@@ -1740,6 +1740,29 @@ The two are chained: a file chooser is composed from rows, `G40`'s modal
 
 - ✅ **G45 — The host draws a list of segments from its files.** The acceptance above. *Done 2026-10-22.* A `signal`, `waveform` or `spectrogram` names a list with `segments` (the clipboard's segment parts plus each file's `peaks`), in both clients. The host gives it a take key below every server buffer and its views ask about it through the fetch machine as about a buffer, answered by the host's own answerer (`host::disk`) in the server's reply formats: natively on a thread that reads the disk at offsets, in a page over OPFS; the answerer does no I/O and is driven by both. The composition is the core's (`clausters_core::peaks::compose`, which the server's join now uses too), over the container parser and part arithmetic that moved to the core (`clausters_core::pcm`, `clausters_core::segments`). A coarse column is folded from the peaks alone, its edges rounded to a level a thirty-second of its width; a part's own edges, its fades and every edge of a finer column are exact (`docs/decisions.md`, "A host draws a list of segments from its files, through the fetch machine it already has"). Measured over an hour of stereo W64 and its peaks (`tests/long_list.rs`, release): opening at 760 columns is 6 replies, 179 kB read and no sample, in 1.8 ms; ten successive pastes of half an hour each are drawn in 57 ms reading 5.1 MB, the sample blocks under the new seams; a zoom to 4096 samples reads 32 kB in 0.9 ms. A page draws a list recorded into its storage under the same key across an edit and asks the engine nothing (`clients/web/tests/segments-host.html`). Not covered: a spectrogram of a list (this plan's Found by use, for `X28`). The eye pass over `views/segments`, natively and in a page, is the ROADMAP's.
 
+## G46 — A complex element is described again only where it changed
+
+*(Added 2026-10-29 by the user, after reading how the multitrack and the score editor are drawn.)*
+
+**What is there.** A window keeps its description between frames as one piece (`frame::Kept`, a single `valid` flag): a tick that moves only a live layer redraws that layer, and **every other change describes the window again whole**. Inside an element nothing finer is kept:
+
+- **The multitrack** (`elements::multitrack`) emits every visible track, box, curve and header into the window's mesh on every whole frame. Moving one box, a zoom of one row, a `/gui_set` on another widget of the window: all of them describe every visible box again. It stays cheap because a box is drawn at the screen's resolution from kept summaries, so the cost is the visible boxes and not the takes' lengths; a dense multitrack (many tracks, many short boxes, curves on every row) pays it on every frame of a drag.
+- **The score editor** (`elements::score`) keeps its page's triangles (`KeptPage`), so a change elsewhere in the window is a copy. But any change of its own (a note edited, a selection, a press, a drag) lets the whole page go and tessellates it again, every system of it, for one note.
+
+**What the milestone asks.** A complex element keeps its picture **in parts** and describes again only the parts a change reached: the multitrack per track row (or per box) and per header, the score editor per system (or per measure), with the selection's wash and the hand's feedback drawn as a layer over the kept parts rather than into them, so selecting does not invalidate what is selected. The window's own `Kept` learns the same at its scale: a change confined to one element describes that element again and copies the rest.
+
+**Constraints:**
+
+- **The single pass is the reference.** A frame drawn from kept parts is the frame drawn whole, pixel for pixel; a test compares the two, as `a_kept_picture_frame_is_the_single_pass_frame` does for the live layers.
+- **The key is what the part is drawn from**, as `KeptPage`'s is: placement, clip, theme, ink, the text's generation and the part's own state. A part whose key moved is drawn again; one the axis scrolled is moved, not drawn again, where its key allows.
+- **One mechanism, not one per element.** The parts cache is a facility of the element API that the multitrack, the score editor and the roll use, never three caches written beside each other (the rule "what is built is adapted").
+- **Measured before and after**, on the heaviest window of each: a drag of one box in a multitrack of many tracks, a note edited on a score of several pages, natively and in a page, under `/gui_activity` and the host's profiler.
+
+**The milestones:**
+
+- ⬜ **G46 — Partial invalidation inside a complex element.** The acceptance above, with the multitrack and the score editor as its two first users.
+
+
 ## L track — the look: layout, sizing and themes for the light widgets
 
 Section added 2026-07-19; ordered before the P track because the patcher's surfaces build on exactly these primitives — a positioned child, a themed accent, a sized label. This track delivers what the layout engine deliberately deferred ("children are evenly sized at this milestone") plus the customization the protocol has none of today: no color prop on any widget, no per-child size, no text size or wrap, margin/gap as compiled constants. The goal is versatility of *composition* — a script must be able to build a real application face (a menu bar, a working area, a status bar) from the same light elements — while the elements themselves stay simple and cheap to draw: flexibility lives in the layout and the theme, never in the widgets' drawing cost. Five design rules bound it, all in the direction of keeping the host light:

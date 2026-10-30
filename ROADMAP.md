@@ -360,6 +360,12 @@ its plan; the plan is where its acceptance is read.
   shaped text. **Related:** the bundled face's coverage and size, which `G43a`
   decides with measured numbers.
 
+- ⬜ **A complex element is described again only where it changed**
+  *(`clients/gui/PLAN.md`, `G46`)*. The multitrack and the score editor keep
+  their picture in parts and redraw only what a change reached. **Related:**
+  "What a whole frame still costs" (Found by use, done), whose `KeptPage` is the
+  whole-page form of it.
+
 ### The larger questions, and the plans' own Future directions
 
 Named, not enumerated: each is written where it belongs and is read there.
