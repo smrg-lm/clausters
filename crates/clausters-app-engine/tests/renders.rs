@@ -2,6 +2,10 @@
 //! application carries them: each step `clausters_apps::audio::renders`
 //! answers, its lists fed by the application's own reader of takes (the
 //! engine reads no file), and the file and the peaks it writes read back.
+//! A render is an offline run of the processes' SynthDefs, so the suite
+//! needs the `synth` family.
+
+#![cfg(feature = "synth")]
 
 use clausters_apps::audio::renders::{self, GainPoint, List, Output};
 use clausters_document::clipboard::SegmentPart;
