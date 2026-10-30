@@ -501,10 +501,16 @@ when each counter moves, the one-way linkage between them — are in the
 `Session.gui()`, the `clausters` console script and the FFI loaders resolve
 their native artifacts with precedence **env override → bundled copy inside
 the package (`clients/python/clausters/_bin/`, `_libs/`) → workspace
-`target/`**. In this source checkout the package is installed editable, so
-the *bundled* copy wins and goes stale the moment a crate is rebuilt — a
-manual test can silently exercise pre-change binaries. Before any manual or
-visual test launched through Python, refresh the bundled copy — one command:
+`target/`**. The *bundled* copy wins and goes stale the moment a crate is
+rebuilt — a manual test can silently exercise pre-change binaries. **First
+check how the client is installed**: `scripts/install-venv.sh` makes a full
+install by default (a copy in site-packages, with binaries of its own), and
+`--editable` an editable one; `.venv/bin/python -c "import clausters;
+print(clausters.__file__)"` says which. A copy is refreshed whole with
+`scripts/install-venv.sh --refresh`, or switched to editable with
+`scripts/install-venv.sh --editable`. With an editable client, before any
+manual or visual test launched through Python, refresh the bundled copy — one
+command:
 `scripts/refresh-bin.sh` (wraps `clients/python/build_native.py`: rebuilds
 server + FFI + GUI host in release and stages everything into `_bin`/`_libs`;
 `scripts/refresh-bin.sh shell` also runs that example with the `.venv`

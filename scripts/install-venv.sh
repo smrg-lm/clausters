@@ -1,18 +1,26 @@
 #!/usr/bin/env bash
 # Create or update the repository's .venv with everything Python: the client
-# (`clausters`, editable, with its native binaries and its offline book staged
-# inside it), the editor (`clausters-editor`, a plain wheel) and the client's
-# `dev` group (pytest).
+# (`clausters`, with its native binaries and its offline book staged inside
+# it), the editor (`clausters-editor`, a plain wheel) and the client's `dev`
+# group (pytest).
+#
+# The client is a full install by default -- a copy in site-packages, as a
+# user gets it from the wheel, which is what to look into to see what the
+# package carries. `--editable` installs it editable instead, for working on
+# it: its Python is read from clients/python.
 #
 # Usage:
 #   scripts/install-venv.sh              # create .venv if missing, install everything
+#   scripts/install-venv.sh --editable   # the same, the client editable
 #   scripts/install-venv.sh --refresh    # an existing .venv after a code change:
-#                                        # stage the binaries, the book and the editor
-#                                        # again, without resolving any dependency
+#                                        # the client and the editor again, in the
+#                                        # mode the client is installed in, without
+#                                        # resolving any dependency
 #   scripts/install-venv.sh --reset      # delete the local state clausters keeps
 #                                        # (asks first), then install as above
 #
 # Options:
+#   --editable    install the client editable rather than as a copy
 #   --no-editor   leave the editor out (and the client's `editor` extra)
 #   --no-dev      leave the `dev` group out
 #   --python EXE  the interpreter that creates the venv (default python3)
@@ -25,10 +33,12 @@
 # here; a build that misses one stops and names it, and the CLAUSTERS_SKIP_*
 # variables (clients/python/build_native.py) build without that piece.
 #
-# --refresh is the README's step 5. The client is editable, so its Python needs
-# nothing, but what is staged inside it is a copy: scripts/refresh-bin.sh stages
-# the binaries again and build_docs.py the book. The editor is not editable, so
-# its wheel is built and installed again.
+# --refresh is the README's step 5, in the mode the client is installed in.
+# A full install is a copy of everything, so the client is built and installed
+# again. An editable client's Python needs nothing, but what is staged inside
+# it is a copy: scripts/refresh-bin.sh stages the binaries again and
+# build_docs.py the book. The editor is not editable, so its wheel is built and
+# installed again either way.
 #
 # --reset starts from a clean user: it deletes the user config of the server
 # and the client (config.toml), the server's data -- its data directory (sent
@@ -52,16 +62,18 @@ reset=0
 yes=0
 editor=1
 dev=1
+editable=0
 python=python3
 while [[ $# -gt 0 ]]; do
   case $1 in
     --refresh) refresh=1; shift ;;
     --reset) reset=1; shift ;;
     -y | --yes) yes=1; shift ;;
+    --editable) editable=1; shift ;;
     --no-editor) editor=0; shift ;;
     --no-dev) dev=0; shift ;;
     --python) [[ $# -ge 2 ]] || die "--python needs an interpreter"; python=$2; shift 2 ;;
-    -h | --help) sed -n '2,43s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h | --help) sed -n '2,52s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) die "unknown option: $1 (see --help)" ;;
   esac
 done
@@ -144,12 +156,22 @@ export PATH
 pip=("$venv/bin/python" -m pip)
 
 if [[ $refresh == 1 ]]; then
-  "$venv/bin/python" -c "import clausters" 2>/dev/null \
+  # Where the client is imported from says how it is installed: from the
+  # source tree when editable, from site-packages when it is a copy.
+  installed=$("$venv/bin/python" -c "import clausters; print(clausters.__file__)" 2>/dev/null) \
     || die "clausters is not installed in .venv; run without --refresh first"
-  info "Staging the native binaries (scripts/refresh-bin.sh)"
-  "$root/scripts/refresh-bin.sh"
-  info "Staging the offline books (clients/python/build_docs.py)"
-  "$venv/bin/python" "$root/clients/python/build_docs.py"
+  if [[ $installed == "$root/clients/python/"* ]]; then
+    info "Staging the native binaries (scripts/refresh-bin.sh)"
+    "$root/scripts/refresh-bin.sh"
+    info "Staging the offline books (clients/python/build_docs.py)"
+    "$venv/bin/python" "$root/clients/python/build_docs.py"
+  else
+    [[ $editable == 0 ]] \
+      || die "the client is a full install; run without --refresh to make it editable"
+    info "Building and installing the client again (a full install)"
+    # A local directory is always reinstalled, even at the same version.
+    "${pip[@]}" install --no-deps ./clients/python
+  fi
   if [[ $editor == 1 ]]; then
     info "Building and installing the editor"
     # A local directory is always reinstalled, even at the same version.
@@ -163,12 +185,15 @@ fi
 info "Updating pip"
 "${pip[@]}" install --quiet --upgrade pip
 
+client=./clients/python
+[[ $editor == 0 ]] || client="./clients/python[editor]"
 args=()
-if [[ $editor == 1 ]]; then
-  args+=(-e "./clients/python[editor]" ./clausters-editor/wheel)
+if [[ $editable == 1 ]]; then
+  args+=(-e "$client")
 else
-  args+=(-e ./clients/python)
+  args+=("$client")
 fi
+[[ $editor == 0 ]] || args+=(./clausters-editor/wheel)
 [[ $dev == 0 ]] || args+=(--group ./clients/python/pyproject.toml:dev)
 
 info "Installing (builds every native piece in release: minutes the first time)"

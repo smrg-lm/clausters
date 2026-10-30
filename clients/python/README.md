@@ -267,21 +267,26 @@ or `CLAUSTERS_SKIP_DOCS=1` builds without that piece.
 
 ```sh
 python3 -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install -e "./clients/python[editor]" ./clausters-editor/wheel \
+pip install "./clients/python[editor]" ./clausters-editor/wheel \
   --group ./clients/python/pyproject.toml:dev
 ```
 
 This builds, in release, the three cdylibs, the server, the GUI host and the
 editor, and stages each into its package — several minutes the first time.
-`clausters` is installed editable; `clausters-editor` is a plain wheel, which pip
-takes as the one the `editor` extra names, as it would take PyPI's. The `dev`
+`clausters` is installed as a copy, as a user gets it from the wheel, so what
+is in site-packages is what the package carries; to work on the client,
+install it editable instead (`pip install -e "./clients/python[editor]" ...`),
+and its Python is read from `clients/python`. `clausters-editor` is a plain
+wheel, which pip takes as the one the `editor` extra names, as it would take
+PyPI's. The `dev`
 group is pytest (pip's `--group` reads `./pyproject.toml` unless given a path,
 and this one lives in `clients/python/`); drop it, or the editor's two
 arguments, for a lighter install.
 
 `scripts/install-venv.sh` does this step in one command: it creates `.venv` when
 it is missing, updates pip (`--group` takes 25.1) and runs the install above
-(`--no-editor` and `--no-dev` drop those pieces). `--reset` first deletes the
+(`--editable` installs the client editable, `--no-editor` and `--no-dev`
+drop those pieces). `--reset` first deletes the
 local state the server, the client and the editor keep -- config, data
 directory, the editor's environments, stale shared-memory segments -- after
 listing it, to start from a clean user.
@@ -312,11 +317,13 @@ nothing is left running (check with `pgrep -laf 'clausters($| )|clausters-gui'`)
 In (e) the editor's session runs on this venv's Python, so `import clausters`
 works there from the first line.
 
-**5. After changing code:**
+**5. After changing code.** A full install is a copy of everything, so any
+change is installed again with step 3's `pip install` of the client
+(`--no-deps` skips resolving anything). An editable one needs less:
 
-- **Python in `clients/python`** — nothing: the install is editable. The
-  offline books are a copy, though: after a docstring or a page of either
-  book changes, `python clients/python/build_docs.py` stages them again.
+- **Python in `clients/python`** — nothing. The offline books are a copy,
+  though: after a docstring or a page of either book changes, `python
+  clients/python/build_docs.py` stages them again.
 - **Rust (server, core, GUI host)** — `scripts/refresh-bin.sh`. The package
   loads the binaries **staged inside it** before the workspace `target/`, so a
   rebuilt crate is not what runs until it is staged again; a manual test would
@@ -327,8 +334,10 @@ works there from the first line.
   CLAUSTERS_EDITOR_SKIP_BUILD=1` in front of it stages them without rebuilding
   anything.
 
-`scripts/install-venv.sh --refresh` does all three on an existing `.venv`:
-the binaries, the book and the editor, without resolving any dependency.
+`scripts/install-venv.sh --refresh` does all of it on an existing `.venv`, in
+the mode the client is installed in, without resolving any dependency. Which
+mode that is, `python -c "import clausters; print(clausters.__file__)"` says:
+a path under `clients/python` is editable, one under `site-packages` a copy.
 
 Step 3 builds the GUI binary (wgpu, a minute or two the first time); set
 `CLAUSTERS_SKIP_GUI_BUILD=1` to skip it for a faster, server-only install (a
