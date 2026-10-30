@@ -229,8 +229,9 @@ def many_channels():
 # %% [markdown]
 # ## A file not written yet
 #
-# `SoundFile.empty` is a shape with no path: silence that opens like any take.
-# Its first save -- Ctrl+S, or File -> Save as... -- asks where it goes.
+# A new file is silence of a shape, added to this editor and written nowhere
+# yet: its first save -- Ctrl+S, or File -> Save as... -- asks where it goes.
+# `edit(SoundFile.empty(2, frames, rate))` opens the same in a window of its own.
 
 # %%
 def new_file():

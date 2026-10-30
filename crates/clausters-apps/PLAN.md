@@ -5672,7 +5672,7 @@ wrong.
   decoded packet by packet from its top as the ring has room, the start
   thrown away as it is decoded, and opened again to loop.
 
-- ⬜ **`edit(SoundFile.empty(...))` is refused, though both books say it
+- ✅ **`edit(SoundFile.empty(...))` is refused, though both books say it
   opens silence** *(found 2026-10-28, reading the client's check while
   decoding compressed files)*. The editor's constructor refuses a file with
   no path in both clients, and the window's open takes a path or none, so
@@ -5680,6 +5680,9 @@ wrong.
   reached only by `new_file` on an open editor. Either `edit` opens an
   empty editor and adds a new file of that shape, or the books stop saying
   it.
+  **Fixed 2026-10-30, as the books say** (decided by the user): a file
+  with no path opens the editor with none and adds a new file of its
+  shape (`new_file`), whose first save asks where in the Save as form.
 
 - ⬜ **A wrap on a block's edge can play a block of silence nobody counts**
   *(found 2026-10-28, closing the playback tests' entry)*. With every core

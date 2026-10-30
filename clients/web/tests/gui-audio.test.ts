@@ -104,11 +104,13 @@ test("a buffer is not edited", async () => {
     await assert.rejects(edit(buffer, { host: new FakeHost() as unknown as GuiHost }), /sound files/);
 });
 
-test("a file not on disk is refused and a compressed one is not", async () => {
-    await assert.rejects(
-        edit(new SoundFile(null, 100, 1, SR), { host: new FakeHost() as unknown as GuiHost }),
-        /not a file on disk/,
-    );
+test("silence not on disk opens as a new file and a compressed one opens", async () => {
+    const host = new FakeHost();
+    await edit(SoundFile.empty(2, 100, SR), { host: host as unknown as GuiHost });
+    assert.deepEqual(host.calls[0], ["open", "audio", { title: "Audio" }]);
+    assert.deepEqual(host.calls[host.calls.length - 1]![2], {
+        do: { verb: "newFile", shape: { channels: 2, frames: 100, rate: SR } },
+    });
     assert.equal(readsInPlace(aFile("/takes/take.mp3", "mp3")), false);
     await edit(aFile("/takes/take.mp3", "mp3"), { host: new FakeHost() as unknown as GuiHost, open: false });
 });

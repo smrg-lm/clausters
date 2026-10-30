@@ -198,12 +198,6 @@ export class AudioEditor {
     private handle: WindowHandle | null = null;
 
     constructor(file: SoundFile | null = null, { title = "Audio", layers }: AudioEditorOptions = {}) {
-        if (file !== null && file.path === null) {
-            throw new RangeError(
-                "a file not written yet is not a file on disk, which is what the " +
-                    "audio editor opens",
-            );
-        }
         this.opening = file;
         this.title = String(title);
         this.openLayers = layers ?? null;
@@ -219,11 +213,16 @@ export class AudioEditor {
         if (this.handle !== null) return this.handle;
         const resolved = host ?? (await (await import("../../plot.ts")).resolveHost());
         const options: Record<string, unknown> = { title: this.title };
-        if (this.opening !== null) options.path = this.opening.path;
+        if (this.opening !== null && this.opening.path !== null) options.path = this.opening.path;
         const window = await resolved.openApp("audio", options, 5.0, { element: stage });
         const { WindowHandle } = await import("../handle.ts");
         this.hostOf = resolved;
         this.handle = new WindowHandle(resolved, window, new Map());
+        // silence not written anywhere yet: a new file of its shape
+        if (this.opening !== null && this.opening.path === null) {
+            const { channels, frames, sampleRate } = this.opening;
+            await this.newFile(channels, frames, sampleRate);
+        }
         if (this.openLayers !== null) await this.setLayers(this.openLayers);
         return this.handle;
     }

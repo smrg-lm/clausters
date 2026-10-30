@@ -130,10 +130,6 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
   load closing the playback tests' entry; rare.
 
-- ⬜ **`edit(SoundFile.empty(...))` is refused, though both books say it
-  opens silence** *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found
-  decoding compressed files: the books and the clients disagree.
-
 - ⬜ **The other applications that open files open without one and outlive
   their last** *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audio
   editor keeps the rule; the score editor and the multitrack with a session

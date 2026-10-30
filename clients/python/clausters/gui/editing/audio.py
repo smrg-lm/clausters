@@ -125,7 +125,9 @@ class AudioEditor:
     (`new_file`, `open_file`).
 
     Args:
-        file: the `clausters.SoundFile` to edit, read where it is. ``None``
+        file: the `clausters.SoundFile` to edit, read where it is; one with
+            no path (`clausters.SoundFile.empty`) is silence of its shape,
+            not written anywhere yet, whose first save asks where. ``None``
             opens the editor with no file.
         title: the window's title.
         layers: what the picture measures, innermost last; the application's
@@ -133,10 +135,6 @@ class AudioEditor:
     """
 
     def __init__(self, file=None, *, title: str = "Audio", layers=None):
-        if file is not None and file.path is None:
-            raise ValueError(
-                "a file not written yet is not a file on disk, which is what the "
-                "audio editor opens")
         self._file = file
         #: The window's title.
         self.title = str(title)
@@ -157,13 +155,16 @@ class AudioEditor:
 
         host = _resolve_host(host, None)
         options = {"title": self.title}
-        if self._file is not None:
+        if self._file is not None and self._file.path is not None:
             options["path"] = str(self._file.path)
         window = host.open_app("audio", options)
         self._host = host
         self._window = WindowHandle(host, int(window), {})
         # the host's loop delivers the window's close from now on
         host.loop
+        # silence not written anywhere yet: a new file of its shape
+        if self._file is not None and self._file.path is None:
+            self.new_file(self._file.channels, self._file.frames, self._file.sample_rate)
         if self._layers is not None:
             self.layers = self._layers
         return self._window

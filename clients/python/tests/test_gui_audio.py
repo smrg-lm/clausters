@@ -115,9 +115,12 @@ def test_a_buffer_is_not_edited():
         edit(Buffer(), host=FakeHost())
 
 
-def test_a_file_not_on_disk_is_refused_and_a_compressed_one_is_not():
-    with pytest.raises(ValueError, match="not a file on disk"):
-        edit(SoundFile(None, 100, 1, SR), host=FakeHost())
+def test_silence_not_on_disk_opens_as_a_new_file_and_a_compressed_one_opens():
+    host = FakeHost()
+    edit(SoundFile.empty(2, 100, SR), host=host)
+    assert host.calls[0] == ("open", "audio", {"title": "Audio"})
+    assert host.calls[-1][2] == {"do": {"verb": "newFile", "shape": {
+        "channels": 2, "frames": 100, "rate": SR}}}
     assert not reads_in_place(a_file("/takes/take.mp3", "mp3"))
     edit(a_file("/takes/take.mp3", "mp3"), host=FakeHost(), open=False)
 
