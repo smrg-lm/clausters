@@ -110,10 +110,6 @@ already carry it.
   *(`clients/web/PLAN.md`, Found by use)*. The pair is correct; the extractor
   counts a platform's boot and a language's array calls as client API.
 
-- ⬜ **A FaustDef's `[unit:...]` and `[scale:log]` metadata are not read**
-  *(root `PLAN.md`, Found by use)*. Found building `J12`, seen in the generic
-  editor a node opens.
-
 - ⬜ **A clip's lane stacks every channel evenly, however short the lane**,
   **A short channel row's ruler labels collide at its edges** and **The
   audio editor's meter is cut at the window's right edge**

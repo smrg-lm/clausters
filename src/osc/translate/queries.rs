@@ -490,7 +490,9 @@ fn synth_controls(def: &SynthDef) -> Vec<Control> {
 }
 
 /// A FaustDef's controls: its UI parameters, each with the range and step
-/// its slider declared. The reserved `out`/`in` bus controls are engine
+/// its slider declared, and the unit and log scale its metadata declares (a
+/// log scale over a range that reaches zero has no ratios and stays linear,
+/// as `ControlDisplay::validate` asks). The reserved `out`/`in` bus controls are engine
 /// plumbing and stay out of the reported surface.
 #[cfg(feature = "faust")]
 fn faust_controls(def: &FaustDef) -> Vec<Control> {
@@ -501,7 +503,8 @@ fn faust_controls(def: &FaustDef) -> Vec<Control> {
                 min: Some(f64::from(p.min)),
                 max: Some(f64::from(p.max)),
                 step: Some(f64::from(p.step)),
-                ..ControlDisplay::default()
+                warp: (p.log && p.min > 0.0).then(|| "exp".to_string()),
+                unit: p.unit.clone(),
             },
             ..Control::new(p.name.clone(), f64::from(p.init))
         })

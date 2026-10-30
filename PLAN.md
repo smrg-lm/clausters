@@ -4577,12 +4577,15 @@ should confirm before the fix.
   stays as it is. **Fixed 2026-10-30:** `/synth_get`, `/synth_getRange` and
   `/synth_getText` read a control the mirror records as mapped to a control
   bus from that bus's atomic.
-- ⬜ **A FaustDef's `[unit:...]` and `[scale:log]` metadata are not read**
+- ✅ **A FaustDef's `[unit:...]` and `[scale:log]` metadata are not read**
   *(found 2026-10-16, building `J12`)*. A Faust slider brings its range and
   step to `/def_query`, and its unit and its scale stay in the DSP's metadata,
   so a generic editor draws a frequency slider linear and with no unit. Both
   walks that read a def's parameters (the libfaust UI glue and the compiler's
   JSON) would read the two declarations into the control's display.
+  **Fixed 2026-10-30:** both walks read a widget's declarations through
+  `ParamSpec::declare`, and `/def_query` reports the unit and, for a log
+  scale over a range above zero, the `exp` warp.
 - ⬜ **A write in place behind an undrained replacement can miss a shared
   buffer** *(found 2026-10-16, fixing the audio editor's gain preview)*. While
   a `/buffer_alloc`, read, gen or stitch on an index is still in the NRT queue,

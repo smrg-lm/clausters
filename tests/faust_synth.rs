@@ -118,6 +118,26 @@ fn probed_def_exposes_params_and_reserved_bus_controls() {
     assert_eq!((freq.min, freq.max), (20.0, 20_000.0));
 }
 
+/// **A slider's `[unit:...]` and `[scale:log]` are read**, from the label's
+/// metadata libfaust declares on the widget's zone; a slider declaring
+/// neither has no unit and a linear scale, and one widget's metadata is not
+/// the next one's.
+#[test]
+fn a_slider_reads_its_unit_and_log_scale() {
+    let def = compile_def(
+        "fmeta",
+        r#"import("stdfaust.lib");
+freq = hslider("freq[unit:Hz][scale:log]", 440.0, 20.0, 20000.0, 0.01);
+amp = hslider("amp", 0.2, 0.0, 1.0, 0.001);
+process = os.osc(freq) * amp;"#,
+    );
+    let param = |name| &def.params[def.control_index(name).unwrap() as usize];
+    let freq = param("freq");
+    assert_eq!((freq.unit.as_deref(), freq.log), (Some("Hz"), true));
+    let amp = param("amp");
+    assert_eq!((amp.unit.as_deref(), amp.log), (None, false));
+}
+
 #[test]
 fn soundfile_reads_a_server_buffer() {
     use clausters::dsp::buffer::{Buffer, empty_pool};

@@ -74,6 +74,23 @@ pub struct UiNode {
     /// is not one -- the same two places the libfaust walk looks.
     #[serde(default)]
     pub url: String,
+    /// The widget's metadata declarations, one key each (`{"unit": "Hz"}`).
+    #[serde(default)]
+    pub meta: Vec<std::collections::BTreeMap<String, serde_json::Value>>,
+}
+
+impl UiNode {
+    /// This widget as a parameter over `range` (`[init, min, max, step]`),
+    /// with its metadata read the way the libfaust walk reads `declare`.
+    fn spec(&self, range: [f32; 4]) -> ParamSpec {
+        let mut spec = ParamSpec::new(self.label.clone(), range);
+        for (key, value) in self.meta.iter().flatten() {
+            if let Some(value) = value.as_str() {
+                spec.declare(key, value);
+            }
+        }
+        spec
+    }
 }
 
 impl FaustJson {
@@ -132,25 +149,13 @@ fn walk(
         // which is what the libfaust walk's `add_button` gives them.
         "button" | "checkbox" => {
             if let Some(index) = node.index {
-                specs.push(ParamSpec {
-                    name: node.label.clone(),
-                    init: 0.0,
-                    min: 0.0,
-                    max: 1.0,
-                    step: 1.0,
-                });
+                specs.push(node.spec([0.0, 0.0, 1.0, 1.0]));
                 offsets.push(index);
             }
         }
         "vslider" | "hslider" | "nentry" => {
             if let Some(index) = node.index {
-                specs.push(ParamSpec {
-                    name: node.label.clone(),
-                    init: node.init,
-                    min: node.min,
-                    max: node.max,
-                    step: node.step,
-                });
+                specs.push(node.spec([node.init, node.min, node.max, node.step]));
                 offsets.push(index);
             }
         }
@@ -216,6 +221,24 @@ mod tests {
             (gate.init, gate.min, gate.max, gate.step),
             (0.0, 0.0, 1.0, 1.0)
         );
+    }
+
+    /// A widget's metadata, as the compiler's JSON writes it (`"meta"`, one
+    /// key per entry): `unit` and `scale:log` read, the rest ignored.
+    #[test]
+    fn a_slider_reads_its_unit_and_log_scale() {
+        let json = r#"{
+            "name": "m", "size": 64, "inputs": 0, "outputs": 1,
+            "ui": [{"type": "vgroup", "label": "m", "items": [
+                {"type": "hslider", "label": "freq", "index": 4,
+                 "meta": [{"unit": "Hz"}, {"scale": "log"}, {"tooltip": "pitch"}],
+                 "init": 440, "min": 20, "max": 20000, "step": 0.01},
+                {"type": "hslider", "label": "amp", "index": 8,
+                 "init": 0.2, "min": 0, "max": 1, "step": 0.001}]}]
+        }"#;
+        let (specs, _) = FaustJson::parse(json).unwrap().params();
+        assert_eq!((specs[0].unit.as_deref(), specs[0].log), (Some("Hz"), true));
+        assert_eq!((specs[1].unit.as_deref(), specs[1].log), (None, false));
     }
 
     /// A def that declares two soundfiles, as the wasm backend emits them: the

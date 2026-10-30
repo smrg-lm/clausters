@@ -200,6 +200,8 @@ struct CollectedUi {
     /// inside `collect_ui`, where the real borrow is alive.
     buffers: *const BufferPool,
     soundfiles: Vec<SoundfileData>,
+    /// The `declare`s since the last widget, `(zone, key, value)`.
+    declared: Vec<(*mut f32, String, String)>,
 }
 
 fn collect_ui(dsp: *mut ffi::llvm_dsp, buffers: Option<&BufferPool>) -> CollectedUi {
@@ -208,6 +210,7 @@ fn collect_ui(dsp: *mut ffi::llvm_dsp, buffers: Option<&BufferPool>) -> Collecte
         zones: Vec::new(),
         buffers: buffers.map_or(std::ptr::null(), |b| b as *const BufferPool),
         soundfiles: Vec::new(),
+        declared: Vec::new(),
     };
     let mut glue = ffi::UIGlue {
         uiInterface: &mut ui as *mut CollectedUi as *mut c_void,
@@ -238,14 +241,16 @@ unsafe fn add_param(ui: *mut c_void, label: *const c_char, zone: *mut f32, spec:
     let name = unsafe { CStr::from_ptr(label) }
         .to_string_lossy()
         .into_owned();
-    let [init, min, max, step] = spec;
-    ui.specs.push(ParamSpec {
-        name,
-        init,
-        min,
-        max,
-        step,
-    });
+    let mut param = ParamSpec::new(name, spec);
+    // libfaust declares a widget's metadata on its zone just before adding
+    // it; what was declared on another zone (or on none, the def's own) is
+    // not this widget's.
+    for (on, key, value) in ui.declared.drain(..) {
+        if on == zone {
+            param.declare(&key, &value);
+        }
+    }
+    ui.specs.push(param);
     ui.zones.push(zone);
 }
 
@@ -310,10 +315,18 @@ unsafe extern "C" fn add_soundfile(
     unsafe { *sf_zone = &*data.soundfile as *const ffi::Soundfile as *mut c_void };
     ui.soundfiles.push(data);
 }
+/// A metadata declaration (`[unit:Hz]`, `[scale:log]`), kept for the widget
+/// added next on the same zone (`add_param`).
 unsafe extern "C" fn declare(
-    _ui: *mut c_void,
-    _zone: *mut f32,
-    _key: *const c_char,
-    _value: *const c_char,
+    ui: *mut c_void,
+    zone: *mut f32,
+    key: *const c_char,
+    value: *const c_char,
 ) {
+    if zone.is_null() || key.is_null() || value.is_null() {
+        return;
+    }
+    let ui = unsafe { collector(ui) };
+    let text = |p| unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned();
+    ui.declared.push((zone, text(key), text(value)));
 }

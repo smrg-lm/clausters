@@ -73,6 +73,38 @@ pub struct ParamSpec {
     pub min: f32,
     pub max: f32,
     pub step: f32,
+    /// What its `[unit:...]` declares it is measured in.
+    pub unit: Option<String>,
+    /// Whether its `[scale:log]` asks for equal ratios over equal travel.
+    pub log: bool,
+}
+
+impl ParamSpec {
+    /// A parameter with its range and no metadata read yet.
+    pub fn new(name: String, [init, min, max, step]: [f32; 4]) -> Self {
+        Self {
+            name,
+            init,
+            min,
+            max,
+            step,
+            unit: None,
+            log: false,
+        }
+    }
+
+    /// **Reads one metadata declaration of the widget** into how it is
+    /// drawn: `[unit:Hz]` is its unit and `[scale:log]` its exponential
+    /// range. Any other key says nothing a control's display holds, and both
+    /// walks (`faust::synth`'s and `json_ui`'s) read through this one so
+    /// they agree.
+    pub fn declare(&mut self, key: &str, value: &str) {
+        match key {
+            "unit" if !value.trim().is_empty() => self.unit = Some(value.trim().to_string()),
+            "scale" => self.log = value.trim() == "log",
+            _ => {}
+        }
+    }
 }
 
 /// What `/def_send faust` carries: one of the three def formats. Shared by
