@@ -5694,6 +5694,8 @@ wrong.
   counted. Seen once in some thirty runs of the suite under full load and
   not in twenty more; what the reader holds at that wrap is the question
   (a ring that read the old loop's end, refilled as a locate would be).
+  Not reproduced on 2026-10-30 in 104 more runs of the test alone, 40 idle
+  and 64 with every core busy; still waits for a failure's output.
 
 - ✅ **The second audio editor window does not play** *(found 2026-10-28
   by the user, in the native eye pass of `G44c`)*. Two windows opened from
