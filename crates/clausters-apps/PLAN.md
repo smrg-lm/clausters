@@ -5658,7 +5658,7 @@ wrong.
   in place on its own end (`server::engine`, `cross_edge`, `edge_due`).
   Few cores only changed which block the readers were ready on.
 
-- ⬜ **A page decodes no compressed file when it opens** *(found
+- ✅ **A page decodes no compressed file when it opens** *(found
   2026-10-28, decoding a compressed file at open)*. The decode is an
   offline render whose `DiskIn` streams the file, and in a page `diskIn`
   streams WAV only (`clients/web/docs/src/platform.md`), so the same open
@@ -5666,6 +5666,11 @@ wrong.
   worker should stream a compressed file through the decoder from its top,
   as a native render does; a span of one is still not a file, but a decode
   reads it once, in order.
+  **Fixed 2026-10-30.** The decoder a native `DiskIn` streams through is
+  one module (`dsp::decode`), and a page's offline `DiskIn` uses it for a
+  file that is not read by arithmetic: opened through the render's files,
+  decoded packet by packet from its top as the ring has room, the start
+  thrown away as it is decoded, and opened again to loop.
 
 - ⬜ **`edit(SoundFile.empty(...))` is refused, though both books say it
   opens silence** *(found 2026-10-28, reading the client's check while

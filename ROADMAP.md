@@ -305,9 +305,8 @@ its plan; the plan is where its acceptance is read.
   *(`crates/clausters-apps/PLAN.md`, "The milestones")*. **Taken next**:
   the audio editor's lifecycle, on the application that holds its engine
   since `X34`, carried to the other editors. **Related:** the apps plan's
-  "A page decodes no compressed file when it opens" (Found by use), and
-  after it "Working on one channel of a take" (Future directions), the
-  channel a paste lands from.
+  "Working on one channel of a take" (Future directions), the channel a
+  paste lands from.
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable

@@ -87,10 +87,55 @@ struct Slot {
     offline: Option<OfflineRead>,
 }
 
-/// What an offline `DiskIn` has read of its file.
-struct OfflineRead {
-    layout: crate::dsp::pcm::Layout,
-    next: u64,
+/// What an offline `DiskIn` has read of its file: a PCM file by arithmetic,
+/// from the frame it has read to, or any other through the decoder, from its
+/// top -- a compressed file, as a native render streams one.
+enum OfflineRead {
+    Pcm {
+        layout: crate::dsp::pcm::Layout,
+        next: u64,
+    },
+    Decoded {
+        file: crate::dsp::decode::Decoded,
+        /// The last packet decoded, and how much of it the ring has taken.
+        pending: Vec<f32>,
+        at: usize,
+        /// Samples still to throw away before the start.
+        skip: usize,
+    },
+}
+
+impl OfflineRead {
+    /// The read of the file at `path` from frame `start`: by arithmetic when
+    /// it is PCM, else through the decoder.
+    fn open(path: &str, start: u64) -> Result<OfflineRead, String> {
+        match layout_through_files(path) {
+            Ok(layout) => Ok(OfflineRead::Pcm {
+                next: start.min(layout.frames),
+                layout,
+            }),
+            Err(why) => {
+                let file =
+                    crate::dsp::decode::Decoded::open(path).map_err(|e| format!("{why}; {e}"))?;
+                let skip = usize::try_from(start)
+                    .unwrap_or(usize::MAX)
+                    .saturating_mul(file.channels);
+                Ok(OfflineRead::Decoded {
+                    file,
+                    pending: Vec::new(),
+                    at: 0,
+                    skip,
+                })
+            }
+        }
+    }
+
+    fn channels(&self) -> usize {
+        match self {
+            OfflineRead::Pcm { layout, .. } => layout.channels,
+            OfflineRead::Decoded { file, .. } => file.channels,
+        }
+    }
 }
 
 thread_local! {
@@ -253,8 +298,9 @@ fn push_frames(producer: &mut Producer<f32>, frames: &[f32]) {
     }
 }
 
-/// **Serves a `DiskIn` on the spot**: runs of its file from where it has read to, until its ring is full or the file is
-/// played out (and from the top again, looping).
+/// **Serves a `DiskIn` on the spot**: runs of its file from where it has
+/// read to, until its ring is full or the file is played out (and from the
+/// top again, looping).
 fn serve_in(id: u32) {
     let Some(files) = files() else {
         return;
@@ -268,33 +314,88 @@ fn serve_in(id: u32) {
         let (End::Feeding(producer), Some(read)) = (&mut slot.end, slot.offline.as_mut()) else {
             return;
         };
-        let channels = read.layout.channels.max(1);
-        loop {
-            if read.next >= read.layout.frames {
-                if !looping || read.layout.frames == 0 {
-                    return;
-                }
-                read.next = 0;
+        let channels = read.channels().max(1);
+        let served = match read {
+            OfflineRead::Pcm { layout, next } => {
+                serve_pcm(files.as_ref(), layout, next, looping, producer, channels)
             }
-            let room = producer.slots() / channels;
-            let n = room
-                .min(READ_SPAN)
-                .min((read.layout.frames - read.next) as usize);
-            if n == 0 {
-                return;
-            }
-            match read_frames(files.as_ref(), &read.layout, read.next, n) {
-                Ok(samples) => {
-                    push_frames(producer, &samples);
-                    read.next += n as u64;
-                }
-                Err(e) => {
-                    tracing::warn!("DiskIn: {e}");
-                    return;
-                }
-            }
+            OfflineRead::Decoded {
+                file,
+                pending,
+                at,
+                skip,
+            } => serve_decoded(file, pending, at, skip, looping, producer, channels),
+        };
+        if let Err(e) = served {
+            tracing::warn!("DiskIn: {e}");
         }
     });
+}
+
+/// A PCM file's runs, read by arithmetic from frame `next`.
+fn serve_pcm(
+    files: &dyn PageFiles,
+    layout: &crate::dsp::pcm::Layout,
+    next: &mut u64,
+    looping: bool,
+    producer: &mut Producer<f32>,
+    channels: usize,
+) -> Result<(), String> {
+    loop {
+        if *next >= layout.frames {
+            if !looping || layout.frames == 0 {
+                return Ok(());
+            }
+            *next = 0;
+        }
+        let room = producer.slots() / channels;
+        let n = room.min(READ_SPAN).min((layout.frames - *next) as usize);
+        if n == 0 {
+            return Ok(());
+        }
+        let samples = read_frames(files, layout, *next, n)?;
+        push_frames(producer, &samples);
+        *next += n as u64;
+    }
+}
+
+/// A decoded file's packets, as far as the ring has room for: whole frames
+/// of the packet in hand, then the next one, past the start.
+fn serve_decoded(
+    file: &mut crate::dsp::decode::Decoded,
+    pending: &mut Vec<f32>,
+    at: &mut usize,
+    skip: &mut usize,
+    looping: bool,
+    producer: &mut Producer<f32>,
+    channels: usize,
+) -> Result<(), String> {
+    // a file that decodes to nothing ends a loop's restarts here
+    let mut restarted = false;
+    loop {
+        if *at < pending.len() {
+            let room = producer.slots() / channels * channels;
+            let n = room.min(pending.len() - *at);
+            if n == 0 {
+                return Ok(());
+            }
+            push_frames(producer, &pending[*at..*at + n]);
+            *at += n;
+            continue;
+        }
+        *at = 0;
+        if file.next(pending)? {
+            let dropped = (*skip).min(pending.len());
+            *at = dropped;
+            *skip -= dropped;
+            restarted &= pending.is_empty();
+        } else if looping && !restarted {
+            file.again()?;
+            restarted = true;
+        } else {
+            return Ok(());
+        }
+    }
 }
 
 /// Pushes interleaved frames into a `DiskIn` stream, returning how many
@@ -374,18 +475,15 @@ impl DiskIn {
         // shape is read now, as natively, and the stream is served as it
         // plays.
         let offline = (ctx.offline && files().is_some())
-            .then(|| match layout_through_files(&path) {
-                Ok(layout) => Some(OfflineRead {
-                    next: config.start.min(layout.frames),
-                    layout,
-                }),
+            .then(|| match OfflineRead::open(&path, config.start) {
+                Ok(read) => Some(read),
                 Err(e) => {
                     tracing::warn!("DiskIn: {e}");
                     None
                 }
             })
             .flatten();
-        let channels = offline.as_ref().map_or(0, |r| r.layout.channels);
+        let channels = offline.as_ref().map_or(0, OfflineRead::channels);
         let serve = offline.is_some();
         // The channel count is not knowable here (see the module docs): the
         // stream starts shapeless and the host fills it in. The ring is sized

@@ -37,6 +37,7 @@ use std::thread::JoinHandle;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
+use crate::dsp::decode::Decoded;
 use crate::dsp::io_thread::{Turn, wait_for};
 use crate::dsp::registry::{BuildCtx, UGenConfig};
 use crate::dsp::{ProcessCtx, UGen, at};
@@ -54,67 +55,6 @@ impl Drop for Ended {
     fn drop(&mut self) {
         self.0.store(true, Ordering::Release);
     }
-}
-
-// ---- symphonia open helper (streaming) ----
-
-struct OpenFile {
-    format: Box<dyn symphonia::core::formats::FormatReader>,
-    decoder: Box<dyn symphonia::core::codecs::audio::AudioDecoder>,
-    track_id: u32,
-    channels: usize,
-}
-
-/// Opens `path` for streaming and returns the reader/decoder plus its channel
-/// count. Called on the network thread (build) and again by the reader thread
-/// on each loop restart.
-fn open_file(path: &str) -> Result<OpenFile, String> {
-    use symphonia::core::codecs::CodecParameters;
-    use symphonia::core::codecs::audio::AudioDecoderOptions;
-    use symphonia::core::formats::probe::Hint;
-    use symphonia::core::formats::{FormatOptions, TrackType};
-    use symphonia::core::io::MediaSourceStream;
-    use symphonia::core::meta::MetadataOptions;
-
-    let err = |e: String| format!("{path}: {e}");
-    let file = crate::dsp::pcm::Source::open(path).map_err(|e| err(e.to_string()))?;
-    let stream = MediaSourceStream::new(Box::new(file), Default::default());
-    let mut hint = Hint::new();
-    if let Some(ext) = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-    {
-        hint.with_extension(ext);
-    }
-    let format = symphonia::default::get_probe()
-        .probe(
-            &hint,
-            stream,
-            FormatOptions::default(),
-            MetadataOptions::default(),
-        )
-        .map_err(|e| err(e.to_string()))?;
-    let track = format
-        .default_track(TrackType::Audio)
-        .ok_or_else(|| err("no audio track".into()))?;
-    let params = match track.codec_params.as_ref() {
-        Some(CodecParameters::Audio(params)) => params,
-        _ => return Err(err("default track is not audio".into())),
-    };
-    let channels = params.channels.as_ref().map_or(0, |c| c.count());
-    if channels == 0 {
-        return Err(err("could not determine channel count".into()));
-    }
-    let track_id = track.id;
-    let decoder = symphonia::default::get_codecs()
-        .make_audio_decoder(params, &AudioDecoderOptions::default())
-        .map_err(|e| err(e.to_string()))?;
-    Ok(OpenFile {
-        format,
-        decoder,
-        track_id,
-        channels,
-    })
 }
 
 // ---- DiskIn ----
@@ -153,7 +93,7 @@ impl DiskIn {
             .filter(|l| l.container != crate::dsp::pcm::Container::Wav);
         let opened = match long {
             Some(layout) => Opened::Pcm(layout),
-            None => match open_file(&path) {
+            None => match Decoded::open(&path) {
                 Ok(o) => Opened::Decoded(o),
                 Err(e) => {
                     tracing::warn!("DiskIn: {e}; it will be silent");
@@ -163,7 +103,7 @@ impl DiskIn {
         };
         let channels = match &opened {
             Opened::Pcm(layout) => layout.channels,
-            Opened::Decoded(o) => o.channels,
+            Opened::Decoded(d) => d.channels,
         };
         // The ring holds whole interleaved frames; round capacity down.
         let cap = (RING_SAMPLES / channels).max(1) * channels;
@@ -184,8 +124,8 @@ impl DiskIn {
                         Opened::Pcm(layout) => {
                             pcm_reader_thread(layout, looping, start, producer, stop, turn)
                         }
-                        Opened::Decoded(o) => {
-                            reader_thread(path, o, looping, start, producer, stop, turn)
+                        Opened::Decoded(d) => {
+                            reader_thread(d, looping, start, producer, stop, turn)
                         }
                     }
                 })
@@ -257,7 +197,7 @@ impl Drop for DiskIn {
 /// decoder.
 enum Opened {
     Pcm(crate::dsp::pcm::Layout),
-    Decoded(OpenFile),
+    Decoded(Decoded),
 }
 
 /// [`reader_thread`] for a PCM file read by arithmetic: the start is a seek
@@ -313,16 +253,13 @@ fn pcm_reader_thread(
 /// before the ring sees them, so the first one the audio thread pops is
 /// `start` whatever the format.
 fn reader_thread(
-    path: String,
-    mut opened: OpenFile,
+    mut opened: Decoded,
     looping: bool,
     start: u64,
     mut producer: Producer<f32>,
     stop: Arc<AtomicBool>,
     mut turn: Turn,
 ) {
-    use symphonia::core::errors::Error as SymError;
-
     let mut pending: Vec<f32> = Vec::new();
     let mut idx = 0usize;
     // samples still to throw away before the start
@@ -347,40 +284,24 @@ fn reader_thread(
                 Err(_) => turn.park(),
             }
         }
-        pending.clear();
         idx = 0;
 
         // Reading and decoding a packet is the work, whatever it yields.
         turn.worked();
-        match opened.format.next_packet() {
-            Ok(Some(packet)) => {
-                if packet.track_id != opened.track_id {
-                    continue;
-                }
-                match opened.decoder.decode(&packet) {
-                    Ok(decoded) => {
-                        decoded.copy_to_vec_interleaved(&mut pending);
-                        let dropped = skip.min(pending.len());
-                        idx = dropped;
-                        skip -= dropped;
-                    }
-                    Err(SymError::DecodeError(_)) => continue,
-                    Err(_) => return,
-                }
+        match opened.next(&mut pending) {
+            Ok(true) => {
+                let dropped = skip.min(pending.len());
+                idx = dropped;
+                skip -= dropped;
             }
-            Ok(None) => {
-                // End of stream: restart from the top (exact, no seek) when
-                // looping, otherwise we are done.
-                if looping {
-                    match open_file(&path) {
-                        Ok(o) => opened = o,
-                        Err(_) => return,
-                    }
-                } else {
+            // End of stream: restart from the top (exact, no seek) when
+            // looping, otherwise we are done.
+            Ok(false) if looping => {
+                if opened.again().is_err() {
                     return;
                 }
             }
-            Err(_) => return,
+            Ok(false) | Err(_) => return,
         }
     }
 }

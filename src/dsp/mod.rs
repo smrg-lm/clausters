@@ -41,6 +41,9 @@ pub mod fifo;
 // lock-free ring. In a page there is neither a thread nor a filesystem the
 // engine can reach, so the ring stays and the **host** fills it -- same UGens,
 // same underrun behaviour, a different reader.
+// A file decoded from its top, which both halves of `DiskIn` stream.
+#[cfg(feature = "synth")]
+mod decode;
 #[cfg(all(feature = "synth", not(target_arch = "wasm32")))]
 pub mod disk;
 #[cfg(all(feature = "synth", target_arch = "wasm32"))]

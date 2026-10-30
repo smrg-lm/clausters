@@ -9,7 +9,9 @@
 //  - a render to a file is the render in memory, sample for sample;
 //  - a file streamed by `DiskIn` in a render is read from its first frame --
 //    a stream reads inside the block that needs it, as a native render's
-//    waits for its thread, so nothing is played as silence.
+//    waits for its thread, so nothing is played as silence;
+//  - a file that is not a WAV is streamed through the decoder, from its top,
+//    as a native render streams a compressed one.
 
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -47,6 +49,27 @@ function constant(value: number, frames: number): Uint8Array {
     view.setUint32(28, RATE * 4, true); view.setUint16(32, 4, true);
     view.setUint16(34, 32, true); ascii(36, "data"); view.setUint32(40, frames * 4, true);
     for (let i = 0; i < frames; i++) view.setFloat32(44 + i * 4, value, true);
+    return bytes;
+}
+
+/**
+ * A mono 16-bit AIFF at 48 kHz of `frames` samples, every one `value`: a
+ * file a render reads through the decoder, as it does a compressed one, since
+ * only a WAV family is read by arithmetic.
+ */
+function aiff(value: number, frames: number): Uint8Array {
+    const data = frames * 2;
+    const bytes = new Uint8Array(12 + 26 + 16 + data);
+    const view = new DataView(bytes.buffer);
+    const ascii = (at: number, text: string) =>
+        [...text].forEach((c, i) => (bytes[at + i] = c.charCodeAt(0)));
+    ascii(0, "FORM"); view.setUint32(4, bytes.length - 8); ascii(8, "AIFF");
+    ascii(12, "COMM"); view.setUint32(16, 18); view.setUint16(20, 1);
+    view.setUint32(22, frames); view.setUint16(26, 16);
+    // 48000 as an 80-bit extended float: exponent 16383 + 15, mantissa 0xBB80 << 48
+    bytes.set([0x40, 0x0e, 0xbb, 0x80, 0, 0, 0, 0, 0, 0], 28);
+    ascii(38, "SSND"); view.setUint32(42, 8 + data);
+    for (let i = 0; i < frames; i++) view.setInt16(54 + i * 2, Math.round(value * 32768));
     return bytes;
 }
 
@@ -98,6 +121,30 @@ test("a file a render streams is read from its first frame", async () => {
         const back = await decodeSoundfile(await readFile(path), path, 0, -1);
         const samples = [...back.samples];
         assert.equal(samples[0], 0.25, "the first frame is the file's, not silence");
+        assert.ok(samples.every((v) => v === 0.25), "the file throughout");
+    } finally {
+        await rm(dir, { recursive: true, force: true });
+    }
+});
+
+test("a file a render streams is decoded when it is not a WAV", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clausters-file-render-"));
+    try {
+        const a = join(dir, "a.aiff");
+        await writeFile(a, aiff(0.25, 48_000));
+        const def = new SynthDef("stream", out(0, diskIn(1, { path: a })));
+        const nrt = new OscNrtInterface();
+        nrt.addBundle(0, [
+            { addr: "/def_send", args: [s("synth"), s(def.dumpDef())] },
+            { addr: "/synth_new", args: [s("stream"), i(1000), i(0), i(0)] },
+        ]);
+        nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
+        const path = join(dir, "out.wav");
+        const stats = await renderScore(nrt.score.bytes(), { sampleRate: RATE, channels: 1, path });
+        assert.equal(stats.frames, 24_000);
+        const back = await decodeSoundfile(await readFile(path), path, 0, -1);
+        const samples = [...back.samples];
+        assert.equal(samples[0], 0.25, "the first frame is the file's, decoded");
         assert.ok(samples.every((v) => v === 0.25), "the file throughout");
     } finally {
         await rm(dir, { recursive: true, force: true });

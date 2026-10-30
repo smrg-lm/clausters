@@ -38,7 +38,7 @@ that a reader who hits one today knows which.
 
 | What | Status |
 |---|---|
-| **`diskIn` streams WAV only** | A span of a compressed file is not a file, so it cannot be decoded on its own; a WAV span can be, and is. Reading a compressed file whole is what a buffer is for (`Buffer.read`). Natively `diskIn` reads whatever the decoder does. |
+| **A live `diskIn` streams WAV only** | A live engine's `diskIn` is fed by the page a span at a time, and a span of a compressed file is not a file, so it cannot be decoded on its own; a WAV span can be, and is. Reading a compressed file whole is what a buffer is for (`Buffer.read`). **An offline render's `diskIn` reads whatever the decoder does**, as natively: its thread reads the page's files on the spot, so a file that is not a WAV is decoded from its top, in order. |
 | **A stream starts after a longer lead** | Natively a thread shares a ring with the audio thread. In a tab there is no shared memory, so a Worker reads a span and *moves* it across a port — how far ahead it reads is the design, not a tuning constant, and an underrun is silence exactly as a slow disk gives. |
 | **`/buffer_read` is not delegated** | Its sibling `/buffer_allocRead` is: it leaves the AudioWorklet for the NRT worker and comes back decoded. This one overlays a file onto the buffer's *current* contents, which live in the engine's own memory, so the job cannot leave without shipping them out and back. It runs in the worklet, under the serving budget. |
 
