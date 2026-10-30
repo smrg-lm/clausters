@@ -8761,7 +8761,7 @@ module of its own.
   known. What is open is the next failure's output, run with
   `--test-threads=1` to name the test.
 
-- ⬜ **An edit of a long take costs a native server with a segment a pass
+- ✅ **An edit of a long take costs a native server with a segment a pass
   over it** *(found 2026-10-22, measuring the summaries of G44a)*. A server
   that shares its buffers copies every join an edit makes into a region a
   peer maps, and builds the region's overview: 183 ms for ten minutes of
@@ -8775,6 +8775,12 @@ module of its own.
   *Taken by the turn to takes on disk (2026-10-22): a take stops being a
   pool buffer, so there is no join to copy; it closes with `S23`, which
   removes the copy.*
+  **Closed 2026-10-30, with nothing left to fix:** `S23` took the server's
+  joins away whole (`/buffer_stitch`, `/buffer_parts`, the stitched
+  storage, the overview file beside a shared region and the cost test
+  that measured it), so no edit makes a join on a server and there is
+  nothing to copy into a region a peer maps. An application reads, joins
+  and measures its takes itself, on its own engine.
 
 - ✅ **A list of segments over files draws no spectrogram** *(found
   2026-10-22, building `G45`)*. A `signal` naming `segments` is drawn from
