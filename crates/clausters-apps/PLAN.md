@@ -5732,7 +5732,7 @@ wrong.
   checks it after each run, a second of the score
   (`render_to_wav_while`), and the save's render is let go there.
 
-- ⬜ **A lane's commands skip the queue a cue holds** *(found 2026-10-29,
+- ✅ **A lane's commands skip the queue a cue holds** *(found 2026-10-29,
   putting a box of notes on the application's engine)*. The engine an
   application holds keeps the commands that follow a cue until the disk
   readers are ready, so a play waits for its first blocks; `EngineMedium`
@@ -5742,6 +5742,12 @@ wrong.
   order, since a lane is fed from the transport's position; a play that
   starts a lane and a cue in one turn should keep the order it was asked
   in.
+  **Fixed 2026-10-30.** What waits for a cue is a list of commands and
+  lane changes (`Waiting`), and a lane made, set or freed while a cue is
+  not over goes behind it, as a command pushed then does; the cue's end
+  carries them out in the order they were asked. The medium also pushed
+  the commands built before a lane's change past the queue (`send`), and
+  now pushes them behind it.
 
 - ✅ **A roll's notes member outlives its window** *(found 2026-10-29,
   giving the application's roll a transport)*. Closing a roll frees its

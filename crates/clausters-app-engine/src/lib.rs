@@ -51,6 +51,24 @@ use clausters_editing::instance::{Op, Port, Ports};
 /// A transport's loop and end mark, as last told.
 type Standing = (Option<(u64, u64)>, Option<u64>);
 
+/// **One thing that waits for a cue**: a command, or an event lane made,
+/// set or freed, which the engine takes in the order they were asked.
+enum Waiting {
+    Cmd(Cmd),
+    LaneNew {
+        lane: i32,
+        transport: usize,
+        target: i32,
+    },
+    LaneSet {
+        lane: i32,
+        data: String,
+    },
+    LaneFree {
+        lane: i32,
+    },
+}
+
 /// **The engine an application holds**: its handle, the translator that
 /// builds its commands, and the device it runs on when it has one.
 pub struct AppEngine {
@@ -62,8 +80,9 @@ pub struct AppEngine {
     /// held until the engine says the cue is over, so a play rolls once its
     /// readers hold the frames it starts on -- as a client waits for the
     /// cue's `/done` before it rolls a server's transport. The cued
-    /// transport, and the commands after it in the order they were pushed.
-    held: VecDeque<(usize, Vec<Cmd>)>,
+    /// transport, and the commands and lane changes after it in the order
+    /// they were asked.
+    held: VecDeque<(usize, Vec<Waiting>)>,
     /// Whether each transport was last told to roll, and has not stopped on
     /// its end mark since.
     rolling: HashMap<usize, bool>,
@@ -180,16 +199,81 @@ impl AppEngine {
     ///
     /// Commands after a transport's cue wait for the cue to be over
     /// ([`Self::pump`] sends them), and so does everything pushed meanwhile,
-    /// so the engine takes them in the order they were pushed.
+    /// a lane's change included, so the engine takes them in the order they
+    /// were pushed.
     pub fn push(&mut self, cmds: Vec<Cmd>) -> bool {
         if cmds.is_empty() {
             return true;
         }
         if let Some((_, waiting)) = self.held.back_mut() {
-            waiting.extend(cmds);
+            waiting.extend(cmds.into_iter().map(Waiting::Cmd));
             return true;
         }
         self.send(cmds)
+    }
+
+    /// **`change` behind what waits for a cue**, if anything does: answers
+    /// it back when nothing waits, to be carried out now.
+    fn wait_behind(&mut self, change: Waiting) -> Option<Waiting> {
+        match self.held.back_mut() {
+            Some((_, waiting)) => {
+                waiting.push(change);
+                None
+            }
+            None => Some(change),
+        }
+    }
+
+    /// **What waited for a cue**, carried out in the order it was asked:
+    /// the commands in batches between the lanes' changes, each through
+    /// [`Self::push`], so a second cue among them holds what follows it.
+    fn release(&mut self, waited: Vec<Waiting>) {
+        let mut batch = Vec::new();
+        for change in waited {
+            match change {
+                Waiting::Cmd(cmd) => batch.push(cmd),
+                lane => {
+                    self.push(std::mem::take(&mut batch));
+                    self.lane(lane);
+                }
+            }
+        }
+        self.push(batch);
+    }
+
+    /// A lane's change, behind what waits for a cue or now.
+    fn lane(&mut self, change: Waiting) {
+        match self.wait_behind(change) {
+            Some(Waiting::LaneNew {
+                lane,
+                transport,
+                target,
+            }) => {
+                if let Some(cmd) = self
+                    .lanes
+                    .make(lane, transport, target, &mut self.translator)
+                {
+                    let _ = self.handle.send(cmd);
+                }
+            }
+            Some(Waiting::LaneSet { lane, data }) => {
+                match self.lanes.set(lane, data.as_bytes(), &mut self.translator) {
+                    Ok(cleared) => {
+                        if let Some(cmd) = cleared {
+                            let _ = self.handle.send(cmd);
+                        }
+                        self.feed_lane(lane);
+                    }
+                    Err(why) => tracing::warn!("app engine: lane {lane}: {why}"),
+                }
+            }
+            Some(Waiting::LaneFree { lane }) => {
+                if let Some(cmd) = self.lanes.free(lane, &mut self.translator) {
+                    let _ = self.handle.send(cmd);
+                }
+            }
+            Some(Waiting::Cmd(_)) | None => {}
+        }
     }
 
     /// Sends `cmds` up to and including the first cue, and holds the rest
@@ -202,6 +286,7 @@ impl AppEngine {
             // what follows waits, pushed with the cue or after it
             let rest = cmds.split_off(at + 1);
             if let Some(Cmd::TransportCue { transport }) = cmds.last() {
+                let rest = rest.into_iter().map(Waiting::Cmd).collect();
                 self.held.push_back((*transport, rest));
             }
         }
@@ -246,35 +331,29 @@ impl AppEngine {
     }
 
     /// **Lane `lane` on transport `transport`**, its notes made at the tail
-    /// of group `target` (`/lane_new`).
+    /// of group `target` (`/lane_new`). Like a command, it waits behind a
+    /// cue that is not over ([`Self::push`]).
     pub fn lane_new(&mut self, lane: i32, transport: usize, target: i32) {
-        if let Some(cmd) = self
-            .lanes
-            .make(lane, transport, target, &mut self.translator)
-        {
-            let _ = self.handle.send(cmd);
-        }
+        self.lane(Waiting::LaneNew {
+            lane,
+            transport,
+            target,
+        });
     }
 
     /// **Lane `lane`'s data**, replaced whole (`/lane_set`), and the lane
-    /// fed from where its transport stands.
+    /// fed from where its transport stands -- behind a cue that is not over.
     pub fn lane_set(&mut self, lane: i32, data: &str) {
-        match self.lanes.set(lane, data.as_bytes(), &mut self.translator) {
-            Ok(cleared) => {
-                if let Some(cmd) = cleared {
-                    let _ = self.handle.send(cmd);
-                }
-                self.feed_lane(lane);
-            }
-            Err(why) => tracing::warn!("app engine: lane {lane}: {why}"),
-        }
+        self.lane(Waiting::LaneSet {
+            lane,
+            data: data.to_string(),
+        });
     }
 
-    /// Lane `lane` freed (`/lane_free`): its notes released.
+    /// Lane `lane` freed (`/lane_free`): its notes released -- behind a cue
+    /// that is not over.
     pub fn lane_free(&mut self, lane: i32) {
-        if let Some(cmd) = self.lanes.free(lane, &mut self.translator) {
-            let _ = self.handle.send(cmd);
-        }
+        self.lane(Waiting::LaneFree { lane });
     }
 
     /// Every lane on transport `transport` cleared and fed again.
@@ -317,12 +396,12 @@ impl AppEngine {
     /// it -- a play waiting on its cue included -- unless it stopped on its
     /// end mark since.
     pub fn rolling(&self, transport: usize) -> bool {
-        let waiting = self.held.iter().rev().find_map(|(_, cmds)| {
-            cmds.iter().rev().find_map(|cmd| match cmd {
-                Cmd::TransportRun {
+        let waiting = self.held.iter().rev().find_map(|(_, waited)| {
+            waited.iter().rev().find_map(|change| match change {
+                Waiting::Cmd(Cmd::TransportRun {
                     transport: t,
                     rolling,
-                } if *t == transport => Some(*rolling),
+                }) if *t == transport => Some(*rolling),
                 _ => None,
             })
         });
@@ -396,10 +475,10 @@ impl AppEngine {
                 // the cue is over: what waited for it goes
                 Garbage::TransportCued { transport, .. } => {
                     if self.held.front().is_some_and(|(t, _)| *t == transport)
-                        && let Some((_, cmds)) = self.held.pop_front()
+                        && let Some((_, waited)) = self.held.pop_front()
                     {
                         let later = std::mem::take(&mut self.held);
-                        self.send(cmds);
+                        self.release(waited);
                         self.held.extend(later);
                     }
                 }
@@ -766,17 +845,17 @@ impl EngineMedium {
                 lane,
                 target,
             } => {
-                engine.send(std::mem::take(cmds));
+                engine.push(std::mem::take(cmds));
                 engine.lane_new(lane, transport as usize, target);
                 Ok(())
             }
             Op::LaneSet { lane, data } => {
-                engine.send(std::mem::take(cmds));
+                engine.push(std::mem::take(cmds));
                 engine.lane_set(lane, &data);
                 Ok(())
             }
             Op::LaneFree { lane } => {
-                engine.send(std::mem::take(cmds));
+                engine.push(std::mem::take(cmds));
                 engine.lane_free(lane);
                 Ok(())
             }
@@ -825,4 +904,34 @@ impl Medium for EngineMedium {
 
 fn alloc_node(ids: &mut IdSpaces) -> Result<i32, IdError> {
     Ok(ids.alloc(Space::Nodes, 1)? as i32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **A lane's change waits behind a cue as a command does**: a lane
+    /// made after a cue is not made before the cue is over, and is made in
+    /// its turn once it is.
+    #[test]
+    fn a_lane_made_after_a_cue_waits_for_it() {
+        let (mut app, mut engine) = AppEngine::detached(48_000.0, 2);
+        app.push(vec![Cmd::TransportCue { transport: 1 }]);
+        app.lane_new(5, 1, ROOT_NODE_ID);
+        assert!(app.lanes.all().is_empty(), "made ahead of the cue");
+        assert!(matches!(app.held.back(), Some((1, waited)) if waited.len() == 1));
+        let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+        for _ in 0..64 {
+            engine.process_block(&mut out);
+            app.pump();
+            if app.held.is_empty() {
+                break;
+            }
+        }
+        assert!(app.held.is_empty(), "the cue never ended");
+        assert_eq!(app.lanes.all(), vec![(5, 1)]);
+        // nothing waits now: a lane is made at once
+        app.lane_free(5);
+        assert!(app.lanes.all().is_empty());
+    }
 }
