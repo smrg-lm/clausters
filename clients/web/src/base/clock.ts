@@ -129,8 +129,12 @@ export function manualTicker(): ManualTicker {
  * would give nothing: the work is a `setTimeout`).
  */
 let sharedWorker: Worker | null = null;
+/** Whether the worker has said it runs ({@link workerTicker}). */
+let workerReady = false;
 let nextTickerId = 1;
-const tickCallbacks = new Map<number, () => void>();
+let nextWake = 1;
+/** The armed wake of each ticker, by id: the one a reply must name to run. */
+const tickCallbacks = new Map<number, { wake: number; run: () => void }>();
 
 function tickWorker(): Worker {
     if (sharedWorker === null) {
@@ -138,9 +142,15 @@ function tickWorker(): Worker {
             type: "module",
         });
         sharedWorker.onmessage = (event: MessageEvent<TickReply>) => {
-            const callback = tickCallbacks.get(event.data.id);
-            tickCallbacks.delete(event.data.id);
-            callback?.();
+            if ("ready" in event.data) {
+                workerReady = true;
+                return;
+            }
+            const { id, wake } = event.data;
+            const armed = tickCallbacks.get(id);
+            if (armed?.wake !== wake) return; // a wake replaced, or run already
+            tickCallbacks.delete(id);
+            armed.run();
         };
     }
     return sharedWorker;
@@ -149,17 +159,42 @@ function tickWorker(): Worker {
 /**
  * The browser ticker: the wake-up is timed in a worker, so a background tab's
  * timer throttling cannot starve the schedule.
+ *
+ * **Until the worker runs**, a wake is also armed on the page's own timer,
+ * and whichever comes first runs it: a worker's script loads before it reads
+ * its first message, and on a cold start that can take longer than a clock's
+ * first wait -- the first notes of a pattern played as the clock is made
+ * came late by however long it took. Each wake is numbered, so the other
+ * timer's answer, or a stale one, runs nothing.
  */
 export function workerTicker(): Ticker {
     const worker = tickWorker();
     const id = nextTickerId++;
     const post = (msg: TickRequest) => worker.postMessage(msg);
+    let fallback: ReturnType<typeof setTimeout> | null = null;
+    const dropFallback = () => {
+        if (fallback !== null) clearTimeout(fallback);
+        fallback = null;
+    };
     return {
         schedule(seconds, callback) {
-            tickCallbacks.set(id, callback);
-            post({ id, delayMs: Math.max(seconds, 0) * 1000 });
+            dropFallback();
+            const wake = nextWake++;
+            const ms = Math.max(seconds, 0) * 1000;
+            tickCallbacks.set(id, { wake, run: callback });
+            // An instant, not a delay: see `TickRequest`.
+            post({ id, wake, at: performance.timeOrigin + performance.now() + ms });
+            if (!workerReady) {
+                fallback = setTimeout(() => {
+                    fallback = null;
+                    if (tickCallbacks.get(id)?.wake !== wake) return;
+                    tickCallbacks.delete(id);
+                    callback();
+                }, ms);
+            }
         },
         cancel() {
+            dropFallback();
             tickCallbacks.delete(id);
             post({ id, cancel: true });
         },

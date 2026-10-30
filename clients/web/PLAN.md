@@ -5189,7 +5189,11 @@ sound.
   since `Source.file` shares the name. `job` was the page's own helper
   parameter, read as a client name, and is renamed.
 
-- ⬜ **`seq.html` fails in Firefox on a note's start** *(found 2026-10-29,
+- ✅ **`seq.html` fails in Firefox on a note's start** *(found 2026-10-29,
   the Firefox pass over the pages)*: `note starts[1] = 0.418s, expected
-  ~0.25s`, in headless Firefox only; Chrome passes it.
+  ~0.25s`, in headless Firefox only; Chrome passes it. **Fixed
+  2026-10-30:** the clock's first wake came late by however long the tick
+  worker took to load, which in a fresh Firefox profile was often longer
+  than the wait; a wake is now armed for an instant, and on the page's own
+  timer too until the worker says it runs.
 
