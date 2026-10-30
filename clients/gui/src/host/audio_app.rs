@@ -174,6 +174,9 @@ pub(super) enum FromApp {
     /// **A box of notes in multitrack window `parent` asked for its roll**
     /// (`source`, the sequence it reads): the host opens a window for it.
     Roll { parent: i32, source: u64 },
+    /// **Multitrack window `def_id`'s multitrack moved by a hand**, to the
+    /// context's `version`: its opener is told ([`super::GUI_APP_CHANGED`]).
+    Changed { def_id: i32, version: i64 },
     /// An answer for a client of the door.
     Reply {
         to: ClientId,
@@ -703,8 +706,24 @@ impl App {
         };
         let (args, lease) = self.editing.exchange_event(args, Default::default());
         let action = json!({"verb": "event", "addr": addr, "window": true, "args": args});
+        let before = self.editing.version();
         let ran = self.app.act(&mut self.editing, member, action, 0, lease);
         self.said(def_id, ran, true);
+        // **A hand moved the context**: every multitrack window's opener
+        // is told, a roll's edit being its multitrack's sequence
+        let version = self.editing.version();
+        if version != before {
+            let multitracks: Vec<i32> = self
+                .windows
+                .iter()
+                .filter(|(_, w)| w.kind == AppKind::Multitrack)
+                .map(|(id, _)| *id)
+                .collect();
+            for def_id in multitracks {
+                self.out
+                    .send(Vec::new(), FromApp::Changed { def_id, version });
+            }
+        }
     }
 
     /// **One call of the door**: a member's verb or a query answered at

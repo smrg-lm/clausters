@@ -96,6 +96,19 @@ class FakeHost {
         return !pred();
     }
 
+    /** The page's subscribers, which the host's own messages reach. */
+    listeners = new Set<(msg: { addr: string; args: unknown[] }) => void>();
+
+    onMessage(handler: (msg: { addr: string; args: unknown[] }) => void): () => void {
+        this.listeners.add(handler);
+        return () => this.listeners.delete(handler);
+    }
+
+    /** What the host tells the page a hand did in its window. */
+    handChanged(): void {
+        for (const listen of [...this.listeners]) listen({ addr: "/gui_app_changed", args: [9, 2n] });
+    }
+
     setClosedHandler(_id: number, handler: (() => void) | null): void {
         this.closedHandler = handler;
     }
@@ -170,6 +183,23 @@ test("the page's multitrack is the window's while it is open", async () => {
     assert.equal(track.name, "last");
     track.name = "mine again";
     assert.equal(track.name, "mine again", "and it is the page's again");
+});
+
+test("what a hand does in the window reaches the page's multitrack", async () => {
+    const host = new FakeHost();
+    const multitrack = new Multitrack();
+    const track = multitrack.tracks.add("a");
+    await edit(multitrack, { host: host as unknown as GuiHost });
+    // a hand renames the track in the window
+    const tracks = (host.held!.write().tracks as Call[]).map((t) => ({ ...t, name: "by hand" }));
+    host.held!.call("apply", { intent: { intent: "settracks", tracks } });
+    assert.equal(track.name, "a", "the page's copy until it is told");
+    host.handChanged();
+    const editor = (await edit(multitrack, { host: host as unknown as GuiHost })) as MultitrackEditor;
+    await editor.output();
+    assert.equal(track.name, "by hand", "told, the copy follows the window");
+    host.closeWindow();
+    assert.equal(host.listeners.size, 0, "a closed window is not listened to");
 });
 
 test("the transport and the save are calls to the application", async () => {

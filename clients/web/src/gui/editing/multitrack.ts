@@ -20,11 +20,11 @@
  * one handed over -- is an edit of the window's, undone by its Ctrl+Z, in the
  * order the page made them, and `multitrack.history` is the window's
  * history. When the window goes, the multitrack holds what the window left
- * it as. **What the hand does in the window is read by the page's multitrack
- * only after the page's next change or step, or once the window closes**: a
- * call to the host is a promise, so the multitrack's objects, which answer at
- * once, read the copy this page holds, brought to the window's after each of
- * the page's own changes. The reference client reads the window's at every
+ * it as. **The multitrack's objects answer at once from a copy this page
+ * holds**, since a call to the host is a promise: the copy is brought to the
+ * window's after each of the page's own changes and steps, and after what a
+ * hand does in the window, which the host tells the page
+ * (`/gui_app_changed`). The reference client reads the window's at every
  * read.
  *
  * A box of notes plays the sequence the session holds for it, and a double
@@ -141,6 +141,8 @@ export class MultitrackEditor implements WindowOver {
     /** The page's changes, forwarded in the order they were made. */
     private queue: Promise<unknown> = Promise.resolve();
     private pending = 0;
+    /** Stops listening for what a hand does in the window. */
+    private unlisten: (() => void) | null = null;
     private depth = 0;
     private legs: Leg[] | null = null;
     private blockLabel = "edit";
@@ -184,6 +186,13 @@ export class MultitrackEditor implements WindowOver {
         this.hostOf = resolved;
         this.handle = new WindowHandle(resolved, window, new Map());
         this.handle.onClosed(() => this.closedNow());
+        // **What a hand does in the window** is told (`/gui_app_changed`),
+        // and the copy the page holds follows it after the page's own changes
+        this.unlisten = resolved.onMessage((msg) => {
+            if (msg.addr !== "/gui_app_changed" || Number(msg.args[0]) !== window) return;
+            this.pending += 1;
+            this.queue = this.queue.then(() => this.follow());
+        });
         // the page's multitrack is the window's from now on
         this.multitrack.window = this;
         return this.handle;
@@ -191,6 +200,8 @@ export class MultitrackEditor implements WindowOver {
 
     /** The window went: the multitrack holds what it left it as. */
     private closedNow(): void {
+        this.unlisten?.();
+        this.unlisten = null;
         this.settle();
         this.closedHandler?.();
     }

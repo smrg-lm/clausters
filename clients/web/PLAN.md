@@ -5161,7 +5161,7 @@ sound.
   canvas and box, and the host removes the canvas it had appended.
   `tests/app-window.html` opens one into a stage.
 
-- ⬜ **A page's multitrack reads the window only after its own next change**
+- ✅ **A page's multitrack reads the window only after its own next change**
   *(found 2026-10-29, porting the live multitrack handle)*. The Python client
   reads the window's multitrack at every read; a page's objects answer at once,
   so they read a copy brought to the window's after each of the page's changes
@@ -5170,6 +5170,9 @@ sound.
   window between those is not in the page's reads. Closing it needs the
   application to tell the page each change of the window's, or reads that are
   promises.
+  **Fixed 2026-10-30, by the first** (decided by the user, `docs/decisions.md`):
+  the host tells the opener `/gui_app_changed` after a hand moves the context,
+  and the page brings its copy to the window's as after its own changes.
 
 - ✅ **`editors/span_selected` differs from its twin outside the
   multitrack** *(found 2026-10-29, auditing the pair after rewriting its

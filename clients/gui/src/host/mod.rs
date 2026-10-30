@@ -749,6 +749,13 @@ pub const GUI_APP_OPEN: &str = "/gui_app_open";
 /// focus).
 /// Answered by [`GUI_APP_REPLY`].
 pub const GUI_APP_CALL: &str = "/gui_app_call";
+/// `/gui_app_changed <window> <version>`: **what a multitrack window holds
+/// moved by a hand**, told the client that opened it: a gesture, a verb or
+/// a step in the window, or in a roll opened from it, moved the editing
+/// context to `version`. A client that keeps a copy of the multitrack
+/// brings it to the window's; one that reads the window at every read has
+/// nothing to do. Its own calls are not told: it already knows them.
+pub const GUI_APP_CHANGED: &str = "/gui_app_changed";
 /// `/gui_app_reply <seq> <json>`: the answer to a [`GUI_APP_OPEN`] or a
 /// [`GUI_APP_CALL`] with the same `seq`: `{"ok": value}`, or
 /// `{"error": {"type", "message"}}` with the kind the application raised

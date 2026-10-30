@@ -11474,9 +11474,19 @@ holds that from then on, its own again.
 in the web client and the multitrack's objects answer at once, so a page's
 multitrack keeps a copy: a change is made in it and forwarded to the window in
 order, and the copy is brought to the window's after each of the page's own
-changes and steps and when the window closes. What a hand does in the window
-reaches the page's reads only then. The surface is the same in both clients;
-this one difference is named in the web client's prose and its plan.
+changes and steps and when the window closes. The surface is the same in both
+clients; this one difference is named in the web client's prose.
+
+**What a hand does is told, not read through a promise** (decided by the
+user 2026-10-30). Of the two ways to bring a hand's change to a page's
+reads -- the application telling the page each change, or every read a
+promise -- the first keeps the multitrack's surface as it is in both clients
+and asks almost nothing of either: the host tells the window's opener
+`/gui_app_changed window version` after a gesture, a verb or a step in the
+window (or in a roll opened from it) moves the context, and the page brings
+its copy to the window's as it does after its own changes. The script reads
+the window at every read and needs nothing of it. The opener's own calls are
+not told, since it already follows them.
 
 ## The server keeps no command an application's editing made (2026-10-29)
 

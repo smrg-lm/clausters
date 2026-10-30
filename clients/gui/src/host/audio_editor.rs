@@ -470,6 +470,7 @@ impl Host {
                     self.pending_effects.push(HostEffect::Send { to, msg });
                 }
                 FromApp::Roll { parent, source } => self.open_roll_of(parent, source),
+                FromApp::Changed { def_id, version } => self.changed_audio(def_id, version),
             }
         }
     }
@@ -787,6 +788,26 @@ impl Host {
         {
             window.last = Some(effect["multitrack"].clone());
         }
+    }
+
+    /// **What window `def_id` holds moved by a hand**: whoever opened it is
+    /// told ([`GUI_APP_CHANGED`]).
+    fn changed_audio(&mut self, def_id: i32, version: i64) {
+        let Some(to) = self
+            .audio
+            .as_ref()
+            .and_then(|audio| audio.windows.get(&def_id))
+            .and_then(|w| w.opener)
+        else {
+            return;
+        };
+        self.pending_effects.push(HostEffect::Send {
+            to,
+            msg: OscMessage {
+                addr: GUI_APP_CHANGED.into(),
+                args: vec![OscType::Int(def_id), OscType::Long(version)],
+            },
+        });
     }
 
     /// **The window is this host's no longer, and whoever opened it is
@@ -1771,6 +1792,78 @@ mod tests {
         assert_eq!(gone["error"]["type"], "runtime", "{gone}");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(&out);
+    }
+
+    /// **A hand in a multitrack window is told its opener**
+    /// (`/gui_app_changed`), and the opener's own call is not.
+    #[test]
+    fn a_hand_in_a_multitrack_is_told_its_opener() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let mut host = host();
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_996)));
+        let multitrack = json!({"tracks": [{"id": 1, "name": "a", "takeLanes": [{"id": 2}]}]});
+        let options = json!({"multitrack": multitrack, "title": "untitled"}).to_string();
+        let first = door(
+            &mut host,
+            GUI_APP_OPEN,
+            vec![
+                OscType::Int(1),
+                OscType::String("multitrack".into()),
+                OscType::String(options),
+            ],
+            client,
+        );
+        let opened = answered(&mut host, first, 1);
+        let window = opened["ok"]["window"].as_i64().expect("a window") as i32;
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(window).is_some()
+        });
+        let told = |effects: Vec<HostEffect>| {
+            effects.into_iter().find_map(|e| match e {
+                HostEffect::Send { to, msg } if to == client && msg.addr == GUI_APP_CHANGED => {
+                    Some(msg.args)
+                }
+                _ => None,
+            })
+        };
+        // the client's own edit is not told back: it knows it
+        let state = ask(
+            &mut host,
+            window,
+            json!({"do": {"verb": "handle", "call": {"verb": "state"}}}),
+        );
+        let mut tracks = state["tracks"].clone();
+        tracks[0]["name"] = json!("b");
+        let _rx = host.ask_audio(
+            window,
+            json!({"do": {"verb": "handle", "call": {"verb": "apply",
+            "intent": {"intent": "settracks", "tracks": tracks}}}}),
+        );
+        let mut heard = None;
+        let t = std::time::Instant::now();
+        while t.elapsed() < std::time::Duration::from_millis(300) {
+            heard = heard.or(told(host.take_effects()));
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(heard.is_none(), "its own edit was told: {heard:?}");
+        // an undo in the window is a hand's, and is told
+        let undo = host.event_message(window, 1, vec![OscType::String("undo".into())]);
+        assert!(host.deliver(window, &undo));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let args = loop {
+            if let Some(args) = told(host.take_effects()) {
+                break args;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the opener never heard the hand"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        assert_eq!(args[0], OscType::Int(window));
+        assert!(matches!(args[1], OscType::Long(_)), "{args:?}");
+        host.close_audio(window);
     }
 
     /// **A multitrack a client hands over is told back when its window

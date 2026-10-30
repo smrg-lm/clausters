@@ -182,11 +182,12 @@ made at once in the page and is an edit of the window's, in the order the page
 made them, that its Ctrl+Z takes back; `multitrack.history` is the window's
 history, its steps and reads promises (`multitrack.history.entry("tidy", ...)`
 makes a block one entry). When the window goes, the multitrack holds what the
-window left it as. **What the hand does in the window reaches the page's
-multitrack after the page's next change or step, or when the window closes**: a
-call to the host is a promise, so the multitrack's objects, which answer at
-once, read the copy the page holds; the Python client reads the window's at
-every read.
+window left it as. **The multitrack's objects answer at once from a copy the
+page holds**, since a call to the host is a promise; the copy is brought to the
+window's after each of the page's own changes and steps, and after whatever a
+hand does in the window, which the host tells the page. A read made right
+after a hand's gesture can still answer what was there before it, until the
+copy arrives; the Python client reads the window's at every read.
 
 **A `SoundFile` opens in the audio editor**, an application the GUI host holds: the host
 opens it in a window of its own, on an engine of the application's own, and every gesture,
