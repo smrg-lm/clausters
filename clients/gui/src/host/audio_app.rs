@@ -505,7 +505,14 @@ impl App {
                 empty: false,
             },
         );
-        Ok(Vec::new())
+        // the Save as form's widgets, numbered with the window's
+        let dialogs = self.member_call(member, json!({"verb": "dialogs"}))["dialogs"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|n| n.as_str().map(str::to_string))
+            .collect();
+        Ok(dialogs)
     }
 
     /// **The roll over the box of notes `source` of multitrack window
@@ -591,10 +598,14 @@ impl App {
             Some(to) => to.is_some(),
             None => session.is_some(),
         };
+        // **It saves unless it was opened read-only**: an untitled one too,
+        // whose first Save asks where in the Save as form
+        let saves = !matches!(save_to, Some(None));
         self.member_call(
             member,
             json!({"verb": "sync", "window": def_id, "controls": controls,
-                "closeForm": form, "asks": asks}),
+                "closeForm": form, "asks": asks, "saves": saves,
+                "dialogs": ids["dialogs"]}),
         );
         let mut action = match session {
             Some(path) => json!({"verb": "open", "session": path, "window": true}),

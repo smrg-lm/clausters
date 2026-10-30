@@ -356,6 +356,20 @@ impl<F: Spec> Open<F> {
     }
 }
 
+/// **What a window is corrected with**, as the editor's answer carries it:
+/// the pairs [`Dialogs::open`] and [`Dialogs::hide`] answer.
+#[must_use]
+pub fn corrections(list: Vec<(i32, Value)>) -> Vec<clausters_editing::conversation::Correction> {
+    list.into_iter()
+        .map(
+            |(widget, props)| clausters_editing::conversation::Correction {
+                widget: i64::from(widget),
+                props,
+            },
+        )
+        .collect()
+}
+
 /// What the stack is corrected with to take a dialog down.
 #[must_use]
 pub fn hidden(ids: &Ids) -> Vec<(i32, Value)> {

@@ -88,7 +88,9 @@ objects, `select(regions)` and `unselect()`, which are the window's and enter
 no history; `grid`, `snap_to_grid` and `notes_view`; `output`, each track's meter
 and the samples played as silence (`starved`); and `save(path=None)`, which
 writes the session as the edits have left it, every file inside its folder
-named relative to it. **The script's multitrack is the window's while it is
+named relative to it. The window saves too: its Save writes
+where the session saves, and an untitled one asks where in the Save as form,
+as Save as always does. **The script's multitrack is the window's while it is
 open**: the session's `multitrack`, or the one handed over, reads what the
 window shows now, a change made through its objects is an edit of the window's
 that its Ctrl+Z takes back, and `multitrack.history` is the window's history

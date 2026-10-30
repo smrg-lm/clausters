@@ -5888,7 +5888,14 @@ wrong.
   native host links; the page's application build links none, so there
   a box stays a roll. The page's engraver is the web client's, in the page.
 
-- ⬜ **An untitled multitrack's Save asks for nothing** *(found 2026-10-29,
+- ✅ **An untitled multitrack's Save asks for nothing** *(found 2026-10-29,
   the same work)*. A multitrack handed over whole has no file, and Save from
   its window says "save it as" on the status line rather than opening the
   Save as dialog the audio editor opens; a script's `save(path)` names one.
+  **Fixed 2026-10-30.** The window's Save and Save as are the multitrack
+  editor's verbs (`save`, `save_as`): Save writes where the session saves
+  (it did nothing from the window before, with a file or without), and
+  with no file yet it opens the Save as form, the shared mechanism's
+  (`multitrack::dialogs`), whose `OK` writes there and makes it where
+  later saves go. A window saves unless it was opened read-only (`saves`),
+  which is no longer read off whether it asks before closing.

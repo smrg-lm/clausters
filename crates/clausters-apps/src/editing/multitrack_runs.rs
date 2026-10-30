@@ -557,8 +557,11 @@ impl Editing {
         // what a close asks about: whether anything moved since the session
         // was last written
         let unsaved = self.version != tracks.saved;
+        // and whether it has a file to be written over, or a Save asks where
+        let untitled = tracks.session.is_none() && !matches!(tracks.save_to, Some(Some(_)));
         if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
             editor.set_unsaved(unsaved);
+            editor.set_untitled(untitled);
         }
         let Some(turned) = self.event(member, event) else {
             return json!(false);
@@ -678,6 +681,14 @@ impl Editing {
         {
             ran.effects.push(effect("say", json!({"reason": why})));
             return json!(outcome.changed);
+        }
+        // **The Save as form's `OK`**: the session written there, and saved
+        // there from then on, whatever the holder named before
+        if let Some(path) = &outcome.save_as {
+            match self.save_session(member, tracks, Some(path)) {
+                Ok(_) => tracks.save_to = None,
+                Err(why) => ran.effects.push(effect("say", json!({"reason": why}))),
+            }
         }
         if outcome.close {
             self.close_tracks(member, tracks, ids);

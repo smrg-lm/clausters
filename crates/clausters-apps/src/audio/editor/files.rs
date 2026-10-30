@@ -5,16 +5,6 @@ use super::*;
 use crate::audio::dialogs::{self, Form};
 use crate::forms::{self, Said};
 
-/// Props for widgets, as the corrections a turn answers with.
-fn corrected(list: Vec<(i32, Value)>) -> Vec<Correction> {
-    list.into_iter()
-        .map(|(widget, props)| Correction {
-            widget: i64::from(widget),
-            props,
-        })
-        .collect()
-}
-
 /// How wide the list's column for the playing mark is.
 const FILE_MARK_W: f64 = 18.0;
 
@@ -441,7 +431,7 @@ impl AudioEditor {
         };
         (
             None,
-            corrected(self.window_state.dialogs.open(form, values)),
+            forms::corrections(self.window_state.dialogs.open(form, values)),
         )
     }
 
@@ -506,7 +496,7 @@ impl AudioEditor {
         let reason = match said {
             Said::Field(..) | Said::Chosen(..) | Said::Entered(..) => return (None, Vec::new()),
             Said::Cancel | Said::Discard => {
-                return (None, corrected(self.window_state.dialogs.hide()));
+                return (None, forms::corrections(self.window_state.dialogs.hide()));
             }
             Said::Picked(_, paths) if open.form == Form::Open => open_paths(&paths, out),
             Said::Picked(..) => return (None, Vec::new()),
@@ -548,7 +538,7 @@ impl AudioEditor {
         if reason.is_some() {
             return (reason, Vec::new());
         }
-        let mut corrections = corrected(self.window_state.dialogs.hide());
+        let mut corrections = forms::corrections(self.window_state.dialogs.hide());
         // a file saved under a new path is called by it from now on
         if let (Form::SaveAs, Some(pane)) = (open.form, self.window_state.pane) {
             corrections.push(Correction {

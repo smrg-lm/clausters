@@ -173,7 +173,9 @@ multitrack's `Region` objects, `select(regions)` and `unselect()`, which are
 the window's and enter no history; `grid()`, `snapToGrid()` and `notesView()`, each with
 its setter (`setGrid`, ...); `output()`, each track's meter and the samples
 played as silence (`starved`); and `save(path)`, which writes the session as
-the edits have left it, every file inside its folder named relative to it.
+the edits have left it, every file inside its folder named relative to it. The window saves too: its Save writes
+where the session saves, and an untitled one asks where in the Save as form,
+as Save as always does.
 **The page's multitrack is the window's while it is open**: a change made
 through the objects of the session's `multitrack`, or of the one handed over, is
 made at once in the page and is an edit of the window's, in the order the page

@@ -41,7 +41,7 @@ use clausters_document::{Opaque, SourceId, domain};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 use clausters_editing::multitrack::{self as projection, Look};
 
-use super::{Meter, Transport, TransportIds, Window};
+use super::{Meter, Transport, TransportIds, Window, dialogs};
 use crate::turn::{self, Converse, int, number};
 
 pub use crate::turn::{Event, Kind, Leg, Record};
@@ -98,6 +98,10 @@ pub struct Outcome {
     /// written -- a save that fails keeps the window.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub save: bool,
+    /// **Save under this path**: the Save as form's `OK`. The holder writes
+    /// the session there, and saves there from then on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub save_as: Option<String>,
     /// **Whether to close the window** ([`crate::closing`]): a close asked of
     /// it, with nothing to lose or nothing to ask in.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -124,6 +128,7 @@ impl Converse for MultitrackEditor {
     fn owns(&self, widget: i64, tag: &str) -> bool {
         i32::try_from(widget).is_ok_and(|w| self.answers(w, tag))
             || self.close_form.is_some_and(|ids| ids.contains(widget))
+            || self.dialogs.name(widget).is_some()
     }
 
     fn asks_to_close(&self) -> bool {
@@ -172,6 +177,9 @@ impl Converse for MultitrackEditor {
                 None => return (None, Vec::new()),
             }
             return (None, crate::closing::shown(&ids, false));
+        }
+        if let Some(name) = self.dialogs.name(widget).map(str::to_string) {
+            return self.form_event(&name, tag, values, out);
         }
         self.gesture(widget, tag, values, out)
     }
@@ -297,6 +305,14 @@ pub struct MultitrackEditor {
     /// Whether the holder's work has changes its file does not hold, as the
     /// holder last said: the session is the holder's, not this editor's.
     unsaved: bool,
+    /// **Whether the window saves its session** ([`Window::saves`]), as the
+    /// holder said: not one it opened read-only.
+    saves: bool,
+    /// **Whether the session has no file yet**, as the holder last said: a
+    /// Save then asks where, in the Save as form.
+    untitled: bool,
+    /// The window's dialogs ([`dialogs`]): the Save as form.
+    dialogs: dialogs::Dialogs,
     /// Whether the window is composed with no chrome ([`Window::bare`]).
     bare: bool,
     /// **The grid a box lands on, in beats** ([`crate::DEFAULT_GRID`] until
@@ -387,6 +403,9 @@ impl MultitrackEditor {
             close_form: None,
             asks: false,
             unsaved: false,
+            saves: false,
+            untitled: false,
+            dialogs: dialogs::Dialogs::default(),
             bare: false,
             grid: crate::DEFAULT_GRID,
             snap: true,
@@ -437,7 +456,7 @@ impl MultitrackEditor {
         let crossfade = self.multitrack().defaults.crossfade;
         crate::chrome::grid_actions(
             crate::chrome::App::Multitrack,
-            self.asks,
+            self.saves,
             undo,
             redo,
             &|verb| match verb {
@@ -574,6 +593,83 @@ impl MultitrackEditor {
     /// close asks about. The holder says so before each turn.
     pub fn set_unsaved(&mut self, unsaved: bool) {
         self.unsaved = unsaved;
+    }
+
+    /// **Whether the window saves its session itself**: File has Save and
+    /// Save as. Said before [`window`](Self::window).
+    pub fn set_saves(&mut self, saves: bool) {
+        self.saves = saves;
+    }
+
+    /// Whether the session has no file yet: what a Save asks about. The
+    /// holder says so before each turn.
+    pub fn set_untitled(&mut self, untitled: bool) {
+        self.untitled = untitled;
+    }
+
+    /// **The dialogs' widgets, by name** ([`dialogs::names`]), numbered by the
+    /// holder: the window then holds the Save as form. Said before
+    /// [`window`](Self::window).
+    pub fn set_dialogs(&mut self, ids: crate::forms::Ids) {
+        self.dialogs.ids = ids;
+    }
+
+    /// **A save from the window**: where the session saves, or -- for one
+    /// with no file yet, in a window with dialogs -- the Save as form, which
+    /// asks where.
+    fn save_from_window(&mut self, out: &mut Outcome) -> (Option<String>, Vec<Correction>) {
+        if !self.saves {
+            return (Some("this window writes no file".into()), Vec::new());
+        }
+        if self.untitled && self.dialogs.numbered(dialogs::forms()) {
+            return self.open_save_as();
+        }
+        out.save = true;
+        (None, Vec::new())
+    }
+
+    /// **The Save as form, up**, its field holding nothing: a session is
+    /// named by where it is written.
+    fn open_save_as(&mut self) -> (Option<String>, Vec<Correction>) {
+        if !self.saves {
+            return (Some("this window writes no file".into()), Vec::new());
+        }
+        if !self.dialogs.numbered(dialogs::forms()) {
+            return (Some("this window has no dialogs".into()), Vec::new());
+        }
+        let shown = self.dialogs.open(dialogs::Form::SaveAs, Default::default());
+        (None, crate::forms::corrections(shown))
+    }
+
+    /// **What a widget of the dialogs said**: a field typed into, the form
+    /// cancelled, or `OK` -- the path the session is saved under, which the
+    /// outcome names for the holder to write. A form refused stays up.
+    fn form_event(
+        &mut self,
+        name: &str,
+        tag: &str,
+        values: &[Value],
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        use crate::forms::Said;
+        let Some(said) = self.dialogs.read(name, tag, values) else {
+            return (None, Vec::new());
+        };
+        let Some(open) = self.dialogs.up().cloned() else {
+            return (None, Vec::new());
+        };
+        match said {
+            Said::Cancel | Said::Discard => (None, crate::forms::corrections(self.dialogs.hide())),
+            Said::Accept => {
+                let path = open.value("path").trim().to_string();
+                if path.is_empty() {
+                    return (Some("a session is saved under a path".into()), Vec::new());
+                }
+                out.save_as = Some(path);
+                (None, crate::forms::corrections(self.dialogs.hide()))
+            }
+            _ => (None, Vec::new()),
+        }
     }
 
     /// The window's own settings: the navigation group, the transport row, the
@@ -1020,6 +1116,8 @@ impl MultitrackEditor {
                     tag,
                     PLAY_KEY
                         | LOOP_KEY
+                        | SAVE_VERB
+                        | SAVE_AS_VERB
                         | PAUSE_VERB
                         | STOP_VERB
                         | STOP_AT_END_VERB
@@ -1077,7 +1175,8 @@ impl MultitrackEditor {
     pub fn window(&mut self, widget: i32, ruler: i32) -> Value {
         self.widget = Some(widget);
         self.ruler = Some(ruler);
-        let mut def = self.composed(widget, ruler, super::window);
+        let stack = self.dialogs.stack(dialogs::forms());
+        let mut def = self.composed(widget, ruler, stack.as_ref(), super::window);
         if let Some(lists) = self.lists() {
             set_on(&mut def, widget, "lists", &lists);
         }
@@ -1104,7 +1203,7 @@ impl MultitrackEditor {
             self.widget.unwrap_or(widget),
             self.ruler.unwrap_or(i32::MIN),
         );
-        let mut props = self.composed(multitrack, ruler, |w| super::props(w, widget));
+        let mut props = self.composed(multitrack, ruler, None, |w| super::props(w, widget));
         if widget == multitrack && !props.is_empty() {
             // how a box of notes is drawn, and its page where it is one
             props.insert("notes_view".into(), json!(self.notes_view));
@@ -1262,7 +1361,13 @@ impl MultitrackEditor {
     }
 
     /// The window over the editor's state, handed to `f`.
-    fn composed<T>(&self, widget: i32, ruler: i32, f: impl FnOnce(&Window<'_>) -> T) -> T {
+    fn composed<T>(
+        &self,
+        widget: i32,
+        ruler: i32,
+        dialogs: Option<&Value>,
+        f: impl FnOnce(&Window<'_>) -> T,
+    ) -> T {
         let multitrack = self.multitrack();
         let tempo = projection::tempo_map(&multitrack);
         let table = Table {
@@ -1289,6 +1394,8 @@ impl MultitrackEditor {
             size: self.size,
             close_form: self.close_form,
             asks: self.asks,
+            saves: self.saves,
+            dialogs,
             bare: self.bare,
             grid: self.grid,
             snap: self.snap,
@@ -1365,6 +1472,13 @@ impl MultitrackEditor {
                 looping: values.first().is_some_and(|v| number(v) != 0.0),
             });
             return (None, Vec::new());
+        }
+        // **The window's Save and Save as** (Ctrl+S, Ctrl+Shift+S, File)
+        if self.window.map(i64::from) == Some(widget) && tag == SAVE_VERB {
+            return self.save_from_window(out);
+        }
+        if self.window.map(i64::from) == Some(widget) && tag == SAVE_AS_VERB {
+            return self.open_save_as();
         }
         // **The menu's pause and stop**, the transport row's two buttons by
         // their verbs
@@ -1632,7 +1746,9 @@ impl MultitrackEditor {
         };
         // The host owns where the cursor *is*, so it is told rather than left
         // to find out on the next redraw.
-        let units = self.composed(widget, self.ruler.unwrap_or(i32::MIN), |w| w.cursor_units());
+        let units = self.composed(widget, self.ruler.unwrap_or(i32::MIN), None, |w| {
+            w.cursor_units()
+        });
         vec![Correction {
             widget: i64::from(widget),
             props: json!({ "cursor": units }),
@@ -1706,6 +1822,12 @@ pub const LOOP_KEY: &str = "loop";
 /// **The window's pause**: play, or pause where it stands -- the menu's
 /// Pause, what the transport row's play/pause button does.
 pub const PAUSE_VERB: &str = "pause";
+
+/// **The window's Save**: the session written where it saves, or the Save as
+/// form for one with no file yet.
+pub const SAVE_VERB: &str = "save";
+/// **The window's Save as**: the form that asks where the session is written.
+pub const SAVE_AS_VERB: &str = "save_as";
 
 /// A box of notes drawn as a roll: the `notes_view` word, and the window's
 /// verb that asks for it.
@@ -1960,6 +2082,16 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
             if let Some(asks) = get("asks").as_bool() {
                 editor.set_asks_to_close(asks);
             }
+            if let Some(saves) = get("saves").as_bool() {
+                editor.set_saves(saves);
+            }
+            if let Some(ids) = get("dialogs").as_object() {
+                editor.set_dialogs(
+                    ids.iter()
+                        .filter_map(|(name, id)| Some((name.clone(), id.as_i64()? as i32)))
+                        .collect(),
+                );
+            }
             if let Some(grid) = get("grid").as_f64() {
                 editor.set_grid(grid);
             }
@@ -1969,6 +2101,7 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
             "{}".into()
         }
         "grid" => json!({ "grid": editor.grid(), "snap": editor.snap() }).to_string(),
+        "dialogs" => json!({ "dialogs": dialogs::names() }).to_string(),
         "rewind" => outcome(&editor.rewind(version)),
         "toggle" => outcome(&editor.toggle(version)),
         "stop" => outcome(&editor.stop(version)),
@@ -2666,6 +2799,65 @@ mod tests {
                 .transport
                 .is_none()
         );
+    }
+
+    /// **A Save with no file asks where**: an untitled session's Save opens
+    /// the Save as form, whose `OK` names the path the holder writes; a
+    /// session with a file is saved at once, and a read-only window saves
+    /// nothing and says so.
+    #[test]
+    fn an_untitled_save_opens_the_save_as_form() {
+        let mut ed = editor();
+        let ids: crate::forms::Ids = dialogs::names()
+            .into_iter()
+            .enumerate()
+            .map(|(k, name)| (name, 60 + k as i32))
+            .collect();
+        ed.set_dialogs(ids.clone());
+        ed.set_saves(true);
+        ed.set_untitled(true);
+        let window = ed.window(40, 41);
+        let stack = &window["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == ids["stack"])
+            .expect("the window holds the dialogs' stack");
+        assert_eq!(stack["index"], 0);
+        assert!(
+            window["menu"].to_string().contains("save_as"),
+            "File has Save as"
+        );
+        let shown = ed.event(&event(39, 1, 1, SAVE_VERB, vec![]), 1);
+        assert!(!shown.save, "nothing written yet");
+        let Some(Answer::Push { corrections, .. }) = shown.answer else {
+            panic!("the form shown: {:?}", shown.answer)
+        };
+        assert!(
+            corrections
+                .iter()
+                .any(|c| c.widget == i64::from(ids["stack"]) && c.props["index"] == 1),
+            "the form is up: {corrections:?}"
+        );
+        ed.event(
+            &event(i64::from(ids["file:path"]), 2, 1, "/songs/a.json", vec![]),
+            1,
+        );
+        let accepted = ed.event(&event(i64::from(ids["file:ok"]), 3, 1, "click", vec![]), 1);
+        assert_eq!(accepted.save_as.as_deref(), Some("/songs/a.json"));
+        // with a file, Save writes at once
+        ed.set_untitled(false);
+        assert!(ed.event(&event(39, 4, 1, SAVE_VERB, vec![]), 1).save);
+        // Save as asks again, whatever the session's file
+        assert!(
+            ed.event(&event(39, 5, 1, SAVE_AS_VERB, vec![]), 1)
+                .answer
+                .is_some()
+        );
+        // a read-only window writes nothing
+        ed.set_saves(false);
+        let refused = ed.event(&event(39, 6, 1, SAVE_VERB, vec![]), 1);
+        assert!(!refused.save);
     }
 
     /// **A curve shown from the context menu is an edit**: the `shown` report

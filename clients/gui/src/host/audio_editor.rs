@@ -1063,6 +1063,58 @@ mod tests {
         let _ = std::fs::remove_dir_all(&folder);
     }
 
+    /// **An untitled multitrack's Save asks where**: the window's Save opens
+    /// the Save as form, whose `OK` writes the session at the path typed,
+    /// and a later Save writes there again without asking.
+    #[test]
+    fn an_untitled_multitrack_is_saved_through_the_save_as_form() {
+        let folder = std::env::temp_dir().join(format!("host-save-as-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut host = host();
+        let multitrack = json!({"tracks": [{"id": 1, "name": "a", "takeLanes": [{"id": 2}]}]});
+        let def_id = host
+            .open_multitrack_over(multitrack, "untitled", None)
+            .expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
+        let widget = |host: &Host, name: &str| host.own_widget_id(structure, AUDIO, name).unwrap();
+        let stack = widget(&host, "dialog:stack");
+        let page = |host: &Host| match host.window_defs[&def_id].find(stack).map(|w| &w.kind) {
+            Some(crate::host::widget::WidgetKind::Stack { index, .. }) => *index,
+            other => panic!("a stack: {other:?}"),
+        };
+        assert_eq!(page(&host), 0, "no dialog is up");
+        let save = host.event_message(def_id, 1, vec![OscType::String("save".into())]);
+        assert!(host.deliver(def_id, &save));
+        until(&mut host, "the Save as form never came up", |h| {
+            page(h) == 1
+        });
+        let path = folder.join("named.json");
+        let field = widget(&host, "dialog:file:path");
+        let typed = host.event_message(field, 2, vec![OscType::String(path.display().to_string())]);
+        assert!(host.deliver(def_id, &typed));
+        let ok = widget(&host, "dialog:file:ok");
+        let click = host.event_message(ok, 3, vec![OscType::String("click".into())]);
+        assert!(host.deliver(def_id, &click));
+        until(&mut host, "the session was never written", |h| {
+            path.exists() && page(h) == 0
+        });
+        let written: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(written["multitrack"]["tracks"][0]["name"], "a", "{written}");
+        // the next Save writes there, asking nothing
+        std::fs::remove_file(&path).unwrap();
+        let save = host.event_message(def_id, 4, vec![OscType::String("save".into())]);
+        assert!(host.deliver(def_id, &save));
+        until(&mut host, "the second save never wrote", |_| path.exists());
+        assert_eq!(page(&host), 0);
+        host.close_audio(def_id);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
     /// **A double click on a box of notes opens its roll in the
     /// application**: a window of its own over the box's sequence, played
     /// on a transport of its own by the space bar, which goes when the

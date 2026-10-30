@@ -35,6 +35,7 @@ use clausters_editing::multitrack::{self as projection, Look};
 
 use crate::chrome::{self, App};
 
+pub mod dialogs;
 pub mod editor;
 pub mod sources;
 
@@ -130,9 +131,13 @@ pub struct Window<'a> {
     pub size: (i64, i64),
     /// The close form's widgets, when the holder numbered them.
     pub close_form: Option<crate::closing::Ids>,
-    /// Whether the window is the work's one holder ([`crate::closing`]) --
-    /// which is also whether it saves its work itself.
+    /// Whether the window is the work's one holder ([`crate::closing`]).
     pub asks: bool,
+    /// **Whether the window saves its session itself**: File has Save and
+    /// Save as then. Not a session opened read-only.
+    pub saves: bool,
+    /// The dialogs' stack ([`dialogs`]), when the holder numbered them.
+    pub dialogs: Option<&'a Value>,
     /// **A window with no chrome**: no menu bar and no tools, for a client
     /// that composes its own around it. The transport row stays, under the
     /// multitrack, where a window with chrome holds it in the toolbar.
@@ -202,6 +207,10 @@ pub fn window(w: &Window<'_>) -> Value {
     if let Some(ids) = &w.close_form {
         children.push(crate::closing::stack(ids, UNSAVED));
     }
+    // **The dialogs, held**: the Save as form, on a page of its stack
+    if let Some(stack) = w.dialogs {
+        children.push(stack.clone());
+    }
     let mut window = json!({
         "type": "window",
         "title": w.title,
@@ -224,7 +233,7 @@ pub fn window(w: &Window<'_>) -> Value {
         }
         chrome::dress(
             &mut window,
-            chrome::menu(App::Multitrack, w.asks),
+            chrome::menu(App::Multitrack, w.saves),
             bar,
             w.widget,
         );
@@ -460,6 +469,8 @@ mod tests {
             size: (1000, 560),
             close_form: None,
             asks: false,
+            saves: false,
+            dialogs: None,
             bare: false,
             grid: crate::DEFAULT_GRID,
             snap: true,

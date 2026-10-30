@@ -77,6 +77,7 @@ The verdict is one of three:
 | `audio` | `apply` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** — the one effect today is the gain envelope |
 | `audio` | `apply_envelope` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** |
 | `audio` | `reverse` | `AudioEditor.reverse` | `AudioEditor.reverse` | **api** |
+| `multitrack` | `save_as` | `MultitrackEditor.save` | `MultitrackEditor.save` | **api** — `save(path)` |
 | `multitrack` | `pause` | `MultitrackTransport.pause` | `MultitrackTransport.pause` | **api** |
 | `multitrack` | `stop` | `MultitrackTransport.stop` | `MultitrackTransport.stop` | **api** |
 | `multitrack` | `stop_at_end` | `MultitrackEditor.stop_at_end` | `MultitrackEditor.stopAtEnd` | **api** |
