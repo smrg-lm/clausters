@@ -21,7 +21,7 @@
 //! | the press walk | [`Element::press`] |
 //! | the keyboard arms + the host's focused field | [`Element::accepts_focus`] / [`Element::key`] |
 //! | the tree collectors | [`Element::needs`], with [`Samples::tap_frames`] sizing a page's tap subscription |
-//! | a clip's body draw | [`Element::draw_body`], or [`Slotted::texture_body`] for the one the frame must route to the GPU |
+//! | a clip's body draw | [`Element::draw_body`], or [`Slotted::slots`] for the one the frame must route to the GPU |
 //! | the shared time axis' chrome | [`OnAxis::gutter`] / [`OnAxis::measured_gutter`] |
 //! | the default drag table | [`Element::gesture_map`] |
 //! | the gesture machine's reads | [`OnAxis::rows`] / [`OnAxis::centres_y_zoom`], and [`Measured::freq_axis`] & co. for an element that measures its own x |
@@ -171,11 +171,9 @@ pub struct Ctx<'a> {
 /// mapped onto the colormap, the shape of the frequency axis, and the colormap
 /// itself.
 ///
-/// A clip's body is drawn against the *clip's* axis and with the clip's id (a
-/// body carries none), so it cannot go through the ordinary slot path -- the
-/// frame has to route it to the texture pass itself. This is the whole of what
-/// it needs to know to do that, and an element that draws its body into the
-/// mesh instead answers `None` ([`Slotted::texture_body`]).
+/// A texture layer carries this look in [`SlotFrame::Signal`], alongside its
+/// body, layer stack and vertical window. [`Slotted::slots`] supplies those
+/// frames; an element that draws only into the mesh claims no texture slot.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextureLook {
     pub db_floor: f32,

@@ -121,6 +121,7 @@ impl Host {
     /// every editor closes by (`clausters_apps::closing`): this host is the
     /// window's client, so it frees what it defined, and a standalone host
     /// whose last window goes ends.
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps", feature = "notation"))]
     pub(super) fn free_own_window(&mut self, def_id: i32) {
         use std::net::{Ipv4Addr, SocketAddr};
 
@@ -143,6 +144,7 @@ impl Host {
     /// **An answer the editor gave, carried out on this host**: the corrections
     /// drawn and the stamp settled -- what a client's `/gui_ack`, or its bundled
     /// push, does when it reaches a host, without the socket.
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps", feature = "notation"))]
     pub(super) fn tell(&mut self, answer: clausters_editing::conversation::Answer) {
         use clausters_editing::conversation::Answer;
 

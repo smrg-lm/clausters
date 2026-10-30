@@ -54,6 +54,7 @@ impl Host {
     /// **The id of a widget this host opens for itself**, by what it draws:
     /// the same number for as long as the name is held, and one no client of
     /// this host is handed. `None`, said out loud, when the table is full.
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps", feature = "notation"))]
     pub(crate) fn own_widget(&mut self, structure: i64, role: &str, key: &str) -> Option<i32> {
         let id = self
             .widget_ids

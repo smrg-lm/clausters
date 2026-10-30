@@ -9,9 +9,11 @@
 //! says so), and an offline wait counts its sleeps instead of reading a
 //! deadline.
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::server::meters::{Meters, Role, Stamp, stamp};
 
 /// How long the I/O thread parks when its ring is full/empty before retrying.
@@ -32,6 +34,7 @@ const GIVE_UP: Duration = Duration::from_secs(10);
 /// done in it -- a thread that wakes to a ring still full, or still empty, did
 /// no work and is not a call. Dropping it closes the last stretch, so every
 /// way out of a thread's loop is accounted.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) struct Turn {
     meters: Arc<Meters>,
     role: Role,
@@ -39,6 +42,7 @@ pub(crate) struct Turn {
     worked: bool,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Turn {
     pub(crate) fn new(meters: Arc<Meters>, role: Role) -> Self {
         Self {
@@ -72,6 +76,7 @@ impl Turn {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Drop for Turn {
     fn drop(&mut self) {
         self.close();
