@@ -359,6 +359,10 @@ pub struct Editing {
     tracks: std::collections::BTreeMap<MemberId, multitrack_runs::Tracks>,
     /// Each roll's playback, on a transport of its own.
     rolls: std::collections::BTreeMap<MemberId, roll_runs::Roll>,
+    /// **The notes members whose window is gone**. A seat stays, since the
+    /// history may still walk an edit made there, and the next roll over the
+    /// same sequence takes it again rather than adding one.
+    unwindowed: std::collections::BTreeSet<MemberId>,
     /// The file each audio member plays, kept beside its session since a
     /// run holds the session while it decides whether an edit may start.
     audio_playing: std::collections::BTreeMap<MemberId, u64>,
@@ -394,6 +398,7 @@ impl Editing {
             sessions: Default::default(),
             tracks: Default::default(),
             rolls: Default::default(),
+            unwindowed: Default::default(),
             audio_playing: Default::default(),
             engine: None,
             shared: Default::default(),

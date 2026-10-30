@@ -721,6 +721,17 @@ fn a_roll_plays_its_notes_on_a_transport_of_its_own() {
     let tail = after.iter().fold(0.0f32, |a, b| a.max(b.abs()));
     assert!(tail < 1e-3, "nothing sounds once it stopped: {tail}");
     app.forget(&mut editing, roll);
+
+    // **a roll whose window is gone is taken again**: the next one over the
+    // same sequence is the same member, so opening and closing adds none
+    let shared = match editing.member(multitrack) {
+        Some(Member::Multitrack(editor)) => editor.sequence(SourceId(5)).cloned().unwrap(),
+        _ => panic!("not a multitrack"),
+    };
+    let again: serde_json::Value =
+        serde_json::from_str(&editing.open_notes("sequence:5", shared, &request)).unwrap();
+    assert_eq!(again["member"].as_u64(), Some(u64::from(roll)));
+    assert_eq!(again["structure"], opened["structure"]);
     let _ = std::fs::remove_dir_all(&folder);
 }
 

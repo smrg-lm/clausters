@@ -377,12 +377,28 @@ impl Editing {
     /// door a binding's sequence handle opens through, so the editor edits the
     /// very sequence the script holds. `request` is what
     /// [`notes::new_json`] reads; the answer is the `openNotes` one.
+    ///
+    /// **A roll whose window is gone is taken again** by the next one over
+    /// the same sequence: its seat, with a new editor, so a window opened
+    /// and closed over one box adds no member each time.
     pub fn open_notes(&mut self, key: &str, sequence: Shared, request: &str) -> String {
         let mut request = serde_json::from_str::<Value>(request).unwrap_or_else(|_| json!({}));
         if let Some(map) = request.as_object_mut() {
             map.insert("version".into(), json!(self.version));
         }
-        let editor = notes::new_json(sequence, &request.to_string());
+        let editor = notes::new_json(sequence.clone(), &request.to_string());
+        let again = self.unwindowed.iter().copied().find(|member| {
+            matches!(self.member(*member),
+                Some(Member::Notes(held)) if std::sync::Arc::ptr_eq(held.sequence(), &sequence))
+        });
+        if let Some(member) = again {
+            self.unwindowed.remove(&member);
+            if let Some(seat) = self.member_mut(member) {
+                *seat = Member::Notes(Box::new(editor));
+            }
+            let structure = self.structure(member).map(|s| s.0);
+            return json!({ "member": member, "structure": structure }).to_string();
+        }
         joined(self, key, Member::Notes(Box::new(editor))).to_string()
     }
 }

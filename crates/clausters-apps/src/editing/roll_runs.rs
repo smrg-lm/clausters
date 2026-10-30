@@ -90,6 +90,7 @@ impl Editing {
             self.rolls.insert(member, roll);
         } else {
             let _ = roll.playback.close(ids);
+            self.unwindowed.insert(member);
         }
         ran
     }
@@ -258,10 +259,15 @@ impl Editing {
         }
     }
 
-    /// **A roll is gone**: its lane, its graphs and its transport.
+    /// **A roll is gone**: its lane, its graphs and its transport. Its
+    /// member stays for the history and is taken again by the next roll over
+    /// its sequence ([`Editing::open_notes`]).
     pub fn forget_roll(&mut self, member: MemberId, ids: &mut IdSpaces) {
         if let Some(mut roll) = self.rolls.remove(&member) {
             let _ = roll.playback.close(ids);
+        }
+        if matches!(self.member(member), Some(Member::Notes(_))) {
+            self.unwindowed.insert(member);
         }
     }
 }

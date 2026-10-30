@@ -5743,7 +5743,7 @@ wrong.
   starts a lane and a cue in one turn should keep the order it was asked
   in.
 
-- ⬜ **A roll's notes member outlives its window** *(found 2026-10-29,
+- ✅ **A roll's notes member outlives its window** *(found 2026-10-29,
   giving the application's roll a transport)*. Closing a roll frees its
   playback and its transport, and the notes member stays in the editing
   context with the editor it held. Its edits are in the history shared with
@@ -5752,6 +5752,12 @@ wrong.
   What it should become when its window goes (released once the history
   names it no more, or kept and reused by the next roll over the same
   sequence) is still to decide.
+  **Fixed 2026-10-30: kept and reused.** The seat stays, as an audio
+  member's does, and the context notes it as having no window
+  (`forget_roll`); the next `open_notes` over the same sequence takes that
+  seat with a new editor, so a box opened and closed any number of times
+  holds one member. Releasing it once the history names it no more would
+  add a walk over the history for the cost of one editor.
 
 - ⬜ **The multitrack's handler marks nothing** *(found 2026-10-29, moving
   the clients onto the application)*. The clients' own multitrack editor had
