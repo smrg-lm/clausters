@@ -105,7 +105,8 @@ impl OscServer {
     }
 
     /// `/synth_get nodeID control...` / `/synth_getRange nodeID control numControls...`:
-    /// reads a synth's current control values from the mirror and replies
+    /// reads a synth's current control values from the mirror -- or, for a
+    /// control mapped to a control bus, from the bus it follows -- and replies
     /// `/node_set nodeID control value ...` (`/synth_getRange` echoes each range's
     /// `(control, numControls, val...)`), the query counterpart of `/node_set`.
     pub(in crate::osc::server) fn handle_synth_get(
@@ -132,7 +133,7 @@ impl OscServer {
         let read = |index: u32| -> Result<f32, String> {
             controls
                 .get(index as usize)
-                .copied()
+                .map(|&set| self.control_now(id, index, set))
                 .ok_or_else(|| format!("control index {index} out of range"))
         };
         // A control is named or numbered, so it is the one read `Args` cannot
@@ -160,6 +161,18 @@ impl OscServer {
         }
         self.reply(from, "/node_set", out);
         Ok(())
+    }
+
+    /// **A control's value now**: what the bus it is mapped to carries, for
+    /// a control mapped to a control bus (an atomic this thread can read),
+    /// and otherwise `set`, the value the mirror holds -- the last one a
+    /// `/node_set` wrote. An audio-mapped control has no single value to
+    /// read and answers `set` too.
+    fn control_now(&self, id: i32, index: u32, set: f32) -> f32 {
+        match self.translator.mirror.control_bus(id, index) {
+            Some(bus) => self.handle.control_buses().get(bus),
+            None => set,
+        }
     }
 
     /// `/synth_get` on a **GraphDef instance** or one of its voices: each
@@ -217,7 +230,7 @@ impl OscServer {
             let index = control_key(arg, &def).ok_or_else(|| format!("unknown control {arg:?}"))?;
             let value = values
                 .get(index as usize)
-                .copied()
+                .map(|&set| self.control_now(id, index, set))
                 .ok_or_else(|| format!("control index {index} out of range"))?;
             asked.push((arg.clone(), index, f64::from(value)));
         }

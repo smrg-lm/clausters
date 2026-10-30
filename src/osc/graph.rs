@@ -822,6 +822,18 @@ impl TreeMirror {
         }
     }
 
+    /// The control bus a synth's control is mapped to, if it is mapped to
+    /// one (an audio map has no value to read here).
+    pub fn control_bus(&self, id: i32, ctl: u32) -> Option<usize> {
+        match self.nodes.get(&id).map(|n| &n.body) {
+            Some(MirrorBody::Synth { maps, .. }) => maps
+                .iter()
+                .find(|&&(c, bus, audio)| c == ctl && !audio && bus >= 0)
+                .map(|&(_, bus, _)| bus as usize),
+            _ => None,
+        }
+    }
+
     /// Updates one mirrored control value. Returns `true` when the control
     /// is used as a bus index (the caller must re-analyze and re-sort).
     pub fn set_control(&mut self, id: i32, index: u32, value: f32) -> bool {

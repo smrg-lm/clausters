@@ -2847,6 +2847,52 @@ fn n_setn_and_s_get_read_a_control_range() {
     server.quit();
 }
 
+/// **A mapped control reads back what its bus carries.** A control mapped to a
+/// control bus follows the bus, so `/synth_get` answers the bus's value rather
+/// than the last one set; set again, the map is gone and the set value is read.
+#[test]
+fn s_get_reads_a_mapped_control_from_its_bus() {
+    let mut server = TestServer::spawn();
+    server.new_synth(1000, 0);
+    server.wait_for_synth_count(1);
+
+    let get = |server: &mut TestServer| {
+        server.send(
+            "/synth_get",
+            vec![OscType::Int(1000), OscType::String("freq".into())],
+        );
+        server.recv_until("/node_set").args[2].clone()
+    };
+    server.send("/bus_set", vec![OscType::Int(5), OscType::Float(660.0)]);
+    server.send(
+        "/node_map",
+        vec![
+            OscType::Int(1000),
+            OscType::String("freq".into()),
+            OscType::Int(5),
+        ],
+    );
+    server.assert_accepted("/node_map");
+    assert_eq!(get(&mut server), OscType::Float(660.0));
+
+    server.send("/bus_set", vec![OscType::Int(5), OscType::Float(770.0)]);
+    server.assert_accepted("/bus_set");
+    assert_eq!(get(&mut server), OscType::Float(770.0));
+
+    server.send(
+        "/node_set",
+        vec![
+            OscType::Int(1000),
+            OscType::String("freq".into()),
+            OscType::Float(330.0),
+        ],
+    );
+    server.assert_accepted("/node_set");
+    assert_eq!(get(&mut server), OscType::Float(330.0));
+
+    server.quit();
+}
+
 #[test]
 fn n_fill_fills_a_control_range() {
     let mut server = TestServer::spawn();

@@ -571,8 +571,9 @@ loaded state. The knob a hand is holding is left alone, so a drag is never
 pulled back under the pointer. A binding to `/node_setText` comes back the same
 way, as the control's value **as text** — the plugin's own words for it, or the
 number with its unit — which is how a `label` bound to it shows a value it never
-writes. A control mapped to a bus reads back what was last set on it, not what
-the bus carries.
+writes. A control mapped to a control bus reads back what the bus carries, so
+its knob follows the bus; one mapped to an audio bus reads back what was last
+set on it.
 
 ## The signal element: every view of a signal
 

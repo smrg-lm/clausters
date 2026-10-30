@@ -4567,14 +4567,16 @@ should confirm before the fix.
   generator `ends` for the voice to go with its note; a slot that holds a
   nested graph is left to its `ends`, as before.
 
-- ⬜ **A control mapped to a bus reads back what was last set on it** *(found
+- ✅ **A control mapped to a bus reads back what was last set on it** *(found
   2026-10-16, building `J12`)*. `/synth_get` reads the network thread's mirror
   of a node, which holds the value a `/node_set` wrote and the map, not what
   the bus carries; so a generic editor's knob over a mapped control stands still
   while the control follows its bus. A control bus is an atomic the network
   thread can read, so `/synth_get` answering the bus for a control mapped to
   one is a small change; an audio-mapped control has no such value to read and
-  stays as it is.
+  stays as it is. **Fixed 2026-10-30:** `/synth_get`, `/synth_getRange` and
+  `/synth_getText` read a control the mirror records as mapped to a control
+  bus from that bus's atomic.
 - ⬜ **A FaustDef's `[unit:...]` and `[scale:log]` metadata are not read**
   *(found 2026-10-16, building `J12`)*. A Faust slider brings its range and
   step to `/def_query`, and its unit and its scale stay in the DSP's metadata,
