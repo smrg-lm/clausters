@@ -153,10 +153,6 @@ already carry it.
   *(`clients/gui/PLAN.md`, Found by use)*. Not reproduced; waits for the next
   failure's output.
 
-- ⬜ **The Open file chooser gives its label too much of the width**
-  *(`clients/gui/PLAN.md`, Found by use)*. Small; the room it frees is where a
-  file preview could go later.
-
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and

@@ -8709,12 +8709,15 @@ module of its own.
   encode, present -- with its uploaded bytes and placements, counted in
   `/gui_activity`, and `host.profile(id, seconds)` / `editor.profile` with
   `format_window_profile` in both clients.)*
-- ⬜ **The Open file chooser gives its label too much of the width**
+- ✅ **The Open file chooser gives its label too much of the width**
   (2026-10-21, the user, in the browser pass over `edit-audio.html`). The
   label beside the file browser in File -> Open file... takes more room than
   it needs; it should narrow and give the width to the browser. The room it
   frees is where a preview of the selected file could go later, which is a
-  design of its own and not part of this fix.
+  design of its own and not part of this fix. **Fixed 2026-10-30:** a
+  caption beside a chooser is as wide as its text, and the chooser takes
+  the rest of a packed row as wide as the caption column and the chooser
+  were (`clausters_apps::forms`), so the dialog keeps its width.
 
 - ✅ **A playhead looping over a selection moves at the tick, not the
   display** *(found 2026-10-22, the eye pass over the audio editor's

@@ -884,6 +884,44 @@ mod tests {
         assert_eq!(meter.rect.w, natural, "the meter is not cut");
     }
 
+    /// **A chooser's caption is as wide as its text**, and the chooser
+    /// takes the rest of a row whose width is stated: the shape a form's
+    /// file field has (`clausters_apps::forms`), in a dialog that hugs.
+    #[test]
+    fn a_chooser_takes_what_its_caption_leaves_of_its_row() {
+        let w = tree(
+            r#"{"type":"window","children":[
+            {"id":2,"type":"layout","flow":"col","hug":true,"children":[
+                {"id":3,"type":"layout","flow":"row","hug":true,"pack":true,"margin":0,"w":590,"children":[
+                    {"id":4,"type":"label","text":"Files"},
+                    {"id":5,"type":"files","path":".","weight":1,"h":300}]}]}]}"#,
+        );
+        let m = Metrics::default();
+        let placed = layout(Rect::new(0.0, 0.0, 1200.0, 800.0), &w, &m);
+        let rect = |id: i32| {
+            placed
+                .iter()
+                .find(|p| p.widget.id == Some(id))
+                .unwrap()
+                .rect
+        };
+        let (row, caption, files) = (rect(3), rect(4), rect(5));
+        // A dialog is placed at its fitted size, which the row's width sets.
+        let dialog = w.children[0].hug_size(&m, 1.0).0.unwrap();
+        assert_eq!(
+            dialog,
+            590.0 + 2.0 * m.margin,
+            "the row's width is the dialog's"
+        );
+        assert!(caption.w < 100.0, "the caption hugs its text: {caption:?}");
+        assert_eq!(
+            caption.w + m.gap + files.w,
+            row.w,
+            "the chooser takes the rest"
+        );
+        assert_eq!(files.h, 300.0);
+    }
+
     #[test]
     fn a_stack_places_only_the_page_its_index_names() {
         // Three pages, one shown: the hidden ones get no rectangle at all, so

@@ -146,19 +146,29 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
         .fields()
         .iter()
         .map(|(name, label)| {
-            let mut caption = json!({"type": "label", "text": label, "w": CAPTION_W});
+            let chooser = form.chooser(name);
+            let mut caption = json!({"type": "label", "text": label});
+            // **A caption beside a chooser is as wide as its text**, and the
+            // chooser takes the rest of the row: the column of captions a
+            // form lines its text fields up on is width a file list has
+            // better use for.
+            if chooser.is_none()
+                && let Some(map) = caption.as_object_mut()
+            {
+                map.insert("w".into(), json!(CAPTION_W));
+            }
             // the caption a form corrects is the question it is asking
             if let (Some(_), Some(map)) = (form.label(), caption.as_object_mut()) {
                 map.insert("id".into(), json!(id("label")));
             }
-            let mut field = match form.chooser(name) {
+            let mut field = match chooser {
                 Some(chooser) => json!({
                     "type": "files",
                     "id": id(name),
                     "path": Some(held(name)).filter(|dir| !dir.is_empty()).unwrap_or(START),
                     "filter": chooser.filter,
                     "multiple": chooser.multiple,
-                    "w": chooser.w,
+                    "weight": 1,
                     "h": chooser.h,
                 }),
                 None => json!({"type": "text", "id": id(name), "value": held(name), "w": FIELD_W}),
@@ -168,13 +178,21 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
             }
             // a row is its caption and its field and no air of its own: the
             // dialog's gap is what separates one row from the next
-            json!({
+            let mut row = json!({
                 "type": "layout",
                 "flow": "row",
                 "hug": true,
                 "margin": 0,
                 "children": [caption, field],
-            })
+            });
+            // the row a chooser stands in is as wide as a caption and the
+            // chooser were, so the dialog keeps its width, and packed, so the
+            // caption is its text and the chooser's weight the rest
+            if let (Some(chooser), Some(map)) = (chooser, row.as_object_mut()) {
+                map.insert("w".into(), json!(CAPTION_W + chooser.w));
+                map.insert("pack".into(), json!(true));
+            }
+            row
         })
         .collect();
     let spring = json!({"type": "separator", "weight": 1, "line": false});
@@ -572,9 +590,26 @@ mod tests {
         assert_eq!(chooser["path"], START);
         assert_eq!(chooser["filter"], json!(["wav"]));
         assert_eq!(chooser["multiple"], true);
+        // The chooser takes what its row leaves its caption, which is only
+        // as wide as its text: the row is as wide as a caption column and
+        // the chooser's width together.
         assert_eq!(
-            (chooser["w"].as_f64(), chooser["h"].as_f64()),
-            (Some(400.0), Some(300.0))
+            (chooser["weight"].as_f64(), chooser["h"].as_f64()),
+            (Some(1.0), Some(300.0))
+        );
+        assert!(chooser.get("w").is_none());
+        fn row_of(tree: &Value) -> Option<&Value> {
+            if tree["children"][1]["type"] == "files" {
+                return Some(tree);
+            }
+            tree["children"].as_array()?.iter().find_map(row_of)
+        }
+        let row = row_of(&stack).unwrap();
+        assert_eq!(row["w"].as_f64(), Some(CAPTION_W + 400.0));
+        assert_eq!(row["pack"], true);
+        assert!(
+            row["children"][0].get("w").is_none(),
+            "the caption hugs its text"
         );
         assert!(
             chooser.get("value").is_none(),
