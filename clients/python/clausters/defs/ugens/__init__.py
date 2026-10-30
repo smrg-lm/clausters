@@ -158,7 +158,6 @@ from .io import (
     clip_count,
     disk_in,
     disk_out,
-    peaks_out,
     in_,
     in_ctl,
     local_in,
@@ -280,7 +279,7 @@ from .env import (
 #: divergences the /ugen_query contrast test declares. For these the names would
 #: mislabel the inlets, so the Def-view falls back to positional labels.
 _INPUT_NAMES_MISALIGNED = frozenset(
-    {"EnvGen", "SendReply", "Dseq", "Poll", "DiskIn", "DiskOut", "PeaksOut", "PV_Kernel"}
+    {"EnvGen", "SendReply", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}
 )
 
 #: Lazily built {kind: [param name, ...]} -- see `ugen_input_names`.
@@ -412,7 +411,6 @@ __all__ = [
     "clip_count",
     "disk_in",
     "disk_out",
-    "peaks_out",
     "in_",
     "in_ctl",
     "local_in",

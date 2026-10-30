@@ -5,7 +5,7 @@
 // reaches no file. This one is the native render (`renderFile`, the engine's
 // `render_to_wav_with`): it writes its output a run at a time, and serves its
 // own file streams between two runs -- the lists and `DiskIn`s it reads, the
-// `DiskOut`s and `PeaksOut`s it writes -- through `clausters_core::files`, as
+// `DiskOut`s it writes -- through `clausters_core::files`, as
 // it does natively. What the Rust needs of this side is that each file call
 // is answered before it returns, so the files the score names are opened
 // first (opening is asynchronous; reading and writing an open file is not),

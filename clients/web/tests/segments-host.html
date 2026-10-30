@@ -28,8 +28,8 @@
     <!--
       The page half of the host drawing a list from its files
       (clients/web/test.sh, headless Chrome; ?smoke=1 auto-runs). The engine
-      records a tone into a W64 with diskOut and its peaks with peaksOut, both
-      into the page's storage; a waveform then names a list over that file and
+      records a tone into a W64 with diskOut, into the page's storage, with no
+      peaks (the host summarizes its samples); a waveform then names a list over that file and
       the host draws it. What is asserted is what the host did, read off its
       own console:
 
@@ -55,7 +55,7 @@
 
       const { Server, Buffer, Synth, SynthDef, Bus, GuiHost, gui, opfs } =
         await import("../dist/index.js");
-      const { diskOut, out, peaksOut, sine } = await import("../dist/defs/index.js");
+      const { diskOut, out, sine } = await import("../dist/defs/index.js");
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -87,15 +87,12 @@
         const server = await new Server().boot();
         await new GuiHost({ engine: server.engine }).boot();
 
-        // The take and its peaks, written as a render or a recording writes
-        // them: the samples by diskOut, the summary by peaksOut beside it.
+        // The take, written as a recording writes it: the samples by diskOut.
         const PATH = "takes/segments.w64";
-        const PEAKS = "takes/segments.peaks";
         const bus = Bus.audio(1, { server });
         const tone = sine(330).mul(0.5);
         await new SynthDef("segments_take",
-          out(bus.index, diskOut(tone, { path: PATH, format: "float" })),
-          peaksOut(tone, { path: PEAKS })).send(server);
+          out(bus.index, diskOut(tone, { path: PATH, format: "float" }))).send(server);
         const take = new Synth("segments_take", {}, { server });
         await sleep(900);
         take.free();
@@ -106,7 +103,7 @@
         if (!(frames > 24000)) throw new Error(`the take is ${frames} frames`);
 
         const part = (start, length) => ({
-          path: PATH, peaks: PEAKS, start, frames: length,
+          path: PATH, start, frames: length,
           source_channels: 1, source_frames: frames, source_rate: 48000,
         });
         const whole = { channels: 1, sample_rate: 48000, parts: [part(0, frames)] };

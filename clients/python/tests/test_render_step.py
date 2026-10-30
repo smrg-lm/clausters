@@ -54,20 +54,20 @@ def test_a_render_is_followed_as_it_goes(tmp_path):
 
 def test_a_render_with_no_path_keeps_no_output_and_does_its_work(tmp_path):
     from clausters._steps import render_step
-    from clausters.defs import peaks_out
+    from clausters.defs import disk_out
 
-    peaks = tmp_path / "tone.peaks"
+    written = tmp_path / "tone.wav"
     nrt = OscNrtInterface()
     nrt.send_msg(None, "/def_send", "synth",
-                 SynthDef("measured", peaks_out(sine(660), path=str(peaks))).dump_def())
-    nrt.send_msg(None, "/synth_new", "measured", 1000, 0, 0)
+                 SynthDef("recorded", disk_out(sine(660), path=str(written),
+                                               format="float")).dump_def())
+    nrt.send_msg(None, "/synth_new", "recorded", 1000, 0, 0)
     nrt.send_bundle(None, 0.5, ("/node_free", 1000))
     render_step({"score": nrt.score.bytes().hex(), "path": "", "rate": 48_000.0,
                  "channels": 1, "format": "float"})
-    assert peaks.read_bytes()[:4] == b"CLPK"
-    # the peaks file and the spectral summary a PeaksOut writes beside it,
-    # and no rendered file
-    assert sorted(tmp_path.iterdir()) == sorted([peaks, peaks.with_suffix(".spectra")])
+    assert written.read_bytes()[:4] == b"RIFF"
+    # what the DiskOut wrote, and no rendered file
+    assert sorted(tmp_path.iterdir()) == [written]
 
 
 def test_renders_called_off_are_not_begun(tmp_path):

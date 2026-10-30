@@ -38,7 +38,7 @@ from .ugens import ChannelList, Ugen, out
 #: sounding and recording *and* hearing is the explicit
 #: ``out(0, disk_out(sig, path=p))``.
 _SINK_KINDS = {
-    "Out", "ReplaceOut", "OutCtl", "LocalOut", "DiskOut", "PeaksOut",
+    "Out", "ReplaceOut", "OutCtl", "LocalOut", "DiskOut",
     "SendTrig", "SendReply", "Poll",
 }
 

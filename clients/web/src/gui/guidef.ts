@@ -961,7 +961,7 @@ export interface SegmentListPart {
     source_channels: number;
     source_frames: number;
     source_rate: number;
-    /** The file's peaks (what `peaksOut` writes); absent, its samples are read. */
+    /** The file's peaks (an application measures them); absent, its samples are read. */
     peaks?: string;
 }
 

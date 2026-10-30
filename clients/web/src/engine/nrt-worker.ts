@@ -116,26 +116,6 @@ interface WriteRequest {
     final: boolean;
 }
 
-/** `PeaksOut`: keep a run of base buckets, and write the peaks file when
- *  `final` -- unless a bucket was `lost`, when no file is written. */
-interface PeaksRequest {
-    type: "peaks";
-    ticket: number;
-    path: string;
-    stats: Float32Array;
-    channels: number;
-    frames: number;
-    lost: boolean;
-    final: boolean;
-}
-
-/** The spectral summary a `PeaksOut` writes beside its peaks, kept and
- *  written as they are: its finest columns in `stats`, a byte of a bin as a
- *  float. */
-interface SpectraRequest extends Omit<PeaksRequest, "type"> {
-    type: "spectra";
-}
-
 /** `DiskOut`: append a recorded run, and close the file when `final`. */
 interface RecordRequest {
     type: "record";
@@ -183,8 +163,6 @@ type Request =
     | SpanRequest
     | WriteRequest
     | RecordRequest
-    | PeaksRequest
-    | SpectraRequest
     | FaustRequest
     | FaustHeapRequest
     | { type: "ping" };
@@ -279,8 +257,6 @@ type Decoder = {
         frames: number;
         free(): void;
     };
-    peaksFile: (frames: number, channels: number, stats: Float32Array) => Uint8Array<ArrayBuffer>;
-    spectraFile: (frames: number, channels: number, columns: Float32Array) => Uint8Array<ArrayBuffer>;
     stripFaustData: (module: Uint8Array) => Uint8Array;
     faustBoxFromJson: (json: string) => number;
     faustSignalsFromJson: (json: string) => Uint32Array;
@@ -455,8 +431,6 @@ function serial<T>(path: string, work: () => Promise<T>): Promise<T> {
     return done;
 }
 
-/** A peaks file being summarized: the runs of base buckets so far. */
-const peaks = new Map<string, Float32Array[]>();
 
 async function shapeOf(path: string): Promise<WavShape> {
     const known = shapes.get(path);
@@ -621,34 +595,6 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
         } catch (e) {
             writes.delete(path);
             post({ type: "write", ticket: request.ticket, error: message(e) });
-        }
-        return;
-    }
-    if (request.type === "peaks" || request.type === "spectra") {
-        let held = peaks.get(request.path) ?? [];
-        if (request.stats.length > 0) held.push(request.stats);
-        if (!request.final) {
-            peaks.set(request.path, held);
-            return;
-        }
-        peaks.delete(request.path);
-        if (request.lost || request.frames === 0) return;
-        try {
-            const total = held.reduce((n, run) => n + run.length, 0);
-            const stats = new Float32Array(total);
-            let at = 0;
-            for (const run of held) {
-                stats.set(run, at);
-                at += run.length;
-            }
-            held = [];
-            // The pyramid is the shared core's, as a native `PeaksOut`'s is,
-            // and so is the spectral summary's.
-            const { peaksFile, spectraFile } = await load();
-            const write = request.type === "peaks" ? peaksFile : spectraFile;
-            await writeFile(request.path, write(request.frames, request.channels, stats));
-        } catch (e) {
-            console.warn(`PeaksOut: ${request.path}: ${message(e)}`);
         }
         return;
     }

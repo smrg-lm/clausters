@@ -500,7 +500,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         if (this.nrt === null) return;
         const streams = JSON.parse(this.server.diskPoll()) as {
             id: number;
-            direction: "in" | "out" | "list" | "peaks" | "spectra";
+            direction: "in" | "out" | "list";
             path: string;
             channels: number;
             looping: boolean;
@@ -517,7 +517,6 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             live.add(s.id);
             if (s.direction === "in") this.feed(s);
             else if (s.direction === "list") this.feedList(s);
-            else if (s.direction === "peaks" || s.direction === "spectra") this.drainPeaks(s, s.direction);
             else this.drain(s);
         }
         // A synth that was freed took its stream with it; close its recording.
@@ -650,39 +649,6 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             frame: state.frame,
             frames: Math.min(frames, DISK_SPAN_FRAMES * 4),
         });
-    }
-
-    /**
-     * One `PeaksOut`: hand the Worker its buckets, or the columns of the
-     * spectral summary it writes beside them, and once its synth is gone and
-     * everything is drained, the word to write the file; then it is forgotten.
-     */
-    private drainPeaks(s: {
-        id: number;
-        path: string;
-        channels: number;
-        looping: boolean;
-        start: number;
-        format: string;
-        samples: number;
-    }, kind: "peaks" | "spectra"): void {
-        const stats = s.samples > 0 ? this.server.diskPull(s.id, s.samples) : new Float32Array(0);
-        const final = s.looping && stats.length >= s.samples;
-        if (stats.length === 0 && !final) return;
-        this.nrt!.postMessage(
-            {
-                type: kind,
-                ticket: s.id,
-                path: s.path,
-                stats,
-                channels: s.channels,
-                frames: s.start,
-                lost: s.format === "lost",
-                final,
-            },
-            [stats.buffer],
-        );
-        if (final) this.server.diskRelease(s.id);
     }
 
     /** One `DiskOut`: take what it has recorded and hand it to the Worker. */

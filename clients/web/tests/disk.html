@@ -35,8 +35,8 @@
       through transportDiskIn: every sample the bus carries is a frame of one
       of the two files (or the silence of a refill), both files are heard, and
       a locate under the moving playhead keeps it so. Then the long-file
-      containers: diskOut records into a W64 with peaksOut writing its peaks
-      file beside it, both read back, and buffer.write writes an RF64 that
+      containers: diskOut records into a W64, read back, and buffer.write
+      writes an RF64 that
       Buffer.read reads back sample for sample. Mid-take, the recording is
       already a sound file of what it holds: a run is written where the body
       ends and the header again, so the worker never holds the take. Last,
@@ -47,7 +47,7 @@
     <script type="module">
       import { Session, opfs, loadCore, SynthDef, Synth, Group, Bus, Buffer, data,
         OscNrtInterface, renderScore } from "../dist/index.js";
-      import { diskIn, diskOut, out, peaksOut, sine, transportDiskIn } from "../dist/defs/index.js";
+      import { diskIn, diskOut, out, sine, transportDiskIn } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -242,20 +242,17 @@
         const joined = heard.size === 2 && foreign.length === 0 &&
           named === "takes/a.wav,takes/b.wav,takes/a.wav" && replaced <= 4;
 
-        // 5) The long-file containers. A W64 recorded with its peaks file
-        //    beside it, then read back as a buffer; an RF64 written from a
-        //    buffer and read back.
+        // 5) The long-file containers. A W64 recorded, then read back as a
+        //    buffer; an RF64 written from a buffer and read back.
         const tone = sine(330).mul(0.5);
         await new SynthDef("long",
-          out(recBus.index, diskOut(tone, { path: "takes/long.w64", format: "float" })),
-          peaksOut(tone, { path: "takes/long.peaks" })).send(server);
+          out(recBus.index, diskOut(tone, { path: "takes/long.w64", format: "float" }))).send(server);
         const long = new Synth("long", {}, { server });
         await wait(700);
         long.free();
         await wait(600);
         const w64 = await Buffer.read("takes/long.w64", { server });
         const w64Head = String.fromCharCode(...(await opfs.readRange("takes/long.w64", 0, 4)));
-        const peaksHead = String.fromCharCode(...(await opfs.readRange("takes/long.peaks", 0, 4)));
         const w64Peak = Math.max(...(await w64.getSamples({ start: 0, count: Math.min(w64.frames, 4800) })).map(Math.abs));
         await w64.write("takes/back.rf64", { sampleFormat: "float" });
         const rf64 = await Buffer.read("takes/back.rf64", { server });
@@ -265,18 +262,16 @@
         const wrote = await w64.getSamples({ start: 0, count: w64.frames });
         const back = await rf64.getSamples({ start: 0, count: rf64.frames });
         const same = wrote.length === back.length && wrote.every((v, i) => v === back[i]);
-        log(`W64 "${w64Head}" of ${w64.frames} frames at peak ${w64Peak.toFixed(3)}, peaks "${peaksHead}"; ` +
+        log(`W64 "${w64Head}" of ${w64.frames} frames at peak ${w64Peak.toFixed(3)}; ` +
             `RF64 "${rf64Head}" of ${rf64.frames} frames`);
         const longOk = w64Head === "riff" && w64.frames > 24000 && w64Peak > 0.45 &&
-          peaksHead === "CLPK" && rf64Head === "RF64" && rf64.frames === w64.frames && same;
+          rf64Head === "RF64" && rf64.frames === w64.frames && same;
 
         // 6) An offline render that reads the two files as a list and writes
         //    its own file, run in a Worker of its own: the list is read from
-        //    its first frame (a stream reads inside the block that needs it),
-        //    and the peaks are written beside the output.
+        //    its first frame (a stream reads inside the block that needs it).
         const reader = transportDiskIn(1, 0, 0, 0, 0);
-        const listDef = new SynthDef("rendered", out(0, reader),
-          peaksOut(reader, { path: "takes/rendered.peaks" }));
+        const listDef = new SynthDef("rendered", out(0, reader));
         const s = (v) => ["s", v];
         const i = (v) => ["i", v];
         const f = (v) => ["f", v];
@@ -312,13 +307,12 @@
         alongside.free();
         const renderedBuf = await Buffer.read("takes/rendered.wav", { server });
         const rendered = await renderedBuf.getSamples({ start: 0, count: renderedBuf.frames });
-        const renderedPeaks = String.fromCharCode(...(await opfs.readRange("takes/rendered.peaks", 0, 4)));
         const renderedOk = renderedStats.frames === 24000 && rendered.length === 24000 &&
           rendered.slice(0, 12000).every((v) => v === 0.25) &&
-          rendered.slice(12000).every((v) => v === -0.5) && renderedPeaks === "CLPK" &&
+          rendered.slice(12000).every((v) => v === -0.5) &&
           livePeak > 0.1;
         log(`rendered a list of two files: ${rendered.length} frames, first ${rendered[0]}, ` +
-            `at the seam ${rendered[12000]}, peaks "${renderedPeaks}", the same file streamed live at ${livePeak}`);
+            `at the seam ${rendered[12000]}, the same file streamed live at ${livePeak}`);
 
         const ok = riff === "RIFF" && frames > 24000 && peak > 0.1 && half > 0.1 && past < 0.01 &&
           joined && longOk && midOk && renderedOk;
@@ -327,8 +321,8 @@
             `filesystem (${size} bytes of RIFF) and diskIn streamed it back at ` +
             `peak ${peak.toFixed(3)}, read back whole mid-take, and from a start frame where it was asked to; ` +
             `a join of two files played at the transport's position, through a locate; ` +
-            `a W64 with its peaks file and an RF64 written and read back; an offline ` +
-            `render read a list of two files from its first frame and wrote its file and peaks`
+            `a W64 and an RF64 written and read back; an offline ` +
+            `render read a list of two files from its first frame and wrote its file`
           : `FAIL: riff "${riff}", ${frames} frames, mid-take ${midSize} bytes, ${midData} in the header, ${midFrames} frames read, peak ${peak}, from half ${half}, from past ${past}, ` +
             `join heard ${[...heard]} with ${foreign.length} foreign (${foreign.slice(0, 4)}), parts ${named}, replaced with a silence of ${replaced} (${quiet} unreplaced), ` +
             `long files ${longOk}, rendered ${renderedOk}`);

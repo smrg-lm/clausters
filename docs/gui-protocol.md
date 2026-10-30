@@ -1425,7 +1425,7 @@ file — the clipboard's segment part: `path` (absolute), `start`, `frames`
 `fade_out` and their shapes, `channels` (the map, list channel to file
 channel, `-1` silent, the identity when absent), and the file's own
 `source_channels`, `source_frames` and `source_rate` — plus `peaks`, the path
-of that file's peaks (the CLPK file a `PeaksOut` writes). A file is a PCM
+of that file's peaks (the CLPK file an application measures with `clausters_core::peaks::measure`; absent, the host summarizes the file's samples). A file is a PCM
 WAV, W64 or RF64; a part at another rate reads between frames, as a join's
 does. A list that cannot be drawn (no parts, a part of no frames, a map of the
 wrong width, a span past its file) is said in the log and left out. A

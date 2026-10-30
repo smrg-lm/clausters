@@ -41,7 +41,6 @@ interface Codec {
         sampleFormat: string,
         dataBytes: number,
     ) => Uint8Array;
-    peaksFile: (frames: number, channels: number, stats: Float32Array) => Uint8Array;
 }
 
 let loaded: Promise<Codec> | null = null;
@@ -151,14 +150,12 @@ export async function probeSoundfile(
 export async function soundFraming(): Promise<{
     header: (path: string, channels: number, sampleRate: number, sampleFormat: string, dataBytes: number) => Uint8Array;
     body: (samples: Float32Array, sampleFormat: string) => Uint8Array;
-    peaks: (frames: number, channels: number, stats: Float32Array) => Uint8Array;
 }> {
     const module = await codec();
     return {
         header: (path, channels, sampleRate, sampleFormat, dataBytes) =>
             module.soundHeader(path, "", channels, sampleRate, sampleFormat, dataBytes),
         body: (samples, sampleFormat) => module.encodeWavFrames(samples, sampleFormat),
-        peaks: (frames, channels, stats) => module.peaksFile(frames, channels, stats),
     };
 }
 

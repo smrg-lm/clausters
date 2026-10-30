@@ -12,15 +12,15 @@ and the spectrogram of the second with ``spectrogram(segments=...)``:
 - **the take edited**: the same file with its halves swapped, the loud half
   first, with a 10 ms fade either side of the seam. Nothing was rendered for
   it. It is two parts over the one file, and its picture is composed by the
-  host from the file's peaks;
+  host from the file's summary;
 - **its spectrogram**, under it: analyzed from the file by the host, only
   for the span on screen, and analyzed again as you zoom and scroll.
 
-The file is rendered offline with its **peaks** beside it: the render writes
-the samples to ``take.w64``, and a ``peaks_out`` on the same signal writes
-``take.peaks``, the summary a waveform is drawn from. The host reads both
-itself, with no server involved in the drawing: it reads the levels of the
-peaks its window resolves, and **samples only under a zoom**. So zoom in with
+The file is rendered offline to ``take.w64`` and named with no peaks, so the
+host summarizes its samples itself, once, with no server involved in the
+drawing (an application measures a peaks file for a take of hours, and a
+part names it as ``peaks``). It draws the levels its window resolves, and
+reads **samples only under a zoom**. So zoom in with
 the wheel until single samples show, and what you see is read from the file
 then, a span at a time. **Check by eye** that the edited take falls from loud
 to quiet at its seam and then swells again, that zooming into the seam
@@ -45,7 +45,7 @@ import sys
 from pathlib import Path
 
 from clausters import Session
-from clausters.defs import DoneAction, Synth, SynthDef, out, peaks_out, sine
+from clausters.defs import DoneAction, Synth, SynthDef, out, sine
 from clausters.defs.ugens import line
 from clausters.gui import spectrogram, view, waveform
 
@@ -57,21 +57,17 @@ FADE = SR // 100      # 10 ms
 OUT = Path(__file__).resolve().parent.parent / "out" / "segments"
 OUT.mkdir(parents=True, exist_ok=True)
 TAKE = str(OUT / "take.w64")
-PEAKS = str(OUT / "take.peaks")
 
 # %% [markdown]
-# ## Render the take, and its peaks beside it
+# ## Render the take
 # A tone that swells over four seconds and frees itself at the end. The render
-# writes its output to the W64; `peaks_out` writes the peaks of the same
-# signal when the synth is freed. The render lasts exactly as long as the
-# synth, so the peaks cover the whole file: the host does not trust peaks of
-# another length.
+# writes its output to the W64 and lasts exactly as long as the synth.
 
 # %%
 def swell() -> SynthDef:
     level = line(0.05, 0.8, SECONDS, done_action=DoneAction.FREE_SELF)
     tone = sine(440.0) * level
-    return SynthDef("swell", out(0.0, peaks_out(tone, path=PEAKS)))
+    return SynthDef("swell", out(0.0, tone))
 
 
 offline = Session.nrt().activate()
@@ -79,16 +75,16 @@ swell().send()
 Synth("swell")
 stats = offline.render(sample_rate=SR, channels=1, path=TAKE, tail=SECONDS)
 offline.deactivate()
-print(f"rendered {stats.frames} frames to {TAKE}, peaks to {PEAKS}")
+print(f"rendered {stats.frames} frames to {TAKE}")
 
 # %% [markdown]
 # ## Two lists over the one file
 # A part names the file by its path, the span it reads, its fades and the
-# file's own shape, and where the file's peaks are.
+# file's own shape.
 
 # %%
 def part(start: int, frames: int, fade_in: int = 0, fade_out: int = 0) -> dict:
-    return {"path": TAKE, "peaks": PEAKS, "start": start, "frames": frames,
+    return {"path": TAKE, "start": start, "frames": frames,
             "fade_in": fade_in, "fade_out": fade_out,
             "source_channels": 1, "source_frames": stats.frames, "source_rate": SR}
 

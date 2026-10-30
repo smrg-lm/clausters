@@ -607,14 +607,12 @@ fn a_render_stepped_in_runs_is_the_render_in_one_call() {
 }
 
 /// **The files a score reads** are its joins' and its `DiskIn`s', once each,
-/// and **the files it writes** its `DiskOut`s' and `PeaksOut`s', a peaks
-/// file with the spectral summary beside it.
+/// and **the files it writes** its `DiskOut`s'.
 #[test]
 fn a_score_names_the_files_its_joins_and_streams_read() {
     let def = r#"{"name":"reads","ugens":[
         {"kind":"DiskIn","inputs":[{"const":0}],"path":"b.wav"},
-        {"kind":"DiskOut","inputs":[{"const":0}],"path":"c.wav"},
-        {"kind":"PeaksOut","inputs":[{"const":0}],"path":"c.peaks"}]}"#;
+        {"kind":"DiskOut","inputs":[{"const":0}],"path":"c.wav"}]}"#;
     let score = OscScore::new([
         (
             0.0,
@@ -643,14 +641,7 @@ fn a_score_names_the_files_its_joins_and_streams_read() {
         score.files(),
         vec!["b.wav".to_string(), "a.wav".to_string()]
     );
-    assert_eq!(
-        score.outputs(),
-        vec![
-            "c.wav".to_string(),
-            "c.peaks".to_string(),
-            "c.spectra".to_string()
-        ]
-    );
+    assert_eq!(score.outputs(), vec!["c.wav".to_string()]);
 }
 
 /// **An offline score plays a list of files at the transport's position**:

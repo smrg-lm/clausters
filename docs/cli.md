@@ -113,7 +113,7 @@ by its byte count as a big-endian `int32`, with timetags counting seconds from
 the start of the render. The render ends at the **last** bundle, so close every
 score with one that makes no sound (a final `/node_free`) to set the duration.
 An output of `-` keeps nothing of the render's output, for a render whose work
-is what its synths write: a `PeaksOut` measuring a file, a `DiskOut`.
+is what its synths write: a `DiskOut`.
 
 **A score drives a transport too, in part.** A render keeps no grid and has no
 clients to tell, so of the transport commands it takes the ones the engine

@@ -101,7 +101,6 @@ const SIGNATURE_DIFFERS: Record<string, string> = {
     Poll: "the static label sits between two wire inputs",
     DiskIn: "path/loop/start are static fields; only chan is an input",
     DiskOut: "path/format are static fields; only signal is an input",
-    PeaksOut: "the channels are one array, the wire's variadic run; path is a static field",
     PV_Kernel: "mag/phase are static fields; the wire takes chain + params",
     PanAz: "numchans leads here and trails on the wire, beside the filled chan",
 };

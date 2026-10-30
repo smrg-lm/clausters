@@ -253,7 +253,7 @@ export const diskIn = (chan: Channel = 0.0, { path, loop = false, start = 0 }: D
  * `"int24"` or `"float"`) and passes `signal` through as its output: a WAV,
  * closed as an RF64 if the take outgrew 4 GB, or a W64 or an RF64 when the
  * path ends in `.w64` or `.rf64`. Record stereo with two
- * `diskOut`s; `peaksOut` beside it writes the take's peaks file.
+ * `diskOut`s.
  *
  * It delivers audio out of the graph, so it is a valid def root on its own:
  * `play(diskOut(sig, { path }))` records **without sounding**. To record and
@@ -269,37 +269,6 @@ export interface DiskOutOptions {
 
 export const diskOut = (signal: Channel, { path, format = "int16" }: DiskOutOptions): Ugen =>
     new Ugen("DiskOut", [signal], { static: { path: String(path), format: String(format) } });
-
-/** What {@link peaksOut} writes to. */
-export interface PeaksOutOptions {
-    /** The peaks file to write, on the server's filesystem. A **static** field. */
-    path: string;
-}
-
-/**
- * Writes the **peaks file** of `signals` at `path`: the overview a waveform of
- * the take is drawn from -- the minimum, the maximum and the mean square of
- * every 256 frames, per channel, and each coarser level -- in the CLPK format
- * the GUI host maps. One channel per signal, so a stereo take is
- * `peaksOut([left, right], { path })`. Passes its first signal through.
- *
- * It goes beside a `diskOut` on the same signals, as two separate UGens that
- * write two separate files; a file recorded without one is measured by
- * rendering `diskIn` into this alone. The file is written when the synth is
- * freed. A writer that fell behind writes no file rather than one that draws
- * what is not there. Like `diskOut` it delivers out of the graph, so it is a
- * valid def root on its own.
- *
- * Beside it, at `path` with its extension made `.spectra`, it writes the
- * take's **spectral summary**: what a spectrogram of more of the take than its
- * samples are worth reading for is drawn from. A window of 1024 frames every
- * 512, each bin the largest it was over every 16 windows, and each coarser
- * level, a byte a bin.
- */
-export const peaksOut = (signals: Channel | Channel[], { path }: PeaksOutOptions): Ugen =>
-    new Ugen("PeaksOut", Array.isArray(signals) ? signals : [signals], {
-        static: { path: String(path) },
-    });
 
 // --- synth-private feedback ---
 

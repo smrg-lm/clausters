@@ -157,7 +157,6 @@ export {
     clipCount,
     diskIn,
     diskOut,
-    peaksOut,
     inCtl,
     in_,
     localIn,
@@ -171,7 +170,7 @@ export {
     sendTrig,
     truePeak,
 } from "./io.ts";
-export type { DiskInOptions, DiskOutOptions, PeaksOutOptions, PollOptions } from "./io.ts";
+export type { DiskInOptions, DiskOutOptions, PollOptions } from "./io.ts";
 
 export {
     bufChannels,
@@ -292,7 +291,6 @@ const INPUT_NAMES_MISALIGNED = new Set([
     "Poll",
     "DiskIn",
     "DiskOut",
-    "PeaksOut",
     "PV_Kernel",
 ]);
 

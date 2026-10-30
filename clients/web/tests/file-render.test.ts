@@ -9,9 +9,7 @@
 //  - a render to a file is the render in memory, sample for sample;
 //  - a list of two files played by `TransportDiskIn` in a render is read from
 //    its first frame -- a stream reads inside the block that needs it, as a
-//    native render's waits for its thread, so nothing is played as silence --
-//    and the `PeaksOut` beside it writes its file, and the spectral summary
-//    beside that.
+//    native render's waits for its thread, so nothing is played as silence.
 
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -23,7 +21,7 @@ import { loadCore } from "../src/base/core.ts";
 import { OscNrtInterface } from "../src/base/connection.ts";
 import type { OscArg } from "../src/base/osc.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
-import { out, peaksOut, sine, transportDiskIn } from "../src/defs/ugens/index.ts";
+import { diskOut, out, sine, transportDiskIn } from "../src/defs/ugens/index.ts";
 import { decodeSoundfile } from "../src/engine/codec.ts";
 import { loadRenderer } from "../src/engine/render.ts";
 import { renderScore } from "../src/render.ts";
@@ -83,16 +81,15 @@ test("a render to a file is the render in memory, sample for sample", async () =
     }
 });
 
-test("a list of files is read from its first frame, and its peaks are written", async () => {
+test("a list of files is read from its first frame", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clausters-file-render-"));
     try {
         const a = join(dir, "a.wav");
         const b = join(dir, "b.wav");
         await writeFile(a, constant(0.25, 12_000));
         await writeFile(b, constant(-0.5, 12_000));
-        const peaks = join(dir, "list.peaks");
         const reader = transportDiskIn(1, 0, 0, 0, 0);
-        const def = new SynthDef("list", out(0, reader), peaksOut(reader, { path: peaks }));
+        const def = new SynthDef("list", out(0, reader));
         const part = (path: string): OscArg[] =>
             [s(path), i(0), i(12_000), i(0), i(0), i(0), f(0), i(0), f(0), i(0)];
         const nrt = new OscNrtInterface();
@@ -113,12 +110,6 @@ test("a list of files is read from its first frame, and its peaks are written", 
         assert.equal(samples[0], 0.25, "the first frame is the list's, not silence");
         assert.ok(samples.slice(0, 12_000).every((v) => v === 0.25), "the first file throughout");
         assert.ok(samples.slice(12_000).every((v) => v === -0.5), "then the second");
-        const head = new TextDecoder().decode((await readFile(peaks)).subarray(0, 4));
-        assert.equal(head, "CLPK");
-        // and the spectral summary beside them
-        const spectra = join(dir, "list.spectra");
-        const tag = new TextDecoder().decode((await readFile(spectra)).subarray(0, 4));
-        assert.equal(tag, "CLSP");
     } finally {
         await rm(dir, { recursive: true, force: true });
     }
@@ -154,21 +145,22 @@ test("a render step writes its file and releases what follows it", async () => {
 test("a render with no path keeps no output and does its work", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clausters-file-render-"));
     try {
-        const peaks = join(dir, "tone.peaks");
+        const written = join(dir, "tone.wav");
         const nrt = new OscNrtInterface();
-        const def = new SynthDef("measured", peaksOut(sine(660), { path: peaks }));
+        const def = new SynthDef("recorded", diskOut(sine(660), { path: written, format: "float" }));
         nrt.addBundle(0, [
             { addr: "/def_send", args: [s("synth"), s(def.dumpDef())] },
-            { addr: "/synth_new", args: [s("measured"), i(1000), i(0), i(0)] },
+            { addr: "/synth_new", args: [s("recorded"), i(1000), i(0), i(0)] },
         ]);
         nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
         const score = [...nrt.score.bytes()].map((b) => b.toString(16).padStart(2, "0")).join("");
         const { renderStep } = await import("../src/steps.ts");
         await renderStep({ score, path: "", rate: RATE, channels: 1, format: "float" });
-        const head = new TextDecoder().decode((await readFile(peaks)).subarray(0, 4));
-        assert.equal(head, "CLPK");
+        const head = new TextDecoder().decode((await readFile(written)).subarray(0, 4));
+        assert.equal(head, "RIFF");
+        // what the DiskOut wrote, and no rendered file
         const { readdir } = await import("node:fs/promises");
-        assert.deepEqual((await readdir(dir)).sort(), ["tone.peaks", "tone.spectra"]);
+        assert.deepEqual(await readdir(dir), ["tone.wav"]);
     } finally {
         await rm(dir, { recursive: true, force: true });
     }

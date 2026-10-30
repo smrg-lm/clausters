@@ -1008,7 +1008,8 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       ``start``, ``frames`` at the list's rate, ``fade_in``/``fade_out`` and
       their ``*_shape``, ``channels`` as the map, the file's
       ``source_channels``/``source_frames``/``source_rate``) and ``peaks``,
-      the file's peaks as ``peaks_out`` writes them. The host draws it from the
+      the file's peaks, as an application measures them (absent, the host
+      summarizes the file's samples). The host draws it from the
       files themselves with no server -- the peaks its window resolves, and
       the samples only under a zoom -- natively from the disk and in a page
       from its storage. Setting a new list is the same take edited: the view

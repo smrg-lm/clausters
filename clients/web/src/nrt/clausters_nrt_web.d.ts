@@ -122,14 +122,6 @@ export function faustBoxFromJson(json: string): number;
 export function faustSignalsFromJson(json: string): Uint32Array;
 
 /**
- * **A peaks file's bytes** from the base buckets a `PeaksOut` reported, in
- * the order it reports them -- bucket-major, channel-minor, `min`, `max`
- * and mean square -- for `frames` frames of `channels` channels: the CLPK
- * pyramid a native `PeaksOut` writes, built by the same core.
- */
-export function peaksFile(frames: number, channels: number, stats: Float32Array): Uint8Array;
-
-/**
  * Reads a soundfile's header out of its bytes, with the decoder `decodeAudio`
  * uses. `ext` and `label` are as there.
  */
@@ -149,15 +141,6 @@ export function soundHeader(path: string, container: string, channels: number, s
  * which is `file_bytes` long in all.
  */
 export function soundShape(head: Uint8Array, path: string, file_bytes: number): SoundShape;
-
-/**
- * **A spectral summary's bytes** from the finest columns a `PeaksOut`
- * reported, a byte of a bin as a float, in the order it reports them
- * (column after column, each channel's bins in turn), for `frames` frames
- * of `channels` channels: the file a native `PeaksOut` writes beside its
- * peaks, built by the same core (`clausters_core::spectra`).
- */
-export function spectraFile(frames: number, channels: number, columns: Float32Array): Uint8Array;
 
 /**
  * Removes the data segment a Faust wasm module carries, so the module can be
@@ -202,7 +185,6 @@ export interface InitOutput {
     readonly encodeWavFrames: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly faustBoxFromJson: (a: number, b: number) => [number, number, number];
     readonly faustSignalsFromJson: (a: number, b: number) => [number, number, number, number];
-    readonly peaksFile: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly probeAudio: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly probed_channels: (a: number) => number;
     readonly probed_codec: (a: number) => [number, number];
@@ -215,7 +197,6 @@ export interface InitOutput {
     readonly soundshape_dataOffset: (a: number) => number;
     readonly soundshape_float: (a: number) => number;
     readonly soundshape_frames: (a: number) => number;
-    readonly spectraFile: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly stripFaustData: (a: number, b: number) => [number, number, number, number];
     readonly wavHeader: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly probed_frames: (a: number) => number;

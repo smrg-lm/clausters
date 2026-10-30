@@ -60,16 +60,6 @@ pub enum Direction {
     /// the host reads the span of a file one of its parts names, and the
     /// engine renders the part from it.
     List,
-    /// The base buckets of a peaks file (`PeaksOut`), drained like a
-    /// `DiskOut` and written by the host once the synth is freed: `start` is
-    /// the frames summarized, `looping` says the synth is gone, and `format`
-    /// is `"lost"` when the ring could not take a bucket.
-    Peaks,
-    /// The finest columns of the spectral summary beside a peaks file
-    /// (`PeaksOut`, `clausters_core::spectra`), a byte of a bin as a float,
-    /// drained and written as [`Direction::Peaks`] is: `path` is the
-    /// summary's, `start` the frames summarized.
-    Spectra,
 }
 
 /// What one open stream wants from the host right now.
@@ -155,9 +145,9 @@ thread_local! {
 /// these over for its length ([`install_files`], `server::render`'s
 /// `page_streams`) and the input streams read through it the moment they
 /// need to: a list stream its next span, a `DiskIn` its next run. What is
-/// rendered is then what a native render renders. The outputs (`DiskOut`,
-/// `PeaksOut`) need nothing of it: the render drains them between two runs,
-/// as the host does live.
+/// rendered is then what a native render renders. The output (`DiskOut`)
+/// needs nothing of it: the render drains it between two runs, as the host
+/// does live.
 pub trait PageFiles {
     /// The length of the file at `path`, in bytes.
     fn size(&self, path: &str) -> Result<u64, String>;
@@ -257,8 +247,8 @@ fn fresh_id() -> u32 {
     })
 }
 
-/// Forgets a stream: what the host calls once it has drained a `PeaksOut`
-/// whose synth is gone and written its file.
+/// Forgets a stream: what the host calls once it has drained one whose
+/// synth is gone.
 pub fn release(id: u32) {
     STREAMS.with(|s| s.borrow_mut().retain(|slot| slot.id != id));
 }
@@ -1507,211 +1497,5 @@ impl TransportDiskIn {
 impl Drop for TransportDiskIn {
     fn drop(&mut self) {
         release(self.id);
-    }
-}
-
-// ---- PeaksOut ----
-
-/// Writes the peaks file of its inputs, the page's half of `dsp::peaks_out`:
-/// the buckets are folded here exactly as natively, and the host drains them
-/// and writes the file through the same core once the synth is freed.
-pub struct PeaksOut {
-    active: Option<PeaksActive>,
-}
-
-struct PeaksActive {
-    id: u32,
-    producer: Producer<f32>,
-    /// The spectral summary's stream, its ring and the columns' fold.
-    spectra_id: u32,
-    columns: Producer<f32>,
-    spectra: clausters_core::spectra::Accumulator,
-    columns_lost: bool,
-    acc: Box<[(f32, f32, f64)]>,
-    channels: usize,
-    filled: usize,
-    frames: u64,
-    lost: bool,
-}
-
-/// The most channels one `PeaksOut` summarizes, as natively.
-const PEAKS_CHANNELS: usize = 64;
-
-/// The ring of a `PeaksOut`'s spectral columns, in floats: 512 a channel a
-/// column, half a minute of stereo between two drains.
-const COLUMN_RING: usize = 1 << 17;
-const PEAKS_EMPTY: (f32, f32, f64) = (f32::INFINITY, f32::NEG_INFINITY, 0.0);
-
-impl PeaksOut {
-    pub fn open(config: &UGenConfig, _ctx: &BuildCtx) -> Self {
-        let Some(path) = config.path.clone() else {
-            tracing::warn!("PeaksOut has no path; it will write nothing");
-            return Self { active: None };
-        };
-        let (producer, consumer) = RingBuffer::new(RING_SAMPLES);
-        let (columns, column_consumer) = RingBuffer::new(COLUMN_RING);
-        let spectra_id = fresh_id();
-        register(Slot {
-            id: spectra_id,
-            direction: Direction::Spectra,
-            path: clausters_core::spectra::beside_peaks(&path),
-            channels: 0,
-            looping: false,
-            start: 0,
-            format: String::new(),
-            end: End::Draining(column_consumer),
-            list: None,
-            offline: None,
-        });
-        let id = fresh_id();
-        register(Slot {
-            id,
-            direction: Direction::Peaks,
-            path,
-            channels: 0,
-            looping: false,
-            start: 0,
-            format: String::new(),
-            end: End::Draining(consumer),
-            list: None,
-            offline: None,
-        });
-        Self {
-            active: Some(PeaksActive {
-                id,
-                producer,
-                spectra_id,
-                columns,
-                spectra: clausters_core::spectra::Accumulator::new(PEAKS_CHANNELS),
-                columns_lost: false,
-                acc: vec![PEAKS_EMPTY; PEAKS_CHANNELS].into_boxed_slice(),
-                channels: 0,
-                filled: 0,
-                frames: 0,
-                lost: false,
-            }),
-        }
-    }
-}
-
-impl PeaksActive {
-    fn push(&mut self) {
-        let n = self.channels * 3;
-        let filled = self.filled.max(1) as f64;
-        match self.producer.write_chunk_uninit(n) {
-            Ok(chunk) => {
-                chunk.fill_from_iter(
-                    self.acc[..self.channels]
-                        .iter()
-                        .flat_map(|&(lo, hi, sq)| [lo, hi, (sq / filled) as f32]),
-                );
-            }
-            Err(_) => self.lost = true,
-        }
-        self.acc[..self.channels].fill(PEAKS_EMPTY);
-        self.filled = 0;
-    }
-
-    /// Folds frame `i` of `inputs` into the spectral column, and pushes the
-    /// column it finishes.
-    fn fold_spectrum(&mut self, inputs: &[&[f32]], i: usize) {
-        let Self {
-            spectra,
-            columns,
-            columns_lost,
-            ..
-        } = self;
-        spectra.push(
-            |c| inputs.get(c).map_or(0.0, |input| at(input, i)),
-            &mut |column| push_column(columns, columns_lost, column),
-        );
-    }
-
-    /// Tells the registry what the host needs to write the files: the peaks
-    /// and the spectral summary.
-    fn publish(&self, ended: bool) {
-        let channels = self.channels;
-        let frames = self.frames;
-        let rows = [(self.id, self.lost), (self.spectra_id, self.columns_lost)];
-        STREAMS.with(|s| {
-            for slot in s.borrow_mut().iter_mut() {
-                let Some(&(_, lost)) = rows.iter().find(|(id, _)| *id == slot.id) else {
-                    continue;
-                };
-                slot.channels = channels;
-                slot.start = frames;
-                slot.looping = ended;
-                if lost {
-                    slot.format = "lost".into();
-                }
-            }
-        });
-    }
-}
-
-/// Pushes a finished spectral column into its ring, a byte as a float, or
-/// notes it lost.
-fn push_column(columns: &mut Producer<f32>, lost: &mut bool, column: &[u8]) {
-    match columns.write_chunk_uninit(column.len()) {
-        Ok(chunk) => {
-            chunk.fill_from_iter(column.iter().map(|b| f32::from(*b)));
-        }
-        Err(_) => *lost = true,
-    }
-}
-
-impl UGen for PeaksOut {
-    fn reset(&mut self) {
-        // A file is the host's and cannot be restarted from here: a `Voices`
-        // node refuses a def that holds one.
-    }
-
-    fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
-        let first = inputs.first().copied().unwrap_or(&[]);
-        for (i, s) in output.iter_mut().enumerate() {
-            *s = at(first, i);
-        }
-        let Some(a) = self.active.as_mut() else {
-            return;
-        };
-        if a.channels == 0 {
-            a.channels = inputs.len().clamp(1, PEAKS_CHANNELS);
-            a.spectra.set_channels(a.channels);
-        }
-        for i in 0..output.len() {
-            a.fold_spectrum(inputs, i);
-            for (c, cell) in a.acc[..a.channels].iter_mut().enumerate() {
-                let x = inputs.get(c).map_or(0.0, |input| at(input, i));
-                cell.0 = cell.0.min(x);
-                cell.1 = cell.1.max(x);
-                cell.2 += f64::from(x) * f64::from(x);
-            }
-            a.filled += 1;
-            if a.filled == crate::dsp::summary::SUMMARY_BUCKET {
-                a.push();
-            }
-        }
-        a.frames += output.len() as u64;
-        a.publish(false);
-    }
-}
-
-impl Drop for PeaksOut {
-    fn drop(&mut self) {
-        // The stream stays registered until the host has drained it and
-        // written the file (`release`); it is only told the synth is gone.
-        if let Some(a) = self.active.as_mut() {
-            if a.filled > 0 && a.channels > 0 {
-                a.push();
-            }
-            let PeaksActive {
-                spectra,
-                columns,
-                columns_lost,
-                ..
-            } = a;
-            spectra.finish(&mut |column| push_column(columns, columns_lost, column));
-            a.publish(true);
-        }
     }
 }

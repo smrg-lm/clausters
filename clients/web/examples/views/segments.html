@@ -33,16 +33,15 @@ that swells from quiet to loud;</li>
 <li><b>the take edited</b>: the same file with its halves swapped, the loud
 half first, with a 10 ms fade either side of the seam. Nothing was rendered
 for it. It is two parts over the one file, and its picture is composed by the
-host from the file's peaks;</li>
+host from the file's summary;</li>
 <li><b>its spectrogram</b>, under it: analyzed from the file by the host, only
 for the span on screen, and analyzed again as you zoom and scroll.</li>
 </ul>
-The file is rendered offline with its <b>peaks</b> beside it: the render
-writes the samples to <code>take.w64</code>, and a <code>peaksOut</code> on the
-same signal writes <code>take.peaks</code>, the summary a waveform is drawn
-from. The host reads both itself, with no server involved in the drawing: it
-reads the levels of the peaks its window resolves, and <b>samples only under a
-zoom</b>. So zoom in with the wheel until single samples show, and what you see
+The file is rendered offline to <code>take.w64</code> and named with no peaks,
+so the host summarizes its samples itself, once, with no server involved in the
+drawing (an application measures a peaks file for a take of hours, and a part
+names it as <code>peaks</code>). It draws the levels its window resolves, and
+reads <b>samples only under a zoom</b>. So zoom in with the wheel until single samples show, and what you see
 is read from the file then, a span at a time. <b>Check by eye</b> that the
 edited take falls from loud to quiet at its seam and then swells again, that
 zooming into the seam shows the 10 ms fades meeting, and that the spectrogram
@@ -59,7 +58,7 @@ first (<code>dist/</code> is git-ignored); serve it over HTTP and open
     </main>
     <!--
       The web sibling of clients/python/examples/views/segments.py, call for
-      call: the same tone rendered offline with its peaks, the same two lists
+      call: the same tone rendered offline, the same two lists
       over the one file, the same window. The files are in the page's storage,
       where the script writes them to the example tree's out/.
 
@@ -68,7 +67,7 @@ first (<code>dist/</code> is git-ignored); serve it over HTTP and open
     -->
     <script type="module">
       import { Session, Synth, SynthDef, gui, opfs } from "../../dist/index.js";
-      import { DoneAction, line, out, peaksOut, sine } from "../../dist/defs/index.js";
+      import { DoneAction, line, out, sine } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (text) => { $("log").textContent += text + "\n"; };
@@ -78,18 +77,15 @@ first (<code>dist/</code> is git-ignored); serve it over HTTP and open
       const FADE = SR / 100;      // 10 ms
 
       const TAKE = "out/segments/take.w64";
-      const PEAKS = "out/segments/take.peaks";
 
-      // ---- render the take, and its peaks beside it ----
+      // ---- render the take ----
       // A tone that swells over four seconds and frees itself at the end. The
-      // render writes its output to the W64; `peaksOut` writes the peaks of
-      // the same signal when the synth is freed. The render lasts exactly as
-      // long as the synth, so the peaks cover the whole file: the host does not
-      // trust peaks of another length.
+      // render writes its output to the W64 and lasts exactly as long as the
+      // synth.
       function swell() {
         const level = line(0.05, 0.8, SECONDS, DoneAction.FREE_SELF);
         const tone = sine(440.0).mul(level);
-        return new SynthDef("swell", out(0.0, peaksOut(tone, { path: PEAKS })));
+        return new SynthDef("swell", out(0.0, tone));
       }
 
       async function run() {
@@ -103,13 +99,13 @@ first (<code>dist/</code> is git-ignored); serve it over HTTP and open
         new Synth("swell");
         const stats = await offline.render({ sampleRate: SR, channels: 1, path: TAKE, tail: SECONDS });
         offline.deactivate();
-        log(`rendered ${stats.frames} frames to ${TAKE}, peaks to ${PEAKS}`);
+        log(`rendered ${stats.frames} frames to ${TAKE}`);
 
         // ---- two lists over the one file ----
         // A part names the file by its path, the span it reads, its fades and
-        // the file's own shape, and where the file's peaks are.
+        // the file's own shape.
         const part = (start, frames, fadeIn = 0, fadeOut = 0) => ({
-          path: TAKE, peaks: PEAKS, start, frames,
+          path: TAKE, start, frames,
           fade_in: fadeIn, fade_out: fadeOut,
           source_channels: 1, source_frames: stats.frames, source_rate: SR,
         });

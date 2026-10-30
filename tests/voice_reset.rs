@@ -121,10 +121,6 @@ const NOT_RESET: &[(&str, &str)] = &[
         "TransportDiskIn",
         "a stream is its I/O thread's; a Voices node refuses the def",
     ),
-    (
-        "PeaksOut",
-        "a file is its writer's; a Voices node refuses the def",
-    ),
     ("BufDelayN", "the line is a pool buffer, the client's"),
     ("BufDelayL", "the line is a pool buffer, the client's"),
     ("BufDelayC", "the line is a pool buffer, the client's"),

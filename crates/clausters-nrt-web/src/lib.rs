@@ -271,34 +271,6 @@ pub fn sound_shape(head: &[u8], path: &str, file_bytes: f64) -> Result<SoundShap
     Ok(SoundShape { layout })
 }
 
-/// **A peaks file's bytes** from the base buckets a `PeaksOut` reported, in
-/// the order it reports them -- bucket-major, channel-minor, `min`, `max`
-/// and mean square -- for `frames` frames of `channels` channels: the CLPK
-/// pyramid a native `PeaksOut` writes, built by the same core.
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = peaksFile))]
-pub fn peaks_file(frames: f64, channels: u32, stats: &[f32]) -> Result<Vec<u8>, String> {
-    use clausters::clausters_core::peaks::MultiPyramid;
-    let mut pyramid = MultiPyramid::empty(frames as usize, channels.max(1) as usize, 256);
-    if !pyramid.write_buckets(0, 256, stats) {
-        return Err("the buckets do not cover the frames summarized".into());
-    }
-    Ok(pyramid.to_bytes())
-}
-
-/// **A spectral summary's bytes** from the finest columns a `PeaksOut`
-/// reported, a byte of a bin as a float, in the order it reports them
-/// (column after column, each channel's bins in turn), for `frames` frames
-/// of `channels` channels: the file a native `PeaksOut` writes beside its
-/// peaks, built by the same core (`clausters_core::spectra`).
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = spectraFile))]
-pub fn spectra_file(frames: f64, channels: u32, columns: &[f32]) -> Result<Vec<u8>, String> {
-    use clausters::clausters_core::spectra::Spectra;
-    let columns: Vec<u8> = columns.iter().map(|v| *v as u8).collect();
-    Spectra::from_columns(frames as usize, channels.max(1) as usize, &columns)
-        .map(|s| s.to_bytes())
-        .ok_or_else(|| "the columns do not cover the frames summarized".into())
-}
-
 /// Encodes interleaved samples into WAV sample bytes, at the same scale and
 /// with the same clamp a native `DiskOut` writes -- which is the whole reason it
 /// is here rather than in the page: a second conversion is a second answer.

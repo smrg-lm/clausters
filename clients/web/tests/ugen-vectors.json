@@ -1868,16 +1868,6 @@
       ]
     },
     {
-      "name": "PeaksOut",
-      "arity": -1,
-      "inputs": [
-        {
-          "name": "signal",
-          "default": 0.0
-        }
-      ]
-    },
-    {
       "name": "Phasor",
       "arity": 5,
       "inputs": [
