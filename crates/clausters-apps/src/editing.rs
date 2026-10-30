@@ -57,7 +57,9 @@ mod coordinator;
 mod door;
 mod exchange;
 pub mod held;
+mod multitrack_operations;
 mod multitrack_runs;
+mod multitrack_walks;
 mod roll_runs;
 
 pub use caller::{Caller, Header, Raised, Ran, Render};
@@ -349,6 +351,11 @@ pub struct Stepped {
 pub struct Editing {
     services: crate::application::services::Services,
     audio_runtime: crate::application::runtime::Runtime<audio::operations::Commit, audio::Outcome>,
+    multitrack_runtime: crate::application::runtime::Runtime<
+        crate::multitrack::operations::Commit,
+        multitrack::Outcome,
+    >,
+    multitrack_waits: std::collections::BTreeMap<u64, crate::application::operations::Prepared>,
     version: i64,
     seats: Vec<Seat>,
     /// The most bytes of takes only the history holds, when there is a limit.
@@ -392,6 +399,8 @@ impl Editing {
         Self {
             services: crate::application::services::Services::new(history, resources),
             audio_runtime: Default::default(),
+            multitrack_runtime: Default::default(),
+            multitrack_waits: Default::default(),
             version: FIRST_VERSION,
             seats: Vec::new(),
             bytes: None,
@@ -550,6 +559,10 @@ impl Editing {
     fn invalidate_server(&mut self, server: ServerInstance) -> Vec<ResourceId> {
         self.audio_runtime
             .invalidate(&mut self.services.resources, server);
+        self.multitrack_runtime
+            .invalidate(&mut self.services.resources, server);
+        self.multitrack_waits
+            .retain(|_, work| work.ticket.target.server != server);
         self.services.resources.invalidate(server)
     }
 
@@ -870,7 +883,28 @@ impl Editing {
         let seat = self.seats.get_mut(member as usize)?;
         let structure = seat.structure;
         let mut outcome = match &mut seat.member {
-            Member::Multitrack(editor) => Outcome::Multitrack(editor.event(event, version)),
+            Member::Multitrack(editor) => {
+                let target = crate::application::operations::Target {
+                    member,
+                    object: editor.session_binding(),
+                    server: seat.server,
+                };
+                let outcome = match self.multitrack_runtime.operations.check_write(target) {
+                    Ok(()) => editor.event(event, version),
+                    Err(reason) => multitrack::Outcome {
+                        turn: Kind::Route,
+                        version,
+                        answer: Some(clausters_editing::conversation::answer(
+                            event.args.get(1).map_or(0, int),
+                            version,
+                            Some(reason.into()),
+                            Vec::new(),
+                        )),
+                        ..Default::default()
+                    },
+                };
+                Outcome::Multitrack(outcome)
+            }
             Member::Audio(editor) => Outcome::Audio(Box::new(editor.event(event, version))),
             Member::Notes(editor) => Outcome::Notes(editor.event(event, version)),
             Member::Points(editor) => Outcome::Points(editor.event(event, version)),
@@ -924,10 +958,26 @@ impl Editing {
                     Member::External { .. } => {}
                 }
             }
-            if pending.is_some()
-                && let Outcome::Audio(audio) = &mut outcome
-            {
-                audio.answer = None;
+            if pending.is_some() {
+                use crate::turn::Turned;
+                match &mut outcome {
+                    Outcome::Audio(outcome) => {
+                        outcome.take_answer();
+                    }
+                    Outcome::Multitrack(outcome) => {
+                        outcome.take_answer();
+                    }
+                    Outcome::Notes(outcome) => {
+                        outcome.take_answer();
+                    }
+                    Outcome::Points(outcome) => {
+                        outcome.take_answer();
+                    }
+                    #[cfg(feature = "notation")]
+                    Outcome::Score(outcome) => {
+                        outcome.take_answer();
+                    }
+                }
             }
             stepped = Some(step);
         }
@@ -983,6 +1033,11 @@ impl Editing {
     /// step nothing could apply is not a step: the cursor goes back, and the
     /// entry is still there.
     pub fn step(&mut self, direction: Direction) -> Stepped {
+        self.prepare_multitrack_walk(direction)
+            .unwrap_or_else(|| self.step_now(direction))
+    }
+
+    fn step_now(&mut self, direction: Direction) -> Stepped {
         let label = match direction {
             Direction::Undo => self.services.histories.undo_label(),
             Direction::Redo => self.services.histories.redo_label(),

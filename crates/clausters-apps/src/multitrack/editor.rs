@@ -102,6 +102,9 @@ pub struct Outcome {
     /// the session there, and saves there from then on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub save_as: Option<String>,
+    /// Captured session and destination after storage confirmation.
+    #[serde(skip)]
+    pub saved: Option<Box<super::operations::Saved>>,
     /// **Whether to close the window** ([`crate::closing`]): a close asked of
     /// it, with nothing to lose or nothing to ask in.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -277,6 +280,9 @@ pub struct MultitrackEditor {
     /// **What each take is on disk**, where the application that holds the
     /// editor resolved it: the file a track's reader reads its regions from.
     takes: HashMap<SourceId, clausters_document::parts::TakeFile>,
+    // A session replacement has its own identity even when it reuses source
+    // ids and file paths. Measurement replies name the original binding.
+    session_binding: i64,
     meters: Vec<Meter>,
     link: Option<i64>,
     transport: Transport,
@@ -387,6 +393,7 @@ impl MultitrackEditor {
             segments: HashMap::new(),
             sequences: HashMap::new(),
             takes: HashMap::new(),
+            session_binding: 0,
             meters: Vec::new(),
             link: None,
             transport: Transport::Absent,
@@ -723,6 +730,73 @@ impl MultitrackEditor {
     /// turn of this editor.
     pub fn set_multitrack(&mut self, multitrack: Multitrack) {
         *self.multitrack() = multitrack;
+    }
+
+    /// Capture the current multitrack, source table and shared sequences.
+    pub(crate) fn session_snapshot(
+        &self,
+        base: Option<&clausters_document::session::Session>,
+    ) -> clausters_document::session::Session {
+        use clausters_document::session::{Location, Session, Source};
+        use clausters_document::{Document, Lifetime};
+        let mut session = base
+            .cloned()
+            .unwrap_or_else(|| Session::new(Document::empty()));
+        session.multitrack = self.multitrack().clone();
+        let (_, placed) = self.read_sources();
+        for (id, source) in placed {
+            if session.sources.contains_key(&id) {
+                continue;
+            }
+            let entry = match source {
+                crate::editing::held::PlacedSource::File(file) => Source::file(
+                    file.path.to_string(),
+                    Lifetime::Session,
+                )
+                .shaped(file.channels, file.frames, file.rate),
+                crate::editing::held::PlacedSource::Parts(_) => continue,
+            };
+            session.sources.insert(id, entry);
+        }
+        // a sequence is written as it now is: a roll may have edited it
+        for (id, source) in session.sources.iter_mut() {
+            if let Location::Events { sequence } = &mut source.location
+                && let Some(shared) = self.sequence(*id)
+            {
+                **sequence = shared.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            }
+        }
+        for source in self.joins_read() {
+            if let (false, Some(parts)) = (
+                session.sources.contains_key(&source),
+                self.segments_of(source),
+            ) {
+                let mut entry = Source::file("", Lifetime::Session);
+                entry.location = Location::Segments { parts };
+                session.sources.insert(source, entry);
+            }
+        }
+        session
+    }
+
+    /// The active session binding, independent of the conversation version.
+    pub(crate) fn session_binding(&self) -> i64 {
+        self.session_binding
+    }
+
+    /// Retire pending results without freeing the retained multitrack.
+    pub(crate) fn invalidate_session_binding(&mut self) {
+        self.session_binding += 1;
+    }
+
+    /// Start a distinct source binding before opening a replacement session.
+    pub(crate) fn replace_session_binding(&mut self) {
+        self.invalidate_session_binding();
+        self.takes.clear();
+        self.sources.clear();
+        self.lengths.clear();
+        self.sequences.clear();
+        self.segments.clear();
     }
 
     /// **The joins a caller holds**, by source -- the segments each is made

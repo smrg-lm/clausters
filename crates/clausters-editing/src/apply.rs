@@ -89,6 +89,14 @@ pub enum Step {
         /// Where it goes.
         to: String,
     },
+    /// Write a prepared document through the endpoint's file layer, and wait
+    /// for confirmation. Paths name disk natively and OPFS in a page.
+    Store {
+        /// Destination path.
+        path: String,
+        /// Immutable UTF-8 document captured at preparation.
+        contents: String,
+    },
 }
 
 /// **A list a render reads**, fed by the endpoint's reader into one mono
@@ -116,6 +124,7 @@ impl Step {
         match self {
             Step::Render(render) => Some(&render.label),
             Step::Measure { label, .. } => Some(label),
+            Step::Store { .. } => Some("Save"),
             _ => None,
         }
     }
@@ -790,6 +799,9 @@ pub fn steps_json(steps: &[Step]) -> Value {
                 }
                 Step::Sync(id) => json!({ "sync": id }),
                 Step::Move { from, to } => json!({"move": {"from": from, "to": to}}),
+                Step::Store { path, contents } => {
+                    json!({"store": {"path": path, "contents": contents}})
+                }
                 Step::Measure { path, peaks, label } => {
                     json!({"measure": {"path": path, "peaks": peaks, "label": label}})
                 }
@@ -853,6 +865,12 @@ pub fn steps_from_json(steps: &Value) -> Vec<Step> {
                 return Some(Step::AwaitDone {
                     command: wait.get("command")?.as_str()?.to_string(),
                     index: wait.get("index").and_then(Value::as_i64).map(|i| i as i32),
+                });
+            }
+            if let Some(stored) = step.get("store") {
+                return Some(Step::Store {
+                    path: stored.get("path")?.as_str()?.to_string(),
+                    contents: stored.get("contents")?.as_str()?.to_string(),
                 });
             }
             if let Some(moved) = step.get("move") {
@@ -992,6 +1010,7 @@ mod tests {
                 Step::Render(r) => format!("render {}", r.path),
                 Step::Measure { peaks, .. } => format!("measure {peaks}"),
                 Step::Move { to, .. } => format!("move {to}"),
+                Step::Store { path, .. } => format!("store {path}"),
             })
             .collect()
     }
@@ -1298,6 +1317,10 @@ mod tests {
                 index: None,
             },
             Step::Sync(9),
+            Step::Store {
+                path: "/sessions/document.json".into(),
+                contents: "{\"channels\":2}\n".into(),
+            },
         ];
         assert_eq!(steps_from_json(&steps_json(&steps)), steps);
     }

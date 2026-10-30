@@ -169,6 +169,8 @@ def test_the_transport_and_the_save_are_calls_to_the_application():
     assert editor.output["starved"] == 0
     assert editor.save("/songs/song.json") == "/songs/song.json"
     assert host.calls[-1][2] == {"do": {"verb": "save", "path": "/songs/song.json"}}
+    editor.retry_pending()
+    assert host.calls[-1][2] == {"do": {"verb": "retry"}}
     assert editor.undo() and host.verbs[-1] == (9, "undo")
     assert editor.split() and host.verbs[-1] == (9, "split")
 

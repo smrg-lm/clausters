@@ -108,12 +108,12 @@ impl Host {
                 self.instance.run.awaiting(),
                 Some((
                     _,
-                    Step::Render(_) | Step::Measure { .. } | Step::Move { .. }
+                    Step::Render(_) | Step::Measure { .. } | Step::Move { .. } | Step::Store { .. }
                 ))
             ) {
                 return;
             }
-            diag::warn!("an offline render or a file move was asked of a host that does neither");
+            diag::warn!("a file operation was asked of a host without a file executor");
             self.instance
                 .run
                 .rendered(Some("this host renders and moves no file".into()));

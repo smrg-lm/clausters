@@ -191,7 +191,7 @@ impl Editing {
 
     /// The step's operation or its files' effects carried out; answers what
     /// it let go of.
-    fn audio_carry_step(
+    pub(in crate::editing) fn audio_carry_step(
         &mut self,
         stepped: Stepped,
         caller: &mut dyn Caller,

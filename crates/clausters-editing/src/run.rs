@@ -96,7 +96,8 @@ impl Runner {
                     wait @ (Step::AwaitDone { .. }
                     | Step::Render(_)
                     | Step::Measure { .. }
-                    | Step::Move { .. }),
+                    | Step::Move { .. }
+                    | Step::Store { .. }),
                 )) => self.awaiting = Some((to, wait)),
             }
         }
@@ -146,7 +147,7 @@ impl Runner {
             self.awaiting,
             Some((
                 _,
-                Step::Render(_) | Step::Measure { .. } | Step::Move { .. }
+                Step::Render(_) | Step::Measure { .. } | Step::Move { .. } | Step::Store { .. }
             ))
         ) {
             return Reply::Unrelated;
@@ -192,11 +193,11 @@ fn server_name(server: Server) -> &'static str {
 ///   pairs a send with its reply send that one last.
 /// - `reply` -- `from`, `addr` and `args` (tagged): answers `{"reply":
 ///   "released"}`, `{"reply": "unrelated"}`, or `{"reply": "refused", "args"}`.
-/// - `rendered` (or `moved`) -- `error` when the render or the move the
-///   queue is held behind failed: answers as `reply` does. Either step is
-///   awaited with no message sent: the endpoint renders its score offline
-///   itself (`awaiting.step.render`), or moves the file
-///   (`awaiting.step.move`).
+/// - `rendered` (or `moved`) -- `error` when the offline step the queue
+///   waits on failed: answers as `reply` does. No message is sent for one:
+///   the endpoint renders offline (`awaiting.step.render`), moves a file
+///   (`awaiting.step.move`), or writes a prepared UTF-8 document
+///   (`awaiting.step.store`, with `path` and `contents`).
 /// - `idle` -- answers `{"idle": bool}`.
 ///
 /// A verb it does not know answers `{"error": ...}`.

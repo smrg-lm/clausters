@@ -491,6 +491,14 @@ class MultitrackEditor(Marking):
         read in time since the engine opened (``starved``)."""
         return self._query("output")
 
+    def retry_pending(self) -> None:
+        """Retry failed session repairs without repeating the operation.
+
+        Call after resolving the I/O failure. Raises `CommandError` if repair
+        fails again. Does nothing if no repairs remain.
+        """
+        self._do("retry")
+
     # ---- saving ----
 
     def save(self, path: "str | None" = None) -> str:

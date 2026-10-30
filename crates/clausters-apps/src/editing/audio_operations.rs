@@ -639,7 +639,7 @@ impl crate::application::walks::WalkHost<audio::operations::Commit> for Editing 
         if self.services.histories.peek_walk(walk.direction).as_ref() != Some(&walk.expected) {
             return Err("the editing order changed while the step was pending".into());
         }
-        let stepped = self.step(walk.direction);
+        let stepped = self.step_now(walk.direction);
         if stepped.stepped {
             Ok(stepped)
         } else {

@@ -226,36 +226,48 @@ impl<C> Operations<C> {
             .any(|(primary, others)| *primary == target || others.contains(&target))
     }
 
+    /// Read the same access policy preparation enforces, for a synchronous
+    /// domain edit that needs no external work.
+    pub fn check_write(&self, target: Target) -> std::result::Result<(), &'static str> {
+        self.check_access(&[target], Access::Write)
+    }
+
+    fn check_access(
+        &self,
+        targets: &[Target],
+        access: Access,
+    ) -> std::result::Result<(), &'static str> {
+        if targets.iter().any(|target| {
+            self.recovering
+                .values()
+                .any(|(primary, others)| primary == target || others.contains(target))
+        }) {
+            return Err("the object is awaiting recovery");
+        }
+        if self.pending.values().any(|pending| {
+            targets.iter().any(|target| {
+                pending.operation.target == *target
+                    || pending.operation.additional_targets.contains(target)
+            }) && match (access, pending.operation.access) {
+                (Access::Snapshot(_), _) | (_, Access::Write) => true,
+                (Access::Write, Access::Snapshot(batches)) => pending.next < batches,
+            }
+        }) {
+            return Err("the object has pending work");
+        }
+        Ok(())
+    }
+
     /// Validate declarations and retain reads and allocations atomically.
     pub fn prepare(
         &mut self,
         resources: &mut Resources,
         operation: Operation<C>,
     ) -> std::result::Result<Ticket, &'static str> {
-        if std::iter::once(&operation.target)
-            .chain(&operation.additional_targets)
-            .any(|target| {
-                self.recovering
-                    .values()
-                    .any(|(primary, others)| primary == target || others.contains(target))
-            })
-        {
-            return Err("the object is awaiting recovery");
-        }
-        if self.pending.values().any(|pending| {
-            std::iter::once(&operation.target)
-                .chain(&operation.additional_targets)
-                .any(|target| {
-                    pending.operation.target == *target
-                        || pending.operation.additional_targets.contains(target)
-                })
-                && match (operation.access, pending.operation.access) {
-                    (Access::Snapshot(_), _) | (_, Access::Write) => true,
-                    (Access::Write, Access::Snapshot(batches)) => pending.next < batches,
-                }
-        }) {
-            return Err("the object has pending work");
-        }
+        let targets: Vec<_> = std::iter::once(operation.target)
+            .chain(operation.additional_targets.iter().copied())
+            .collect();
+        self.check_access(&targets, operation.access)?;
         if !resources.valid(operation.target.server)
             || operation
                 .batches

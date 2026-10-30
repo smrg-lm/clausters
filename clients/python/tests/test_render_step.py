@@ -27,6 +27,33 @@ def _score() -> bytes:
     return nrt.score.bytes()
 
 
+def test_a_document_store_writes_its_snapshot_before_releasing_the_queue(tmp_path):
+    path = tmp_path / "session.json"
+    contents = '{"sources":{},"channels":2}\n'
+    server = _Server()
+    run_steps(server, _native.StepRunner(), [
+        {"send": {"addr": "/before", "args": []}},
+        {"store": {"path": str(path), "contents": contents}},
+        {"send": {"addr": "/after", "args": []}},
+    ])
+    assert path.read_bytes() == contents.encode("utf-8")
+    assert server.sent == ["/before", "/after"]
+
+
+def test_a_failed_document_store_refuses_before_following_messages(tmp_path):
+    import pytest
+
+    from clausters.errors import CommandError
+
+    server = _Server()
+    with pytest.raises(CommandError, match="writing"):
+        run_steps(server, _native.StepRunner(), [
+            {"store": {"path": str(tmp_path / "missing" / "session.json"), "contents": "{}"}},
+            {"send": {"addr": "/after", "args": []}},
+        ])
+    assert server.sent == []
+
+
 def test_a_render_step_writes_its_file_and_releases_what_follows(tmp_path):
     path = tmp_path / "tone.w64"
     server = _Server()

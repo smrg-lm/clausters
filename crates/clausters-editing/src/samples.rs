@@ -224,6 +224,7 @@ mod tests {
             Step::Render(r) => format!("render {}", r.path),
             Step::Measure { peaks, .. } => format!("measure {peaks}"),
             Step::Move { to, .. } => format!("move {to}"),
+            Step::Store { path, .. } => format!("store {path}"),
         };
         let mono = write_steps(7, 1, &payload, 2);
         assert_eq!(

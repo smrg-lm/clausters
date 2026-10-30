@@ -1140,6 +1140,14 @@ opening. And a generator whose reference `defs` does not have keeps what it last
 **rendered** as its floor, which is the same thing a host with no language
 attached shows.
 
+The editor's `save` waits for storage confirmation. It writes the contents
+captured when the save began: an edit made while it waits remains unsaved.
+Failure preserves the previous destination and checkpoint, so saving can be
+tried again. A close that asks to save waits for this confirmation too.
+After resolving a pending repair's I/O failure, `editor.retryPending()`
+retries the repair without repeating the edit or measurement. A failed retry
+keeps the affected session locked; a successful one lets editing continue.
+
 ## Mixing is the multitrack's
 
 A **track** carries its own mix: `muted`, `soloed` and `level`, the fader as

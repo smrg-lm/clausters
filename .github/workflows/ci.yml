@@ -113,6 +113,8 @@ jobs:
       - run: cargo fmt --check --manifest-path clients/gui/Cargo.toml
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo clippy --all-targets --manifest-path clients/gui/Cargo.toml -- -D warnings
+      - name: Isolated application features (without workspace unification)
+        run: crates/clausters-apps/check-features.sh
 
   test:
     name: cargo test (${{ matrix.name }})

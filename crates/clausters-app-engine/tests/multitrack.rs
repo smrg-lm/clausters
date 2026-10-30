@@ -534,7 +534,23 @@ fn a_session_opens_from_its_files_and_saves_relative_paths() {
         3,
         None,
     );
-    assert!(matches!(ran.end, Some(Ok(_))), "{:?}", ran.end);
+    assert!(ran.end.is_none(), "storage confirms asynchronously");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        let landed = app.landed(&mut editing);
+        if let Some(ran) = landed
+            .iter()
+            .find(|ran| ran.token == 3 && ran.end.is_some())
+        {
+            assert!(matches!(ran.end, Some(Ok(_))), "{:?}", ran.end);
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the save never confirmed"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
     let saved: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&saved_to).unwrap()).unwrap();
     assert_eq!(saved["sources"]["9"]["location"]["path"], "take.wav");

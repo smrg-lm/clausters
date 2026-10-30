@@ -1552,6 +1552,28 @@ adds its destination, binding and playback results after this decision.
 History walks still use `WalkHost` and `walks::finish`. Collection remains
 with `Editing`, after the application has retained contents and history.
 
+The multitrack supplies another real application to those services.
+`multitrack::operations` prepares typed session-open, measurement, save and
+history deltas. `editing::multitrack_operations` drives their runtime through
+the existing `Caller`, `start` and `land` doors. Each dispatched batch gets a
+distinct run id; duplicate landings cannot consume the next batch. A session
+binding changes before its sources are published, and a delta of an earlier
+binding cannot attach peaks or confirm a save on the replacement. Measurements
+publish their peaks together after all sources succeed; partial caches remain
+reusable files and do not become document edits. A failed repair remains
+reachable through either client's explicit retry verb.
+
+A session save captures its multitrack, source table and shared sequences.
+`Step::Store` writes that immutable UTF-8 document through `clausters_core::files`
+on the application worker, over disk or OPFS. Confirmation updates the original
+binding's destination and content checkpoint; it does not mark later edits
+clean. Conversation versions do not decide whether a session is dirty.
+`editing::multitrack_walks` supplies `WalkHost` for the multitrack's typed
+runtime; it uses `walks::finish` and the existing atomic history application.
+`crates/clausters-apps/check-features.sh` tests, lints and documents this crate
+outside the workspace, with and without notation, so feature unification
+cannot hide a notation dependency. The lint CI job runs the same check.
+
 Resource collection transfers an unreferenced owned source into retiring storage within `Resources`. A `ReleaseTicket` identifies the exact buffer incarnation and release attempt. Cleanup uses the existing `/buffer_free` wait, or no server effects for stored samples; only a successful acknowledgement returns its id to the allocator. A refused cleanup retains the reservation and error for an explicit retry. Duplicate tickets cannot return an id twice or acknowledge a later reuse. Closing a file commits its removal from the open list, then executes these tracked cleanups; playback and clipboard roots can defer collection. Closing a view leaves the application object intact and prevents a later completion from recreating its playback graph. Execution adapters serialize application batches and cleanup per endpoint, checking the incarnation after waiting for their turn.
 
 `clausters_apps::application::histories::Histories` maps an `Object` (member plus stable object id) to an undo `ScopeId` and the structure registered in that order. `Editing::with_services` accepts this service and `application::resources::Resources` explicitly; its default constructor supplies independent instances. The history engine remains `clausters_document::history::History`. `Editing::join` registers a member's initial object in the context's order under a shared key; `Editing::open_independent` (an audio editor's default) and every further object get an independent order. Selection changes the order being walked without exchanging histories or cloning them into a window. Closing its last observer removes an independent order; shared orders retain the history engine's existing forgotten-structure semantics.

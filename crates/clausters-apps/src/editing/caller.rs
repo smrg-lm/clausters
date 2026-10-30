@@ -138,7 +138,7 @@ impl Editing {
     ) -> Ran {
         match self.member(member) {
             Some(Member::Audio(_)) => self.audio_landed(member, run, result, lease, caller, ids),
-            Some(Member::Multitrack(_)) => self.multitrack_landed(member, result),
+            Some(Member::Multitrack(_)) => self.multitrack_landed(member, run, result, caller, ids),
             _ => refused(),
         }
     }

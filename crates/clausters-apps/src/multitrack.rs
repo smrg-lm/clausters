@@ -37,6 +37,7 @@ use crate::chrome::{self, App};
 
 pub mod dialogs;
 pub mod editor;
+pub mod operations;
 pub mod sources;
 
 /// A multitrack the editor and its holder edit together -- a script's handle

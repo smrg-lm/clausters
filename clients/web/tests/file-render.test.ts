@@ -151,6 +151,30 @@ test("a file a render streams is decoded when it is not a WAV", async () => {
     }
 });
 
+test("a document store writes its snapshot before releasing the queue", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clausters-document-store-"));
+    try {
+        const path = join(dir, "session.json");
+        const contents = '{"sources":{},"channels":2}\n';
+        const sent: string[] = [];
+        const server = { sendMsg: (addr: string) => sent.push(addr) } as unknown as Server;
+        await runSteps(server, new StepRunner(), [
+            { send: { addr: "/before", args: [] } },
+            { store: { path, contents } },
+            { send: { addr: "/after", args: [] } },
+        ]);
+        assert.equal(await readFile(path, "utf8"), contents);
+        assert.deepEqual(sent, ["/before", "/after"]);
+        await assert.rejects(runSteps(server, new StepRunner(), [
+            { store: { path: join(dir, "missing", "session.json"), contents } },
+            { send: { addr: "/unreachable", args: [] } },
+        ]));
+        assert.deepEqual(sent, ["/before", "/after"]);
+    } finally {
+        await rm(dir, { recursive: true, force: true });
+    }
+});
+
 test("a render step writes its file and releases what follows it", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clausters-file-render-"));
     try {

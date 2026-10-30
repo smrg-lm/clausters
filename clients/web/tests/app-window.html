@@ -26,6 +26,7 @@
     -->
     <script type="module">
       import { Session, SoundFile, gui, opfs } from "../dist/index.js";
+      import { Content, Multitrack, Session as SavedSession, Source } from "../dist/multitrack.js";
 
       const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
       const verdict = (text) => {
@@ -114,6 +115,36 @@
           throw new Error(`the staged window left ${now - counted} canvases on the page, not one`);
         }
         log(`staged: the window draws in its element, ${inStage.width}x${inStage.height}`);
+
+        // A real multitrack save goes through the application worker's
+        // storage operation. Read it back from OPFS, including its source
+        // table and the relative file the region reads.
+        const multitrack = new Multitrack();
+        const track = multitrack.tracks.add("stored");
+        track.activeTakeLane.regions.add(0, 2, Content.onto({
+          source: { source: 1, lifetime: "session", generation: 0 },
+          start: 0, duration: 2,
+        }));
+        const saved = new SavedSession();
+        saved.multitrack = multitrack;
+        saved.sources.set(1, Source.file("app_window.wav").shaped(1, frames, rate));
+        await saved.save("out/app_window_session.json");
+        const sessionEditor = await gui.edit(saved, { title: "stored session" });
+        await until(async () => {
+          try {
+            await sessionEditor.save("out/app_window_again.json");
+            return true;
+          } catch (error) {
+            if (!String(error?.message ?? error).includes("pending work")) throw error;
+            return false;
+          }
+        }, "source measurement and session storage");
+        const reopened = await SavedSession.open("out/app_window_again.json");
+        if (reopened.sources.get(1)?.location.path !== "app_window.wav" || reopened.multitrack.tracks.length !== 1) {
+          throw new Error("the stored session did not retain its track and relative source");
+        }
+        await sessionEditor.close();
+        log("stored: the multitrack snapshot and its relative source read back from OPFS");
 
         verdict("PASS: an application's window opened at its declared size and a press on " +
           "it landed where it is drawn; one opened into an element drew there");

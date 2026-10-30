@@ -52,11 +52,23 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
         ready = runner.call("ready")
         messages = ready.get("messages", [])
         awaiting = ready.get("awaiting")
-        if awaiting is None or "render" in awaiting["step"] or "move" in awaiting["step"]:
+        if awaiting is None or any(kind in awaiting["step"] for kind in ("render", "move", "store")):
             for message in messages:
                 server.send_msg(message["addr"], *[step_arg(a) for a in message["args"]])
             if awaiting is None:
                 return
+            if "store" in awaiting["step"]:
+                from pathlib import Path
+                stored = awaiting["step"]["store"]
+                try:
+                    if called_off is not None and called_off.is_set():
+                        raise CommandError("called off")
+                    Path(stored["path"]).write_bytes(stored["contents"].encode("utf-8"))
+                except Exception as error:
+                    runner.call("rendered", error=str(error))
+                    raise CommandError(f"writing {stored['path']} failed: {error}") from error
+                runner.call("rendered")
+                continue
             if "move" in awaiting["step"]:
                 # **A file moved**, on this client's disk: what a save over a
                 # file the take reads does with it.

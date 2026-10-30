@@ -5,7 +5,8 @@
 //! An edit that makes new samples (a stroke, a gain applied, a mix, the peaks
 //! of a file opened with none) is an offline render of a score into a file
 //! ([`Step::Render`]), and a save over a file a list reads moves files
-//! ([`Step::Move`]). An application that holds its engine runs the render on
+//! ([`Step::Move`]). A document save writes its prepared UTF-8 contents
+//! through the same file layer ([`Step::Store`]). The application runs a render on
 //! the core's offline render, in the thread that calls this, and moves the
 //! file in its filesystem. The other steps are a server's (a message, a wait
 //! for its `/done`, a barrier): an application that holds its engine has no
@@ -70,6 +71,8 @@ pub fn carry_while(
             }
             Step::Move { from, to } => clausters_core::files::rename(from, to)
                 .map_err(|e| format!("moving {from} to {to} failed: {e}"))?,
+            Step::Store { path, contents } => clausters_core::files::write(path, contents)
+                .map_err(|e| format!("writing {path} failed: {e}"))?,
             Step::Send(message) => {
                 tracing::warn!(
                     "app engine: {} is a server's message and is not carried out here",
@@ -219,6 +222,26 @@ fn failed(path: &str, e: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_prepared_document_is_written_only_while_live_and_reads_back_exactly() {
+        let path =
+            std::env::temp_dir().join(format!("stored-document-{}.json", std::process::id()));
+        let contents = "{\"sources\":{},\"channels\":2}\n";
+        let steps = [Step::Store {
+            path: path.to_string_lossy().into_owned(),
+            contents: contents.into(),
+        }];
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            carry_while(&steps, &AtomicBool::new(false), |_, _, _| {}),
+            Err("called off".into())
+        );
+        assert!(!path.exists());
+        carry(&steps, |_, _, _| {}).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), contents);
+        std::fs::remove_file(path).unwrap();
+    }
 
     /// **Steps called off are not begun**: a move after the call is not made,
     /// and the answer says the steps were called off.

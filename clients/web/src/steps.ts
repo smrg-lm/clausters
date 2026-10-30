@@ -29,7 +29,8 @@ export type Step =
     | { await: { command: string; index: number | null } }
     | { sync: number }
     | { render: RenderStep }
-    | { move: { from: string; to: string } };
+    | { move: { from: string; to: string } }
+    | { store: { path: string; contents: string } };
 
 /**
  * **How an offline render goes**, told by {@link runSteps}: the frames done and
@@ -130,8 +131,8 @@ export function runSteps(
 
 /**
  * **What a step does on the disk**, by the verb: render a score into a file,
- * move a file, remove one. A test replaces them to record what a run asked
- * for rather than doing it.
+ * move a file, write a prepared document, remove one. A test replaces them to
+ * record what a run asked for rather than doing it.
  *
  * @internal
  */
@@ -141,6 +142,10 @@ export const disk = {
     move: async (from: string, to: string): Promise<void> => {
         const { moveFileAt } = await import("./base/files.ts");
         await moveFileAt(from, to);
+    },
+    store: async (path: string, contents: string): Promise<void> => {
+        const { writeFileAt } = await import("./base/files.ts");
+        await writeFileAt(path, new TextEncoder().encode(contents));
     },
     remove: async (path: string): Promise<void> => {
         const { removeFileAt } = await import("./base/files.ts");
@@ -164,11 +169,23 @@ async function walkSteps(
         };
         const messages = ready.messages ?? [];
         const awaiting = ready.awaiting ?? null;
-        if (awaiting === null || "render" in awaiting.step || "move" in awaiting.step) {
+        if (awaiting === null || "render" in awaiting.step || "move" in awaiting.step || "store" in awaiting.step) {
             for (const message of messages) {
                 server.sendMsg(message.addr, ...message.args.map(stepArg));
             }
             if (awaiting === null) return;
+            if ("store" in awaiting.step) {
+                const stored = awaiting.step.store;
+                try {
+                    if (signal?.aborted) throw new Error("called off");
+                    await disk.store(stored.path, stored.contents);
+                } catch (error) {
+                    call({ verb: "rendered", error: String((error as Error)?.message ?? error) });
+                    throw error;
+                }
+                call({ verb: "rendered" });
+                continue;
+            }
             if ("move" in awaiting.step) {
                 // **A file moved**, where this client's paths are: what a save
                 // over a file the take reads does with it.

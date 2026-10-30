@@ -491,6 +491,15 @@ export class MultitrackEditor implements WindowOver {
     // ---- saving ----
 
     /**
+     * Retry failed session repairs without repeating the operation.
+     * Call after resolving the I/O failure; rejects if repair fails again.
+     * Does nothing if no repairs remain.
+     */
+    async retryPending(): Promise<void> {
+        await this.act("retry");
+    }
+
+    /**
      * **Write the session as the edits have left it**: over the file it was
      * opened from, or, given a `path`, there, which a later `save` then writes
      * over. An untitled one needs a `path` the first time. Every file inside

@@ -2830,6 +2830,11 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
       multitrack behavior; audio keeps its result shape and domain decisions.
     - ⬜ Integrate typed multitrack operations, storage and history walks;
       retire the replaced routes after the real consumer passes.
+      - ✅ Session open/measurement/save and history use their own typed
+        runtime over the shared services; verify fault traces, storage
+        read-back on disk/OPFS, and both client handlers.
+      - ⬜ Decode the remaining multitrack action and handle requests at the
+        boundary and replace internal JSON dispatch with typed calls.
 
   - ⬜ **The multitrack's file lifecycle.** Distinguish no session, a new
     session with no path, and a saved session; an empty multitrack is open.
@@ -4286,6 +4291,18 @@ Every entry carries a checkbox.
   design question this entry carries.
 
 ## Found by use: the running list of fixes
+
+- ⬜ **A failed endpoint walk leaves unissued steps queued** (2026-10-30,
+  reading the document-store adapters). `clausters_editing::run::Runner`
+  deliberately releases its queue after a refusal; its
+  `a_refused_command_releases_the_queue_with_its_reason` test preserves
+  that low-level policy. Python `run_steps` and web `runSteps` raise on
+  failure without retiring the unissued tail. Reusing that runner can then
+  dispatch the previous batch's remaining sends before the new work.
+  Keep the raw runner's policy explicit and give the aborted endpoint walk
+  an explicit retirement boundary. **Acceptance:** reuse one runner after a
+  refused render, store and server wait; none of the failed walk's unissued
+  messages goes out, and independent queued work follows its stated policy.
 
 - ✅ **The audio meter is corrected while the window does not draw it**
   (2026-10-21, the eye pass over the editor with no file). After a file is
