@@ -6,7 +6,7 @@
 //! beside it.
 //!
 //! It is what an application measures a take with: a file opened without
-//! peaks read in blocks ([`file`]), and the samples a render writes folded
+//! peaks read in blocks ([`file()`]), and the samples a render writes folded
 //! in the render's own thread. The engine measures nothing; this is the one
 //! fold, the same natively and in a page.
 

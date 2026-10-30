@@ -22,14 +22,14 @@
 //! `/synth_new -1` would be, because a lane plays again and again and a note's
 //! start and its release must name one node. An entry that leaves unrun comes
 //! back through the garbage FIFO with its commands, and the nodes it would have
-//! made are forgotten there ([`OscServer::forget_unrun`]).
+//! made are forgotten there (`OscServer::forget_unrun`).
 //!
 //! **A lane's MIDI plays as the live input does.** Its messages go through
 //! the channel's `/midi_bind` binding and the translator's own MIDI builders,
 //! as though they had reached the port at their position. What the live path
 //! decides as a message arrives -- which voice a note-off ends, which voices a
 //! controller moves, which instrument a program change picks -- the lane
-//! decides from its data when it is set ([`midi_events`]), since it builds its
+//! decides from its data when it is set (`midi_events`), since it builds its
 //! entries ahead of the position: a note-on and its note-off are one entry
 //! with a release, like a note, and its voice id is the MIDI range's.
 

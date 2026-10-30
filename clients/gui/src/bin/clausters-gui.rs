@@ -43,7 +43,9 @@ use clausters_gui::host::ServerLink;
 #[cfg(feature = "standalone")]
 use clausters_gui::host::bundle;
 #[cfg(feature = "standalone")]
-use clausters_gui::host::embed::{EmbedServer, EmbedSession};
+use clausters_gui::host::embed::EmbedServer;
+#[cfg(all(feature = "standalone", feature = "score"))]
+use clausters_gui::host::embed::EmbedSession;
 
 const USAGE: &str = "\
 usage:
@@ -863,7 +865,7 @@ fn run_score(
 /// **A failed boot is not a failed score.** Editing, undo and save need no
 /// server at all; what needs one is the sound. So a machine with no audio
 /// device still opens the file, and says why nothing plays.
-#[cfg(feature = "standalone")]
+#[cfg(all(feature = "standalone", feature = "score"))]
 fn attach_server(
     host: &mut Host,
     shm: Option<String>,
@@ -915,18 +917,18 @@ fn attach_server(
 /// when none answers, and this is the same posture: a person who opens a
 /// session wants to hear it, not to arrange two processes by hand. A player
 /// the user started themselves (`--server`) is not owned and not killed.
-#[cfg(feature = "standalone")]
+#[cfg(all(feature = "standalone", feature = "score"))]
 struct OwnedPlayer(std::process::Child);
 
 /// What a session's servers hand back: the data plane its windows read, and
 /// the player process it owns, if it started one.
-#[cfg(feature = "standalone")]
+#[cfg(all(feature = "standalone", feature = "score"))]
 type Attached = (
     Option<Arc<dyn clausters_gui::host::BusSource>>,
     Option<OwnedPlayer>,
 );
 
-#[cfg(feature = "standalone")]
+#[cfg(all(feature = "standalone", feature = "score"))]
 impl Drop for OwnedPlayer {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -941,7 +943,7 @@ impl Drop for OwnedPlayer {
 /// attaches to what is there instead of truncating it and taking the samples
 /// with it. Started the other way round it would be the owner, and the session
 /// would refuse to open.
-#[cfg(feature = "standalone")]
+#[cfg(all(feature = "standalone", feature = "score"))]
 fn spawn_player(segment: &Path) -> Result<(OwnedPlayer, String), String> {
     // The binary beside this one, unless an override says otherwise: an
     // editor and its player ship together.
@@ -992,7 +994,7 @@ fn spawn_player(segment: &Path) -> Result<(OwnedPlayer, String), String> {
 
 /// Attaches the player, started here unless one was named, and answers the
 /// process when this host owns it.
-#[cfg(feature = "standalone")]
+#[cfg(all(feature = "standalone", feature = "score"))]
 fn attach_player(
     host: &mut Host,
     segment: &Path,
@@ -1039,7 +1041,7 @@ fn parse_share(v: &str) -> Result<IdShare, String> {
 
 /// Waits for a freshly started player to answer, so nothing is sent into a
 /// socket that is not listening yet.
-#[cfg(feature = "standalone")]
+#[cfg(all(feature = "standalone", feature = "score"))]
 fn await_player(leg: &ServerLeg) -> Result<(), String> {
     use std::time::{Duration, Instant};
 
@@ -1072,7 +1074,7 @@ fn await_player(leg: &ServerLeg) -> Result<(), String> {
 /// Where an editor puts its segment when nobody said: a memory filesystem if
 /// there is one, the temp directory otherwise, named for this process so two
 /// editors never share one.
-#[cfg(feature = "standalone")]
+#[cfg(all(feature = "standalone", feature = "score"))]
 fn default_segment_path() -> String {
     let dir = if Path::new("/dev/shm").is_dir() {
         std::path::PathBuf::from("/dev/shm")
