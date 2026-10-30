@@ -17,6 +17,13 @@
 //! own flag and a child's is its own, so a thaw does not wake a paused file.
 //! Switching files pauses one instance and runs another; nothing is rebuilt.
 //!
+//! **Several files may sound together**, on the one transport
+//! ([`AudioEditorPlayback::play_with`]): a window of takes recorded side by
+//! side plays them as one, each its own instance on the editor's bus, which
+//! sums them. The file in focus still rules the pass -- its frames are what
+//! a locate, a loop and an end are measured in -- and the others run beside
+//! it until a play of one file alone pauses them again.
+//!
 //! # The transport is the editor's own
 //!
 //! One allocated from the caller's id spaces (`Space::Transports`) the first
@@ -93,8 +100,10 @@ pub struct AudioEditorPlayback<M: Medium = Applier> {
     /// The defs already sent, by name.
     sent: BTreeSet<String>,
     files: BTreeMap<u64, File>,
-    /// The file that plays: every other one is paused.
+    /// The file that plays: every other one is paused, but those in `with`.
     focus: Option<u64>,
+    /// The files that sound together with the one in focus.
+    with: BTreeSet<u64>,
     /// The file the window shows, which need not be the one that plays: a
     /// pass goes on while the window looks at another file.
     viewed: Option<u64>,
@@ -146,6 +155,7 @@ impl<M: Medium> AudioEditorPlayback<M> {
             sent: BTreeSet::new(),
             files: BTreeMap::new(),
             focus: None,
+            with: BTreeSet::new(),
             viewed: None,
             passes: Passes::default(),
         }
@@ -315,6 +325,7 @@ impl<M: Medium> AudioEditorPlayback<M> {
             return self.close(ids);
         }
         self.files.remove(&file);
+        self.with.remove(&file);
         let mut steps = Vec::new();
         if self.focus == Some(file) {
             self.focus = None;
@@ -322,6 +333,15 @@ impl<M: Medium> AudioEditorPlayback<M> {
                 steps.extend(self.pause());
             }
             self.passes.end_pause();
+            // what sounded with it pauses with it
+            let beside: Vec<Op> = std::mem::take(&mut self.with)
+                .into_iter()
+                .map(|f| Op::Run {
+                    handle: play_handle(f),
+                    run: false,
+                })
+                .collect();
+            steps.extend(self.apply_plain(beside));
         }
         let op = self.free_file(file, channels);
         steps.extend(self.applier.apply(
@@ -343,7 +363,16 @@ impl<M: Medium> AudioEditorPlayback<M> {
     /// loop straight through, before it rolls, so the first frame played is
     /// the take's and not a silence while the disk catches up.
     pub fn play(&mut self, file: u64, start: u64, pass: Pass) -> Vec<Step> {
-        let mut steps = self.focus_on(file);
+        self.play_with(file, &[], start, pass)
+    }
+
+    /// [`Self::play`] with **the files `with` sounding together** with
+    /// `file`, on the same transport: each runs from the same position, and
+    /// every other file pauses. `file` is the one in focus, so `start` and
+    /// `pass` are in its frames; a file of `with` that is not open is left
+    /// out.
+    pub fn play_with(&mut self, file: u64, with: &[u64], start: u64, pass: Pass) -> Vec<Step> {
+        let mut steps = self.sound(file, with);
         let Some(f) = self.files.get(&file).cloned() else {
             return steps;
         };
@@ -534,6 +563,7 @@ impl<M: Medium> AudioEditorPlayback<M> {
         }
         self.files.clear();
         self.focus = None;
+        self.with.clear();
         self.width = 0;
         self.give_back(ids)?;
         Ok(steps)
@@ -762,7 +792,7 @@ impl<M: Medium> AudioEditorPlayback<M> {
                 ]),
             });
         }
-        if self.focus != Some(file) {
+        if self.focus != Some(file) && !self.with.contains(&file) {
             ops.push(Op::Run { handle, run: false });
         }
         ops
@@ -779,22 +809,45 @@ impl<M: Medium> AudioEditorPlayback<M> {
     /// The steps that bring `file` into focus: the one in focus pauses and
     /// this one runs.
     fn focus_on(&mut self, file: u64) -> Vec<Step> {
-        if self.focus == Some(file) || !self.files.contains_key(&file) {
+        self.sound(file, &[])
+    }
+
+    /// **Brings `file` into focus with `with` sounding beside it**: what runs
+    /// now and did not is run, what ran and does not is paused, and a file
+    /// that goes on running is left alone.
+    fn sound(&mut self, file: u64, with: &[u64]) -> Vec<Step> {
+        if !self.files.contains_key(&file) {
             return Vec::new();
         }
-        // a pause was of the file that leaves focus
-        self.passes.end_pause();
+        let with: BTreeSet<u64> = with
+            .iter()
+            .copied()
+            .filter(|f| *f != file && self.files.contains_key(f))
+            .collect();
+        if self.focus == Some(file) && self.with == with {
+            return Vec::new();
+        }
+        if self.focus != Some(file) {
+            // a pause was of the file that leaves focus
+            self.passes.end_pause();
+        }
+        let was: BTreeSet<u64> = self.focus.iter().chain(&self.with).copied().collect();
+        let now: BTreeSet<u64> = with.iter().copied().chain([file]).collect();
         let mut ops = Vec::new();
-        if let Some(was) = self.focus.replace(file) {
+        for &gone in was.difference(&now) {
             ops.push(Op::Run {
-                handle: play_handle(was),
+                handle: play_handle(gone),
                 run: false,
             });
         }
-        ops.push(Op::Run {
-            handle: play_handle(file),
-            run: true,
-        });
+        for &came in now.difference(&was) {
+            ops.push(Op::Run {
+                handle: play_handle(came),
+                run: true,
+            });
+        }
+        self.focus = Some(file);
+        self.with = with;
         self.apply_plain(ops)
     }
 
@@ -922,6 +975,41 @@ mod tests {
             .sync(7, 13, 1, 80, 48_000.0, 48_000.0, &mut ids)
             .unwrap();
         assert!(same.is_empty(), "nothing moved, nothing sent");
+    }
+
+    /// **Files played together run together**, and a play of one of them
+    /// alone pauses the rest again.
+    #[test]
+    fn files_played_together_run_together() {
+        let mut playback = AudioEditorPlayback::on(Endpoint::default(), 1);
+        let mut ids = spaces();
+        for (file, buffer) in [(1, 10), (2, 11), (3, 12)] {
+            playback
+                .sync(file, buffer, 1, 100, 48_000.0, 48_000.0, &mut ids)
+                .unwrap();
+        }
+        let runs = |steps: &[Step]| -> Vec<OscType> {
+            sent(steps, "/node_run")
+                .iter()
+                .map(|m| m.args[1].clone())
+                .collect()
+        };
+        let together = playback.play_with(1, &[2, 3], 0, Pass::Loop { from: 0, to: 50 });
+        assert_eq!(
+            runs(&together),
+            [OscType::Int(1), OscType::Int(1)],
+            "the two beside the focus run; the focus already did"
+        );
+        assert_eq!(playback.focus(), Some(1));
+        let again = playback.play_with(1, &[2, 3], 0, Pass::Loop { from: 0, to: 50 });
+        assert!(runs(&again).is_empty(), "nothing to switch the second time");
+        let alone = playback.play(2, 0, Pass::Loop { from: 0, to: 50 });
+        assert_eq!(
+            runs(&alone),
+            [OscType::Int(0), OscType::Int(0)],
+            "the others pause; the one played already runs"
+        );
+        assert_eq!(playback.focus(), Some(2));
     }
 
     /// **A second file is made paused, and playing it switches the focus**:

@@ -30,6 +30,13 @@
 //! played last is the focus: another take plays by switching which one runs,
 //! and the same take again by locating it. A stop rolls out the transport's
 //! ramp, so the output's declick falls to zero and nothing clicks.
+//!
+//! **The takes of one navigation group play together.** Lanes linked on one
+//! axis share a position cursor and a playhead, so they are one thing to
+//! play: the space bar over any of them sounds all of them from the group's
+//! cursor, summed on the monitor's output, and every lane draws the one
+//! playhead. A lane at another rate than the one pointed at is left out,
+//! since one transport cannot place both.
 
 use clausters_core::osc::OscType;
 use clausters_editing::apply::Step;
@@ -82,20 +89,53 @@ impl Host {
     /// be written. The take is synced first -- the buffer a join is now and
     /// its length -- so an edit made since the last play is what plays.
     pub fn play_buffer(&mut self, def_id: i32, widget_id: i32, start: u64, pass: Pass) -> bool {
-        // The take is looked up once, and everything the readers need is read
-        // off it: the buffer, its shape and the rate it was recorded at.
-        let Some(samples) = self.samples_of(def_id, widget_id) else {
-            return false;
-        };
-        let Some(bufnum) = samples.source_buffer() else {
-            return false;
-        };
-        let (channels, frames) = samples.sample_shape().unwrap_or((1, 0));
-        let recorded = samples.samples_rate();
         if self.player().is_none() {
             diag::warn!("nothing to play this take through: no audio server");
             return false;
         }
+        let Some(mut steps) = self.sync_take(def_id, widget_id) else {
+            return false;
+        };
+        // The lanes beside it sound with it: each made, or brought up to
+        // date, as the one pointed at is.
+        let mut beside = Vec::new();
+        for id in self.takes_beside(def_id, widget_id) {
+            if let Some(synced) = self.sync_take(def_id, id) {
+                steps.extend(synced);
+                beside.push(id);
+            }
+        }
+        let with: Vec<u64> = beside.iter().map(|&id| id as u64).collect();
+        steps.extend(self.monitor.play_with(widget_id as u64, &with, start, pass));
+        self.run_monitor(steps);
+        // **The play cursor is the transport's position**, drawn by the host
+        // every frame from the engine's own counter -- an anchor of 0 on that
+        // clock is the take's own frame, since the readers play it from the
+        // transport's zero. It wraps where a loop wraps and holds where a pause
+        // holds, with no message per frame. Every lane that sounds draws it.
+        if let Some(transport) = self.monitor.transport() {
+            for id in std::iter::once(widget_id).chain(beside) {
+                self.set_head_clock_of(id, HeadClock::Transport(transport as usize));
+            }
+        }
+        self.set_timeline_playhead(widget_id, 0.0);
+        self.playing = Some(Monitor {
+            widget: widget_id,
+            rolling: true,
+        });
+        true
+    }
+
+    /// **Makes, or brings up to date, the monitor's readers of the take
+    /// widget `widget_id` draws**, answering the steps; `None` when it draws
+    /// no server buffer or the nodes cannot be made. The take is looked up
+    /// once, and everything the readers need is read off it: the buffer, its
+    /// shape and the rate it was recorded at.
+    fn sync_take(&mut self, def_id: i32, widget_id: i32) -> Option<Vec<Step>> {
+        let samples = self.samples_of(def_id, widget_id)?;
+        let bufnum = samples.source_buffer()?;
+        let (channels, frames) = samples.sample_shape().unwrap_or((1, 0));
+        let recorded = samples.samples_rate();
         let engine = if self.server_rate > 0.0 {
             self.server_rate
         } else {
@@ -111,29 +151,47 @@ impl Host {
             engine,
             &mut self.ids,
         );
-        let mut steps = match synced {
-            Ok(steps) => steps,
+        match synced {
+            Ok(steps) => Some(steps),
             Err(e) => {
                 diag::warn!("cannot make the monitor's nodes: {e}");
-                return false;
+                None
             }
-        };
-        steps.extend(self.monitor.play(widget_id as u64, start, pass));
-        self.run_monitor(steps);
-        // **The play cursor is the transport's position**, drawn by the host
-        // every frame from the engine's own counter -- an anchor of 0 on that
-        // clock is the take's own frame, since the readers play it from the
-        // transport's zero. It wraps where a loop wraps and holds where a pause
-        // holds, with no message per frame.
-        if let Some(transport) = self.monitor.transport() {
-            self.set_head_clock_of(widget_id, HeadClock::Transport(transport as usize));
         }
-        self.set_timeline_playhead(widget_id, 0.0);
-        self.playing = Some(Monitor {
-            widget: widget_id,
-            rolling: true,
-        });
-        true
+    }
+
+    /// **The takes that sound with widget `widget_id`'s**: the other views of
+    /// a server buffer in its navigation group, recorded at its rate.
+    pub(crate) fn takes_beside(&self, def_id: i32, widget_id: i32) -> Vec<i32> {
+        let Some(rate) = self.samples_of(def_id, widget_id).map(|s| s.samples_rate()) else {
+            return Vec::new();
+        };
+        self.group_mates(widget_id)
+            .into_iter()
+            .filter(|&id| {
+                self.samples_of(def_id, id)
+                    .is_some_and(|s| s.source_buffer().is_some() && s.samples_rate() == rate)
+            })
+            .collect()
+    }
+
+    /// **How long a pass from widget `widget_id` can run**: the longest of
+    /// the takes that sound together ([`Self::takes_beside`]).
+    pub(crate) fn monitor_frames(&self, def_id: i32, widget_id: i32) -> Option<u64> {
+        let own = self.buffer_frames(def_id, widget_id)?;
+        Some(
+            self.takes_beside(def_id, widget_id)
+                .into_iter()
+                .filter_map(|id| self.buffer_frames(def_id, id))
+                .fold(own, u64::max),
+        )
+    }
+
+    /// Whether widget `id` is one of the takes the monitor sounds: the one
+    /// played, or a lane of its group.
+    pub(crate) fn monitor_holds(&self, id: i32) -> bool {
+        self.playing
+            .is_some_and(|m| m.widget == id || self.group_mates(m.widget).contains(&id))
     }
 
     /// **Stops the monitor**, if it is playing: the stop rolls out its ramp
@@ -178,7 +236,8 @@ impl Host {
     /// the play cursor stands on the position cursor. Rolling, the mark moves
     /// and the music does not.
     pub fn cue_monitor(&mut self, widget: i32, frame: u64) {
-        if self.monitor.focus() != Some(widget as u64)
+        let focus = self.monitor.focus().map(|f| f as i32);
+        if focus.is_none_or(|f| f != widget && !self.group_mates(widget).contains(&f))
             || self.playing.is_some_and(|m| m.rolling)
             || self.player().is_none()
         {

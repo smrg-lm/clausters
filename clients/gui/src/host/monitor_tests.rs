@@ -665,3 +665,72 @@ fn a_set_of_looping_turns_the_loop_switch() {
     set(&mut host, 0);
     assert!(!host.monitor_loops());
 }
+
+/// **The takes of one navigation group play together**: the space bar's
+/// play over one lane sounds every linked lane from the same position, on
+/// the one transport, and each lane draws the one playhead.
+#[test]
+fn linked_lanes_play_together_on_one_transport() {
+    const LINKED: &str = r#"{"type":"window","children":[
+        {"id":50,"type":"signal","view":"trace","buffer":0,"navigable":1,"link":7},
+        {"id":51,"type":"signal","view":"trace","buffer":1,"navigable":1,"link":7},
+        {"id":52,"type":"signal","view":"trace","buffer":2,"navigable":1}
+    ]}"#;
+    let server = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+    let leg = ServerLeg::connect(server.local_addr().unwrap()).unwrap();
+    let mut host = Host::new().with_server(leg);
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_DEF.into(),
+            args: vec![OscType::Int(1), OscType::String(LINKED.into())],
+        }),
+        from(),
+    );
+    let data = std::sync::Arc::new(WaveformData::from_interleaved(&[0.0f32; 16], 1, 64));
+    for id in [50, 51, 52] {
+        host.window_def_mut(1)
+            .and_then(|t| t.find_mut(id))
+            .expect("the waveform")
+            .take_bulk(|| Loaded::Peaks(data.clone()))
+            .then_some(())
+            .expect("the element took the pyramid");
+    }
+    assert_eq!(
+        host.takes_beside(1, 50),
+        vec![51],
+        "the linked lane, not the lone one"
+    );
+    assert!(host.play_buffer(
+        1,
+        50,
+        0,
+        play::Pass::Until {
+            end: Some(16),
+            back: 0
+        }
+    ));
+    let sent = exchange(&mut host, &server);
+    let readers: Vec<&OscMessage> = sent.iter().filter(|m| m.addr == "/graph_addSlot").collect();
+    assert_eq!(
+        readers.len(),
+        2,
+        "a reader for each linked take: {:?}",
+        addrs(&sent)
+    );
+    assert!(
+        sent.iter()
+            .any(|m| m.addr == "/node_run" && m.args.last() == Some(&OscType::Int(1))),
+        "the linked take runs beside the one played: {:?}",
+        addrs(&sent)
+    );
+    assert_eq!(one(&sent, "/transport_play").args[0], OscType::Int(MONITOR));
+    for id in [50, 51] {
+        assert_eq!(
+            host.head_clock_of(1, Some(id)),
+            HeadClock::Transport(MONITOR as usize),
+            "lane {id} draws the monitor's playhead"
+        );
+        assert!(host.monitor_holds(id));
+    }
+    assert!(!host.monitor_holds(52), "the lone lane is not played");
+}

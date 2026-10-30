@@ -223,6 +223,13 @@ its plan; the plan is where its acceptance is read.
 
 ### Waiting on a decision
 
+- ⬜ **`S24` — a buffer's summary is read like its samples** *(root
+  `PLAN.md`, S track)*. A stateless `/buffer_summary` read beside
+  `/buffer_getRange`, for a host that cannot map the engine's memory (a page,
+  a remote server) to draw a server buffer standing still without reading
+  every sample back. **The decision:** whether it is worth a command, and
+  whether `plot` is one of its users, and which example shows it.
+
 - ⬜ **The audio editor's Edit menu names one entry per kind of edit**
   *(`crates/clausters-apps/PLAN.md`, Future directions)*. Apply gain envelope
   does not scale to a second process, and several effects per file need

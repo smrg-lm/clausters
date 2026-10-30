@@ -653,7 +653,7 @@ impl Gestures {
         }
         let over = hit(host, ctx, cx, cy).map(|Hit { id, .. }| id);
         if let Some(loaded) = host.monitor()
-            && over.is_none_or(|id| id == loaded.widget)
+            && over.is_none_or(|id| host.monitor_holds(id))
         {
             let mark =
                 position_cursor(host, loaded.widget).unwrap_or(start_of(host, loaded.widget).0);
@@ -669,7 +669,7 @@ impl Gestures {
         // addressed by pointing, and over nothing it is the window's own verb.
         let id = over.or_else(|| sole_take(host, ctx.def_id))?;
         let (_, span) = start_of(host, id);
-        let frames = host.buffer_frames(ctx.def_id, id)?;
+        let frames = host.monitor_frames(ctx.def_id, id)?;
         // **Where it starts and how it ends are the crate's rule**, the one an
         // audio editor's application reads too: a selection plays its span, no
         // selection plays from the position cursor, and the loop switch (`L`)
@@ -693,7 +693,7 @@ impl Gestures {
         let looping = host.toggle_monitor_loop();
         if let Some(loaded) = host.monitor()
             && loaded.rolling
-            && let Some(frames) = host.buffer_frames(ctx.def_id, loaded.widget)
+            && let Some(frames) = host.monitor_frames(ctx.def_id, loaded.widget)
         {
             let (_, span) = start_of(host, loaded.widget);
             let (_, pass) = space(

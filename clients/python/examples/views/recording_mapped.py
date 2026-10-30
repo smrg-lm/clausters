@@ -1,45 +1,23 @@
 #!/usr/bin/env python3
-"""The web page's window, natively -- and **nothing about the audio crosses the
-wire**.
+"""Four takes drawn while they are recorded, natively.
 
-`clients/web/examples/views/recording.html` draws four takes as they record,
-a finished take read back whole, and one peer's edit landing in a lane. A
-page can map nothing, so each of those three pictures is something it has to
-**ask the server for**: the overview of a recording as it is written
-(``/buffer_stream``), the samples of a take that stands still, read back and
-summarized by the host (``/buffer_getRange``), and the span another peer
-edited, read back the same way.
+The Python twin of ``clients/web/examples/views/recording.html``.
 
-This is the same window with the same three things happening, on a host that
-**maps the segment** -- and every one of them is a local read:
+**Record 4 takes** plays four glissandi and records each into its own buffer.
+This host shares memory with the server, so it reads the buffers directly as
+they are written; nothing is sent over the wire. A page cannot share that
+memory, so there the server sends a summary of what was just recorded
+(``/buffer_stream``). The picture is the same either way.
 
-- **A recording** is followed by the buffer's *write frontier*, one number the
-  engine publishes in the directory row, with the samples already being the
-  cells the host draws.
-- **The finished take** is drawn from the samples the host maps, summarized
-  where they lie: a minute of stereo -- 23 MB -- is never copied, and the
-  server measures no peaks.
-- **A peer's edit** arrives as the span and nothing else (``/buffer_touch``):
-  the samples under the host are already the new ones, so what it does is
-  re-summarize those buckets. Here the edit is a write the server makes into
-  the buffer (`clausters.Buffer.fill`, zeros over the span of a mono take),
-  announced by this script; a local peer
-  that maps the region can equally store into the cells and announce the same
-  span, which is what ``examples/shm_samples.py`` shows.
+**Zoom** with the wheel and **pan** by dragging, over the ruler or any lane.
 
-So the two files are one experiment run twice: **the route differs and the
-drawing does not.** Open them side by side.
+The second button stands for another client editing a take: it silences the
+middle of the first one and says which span changed (``/buffer_touch``). The
+host re-summarizes only that span.
 
-The two lanes' groups are worth a look before anything else happens: the four
-takes share one navigation group and one ruler, and the long take has its own,
-because a group is one window in samples over every lane in it and this take is
-eight times longer than those. Zoom (wheel) and pan (drag) work on whichever
-ruler or lane the pointer is over.
-
-Needs an audio device, a display and a GPU adapter. The buttons drive it, so
-nothing has to be run cell by cell -- though it is organized as ``# %%`` cells
-too, so it steps under Shift+Enter with the window staying up between them.
-With the client importable (``pip install -e ./clients/python``)::
+Needs an audio device, a display and a GPU adapter. With the client importable
+(``pip install -e ./clients/python``), run it as a script, or step through its
+``# %%`` cells::
 
     python clients/python/examples/views/recording_mapped.py
 """
@@ -53,19 +31,17 @@ from clausters.defs import control
 from clausters.defs.ugens import line, out, record_buf, sine
 from clausters.gui import button, label, panel, timeruler, view, waveform
 
-#: The four takes, and the finished one beside them.
+#: The four takes.
 TAKES = 4
 SECONDS = 8.0
-LONG_SECONDS = 60.0
 RATE = 48_000.0
-#: The navigation groups: one axis for the takes, one for the long take.
-LANES, LONG = 1, 2
+#: The navigation group the four lanes and their ruler share.
+LANES = 1
 
 # %% [markdown]
 # ## The server, the host and the segment
-# One server owning a segment and one host mapping it. Every buffer lives in a
-# region beside that segment, and -- since the server writes one -- a summary
-# beside the region.
+# One server owning a segment and one host mapping it: every buffer lives in a
+# region beside that segment, and the host reads it there.
 
 # %%
 session = Session.live()
@@ -74,33 +50,13 @@ gui = session.gui()
 print(f"audio server on segment {server.shm}")
 
 takes = [Buffer.alloc(int(SECONDS * RATE), 1, server=server) for _ in range(TAKES)]
-long_take = Buffer.alloc(int(LONG_SECONDS * RATE), 2, server=server)
-
-# %% [markdown]
-# ## Fill the long one without sending a sample
-# `clausters.Buffer.fill` says *how many* samples to write rather than carrying
-# them, so a square wave across 23 MB is a dozen numbers on the wire. The runs
-# land on whole buckets of the summary (256 frames): a boundary falling inside
-# a bucket gives that bucket both values, and the picture a full-height column
-# at every step -- true, and a distraction here.
-
-# %%
-STEPS = 12
-step_frames = (long_take.frames // STEPS // 256) * 256
-long_take.fill(*[
-    (i * step_frames * long_take.channels,
-     step_frames * long_take.channels,
-     (1 if i % 2 == 0 else -1) * (0.2 + 0.7 * (i / (STEPS - 1))))
-    for i in range(STEPS)
-])
 
 # %% [markdown]
 # ## The window
 # The page's, lane for lane, plus the buttons that drive it. `fills` is the one
 # thing the host cannot work out for itself: it says *these samples are being
 # written*, so a lane stops at the frontier and leaves the axis past it empty
-# rather than inking the buffer's own zeros. The finished take carries none --
-# it is written everywhere, and that is a different picture.
+# rather than inking the buffer's own zeros.
 
 # %%
 win = view(
@@ -113,9 +69,6 @@ win = view(
       for i, t in enumerate(takes)],
     # Under the lanes, so its marks point **up** at them.
     timeruler(ruler="time", dir="up", sample_rate=RATE, link=LANES, h=22),
-    waveform(name="long", buffer=long_take.bufnum, sample_rate=RATE,
-             ruler="off", ruler_y="off", link=LONG),
-    timeruler(ruler="time", dir="up", sample_rate=RATE, link=LONG, h=22),
     title="the page's window, mapped", w=980, h=560, layout="col").open()
 
 # %% [markdown]

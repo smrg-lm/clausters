@@ -761,6 +761,21 @@ impl Host {
 
     /// The distinct window roots showing any member of group `key` -- the
     /// windows a group mutation must repaint.
+    /// **The other members of widget `id`'s navigation group** in its own
+    /// window, in the window's order; none for a widget alone on its axis.
+    pub(crate) fn group_mates(&self, id: i32) -> Vec<i32> {
+        let members = self.timeline_members();
+        let Some(me) = members.iter().find(|m| m.id == id) else {
+            return Vec::new();
+        };
+        let (root, key) = (me.root, me.key);
+        members
+            .iter()
+            .filter(|m| m.root == root && m.key == key && m.id != id)
+            .map(|m| m.id)
+            .collect()
+    }
+
     fn timeline_roots(&self, key: GroupKey) -> Vec<i32> {
         let mut roots = Vec::new();
         for m in self.timeline_members() {

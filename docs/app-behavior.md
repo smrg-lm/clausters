@@ -29,7 +29,11 @@ code that keeps it lives.
   share its time axis, its play cursor and its history, because what they
   show is the same thing. Sharing is by **navigation group**: a widget joins
   its own group unless it declares a `link` (`host::timeline`), and a pane's
-  bodies are members of the pane's group.
+  bodies are members of the pane's group. **Takes linked on one axis play
+  together**: the host's monitor sounds every server buffer of the group
+  from the group's cursor, on one transport, and every lane draws the one
+  playhead (`host::play`). Played one at a time, each lane kept a playhead
+  of its own and the others stood scattered over the axis.
 - **A transport belongs to an object.** Each audio editor plays on a
   transport of its own (the clients' `AudioPlayback`, one per editor), so
   playing one window moves the play cursor and the meter of that window only.
