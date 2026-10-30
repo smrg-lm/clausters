@@ -128,8 +128,7 @@ already carry it.
 
 - ⬜ **A wrap on a block's edge can play a block of silence nobody counts**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
-  load closing the playback tests' entry; rare, and before `X34` only if it
-  comes back.
+  load closing the playback tests' entry; rare.
 
 - ⬜ **`edit(SoundFile.empty(...))` is refused, though both books say it
   opens silence** *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found
@@ -302,26 +301,13 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **The second turn: an editing application holds its engine**,
-  milestone `X34` *(`crates/clausters-apps/PLAN.md`,
-  "The second turn: an editing application holds its engine")*. **Taken next**, on the user's word: a copy and paste pattern
-  that reaches hours hangs the audio editor, because each paste flattens the
-  clipboard into the list and the whole list is sent to the server as one
-  message that outgrows a packet. It revises the first turn
-  ("The turn: an application's takes live on disk", `X28` and `X29`), whose
-  surviving work carries over. In that order, now that the application
-  holds its engine, its take is shared blocks and it reads and draws its
-  takes: the multitrack on the same modules, its parts left in order in
-  its plan, its parts done and its by-ear and by-eye pass left.
-  Before `X25`, which should port this lifecycle.
-  **Related:** found moving the editor onto files, and taken
-  after `X32`: the apps plan's "A page decodes no compressed file when it
-  opens" (Found by use). After it: the apps plan's "Working on one channel of a take" (Future
-  directions), the channel a paste lands from.
-
-  | Order | Milestone | Plan |
-  |---|---|---|
-  | 1 | `X34` — The multitrack over the same modules | `crates/clausters-apps/PLAN.md` |
+- ⬜ **`X25` — port the proven lifecycle to the other existing editors**
+  *(`crates/clausters-apps/PLAN.md`, "The milestones")*. **Taken next**:
+  the audio editor's lifecycle, on the application that holds its engine
+  since `X34`, carried to the other editors. **Related:** the apps plan's
+  "A page decodes no compressed file when it opens" (Found by use), and
+  after it "Working on one channel of a take" (Future directions), the
+  channel a paste lands from.
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable

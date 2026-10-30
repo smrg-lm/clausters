@@ -3390,7 +3390,9 @@ over the opened file) carries over.
   the editor, a file that only keeps an edit in progress adds nothing. What
   a file of the editor's own would be for is in Future directions
   ("Application crash recovery and persistent undo").
-- ⬜ **X34 - The multitrack over the same modules.** What `X29` asked
+- ✅ **X34 - The multitrack over the same modules.** *(Closed 2026-10-30
+  with the user's by-ear and by-eye pass over `edit_multitrack` on the
+  current tree.)* What `X29` asked
   (sessions of hour-long takes opening in the time of their peaks, a comping
   pass of quarter-second parts with no click or underrun), on the modules of
   `X30` to `X32`, regions with their fades and crossfades read by the
