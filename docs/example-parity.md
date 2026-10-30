@@ -111,6 +111,13 @@ to.
 | — | `item` | `idiom` — an event of a sequence by its index. Python subscripts the live collection (`notes.events[1]`), which is no call; TypeScript has no `__getitem__`, so the same reach is `events.item(1)` |
 | — | `setSpan` | `idiom` — setting a transport's span. A script assigns the property (`t.span = (1.0, 3.0)`), which is no call; in a page the setter reaches the engine and the host and has to be awaited, and a setter cannot be, so the same act is a method (`bindings.md`, the client surface's two shapes) |
 | — | `selected` | `idiom` — what a roll's or a multitrack's hand marked. A script reads the property, which asks the host and blocks for the answer; a page awaits the answer, so the same read is a method. The audio editor's `selected` reads no host and is a property in both |
+| — | `files` | `idiom` — the files open in an audio editor: a read of the application the GUI host holds. A script reads the property, which asks the application and blocks for the answer; a page awaits it, so the same read is a method (`bindings.md`, the client surface's two shapes) |
+| — | `dirty` | `idiom` — whether the file in focus has edits it does not hold: a read of the application the GUI host holds. A script reads the property, which asks the application and blocks for the answer; a page awaits it, so the same read is a method (`bindings.md`, the client surface's two shapes) |
+| — | `undoLabel` | `idiom` — what the file's undo would take back: a read of the application the GUI host holds. A script reads the property, which asks the application and blocks for the answer; a page awaits it, so the same read is a method (`bindings.md`, the client surface's two shapes) |
+| — | `sampleRate` | `idiom` — the rate of the file in focus: a read of the application the GUI host holds. A script reads the property, which asks the application and blocks for the answer; a page awaits it, so the same read is a method (`bindings.md`, the client surface's two shapes) |
+| — | `span` | `idiom` — an audio editor's transport's span: a read of the application the GUI host holds. A script reads the property, which asks the application and blocks for the answer; a page awaits it, so the same read is a method (`bindings.md`, the client surface's two shapes) |
+| — | `parts` | `idiom` — the parts an audio editor's take is made of: a read of the application the GUI host holds. A script reads the property, which asks the application and blocks for the answer; a page awaits it, so the same read is a method (`bindings.md`, the client surface's two shapes) |
+| — | `setLayer` | `idiom` — the layer an audio editor's hand edits. A script assigns the property (`editor.layer = "take"`), which is no call; in a page the setter reaches the application and has to be awaited, so the same act is a method, as `setSpan` is |
 
 ## What one side of a pair says alone
 
@@ -137,6 +144,12 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | python | `MonotonicTimebase` | nothing here plays, so the script boots no server, and with no server there is no sample clock for its session's clocks: it names wall-clock time. A page's session always has its in-page engine, whose clock it keeps |
+
+### `editors/audio_lifecycle`
+
+| Only in | Call | Why |
+|---|---|---|
+| web | `file` ×5 | the file in focus, read of the application the GUI host holds: the script reads the property (`editor.file`), which asks the application and blocks for the answer; a page awaits it, so the same read is a method. Declared per pair rather than in the idiom table because `Source.file` shares the name |
 
 ### `transport/conductor`
 
@@ -480,6 +493,7 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | web | `set` ×2 | an entry of the saved session's source table: the table is a `Map`, so the page sets it with `Map.set`, which the audit reads as a node's `set`. The script assigns a dict key, which is no call |
+| web | `file` | the file in focus, read as in `editors/audio_lifecycle` |
 
 ### `basics/verbs`
 

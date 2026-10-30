@@ -5171,12 +5171,20 @@ sound.
   application to tell the page each change of the window's, or reads that are
   promises.
 
-- ⬜ **`editors/span_selected` differs from its twin outside the
+- ✅ **`editors/span_selected` differs from its twin outside the
   multitrack** *(found 2026-10-29, auditing the pair after rewriting its
   multitrack cells)*. `scripts/audit-example-pairs.py` reports `job` at the
   page's start and `file` and three `span` reads in the audio cells, none of
   them declared in `docs/example-parity.md`; they predate the multitrack's
   rewrite.
+  **Fixed 2026-10-30**, with `editors/audio_lifecycle` and
+  `editors/edit_audio`, which differed the same way and had no entry. The
+  reads of an audio editor's application (`files`, `dirty`, `undoLabel`,
+  `sampleRate`, `span`, `parts`) and the `layer` setter are properties in a
+  script and awaited methods in a page, the shape `selected` and `setSpan`
+  already declare, and are idiom rows now; `file` is declared per pair,
+  since `Source.file` shares the name. `job` was the page's own helper
+  parameter, read as a client name, and is renamed.
 
 - ⬜ **`seq.html` fails in Firefox on a note's start** *(found 2026-10-29,
   the Firefox pass over the pages)*: `note starts[1] = 0.418s, expected
