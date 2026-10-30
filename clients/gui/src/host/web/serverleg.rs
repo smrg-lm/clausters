@@ -225,6 +225,12 @@ impl WebApp {
             return;
         }
         match msg.addr.as_str() {
+            // A node was made or freed (on any client): the trees are asked
+            // for now rather than on the next beat, as a window does.
+            "/node_start" | "/node_end" => {
+                let open = self.visible_defs();
+                self.query_trees(&open);
+            }
             "/bus_stream.reply" => {
                 if !self.stream_seen {
                     self.stream_seen = true;

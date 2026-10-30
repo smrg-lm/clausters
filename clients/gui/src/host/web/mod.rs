@@ -503,7 +503,7 @@ impl WebApp {
     /// this set, which is what makes a scrolled-away component free.
     ///
     /// A tab in the background shows nothing, so it has no visible canvas.
-    fn visible_defs(&self) -> Vec<i32> {
+    pub(super) fn visible_defs(&self) -> Vec<i32> {
         if page_hidden() {
             return Vec::new();
         }
@@ -721,7 +721,8 @@ impl WebApp {
         }
     }
 
-    /// One beat of the read-back: what every bound widget writes, asked for.
+    /// One beat of the read-back: what every bound widget writes, and the
+    /// tree every `nodetree` shows, asked for.
     ///
     /// Of the visible canvases: one scrolled away or in a hidden tab is read
     /// back by nobody until it is seen again.
@@ -733,9 +734,27 @@ impl WebApp {
         for msg in self.host.read_back_asks(&open) {
             let _ = server.send(msg);
         }
+        for def in &open {
+            if self.host.reads_back(&[*def]) {
+                self.host.count(*def, Count::ReadBack);
+            }
+        }
+        self.query_trees(&open);
+    }
+
+    /// **The trees the `nodetree`s of `open` show, asked for**
+    /// ([`node_trees`](crate::host::node_trees)): on the read-back's beat,
+    /// and at once when a node starts or ends.
+    pub(super) fn query_trees(&mut self, open: &[i32]) {
+        let Some(server) = self.host.server() else {
+            return;
+        };
+        for msg in self.host.tree_asks(open) {
+            let _ = server.send(msg);
+        }
         for def in open {
-            if self.host.reads_back(&[def]) {
-                self.host.count(def, Count::ReadBack);
+            if !self.host.tree_groups(&[*def]).is_empty() {
+                self.host.count(*def, Count::TreeQuery);
             }
         }
     }

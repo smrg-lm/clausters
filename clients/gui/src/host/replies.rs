@@ -99,6 +99,15 @@ pub(crate) trait Front {
             }
             return true;
         }
+        // A `nodetree`'s group, read back ([`node_trees`](super::node_trees)).
+        if let Some(showing) = self.host_mut().read_tree(msg) {
+            for def_id in showing {
+                if self.window_open(def_id) {
+                    self.redraw_window(def_id);
+                }
+            }
+            return true;
+        }
         self.host_mut().on_server_reply(from, msg);
         // **What a download brought**, counted on the windows waiting on it
         // (`/gui_activity`).

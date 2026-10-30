@@ -13,8 +13,8 @@
 //! The host asks; it is not told. The server's answer is its mirror of the
 //! node, which a `/node_set` from any client, an edit in a plugin's own window
 //! and a loaded state all update -- so one question covers every way a value
-//! changes. A control mapped to a bus reads what was last set on it rather
-//! than what the bus carries, which is what the mirror knows.
+//! changes. A control mapped to a control bus is answered with what the bus
+//! carries, so a widget bound to it follows the bus.
 //!
 //! A node is read only once the server has said it is there -- a
 //! `/node_query`, which answers a node that is not with a state rather than a

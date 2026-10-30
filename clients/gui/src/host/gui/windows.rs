@@ -26,7 +26,6 @@ use crate::spectrogram::Stft;
 use crate::view::Renderers;
 
 use super::app::{App, WindowState};
-use super::serverleg::tree_has_node_tree;
 use super::{Loop, NODETREE_POLL, PLACEHOLDER_ORIGIN};
 
 /// What a `/gui_def` builds for a window that already exists: the bulk slots,
@@ -214,7 +213,11 @@ impl App {
         }
         // A node-tree view drives the client leg: register for notifications and
         // query at once, so it shows the tree without waiting for the first poll.
-        if self.host.window_def(id).is_some_and(tree_has_node_tree) && self.host.server().is_some()
+        if self
+            .host
+            .window_def(id)
+            .is_some_and(crate::host::node_trees::shows_node_tree)
+            && self.host.server().is_some()
         {
             self.ensure_notify();
             self.requery_node_trees(&[id]);

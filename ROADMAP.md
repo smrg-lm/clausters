@@ -134,11 +134,10 @@ already carry it.
   buffer** *(root `PLAN.md`, Found by use)*. The narrower race left after the
   gain preview's fix; no client writes before an allocation's `/done`.
 
-- ⬜ **A `nodetree` in a page never refreshes**, **The host's wasm exports
-  the MIDI crate's C ABI, which no page calls**, and **A press in a
-  multitrack lands off its mark again at a density of 0.8 — seen only in the
-  automated browser** *(`clients/gui/PLAN.md`, Found by use)*. Three
-  differences between the native host and the page.
+- ⬜ **The host's wasm exports the MIDI crate's C ABI, which no page
+  calls** and **A press in a multitrack lands off its mark again at a density
+  of 0.8 — seen only in the automated browser** *(`clients/gui/PLAN.md`,
+  Found by use)*. Two differences between the native host and the page.
 
 - ⬜ **A MIDI file and an OSC score are sources, as a sound file is, and a
   session holds neither inside** *(`crates/clausters-document/PLAN.md`, Found

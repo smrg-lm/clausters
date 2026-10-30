@@ -56,6 +56,8 @@ pub mod bind;
 // The other way of a binding: what a bound widget writes, asked for and read
 // back onto it.
 pub mod readback;
+// A `nodetree`'s tree, asked for and read back the same way in both fronts.
+pub mod node_trees;
 // What the host says to itself: one door for the platform log, in both builds,
 // and the debug channel that also lands on a window's status bar. The status
 // bar beside it is what the host says to the person at the window; this is the
@@ -1016,6 +1018,9 @@ pub struct Host {
     /// multitrack -- is the outer one's, and closes when it closes
     /// ([`depend`](Self::depend)).
     dependents: HashMap<i32, Vec<i32>>,
+    /// **The server's node trees a `nodetree` draws**, by group, as last
+    /// read ([`node_trees`]).
+    node_trees: HashMap<i32, graphics::nodetree::NodeTree>,
     /// The document this host owns, when it is its own owner.
     ///
     /// `None` is every host driven by a script: a gesture emits and waits, and
@@ -1177,6 +1182,7 @@ impl Host {
             popups: HashMap::new(),
             close_asked: Default::default(),
             dependents: HashMap::new(),
+            node_trees: HashMap::new(),
             owner: None,
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             audio: None,

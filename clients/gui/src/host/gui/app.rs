@@ -26,7 +26,6 @@ use crate::host::fetch::BufferFetches;
 use crate::host::frame::Batches;
 use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::{Gestures, Wheel, WheelDelta};
-use crate::host::graphics::nodetree::NodeTree;
 use crate::host::live::{self, TickFrame};
 use crate::host::widget::Widget;
 use crate::host::widget::element::Live;
@@ -246,9 +245,6 @@ pub(super) struct App {
     pub(super) fetches: BufferFetches,
     /// The windows keeping their last frame while a picture is stale.
     pub(super) hold: crate::host::replies::PictureHold,
-    /// The node tree last read from the server, by group id, feeding `nodetree`
-    /// widgets (filled by `/group_queryTree.reply`).
-    pub(super) node_trees: HashMap<i32, NodeTree>,
     /// Whether the client leg has registered for node notifications
     /// (`/server_notify 1`), so it is sent once even with several node-tree windows.
     pub(super) notified: bool,
@@ -321,7 +317,6 @@ impl App {
             next_frame: Instant::now(),
             fetches: BufferFetches::default(),
             hold: Default::default(),
-            node_trees: HashMap::new(),
             notified: false,
             frontiers: HashMap::new(),
             next_query: Instant::now(),
@@ -657,7 +652,7 @@ impl App {
             metrics: self.host.metrics_for(def_id),
             world: World {
                 bus: source,
-                node_trees: &self.node_trees,
+                node_trees: self.host.node_trees(),
                 server_attached,
                 sample_rate: source.map_or(0.0, |s| s.sample_rate()),
                 clocks: {
@@ -1073,7 +1068,7 @@ impl App {
         }
 
         // Node-tree polling, driven from the client leg (the `/node_set` poll).
-        if self.host.server().is_some() && !self.node_tree_groups(&shown).is_empty() {
+        if self.host.server().is_some() && !self.host.tree_groups(&shown).is_empty() {
             if now >= self.next_query {
                 self.requery_node_trees(&shown);
                 self.next_query = now + NODETREE_POLL;

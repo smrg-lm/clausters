@@ -518,9 +518,7 @@ impl WebApp {
                 clocks: self.host.head_clocks(def, Some(self.buses.as_ref())),
                 cursor: slot.cursor,
                 timelines,
-                // The node tree stays empty until a browser node-tree path
-                // exists.
-                ..Default::default()
+                node_trees: self.host.node_trees(),
             },
             focused,
             // The page draws what the desktop draws: a held clip keeps its
