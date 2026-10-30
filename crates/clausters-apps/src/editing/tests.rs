@@ -410,8 +410,8 @@ fn reads(editing: &Editing, member: MemberId) -> Vec<String> {
     }
 }
 
-/// How many audio members a step stitched again.
-fn stitched(stepped: &Stepped) -> usize {
+/// How many audio members a step handed a list again.
+fn relisted(stepped: &Stepped) -> usize {
     stepped
         .effects
         .iter()
@@ -437,7 +437,7 @@ fn an_editor_open_alone_undoes_through_a_context_of_one() {
     let undone = editing.step(Direction::Undo);
     assert!(undone.stepped);
     assert_eq!(undone.version, 3);
-    assert_eq!(stitched(&undone), 1);
+    assert_eq!(relisted(&undone), 1);
     assert_eq!(reads(&editing, take), ["take7"]);
     assert_eq!(undone.corrections.len(), 1);
     assert_eq!(undone.corrections[0].member, take);
@@ -489,7 +489,7 @@ fn two_applications_in_one_context_walk_one_order() {
     assert_eq!(position(&mut editing, multitrack), 2.0);
 
     let back = editing.step(Direction::Undo);
-    assert_eq!(stitched(&back), 1, "the stroke, in between");
+    assert_eq!(relisted(&back), 1, "the stroke, in between");
     assert_eq!(reads(&editing, take), ["take7"]);
     assert_eq!(position(&mut editing, multitrack), 2.0);
 
@@ -503,8 +503,8 @@ fn two_applications_in_one_context_walk_one_order() {
 }
 
 /// **Two windows over one take are one structure**: a stroke in one is
-/// one entry, undone once whichever asks, and each window's join is
-/// stitched again over the list the step handed back.
+/// one entry, undone once whichever asks, and each window is handed the
+/// list the step put back.
 #[test]
 fn two_windows_over_one_take_are_one_structure() {
     let mut editing = Editing::default();
@@ -515,7 +515,7 @@ fn two_windows_over_one_take_are_one_structure() {
         .unwrap();
     let undone = editing.step(Direction::Undo);
     assert!(undone.stepped);
-    assert_eq!(stitched(&undone), 2, "each window draws its own join");
+    assert_eq!(relisted(&undone), 2, "each window draws its own list");
     assert_eq!(
         (reads(&editing, left), reads(&editing, right)),
         (vec!["take7".to_string()], vec!["take7".to_string()])

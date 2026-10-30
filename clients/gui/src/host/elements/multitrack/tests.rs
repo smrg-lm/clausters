@@ -2116,7 +2116,7 @@ fn a_take_is_asked_for_once_and_again_when_forgotten() {
     assert_eq!(mt.ask_takes(false), vec![3]);
     assert!(mt.ask_takes(false).is_empty());
 
-    // Its stitch is done: forgotten, it is asked for once more.
+    // A write announced to it: forgotten, it is asked for once more.
     assert!(mt.forget_take(3), "it had been asked for");
     assert!(!mt.forget_take(7), "a take it never asked for is not its");
     assert_eq!(mt.ask_takes(false), vec![3]);

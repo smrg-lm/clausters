@@ -48,7 +48,6 @@ The sample clock gives every client a common, drift-free **sample axis**, so two
 /transport_set  i <t> h <originSample> d <tempo>  →  /done  "/transport_set"          (set the grid, stopped at 0)
 /transport_play  i <t> [d <position>]             →  /done  "/transport_play"     (start rolling)
 /transport_stop  i <t>                            →  /done  "/transport_stop"
-/transport_cue  i <t>                             →  /done  "/transport_cue" i <t> i <ready>  (fill the disk readers where it stands)
 /transport_locate  i <t> d <position>             →  /done  "/transport_locate"   (set the song position, in beats)
 /transport_locateSample  i <t> h <sample>         →  /done  "/transport_locateSample"  (the same, in frames)
 /transport_loop  i <t> [h <start> h <end>]        →  /done  "/transport_loop"     (wrap inside this span; no arguments = off)

@@ -451,9 +451,9 @@ pub fn adjacent(a: Placement, b: Placement, tol: f64) -> bool {
 /// source -- reordered fragments, a multitrack whose edge was pulled to show more --
 /// cannot be said in one window at all: joined anyway, the box plays straight
 /// through material the multitracks skipped, and runs into silence past the end of
-/// what it reads. One box over several runs is a **cut**, which is a buffer
-/// the server stitches and not a placement (see `clients/gui/PLAN.md`, "Join
-/// over fragments").
+/// what it reads. One box over several runs is a **cut**, which is a list of
+/// parts its application reads and not a placement (see `clients/gui/PLAN.md`,
+/// "Join over fragments").
 ///
 /// So the test is the inverse of [`split_at`]'s rule: the later box's window
 /// opens exactly where the earlier box's window closes.

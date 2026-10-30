@@ -257,60 +257,6 @@ impl OscServer {
         self.changed(from, "/transport_play", k)
     }
 
-    /// `/transport_cue <transport:int32>` -- **readies a stopped transport's
-    /// disk readers where it stands**, the field's pre-roll: every
-    /// `TransportDiskIn` in its governed group fills its ring at the standing
-    /// position, and the reply, `/done /transport_cue <transport>
-    /// <ready:int32>`, comes once they hold it -- `ready` 1 -- or after a
-    /// bounded wait, `ready` 0. Nothing else moves: the transport stays
-    /// stopped, its clock frozen, its bundles and lanes where they were, and
-    /// only the synths that stream are run. A `/transport_play` after the
-    /// reply starts on frames already read; one without a cue plays as it
-    /// always has, its first frames late. A transport with no group bound,
-    /// or one rolling, is answered at once.
-    pub(in crate::osc::server) fn handle_transport_cue(
-        &mut self,
-        mut args: Args,
-        from: ClientId,
-    ) -> Answer {
-        let k = self.transport_arg(&mut args)?;
-        if self.transports[k].group.is_none() {
-            self.on_cued(from, k, true);
-            return Ok(());
-        }
-        self.send_engine(Cmd::TransportCue { transport: k })?;
-        self.pending_cues.push((from, k));
-        Ok(())
-    }
-
-    /// The engine's answer to transport `k`'s cue, to every client waiting
-    /// on it.
-    pub(in crate::osc::server) fn on_transport_cued(&mut self, k: usize, ready: bool) {
-        if !ready {
-            tracing::warn!("transport {k}: a cue ran out of time before its readers were ready");
-        }
-        let mut waiting = std::mem::take(&mut self.pending_cues);
-        waiting.retain(|&(client, j)| {
-            if j == k {
-                self.on_cued(client, k, ready);
-            }
-            j != k
-        });
-        self.pending_cues = waiting;
-    }
-
-    fn on_cued(&self, client: ClientId, k: usize, ready: bool) {
-        self.reply(
-            client,
-            "/done",
-            vec![
-                OscType::String("/transport_cue".into()),
-                OscType::Int(k as i32),
-                OscType::Int(ready as i32),
-            ],
-        );
-    }
-
     /// `/transport_stop <transport:int32>` -- stop the transport. Every
     /// client's playhead halts at its current point; `position` holds for the
     /// next play.

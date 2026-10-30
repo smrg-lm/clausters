@@ -386,17 +386,6 @@ impl ClaustersHeadless {
         self.server.finish_delegated(ticket, outcome);
     }
 
-    /// Answers a delegated `/buffer_stitch` with the shape of each file it
-    /// named, in order: the join is resolved and installed here, and the
-    /// command's `/done` or `/fail` follows.
-    pub fn finish_delegated_shapes(
-        &mut self,
-        ticket: u64,
-        shapes: Vec<Result<crate::dsp::pcm::Layout, String>>,
-    ) {
-        self.server.finish_delegated_shapes(ticket, shapes);
-    }
-
     /// The Faust compilations waiting for the host. In a page the compiler is
     /// not a thread but a queue the host drains: it compiles with
     /// `libfaust-wasm` in its Worker, instantiates the emitted module against

@@ -184,7 +184,7 @@ libc = "0.2"
 clausters-plugin-host = { path = "crates/clausters-plugin-host", optional = true, default-features = false }
 
 [dev-dependencies]
-# Audio edit outcomes rendered through the real server, including undo/redo.
+# The audio editor over takes of hours, measured (`tests/long_takes.rs`).
 clausters-apps = { path = "crates/clausters-apps" }
 assert_no_alloc = "1"
 # The applications' playbacks, heard offline (`tests/audio_editor_graph.rs`,

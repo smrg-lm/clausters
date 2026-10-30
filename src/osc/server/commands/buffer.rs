@@ -5,7 +5,6 @@
 //! queries here answer from the mirror in the same turn.
 
 use super::super::*;
-use crate::dsp::summary::SUMMARY_BUCKET;
 use crate::osc::translate::{allocated, mirror_buffer, readable};
 use clausters_core::osc::{push_sample, sample_blob};
 
@@ -55,18 +54,6 @@ impl OscServer {
         let start = args.int()?;
         let frames = args.int()?;
         allocated(&self.translator.buffers, index as i32)?;
-        // **The overview beside the region is a reader like any other**, and
-        // the only one that is this server's own: a peer wrote into the cells
-        // and said where, so the summary over that span is what is stale.
-        if let (Ok(start), Ok(frames)) = (usize::try_from(start), usize::try_from(frames))
-            && let Some(buffer) = self
-                .translator
-                .buffers
-                .get(index)
-                .and_then(|b| b.as_ref().cloned())
-        {
-            self.overviews.wrote(index, &buffer, start, frames);
-        }
         let payload = vec![
             OscType::Int(index as i32),
             OscType::Int(channel),
@@ -205,66 +192,6 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/buffer_parts bufnum` -> `/buffer_parts.reply bufnum channels sampleRate
-    /// [srcBufnum srcStart frames fadeIn fadeOut fadeInShape fadeInCurve
-    /// fadeOutShape fadeOutCurve chan...]...`: what a join is
-    /// made of, in the terms `/buffer_stitch` takes, so a reply can be edited
-    /// and sent back.
-    ///
-    /// **A buffer that owns its samples answers with no parts**, which is the
-    /// answer to "is this a join": a client that would draw an editable
-    /// waveform asks before it draws one rather than finding out by being
-    /// refused when it writes. An unallocated slot answers with `channels = 0`
-    /// and no parts, on the rule `/buffer_query` follows -- absence is a state
-    /// and not a protocol error.
-    ///
-    /// Its own reply rather than a field on `/buffer_query.reply`, whose
-    /// repeating group is four wide: a fifth field would be read as the next
-    /// buffer's index by every parser that chunks it. Synchronous, answered
-    /// from the mirror like the rest of the queries.
-    pub(in crate::osc::server) fn handle_buffer_parts(
-        &mut self,
-        mut args: Args,
-        from: ClientId,
-    ) -> Answer {
-        let bufnum = args.int()?;
-        let buffer = mirror_buffer(&self.translator.buffers, bufnum);
-        let mut out = vec![OscType::Int(bufnum)];
-        out.push(OscType::Int(
-            buffer.as_ref().map_or(0, |b| b.channels() as i32),
-        ));
-        out.push(OscType::Float(
-            buffer.as_ref().map_or(0.0, |b| b.sample_rate() as f32),
-        ));
-        if let Some(stitch) = buffer.as_ref().and_then(|b| b.stitch()) {
-            // A frame count past an `i32` goes as a long, as it may arrive.
-            let count = |n: usize| match i32::try_from(n) {
-                Ok(n) => OscType::Int(n),
-                Err(_) => OscType::Long(n as i64),
-            };
-            for part in stitch.parts() {
-                // A part over a file names it by its path, as it was given.
-                out.push(match part.src.file() {
-                    Some(layout) => OscType::String(layout.path.clone()),
-                    None => OscType::Int(part.src_index),
-                });
-                out.push(count(part.src_start));
-                out.push(count(part.frames));
-                out.push(OscType::Int(part.fade_in as i32));
-                out.push(OscType::Int(part.fade_out as i32));
-                out.push(OscType::Int(part.fade_in_shape.shape));
-                out.push(OscType::Float(part.fade_in_shape.curve));
-                out.push(OscType::Int(part.fade_out_shape.shape));
-                out.push(OscType::Float(part.fade_out_shape.curve));
-                for &to in part.map.iter() {
-                    out.push(OscType::Int(to));
-                }
-            }
-        }
-        self.reply(from, "/buffer_parts.reply", out);
-        Ok(())
-    }
-
     /// `/buffer_get bufnum index...` -> `/buffer_get.reply bufnum index value...`: read single
     /// samples (flat, interleaved) from the buffer mirror. Out-of-range indices
     /// (and any index into an unallocated buffer) read as `0.0`, mirroring how
@@ -336,120 +263,6 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/buffer_peaks bufnum [bucket=256] [start=0] [frames=-1]` ->
-    /// `/buffer_peaks.reply bufnum startFrame bucket blob` (one or more):
-    /// **the overview of a buffer that is standing still.**
-    ///
-    /// `/buffer_stream`'s sibling, and the pair is a distinction in the
-    /// *material* and not in the client: a recording's overview is pushed as
-    /// it is written, and a buffer nothing is writing has one that can simply
-    /// be asked for. Same blob either way -- bucket-major, channel-minor, min,
-    /// max and mean square as little-endian `f32` -- so the receiving half is
-    /// the one both already have (`peaks::MultiPyramid::write_buckets`), and
-    /// the folding code does not fork.
-    ///
-    /// **What it is for is the round trip it replaces.** A view of a server
-    /// buffer that cannot map it had two ways to get a picture: download every
-    /// sample (230 MB for a ten-minute stereo take, and the page's own bulk
-    /// read gives up well below that), or have nothing until something records
-    /// into it. This is the third: about a hundredth of the bandwidth, enough
-    /// to draw the whole take at once, and the spans under a zoom read back
-    /// with `/buffer_getRange` as they are needed.
-    ///
-    /// `bucket` is any size, and a view asks for the coarsest that still
-    /// resolves its pixel columns: one of 256 * 2^k on its own grid is folded
-    /// out of the summary's levels with no sample read, and any other is
-    /// answered exactly too. `start` is rounded **down** to a whole bucket, so
-    /// the grids agree; `frames < 0` runs to the end. A span that runs to the
-    /// end answers its last bucket over the frames it holds -- the pyramid's
-    /// own short entry -- and one that stops short answers whole buckets only.
-    ///
-    /// **One request, one reply, and the reply's own length says how much
-    /// came** -- the chunk conversation `/buffer_getRange` already has, for the
-    /// same reason: one reply is bounded by [`MAX_STREAM_BYTES`], so no message
-    /// is bounded by how long the take is, and a client walking a long take
-    /// asks again from where the blob ended. Nothing is remembered between
-    /// requests.
-    ///
-    /// Synchronous on the network thread, like `/buffer_get`, `/buffer_getRange`
-    /// and `/buffer_export`, and answered from the buffer's kept summary
-    /// ([`crate::dsp::summary`]), so what it reads from samples is only what
-    /// nobody asked for before, bounded per reply.
-    pub(in crate::osc::server) fn handle_buffer_peaks(
-        &mut self,
-        mut args: Args,
-        from: ClientId,
-    ) -> Answer {
-        let bufnum = args.int()?;
-        let bucket = args.opt_int()?.unwrap_or(SUMMARY_BUCKET as i32).max(1) as usize;
-        let start = args.opt_int()?.unwrap_or(0).max(0) as usize;
-        let asked = args.opt_int()?.unwrap_or(-1);
-        let buffer = allocated(&self.translator.buffers, bufnum)?;
-        readable(&buffer, bufnum)?;
-        let frames = buffer.frames();
-        // Rounded to the grid the answer is folded into: a bucket summarized
-        // from part of itself would report a peak the samples do not have.
-        let first = (start / bucket) * bucket;
-        let end = match asked {
-            n if n < 0 => frames,
-            n => (start + n as usize).min(frames),
-        };
-        // A span that runs to the take's end answers its last bucket too, over
-        // the frames it holds: that is the pyramid's own ragged entry, and at
-        // a coarse bucket it is most of a second nobody could otherwise ask.
-        let held = end.saturating_sub(first);
-        let buckets = if end == frames {
-            held.div_ceil(bucket)
-        } else {
-            held / bucket
-        };
-        if buckets == 0 {
-            // Nothing whole to answer with, and the honest reply is an empty
-            // one rather than silence: the asker learns the span held no
-            // bucket, which is different from a request that went missing.
-            self.reply(
-                from,
-                "/buffer_peaks.reply",
-                vec![
-                    OscType::Int(bufnum),
-                    OscType::Long(first as i64),
-                    OscType::Int(bucket as i32),
-                    OscType::Blob(Vec::new()),
-                ],
-            );
-            return Ok(());
-        }
-        let buckets = buckets.min(max_stream_buckets(buffer.channels()));
-        // **Out of the buffer's summary**, which is kept for every buffer this
-        // server owns and composed for a join from its sources' -- so a span
-        // asked twice is measured once, an edit's new join is answered from
-        // what its sources already had, and a coarse bucket reads levels
-        // rather than samples. A server that maps somebody else's samples
-        // hears of none of the writes into them, so it reads the samples.
-        let bytes = if self.keeps_summaries() {
-            sample_blob(&summary_overview(&buffer, first, bucket, buckets))
-        } else {
-            super::super::streams::overview_blob(&buffer, first, bucket, buckets)
-        };
-        self.reply(
-            from,
-            "/buffer_peaks.reply",
-            vec![
-                OscType::Int(bufnum),
-                OscType::Long(first as i64),
-                OscType::Int(bucket as i32),
-                OscType::Blob(bytes),
-            ],
-        );
-        Ok(())
-    }
-
-    /// Whether this server's buffers keep their summaries: every server but one
-    /// mapping another's segment, whose samples change under it unannounced.
-    pub(in crate::osc::server) fn keeps_summaries(&self) -> bool {
-        self.owns_samples || self.shm_path.is_none()
-    }
-
     /// `/buffer_export bufnum path` -> `/done /buffer_export bufnum`: write the buffer's raw
     /// samples (flat, interleaved, little-endian `f32`) to `path` as a **local
     /// shared resource**, so a same-machine client (the GUI host) can map and read
@@ -475,37 +288,4 @@ impl OscServer {
         self.done_with(from, "/buffer_export", vec![OscType::Int(bufnum)]);
         Ok(())
     }
-}
-
-/// **The overview of `buckets` buckets from `first`, out of the buffer's
-/// summary**: bucket-major, channel-minor, min, max and mean square, the
-/// layout `/buffer_stream` reports in.
-///
-/// The work is bounded by what it reads from samples, not by the span: a
-/// question over what the summary has already measured reads levels, and one
-/// over a take nobody has looked at yet measures it here,
-/// [`SUMMARY_READ_SAMPLES`] at most per reply. The reply's own length says how far it got, so the asker
-/// goes on from there as it does when the bytes run out -- and the opening pass
-/// over a long take is spread over replies rather than paid in one turn of an
-/// engine that has a block to deliver. At least one bucket always comes back.
-fn summary_overview(
-    buffer: &crate::dsp::buffer::Buffer,
-    first: usize,
-    bucket: usize,
-    buckets: usize,
-) -> Vec<f32> {
-    let channels = buffer.channels().max(1);
-    let mut out = Vec::with_capacity(buckets * channels * 3);
-    let mut read = 0;
-    for b in 0..buckets {
-        let at = first + b * bucket;
-        for ch in 0..channels {
-            let stats = buffer.summary_span(ch, at, at + bucket, &mut read);
-            out.extend_from_slice(&stats.bucket());
-        }
-        if read >= SUMMARY_READ_SAMPLES {
-            break;
-        }
-    }
-    out
 }

@@ -8,12 +8,9 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use clausters::dsp::buffer::Buffer;
-use clausters::rosc::OscType;
-use clausters::server::engine::{BLOCK_SIZE, Cmd, engine_pair};
-use clausters::server::nrt::{NrtAction, run_job};
+use clausters::server::engine::{BLOCK_SIZE, engine_pair};
 use clausters_app_engine::{AppEngine, EngineMedium};
-use clausters_core::ids::{IdShare, IdSpaces, ServerShape, Space};
+use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
 use clausters_editing::audio_playback::AudioEditorPlayback;
 use clausters_editing::pass::Pass;
 
@@ -56,31 +53,40 @@ fn take(name: &str) -> (String, Vec<f32>) {
     (path.to_string_lossy().into_owned(), values)
 }
 
-/// The join of one part over the whole file.
-fn join(path: &str) -> Arc<Buffer> {
-    let args = vec![
-        OscType::Int(9),
-        OscType::Int(1),
-        OscType::Float(SR as f32),
-        OscType::String(path.into()),
-        OscType::Int(0),
-        OscType::Int(FRAMES as i32),
-        OscType::Int(0),
-        OscType::Int(0),
-        OscType::Int(1),
-        OscType::Float(0.0),
-        OscType::Int(1),
-        OscType::Float(0.0),
-        OscType::Int(0),
-    ];
-    let mirror = vec![None; 16];
-    let (_, job) =
-        clausters::osc::translate::parse_buffer_msg("/buffer_stitch", &args, &mirror, SR)
-            .expect("parsed");
-    match run_job(job).expect("stitched") {
-        NrtAction::Install(b) => b,
-        _ => panic!("a stitch installs a buffer"),
-    }
+/// **The take fed by the application's reader**: one part over the whole
+/// file, read by a `TakeFeed` into the engine's fed stream, which the
+/// playback is synced to. The feed is held for as long as it plays.
+fn feed(
+    app: &Mutex<AppEngine>,
+    playback: &mut AudioEditorPlayback<EngineMedium>,
+    path: &str,
+    ids: &mut IdSpaces,
+) -> clausters_app_engine::take::TakeFeed {
+    use clausters_app_engine::take::{Headers, ReadList, TakeFeed};
+    let part = clausters_document::clipboard::SegmentPart {
+        path: path.into(),
+        start: 0,
+        frames: FRAMES as u64,
+        fade_in: 0,
+        fade_out: 0,
+        fade_in_shape: Default::default(),
+        fade_out_shape: Default::default(),
+        channels: None,
+        source_channels: 1,
+        source_frames: FRAMES as u64,
+        source_rate: SR,
+    };
+    let list = ReadList::of(&[part], 1, SR, &mut Headers::default()).unwrap();
+    let feed = TakeFeed::start(1);
+    feed.set(Arc::new(list));
+    let buffers = AppEngine::alloc_take(1, ids).unwrap();
+    app.lock()
+        .unwrap()
+        .install_take(&feed, FRAMES as u64, &buffers);
+    playback
+        .sync_streams(1, buffers, FRAMES as u64, SR, SR, ids)
+        .unwrap();
+    feed
 }
 
 /// **The take is heard as it is, with nothing sent but commands**: every
@@ -92,16 +98,8 @@ fn the_audio_editor_plays_on_an_engine_it_holds() {
     let (mut engine, handle) = engine_pair(SR as f32, 2);
     let app = Arc::new(Mutex::new(AppEngine::over(handle)));
     let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
-    let bufnum = ids.alloc(Space::Buffers, 1).unwrap() as i32;
-    assert!(app.lock().unwrap().push(vec![Cmd::SetBuffer {
-        index: bufnum as usize,
-        buffer: Some(join(&path)),
-    }]));
     let mut playback = AudioEditorPlayback::in_medium(EngineMedium::new(Arc::clone(&app)));
-    let steps = playback
-        .sync(1, bufnum, 1, FRAMES as u64, SR, SR, &mut ids)
-        .expect("synced");
-    assert!(steps.is_empty(), "nothing to walk: {steps:?}");
+    let _feed = feed(&app, &mut playback, &path, &mut ids);
     let steps = playback.play(
         1,
         0,
@@ -158,15 +156,8 @@ fn loops_stops_and_locates_on_an_engine_it_holds() {
     let (mut engine, handle) = engine_pair(SR as f32, 2);
     let app = Arc::new(Mutex::new(AppEngine::over(handle)));
     let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
-    let bufnum = ids.alloc(Space::Buffers, 1).unwrap() as i32;
-    app.lock().unwrap().push(vec![Cmd::SetBuffer {
-        index: bufnum as usize,
-        buffer: Some(join(&path)),
-    }]);
     let mut playback = AudioEditorPlayback::in_medium(EngineMedium::new(Arc::clone(&app)));
-    playback
-        .sync(1, bufnum, 1, FRAMES as u64, SR, SR, &mut ids)
-        .unwrap();
+    let _feed = feed(&app, &mut playback, &path, &mut ids);
     let (from, to) = (2_000u64, 6_000u64);
     playback.play(1, from, Pass::Loop { from, to });
     let heard = blocks(&mut engine, &app, 300);
@@ -274,7 +265,7 @@ fn both(
 /// application's own thread into a mono fed stream per channel, plays each
 /// side's frames; an edit (the parts put the other way round) is a new list
 /// the readers fade into from where they are, and then plays as edited. No
-/// list, no stitch and no file is in the engine.
+/// list and no file is in the engine.
 #[test]
 fn the_application_reads_its_take_into_the_engine() {
     use clausters_app_engine::take::{Headers, ReadList, TakeFeed};
@@ -398,7 +389,7 @@ fn version(
 /// coordinator opens a file, measures its peaks, plays it from its first
 /// frame, and after a delete and a reverse plays the take as edited -- the
 /// list read by the application into the engine's fed streams, the renders
-/// run in the application's threads, nothing stitched and no OSC between
+/// run in the application's threads, nothing joined by the engine and no OSC between
 /// them.
 #[test]
 fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
@@ -604,7 +595,7 @@ fn the_audio_editor_s_coordinator_plays_its_file_on_an_engine_it_holds() {
 /// change the test turns, since the machine, not the change, made it. Run
 /// again, up to four times; a machine that starves every run fails the test
 /// saying so, rather than passing it.
-fn unstarved<T>(fed: bool, mut run: impl FnMut() -> (T, u64)) -> T {
+fn unstarved<T>(mut run: impl FnMut() -> (T, u64)) -> T {
     let mut starved = 0;
     for _ in 0..4 {
         let (result, short) = run();
@@ -613,7 +604,7 @@ fn unstarved<T>(fed: bool, mut run: impl FnMut() -> (T, u64)) -> T {
         }
         starved = short;
     }
-    panic!("fed {fed}: the reader ran out of lead in every run ({starved} samples the last)");
+    panic!("the reader ran out of lead in every run ({starved} samples the last)");
 }
 
 /// What a moved loop's run heard: the samples where the output stepped, and
@@ -624,49 +615,15 @@ type Moved = (Vec<usize>, Vec<(usize, u64, u64)>);
 /// take moves it, and the loop switch turned off**: each change is a
 /// reading of the take replaced while it plays, which is crossfaded, so the
 /// output never steps -- but where the loop itself comes round. Over the
-/// application's fed stream (`fed`) and over the reader's own thread alike.
-fn moved_loop_steps(fed: bool) -> (Moved, u64) {
-    use clausters_app_engine::take::{Headers, ReadList, TakeFeed};
-    let (path, _) = take(if fed { "moved-fed" } else { "moved-own" });
+/// application's fed stream.
+fn moved_loop_steps() -> (Moved, u64) {
+    let (path, _) = take("moved");
     let (mut engine, handle) = engine_pair(SR as f32, 2);
     let app = Arc::new(Mutex::new(AppEngine::over(handle)));
     let reading = app.lock().unwrap().reading();
     let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
     let mut playback = AudioEditorPlayback::in_medium(EngineMedium::new(Arc::clone(&app)));
-    let feed = TakeFeed::start(1);
-    if fed {
-        let part = clausters_document::clipboard::SegmentPart {
-            path: path.clone(),
-            start: 0,
-            frames: FRAMES as u64,
-            fade_in: 0,
-            fade_out: 0,
-            fade_in_shape: Default::default(),
-            fade_out_shape: Default::default(),
-            channels: None,
-            source_channels: 1,
-            source_frames: FRAMES as u64,
-            source_rate: SR,
-        };
-        let list = ReadList::of(&[part], 1, SR, &mut Headers::default()).unwrap();
-        feed.set(Arc::new(list));
-        let buffers = AppEngine::alloc_take(1, &mut ids).unwrap();
-        app.lock()
-            .unwrap()
-            .install_take(&feed, FRAMES as u64, &buffers);
-        playback
-            .sync_streams(1, buffers, FRAMES as u64, SR, SR, &mut ids)
-            .unwrap();
-    } else {
-        let bufnum = ids.alloc(Space::Buffers, 1).unwrap() as i32;
-        app.lock().unwrap().push(vec![Cmd::SetBuffer {
-            index: bufnum as usize,
-            buffer: Some(join(&path)),
-        }]);
-        playback
-            .sync(1, bufnum, 1, FRAMES as u64, SR, SR, &mut ids)
-            .unwrap();
-    }
+    let _feed = feed(&app, &mut playback, &path, &mut ids);
     let transport = playback.transport().unwrap_or(0) as usize;
     playback.play(
         1,
@@ -712,25 +669,20 @@ fn moved_loop_steps(fed: bool) -> (Moved, u64) {
 
 #[test]
 fn a_loop_moved_while_it_plays_is_crossfaded() {
-    for fed in [true, false] {
-        let (steps, jumps) = unstarved(fed, || moved_loop_steps(fed));
-        // the position never moves but where the loop comes round, once
-        assert_eq!(jumps.len(), 1, "fed {fed}: {jumps:?}");
-        let wrap = jumps[0].0;
-        assert!(
-            jumps[0].2 < jumps[0].1,
-            "fed {fed}: the loop came round: {jumps:?}"
-        );
-        // and the output steps only there: in the block the position
-        // jumped in, the one before, or -- a wrap on a block's last frame --
-        // at the first frame of the next
-        assert!(
-            steps.iter().all(|&i| i / BLOCK_SIZE + 1 == wrap
-                || i / BLOCK_SIZE == wrap
-                || i == (wrap + 1) * BLOCK_SIZE),
-            "fed {fed}: steps at {steps:?}, the loop came round in block {wrap}"
-        );
-    }
+    let (steps, jumps) = unstarved(moved_loop_steps);
+    // the position never moves but where the loop comes round, once
+    assert_eq!(jumps.len(), 1, "{jumps:?}");
+    let wrap = jumps[0].0;
+    assert!(jumps[0].2 < jumps[0].1, "the loop came round: {jumps:?}");
+    // and the output steps only there: in the block the position
+    // jumped in, the one before, or -- a wrap on a block's last frame --
+    // at the first frame of the next
+    assert!(
+        steps.iter().all(|&i| i / BLOCK_SIZE + 1 == wrap
+            || i / BLOCK_SIZE == wrap
+            || i == (wrap + 1) * BLOCK_SIZE),
+        "steps at {steps:?}, the loop came round in block {wrap}"
+    );
 }
 
 /// **The loop switch turned while it plays changes nothing that is heard**:
@@ -743,122 +695,85 @@ fn a_loop_moved_while_it_plays_is_crossfaded() {
 /// frames at its position, sample for sample. A loop set, moved or cleared is the same reading up to where the
 /// two part, and the new one is spliced on there; the change is cued, so one
 /// turned too near the loop's end for the new reading to be read in time
-/// takes effect a pass later. Over the application's fed stream and over the
-/// reader's own thread alike.
+/// takes effect a pass later.
 #[test]
 fn the_loop_switch_turned_while_it_plays_is_not_heard() {
-    use clausters_app_engine::take::{Headers, ReadList, TakeFeed};
-    for fed in [true, false] {
-        let (checked, wrong) = unstarved(fed, || {
-            let (path, values) = take(if fed { "switch-fed" } else { "switch-own" });
-            let (mut engine, handle) = engine_pair(SR as f32, 2);
-            let app = Arc::new(Mutex::new(AppEngine::over(handle)));
-            let reading = app.lock().unwrap().reading();
-            let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
-            let mut playback = AudioEditorPlayback::in_medium(EngineMedium::new(Arc::clone(&app)));
-            let feed = TakeFeed::start(1);
-            if fed {
-                let part = clausters_document::clipboard::SegmentPart {
-                    path: path.clone(),
-                    start: 0,
-                    frames: FRAMES as u64,
-                    fade_in: 0,
-                    fade_out: 0,
-                    fade_in_shape: Default::default(),
-                    fade_out_shape: Default::default(),
-                    channels: None,
-                    source_channels: 1,
-                    source_frames: FRAMES as u64,
-                    source_rate: SR,
-                };
-                let list = ReadList::of(&[part], 1, SR, &mut Headers::default()).unwrap();
-                feed.set(Arc::new(list));
-                let buffers = AppEngine::alloc_take(1, &mut ids).unwrap();
-                app.lock()
-                    .unwrap()
-                    .install_take(&feed, FRAMES as u64, &buffers);
-                playback
-                    .sync_streams(1, buffers, FRAMES as u64, SR, SR, &mut ids)
-                    .unwrap();
-            } else {
-                let bufnum = ids.alloc(Space::Buffers, 1).unwrap() as i32;
-                app.lock().unwrap().push(vec![Cmd::SetBuffer {
-                    index: bufnum as usize,
-                    buffer: Some(join(&path)),
-                }]);
-                playback
-                    .sync(1, bufnum, 1, FRAMES as u64, SR, SR, &mut ids)
-                    .unwrap();
+    let (checked, wrong) = unstarved(|| {
+        let (path, values) = take("switch");
+        let (mut engine, handle) = engine_pair(SR as f32, 2);
+        let app = Arc::new(Mutex::new(AppEngine::over(handle)));
+        let reading = app.lock().unwrap().reading();
+        let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+        let mut playback = AudioEditorPlayback::in_medium(EngineMedium::new(Arc::clone(&app)));
+        let _feed = feed(&app, &mut playback, &path, &mut ids);
+        let transport = playback.transport().unwrap_or(0) as usize;
+        let looped = Pass::Loop {
+            from: 1000,
+            to: 21000,
+        };
+        playback.play(1, 1000, looped);
+        let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+        let (mut on, mut next, mut sounding) = (true, 40usize, false);
+        // the pass the last switch near the loop's end was turned in
+        let mut near = None;
+        // when the switch was last turned
+        let mut last = 0;
+        let (mut checked, mut wrong) = (0, Vec::new());
+        for b in 0..3000usize {
+            // Once a pass, the switch is turned just before the loop's end --
+            // where the new reading cannot be read before the frames where the
+            // two part are played, and the change is cued to the next pass.
+            let at = reading.transport_position(transport) as usize;
+            let pass = b / 300;
+            if (20_700..21_000).contains(&at) && near != Some(pass) && b >= last + 96 {
+                near = Some(pass);
+                next = b;
             }
-            let transport = playback.transport().unwrap_or(0) as usize;
-            let looped = Pass::Loop {
-                from: 1000,
-                to: 21000,
-            };
-            playback.play(1, 1000, looped);
-            let mut out = vec![0.0f32; BLOCK_SIZE * 2];
-            let (mut on, mut next, mut sounding) = (true, 40usize, false);
-            // the pass the last switch near the loop's end was turned in
-            let mut near = None;
-            // when the switch was last turned
-            let mut last = 0;
-            let (mut checked, mut wrong) = (0, Vec::new());
-            for b in 0..3000usize {
-                // Once a pass, the switch is turned just before the loop's end --
-                // where the new reading cannot be read before the frames where the
-                // two part are played, and the change is cued to the next pass.
-                let at = reading.transport_position(transport) as usize;
-                let pass = b / 300;
-                if (20_700..21_000).contains(&at) && near != Some(pass) && b >= last + 96 {
-                    near = Some(pass);
-                    next = b;
-                }
-                if b == next {
-                    last = b;
-                    on = !on;
-                    playback.set_pass(if on {
-                        looped
-                    } else {
-                        Pass::Until {
-                            end: Some(FRAMES as u64),
-                            back: 1000,
-                        }
-                    });
-                    // at a hand's pace: every six to twelve bursts
-                    next = b + 96 + (b * 7919) % 97;
-                }
-                let before = reading.transport_position(transport) as usize;
-                engine.process_block(&mut out);
-                app.lock().unwrap().pump();
-                let after = reading.transport_position(transport) as usize;
-                let left: Vec<f32> = out.as_chunks::<2>().0.iter().map(|f| f[0]).collect();
-                sounding |= b > 0 && left[0] != 0.0;
-                // a block played straight through, past the play's ramp and
-                // short of the end's
-                if sounding && b > 20 && after == before + BLOCK_SIZE && after <= FRAMES - 600 {
-                    checked += 1;
-                    if let Some(i) =
-                        (0..BLOCK_SIZE).find(|&i| (left[i] - values[before + i]).abs() > 1e-6)
-                    {
-                        wrong.push((b, i, left[i], values[before + i]));
+            if b == next {
+                last = b;
+                on = !on;
+                playback.set_pass(if on {
+                    looped
+                } else {
+                    Pass::Until {
+                        end: Some(FRAMES as u64),
+                        back: 1000,
                     }
-                }
-                if b % 16 == 15 {
-                    std::thread::sleep(Duration::from_micros(1_333 * 16));
+                });
+                // at a hand's pace: every six to twelve bursts
+                next = b + 96 + (b * 7919) % 97;
+            }
+            let before = reading.transport_position(transport) as usize;
+            engine.process_block(&mut out);
+            app.lock().unwrap().pump();
+            let after = reading.transport_position(transport) as usize;
+            let left: Vec<f32> = out.as_chunks::<2>().0.iter().map(|f| f[0]).collect();
+            sounding |= b > 0 && left[0] != 0.0;
+            // a block played straight through, past the play's ramp and
+            // short of the end's
+            if sounding && b > 20 && after == before + BLOCK_SIZE && after <= FRAMES - 600 {
+                checked += 1;
+                if let Some(i) =
+                    (0..BLOCK_SIZE).find(|&i| (left[i] - values[before + i]).abs() > 1e-6)
+                {
+                    wrong.push((b, i, left[i], values[before + i]));
                 }
             }
-            let _ = std::fs::remove_file(&path);
-            let starved = app.lock().unwrap().handle().meters().starved();
-            ((checked, wrong), starved)
-        });
-        assert!(checked > 300, "fed {fed}: only {checked} blocks checked");
-        assert!(
-            wrong.is_empty(),
-            "fed {fed}: {} of {checked} blocks wrong: {:?}",
-            wrong.len(),
-            &wrong[..wrong.len().min(8)]
-        );
-    }
+            if b % 16 == 15 {
+                std::thread::sleep(Duration::from_micros(1_333 * 16));
+            }
+        }
+        let _ = std::fs::remove_file(&path);
+        let starved = app.lock().unwrap().handle().meters().starved();
+        ((checked, wrong), starved)
+    });
+    assert!(checked > 300, "only {checked} blocks checked");
+    assert!(
+        wrong.is_empty(),
+        "{} of {checked} blocks wrong: {:?}",
+        wrong.len(),
+        &wrong[..wrong.len().min(8)]
+    );
 }
 
 /// **Two loop switches turned close together at the loop's end are not
@@ -871,134 +786,98 @@ fn the_loop_switch_turned_while_it_plays_is_not_heard() {
 /// keep what the loop in force plays, so a change put in place a pass
 /// later is not heard either. The transport and the readers never go two
 /// ways. Every block played straight through is the take's frames at its
-/// position, over the fed stream and over the reader's own thread.
+/// position.
 #[test]
 fn two_loop_switches_close_together_at_its_end_are_not_heard() {
-    use clausters_app_engine::take::{Headers, ReadList, TakeFeed};
-    for fed in [true, false] {
-        let (checked, wrong) = unstarved(fed, || {
-            let (path, values) = take(if fed { "switch-fed" } else { "switch-own" });
-            let (mut engine, handle) = engine_pair(SR as f32, 2);
-            let app = Arc::new(Mutex::new(AppEngine::over(handle)));
-            let reading = app.lock().unwrap().reading();
-            let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
-            let mut playback = AudioEditorPlayback::in_medium(EngineMedium::new(Arc::clone(&app)));
-            let feed = TakeFeed::start(1);
-            if fed {
-                let part = clausters_document::clipboard::SegmentPart {
-                    path: path.clone(),
-                    start: 0,
-                    frames: FRAMES as u64,
-                    fade_in: 0,
-                    fade_out: 0,
-                    fade_in_shape: Default::default(),
-                    fade_out_shape: Default::default(),
-                    channels: None,
-                    source_channels: 1,
-                    source_frames: FRAMES as u64,
-                    source_rate: SR,
-                };
-                let list = ReadList::of(&[part], 1, SR, &mut Headers::default()).unwrap();
-                feed.set(Arc::new(list));
-                let buffers = AppEngine::alloc_take(1, &mut ids).unwrap();
-                app.lock()
-                    .unwrap()
-                    .install_take(&feed, FRAMES as u64, &buffers);
-                playback
-                    .sync_streams(1, buffers, FRAMES as u64, SR, SR, &mut ids)
-                    .unwrap();
-            } else {
-                let bufnum = ids.alloc(Space::Buffers, 1).unwrap() as i32;
-                app.lock().unwrap().push(vec![Cmd::SetBuffer {
-                    index: bufnum as usize,
-                    buffer: Some(join(&path)),
-                }]);
-                playback
-                    .sync(1, bufnum, 1, FRAMES as u64, SR, SR, &mut ids)
-                    .unwrap();
-            }
-            let transport = playback.transport().unwrap_or(0) as usize;
-            let looped = Pass::Loop {
-                from: 1000,
-                to: 21000,
+    let (checked, wrong) = unstarved(|| {
+        let (path, values) = take("switch");
+        let (mut engine, handle) = engine_pair(SR as f32, 2);
+        let app = Arc::new(Mutex::new(AppEngine::over(handle)));
+        let reading = app.lock().unwrap().reading();
+        let mut ids = IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE);
+        let mut playback = AudioEditorPlayback::in_medium(EngineMedium::new(Arc::clone(&app)));
+        let _feed = feed(&app, &mut playback, &path, &mut ids);
+        let transport = playback.transport().unwrap_or(0) as usize;
+        let looped = Pass::Loop {
+            from: 1000,
+            to: 21000,
+        };
+        playback.play(1, 1000, looped);
+        let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+        let (mut on, mut sounding) = (true, false);
+        let (mut checked, mut wrong) = (0, Vec::new());
+        let mut turned = None;
+        for b in 0..3000usize {
+            // Once a pass the switch is turned off a little before the
+            // loop's end and on again just before it, a few blocks apart.
+            let at = reading.transport_position(transport) as usize;
+            let pass = b / 300;
+            let turn = match turned {
+                None if b > 40 && (20_100..20_300).contains(&at) => Some((pass, 1)),
+                // the second within a few blocks of the end, or within the
+                // last one, pass by pass
+                Some((p, 1))
+                    if (if p % 2 == 0 { 20_850 } else { 20_940 }..21_000).contains(&at) =>
+                {
+                    Some((p, 2))
+                }
+                Some((_, 2)) if at < 20_000 => {
+                    turned = None;
+                    None
+                }
+                _ => None,
             };
-            playback.play(1, 1000, looped);
-            let mut out = vec![0.0f32; BLOCK_SIZE * 2];
-            let (mut on, mut sounding) = (true, false);
-            let (mut checked, mut wrong) = (0, Vec::new());
-            let mut turned = None;
-            for b in 0..3000usize {
-                // Once a pass the switch is turned off a little before the
-                // loop's end and on again just before it, a few blocks apart.
-                let at = reading.transport_position(transport) as usize;
-                let pass = b / 300;
-                let turn = match turned {
-                    None if b > 40 && (20_100..20_300).contains(&at) => Some((pass, 1)),
-                    // the second within a few blocks of the end, or within the
-                    // last one, pass by pass
-                    Some((p, 1))
-                        if (if p % 2 == 0 { 20_850 } else { 20_940 }..21_000).contains(&at) =>
-                    {
-                        Some((p, 2))
+            if let Some(t) = turn {
+                turned = Some(t);
+                on = !on;
+                playback.set_pass(if on {
+                    // the loop the frames kept from the first turn read, or
+                    // another one, every other pair of passes
+                    match (t.0 / 2) % 2 {
+                        0 => looped,
+                        _ => Pass::Loop {
+                            from: 2000 + 500 * (b as u64 % 3),
+                            to: 21000,
+                        },
                     }
-                    Some((_, 2)) if at < 20_000 => {
-                        turned = None;
-                        None
+                } else {
+                    Pass::Until {
+                        end: Some(FRAMES as u64),
+                        back: 1000,
                     }
-                    _ => None,
-                };
-                if let Some(t) = turn {
-                    turned = Some(t);
-                    on = !on;
-                    playback.set_pass(if on {
-                        // the loop the frames kept from the first turn read, or
-                        // another one, every other pair of passes
-                        match (t.0 / 2) % 2 {
-                            0 => looped,
-                            _ => Pass::Loop {
-                                from: 2000 + 500 * (b as u64 % 3),
-                                to: 21000,
-                            },
-                        }
-                    } else {
-                        Pass::Until {
-                            end: Some(FRAMES as u64),
-                            back: 1000,
-                        }
-                    });
-                }
-                let before = reading.transport_position(transport) as usize;
-                engine.process_block(&mut out);
-                app.lock().unwrap().pump();
-                let after = reading.transport_position(transport) as usize;
-                let left: Vec<f32> = out.as_chunks::<2>().0.iter().map(|f| f[0]).collect();
-                sounding |= b > 0 && left[0] != 0.0;
-                // a block played straight through, past the play's ramp and
-                // short of the end's
-                if sounding && b > 20 && after == before + BLOCK_SIZE && after <= FRAMES - 600 {
-                    checked += 1;
-                    if let Some(i) =
-                        (0..BLOCK_SIZE).find(|&i| (left[i] - values[before + i]).abs() > 1e-6)
-                    {
-                        wrong.push((b, i, left[i], values[before + i]));
-                    }
-                }
-                if b % 16 == 15 {
-                    std::thread::sleep(Duration::from_micros(1_333 * 16));
+                });
+            }
+            let before = reading.transport_position(transport) as usize;
+            engine.process_block(&mut out);
+            app.lock().unwrap().pump();
+            let after = reading.transport_position(transport) as usize;
+            let left: Vec<f32> = out.as_chunks::<2>().0.iter().map(|f| f[0]).collect();
+            sounding |= b > 0 && left[0] != 0.0;
+            // a block played straight through, past the play's ramp and
+            // short of the end's
+            if sounding && b > 20 && after == before + BLOCK_SIZE && after <= FRAMES - 600 {
+                checked += 1;
+                if let Some(i) =
+                    (0..BLOCK_SIZE).find(|&i| (left[i] - values[before + i]).abs() > 1e-6)
+                {
+                    wrong.push((b, i, left[i], values[before + i]));
                 }
             }
-            let _ = std::fs::remove_file(&path);
-            let starved = app.lock().unwrap().handle().meters().starved();
-            ((checked, wrong), starved)
-        });
-        assert!(checked > 300, "fed {fed}: only {checked} blocks checked");
-        assert!(
-            wrong.is_empty(),
-            "fed {fed}: {} of {checked} blocks wrong: {:?}",
-            wrong.len(),
-            &wrong[..wrong.len().min(8)]
-        );
-    }
+            if b % 16 == 15 {
+                std::thread::sleep(Duration::from_micros(1_333 * 16));
+            }
+        }
+        let _ = std::fs::remove_file(&path);
+        let starved = app.lock().unwrap().handle().meters().starved();
+        ((checked, wrong), starved)
+    });
+    assert!(checked > 300, "only {checked} blocks checked");
+    assert!(
+        wrong.is_empty(),
+        "{} of {checked} blocks wrong: {:?}",
+        wrong.len(),
+        &wrong[..wrong.len().min(8)]
+    );
 }
 
 /// **A pass that ends on its own is taken in on the application's turn**:

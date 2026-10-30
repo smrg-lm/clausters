@@ -254,7 +254,7 @@ pub fn mean_square(samples: &[f32]) -> Option<f32> {
 ///
 /// One function because there is one layout, and every end of it is somebody
 /// else's: the server's `/buffer_stream` reports it as a recording grows and
-/// `/buffer_peaks` answers it for a buffer that stands still, while a client
+/// a host's answerer answers it for a list that stands still, while a client
 /// folds it straight into the pyramid a picture already holds
 /// ([`Pyramid::write_buckets`], [`MultiPyramid::write_buckets`]) -- the same
 /// three statistics in the same energy form, so nothing is converted anywhere.
@@ -1323,7 +1323,7 @@ mod tests {
     }
 
     /// **The overview is the pyramid's level 0, said on the wire** -- one
-    /// function serves both ends of `/buffer_stream` and `/buffer_peaks`, so
+    /// function serves both ends of `/buffer_stream` and a host's answerer, so
     /// what it produces has to be exactly what `write_buckets` folds back.
     #[test]
     fn an_overview_is_the_base_level_in_the_wire_layout() {

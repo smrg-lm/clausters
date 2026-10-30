@@ -296,9 +296,8 @@ its plan; the plan is where its acceptance is read.
 ### The near work
 
 - ⬜ **The second turn: an editing application holds its engine**,
-  milestone `X34`, then `S23` *(`crates/clausters-apps/PLAN.md`,
-  "The second turn: an editing application holds its engine"; `S23` in root
-  `PLAN.md`)*. **Taken next**, on the user's word: a copy and paste pattern
+  milestone `X34` *(`crates/clausters-apps/PLAN.md`,
+  "The second turn: an editing application holds its engine")*. **Taken next**, on the user's word: a copy and paste pattern
   that reaches hours hangs the audio editor, because each paste flattens the
   clipboard into the list and the whole list is sent to the server as one
   message that outgrows a packet. It revises the first turn
@@ -306,8 +305,7 @@ its plan; the plan is where its acceptance is read.
   surviving work carries over. In that order, now that the application
   holds its engine, its take is shared blocks and it reads and draws its
   takes: the multitrack on the same modules, its parts left in order in
-  its plan, its parts done and its by-ear and by-eye pass left; and the server's cleaning last, once nothing
-  calls what it removes.
+  its plan, its parts done and its by-ear and by-eye pass left.
   Before `X25`, which should port this lifecycle.
   **Related:** found moving the editor onto files, and taken
   after `X32`: the apps plan's "A page decodes no compressed file when it
@@ -317,7 +315,6 @@ its plan; the plan is where its acceptance is read.
   | Order | Milestone | Plan |
   |---|---|---|
   | 1 | `X34` — The multitrack over the same modules | `crates/clausters-apps/PLAN.md` |
-  | 2 | `S23` — The server keeps no editing commands, widened | root `PLAN.md` |
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable

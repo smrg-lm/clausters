@@ -16,11 +16,11 @@ fn def_msg(id: i32, json: &str) -> OscPacket {
     })
 }
 
-/// **A join is asked for again when its stitch is done.** Its box names
-/// the buffer in the turn the stitch is sent, so the first ask can find
-/// the buffer empty; the server's `/done` is when the samples are there.
+/// **A take is asked for again when another peer announces a write to
+/// it**: the first ask can find the buffer empty, and the write is what
+/// says its samples are there.
 #[test]
-fn a_stitched_take_is_asked_for_again() {
+fn a_take_written_by_another_peer_is_asked_for_again() {
     let mut host = Host::new();
     host.handle_packet(
         def_msg(
@@ -41,24 +41,6 @@ fn a_stitched_take_is_asked_for_again() {
     };
     assert_eq!(ask(&mut host), vec![3], "the first repaint asks");
     assert!(ask(&mut host).is_empty(), "and the next does not");
-
-    let done = |command: &str, bufnum: i32| OscMessage {
-        addr: "/done".into(),
-        args: vec![OscType::String(command.into()), OscType::Int(bufnum)],
-    };
-    assert!(host.forget_stitched(&done("/buffer_alloc", 3)).is_empty());
-    assert!(host.forget_stitched(&done("/buffer_stitch", 4)).is_empty());
-    assert!(ask(&mut host).is_empty(), "nothing else forgets it");
-
-    assert_eq!(host.forget_stitched(&done("/buffer_stitch", 3)), vec![1]);
-    assert_eq!(ask(&mut host), vec![3], "made, it is asked for again");
-
-    // **And the `/done` is not the only way to hear it.** When a *client*
-    // owns the multitrack it is the client that sends the stitch, so the `/done`
-    // goes to the client and never reaches here; what does reach here is
-    // the write the server announces to every other peer, which is the same
-    // news under another name.
-    assert!(ask(&mut host).is_empty(), "the second ask stands");
     assert_eq!(host.forget_take(3), vec![1]);
     assert_eq!(ask(&mut host), vec![3], "written, it is asked for again");
     assert!(

@@ -425,22 +425,6 @@ export class ServerTransport {
     }
 
     /**
-     * Readies the transport's disk readers where it stands
-     * (`/transport_cue`), the pre-roll a play from a file wants: every
-     * `TransportDiskIn` in its governed group fills its ring at the standing
-     * position, and the promise resolves once they hold it -- `true` -- or
-     * once the server's bounded wait is over, `false`. Nothing else moves:
-     * the transport stays stopped, its clock frozen, and a `transportPlay`
-     * after it starts on frames already read. Without a group bound it
-     * resolves at once.
-     */
-    async transportCue(this: Server, timeout?: number): Promise<boolean> {
-        const msg = await this.command("/transport_cue", [["i", this.transportId]], timeout);
-        const ready = msg.args[2];
-        return ready === undefined ? true : Number(ready) !== 0;
-    }
-
-    /**
      * Sets the shared transport's song position (`/transport_locate`) -- where
      * play starts, or where it seeks to while playing. Every following playhead
      * locates to it. Broadcast to `/server_notify` clients.

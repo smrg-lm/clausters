@@ -67,21 +67,10 @@ export class WebServer {
      */
     delegateJobs(): void;
     /**
-     * Answers a `list` stream's request with the span it asked for,
-     * interleaved. Returns whether it was taken: a span for an older refill
-     * (another `generation`) or for frames the stream has left is dropped,
-     * and the stream asks again.
-     */
-    diskListPush(id: number, generation: number, at: number, list_frames: number, samples: Float32Array): boolean;
-    /**
      * Every open disk stream and what it wants right now, as JSON: an array of
-     * `{id, direction: "in"|"out"|"list", path, channels, looping, start,
-     * format, samples, generation, at, listFrames, span}`. `start` is the
-     * frame an `in` reads from first; `samples` is room to fill for an `in`,
-     * and samples waiting for an `out`. A `list` (`TransportDiskIn`) asks for
-     * `span` frames of `path` (a file of `channels` channels) from `start`,
-     * to render `listFrames` frames of its list from `at`; the answer goes to
-     * [`disk_list_push`](Self::disk_list_push) with its `generation`.
+     * `{id, direction: "in"|"out", path, channels, looping, start, format,
+     * samples}`. `start` is the frame an `in` reads from first; `samples` is
+     * room to fill for an `in`, and samples waiting for an `out`.
      *
      * This is the whole interface between the graph and whatever is reading
      * files: the host walks it each turn, fills what is hungry with
@@ -130,14 +119,6 @@ export class WebServer {
      * [`take_faust_jobs`](Self::take_faust_jobs).
      */
     finishFaust(ticket: number, compute: number, init: number, json?: string | null, error?: string | null): void;
-    /**
-     * Answers a delegated `shapes` job (`/buffer_stitch` with parts over
-     * files): one entry per path it named, in its order -- `channels`,
-     * `sample_rates` and `frames` for a file the host read, and a non-empty
-     * `errors[i]` for one it could not. The join is resolved and installed
-     * here, and the `/done` or `/fail` follows.
-     */
-    finishShapes(ticket: number, paths: string[], channels: Uint32Array, sample_rates: Float64Array, frames: Float64Array, errors: string[]): void;
     /**
      * How many frames one [`buffer_load_chunk`](Self::buffer_load_chunk)
      * should carry -- the serving budget's number, read from the engine rather
@@ -357,14 +338,12 @@ export interface InitOutput {
     readonly webserver_ctl_get: (a: number, b: number) => number;
     readonly webserver_ctl_set: (a: number, b: number, c: number) => void;
     readonly webserver_delegateJobs: (a: number) => void;
-    readonly webserver_diskListPush: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly webserver_diskPoll: (a: number) => [number, number];
     readonly webserver_diskPull: (a: number, b: number, c: number) => [number, number];
     readonly webserver_diskPush: (a: number, b: number, c: number, d: number) => number;
     readonly webserver_diskShape: (a: number, b: number, c: number) => void;
     readonly webserver_finishDelegated: (a: number, b: number, c: number, d: number) => void;
     readonly webserver_finishFaust: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
-    readonly webserver_finishShapes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => void;
     readonly webserver_installFrames: (a: number) => number;
     readonly webserver_new: (a: number, b: number, c: number) => [number, number, number];
     readonly webserver_poll: (a: number) => [number, number];

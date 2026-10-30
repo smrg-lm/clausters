@@ -29,15 +29,8 @@ use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 /// **A reader's place in a buffer**: the buffer, and the contiguous run it is
 /// currently inside.
 ///
-/// Over a plain buffer the run is the whole of it and this is
-/// [`Buffer::sample`] with a bounds check in front. Over a
-/// [join](crate::dsp::stitch) it is what makes a join cost what a buffer costs:
-/// the join otherwise resolves which part a frame belongs to **on every
-/// sample** -- twice per interpolated read -- and a reader advancing
-/// monotonically crosses a seam once a block at the very most. So the part is
-/// resolved when the block enters it and held while the frames stay inside,
-/// and the per-sample path is the fallback for the block that does cross one,
-/// and for a phase that jumps, runs backwards or is modulated.
+/// The run is the whole buffer, its cells taken once, so a read is an indexed
+/// load with a bounds check in front ([`Buffer::run_at`]).
 ///
 /// One of these lives in a local for the length of a `process` call: a run
 /// borrows the buffer, and the buffer cannot be replaced while it is borrowed.
@@ -528,104 +521,5 @@ impl UGen for BufInfo {
             None => 0.0,
         };
         output.fill(value);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::dsp::stitch::{FadeShape, PartSpec, Stitch};
-    use std::sync::Arc;
-
-    /// **The run is an optimization, so it must answer exactly what the
-    /// per-sample path answers** -- at the seam, inside a fade, and after a
-    /// phase that jumped backwards, which are the three places a held run could
-    /// be the wrong one.
-    #[test]
-    fn a_held_run_reads_what_the_per_sample_path_reads() {
-        let take = Arc::new(Buffer::new(
-            (0..64).map(|i| i as f32).collect(),
-            1,
-            64,
-            48_000.0,
-        ));
-        // Three parts out of order, the middle one faded at both ends.
-        let join = Buffer::stitched(
-            Stitch::new(
-                vec![
-                    PartSpec {
-                        src: Arc::clone(&take),
-                        src_index: 0,
-                        src_start: 32,
-                        frames: 8,
-                        fade_in: 0,
-                        fade_out: 0,
-                        fade_in_shape: FadeShape::LINEAR,
-                        fade_out_shape: FadeShape::LINEAR,
-                        map: vec![0],
-                    },
-                    PartSpec {
-                        src: Arc::clone(&take),
-                        src_index: 0,
-                        src_start: 0,
-                        frames: 8,
-                        fade_in: 3,
-                        fade_out: 3,
-                        fade_in_shape: FadeShape::LINEAR,
-                        fade_out_shape: FadeShape::LINEAR,
-                        map: vec![0],
-                    },
-                    PartSpec {
-                        src: Arc::clone(&take),
-                        src_index: 0,
-                        src_start: 16,
-                        frames: 8,
-                        fade_in: 0,
-                        fade_out: 0,
-                        fade_in_shape: FadeShape::LINEAR,
-                        fade_out_shape: FadeShape::LINEAR,
-                        map: vec![0],
-                    },
-                ],
-                1,
-                48_000.0,
-            )
-            .expect("built"),
-            1,
-            48_000.0,
-        );
-
-        // The per-sample reference: `Buffer::sample` twice, which is what
-        // `read_lin` was before a reader held anything.
-        let reference = |pos: f64| {
-            let f0 = pos as usize;
-            let frac = (pos - f0 as f64) as f32;
-            let f1 = if f0 + 1 < join.frames() { f0 + 1 } else { f0 };
-            join.sample(f0, 0) * (1.0 - frac) + join.sample(f1, 0) * frac
-        };
-
-        let mut reader = Reader::new(&join);
-        // Forward over the whole join, on half frames so every read
-        // interpolates -- including across both seams.
-        let mut pos = 0.0;
-        while pos < 23.0 {
-            let read = reader.read(pos, 0, false);
-            assert!(
-                (read - reference(pos)).abs() < 1e-6,
-                "at {pos}: {read} vs {}",
-                reference(pos)
-            );
-            pos += 0.5;
-        }
-        // And a phase that jumps backwards, which is what makes the held run
-        // the wrong one until it is re-taken.
-        for pos in [20.0, 3.0, 19.5, 8.25, 0.0] {
-            let read = reader.read(pos, 0, false);
-            assert!(
-                (read - reference(pos)).abs() < 1e-6,
-                "after a jump to {pos}: {read} vs {}",
-                reference(pos)
-            );
-        }
     }
 }

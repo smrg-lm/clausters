@@ -113,12 +113,11 @@ const BUILT: [&str; 8] = [
 ];
 
 /// What a play sends once the take is made: how the pass ends, where it
-/// starts, its readers cued there, and the transport rolling.
-const PASS: [&str; 5] = [
+/// starts, and the transport rolling.
+const PASS: [&str; 4] = [
     "/transport_loop",
     "/transport_end",
     "/transport_locateSample",
-    "/transport_cue",
     "/transport_play",
 ];
 

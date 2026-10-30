@@ -53,7 +53,6 @@ mod commands;
 mod dispatch;
 pub mod lanes;
 mod lifecycle;
-mod overviews;
 mod profile;
 mod streams;
 mod transports;
@@ -108,31 +107,21 @@ const MAX_STREAM_TAPS: usize = 8;
 /// handful of takes at once, and a client that wants more takes two.
 const MAX_STREAM_BUFFERS: usize = 32;
 
-/// Ceiling on the **bytes** of one overview reply (`/buffer_stream.reply`,
-/// `/buffer_peaks.reply`), so a subscription that stalled -- or a request for a
-/// long take -- does not answer in one message.
+/// Ceiling on the **bytes** of one overview reply (`/buffer_stream.reply`), so
+/// a subscription that stalled does not answer in one message.
 ///
 /// It is a byte count and not a bucket count because a bucket is not a size: a
 /// bucket costs `channels * 3` floats, so 4096 of them are 96 kB of a stereo
 /// take and 400 kB of an eight-channel one. The carriers have real limits and
 /// the smallest of them is the shared ring's **64 KiB**, which drops what does
-/// not fit *silently* -- a page that asked for a summary and got nothing back,
+/// not fit *silently* -- a page that subscribed and got nothing back,
 /// forever, is exactly what this ceiling exists to prevent. An eighth of the
 /// ring leaves room for the several replies in the air while a session draws,
 /// which is the same reasoning that sizes a client's `/buffer_getRange` chunk.
 ///
-/// What is left over is asked for again (`/buffer_peaks`, whose reply says
-/// where it ended) or sent by the next report (`/buffer_stream`, whose
-/// frontier is where the report ended and not where the samples end).
+/// What is left over is sent by the next report, whose frontier is where the
+/// report ended and not where the samples end.
 const MAX_STREAM_BYTES: usize = 8 * 1024;
-
-/// **Samples one `/buffer_peaks` reply may read** to measure what the
-/// buffer's summary has not measured yet, across its channels: 1.4 s of
-/// stereo, which a page's engine reads in some 0.4 ms (measured in node,
-/// 2026-10-22) -- a sixth of the 2.67 ms a 128-frame quantum leaves for the
-/// whole turn, so a long take's first pass is spread over many turns and none
-/// of them is late.
-const SUMMARY_READ_SAMPLES: usize = 1 << 17;
 
 /// The above as a bucket count, for a buffer of `channels` channels: each
 /// bucket carries `min`, `max` and mean square per channel.
@@ -236,11 +225,6 @@ pub struct OscServer {
     /// list stays empty, which is why it is written and never read there.
     #[cfg_attr(not(unix), allow(dead_code))]
     shared_buffers: Vec<Option<std::path::PathBuf>>,
-    /// Per buffer, the **overview** beside its region: the peak pyramid a peer
-    /// maps instead of summarizing the samples itself, kept current span by
-    /// span as writes land. See [`overviews`].
-    #[cfg_attr(not(unix), allow(dead_code))]
-    overviews: overviews::Overviews,
     /// TCP transport, when `listen_tcp` was called: accepts length-prefixed OSC
     /// connections multiplexed into the same loop. See [`clausters_net::tcp`].
     tcp: Option<clausters_net::tcp::TcpHub>,
@@ -310,9 +294,6 @@ pub struct OscServer {
     /// Defs whose spare instance the build worker is preparing.
     plugin_spares_building: std::collections::HashSet<String>,
     pending_syncs: Vec<PendingSync>,
-    /// The clients waiting on a `/transport_cue`, with the transport each
-    /// cued: answered together when the engine says the cue is over.
-    pending_cues: Vec<(ClientId, usize)>,
     /// Each transport's network-side state -- its grid, its rolling state, its
     /// bindings -- indexed by transport id and sized at boot (`--transports`).
     transports: Vec<Transport>,

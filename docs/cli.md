@@ -120,10 +120,11 @@ clients to tell, so of the transport commands it takes the ones the engine
 carries out itself, each at its exact sample like the rest of the bundle:
 `/transport_group` (the group it governs, which the score makes with
 `/group_new`), `/transport_play` with no position, `/transport_stop` and
-`/transport_locateSample`. That is what a render playing a list of files at the
-transport's position needs (`TransportDiskIn` over a `/buffer_stitch` of file
-parts); a play from a beat is refused, since a beat needs a grid. Offline the
-streams wait for what they read, so a list is read from its first frame.
+`/transport_locateSample`. That is what a render playing a take at the
+transport's position needs (`TransportDiskIn` over a buffer the render's
+application feeds); a play from a beat is refused, since a beat needs a grid.
+Offline the streams wait for what they read, so a take is read from its first
+frame.
 
 | Flag | Value | Default | What it does |
 | --- | --- | --- | --- |

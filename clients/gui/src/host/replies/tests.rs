@@ -79,7 +79,8 @@ fn from() -> ClientId {
     )))
 }
 
-const TEN_MINUTES: usize = 10 * 60 * 48_000;
+/// Two seconds of mono: a server buffer is read back whole.
+const TAKE: usize = 2 * 48_000;
 
 impl Probe {
     /// A window drawing take 7 as a trace.
@@ -132,54 +133,43 @@ impl Probe {
         self.ask_owed_spans(&[1]);
     }
 
-    /// The server answering one `/buffer_peaks`, mono, every bucket `value`.
-    fn answer(&mut self, ask: &OscMessage, value: f32, take: usize) {
-        let ints: Vec<i64> = ask
-            .args
-            .iter()
-            .map(|a| match a {
-                OscType::Int(v) => *v as i64,
-                _ => 0,
-            })
-            .collect();
-        let (bucket, start, frames) = (ints[1] as usize, ints[2] as usize, ints[3] as usize);
-        let end = (start + frames).min(take);
-        let buckets = (end - start).div_ceil(bucket).min(8 * 1024 / 12);
-        let mut blob = Vec::new();
-        for _ in 0..buckets {
-            for v in [-value, value, value * value] {
-                blob.extend_from_slice(&v.to_le_bytes());
-            }
-        }
-        self.on_server_reply(
-            Leg::Server,
-            &OscMessage {
-                addr: "/buffer_peaks.reply".into(),
-                args: vec![
-                    OscType::Int(7),
-                    OscType::Long(start as i64),
-                    OscType::Int(bucket as i32),
-                    OscType::Blob(blob),
-                ],
-            },
-        );
-    }
-
-    /// Answers every summary request until none is left, counting them.
+    /// The server answering every `/buffer_getRange` until none is left,
+    /// every sample `value`; how many it answered.
     fn answer_all(&mut self, value: f32, take: usize) -> usize {
         let mut asks = 0;
         loop {
             let pending: Vec<_> = self
                 .sent()
                 .into_iter()
-                .filter(|m| m.addr == "/buffer_peaks")
+                .filter(|m| m.addr == "/buffer_getRange")
                 .collect();
             if pending.is_empty() {
                 return asks;
             }
             for ask in pending {
                 asks += 1;
-                self.answer(&ask, value, take);
+                let [OscType::Int(bufnum), start, count] = ask.args.as_slice() else {
+                    panic!("a range ask: {ask:?}");
+                };
+                let index = |a: &OscType| match a {
+                    OscType::Int(v) => *v as usize,
+                    OscType::Long(v) => *v as usize,
+                    _ => 0,
+                };
+                let (start, count) = (index(start), index(count));
+                let n = count.min(take.saturating_sub(start));
+                let blob = clausters_core::osc::sample_blob(&vec![value; n]);
+                self.on_server_reply(
+                    Leg::Server,
+                    &OscMessage {
+                        addr: "/buffer_getRange.reply".into(),
+                        args: vec![
+                            OscType::Int(*bufnum),
+                            OscType::Int(start as i32),
+                            OscType::Blob(blob),
+                        ],
+                    },
+                );
             }
         }
     }
@@ -197,50 +187,33 @@ impl Probe {
 
 /// **A window's picture is awaited until nothing more is owed**: what a
 /// capture of a window the compositor does not draw waits on. Told its take,
-/// a view owes the summary; drawn, it asks; answered whole, nothing is owed.
+/// a view of a server buffer reads it back; read whole, nothing is owed.
 #[test]
-fn a_picture_is_awaited_until_its_summary_is_whole() {
+fn a_picture_is_awaited_until_its_samples_are_whole() {
     let mut probe = Probe::open();
-    probe.told(TEN_MINUTES);
-    assert!(
-        probe.awaits_picture(1),
-        "a view told its take owes its summary"
-    );
-    probe.drawn(760.0);
-    assert!(probe.awaits_picture(1), "asked, not answered");
-    probe.answer_all(0.5, TEN_MINUTES);
-    assert_eq!(probe.picture(), Some((TEN_MINUTES, 0.5)));
+    probe.told(TAKE);
+    assert!(probe.awaits_picture(1), "a view told its take reads it");
+    probe.answer_all(0.5, TAKE);
+    assert_eq!(probe.picture(), Some((TAKE, 0.5)));
     assert!(!probe.awaits_picture(1), "whole, nothing more is owed");
 }
 
-/// **A take's summary is asked at the level the view is drawn at**, once it
-/// has been drawn, and comes in a few replies whatever the take's length.
+/// **A server buffer is read back and summarized here**: the server keeps
+/// no summary, so nothing asks it for one, and the picture is placed once
+/// every chunk has come.
 #[test]
-fn a_summary_is_asked_at_the_drawn_level_and_placed_whole() {
+fn a_server_buffer_is_read_back_and_placed_whole() {
     let mut probe = Probe::open();
-    probe.told(TEN_MINUTES);
-    assert!(
-        probe.sent().iter().all(|m| m.addr != "/buffer_peaks"),
-        "nothing says how wide the view is before it is drawn"
-    );
-    probe.drawn(760.0);
+    probe.told(TAKE);
     let asked = probe.sent();
-    let ask = asked
-        .iter()
-        .find(|m| m.addr == "/buffer_peaks")
-        .expect("drawn, it asks");
-    assert_eq!(
-        ask.args[1],
-        OscType::Int(32_768),
-        "the coarsest level its columns resolve"
-    );
+    assert!(asked.iter().all(|m| m.addr != "/buffer_summary"));
+    assert!(asked.iter().any(|m| m.addr == "/buffer_getRange"));
     assert_eq!(probe.picture(), None);
-    // The first of the two replies is not drawn: half a summary is not one.
-    probe.answer(ask, 0.5, TEN_MINUTES);
-    assert_eq!(probe.picture(), None, "nothing until it is whole");
-    let rest = probe.answer_all(0.5, TEN_MINUTES);
-    assert_eq!(rest, 1, "879 buckets of mono: two replies");
-    assert_eq!(probe.picture(), Some((TEN_MINUTES, 0.5)));
+    for msg in asked {
+        probe.sent.borrow_mut().push(msg);
+    }
+    probe.answer_all(0.5, TAKE);
+    assert_eq!(probe.picture(), Some((TAKE, 0.5)));
     probe.drawn(760.0);
     assert!(probe.sent().is_empty(), "a still window asks for nothing");
 }
@@ -252,12 +225,11 @@ fn a_summary_is_asked_at_the_drawn_level_and_placed_whole() {
 #[test]
 fn an_edit_keeps_the_picture_until_the_new_one_is_whole() {
     let mut probe = Probe::open();
-    probe.told(TEN_MINUTES);
-    probe.drawn(760.0);
-    probe.answer_all(0.5, TEN_MINUTES);
-    assert_eq!(probe.picture(), Some((TEN_MINUTES, 0.5)));
+    probe.told(TAKE);
+    probe.answer_all(0.5, TAKE);
+    assert_eq!(probe.picture(), Some((TAKE, 0.5)));
 
-    // A paste: the owner restitched the take, a second longer, and says so.
+    // A paste: the owner wrote the take again, a second longer, and says so.
     probe.host.handle_packet(
         OscPacket::Message(OscMessage {
             addr: GUI_SET.into(),
@@ -276,24 +248,16 @@ fn an_edit_keeps_the_picture_until_the_new_one_is_whole() {
         .and_then(|w| w.kind.as_samples_mut())
         .and_then(|s| s.wants_reload());
     assert!(asks_again.is_some(), "the reload is a read");
-    assert_eq!(probe.picture(), Some((TEN_MINUTES, 0.5)), "drawn meanwhile");
+    assert_eq!(probe.picture(), Some((TAKE, 0.5)), "drawn meanwhile");
 
-    let longer = TEN_MINUTES + 48_000;
+    let longer = TAKE + 48_000;
     probe.told(longer);
-    probe.drawn(760.0);
-    let asked = probe.sent();
-    let ask = asked
-        .iter()
-        .find(|m| m.addr == "/buffer_peaks")
-        .expect("asked at its level");
-    probe.answer(ask, 0.75, longer);
     assert_eq!(
         probe.picture(),
-        Some((TEN_MINUTES, 0.5)),
+        Some((TAKE, 0.5)),
         "the take before the edit, still whole, while the new one comes"
     );
-    let rest = probe.answer_all(0.75, longer);
-    assert!(rest <= 2, "a few replies, whatever the length: {rest}");
+    probe.answer_all(0.75, longer);
     assert_eq!(
         probe.picture(),
         Some((longer, 0.75)),

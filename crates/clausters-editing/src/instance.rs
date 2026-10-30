@@ -355,8 +355,9 @@ pub enum Op {
         /// The ramp's length.
         samples: i64,
     },
-    /// **Ready transport `transport`'s disk readers where it stands**
-    /// (`/transport_cue`), before a play.
+    /// **Ready transport `transport`'s disk readers where it stands**, before
+    /// a play: the engine's cue, carried out only in an engine an application
+    /// holds.
     TransportCue {
         /// The transport.
         transport: i32,

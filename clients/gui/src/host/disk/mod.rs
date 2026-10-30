@@ -17,9 +17,9 @@
 //! **It goes through the fetch machine the host already has.** A list gets a
 //! **take key** ([`is_list_key`]), a buffer number in a range no server
 //! allocates, and the views over it ask for its shape, its summary at the
-//! level they draw and the span under a zoom exactly as they ask a server for
-//! a buffer's -- `/buffer_query`, `/buffer_peaks`, `/buffer_getRange` -- and
-//! are answered in the server's own reply formats. What differs is only where
+//! level they draw and the span under a zoom -- `/buffer_query`, the host's
+//! own `/buffer_summary`, `/buffer_getRange` -- and are answered in the
+//! server's reply formats where the server has the question. What differs is only where
 //! a message goes: a front sends a list key's to the host's [`DiskLink`]
 //! instead of to a server, so asking at the drawn level, placing a picture
 //! whole, keeping it across an edit and asking again after a lost reply are

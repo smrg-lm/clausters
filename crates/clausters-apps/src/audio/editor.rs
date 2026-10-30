@@ -6,8 +6,8 @@
 //! gesture read in its vocabulary, an acknowledgement, and an entry for the
 //! history the caller keeps -- with one difference in what comes back: not a
 //! write into the take, but the **steps** that render a new file where a turn
-//! needs one ([`Outcome::steps`]), and over a server the stitch of the join it
-//! plays. The window is told the new list by reference (`segments`, through
+//! needs one ([`Outcome::steps`]); the application's own reader feeds its
+//! engine the new list. The window is told the new list by reference (`segments`, through
 //! [`crate::audio::shared`]). Each entry names the takes before and after it
 //! by number and states the files each reads, so the history holds them for
 //! as long as it can walk to them.

@@ -306,21 +306,6 @@ class ServerTransport:
             raise CommandError(f"/transport_stop failed: {args}")
         return self
 
-    def transport_cue(self, timeout: "float | None" = None) -> bool:
-        """Ready the transport's disk readers where it stands
-        (``/transport_cue``), the pre-roll a play from a file wants: every
-        ``TransportDiskIn`` in its governed group fills its ring at the
-        standing position, and the call returns once they hold it -- ``True``
-        -- or once the server's bounded wait is over, ``False``. Nothing else
-        moves: the transport stays stopped, its clock frozen, and a
-        `transport_play` after it starts on frames already read. Without a
-        group bound it returns at once."""
-        addr, args = self.request("/transport_cue", self.transport_id,
-                                  timeout=timeout, expect=("/done", "/fail"))
-        if addr == "/fail":
-            raise CommandError(f"/transport_cue failed: {args}")
-        return bool(args[2]) if len(args) > 2 else True
-
     def transport_locate_sample(self, sample: int, timeout: "float | None" = None):
         """Seek on the transport's own **sample** axis (``/transport_locateSample``).
 

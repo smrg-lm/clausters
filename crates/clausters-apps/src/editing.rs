@@ -402,8 +402,8 @@ impl Editing {
 
     /// **Plays its audio members on `engine`**, an engine the application
     /// holds: their playback's ops become the engine's commands, and each
-    /// file's list is handed to the engine to read rather than stitched into
-    /// a join on a server. Set before the first audio member opens.
+    /// file's list is read by the application's own reader into the engine.
+    /// Set before the first audio member opens.
     pub fn hold_engine(&mut self, engine: Box<dyn held::HeldEngine>) {
         self.engine = Some(engine);
     }

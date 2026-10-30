@@ -31,23 +31,20 @@
       That last part is the one that matters: it is the only thing that says
       the spans crossed the port and landed in the ring in time. Then it streams
       from a start frame: half way in it sounds, past the end it is silent.
-      Last, a join whose parts name two files plays at the transport's position
-      through transportDiskIn: every sample the bus carries is a frame of one
-      of the two files (or the silence of a refill), both files are heard, and
-      a locate under the moving playhead keeps it so. Then the long-file
+      Then the long-file
       containers: diskOut records into a W64, read back, and buffer.write
       writes an RF64 that
       Buffer.read reads back sample for sample. Mid-take, the recording is
       already a sound file of what it holds: a run is written where the body
       ends and the header again, so the worker never holds the take. Last,
-      an offline render in a Worker of its own reads the two files as a list
-      and writes its own file and peaks: the list is there from its first
-      frame, and the live engine goes on streaming one of the files beside it.
+      an offline render in a Worker of its own streams a file with diskIn and
+      writes its own file: the file is there from its first frame, and the
+      live engine goes on streaming the same file beside it.
     -->
     <script type="module">
-      import { Session, opfs, loadCore, SynthDef, Synth, Group, Bus, Buffer, data,
+      import { Session, opfs, loadCore, SynthDef, Synth, Bus, Buffer, data,
         OscNrtInterface, renderScore } from "../dist/index.js";
-      import { diskIn, diskOut, out, sine, transportDiskIn } from "../dist/defs/index.js";
+      import { diskIn, diskOut, out, sine } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -160,9 +157,7 @@
         const past = await level(Math.floor(frames) + 48000);
         log(`from half way: peak ${half.toFixed(3)}; from past the end: peak ${past.toFixed(3)}`);
 
-        // 4) A join of two files at the transport's position. Each file holds
-        //    one value, so every sample the bus carries says which file it
-        //    came from -- or that a refill was still on its way.
+        // 4) A file of one value, which the offline render below reads.
         const constant = (value) => {
           const n = 48000;
           const bytes = new Uint8Array(44 + n * 4);
@@ -177,70 +172,6 @@
           return bytes;
         };
         await opfs.writeFile("takes/a.wav", constant(0.25));
-        await opfs.writeFile("takes/b.wav", constant(-0.5));
-        const join = await Buffer.stitch([
-          { source: "takes/a.wav", start: 0, frames: 12000 },
-          { source: "takes/b.wav", start: 6000, frames: 12000 },
-          { source: "takes/a.wav", start: 24000, frames: 12000 },
-        ], { channels: 1, server });
-        const named = (await join.parts()).map((p) => p.source).join(",");
-        await new SynthDef("list",
-          out(playBus.index, transportDiskIn(join.bufnum, 0, 0, 0, 1))).send(server);
-        // The engine's transport rolls what a bound group holds.
-        const governed = new Group({ server });
-        await server.setTransport(0, 2.0);
-        await server.transportGroup(governed);
-        await server.transportPlay();
-        const list = new Synth("list", {}, { target: governed, server });
-        const heard = new Set();
-        const foreign = [];
-        const listen = async (ms) => {
-          for (let waited = 0; waited < ms; waited += 40) {
-            await wait(40);
-            const window = taps.window(playBus.index);
-            for (const v of window ? window.samples : []) {
-              if (v === 0.25 || v === -0.5) heard.add(v);
-              else if (v !== 0) foreign.push(v);
-            }
-          }
-        };
-        await listen(1500);
-        await server.transportLocateSample(18000);
-        await listen(1000);
-        // A list replaced while it plays -- the join stitched again, as an
-        // edit does -- fades from the old into the new one rather than going
-        // silent while the new one is read.
-        const longest = { zeros: 0 };
-        const watch = async (ms) => {
-          for (let waited = 0; waited < ms; waited += 20) {
-            await wait(20);
-            const window = taps.window(playBus.index);
-            let run = 0;
-            for (const v of window ? window.samples : []) {
-              run = v === 0 ? run + 1 : 0;
-              longest.zeros = Math.max(longest.zeros, run);
-            }
-          }
-        };
-        await server.transportLocateSample(0);
-        await watch(150);
-        longest.zeros = 0;
-        await watch(150);
-        const quiet = longest.zeros;
-        longest.zeros = 0;
-        const raw = (path, start) => [["s", path], ["i", start], ["i", 12000], ["i", 0], ["i", 0],
-          ["i", 0], ["f", 0], ["i", 0], ["f", 0], ["i", 0]];
-        await server.command("/buffer_stitch", [["i", join.bufnum], ["i", 1], ["f", 0],
-          ...raw("takes/b.wav", 0), ...raw("takes/a.wav", 0), ...raw("takes/b.wav", 12000)]);
-        await watch(250);
-        const replaced = longest.zeros;
-        list.free();
-        await server.transportStop();
-        governed.free();
-        log(`join of two files: heard ${[...heard].join(" and ")}, ${foreign.length} foreign samples; parts ${named}; ` +
-            `replaced while it played, the longest silence ${replaced} samples`);
-        const joined = heard.size === 2 && foreign.length === 0 &&
-          named === "takes/a.wav,takes/b.wav,takes/a.wav" && replaced <= 4;
 
         // 5) The long-file containers. A W64 recorded, then read back as a
         //    buffer; an RF64 written from a buffer and read back.
@@ -267,23 +198,16 @@
         const longOk = w64Head === "riff" && w64.frames > 24000 && w64Peak > 0.45 &&
           rf64Head === "RF64" && rf64.frames === w64.frames && same;
 
-        // 6) An offline render that reads the two files as a list and writes
-        //    its own file, run in a Worker of its own: the list is read from
-        //    its first frame (a stream reads inside the block that needs it).
-        const reader = transportDiskIn(1, 0, 0, 0, 0);
-        const listDef = new SynthDef("rendered", out(0, reader));
+        // 6) An offline render that streams the file and writes its own, run
+        //    in a Worker of its own: the file is read from its first frame (a
+        //    stream reads inside the block that needs it).
+        const renderDef = new SynthDef("rendered", out(0, diskIn(1, { path: "takes/a.wav" })));
         const s = (v) => ["s", v];
         const i = (v) => ["i", v];
-        const f = (v) => ["f", v];
-        const part = (path) => [s(path), i(0), i(12000), i(0), i(0), i(0), f(0), i(0), f(0), i(0)];
         const nrt = new OscNrtInterface();
         nrt.addBundle(0, [
-          { addr: "/buffer_stitch", args: [i(1), i(1), f(48000), ...part("takes/a.wav"), ...part("takes/b.wav")] },
-          { addr: "/def_send", args: [s("synth"), s(listDef.dumpDef())] },
-          { addr: "/group_new", args: [i(100), i(1), i(0)] },
-          { addr: "/transport_group", args: [i(0), i(100)] },
-          { addr: "/transport_play", args: [i(0)] },
-          { addr: "/synth_new", args: [s("rendered"), i(1000), i(0), i(100)] },
+          { addr: "/def_send", args: [s("synth"), s(renderDef.dumpDef())] },
+          { addr: "/synth_new", args: [s("rendered"), i(1000), i(0), i(0)] },
         ]);
         nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
         // The live engine streams the same file while the render reads it:
@@ -308,23 +232,19 @@
         const renderedBuf = await Buffer.read("takes/rendered.wav", { server });
         const rendered = await renderedBuf.getSamples({ start: 0, count: renderedBuf.frames });
         const renderedOk = renderedStats.frames === 24000 && rendered.length === 24000 &&
-          rendered.slice(0, 12000).every((v) => v === 0.25) &&
-          rendered.slice(12000).every((v) => v === -0.5) &&
-          livePeak > 0.1;
-        log(`rendered a list of two files: ${rendered.length} frames, first ${rendered[0]}, ` +
-            `at the seam ${rendered[12000]}, the same file streamed live at ${livePeak}`);
+          rendered.every((v) => v === 0.25) && livePeak > 0.1;
+        log(`rendered a stream of a file: ${rendered.length} frames, first ${rendered[0]}, ` +
+            `the same file streamed live at ${livePeak}`);
 
         const ok = riff === "RIFF" && frames > 24000 && peak > 0.1 && half > 0.1 && past < 0.01 &&
-          joined && longOk && midOk && renderedOk;
+          longOk && midOk && renderedOk;
         verdict(ok
           ? `PASS: diskOut recorded ${(frames / 48000).toFixed(2)} s into the page's ` +
             `filesystem (${size} bytes of RIFF) and diskIn streamed it back at ` +
             `peak ${peak.toFixed(3)}, read back whole mid-take, and from a start frame where it was asked to; ` +
-            `a join of two files played at the transport's position, through a locate; ` +
             `a W64 and an RF64 written and read back; an offline ` +
-            `render read a list of two files from its first frame and wrote its file`
+            `render streamed a file from its first frame and wrote its own`
           : `FAIL: riff "${riff}", ${frames} frames, mid-take ${midSize} bytes, ${midData} in the header, ${midFrames} frames read, peak ${peak}, from half ${half}, from past ${past}, ` +
-            `join heard ${[...heard]} with ${foreign.length} foreign (${foreign.slice(0, 4)}), parts ${named}, replaced with a silence of ${replaced} (${quiet} unreplaced), ` +
             `long files ${longOk}, rendered ${renderedOk}`);
         await session.close();
       }

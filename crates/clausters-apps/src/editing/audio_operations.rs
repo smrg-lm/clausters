@@ -497,9 +497,9 @@ impl Editing {
             Ok(ticket) => ticket,
             Err(reason) => return Some(self.refused_audio_walk(reason)),
         };
-        // **A step with nothing to carry out lands at once**: over an engine
-        // the application holds, a list put back is read by the engine and
-        // stitched by nobody, so the walk has no batch to hand out.
+        // **A step with nothing to carry out lands at once**: a list put back
+        // is read by the application's own reader into its engine, so the
+        // walk has no batch to hand out.
         let Some((batch, work)) = self.audio_runtime.operations.next(ticket) else {
             let finished = self.audio_runtime.operations.finish_ready(ticket)?;
             let walk = self.audio_runtime.take_walk(finished.ticket)?;

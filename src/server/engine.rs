@@ -162,8 +162,8 @@ pub enum Cmd {
         transport: usize,
         id: i32,
     },
-    /// `/transport_cue`: the readers of transport `transport`'s governed
-    /// group fill their rings where it stands, the transport staying stopped
+    /// **The cue**, an application's pre-roll: the readers of transport
+    /// `transport`'s governed group fill their rings where it stands, the transport staying stopped
     /// and its clock frozen; answered by [`Garbage::TransportCued`].
     TransportCue {
         transport: usize,
@@ -491,7 +491,7 @@ struct TransportState {
     /// published, so the network thread that hears it reads the position the
     /// pass went back to and not the one before the jump.
     ended: bool,
-    /// A cue in progress (`/transport_cue`), and the blocks it has waited.
+    /// A cue in progress ([`Cmd::TransportCue`]), and the blocks it has waited.
     cue: Option<u32>,
     /// **A loop change waiting for its readers** (`/transport_loop` while it
     /// rolls over disk readers): the span asked for, and the blocks it has

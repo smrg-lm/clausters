@@ -116,8 +116,6 @@ pub enum Phase {
     TapStreams,
     /// The buffer streams (`/buffer_stream`).
     BufferStreams,
-    /// Rebuilding the overviews a write left stale.
-    Overviews,
     /// Collecting what finished: garbage, node events, replies and async
     /// results.
     Collect,
@@ -125,7 +123,7 @@ pub enum Phase {
 
 impl Phase {
     /// Every phase, in wire order.
-    pub const ALL: [Phase; 9] = [
+    pub const ALL: [Phase; 8] = [
         Phase::Commands,
         Phase::Nodes,
         Phase::Publish,
@@ -133,7 +131,6 @@ impl Phase {
         Phase::Streams,
         Phase::TapStreams,
         Phase::BufferStreams,
-        Phase::Overviews,
         Phase::Collect,
     ];
 
@@ -155,7 +152,6 @@ impl Phase {
             Phase::Streams => "streams",
             Phase::TapStreams => "tap-streams",
             Phase::BufferStreams => "buffer-streams",
-            Phase::Overviews => "overviews",
             Phase::Collect => "collect",
         }
     }

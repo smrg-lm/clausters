@@ -28,7 +28,7 @@ from .asdef import as_def, expr_channels
 from .boxes import Box
 from .bus import AudioBusAllocator, Bus, ControlBusAllocator, EventBusAllocator
 from .clocksync import SampleClockModel, UdpSampleClock
-from .buffer import Buffer, BufferAllocator, Part
+from .buffer import Buffer, BufferAllocator
 from .expr import Expr, FaustExpr, SynthExpr
 from .faustdef import FaustDef
 from .plugindef import Plugin, PluginCatalog, PluginDef
@@ -274,7 +274,6 @@ __all__ = ["IdSpaces",
     "EventBusAllocator",
     "Buffer",
     "BufferAllocator",
-    "Part",
     "AddAction",
     "Group",
     "Synth",

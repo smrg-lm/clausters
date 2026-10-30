@@ -314,12 +314,6 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/buffer_getRange", |s, _, m, f| {
         s.handle_buffer_get_range(Args::new(m), f)
     }),
-    ("/buffer_parts", |s, _, m, f| {
-        s.handle_buffer_parts(Args::new(m), f)
-    }),
-    ("/buffer_peaks", |s, _, m, f| {
-        s.handle_buffer_peaks(Args::new(m), f)
-    }),
     ("/buffer_query", |s, _, m, f| {
         s.handle_buffer_query(Args::new(m), f)
     }),
@@ -329,7 +323,6 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/buffer_setChannel", OscServer::handle_buffer_cmd),
     ("/buffer_setRange", OscServer::handle_buffer_cmd),
     ("/buffer_setRangeChannel", OscServer::handle_buffer_cmd),
-    ("/buffer_stitch", OscServer::handle_buffer_cmd),
     ("/buffer_stream", |s, _, m, f| {
         s.handle_buffer_stream(Args::new(m), f)
     }),
@@ -520,9 +513,6 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_synth_get_text(Args::new(m), f)
     }),
     ("/synth_new", OscServer::handle_via_translate),
-    ("/transport_cue", |s, _, m, f| {
-        s.handle_transport_cue(Args::new(m), f)
-    }),
     ("/transport_end", |s, _, m, f| {
         s.handle_transport_end(Args::new(m), f)
     }),

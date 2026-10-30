@@ -210,7 +210,7 @@ export { Bus } from "./defs/bus.ts";
 export { Buffer } from "./defs/buffer.ts";
 export { SoundFile } from "./soundfile.ts";
 export type { SoundFileFormat } from "./soundfile.ts";
-export type { BufferOptions, Part } from "./defs/buffer.ts";
+export type { BufferOptions } from "./defs/buffer.ts";
 export { SynthDef } from "./defs/synthdef.ts";
 export { FaustDef } from "./defs/faustdef.ts";
 export { GraphDef } from "./defs/graphdef.ts";

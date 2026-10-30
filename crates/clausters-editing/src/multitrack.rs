@@ -145,8 +145,8 @@ pub trait Buffers {
     ///
     /// What lets a join be refused as an edit instead of applied and left
     /// hollow: a box trimmed past the end of its take reads frames the take
-    /// does not have, and a stitch asking for them is refused by the server
-    /// after the multitrack already holds the joined box. Defaulted to unknown, which
+    /// does not have, and a join asking for them is refused only after the
+    /// multitrack already holds the joined box. Defaulted to unknown, which
     /// checks nothing.
     fn frames(&self, _source: SourceId) -> Option<u64> {
         None
@@ -1866,7 +1866,7 @@ mod tests {
     /// neither seen nor heard)*. A left-hand trim slides a window's start and
     /// leaves its duration, so a trimmed box's window claims more of its take
     /// than the box plays; built from that claim a part ran past the end of the
-    /// take, and the server refused the whole stitch.
+    /// take, and the whole join was refused.
     #[test]
     fn a_trimmed_box_joins_as_what_it_shows() {
         let mut multitrack = swapped();
@@ -1928,8 +1928,8 @@ mod tests {
 
     /// **A join over a box that reads past its take is refused as an edit**
     /// (found 2026-09-13). A trim is not bounded by its take, so a box can
-    /// play past the end of the samples; minted, that join was a source the
-    /// server refused to stitch, and the multitrack held a joined box over nothing.
+    /// play past the end of the samples; minted, that join was a source
+    /// nothing could read, and the multitrack held a joined box over nothing.
     /// A caller that knows the take's length refuses it with its reason; one
     /// that does not checks nothing, as before.
     #[test]
@@ -2313,7 +2313,7 @@ mod tests {
     }
 
     /// **What a join is not, said out loud.** A gap and an overlap are the two
-    /// cases `/buffer_stitch` cannot state, so they are refused rather than
+    /// cases a list of parts cannot state, so they are refused rather than
     /// joined into something that plays material nobody placed -- and the
     /// refusal travels, which is the difference between a verb that is right
     /// and a key that looks dead.

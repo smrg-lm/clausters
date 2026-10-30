@@ -140,7 +140,6 @@ impl OscServer {
             shm_path: None,
             owns_samples: false,
             shared_buffers: Vec::new(),
-            overviews: Default::default(),
             tcp: None,
             #[cfg(not(target_arch = "wasm32"))]
             ws: None,
@@ -182,7 +181,6 @@ impl OscServer {
             faust_submitted: 0,
             faust_drained: 0,
             pending_syncs: Vec::new(),
-            pending_cues: Vec::new(),
             transports,
             lanes: Default::default(),
             post_errors: true,
@@ -509,8 +507,7 @@ impl OscServer {
         false
     }
 
-    /// Serves every subscription that is due -- the three streams, and the
-    /// overviews a write left stale. One turn of [`Self::run`] and of
+    /// Serves every subscription that is due -- the three streams. One turn of [`Self::run`] and of
     /// [`Self::step`] both end their serving with it.
     fn pump_subscriptions(&mut self) {
         use crate::server::meters::Phase;
@@ -518,10 +515,6 @@ impl OscServer {
         self.metered(Phase::Streams, Self::pump_streams);
         self.metered(Phase::TapStreams, Self::pump_tap_streams);
         self.metered(Phase::BufferStreams, Self::pump_buffer_streams);
-        self.metered(Phase::Overviews, |server| {
-            let now = server.mono_secs();
-            server.overviews.flush(now, &server.translator.buffers);
-        });
     }
 
     /// Runs one part of the serving turn, accounted to its phase.
@@ -569,15 +562,6 @@ impl OscServer {
     /// Answers a delegated job. See [`NrtRunner::finish_delegated`].
     pub fn finish_delegated(&mut self, ticket: u64, outcome: Result<(), String>) {
         self.nrt.finish_delegated(ticket, outcome);
-    }
-
-    /// Answers a delegated `/buffer_stitch` with the shapes of its files.
-    pub fn finish_delegated_shapes(
-        &mut self,
-        ticket: u64,
-        shapes: Vec<Result<crate::dsp::pcm::Layout, String>>,
-    ) {
-        self.nrt.finish_delegated_shapes(ticket, shapes);
     }
 
     /// The Faust compilations waiting for the host, if this build's compiler is
@@ -712,9 +696,8 @@ impl OscServer {
                 }
                 Garbage::FreedBuffer(_) | Garbage::RetiredSynth(_) => {}
                 Garbage::TransportEnded { transport } => self.on_transport_ended(transport),
-                Garbage::TransportCued { transport, ready } => {
-                    self.on_transport_cued(transport, ready)
-                }
+                // A cue is an application engine's, never sent over the wire.
+                Garbage::TransportCued { .. } => {}
                 Garbage::SpentBundle(cmds) => {
                     // The executed shell of a timed bundle (empty), or one a
                     // `/sched_clear` dropped with its commands still in it:

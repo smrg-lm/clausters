@@ -7,8 +7,8 @@
 //! they are walked. Every endpoint walked them its own way: the Python client
 //! paired a send with a blocking request, the web client awaited, and the GUI
 //! host kept a queue with a reply path of its own. Three walks of one list, and
-//! the host's had nowhere to put a session's open, so a join's stitch went out
-//! before the reads it is made of.
+//! the host's had nowhere to put a session's open, so a command went out
+//! before the reads it depends on.
 //!
 //! So the walk is here, as data: steps in, the messages that may leave, and a
 //! reply offered to what the queue is held behind. It opens no socket and waits
@@ -20,8 +20,8 @@
 //! A step names the [`Server`] it goes to, and a reply the one it came from. A
 //! client has one server and names [`Server::Sound`] throughout; the standalone
 //! host has two -- a session that holds the samples and a player that sounds
-//! them -- and a join is made in the first and attached in the second, in that
-//! order. The queue is **one**, across both: order is what the steps state, and
+//! them -- and a buffer is made in the first and attached in the second, in
+//! that order. The queue is **one**, across both: order is what the steps state, and
 //! a wait holds everything after it wherever it goes.
 
 use std::collections::VecDeque;
@@ -510,7 +510,7 @@ mod tests {
         assert_eq!(addrs(&run.ready()), [(Server::Sound, "/node_set")]);
     }
 
-    /// **A join waits for its reads where the samples are, and is attached
+    /// **A buffer waits for its reads where the samples are, and is attached
     /// where the multitrack sounds**: one queue across two servers, and only the
     /// server a wait was sent to can release it.
     #[test]
@@ -531,9 +531,9 @@ mod tests {
         run.push(
             Server::Samples,
             [
-                send("/buffer_stitch", vec![OscType::Int(5)]),
+                send("/buffer_gen", vec![OscType::Int(5)]),
                 Step::AwaitDone {
-                    command: "/buffer_stitch".into(),
+                    command: "/buffer_gen".into(),
                     index: Some(5),
                 },
             ],
@@ -563,10 +563,10 @@ mod tests {
         run.reply(Server::Samples, &done("/buffer_allocRead", 2));
         assert_eq!(
             addrs(&run.ready()),
-            [(Server::Samples, "/buffer_stitch")],
-            "the stitch after both reads, never before"
+            [(Server::Samples, "/buffer_gen")],
+            "the command after both reads, never before"
         );
-        run.reply(Server::Samples, &done("/buffer_stitch", 5));
+        run.reply(Server::Samples, &done("/buffer_gen", 5));
         assert_eq!(addrs(&run.ready()), [(Server::Sound, "/buffer_attach")]);
         assert!(run.is_idle());
     }

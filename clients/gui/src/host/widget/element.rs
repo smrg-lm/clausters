@@ -2565,8 +2565,8 @@ pub trait Samples {
     /// downloads it, so a view switch -- which redefines the window --
     /// re-fetched every drawn take's shape and peaks and drew a frame for
     /// each reply. What is carried is exactly as fresh as what was drawn: an
-    /// element told to read again (`reload`), one the server announced a
-    /// write over or a restitch of, is told so after the carry as before it.
+    /// element told to read again (`reload`), or one the server announced a
+    /// write over, is told so after the carry as before it.
     /// An element that has nothing resolved, or names another resource,
     /// carries nothing and asks as it always did.
     fn carry_resolved(&mut self, _from: &dyn Element) -> bool {
@@ -2650,10 +2650,9 @@ pub trait Samples {
     /// the next walk asks for it again. Returns whether this element had asked
     /// for it.
     ///
-    /// What makes the per-repaint walk safe to ask once: a join's box names its
-    /// buffer in the same turn the stitch is sent, so the first ask can find
-    /// the buffer empty, or published and not yet copied into. The host
-    /// forgets it when the server says the stitch is done.
+    /// What makes the per-repaint walk safe to ask once: a box can name its
+    /// buffer before the buffer holds its samples, so the first ask can find
+    /// it empty. The host forgets it when the server announces a write to it.
     fn forget_take(&mut self, _bufnum: i32) -> bool {
         false
     }
@@ -2817,7 +2816,7 @@ pub trait Samples {
     /// its own, returning whether it took it. The default is not to.
     ///
     /// The other landing of a zoom past the overview, and the cheaper one: the
-    /// wire's ordinary overview blob (`/buffer_peaks`, bucket-major and
+    /// wire's ordinary overview blob (`/buffer_summary`, bucket-major and
     /// channel-minor) measured at a bucket finer than this element's summary,
     /// which is a few kilobytes where the samples over the same span are a few
     /// hundred. It answers the columns inside its span and the summary goes on

@@ -5,34 +5,12 @@
 use super::*;
 
 impl Host {
-    /// **A buffer's samples were just made** (`/done /buffer_stitch bufnum`):
-    /// every element that asked for that take forgets it, so the next walk
-    /// asks again. Returns the windows that had one, for a front to redraw.
-    ///
-    /// A join's box names its buffer in the same turn the stitch is sent, so
-    /// the first ask can find it unallocated, or published and not yet copied
-    /// into; this is the second ask, made when the samples are there. Any other
-    /// message is not this one and touches nothing.
-    pub fn forget_stitched(&mut self, msg: &OscMessage) -> Vec<i32> {
-        let [OscType::String(command), OscType::Int(bufnum)] = msg.args.as_slice() else {
-            return Vec::new();
-        };
-        if msg.addr != "/done" || command != "/buffer_stitch" {
-            return Vec::new();
-        }
-        self.forget_take(*bufnum)
-    }
-
     /// **Every element that asked for this take forgets it**, so the next walk
     /// asks again; the windows that had one come back, for a front to redraw.
     ///
-    /// The `/done` above is one way to learn the samples are there, and it only
-    /// reaches whoever *asked* for the stitch. When a **client** owns the multitrack
-    /// it is the client that sends it, and the host hears about that buffer
-    /// only as the write the server announces to everyone else
-    /// (`/buffer_touched`) -- which is the same news under another name, and is
-    /// what makes a join drawn by a client's window fill in rather than stay
-    /// the empty box the first ask answered with.
+    /// A buffer another peer wrote and announced (`/buffer_touched`) that
+    /// nothing here holds a shape for is asked for again this way: the write
+    /// is what says its samples are there now.
     pub fn forget_take(&mut self, bufnum: i32) -> Vec<i32> {
         let mut touched = Vec::new();
         for (def_id, tree) in &mut self.window_defs {

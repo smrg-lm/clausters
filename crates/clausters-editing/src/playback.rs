@@ -838,7 +838,6 @@ mod tests {
             args_of(&steps, "/transport_locateSample"),
             Some(vec![OscType::Long(48_000)])
         );
-        assert!(args_of(&steps, "/transport_cue").is_some(), "cued");
         assert_eq!(
             addrs(&steps).last().map(String::as_str),
             Some("/transport_play")
@@ -976,7 +975,6 @@ mod tests {
                 "/transport_loop",
                 "/transport_end",
                 "/transport_locateSample",
-                "/transport_cue",
                 "/transport_play"
             ]
         );

@@ -57,8 +57,9 @@ pub const HELD_BYTES: usize = 64 << 20;
 const HEAD_BYTES: usize = 1 << 16;
 const LARGE_HEAD_BYTES: usize = 1 << 20;
 
-/// Statistics one `/buffer_peaks.reply` carries at most. A server's reply
-/// is bounded by the carrier it crosses, 8 KiB; this answer crosses none --
+/// Statistics one `/buffer_summary.reply` carries at most. A server's
+/// overview is bounded by the carrier it crosses, 8 KiB; this answer crosses
+/// none --
 /// it is the host's own, handed to the view in the same process -- so it
 /// carries a whole grid a view asks for (two views of stereo at two buckets
 /// a column) in one reply, where 8 KiB took two dozen round trips, one a
@@ -410,7 +411,7 @@ impl Answerer {
                 list.channels,
                 list.sample_rate,
             )),
-            "/buffer_peaks" => self.peaks_reply(key, &list, &msg.args[1..]),
+            "/buffer_summary" => self.peaks_reply(key, &list, &msg.args[1..]),
             "/buffer_getRange" => self.range_reply(key, &list, &msg.args[1..]),
             "/buffer_spectrum" => self.spectrum_reply(key, &list, &msg.args[1..]),
             _ => Answer::None,
@@ -673,8 +674,8 @@ impl Answerer {
         }
     }
 
-    /// `/buffer_peaks key [bucket] [start] [frames]`, answered as the server
-    /// answers it: from `start` rounded down to a bucket, whole buckets only
+    /// `/buffer_summary key [bucket] [start] [frames]`, the host's own
+    /// question: from `start` rounded down to a bucket, whole buckets only
     /// unless the span runs to the end, at most [`MAX_REPLY_BYTES`] of them.
     fn peaks_reply(&mut self, key: i32, list: &List, args: &[OscType]) -> Answer {
         let int = |i: usize, default: i64| args.get(i).and_then(as_i64).unwrap_or(default);
@@ -729,7 +730,7 @@ impl Answerer {
         }
         self.samples_read += read;
         Answer::Reply(OscMessage {
-            addr: "/buffer_peaks.reply".into(),
+            addr: "/buffer_summary.reply".into(),
             args: vec![
                 OscType::Int(key),
                 OscType::Long(first as i64),

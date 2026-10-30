@@ -104,7 +104,7 @@ fn summary(
         let reply = ask(
             answerer,
             io,
-            "/buffer_peaks",
+            "/buffer_summary",
             vec![
                 OscType::Int(key),
                 OscType::Int(bucket as i32),
@@ -153,7 +153,7 @@ fn direct(
 fn a_list_key_is_below_every_buffer_and_absence() {
     assert!(is_list_key(-2) && !is_list_key(-1) && !is_list_key(0));
     let msg = OscMessage {
-        addr: "/buffer_peaks".into(),
+        addr: "/buffer_summary".into(),
         args: vec![OscType::Int(-7)],
     };
     assert_eq!(list_key_of(&msg), Some(-7));
@@ -239,7 +239,7 @@ fn a_read_landing_after_its_last_list_went_is_dropped() {
         ),
     );
     let ask = |key: i32| OscMessage {
-        addr: "/buffer_peaks".into(),
+        addr: "/buffer_summary".into(),
         args: vec![
             OscType::Int(key),
             OscType::Int(1 << 12),

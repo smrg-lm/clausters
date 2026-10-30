@@ -967,15 +967,10 @@ answers `layers` with the form it was given.
   been read. **Past that it reads**: a view zoomed finer than its summary asks
   for the span it is showing and draws it — so the picture is the same at every
   zoom whichever way the host got it, which is the rule the platform seam is
-  judged by. What it asks for has two shapes, and the zoom is what chooses:
-  between the summary's bucket and about thirty-two samples a pixel it asks for
-  a **finer grid** over that span (`/buffer_peaks` at a finer bucket), which is
-  the one min/max pair per pixel column the drawing actually needs and a few
-  kilobytes; finer than that it asks for the **samples** (`/buffer_getRange`),
-  where a bucket would carry three floats to describe a handful of them and
-  where the trace is the polyline through the samples anyway. Neither is on the
-  wire as a decision: both are ordinary commands, and which one a host sends is
-  its own business.
+  judged by. What it asks for is the **samples** of the span
+  (`/buffer_getRange`): the server keeps no summary of a buffer to ask a finer
+  grid of. Nothing of it is on the wire as a decision: it is an ordinary
+  command, and when a host sends it is its own business.
 
   This holds **while the take records too**, and the frontier is the whole of
   what `fills` does to it: a span is asked for only as far as `written`, never
@@ -988,14 +983,13 @@ answers `layers` with the form it was given.
   the segment has always shown: there the samples *are* the mapped cells, so any
   zoom is current with nothing told to it.
 - **What `fills` does *not* decide is how the samples arrive.** A host that
-  cannot map them has one route, whatever the size: the view is drawn from the
-  buffer's summary (`/buffer_peaks` for a take standing still, the stream while
-  it records), and the run under the eye is read back with `/buffer_getRange`
-  as a zoom reaches it. A take is never downloaded whole, so its picture, and
-  its picture after an edit, arrive in a few replies (`docs/decisions.md`, "A
-  host that cannot map draws every take from its summary"). `fills` says only
-  that the samples are being written, so the summary is pushed rather than
-  asked for. Nothing about this is on the wire: a script says what the view is
+  cannot map them reads a buffer standing still back with `/buffer_getRange`
+  and summarizes it itself, and a write another peer announces is read back
+  by its span; the server measures no peaks (`docs/decisions.md`, "The server
+  keeps no command an application's editing made"). A take of an application
+  is not a server buffer but a list the host draws from its files. `fills`
+  says only that the samples are being written, so the summary is pushed
+  rather than asked for. Nothing about this is on the wire: a script says what the view is
   *of*, never how to fetch it.
 
 An `axes` pair works on `/gui_def` and on `/gui_set` alike (there it rides as

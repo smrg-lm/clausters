@@ -81,15 +81,6 @@ pub struct Buffer {
     /// Where else to publish it: the directory row a mapping peer reads
     /// directly. `None` is a buffer no other process can see.
     frontier: Option<std::sync::Arc<dyn Frontier>>,
-    /// **How many times the audio thread has said it wrote**: one more per
-    /// [`Self::raise_frontier`]. The frontier only rises, so a looping
-    /// recorder going over what it already wrote leaves it where it was; this
-    /// moves every time, which is what tells the summary below that the
-    /// samples under it changed where nobody said.
-    writes: AtomicU64,
-    /// The summary `/buffer_peaks` answers from, measured as it is asked
-    /// ([`crate::dsp::summary`]). Only the network side takes this lock.
-    summary: crate::dsp::summary::SummarySlot,
 }
 
 /// Where a buffer says **how far it has been written**.
@@ -122,38 +113,23 @@ pub enum Storage {
     /// (`dsp::region`).
     #[cfg(unix)]
     Shared(std::sync::Arc<crate::dsp::region::Region>),
-    /// **Other buffers' samples**: a join, read through the parts it is made of
-    /// rather than out of cells of its own (`dsp::stitch`). This is the one
-    /// form with no cells at all, which is why [`Storage::cells`] answers an
-    /// `Option` -- see [`Stitch`](crate::dsp::stitch::Stitch) for what that
-    /// costs and what it takes away (nothing: a stitch is replaced, not
-    /// written).
-    Stitched(crate::dsp::stitch::Stitch),
-    /// **Samples in a file**: a PCM file a segment list names as the source of
-    /// a part. Nothing is read here -- a random-access read of it is silence
-    /// -- because a file is streamed, by a reader that follows the transport
-    /// and reads ahead of it on a thread of its own (`dsp::stream`). This is
-    /// the shape the file was found to have, so a part over it is validated
-    /// and placed exactly as a part over a buffer is.
-    File(crate::dsp::pcm::Layout),
     /// **Samples its owner feeds**: frames a program that embeds the engine
     /// reads and hands over through a ring, positioned by the transport
     /// (`dsp::fed`). Nothing is held here and a random-access read is
-    /// silence, as for a file: one stream reader plays it.
+    /// silence: one stream reader plays it.
     Fed(std::sync::Arc<crate::dsp::fed::Fed>),
 }
 
 impl Storage {
-    /// The cells, whichever side they live on, or `None` for a join, which owns
-    /// no samples and is read one at a time through
-    /// [`Buffer::sample`](Buffer::sample).
+    /// The cells, whichever side they live on, or `None` for a fed buffer,
+    /// which holds no samples.
     #[inline]
     pub fn cells(&self) -> Option<&[AtomicU32]> {
         match self {
             Storage::Owned(v) => Some(v),
             #[cfg(unix)]
             Storage::Shared(r) => Some(r.cells()),
-            Storage::Stitched(_) | Storage::File(_) | Storage::Fed(_) => None,
+            Storage::Fed(_) => None,
         }
     }
 }
@@ -169,12 +145,7 @@ pub struct Run<'a> {
     /// The buffer this is a run of -- what a frame outside the run is read
     /// through.
     buffer: &'a Buffer,
-    /// The part and its source's cells, when the buffer is a join. `None` is a
-    /// plain buffer, whose run is the whole of it.
-    part: Option<crate::dsp::stitch::PartRun<'a>>,
-    /// The cells of a plain buffer, taken once so a read inside the run is an
-    /// indexed load -- the same saving the part gives a join, so the fast path
-    /// is uniform rather than a stitched-only branch.
+    /// The cells, taken once so a read inside the run is an indexed load.
     cells: Option<&'a [AtomicU32]>,
     /// The first frame of the run, on this buffer's own axis.
     start: usize,
@@ -200,10 +171,9 @@ impl Run<'_> {
             // ordinary read, which answers 0 where there is nothing.
             return self.buffer.sample(frame, channel);
         }
-        match (self.part, self.cells) {
-            (Some(part), _) => part.sample(frame - self.start, channel),
-            (None, Some(cells)) => Buffer::load(&cells[frame * self.buffer.channels() + channel]),
-            (None, None) => self.buffer.sample(frame, channel),
+        match self.cells {
+            Some(cells) => Buffer::load(&cells[frame * self.buffer.channels() + channel]),
+            None => self.buffer.sample(frame, channel),
         }
     }
 }
@@ -234,8 +204,6 @@ impl Buffer {
             sample_rate,
             written: AtomicU64::new(0),
             frontier: None,
-            writes: AtomicU64::new(0),
-            summary: Default::default(),
         }
     }
 
@@ -256,8 +224,6 @@ impl Buffer {
             sample_rate,
             written: AtomicU64::new(0),
             frontier: None,
-            writes: AtomicU64::new(0),
-            summary: Default::default(),
         }
     }
 
@@ -283,7 +249,6 @@ impl Buffer {
     /// being written as it reads is what it does with every other one.
     pub fn raise_frontier(&self, frame: usize) {
         self.written.fetch_max(frame as u64, Ordering::Relaxed);
-        self.writes.fetch_add(1, Ordering::Relaxed);
         if let Some(sink) = &self.frontier {
             sink.raise(frame as u64);
         }
@@ -299,15 +264,6 @@ impl Buffer {
     /// a mapping peer reads the same number out of the segment.
     pub fn frontier(&self) -> u64 {
         self.written.load(Ordering::Relaxed)
-    }
-
-    /// How many writes the audio thread has reported (see the field).
-    pub fn writes(&self) -> u64 {
-        self.writes.load(Ordering::Relaxed)
-    }
-
-    pub(crate) fn summary_slot(&self) -> &crate::dsp::summary::SummarySlot {
-        &self.summary
     }
 
     /// Where this buffer's samples live -- what a pool consults to hand a peer
@@ -337,12 +293,8 @@ impl Buffer {
     /// wavetable). Read one with [`load`](Self::load); nothing else about the
     /// representation is anybody's business.
     ///
-    /// `None` for a **stitched** buffer, which owns no samples: a caller that
-    /// needs a contiguous span must say so, and refusing it here is what makes
-    /// that a compile error at every one of the five places rather than a
-    /// silently empty slice. Everything that reads sample by sample --
-    /// [`sample`](Self::sample), [`at`](Self::at), a summary -- works on a join
-    /// with no change at all.
+    /// `None` for a **fed** buffer, which holds no samples: a caller that
+    /// needs a contiguous span must say so.
     #[inline]
     pub fn cells(&self) -> Option<&[AtomicU32]> {
         self.data.cells()
@@ -350,53 +302,15 @@ impl Buffer {
 
     /// **The contiguous run `frame` falls in**: a stretch of this buffer over
     /// which reading needs no lookup, handed out once for a caller to read a
-    /// whole block out of.
-    ///
-    /// Over a plain buffer that is the whole of it, and a run reads exactly
-    /// what [`Buffer::sample`] reads. Over a [join](crate::dsp::stitch) it is
-    /// **one part**, and that is the point: a join resolves which part a frame
-    /// belongs to on every sample, and a reader advancing monotonically crosses
-    /// a seam once a block at the very most. The caller asks again when a frame
-    /// leaves the run ([`Run::holds`]), so the per-sample path stays the
-    /// fallback for the block that does cross one, and for a phase that jumps,
-    /// runs backwards or is modulated.
+    /// whole block out of. Over a buffer with cells that is the whole of it,
+    /// and a run reads exactly what [`Buffer::sample`] reads.
     #[inline]
-    pub fn run_at(&self, frame: usize) -> Run<'_> {
-        match &self.data {
-            Storage::Stitched(stitch) => match stitch.run_at(frame) {
-                Some(part) => Run {
-                    buffer: self,
-                    part: Some(crate::dsp::stitch::PartRun::new(part)),
-                    cells: None,
-                    start: part.start(),
-                    end: part.end(),
-                },
-                // Past the end there is no run: everything falls through to the
-                // read that answers 0.
-                None => Run {
-                    buffer: self,
-                    part: None,
-                    cells: None,
-                    start: frame,
-                    end: frame,
-                },
-            },
-            _ => Run {
-                buffer: self,
-                part: None,
-                cells: self.data.cells(),
-                start: 0,
-                end: self.frames,
-            },
-        }
-    }
-
-    /// The join this buffer is, when it is one.
-    #[inline]
-    pub fn stitch(&self) -> Option<&crate::dsp::stitch::Stitch> {
-        match &self.data {
-            Storage::Stitched(s) => Some(s),
-            _ => None,
+    pub fn run_at(&self, _frame: usize) -> Run<'_> {
+        Run {
+            buffer: self,
+            cells: self.data.cells(),
+            start: 0,
+            end: self.frames,
         }
     }
 
@@ -425,56 +339,7 @@ impl Buffer {
             sample_rate,
             written: AtomicU64::new(0),
             frontier: None,
-            writes: AtomicU64::new(0),
-            summary: Default::default(),
         }
-    }
-
-    /// The file this buffer's samples are in, when they are in one.
-    #[inline]
-    pub fn file(&self) -> Option<&crate::dsp::pcm::Layout> {
-        match &self.data {
-            Storage::File(layout) => Some(layout),
-            _ => None,
-        }
-    }
-
-    /// **Whether reading this buffer reads a file**: it is one, or it is a
-    /// segment list with a part over one. Such a buffer is played by a stream
-    /// reader and by nothing that reads at random -- a random-access read of a
-    /// file part is silence -- so every command that would read its samples
-    /// refuses it by name.
-    #[inline]
-    pub fn reads_from_disk(&self) -> bool {
-        match &self.data {
-            Storage::File(_) | Storage::Fed(_) => true,
-            Storage::Stitched(s) => s.reads_from_disk(),
-            _ => false,
-        }
-    }
-
-    /// A buffer over the samples of the PCM file `layout` describes. It holds
-    /// none of them: see [`Storage::File`].
-    pub fn on_file(layout: crate::dsp::pcm::Layout) -> Self {
-        let (channels, frames, sample_rate) =
-            (layout.channels, layout.frames as usize, layout.sample_rate);
-        Self {
-            frames,
-            data: Storage::File(layout),
-            channels,
-            sample_rate,
-            written: AtomicU64::new(0),
-            frontier: None,
-            writes: AtomicU64::new(0),
-            summary: Default::default(),
-        }
-    }
-
-    /// Whether this buffer is a join -- what a write path checks before
-    /// refusing, and what `/buffer_query` reports so a client never tries.
-    #[inline]
-    pub fn is_stitched(&self) -> bool {
-        matches!(self.data, Storage::Stitched(_))
     }
 
     /// One cell's value. The single door every read goes through, so the
@@ -491,10 +356,7 @@ impl Buffer {
     pub fn at(&self, index: usize) -> f32 {
         match self.cells() {
             Some(cells) => cells.get(index).map_or(0.0, Self::load),
-            // A join has no flat index of its own; the coordinate a caller
-            // means is the frame and the channel it decomposes into.
-            None if self.channels == 0 => 0.0,
-            None => self.sample(index / self.channels, index % self.channels),
+            None => 0.0,
         }
     }
 
@@ -510,8 +372,7 @@ impl Buffer {
             Storage::Owned(v) => Self::load(&v[frame * self.channels + channel]),
             #[cfg(unix)]
             Storage::Shared(r) => Self::load(&r.cells()[frame * self.channels + channel]),
-            Storage::Stitched(stitch) => stitch.sample(frame, channel),
-            Storage::File(_) | Storage::Fed(_) => 0.0,
+            Storage::Fed(_) => 0.0,
         }
     }
 
@@ -519,10 +380,7 @@ impl Buffer {
     /// nothing. Takes `&self`: a buffer in the pool is reached through an
     /// `Arc`, so there is no `&mut` to be had and the cells carry the
     /// mutability instead.
-    /// A join is not written: it has no cells, and writing *through* to
-    /// whichever source a frame lands on would turn one edit into an edit of
-    /// several takes. The commands refuse it by name; here it is simply a
-    /// write that goes nowhere, like any other out-of-range one.
+    /// A fed buffer has no cells, and a write to it goes nowhere.
     #[inline]
     pub fn set_at(&self, index: usize, value: f32) {
         if let Some(cell) = self.cells().and_then(|cells| cells.get(index)) {
@@ -538,8 +396,8 @@ impl Buffer {
         }
     }
 
-    /// **One channel of this buffer, read where it lies** -- the door every
-    /// summary goes through.
+    /// **One channel of this buffer, read where it lies** -- what
+    /// `/buffer_stream` summarizes.
     ///
     /// Interleaved storage puts a channel's frames `channels` apart, so
     /// de-interleaving one to summarize it would copy the take; a
@@ -578,21 +436,6 @@ impl Buffer {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-
-    /// A join over other buffers: this one's samples are theirs, read through
-    /// the parts. See [`crate::dsp::stitch`] for the whole argument.
-    pub fn stitched(stitch: crate::dsp::stitch::Stitch, channels: usize, sample_rate: f64) -> Self {
-        Self {
-            frames: stitch.frames(),
-            data: Storage::Stitched(stitch),
-            channels,
-            sample_rate,
-            written: AtomicU64::new(0),
-            frontier: None,
-            writes: AtomicU64::new(0),
-            summary: Default::default(),
-        }
     }
 }
 

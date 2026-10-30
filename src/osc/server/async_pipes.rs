@@ -224,8 +224,7 @@ impl OscServer {
                 }
                 // **A write in place, and the span it covered.** Nothing is
                 // installed -- the cells the engine reads are already the new
-                // ones -- so all this owes is the summary over them: the
-                // overview beside the region follows the span, and everyone
+                // ones -- so all this owes is the announcement: everyone
                 // holding a picture of these samples is told which span went
                 // stale.
                 //
@@ -239,14 +238,6 @@ impl OscServer {
                 // whoever wrote means every client has to remember, and the
                 // one that forgets shows a stale take that sounds edited.
                 NrtAction::Wrote { start, frames } => {
-                    if let Some(buffer) = self
-                        .translator
-                        .buffers
-                        .get(index)
-                        .and_then(|b| b.as_ref().cloned())
-                    {
-                        self.overviews.wrote(index, &buffer, start, frames);
-                    }
                     self.announce_write(result.index, start, frames, result.client);
                     None
                 }
@@ -278,10 +269,9 @@ impl OscServer {
         buffer: Arc<crate::dsp::buffer::Buffer>,
     ) -> Arc<crate::dsp::buffer::Buffer> {
         use crate::dsp::region::Region;
-        if buffer.reads_from_disk() {
-            // **A list that reads a file is not copied into a region**: its
-            // samples are in its files, where a peer reads them too, and
-            // copying hours of them into memory is what it exists not to do.
+        if buffer.fed().is_some() {
+            // **A fed buffer holds no samples**: its owner hands them to its
+            // reader, and there is nothing to copy into a region.
             return buffer;
         }
         if !self.owns_samples {
@@ -318,64 +308,29 @@ impl OscServer {
             }
         };
         // The one copy: what was just built, into the memory it will live in.
-        // A join is read part by part instead -- it owns no cells to copy
-        // from, and a peer that maps this region gets the samples the join
-        // reads, which is what it is looking at.
         let cells = region.cells();
-        match (buffer.cells(), buffer.stitch()) {
-            (Some(source), _) => {
-                for (cell, value) in cells.iter().zip(source) {
-                    cell.store(
-                        value.load(std::sync::atomic::Ordering::Relaxed),
-                        std::sync::atomic::Ordering::Relaxed,
-                    );
-                }
+        if let Some(source) = buffer.cells() {
+            for (cell, value) in cells.iter().zip(source) {
+                cell.store(
+                    value.load(std::sync::atomic::Ordering::Relaxed),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
             }
-            (None, Some(stitch)) => stitch.copy_into(cells, buffer.channels()),
-            (None, None) => {}
         }
-        let view = crate::dsp::buffer::Buffer::shared(
-            Arc::clone(&region),
-            buffer.channels(),
-            buffer.frames(),
-            buffer.sample_rate(),
-        );
-        self.shared_buffers[index] = Some(region_path.clone());
-        let shared = if buffer.is_stitched() {
-            // **A join stays a join.** What went into the region is a picture
-            // of it -- the samples a peer draws, which is what a peer wants --
-            // but what the engine and the mirror keep is the join itself.
-            // Handing back the flattened copy instead would quietly undo the
-            // whole of it: the sources would stop being named (so
-            // `/buffer_parts` would answer "not a join"), the memory a join
-            // exists not to duplicate would be duplicated, and the reader would
-            // lose the run it reads a cut by. A join is replaced rather than
-            // written, so the picture cannot go stale under the peer without
-            // the replacement it is drawn from arriving too.
-            buffer
-        } else {
-            // Shared samples are samples somebody may be drawing, so the buffer
-            // publishes how far it has been written: a recording fills a
-            // picture in another process with one relaxed store per block and
-            // no message at all.
-            Arc::new(
-                crate::dsp::buffer::Buffer::shared(
-                    Arc::clone(&region),
-                    buffer.channels(),
-                    buffer.frames(),
-                    buffer.sample_rate(),
-                )
-                .with_frontier(segment.frontier_sink(index)),
+        self.shared_buffers[index] = Some(region_path);
+        // Shared samples are samples somebody may be drawing, so the buffer
+        // publishes how far it has been written: a recording fills a picture
+        // in another process with one relaxed store per block and no message
+        // at all.
+        Arc::new(
+            crate::dsp::buffer::Buffer::shared(
+                Arc::clone(&region),
+                buffer.channels(),
+                buffer.frames(),
+                buffer.sample_rate(),
             )
-        };
-        // **The overview beside it**, built from the samples that were just
-        // copied in: the one full pass, paid where the copy already is, so a
-        // peer opening this take maps a summary instead of computing one --
-        // and kept as the buffer's own summary, so `/buffer_peaks` reads it.
-        // Built from the region's cells rather than through a join, whose own
-        // read resolves a part per sample.
-        self.overviews.publish(index, &region_path, &view, &shared);
-        shared
+            .with_frontier(segment.frontier_sink(index)),
+        )
     }
 
     /// Sharing samples needs a mapped region, and a region is a file
@@ -409,7 +364,6 @@ impl OscServer {
         #[cfg(unix)]
         if let Some(path) = self.shared_buffers.get_mut(index).and_then(Option::take) {
             crate::dsp::region::Region::unlink(&path);
-            self.overviews.retire(index);
         }
     }
 

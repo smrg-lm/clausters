@@ -4,7 +4,7 @@
 //! (`/buffer_query.reply`), a run of its samples (`/buffer_getRange.reply`), a
 //! span another peer wrote (`/buffer_touched`), the overview of a recording
 //! (`/buffer_stream.reply`) and the overview of a take standing still
-//! (`/buffer_peaks.reply`) -- and what each one does to the widget trees is the
+//! (`/buffer_summary.reply`) -- and what each one does to the widget trees is the
 //! same in a window and in a page. It was written twice, once per front, and
 //! the two copies had already drifted apart: a rate one of them could not read,
 //! a summary one of them put into a slot the element had not claimed.
@@ -100,14 +100,11 @@ pub(crate) trait Front {
             return true;
         }
         self.host_mut().on_server_reply(from, msg);
-        for def_id in self.host_mut().forget_stitched(msg) {
-            self.redraw_window(def_id);
-        }
         // **What a download brought**, counted on the windows waiting on it
         // (`/gui_activity`).
         if matches!(
             msg.addr.as_str(),
-            "/buffer_getRange.reply" | "/buffer_peaks.reply"
+            "/buffer_getRange.reply" | "/buffer_summary.reply"
         ) && let Some(OscType::Int(bufnum)) = msg.args.first()
         {
             let bytes: usize = msg
@@ -189,7 +186,7 @@ pub(crate) trait Front {
             // draw, or the finer grid one view's zoom wants. The conversation
             // collects the replies and hands the grid over whole, so a view
             // never draws half of one over the picture it had.
-            "/buffer_peaks.reply" => {
+            "/buffer_summary.reply" => {
                 if let Some((bufnum, start, bucket, stats)) = super::stream_report(&msg.args) {
                     let (done, next) = self.fetches().on_peaks(bufnum, start, bucket, &stats);
                     for msg in next {
@@ -471,8 +468,9 @@ pub(crate) trait Front {
     /// The picture is the whole of the box the take fills -- so the axis does
     /// not move while it fills -- and what fills it comes from one of two
     /// places, which is what `ask_summary` says: a take being **written** has
-    /// its overview pushed as it appears (`/buffer_stream`), and one standing
-    /// still is asked for it (`/buffer_peaks`). Either way the samples stay
+    /// its overview pushed as it appears (`/buffer_stream`), and a list
+    /// standing still is asked for it (`/buffer_summary`, answered by the
+    /// host's own answerer). Either way the samples stay
     /// where they are, and the run under the eye is read back when a zoom goes
     /// past what the summary can answer.
     fn place_summary(
@@ -774,7 +772,7 @@ pub(crate) trait Front {
     }
 
     /// **Puts a finer grid under one view**, the summary counterpart of
-    /// [`Front::place_window`]: the same `/buffer_peaks` blob every other
+    /// [`Front::place_window`]: the same `/buffer_summary` blob every other
     /// overview arrives in, folded beside the view's own summary rather than
     /// into it, because it is measured at a different bucket.
     fn place_detail(
@@ -894,12 +892,10 @@ pub(crate) trait Front {
                 .and_then(|tree| super::span_to_read_back(tree, bufnum))
         }) else {
             // **The announcement is the second ask.** Nothing here has a
-            // picture of this buffer with a shape to put a span into -- which is
-            // what a join looks like a moment after the edit that minted it:
-            // its box named the buffer in the turn the stitch was sent, the
-            // first ask answered with no frames at all, and a take remembered
-            // as asked is never asked again. The write the server has just
-            // announced is what says the samples are there now.
+            // picture of this buffer with a shape to put a span into -- a take
+            // whose first ask answered with no frames at all, and a take
+            // remembered as asked is never asked again. The write the server
+            // has just announced is what says the samples are there now.
             let asked = self.host_mut().forget_take(bufnum);
             if asked.is_empty() {
                 return diag::info!(
@@ -927,7 +923,7 @@ pub(crate) trait Front {
     /// **Asks for the spans the last frame could not draw** in windows
     /// `defs`. A view zoomed finer than its summary leaves the span it was
     /// asked for on its slot; this is where that note becomes a
-    /// `/buffer_getRange` (or a finer `/buffer_peaks`).
+    /// `/buffer_getRange` (or a finer `/buffer_summary`).
     ///
     /// Called after drawing, once per pass: the note is this frame's, and a
     /// span already in flight is not asked for again (the fetch machine keeps
@@ -1083,6 +1079,15 @@ pub(crate) trait Front {
             }
         }
         for (def_id, widget_id, key, bufnum, channels, owed) in asked {
+            // **A server keeps no summary to ask a finer grid of**: a server
+            // buffer zoomed past its picture (a recording, drawn from the
+            // overview it streamed) reads the samples of the span instead.
+            let owed = match owed {
+                Owed::Summary { a, b, .. } if !crate::host::disk::is_list_key(bufnum) => {
+                    Owed::Samples { a, b }
+                }
+                owed => owed,
+            };
             let msg = match owed {
                 Owed::Summary { a, b, bucket, seen } => self.fetches().want_detail(
                     bufnum,

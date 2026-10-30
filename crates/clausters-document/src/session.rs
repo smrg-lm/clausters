@@ -319,10 +319,10 @@ pub enum Location {
     /// is exactly what cannot be said as a window.
     ///
     /// A built join is [`crate::multitrack::picture`]'s source like any
-    /// other; what builds it is the caller's (`/buffer_stitch` over pool
-    /// buffers today, a prebuffered stream once a part may name a file -- root
-    /// `PLAN.md`). **This statement does not change when that does**, which is
-    /// why the recipe is here and not in a call a client remembers making.
+    /// other; what reads it is the application's reader, which reads the
+    /// parts from their files. **This statement does not change with the
+    /// reader**, which is why the recipe is here and not in a call a client
+    /// remembers making.
     Segments {
         /// The spans, in reading order.
         parts: Vec<Part>,
@@ -353,7 +353,7 @@ pub enum Location {
 /// the fade at each end.
 ///
 /// **Frames, not seconds**, unlike [`crate::SegmentRef`]: a part of a join is a
-/// statement about samples -- the unit `/buffer_stitch` takes it in and the unit
+/// statement about samples -- the unit a reader reads it in and the unit
 /// [`crate::SourceRef::range`] already speaks. A `SegmentRef` measures a
 /// *window a multitrack places*, which is the musical side of the same fact and is
 /// where seconds belong.

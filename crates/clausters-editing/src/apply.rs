@@ -616,9 +616,10 @@ impl Applier {
                 "/transport_fade",
                 vec![OscType::Long(samples)],
             )),
-            Op::TransportCue { transport } => {
-                steps.extend(transport_command(transport, "/transport_cue", Vec::new()))
-            }
+            // **The cue is an engine's an application holds**, never sent
+            // over the wire: a server a client plays has no reader to ready
+            // (`TransportDiskIn` reads only what an application feeds it).
+            Op::TransportCue { .. } => {}
             Op::FillBus { handle, value } => {
                 if let Some((bus, channels)) = self.buses.get(&handle).copied() {
                     steps.push(send(
@@ -708,8 +709,7 @@ pub(crate) fn send(addr: &str, args: Vec<OscType>) -> Step {
 /// **A transport command as the op that carries it out** in a medium, or
 /// `None` for an address no op names: `/transport_play`, `/transport_stop`,
 /// `/transport_locateSample`, `/transport_loop` and `/transport_end` (each
-/// with its two samples, or none to clear), `/transport_fade` and
-/// `/transport_cue`.
+/// with its two samples, or none to clear) and `/transport_fade`.
 pub(crate) fn transport_op(transport: i32, addr: &str, args: &[OscType]) -> Option<Op> {
     let long = |i: usize| match args.get(i) {
         Some(OscType::Long(v)) => *v,
@@ -740,7 +740,6 @@ pub(crate) fn transport_op(transport: i32, addr: &str, args: &[OscType]) -> Opti
             transport,
             samples: long(0),
         },
-        "/transport_cue" => Op::TransportCue { transport },
         _ => return None,
     })
 }

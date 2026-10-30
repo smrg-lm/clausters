@@ -114,7 +114,7 @@ fn summary(
     let mut buckets = 0;
     loop {
         let msg = OscMessage {
-            addr: "/buffer_peaks".into(),
+            addr: "/buffer_summary".into(),
             args: vec![
                 OscType::Int(key),
                 OscType::Int(bucket as i32),

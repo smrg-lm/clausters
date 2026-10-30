@@ -10720,6 +10720,8 @@ was stitched. A trace both client suites replay against
 
 ## A host that cannot map draws every take from its summary (2026-10-22)
 
+*Revised 2026-10-30, closing `S23`: the server keeps no summary and answers no `/buffer_peaks`, so a host that cannot map reads a server buffer standing still back and summarizes it itself. What this entry measured holds for an application's takes, which are lists the host draws from their files and summarizes at the level a view draws; a server buffer is what a script draws, and an edit announced by span is still read back by its span ("The server keeps no command an application's editing made").*
+
 *Decided 2026-10-22, by the user, revising the two routes kept on
 2026-08-20.* A host that cannot map a server buffer (a page, or a host attached
 to a remote server) drew a short take by downloading every sample, so that
@@ -10750,6 +10752,8 @@ as a spike. A route that front-loads work to save a later round trip is
 measured against that, not against the round trip alone.
 
 ## A take's overview is answered from a summary kept on the buffer (2026-10-22)
+
+*Superseded 2026-10-30, closing `S23`: `dsp::summary`, `/buffer_peaks` and the overview file beside a shared region are gone with the joins they composed ("The server keeps no command an application's editing made"). The measuring as it is asked lives on in the host's own answerer of lists (`clausters_core::peaks::Kept`).*
 
 *Decided 2026-10-22, opening the audio editor's picture milestone (the GUI
 plan's G44), which the user asked to be designed and measured with care

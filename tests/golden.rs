@@ -606,120 +606,24 @@ fn a_render_stepped_in_runs_is_the_render_in_one_call() {
     );
 }
 
-/// **The files a score reads** are its joins' and its `DiskIn`s', once each,
-/// and **the files it writes** its `DiskOut`s'.
+/// **The files a score reads** are its `DiskIn`s', once each, and **the
+/// files it writes** its `DiskOut`s'.
 #[test]
-fn a_score_names_the_files_its_joins_and_streams_read() {
+fn a_score_names_the_files_its_streams_read_and_write() {
     let def = r#"{"name":"reads","ugens":[
         {"kind":"DiskIn","inputs":[{"const":0}],"path":"b.wav"},
         {"kind":"DiskOut","inputs":[{"const":0}],"path":"c.wav"}]}"#;
     let score = OscScore::new([
         (
             0.0,
-            vec![
-                msg(
-                    "/def_send",
-                    vec![OscType::String("synth".into()), OscType::String(def.into())],
-                ),
-                msg(
-                    "/buffer_stitch",
-                    vec![
-                        OscType::Int(1),
-                        OscType::Int(1),
-                        OscType::Float(48_000.0),
-                        OscType::String("a.wav".into()),
-                        OscType::Int(0),
-                        OscType::Int(10),
-                    ],
-                ),
-            ],
+            vec![msg(
+                "/def_send",
+                vec![OscType::String("synth".into()), OscType::String(def.into())],
+            )],
         ),
         (0.1, vec![msg("/node_free", vec![OscType::Int(0)])]),
     ])
     .unwrap();
-    assert_eq!(
-        score.files(),
-        vec!["b.wav".to_string(), "a.wav".to_string()]
-    );
+    assert_eq!(score.files(), vec!["b.wav".to_string()]);
     assert_eq!(score.outputs(), vec!["c.wav".to_string()]);
-}
-
-/// **An offline score plays a list of files at the transport's position**:
-/// the score binds the group the transport governs and rolls it, and the
-/// list is read from its first frame -- the stream waits for its thread, so
-/// nothing is played as silence.
-#[test]
-fn an_offline_score_rolls_a_transport_over_a_list_of_files() {
-    let dir = temp_path("transport-list");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let file = |name: &str, value: f32| {
-        let path = dir.join(name).to_string_lossy().into_owned();
-        let mut w = clausters::dsp::pcm::Writer::create(&path, 1, 48_000.0, "float").unwrap();
-        w.write(&vec![value; 12_000]).unwrap();
-        w.finalize().unwrap();
-        path
-    };
-    let (a, b) = (file("a.wav", 0.25), file("b.wav", -0.5));
-    let part = |path: &str| {
-        vec![
-            OscType::String(path.into()),
-            OscType::Int(0),
-            OscType::Int(12_000),
-            OscType::Int(0),
-            OscType::Int(0),
-            OscType::Int(0),
-            OscType::Float(0.0),
-            OscType::Int(0),
-            OscType::Float(0.0),
-            OscType::Int(0),
-        ]
-    };
-    let mut stitch = vec![OscType::Int(1), OscType::Int(1), OscType::Float(48_000.0)];
-    stitch.extend(part(&a));
-    stitch.extend(part(&b));
-    let def = r#"{"name":"list","ugens":[
-        {"kind":"TransportDiskIn","inputs":[{"const":1},{"const":0},{"const":0},{"const":0},{"const":0}]},
-        {"kind":"Out","inputs":[{"const":0},{"ugen":0}]}]}"#;
-    let score = OscScore::new([
-        (
-            0.0,
-            vec![
-                msg("/buffer_stitch", stitch),
-                msg(
-                    "/def_send",
-                    vec![OscType::String("synth".into()), OscType::String(def.into())],
-                ),
-                msg(
-                    "/group_new",
-                    vec![OscType::Int(100), OscType::Int(1), OscType::Int(0)],
-                ),
-                msg("/transport_group", vec![OscType::Int(0), OscType::Int(100)]),
-                msg("/transport_play", vec![OscType::Int(0)]),
-                msg(
-                    "/synth_new",
-                    vec![
-                        OscType::String("list".into()),
-                        OscType::Int(1000),
-                        OscType::Int(0),
-                        OscType::Int(100),
-                    ],
-                ),
-            ],
-        ),
-        (0.5, vec![msg("/node_free", vec![OscType::Int(1000)])]),
-    ])
-    .unwrap();
-    let cfg = RenderConfig {
-        channels: 1,
-        ..scenes::config()
-    };
-    let (out, _) = render_to_vec(&score, &cfg).unwrap();
-    assert_eq!(out.len(), 24_000);
-    assert!(
-        out[..12_000].iter().all(|v| *v == 0.25),
-        "the first file, from its first frame"
-    );
-    assert!(out[12_000..].iter().all(|v| *v == -0.5), "then the second");
-    let _ = std::fs::remove_dir_all(&dir);
 }

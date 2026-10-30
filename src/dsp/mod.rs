@@ -16,8 +16,6 @@ pub mod events;
 pub mod pcm;
 #[cfg(unix)]
 pub mod region;
-pub mod stitch;
-pub mod summary;
 pub mod wavetable;
 
 // The UGen library -- the SynthDef family (`synth` feature). A Faust-only or
@@ -50,13 +48,6 @@ pub mod disk;
 pub mod disk;
 // An I/O thread's account and its waits, where the engine has threads: natively,
 // and in a page whose engine shares its memory with its threads.
-#[cfg(all(
-    feature = "synth",
-    any(not(target_arch = "wasm32"), target_feature = "atomics")
-))]
-pub(crate) mod io_thread;
-// A segment list with file parts, streamed by a reader that follows the
-// transport -- `DiskIn`'s thread and ring, positioned.
 #[cfg(feature = "synth")]
 pub mod envgen;
 pub mod fed;
@@ -68,6 +59,11 @@ pub mod fused;
 pub mod impulse;
 #[cfg(feature = "synth")]
 pub mod io;
+#[cfg(all(
+    feature = "synth",
+    any(not(target_arch = "wasm32"), target_feature = "atomics")
+))]
+pub(crate) mod io_thread;
 #[cfg(feature = "synth")]
 pub mod lag;
 #[cfg(feature = "synth")]
@@ -98,41 +94,19 @@ pub mod scalar;
 pub mod sine;
 #[cfg(feature = "synth")]
 pub mod spectral;
-// The list reader is one and the same wherever the engine has threads:
-// natively, and in a page whose engine shares its memory with its threads (an
-// editing application's), where its threads are workers.
-#[cfg(all(
-    feature = "synth",
-    any(not(target_arch = "wasm32"), target_feature = "atomics")
-))]
+// The reader of a fed buffer, which follows the transport: one and the same
+// in every build, natively and in a page.
+#[cfg(feature = "synth")]
 pub mod stream;
-/// In a page whose engine has no threads the list reader is the host-fed one
-/// beside `DiskIn`'s.
-#[cfg(all(
-    feature = "synth",
-    target_arch = "wasm32",
-    not(target_feature = "atomics")
-))]
-pub mod stream {
-    pub use super::disk::TransportDiskIn;
-
-    /// The ring, in samples, as natively.
-    pub const RING_SAMPLES: usize = 1 << 17;
-
-    pub use super::LIST_CROSS as CROSS;
-    pub use super::LIST_KEPT as KEPT;
-    pub use super::LIST_LAND_LEAD as LAND_LEAD;
-}
 
 /// **How many frames a list replaced while it plays fades out over, and the
-/// new one in** (`TransportDiskIn`, natively and in a page): under three
+/// new one in** (`TransportDiskIn`): under three
 /// milliseconds at 48 kHz, which a cut heard while looping reads as the cut
 /// and not as a click.
 pub const LIST_CROSS: usize = 128;
 
 /// **How many samples of the old reading a list replaced while it plays
-/// keeps** to play while the new one is read (`TransportDiskIn`, natively
-/// and in a page): 340 ms of stereo at 48 kHz, which a refill and the lead
+/// keeps** to play while the new one is read (`TransportDiskIn`): 340 ms of stereo at 48 kHz, which a refill and the lead
 /// it lands with are well inside.
 pub const LIST_KEPT: usize = 32768;
 
@@ -144,14 +118,14 @@ pub const LIST_KEPT: usize = 32768;
 pub const LIST_LAND_LEAD: usize = 2048;
 
 /// **How much of a list a cued reader holds before it says it is ready**
-/// (`/transport_cue`), in frames: 85 ms at 48 kHz, the lead its refills
+/// (the engine's cue), in frames: 85 ms at 48 kHz, the lead its refills
 /// then keep ahead of the playhead -- or less, where the list ends sooner.
 pub const CUE_LEAD: usize = 4096;
 
 /// **A transport's loop, in the frames of a list a reader plays**: the
 /// reader that reaches frame `to` goes on at frame `from`, so the disk side
-/// renders the loop straight through and a wrap costs no refill. What the
-/// two `TransportDiskIn`s (natively and in a page) share.
+/// renders the loop straight through and a wrap costs no refill. What
+/// `TransportDiskIn` and its owner share.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ListWrap {
     /// The first frame after a wrap.
@@ -1122,7 +1096,7 @@ pub trait UGen: Send {
     fn resume(&mut self) {}
 
     /// **Whether a reader that streams from disk holds the frames it stands
-    /// at** (`/transport_cue`): `None` for a UGen that streams nothing, which
+    /// at** (the engine's cue, `Cmd::TransportCue`): `None` for a UGen that streams nothing, which
     /// is every kind but `TransportDiskIn`. Read after a cue has run the
     /// synth standing, so its next play starts on frames already in the ring.
     fn cued(&self) -> Option<bool> {

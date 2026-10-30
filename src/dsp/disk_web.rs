@@ -24,27 +24,16 @@
 //! has no counterpart for, and this way the surface a script writes against is
 //! the same one in both.
 //!
-//! **A page whose engine has threads reads its lists natively.** An editing
-//! application's engine in a page shares its memory with its threads (its
-//! build has `target_feature = "atomics"`), so its `TransportDiskIn` is the
-//! native reader (`dsp::stream`), its thread a worker, and the one a take its
-//! application feeds plays through (`dsp::fed`). This reader is the one of a
-//! page whose engine has no thread to give it.
-//!
 //! The registry is a `thread_local`, and that is not a shortcut: everything
 //! that touches it -- building a synth, dropping one, and the host's own calls --
 //! happens on the one thread a page's engine has.
 
 use std::cell::RefCell;
-use std::sync::Arc;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
-use crate::dsp::buffer::Buffer;
 use crate::dsp::registry::{BuildCtx, UGenConfig};
-use crate::dsp::stitch::Part;
-use crate::dsp::{CUE_LEAD, ListWrap, ProcessCtx, UGen, at};
-use crate::server::meters::Meters;
+use crate::dsp::{ProcessCtx, UGen, at};
 
 /// Ring capacity in samples, as natively (~1.4 s of mono at 48 kHz).
 const RING_SAMPLES: usize = 1 << 16;
@@ -56,10 +45,6 @@ pub enum Direction {
     In,
     /// The graph being written to a file (`DiskOut`).
     Out,
-    /// A segment list played at the transport's position (`TransportDiskIn`):
-    /// the host reads the span of a file one of its parts names, and the
-    /// engine renders the part from it.
-    List,
 }
 
 /// What one open stream wants from the host right now.
@@ -81,26 +66,6 @@ pub struct StreamRequest {
     /// `DiskIn`: room in the ring, in samples -- how much the host may push.
     /// `DiskOut`: samples waiting to be pulled.
     pub samples: usize,
-    /// `List`: which refill this span is for. A span answered for an older one
-    /// is thrown away by [`list_push`].
-    pub generation: u32,
-    /// `List`: the frame of the list the span renders from, and how many.
-    pub at: u64,
-    pub list_frames: usize,
-    /// `List`: how many frames of the file to read, from `start`.
-    pub span: usize,
-}
-
-/// A list stream's side of the registry: what it plays and where the host
-/// has rendered it to.
-struct ListState {
-    list: Option<Arc<Buffer>>,
-    /// The next list frame to render; `None` before the first refill.
-    next: Option<u64>,
-    generation: u32,
-    looping: bool,
-    /// The transport's loop, rendered straight through.
-    wrap: Option<ListWrap>,
 }
 
 enum End {
@@ -117,7 +82,6 @@ struct Slot {
     start: u64,
     format: String,
     end: End,
-    list: Option<ListState>,
     /// `DiskIn` in an offline render whose host reads its files on the spot:
     /// the file, and the frame read to.
     offline: Option<OfflineRead>,
@@ -144,7 +108,7 @@ thread_local! {
 /// handle, through `clausters_core::files`), so the render hands one of
 /// these over for its length ([`install_files`], `server::render`'s
 /// `page_streams`) and the input streams read through it the moment they
-/// need to: a list stream its next span, a `DiskIn` its next run. What is
+/// need to: a `DiskIn` its next run. What is
 /// rendered is then what a native render renders. The output (`DiskOut`)
 /// needs nothing of it: the render drains it between two runs, as the host
 /// does live.
@@ -262,27 +226,6 @@ pub fn poll() -> Vec<StreamRequest> {
         let mut s = s.borrow_mut();
         let mut out = Vec::with_capacity(s.len());
         for slot in s.iter_mut() {
-            if slot.direction == Direction::List {
-                // Reported whether or not it wants a span (`span` 0 when it
-                // does not), so the host can tell a live stream from a freed
-                // one.
-                let request = list_request(slot).unwrap_or_else(|| StreamRequest {
-                    id: slot.id,
-                    direction: Direction::List,
-                    path: String::new(),
-                    channels: 0,
-                    looping: false,
-                    start: 0,
-                    format: String::new(),
-                    samples: 0,
-                    generation: 0,
-                    at: 0,
-                    list_frames: 0,
-                    span: 0,
-                });
-                out.push(request);
-                continue;
-            }
             out.push(StreamRequest {
                 id: slot.id,
                 direction: slot.direction,
@@ -295,114 +238,14 @@ pub fn poll() -> Vec<StreamRequest> {
                     End::Feeding(p) => p.slots(),
                     End::Draining(c) => c.slots(),
                 },
-                generation: 0,
-                at: 0,
-                list_frames: 0,
-                span: 0,
             });
         }
         out
     })
 }
 
-/// The frames a list stream renders in one span: 0.4 s at 48 kHz, what a
-/// `DiskIn` stream asks for at most. One span is in flight at a time, so a
-/// span has to outlast the host's round trip to the page's files, or a
-/// stream that has just been refilled chases the playhead and never catches
-/// it.
-const LIST_SPAN: usize = 19_200;
-
-/// **What a list stream wants from the host**, after rendering what it can
-/// without it: the parts over buffers are in memory and go straight into the
-/// ring, and the first part over a file is the span the host is asked for.
-/// `None` while the ring is full, the list is played out or nothing has been
-/// asked for yet.
-fn list_request(slot: &mut Slot) -> Option<StreamRequest> {
-    let End::Feeding(producer) = &mut slot.end else {
-        return None;
-    };
-    let state = slot.list.as_mut()?;
-    let list = state.list.clone()?;
-    let channels = list.channels().max(1);
-    let total = list.frames() as u64;
-    loop {
-        let mut at = state.next?;
-        if at >= total {
-            if state.looping && total > 0 {
-                at = 0;
-                state.next = Some(0);
-            } else {
-                return None;
-            }
-        }
-        let room = producer.slots() / channels;
-        // A span stops at the loop's end, and the next one starts at its
-        // start.
-        let left = ListWrap::before(state.wrap, at).unwrap_or(total - at) as usize;
-        let want = LIST_SPAN.min(room).min(left);
-        if want == 0 || (room < LIST_SPAN && want < left) {
-            return None;
-        }
-        let Some(stitch) = list.stitch() else {
-            // A buffer that owns its samples, played through the same reader.
-            let mut frames = Vec::with_capacity(want * channels);
-            for f in 0..want {
-                for c in 0..channels {
-                    frames.push(list.sample(at as usize + f, c));
-                }
-            }
-            push_frames(producer, &frames);
-            state.next = Some(ListWrap::advance(state.wrap, at, want as u64));
-            continue;
-        };
-        let (_, part) = stitch.part_at(at as usize)?;
-        let inner = at as usize - part.start();
-        let len = want.min(part.end() - at as usize);
-        match part.src.file() {
-            Some(layout) => {
-                let (first, end) = part.source_span(inner, inner + len);
-                return Some(StreamRequest {
-                    id: slot.id,
-                    direction: Direction::List,
-                    path: layout.path.clone(),
-                    channels: layout.channels,
-                    looping: state.looping,
-                    start: first as u64,
-                    format: String::new(),
-                    samples: producer.slots(),
-                    generation: state.generation,
-                    at,
-                    list_frames: len,
-                    span: end - first,
-                });
-            }
-            None => {
-                let mut frames = vec![0.0; len * channels];
-                render_part(part, inner, channels, &mut frames, |f, c| {
-                    part.src.sample(f, c)
-                });
-                push_frames(producer, &frames);
-                state.next = Some(ListWrap::advance(state.wrap, at, len as u64));
-            }
-        }
-    }
-}
-
-/// `len = out.len() / channels` frames of `part` from `inner` on, each read
-/// through `frame` -- [`PartSpan::read_with`](clausters_core::segments::PartSpan::read_with), the read every part makes.
-fn render_part(
-    part: &Part,
-    inner: usize,
-    channels: usize,
-    out: &mut [f32],
-    frame: impl Fn(usize, usize) -> f32,
-) {
-    for (j, cells) in out.chunks_mut(channels).enumerate() {
-        for (c, cell) in cells.iter_mut().enumerate() {
-            *cell = part.read_with(inner + j, c, &frame);
-        }
-    }
-}
+/// The frames an offline `DiskIn` reads in one run: 0.4 s at 48 kHz.
+const READ_SPAN: usize = 19_200;
 
 fn push_frames(producer: &mut Producer<f32>, frames: &[f32]) {
     if let Ok(chunk) = producer.write_chunk_uninit(frames.len()) {
@@ -410,115 +253,7 @@ fn push_frames(producer: &mut Producer<f32>, frames: &[f32]) {
     }
 }
 
-/// **Hands a list stream the span it asked for**: frames `start..start +
-/// span` of the file, interleaved, for the `list_frames` list frames from
-/// `at`. The part is rendered from them into the ring. Returns whether it was
-/// taken: a span for an older refill, or for frames the stream is no longer
-/// at, is thrown away.
-pub fn list_push(id: u32, generation: u32, at: u64, list_frames: usize, samples: &[f32]) -> bool {
-    STREAMS.with(|s| {
-        let mut s = s.borrow_mut();
-        let Some(slot) = s.iter_mut().find(|slot| slot.id == id) else {
-            return false;
-        };
-        take_span(slot, generation, at, list_frames, samples)
-    })
-}
-
-/// [`list_push`] into a stream already found.
-fn take_span(
-    slot: &mut Slot,
-    generation: u32,
-    at: u64,
-    list_frames: usize,
-    samples: &[f32],
-) -> bool {
-    {
-        let End::Feeding(producer) = &mut slot.end else {
-            return false;
-        };
-        let Some(state) = slot.list.as_mut() else {
-            return false;
-        };
-        if state.generation != generation || state.next != Some(at) {
-            return false;
-        }
-        let Some(list) = state.list.clone() else {
-            return false;
-        };
-        let Some((_, part)) = list.stitch().and_then(|st| st.part_at(at as usize)) else {
-            return false;
-        };
-        let Some(layout) = part.src.file() else {
-            return false;
-        };
-        let channels = list.channels().max(1);
-        if producer.slots() < list_frames * channels {
-            return false;
-        }
-        let inner = at as usize - part.start();
-        let (first, _) = part.source_span(inner, inner + list_frames);
-        let width = layout.channels;
-        let mut frames = vec![0.0; list_frames * channels];
-        render_part(part, inner, channels, &mut frames, |f, c| {
-            f.checked_sub(first)
-                .and_then(|f| samples.get(f * width + c))
-                .copied()
-                .unwrap_or(0.0)
-        });
-        push_frames(producer, &frames);
-        state.next = Some(ListWrap::advance(state.wrap, at, list_frames as u64));
-        true
-    }
-}
-
-/// **Serves a list stream on the spot**, through the files an offline
-/// render's host handed over: every span it asks for, read and rendered,
-/// until its ring has no room for another. Nothing without them.
-fn serve_list(id: u32) {
-    let Some(files) = files() else {
-        return;
-    };
-    STREAMS.with(|s| {
-        let mut s = s.borrow_mut();
-        let Some(slot) = s.iter_mut().find(|slot| slot.id == id) else {
-            return;
-        };
-        while let Some(request) = list_request(slot) {
-            let layout = slot
-                .list
-                .as_ref()
-                .and_then(|state| state.list.clone())
-                .and_then(|list| {
-                    let (_, part) = list.stitch()?.part_at(request.at as usize)?;
-                    part.src.file().cloned()
-                });
-            let Some(layout) = layout else {
-                return;
-            };
-            match read_frames(files.as_ref(), &layout, request.start, request.span) {
-                Ok(samples) => {
-                    if !take_span(
-                        slot,
-                        request.generation,
-                        request.at,
-                        request.list_frames,
-                        &samples,
-                    ) {
-                        return;
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("TransportDiskIn: {e}");
-                    return;
-                }
-            }
-        }
-    });
-}
-
-/// **Serves a `DiskIn` on the spot**, as [`serve_list`] does a list: runs of
-/// its file from where it has read to, until its ring is full or the file is
+/// **Serves a `DiskIn` on the spot**: runs of its file from where it has read to, until its ring is full or the file is
 /// played out (and from the top again, looping).
 fn serve_in(id: u32) {
     let Some(files) = files() else {
@@ -543,7 +278,7 @@ fn serve_in(id: u32) {
             }
             let room = producer.slots() / channels;
             let n = room
-                .min(LIST_SPAN)
+                .min(READ_SPAN)
                 .min((read.layout.frames - read.next) as usize);
             if n == 0 {
                 return;
@@ -558,30 +293,6 @@ fn serve_in(id: u32) {
                     return;
                 }
             }
-        }
-    });
-}
-
-/// Points a list stream at `frame` of `list` (or of the list it holds), for
-/// a new refill: what the host renders next starts there.
-fn refill_slot(
-    id: u32,
-    list: Option<Arc<Buffer>>,
-    frame: u64,
-    looping: bool,
-    wrap: Option<ListWrap>,
-) {
-    STREAMS.with(|s| {
-        if let Some(slot) = s.borrow_mut().iter_mut().find(|slot| slot.id == id)
-            && let Some(state) = slot.list.as_mut()
-        {
-            if list.is_some() {
-                state.list = list;
-            }
-            state.next = Some(frame);
-            state.generation = state.generation.wrapping_add(1);
-            state.looping = looping;
-            state.wrap = wrap;
         }
     });
 }
@@ -692,7 +403,6 @@ impl DiskIn {
             start: config.start,
             format: String::new(),
             end: End::Feeding(producer),
-            list: None,
             offline,
         });
         Self {
@@ -791,7 +501,6 @@ impl DiskOut {
             start: 0,
             format,
             end: End::Draining(consumer),
-            list: None,
             offline: None,
         });
         Self {
@@ -854,648 +563,5 @@ impl Drop for DiskOut {
                 slot.looping = true;
             }
         });
-    }
-}
-
-// ---- TransportDiskIn ----
-
-/// Plays a segment list at the transport's position, the page's half of
-/// `dsp::stream`. Inputs as natively: 0 `bufnum`, 1 `chan`, 2 `offset`,
-/// 3 `start`, 4 `loop`.
-///
-/// **One thread, so no epochs.** Natively a refill is a request to another
-/// thread, and the frames already in the ring have to be told apart from the
-/// ones after it. Here the host renders between blocks on this same thread:
-/// a refill throws the ring away and points the registry at the new frame in
-/// one go, and a span still travelling for the old one is refused when it
-/// arrives (its generation is old). The silence a refill costs is the host's
-/// round trip to the page's files, and it is not counted as running out of
-/// lead; a ring that runs dry afterwards is.
-///
-/// **A list replaced while it plays is not that silence**, as natively: the
-/// next frames of the old list are kept aside ([`KEPT`] samples) before the
-/// ring is thrown away, they play while the new list is read, and the two
-/// fade over [`CROSS`](crate::dsp::stream::CROSS) frames each once the new
-/// list's frames have come.
-///
-/// **A transport's loop is read straight through, and a cue fills the ring
-/// where the transport stands**, as natively: the host is asked for the
-/// loop's start after its end, and [`UGen::cued`] answers whether the ring
-/// holds the standing frame and [`CUE_LEAD`] past it.
-pub struct TransportDiskIn {
-    id: u32,
-    consumer: Consumer<f32>,
-    meters: Arc<Meters>,
-    sent: usize,
-    looping: bool,
-    /// The transport's loop in the list's frames, as natively.
-    wrap: Option<ListWrap>,
-    /// Where the transport stands over the list while it is stopped, as
-    /// natively: what a cue fills the ring at.
-    standing: Option<u64>,
-    head: Option<u64>,
-    /// Since the last refill nothing has arrived: its silence is the refill's.
-    fresh: bool,
-    channels: usize,
-    frames: u64,
-    /// Served on the spot, in an offline render whose host reads files
-    /// ([`PageFiles`]): a refill lands inside the call, as natively.
-    serve: bool,
-    /// The old list's next frames, kept when a replacement threw the ring
-    /// away while it played: allocated once, with the reader.
-    kept: Vec<f32>,
-    /// What of `kept` plays out: its channels, the next sample and the end
-    /// -- `None` when nothing is playing out.
-    outgoing: Option<Kept>,
-    /// Frames of fade-in left for the list that replaced it.
-    fade_in: usize,
-    /// What the list it replaced plays over the fade-in, this reader's
-    /// channel of it, as natively: the two are mixed. Silence where the
-    /// replaced list ran out.
-    faded: [f32; crate::dsp::stream::CROSS],
-    /// Where the transport stands in the block after the last one it
-    /// played, as natively: only a list replaced while it plays on fades.
-    continues: Option<u64>,
-    /// The loop in force, in the list's frames, and the list frame at the
-    /// transport's frame 0, as the last block read them, as natively.
-    applied: Option<ListWrap>,
-    delta: f64,
-}
-
-/// **What of `kept` plays out**, as natively: its channels, the next sample
-/// and the end, whether the new reading is spliced on at its end (a loop
-/// set, moved or cleared) rather than crossfaded in, and the loop it was
-/// read through.
-#[derive(Clone, Copy)]
-struct Kept {
-    channels: usize,
-    next: usize,
-    end: usize,
-    /// Where the new reading is spliced on, as a sample of the kept frames.
-    at: usize,
-    splice: bool,
-    wrap: Option<ListWrap>,
-    /// The list frame the next kept sample is, as natively: the kept frames
-    /// go where the transport plays something else before the splice.
-    frame: u64,
-}
-
-/// **How many samples of the old list a replacement keeps** to play while
-/// the new one is read: the native reader's count, 85 ms of stereo at
-/// 48 kHz, which a page's round trip to its files is well inside.
-pub const KEPT: usize = crate::dsp::stream::KEPT;
-
-impl TransportDiskIn {
-    pub fn open(ctx: &BuildCtx) -> Self {
-        let meters = &ctx.meters;
-        let (producer, consumer) = RingBuffer::new(crate::dsp::stream::RING_SAMPLES);
-        let id = fresh_id();
-        register(Slot {
-            id,
-            direction: Direction::List,
-            path: String::new(),
-            channels: 0,
-            looping: false,
-            start: 0,
-            format: String::new(),
-            end: End::Feeding(producer),
-            list: Some(ListState {
-                list: None,
-                next: None,
-                generation: 0,
-                looping: false,
-                wrap: None,
-            }),
-            offline: None,
-        });
-        Self {
-            id,
-            consumer,
-            meters: Arc::clone(meters),
-            sent: 0,
-            looping: false,
-            wrap: None,
-            standing: None,
-            head: None,
-            fresh: true,
-            channels: 1,
-            frames: 0,
-            serve: ctx.offline && files().is_some(),
-            kept: vec![0.0; KEPT],
-            outgoing: None,
-            fade_in: 0,
-            faded: [0.0; crate::dsp::stream::CROSS],
-            continues: None,
-            applied: None,
-            delta: 0.0,
-        }
-    }
-
-    /// **Keeps the old list's next frames aside** before a replacement throws
-    /// the ring away, to play while the new one is read: no more than
-    /// `agree`, the frames the new reading reads alike where they are
-    /// bounded.
-    fn keep_outgoing(&mut self, frame: u64, agree: Option<u64>) {
-        // from the frame the transport plays now
-        if let Some(head) = self.head
-            && head < frame
-        {
-            let have = (self.consumer.slots() / self.channels) as u64;
-            let n = (frame - head).min(have);
-            if let Ok(chunk) = self.consumer.read_chunk(n as usize * self.channels) {
-                chunk.commit_all();
-            }
-            self.head = Some(self.advance(head, n));
-        }
-        let channels = self.channels;
-        // all it holds of the old reading, which plays on past where the two
-        // part if the loop is not in place by then, as natively
-        let n = self.consumer.slots().min(KEPT / channels * channels);
-        let at = agree.map_or(n, |f| (f as usize * channels).min(n));
-        if n < channels {
-            return;
-        }
-        if let Ok(chunk) = self.consumer.read_chunk(n) {
-            let (a, b) = chunk.as_slices();
-            self.kept[..a.len()].copy_from_slice(a);
-            self.kept[a.len()..a.len() + b.len()].copy_from_slice(b);
-        }
-        self.outgoing = Some(Kept {
-            channels,
-            next: 0,
-            end: n,
-            at,
-            splice: false,
-            wrap: self.wrap,
-            frame,
-        });
-    }
-
-    /// The next sample of the list a replacement took over from: it plays
-    /// while the new one is read, and once the new one has come it is
-    /// crossfaded in over the old one's next frames.
-    fn take_outgoing(&mut self, frame: u64, channel: usize) -> f32 {
-        use crate::dsp::stream::CROSS;
-        let Some(Kept {
-            channels,
-            mut next,
-            end,
-            at,
-            splice,
-            wrap,
-            frame: kept_frame,
-        }) = self.outgoing
-        else {
-            return 0.0;
-        };
-        // the kept frames are the take only where the transport plays them,
-        // as natively: apart before the splice, they go
-        if kept_frame != frame && next + channels <= at {
-            self.outgoing = None;
-            self.faded = [0.0; CROSS];
-            self.fade_in = CROSS;
-            return 0.0;
-        }
-        let step = |f: u64| ListWrap::advance(wrap, f, 1);
-        if splice {
-            // at the splice the new reading goes on, as natively: in from
-            // silence where it is not in yet -- or, where the loop it reads is
-            // not in place yet, the kept frames play on and the old reading
-            // is read again from their end
-            if next + channels > at {
-                if self.applied != self.wrap && self.applied == wrap && next + channels <= end {
-                    if let Some(kept) = self.outgoing.as_mut() {
-                        kept.at = end;
-                    }
-                    self.wrap = wrap;
-                    let left = ((end - next) / channels) as u64;
-                    self.refill(None, ListWrap::advance(wrap, frame, left));
-                    return self.take_outgoing(frame, channel);
-                }
-                self.outgoing = None;
-                // played to the splice: the new reading is owed from here, so
-                // a silence until it comes is the ring out of lead, as natively
-                self.fresh = false;
-                let seamless = self.head == Some(frame) && self.consumer.slots() >= self.channels;
-                self.faded = [0.0; CROSS];
-                self.fade_in = if seamless { 0 } else { CROSS };
-                return 0.0;
-            }
-            let value = self.kept[next + channel.min(channels - 1)];
-            if let Some(kept) = self.outgoing.as_mut() {
-                kept.next += channels;
-                kept.frame = step(kept.frame);
-            }
-            return value;
-        }
-        // The new list has landed once it holds the frame the transport is at
-        // and the fade's length past it: what played meanwhile is skipped.
-        let behind = self.head.map_or(0, |h| frame.saturating_sub(h)) as usize;
-        // the old list's frames left, which the new one may wait on, and the
-        // lead it lands with, as natively
-        let left = (end - next) / channels;
-        let holds = self.consumer.slots() / self.channels;
-        let lead = crate::dsp::stream::LAND_LEAD;
-        let landed = holds >= behind + CROSS + lead || (holds >= behind + CROSS && left <= CROSS);
-        if landed {
-            let pick = channel.min(channels - 1);
-            self.faded = [0.0; CROSS];
-            for slot in self.faded.iter_mut() {
-                if next + channels > end {
-                    break;
-                }
-                *slot = self.kept[next + pick];
-                next += channels;
-            }
-            self.outgoing = None;
-            self.fade_in = CROSS;
-            return 0.0;
-        }
-        if next + channels > end {
-            // the new list did not come while the old one played: a silence,
-            // counted as the ring out of lead, and the new one fades in from
-            // it, as natively
-            self.outgoing = None;
-            self.fresh = false;
-            self.faded = [0.0; CROSS];
-            self.fade_in = CROSS;
-            return 0.0;
-        }
-        let value = self.kept[next + channel.min(channels - 1)];
-        if let Some(kept) = self.outgoing.as_mut() {
-            kept.next = next + channels;
-            kept.frame = step(kept.frame);
-        }
-        value
-    }
-
-    fn refill(&mut self, list: Option<Arc<Buffer>>, frame: u64) {
-        let stale = self.consumer.slots();
-        if let Ok(chunk) = self.consumer.read_chunk(stale) {
-            chunk.commit_all();
-        }
-        refill_slot(self.id, list, frame, self.looping, self.wrap);
-        self.head = Some(frame);
-        self.fresh = true;
-    }
-
-    fn advance(&self, frame: u64, by: u64) -> u64 {
-        if self.looping && self.frames > 0 {
-            (frame + by) % self.frames
-        } else {
-            ListWrap::advance(self.wrap, frame, by)
-        }
-    }
-
-    /// Whether the ring holds frame `frame` and the lead a play wants past
-    /// it, as natively.
-    fn holds(&self, frame: u64) -> bool {
-        let ahead = if self.looping || ListWrap::before(self.wrap, frame).is_some() {
-            CUE_LEAD as u64
-        } else {
-            self.frames.saturating_sub(frame).min(CUE_LEAD as u64)
-        };
-        let ring = (crate::dsp::stream::RING_SAMPLES / self.channels) as u64;
-        self.outgoing.is_none()
-            && self.head == Some(frame)
-            && (self.consumer.slots() / self.channels) as u64 >= ahead.min(ring)
-    }
-
-    /// **Frame `frame` of the list, read the moment it is needed**, in an
-    /// offline render whose host reads files on the spot: what would be a
-    /// wait natively is a read here, so a frame is never played as silence.
-    fn take_served(&mut self, frame: u64, channel: usize) -> f32 {
-        let ring = (crate::dsp::stream::RING_SAMPLES / self.channels) as u64;
-        if let Some(head) = self.head
-            && head < frame
-            && frame - head <= ring
-        {
-            let have = (self.consumer.slots() / self.channels) as u64;
-            let n = (frame - head).min(have);
-            if let Ok(chunk) = self.consumer.read_chunk(n as usize * self.channels) {
-                chunk.commit_all();
-            }
-            self.head = Some(self.advance(head, n));
-        }
-        if self.head != Some(frame) {
-            self.refill(None, frame);
-        }
-        if self.consumer.slots() < self.channels {
-            serve_list(self.id);
-        }
-        if self.head != Some(frame) || self.consumer.slots() < self.channels {
-            return 0.0;
-        }
-        let mut value = 0.0;
-        for c in 0..self.channels {
-            let v = self.consumer.pop().unwrap_or(0.0);
-            if c == channel {
-                value = v;
-            }
-        }
-        self.head = Some(self.advance(frame, 1));
-        value
-    }
-
-    fn take(&mut self, frame: u64, channel: usize, starved: &mut u64) -> f32 {
-        if self.serve {
-            return self.take_served(frame, channel);
-        }
-        if self.outgoing.is_some() {
-            let value = self.take_outgoing(frame, channel);
-            if self.outgoing.is_some() {
-                return value;
-            }
-        }
-        let Some(head) = self.head else {
-            self.refill(None, frame);
-            return 0.0;
-        };
-        if head != frame {
-            let ring = (crate::dsp::stream::RING_SAMPLES / self.channels) as u64;
-            if head < frame && frame - head <= ring {
-                let have = (self.consumer.slots() / self.channels) as u64;
-                let n = (frame - head).min(have);
-                if let Ok(chunk) = self.consumer.read_chunk(n as usize * self.channels) {
-                    chunk.commit_all();
-                }
-                self.head = Some(self.advance(head, n));
-            } else {
-                self.refill(None, frame);
-                return 0.0;
-            }
-        }
-        if self.head != Some(frame) || self.consumer.slots() < self.channels {
-            if !self.fresh {
-                *starved += 1;
-            }
-            return 0.0;
-        }
-        self.fresh = false;
-        let mut value = 0.0;
-        for c in 0..self.channels {
-            let v = self.consumer.pop().unwrap_or(0.0);
-            if c == channel {
-                value = v;
-            }
-        }
-        self.head = Some(self.advance(frame, 1));
-        if self.fade_in > 0 {
-            let cross = crate::dsp::stream::CROSS;
-            let k = cross - self.fade_in;
-            let t = k as f32 / cross as f32;
-            value = value * t + self.faded[k] * (1.0 - t);
-            self.fade_in -= 1;
-        }
-        value
-    }
-}
-
-impl UGen for TransportDiskIn {
-    fn reset(&mut self) {
-        // A stream is the host's and cannot be restarted from here: a
-        // `Voices` node refuses a def that holds one.
-    }
-
-    fn cued(&self) -> Option<bool> {
-        Some(self.standing.is_none_or(|f| self.holds(f)))
-    }
-
-    fn looped(&self, transport: &crate::dsp::TransportCtx) -> Option<bool> {
-        // as natively: the reading follows the loop asked for and holds the
-        // lead it goes on with, before a splice it waits on is reached
-        if self.looping {
-            return Some(true);
-        }
-        let asked = ListWrap::of(
-            transport.pending_looping.unwrap_or(transport.looping),
-            self.delta,
-            self.frames,
-        );
-        // as natively: frames kept from a change before read it already
-        if asked != self.wrap {
-            return Some(self.kept_reads(asked) >= crate::dsp::stream::LAND_LEAD as u64);
-        }
-        // the kept frames before a splice count, as natively
-        let kept = match &self.outgoing {
-            Some(o) if o.splice && o.next > o.at => return Some(false),
-            Some(o) if o.splice => ((o.at - o.next) / o.channels) as u64,
-            _ => 0,
-        };
-        let ring = match self.head {
-            Some(_) => (self.consumer.slots() / self.channels) as u64,
-            None => 0,
-        };
-        let lead = crate::dsp::stream::LAND_LEAD as u64;
-        let ahead = match (self.wrap, self.head) {
-            (None, Some(head)) => self.frames.saturating_sub(head).min(lead),
-            _ => lead,
-        };
-        Some(ring + kept >= ahead.max(1))
-    }
-
-    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
-        let next = ctx.transport.position + output.len() as u64;
-        let rolling = ctx.transport.rolling;
-        self.play(ctx, inputs, output);
-        self.continues = rolling.then_some(next);
-    }
-}
-
-impl TransportDiskIn {
-    /// **How many of the frames kept from a change read the loop `asked`**:
-    /// the kept frames of a loop change (spliced, the same list read another
-    /// way) from where they stand to where their reading and that one part,
-    /// or to their end. A change of the list keeps frames of another take,
-    /// and none of them count.
-    fn kept_reads(&self, asked: Option<ListWrap>) -> u64 {
-        let Some(o) = self.outgoing.as_ref().filter(|o| o.splice) else {
-            return 0;
-        };
-        let left = ((o.end - o.next) / o.channels) as u64;
-        ListWrap::agree(o.wrap, asked, o.frame).map_or(left, |n| n.min(left))
-    }
-
-    /// **What the loop in force plays from `frame`, kept**, as natively
-    /// (`stream::TransportDiskIn::keep_in_force`): the kept frames to their
-    /// splice and what the ring holds of the loop in force after it.
-    fn keep_in_force(&mut self, frame: u64) {
-        let Some(o) = self.outgoing.as_ref() else {
-            return;
-        };
-        let channels = o.channels;
-        let (from, to) = (o.next, o.at);
-        let spliced = ListWrap::advance(self.wrap, frame, ((to - from) / channels) as u64);
-        if !o.splice
-            || from > to
-            || o.frame != frame
-            || channels != self.channels
-            || self.applied != self.wrap
-            || self.head != Some(spliced)
-        {
-            return;
-        }
-        self.kept.copy_within(from..to, 0);
-        let prefix = to - from;
-        let room = (KEPT / channels * channels).saturating_sub(prefix);
-        let n = self.consumer.slots().min(room) / channels * channels;
-        if n > 0
-            && let Ok(chunk) = self.consumer.read_chunk(n)
-        {
-            let (a, b) = chunk.as_slices();
-            self.kept[prefix..prefix + a.len()].copy_from_slice(a);
-            self.kept[prefix + a.len()..prefix + a.len() + b.len()].copy_from_slice(b);
-            chunk.commit_all();
-            self.head = Some(self.advance(spliced, (n / channels) as u64));
-        }
-        self.outgoing = Some(Kept {
-            channels,
-            next: 0,
-            end: prefix + n,
-            at: prefix + n,
-            splice: true,
-            wrap: self.wrap,
-            frame,
-        });
-    }
-
-    /// One block of [`UGen::process`].
-    fn play(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
-        let index = inputs[0][0].max(0.0) as usize;
-        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_ref()) else {
-            self.standing = None;
-            output.fill(0.0);
-            return;
-        };
-        let frames = buf.frames() as u64;
-        let looping = inputs[4][0] != 0.0;
-        let base = ctx.transport.position as f64;
-        let rolling = ctx.transport.rolling;
-        let delta = at(inputs[3], 0) as f64 - at(inputs[2], 0) as f64;
-        // a loop asked for is read before it is in place, as natively
-        let wrap = match looping {
-            true => None,
-            false => ListWrap::of(
-                ctx.transport
-                    .pending_looping
-                    .unwrap_or(ctx.transport.looping),
-                delta,
-                frames,
-            ),
-        };
-        self.applied = match looping {
-            true => None,
-            false => ListWrap::of(ctx.transport.looping, delta, frames),
-        };
-        self.delta = delta;
-        let place = |i: usize| -> (Option<u64>, Option<u64>) {
-            if frames == 0 {
-                return (None, None);
-            }
-            let played = if rolling { i as f64 } else { 0.0 };
-            let raw = base + played - at(inputs[2], i) as f64 + at(inputs[3], i) as f64;
-            if looping {
-                let f = (raw.rem_euclid(frames as f64) as u64).min(frames - 1);
-                (Some(f), Some(f))
-            } else if raw < 0.0 {
-                (None, Some(0))
-            } else if raw >= frames as f64 {
-                (None, None)
-            } else {
-                (Some(raw as u64), Some(raw as u64))
-            }
-        };
-        self.standing = if rolling { None } else { place(0).1 };
-        let address = Arc::as_ptr(buf) as usize;
-        if address != self.sent || looping != self.looping || wrap != self.wrap {
-            // **Only the loop changed**: the same list read another way, which
-            // is spliced on where the kept frames end, as natively.
-            let rewrapped = address == self.sent && looping == self.looping;
-            let frame0 = place(0).0.unwrap_or(0);
-            let mut from = None;
-            // A list that was playing plays on, out of what is kept of it,
-            // while the new one is read.
-            if rolling
-                && self.continues == Some(ctx.transport.position)
-                && !self.serve
-                && !self.fresh
-                && self.outgoing.is_none()
-            {
-                // the old reading is right only as far as the new one reads
-                // the same frames, as natively
-                let agree = ListWrap::agree(self.wrap, wrap, frame0);
-                self.keep_outgoing(frame0, agree);
-                if rewrapped && let Some(kept) = self.outgoing.as_mut() {
-                    kept.splice = true;
-                    let frames = (kept.at / kept.channels) as u64;
-                    from = Some(ListWrap::advance(wrap, frame0, frames));
-                }
-            } else if self.outgoing.is_some() {
-                // a change before the last one came, as natively: what the
-                // loop in force plays is kept first where the kept frames
-                // read another loop than this one
-                if rewrapped && self.kept_reads(wrap) < crate::dsp::stream::LAND_LEAD as u64 {
-                    self.keep_in_force(frame0);
-                }
-                let Some(kept) = self.outgoing.as_mut() else {
-                    unreachable!("kept just above")
-                };
-                if rewrapped && kept.splice {
-                    let mut left = (kept.end - kept.next) / kept.channels;
-                    if let Some(agree) = ListWrap::agree(kept.wrap, wrap, frame0) {
-                        left = left.min(agree as usize);
-                    }
-                    kept.at = kept.next + left * kept.channels;
-                    from = Some(ListWrap::advance(wrap, frame0, left as u64));
-                } else {
-                    kept.splice = false;
-                }
-            }
-            self.looping = looping;
-            self.wrap = wrap;
-            self.sent = address;
-            self.channels = buf.channels().max(1);
-            self.frames = frames;
-            let at = from.unwrap_or_else(|| place(0).1.unwrap_or(0));
-            self.refill(Some(Arc::clone(buf)), at);
-            if !self.serve && self.outgoing.is_none() {
-                output.fill(0.0);
-                return;
-            }
-        }
-        let channel = (inputs[1][0].max(0.0) as usize).min(self.channels - 1);
-        if !rolling {
-            self.outgoing = None;
-            self.fade_in = 0;
-            output.fill(0.0);
-            if let Some(f) = self.standing
-                && self.head != Some(f)
-            {
-                self.refill(None, f);
-            }
-            return;
-        }
-        let mut starved = 0u64;
-        for (i, s) in output.iter_mut().enumerate() {
-            *s = match place(i) {
-                (Some(f), _) => self.take(f, channel, &mut starved),
-                (None, Some(ready)) => {
-                    if self.head != Some(ready) {
-                        self.refill(None, ready);
-                    }
-                    0.0
-                }
-                (None, None) => 0.0,
-            };
-        }
-        if starved > 0 {
-            self.meters.starve(starved);
-        }
-    }
-}
-
-impl Drop for TransportDiskIn {
-    fn drop(&mut self) {
-        release(self.id);
     }
 }

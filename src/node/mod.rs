@@ -100,7 +100,7 @@ pub trait SynthNode: Send {
     fn resume(&mut self) {}
 
     /// **A cue of the transport standing over this synth**
-    /// (`/transport_cue`): a synth that streams from disk runs one standing
+    /// (`Cmd::TransportCue`): a synth that streams from disk runs one standing
     /// block, so its readers fill their rings where the transport stands,
     /// and answers whether they hold it. `None` for a synth that streams
     /// nothing, which is not run: a cue moves nothing but the readers.

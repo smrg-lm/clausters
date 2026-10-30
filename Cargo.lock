@@ -285,6 +285,7 @@ dependencies = [
 name = "clausters-app-engine"
 version = "0.11.0"
 dependencies = [
+ "assert_no_alloc",
  "clausters",
  "clausters-apps",
  "clausters-core",

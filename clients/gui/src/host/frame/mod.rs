@@ -100,7 +100,7 @@ pub(crate) struct WaveformSlot {
 /// on the zoom:
 ///
 /// - [`Owed::Summary`] -- a **finer grid** over the span, at about a bucket a
-///   column (`/buffer_peaks`, folded by [`WaveformData::set_detail`]). A few
+///   column (`/buffer_summary`, folded by [`WaveformData::set_detail`]). A few
 ///   kilobytes, one reply, and it is what a zoom above the polyline regime
 ///   actually wants: asking for the samples there moves a few hundred kilobytes
 ///   through a 64 KiB carrier to compute a row the server can measure in one

@@ -3,7 +3,7 @@
 The server keeps one **transport**: a beat grid several clients phase-align on, plus a DAW-style rolling state (playing, and a song position). It has two intensities, and which one you get depends on a single call.
 
 - With **no group bound** it is an advisory: the server stores the grid and the rolling state, broadcasts every change, and never schedules audio from it. Clients read it and obey it because they choose to.
-- With **a group bound** the engine enforces it. `transportStop()` freezes that group and everything under it at the exact sample it lands on, and `transportPlay()` thaws them. `transportCue()` before a play has the group's disk readers read where the transport stands, so the play starts on frames already read; nothing else moves.
+- With **a group bound** the engine enforces it. `transportStop()` freezes that group and everything under it at the exact sample it lands on, and `transportPlay()` thaws them.
 
 The whole surface is on the `Server`, so it is carrier-agnostic: the same calls drive a native `clausters --ws` server and the in-page engine.
 

@@ -165,7 +165,7 @@ fn a_take_at_another_rate_fills_the_list_by_the_ratio() {
     let left = remove(&list, 60_000, 72_000, &rates).unwrap();
     assert_eq!(length(&left, &rates), Ok(84_000));
     assert_eq!(insert(&left, 60_000, &cut, &rates).unwrap(), list);
-    // the stitch's count and the list's are one rule
+    // the reader's count and the list's are one rule
     assert_eq!(contributed(44_100, 44_100.0, 48_000.0), 48_000);
     assert_eq!(contributed(100, 48_000.0, 48_000.0), 100);
 }

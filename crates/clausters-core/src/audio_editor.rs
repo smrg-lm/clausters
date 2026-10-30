@@ -36,7 +36,7 @@
 //!   only works because a transport with a ramp rolls it out before it
 //!   freezes (`/transport_fade`).
 //! - **The reader's window is the take**: its `span` is the take's length on
-//!   the transport, stated by whoever stitches the join, so past the end the
+//!   the transport, stated by whoever holds the take, so past the end the
 //!   gate is exactly zero and nothing is compared against the buffer per
 //!   sample. The gate is a step at both ends: a click in the file is heard as
 //!   a click, and what declicks a stop is the output, not the reader.
@@ -152,14 +152,16 @@ fn in_out_controls(ins: usize, outs: usize) -> Vec<Value> {
 
 /// **One channel of the take**, following the transport.
 ///
-/// The take is a list of segments over files, stitched into a join at the
-/// engine's rate -- so a part of a 44.1 kHz file in a 48 kHz session is read
-/// at the ratio and plays at its true pitch -- and read by a
-/// `TransportDiskIn`, which streams the join from its files ahead of the
-/// transport's position: frame `position` of the join at each sample, worked
-/// out in `f64`, a locate a refill, and a seam a read made before the
-/// playhead gets there. No `at` (the take starts at the transport's zero), no
-/// `start`, no `loop` (the transport loops).
+/// The take is read by whoever holds it. An application's engine is fed the
+/// take by the application's own reader -- a list of segments over files,
+/// read at the engine's rate, so a part of a 44.1 kHz file in a 48 kHz
+/// session plays at its true pitch -- and a `TransportDiskIn` plays that fed
+/// stream, a locate a refill and a seam a read made before the playhead gets
+/// there. A buffer of the pool (a host sounding a take a script drew) is read
+/// by a `TransportBufRd` at the transport's position. Each is silent over the
+/// other's buffer, so the reader is their sum: frame `position` of the take
+/// at each sample, worked out in `f64`. No `at` (the take starts at the
+/// transport's zero), no `start`, no `loop` (the transport loops).
 ///
 /// The gate is `0 <= position < span`, with no ramp: past the take's end the
 /// output is exactly zero, and neither the first nor the last sample is
@@ -182,9 +184,13 @@ pub fn reader_def() -> Value {
             {"kind": "TransportDiskIn", "inputs": [
                 {"control": 1}, {"control": 2}, {"const": 0.0}, {"const": 0.0},
                 {"const": 0.0}]},
-            {"kind": "Mul", "inputs": [{"ugen": 4}, {"ugen": 3}]},
+            {"kind": "TransportBufRd", "inputs": [
+                {"control": 1}, {"control": 2}, {"const": 0.0}, {"const": 1.0},
+                {"const": 0.0}, {"const": 0.0}]},
+            {"kind": "Add", "inputs": [{"ugen": 4}, {"ugen": 5}]},
+            {"kind": "Mul", "inputs": [{"ugen": 6}, {"ugen": 3}]},
             {"kind": "Add", "inputs": [{"control": 0}, {"control": 2}]},
-            {"kind": "Out", "inputs": [{"ugen": 6}, {"ugen": 5}]},
+            {"kind": "Out", "inputs": [{"ugen": 8}, {"ugen": 7}]},
         ],
     })
 }

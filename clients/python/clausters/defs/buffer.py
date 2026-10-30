@@ -13,69 +13,15 @@ always reusable, a double free is refused loudly, exhaustion raises instead of
 wrapping. The `Server` sizes it from its `ServerOptions` (``max_buffers``).
 """
 
-import os
 from array import array
-from typing import NamedTuple
 
 from .. import _native
-from ..base._osclib import Int64
 from ..base.bulk import blob_to_samples, samples_to_blob
 from ..errors import CommandError, CommandRingFull
 from .info import BufferInfo, parse_buffer_list
 from ._wire import resolve as _resolve
 
 NUM_BUFFERS = 4096
-
-
-class Part(NamedTuple):
-    """One source's contribution to a join -- what `Buffer.stitch` takes and
-    `Buffer.parts` gives back.
-
-    ``source`` is a `Buffer`, a bare slot number or **the path of a PCM WAV
-    file**, ``start`` the first frame read from it and ``frames`` how many
-    frames **of the join** it fills. A part over a file is the same part with
-    its samples somewhere else: a join with one is played from disk by
-    ``TransportDiskIn``, which follows the transport and reads ahead of it, and
-    everything that would read it at random (``BufRd``, `get`, `peaks`, a copy)
-    refuses it by name. The
-    two are the same count while the source is at the join's own rate; a source
-    at another rate is read through the ratio the two make, so a second of a
-    44.1 kHz take fills 48000 frames of a 48 kHz join and reads 44100 of its
-    own. The server takes that ratio off the buffers themselves. ``fade_in`` and
-    ``fade_out`` are fades in frames, which is the few milliseconds an editor
-    puts on a cut: two spans that do not continue each other make a step, and a
-    step is a click however well the frames are read.
-
-    ``channels`` maps the join's channels onto the source's, one entry per
-    channel of the join -- the source channel that channel reads, or a negative
-    number for silence. It is routing and not level. ``None`` reads channel *c*
-    from source channel *c*, which is what a join of takes of the same width
-    means.
-
-    ``fade_in_shape`` and ``fade_out_shape`` are each fade's envelope segment
-    shape, by number (1 is linear, 4 equal power, 5 the custom curvature whose
-    value is ``fade_in_curve``/``fade_out_curve``): linear unless stated, and
-    what a join keeps of the shape a region's edge was drawn with.
-    """
-
-    source: "Buffer | int | str"
-    start: int = 0
-    frames: int = 0
-    fade_in: int = 0
-    fade_out: int = 0
-    channels: "list | None" = None
-    fade_in_shape: int = 1
-    fade_in_curve: float = 0.0
-    fade_out_shape: int = 1
-    fade_out_curve: float = 0.0
-
-
-
-def _frame_count(n) -> "int | Int64":
-    """A frame number as the wire carries it: an int, or an int64 past what
-    an int32 counts -- a frame of a file hours long."""
-    n = int(n)
-    return n if -2**31 <= n < 2**31 else Int64(n)
 
 
 def _file_path(path) -> str:
@@ -226,84 +172,6 @@ class Buffer:
         if addr == "/fail":
             srv.buffers.free(bufnum)
             raise CommandError(f"/buffer_alloc {bufnum} failed: {args}")
-        return buf
-
-    @classmethod
-    def stitch(cls, parts, channels: "int | None" = None,
-               sample_rate: float = 0.0, *, wait: bool = True,
-               timeout: "float | None" = None, server=None) -> "Buffer":
-        """Install a **join** over other buffers (``/buffer_stitch``): a buffer
-        whose samples are spans of theirs, read as one.
-
-        That is how a cut assembled from several takes -- or from one take in
-        another order -- plays as **one** reader. Without it the reader would
-        have to change which buffer it reads with sample accuracy, and the
-        buffer a reader reads is an initial-rate control: every seam would be a
-        new node and a control message in the middle of playback.
-
-        A join **owns no samples**, so every command that writes into it
-        refuses (`set_samples`, `fill`, `read`), and so do
-        the recording UGens: writing would mean writing through to whichever
-        take a frame lands on, which is one edit becoming an edit of several.
-        It takes nothing away -- a join is *replaced* rather than edited, which
-        costs the list of parts and not the samples. The sources are held for
-        as long as the join exists, so freeing a take something is stitched
-        over does not silence it.
-
-        Args:
-            parts: the `Part`s, in the order they play. A source at another
-                rate is read at that rate rather than refused -- a join owns no
-                samples, so it converts none and stores none.
-            channels: how wide the join is. ``None`` takes the first part's
-                source's width, which needs a `Buffer` that knows its shape.
-            sample_rate: the join's rate; 0.0 means the server's.
-
-        In NRT it scores at time 0; in RT ``wait=True`` blocks on ``/done``.
-        """
-        srv = _resolve(server)
-        parts = [p if isinstance(p, Part) else Part(*p) for p in parts]
-        if not parts:
-            raise ValueError("a join needs at least one part")
-        if channels is None:
-            first = parts[0].source
-            channels = getattr(first, "channels", 0)
-            if not channels:
-                raise ValueError(
-                    "the join's width: the first part's source does not know "
-                    "its own, so say how many channels the join has")
-        frames = 0
-        args = []
-        for part in parts:
-            source = part.source
-            if isinstance(source, (str, os.PathLike)):
-                source = os.fspath(source)
-            else:
-                source = int(getattr(source, "bufnum", source))
-            args += [source, _frame_count(part.start),
-                     _frame_count(part.frames), int(part.fade_in), int(part.fade_out),
-                     int(part.fade_in_shape), float(part.fade_in_curve),
-                     int(part.fade_out_shape), float(part.fade_out_curve)]
-            mapped = part.channels
-            if mapped is None:
-                mapped = range(channels)
-            mapped = [int(c) for c in mapped]
-            if len(mapped) != channels:
-                raise ValueError(
-                    f"a part maps {len(mapped)} channels and the join has "
-                    f"{channels}: every part spells its whole map")
-            args += mapped
-            frames += int(part.frames)
-        bufnum = srv.buffers.alloc()
-        buf = cls(bufnum, frames, channels, sample_rate, server=srv)
-        head = (bufnum, int(channels), float(sample_rate))
-        if buf._scored() or not wait:
-            srv.send_msg("/buffer_stitch", *head, *args)
-            return buf
-        addr, replied = srv.request("/buffer_stitch", *head, *args,
-                                    timeout=timeout, expect=("/done", "/fail"))
-        if addr == "/fail":
-            srv.buffers.free(bufnum)
-            raise CommandError(f"/buffer_stitch {bufnum} failed: {replied}")
         return buf
 
     @classmethod
@@ -611,94 +479,6 @@ class Buffer:
                 break                      # past the end: the server has no more
             got += n
         return out
-
-    def parts(self, *, timeout: "float | None" = None) -> list:
-        """What this buffer is a join **of** (``/buffer_parts``), as `Part`s in
-        the order they play -- and an empty list when it owns its samples.
-
-        That empty list is the answer to "is this a join", and it is worth
-        asking before drawing: a join refuses every write, so a view that would
-        offer an editable waveform over one finds out by being refused, which is
-        honest but late. The parts come back in the terms `stitch` takes them
-        in, so what is read can be edited and sent back.
-
-        The sources come back as slot numbers rather than `Buffer` handles: what
-        the server holds is an index, and which handle in this program stands
-        for it is this program's business. A part over a file comes back as
-        its path.
-
-        RT only (it needs a reply)."""
-        srv = self._server()
-        _, args = srv.request("/buffer_parts", self.bufnum, timeout=timeout,
-                              expect=("/buffer_parts.reply",))
-        channels = max(1, int(args[1]))
-        width = 9 + channels
-        def source(value):
-            return value if isinstance(value, str) else int(value)
-
-        return [Part(source=source(group[0]), start=int(group[1]),
-                     frames=int(group[2]), fade_in=int(group[3]),
-                     fade_out=int(group[4]),
-                     fade_in_shape=int(group[5]),
-                     fade_in_curve=float(group[6]),
-                     fade_out_shape=int(group[7]),
-                     fade_out_curve=float(group[8]),
-                     channels=[int(c) for c in group[9:]])
-                for group in (args[3:][i:i + width]
-                              for i in range(0, len(args) - 3, width))]
-
-    def peaks(self, bucket: int = 256, start: int = 0, frames: int = -1, *,
-              timeout: "float | None" = None):
-        """Fetch this buffer's **overview** (``/buffer_peaks`` ->
-        ``/buffer_peaks.reply``), as ``(start_frame, bucket, stats)``.
-
-        The summary of a buffer that is standing still, and the sibling of the
-        stream a recording pushes: the same blob either way -- bucket-major and
-        channel-minor, ``min``, ``max`` and mean square per bucket, in one flat
-        ``array('f')`` -- so it folds into a pyramid through the same door
-        (`clausters.gui.peaks_cache_stream_file`, the core's ``write_buckets``)
-        with nothing converted.
-
-        It is what lets a picture of a long take exist without the take: about
-        a hundredth of the samples' bandwidth, enough to draw the whole of it,
-        and the spans under a zoom read back with `get_samples` as they are
-        needed.
-
-        Args:
-            bucket: frames per bucket. Use the one the pyramid it is folded
-                into was built at (256 unless it says otherwise), so the two
-                grids agree by construction.
-            start: the first frame, rounded **down** to a whole bucket for the
-                same reason.
-            frames: how many, -1 to the end. Long spans come back in several
-                requests: the reply's own length says how much arrived, and
-                this walks from where it ended until the span is covered or the
-                server has no more.
-
-        RT only (it needs replies)."""
-        srv = self._server()
-        # The channel count is what turns a blob's length back into buckets, so
-        # it is asked for when the handle does not already carry it -- exactly
-        # as `get_samples` asks for the shape it needs.
-        if frames < 0 or not self.channels:
-            shape = self.info(timeout=timeout)
-            if frames < 0:
-                frames = max(0, shape.frames - start)
-        channels = max(1, self.channels)
-        first = (start // bucket) * bucket
-        end = start + frames
-        out = array("f")
-        at = first
-        while at < end:
-            _, args = srv.request("/buffer_peaks", self.bufnum, int(bucket), int(at),
-                                  int(end - at), timeout=timeout,
-                                  expect=("/buffer_peaks.reply",))
-            run = blob_to_samples(args[3])
-            if not run:
-                break              # no whole bucket left: the span is covered
-            out.extend(run)
-            at += (len(run) // (channels * 3)) * bucket
-        return first, bucket, out
 
     def set_samples(self, samples, start: int = 0, *, chunk: "int | None" = None,
                     wait: bool = True, timeout: "float | None" = None):

@@ -38,3 +38,6 @@ web-time = "1.1"
 
 [dev-dependencies]
 hound = "3"
+# The reader of a fed take, played under the allocation guard
+# (`tests/rt_safety.rs`).
+assert_no_alloc = "1"

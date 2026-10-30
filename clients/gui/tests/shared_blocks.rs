@@ -112,7 +112,7 @@ fn picture(answerer: &mut Answerer, disk: &mut Disk, bucket: usize) -> usize {
     let mut buckets = 0;
     loop {
         let msg = OscMessage {
-            addr: "/buffer_peaks".into(),
+            addr: "/buffer_summary".into(),
             args: vec![
                 OscType::Int(-2),
                 OscType::Int(bucket as i32),

@@ -49,8 +49,7 @@ summary of that length -- the picture is the whole of the box it will fill, whic
 is why the axis does not move while it fills.
 
 <b>Zoom in</b> (wheel): past what the overview can resolve, the host reads back
-<i>the span you are looking at</i> -- a <b>finer overview</b> of it while a
-column still holds many samples, and the samples themselves once it does not. So the
+<i>the span you are looking at</i>, as samples. So the
 picture is the same here as in a desktop window, which reads the memory it
 mapped -- the route differs, the drawing does not. That holds <b>while a take is
 still recording</b> too: everything behind the write frontier is final, so it is
@@ -73,15 +72,12 @@ every lane in it -- so two lengths mean two axes. Zoom (wheel) and pan work on
 whichever ruler or lane the pointer is over, and each group moves on its own.
 
 It is the <b>other</b> half of the same question, and the one that is
-not about recording at all: a take that is <i>finished</i> and too big to
-download. A page has two routes to a picture and keeps both, because they are
-cheap in opposite cases -- a short buffer is pulled whole and then every zoom is
-free, while a minute of stereo (23 MB, and a ten-minute take is 230) is drawn
-from its <b>overview</b> and reads back only the span under the eye. What
-chooses is the buffer's <b>size</b>, not whether something is recording into it.
-The overview of a take standing still is asked for
-(<code>/buffer_peaks</code>) instead of streamed; it is the same blob, folded the
-same way.
+not about recording at all: a take that is <i>finished</i>. The server keeps no
+summary of a buffer and measures no peaks, so a page reads a take standing
+still back (<code>/buffer_getRange</code>) and summarizes it itself, as a
+desktop host summarizes what it maps; a minute of stereo is 23 MB, so it fills
+in over a few seconds. An application's takes of hours are not server buffers:
+they are lists its window draws from their files.
 
 Everything runs on the <b>in-page engine</b>: no server process, no
 socket.</div>

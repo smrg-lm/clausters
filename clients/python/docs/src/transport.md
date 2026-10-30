@@ -203,7 +203,6 @@ continues the frozen sound.
 | Let the engine enforce the transport | `server.transport_group(group)` |
 | Give it back | `server.transport_group(None)` (thaws what it governed) |
 | Freeze / carry on | `server.transport_stop()` / `server.transport_play()` |
-| Have its disk readers read where it stands before it rolls | `server.transport_cue()`, then `transport_play()` |
 | Read the transport's own clock | `server.transport_state()["transport_sample"]` |
 | Continue rather than restart, client-side | `transport.resume()` (not `play()`) |
 | Ask whether a seek means anything | `editor.locatable` |

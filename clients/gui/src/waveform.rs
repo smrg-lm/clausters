@@ -252,11 +252,10 @@ struct Channel {
 /// beside it: `pyramid` covers `start .. start + pyramid.total_samples()` of
 /// the channel and nothing else, at a bucket finer than the view's own.
 ///
-/// What it is for is the client that cannot map the samples. Zoomed past its
-/// summary, such a view used to fetch the **samples** over the span it shows --
-/// a few hundred kilobytes through a 64 KiB carrier, a chunk a frame -- to
-/// compute one min/max pair per pixel column, which is a few kilobytes and
-/// which `/buffer_peaks` answers directly. The samples are still what the
+/// What it is for is a list an application hands over, whose samples are in
+/// its files. Zoomed past its summary, such a view would read the **samples**
+/// over the span it shows to compute one min/max pair per pixel column, which
+/// is a few kilobytes and which `/buffer_summary` answers directly. The samples are still what the
 /// deepest zoom reads: below a handful of samples a column there is no summary
 /// worth asking for, and the trace draws the polyline through the samples
 /// themselves.
@@ -350,38 +349,6 @@ impl WaveformData {
             })
             .collect();
         Self { channels }
-    }
-
-    /// The same, with the summary **already built** -- read out of the
-    /// overview file the server keeps beside a take's region.
-    ///
-    /// It is the pass [`Self::from_sources`] pays that this saves, and it is
-    /// the only difference between them: the samples are still mapped, so a
-    /// zoom past the summary still reads the cells themselves. `None` when the
-    /// summary does not describe these sources -- a different channel count or
-    /// length, which is a file from another take or another generation, and
-    /// drawing one over the other would be a picture of the wrong audio.
-    pub fn from_sources_summarized(
-        sources: Vec<Arc<dyn peaks::Source + Send + Sync>>,
-        summary: MultiPyramid,
-    ) -> Option<Self> {
-        if sources.is_empty()
-            || summary.num_channels() != sources.len()
-            || sources.first().map(|s| s.len()) != Some(summary.frames())
-        {
-            return None;
-        }
-        Some(Self {
-            channels: sources
-                .into_iter()
-                .zip(summary.into_channels())
-                .map(|(source, pyramid)| Channel {
-                    samples: Samples::Shared(source),
-                    pyramid: pyramid.into(),
-                    detail: None,
-                })
-                .collect(),
-        })
     }
 
     /// A multichannel waveform from `samples` holding `channels` interleaved

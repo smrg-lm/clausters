@@ -6,9 +6,9 @@ wire**.
 finished take too big to download, and one peer's edit landing in a lane. A
 page can map nothing, so each of those three pictures is something it has to
 **ask the server for**: the overview of a recording as it is written
-(``/buffer_stream``), the overview of a take that stands still
-(``/buffer_peaks``), and the span another peer edited, read back
-(``/buffer_getRange``).
+(``/buffer_stream``), the samples of a take that stands still, read back and
+summarized by the host (``/buffer_getRange``), and the span another peer
+edited, read back the same way.
 
 This is the same window with the same three things happening, on a host that
 **maps the segment** -- and every one of them is a local read:
@@ -16,11 +16,9 @@ This is the same window with the same three things happening, on a host that
 - **A recording** is followed by the buffer's *write frontier*, one number the
   engine publishes in the directory row, with the samples already being the
   cells the host draws.
-- **The finished take** is drawn from the **overview file beside its region**
-  (``<segment>.buf<n>.<gen>.peaks``), which the server writes when it publishes
-  the buffer and keeps current span by span. So a minute of stereo -- 23 MB --
-  opens with a few hundred kilobytes mapped and no pass over the samples at
-  all. The lane prints both numbers when it opens.
+- **The finished take** is drawn from the samples the host maps, summarized
+  where they lie: a minute of stereo -- 23 MB -- is never copied, and the
+  server measures no peaks.
 - **A peer's edit** arrives as the span and nothing else (``/buffer_touch``):
   the samples under the host are already the new ones, so what it does is
   re-summarize those buckets. Here the edit is a write the server makes into
@@ -47,7 +45,6 @@ With the client importable (``pip install -e ./clients/python``)::
 """
 
 # %%
-import os
 import random
 import sys
 
@@ -55,7 +52,6 @@ from clausters import Buffer, Session, Synth, SynthDef
 from clausters.defs import control
 from clausters.defs.ugens import line, out, record_buf, sine
 from clausters.gui import button, label, panel, timeruler, view, waveform
-from clausters.ipc import ShmClient
 
 #: The four takes, and the finished one beside them.
 TAKES = 4
@@ -97,32 +93,6 @@ long_take.fill(*[
      (1 if i % 2 == 0 else -1) * (0.2 + 0.7 * (i / (STEPS - 1))))
     for i in range(STEPS)
 ])
-
-
-def overview_bytes(buf: Buffer) -> "tuple[int, int]":
-    """``(samples, overview)`` in bytes for `buf`, read off the filesystem.
-
-    The region is the samples and its sibling is the summary the host maps
-    instead of computing one -- the whole point of the lane below, in two
-    numbers.
-    """
-    shm = ShmClient(server.shm)
-    try:
-        region = shm.region_path(buf.bufnum)
-    finally:
-        shm.close()
-    if region is None:
-        return (0, 0)
-    def size(path: str) -> int:
-        return os.path.getsize(path) if os.path.exists(path) else 0
-
-    return (size(region), size(region + ".peaks"))
-
-
-_samples, _peaks = overview_bytes(long_take)
-print(f"the finished take: {_samples / 1e6:.1f} MB of samples, "
-      f"summarized beside it in {_peaks / 1e3:.0f} kB -- "
-      f"which is what the lane opens from")
 
 # %% [markdown]
 # ## The window

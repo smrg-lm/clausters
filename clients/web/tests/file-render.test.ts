@@ -7,9 +7,9 @@
 // what is checked here is what both places get:
 //
 //  - a render to a file is the render in memory, sample for sample;
-//  - a list of two files played by `TransportDiskIn` in a render is read from
-//    its first frame -- a stream reads inside the block that needs it, as a
-//    native render's waits for its thread, so nothing is played as silence.
+//  - a file streamed by `DiskIn` in a render is read from its first frame --
+//    a stream reads inside the block that needs it, as a native render's
+//    waits for its thread, so nothing is played as silence.
 
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -21,7 +21,7 @@ import { loadCore } from "../src/base/core.ts";
 import { OscNrtInterface } from "../src/base/connection.ts";
 import type { OscArg } from "../src/base/osc.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
-import { diskOut, out, sine, transportDiskIn } from "../src/defs/ugens/index.ts";
+import { diskIn, diskOut, out, sine } from "../src/defs/ugens/index.ts";
 import { decodeSoundfile } from "../src/engine/codec.ts";
 import { loadRenderer } from "../src/engine/render.ts";
 import { renderScore } from "../src/render.ts";
@@ -52,7 +52,6 @@ function constant(value: number, frames: number): Uint8Array {
 
 const s = (v: string): OscArg => ["s", v];
 const i = (v: number): OscArg => ["i", v];
-const f = (v: number): OscArg => ["f", v];
 
 test("a render to a file is the render in memory, sample for sample", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clausters-file-render-"));
@@ -81,25 +80,16 @@ test("a render to a file is the render in memory, sample for sample", async () =
     }
 });
 
-test("a list of files is read from its first frame", async () => {
+test("a file a render streams is read from its first frame", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clausters-file-render-"));
     try {
         const a = join(dir, "a.wav");
-        const b = join(dir, "b.wav");
-        await writeFile(a, constant(0.25, 12_000));
-        await writeFile(b, constant(-0.5, 12_000));
-        const reader = transportDiskIn(1, 0, 0, 0, 0);
-        const def = new SynthDef("list", out(0, reader));
-        const part = (path: string): OscArg[] =>
-            [s(path), i(0), i(12_000), i(0), i(0), i(0), f(0), i(0), f(0), i(0)];
+        await writeFile(a, constant(0.25, 48_000));
+        const def = new SynthDef("stream", out(0, diskIn(1, { path: a })));
         const nrt = new OscNrtInterface();
         nrt.addBundle(0, [
-            { addr: "/buffer_stitch", args: [i(1), i(1), f(RATE), ...part(a), ...part(b)] },
             { addr: "/def_send", args: [s("synth"), s(def.dumpDef())] },
-            { addr: "/group_new", args: [i(100), i(1), i(0)] },
-            { addr: "/transport_group", args: [i(0), i(100)] },
-            { addr: "/transport_play", args: [i(0)] },
-            { addr: "/synth_new", args: [s("list"), i(1000), i(0), i(100)] },
+            { addr: "/synth_new", args: [s("stream"), i(1000), i(0), i(0)] },
         ]);
         nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
         const path = join(dir, "out.wav");
@@ -107,9 +97,8 @@ test("a list of files is read from its first frame", async () => {
         assert.equal(stats.frames, 24_000);
         const back = await decodeSoundfile(await readFile(path), path, 0, -1);
         const samples = [...back.samples];
-        assert.equal(samples[0], 0.25, "the first frame is the list's, not silence");
-        assert.ok(samples.slice(0, 12_000).every((v) => v === 0.25), "the first file throughout");
-        assert.ok(samples.slice(12_000).every((v) => v === -0.5), "then the second");
+        assert.equal(samples[0], 0.25, "the first frame is the file's, not silence");
+        assert.ok(samples.every((v) => v === 0.25), "the file throughout");
     } finally {
         await rm(dir, { recursive: true, force: true });
     }

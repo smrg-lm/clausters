@@ -1,8 +1,8 @@
 //! **What a stream's I/O thread is made of**: its account in the load table,
 //! its park, and the wait an offline render makes on it -- shared by the
-//! readers and writers that have a thread of their own (`dsp::disk`,
-//! `dsp::stream`, `dsp::peaks_out`), natively and in a page whose engine
-//! shares its memory with its threads.
+//! readers and writers that have a thread of their own (`dsp::disk`), and
+//! the offline wait a fed reader (`dsp::stream`) makes on its owner,
+//! natively and in a page whose engine shares its memory with its threads.
 //!
 //! A page has no clock a thread can read (`std::time::Instant` is not there),
 //! so the load table's stretches are not timed in one (`server::meters`
@@ -18,12 +18,6 @@ use crate::server::meters::{Meters, Role, Stamp, stamp};
 /// A page's readers rest instead (`dsp::disk_web`).
 #[cfg(not(target_arch = "wasm32"))]
 const PARK: Duration = Duration::from_millis(2);
-
-/// **How long a reader that is woken for its work parks**, as a safety net:
-/// a request, a list put in place and a ring fallen to half wake it
-/// (`dsp::stream`), so a thread with nothing to read costs no turn of a core
-/// five hundred times a second.
-pub(crate) const REST: Duration = Duration::from_millis(100);
 
 /// How long an offline wait sleeps between two looks, once spinning is over.
 const NAP: Duration = Duration::from_micros(50);
@@ -67,13 +61,6 @@ impl Turn {
     pub(crate) fn park(&mut self) {
         self.close();
         std::thread::park_timeout(PARK);
-        self.since = stamp();
-    }
-
-    /// Closes the stretch and parks until it is woken, or for [`REST`].
-    pub(crate) fn rest(&mut self) {
-        self.close();
-        std::thread::park_timeout(REST);
         self.since = stamp();
     }
 

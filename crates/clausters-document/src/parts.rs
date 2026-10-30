@@ -225,7 +225,7 @@ impl Rates<'_> {
 /// **How many frames of a list at `join` a span of `frames` of a take at
 /// `take` fills**: the same count when the two rates agree, else the span's
 /// duration at the list's rate, to the nearest frame. One rule for the
-/// list's arithmetic and for the stitch that reads it.
+/// list's arithmetic and for the reader that reads it.
 pub fn contributed(frames: u64, take: f64, join: f64) -> u64 {
     if take > 0.0 && join > 0.0 && take != join {
         ((frames as f64) * join / take).round() as u64
@@ -355,8 +355,8 @@ pub fn sources(parts: &[Part]) -> Vec<SourceId> {
 /// knows as a join is replaced by the spans of that join it covers.
 ///
 /// What keeps every list flat -- a join is a list of takes, never of joins --
-/// so the server's limit on stitching joins over joins is never approached by
-/// editing. A join over a join over a take reads through both.
+/// so a reader reads a span of a file and never a list of lists. A join over
+/// a join over a take reads through both.
 pub fn flatten(
     parts: &[Part],
     parts_of: &dyn Fn(SourceId) -> Option<Vec<Part>>,

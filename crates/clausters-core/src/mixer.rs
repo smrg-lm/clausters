@@ -124,10 +124,9 @@ pub const RATE: &str = "rate";
 ///
 /// **Not initial-rate**, deliberately: `BufRd` looks the buffer up once a
 /// block, so this is an ordinary control and changing which buffer a box reads
-/// is a `/node_set` rather than a new node. That matters because re-cutting a
-/// join *is* a new buffer -- a stitched one is replaced rather than edited -- and
-/// a box that had to be rebuilt for it would stop and restart every time a hand
-/// moved a seam.
+/// is a `/node_set` rather than a new node. That matters because a box whose
+/// take is a new buffer would otherwise be rebuilt, and stop and restart every
+/// time a hand moved a seam.
 pub const BUF: &str = "buf";
 /// Which channel of the source a reader takes.
 pub const CHAN: &str = "chan";

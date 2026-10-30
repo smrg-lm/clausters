@@ -95,8 +95,7 @@ impl OscScore {
     }
 
     /// **Every file the score reads**, once each, in the order they are
-    /// first named: the string sources of its `/buffer_stitch` parts and the
-    /// paths of its synth defs' `DiskIn`s.
+    /// first named: the paths of its synth defs' `DiskIn`s.
     ///
     /// What it is for is a page, whose render opens a file only before it
     /// starts: an offline render's host opens each of these first, and the
@@ -105,13 +104,6 @@ impl OscScore {
     pub fn files(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         for msg in self.events.iter().flat_map(|ev| &ev.messages) {
-            if msg.addr == "/buffer_stitch" {
-                for arg in msg.args.iter().skip(3) {
-                    if let OscType::String(path) = arg {
-                        add_once(&mut out, path);
-                    }
-                }
-            }
             for path in def_paths(msg, &["DiskIn"]) {
                 add_once(&mut out, &path);
             }
@@ -829,7 +821,7 @@ mod page_streams {
             for row in disk::poll() {
                 match row.direction {
                     Direction::Out => self.record(&row),
-                    Direction::In | Direction::List => {}
+                    Direction::In => {}
                 }
             }
         }
@@ -1026,13 +1018,12 @@ impl Renderer {
             // ask of one is what the engine itself does: bind the group it
             // governs, roll it, stop it and stand it at a sample -- each at
             // its exact sample, like the rest of the event -- which is what a
-            // render that plays a list at the transport's position
-            // (`TransportDiskIn`) needs, and cue it. A play from a beat needs a grid,
+            // render that plays a fed take at the transport's position
+            // (`TransportDiskIn`) needs. A play from a beat needs a grid,
             // which a render keeps none of, and is refused.
             "/transport_group"
             | "/transport_play"
             | "/transport_stop"
-            | "/transport_cue"
             | "/transport_locateSample" => {
                 let transport = match msg.args.first() {
                     Some(OscType::Int(k))
@@ -1067,10 +1058,6 @@ impl Renderer {
                         transport,
                         rolling: false,
                     },
-                    // Offline a reader waits for every frame it reads, so a
-                    // cue has nothing to wait for; it is run all the same,
-                    // the way the server runs it.
-                    ("/transport_cue", []) => Cmd::TransportCue { transport },
                     ("/transport_locateSample", [OscType::Int(n)]) => Cmd::TransportLocate {
                         transport,
                         position: (*n).max(0) as u64,

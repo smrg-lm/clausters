@@ -602,17 +602,6 @@ def test_the_governed_group_is_a_node_or_its_id():
     assert iface.sent[-1] == ("/transport_group", [0, -1])
 
 
-def test_a_cue_answers_whether_the_readers_are_ready():
-    iface = _FakeInterface()
-    srv = Server(interface=iface)
-    iface.queue_reply("/done", "/transport_cue", 0, 1)
-    assert srv.transport_cue() is True
-    assert iface.sent[-1] == ("/transport_cue", [0])
-    # the server's wait ran out first
-    iface.queue_reply("/done", "/transport_cue", 0, 0)
-    assert srv.transport_cue() is False
-
-
 def test_the_end_mark_is_set_cleared_and_read_back():
     iface = _FakeInterface()
     srv = Server(interface=iface)

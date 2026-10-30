@@ -39,46 +39,6 @@ function filePath(file: string | SoundFile): string {
     return path;
 }
 
-/**
- * One source's contribution to a join -- what {@link Buffer.stitch} takes and
- * {@link Buffer.parts} gives back.
- *
- * `source` is a {@link Buffer} or a bare slot number, `start` the first frame
- * read from it and `frames` how many it contributes. `fadeIn` and `fadeOut` are
- * fades in frames, which is the few milliseconds an editor puts on a cut: two
- * spans that do not continue each other make a step, and a step is a click
- * however well the frames are read.
- *
- * `channels` maps the join's channels onto the source's, one entry per channel
- * of the join -- the source channel that channel reads, or a negative number for
- * silence. It is routing and not level. Left out, channel *c* reads source
- * channel *c*, which is what a join of takes of the same width means.
- *
- * `fadeInShape` and `fadeOutShape` are each fade's envelope segment shape, by
- * number (1 is linear, 4 equal power, 5 the custom curvature whose value is
- * `fadeInCurve`/`fadeOutCurve`): linear unless stated, and what a join keeps
- * of the shape a region's edge was drawn with.
- */
-export interface Part {
-    /**
-     * A `Buffer`, a bare slot number or **the path of a PCM WAV file**. A part
-     * over a file is the same part with its samples somewhere else: a join
-     * with one is played from disk by `TransportDiskIn`, which follows the
-     * transport and reads ahead of it, and everything that would read it at
-     * random (`BufRd`, `get`, `peaks`, a copy) refuses it by name.
-     */
-    source: Buffer | number | string;
-    start?: number;
-    frames: number;
-    fadeIn?: number;
-    fadeOut?: number;
-    channels?: number[];
-    fadeInShape?: number;
-    fadeInCurve?: number;
-    fadeOutShape?: number;
-    fadeOutCurve?: number;
-}
-
 /** What every `Buffer` constructor takes: which server, and how long to wait. */
 export interface BufferOptions {
     /** How long to wait for the server's `/done`; the handle's by default. */
@@ -141,61 +101,6 @@ export class Buffer {
     }
 
     // ---- constructors ----
-
-    /**
-     * Installs a **join** over other buffers (`/buffer_stitch`): a buffer whose
-     * samples are spans of theirs, read as one.
-     *
-     * That is how a cut assembled from several takes -- or from one take in
-     * another order -- plays as **one** reader. Without it the reader would have
-     * to change which buffer it reads with sample accuracy, and the buffer a
-     * reader reads is an initial-rate control: every seam would be a new node
-     * and a control message in the middle of playback.
-     *
-     * A join **owns no samples**, so every command that writes into it refuses
-     * (`setSamples`, `fill`, `read`), and so do the
-     * recording UGens: writing would mean writing through to whichever take a
-     * frame lands on, which is one edit becoming an edit of several. It takes
-     * nothing away -- a join is *replaced* rather than edited, which costs the
-     * list of parts and not the samples. The sources are held for as long as
-     * the join exists, so freeing a take something is stitched over does not
-     * silence it.
-     *
-     * `channels` is how wide the join is, defaulting to the first part's
-     * source's width, and `sampleRate` 0 means the server's. A source at
-     * another rate is read at that rate rather than refused -- a join owns no
-     * samples, so it converts none and stores none.
-     */
-    static async stitch(
-        parts: Part[],
-        {
-            channels,
-            sampleRate = 0.0,
-            wait = true,
-            timeout,
-            server: on,
-        }: BufferOptions & {
-            channels?: number;
-            sampleRate?: number;
-            wait?: boolean;
-        } = {},
-    ): Promise<Buffer> {
-        if (!wait) return stitchSent(parts, { channels, sampleRate, server: on });
-        const { server, width, frames, args } = stitchParts(parts, { channels, server: on });
-        const bufnum = server.buffers.alloc();
-        const head: MsgArg[] = [
-            ["i", bufnum],
-            ["i", width],
-            ["f", sampleRate],
-        ];
-        try {
-            await server.command("/buffer_stitch", [...head, ...args], timeout);
-        } catch (error) {
-            server.buffers.free(bufnum);
-            throw error;
-        }
-        return new Buffer(bufnum, frames, width, sampleRate, server);
-    }
 
     /**
      * Allocates a zeroed buffer (`/buffer_alloc`).
@@ -715,48 +620,6 @@ export class Buffer {
     }
 
     /**
-     * What this buffer is a join **of** (`/buffer_parts`), as parts in the
-     * order they play -- and an empty list when it owns its samples.
-     *
-     * That empty list is the answer to "is this a join", and it is worth asking
-     * before drawing: a join refuses every write, so a view that would offer an
-     * editable waveform over one finds out by being refused, which is honest
-     * but late. The parts come back in the terms `stitch` takes them in, so
-     * what is read can be edited and sent back.
-     *
-     * The sources come back as slot numbers rather than `Buffer` handles: what
-     * the server holds is an index, and which handle in this program stands for
-     * it is this program's business. A part over a file comes back as its path.
-     */
-    async parts(timeout?: number): Promise<Part[]> {
-        const msg = await this.srv().request("/buffer_parts", [["i", this.bufnum]], {
-            expect: ["/buffer_parts.reply"],
-            timeout,
-        });
-        const ints = msg.args.map((a) => Number(a));
-        const channels = Math.max(1, ints[1] ?? 1);
-        const width = 9 + channels;
-        const out: Part[] = [];
-        for (let at = 3; at + width <= ints.length; at += width) {
-            // A part over a file comes back as its path.
-            const named = msg.args[at];
-            out.push({
-                source: typeof named === "string" ? named : ints[at]!,
-                start: ints[at + 1]!,
-                frames: ints[at + 2]!,
-                fadeIn: ints[at + 3]!,
-                fadeOut: ints[at + 4]!,
-                fadeInShape: ints[at + 5]!,
-                fadeInCurve: ints[at + 6]!,
-                fadeOutShape: ints[at + 7]!,
-                fadeOutCurve: ints[at + 8]!,
-                channels: ints.slice(at + 9, at + width),
-            });
-        }
-        return out;
-    }
-
-    /**
      * Reads interleaved samples out of this buffer (`/buffer_getRange` -> `/buffer_getRange.reply`), in
      * chunks, as one `Float32Array`. `count` -1 reads to the end (the shape is
      * queried first). Sample indices are flat across channels
@@ -802,69 +665,6 @@ export class Buffer {
             got += run.length;
         }
         return got === total ? out : out.subarray(0, got);
-    }
-
-    /**
-     * Fetches this buffer's **overview** (`/buffer_peaks` ->
-     * `/buffer_peaks.reply`), as `{ start, bucket, stats }`.
-     *
-     * The summary of a buffer that is standing still, and the sibling of the
-     * stream a recording pushes: the same blob either way -- bucket-major and
-     * channel-minor, `min`, `max` and mean square per bucket, one flat
-     * `Float32Array` -- so it folds into a pyramid through the same door
-     * (`Peaks.writeBuckets`) with nothing converted.
-     *
-     * It is what lets a picture of a long take exist without the take: about a
-     * hundredth of the samples' bandwidth, enough to draw the whole of it, and
-     * the spans under a zoom read back with {@link getSamples} as they are
-     * needed.
-     *
-     * `bucket` should be the one the pyramid it is folded into was built at
-     * (256 unless it says otherwise), so the two grids agree by construction;
-     * `start` is rounded **down** to a whole bucket for the same reason, and
-     * the rounded frame comes back with the answer. `frames: -1` runs to the
-     * end. Long spans take several requests -- the reply's own length says how
-     * much arrived, and this walks from where it ended.
-     */
-    async peaks({
-        bucket = 256,
-        start = 0,
-        frames = -1,
-        timeout,
-    }: { bucket?: number; start?: number; frames?: number; timeout?: number } = {}):
-        Promise<{ start: number; bucket: number; stats: Float32Array }> {
-        const server = this.srv();
-        // The channel count turns a blob's length back into buckets, so it is
-        // asked for when the handle does not carry it -- as `getSamples` asks
-        // for the shape it needs.
-        if (frames < 0 || !this.channels) {
-            const shape = await this.info(timeout);
-            if (frames < 0) frames = Math.max(0, shape.frames - start);
-        }
-        const channels = Math.max(1, this.channels);
-        const first = Math.floor(start / bucket) * bucket;
-        const end = start + frames;
-        const runs: Float32Array[] = [];
-        let at = first;
-        while (at < end) {
-            const msg = await server.request(
-                "/buffer_peaks",
-                [["i", this.bufnum], ["i", bucket], ["i", at], ["i", end - at]],
-                { expect: ["/buffer_peaks.reply"], timeout },
-            );
-            const run = blobToSamples(msg.args[3] as Uint8Array);
-            if (run.length === 0) break; // no whole bucket left: the span is covered
-            runs.push(run);
-            at += Math.floor(run.length / (channels * 3)) * bucket;
-        }
-        const total = runs.reduce((n, run) => n + run.length, 0);
-        const stats = new Float32Array(total);
-        let at_ = 0;
-        for (const run of runs) {
-            stats.set(run, at_);
-            at_ += run.length;
-        }
-        return { start: first, bucket, stats };
     }
 
     /**
@@ -1027,98 +827,6 @@ export class Buffer {
         }
         return this.server;
     }
-}
-
-/**
- * The spans of a join, checked and encoded -- everything {@link Buffer.stitch}
- * does before it has a buffer number to put them under.
- *
- * It is a function of the parts and nothing else, which is what lets the two
- * forms of the verb (waited for, and sent) share one reading of them.
- */
-/** A frame number as the wire carries it: an int, or an int64 past what an
- *  int32 counts -- a frame of a file hours long. */
-function frameCount(n: number): MsgArg {
-    const whole = Math.trunc(n);
-    return whole >= -(2 ** 31) && whole < 2 ** 31 ? ["i", whole] : ["h", BigInt(whole)];
-}
-
-function stitchParts(
-    parts: Part[],
-    { channels, server: on }: { channels?: number; server?: Server },
-): { server: Server; width: number; frames: number; args: MsgArg[] } {
-    const server = resolveServer(on);
-    const first = parts[0];
-    if (!first) throw new Error("a join needs at least one part");
-    const width =
-        channels ?? (typeof first.source === "object" ? first.source.channels : 0);
-    if (!width) {
-        throw new Error(
-            "the join's width: the first part's source does not know its own, " +
-                "so say how many channels the join has",
-        );
-    }
-    const args: MsgArg[] = [];
-    let frames = 0;
-    for (const part of parts) {
-        const source: MsgArg =
-            typeof part.source === "string"
-                ? ["s", part.source]
-                : ["i", Math.trunc(typeof part.source === "number" ? part.source : part.source.bufnum)];
-        const mapped = part.channels ?? [...Array(width).keys()];
-        if (mapped.length !== width) {
-            throw new Error(
-                `a part maps ${mapped.length} channels and the join has ` +
-                    `${width}: every part spells its whole map`,
-            );
-        }
-        args.push(
-            source,
-            frameCount(part.start ?? 0),
-            frameCount(part.frames),
-            ["i", Math.trunc(part.fadeIn ?? 0)],
-            ["i", Math.trunc(part.fadeOut ?? 0)],
-            ["i", Math.trunc(part.fadeInShape ?? 1)],
-            ["f", part.fadeInCurve ?? 0.0],
-            ["i", Math.trunc(part.fadeOutShape ?? 1)],
-            ["f", part.fadeOutCurve ?? 0.0],
-            ...mapped.map((c): MsgArg => ["i", Math.trunc(c)]),
-        );
-        frames += Math.trunc(part.frames);
-    }
-    return { server, width, frames, args };
-}
-
-/**
- * {@link Buffer.stitch} with `wait: false`, **answered on the line that sends**.
- *
- * A join owns no samples, so there is nothing to copy and nothing to load: the
- * buffer number is known the moment the pool hands it out, and the `/done` says
- * only that the round trip happened. The public verb stays a promise like every
- * other call on this class -- this is the shape a **turn** needs, where the table
- * a join is written into is read again before any microtask could run, and it is
- * the shape the Python client's `Buffer.stitch(wait=False)` has.
- *
- * @internal
- */
-export function stitchSent(
-    parts: Part[],
-    {
-        channels,
-        sampleRate = 0.0,
-        server: on,
-    }: { channels?: number; sampleRate?: number; server?: Server } = {},
-): Buffer {
-    const { server, width, frames, args } = stitchParts(parts, { channels, server: on });
-    const bufnum = server.buffers.alloc();
-    server.sendMsg(
-        "/buffer_stitch",
-        ["i", bufnum],
-        ["i", width],
-        ["f", sampleRate],
-        ...args,
-    );
-    return new Buffer(bufnum, frames, width, sampleRate, server);
 }
 
 /** Anything a command can address by buffer number: a handle or the number. */
