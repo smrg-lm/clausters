@@ -151,6 +151,10 @@ pub(super) enum ToApp {
     /// The window is gone: its renders are called off and its working
     /// folder removed.
     Forget { def_id: i32 },
+    /// **A client is window `def_id`'s holder now**, which held none: the
+    /// window it asked to open again. It is the client's to keep, as one it
+    /// opened, and asks nothing before a close.
+    Adopt { def_id: i32 },
 }
 
 /// What the application says back to the host.
@@ -166,6 +170,17 @@ pub(super) enum FromApp {
     Opened {
         def_id: i32,
         outcome: Result<Vec<String>, String>,
+        reply: Option<Reply>,
+    },
+    /// **Window `def_id` was not opened**: the session it was asked to open
+    /// (`path`) is window `window`'s, which comes forward instead. `adopt`
+    /// says whether the open asked for the file alone, which the asker may
+    /// take that window over for, or brought contents of its own.
+    Held {
+        def_id: i32,
+        window: i32,
+        path: String,
+        adopt: bool,
         reply: Option<Reply>,
     },
     /// A run of window `def_id`'s editor, as far as it went: the effects
@@ -350,6 +365,29 @@ impl App {
                 save_to,
                 reply,
             } => {
+                // **a session open in a window is not opened twice**: an open
+                // of it is that window's, which comes forward instead
+                let asked = match (&kind, &data) {
+                    (AppKind::Multitrack, Some(MultitrackData::Snapshot(snapshot))) => {
+                        snapshot.path.clone().map(|path| (path, false))
+                    }
+                    (AppKind::Multitrack, None) => path.clone().map(|path| (path, true)),
+                    _ => None,
+                };
+                if let Some((path, adopt)) = asked
+                    && let Some(window) = self.holding(&path)
+                {
+                    return self.out.send(
+                        Vec::new(),
+                        FromApp::Held {
+                            def_id,
+                            window,
+                            path,
+                            adopt,
+                            reply,
+                        },
+                    );
+                }
                 let outcome = match kind {
                     AppKind::Audio => self.open(def_id, &key, &title, path.as_deref()),
                     AppKind::Multitrack => {
@@ -418,7 +456,32 @@ impl App {
                 self.said(def_id, ran, false);
             }
             ToApp::Forget { def_id } => self.forget(def_id),
+            ToApp::Adopt { def_id } => {
+                let Some(window) = self.windows.get_mut(&def_id) else {
+                    return;
+                };
+                window.client_owned = true;
+                let member = window.member;
+                self.member_call(member, json!({"verb": "sync", "asks": false}));
+                self.say_actions(def_id);
+            }
         }
+    }
+
+    /// **The window that holds the session at `path`**: one open over it,
+    /// or one still opening over it, whose session is opened once it is
+    /// bound.
+    fn holding(&self, path: &str) -> Option<i32> {
+        self.windows
+            .iter()
+            .find(|(_, window)| {
+                window
+                    .session
+                    .as_deref()
+                    .is_some_and(|opening| clausters_apps::editing::same_file(opening, path))
+            })
+            .map(|(def_id, _)| *def_id)
+            .or_else(|| self.editing.window_holding_session(path))
     }
 
     /// **The editor opened**, in its working folder, over `path` or none.

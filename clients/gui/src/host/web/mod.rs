@@ -468,6 +468,13 @@ impl WebApp {
                     self.fetches.drop_def(id);
                     self.on_tree_changed();
                 }
+                // a page's window is a canvas in it: scrolled into view
+                HostEffect::Raise(id) => {
+                    if let Some(canvas) = self.canvases.get(&id).and_then(|s| s.window.canvas()) {
+                        canvas.scroll_into_view();
+                        let _ = canvas.focus();
+                    }
+                }
                 HostEffect::Redraw(id) => {
                     if self.canvases.contains_key(&id) {
                         // A `/gui_set` may have retargeted a meter/scope `bus`:

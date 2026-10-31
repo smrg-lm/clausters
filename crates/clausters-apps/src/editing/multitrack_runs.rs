@@ -375,7 +375,22 @@ impl Editing {
                 session: Some(path),
                 ..
             } => {
-                let opened = self.open_session(member, path, caller, &mut ran);
+                // **a session open in another window is not opened twice**:
+                // that window comes forward, and this one stays as it is
+                let here = match self.member(member) {
+                    Some(Member::Multitrack(editor)) => editor.window_id(),
+                    _ => None,
+                };
+                let elsewhere = self
+                    .window_holding_session(path)
+                    .filter(|window| Some(*window) != here);
+                let opened = match elsewhere {
+                    Some(window) => {
+                        ran.effects.push(effect("front", json!({"window": window})));
+                        Err(format!("{path} is open in another window"))
+                    }
+                    None => self.open_session(member, path, caller, &mut ran),
+                };
                 if opened.is_ok() {
                     self.stop_multitrack(member, tracks, ids);
                     self.sound(member, tracks, ids);
@@ -1019,6 +1034,10 @@ impl Editing {
     pub fn forget_multitrack(&mut self, member: MemberId, ids: &mut IdSpaces) {
         if let Some(mut tracks) = self.tracks.remove(&member) {
             self.close_tracks(member, &mut tracks, ids);
+        }
+        // in no window now, it holds no file a later open would find
+        if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
+            editor.set_window(None);
         }
     }
 }

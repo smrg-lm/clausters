@@ -921,3 +921,62 @@ fn a_roll_joins_its_own_multitracks_order_whatever_its_key() {
     f.editing.select(Some(other_roll));
     assert!(!f.editing.can_undo(), "and not the other multitrack's");
 }
+
+#[test]
+fn a_session_open_in_one_window_brings_it_forward_instead_of_opening_twice() {
+    let mut f = Fixture::new();
+    let other = f.second();
+    for (member, window) in [(f.member, 39), (other, 49)] {
+        let Some(Member::Multitrack(editor)) = f.editing.member_mut(member) else {
+            panic!()
+        };
+        editor.set_window(Some(window));
+    }
+    let measured = f.open("held", 1);
+    f.land(measured.run, Ok(()));
+    let path = f.folder.join("held.json");
+    // written another way, it is the same file
+    let written = f.folder.join(".").join("held.json");
+    assert_eq!(
+        f.editing.window_holding_session(written.to_str().unwrap()),
+        Some(39)
+    );
+    let before = f.editing.multitrack_query(other, "file");
+    let again = f.editing.start(
+        other,
+        &json!({"verb":"open", "session":written}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(
+        again
+            .effects
+            .iter()
+            .any(|effect| effect["kind"] == "front" && effect["window"] == 39),
+        "{again:?}"
+    );
+    assert!(matches!(again.end, Some(Err(_))), "{:?}", again.end);
+    assert_eq!(f.editing.multitrack_query(other, "file"), before);
+    // the window that holds it opens it again from its file
+    let reread = f.editing.start(
+        f.member,
+        &json!({"verb":"open", "session":path}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(
+        !reread
+            .effects
+            .iter()
+            .any(|effect| effect["kind"] == "front"),
+        "{reread:?}"
+    );
+    // a window that went holds nothing
+    f.editing.forget_multitrack(f.member, &mut f.ids);
+    assert_eq!(
+        f.editing.window_holding_session(path.to_str().unwrap()),
+        None
+    );
+}

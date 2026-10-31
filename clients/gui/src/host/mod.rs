@@ -794,6 +794,9 @@ pub enum HostEffect {
     OpenWindow(i32),
     /// Close the window for the GuiDef rooted at this id, if any.
     CloseWindow(i32),
+    /// **Bring the window rooted at this id to the front**: a document
+    /// asked to be opened again is the window that already holds it.
+    Raise(i32),
     /// A live `/gui_set` changed a widget in the window rooted at this id; the
     /// front should repaint it (the typed tree is already updated in place).
     Redraw(i32),

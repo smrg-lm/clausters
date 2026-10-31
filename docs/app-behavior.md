@@ -88,6 +88,12 @@ code that keeps it lives.
   from a multitrack's box takes its entries into that session's order, so
   the multitrack's undo walks them, and the same sequence under another
   multitrack is another structure in another order.
+  **A document is open once in a host.** Opening a session file a window
+  already holds brings that window forward and opens nothing: from the
+  window's File > Open, from a client (`/gui_app_open`), or from the host's
+  own start. A client that asked for the file alone is answered that window
+  and is its holder from then on when no client held it; one held by
+  another client is refused, with the window named.
   A scripted history step with a malformed or unknown member is refused
   before selecting an order or preparing I/O. It cannot use the previously
   selected order or truncate an oversized id to address another member.

@@ -128,6 +128,11 @@ already carry it.
   editor keeps the rule; the score editor and the multitrack with a session
   file follow it when `X25` ports the lifecycle.
 
+- ⬜ **A sound file opens in two audio editor windows of one host**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. A multitrack's session
+  is open once in a host now; the audio editor's open finds the file in its
+  window's list and focuses it.
+
 - ⬜ **A write in place behind an undrained replacement can miss a shared
   buffer** *(root `PLAN.md`, Found by use)*. The narrower race left after the
   gain preview's fix; no client writes before an allocation's `/done`.

@@ -494,6 +494,12 @@ impl App {
                         lp.exit();
                     }
                 }
+                HostEffect::Raise(id) => {
+                    if let Some(window) = self.windows.get(&id).and_then(|ws| ws.gpu.window()) {
+                        window.set_minimized(false);
+                        window.focus_window();
+                    }
+                }
                 HostEffect::Redraw(id) => {
                     if let Some(ws) = self.windows.get(&id) {
                         ws.repaint();

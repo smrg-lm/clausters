@@ -492,6 +492,13 @@ impl Host {
                     let msg = super::apps::app_reply(seq, answer);
                     self.pending_effects.push(HostEffect::Send { to, msg });
                 }
+                FromApp::Held {
+                    def_id,
+                    window,
+                    path,
+                    adopt,
+                    reply,
+                } => self.held_audio(def_id, window, &path, adopt, reply),
                 FromApp::Roll { parent, source } => self.open_roll_of(parent, source),
                 FromApp::Changed { def_id, version } => self.changed_audio(def_id, version),
             }
@@ -610,6 +617,12 @@ impl Host {
                     }
                 }
                 "publish" => self.publish_audio(def_id, effect["def"].clone()),
+                // the window that holds what this one was asked to open
+                "front" => {
+                    if let Some(window) = effect["window"].as_i64() {
+                        self.pending_effects.push(HostEffect::Raise(window as i32));
+                    }
+                }
                 // **the play cursor is the editor's transport's position**
                 "transport" => {
                     if let Some(transport) = effect["transport"].as_u64() {
@@ -842,6 +855,64 @@ impl Host {
                 args: vec![OscType::Int(def_id), OscType::String(snapshot.to_string())],
             },
         });
+    }
+
+    /// **Window `def_id` was not opened, since window `window` holds the
+    /// session it asked for** (`path`): that window comes forward, and is
+    /// the answer. A client that asked for the file alone takes it over
+    /// when no client holds it -- the host's own, or one a client let go
+    /// of -- and is answered it as one it opened; otherwise it is told
+    /// where the session is open.
+    fn held_audio(
+        &mut self,
+        def_id: i32,
+        window: i32,
+        path: &str,
+        adopt: bool,
+        reply: Option<Reply>,
+    ) {
+        let Some(audio) = self.audio.as_mut() else {
+            return;
+        };
+        audio.windows.remove(&def_id);
+        self.pending_effects.push(HostEffect::Raise(window));
+        diag::info!("audio: {path} is open in window {window}, brought forward");
+        let refused = (
+            "value".to_string(),
+            format!("{path} is open in window {window}"),
+        );
+        match reply {
+            Some(Reply::Client(to, seq)) => {
+                let answer = match audio.windows.get_mut(&window) {
+                    Some(held) if adopt && (held.opener.is_none() || held.released) => {
+                        // **the client that let it go hears it gone**, as
+                        // a window of its own that closed
+                        let before = held.opener.replace(to).filter(|before| *before != to);
+                        held.released = false;
+                        held.last = None;
+                        if let Some(before) = before {
+                            self.pending_effects.push(HostEffect::Send {
+                                to: before,
+                                msg: OscMessage {
+                                    addr: GUI_CLOSED.into(),
+                                    args: vec![OscType::Int(window)],
+                                },
+                            });
+                        }
+                        let _ = audio.ask(ToApp::Adopt { def_id: window });
+                        Ok(json!({"window": window}))
+                    }
+                    _ => Err(refused),
+                };
+                let msg = super::apps::app_reply(seq, answer);
+                self.pending_effects.push(HostEffect::Send { to, msg });
+            }
+            #[cfg(test)]
+            Some(Reply::Local(tx)) => {
+                let _ = tx.send(Err(refused));
+            }
+            None => {}
+        }
     }
 
     /// **What window `def_id` holds moved by a hand**: whoever opened it is
@@ -2096,6 +2167,110 @@ mod tests {
             vec![OscType::Int(window)],
             "the session was the host's own"
         );
+    }
+
+    /// **A session open in a window is not opened twice**: a client that
+    /// asks for it again is answered that window, which comes forward and
+    /// is its from then on when no client held it; another client is told
+    /// where it is open, and the host's own open brings it forward alone.
+    #[test]
+    fn a_session_already_open_brings_its_window_forward() {
+        use clausters_document::Document;
+        use clausters_document::session::Session;
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let folder = std::env::temp_dir().join(format!("host-mt-held-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("song.json");
+        std::fs::write(
+            &path,
+            serde_json::to_string(&Session::new(Document::empty())).unwrap(),
+        )
+        .unwrap();
+        let path = path.to_str().unwrap().to_string();
+        let mut host = host();
+        let window = host.open_multitrack(Some(&path), "song").unwrap();
+        until(&mut host, "the window never opened its session", |host| {
+            host.window_def(window).is_some()
+        });
+        until(&mut host, "the session was never opened", |host| {
+            ask(host, window, json!({"query": "file"}))["path"] == json!(path)
+        });
+        // **every effect until the door answers `seq`**
+        let effects = |host: &mut Host, first: Vec<HostEffect>, seq: i32| {
+            let mut seen = first;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            while reply_of(&seen, seq).is_none() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the door never answered"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                seen.extend(host.take_effects());
+            }
+            let answer = reply_of(&seen, seq).unwrap();
+            let raised = seen
+                .iter()
+                .any(|e| matches!(e, HostEffect::Raise(id) if *id == window));
+            (answer, raised)
+        };
+        let options = json!({"path": format!("{}/./song.json", folder.display())}).to_string();
+        let open = |host: &mut Host, seq: i32, client: ClientId| {
+            door(
+                host,
+                GUI_APP_OPEN,
+                vec![
+                    OscType::Int(seq),
+                    OscType::String("multitrack".into()),
+                    OscType::String(options.clone()),
+                ],
+                client,
+            )
+        };
+        let first = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_994)));
+        let sent = open(&mut host, 1, first);
+        let (answer, raised) = effects(&mut host, sent, 1);
+        assert_eq!(answer["ok"]["window"], window, "{answer}");
+        assert!(raised, "the window was not brought forward");
+        let second = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_993)));
+        let sent = open(&mut host, 2, second);
+        let (answer, raised) = effects(&mut host, sent, 2);
+        assert!(
+            answer["error"]["message"]
+                .as_str()
+                .is_some_and(|why| why.contains(&format!("window {window}"))),
+            "{answer}"
+        );
+        assert!(raised);
+        // the host's own open: nothing opens, the window comes forward
+        let again = host.open_multitrack(Some(&path), "song").unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !host
+            .take_effects()
+            .iter()
+            .any(|e| matches!(e, HostEffect::Raise(id) if *id == window))
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "never brought forward"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(!host.owns_audio(again));
+        // the client took it over: it is told the window's close
+        host.closed_by_user(window);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !host.take_effects().iter().any(
+            |e| matches!(e, HostEffect::Send { to, msg } if *to == first && msg.addr == GUI_CLOSED),
+        ) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the client never heard the close"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

@@ -369,6 +369,28 @@ enum Order<'a> {
     Own,
 }
 
+/// **Whether two paths name one file**: the file each resolves to, where
+/// both exist on a disk, and otherwise the same absolute path, written
+/// either way (`./a` or `a`, a trailing separator). A page's storage has no
+/// links, so the written path is the file there.
+pub fn same_file(a: &str, b: &str) -> bool {
+    use std::path::{Component, Path, PathBuf};
+    if a == b {
+        return true;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if let (Ok(a), Ok(b)) = (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        return a == b;
+    }
+    let plain = |path: &str| -> PathBuf {
+        let path = std::path::absolute(path).unwrap_or_else(|_| PathBuf::from(path));
+        path.components()
+            .filter(|c| !matches!(c, Component::CurDir))
+            .collect()
+    };
+    plain(a) == plain(b) || Path::new(a) == Path::new(b)
+}
+
 /// The object a member's order is bound to: the audio file in focus, the
 /// multitrack's session, the one structure of any other editor.
 fn object_id(member: &Member) -> i64 {
@@ -786,6 +808,25 @@ impl Editing {
             .histories
             .focus(Object { member, id: object }, &domain);
         self.seats[member as usize].structure = structure;
+    }
+
+    /// **The window that holds the session file at `path`**, if one does:
+    /// a multitrack open in a window over that file. A document is open
+    /// once in a host, so an open of it brings that window forward instead.
+    pub fn window_holding_session(&self, path: &str) -> Option<i32> {
+        self.seats.iter().find_map(|seat| match &seat.member {
+            Member::Multitrack(editor)
+                if editor.has_session()
+                    && editor
+                        .file()
+                        .path
+                        .as_deref()
+                        .is_some_and(|held| same_file(held, path)) =>
+            {
+                editor.window_id()
+            }
+            _ => None,
+        })
     }
 
     /// A member, to read.

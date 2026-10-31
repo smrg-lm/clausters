@@ -2882,9 +2882,17 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
       it, and the window goes on as the host's own, asking before a close
       loses work. The `snapshot` a handler opens over again stays: it is
       one session's. *Done 2026-10-30.*
-    - ⬜ A document already open in another window of the host is not
-      opened twice: File > Open, `/gui_app_open` and `--session` bring its
-      window forward, as `edit()` already does in both clients.
+    - ✅ A document already open in another window of the host is not
+      opened twice. The context answers which window holds a session file
+      (`Editing::window_holding_session`, the same file however its path
+      is written); an in-window open of it (the door's `open`, which the
+      window's File > Open will call) refuses and brings that window
+      forward, and so does the host's own open. A client's
+      `/gui_app_open` of it is answered that window, which it holds from
+      then on when no client did, and is refused naming the window when
+      another client holds it. `--session` opens the host's first window,
+      so it finds nothing; it goes through the same open. *Done
+      2026-10-30.*
     - ⬜ Wire the empty host opening and New/Open/Close file chrome and dialogs,
       including holder-aware save/discard/cancel and confirmed deferred closes.
       Preserve all three opening paths and verify disk/OPFS read-back.
@@ -6087,3 +6095,15 @@ wrong.
   **Fixed 2026-10-30.** Checkpoints compare contents independently of revision
   counters and event-id watermarks. Written snapshots retain the advancing
   values; restored sequence contents and an inactive session are covered.
+
+- ⬜ **A sound file opens in two audio editor windows of one host**
+  *(found 2026-10-30, making a session file open once in a host)*. A
+  multitrack's session is open in one window of a host and an open of it
+  brings that window forward; the audio editor still opens a file another
+  of its windows holds, so two windows edit one file with two histories
+  and the second save writes over the first. The audio editor's window
+  holds several files, so the open finds the window and the file in it
+  (`Editing::window_holding_session` is the multitrack's half), focuses
+  that file and brings the window forward, from File > Open, a client's
+  `/gui_app_open` and `--audio`. **Acceptance:** the same file opened from
+  each of the three, written two ways, is one window and one history.
