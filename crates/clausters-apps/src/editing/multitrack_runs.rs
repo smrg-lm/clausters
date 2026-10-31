@@ -43,16 +43,6 @@ pub(super) struct Tracks {
     /// its readers play.
     taken: HashMap<NodeId, (Vec<PlacedRegion>, PlannedFeed)>,
     revision: u64,
-    /// The session it was opened from, and where it is: what a save
-    /// writes again, with the multitrack as it now is.
-    pub(super) session: Option<(clausters_document::session::Session, String)>,
-    /// **Where a Save with no path writes**, when the holder said
-    /// (`saveTo` on the open): `Some(None)` writes nowhere. Unsaid, it
-    /// writes the session it opened.
-    pub(super) save_to: Option<Option<String>>,
-    /// Captured contents confirmed by the last open or save, independent of
-    /// navigation and the editing context's conversation version.
-    pub(super) saved: Option<clausters_document::session::Session>,
 }
 
 impl Tracks {
@@ -82,9 +72,6 @@ impl Tracks {
             playback: MultitrackPlayback::in_medium(engine.medium()),
             taken: HashMap::new(),
             revision: 0,
-            session: None,
-            save_to: None,
-            saved: None,
         })
     }
 }
@@ -123,6 +110,35 @@ impl Editing {
             Ok(action) => action,
             Err(reason) => return refused("value", reason),
         };
+        if let Some(object) = action.object {
+            if !matches!(
+                action.kind,
+                ActionKind::Handle(_) | ActionKind::Undo | ActionKind::Redo
+            ) {
+                return refused("value", "this action requires the active session");
+            }
+            return self.over_multitrack(member, object, |editing| {
+                let mut ran = editing.multitrack_act_ready(member, &action, caller, ids);
+                let visible = matches!(editing.member(member), Some(Member::Multitrack(editor)) if editor.observes_session());
+                if !visible { ran.effects.retain(|effect| effect["kind"] == "say"); }
+                ran
+            }).unwrap_or_else(|error| refused("value",error));
+        }
+        self.multitrack_act_ready(member, &action, caller, ids)
+    }
+
+    fn multitrack_act_ready(
+        &mut self,
+        member: MemberId,
+        action: &Action,
+        caller: &mut dyn Caller,
+        ids: &mut IdSpaces,
+    ) -> Ran {
+        if matches!(self.member(member), Some(Member::Multitrack(editor)) if !editor.has_session())
+            && !action.allows_empty()
+        {
+            return refused("value", "no file is open");
+        }
         self.select_member(member);
         let mut tracks = match self.tracks.remove(&member) {
             Some(tracks) => tracks,
@@ -131,7 +147,7 @@ impl Editing {
                 None => return refused("runtime", "the multitrack has no engine"),
             },
         };
-        let ran = self.multitrack_run(member, &mut tracks, &action, caller, ids);
+        let ran = self.multitrack_run(member, &mut tracks, action, caller, ids);
         self.tracks.insert(member, tracks);
         ran
     }
@@ -144,16 +160,28 @@ impl Editing {
     fn open_session(
         &mut self,
         member: MemberId,
-        tracks: &mut Tracks,
         path: &str,
         caller: &mut dyn Caller,
         ran: &mut Ran,
     ) -> Result<Value, String> {
-        use crate::multitrack::sources;
         let bytes = clausters_core::files::read(path).map_err(|e| format!("{path}: {e}"))?;
         let session: clausters_document::session::Session =
             serde_json::from_slice(&bytes).map_err(|e| format!("{path}: not a session: {e}"))?;
-        let folder = std::path::Path::new(path)
+        self.open_session_snapshot(member, session, Some(path.to_string()), None, caller, ran)
+    }
+
+    fn open_session_snapshot(
+        &mut self,
+        member: MemberId,
+        session: clausters_document::session::Session,
+        path: Option<String>,
+        checkpoint: Option<clausters_document::session::Session>,
+        caller: &mut dyn Caller,
+        ran: &mut Ran,
+    ) -> Result<Value, String> {
+        use crate::multitrack::sources;
+        let destination = path.as_deref().unwrap_or("");
+        let folder = std::path::Path::new(destination)
             .parent()
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default();
@@ -168,6 +196,31 @@ impl Editing {
             .map(|(id, why)| json!({"source": id.0, "reason": why}))
             .collect();
         let measured = std::mem::take(&mut resolved.measure);
+        self.change_multitrack_session(
+            member,
+            crate::multitrack::operations::Command::Open(Box::new(
+                crate::multitrack::operations::Opened {
+                    session: session.clone(),
+                    resolved,
+                },
+            )),
+        )?;
+        if !measured.is_empty() {
+            self.measure_multitrack(member, measured, ran)?;
+        }
+        if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
+            editor.file_mut().session = Some(session);
+            editor.file_mut().path = path;
+            editor.file_mut().saved = Some(checkpoint.unwrap_or_else(|| editor.session_snapshot()));
+        }
+        Ok(json!({"unresolved": unresolved}))
+    }
+
+    fn change_multitrack_session(
+        &mut self,
+        member: MemberId,
+        command: crate::multitrack::operations::Command,
+    ) -> Result<(), String> {
         let seat = self
             .seats
             .get_mut(member as usize)
@@ -175,28 +228,22 @@ impl Editing {
         let Member::Multitrack(editor) = &mut seat.member else {
             return Err("the member is not a multitrack".into());
         };
-        let ticket = self.multitrack_runtime.prepare(
-            editor.as_ref(),
-            &mut self.services,
-            crate::multitrack::operations::Request {
-                target: crate::application::operations::Target {
-                    member,
-                    object: editor.session_binding(),
-                    server: seat.server,
-                },
-                command: crate::multitrack::operations::Command::Open(Box::new(
-                    crate::multitrack::operations::Opened {
-                        session: session.clone(),
-                        resolved,
-                    },
-                )),
+        let request = crate::multitrack::operations::Request {
+            target: crate::application::operations::Target {
+                member,
+                object: editor.session_binding(),
+                server: seat.server,
             },
-        )?;
+            command,
+        };
+        let ticket =
+            self.multitrack_runtime
+                .prepare(editor.as_ref(), &mut self.services, request)?;
         let finished = self
             .multitrack_runtime
             .operations
             .finish_ready(ticket)
-            .expect("an open has no pending effects");
+            .expect("a binding transition has no pending I/O");
         let settled = self.multitrack_runtime.settle_turn(
             editor.as_mut(),
             &mut self.services,
@@ -204,14 +251,12 @@ impl Editing {
             &mut self.version,
         );
         if settled.protocol.committed != Some(true) {
-            return Err("the session changed before opening".into());
+            return Err("the session changed before confirmation".into());
         }
-        if !measured.is_empty() {
-            self.measure_multitrack(member, measured, ran)?;
-        }
-        tracks.session = Some((session, path.to_string()));
-        tracks.saved = self.multitrack_snapshot(member, tracks);
-        Ok(json!({"unresolved": unresolved}))
+        self.version += 1;
+        editor.binding_changed(self.version);
+        self.select_member(member);
+        Ok(())
     }
 
     /// **The session written** at `path`, or where it was opened from: the
@@ -221,7 +266,6 @@ impl Editing {
     fn save_session(
         &mut self,
         member: MemberId,
-        tracks: &mut Tracks,
         save: super::multitrack_operations::SaveTo,
         ran: &mut Ran,
     ) -> Result<Value, String> {
@@ -234,18 +278,18 @@ impl Editing {
         };
         let path = match (
             save.path.as_deref(),
-            &tracks.save_to,
-            tracks.session.as_ref(),
+            &editor.file().save_to,
+            editor.file().path.as_ref(),
         ) {
             (Some(path), _, _) => path.to_string(),
             (None, Some(Some(path)), _) => path.clone(),
             (None, Some(None), _) => {
                 return Err("this session is read-only: it was opened with nowhere to save".into());
             }
-            (None, None, Some((_, path))) => path.clone(),
+            (None, None, Some(path)) => path.clone(),
             (None, None, None) => return Err("the session has no file yet: save it as".into()),
         };
-        let session = editor.session_snapshot(tracks.session.as_ref().map(|(session, _)| session));
+        let session = editor.session_snapshot();
         let target = crate::application::operations::Target {
             member,
             object: editor.session_binding(),
@@ -273,17 +317,6 @@ impl Editing {
         Ok(json!({"destination": path}))
     }
 
-    fn multitrack_snapshot(
-        &self,
-        member: MemberId,
-        tracks: &Tracks,
-    ) -> Option<clausters_document::session::Session> {
-        let Member::Multitrack(editor) = self.member(member)? else {
-            return None;
-        };
-        Some(editor.session_snapshot(tracks.session.as_ref().map(|(session, _)| session)))
-    }
-
     fn multitrack_run(
         &mut self,
         member: MemberId,
@@ -293,17 +326,57 @@ impl Editing {
         ids: &mut IdSpaces,
     ) -> Ran {
         let mut ran = Ran::default();
-        if let Some(save_to) = &action.save_to {
-            tracks.save_to = Some(save_to.clone());
+        if let Some(save_to) = &action.save_to
+            && let Some(Member::Multitrack(editor)) = self.member_mut(member)
+        {
+            editor.file_mut().save_to = Some(save_to.clone());
         }
         let result = match &action.kind {
+            ActionKind::NewFile | ActionKind::CloseFile => {
+                let command = if matches!(action.kind, ActionKind::NewFile) {
+                    crate::multitrack::operations::Command::New
+                } else {
+                    crate::multitrack::operations::Command::Unbind
+                };
+                self.change_multitrack_session(member, command).map(|()| {
+                    self.stop_multitrack(member, tracks, ids);
+                    if matches!(action.kind, ActionKind::NewFile) {
+                        self.sound(member, tracks, ids);
+                    }
+                    ran.effects.push(effect("publish", json!({})));
+                    ran.effects.push(effect("resync", json!({})));
+                    Value::Null
+                })
+            }
+            ActionKind::Open {
+                snapshot: Some(snapshot),
+                ..
+            } => {
+                let opened = self.open_session_snapshot(
+                    member,
+                    snapshot.session.clone(),
+                    snapshot.path.clone(),
+                    snapshot.saved.clone(),
+                    caller,
+                    &mut ran,
+                );
+                if opened.is_ok() {
+                    self.stop_multitrack(member, tracks, ids);
+                    self.sound(member, tracks, ids);
+                }
+                opened
+            }
             ActionKind::Open {
                 session: Some(path),
+                ..
             } => {
-                let opened = self.open_session(member, tracks, path, caller, &mut ran);
+                let opened = self.open_session(member, path, caller, &mut ran);
                 if opened.is_ok() {
+                    self.stop_multitrack(member, tracks, ids);
                     self.sound(member, tracks, ids);
-                    tracks.saved = self.multitrack_snapshot(member, tracks);
+                    if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
+                        editor.file_mut().saved = Some(editor.session_snapshot());
+                    }
                 }
                 opened.map(|mut answer| {
                     answer["transport"] = json!(tracks.playback.transport());
@@ -319,7 +392,6 @@ impl Editing {
             }
             ActionKind::Save { path } => self.save_session(
                 member,
-                tracks,
                 super::multitrack_operations::SaveTo {
                     path: path.clone(),
                     close: false,
@@ -327,10 +399,16 @@ impl Editing {
                 },
                 &mut ran,
             ),
-            ActionKind::Open { session: None } | ActionKind::Sound => {
+            ActionKind::Open {
+                session: None,
+                snapshot: None,
+            }
+            | ActionKind::Sound => {
                 self.sound(member, tracks, ids);
-                if matches!(action.kind, ActionKind::Open { .. }) {
-                    tracks.saved = self.multitrack_snapshot(member, tracks);
+                if matches!(action.kind, ActionKind::Open { .. })
+                    && let Some(Member::Multitrack(editor)) = self.member_mut(member)
+                {
+                    editor.file_mut().saved = Some(editor.session_snapshot());
                 }
                 Ok(json!({"transport": tracks.playback.transport()}))
             }
@@ -554,7 +632,11 @@ impl Editing {
             }
             _ => Value::Null,
         };
-        effect(kind, json!({ "multitrack": multitrack }))
+        let objects = match self.member(member) {
+            Some(Member::Multitrack(editor)) => editor.closing_objects(),
+            _ => Value::Null,
+        };
+        effect(kind, json!({ "multitrack": multitrack, "objects":objects }))
     }
 
     /// **What a pass of member `member` is read off**: its window's time
@@ -590,11 +672,10 @@ impl Editing {
     ) -> Value {
         // what a close asks about: whether anything moved since the session
         // was last written
-        let unsaved =
-            tracks.saved.is_some() && self.multitrack_snapshot(member, tracks) != tracks.saved;
-        // and whether it has a file to be written over, or a Save asks where
-        let untitled = tracks.session.is_none() && !matches!(tracks.save_to, Some(Some(_)));
         if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
+            let file = editor.file();
+            let unsaved = editor.unsaved_contents();
+            let untitled = file.path.is_none() && !matches!(file.save_to, Some(Some(_)));
             editor.set_unsaved(unsaved);
             editor.set_untitled(untitled);
         }
@@ -723,7 +804,7 @@ impl Editing {
                 close: outcome.close,
                 save_as: outcome.save_as.is_some(),
             };
-            if let Err(why) = self.save_session(member, tracks, save, ran) {
+            if let Err(why) = self.save_session(member, save, ran) {
                 ran.effects.push(effect("say", json!({"reason":why})));
             }
             return json!(outcome.changed);
@@ -741,6 +822,11 @@ impl Editing {
     /// written into the multitrack (the widest of its regions, which a save
     /// keeps), and the nodes brought in step.
     fn sound(&mut self, member: MemberId, tracks: &mut Tracks, ids: &mut IdSpaces) {
+        if matches!(self.member(member), Some(Member::Multitrack(editor)) if !editor.observes_session())
+        {
+            return;
+        }
+
         let Some(Member::Multitrack(editor)) = self.member(member) else {
             return;
         };
@@ -852,6 +938,10 @@ impl Editing {
         if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
             editor.invalidate_session_binding();
         }
+        self.stop_multitrack(member, tracks, ids);
+    }
+
+    fn stop_multitrack(&mut self, member: MemberId, tracks: &mut Tracks, ids: &mut IdSpaces) {
         let _ = tracks.playback.close(ids);
         tracks.taken.clear();
         if let Some(engine) = self.engine.as_mut() {
@@ -863,6 +953,27 @@ impl Editing {
     /// transport, whether it rolls) or `output` (each track's meter buses,
     /// and the samples played as silence).
     pub(crate) fn multitrack_query(&mut self, member: MemberId, query: &str) -> Value {
+        let Some(Member::Multitrack(editor)) = self.member(member) else {
+            return json!({"error":"the member is not a multitrack"});
+        };
+        if query == "file" {
+            return if !editor.has_session() {
+                json!({"empty":true})
+            } else {
+                json!({"empty":false, "object":editor.session_binding(), "path":editor.file().path.as_ref(),
+                    "dirty":editor.unsaved_contents()})
+            };
+        }
+        if query == "session" && editor.has_session() {
+            return serde_json::to_value(editor.retained_snapshot()).unwrap_or(Value::Null);
+        }
+        if !editor.has_session() {
+            return if query == "history" {
+                json!({"canUndo":false,"canRedo":false,"undoLabel":null,"redoLabel":null})
+            } else {
+                json!({"error":"no file is open"})
+            };
+        }
         self.select_member(member);
         let Some(mut tracks) = self.tracks.remove(&member) else {
             return json!({"error": "the multitrack has no session"});

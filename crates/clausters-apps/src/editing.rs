@@ -58,6 +58,7 @@ mod door;
 mod exchange;
 pub mod held;
 mod multitrack_action;
+mod multitrack_objects;
 mod multitrack_operations;
 mod multitrack_runs;
 mod multitrack_walks;
@@ -731,6 +732,8 @@ impl Editing {
             // an editor with no file open has no order to focus
             Member::Audio(editor) if !editor.has_file() => return,
             Member::Audio(editor) => editor.focused_file(),
+            Member::Multitrack(editor) if !editor.has_session() => return,
+            Member::Multitrack(editor) => editor.session_binding(),
             _ => 0,
         };
         let domain = seat.member.domain();
@@ -1095,9 +1098,15 @@ impl Editing {
                 match &mut seat.member {
                     Member::Multitrack(editor) => {
                         seated = true;
-                        kept.push((id, Kept::Multitrack(editor.before_step())));
+                        let target = object.map_or(editor.session_binding(), |object| object.id);
                         let loads: Vec<Value> = payloads.iter().map(|p| p.0.clone()).collect();
-                        for done in editor.apply_step(&loads) {
+                        let Some((before, result)) = editor.over_session(target, |editor| {
+                            (editor.before_step(), editor.apply_step(&loads))
+                        }) else {
+                            continue;
+                        };
+                        kept.push((id, Kept::Multitrack(target, before)));
+                        for done in result {
                             stepped = true;
                             out.effects.push(Effect::Multitrack {
                                 member,
@@ -1247,7 +1256,7 @@ impl Editing {
 /// **What a member was before a history step**, put back when another
 /// structure of the same step refuses it.
 enum Kept {
-    Multitrack(crate::multitrack::editor::Kept),
+    Multitrack(i64, crate::multitrack::editor::Kept),
     Audio(i64, audio::Kept),
     Notes(clausters_document::EventSequence),
     Points(clausters_document::multitrack::Automation),
@@ -1258,7 +1267,9 @@ enum Kept {
 impl Kept {
     fn put_back(self, member: &mut Member) {
         match (self, member) {
-            (Kept::Multitrack(state), Member::Multitrack(editor)) => editor.put_back(state),
+            (Kept::Multitrack(object, state), Member::Multitrack(editor)) => {
+                editor.over_session(object, |editor| editor.put_back(state));
+            }
             (Kept::Audio(file, state), Member::Audio(editor)) => {
                 editor.over_file(file, |editor| editor.put_back(state));
             }

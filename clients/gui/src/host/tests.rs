@@ -16,6 +16,56 @@ fn def_msg(id: i32, json: &str) -> OscPacket {
     })
 }
 
+#[test]
+fn closing_a_list_window_retires_its_summary_requests_before_another_opens() {
+    let mut host = Host::new();
+    let window = |sources: usize| {
+        let lists: serde_json::Map<String, serde_json::Value> = (1..=sources)
+            .map(|source| {
+                (
+                    source.to_string(),
+                    serde_json::json!({"channels":1,"sample_rate":48000.0,
+                "parts":[{"path":"/take.wav","start":0,"frames":1000,
+                "source_channels":1,"source_frames":1000,"source_rate":48000.0}]}),
+                )
+            })
+            .collect();
+        serde_json::json!({"type":"window","children":[{"id":10,"type":"multitrack", "lists":lists}]}).to_string()
+    };
+    host.handle_packet(def_msg(1, &window(2)), from());
+    let old: Vec<i32> = host.lists.keys().copied().collect();
+    assert_eq!(old.len(), 2);
+    assert!(host.take_relisted().is_empty());
+    let mut fetches = super::fetch::BufferFetches::default();
+    for key in &old {
+        assert!(fetches.want_summary(*key, 256, 1, 1000, 48000.0).is_some());
+    }
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_FREE.into(),
+            args: vec![OscType::Int(1)],
+        }),
+        from(),
+    );
+    // The common front retires these before asking for the next picture.
+    let retired = host.take_relisted();
+    assert_eq!(retired.len(), 2);
+    for key in retired {
+        fetches.forget(key);
+    }
+    host.handle_packet(def_msg(1, &window(1)), from());
+    let next = *host.lists.keys().next().unwrap();
+    assert!(!old.contains(&next));
+    assert!(
+        fetches.want_summary(next, 256, 1, 1000, 48000.0).is_some(),
+        "no request to a freed list may keep the new summary waiting"
+    );
+    assert!(
+        host.take_relisted().is_empty(),
+        "the new list is still retained"
+    );
+}
+
 /// **A take is asked for again when another peer announces a write to
 /// it**: the first ask can find the buffer empty, and the write is what
 /// says its samples are there.

@@ -15,6 +15,8 @@ program would.
   then the saw's second, the parts the file states; the box on the keys track
   plays the notes the file holds, as the roll left them if a save came after an
   edit -- double click it to open the roll again. Save writes the session back.
+- **Close and reopen the window** once: the client keeps its multitrack object,
+  its contents and its sources while the view is gone.
 
 **What it needs:** run ``edit_multitrack.py`` once first, which saves
 ``clients/python/examples/out/edit_multitrack.json`` and its takes. A display
@@ -57,6 +59,18 @@ for id, sequence in saved.sequences().items():
 session = Session.live()
 session.gui()          # the host, which holds the multitrack
 editor = edit(saved, title="reopened")
+
+# %% [markdown]
+# ## Reopen the view over the same object
+# Closing a client-held view loses no contents: the script still holds them.
+# Opening it again reuses that object and its sources, without reading the
+# saved file over changes the window left behind.
+
+# %%
+multitrack = editor.multitrack
+editor.close()
+editor.open()
+assert editor.multitrack is multitrack
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):

@@ -219,7 +219,7 @@ impl Host {
     }
 
     /// **Opens the multitrack editor** in a window of its own, over the
-    /// session at `path` or over an empty multitrack, and answers the
+    /// session at `path` or over no session, and answers the
     /// window's id: its session is opened, its takes' peaks read or
     /// measured, and its tracks sounded on the application's engine.
     pub fn open_multitrack(&mut self, path: Option<&str>, title: &str) -> Result<i32, String> {
@@ -268,7 +268,25 @@ impl Host {
         self.open_app_saving(
             AppKind::Multitrack,
             None,
-            Some(multitrack),
+            Some(super::audio_app::MultitrackData::Contents(multitrack)),
+            title,
+            reply,
+            None,
+        )
+    }
+
+    pub(super) fn open_multitrack_retained(
+        &mut self,
+        snapshot: clausters_apps::multitrack::operations::Retained,
+        title: &str,
+        reply: Option<Reply>,
+    ) -> Result<i32, String> {
+        self.open_app_saving(
+            AppKind::Multitrack,
+            None,
+            Some(super::audio_app::MultitrackData::Retained(Box::new(
+                snapshot,
+            ))),
             title,
             reply,
             None,
@@ -279,7 +297,7 @@ impl Host {
         &mut self,
         kind: AppKind,
         path: Option<&str>,
-        data: Option<Value>,
+        data: Option<super::audio_app::MultitrackData>,
         title: &str,
         reply: Option<Reply>,
         save_to: Option<Option<String>>,
@@ -784,9 +802,10 @@ impl Host {
             .audio
             .as_mut()
             .and_then(|audio| audio.windows.get_mut(&def_id))
-            && effect["multitrack"].is_object()
+            && (effect["multitrack"].is_object() || effect["objects"].is_object())
         {
-            window.last = Some(effect["multitrack"].clone());
+            window.last =
+                Some(json!({"multitrack":effect["multitrack"],"objects":effect["objects"]}));
         }
     }
 
@@ -825,7 +844,10 @@ impl Host {
         if let Some(to) = window.opener {
             let mut args = vec![OscType::Int(def_id)];
             if let Some(last) = window.last {
-                args.push(OscType::String(last.to_string()));
+                args.push(OscType::String(last["multitrack"].to_string()));
+                if last["objects"].is_object() {
+                    args.push(OscType::String(last["objects"].to_string()));
+                }
             }
             self.pending_effects.push(HostEffect::Send {
                 to,
@@ -1950,6 +1972,52 @@ mod tests {
         };
         let last: Value = serde_json::from_str(last).unwrap();
         assert_eq!(last["tracks"][0]["name"], "b", "{last}");
+        let Some(OscType::String(objects)) = told.get(2) else {
+            panic!("the close carries no retained objects: {told:?}");
+        };
+        let objects: Value = serde_json::from_str(objects).unwrap();
+        let active = objects["active"].as_i64().unwrap().to_string();
+        assert_eq!(objects["objects"][active]["session"]["multitrack"], last);
+    }
+
+    #[test]
+    fn a_multitrack_window_without_a_session_retains_its_unbound_objects() {
+        let mut host = host();
+        let window = host.open_multitrack(None, "empty").unwrap();
+        until(&mut host, "the empty window was never drawn", |host| {
+            host.window_def(window).is_some()
+        });
+        assert_eq!(
+            ask(&mut host, window, json!({"query":"file"})),
+            json!({"empty":true})
+        );
+        assert_eq!(
+            ask(&mut host, window, json!({"query":"history"}))["canUndo"],
+            false
+        );
+        assert_eq!(
+            ask(&mut host, window, json!({"do":{"verb":"undo"}}))["why"],
+            "no file is open"
+        );
+        ask(&mut host, window, json!({"do":{"verb":"new_file"}}));
+        let object = ask(&mut host, window, json!({"query":"file"}))["object"].clone();
+        assert!(object.is_i64());
+        ask(&mut host, window, json!({"do":{"verb":"close_file"}}));
+        assert!(
+            host.window_def(window).is_some(),
+            "the last session is not the window"
+        );
+        assert_eq!(
+            ask(&mut host, window, json!({"query":"file"})),
+            json!({"empty":true})
+        );
+        let kept = ask(
+            &mut host,
+            window,
+            json!({"query":"session", "object":object}),
+        );
+        assert!(kept["session"].is_object(), "{kept}");
+        host.close_audio(window);
     }
 
     /// **A file the editor cannot open is said to whoever asked**, and no

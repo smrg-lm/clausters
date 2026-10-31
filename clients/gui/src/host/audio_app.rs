@@ -93,6 +93,13 @@ pub(super) const MULTITRACK_ROLES: &[&str] = &[
 /// The size a multitrack window opens at, in logical pixels.
 const MULTITRACK_SIZE: (i64, i64) = (1000, 560);
 
+/// Contents handed over by a client, or a retained session being reopened.
+#[derive(Debug)]
+pub(super) enum MultitrackData {
+    Contents(Value),
+    Retained(Box<clausters_apps::multitrack::operations::Retained>),
+}
+
 /// What the host asks of the application.
 #[derive(Debug)]
 pub(super) enum ToApp {
@@ -107,7 +114,7 @@ pub(super) enum ToApp {
         path: Option<String>,
         /// The multitrack to open, as the document's JSON, when it has no
         /// file: an untitled session.
-        data: Option<Value>,
+        data: Option<MultitrackData>,
         /// Where a multitrack's Save writes, when the host that opened it
         /// said: `Some(None)` writes nowhere.
         save_to: Option<Option<String>>,
@@ -192,6 +199,8 @@ struct Window {
     kind: AppKind,
     /// The session a multitrack window opens, once it is bound.
     session: Option<String>,
+    snapshot: Option<Box<clausters_apps::multitrack::operations::Retained>>,
+    client_owned: bool,
     /// Where its Save writes, when the host said.
     save_to: Option<Option<String>>,
     /// The ids its tree is drawn with, once the host bound them.
@@ -349,6 +358,9 @@ impl App {
                         self.open_roll(def_id, &title, source, parent)
                     }
                 };
+                if let Some(window) = self.windows.get_mut(&def_id) {
+                    window.client_owned = matches!(reply, Some(Reply::Client(..)));
+                }
                 self.out.send(
                     self.editing.said(),
                     FromApp::Opened {
@@ -452,6 +464,8 @@ impl App {
                 member,
                 kind: AppKind::Audio,
                 session: None,
+                snapshot: None,
+                client_owned: false,
                 save_to: None,
                 ids: None,
                 widgets: Vec::new(),
@@ -471,7 +485,7 @@ impl App {
         key: &str,
         title: &str,
         path: Option<String>,
-        data: Option<Value>,
+        data: Option<MultitrackData>,
         save_to: Option<Option<String>>,
     ) -> Result<Vec<String>, String> {
         let workspace = clausters_core::workspace::Workspace::create("multitrack")
@@ -483,10 +497,16 @@ impl App {
                 .unwrap_or_else(|e| e.into_inner())
                 .sample_rate(),
         );
+        let (multitrack, snapshot) = match data {
+            Some(MultitrackData::Contents(contents)) => (Some(contents), None),
+            Some(MultitrackData::Retained(snapshot)) => (None, Some(snapshot)),
+            None => (None, None),
+        };
+        let empty = multitrack.is_none();
         let opened = self.app.call(
             &mut self.editing,
             &json!({"verb": "openMultitrack", "key": key,
-                "multitrack": data.unwrap_or_else(|| json!({})),
+                "multitrack": multitrack, "empty": empty,
                 "rate": rate, "title": title, "transport": true,
                 "w": MULTITRACK_SIZE.0, "h": MULTITRACK_SIZE.1}),
         );
@@ -500,6 +520,8 @@ impl App {
                 member,
                 kind: AppKind::Multitrack,
                 session: path,
+                snapshot,
+                client_owned: false,
                 save_to,
                 ids: None,
                 widgets: Vec::new(),
@@ -567,6 +589,8 @@ impl App {
                 member,
                 kind: AppKind::Roll { source, parent: 0 },
                 session: None,
+                snapshot: None,
+                client_owned: false,
                 save_to: None,
                 ids: None,
                 widgets: Vec::new(),
@@ -597,10 +621,10 @@ impl App {
         // **A window that saves its session asks before a close loses
         // work**: one over a file, or told where it writes. An untitled one
         // goes back to the script that handed it over, which keeps it.
-        let asks = match &save_to {
-            Some(to) => to.is_some(),
-            None => session.is_some(),
-        };
+        let asks = !self
+            .windows
+            .get(&def_id)
+            .is_some_and(|window| window.client_owned);
         // **It saves unless it was opened read-only**: an untitled one too,
         // whose first Save asks where in the Save as form
         let saves = !matches!(save_to, Some(None));
@@ -614,6 +638,13 @@ impl App {
             Some(path) => json!({"verb": "open", "session": path, "window": true}),
             None => json!({"verb": "open", "window": true}),
         };
+        if let Some(snapshot) = self
+            .windows
+            .get_mut(&def_id)
+            .and_then(|window| window.snapshot.take())
+        {
+            action["snapshot"] = json!(snapshot);
+        }
         if let Some(save_to) = save_to {
             action["saveTo"] = json!(save_to);
         }
@@ -745,16 +776,26 @@ impl App {
         } else if let Some(query) = call["query"].as_str() {
             // what the window reads of the editor: its transport, its
             // actions, the history of the file in focus
-            let answer = match query {
-                "actions" => self.app.call(
-                    &mut self.editing,
-                    &json!({"verb": "actions", "member": member}),
-                ),
-                "history" => self.app.call(
-                    &mut self.editing,
-                    &json!({"verb": "state", "member": member}),
-                ),
-                _ => self.app.query(&mut self.editing, member, query),
+            let answer = if let Some(object) = call.get("object") {
+                match object.as_i64() {
+                    Some(object) => {
+                        self.app
+                            .query_multitrack_object(&mut self.editing, member, object, query)
+                    }
+                    None => json!({"error":"the session object is not an integer"}),
+                }
+            } else {
+                match query {
+                    "actions" => self.app.call(
+                        &mut self.editing,
+                        &json!({"verb": "actions", "member": member}),
+                    ),
+                    "history" => self.app.call(
+                        &mut self.editing,
+                        &json!({"verb": "state", "member": member}),
+                    ),
+                    _ => self.app.query(&mut self.editing, member, query),
+                }
             };
             self.answer(reply, Ok(answer));
         } else if let Some(Value::Object(action)) = call.get("do") {

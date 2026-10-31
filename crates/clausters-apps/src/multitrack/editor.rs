@@ -260,29 +260,13 @@ pub struct Applied {
 /// view's end of the conversation with the host.
 #[derive(Clone, Debug)]
 pub struct MultitrackEditor {
-    /// **The multitrack, shared with whoever holds it** -- a script's handle
-    /// over it edits what this editor draws, and a turn here is what that
-    /// handle reads.
-    multitrack: super::Shared,
     rate: f64,
-    sources: HashMap<SourceId, i64>,
-    /// How many frames each take holds, where the caller said: what refuses a
-    /// join over a box that reads past the end of its take.
-    lengths: HashMap<SourceId, u64>,
-    /// **The segments each join this editor knows is made of**: the ones it
-    /// minted, and the ones a caller opened a session with. Read-only objects
-    /// -- a join is replaced, never edited -- so they are kept as they were
-    /// made, and a later join over a box that windows one reads through them.
-    segments: HashMap<SourceId, Vec<clausters_document::session::Part>>,
-    /// **The event sequences its notes regions read**, shared with whoever
-    /// holds them -- a notes editor opened on one edits what these boxes draw.
-    sequences: HashMap<SourceId, crate::notes::Shared>,
-    /// **What each take is on disk**, where the application that holds the
-    /// editor resolved it: the file a track's reader reads its regions from.
-    takes: HashMap<SourceId, clausters_document::parts::TakeFile>,
-    // A session replacement has its own identity even when it reuses source
-    // ids and file paths. Measurement replies name the original binding.
-    session_binding: i64,
+    session: SessionState,
+    retained: std::collections::BTreeMap<i64, SessionState>,
+    next_session: i64,
+    session_open: bool,
+    displayed_session: Option<i64>,
+    binding_generation: u64,
     meters: Vec<Meter>,
     link: Option<i64>,
     transport: Transport,
@@ -375,6 +359,116 @@ struct Engraved {
     onsets: Vec<(String, f64)>,
 }
 
+/// The file facts of one session, retained with its contents and history.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SessionFile {
+    pub session: Option<clausters_document::session::Session>,
+    pub path: Option<String>,
+    pub save_to: Option<Option<String>>,
+    pub saved: Option<clausters_document::session::Session>,
+}
+
+/// Contents and resolved sources retained independently of the window.
+#[derive(Clone, Debug)]
+pub(crate) struct SessionState {
+    file: SessionFile,
+    /// **The multitrack, shared with whoever holds it** -- a script's handle
+    /// over it edits what this editor draws, and a turn here is what that
+    /// handle reads.
+    multitrack: super::Shared,
+    sources: HashMap<SourceId, i64>,
+    /// How many frames each take holds, where the caller said: what refuses a
+    /// join over a box that reads past the end of its take.
+    lengths: HashMap<SourceId, u64>,
+    /// **The segments each join this editor knows is made of**: the ones it
+    /// minted, and the ones a caller opened a session with. Read-only objects
+    /// -- a join is replaced, never edited -- so they are kept as they were
+    /// made, and a later join over a box that windows one reads through them.
+    segments: HashMap<SourceId, Vec<clausters_document::session::Part>>,
+    /// **The event sequences its notes regions read**, shared with whoever
+    /// holds them -- a notes editor opened on one edits what these boxes draw.
+    sequences: HashMap<SourceId, crate::notes::Shared>,
+    /// **What each take is on disk**, where the application that holds the
+    /// editor resolved it: the file a track's reader reads its regions from.
+    takes: HashMap<SourceId, clausters_document::parts::TakeFile>,
+    // A session replacement has its own identity even when it reuses source
+    // ids and file paths. Measurement replies name the original binding.
+    id: i64,
+}
+
+impl SessionState {
+    fn new(id: i64, multitrack: super::Shared) -> Self {
+        Self {
+            id,
+            multitrack,
+            file: SessionFile::default(),
+            sources: HashMap::new(),
+            lengths: HashMap::new(),
+            segments: HashMap::new(),
+            sequences: HashMap::new(),
+            takes: HashMap::new(),
+        }
+    }
+
+    fn snapshot(&self) -> clausters_document::session::Session {
+        use clausters_document::session::{Location, Session, Source};
+        use clausters_document::{Document, Lifetime};
+        let mut session = self
+            .file
+            .session
+            .clone()
+            .unwrap_or_else(|| Session::new(Document::empty()));
+        session.multitrack = self
+            .multitrack
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        for (id, file) in &self.takes {
+            session.sources.entry(*id).or_insert_with(|| {
+                Source::file(file.path.to_string(), Lifetime::Session).shaped(
+                    file.channels,
+                    file.frames,
+                    file.rate,
+                )
+            });
+        }
+        for (id, shared) in &self.sequences {
+            let sequence = Box::new(shared.lock().unwrap_or_else(|e| e.into_inner()).clone());
+            if let Some(source) = session.sources.get_mut(id) {
+                source.location = Location::Events { sequence };
+            } else {
+                let mut source = Source::file("", Lifetime::Session);
+                source.location = Location::Events { sequence };
+                session.sources.insert(*id, source);
+            }
+        }
+        for source in session
+            .multitrack
+            .regions()
+            .filter_map(|region| region.content.source())
+        {
+            if let Some(parts) = self.segments.get(&source) {
+                session.sources.entry(source).or_insert_with(|| {
+                    let mut entry = Source::file("", Lifetime::Session);
+                    entry.location = Location::Segments {
+                        parts: parts.clone(),
+                    };
+                    entry
+                });
+            }
+        }
+        session
+    }
+
+    fn retained_snapshot(&self) -> super::operations::Retained {
+        super::operations::Retained {
+            session: self.snapshot(),
+            path: self.file.path.clone(),
+            saved: self.file.saved.clone(),
+        }
+    }
+}
+
 impl MultitrackEditor {
     /// An editor over `multitrack`, drawn on an axis of `rate` frames a second, whose
     /// history is at `version`.
@@ -386,14 +480,13 @@ impl MultitrackEditor {
     /// change through that holder makes is what this editor draws next.
     pub fn over(multitrack: super::Shared, rate: f64, version: i64) -> Self {
         Self {
-            multitrack,
             rate,
-            sources: HashMap::new(),
-            lengths: HashMap::new(),
-            segments: HashMap::new(),
-            sequences: HashMap::new(),
-            takes: HashMap::new(),
-            session_binding: 0,
+            session: SessionState::new(0, multitrack),
+            retained: Default::default(),
+            next_session: 1,
+            session_open: true,
+            displayed_session: Some(0),
+            binding_generation: 0,
             meters: Vec::new(),
             link: None,
             transport: Transport::Absent,
@@ -461,7 +554,7 @@ impl MultitrackEditor {
         stops_at_end: Option<bool>,
     ) -> std::collections::BTreeMap<&'static str, clausters_editing::verbs::ActionState> {
         let crossfade = self.multitrack().defaults.crossfade;
-        crate::chrome::grid_actions(
+        let mut actions = crate::chrome::grid_actions(
             crate::chrome::App::Multitrack,
             self.saves,
             undo,
@@ -476,7 +569,15 @@ impl MultitrackEditor {
                 VIEW_SPECTROGRAM_VERB => Some(self.samples_view == SPECTROGRAM),
                 _ => None,
             },
-        )
+        );
+        if !self.has_session() {
+            for (verb, state) in &mut actions {
+                if !matches!(*verb, "close" | "keys" | "new_file" | "open_file") {
+                    state.refuse("no file is open");
+                }
+            }
+        }
+        actions
     }
 
     /// Whether an engraver was handed over: what a holder that makes one only
@@ -509,7 +610,7 @@ impl MultitrackEditor {
             let Some(source) = box_.source else {
                 continue;
             };
-            let Some(shared) = self.sequences.get(&source) else {
+            let Some(shared) = self.session.sequences.get(&source) else {
                 continue;
             };
             let sequence = shared.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -715,7 +816,8 @@ impl MultitrackEditor {
 
     /// The multitrack, held while the guard lives.
     pub fn multitrack(&self) -> std::sync::MutexGuard<'_, Multitrack> {
-        self.multitrack
+        self.session
+            .multitrack
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
@@ -723,7 +825,7 @@ impl MultitrackEditor {
     /// The multitrack as it is shared: what a handle opened over this editor's
     /// structure holds.
     pub fn shared(&self) -> super::Shared {
-        self.multitrack.clone()
+        self.session.multitrack.clone()
     }
 
     /// Replaces the multitrack -- a caller that edited it by a route that was not a
@@ -732,71 +834,130 @@ impl MultitrackEditor {
         *self.multitrack() = multitrack;
     }
 
+    /// File facts retained with the active session.
+    pub(crate) fn file(&self) -> &SessionFile {
+        &self.session.file
+    }
+    pub(crate) fn file_mut(&mut self) -> &mut SessionFile {
+        &mut self.session.file
+    }
+
     /// Capture the current multitrack, source table and shared sequences.
-    pub(crate) fn session_snapshot(
-        &self,
-        base: Option<&clausters_document::session::Session>,
-    ) -> clausters_document::session::Session {
-        use clausters_document::session::{Location, Session, Source};
-        use clausters_document::{Document, Lifetime};
-        let mut session = base
-            .cloned()
-            .unwrap_or_else(|| Session::new(Document::empty()));
-        session.multitrack = self.multitrack().clone();
-        let (_, placed) = self.read_sources();
-        for (id, source) in placed {
-            if session.sources.contains_key(&id) {
-                continue;
-            }
-            let entry = match source {
-                crate::editing::held::PlacedSource::File(file) => Source::file(
-                    file.path.to_string(),
-                    Lifetime::Session,
-                )
-                .shaped(file.channels, file.frames, file.rate),
-                crate::editing::held::PlacedSource::Parts(_) => continue,
-            };
-            session.sources.insert(id, entry);
-        }
-        // a sequence is written as it now is: a roll may have edited it
-        for (id, source) in session.sources.iter_mut() {
+    pub(crate) fn session_snapshot(&self) -> clausters_document::session::Session {
+        self.session.snapshot()
+    }
+
+    pub(crate) fn retained_snapshot(&self) -> super::operations::Retained {
+        self.session.retained_snapshot()
+    }
+
+    /// Whether contents differ from the confirmed checkpoint. Revision
+    /// counters and event-id watermarks advance through undo as well; they
+    /// invalidate readers but do not make restored contents dirty.
+    pub(crate) fn unsaved_contents(&self) -> bool {
+        let Some(saved) = &self.file().saved else {
+            return false;
+        };
+        let mut current = self.session_snapshot();
+        current.multitrack.version = saved.multitrack.version;
+        current.document.version = saved.document.version;
+        for (id, source) in &mut current.sources {
+            use clausters_document::session::Location;
             if let Location::Events { sequence } = &mut source.location
-                && let Some(shared) = self.sequence(*id)
+                && let Some(clausters_document::session::Source {
+                    location: Location::Events { sequence: previous },
+                    ..
+                }) = saved.sources.get(id)
             {
-                **sequence = shared.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                sequence.next_id = previous.next_id;
             }
         }
-        for source in self.joins_read() {
-            if let (false, Some(parts)) = (
-                session.sources.contains_key(&source),
-                self.segments_of(source),
-            ) {
-                let mut entry = Source::file("", Lifetime::Session);
-                entry.location = Location::Segments { parts };
-                session.sources.insert(source, entry);
-            }
+        current != *saved
+    }
+
+    /// Current and retained object snapshots for the client's close message.
+    pub(crate) fn closing_objects(&self) -> Value {
+        let mut objects = serde_json::Map::new();
+        for state in self
+            .retained
+            .values()
+            .chain(self.has_session().then_some(&self.session))
+        {
+            objects.insert(
+                state.id.to_string(),
+                serde_json::to_value(state.retained_snapshot()).unwrap_or(Value::Null),
+            );
         }
-        session
+        json!({"active":self.has_session().then_some(self.session.id),"objects":objects})
     }
 
     /// The active session binding, independent of the conversation version.
     pub(crate) fn session_binding(&self) -> i64 {
-        self.session_binding
+        self.session.id
     }
 
     /// Retire pending results without freeing the retained multitrack.
     pub(crate) fn invalidate_session_binding(&mut self) {
-        self.session_binding += 1;
+        self.displayed_session = None;
+        self.binding_generation += 1;
     }
 
-    /// Start a distinct source binding before opening a replacement session.
+    pub(crate) fn binding_generation(&self) -> u64 {
+        self.binding_generation
+    }
+
+    /// Publish a new object while retaining the previous session's contents.
     pub(crate) fn replace_session_binding(&mut self) {
-        self.invalidate_session_binding();
-        self.takes.clear();
-        self.sources.clear();
-        self.lengths.clear();
-        self.sequences.clear();
-        self.segments.clear();
+        let mut next = SessionState::new(self.next_session, super::shared(Multitrack::new()));
+        next.file.save_to = self.file().save_to.clone();
+        self.next_session += 1;
+        let previous = std::mem::replace(&mut self.session, next);
+        if self.session_open {
+            self.retained.insert(previous.id, previous);
+        }
+        self.session_open = true;
+        self.binding_generation += 1;
+        self.displayed_session = Some(self.session.id);
+    }
+
+    /// Whether this window has a session, including a new empty session.
+    pub fn has_session(&self) -> bool {
+        self.session_open
+    }
+
+    /// Whether object work belongs to the session this window displays.
+    pub(crate) fn observes_session(&self) -> bool {
+        self.session_open && self.displayed_session == Some(self.session.id)
+    }
+
+    /// Unbind a session while preserving the client object it represented.
+    pub(crate) fn unbind_session(&mut self) {
+        if !self.session_open {
+            return;
+        }
+        self.replace_session_binding();
+        self.session_open = false;
+        self.displayed_session = None;
+        self.cursor = None;
+        self.range = None;
+        self.told = None;
+    }
+
+    /// A transition invalidates content events drawn for the previous binding.
+    pub(crate) fn binding_changed(&mut self, version: i64) {
+        self.conversation.raise_floor(version);
+        self.cursor = None;
+        self.range = None;
+        self.told = None;
+    }
+
+    /// Apply object work without rebinding the window or its conversation.
+    pub(crate) fn over_session<R>(
+        &mut self,
+        id: i64,
+        apply: impl FnOnce(&mut Self) -> R,
+    ) -> Option<R> {
+        crate::application::objects::over(self, id, apply)
     }
 
     /// **The joins a caller holds**, by source -- the segments each is made
@@ -809,15 +970,15 @@ impl MultitrackEditor {
         for id in segments.keys() {
             self.number_join(*id);
         }
-        self.segments.extend(segments);
+        self.session.segments.extend(segments);
     }
 
     /// **Names a join by its own id**, as a take is named, where the
     /// application draws the takes from their files: its boxes name it by
     /// that number, and the window draws it from its list ([`Self::lists`]).
     fn number_join(&mut self, id: SourceId) {
-        if !self.takes.is_empty() {
-            self.sources.entry(id).or_insert(id.0 as i64);
+        if !self.session.takes.is_empty() {
+            self.session.sources.entry(id).or_insert(id.0 as i64);
         }
     }
 
@@ -831,7 +992,7 @@ impl MultitrackEditor {
         };
         if let clausters_document::session::Location::Segments { parts } = made.source.location {
             self.number_join(made.id);
-            self.segments.insert(made.id, parts);
+            self.session.segments.insert(made.id, parts);
         }
     }
 
@@ -851,7 +1012,7 @@ impl MultitrackEditor {
         intent
             .sources()
             .into_iter()
-            .filter(|source| self.segments.contains_key(source))
+            .filter(|source| self.session.segments.contains_key(source))
             .map(|source| source.0)
             .collect()
     }
@@ -859,7 +1020,7 @@ impl MultitrackEditor {
     /// Whether `source` is a join this editor knows: one it minted, or one a
     /// session it was opened with held.
     pub fn is_join(&self, source: SourceId) -> bool {
-        self.segments.contains_key(&source)
+        self.session.segments.contains_key(&source)
     }
 
     /// **The joins the multitrack reads now**: what a released join is checked
@@ -869,27 +1030,27 @@ impl MultitrackEditor {
         self.multitrack()
             .regions()
             .filter_map(|region| region.content.source())
-            .filter(|source| self.segments.contains_key(source))
+            .filter(|source| self.session.segments.contains_key(source))
             .collect()
     }
 
     /// **Forgets a join** nothing reaches any more: it leaves the editor's
     /// table with its segments, so a later edit cannot read through it.
     pub fn forget_join(&mut self, source: SourceId) {
-        self.segments.remove(&source);
-        self.sources.remove(&source);
-        self.lengths.remove(&source);
+        self.session.segments.remove(&source);
+        self.session.sources.remove(&source);
+        self.session.lengths.remove(&source);
     }
 
     /// **Binds source `source` to a sequence** the caller shares: a region
     /// over that source draws the sequence's notes, as it stands when drawn.
     pub fn bind_sequence(&mut self, source: SourceId, sequence: crate::notes::Shared) {
-        self.sequences.insert(source, sequence);
+        self.session.sequences.insert(source, sequence);
     }
 
     /// The sequence bound to `source`, when one is.
     pub fn sequence(&self, source: SourceId) -> Option<&crate::notes::Shared> {
-        self.sequences.get(&source)
+        self.session.sequences.get(&source)
     }
 
     /// **What each take is on disk**: the files the application reads the
@@ -897,10 +1058,10 @@ impl MultitrackEditor {
     pub fn set_takes(&mut self, takes: HashMap<SourceId, clausters_document::parts::TakeFile>) {
         // a take is drawn from its file, named by its own id
         for (id, file) in &takes {
-            self.sources.insert(*id, id.0 as i64);
-            self.lengths.insert(*id, file.frames);
+            self.session.sources.insert(*id, id.0 as i64);
+            self.session.lengths.insert(*id, file.frames);
         }
-        self.takes = takes;
+        self.session.takes = takes;
     }
 
     /// **The takes the window draws from their files**: each take's file and
@@ -914,10 +1075,11 @@ impl MultitrackEditor {
     /// their frames and nothing in them until they are.
     pub fn lists(&self) -> Option<Value> {
         use clausters_document::session::Part;
-        if self.takes.is_empty() {
+        if self.session.takes.is_empty() {
             return None;
         }
         let files: crate::audio::editor::sources::Sources = self
+            .session
             .takes
             .iter()
             .map(|(id, file)| {
@@ -939,7 +1101,11 @@ impl MultitrackEditor {
         let spanned = |part: &Part| {
             let mut part = part.clone();
             if part.source.range.is_none() {
-                let frames = self.takes.get(&part.source.source).map_or(0, |t| t.frames);
+                let frames = self
+                    .session
+                    .takes
+                    .get(&part.source.source)
+                    .map_or(0, |t| t.frames);
                 part.source.range = Some(clausters_document::Range {
                     start: 0,
                     end: frames,
@@ -963,6 +1129,7 @@ impl MultitrackEditor {
             })]
         };
         let mut lists: Map<String, Value> = self
+            .session
             .takes
             .iter()
             .map(|(id, file)| {
@@ -975,8 +1142,10 @@ impl MultitrackEditor {
                 (id.0.to_string(), list)
             })
             .collect();
-        for (id, parts) in &self.segments {
-            let mut takes = parts.iter().map(|p| self.takes.get(&p.source.source));
+        for (id, parts) in &self.session.segments {
+            let mut takes = parts
+                .iter()
+                .map(|p| self.session.takes.get(&p.source.source));
             if takes.clone().any(|t| t.is_none()) {
                 continue;
             }
@@ -985,7 +1154,7 @@ impl MultitrackEditor {
             };
             let channels = parts
                 .iter()
-                .filter_map(|p| self.takes.get(&p.source.source))
+                .filter_map(|p| self.session.takes.get(&p.source.source))
                 .map(|t| t.channels)
                 .max()
                 .unwrap_or(1);
@@ -1005,19 +1174,19 @@ impl MultitrackEditor {
 
     /// One take's file, resolved again (its peaks measured).
     pub fn set_take(&mut self, source: SourceId, file: clausters_document::parts::TakeFile) {
-        self.sources.insert(source, source.0 as i64);
-        self.lengths.insert(source, file.frames);
-        self.takes.insert(source, file);
+        self.session.sources.insert(source, source.0 as i64);
+        self.session.lengths.insert(source, file.frames);
+        self.session.takes.insert(source, file);
     }
 
     /// The parts a join this editor knows is made of.
     pub fn segments_of(&self, source: SourceId) -> Option<Vec<clausters_document::session::Part>> {
-        self.segments.get(&source).cloned()
+        self.session.segments.get(&source).cloned()
     }
 
     /// The file a take is, when the application resolved it.
     pub fn take(&self, source: SourceId) -> Option<&clausters_document::parts::TakeFile> {
-        self.takes.get(&source)
+        self.session.takes.get(&source)
     }
 
     /// **What the tracks' readers read**: each source's shape, and what it
@@ -1036,7 +1205,7 @@ impl MultitrackEditor {
         use clausters_document::parts::{FileList, Rates, Tree};
         let mut shapes = HashMap::new();
         let mut sources = std::collections::BTreeMap::new();
-        for (id, file) in &self.takes {
+        for (id, file) in &self.session.takes {
             shapes.insert(
                 *id,
                 SourceShape {
@@ -1047,12 +1216,15 @@ impl MultitrackEditor {
             );
             sources.insert(*id, PlacedSource::File(file.clone()));
         }
-        for (id, parts) in &self.segments {
+        for (id, parts) in &self.session.segments {
             let files: Option<std::collections::BTreeMap<SourceId, _>> = parts
                 .iter()
                 .map(|part| {
                     let source = part.source.source;
-                    self.takes.get(&source).map(|file| (source, file.clone()))
+                    self.session
+                        .takes
+                        .get(&source)
+                        .map(|file| (source, file.clone()))
                 })
                 .collect();
             let Some(files) = files else {
@@ -1098,13 +1270,13 @@ impl MultitrackEditor {
 
     /// Which buffer each source was read into.
     pub fn set_sources(&mut self, sources: HashMap<SourceId, i64>) {
-        self.sources = sources;
+        self.session.sources = sources;
     }
 
     /// How many frames each take holds. A take left out is one whose length
     /// is not known, and a join over it is not checked against it.
     pub fn set_lengths(&mut self, lengths: HashMap<SourceId, u64>) {
-        self.lengths = lengths;
+        self.session.lengths = lengths;
     }
 
     /// Where each track's meters are read from, as last told.
@@ -1162,6 +1334,10 @@ impl MultitrackEditor {
 
     /// The window this editor is open in, once it is.
     pub fn set_window(&mut self, window: Option<i32>) {
+        if self.window != window {
+            self.binding_generation += 1;
+            self.displayed_session = window.and(self.session_open.then_some(self.session.id));
+        }
         self.window = window;
     }
 
@@ -1330,13 +1506,13 @@ impl MultitrackEditor {
     /// **What a history step is put back to** when another structure of the
     /// same step refuses it: the multitrack and the joins this editor knows.
     pub(crate) fn before_step(&self) -> Kept {
-        Kept(self.multitrack().clone(), self.segments.clone())
+        Kept(self.multitrack().clone(), self.session.segments.clone())
     }
 
     /// Puts back what [`before_step`](Self::before_step) kept.
     pub(crate) fn put_back(&mut self, kept: Kept) {
         *self.multitrack() = kept.0;
-        self.segments = kept.1;
+        self.session.segments = kept.1;
     }
 
     /// **One payload of a history step**, applied to the multitrack -- the inverse
@@ -1396,6 +1572,9 @@ impl MultitrackEditor {
     /// a history step leaves behind, and what a second window over the multitrack
     /// is told when this one edited it.
     pub fn resync_all(&mut self, version: i64) -> Answer {
+        if self.has_session() && !self.observes_session() {
+            return Answer::Silent;
+        }
         let mut corrections = Vec::new();
         for widget in [self.widget, self.ruler].into_iter().flatten() {
             corrections.extend(self.resync(i64::from(widget)));
@@ -1436,10 +1615,10 @@ impl MultitrackEditor {
     /// the multitrack's playback hands its event lane.
     pub fn placed_notes(&self) -> clausters_editing::notes_playback::Placement {
         let table = Table {
-            buffers: &self.sources,
-            lengths: &self.lengths,
-            segments: &self.segments,
-            sequences: &self.sequences,
+            buffers: &self.session.sources,
+            lengths: &self.session.lengths,
+            segments: &self.session.segments,
+            sequences: &self.session.sequences,
         };
         projection::placed_notes(&self.multitrack(), &table)
     }
@@ -1455,10 +1634,10 @@ impl MultitrackEditor {
         let multitrack = self.multitrack();
         let tempo = projection::tempo_map(&multitrack);
         let table = Table {
-            buffers: &self.sources,
-            lengths: &self.lengths,
-            segments: &self.segments,
-            sequences: &self.sequences,
+            buffers: &self.session.sources,
+            lengths: &self.session.lengths,
+            segments: &self.session.segments,
+            sequences: &self.session.sequences,
         };
         let look = Look {
             rate: self.rate,
@@ -1669,7 +1848,7 @@ impl MultitrackEditor {
                 .into_iter()
                 .find(|b| b.region.0.to_string() == named)
                 .and_then(|b| b.source)
-                .filter(|source| self.sequences.contains_key(source))
+                .filter(|source| self.session.sequences.contains_key(source))
                 .map(|source| source.0);
             return (None, Vec::new());
         }
@@ -1684,10 +1863,10 @@ impl MultitrackEditor {
         }
         let taken = {
             let table = Table {
-                buffers: &self.sources,
-                lengths: &self.lengths,
-                segments: &self.segments,
-                sequences: &self.sequences,
+                buffers: &self.session.sources,
+                lengths: &self.session.lengths,
+                segments: &self.session.segments,
+                sequences: &self.session.sequences,
             };
             let look = Look {
                 rate: self.rate,
@@ -2030,6 +2209,8 @@ struct New {
     #[serde(default)]
     multitrack: Value,
     #[serde(default)]
+    empty: bool,
+    #[serde(default)]
     rate: f64,
     #[serde(default)]
     version: i64,
@@ -2058,7 +2239,11 @@ fn yes() -> bool {
 /// An editor built from a JSON request, or `None` for one that names no multitrack.
 pub fn new_json(request: &str) -> Option<MultitrackEditor> {
     let parsed: New = serde_json::from_str(request).ok()?;
-    let multitrack: Multitrack = serde_json::from_value(parsed.multitrack.clone()).ok()?;
+    let multitrack = if parsed.empty {
+        Multitrack::new()
+    } else {
+        serde_json::from_value(parsed.multitrack.clone()).ok()?
+    };
     Some(built(super::shared(multitrack), parsed))
 }
 
@@ -2076,6 +2261,8 @@ fn built(multitrack: super::Shared, request: New) -> MultitrackEditor {
         &request.title,
         (request.w, request.h),
     );
+    editor.session_open = !request.empty;
+    editor.displayed_session = (!request.empty).then_some(0);
     editor.set_bare(!request.chrome);
     if let Some(view) = &request.notes_view {
         editor.set_notes_view(view);
@@ -2129,6 +2316,29 @@ pub fn call_value(editor: &mut MultitrackEditor, request: &Value) -> Value {
     )
 }
 
+impl crate::application::objects::Owner for MultitrackEditor {
+    type Id = i64;
+    type State = (SessionState, bool);
+
+    fn current(&self) -> Option<i64> {
+        self.session_open.then_some(self.session.id)
+    }
+    fn take(&mut self, id: i64) -> Option<Self::State> {
+        self.retained.remove(&id).map(|state| (state, true))
+    }
+    fn replace(&mut self, (state, open): Self::State) -> Self::State {
+        (
+            std::mem::replace(&mut self.session, state),
+            std::mem::replace(&mut self.session_open, open),
+        )
+    }
+    fn park(&mut self, (state, open): Self::State) {
+        if open {
+            self.retained.insert(state.id, state);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2156,6 +2366,47 @@ mod tests {
             duration: 2.0,
         });
         region
+    }
+
+    #[test]
+    fn a_restored_sequence_checkpoint_is_clean_while_its_id_watermark_is_kept() {
+        use clausters_document::events::{Event, EventSequence, EventsIntent};
+        let mut editor = MultitrackEditor::new(Multitrack::new(), SR, 0);
+        let sequence = std::sync::Arc::new(std::sync::Mutex::new(EventSequence::default()));
+        editor.bind_sequence(SourceId(7), sequence.clone());
+        editor.file_mut().saved = Some(editor.session_snapshot());
+        let before = sequence.lock().unwrap().state();
+        sequence
+            .lock()
+            .unwrap()
+            .edit(EventsIntent::Add {
+                event: Event::new(0.0, json!({"midinote":60})),
+            })
+            .unwrap();
+        assert!(editor.unsaved_contents());
+        sequence.lock().unwrap().edit(before).unwrap();
+        assert!(
+            !editor.unsaved_contents(),
+            "undo restores the checkpoint's contents"
+        );
+        assert_eq!(sequence.lock().unwrap().next_id, 1);
+        let original = editor.session_binding();
+        editor.replace_session_binding();
+        editor
+            .over_session(original, |editor| {
+                assert!(!editor.unsaved_contents());
+                let snapshot = editor.session_snapshot();
+                let clausters_document::session::Location::Events { sequence } =
+                    &snapshot.sources[&SourceId(7)].location
+                else {
+                    panic!()
+                };
+                assert_eq!(
+                    sequence.next_id, 1,
+                    "the written id watermark must not go back"
+                );
+            })
+            .unwrap();
     }
 
     /// Two tracks: the first holding boxes 12 and 13, the second box 22.

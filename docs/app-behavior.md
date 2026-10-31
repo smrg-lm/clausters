@@ -535,6 +535,11 @@ code that keeps it lives.
 - **Content confirmation preserves current presentation.** Showing or hiding an envelope while an edit or history restore waits for I/O remains in effect after confirmation and redraw. Curve visibility is matched by identity against the current file, not restored from the prepared content snapshot.
 - **An applied curve is put away.** Apply renders the gain curve into the take and leaves it at unity, which shows nothing: once the render lands the curve is hidden and the hand is back on the take. An undo brings the points back and leaves the curve hidden, since which body is shown is the view's. What a confirmation tells the window is the whole pane as the editor holds it (its label, the body in hand, whether the curve is shown), never part of it.
 
+- **A freed list leaves no pending picture request.** Closing or rebinding
+  the last view of a file list retires its summaries and reads. A new window's
+  clip waveforms can load immediately; requests to lists that no longer exist
+  cannot occupy its fetch queue.
+
 ## Checking a change
 
 A change to an application is checked, by test where the host allows it and

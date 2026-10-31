@@ -97,6 +97,14 @@ that its Ctrl+Z takes back, and `multitrack.history` is the window's history
 (`with multitrack.history("tidy"):` makes a block one entry). When the window
 goes, the multitrack holds what the window left it as.
 
+`MultitrackEditor()` opens without a session. Its `multitrack` is `None` until
+one is bound. The active `multitrack` may change, but a `Multitrack` or `Track`
+object the script already holds keeps addressing its original session and
+history. Closing the window returns each retained object to the script with its
+own contents and sources; reopening the handler preserves local changes made
+after close. A client-held session does not ask to discard work on window close,
+because its client object retains it.
+
 **A `SoundFile` opens in the audio editor**, an application the GUI host holds: the host
 opens it in a window of its own, on an engine of the application's own, and every gesture,
 render and undo runs in the host's process. What `edit` answers is its **handler**,

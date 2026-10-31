@@ -119,16 +119,22 @@ impl Host {
         let reply = super::audio_app::Reply::Client(from, seq);
         // a multitrack handed over whole is an untitled session; a path, the
         // session at it
-        let opened = match (&options["multitrack"], path) {
-            (Value::Object(_), None) => {
-                self.open_multitrack_over(options["multitrack"].clone(), title, Some(reply))
+        let opened = if let Some(snapshot) = options.get("snapshot") {
+            serde_json::from_value(snapshot.clone())
+                .map_err(|e| e.to_string())
+                .and_then(|snapshot| self.open_multitrack_retained(snapshot, title, Some(reply)))
+        } else {
+            match (&options["multitrack"], path) {
+                (Value::Object(_), None) => {
+                    self.open_multitrack_over(options["multitrack"].clone(), title, Some(reply))
+                }
+                _ => self.open_app_for(
+                    super::audio_app::AppKind::Multitrack,
+                    path,
+                    title,
+                    Some(reply),
+                ),
             }
-            _ => self.open_app_for(
-                super::audio_app::AppKind::Multitrack,
-                path,
-                title,
-                Some(reply),
-            ),
         };
         if let Err(message) = opened {
             effects.push(HostEffect::Reply(app_reply(

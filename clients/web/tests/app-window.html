@@ -143,8 +143,33 @@
         if (reopened.sources.get(1)?.location.path !== "app_window.wav" || reopened.multitrack.tracks.length !== 1) {
           throw new Error("the stored session did not retain its track and relative source");
         }
+        track.name = "retained";
+        await sessionEditor.output();
         await sessionEditor.close();
-        log("stored: the multitrack snapshot and its relative source read back from OPFS");
+        track.name = "after close";
+        await sessionEditor.open();
+        await until(async () => {
+          try { await sessionEditor.save("out/app_window_retained.json"); return true; }
+          catch (error) {
+            if (!String(error?.message ?? error).includes("pending work")) throw error;
+            return false;
+          }
+        }, "reopened source measurement and session storage");
+        if (sessionEditor.multitrack !== multitrack) throw new Error("reopening retargeted the client object");
+        const retained = await SavedSession.open("out/app_window_retained.json");
+        if ([...retained.multitrack.tracks][0]?.name !== "after close" || retained.sources.get(1)?.location.path !== "app_window.wav") {
+          throw new Error("reopening lost the retained contents or source location");
+        }
+        await sessionEditor.act("new_file");
+        const original = multitrack;
+        track.name = "inactive";
+        await sessionEditor.output();
+        await sessionEditor.act("close_file");
+        const empty = await sessionEditor.query("file");
+        if (!empty.empty || sessionEditor.closed) throw new Error("closing the last session closed its window");
+        await sessionEditor.close();
+        if ([...original.tracks][0]?.name !== "inactive") throw new Error("unbinding lost the original client object");
+        log("stored: the multitrack, retained objects and relative sources read back from OPFS");
 
         verdict("PASS: an application's window opened at its declared size and a press on " +
           "it landed where it is drawn; one opened into an element drew there");

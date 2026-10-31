@@ -199,6 +199,7 @@ class GuiHost:
         # what an application left each closed window as (`/gui_closed`'s
         # second argument), until its handler takes it
         self._left: dict = {}
+        self._left_objects: dict = {}
         #: the ``clausters-gui`` process this host started and owns (`boot`), if
         #: any; stopped by `stop`. ``None`` when connected to a host it did not
         #: start.
@@ -1227,6 +1228,13 @@ class GuiHost:
         said nothing."""
         return self._left.pop(int(id), None)
 
+    def _closed_objects(self, id: int):
+        """Take the application's retained object snapshots, once."""
+        objects = self._left_objects.pop(int(id), None)
+        if objects is not None:
+            self._left.pop(int(id), None)
+        return objects
+
     def _set_closed_handler(self, id: int, func):
         """Register (or clear) a `clausters.gui.handle.WindowHandle.on_closed`
         callback for window ``id``."""
@@ -1397,6 +1405,8 @@ class GuiHost:
             wid = int(args[0])
             if len(args) > 1:
                 self._left[wid] = json.loads(str(args[1]))
+            if len(args) > 2:
+                self._left_objects[wid] = json.loads(str(args[2]))
             self._open.discard(wid)
             func = self._on_closed.get(wid)
             if func is not None:

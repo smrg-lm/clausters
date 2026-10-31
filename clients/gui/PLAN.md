@@ -9100,3 +9100,21 @@ module of its own.
   pass now ends over its whole target. `tests/app-window.html` checks the
   size and a press; Chrome skews a synthetic event under a forced display
   scale, so the press at 1.25 was checked with real input.
+
+- ✅ **A reopened multitrack waits behind summaries of freed lists**
+  *(found 2026-10-30 during the session-lifecycle review)*. Closing a window
+  frees its disk lists, but pending summary requests still occupy the shared
+  fetch queue. A second window draws clip frames and curves without its
+  waveforms. Retire the requests when the list loses its last holder; verify
+  immediate close/reopen with several clips and a stalled previous summary.
+  **Fixed 2026-10-30.** List release now tells the existing fetch machine to
+  retire those requests. A regression fills the summary slots, frees their
+  lists and opens another window; the native load example draws every clip's
+  waveform after immediate close/reopen.
+
+- ⬜ **The parallel default host suite can exit with SIGSEGV**
+  *(found 2026-10-30 during session-lifecycle verification)*. A permitted
+  `cargo test --offline --lib` ended with signal 11 and no Rust failure
+  report. The same suite with `-- --test-threads=1` passed 1400 tests (one
+  ignored). Identify the concurrent path and add a deterministic regression;
+  no cause is established by the serial pass.

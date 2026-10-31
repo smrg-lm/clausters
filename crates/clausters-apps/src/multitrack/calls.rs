@@ -128,6 +128,26 @@ impl Call {
         }
     }
 
+    /// Window configuration and forms remain usable without a session.
+    pub fn allows_empty(&self) -> bool {
+        match self {
+            Self::Sync(sync) => sync.multitrack.is_none(),
+            Self::Grid
+            | Self::Dialogs
+            | Self::Clock(_)
+            | Self::Window(_, _)
+            | Self::SetWindow(_)
+            | Self::Props(_)
+            | Self::NotesView(_)
+            | Self::Resync
+            | Self::Settle
+            | Self::Announce
+            | Self::Acknowledge(_, _)
+            | Self::Unknown => true,
+            _ => false,
+        }
+    }
+
     /// Whether this call changes what the window draws.
     pub fn resyncs(&self) -> bool {
         matches!(self, Self::Sync(_) | Self::NotesView(_))

@@ -47,16 +47,7 @@ impl AudioEditor {
         if !self.open_files.open {
             return None;
         }
-        if self.file.id.0 == id {
-            return Some(apply(self));
-        }
-        let next = self.open_files.parked.remove(&FileId(id))?;
-        let focused = std::mem::replace(&mut self.file, next);
-        let answer = apply(self);
-        let updated = std::mem::replace(&mut self.file, focused);
-        self.open_files.parked.insert(updated.id, updated);
-        self.refresh_files();
-        Some(answer)
+        crate::application::objects::over(self, FileId(id), apply)
     }
 
     /// **Each open file's take, as an engine the application holds reads
@@ -577,6 +568,25 @@ fn open_paths(paths: &[String], out: &mut Outcome) -> Option<String> {
         paths: paths.to_vec(),
     });
     None
+}
+
+impl crate::application::objects::Owner for AudioEditor {
+    type Id = FileId;
+    type State = AudioFileState;
+
+    fn current(&self) -> Option<FileId> {
+        self.open_files.open.then_some(self.file.id)
+    }
+    fn take(&mut self, id: FileId) -> Option<AudioFileState> {
+        self.open_files.parked.remove(&id)
+    }
+    fn replace(&mut self, state: AudioFileState) -> AudioFileState {
+        std::mem::replace(&mut self.file, state)
+    }
+    fn park(&mut self, state: AudioFileState) {
+        self.open_files.parked.insert(state.id, state);
+        self.refresh_files();
+    }
 }
 
 #[cfg(test)]

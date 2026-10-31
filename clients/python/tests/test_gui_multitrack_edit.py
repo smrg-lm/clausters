@@ -27,6 +27,9 @@ class FakeHost:
         self.verbs: list = []
         self._open: set = set()
         self.held = None
+        self.objects = {}
+        self.active = None
+        self.path = None
         self.recorded: list = []
         self.closed_handler = None
         self.answers = {
@@ -45,13 +48,18 @@ class FakeHost:
     def open_app(self, app, options=None, timeout=5.0):
         options = dict(options or {})
         self.calls.append(("open", app, options))
-        self.held = _native.MultitrackHandle(options.get("multitrack", {}))
+        self.bind(options.get("multitrack", {}) if "path" in options or "multitrack" in options else None, options.get("path"))
+        if "snapshot" in options:
+            snapshot = options["snapshot"]
+            self.bind(snapshot["session"].get("multitrack", {}), snapshot.get("path"))
         self._open.add(9)
         return 9
 
     def call_app(self, window, call, timeout=None):
         self.calls.append(("call", int(window), call))
         if "query" in call:
+            if call["query"] == "file":
+                return {"empty": self.active is None, "object":self.active, "path":self.path}
             return self.answers.get(call["query"])
         do = call["do"]
         if do["verb"] == "handle":
@@ -59,7 +67,8 @@ class FakeHost:
             if asked["verb"] == "record":
                 self.recorded.append((do.get("label"), asked["legs"]))
                 return True
-            answer = self.held.call(**asked)
+            held = self.objects[do.get("object", self.active)]
+            answer = held.call(**asked)
             if asked["verb"] == "apply" and do.get("record", True):
                 self.recorded.append((do.get("label"), [asked["intent"]]))
             return answer
@@ -68,13 +77,27 @@ class FakeHost:
             return False
         return self.answers.get(do["verb"])
 
+    def bind(self, written, path=None):
+        """A binding transition the Rust application would publish."""
+        self.path = path
+        if written is None:
+            self.active = None
+            self.held = None
+        else:
+            self.active = len(self.objects)
+            self.held = _native.MultitrackHandle(written)
+            self.objects[self.active] = self.held
+
     def close_window(self):
         """The window goes, as the host says it: what it left the multitrack
         as rides with the close."""
-        self.left = self.held.call("state")
+        self.left = None if self.held is None else self.held.call("state")
         self._open.discard(9)
         if self.closed_handler is not None:
             self.closed_handler[1]()
+
+    def _closed_objects(self, window):
+        return {"active":self.active,"objects":{str(identity):{"session":{"format":SavedSession.format,"multitrack":held.call("state"), "sources": {}}, "path":self.path if identity == self.active else None,"saved":None} for identity,held in self.objects.items()}}
 
     def _closed_with(self, window):
         return getattr(self, "left", None)
@@ -205,3 +228,79 @@ def test_what_the_hand_holds_is_the_windows():
     assert host.calls[-1][2] == {"do": {"verb": "select", "regions": []}}
     host.close_window()
     assert editor.selected == [], "nothing is marked with no window open"
+
+
+def test_a_retained_object_is_not_retargeted_by_a_window_binding():
+    host = FakeHost()
+    original = Multitrack()
+    track = original.tracks.add("original")
+    editor = edit(original, host=host)
+    first_identity = host.active
+    replacement = Multitrack()
+    replacement.tracks.add("replacement")
+    host.bind(replacement.write())
+    current = editor.multitrack
+    assert current is not original
+    assert editor.multitrack is current, "one wrapper per session identity"
+    track.name = "retained"
+    assert host.calls[-1][2]["do"]["object"] == first_identity
+    assert host.objects[first_identity].call("state")["tracks"][0]["name"] == "retained"
+    assert current.tracks[0].name == "replacement"
+    original.history.undo()
+    assert host.calls[-1][2] == {"do":{"verb":"undo","object":first_identity}}
+    host.close_window()
+    assert track.name == "retained"
+    assert current.tracks[0].name == "replacement"
+    track.name = "local again"
+    assert current.tracks[0].name == "replacement"
+
+
+def test_an_editor_can_open_without_a_session_and_keep_the_client_object_after_close_file():
+    host = FakeHost()
+    editor = MultitrackEditor()
+    editor.open(host)
+    assert host.calls[0] == ("open","multitrack",{"title":"Multitrack"})
+    assert editor.multitrack is None
+    assert editor.path is None
+    held = Multitrack()
+    held.tracks.add("new")
+    host.bind(held.write())
+    current = editor.multitrack
+    assert current is not None
+    host.bind(None)
+    assert editor.multitrack is None
+    assert current.tracks[0].name == "new"
+    host.close_window()
+    assert editor.multitrack is None
+    assert current.tracks[0].name == "new"
+
+
+def test_reopening_keeps_the_same_object_and_its_local_changes():
+    host = FakeHost()
+    original = Multitrack()
+    track = original.tracks.add("original")
+    editor = edit(original, host=host)
+    host.close_window()
+    track.name = "after close"
+    editor.open(host)
+    assert editor.multitrack is original
+    assert track.name == "after close"
+    assert "snapshot" in next(call for call in reversed(host.calls) if call[0] == "open")[2]
+    host.close_window()
+    assert track.name == "after close"
+
+
+def test_a_binding_first_observed_at_close_is_retained_for_reopen():
+    host = FakeHost()
+    editor = MultitrackEditor()
+    editor.open(host)
+    current = Multitrack()
+    current.tracks.add("from window")
+    host.bind(current.write(), "/songs/next.json")
+    host.close_window()
+    held = editor.multitrack
+    assert held.tracks[0].name == "from window"
+    assert editor.path == "/songs/next.json"
+    editor.open(host)
+    assert editor.multitrack is held
+    assert held.tracks[0].name == "from window"

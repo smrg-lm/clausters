@@ -30,6 +30,9 @@ class FakeHost {
     verbs: [number, string][] = [];
     open = new Set<number>();
     held: Multitrack | null = null;
+    objects = new Map<number, Multitrack>();
+    active: number | null = null;
+    path: string | null = null;
     recorded: [string | undefined, unknown[]][] = [];
     closedHandler: (() => void) | null = null;
     left: unknown = null;
@@ -46,7 +49,10 @@ class FakeHost {
 
     async openApp(app: string, options: Record<string, unknown> = {}): Promise<number> {
         this.calls.push(["open", app, { ...options }]);
-        this.held = Multitrack.read((options.multitrack ?? {}) as Record<string, unknown>);
+        const snapshot = options.snapshot as Call | undefined;
+        this.bind(snapshot !== undefined ? snapshot.session.multitrack ?? {} :
+            "path" in options || "multitrack" in options ? options.multitrack ?? {} : null,
+            snapshot?.path ?? options.path ?? null);
         this.open.add(9);
         return 9;
     }
@@ -54,6 +60,7 @@ class FakeHost {
     async callApp(window: number | { id: number }, call: Call): Promise<unknown> {
         const id = typeof window === "number" ? window : window.id;
         this.calls.push(["call", id, call]);
+        if (call.query === "file") return { empty: this.active === null, object: this.active, path: this.path };
         if (call.query !== undefined) return this.answers[call.query];
         const doing = call.do as Call;
         if (doing.verb === "handle") {
@@ -62,7 +69,7 @@ class FakeHost {
                 this.recorded.push([doing.label, args.legs as unknown[]]);
                 return true;
             }
-            const answer = this.held!.call(verb, args);
+            const answer = this.objects.get(doing.object ?? this.active)!.call(verb, args);
             if (verb === "apply" && doing.record !== false) this.recorded.push([doing.label, [args.intent]]);
             return answer;
         }
@@ -73,9 +80,23 @@ class FakeHost {
         return this.answers[doing.verb];
     }
 
+    bind(written: Call | null, path: unknown = null): void {
+        this.path = path === null ? null : String(path);
+        if (written === null) { this.active = null; this.held = null; }
+        else {
+            this.active = this.objects.size;
+            this.held = Multitrack.read(written);
+            this.objects.set(this.active, this.held);
+        }
+    }
+    closedObjects(): unknown {
+        return { active: this.active, objects: Object.fromEntries([...this.objects].map(([identity, held]) =>
+            [String(identity), { session: { format: new SavedSession().format, multitrack: held.write() }, path: identity === this.active ? this.path : null, saved: null }])) };
+    }
+
     /** The window goes, as the host says it: what it left the multitrack as rides with the close. */
     closeWindow(): void {
-        this.left = this.held!.write();
+        this.left = this.held?.write() ?? null;
         this.open.delete(9);
         this.closedHandler?.();
     }
@@ -254,4 +275,86 @@ test("what the hand holds is the window's", async () => {
     assert.deepEqual(host.last(), { do: { verb: "select", regions: [] } });
     host.closeWindow();
     assert.deepEqual(await editor.selected(), [], "nothing is marked with no window open");
+});
+
+
+test("a retained object is not retargeted by a window binding", async () => {
+    const host = new FakeHost();
+    const original = new Multitrack();
+    const track = original.tracks.add("original");
+    const editor = await edit(original, { host: host as unknown as GuiHost });
+    const firstIdentity = host.active;
+    const replacement = new Multitrack();
+    replacement.tracks.add("replacement");
+    host.bind(replacement.write());
+    host.handChanged();
+    await editor.output();
+    const current = editor.multitrack as Multitrack | null;
+    assert.notEqual(current, original);
+    assert.equal(editor.multitrack, current);
+    track.name = "retained";
+    await editor.output();
+    assert.equal([...host.objects.get(firstIdentity!)!.tracks][0]!.name, "retained");
+    assert.equal([...current!.tracks][0]!.name, "replacement");
+    await original.history.undo();
+    assert.ok(host.calls.some(call => call[0] === "call" && (call[2] as Call).do?.verb === "undo" && (call[2] as Call).do?.object === firstIdentity));
+    host.closeWindow();
+    assert.equal(track.name, "retained");
+    assert.equal([...current!.tracks][0]!.name, "replacement");
+    track.name = "local again";
+    assert.equal([...current!.tracks][0]!.name, "replacement");
+});
+
+test("an editor opens without a session and close file preserves the client object", async () => {
+    const host = new FakeHost();
+    const editor = new MultitrackEditor();
+    await editor.open(host as unknown as GuiHost);
+    assert.deepEqual(host.calls[0], ["open", "multitrack", { title: "Multitrack" }]);
+    assert.equal(editor.multitrack, null);
+    assert.equal(editor.path, null);
+    const held = new Multitrack();
+    held.tracks.add("new");
+    host.bind(held.write());
+    host.handChanged();
+    await editor.output();
+    const current = editor.multitrack as Multitrack | null;
+    host.bind(null);
+    host.handChanged();
+    await editor.output();
+    assert.equal(editor.multitrack, null);
+    assert.equal([...current!.tracks][0]!.name, "new");
+    host.closeWindow();
+    assert.equal(editor.multitrack, null);
+    assert.equal([...current!.tracks][0]!.name, "new");
+});
+
+test("reopening keeps the same object and its local changes", async () => {
+    const host = new FakeHost();
+    const original = new Multitrack();
+    const track = original.tracks.add("original");
+    const editor = await edit(original, { host: host as unknown as GuiHost });
+    host.closeWindow();
+    track.name = "after close";
+    await editor.open(host as unknown as GuiHost);
+    assert.equal(editor.multitrack, original);
+    assert.equal(track.name, "after close");
+    assert.ok(host.calls.filter(call => call[0] === "open").at(-1)![2].snapshot);
+    host.closeWindow();
+    assert.equal(track.name, "after close");
+});
+
+test("a binding first observed at close is retained for reopen", async () => {
+    const host = new FakeHost();
+    const editor = new MultitrackEditor();
+    await editor.open(host as unknown as GuiHost);
+    const current = new Multitrack();
+    current.tracks.add("from window");
+    host.bind(current.write(), "/songs/next.json");
+    host.closeWindow();
+    const held = editor.multitrack;
+    assert.equal([...held!.tracks][0]!.name, "from window");
+    assert.equal(editor.path, "/songs/next.json");
+    await editor.open(host as unknown as GuiHost);
+    assert.equal(editor.multitrack, held);
+    assert.equal([...held!.tracks][0]!.name, "from window");
 });

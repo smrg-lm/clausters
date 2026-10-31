@@ -2851,6 +2851,15 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     and last-session close on disk and OPFS; read saved sessions and source
     references back. Run and review `edit_multitrack` and `load_multitrack`
     in both clients before the next port.
+    - ✅ Complete stable session-object addressing and retained content/file
+      checkpoints before exposing binding transitions. Finish the Python
+      reference handler, then port its object routing and close snapshots to
+      the web handler; existing client objects must keep their original session.
+    - ⬜ Wire the empty host opening and New/Open/Close file chrome and dialogs,
+      including holder-aware save/discard/cancel and confirmed deferred closes.
+      Preserve all three opening paths and verify disk/OPFS read-back.
+    - ⬜ Refresh artifacts and finish the automatic and manual example-pair
+      acceptance after the complete binding path is in place.
 
   - ⬜ **Roll review and points port.** Review roll actions, clipboard,
     history, conversations, close and invalidation. Extend its existing host
@@ -6036,3 +6045,15 @@ wrong.
   (`multitrack::dialogs`), whose `OK` writes there and makes it where
   later saves go. A window saves unless it was opened read-only (`saves`),
   which is no longer read off whether it asks before closing.
+
+- ✅ **A restored session stays dirty because its counters advanced**
+  *(found 2026-10-30 while checking a retained session's undo)*. Comparing a
+  saved session directly with its current snapshot counts `Multitrack.version`
+  as contents. An edit followed by its inverse restores the contents but
+  advances that counter, so the close/save reading stays dirty. Event-id
+  watermarks have the same distinction. Compare contents independently of
+  these counters while preserving them in the written snapshot; test an undo
+  back to the checkpoint, including a sequence edit and an inactive session.
+  **Fixed 2026-10-30.** Checkpoints compare contents independently of revision
+  counters and event-id watermarks. Written snapshots retain the advancing
+  values; restored sequence contents and an inactive session are covered.

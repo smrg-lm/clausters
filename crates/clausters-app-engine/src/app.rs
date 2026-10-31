@@ -199,6 +199,17 @@ impl App {
         editing.query(member, query)
     }
 
+    /// Read the original session retained by a client's handle.
+    pub fn query_multitrack_object(
+        &mut self,
+        editing: &mut Editing,
+        member: MemberId,
+        object: i64,
+        query: &str,
+    ) -> Value {
+        editing.query_multitrack_object(member, object, query)
+    }
+
     /// **Starts `action` on member `member`** and carries it as far as
     /// it goes; `token` comes back with its end. `lease` is the clipboard
     /// lease its event was prepared with (`Editing::exchange_event`).

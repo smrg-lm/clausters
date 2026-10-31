@@ -352,6 +352,14 @@ pub(crate) fn call_value(editing: &mut Editing, mut request: Value) -> Value {
             None => json!({"error": "the action member is invalid"}),
         },
         "state" => {
+            if let Some(target) = request
+                .get("member")
+                .and_then(Value::as_u64)
+                .and_then(|id| MemberId::try_from(id).ok())
+                && matches!(editing.member(target), Some(Member::Multitrack(editor)) if !editor.has_session())
+            {
+                return json!({"version":editing.version(),"canUndo":false,"canRedo":false,"undoLabel":null,"redoLabel":null});
+            }
             editing.select(
                 request
                     .get("member")

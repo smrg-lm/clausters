@@ -189,6 +189,14 @@ hand does in the window, which the host tells the page. A read made right
 after a hand's gesture can still answer what was there before it, until the
 copy arrives; the Python client reads the window's at every read.
 
+`new MultitrackEditor()` opens without a session. Its `multitrack` is `null`
+until one is bound. When the host reports a binding change, the handler updates
+that property; a `Multitrack` or `Track` object the page already holds keeps
+addressing its original session and history. Closing the window restores each
+retained object's own contents and sources. Reopening the handler preserves
+local changes made after close. A client-held session does not ask to discard
+work on window close, because its client object retains it.
+
 **A `SoundFile` opens in the audio editor**, an application the GUI host holds: the host
 opens it in a window of its own, on an engine of the application's own, and every gesture,
 render and undo runs in the host's process. What `edit` answers is its **handler**,

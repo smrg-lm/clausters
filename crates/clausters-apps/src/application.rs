@@ -20,3 +20,6 @@ pub mod runtime;
 
 /// Multi-object history confirmation over typed application participants.
 pub mod walks;
+
+// Object access shared by file bindings and retained client handles.
+pub(crate) mod objects;

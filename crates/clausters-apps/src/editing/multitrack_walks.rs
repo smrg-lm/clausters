@@ -14,24 +14,30 @@ impl Editing {
         let scope = self.services.histories.selected();
         let mut plans = Vec::new();
         for (structure, _) in &expected.legs {
-            for (id, seat) in self.seats.iter().enumerate() {
-                if seat.structure != *structure {
+            for (id, seat) in self.seats.iter_mut().enumerate() {
+                let object = self.services.histories.object_for(id as u32, *structure);
+                if seat.structure != *structure && object.is_none() {
                     continue;
                 }
                 // Audio participation is prepared by its existing runtime.
                 if matches!(seat.member, Member::Audio(_)) {
                     return None;
                 }
-                if let Member::Multitrack(editor) = &seat.member {
+                if let Member::Multitrack(editor) = &mut seat.member {
                     let request = Request {
                         target: Target {
                             member: id as u32,
-                            object: editor.session_binding(),
+                            object: object.map_or(editor.session_binding(), |object| object.id),
                             server: seat.server,
                         },
                         command: Command::Restore,
                     };
-                    match editor.prepare(request, &self.services) {
+                    let prepared = editor
+                        .over_session(request.target.object, |editor| {
+                            editor.prepare(request, &self.services)
+                        })
+                        .unwrap_or_else(|| Err("the session is no longer retained".into()));
+                    match prepared {
                         Ok(plan) => plans.push((id as u32, plan)),
                         Err(reason) => return Some(self.refused_multitrack_walk(reason)),
                     }

@@ -7,14 +7,49 @@ use clausters_document::multitrack::{edit::MultitrackIntent, handle::Request};
 
 pub(super) struct Action {
     pub kind: Kind,
+    pub object: Option<i64>,
     // Missing keeps the current destination; explicit null is read-only.
     pub save_to: Option<Option<String>>,
 }
 
 impl Action {
+    pub fn allows_empty(&self) -> bool {
+        match &self.kind {
+            Kind::Open { .. }
+            | Kind::NewFile
+            | Kind::Close
+            | Kind::Closed
+            | Kind::Retry
+            | Kind::Sound => true,
+            Kind::Verb { call } => call.allows_empty(),
+            Kind::Event(event) => {
+                event.addr == "/gui_closed"
+                    || matches!(
+                        event.args.get(3).and_then(Value::as_str),
+                        Some("close" | "new_file" | "open_file")
+                    )
+            }
+            _ => false,
+        }
+    }
+
     pub fn read(value: &Value) -> Result<Self, String> {
+        let mut kind = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+        if let Kind::Open { snapshot, .. } = &mut kind {
+            // Decode maps with numeric newtype keys through serde_json's
+            // map-key reader, before internally tagged enum buffering.
+            *snapshot = value
+                .get("snapshot")
+                .map(|snapshot| serde_json::from_value(snapshot.clone()))
+                .transpose()
+                .map_err(|e| e.to_string())?;
+        }
         Ok(Self {
-            kind: serde_json::from_value(value.clone()).map_err(|e| e.to_string())?,
+            object: value
+                .get("object")
+                .map(|id| id.as_i64().ok_or("the session object is not an integer"))
+                .transpose()?,
+            kind,
             save_to: value
                 .get("saveTo")
                 .map(|path| path.as_str().map(str::to_string)),
@@ -27,7 +62,11 @@ impl Action {
 pub(super) enum Kind {
     Open {
         session: Option<String>,
+        #[serde(skip)]
+        snapshot: Option<Box<crate::multitrack::operations::Retained>>,
     },
+    NewFile,
+    CloseFile,
     Sound,
     Save {
         path: Option<String>,

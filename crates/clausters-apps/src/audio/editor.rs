@@ -664,13 +664,13 @@ pub struct AudioEditor {
 /// An open file's identity in its editor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
-struct FileId(i64);
+pub(crate) struct FileId(i64);
 
 #[derive(Clone, Debug)]
 // Contents and sample-storage facts for one open object. No widget or
 // conversation belongs here, so this state can occupy the active slot or the
 // inactive collection without carrying a second window.
-struct AudioFileState {
+pub(crate) struct AudioFileState {
     id: FileId,
     presentation: AudioFileViewState,
     channels: u32,

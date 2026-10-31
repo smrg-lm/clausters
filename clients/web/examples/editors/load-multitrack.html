@@ -34,7 +34,8 @@ the session, the join from the takes it is made of, and the notes from the file
 first half and then the saw's second, the parts the file states; the box on the
 keys track plays the notes the file holds, as the roll left them if a save came
 after an edit -- double click it to open the roll again. Save writes the session
-back.
+back. <b>Close and reopen the window</b> once: the page keeps its multitrack
+object, its contents and its sources while the view is gone.
 <b>What it needs:</b> open <code>edit-multitrack.html</code> once first, on the
 same origin, which saves <code>out/edit_multitrack.json</code> and its takes.</div>
       <button id="run">reopen the multitrack</button>
@@ -85,6 +86,15 @@ same origin, which saves <code>out/edit_multitrack.json</code> and its takes.</d
         const session = await Session.embed();
         await session.gui();   // the host, which holds the multitrack
         const editor = await gui.edit(saved, { title: "reopened", stage: $("stage") });
+
+        // ---- reopen the view over the same object ----
+        // Closing a client-held view loses no contents: the page still holds
+        // them. Opening again reuses that object and its sources without
+        // reading the saved file over changes the window left behind.
+        const multitrack = editor.multitrack;
+        await editor.close();
+        await editor.open(undefined, { stage: $("stage") });
+        if (editor.multitrack !== multitrack) throw new Error("reopening replaced the multitrack object");
 
         // The script's ending: there `wait()` blocks so the process stays alive
         // while the window is on screen. Here nothing exits and nothing may

@@ -352,7 +352,7 @@ impl crate::host::Host {
         self.disk = Some(link);
     }
 
-    /// **The take keys whose list changed** since the last call: a front
+    /// **The take keys whose list changed or was freed** since the last call: a front
     /// drops what it asked about them before (`BufferFetches::forget`), since
     /// the answer is the new list's from wherever it had reached -- a summary
     /// walked on to the old length, the rest of the take drawn as silence.
@@ -404,6 +404,14 @@ impl crate::host::Host {
                 self.relisted.push(*key);
             }
         }
+        // A summary of a freed list can never finish. Retire its fetch too,
+        // or it keeps a summary slot occupied when another window opens.
+        self.relisted.extend(
+            self.lists
+                .keys()
+                .filter(|key| !named.contains_key(key))
+                .copied(),
+        );
         if let Some(disk) = &self.disk {
             for (key, list) in &named {
                 if self.lists.get(key).is_none_or(|was| **was != **list) {

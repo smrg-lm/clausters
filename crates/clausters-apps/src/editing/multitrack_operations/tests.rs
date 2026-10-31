@@ -178,17 +178,16 @@ fn save_confirms_only_the_snapshot_written_and_failure_keeps_the_previous_destin
     std::fs::write(path, contents).unwrap();
     let saved = f.land(storage.run, Ok(()));
     assert_eq!(saved.end, Some(Ok(json!({"destination":destination}))));
-    let tracks = &f.editing.tracks[&f.member];
     let Some(Member::Multitrack(editor)) = f.editing.member(f.member) else {
         panic!()
     };
     assert_ne!(
-        editor.session_snapshot(tracks.session.as_ref().map(|(s, _)| s)),
-        *tracks.saved.as_ref().unwrap()
+        editor.session_snapshot(),
+        *editor.file().saved.as_ref().unwrap()
     );
     let read_back: Session = serde_json::from_slice(&std::fs::read(&destination).unwrap()).unwrap();
     assert_eq!(read_back, captured);
-    let checkpoint = tracks.saved.clone();
+    let checkpoint = editor.file().saved.clone();
     let retry_path = f.folder.join("retry.json");
     let failed = f
         .editing
@@ -203,11 +202,14 @@ fn save_confirms_only_the_snapshot_written_and_failure_keeps_the_previous_destin
         .unwrap();
     let failure = f.land(failed.run, Err("write refused".into()));
     assert!(matches!(failure.end, Some(Err(_))));
+    let Member::Multitrack(editor) = f.editing.member(f.member).unwrap() else {
+        panic!()
+    };
     assert_eq!(
-        f.editing.tracks[&f.member].session.as_ref().unwrap().1,
+        editor.file().path.as_deref().unwrap(),
         destination.to_string_lossy()
     );
-    assert_eq!(f.editing.tracks[&f.member].saved, checkpoint);
+    assert_eq!(editor.file().saved, checkpoint);
     let retry = f
         .editing
         .start(
@@ -224,19 +226,14 @@ fn save_confirms_only_the_snapshot_written_and_failure_keeps_the_previous_destin
     };
     std::fs::write(path, contents).unwrap();
     f.land(retry.run, Ok(()));
+    let Member::Multitrack(editor) = f.editing.member(f.member).unwrap() else {
+        panic!()
+    };
     assert_eq!(
-        f.editing.tracks[&f.member].session.as_ref().unwrap().1,
+        editor.file().path.as_deref().unwrap(),
         retry_path.to_string_lossy()
     );
-    assert_eq!(
-        f.editing.tracks[&f.member]
-            .saved
-            .as_ref()
-            .unwrap()
-            .multitrack
-            .channels,
-        6
-    );
+    assert_eq!(editor.file().saved.as_ref().unwrap().multitrack.channels, 6);
 }
 
 #[test]
@@ -605,4 +602,348 @@ fn typed_handle_edits_can_be_grouped_and_walked_as_one_entry() {
             ))
         );
     }
+}
+
+#[test]
+fn replacing_a_session_retains_its_object_and_history_without_rebinding_the_view() {
+    let mut f = Fixture::new();
+    let measured = f.open("retained", 1);
+    f.land(measured.run, Ok(()));
+    let edited = f.editing.start(
+        f.member,
+        &json!({"verb":"handle", "label":"marker",
+        "call":{"verb":"apply", "intent":{"intent":"setmarker", "marker":7, "at":2.0}}}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(matches!(edited.end, Some(Ok(_))));
+    let original_scope = f.editing.services.histories.selected();
+    let Member::Multitrack(editor) = f.editing.member(f.member).unwrap() else {
+        panic!()
+    };
+    let original = editor.shared();
+    let original_binding = editor.session_binding();
+    let measured = f.open("replacement", 1);
+    f.land(measured.run, Ok(()));
+    f.editing.select_member(f.member);
+    assert!(!f.editing.can_undo(), "the replacement has its own order");
+    let Member::Multitrack(editor) = f.editing.member(f.member).unwrap() else {
+        panic!()
+    };
+    let replacement = editor.shared();
+    let replacement_binding = editor.session_binding();
+    assert_ne!(original_binding, replacement_binding);
+    assert!(!std::sync::Arc::ptr_eq(&original, &replacement));
+    assert_eq!(original.lock().unwrap().markers.len(), 1);
+    assert!(replacement.lock().unwrap().markers.is_empty());
+    for direction in [Direction::Undo, Direction::Redo] {
+        f.editing.services.histories.select(original_scope);
+        assert!(f.editing.step(direction).stepped);
+        assert_eq!(
+            original.lock().unwrap().markers.len(),
+            usize::from(direction == Direction::Redo)
+        );
+        assert!(replacement.lock().unwrap().markers.is_empty());
+        let Member::Multitrack(editor) = f.editing.member(f.member).unwrap() else {
+            panic!()
+        };
+        assert_eq!(editor.session_binding(), replacement_binding);
+        assert!(std::sync::Arc::ptr_eq(&editor.shared(), &replacement));
+        assert!(
+            editor
+                .take(SourceId(1))
+                .unwrap()
+                .path
+                .ends_with("replacement-1.wav")
+        );
+    }
+}
+
+#[test]
+fn closing_the_file_keeps_the_window_and_an_empty_window_never_selects_another_order() {
+    let mut f = Fixture::new();
+    let edited = f.editing.start(
+        f.member,
+        &json!({"verb":"handle", "label":"marker",
+        "call":{"verb":"apply", "intent":{"intent":"setmarker", "marker":7, "at":2.0}}}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(matches!(edited.end, Some(Ok(_))));
+    let scope = f.editing.services.histories.selected();
+    let original = match f.editing.member(f.member).unwrap() {
+        Member::Multitrack(editor) => editor.shared(),
+        _ => panic!(),
+    };
+    let closed = f.editing.start(
+        f.member,
+        &json!({"verb":"close_file"}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert_eq!(closed.end, Some(Ok(Value::Null)));
+    assert!(
+        closed
+            .effects
+            .iter()
+            .any(|effect| effect["kind"] == "publish")
+    );
+    assert!(
+        closed
+            .effects
+            .iter()
+            .all(|effect| effect["kind"] != "closeWindow")
+    );
+    assert_eq!(
+        f.editing.multitrack_query(f.member, "file"),
+        json!({"empty":true})
+    );
+    for action in [
+        json!({"verb":"undo"}),
+        json!({"verb":"play"}),
+        json!({"verb":"save", "path":f.folder.join("none.json")}),
+        json!({"verb":"handle", "call":{"verb":"state"}}),
+    ] {
+        let ran = f
+            .editing
+            .start(f.member, &action, None, &mut f.disk, &mut f.ids);
+        assert_eq!(ran.end.unwrap().unwrap_err().message, "no file is open");
+        assert!(ran.render.is_none());
+        assert_eq!(f.editing.services.histories.selected(), scope);
+    }
+    assert!(
+        f.editing.can_undo(),
+        "the retained object's history was not freed"
+    );
+    assert_eq!(original.lock().unwrap().markers.len(), 1);
+    let history: Value = serde_json::from_str(&call_json(
+        &mut f.editing,
+        &json!({"verb":"state", "member":f.member}).to_string(),
+    ))
+    .unwrap();
+    assert_eq!(history["canUndo"], false);
+    assert_eq!(f.editing.services.histories.selected(), scope);
+    let actions = f.editing.action_states(f.member);
+    assert_eq!(actions["undo"]["reason"], "no file is open");
+    let new = f.editing.start(
+        f.member,
+        &json!({"verb":"new_file"}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert_eq!(new.end, Some(Ok(Value::Null)));
+    let file = f.editing.multitrack_query(f.member, "file");
+    assert_eq!(file["empty"], false);
+    assert_eq!(file["path"], Value::Null);
+    assert_eq!(file["dirty"], false);
+    assert!(!f.editing.can_undo());
+    assert_eq!(original.lock().unwrap().markers.len(), 1);
+}
+
+#[test]
+fn opening_without_a_session_is_distinct_from_an_empty_open_session() {
+    let mut f = Fixture::new();
+    let empty: Value = serde_json::from_str(&call_json(
+        &mut f.editing,
+        &json!({"verb":"openMultitrack","key":"no-session","empty":true}).to_string(),
+    ))
+    .unwrap();
+    let empty = empty["member"].as_u64().unwrap() as u32;
+    assert_eq!(
+        f.editing.multitrack_query(empty, "file"),
+        json!({"empty":true})
+    );
+    assert_eq!(f.editing.multitrack_query(f.member, "file")["empty"], false);
+    let before = f.editing.services.histories.selected();
+    let denied = f.editing.start(
+        empty,
+        &json!({"verb":"undo"}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert_eq!(denied.end.unwrap().unwrap_err().message, "no file is open");
+    assert_eq!(f.editing.services.histories.selected(), before);
+    let shown: Value = serde_json::from_str(&call_json(
+        &mut f.editing,
+        &json!({"verb":"member","member":empty,"call":{"verb":"window","widget":40,"ruler":41}})
+            .to_string(),
+    ))
+    .unwrap();
+    assert!(
+        shown["children"].is_array(),
+        "chrome remains composable: {shown}"
+    );
+}
+
+#[test]
+fn a_failed_open_keeps_the_binding_and_an_event_from_before_replacement_is_refused() {
+    let mut f = Fixture::new();
+    let Some(Member::Multitrack(editor)) = f.editing.member_mut(f.member) else {
+        panic!()
+    };
+    editor.window(40, 41);
+    editor.set_window(Some(39));
+    let version = f.editing.version;
+    let replaced = f.editing.start(
+        f.member,
+        &json!({"verb":"new_file"}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(matches!(replaced.end, Some(Ok(_))));
+    let before = f.editing.multitrack_query(f.member, "file");
+    let failed = f.editing.start(
+        f.member,
+        &json!({"verb":"open","session":f.folder.join("missing.json")}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(matches!(failed.end, Some(Err(_))));
+    assert_eq!(f.editing.multitrack_query(f.member, "file"), before);
+    let late = f.editing.start(
+        f.member,
+        &json!({"verb":"event","addr":"/gui_event", "args":[39,1,version,"crossfade"]}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(
+        late.effects
+            .iter()
+            .any(|effect| effect["kind"] == "echo" && effect["answer"]["reason"].is_string()),
+        "{late:?}"
+    );
+    assert!(!f.editing.can_undo());
+    assert_eq!(f.editing.multitrack_query(f.member, "file"), before);
+}
+
+#[test]
+fn a_retained_handle_edits_its_original_session_after_the_window_binds_another() {
+    let mut f = Fixture::new();
+    let measured = f.open("original", 1);
+    f.land(measured.run, Ok(()));
+    let original = f.editing.multitrack_query(f.member, "file")["object"]
+        .as_i64()
+        .unwrap();
+    let opened = f.editing.start(
+        f.member,
+        &json!({"verb":"new_file"}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(matches!(opened.end, Some(Ok(_))));
+    let current = f.editing.multitrack_query(f.member, "file");
+    let scope = f.editing.services.histories.selected();
+    let applied = f.editing.start(
+        f.member,
+        &json!({"verb":"handle","object":original,
+        "call":{"verb":"apply","intent":{"intent":"setmarker","marker":7,"at":3.0}}}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert_eq!(applied.end.unwrap().unwrap()["applied"], true);
+    assert!(
+        applied.effects.is_empty(),
+        "an inactive object updates no widgets or playback"
+    );
+    assert_eq!(f.editing.services.histories.selected(), scope);
+    assert_eq!(f.editing.multitrack_query(f.member, "file"), current);
+    let file = f
+        .editing
+        .query_multitrack_object(f.member, original, "file");
+    assert_eq!(file["dirty"], true);
+    assert!(file["path"].as_str().unwrap().ends_with("original.json"));
+    assert_eq!(
+        f.editing
+            .query_multitrack_object(f.member, original, "history")["canUndo"],
+        true
+    );
+    let undone = f.editing.start(
+        f.member,
+        &json!({"verb":"undo","object":original}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert_eq!(undone.end, Some(Ok(json!(true))));
+    assert!(undone.effects.is_empty());
+    assert_eq!(
+        f.editing
+            .query_multitrack_object(f.member, original, "file")["dirty"],
+        false
+    );
+    assert_eq!(f.editing.multitrack_query(f.member, "file"), current);
+    f.editing.start(
+        f.member,
+        &json!({"verb":"close_file"}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    let state = f.editing.start(
+        f.member,
+        &json!({"verb":"handle","object":original,"call":{"verb":"state"}}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(
+        matches!(state.end, Some(Ok(_))),
+        "retention also survives an unbound window"
+    );
+    assert_eq!(
+        f.editing.multitrack_query(f.member, "file"),
+        json!({"empty":true})
+    );
+}
+
+#[test]
+fn a_retained_snapshot_reopens_unsaved_contents_sources_and_checkpoint() {
+    let mut f = Fixture::new();
+    let measured = f.open("retained", 1);
+    f.land(measured.run, Ok(()));
+    let original = f.editing.multitrack_query(f.member, "file")["object"].clone();
+    let applied = f.editing.start(
+        f.member,
+        &json!({"verb":"handle", "object":original,
+        "call":{"verb":"apply","intent":{"intent":"setmarker","marker":7,"at":3.0}}}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert_eq!(applied.end.unwrap().unwrap()["applied"], true);
+    let captured = f.editing.multitrack_query(f.member, "session");
+    assert!(
+        captured["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("retained.json")
+    );
+    assert!(captured["session"]["sources"]["1"].is_object());
+    let closed = f.editing.closing(f.member, "closeWindow");
+    assert_eq!(closed["objects"]["objects"][original.to_string()], captured);
+    let opened = f.editing.start(
+        f.member,
+        &json!({"verb":"open", "snapshot":captured}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(matches!(opened.end, Some(Ok(_))), "{opened:?}");
+    let file = f.editing.multitrack_query(f.member, "file");
+    assert_ne!(file["object"], original);
+    assert_eq!(
+        file["dirty"], true,
+        "reopening does not confirm unsaved contents"
+    );
+    assert_eq!(f.editing.multitrack_query(f.member, "session"), captured);
 }

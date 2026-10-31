@@ -19,6 +19,18 @@ pub struct Request {
     pub command: Command,
 }
 
+/// A client-held session returned when its window closes and accepted on reopen.
+/// The checkpoint belongs to the captured contents, independently of its path.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct Retained {
+    /// Current contents, including source locations and shared sequences.
+    pub session: Session,
+    /// Last confirmed destination, or none for an untitled session.
+    pub path: Option<String>,
+    /// The confirmed checkpoint, retained through unsaved local changes.
+    pub saved: Option<Session>,
+}
+
 /// A prepared session snapshot, retained through storage confirmation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Saved {
@@ -44,6 +56,10 @@ pub struct Opened {
 /// Typed session work; the runtime knows none of these domain variants.
 #[derive(Debug)]
 pub enum Command {
+    /// Start a new empty session with no path.
+    New,
+    /// Unbind the session without closing the window.
+    Unbind,
     /// Publish a completely read session and a new source binding.
     Open(Box<Opened>),
     /// Prepare this member's participation in the common history walk.
@@ -56,6 +72,8 @@ pub enum Command {
 
 #[derive(Debug)]
 enum Change {
+    New,
+    Unbind,
     Open(Box<Opened>),
     Restore,
     Measure(Vec<(SourceId, TakeFile, String)>),
@@ -66,6 +84,7 @@ enum Change {
 #[derive(Debug)]
 pub struct Commit {
     target: Target,
+    binding_generation: u64,
     change: Change,
 }
 
@@ -82,6 +101,14 @@ impl Application for MultitrackEditor {
         let mut batches = Vec::new();
         let mut access = Access::Snapshot(0);
         let change = match request.command {
+            Command::New => {
+                access = Access::Write;
+                Change::New
+            }
+            Command::Unbind => {
+                access = Access::Write;
+                Change::Unbind
+            }
             Command::Open(opened) => {
                 access = Access::Write;
                 Change::Open(opened)
@@ -131,6 +158,7 @@ impl Application for MultitrackEditor {
             reads: Vec::new(),
             commit: Commit {
                 target: request.target,
+                binding_generation: self.binding_generation(),
                 change,
             },
         })
@@ -141,9 +169,14 @@ impl Application for MultitrackEditor {
             Change::Measure(sources) => sources
                 .iter()
                 .any(|(id, file, _)| self.take(*id) != Some(file)),
-            Change::Open(_) | Change::Restore | Change::Save(_) => false,
+            Change::New | Change::Unbind | Change::Open(_) | Change::Restore | Change::Save(_) => {
+                false
+            }
         };
-        if self.session_binding() != delta.target.object || source_changed {
+        if self.session_binding() != delta.target.object
+            || self.binding_generation() != delta.binding_generation
+            || source_changed
+        {
             return self.abort(
                 delta,
                 IoResult::Failed("the session or source changed before confirmation".into()),
@@ -153,6 +186,11 @@ impl Application for MultitrackEditor {
         }
         let mut outcome = Outcome::default();
         match delta.change {
+            Change::New => {
+                self.replace_session_binding();
+                self.file_mut().saved = Some(self.session_snapshot());
+            }
+            Change::Unbind => self.unbind_session(),
             Change::Open(opened) => {
                 self.replace_session_binding();
                 self.set_multitrack(opened.session.multitrack);
