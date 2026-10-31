@@ -194,7 +194,7 @@ process, no socket.</div>
       /examples/notation/score-editor.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui, loadCore } from "../../dist/index.js";
+      import { Session, gui, loadCore, opfs } from "../../dist/index.js";
 
       const { notation } = gui;
       const el = (id) => document.getElementById(id);
@@ -214,7 +214,7 @@ B c d e | f2 e d | c B A B | G4 |
 `;
 
       // Where the score is saved: a path in the page's own storage.
-      const SAVED = "eight_bars.mei";
+      const SAVED = "out/eight_bars.mei";
 
       let score = null, editor = null;
 
@@ -325,6 +325,7 @@ B c d e | f2 e d | c B A B | G4 |
         // File, Save write it again without asking. It is the score itself, as
         // MEI -- notes, marks, the slur and the crescendo, the page and its
         // text -- and reading it back is the same page.
+        await opfs.makeDirectory("out");
         log(`saved to ${await editor.save(SAVED)}`);
 
         el("open-roll").disabled = false;

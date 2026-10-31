@@ -543,16 +543,23 @@ impl AudioEditor {
         self.leave_next(out)
     }
 
-    /// **A save refused**: nothing goes, and the form is down.
-    pub(super) fn save_refused(&mut self) -> Vec<Correction> {
-        let waited = self.window_state.leaving.take().is_some();
+    /// **A save refused**: what waited for it does not go, and the window stays
+    /// as it is. A close form is down already, since its answer took it down.
+    pub(super) fn save_refused(&mut self) {
+        self.window_state.leaving = None;
         self.window_state.let_go.clear();
+    }
+
+    /// **The close form answered with a Save that is under way**: down, as the
+    /// other applications' goes at the answer. What it was up for waits for the
+    /// write, and the window can be worked in meanwhile ([`Self::after_save`]).
+    pub(crate) fn close_form_answered(&mut self) -> Vec<Correction> {
         let up = self
             .window_state
             .dialogs
             .up()
             .is_some_and(|open| open.form == Form::Close);
-        if waited && up {
+        if up {
             forms::corrections(self.window_state.dialogs.hide())
         } else {
             Vec::new()

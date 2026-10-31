@@ -252,7 +252,7 @@ print(f"saved to {editor.save(SAVED)}")
 # %%
 editor.on_closed(lambda: print("window closed"))
 print("click a note to select it (Ctrl adds, Shift extends), drag one up or "
-      "down the staff, press empty staff to write an eighth; the space bar "
+      "down the staff, N to write (a to g, Escape leaves); the space bar "
       "plays, and the menus, the toolbar and the palettes act on the selection")
 
 

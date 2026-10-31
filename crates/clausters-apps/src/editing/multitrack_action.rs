@@ -17,11 +17,15 @@ impl Action {
             Kind::Open { .. } | Kind::NewFile | Kind::Close | Kind::Closed | Kind::Sound => true,
             Kind::Verb { call } => call.allows_empty(),
             Kind::Event(event) => {
+                let tag = event.args.get(3).and_then(Value::as_str);
+                // a menu's pick names the verb after its tag
+                let verb = if tag == Some(crate::turn::MENU) {
+                    event.args.get(4).and_then(Value::as_str)
+                } else {
+                    tag
+                };
                 event.addr == "/gui_closed"
-                    || matches!(
-                        event.args.get(3).and_then(Value::as_str),
-                        Some("close" | "new_file" | "open_file")
-                    )
+                    || matches!(verb, Some("close" | "new_file" | "open_file"))
             }
             _ => false,
         }

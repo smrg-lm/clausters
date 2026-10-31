@@ -215,7 +215,21 @@ impl Editing {
         event: &Event,
     ) -> Option<Turned> {
         let command = self.decode_audio_event(member, event)?;
-        Some(self.prepare_audio_turn(member, command, event.args.get(1).map_or(0, int)))
+        let saves = matches!(command, Command::WindowSave(_));
+        let mut turned = self.prepare_audio_turn(member, command, event.args.get(1).map_or(0, int));
+        if saves
+            && let Outcome::Audio(outcome) = &mut turned.outcome
+            && outcome.operation.is_some()
+            && let Some(Member::Audio(editor)) = self.member_mut(member)
+        {
+            outcome.answer = Some(clausters_editing::conversation::answer(
+                0,
+                0,
+                None,
+                editor.close_form_answered(),
+            ));
+        }
+        Some(turned)
     }
 
     pub(super) fn prepare_audio_action(

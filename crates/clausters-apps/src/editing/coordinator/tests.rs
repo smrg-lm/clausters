@@ -1111,3 +1111,194 @@ fn a_close_brings_each_file_with_changes_into_view() {
     client.run(&mut editing, member, action);
     assert!(closes(&client), "{:?}", client.effects);
 }
+
+/// **Three applications over one set of services, their replies out of order**:
+/// an audio file, a multitrack's session and a symbolic score each have a save
+/// out; they land in the opposite order, one of them failing, and each settles
+/// its own contents, file and order, none of them moved by another's reply.
+#[test]
+fn saves_of_different_applications_land_each_on_its_own() {
+    let mut editing = Editing::new();
+    let mut client = Client::new();
+    let folder = std::env::temp_dir().join(format!("three-saves-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let audio = opened(&mut client, &mut editing, false);
+    let action = cut(1, &editing);
+    client.run(&mut editing, audio, action);
+    let multitrack = client.call(
+        &mut editing,
+        json!({"verb": "openMultitrack", "key": "session", "multitrack": {}}),
+    )["member"]
+        .as_u64()
+        .unwrap() as MemberId;
+    let mark = json!({"verb": "handle", "call": {"verb": "apply",
+        "intent": {"intent": "setmarker", "marker": 7, "at": 2.0, "name": "cue"}}});
+    assert_eq!(
+        client.run(&mut editing, multitrack, mark)["result"]["applied"],
+        true
+    );
+
+    let wrote = folder.join("session.json");
+    let audio_out = client.begin(&mut editing, audio, save("/takes/a.wav"));
+    let multitrack_out = client.begin(
+        &mut editing,
+        multitrack,
+        json!({"verb": "save", "path": wrote}),
+    );
+    assert_eq!(audio_out["done"], false, "{audio_out}");
+    assert_eq!(multitrack_out["done"], false, "{multitrack_out}");
+
+    #[cfg(feature = "notation")]
+    let (score, score_at) = {
+        use clausters_core::notation::{AnyEngraver, Score, sheet_to_mei, voice_to_sheet};
+        let mei = sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C")).unwrap();
+        let engraver = AnyEngraver::new(crate::editing::tests::Kept(Mutex::new(String::new())));
+        let score = Arc::new(Mutex::new(Score::open(engraver, &mei).unwrap()));
+        let opened: Value =
+            serde_json::from_str(&editing.open_score("score:one", score.clone(), "{}")).unwrap();
+        let member = opened["member"].as_u64().unwrap() as MemberId;
+        client.run(&mut editing, member, json!({"verb": "open"}));
+        let turned = json!({"verb": "act", "call": {"action": "page", "landscape": true}});
+        client.run(&mut editing, member, turned);
+        let at = folder.join("score.mei");
+        let out = client.begin(&mut editing, member, json!({"verb": "save", "path": at}));
+        assert_eq!(out["done"], false, "{out}");
+        // the score's fails, first
+        let failed = client.answer(&mut editing, member, &out, json!({"failed": "disk full"}));
+        assert!(failed["error"].is_object(), "{failed}");
+        (member, at)
+    };
+
+    let landed = client.answer(&mut editing, multitrack, &multitrack_out, json!({}));
+    assert_eq!(landed["result"]["destination"], json!(wrote), "{landed}");
+    let landed = client.finish(&mut editing, audio, audio_out);
+    assert!(landed["error"].is_null(), "{landed}");
+
+    assert_eq!(binding(&mut editing, audio)["dirty"], false);
+    assert_eq!(editing.query(multitrack, "file")["path"], json!(wrote));
+    assert_eq!(editing.query(multitrack, "file")["dirty"], false);
+    #[cfg(feature = "notation")]
+    {
+        let file = editing.query(score, "file");
+        assert_eq!(file["path"], Value::Null, "{score_at:?}: {file}");
+        assert_eq!(file["dirty"], true, "{file}");
+    }
+
+    // each order walks only its own
+    let version = editing.version();
+    let walked = client.run(
+        &mut editing,
+        audio,
+        json!({"verb": "event", "addr": "/gui_event", "window": true,
+            "args": [900, 2, version, "undo"]}),
+    );
+    assert!(walked["error"].is_null(), "{walked}");
+    assert_eq!(binding(&mut editing, audio)["dirty"], true);
+    assert_eq!(editing.query(multitrack, "file")["dirty"], false);
+    let state = |client: &mut Client, editing: &mut Editing, member: MemberId| {
+        client.call(editing, json!({"verb": "state", "member": member}))["canUndo"].clone()
+    };
+    #[cfg(feature = "notation")]
+    {
+        assert_eq!(state(&mut client, &mut editing, score), true);
+        client.run(&mut editing, score, json!({"verb": "undo"}));
+        assert_eq!(state(&mut client, &mut editing, score), false);
+        assert_eq!(editing.query(score, "file")["dirty"], false);
+    }
+    assert_eq!(binding(&mut editing, audio)["dirty"], true);
+    assert_eq!(state(&mut client, &mut editing, multitrack), true);
+    std::fs::remove_dir_all(&folder).unwrap();
+}
+
+/// **The close form's Save goes down at the answer**, as the other
+/// applications' does: the write runs with the window usable, a failure keeps
+/// the window with its work, and the form can be asked for again. An edit made
+/// meanwhile is work the save does not hold, and the window stays.
+#[test]
+fn a_close_form_answered_with_save_is_down_while_the_file_is_written() {
+    let mut editing = Editing::new();
+    let mut client = Client::new();
+    let (member, ids) = asking(&mut client, &mut editing);
+    let action = cut(1, &editing);
+    client.run(&mut editing, member, action);
+    let form_down = |client: &Client| {
+        client.effects.iter().any(|e| {
+            e["kind"] == "echo"
+                && e["answer"]
+                    .to_string()
+                    .contains(&format!(r#""widget":{}"#, ids["stack"]))
+                && e["answer"].to_string().contains(r#""index":0"#)
+        })
+    };
+    let action = verb_of_window(2, &editing, "close");
+    client.run(&mut editing, member, action);
+    client.effects.clear();
+    let action = answered(3, &editing, &ids, "ok");
+    let first = client.begin(&mut editing, member, action);
+    assert!(form_down(&client), "{:?}", client.effects);
+    let write = until(&mut client, &mut editing, member, first, "batch", 1);
+    assert!(!closes(&client));
+    let failed = client.answer(&mut editing, member, &write, json!({"failed": "disk full"}));
+    assert_eq!(failed["error"]["message"], "disk full", "{failed}");
+    assert!(!closes(&client), "{:?}", client.effects);
+    assert_eq!(binding(&mut editing, member)["dirty"], true);
+
+    // the form taken down by Cancel this time, a save elsewhere
+    let action = verb_of_window(4, &editing, "close");
+    client.run(&mut editing, member, action);
+    let action = answered(5, &editing, &ids, "cancel");
+    client.run(&mut editing, member, action);
+    let first = client.begin(&mut editing, member, save("/takes/a.wav"));
+    client.finish(&mut editing, member, first);
+
+    // writing elsewhere, an edit reaches the window while it is written
+    let action = cut(6, &editing);
+    client.run(&mut editing, member, action);
+    let action = verb_of_window(7, &editing, "close");
+    client.run(&mut editing, member, action);
+    let action = answered(8, &editing, &ids, "ok");
+    let first = client.begin(&mut editing, member, action);
+    let write = until(&mut client, &mut editing, member, first, "batch", 1);
+    let action = cut(9, &editing);
+    assert_eq!(client.run(&mut editing, member, action)["result"], true);
+    client.effects.clear();
+    let saved = client.finish(&mut editing, member, write);
+    assert!(saved["error"].is_null(), "{saved}");
+    assert!(!closes(&client), "{:?}", client.effects);
+    assert_eq!(binding(&mut editing, member)["dirty"], true);
+    assert!(
+        client
+            .effects
+            .iter()
+            .any(|e| e["answer"].to_string().contains("it stays open")),
+        "{:?}",
+        client.effects
+    );
+}
+
+/// **A refused operation corrects its window**: what the abort read back reaches
+/// the gesture's answer, beside why, so the picture returns to the take.
+#[test]
+fn a_refused_edit_s_correction_reaches_the_window() {
+    let mut editing = Editing::new();
+    let mut client = Client::new();
+    let member = opened(&mut client, &mut editing, false);
+    let action = reverse(1, &editing);
+    let started = client.begin(&mut editing, member, action);
+    let batch = until(&mut client, &mut editing, member, started, "batch", 1);
+    client.effects.clear();
+    let failed = client.answer(&mut editing, member, &batch, json!({"failed": "no space"}));
+    assert_eq!(failed["error"]["message"], "no space", "{failed}");
+    let echo = client
+        .effects
+        .iter()
+        .find(|e| e["kind"] == "echo")
+        .expect("the gesture is answered");
+    assert_eq!(echo["answer"]["answer"], "push", "{echo}");
+    assert_eq!(echo["answer"]["reason"], "no space", "{echo}");
+    assert!(
+        echo["answer"]["corrections"]
+            .as_array()
+            .is_some_and(|c| !c.is_empty())
+    );
+}

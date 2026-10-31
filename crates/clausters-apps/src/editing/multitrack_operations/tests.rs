@@ -1753,3 +1753,206 @@ fn a_score_window_opened_over_nothing_has_no_document() {
     assert_eq!(score_file(&mut f, member)["empty"], false);
     assert_eq!(score_file(&mut f, member)["dirty"], false);
 }
+
+/// A report from a widget of a score window's dialogs, at the version it draws.
+#[cfg(feature = "notation")]
+fn score_said(f: &mut Fixture, member: MemberId, name: &str, seq: i64) -> Ran {
+    let widget = 200
+        + crate::score::dialogs::names()
+            .iter()
+            .position(|n| n == name)
+            .unwrap() as i32;
+    let at = f.editing.version;
+    f.editing.start(
+        member,
+        &json!({"verb": "event", "addr": "/gui_event",
+            "args": [widget, seq, at, "click"]}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    )
+}
+
+/// A pick of a score window's File menu, at the version it draws.
+#[cfg(feature = "notation")]
+fn score_menu(f: &mut Fixture, member: MemberId, verb: &str, seq: i64) -> Ran {
+    let at = f.editing.version;
+    f.editing.start(
+        member,
+        &json!({"verb": "event", "addr": "/gui_event",
+            "args": [79, seq, at, "menu", verb]}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    )
+}
+
+#[cfg(feature = "notation")]
+fn closes(ran: &Ran) -> bool {
+    ran.effects
+        .iter()
+        .any(|effect| effect["kind"] == "closeWindow")
+}
+
+/// **The close form's Save waits for the write**, as the multitrack's does: a
+/// failure keeps the window, its document and what it had to lose; an edit made
+/// while it is written keeps the window too; a write with nothing moving closes.
+#[cfg(feature = "notation")]
+#[test]
+fn a_score_s_close_form_waits_for_its_write() {
+    let mut f = Fixture::new();
+    let (member, _) = score_member(&mut f, json!({}));
+    let path = f.folder.join("asked.mei");
+    let render = f
+        .editing
+        .start(
+            member,
+            &json!({"verb": "save", "path": path}),
+            None,
+            &mut f.disk,
+            &mut f.ids,
+        )
+        .render
+        .unwrap();
+    land(&mut f, member, render.run, Ok(()));
+    let edit = turned(true);
+    f.editing
+        .start(member, &edit, None, &mut f.disk, &mut f.ids);
+    // the form is up, and Cancel keeps everything
+    let asked = score_menu(&mut f, member, "close", 1);
+    assert!(!closes(&asked), "{asked:?}");
+    assert!(!closes(&score_said(&mut f, member, "close:cancel", 2)));
+    assert_eq!(score_file(&mut f, member)["dirty"], true);
+    // Save, and the write fails
+    score_menu(&mut f, member, "close", 3);
+    let saving = score_said(&mut f, member, "close:ok", 4);
+    assert!(!closes(&saving), "{saving:?}");
+    let failed = land(
+        &mut f,
+        member,
+        saving.render.expect("the save waits on storage").run,
+        Err("the disk is full".into()),
+    );
+    assert!(!closes(&failed), "{failed:?}");
+    assert!(matches!(failed.end, Some(Err(_))), "{failed:?}");
+    assert_eq!(score_file(&mut f, member)["dirty"], true);
+    assert!(f.editing.rolls.contains_key(&member));
+    // again, and work the save does not hold arrives meanwhile
+    score_menu(&mut f, member, "close", 5);
+    let saving = score_said(&mut f, member, "close:ok", 6);
+    let render = saving.render.expect("the save waits on storage");
+    f.editing
+        .start(member, &turned(false), None, &mut f.disk, &mut f.ids);
+    let landed = land(&mut f, member, render.run, Ok(()));
+    assert!(!closes(&landed), "{landed:?}");
+    assert!(
+        landed.effects.iter().any(|e| e["kind"] == "say"),
+        "{landed:?}"
+    );
+    assert_eq!(score_file(&mut f, member)["dirty"], true);
+    // with nothing moving, the close follows the write
+    score_menu(&mut f, member, "close", 7);
+    let saving = score_said(&mut f, member, "close:ok", 8);
+    assert!(!closes(&saving), "not before the write");
+    let render = saving.render.expect("the save waits on storage");
+    let landed = land(&mut f, member, render.run, Ok(()));
+    assert!(closes(&landed), "{landed:?}");
+    assert!(!f.editing.rolls.contains_key(&member));
+    // the landing again is nobody's
+    let again = land(&mut f, member, render.run, Ok(()));
+    assert!(again.effects.is_empty() && again.end.is_none(), "{again:?}");
+}
+
+/// **A store that takes its time**: a second save is refused while it is out,
+/// the order can be walked meanwhile, and what is confirmed is what was written.
+/// A walk back to what the file holds is nothing left to lose.
+#[cfg(feature = "notation")]
+#[test]
+fn a_score_s_slow_store_keeps_its_revision_and_its_order() {
+    let mut f = Fixture::new();
+    let (member, score) = score_member(&mut f, json!({}));
+    let path = f.folder.join("slow.mei");
+    let start = |f: &mut Fixture, action: Value| {
+        f.editing
+            .start(member, &action, None, &mut f.disk, &mut f.ids)
+    };
+    let saving = start(&mut f, json!({"verb": "save", "path": path}));
+    let run = saving.render.unwrap().run;
+    let written = score.lock().unwrap().mei();
+    let refused = start(&mut f, json!({"verb": "save", "path": path}));
+    assert!(refused.render.is_none(), "{refused:?}");
+    assert!(matches!(refused.end, Some(Err(_))), "{refused:?}");
+    start(&mut f, turned(true));
+    assert_ne!(score.lock().unwrap().mei(), written);
+    let landed = land(&mut f, member, run, Ok(()));
+    assert!(matches!(landed.end, Some(Ok(_))), "{landed:?}");
+    assert_eq!(score_file(&mut f, member)["dirty"], true);
+    let walked = start(&mut f, json!({"verb": "undo"}));
+    assert!(matches!(walked.end, Some(Ok(_))), "{walked:?}");
+    assert_eq!(score.lock().unwrap().mei(), written);
+    assert_eq!(score_file(&mut f, member)["dirty"], false);
+    let walked = start(&mut f, json!({"verb": "redo"}));
+    assert!(matches!(walked.end, Some(Ok(_))), "{walked:?}");
+    assert_eq!(score_file(&mut f, member)["dirty"], true);
+    // and the file is free to be written again
+    let again = start(&mut f, json!({"verb": "save"}));
+    assert!(again.render.is_some(), "{again:?}");
+}
+
+/// **The window closed while a save is out**: the landing saves the file the
+/// holder has and draws nothing of what closed; the operation is settled and
+/// holds nothing. A server lost before the reply retires it the same way.
+#[cfg(feature = "notation")]
+#[test]
+fn a_score_s_store_landing_after_its_window_or_its_server_went() {
+    let mut f = Fixture::new();
+    let (member, _) = score_member(&mut f, json!({}));
+    let path = f.folder.join("late.mei");
+    let saving = f.editing.start(
+        member,
+        &json!({"verb": "save", "path": path}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    let run = saving.render.unwrap().run;
+    let target = f.editing.score_waits[&run].ticket.target;
+    // the window's close, as the host's goes, over work the save does not hold
+    f.editing
+        .start(member, &turned(true), None, &mut f.disk, &mut f.ids);
+    let mark = score_menu(&mut f, member, "close", 1);
+    assert!(!closes(&mark), "work unsaved: the form asks: {mark:?}");
+    assert!(closes(&score_said(&mut f, member, "close:discard", 2)));
+    f.editing.forget_roll(member, &mut f.ids);
+    f.editing.close_order_of(member);
+    let landed = land(&mut f, member, run, Ok(()));
+    assert!(matches!(landed.end, Some(Ok(_))), "{landed:?}");
+    assert_eq!(f.editing.window_holding_file(path.to_str().unwrap()), None);
+    assert!(
+        !landed
+            .effects
+            .iter()
+            .any(|e| matches!(e["kind"].as_str(), Some("publish" | "closeWindow"))),
+        "{landed:?}"
+    );
+    assert!(f.editing.score_waits.is_empty());
+    assert!(!f.editing.score_runtime.operations.busy(target));
+
+    // a server lost
+    let mut f = Fixture::new();
+    let (member, _) = score_member(&mut f, json!({}));
+    let saving = f.editing.start(
+        member,
+        &json!({"verb": "save", "path": path}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    let run = saving.render.unwrap().run;
+    let target = f.editing.score_waits[&run].ticket.target;
+    f.editing.invalidate_server(target.server);
+    let landed = land(&mut f, member, run, Ok(()));
+    assert!(landed.effects.is_empty() && landed.end.is_none());
+    assert_eq!(score_file(&mut f, member)["path"], Value::Null);
+    assert!(!f.editing.score_runtime.operations.busy(target));
+}

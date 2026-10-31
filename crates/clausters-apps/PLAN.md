@@ -2810,7 +2810,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   are separate review boundaries; this milestone stays open until their
   automated and manual acceptance is complete.
 
-  - ⬜ **Common coordination, then the multitrack consumer.** Keep
+  - ✅ **Common coordination, then the multitrack consumer.** Keep
     non-generic `Services` and each application's `Runtime<Commit, Outcome>`.
     Extract preparation, dispatch, confirmation, refusal, repair and release
     from audio without moving its commands, deltas, playback or result
@@ -3035,6 +3035,19 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     endpoints, tests, docs and examples together; unresolved findings go at
     the end of their owning plan with checkboxes. Close this milestone and
     remove its ROADMAP entry only after every acceptance passes.
+    *Automatic part done 2026-10-31.* Fault traces cover each application and
+    three of them at once (`saves_of_different_applications_land_each_on_its_own`,
+    the score's slow, failed, late and invalidated stores, the audio close form
+    end to end on a real host); stopped and closed windows of every application
+    ask for nothing (`a_stopped_or_closed_window_of_any_application_asks_for_nothing`),
+    and a hidden one streams nothing (`components.html`); every application's file
+    verbs run against the real host from both clients; the affected pairs were read
+    call by call and run to their end. What it found is fixed: a save over a file
+    on another filesystem than the working folder failed, a second move that did
+    not land left the original in that folder, a stored document was not written
+    whole, a refused operation's corrections never reached its window, the audio
+    close form stayed up through the write where the others go down, and File >
+    Close on a multitrack with no session was refused.
 
   Out of scope: new notation operations, domain conversions, the roll's
   pending recording, new session formats and persistent recovery. The second
@@ -6231,3 +6244,12 @@ wrong.
   whether the test is sensitive to its pacing or a moved loop can step when the
   reader falls behind. **Acceptance:** the assertion's output from a failure
   says which, and the test holds under a loaded machine.
+
+- ⬜ **The clients' walk of steps keeps a move no save hands it** *(found
+  2026-10-31, verifying the save's moves)*. `clients/python/clausters/_steps.py`
+  and `clients/web/src/steps.ts` carry a `move` step with their own rename, which
+  neither rolls back nor crosses filesystems as the application's walk does
+  (`clausters_core::files::move_file`). A save is the host's now, and it is the
+  only maker of a move, so the branch looks unreachable. `X27`'s removal of
+  obsolete coordination decides: gone from both clients, with a test that nothing
+  hands one out.

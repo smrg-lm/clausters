@@ -4,6 +4,7 @@
 use super::run::*;
 use super::*;
 use crate::turn::Kind;
+use clausters_editing::conversation;
 
 impl Session {
     /// **An outcome, carried out**, up to its file binding: what the clients'
@@ -15,14 +16,21 @@ impl Session {
         lease: bool,
     ) -> Result<Vec<Task>, Failure> {
         if let Some(prepared) = outcome.operation.take() {
-            let mut tasks = vec![
-                Task::Operation {
-                    command: None,
-                    prepared: Some(Box::new(Operated::prepared(prepared))),
-                    repairing: false,
-                },
-                Task::TakeCompleted,
-            ];
+            // what the turn already said of the window, before the wait
+            let told = outcome
+                .answer
+                .take()
+                .filter(|answer| !matches!(answer, conversation::Answer::Silent));
+            let mut tasks: Vec<Task> = told
+                .map(|answer| effect("echo", json!({"answer": answer})))
+                .into_iter()
+                .collect();
+            tasks.push(Task::Operation {
+                command: None,
+                prepared: Some(Box::new(Operated::prepared(prepared))),
+                repairing: false,
+            });
+            tasks.push(Task::TakeCompleted);
             if lease {
                 tasks.push(Task::Finally(Cleanup::Lease));
             }

@@ -8,6 +8,8 @@ it is open. What the application does with a call is the host's and is tested
 there (`clients/gui/src/host/audio_editor.rs`).
 """
 
+import time
+
 import pytest
 
 from clausters import _native
@@ -312,3 +314,39 @@ def test_the_windows_file_verbs_hand_the_session_back():
     editor.close_file()
     assert host.calls[-1][2] == {"do": {"verb": "close_file"}}
     assert editor.closed and host.held is None
+
+
+def test_a_window_a_session_left_goes_on_answering_its_own_verbs(gui_host, tmp_path):
+    """A window with no session, on a real host: it opens one from a file, Close
+    file hands that back and leaves the window empty, and its own close closes
+    it."""
+    path = str(tmp_path / "kept.json")
+    SavedSession().save(path)
+    editor = MultitrackEditor(None, title="empty")
+    editor.open(gui_host)
+    assert gui_host.call_app(editor.window, {"query": "file"})["empty"] is True
+    editor.open_file(path)
+    assert gui_host.call_app(editor.window, {"query": "file"})["path"] == path
+    window = int(editor.window)
+    editor.close_file()
+    gui_host.pump(0.2)
+    assert editor.closed, "the handler is done with the window"
+    assert gui_host.call_app(window, {"query": "file"})["empty"] is True
+    gui_host.verb(window, "close")
+    deadline = time.monotonic() + 5.0
+    while window in gui_host.windows and time.monotonic() < deadline:
+        gui_host.pump(0.05)
+    assert window not in gui_host.windows, "a window with no file still closes"
+
+
+@pytest.mark.parametrize("app", ["audio", "multitrack", "score"])
+def test_every_application_with_no_file_answers_its_window_verbs(gui_host, app):
+    """**What a window with no file answers is the same in every application**:
+    its close, whichever door it comes through, closes it."""
+    window = gui_host.open_app(app, {"title": "nothing", "empty": True})
+    assert gui_host.call_app(window, {"query": "history"})["canUndo"] is False
+    gui_host.verb(window, "close")
+    deadline = time.monotonic() + 5.0
+    while window in gui_host.windows and time.monotonic() < deadline:
+        gui_host.pump(0.05)
+    assert window not in gui_host.windows

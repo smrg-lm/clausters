@@ -2908,6 +2908,194 @@ mod tests {
         assert!(host.close_request(window), "it goes at once");
     }
 
+    /// **The audio window's close form, the whole way through this host**: its
+    /// Save renders over the opened file, and only the confirmed write lets the
+    /// window go. A write that fails leaves the window, its work and the file on
+    /// disk as they were, and Cancel leaves them too.
+    #[test]
+    fn an_audio_window_s_close_form_waits_for_the_write_in_the_host() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let folder = std::env::temp_dir().join(format!("host-audio-close-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let file = folder.join("take.wav");
+        let source = take("close-form", 24_000);
+        std::fs::copy(&source, &file).unwrap();
+        let path = file.to_string_lossy().into_owned();
+        let frames = |path: &str| clausters_core::pcm::Layout::open(path).unwrap().frames;
+
+        let mut host = host();
+        let def_id = opened(&mut host, &path);
+        let widget = widget_of(&host, def_id);
+        let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
+        let id = |host: &Host, name: &str| host.own_widget_id(structure, AUDIO, name).unwrap();
+        let stack = id(&host, "dialog:stack");
+        let page = |host: &Host| match host.window_defs[&def_id].find(stack).map(|w| &w.kind) {
+            Some(crate::host::widget::WidgetKind::Stack { index, .. }) => *index,
+            other => panic!("a stack: {other:?}"),
+        };
+        let delete = host.event_message(
+            widget,
+            1,
+            vec![
+                OscType::String("delete".into()),
+                OscType::Float(0.0),
+                OscType::Float(12_000.0),
+            ],
+        );
+        assert!(host.deliver(def_id, &delete));
+        until(&mut host, "the edit never landed", |h| {
+            ask(h, def_id, json!({"member": {"verb": "binding"}}))["dirty"] == true
+        });
+        let close = |host: &mut Host, seq: i32| {
+            let close = host.event_message(def_id, seq, vec![OscType::String("close".into())]);
+            assert!(host.deliver(def_id, &close));
+        };
+        let click = |host: &mut Host, name: &str, seq: i32| {
+            let button = id(host, name);
+            let click = host.event_message(button, seq, vec![OscType::String("click".into())]);
+            assert!(host.deliver(def_id, &click));
+        };
+        let up = 4;
+
+        // Cancel keeps it all
+        close(&mut host, 2);
+        until(&mut host, "the close form never came up", |h| page(h) == up);
+        click(&mut host, "dialog:close:cancel", 3);
+        until(&mut host, "Cancel never took the form down", |h| {
+            page(h) == 0
+        });
+        assert!(host.window_def(def_id).is_some());
+
+        // a write that fails: the form went down with the answer
+        close(&mut host, 4);
+        until(&mut host, "the close form never came up", |h| page(h) == up);
+        let read_only = std::fs::Permissions::from_mode(0o555);
+        std::fs::set_permissions(&folder, read_only).unwrap();
+        click(&mut host, "dialog:close:ok", 5);
+        until(&mut host, "the form never went down", |h| page(h) == 0);
+        settled(&mut host, def_id);
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(host.window_def(def_id).is_some(), "the window stays");
+        assert_eq!(frames(&path), 24_000, "the file is as it was");
+        assert_eq!(
+            ask(&mut host, def_id, json!({"member": {"verb": "binding"}}))["dirty"],
+            true
+        );
+
+        // a write that lands lets the window go, the work in the file
+        close(&mut host, 6);
+        until(&mut host, "the close form never came up", |h| page(h) == up);
+        click(&mut host, "dialog:close:ok", 7);
+        until(&mut host, "the window never went", |h| {
+            h.window_def(def_id).is_none()
+        });
+        assert_eq!(frames(&path), 12_000, "the work is in the file");
+        let _ = std::fs::remove_dir_all(&folder);
+        let _ = std::fs::remove_file(&source);
+    }
+
+    /// **A stopped window of any application costs nothing**: with a client's
+    /// audio, multitrack, roll and symbolic score windows open and stopped, none
+    /// asks for a tick and the application has nothing that may land unasked. A
+    /// pass asks only where it plays, a stop gives that back, and a window closed
+    /// while it plays lets its transport and its demand go.
+    #[test]
+    fn a_stopped_or_closed_window_of_any_application_asks_for_nothing() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let path = take("quiet", 24_000);
+        let (engine, mut processed) = AppEngine::detached(48_000.0, 2);
+        let engine = Arc::new(Mutex::new(engine));
+        let mut host = Host::new();
+        host.hold_audio_engine(Arc::clone(&engine));
+        // the device a detached engine has not got
+        let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let device = {
+            let running = Arc::clone(&running);
+            std::thread::spawn(move || {
+                let mut out = vec![0.0f32; clausters_app_engine::BLOCK_SIZE * 2];
+                while running.load(std::sync::atomic::Ordering::Relaxed) {
+                    processed.process_block(&mut out);
+                    std::thread::sleep(std::time::Duration::from_micros(200));
+                }
+            })
+        };
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_994)));
+        let mut windows = vec![
+            ("audio", opened(&mut host, &path)),
+            (
+                "multitrack",
+                opened_app(
+                    &mut host,
+                    client,
+                    1,
+                    "multitrack",
+                    json!({"multitrack": {}, "title": "session"}),
+                ),
+            ),
+            (
+                "roll",
+                opened_app(
+                    &mut host,
+                    client,
+                    2,
+                    "notes",
+                    json!({"sequence": two_notes(), "title": "keys"}),
+                ),
+            ),
+        ];
+        #[cfg(feature = "score")]
+        windows.push((
+            "score",
+            opened_app(&mut host, client, 3, "score", json!({"title": "page"})),
+        ));
+        #[cfg(feature = "score")]
+        {
+            let score = windows[3].1;
+            ask(&mut host, score, json!({"do": {"verb": "new_file"}}));
+        }
+        let quiet = |host: &Host, window: i32| host.tree_demand(window, true).is_empty();
+        let busy = |_: &Host| {
+            let mut engine = engine.lock().unwrap();
+            engine.pump();
+            engine.busy()
+        };
+        for &(kind, window) in &windows {
+            until(&mut host, kind, |h| quiet(h, window) && !busy(h));
+        }
+        // one plays: only it asks
+        let &(_, roll) = windows.iter().find(|(kind, _)| *kind == "roll").unwrap();
+        ask(&mut host, roll, json!({"do": {"verb": "play"}}));
+        assert!(busy(&host), "the pass may land unasked");
+        for &(kind, window) in &windows {
+            if window != roll {
+                assert!(quiet(&host, window), "{kind} stands");
+            }
+        }
+        ask(&mut host, roll, json!({"do": {"verb": "stop"}}));
+        until(&mut host, "the stop never settled", |h| {
+            quiet(h, roll) && !busy(h)
+        });
+        // and closed while it plays, nothing of it is left
+        ask(&mut host, roll, json!({"do": {"verb": "play"}}));
+        host.close_audio(roll);
+        until(&mut host, "the closed window's transport never went", |h| {
+            !busy(h)
+        });
+        assert!(host.tree_demand(roll, true).is_empty());
+        windows.retain(|&(_, window)| window != roll);
+        for &(kind, window) in &windows {
+            host.close_audio(window);
+            until(&mut host, kind, |h| !busy(h));
+            assert!(host.tree_demand(window, true).is_empty(), "{kind}");
+        }
+        running.store(false, std::sync::atomic::Ordering::Relaxed);
+        device.join().unwrap();
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// **A score is an application of this host's**: a client opens it over
     /// a document through the door, the engraver here draws its window, a
     /// verb is its turn, its file is read and written here, a file a window

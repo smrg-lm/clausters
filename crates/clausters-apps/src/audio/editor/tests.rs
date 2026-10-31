@@ -1602,8 +1602,8 @@ fn the_spectrogram_settings_panel_sets_the_pictures_props() {
 }
 
 /// **What waits for a save goes only over what it wrote**: work newer than the
-/// write keeps the window, and a save refused lets nothing go and takes the
-/// form down.
+/// write keeps the window, and a save refused lets nothing go. The form goes
+/// down when it is answered.
 #[test]
 fn what_waits_for_a_save_stays_over_work_it_does_not_hold() {
     use crate::closing::Leaving;
@@ -1619,10 +1619,16 @@ fn what_waits_for_a_save_stays_over_work_it_does_not_hold() {
     assert!(editor.window_state.leaving.is_none());
 
     crate::turn::Converse::ask_before(&mut editor, Leaving::Window, &mut out);
-    let down = editor.save_refused();
+    let down = editor.close_form_answered();
     assert_eq!(down.len(), 1, "the form goes down");
-    assert!(editor.window_state.leaving.is_none());
     assert!(editor.window_state.dialogs.up().is_none());
+    assert!(editor.close_form_answered().is_empty());
+    assert!(
+        editor.window_state.leaving.is_some(),
+        "what it was up for waits for the write"
+    );
+    editor.save_refused();
+    assert!(editor.window_state.leaving.is_none());
 }
 
 /// **The window carries `ask_close` only where it asks**, and has a form to

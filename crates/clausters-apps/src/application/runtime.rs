@@ -140,11 +140,14 @@ pub struct Repair<O> {
     pub outcome: O,
     /// Original gesture answered after recovery, or on a repair failure.
     pub receipt: Option<(u32, i64)>,
+    /// What the refused operation corrected of its window, in that answer.
+    pub corrections: Vec<clausters_editing::conversation::Correction>,
     /// Unused ids returned only after the recovery effects settle.
     pub returned: Vec<i64>,
 }
 impl<O> Repair<O> {
-    /// The original gesture's answer, carrying the repair's reason.
+    /// The original gesture's answer, carrying the repair's reason and what
+    /// the refused operation corrected of its window.
     pub fn echo(&self, version: i64) -> Option<Echo> {
         self.receipt.map(|(member, seq)| Echo {
             member,
@@ -152,7 +155,7 @@ impl<O> Repair<O> {
                 seq,
                 version,
                 Some(self.reason.clone()),
-                Vec::new(),
+                self.corrections.clone(),
             ),
         })
     }
@@ -410,6 +413,7 @@ impl<C, O> Runtime<C, O> {
             }],
             reason,
             receipt: completion.outcome.receipt().map(|seq| (target.member, seq)),
+            corrections: completion.outcome.corrections(),
             outcome: completion.outcome,
             returned: completion.returned,
         };
@@ -441,6 +445,7 @@ impl<C, O> Runtime<C, O> {
         }
         self.operations.begin_abort(ticket, locked);
         let repair = Repair {
+            corrections: outcome.corrections(),
             ticket,
             batches: refused.recoveries,
             reason: refused.reason,
@@ -781,6 +786,7 @@ mod tests {
         );
         first_runtime.repair(
             Repair {
+                corrections: Vec::new(),
                 ticket,
                 batches: Vec::new(),
                 reason: "revision changed".into(),
@@ -857,6 +863,7 @@ mod tests {
         let completion = runtime.finish(&mut app, &mut services, finished);
         runtime.repair(
             Repair {
+                corrections: Vec::new(),
                 ticket,
                 batches: Vec::new(),
                 reason: "refused".into(),

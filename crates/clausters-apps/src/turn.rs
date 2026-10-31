@@ -115,6 +115,8 @@ pub trait Turned: Default {
     fn take_answer(&mut self) -> Option<Answer>;
     /// The stamp of the gesture the answer acknowledges, when it has one.
     fn receipt(&self) -> Option<i64>;
+    /// What the answer corrects of the window.
+    fn corrections(&self) -> Vec<Correction>;
     /// Whether its holder closes the window ([`crate::closing`]).
     fn set_close(&mut self, close: bool);
 }
@@ -155,6 +157,14 @@ macro_rules! turned {
                         | clausters_editing::conversation::Answer::Push { seq, .. },
                     ) => Some(seq),
                     _ => None,
+                }
+            }
+            fn corrections(&self) -> Vec<clausters_editing::conversation::Correction> {
+                match &self.answer {
+                    Some(clausters_editing::conversation::Answer::Push { corrections, .. }) => {
+                        corrections.clone()
+                    }
+                    _ => Vec::new(),
                 }
             }
             fn confirm(&mut self, version: i64) {

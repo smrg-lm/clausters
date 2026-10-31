@@ -189,7 +189,14 @@
           throw new Error(`a session open in a window was opened twice: ${refused}`);
         }
         await rival.close();
-        await empty.close();
+        // Close file hands the handler what it held, and the window stays empty
+        const stayed = empty.window;
+        await empty.closeFile();
+        await until(() => empty.closed, "the window handing its session back");
+        const none = await empty.host.callApp(stayed.id, { query: "file" });
+        if (none.empty !== true) throw new Error(`Close file left the window with ${JSON.stringify(none)}`);
+        empty.host.verb(stayed, "close");
+        await until(() => !empty.host.isOpen(stayed.id), "the emptied window closing");
         log("stored: the multitrack and its relative sources read back from OPFS, handed back when another session took the window, and opened from OPFS in an empty one");
 
         // **a roll is an application too**: the page's sequence is the window's,
@@ -253,6 +260,22 @@
         const after = await handed.host.callApp(stays, { query: "history" });
         if (after.canUndo !== false) throw new Error("a new document has something to walk back");
         await handed.host.callApp(stays, { do: { verb: "close" } });
+        // **a window over no document opens one from OPFS**, and Close file
+        // leaves it with none again
+        const bare = new gui.editing.ScoreEditor(null, { title: "no score" });
+        await bare.open();
+        if (await bare.hasDocument()) throw new Error("the window opened with a document");
+        await bare.openFile("out/app_window.mei");
+        const opening = await bare.host.callApp(bare.id, { query: "file" });
+        if (opening.path !== "out/app_window.mei" || opening.dirty !== false) {
+          throw new Error(`the window did not open the stored score: ${JSON.stringify(opening)}`);
+        }
+        const bareWindow = bare.id;
+        await bare.closeFile();
+        await until(() => bare.closed, "the window handing its score back");
+        const noScore = await bare.host.callApp(bareWindow, { query: "file" });
+        if (noScore.empty !== true) throw new Error(`Close file left the window with ${JSON.stringify(noScore)}`);
+        await bare.host.callApp(bareWindow, { do: { verb: "close" } });
         // **a page over the sequence a roll shows** is one history with it
         const shown = new EventSequence([[0, new Event({ midinote: 60, dur: 1 })], [1, new Event({ midinote: 62, dur: 1 })]]);
         const reel = await gui.edit(shown, { title: "roll" });
@@ -265,6 +288,19 @@
         await reading.close();
         await reel.close();
         log("score: read and engraved by the worker, edited, saved to OPFS, and one history with a roll");
+
+        // **the audio window's file verbs**: a file opened beside another and
+        // closed again, one written and read back from OPFS
+        const sound = await gui.edit(await write("app_window_sound.wav"), { title: "sound" });
+        await sound.openFile("out/app_window_staged.wav");
+        if ((await sound.files()).length !== 2) throw new Error("the window did not open a second file");
+        await sound.closeFile();
+        if ((await sound.files()).length !== 1) throw new Error("Close file did not close the file in view");
+        await sound.save({ path: "out/app_window_sound_saved.wav" });
+        const soundBack = await SoundFile.open("out/app_window_sound_saved.wav");
+        if (soundBack.frames !== frames) throw new Error(`the save holds ${soundBack.frames} frames, not ${frames}`);
+        await sound.close();
+        log("files: every application's New, Open and Close file against this host, on OPFS");
 
         verdict("PASS: an application's window opened at its declared size and a press on " +
           "it landed where it is drawn; one opened into an element drew there");

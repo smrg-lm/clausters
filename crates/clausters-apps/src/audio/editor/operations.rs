@@ -674,6 +674,7 @@ impl Application for AudioEditor {
             OperationResult::Success => unreachable!(),
         };
         let mut outcome = Outcome::default();
+        self.save_refused();
         if self.focused_file() == delta.target.object
             && self.window_state.binding_generation == delta.binding
         {
@@ -681,8 +682,7 @@ impl Application for AudioEditor {
                 Some(Answer::Ack { seq, .. } | Answer::Push { seq, .. }) => seq,
                 _ => 0,
             };
-            let mut corrections = self.reread();
-            corrections.extend(self.save_refused());
+            let corrections = self.reread();
             outcome.answer = Some(conversation::answer(seq, 0, Some(reason), corrections));
         }
         // nothing was published: the list is what it was, and the files a
