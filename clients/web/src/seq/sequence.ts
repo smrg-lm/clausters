@@ -53,6 +53,24 @@ interface Written {
  * changes (`event.at = 2.0`, `event.set("midinote", 62)`, `event.remove()`),
  * and no call takes or answers an id.
  */
+/** **The window a sequence is open in**, as the sequence sees it. @internal */
+export interface SequenceWindow {
+    /** Whether the window is gone. */
+    readonly closed: boolean;
+    /** The window's history. */
+    readonly history: {
+        entry<T>(label: string, run: () => T): T;
+        undo(): Promise<boolean>;
+        redo(): Promise<boolean>;
+        canUndo(): Promise<boolean>;
+        canRedo(): Promise<boolean>;
+        undoLabel(): Promise<string | null>;
+        redoLabel(): Promise<string | null>;
+    };
+    /** A change made here, `current` the edit that puts it back, as an edit of the window's. */
+    forward(intent: Record<string, unknown>, label: string, current: unknown, applied?: Record<string, unknown>): void;
+}
+
 export class EventSequence {
     /**
      * The sequence itself, in the shared crate -- what a notes editor opened
@@ -60,7 +78,14 @@ export class EventSequence {
      *
      * @internal
      */
-    readonly seq: JsEventSequence;
+    seq: JsEventSequence;
+
+    /**
+     * The editor whose window of the GUI host's has this sequence open, which a
+     * change made through its objects is forwarded to, and whose copy this
+     * is. @internal
+     */
+    window: SequenceWindow | null = null;
 
     /**
      * @param events `[beat, event]` pairs.
@@ -266,6 +291,11 @@ export class EventSequence {
      * @internal
      */
     edit(intent: Record<string, unknown>, label: string): { applied: boolean; id?: number } {
+        if (this.window !== null && !this.window.closed) {
+            const answer = this.applyIntent(intent, true);
+            if (answer.applied) this.window.forward(this.forwardOf(intent, answer.id), label, answer.current, intent);
+            return answer;
+        }
         const context = contexts.get(this);
         const answer = context === undefined
             ? this.applyIntent(intent, false)
@@ -281,10 +311,21 @@ export class EventSequence {
      * first ask. From then on every change made through the sequence's objects
      * is an entry of it, and a turn the windows over the sequence see;
      * `seq.history.entry("humanize", () => ...)` makes everything inside it one
-     * entry.
+     * entry. While a window of the GUI host's has the sequence it is that
+     * window's history, which its Ctrl+Z walks.
      */
-    get history(): UndoHistory {
+    get history(): UndoHistory | SequenceWindow["history"] {
+        if (this.window !== null && !this.window.closed) return this.window.history;
         return new UndoHistory(this);
+    }
+
+    /**
+     * **Holds `written` from now on**, the document's JSON: what the window it
+     * was open in holds, or left. Its events and curves keep their objects, by
+     * their ids. @internal
+     */
+    holdWritten(written: Record<string, unknown>): void {
+        this.seq = new JsEventSequence(JSON.stringify(written));
     }
 
     /**

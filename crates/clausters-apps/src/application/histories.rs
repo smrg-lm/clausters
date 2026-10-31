@@ -213,6 +213,20 @@ impl Histories {
         binding.structure
     }
 
+    /// An order of the object's own, as `focus` makes, with its structure under
+    /// `key`, so a view opened beside it (`join_with`) is the same structure.
+    pub fn own(&mut self, object: Object, key: &str, domain: &str) -> StructureId {
+        let structure = self.focus(object, domain);
+        if let Some(order) = self
+            .objects
+            .get(&object)
+            .and_then(|binding| self.orders.get_mut(&binding.scope))
+        {
+            order.keys.insert(key.into(), structure);
+        }
+        structure
+    }
+
     /// Forget an observer; the last observer removes its structure and order.
     pub fn close(&mut self, object: Object) {
         let Some(binding) = self.objects.remove(&object) else {

@@ -1,69 +1,27 @@
 """Editing a symbolic score on its engraved page: the score editor.
 
 What it opens is a `clausters.gui.notation.Score` -- notation held as MEI, its
-model a sheet -- and it edits that score **in place**: the editor in the shared
-crate (the ``openScore`` member of `clausters._native.EditingCore`) holds the
-very score the script's handle names, so every edit is read back through the
-handle (`Score.sheet`, `Score.mei`) and there is nothing to write back.
+model a sheet. **The score editor is an application of the GUI host's**, as the
+audio editor and the multitrack are: the window, what each gesture does to the
+score, the verbs over what is selected, the entry each one leaves, the engraver
+and the playback all run in the host's process, and this is its handler
+(`clausters.gui.editing.HostedEditor`). Each verb below is one call to the
+application, named as it names it.
 
-**The editor is the crate's**: the window, what each gesture on the page does
-to the score, the verbs over what is selected, the entry each one leaves and
-the corrections it answers with. What is here is what a language owns -- the
-socket, and handing the crate the window it is open in. Each verb below is one
-call into the crate, named as it names it.
+**The script's score is the window's while one is open**: `Score.mei` and
+`Score.sheet` read what the window holds, and a change through it is an edit of
+the window's. When the window goes, the score holds what it left it as.
 """
 
 from __future__ import annotations
 
-from ... import _native
-from ...seq.playback import NotesPlayback
 from ...seq.sequence import EventSequence
-from .domain import Domain
-from .editor import Editor
+from .events import SequenceHandler, _held_of
+from .hosted import HostedTransport, _Held
 from .samples import _plain
-from .view import View
 
 
-class ScoreDomain(Domain):
-    """A score's vocabulary, the crate's ``score``: a step is the page it
-    names, which the crate puts back on the score it shares, so there is
-    nothing here to carry out."""
-
-    name = "score"
-    ingested = True
-
-
-class ScoreView(View):
-    """The toolbar, the palettes beside the page in the scroll it sits in,
-    the status line under them and the dialogs a menu entry opens, composed
-    by the crate."""
-
-    def build(self, editor) -> dict:
-        page = self.widget(editor, "page", editor.structure)
-        scroll = self.widget(editor, "scroll", editor.structure)
-        status = self.widget(editor, "status", editor.structure)
-        # the crate names the toolbar's tools and this numbers them
-        tools = {str(name): self.widget(editor, "tool", editor.structure, str(name))
-                 for name in editor._call("tools").get("tools") or ()}
-        # and the widgets of its dialogs, the same way
-        dialogs = {str(name): self.widget(editor, "dialog", editor.structure, str(name))
-                   for name in editor._call("dialogs").get("dialogs") or ()}
-        # and the entries of its palettes
-        palettes = {str(name): self.widget(editor, "palette", editor.structure, str(name))
-                    for name in editor._call("palettes").get("palettes") or ()}
-        editor._sync_core()
-        tree = editor._call("window", widget=page, scroll=scroll, status=status,
-                            tools=tools, dialogs=dialogs, palettes=palettes)
-        # **A script's own widgets are its objects**, so they are appended here
-        # rather than composed in the crate.
-        tree["children"] = [*tree.get("children", ()), *editor.extra]
-        return tree
-
-    def props(self, editor, widget_id: int) -> dict:
-        return editor._call("props", widget=int(widget_id))
-
-
-class ScoreEditor(Editor):
+class ScoreEditor(SequenceHandler):
     """A symbolic score on its page, edited by hand, in place.
 
     A press on a note selects it, a drag moves it along its staff, and a press
@@ -79,16 +37,15 @@ class ScoreEditor(Editor):
     the articulations, a tie, a triplet, the voice and the layout. Beside the
     page stand the palettes: what can be written, a kind of element to a
     folding group, each entry a verb over what is selected. The space bar,
-    the toolbar's transport and the Play menu play the score on the server,
-    from where the selection starts, with the page's cursor following
+    the toolbar's transport and the Play menu play the score in the
+    application, from where the selection starts, with the page's cursor following
     (`play`, `stop`, `transport`). An entry
     that needs more than a pick -- the page's text, its margins, a
     transformation's parameter -- opens a dialog over the window. Ctrl+click
     adds a note to the selection or takes it out, and
     Shift+click extends the selection to it, in time and across the staves
     between. The verbs act on what is selected (`selected`, `select`); each is
-    one entry of the editing context's history, so Ctrl+Z over the window walks
-    them back.
+    one entry of the history, so Ctrl+Z over the window walks them back.
 
     Args:
         score: the `clausters.gui.notation.Score` to edit. It is the edited
@@ -96,8 +53,6 @@ class ScoreEditor(Editor):
         title: the window's title.
         value: the written value a note entered on the page takes, as
             ``(numerator, denominator)`` of a whole note; a quarter by default.
-        server: the `clausters.defs.Server` it plays on; ``None`` resolves the
-            ambient one when it first plays.
         chrome: ``False`` opens the page alone, in its scroll, over the
             status line: no menu bar, no toolbar, no palettes and no dialogs,
             none of them composed -- the window a script wants when it edits
@@ -111,44 +66,70 @@ class ScoreEditor(Editor):
             since the score it edits is the one this handle holds.
     """
 
+    _app = "score"
+
     def __init__(self, score, *, title: str = "Score", value=None,
-                 width: int = 960, height: int = 640, server=None,
-                 over: "EventSequence | None" = None, how: "dict | None" = None,
-                 interp: "dict | None" = None, **options):
-        options.pop("sample_rate", None)
-        self._server = server
+                 width: "int | None" = None, height: "int | None" = None,
+                 chrome: bool = True, over: "EventSequence | None" = None,
+                 how: "dict | None" = None, interp: "dict | None" = None):
+        super().__init__(title=title, width=width, height=height, chrome=chrome)
         self._score = score
         self._refused: "str | None" = None
+        self._value = value
+        self._how = how
+        self._interp = interp
         #: The sequence this page is the reading of, in an editor opened over
         #: one (`over`); ``None`` for an editor over a score of its own.
         self.sequence: "EventSequence | None" = over
-        #: The score as the sequence it plays as, rendered when it first plays
-        #: and again after every edit. Over a sequence, that sequence.
-        self._rendered: "EventSequence | None" = over
-        if over is None:
-            domain, structure = ScoreDomain(), score
-        else:
-            from .events import NotesDomain
+        self._shown = over
+        #: What the editor edits: the sequence it is over, or the score.
+        self.structure = score if over is None else over
 
-            domain, structure = NotesDomain(), over
-        super().__init__(structure, sample_rate=48_000.0, domain=domain,
-                         view=ScoreView(), title=title, width=width,
-                         height=height, **options)
-        request = {"title": self.title, "w": int(self.size[0]), "h": int(self.size[1])}
-        if value is not None:
-            request["value"] = [int(value[0]), int(value[1])]
-        if not self.chrome:
-            request["chrome"] = False
-        if over is None:
-            self._member, self._structure_id = self._editing.open_score(
-                f"score:{id(score)}", score, request, self.domain)
-        else:
-            if how:
-                request["how"] = dict(how)
-            if interp is not None:
-                request["interp"] = interp
-            self._member, self._structure_id = self._editing.open_score_over(
-                f"sequence:{id(over)}", score, over, request, self.domain)
+    def _held(self) -> _Held:
+        if self.sequence is not None:
+            return _held_of(self.sequence)
+        held = self._score.__dict__.get("_windows")
+        if held is None:
+            held = self._score.__dict__["_windows"] = _Held()
+        return held
+
+    def _options(self, beside) -> dict:
+        options: dict = {"mei": self._score.mei()}
+        path = getattr(self._score, "path", None)
+        if path is not None and self.sequence is None:
+            options["path"] = str(path)
+        if self._value is not None:
+            options["value"] = [int(self._value[0]), int(self._value[1])]
+        if self.sequence is not None:
+            if self._how:
+                options["how"] = dict(self._how)
+            if self._interp is not None:
+                options["interp"] = self._interp
+            if beside is None:
+                options["sequence"] = self.sequence.data()
+        return options
+
+    def open(self, host=None):
+        """Open the window, its play cursor drawn from the transport of its
+        own the application gives it. A pass ends where the music does."""
+        opened = self.closed
+        window = super().open(host)
+        # the page reads and writes the window's from now on
+        if opened:
+            self._score.__dict__["_page"] = self
+            self._do("end", end="contents")
+        return window
+
+    def _take(self) -> None:
+        if self.sequence is not None:
+            super()._take()
+
+    def _settle(self, left: "dict | None", last: bool) -> None:
+        if self._score.__dict__.get("_page") is self:
+            self._score.__dict__.pop("_page", None)
+            self._score._settle(left)
+        if last and self.sequence is not None:
+            self._let_go(left)
 
     @classmethod
     def over(cls, sequence, *, interp: "dict | None" = None, **options) -> "ScoreEditor":
@@ -183,16 +164,6 @@ class ScoreEditor(Editor):
         over a sequence -- the reading of it, which follows the sequence."""
         return self._score
 
-    def _call(self, verb: str, **args) -> dict:
-        """One verb of this editor's member, through the context."""
-        return self._editing.member(self._member, verb, **args)
-
-    def _sync_core(self) -> None:
-        """Hand the crate the window it is open in and the chrome."""
-        self._call("sync", window=self._window, title=self.title,
-                   w=int(self.size[0]), h=int(self.size[1]),
-                   path=getattr(self._score, "path", None))
-
     @property
     def refused(self) -> "str | None":
         """**Why the last verb was refused**, or ``None`` when it was not: the
@@ -213,8 +184,7 @@ class ScoreEditor(Editor):
     def select(self, elements) -> None:
         """Select the page's elements ``elements`` (their ``xml:id``\\s, as the
         page reports them), or nothing with an empty list."""
-        self._call("select", elements=[str(e) for e in elements or ()])
-        self.adopt()
+        self._do("set", call={"verb": "select", "elements": [str(e) for e in elements or ()]})
 
     @property
     def value(self) -> tuple:
@@ -226,7 +196,7 @@ class ScoreEditor(Editor):
 
     @value.setter
     def value(self, value) -> None:
-        self._call("sync", value=[int(value[0]), int(value[1])])
+        self._set(value=[int(value[0]), int(value[1])])
 
     @property
     def entry(self) -> bool:
@@ -238,8 +208,7 @@ class ScoreEditor(Editor):
 
     @entry.setter
     def entry(self, on: bool) -> None:
-        self._call("sync", entry=bool(on))
-        self.adopt()
+        self._set(entry=bool(on))
 
     @property
     def dotted(self) -> bool:
@@ -249,8 +218,7 @@ class ScoreEditor(Editor):
 
     @dotted.setter
     def dotted(self, on: bool) -> None:
-        self._call("sync", dotted=bool(on))
-        self.adopt()
+        self._set(dotted=bool(on))
 
     @property
     def rest(self) -> bool:
@@ -260,8 +228,7 @@ class ScoreEditor(Editor):
 
     @rest.setter
     def rest(self, on: bool) -> None:
-        self._call("sync", rest=bool(on))
-        self.adopt()
+        self._set(rest=bool(on))
 
     @property
     def next_accidental(self) -> "int | None":
@@ -275,8 +242,7 @@ class ScoreEditor(Editor):
 
     @next_accidental.setter
     def next_accidental(self, alter: "int | None") -> None:
-        self._call("sync", accidental=None if alter is None else int(alter))
-        self.adopt()
+        self._set(accidental=None if alter is None else int(alter))
 
     # ---- the layout, which is the window's, and the page, the document's ----
 
@@ -291,8 +257,7 @@ class ScoreEditor(Editor):
 
     @layout.setter
     def layout(self, layout: str) -> None:
-        self._call("sync", layout=str(layout))
-        self.adopt()
+        self._set(layout=str(layout))
 
     @property
     def page(self) -> dict:
@@ -585,115 +550,17 @@ class ScoreEditor(Editor):
 
     # ---- playing it ----
 
-    def open(self, host=None, id: "int | None" = None):
-        """Open the window, with its play cursor drawn from the transport.
-
-        The page draws its cursor over the engraver's timemap, anchored at 0,
-        and the counter that makes that the score's own time is the position
-        of the transport the score plays on -- stopped or rolling, the line is
-        where the sound is. With no server to play on there is no position,
-        and the page opens to be edited; nor with a server that has no
-        transport left, which is logged."""
-        window = super().open(host, id)
-        if self._host is not None and window is not None:
-            try:
-                server = self._resolve_server()
-            except RuntimeError:
-                return window
-            try:
-                transport = NotesPlayback.of(server, self._sequence()).transport_id
-            except (RuntimeError, ValueError) as refused:
-                from ...log import log
-
-                log.warning("the score has no play cursor and cannot be played: %s", refused)
-                return window
-            self._host.head_clock(window, "transport", transport)
-        return window
-
-    def _plays_on(self):
-        try:
-            return self._resolve_server()
-        except RuntimeError:
-            return None
-
-    def _resolve_server(self):
-        if self._server is None:
-            from ...base.main import main
-
-            self._server = main.resolve_server()
-        return self._server
-
-    def _sequence(self) -> EventSequence:
-        """The score as the sequence it plays as: the crate's render, on the
-        engraver's time, made on first ask and kept -- so its playback is one,
-        and an edit is the same sequence holding the next render."""
-        if self._rendered is None:
-            self._rendered = EventSequence.from_data(self._render())
-        return self._rendered
-
-    def _render(self) -> dict:
-        answer = self._call("render")
-        if "sequence" not in answer:
-            raise ValueError(answer.get("error", "the score could not be rendered"))
-        return answer["sequence"]
-
-    def adopt(self) -> None:
-        """Another view of this structure edited it: over a sequence, the page
-        is read again from it -- window or none -- and then every widget is
-        corrected."""
-        if self.sequence is not None:
-            self._call("follow")
-        super().adopt()
-        if self.sequence is not None:
-            # and what plays is the sequence, so the change is heard
-            self._update()
-
-    def _update(self) -> None:
-        """The score changed: the sequence it plays as holds the next render,
-        and the lane takes it, so the server plays the edit on from where the
-        position is."""
-        if self._rendered is None:
-            return
-        # over a sequence, what plays is the sequence, which the edit is
-        # already in
-        if self.sequence is None:
-            try:
-                self._rendered._seq = _native.SequenceHandle(self._render())
-            except ValueError:
-                return
-        playback = self._held
-        if playback is not None:
-            playback.update()
-
     @property
-    def _playback(self) -> NotesPlayback:
-        """The score's playback on the server, made when it has none -- which
-        raises when the server has no transport left."""
-        return NotesPlayback.of(self._resolve_server(), self._sequence())
-
-    @property
-    def _held(self) -> "NotesPlayback | None":
-        """The score's playback when it has one."""
-        if self._rendered is None:
-            return None
-        return NotesPlayback.held(self._server, self._rendered)
-
-    @property
-    def transport(self):
-        """**The transport the score plays on**, as the object a script plays:
-        a `clausters.defs.Transport` whose verbs (``play``, ``pause``,
-        ``stop``, ``locate``, ``loop``, ``wait``) are about this score, in its
-        beats -- a quarter to the beat. Once a script has asked for it, it is
-        the script's to free (``free()``); otherwise it goes back to the
-        server when the editor closes."""
-        playback = self._playback
-        playback.kept = True
-        return playback.transport
+    def transport(self) -> HostedTransport:
+        """**The transport the page plays on** (`HostedTransport`), as the
+        object a script plays, its verbs about this score and in its beats -- a
+        quarter to the beat. It is the window's, and goes with it."""
+        return HostedTransport(self)
 
     def play(self, beat: "float | None" = None, *, range=None,
              looping: bool = False) -> "ScoreEditor":
         """**Play the score** from ``beat`` -- a quarter to the beat; from the
-        start when left out -- on a transport of its own, with the page's
+        start when left out -- on the window's transport, with the page's
         cursor following. Returns ``self``.
 
         ``range`` -- ``(start, end)`` in beats -- plays that stretch, going
@@ -701,91 +568,51 @@ class ScoreEditor(Editor):
         The space bar, the toolbar and the Play menu ask the same, from where
         the selection starts. An edit made while it plays is heard on from
         where the position is."""
-        self._playback.load(float(beat if beat is not None else 0.0),
-                            range=range, looping=looping, end="contents")
+        args = {"beat": float(beat if beat is not None else 0.0), "looping": bool(looping)}
+        if range is not None:
+            args["range"] = [float(range[0]), float(range[1])]
+        self._do("play", **args)
         return self
 
     def pause(self) -> "ScoreEditor":
         """Pause where it stands: a `resume` carries the notes on."""
-        self._playback.call("pause")
+        self._do("pause")
         return self
 
     def resume(self) -> "ScoreEditor":
         """Roll again from where it paused."""
-        self._playback.call("resume")
+        self._do("resume")
         return self
 
     def stop(self) -> "ScoreEditor":
         """Stop, free what sounds, and go back to where the pass started."""
-        playback = self._held
-        if playback is not None:
-            playback.call("stop", back=float(playback.cursor))
+        self._do("stop")
         return self
 
     @property
     def playing(self) -> bool:
         """Whether the score is sounding, as the engine answers -- a pass that
         reached its end stopped without anybody here saying so."""
-        playback = self._held
-        return playback is not None and playback.playing()
+        if self.closed:
+            return False
+        return bool(self._do("playing"))
 
-    def reflect_step(self) -> None:
-        """A history step landed: the window is corrected, and the lane takes
-        the score again, so the undo is heard."""
-        super().reflect_step()
-        self._update()
-
-    def _closed(self) -> bool:
-        closed = super()._closed()
-        self._release()
-        return closed
-
-    def close(self):
-        """Close this editor's window. **The score's transport goes back to
-        the server with it**, and what was sounding is released -- unless a
-        script holds the transport (`transport`), whose it then is to free."""
-        closed = super().close()
-        self._release()
-        return closed
-
-    def _release(self) -> None:
-        playback = self._held
-        if playback is not None and not playback.kept:
-            playback.free()
-
-    def _transport_turn(self, outcome: dict) -> None:
-        """What a turn asked of the playback: a play or a stop, the loop
-        switch, the cursor placed."""
-        if outcome.get("locate") is not None:
-            playback = self._held
-            if playback is not None:
-                playback.cue(float(outcome["locate"]))
-        if outcome.get("play") is not None:
-            # A play is play or stop: a stop goes back to where the pass began.
-            if self.playing:
-                self.stop()
-            else:
-                pass_ = outcome["play"]
-                self._playback.cursor = float(pass_.get("from") or 0.0)
-                self.play(self._playback.cursor, range=pass_.get("range"),
-                          looping=bool(pass_.get("looping")))
-        if outcome.get("loop") is not None:
-            playback = self._held
-            if playback is not None:
-                # the loop switch: followed at once by a pass in progress
-                pass_ = outcome["loop"]
-                playback.set_span(pass_.get("range"), show=False)
-                playback.set_looping(bool(pass_.get("looping")))
+    def show_span(self, span) -> None:
+        """A page has no time range of its own: what plays is a `play`'s
+        ``range``."""
+        raise ValueError("a page has no time range: play(range=...) plays a stretch")
 
     # ---- the score's file ----
 
     def save(self, path=None) -> str:
         """Write the score to its file -- ``path``, which is then the score's,
         or the one it was read from or last saved to -- and answer the path.
-        The File menu's Save, as a method (`clausters.gui.notation.Score.write`).
-        What is written is then not a change the File menu's Close asks about."""
-        written = self.score.write(path)
-        self._call("saved")
+        The File menu's Save, as a method. The application writes it, and what
+        is written is then not a change the File menu's Close asks about."""
+        args = {} if path is None else {"path": str(path)}
+        written = (self._do("save", **args) or {}).get("destination")
+        if written is not None:
+            self.score.path = str(written)
         return written
 
     @property
@@ -799,9 +626,7 @@ class ScoreEditor(Editor):
         of the score, as one entry of the history: the score that was there is
         a step back. The File menu's Open, as a method; the file is then the
         score's."""
-        with open(path, encoding="utf-8") as file:
-            data = file.read()
-        loaded = self._act({"action": "open", "data": data})
+        loaded = bool(self._do("load", path=str(path)))
         if loaded:
             self.score.path = str(path)
         return loaded
@@ -837,73 +662,22 @@ class ScoreEditor(Editor):
         return self._act({"action": "op", "op": op})
 
     def _act(self, call: dict) -> bool:
-        """One verb, through the context: recorded by the crate, and the window
+        """One verb, in the application: recorded there, and the window
         corrected with what it answers. Whether the score changed; why it did
         not is on the window's status bar and in `refused`."""
-        with self._editing.turn(self):
-            turned = self._editing.act(self._member, _plain(call))
-            outcome = turned.get("outcome") or {}
-            changed = bool(outcome.get("changed"))
-            self._refused = outcome.get("refused")
-            if changed:
-                self.dirty = True
-                self._editing.changed()
-                self._update()
-            if self._host is not None and self._window is not None:
-                self.echo.send(outcome.get("answer"))
-            return changed
+        answer = self._do("act", call=_plain(call)) or {}
+        self._refused = answer.get("refused") if isinstance(answer, dict) else None
+        return bool(answer.get("changed")) if isinstance(answer, dict) else False
 
-    # ---- the crate's turns ----
+    def _render(self) -> dict:
+        answer = self._call("render")
+        if "sequence" not in answer:
+            raise ValueError(answer.get("error", "the score could not be rendered"))
+        return answer["sequence"]
 
-    def _deliver(self, addr: str, args) -> bool:
-        self._sync_core()
-        turned = self._editing.event(self._member, str(addr), _plain(list(args)))
-        outcome = turned.get("outcome") or {}
-        if outcome.get("turn") == "closed":
-            return self._closed()
-        if outcome.get("turn") == "step":
-            stepped = self.app.stepped(turned.get("stepped") or {}, self)
-            self.echo.send(outcome.get("answer"))
-            return stepped
-        return self._take(outcome)
-
-    def _route(self, args) -> bool:
-        """One ``/gui_event`` payload, with the stamp already taken off."""
-        self._sync_core()
-        wid, tag, values = args[0], args[1], list(args[2:])
-        turned = self._editing.event(self._member, "/gui_event",
-                                     _plain([wid, 0, 0, tag, *values]))
-        return self._take(turned.get("outcome") or {})
-
-    def _take(self, outcome: dict) -> bool:
-        """Answer the host with what a turn came to; whether the score
-        changed."""
-        if outcome.get("turn") in (None, "nothing"):
-            return False
-        changed = bool(outcome.get("changed"))
-        if changed:
-            self.dirty = True
-            self._editing.changed()
-            self._update()
-        self._transport_turn(outcome)
-        self.echo.send(outcome.get("answer"))
-        # A file is this client's to write and to read: the turn said which.
-        # (the File menu's Close waits for the file it saves to: a write that
-        # fails raises, and the window stays)
-        if outcome.get("save"):
-            self.save(outcome["save"])
-        if self._closing(outcome):
-            return changed
-        if outcome.get("export"):
-            self.export(outcome["export"]["path"], outcome["export"]["format"])
-        if outcome.get("open"):
-            with open(outcome["open"], encoding="utf-8") as file:
-                opened = self._editing.act(
-                    self._member, {"action": "open", "data": file.read()})
-            if self._take(opened.get("outcome") or {}):
-                self.score.path = str(outcome["open"])
-                changed = True
-        return changed
+    def _page(self, call: dict):
+        """A script's call on the document the window has."""
+        return self._do("page", call=call)
 
 
 def is_score(structure) -> bool:
@@ -913,7 +687,7 @@ def is_score(structure) -> bool:
     return isinstance(structure, Score)
 
 
-__all__ = ["ScoreDomain", "ScoreEditor", "ScoreView", "is_score"]
+__all__ = ["ScoreEditor", "is_score"]
 
 
 def _letter(pitch: str) -> str:

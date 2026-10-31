@@ -3,173 +3,142 @@
  * `clausters/gui/editing/events.py`).
  *
  * What it opens is an `EventSequence` -- events as concrete data, each with an
- * id -- and it edits that sequence **in place**: the editor in the shared crate
- * (the `openNotes` member of `EditingCore`) holds the very sequence the page's
- * handle names, so every edit is read back through the handle and there is
- * nothing to write back. `edit` opens a `Timeline` by rendering it first
- * (`Timeline.renderEvents`): the roll edits the events the timeline produced,
- * never the timeline.
+ * id. `edit` opens a `Timeline` by rendering it first (`Timeline.renderEvents`):
+ * the roll edits the events the timeline produced, never the timeline.
  *
- * **The editor is the crate's**: the window, the notes with their ids, what
- * each gesture does to the sequence, the entry it leaves and the corrections it
- * answers with. What is here is what a language owns -- the socket, and handing
- * the crate the window it is open in.
+ * **The roll is an application of the GUI host's**, as the audio editor and the
+ * multitrack are: the window, what each gesture does to the sequence, the entry
+ * it leaves, and the playback all run in the host's process, and this is its
+ * handler ({@link HostedEditor}). The page's sequence is the window's while one
+ * is open, and when the last window over it goes it holds what that window left
+ * it as.
  *
- * **It sounds through its sequence's playback** (the crate's `NotesPlayback`):
- * the sequence is the data of an event lane on a transport of its own, so
- * playing it never moves a multitrack nor another sequence, and the server
- * plays it by the transport's position -- a pause, a stop and a locate are the
- * transport's. Every roll over one sequence shares that transport, and its
- * play cursor is that sequence's. An edit sends the lane its new data, so a note moved ahead of
- * the line is heard where it lands, and what is sounding keeps its release.
- * The space bar over the window plays and pauses.
+ * **It sounds in the application**: the sequence is the data of an event lane on
+ * a transport of the window's own, so playing it moves no multitrack and no other
+ * window, and a pause, a stop and a locate are the transport's. An edit sends the
+ * lane its new data, so a note moved ahead of the line is heard where it lands,
+ * and what is sounding keeps its release. The space bar over the window plays and
+ * pauses. A note names the def it plays with: the application's engine knows
+ * `default`, and a def sent to a client's server is not there.
  *
  * @module
  */
 
-import { area } from "../../base/log.ts";
-import { EVENTS } from "../../document.ts";
-import type { Server } from "../../defs/server/index.ts";
-import { resolveServer } from "../../defs/wire.ts";
 import type { TempoMap } from "../../base/time.ts";
-import { NotesPlayback } from "../../seq/playback.ts";
-import type { Transport } from "../../defs/server/transport.ts";
 import { EventSequence } from "../../seq/sequence.ts";
 import type { SeqEvent } from "../../seq/sequence.ts";
 import { MidiItem } from "../../seq/event.ts";
 import { Timeline } from "../../seq/timeline.ts";
 import type { PlayDestination } from "../../seq/timeline.ts";
-import type { GuiNode } from "../guidef.ts";
-import type { PropValue } from "../host.ts";
-import type { Answer } from "./echo.ts";
-import { Domain } from "./domain.ts";
-import { Editor } from "./editor.ts";
-import type { GenericEditorOptions } from "./editor.ts";
-import { Marking, marking, marks, setMarks } from "./marking.ts";
+import { Held, HostedEditor, HostedTransport } from "./hosted.ts";
+import type { HostedEditorOptions } from "./hosted.ts";
+import { Marking, marking } from "./marking.ts";
 import type { End, Pass } from "./playback.ts";
-import { plain } from "./samples.ts";
-import { View } from "./view.ts";
 
-const log = area("gui.editing");
+/** Who has each sequence. */
+const heldSequences = new WeakMap<EventSequence, Held>();
 
-/** What one turn of the core came to. */
-interface Outcome {
-    turn?: string;
-    /** Whether to close the window, by the crate's rule for every editor. */
-    close?: boolean;
-    changed?: boolean;
-    answer?: Answer;
-    play?: { looping: boolean; range?: [number, number] | null };
-    loop?: { looping: boolean; range?: [number, number] | null };
-    locate?: number;
-    span?: [number, number] | null;
+/** Who has `sequence`: made once, per sequence. @internal */
+export function heldOf(sequence: EventSequence): Held {
+    let held = heldSequences.get(sequence);
+    if (held === undefined) {
+        held = new Held();
+        heldSequences.set(sequence, held);
+    }
+    return held;
 }
 
 /**
- * A sequence's vocabulary, the crate's `events`. A step is applied by the crate
- * to the sequence it shares, so there is nothing here to carry out.
+ * **A window that shows a sequence**, a roll or a page over one: the sequence the
+ * window's from when the first opens, and the changes the page makes through its
+ * objects entries of the history the window walks.
+ *
+ * @internal
  */
-export class NotesDomain extends Domain<EventSequence> {
-    readonly name = EVENTS;
-    override readonly ingested = true;
+export abstract class SequenceHandler extends HostedEditor {
+    /** The sequence the window shows, or `null`. */
+    protected abstract readonly shown: EventSequence | null;
 
-    /** The crate reads the inverse off the sequence it holds. */
-    current(_structure: EventSequence, _payload: unknown): unknown {
-        return null;
+    protected override heldBy(): Held {
+        return heldOf(this.shown as EventSequence);
     }
 
-    /** The crate applied the step to the sequence it shares with the page. */
-    project(_structure: EventSequence, _payload: unknown): boolean {
-        return false;
-    }
-}
-
-/** The roll: one `notes` widget, composed by the crate. */
-export class NotesView extends View<EventSequence> {
-    build(editor: Editor<EventSequence>): GuiNode {
-        const ed = editor as NotesEditor;
-        // The axis names which roll of the sequence this is: a roll in hertz
-        // is another picture of it, and a window beside one in MIDI notes
-        // must not draw on its widget.
-        const wid = this.widget(editor, "notes", editor.structure, ed.yAxis);
-        ed.rollId = wid;
-        ed.syncCore();
-        const tree = ed.coreCall("window", { widget: wid }) as unknown as GuiNode;
-        // **A page's own widgets are its objects**, so they are appended here
-        // rather than composed in the crate.
-        tree.children = [...(tree.children ?? []), ...editor.extra];
-        return tree;
+    protected override taken(): void {
+        (this.shown as EventSequence).window = this;
     }
 
-    override props(editor: Editor<EventSequence>, widgetId: number): Record<string, PropValue> {
-        return (editor as NotesEditor).coreCall("props", { widget: widgetId }) as Record<
-            string,
-            PropValue
-        >;
+    /** A window over the sequence went: another answers for it, or, the last gone, it holds what that window left it as. */
+    protected letGo(left: Record<string, unknown> | null): void {
+        const sequence = this.shown as EventSequence;
+        sequence.window = heldOf(sequence).live();
+        if (sequence.window !== null) return;
+        const written = left?.sequence;
+        if (written !== null && typeof written === "object") {
+            sequence.holdWritten(written as Record<string, unknown>);
+        }
+    }
+
+    /** Brings the sequence the page holds to the window's. */
+    protected async followSequence(): Promise<void> {
+        const sequence = this.shown;
+        if (sequence === null) return;
+        const state = await this.asked("handle", { call: { verb: "state" } });
+        if (state !== null && typeof state === "object") sequence.holdWritten(state as Record<string, unknown>);
     }
 }
 
-/** The marking surface, merged so `roll.selected()` types as its own. */
 export interface NotesEditor extends Marking<SeqEvent[], Iterable<SeqEvent>> {}
 
 /**
- * An event sequence on a roll, edited note by note, in place.
+ * **An event sequence on a roll, in the GUI host's application, and this page its
+ * handler.**
  *
  * **What is marked** (`selected`, `select`, `unselect`) is the events on the
  * roll -- by a click, Shift+click or a marquee -- as the `SeqEvent` objects
- * they are, in beat order. The picture's, not the sequence's: it enters no
+ * they are, in beat order. The window's, not the sequence's: it enters no
  * history and each window has its own, and it is empty with no window open.
  * (The time range a sweep leaves is the transport's `span`.)
  */
-export class NotesEditor extends Editor<EventSequence> {
-    /** This editor's member in its editing context. */
-    private readonly member: number;
-
-    /** This editor's member, whose actions its window reads. */
-    protected override actionMember(): number {
-        return this.member;
-    }
+export class NotesEditor extends SequenceHandler {
+    protected override readonly app = "notes";
+    /** The sequence the roll edits, the one the editor was opened over. */
+    readonly structure: EventSequence;
+    protected override readonly shown: EventSequence;
     /** Whether a hand may edit the notes (`false` for a rendering). */
     readonly editable: boolean;
     /** Whether the roll paints incoming MIDI into the sequence. */
     readonly midiIn: boolean;
     /** The roll's vertical axis, `"midi"` or `"hz"`. */
     readonly yAxis: "midi" | "hz";
-    /** The server it plays on, resolved when it first plays. */
-    #server: Server | null;
-    /** The playback work in flight, chained so each lands in order. */
-    #work: Promise<void> = Promise.resolve();
     /** The timeline a play to a destination of its own (a MIDI port) runs. */
     #elsewhere: Timeline | null = null;
-    /** Where a pass ends ({@link NotesEditor.end}). */
-    #end: End = null;
-    /** The roll's widget id, once drawn. @internal */
-    rollId: number | null = null;
 
-    constructor(sequence: EventSequence, options: NotesEditorOptions) {
-        const domain = new NotesDomain();
-        super(sequence, { title: "Notes", ...options, domain, view: new NotesView() });
+    constructor(sequence: EventSequence, options: NotesEditorOptions = {}) {
+        super("Notes", options);
+        this.structure = sequence;
+        this.shown = sequence;
         this.editable = options.editable ?? true;
         this.midiIn = options.midiIn ?? false;
         this.yAxis = options.yAxis ?? "midi";
-        this.#server = options.server ?? null;
-        const opened = this.editing.openNotes(
-            `sequence:${keyOfSequence(sequence)}`,
-            sequence,
-            {
-                rate: this.sampleRate,
-                editable: this.editable,
-                domain: this.yAxis,
-                title: this.title,
-                w: this.size[0],
-                h: this.size[1],
-                chrome: this.chrome,
-                midi_in: this.midiIn,
-            },
-            domain,
-        );
-        this.member = opened.member;
-        this.structureId = opened.identity;
+    }
+
+    protected override openingOptions(beside: HostedEditor | null): Record<string, unknown> {
+        const options: Record<string, unknown> = {
+            domain: this.yAxis,
+            editable: this.editable,
+            midi_in: this.midiIn,
+        };
+        if (beside === null) options.sequence = this.structure.data();
+        return options;
+    }
+
+    protected override settle(left: Record<string, unknown> | null, last: boolean): void {
+        void last;
+        this.letGo(left);
+    }
+
+    protected override follow(): Promise<void> {
+        return this.followSequence();
     }
 
     /** The sequence the roll edits -- the one the editor was opened over. */
@@ -178,467 +147,177 @@ export class NotesEditor extends Editor<EventSequence> {
     }
 
     /** The sequence's own tempo map, which the roll's axis is drawn through. */
-    override tempoMap(): TempoMap | null {
+    tempoMap(): TempoMap | null {
         return this.structure.tempoMap;
-    }
-
-    /**
-     * One verb of this editor's member, through the context.
-     *
-     * @internal
-     */
-    coreCall(verb: string, args: Record<string, unknown> = {}): Record<string, unknown> {
-        return this.editing.member(this.member, verb, args);
-    }
-
-    /**
-     * Hand the crate the window it is open in and the chrome.
-     *
-     * @internal
-     */
-    syncCore(): void {
-        this.coreCall("sync", {
-            window: this.windowId,
-            rate: this.sampleRate,
-            editable: this.editable,
-            midi_in: this.midiIn,
-            title: this.title,
-            w: this.size[0],
-            h: this.size[1],
-        });
-    }
-
-    /**
-     * Opens the window, with its play cursor drawn from the transport.
-     *
-     * The roll anchors the play cursor at 0, and the counter that makes that
-     * the sequence's own sample is the position of the transport its sequence
-     * plays on -- stopped or rolling, the line is where the lane is. With no
-     * server to play on there is no position, and no line; nor with a server
-     * that has no transport left, which is logged, and the roll opens to be
-     * edited.
-     */
-    override async open(
-        host?: Parameters<Editor<EventSequence>["open"]>[0],
-        options: Parameters<Editor<EventSequence>["open"]>[1] = {},
-    ): ReturnType<Editor<EventSequence>["open"]> {
-        const handle = await super.open(host, options);
-        let server: Server;
-        try {
-            server = this.#resolveServer();
-        } catch {
-            return handle;
-        }
-        let transport: number;
-        try {
-            transport = NotesPlayback.of(server, this.structure).transportId;
-        } catch (refused) {
-            log.warning("the roll has no play cursor and cannot be played: %s", String(refused));
-            return handle;
-        }
-        this.host?.headClock(handle, "transport", transport);
-        return handle;
-    }
-
-    /**
-     * The position cursor was placed at beat `at`: a stopped transport is
-     * cued there, so the play cursor goes with it and the next play starts
-     * from the mark; a rolling pass is left alone.
-     */
-    override locate(at: number): void {
-        if (this.#elsewhere !== null) return;
-        const playback = this.#held;
-        if (playback === null) return;
-        this.#work = this.#work.then(() => playback.cue(at));
-        this.#work.catch(() => {});
     }
 
     // ---- playing it ----
 
-    protected override playsOn(): Server | null {
-        try {
-            return this.#resolveServer();
-        } catch {
-            return null;
-        }
-    }
-
-    #resolveServer(): Server {
-        this.#server ??= resolveServer(null) as unknown as Server;
-        return this.#server;
-    }
-
     /**
-     * The sequence's playback on the server, made when it has none -- which
-     * throws when the server has no transport left.
+     * **The transport the window plays on** ({@link HostedTransport}), as the
+     * object a page plays, its verbs about this window's pass and in the
+     * sequence's beats -- the span is the band an Alt+drag sweeps on the roll,
+     * the loop switch is `L`, and each side reads what the other set. Each window
+     * over the sequence has its own, given back with it.
      */
-    get #playback(): NotesPlayback {
-        return NotesPlayback.of(this.#resolveServer(), this.structure);
+    get transport(): HostedTransport {
+        return new HostedTransport(this);
     }
 
     /**
-     * The sequence's playback when it has one: what a change or a cursor is
-     * told to, which is no reason to take a transport.
+     * **Where a pass ends**, as on a multitrack's transport: `null` by default --
+     * the transport rolls on past the last note until it is stopped -- or
+     * `"contents"`, where the last note ends, or a beat, an **end marker**.
      */
-    get #held(): NotesPlayback | null {
-        return NotesPlayback.held(this.#server, this.structure);
+    async setEnd(end: End): Promise<void> {
+        await this.act("end", { end });
     }
 
     /**
-     * **The transport the sequence plays on**, as the object a page plays: the
-     * `Transport` `play` of a sequence answers, its verbs (`play`, `pause`,
-     * `stop`, `locate`, `loop`, `wait`) and `span` about this editor's
-     * sequence and in its beats -- the span is the band an Alt+drag sweeps on
-     * the roll, the loop switch is `L`, and each side reads what the other set.
-     * It is the sequence's own, shared by every roll over it; once a page has
-     * asked for it, it is the page's to free (`free()`), and otherwise it goes
-     * back to the server when the last roll over the sequence closes.
-     */
-    get transport(): Transport {
-        const playback = this.#playback;
-        playback.kept = true;
-        return playback.transport;
-    }
-
-    /**
-     * **Where a pass ends**, as on a multitrack's transport: `null` by default
-     * -- the transport rolls on past the last note until it is stopped -- or
-     * `"contents"`, where the last note ends (its onset and its length), or a
-     * beat, an **end marker**; either of the last two goes back to the
-     * position cursor. A note's release rings out past the end, since a stop
-     * releases the notes rather than freezing them.
-     */
-    get end(): End {
-        return this.#end;
-    }
-
-    set end(end: End) {
-        this.#end = end;
-        const playback = this.#held;
-        if (playback === null) return;
-        this.#work = this.#work.then(() => playback.setEnd(end));
-        this.#work.catch(() => {});
-    }
-
-    /**
-     * **Plays the sequence** from `beat` -- or from the position cursor, or the
-     * start -- on its own transport.
+     * **Play the sequence** from `beat` -- or from the position cursor, or the
+     * start -- on its window's transport.
      *
      * It is the audio editor's pass: `range` -- `[start, end]` in beats, a time
      * range a sweep left -- plays from its start to its end, going back to
      * `beat`; `looping` loops the range, or with none every note; with neither
-     * the pass ends where {@link NotesEditor.end} says.
+     * the pass ends where {@link NotesEditor.setEnd} says.
      *
-     * `destination` is for a MIDI port (a `MidiServer`): the server has no MIDI
-     * output, so the sequence is played on this page's clock to that
-     * destination instead, as the MIDI messages a file of it holds
-     * ({@link EventSequence.midiMessages}) -- its automation and its
-     * notes' included -- and an edit is heard from the next play.
+     * `destination` is for a MIDI port: the application has no MIDI output, so
+     * the sequence is played on this client's clock to that destination instead,
+     * as the MIDI messages a file of it holds, and an edit is heard from the next
+     * play.
      */
     async play(beat?: number, destination?: PlayDestination, pass: Pass = {}): Promise<this> {
-        const start = beat ?? this.cursor ?? 0;
         if (destination !== undefined) {
-            // The render a file of it holds: its notes, its automation and
-            // its notes', as its MIDI spec says them.
             const played = new Timeline(
-                this.structure.midiMessages().map(([beat, message]) => [beat, MidiItem(message)] as const),
+                this.structure.midiMessages().map(([at, message]) => [at, MidiItem(message)] as const),
             );
             const map = this.structure.tempoMap;
             if (map !== null) played.map = map;
-            played.play({ at: start, destination });
+            played.play({ at: beat ?? 0, destination });
             this.#elsewhere = played;
             return this;
         }
-        await this.#playback.load(start, {
-            range: pass.range ?? null,
-            looping: pass.looping ?? false,
-            end: this.#end,
-        });
+        const args: Record<string, unknown> = { looping: Boolean(pass.looping) };
+        if (beat !== undefined) args.beat = Number(beat);
+        if (pass.range !== undefined && pass.range !== null) args.range = [Number(pass.range[0]), Number(pass.range[1])];
+        await this.act("play", args);
         return this;
     }
 
-    /** Split what is held at the cursor -- the window's `split` ({@link Editor.verb}). */
-    split(): boolean {
-        return this.verb("split");
-    }
-
-    /** Join a touching run of what is held -- the window's `join` ({@link Editor.verb}). */
-    join(): boolean {
-        return this.verb("join");
-    }
-
-    /** Quantize what is selected to the grid -- the window's `quantize` ({@link Editor.verb}). */
-    quantize(): boolean {
-        return this.verb("quantize");
-    }
-
-    /**
-     * **The grid a note lands on, in beats** -- `0.25` for a sixteenth, its
-     * default, and `0` for none. A grid is a length in beats, read through the
-     * tempo map, so its lines move with the tempo: what a drag snaps to and
-     * `quantize` writes into the sequence. The window's own, like its
-     * zoom: setting it is no edit. Set it to choose another:
-     * `editor.grid = 0.5`.
-     */
-    get grid(): number {
-        return Number(this.coreCall("grid").grid ?? 0);
-    }
-
-    set grid(beats: number) {
-        this.coreCall("sync", { grid: beats });
-        this.adopt();
-    }
-
-    /**
-     * **Whether a hand snaps to the grid** -- the snap-to-grid switch, on until
-     * it is turned off. Off, a drag, a paste and a split land where the hand
-     * puts them; `quantize` still moves onto the grid. The window's own, like
-     * its grid: G in the window and the View menu flip it, and setting it is
-     * no edit: `editor.snapToGrid = false`.
-     */
-    get snapToGrid(): boolean {
-        return this.coreCall("grid").snap !== false;
-    }
-
-    set snapToGrid(on: boolean) {
-        this.coreCall("sync", { snap: on });
-        this.adopt();
-    }
-
-    /** Pauses where it stands: a `resume` carries the notes on. */
+    /** Pause where it stands: a `resume` carries the notes on. */
     async pause(): Promise<this> {
         if (this.#elsewhere !== null) {
             this.#elsewhere.pause();
             return this;
         }
-        await this.#playback.call("pause");
+        await this.act("pause");
         return this;
     }
 
-    /** Rolls again from where it paused. */
+    /** Roll again from where it paused. */
     async resume(): Promise<this> {
         if (this.#elsewhere !== null) {
-            this.#elsewhere.play();
+            await this.#elsewhere.play();
             return this;
         }
-        await this.#playback.call("resume");
+        await this.act("resume");
         return this;
     }
 
-    /** Stops, frees what sounds, and goes back to where it started. */
+    /** Stop, free what sounds, and go back to where it started. */
     async stop(): Promise<this> {
         if (this.#elsewhere !== null) {
             this.#elsewhere.stop();
             this.#elsewhere = null;
             return this;
         }
-        await this.#playback.call("stop", { back: this.cursor ?? 0 });
+        await this.act("stop");
         return this;
     }
 
-    /**
-     * Whether the sequence is sounding, as the engine answers. A method here,
-     * the reference client's property: asking the engine is a round trip, and a
-     * page awaits one.
-     */
+    /** Whether the sequence is sounding, as the engine answers. */
     async playing(): Promise<boolean> {
-        const playback = this.#held;
-        return playback !== null && await playback.playing();
+        if (this.closed) return false;
+        return Boolean(await this.act("playing"));
+    }
+
+    /** The position cursor to beat `at`: the next play starts from the mark. */
+    async locate(at: number): Promise<void> {
+        await this.act("locate", { at: Number(at) });
+    }
+
+    /** Split what is held at the cursor: the window's `split`. */
+    split(): boolean {
+        return this.verb("split");
+    }
+
+    /** Join a touching run of what is held: the window's `join`. */
+    join(): boolean {
+        return this.verb("join");
+    }
+
+    /** Quantize what is selected to the grid: the window's `quantize`. */
+    quantize(): boolean {
+        return this.verb("quantize");
+    }
+
+    /** Delete what is selected: the window's `delete`. */
+    delete(): boolean {
+        return this.verb("delete");
     }
 
     /**
-     * The sequence changed: when it is what the lane holds, the lane takes it
-     * again, and the server plays it on from where the position is.
+     * **The grid a note lands on, in beats** -- `0.25` for a sixteenth, its
+     * default, and `0` for none: what a drag snaps to and `quantize` writes into
+     * the sequence. The window's own, like its zoom.
      */
-    #update(): void {
-        const playback = this.#held;
-        if (playback === null) return;
-        const version = this.editing.version;
-        this.#work = this.#work.then(() => playback.update(version));
-        this.#work.catch(() => {});
+    async grid(): Promise<number> {
+        return Number((await this.coreCall("grid")).grid ?? 0);
     }
 
-    // ---- giving the transport back ----
-
-    protected override closedWindow(): boolean {
-        const closed = super.closedWindow();
-        this.#release();
-        return closed;
+    /** Sets the grid, in beats: no edit. */
+    async setGrid(beats: number): Promise<void> {
+        await this.setting({ grid: Number(beats) });
     }
 
-    /**
-     * Closes this editor's window. **The sequence's transport goes back to the
-     * server with the last roll over it**, and what was sounding is released
-     * -- unless a page holds the transport ({@link NotesEditor.transport},
-     * `play(sequence)`), whose it then is to free.
-     */
-    override close(): this {
-        super.close();
-        this.#release();
-        return this;
+    /** **Whether a hand snaps to the grid**: G in the window and the View menu flip it. */
+    async snapToGrid(): Promise<boolean> {
+        return Boolean((await this.coreCall("grid")).snap ?? true);
     }
 
-    /**
-     * This roll closed: with no other roll over the sequence and no page
-     * holding its transport, the playback is freed.
-     */
-    #release(): void {
-        const playback = this.#held;
-        if (playback === null || playback.kept) return;
-        if (playback.rolls().some((roll) => roll !== (this as unknown) && roll.closed !== true)) return;
-        this.#work = this.#work.then(() => playback.free());
-        this.#work.catch(() => {});
-    }
-
-    /**
-     * Waits for the playback work an edit or a key started.
-     *
-     * @internal
-     */
-    async settled(): Promise<void> {
-        await this.#work;
-    }
-
-    /**
-     * A history step landed: the window is corrected, and the lane takes the
-     * sequence again, so the undo is heard.
-     */
-    override reflectStep(): void {
-        super.reflectStep();
-        this.#update();
-    }
-
-    /**
-     * The sequence changed by another route -- another window, a page's
-     * change, a step a page took: the window is corrected, and the lane takes
-     * the sequence again, so the change is heard.
-     */
-    override adopt(): void {
-        super.adopt();
-        this.#update();
+    /** Sets whether a hand snaps to the grid: no edit. */
+    async setSnapToGrid(on: boolean): Promise<void> {
+        await this.setting({ snap: Boolean(on) });
     }
 
     // ---- the roll's two selections ----
 
-    /**
-     * Draws `span` -- `[start, end]` in beats, or `null` -- as the roll's time
-     * range, the band a sweep leaves, and plays it on the space bar. What
-     * `Transport.setSpan` sets on every roll over the sequence it plays.
-     */
-    showSpan(span: readonly [number, number] | null): void {
-        this.coreCall("span", { span: span === null ? null : [span[0], span[1]] });
-        super.adopt();
-    }
-
-    /**
-     * The window's loop switch, as `L` leaves it: what `Transport.loop` turns
-     * on every roll over the sequence it plays.
-     */
-    showLooping(on: boolean): void {
-        const host = this.app.host;
-        if (host !== null && this.rollId !== null && this.window !== null) {
-            host.set(this.rollId, { looping: on ? 1 : 0 });
-        }
+    /** Draw `span` -- `[start, end]` in beats, or `null` -- as the roll's time range, and play it on the space bar. */
+    async showSpan(span: readonly [number, number] | null): Promise<void> {
+        const written = span === null ? null : [Number(span[0]), Number(span[1])];
+        await this.act("set", { call: { verb: "span", span: written } });
     }
 
     /** The events marked on the roll, by the ids the host holds. @internal */
     async marked(): Promise<SeqEvent[]> {
-        const ids = await marks<number>(this.app.host, this.window === null ? null : this.rollId);
-        if (ids.length === 0) return [];
-        const held = new Map([...this.structure.events].map((e) => [e.id, e]));
-        return ids.flatMap((id) => held.get(id) ?? []);
+        if (this.closed) return [];
+        const held = ((await this.query("selected")).selected ?? []) as unknown[];
+        const events = new Map([...this.structure.events].map((event) => [event.id, event]));
+        return held.map((id) => events.get(Number(id))).filter((event): event is SeqEvent => event !== undefined);
     }
 
-    /** Marks `events` -- those of this sequence -- on the roll. @internal */
-    mark(events: Iterable<SeqEvent> | null): void {
-        const ids = [...(events ?? [])].filter((e) => e.sequence === this.structure).map((e) => e.id);
-        setMarks(this.app.host, this.window === null ? null : this.rollId, ids);
-    }
-
-    // ---- the crate's turns ----
-
-    protected override deliver(addr: string, rawArgs: readonly unknown[]): boolean {
-        this.syncCore();
-        const turned = this.editing.event(this.member, addr, plain([...rawArgs]) as unknown[]);
-        const outcome = (turned.outcome ?? {}) as Outcome;
-        if (outcome.turn === "closed") return this.closedWindow();
-        if (outcome.turn === "step") {
-            const stepped = this.app.stepped(this.editing, turned.stepped ?? {}, this);
-            this.echo.send(outcome.answer);
-            return stepped;
-        }
-        return this.take(outcome);
-    }
-
-    /** One `/gui_event` payload, with the stamp already taken off. */
-    protected override route(args: readonly unknown[]): boolean {
-        this.syncCore();
-        const [wid, tag, ...values] = args;
-        const turned = this.editing.event(
-            this.member,
-            "/gui_event",
-            plain([wid, 0, 0, tag, ...values]) as unknown[],
-        );
-        return this.take((turned.outcome ?? {}) as Outcome);
-    }
-
-    /** Answers the host with what a turn came to; whether the sequence changed. */
-    private take(outcome: Outcome): boolean {
-        if (outcome.turn === undefined || outcome.turn === "nothing") return false;
-        const changed = outcome.changed === true;
-        if (changed) {
-            this.dirty = true;
-            this.editing.changed();
-            this.#update();
-        }
-        if (outcome.locate !== undefined) {
-            this.cursor = outcome.locate;
-            // The roll plays on a transport of its own, so the mark is its own
-            // too: a multitrack it was opened from keeps its cursor.
-            this.locate(this.cursor);
-            this.onLocate?.(this.cursor);
-        }
-        if (outcome.play !== undefined) {
-            // The space bar is play/stop: a stop goes back to the position
-            // cursor, so the play cursor lands where the reader left the mark.
-            this.#work = this.#work.then(async () => {
-                if (await this.playing()) await this.stop();
-                else await this.play(undefined, undefined, {
-                    range: outcome.play?.range ?? null,
-                    looping: outcome.play?.looping ?? false,
-                });
-            });
-            this.#work.catch(() => {});
-        }
-        const playback = this.#held;
-        const span = outcome.span;
-        if (span !== undefined && playback !== null) {
-            // A sweep moved the time range: it is the playback's span, so a
-            // page reads it, and the other rolls over the sequence draw it.
-            this.#work = this.#work.then(() => playback.setSpan(span));
-            this.#work.catch(() => {});
-        }
-        const relooped = outcome.loop;
-        if (relooped !== undefined && playback !== null) {
-            // `L`: the loop switch -- followed at once by a pass in progress,
-            // read by a stopped playback on its next play.
-            const range = relooped.range ?? null;
-            this.#work = this.#work.then(async () => {
-                await playback.setSpan(range, { show: false });
-                await playback.setLooping(relooped.looping);
-            });
-            this.#work.catch(() => {});
-        }
-        this.echo.send(outcome.answer);
-        this.closing(outcome);
-        return changed;
+    /** Mark `events` -- those of this sequence -- on the roll. @internal */
+    async mark(events: Iterable<SeqEvent> | null): Promise<void> {
+        if (this.closed) return;
+        const regions = [...(events ?? [])].filter((event) => event.sequence === this.structure).map((event) => event.id);
+        await this.act("select", { regions });
     }
 }
-
 marking(NotesEditor);
 
-/** {@link NotesEditor}'s options: the generic ones plus whether it writes. */
-export interface NotesEditorOptions extends GenericEditorOptions<EventSequence> {
+/** How a {@link NotesEditor} opens. */
+export interface NotesEditorOptions extends HostedEditorOptions {
     /** `false` for a roll a hand may look at and not edit: the notes of a rendering. */
     editable?: boolean;
     /**
@@ -647,8 +326,6 @@ export interface NotesEditorOptions extends GenericEditorOptions<EventSequence> 
      * hertz, where a note moves continuously and writes its `freq`.
      */
     yAxis?: "midi" | "hz";
-    /** The server it plays on; absent, the ambient one when it first plays. */
-    server?: Server | null;
     /**
      * `true` for a roll that **paints what is played**: the host opens its
      * MIDI input and writes each incoming note into the roll -- at the play
@@ -662,18 +339,6 @@ export interface NotesEditorOptions extends GenericEditorOptions<EventSequence> 
      * roll that listens is opened.
      */
     midiIn?: boolean;
-}
-
-/** The number a sequence's structure key is made of: one per handle. */
-const keys = new WeakMap<EventSequence, number>();
-let nextKey = 0;
-export function keyOfSequence(sequence: EventSequence): number {
-    let key = keys.get(sequence);
-    if (key === undefined) {
-        key = ++nextKey;
-        keys.set(sequence, key);
-    }
-    return key;
 }
 
 /**

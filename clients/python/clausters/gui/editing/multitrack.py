@@ -28,6 +28,7 @@ multitrack.
 import os
 import weakref
 
+from .hosted import MultitrackTransport, _Block, _RemoteHandle, _RemoteHistory
 from .marking import Marking
 
 # **What a window left each multitrack as**, by the multitrack: its session,
@@ -35,139 +36,6 @@ from .marking import Marking
 # again, from this handler or from a later `edit`, reads none of it from the
 # file over changes the window left behind
 _snapshots = weakref.WeakKeyDictionary()
-
-
-class MultitrackTransport:
-    """**The multitrack's transport**, as a script plays it: each verb one
-    call to the application, in the multitrack's seconds."""
-
-    def __init__(self, editor):
-        self._editor = editor
-
-    @property
-    def playing(self) -> bool:
-        """Whether the transport rolls."""
-        return bool(self._editor._do("playing"))
-
-    def play(self, start: "float | None" = None, end: "float | None" = None,
-             *, looping: bool = False) -> "MultitrackTransport":
-        """**Roll**: over ``start``..``end`` seconds when both are given (and
-        over and over with ``looping``), else from where it stands."""
-        args = {"looping": bool(looping)}
-        if start is not None and end is not None:
-            args["range"] = [float(start), float(end)]
-        self._editor._do("play", **args)
-        return self
-
-    def pause(self) -> "MultitrackTransport":
-        """Hold where it is; a `play` goes on from there."""
-        self._editor._do("pause")
-        return self
-
-    def stop(self, mark: float = 0.0) -> "MultitrackTransport":
-        """Stop, and go back to ``mark`` seconds."""
-        self._editor._do("stop", mark=float(mark))
-        return self
-
-    def locate(self, at: float) -> "MultitrackTransport":
-        """Stand the transport at ``at`` seconds."""
-        self._editor._do("locate", at=float(at))
-        return self
-
-    def wait(self, timeout: "float | None" = None) -> bool:
-        """Block until the transport stops, or ``timeout`` seconds pass.
-        Answers whether it stopped."""
-        import time
-
-        deadline = None if timeout is None else time.monotonic() + float(timeout)
-        while self.playing:
-            if deadline is not None and time.monotonic() >= deadline:
-                return False
-            time.sleep(0.05)
-        return True
-
-
-class _RemoteHandle:
-    """**The multitrack while the application has it open**: each verb of
-    the multitrack's handle (`clausters._native.MultitrackHandle`) asked of
-    the application, which answers it over the multitrack its window holds."""
-
-    def __init__(self, editor):
-        self._editor = editor
-
-    def call(self, verb: str, **args):
-        """One verb: its answer. Raises `ValueError` for a refusal."""
-        return self._editor._handle({"verb": verb, **args})
-
-
-class _RemoteHistory:
-    """**The window's history, as the script's multitrack reads it** while
-    the application has it open: the undo order the window walks, which the
-    script's changes are entries of."""
-
-    def __init__(self, editor):
-        self._editor = editor
-
-    def __call__(self, label: str = "edit"):
-        return self._editor._block(str(label))
-
-    def undo(self) -> bool:
-        """Step back over the last entry -- a script's or a window's -- and
-        answer whether anything moved."""
-        return bool(self._editor._do("undo"))
-
-    def redo(self) -> bool:
-        """Step forward again after `undo`; whether anything moved."""
-        return bool(self._editor._do("redo"))
-
-    @property
-    def can_undo(self) -> bool:
-        """Whether there is an entry to step back over."""
-        return bool(self._editor._query("history").get("canUndo"))
-
-    @property
-    def can_redo(self) -> bool:
-        """Whether there is an undone entry to step forward into."""
-        return bool(self._editor._query("history").get("canRedo"))
-
-    @property
-    def undo_label(self) -> "str | None":
-        """What an undo would take back, as a menu names it."""
-        return self._editor._query("history").get("undoLabel")
-
-    @property
-    def redo_label(self) -> "str | None":
-        """What a redo would bring back."""
-        return self._editor._query("history").get("redoLabel")
-
-    def __repr__(self) -> str:
-        return f"<UndoHistory, undo {self.undo_label!r}>"
-
-
-class _Block:
-    """A ``with multitrack.history(label):`` over the open window: every
-    change inside it applied as it is made and recorded at the end as one
-    entry."""
-
-    def __init__(self, editor, label: str):
-        self._editor = editor
-        self._label = label
-
-    def __enter__(self):
-        editor = self._editor
-        editor._depth += 1
-        if editor._depth == 1:
-            editor._legs = []
-        return self
-
-    def __exit__(self, *exc):
-        editor = self._editor
-        editor._depth -= 1
-        if editor._depth == 0:
-            legs, editor._legs = editor._legs, None
-            if legs and not editor.closed:
-                editor._handle({"verb": "record", "legs": legs}, label=self._label)
-        return False
 
 
 class MultitrackEditor(Marking):

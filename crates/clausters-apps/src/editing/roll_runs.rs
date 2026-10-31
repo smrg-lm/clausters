@@ -378,6 +378,10 @@ impl Editing {
         }
         if mutates && answer["applied"] != false {
             self.moved();
+            for corrected in self.corrections(Some(member)) {
+                ran.effects
+                    .push(effect("echo", json!({"answer": corrected.answer})));
+            }
             self.roll_update(member, roll, ids);
             self.sound_rolls(ids);
             ran.effects.push(effect("resync", json!({})));
@@ -388,7 +392,11 @@ impl Editing {
 
     /// **The window's closing effect**, carrying what its member leaves: what
     /// a script that held it goes on holding.
-    fn roll_closing(&self, member: MemberId, kind: &str) -> Value {
+    fn roll_closing(&mut self, member: MemberId, kind: &str) -> Value {
+        #[cfg(feature = "notation")]
+        if let Some(Member::Score(editor)) = self.member_mut(member) {
+            editor.follow();
+        }
         let left = match self.member(member) {
             Some(Member::Notes(editor)) => {
                 let sequence = editor.sequence().lock().unwrap_or_else(|e| e.into_inner());
@@ -769,8 +777,12 @@ impl Editing {
         use crate::turn::{Leg, Record};
         let call = &action["call"];
         let verb = call["verb"].as_str().unwrap_or_default();
-        let (shared, over) = match self.member(member) {
-            Some(Member::Score(editor)) => (editor.score().clone(), editor.is_over()),
+        // a page over a sequence reads it again first, as it now is
+        let (shared, over) = match self.member_mut(member) {
+            Some(Member::Score(editor)) => {
+                editor.follow();
+                (editor.score().clone(), editor.is_over())
+            }
             _ => return Err("the member is not a score".into()),
         };
         let edited = match verb {

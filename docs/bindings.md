@@ -1260,6 +1260,16 @@ Python property that reads becomes a method, a property that writes becomes a
   Python `editor.selected`, `editor.select(marked)`, `editor.unselect()`;
   TypeScript `await editor.selected()`, `await editor.select(marked)`,
   `await editor.unselect()`;
+- the roll and the score editor (`NotesEditor`, `ScoreEditor`), handlers of
+  applications the GUI host holds, where every read and every verb that edits
+  is a call through the host's application door: Python `editor.grid = 1.0`,
+  `editor.value = (1, 8)`, `editor.articulation("stacc")`; TypeScript
+  `await editor.setGrid(1)`, `await editor.setValue([1, 8])`,
+  `await editor.articulation("stacc")`. A window's verb by name (`split`,
+  `select_left`) only asks, and answers at once in both. While a window has it,
+  a Python `EventSequence` or `Score` reads the window's at each read, and a
+  TypeScript one answers from a copy the page holds, brought to the window's
+  after each change;
 - the audio editor (`AudioEditor`), the handler of an application the GUI
   host holds, where every read is a call through the host's application
   door: Python `editor.file`, `editor.files`, `editor.parts`,

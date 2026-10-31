@@ -2580,6 +2580,23 @@ mod tests {
             json!({"do": {"verb": "handle", "call": {"verb": "len"}}}),
         );
         assert_eq!(len["len"], 2, "{len}");
+        // **another sequence is another order**: its window walks nothing of
+        // these two's
+        let other = opened_app(
+            &mut host,
+            client,
+            3,
+            "notes",
+            json!({"sequence": two_notes(), "title": "another"}),
+        );
+        assert_eq!(
+            ask(&mut host, other, json!({"query": "history"}))["canUndo"],
+            false
+        );
+        assert_eq!(
+            ask(&mut host, other, json!({"do": {"verb": "undo"}})),
+            false
+        );
         // the transport, as a script plays it
         ask(
             &mut host,

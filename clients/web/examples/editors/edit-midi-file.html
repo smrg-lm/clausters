@@ -115,7 +115,6 @@ the engine, the bends heard.</div>
         const session = (await Session.embed()).activate();
         await session.gui();
         const editor = await gui.edit(notes, {
-          sampleRate: (await session.server.queryInfo()).nominalSampleRate,
           title: "mpe chord",
           stage: $("stage"),
         });

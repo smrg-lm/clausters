@@ -641,8 +641,9 @@ for itself.** `clausters.gui.edit` dispatches on what the structure holds —
 `multitrack.Automation`) and a `bpf`, `NotesEditor` over an `EventSequence`
 (a `Timeline` is rendered into one first) and a `pianoroll` —
 the notes editor, like the audio and the multitrack editors, being the shared
-crate's application (`clausters_apps::notes`), which edits the sequence the
-script's handle names in place, and the points editor too
+crate's application (`clausters_apps::notes`), run in the GUI host with the
+client's handle a remote one while a window has the sequence, and the points
+editor, the crate's too, editing the client's curve in place
 (`clausters_apps::points`: the automation editor seen on its own, over the
 document's `Automation`, whose points each client writes back onto the curve
 object it holds) —

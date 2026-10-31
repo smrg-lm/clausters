@@ -11,8 +11,8 @@ timeline is left as it was.
 What to do in the window: **drag a note** to move it, **drag its edge** to
 resize, **Shift and drag it up or down** to change its velocity (drawn as the
 note's fill), **Ctrl+click** to add or remove one, and **Ctrl+Z** to step back.
-**The space bar plays and stops** -- the editor's own playback, on a transport
-of its own -- and a stop goes back to the position cursor. An edit while it
+**The space bar plays and stops** -- the application's playback, on a transport
+of the window's own -- and a stop goes back to the position cursor. An edit while it
 plays is heard at once: a note moved ahead of the line sounds where it lands,
 and a note already sounding ends as it would have. The pass does not stop at
 the last note: it rolls on, as a multitrack's does, until the space bar stops
@@ -135,9 +135,7 @@ level = notes.automation.add({"control": "amp", "channel": 0}, [(0.0, 0.02), (4.
                              name="level")
 first = notes.events[0]            # the first note, as an object
 first.automation.add({"bend": True}, [(0.0, 0.0), (0.8, 2.0), (1.2, 1.0)])
-editor = edit(notes,
-              sample_rate=session.server.query_info().nominal_sample_rate,
-              title="notes", midi_in=True)
+editor = edit(notes, title="notes", midi_in=True)
 
 # %% [markdown]
 # ## The same notes, in hertz
@@ -146,9 +144,7 @@ editor = edit(notes,
 # frequency: the same pitch in another coordinate.
 
 # %%
-hertz = edit(notes,
-             sample_rate=session.server.query_info().nominal_sample_rate,
-             y_axis="hz", title="notes in hertz")
+hertz = edit(notes, y_axis="hz", title="notes in hertz")
 
 
 # %% [markdown]

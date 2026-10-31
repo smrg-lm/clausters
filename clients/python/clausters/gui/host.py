@@ -199,6 +199,8 @@ class GuiHost:
         # what an application left each closed window as (`/gui_closed`'s
         # second argument), until its handler takes it
         self._left: dict = {}
+        # what is told when a hand moves what each window holds
+        self._on_app_changed: dict = {}
         # the session snapshot each window let go of (`/gui_closed`'s third
         # argument, `/gui_app_released`'s second), until its handler takes it
         self._left_snapshot: dict = {}
@@ -1238,6 +1240,14 @@ class GuiHost:
         when it said none."""
         return self._left_snapshot.pop(int(id), None)
 
+    def _set_changed_handler(self, id: int, func):
+        """Register (or clear) what is called when a hand moves what window
+        ``id`` holds (``/gui_app_changed``)."""
+        if func is None:
+            self._on_app_changed.pop(int(id), None)
+        else:
+            self._on_app_changed[int(id)] = func
+
     def _set_released_handler(self, id: int, func):
         """Register (or clear) what is called when window ``id`` lets go of
         the session it was opened over (``/gui_app_released``)."""
@@ -1421,6 +1431,11 @@ class GuiHost:
             self._open.discard(wid)
             self._on_released.pop(wid, None)
             func = self._on_closed.get(wid)
+            if func is not None:
+                func()
+                return True
+        elif addr == "/gui_app_changed" and args:
+            func = self._on_app_changed.get(int(args[0]))
             if func is not None:
                 func()
                 return True

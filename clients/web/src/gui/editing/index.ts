@@ -56,7 +56,7 @@
 
 export { Application, BASE_ID } from "./application.ts";
 export { AudioEditor, AudioTransport, readsInPlace } from "./audio.ts";
-export { ScoreDomain, ScoreEditor, ScoreView, isScore } from "./score.ts";
+export { ScoreEditor, isScore } from "./score.ts";
 export type {
     PageInfo, PageOptions, PageSetup, ScoreEditorOptions, TextOptions,
 } from "./score.ts";
@@ -71,7 +71,9 @@ export { Domain } from "./domain.ts";
 export { NodeEditor } from "./controls.ts";
 export { edit } from "./edit.ts";
 export type { EditOptions } from "./edit.ts";
-export { NotesDomain, NotesEditor, NotesView } from "./events.ts";
+export { NotesEditor } from "./events.ts";
+export { Held, HostedEditor, HostedTransport } from "./hosted.ts";
+export type { HostedEditorOptions } from "./hosted.ts";
 export type { NotesEditorOptions } from "./events.ts";
 export { MultitrackEditor, MultitrackTransport } from "./multitrack.ts";
 export type { MultitrackEditorOptions, SavedSession } from "./multitrack.ts";

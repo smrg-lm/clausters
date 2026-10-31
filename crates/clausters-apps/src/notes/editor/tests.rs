@@ -415,3 +415,172 @@ fn the_snap_to_grid_switch_is_the_window_s_verb() {
     call_json(&mut e, r#"{"verb": "sync", "snap": true}"#);
     assert!(e.snap());
 }
+
+/// A note, an id and a marker in one sequence, the ids its events take.
+fn with_markers(markers: &[(f64, &str, i64)]) -> Shared {
+    let mut events = vec![SeqEvent::new(
+        0.0,
+        json!({"midinote": 60, "sustain": 1.0, "instrument": "bell"}),
+    )];
+    events.extend(markers.iter().map(|(at, addr, value)| {
+        SeqEvent::new(*at, json!({"type": "osc", "addr": addr, "args": [value]}))
+    }));
+    Arc::new(Mutex::new(EventSequence::new(events)))
+}
+
+/// What the roll cannot draw stays on the note it moves, and on the events
+/// it does not draw.
+#[test]
+fn a_note_keeps_what_the_roll_cannot_draw() {
+    let sequence = with_markers(&[(3.0, "/mark", 1)]);
+    let mut e = editor(sequence.clone());
+    let notes = vec![
+        json!(1),
+        json!(0.0),
+        json!(100.0),
+        json!(65.0),
+        json!(13.0),
+        json!(0.0),
+    ];
+    assert!(e.event(&gesture("notes", notes), 1).changed);
+    let held = sequence.lock().unwrap();
+    let note = held.get(1).unwrap();
+    assert_eq!(note.data.0["midinote"], json!(65.0));
+    assert_eq!(note.data.0["instrument"], "bell");
+    assert_eq!(
+        held.get(2).unwrap().data.0["type"],
+        "osc",
+        "the marker stays"
+    );
+}
+
+/// A note is named by its id, never by its place: the one left out is the
+/// one removed, and one with no id is minted one, which the roll is told.
+#[test]
+fn a_note_is_named_by_its_id_and_a_new_one_is_told_its_own() {
+    let sequence = shared();
+    let mut e = editor(sequence.clone());
+    let out = e.event(
+        &gesture(
+            "notes",
+            vec![
+                json!(2),
+                json!(200.0),
+                json!(100.0),
+                json!(65.0),
+                json!(13.0),
+                json!(0.0),
+            ],
+        ),
+        1,
+    );
+    assert!(out.changed);
+    {
+        let held = sequence.lock().unwrap();
+        assert!(held.get(1).is_none(), "the one left out is the one removed");
+        assert_eq!(held.get(2).unwrap().at.0, 2.0, "and the other keeps its id");
+    }
+    let out = e.event(
+        &gesture(
+            "notes",
+            vec![
+                json!(2),
+                json!(200.0),
+                json!(100.0),
+                json!(65.0),
+                json!(13.0),
+                json!(0.0),
+                json!(0),
+                json!(300.0),
+                json!(100.0),
+                json!(67.0),
+                json!(90.0),
+                json!(0.0),
+            ],
+        ),
+        out.version,
+    );
+    assert!(out.changed);
+    let told = serde_json::to_value(&out.answer).unwrap().to_string();
+    assert!(
+        told.contains("note_ids"),
+        "the roll is told the new id: {told}"
+    );
+    assert_eq!(sequence.lock().unwrap().events.len(), 2);
+}
+
+/// A marker is matched by the message it sends: a drag moves it, what it sends
+/// stays, and leaving one out removes that one and no other.
+#[test]
+fn a_marker_is_moved_and_removed_by_the_message_it_sends() {
+    let sequence = with_markers(&[(0.0, "/a", 1), (1.0, "/b", 2), (2.0, "/c", 3)]);
+    let mut e = editor(sequence.clone());
+    let out = e.event(
+        &gesture(
+            "osc",
+            vec![
+                json!(50.0),
+                json!("/a"),
+                json!(100.0),
+                json!("/b"),
+                json!(200.0),
+                json!("/c"),
+            ],
+        ),
+        1,
+    );
+    assert!(out.changed);
+    assert_eq!(out.record.as_ref().unwrap().label, "edit the markers");
+    let markers = |sequence: &Shared| -> Vec<(f64, Value)> {
+        sequence
+            .lock()
+            .unwrap()
+            .events
+            .iter()
+            .filter(|event| event.data.0["type"] == "osc")
+            .map(|event| (event.at.0, event.data.0["addr"].clone()))
+            .collect()
+    };
+    assert_eq!(markers(&sequence)[0], (0.5, json!("/a")));
+    assert_eq!(
+        sequence.lock().unwrap().get(2).unwrap().data.0["args"],
+        json!([1]),
+        "the message it sends is not the lane's to lose"
+    );
+    let out = e.event(
+        &gesture(
+            "osc",
+            vec![json!(50.0), json!("/a"), json!(200.0), json!("/c")],
+        ),
+        out.version,
+    );
+    assert!(out.changed);
+    assert_eq!(
+        markers(&sequence),
+        vec![(0.5, json!("/a")), (2.0, json!("/c"))]
+    );
+}
+
+/// A marker is the message it sends, and the lane has no way to type one: one
+/// added there is refused, says why, and the lane is put back.
+#[test]
+fn a_marker_added_in_the_roll_is_refused_and_says_why() {
+    let sequence = with_markers(&[(0.0, "/a", 1)]);
+    let mut e = editor(sequence.clone());
+    let out = e.event(
+        &gesture(
+            "osc",
+            vec![json!(0.0), json!("/a"), json!(100.0), json!("")],
+        ),
+        1,
+    );
+    assert!(!out.changed);
+    assert_eq!(
+        sequence.lock().unwrap().events.len(),
+        2,
+        "nothing was added"
+    );
+    let told = serde_json::to_value(&out.answer).unwrap().to_string();
+    assert!(told.contains("a marker is the message it sends"), "{told}");
+    assert!(told.contains("\"osc\""), "the lane is put back: {told}");
+}

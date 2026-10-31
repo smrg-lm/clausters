@@ -400,6 +400,21 @@ impl Editing {
         self.notes_over(None, key, sequence, request)
     }
 
+    /// **Opens a notes editor where `place` says**: what a window a client
+    /// opens through the application's door does, one order to each sequence.
+    /// Otherwise what [`open_notes`] does.
+    ///
+    /// [`open_notes`]: Self::open_notes
+    pub fn open_notes_at(
+        &mut self,
+        place: super::Place,
+        key: &str,
+        sequence: Shared,
+        request: &str,
+    ) -> String {
+        self.notes_placed(Placing::At(place), key, sequence, request)
+    }
+
     /// **Opens a notes editor as a view of `parent`'s editor**, over a
     /// sequence that editor holds, as a roll over a multitrack's box: its
     /// entries go in the order of the session `parent` has open, as the
@@ -424,6 +439,20 @@ impl Editing {
         sequence: Shared,
         request: &str,
     ) -> String {
+        let placing = match parent {
+            Some(parent) => Placing::At(super::Place::Beside(parent)),
+            None => Placing::Context,
+        };
+        self.notes_placed(placing, key, sequence, request)
+    }
+
+    fn notes_placed(
+        &mut self,
+        placing: Placing,
+        key: &str,
+        sequence: Shared,
+        request: &str,
+    ) -> String {
         let mut request = serde_json::from_str::<Value>(request).unwrap_or_else(|_| json!({}));
         if let Some(map) = request.as_object_mut() {
             map.insert("version".into(), json!(self.version));
@@ -441,15 +470,7 @@ impl Editing {
             let structure = self.structure(member).map(|s| s.0);
             return json!({ "member": member, "structure": structure }).to_string();
         }
-        let editor = Member::Notes(Box::new(editor));
-        match parent {
-            Some(parent) => {
-                let member = self.join_view(parent, key, editor);
-                json!({"member": member, "structure": self.structure(member).map(|s| s.0)})
-                    .to_string()
-            }
-            None => joined(self, key, editor).to_string(),
-        }
+        placed(self, placing, key, Member::Notes(Box::new(editor))).to_string()
     }
 }
 
@@ -460,12 +481,34 @@ impl Editing {
     /// very score the script holds. `request` is what [`score::new_json`]
     /// reads; the answer is the `openNotes` one's shape.
     pub fn open_score(&mut self, key: &str, shared: crate::score::Shared, request: &str) -> String {
+        self.score_placed(Placing::Context, key, shared, request)
+    }
+
+    /// **Opens a score editor where `place` says**: what a window a client or
+    /// the host opens through the application does, one order to each score.
+    pub fn open_score_at(
+        &mut self,
+        place: super::Place,
+        key: &str,
+        shared: crate::score::Shared,
+        request: &str,
+    ) -> String {
+        self.score_placed(Placing::At(place), key, shared, request)
+    }
+
+    fn score_placed(
+        &mut self,
+        placing: Placing,
+        key: &str,
+        shared: crate::score::Shared,
+        request: &str,
+    ) -> String {
         let mut request = serde_json::from_str::<Value>(request).unwrap_or_else(|_| json!({}));
         if let Some(map) = request.as_object_mut() {
             map.insert("version".into(), json!(self.version));
         }
         let editor = score::new_json(shared, &request.to_string());
-        joined(self, key, Member::Score(Box::new(editor))).to_string()
+        placed(self, placing, key, Member::Score(Box::new(editor))).to_string()
     }
 
     /// **Opens a score editor over `sequence`**, on the page it is read
@@ -482,12 +525,36 @@ impl Editing {
         sequence: Shared,
         request: &str,
     ) -> String {
+        self.score_over_placed(Placing::Context, key, shared, sequence, request)
+    }
+
+    /// **Opens a score editor over `sequence` where `place` says**: beside a
+    /// window that shows it, one order with that window, or apart.
+    pub fn open_score_over_at(
+        &mut self,
+        place: super::Place,
+        key: &str,
+        shared: crate::score::Shared,
+        sequence: Shared,
+        request: &str,
+    ) -> String {
+        self.score_over_placed(Placing::At(place), key, shared, sequence, request)
+    }
+
+    fn score_over_placed(
+        &mut self,
+        placing: Placing,
+        key: &str,
+        shared: crate::score::Shared,
+        sequence: Shared,
+        request: &str,
+    ) -> String {
         let mut request = serde_json::from_str::<Value>(request).unwrap_or_else(|_| json!({}));
         if let Some(map) = request.as_object_mut() {
             map.insert("version".into(), json!(self.version));
         }
         match score::over_json(shared, sequence, &request.to_string()) {
-            Ok(editor) => joined(self, key, Member::Score(Box::new(editor))).to_string(),
+            Ok(editor) => placed(self, placing, key, Member::Score(Box::new(editor))).to_string(),
             Err(error) => json!({ "error": error }).to_string(),
         }
     }
@@ -547,6 +614,22 @@ impl Editing {
 
 /// A member taken in, as the door answers it: its number and the structure it
 /// is in the order.
+/// **Which undo order a member goes in**: the context's shared one, or where
+/// a window's opener says.
+#[derive(Clone, Copy)]
+enum Placing {
+    Context,
+    At(super::Place),
+}
+
+fn placed(editing: &mut Editing, placing: Placing, key: &str, member: Member) -> Value {
+    let member = match placing {
+        Placing::Context => editing.join(key, member),
+        Placing::At(place) => editing.join_at(place, key, member),
+    };
+    json!({ "member": member, "structure": editing.structure(member).map(|s| s.0) })
+}
+
 fn joined(editing: &mut Editing, key: &str, member: Member) -> Value {
     let member = editing.join(key, member);
     let structure = editing.structure(member).map(|s| s.0);

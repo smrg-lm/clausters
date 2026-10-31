@@ -11527,3 +11527,16 @@ storage; it loads on first use, so a page that never engraves never fetches it.
 A host built without an engraver refuses the open and says why. A client keeps
 the engraver it has for what opens no window (`engrave`, a `Score` read and
 written from a script).
+
+**The roll goes with it**, which the plan had left implicit. A roll and a page
+over one sequence are one history, and one history needs one `Editing`: with the
+page in the host and the roll in the client the order would split. So a client's
+`edit(sequence)` opens the host's roll too, its sequence a remote handle while a
+window has it. Three things a client-side roll had change with that, knowingly:
+it plays on the application's engine rather than the client's server, so a def
+sent to that server does not sound there (written down in the plan's Found by
+use); each window has a transport of its own, as the plan asks of views over a
+sequence, where two rolls used to share one; and a roll's undo order goes with
+its last window, as a multitrack's does, where a client's order outlived it. A
+roll is no longer composed into a client's own window (`extra`, `context`):
+that stays the points editor's, which edits the client's curve.

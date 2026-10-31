@@ -576,6 +576,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             "{}".into()
         }
         "state" => serde_json::to_string(&*editor.held()).unwrap_or_else(|_| "{}".into()),
+        "range" => json!({ "range": editor.range }).to_string(),
         "grid" => json!({ "grid": editor.grid, "snap": editor.snap }).to_string(),
         "span" => {
             editor.range = request

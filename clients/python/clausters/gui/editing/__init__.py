@@ -61,12 +61,13 @@ from .echo import Echo
 from .controls import NodeEditor
 from .edit import edit
 from .editor import Editor, not_an_edit
-from .events import NotesDomain, NotesEditor, NotesView
+from .events import NotesEditor
+from .hosted import HostedEditor, HostedTransport
 from .marking import Marking
 from .multitrack import MultitrackEditor, MultitrackTransport
 from .points import PointsDomain, PointsEditor, PointsView
 from .samples import MEASURES, measures
-from .score import ScoreDomain, ScoreEditor, ScoreView
+from .score import ScoreEditor
 from .trace import watch
 from .view import View
 
@@ -81,20 +82,18 @@ __all__ = [
     "Editing",
     "Editor",
     "FIRST_VERSION",
+    "HostedEditor",
+    "HostedTransport",
     "MEASURES",
     "Marking",
-    "NotesDomain",
     "NodeEditor",
     "NotesEditor",
-    "NotesView",
     "MultitrackEditor",
     "MultitrackTransport",
     "PointsDomain",
     "PointsEditor",
     "PointsView",
-    "ScoreDomain",
     "ScoreEditor",
-    "ScoreView",
     "View",
     "edit",
     "not_an_edit",

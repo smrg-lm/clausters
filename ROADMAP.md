@@ -128,6 +128,11 @@ already carry it.
   editor and the multitrack keep the rule; the score editor follows it when
   `X25` ports the lifecycle to it.
 
+- ⬜ **A def a client sent does not sound in an application's engine** and
+  **Three handlers hold the door's code** *(`crates/clausters-apps/PLAN.md`,
+  "Found by use")*: both found moving the roll to the host; the first waits on
+  how data passes between clients and applications, the second goes with `X27`.
+
 - ⬜ **`a_loop_moved_while_it_plays_is_crossfaded` fails now and then**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Under load only; what is
   open is whether the test's pacing or the crossfade is at fault.

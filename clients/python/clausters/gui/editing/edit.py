@@ -114,7 +114,10 @@ def edit(structure, *, sample_rate: float = 0.0,
             makes a composed window undo across several structures in one
             order), and ``chrome``: ``False`` opens what is edited with none
             of the application's chrome around it, the keys kept
-            (`clausters.gui.editing.Editor`). A curve also takes ``min``/``max`` and ``start``/``end``,
+            (`clausters.gui.editing.Editor`). What the host's applications open
+            (a sequence, a score) takes ``title``, ``width``, ``height`` and
+            ``chrome`` of these, their window being the application's. A curve
+            also takes ``min``/``max`` and ``start``/``end``,
             the ranges its values and its times are kept in
             (`clausters.gui.editing.PointsEditor`). A
             sequence (or a timeline, rendered into one) takes ``y_axis``, the
@@ -194,11 +197,11 @@ def edit(structure, *, sample_rate: float = 0.0,
         if view == "score":
             editor = ScoreEditor.over(structure, **options)
         else:
-            editor = NotesEditor(structure, sample_rate=sample_rate or _ambient_rate(),
-                                 **options)
+            editor = NotesEditor(structure, **options)
+        return _hosted(editor, host, open)
     elif is_score(structure):
         _view(options, ("score",))
-        editor = ScoreEditor(structure, **options)
+        return _hosted(ScoreEditor(structure, **options), host, open)
     else:
         raise TypeError(
             f"nothing edits a {type(structure).__name__}: `edit` opens a SoundFile "
@@ -214,6 +217,19 @@ def edit(structure, *, sample_rate: float = 0.0,
 #: The audio editors this script opened, which a second `edit` of the same
 #: file finds.
 _open_audio: list = []
+
+#: The rolls and the pages this script opened, which a second `edit` of the
+#: same structure finds.
+_open_hosted: list = []
+
+
+def _hosted(editor, host, open: bool):
+    """**A roll or a page, an application of the GUI host's**, opened and kept
+    for a second `edit` to find."""
+    if open:
+        editor.open(host)
+        _open_hosted.append(editor)
+    return editor
 
 #: The multitracks this script opened, which a second `edit` of the same
 #: session file, or of the same multitrack, finds.
@@ -287,21 +303,25 @@ def _already_open(structure, host, options):
                          _is_saved_session(structure) and structure.path is not None
                          and e.path == str(structure.path)))
                      and (host is None or e.host is host)), None)
-    kinds = ((is_curve, PointsEditor), (is_events, NotesEditor),
-             (is_score, ScoreEditor))
-    kind = next((k for test, k in kinds if test(structure)), None)
-    if kind is None or isinstance(structure, Timeline):
+    if is_events(structure) or is_score(structure):
+        if isinstance(structure, Timeline):
+            return None
+        _open_hosted[:] = [e for e in _open_hosted if not e.closed]
+        # a sequence's page is the score editor's, over that sequence
+        page = is_score(structure) or options.get("view") == "score"
+        axis = str(options.get("y_axis", "midi"))
+        return next((e for e in _open_hosted
+                     if e.structure is structure
+                     and isinstance(e, ScoreEditor) == page
+                     and (page or e.y_axis == axis)
+                     and (host is None or e.host is host)), None)
+    if not is_curve(structure):
         return None
-    # a sequence's page is the score editor's, over that sequence
-    if kind is NotesEditor and options.get("view") == "score":
-        kind = ScoreEditor
     context = options.get("context") or Editing.of(structure)
-    axis = str(options.get("y_axis", "midi"))
     for view in context.views():
-        if (type(view) is kind and view.structure is structure
+        if (type(view) is PointsEditor and view.structure is structure
                 and view.window is not None
-                and (host is None or view._host is host)
-                and (kind is not NotesEditor or view.y_axis == axis)):
+                and (host is None or view._host is host)):
             return view
     return None
 

@@ -203,6 +203,9 @@ class EventSequence:
         from ..history import ATTR
         from .playback import NotesPlayback
 
+        window = self._window()
+        if window is not None:
+            return window._script_edit(self, intent, label)
         context = getattr(self, ATTR, None)
         if context is None:
             answer = self._apply(intent, inverse=False)
@@ -213,6 +216,19 @@ class EventSequence:
             # however many views over it asked.
             NotesPlayback.changed(self, None if context is None else context.version)
         return answer
+
+    def _window(self):
+        """The editor whose window has this sequence open, or ``None``."""
+        held = getattr(self._seq, "_held", None)
+        return None if held is None else held.live()
+
+    def _handle_now(self):
+        """**A handle of the Rust side's over the sequence as it is now**: its
+        own, or, while a window has it, one over a copy of what the window
+        holds."""
+        if self._window() is None:
+            return self._seq
+        return _native.SequenceHandle(self.data())
 
     # ---- what a history asks of it ----
 
@@ -246,9 +262,13 @@ class EventSequence:
         order its editors share, made on first ask. From then on every change
         made through the sequence's objects is an entry of it, and a turn the
         windows over the sequence see; ``with seq.history("humanize"):`` makes
-        everything inside it one entry."""
+        everything inside it one entry. While a window of the GUI host's has
+        the sequence it is that window's history, which its Ctrl+Z walks."""
         from ..history import UndoHistory
 
+        window = self._window()
+        if window is not None:
+            return window._history
         return UndoHistory(self)
 
     def _write_curve(self, event: "int | None", written: dict, label: str) -> int:

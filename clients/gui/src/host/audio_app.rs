@@ -708,14 +708,13 @@ impl App {
         // **a page over a sequence**: the sequence the script handed over, or
         // that of the window it stands beside, whose order it joins
         let sequence = self.sequence_of(&mut request, over)?;
-        let key = match over.and_then(|over| self.windows.get(&over)) {
-            Some(window) => window.key.clone(),
-            None => key.to_string(),
-        };
+        let (key, place) = self.placed(key, over);
         let text = request.to_string();
         let opened = match sequence {
-            Some(sequence) => self.editing.open_score_over(&key, score, sequence, &text),
-            None => self.editing.open_score(&key, score, &text),
+            Some(sequence) => self
+                .editing
+                .open_score_over_at(place, &key, score, sequence, &text),
+            None => self.editing.open_score_at(place, &key, score, &text),
         };
         let opened: Value = serde_json::from_str(&opened).map_err(|e| e.to_string())?;
         let member = opened["member"]
@@ -792,6 +791,17 @@ impl App {
         Ok(Some(Arc::new(Mutex::new(sequence))))
     }
 
+    /// **Where a window goes among the undo orders**: beside the window `over`,
+    /// under its key and in its order, or apart under `key`, its edits no step
+    /// of any other window's.
+    fn placed(&self, key: &str, over: Option<i32>) -> (String, clausters_apps::editing::Place) {
+        use clausters_apps::editing::Place;
+        match over.and_then(|over| self.windows.get(&over)) {
+            Some(window) => (window.key.clone(), Place::Beside(window.member)),
+            None => (key.to_string(), Place::Apart),
+        }
+    }
+
     /// **A roll a client opened**, in its working folder, over the sequence
     /// it handed over or the one a window of it already shows, whose order
     /// it joins.
@@ -809,10 +819,7 @@ impl App {
         let sequence = self
             .sequence_of(&mut request, over)?
             .ok_or("a roll opens over a sequence")?;
-        let key = match over.and_then(|over| self.windows.get(&over)) {
-            Some(window) => window.key.clone(),
-            None => key.to_string(),
-        };
+        let (key, place) = self.placed(key, over);
         let rate = f64::from(
             self.app
                 .engine()
@@ -827,7 +834,8 @@ impl App {
                 request[name] = json!(size);
             }
         }
-        let opened: Value = serde_json::from_str(&self.editing.open_notes(
+        let opened: Value = serde_json::from_str(&self.editing.open_notes_at(
+            place,
             &key,
             sequence,
             &request.to_string(),

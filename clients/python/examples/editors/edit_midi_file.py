@@ -101,9 +101,7 @@ print(f"{clip.name}: {native.midi}, {len(native)} notes")
 # %%
 session = Session.live().activate()
 session.gui()
-editor = edit(notes,
-              sample_rate=session.server.query_info().nominal_sample_rate,
-              title="mpe chord")
+editor = edit(notes, title="mpe chord")
 
 
 # %% [markdown]

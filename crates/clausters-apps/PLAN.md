@@ -2957,8 +2957,15 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
       `/gui_app_open score` opens it, natively, with a handler's verbs, its file
       and File > Close through the door; a file a window holds is not opened
       twice, and a build with no engraver refuses it. *Done 2026-10-31.*
-    - ⬜ The door and both handlers: `/gui_app_open score`, the client's
-      `Score` a remote handle while a window holds it.
+    - ✅ The door and both handlers: `/gui_app_open score` and `notes`, the
+      client's `Score` and `EventSequence` remote handles while a window holds
+      them. The roll came too, since a roll and a page over one sequence are
+      one `Editing` (`docs/decisions.md`). `over` opens a view beside a window
+      showing a sequence, one undo order with a transport, a selection and a
+      conversation each; a close hands back what it leaves; Python reads the
+      window's at each read and a page holds a copy it follows, as a
+      multitrack's does. Until the engraver worker lands a page's host refuses
+      a score, saying why. *Done 2026-10-31.*
     - ⬜ The page's engraver worker, which also gives a page's multitrack its
       boxes as pages.
     - ⬜ Standalone on the same application, the replaced paths removed.
@@ -6160,6 +6167,20 @@ wrong.
   that file and brings the window forward, from File > Open, a client's
   `/gui_app_open` and `--audio`. **Acceptance:** the same file opened from
   each of the three, written two ways, is one window and one history.
+
+- ⬜ **A def a client sent does not sound in an application's engine**
+  *(found 2026-10-31, moving the roll to the host)*. A note names its def, and
+  an application's engine has its own: a sequence whose `instrument` is a def
+  sent to the client's server plays silence in its roll, as a box of notes in
+  the multitrack already did. Sending a client's defs to the engine, or naming
+  them in the document, is a way for data to pass between clients and
+  applications, which the user means to decide on its own.
+
+- ⬜ **Three handlers hold the door's code** *(found 2026-10-31)*. In both
+  clients `AudioEditor`, `MultitrackEditor` and `HostedEditor` each hold the
+  opening, the closing and the history a window has. `HostedEditor` is the
+  general one; the other two should take it, which `X27`'s audit of one owner
+  per contract would otherwise find.
 
 - ⬜ **`a_loop_moved_while_it_plays_is_crossfaded` fails now and then**
   *(found 2026-10-31, running the app engine's tests beside other builds)*.

@@ -5,7 +5,7 @@ by hand, played, saved and rendered.
 The notation example, whole. It opens a document in the score editor -- the
 application the shared crate writes once, the same window a page opens and a
 standalone host opens -- and goes through everything a score is here: a model
-the script operates on, a page a hand edits, a sound the server plays, a file,
+the script operates on, a page a hand edits, a sound the application plays, a file,
 and a sequence a roll can take.
 
 What it shows, in the order it does it:
@@ -71,7 +71,7 @@ What it shows, in the order it does it:
   tool and every palette entry is one of the editor's verbs, and each verb is
   a method: the fermata on the last note is put there by this script
   (`select`, `ornament`), as the Ornaments palette would.
-* **The score plays on the server, and the page's cursor follows it.** The
+* **The score plays in the application, and the page's cursor follows it.** The
   space bar, the toolbar's transport and the Play menu play it from where the
   selection starts -- several notes selected are the stretch a loop repeats
   -- on a transport of its own (`editor.play`, `editor.stop`). An edit made
@@ -214,15 +214,14 @@ score.apply({"op": "set_marks", "id": top[7],
 # %% [markdown]
 # ## The editor
 # The window is the application's, whole: the menu bar, the toolbar, the
-# palettes beside the page, the status line under it. The session is made
-# ambient first, so the editor plays on its server without being told which,
-# and its host is opened wired to that server: the page's cursor is drawn from
-# the position of the transport the score plays on, which only a host that is
-# a client of the server can read.
+# palettes beside the page, the status line under it. It runs in the GUI host,
+# with the engraver and the playback, and this script is its handler: from here
+# on `score` reads and writes what the window holds, and when the window goes it
+# holds what the window left it as.
 
 # %%
 session = Session.live().activate()
-session.gui()          # the host wired to this session's server
+session.gui()          # the host the editor opens on
 
 editor = edit(score, title="Score editor (a document, and its model)",
               width=1100, height=800)

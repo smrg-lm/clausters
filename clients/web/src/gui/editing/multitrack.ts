@@ -42,9 +42,9 @@ import { Marking, marking } from "./marking.ts";
 
 /** **The multitrack's transport**, as a script plays it: each verb one call to the application, in the multitrack's seconds. */
 export class MultitrackTransport {
-    private readonly editor: MultitrackEditor;
+    private readonly editor: { act(verb: string, args?: Record<string, unknown>): Promise<any> };
 
-    constructor(editor: MultitrackEditor) {
+    constructor(editor: { act(verb: string, args?: Record<string, unknown>): Promise<any> }) {
         this.editor = editor;
     }
 

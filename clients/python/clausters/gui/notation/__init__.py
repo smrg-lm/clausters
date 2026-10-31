@@ -5,9 +5,10 @@ MusicXML, ABC or Plaine & Easie) out into SVG, and that SVG is walked into the
 flat, resolution-independent display list the GUI host's ``score`` widget
 consumes -- a SMuFL glyph-outline table plus placed primitives (glyphs, staff
 lines, stems, beams, slurs) in page units, each carrying the MEI ``xml:id`` it
-was engraved from. The host tessellates it; **the engraver lives on the client,
-never in the host**, so any language client reuses the same host renderer by
-sending the same display list.
+was engraved from. The host tessellates it; **this engraver is the client's, for what opens no
+window**, so any language client reuses the same host renderer by sending the
+same display list. The score editor is the host's application, with an engraver
+of its own (`clausters.gui.editing.ScoreEditor`).
 
 The whole layer is **native and shared**: the engraver is libverovio, bound in
 Rust (``clausters-notation``), and the format-agnostic parts -- the SVG-to-display

@@ -98,6 +98,12 @@ export class Score {
     private readonly toolkit: Toolkit;
     /** The file the score was read from or last written to, or `null`. */
     path: string | null = null;
+    /**
+     * The score editor whose window of the GUI host's has this score: this is
+     * then its copy, and a change is forwarded there as an entry of the history
+     * the window walks. @internal
+     */
+    window: { readonly closed: boolean; forwardPage(call: Record<string, unknown>): void; stepAsked(direction: "undo" | "redo"): void } | null = null;
 
     private constructor(inner: CoreScore, toolkit: Toolkit) {
         this.inner = inner;
@@ -280,6 +286,11 @@ export class Score {
      * refused; either way the page and the model are as they were.
      */
     apply(op: Op): boolean {
+        if (this.held()) {
+            if (!this.inner.apply(JSON.stringify(op))) return false;
+            this.window?.forwardPage({ verb: "apply", op });
+            return true;
+        }
         const before = this.mei();
         if (!this.inner.apply(JSON.stringify(op))) return false;
         this.record(before, String((op as { op?: unknown }).op ?? "edit the score"));
@@ -372,7 +383,26 @@ export class Score {
      * layer's own stack, so one score has one history.
      */
     load(mei: string): boolean {
+        if (this.held()) {
+            if (!this.inner.load(mei)) return false;
+            this.window?.forwardPage({ verb: "load", mei });
+            return true;
+        }
         return this.inner.load(mei);
+    }
+
+    /** Whether a window of the GUI host's has this score now. */
+    private held(): boolean {
+        return this.window !== null && !this.window.closed;
+    }
+
+    /**
+     * **Holds `mei` from now on**: what the window it is open in holds, or left.
+     *
+     * @internal
+     */
+    holdWritten(mei: string): void {
+        this.inner.load(mei);
     }
 
     /**
@@ -406,6 +436,12 @@ export class Score {
     }
 
     private step(direction: "undo" | "redo"): boolean {
+        // the window's history: asked here, and its answer is the editor's
+        // (`ScoreEditor.undo`), a promise
+        if (this.held()) {
+            this.window?.stepAsked(direction);
+            return true;
+        }
         const context = this.editing;
         const stepped = context.step(direction);
         if (stepped.stepped !== true) return false;
@@ -424,6 +460,11 @@ export class Score {
      * only when the delta is what you actually have.
      */
     transpose(elementId: string, steps: number): boolean {
+        if (this.held()) {
+            if (!this.inner.transpose(elementId, steps)) return false;
+            this.window?.forwardPage({ verb: "transpose", id: elementId, steps });
+            return true;
+        }
         const before = this.mei();
         if (!this.inner.transpose(elementId, steps)) return false;
         this.record(before, "transpose");
@@ -436,6 +477,11 @@ export class Score {
      * twice. True when the note is now there, including when it already was.
      */
     transposeTo(elementId: string, position: number, page = 1): boolean {
+        if (this.held()) {
+            if (!this.inner.transposeTo(elementId, position, page)) return false;
+            this.window?.forwardPage({ verb: "transpose_to", id: elementId, position, page });
+            return true;
+        }
         const before = this.mei();
         if (!this.inner.transposeTo(elementId, position, page)) return false;
         // **A note already there is not an edit.** The call answers true for it,
@@ -452,6 +498,11 @@ export class Score {
      * A rejected action leaves the score untouched.
      */
     edit(action: string, param: Record<string, unknown> = {}): boolean {
+        if (this.held()) {
+            if (!this.inner.edit(action, JSON.stringify(param))) return false;
+            this.window?.forwardPage({ verb: "edit", action, param, label: action });
+            return true;
+        }
         const before = this.mei();
         if (!this.inner.edit(action, JSON.stringify(param))) return false;
         this.record(before, action);

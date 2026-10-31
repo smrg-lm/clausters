@@ -91,7 +91,7 @@ class NotesPlayback:
         self.kept = False
         self._freed = False
         try:
-            taken = self._native.call("open", sequence._seq, server.ids)
+            taken = self._native.call("open", sequence._handle_now(), server.ids)
         except ValueError as refused:
             raise RuntimeError(str(refused)) from None
         #: The transport it plays on, taken from the server's.
@@ -112,7 +112,7 @@ class NotesPlayback:
 
     def call(self, verb: str, **args) -> dict:
         """One verb over the sequence, its steps carried out."""
-        answer = self._native.call(verb, self.sequence._seq, self.server.ids,
+        answer = self._native.call(verb, self.sequence._handle_now(), self.server.ids,
                                    rate=self.rate, **args)
         steps = answer.get("steps")
         if steps:

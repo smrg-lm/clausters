@@ -19,6 +19,7 @@ import json
 import os
 
 from ... import _libpath, _native
+from ...errors import CommandError
 from ._abi import _MISSING, _engraver, _text, _u8
 from . import sheet as _sheet
 from .mei import TRANSCRIPTION_KEYS, from_notes, sheet_from_events
@@ -71,6 +72,12 @@ class Score:
     with no such context uses -- a standalone host holding a page and nothing
     else. From here it is not read: `undo` and `redo` walk the context's pile
     and put a state back through the crate's `load`.
+
+    **While a window of the GUI host's has the score it is the window's**
+    (`clausters.gui.editing.ScoreEditor`): the application holds the document
+    and the engraver, every member here reads and writes what it holds, and
+    each change is an entry of the history the window walks. When the window
+    goes, the score holds what it left it as.
     """
 
     def __init__(self, data: str, *, scale: int = 40, page_width: int = 2100,
@@ -117,16 +124,36 @@ class Score:
         if handle:
             _native.lib().clausters_score_free(handle)
 
+    def _window(self):
+        """The score editor whose window has this score open, or ``None``."""
+        page = self.__dict__.get("_page")
+        return None if page is None or page.closed else page
+
+    def _settle(self, left: "dict | None") -> None:
+        """The window went: the score holds what it left it as."""
+        left = left or {}
+        if isinstance(left.get("mei"), str):
+            raw = left["mei"].encode("utf-8")
+            _native.lib().clausters_score_load(self._h, _native.as_u8(raw), len(raw))
+        if left.get("path"):
+            self.path = str(left["path"])
+
     def display_list(self, page: int = 1) -> dict:
         """This score engraved into a ``score`` display list -- the same layers
         `engrave` returns, but from the live document, so it reflects every edit
         applied so far."""
+        window = self._window()
+        if window is not None:
+            return window._page({"verb": "display_list", "page": int(page)})
         return json.loads(_text(_native.lib().clausters_score_display_list,
                                 self._h, page))
 
     def mei(self) -> str:
         """The score as MEI, ids and all -- the format to persist, and what the
         undo stack is made of."""
+        window = self._window()
+        if window is not None:
+            return window._page({"verb": "mei"})["mei"]
         return _text(_native.lib().clausters_score_mei, self._h)
 
     # ---- the editing context: one order over everything being edited ----
@@ -199,6 +226,9 @@ class Score:
         The door the pile puts a previous page back through. It clears the
         shared layer's own stack, so one score has one history.
         """
+        window = self._window()
+        if window is not None:
+            return bool(window._page({"verb": "load", "mei": str(mei)}))
         raw = mei.encode("utf-8")
         return bool(_native.lib().clausters_score_load(
             self._h, _native.as_u8(raw), len(raw)))
@@ -207,10 +237,16 @@ class Score:
     def can_undo(self) -> bool:
         """Whether the **context's** pile has an edit to step back over -- which
         may be an edit to something else entirely, since the order is one."""
+        window = self._window()
+        if window is not None:
+            return window.can_undo
         return self._editing.can_undo
 
     @property
     def can_redo(self) -> bool:
+        window = self._window()
+        if window is not None:
+            return window.can_redo
         return self._editing.can_redo
 
     def undo(self) -> bool:
@@ -228,6 +264,9 @@ class Score:
         return self._step("redo")
 
     def _step(self, direction: str) -> bool:
+        window = self._window()
+        if window is not None:
+            return window.undo() if direction == "undo" else window.redo()
         context = self._editing
         stepped = context.step(direction)
         if not stepped.get("stepped"):
@@ -247,6 +286,12 @@ class Score:
         a state and not a failure, since the page still draws and still plays
         and only the model's verbs are unavailable on it.
         """
+        window = self._window()
+        if window is not None:
+            try:
+                return window._page({"verb": "sheet"})["sheet"]
+            except CommandError as refused:
+                raise ValueError(str(refused)) from refused
         return _unwrap(_text(_native.lib().clausters_score_sheet, self._h))
 
     def render_events(self, *, instruments=None, interp: "dict | None" = None,
@@ -285,6 +330,9 @@ class Score:
         Returns False when the document has no model behind it or the operation
         was refused; either way the page and the model are as they were.
         """
+        window = self._window()
+        if window is not None:
+            return bool(window._page({"verb": "apply", "op": op}))
         raw = json.dumps(op).encode("utf-8")
         before = self.mei()
         if not _native.lib().clausters_score_apply(
@@ -312,6 +360,10 @@ class Score:
         what applies what a host sends; reach for this one only when the delta
         is what you actually have.
         """
+        window = self._window()
+        if window is not None:
+            return bool(window._page({"verb": "transpose", "id": str(element_id),
+                                      "steps": int(steps)}))
         raw = element_id.encode("utf-8")
         before = self.mei()
         if not _native.lib().clausters_score_transpose(
@@ -340,6 +392,10 @@ class Score:
         harmless. False when the element is not on that page, the page has no
         staff to measure against, or the engraver refused the move.
         """
+        window = self._window()
+        if window is not None:
+            return bool(window._page({"verb": "transpose_to", "id": str(element_id),
+                                      "position": int(position), "page": int(page)}))
         raw = element_id.encode("utf-8")
         before = self.mei()
         if not _native.lib().clausters_score_transpose_to(
@@ -357,6 +413,10 @@ class Score:
         a single undo step -- the escape hatch for what `transpose` does not
         cover. Returns whether the engraver accepted it; a rejected action leaves
         the score untouched."""
+        window = self._window()
+        if window is not None:
+            return bool(window._page({"verb": "edit", "action": str(action),
+                                      "param": param, "label": str(action)}))
         act = action.encode("utf-8")
         par = json.dumps(param).encode("utf-8")
         before = self.mei()

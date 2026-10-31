@@ -32,6 +32,7 @@ import type { Editor } from "./editor.ts";
 import type { GuiHost, Stage } from "../host.ts";
 import { NotesEditor, isEvents } from "./events.ts";
 import { Timeline } from "../../seq/timeline.ts";
+import type { EventSequence } from "../../seq/sequence.ts";
 import { MultitrackEditor, isMultitrack } from "./multitrack.ts";
 import type { Server } from "../../defs/server/index.ts";
 import { PointsEditor, isCurve } from "./points.ts";
@@ -159,7 +160,7 @@ function viewOf<V extends string>(view: string | undefined, views: readonly V[])
 }
 
 /** Builds the editor `structure` asks for, without opening it. */
-async function editorFor(structure: unknown, options: EditOptions): Promise<Editor<never>> {
+async function editorFor(structure: unknown, options: EditOptions): Promise<Editor<never> | NotesEditor | ScoreEditor> {
     const {
         sampleRate = 0, host: _h, stage: _s, open: _o, min, max, start, end, view,
         meter, key, clef, beatUnit, division, tuplets, voices, dynamics, interp,
@@ -185,21 +186,20 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
         // **A sequence has two presentations**, and `view` chooses: the roll,
         // which is its default, or its page -- the score it is read into,
         // where an edit changes in the sequence only what it changed there.
+        const { title, width, height, chrome, value, editable, yAxis, midiIn } = rest as Record<string, any>;
+        const window = { title, width, height, chrome };
         if (viewOf(view, ["roll", "score"] as const) === "score") {
-            const { yAxis: _axis, midiIn: _midi, ...page } = rest;
-            return (await ScoreEditor.over(structure, {
-                ...page,
+            return ScoreEditor.over(structure, {
+                ...window, value,
                 meter, key, clef, beatUnit, division, tuplets, voices, dynamics, interp,
-            })) as unknown as Editor<never>;
+            });
         }
-        return new NotesEditor(structure, {
-            sampleRate,
-            ...rest,
-        }) as unknown as Editor<never>;
+        return new NotesEditor(structure, { ...window, editable, yAxis, midiIn });
     }
     if (isScore(structure)) {
         viewOf(view, ["score"] as const);
-        return new ScoreEditor(structure, rest) as unknown as Editor<never>;
+        const { title, width, height, chrome, value } = rest as Record<string, any>;
+        return new ScoreEditor(structure, { title, width, height, chrome, value });
     }
     throw new TypeError(
         `nothing edits a ${(structure as object)?.constructor?.name ?? typeof structure}: ` +
@@ -241,11 +241,12 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
 export async function edit(structure: Node, options?: EditOptions): Promise<NodeEditor>;
 export async function edit(structure: SoundFile, options?: EditOptions): Promise<AudioEditor>;
 export async function edit(structure: MultitrackSession | Multitrack, options?: EditOptions): Promise<MultitrackEditor>;
-export async function edit(structure: unknown, options?: EditOptions): Promise<Editor<never>>;
+export async function edit(structure: EventSequence | Timeline, options: EditOptions & { view?: "roll" }): Promise<NotesEditor>;
+export async function edit(structure: unknown, options?: EditOptions): Promise<any>;
 export async function edit(
     structure: unknown,
     options: EditOptions = {},
-): Promise<Editor<never> | NodeEditor | AudioEditor | MultitrackEditor> {
+): Promise<Editor<never> | NodeEditor | AudioEditor | MultitrackEditor | NotesEditor | ScoreEditor> {
     if (structure instanceof Node) return nodeEditor(structure, options);
     if (structure instanceof SoundFile) return audioEditor(structure, options);
     if (structure instanceof MultitrackSession || isMultitrack(structure)) {
@@ -261,16 +262,21 @@ export async function edit(
     }
     const { until, ...rest } = options;
     const opened = structure instanceof Timeline ? await structure.renderEvents(until) : structure;
-    // A take knows its own rate; anything else takes the ambient server's.
-    if (!rest.sampleRate) {
+    // A curve takes the ambient server's rate; what the host's applications
+    // open has an engine of its own.
+    if (!rest.sampleRate && isCurve(opened)) {
         rest.sampleRate = await ambientRate();
     }
     const editor = await editorFor(opened, rest);
     if (options.open !== false) {
         await editor.open(options.host, { stage: options.stage });
+        if (editor instanceof NotesEditor || editor instanceof ScoreEditor) openHosted.push(editor);
     }
     return editor;
 }
+
+/** The rolls and the pages this page opened, which a second `edit` of the same structure finds. */
+const openHosted: (NotesEditor | ScoreEditor)[] = [];
 
 /** The audio editors this page opened, which a second `edit` of the same file finds. */
 const openAudio: AudioEditor[] = [];
@@ -375,28 +381,29 @@ async function nodeEditor(node: Node, options: EditOptions): Promise<NodeEditor>
  * editor attaches there when it opens. A timeline is rendered into a new
  * sequence by each call, so it never finds one.
  */
-function alreadyOpen(structure: unknown, options: EditOptions): Editor<never> | null {
-    const kinds: [(s: unknown) => boolean, new (...args: never[]) => object][] = [
-        [isCurve, PointsEditor],
-        [isEvents, NotesEditor],
-        [isScore, ScoreEditor],
-    ];
-    let kind = kinds.find(([test]) => test(structure))?.[1];
-    if (kind === undefined || structure instanceof Timeline) return null;
-    // a sequence's page is the score editor's, over that sequence
-    if (kind === NotesEditor && options.view === "score") kind = ScoreEditor;
-    const context = options.context ?? Editing.of(structure as object);
-    const axis = options.yAxis ?? "midi";
-    for (const view of context.views()) {
-        const editor = view as unknown as Editor<never>;
-        if (
-            editor.constructor === kind &&
+function alreadyOpen(structure: unknown, options: EditOptions): Editor<never> | NotesEditor | ScoreEditor | null {
+    if (structure instanceof Timeline) return null;
+    if (isEvents(structure) || isScore(structure)) {
+        for (let i = openHosted.length - 1; i >= 0; i--) if (openHosted[i]!.closed) openHosted.splice(i, 1);
+        // a sequence's page is the score editor's, over that sequence
+        const page = isScore(structure) || options.view === "score";
+        const axis = options.yAxis ?? "midi";
+        return openHosted.find((editor) =>
             editor.structure === structure &&
-            editor.window !== null &&
-            (options.host === undefined || editor.app.host === options.host) &&
-            (kind !== NotesEditor || (editor as unknown as NotesEditor).yAxis === axis)
+            (editor instanceof ScoreEditor) === page &&
+            (page || (editor as NotesEditor).yAxis === axis) &&
+            (options.host === undefined || editor.host === options.host)) ?? null;
+    }
+    if (!isCurve(structure)) return null;
+    const context = options.context ?? Editing.of(structure as object);
+    for (const view of context.views()) {
+        if (
+            view instanceof PointsEditor &&
+            view.structure === structure &&
+            view.window !== null &&
+            (options.host === undefined || view.app.host === options.host)
         ) {
-            return editor;
+            return view as unknown as Editor<never>;
         }
     }
     return null;

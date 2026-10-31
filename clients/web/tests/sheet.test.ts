@@ -741,43 +741,6 @@ test("a note dragged on the page moves the model's item", {
     assert.equal(moved.alter, -1);
 });
 
-test("a page and a roll walk one order", {
-    skip: engraved ? false : "run third_party/build-verovio-wasm.sh",
-}, async () => {
-    // The join: a score is a structure of the editing context like any other, so
-    // a window holding a page and a lane has **one** Ctrl+Z.
-    const score = await notation.Score.open("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D E F |\n");
-    const timeline = new Timeline([[0.0, new Event({ midinote: 72, dur: 1.0 })]], { tempo: 2.0 });
-    // One context for both -- what a window drawing the two would build.
-    const editor = await edit(timeline, {
-        sampleRate: 48_000,
-        context: Editing.of(score),
-        open: false,
-    });
-    const step = () =>
-        (score.sheet().staves as { voices: { items: { pitches: { step: string }[] }[] }[] }[])[0]
-            .voices[0].items[0].pitches[0].step;
-    // The roll edits the sequence the timeline rendered into, by id.
-    const notes = (editor as unknown as { sequence: Iterable<[number, Event]> }).sequence;
-    const pitches = () => [...notes].map(([, item]) => item.midinote());
-
-    assert.ok(score.apply({ op: "transpose", semitones: 2 }));
-    const wid = picture(editor.view!.build(editor)).id as number;
-    const reach = editor as unknown as { route(args: unknown[]): boolean };
-    assert.ok(reach.route([wid, "notes", 1, 0.0, 24_000, 67, 13, 0]));
-    assert.deepEqual([step(), pitches()], ["d", [67]]);
-
-    // Undone from the *roll's* window, in the order the hand made them.
-    assert.ok(editor.undo());
-    assert.deepEqual([step(), pitches()], ["d", [72]]);
-    assert.ok(editor.undo());
-    assert.deepEqual([step(), pitches()], ["c", [72]]);
-
-    // And from the score's side it is the same pile, walked the same way.
-    assert.ok(score.redo());
-    assert.equal(step(), "d");
-});
-
 test("a score that did not move records nothing", {
     skip: engraved ? false : "run third_party/build-verovio-wasm.sh",
 }, async () => {

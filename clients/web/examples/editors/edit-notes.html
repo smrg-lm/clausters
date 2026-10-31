@@ -199,7 +199,6 @@ leaves every other note its own.</div>
         const first = notes.events.item(0); // the first note, as an object
         first.automation.add({ bend: true }, { points: [[0.0, 0.0], [0.8, 2.0], [1.2, 1.0]] });
         const editor = await gui.edit(notes, {
-          sampleRate: (await session.server.queryInfo()).nominalSampleRate,
           title: "notes",
           midiIn: true,
           stage: $("stage"),
@@ -209,7 +208,6 @@ leaves every other note its own.</div>
         // sequence, whose vertical axis is the frequency -- the same pitch in
         // another coordinate.
         const hertz = await gui.edit(notes, {
-          sampleRate: (await session.server.queryInfo()).nominalSampleRate,
           yAxis: "hz",
           title: "notes in hertz",
           stage: $("hertz"),

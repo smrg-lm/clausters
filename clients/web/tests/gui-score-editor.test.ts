@@ -1,52 +1,108 @@
-// The score editor: a symbolic score edited in place by the crate's
-// application, through the handle the page already holds (mirrors
-// clients/python/tests/test_gui_score_editor.py).
+// The score editor's handler: which call each member makes through the
+// application door, how it reads the answer, and the page's score following the
+// window's while it is open (mirrors clients/python/tests/test_gui_score_editor.py).
+// What a gesture does on the page is the application's and tested in its crate.
 //
 // Needs `./build.sh` (the core wasm) and `third_party/build-verovio-wasm.sh`
 // (the engraver in `vendor/`); skips itself, loudly, when the engraver is not
 // built. Run with `npm test`.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import { Score, setEngraverUrl } from "../src/gui/notation/index.ts";
-import { NotesEditor, ScoreEditor, edit } from "../src/gui/editing/index.ts";
+import { HostedTransport, ScoreEditor, edit } from "../src/gui/editing/index.ts";
+import type { GuiHost } from "../src/gui/host.ts";
 import { Event } from "../src/seq/event.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
-import type { GuiNode } from "../src/gui/guidef.ts";
 
 const engraver = new URL("../vendor/verovio/verovio.js", import.meta.url);
 const PHRASE = "@clef:G-2\n@timesig:4/4\n@data:4CDEF/ 4GABc'/";
 
 await loadCore();
 
-interface Item {
-    id: number;
-    kind: string;
-    dur: [number, number];
-    pitches?: { alter?: number }[];
-    marks?: { articulations?: string[]; ornament?: string; grace?: string; tremolo?: number };
-}
+type Call = Record<string, any>;
 
-/** The `score` widget of an editor's window, wherever the chrome put it. */
-function pageOf(tree: GuiNode): GuiNode {
-    const find = (node: GuiNode): GuiNode | undefined =>
-        node.type === "score" ? node : (node.children ?? []).map(find).find((page) => page);
-    return find(tree) as GuiNode;
-}
+/** A host whose window holds a score of its own, which the door's `page` calls read. */
+class FakeHost {
+    calls: Call[] = [];
+    verbs: string[] = [];
+    window: Score | null = null;
+    sequence: unknown = null;
+    closedHandlers = new Map<number, () => void>();
+    open = new Set<number>();
+    next = 20;
+    answers: Record<string, unknown> = {};
 
-/** The document version an event is made against, which the editor keeps. */
-const versionOf = (editor: ScoreEditor) => (editor as unknown as { version: number }).version;
+    async openApp(app: string, options: Call = {}): Promise<number> {
+        this.calls.push({ open: app, options });
+        this.window = await Score.open(options.mei as string);
+        this.sequence = options.sequence ?? this.sequence;
+        this.next += 1;
+        this.open.add(this.next);
+        return this.next;
+    }
 
-function items(score: Score): Item[] {
-    const sheet = score.sheet() as unknown as {
-        staves: { voices: { items: Item[] }[] }[];
-    };
-    return sheet.staves[0].voices[0].items;
+    async callApp(window: number | { id: number }, call: Call): Promise<unknown> {
+        const id = typeof window === "number" ? window : window.id;
+        this.calls.push({ window: id, ...call });
+        if (call.query !== undefined) return {};
+        if (call.member !== undefined) {
+            const verb = call.member.verb;
+            if (verb === "value") return { value: [1, 8] };
+            if (verb === "input") return { dotted: true };
+            if (verb === "unsaved") return { unsaved: false };
+            return {};
+        }
+        const doing = call.do as Call;
+        if (doing.verb === "page") {
+            if (doing.call.verb === "mei") return { mei: this.window!.mei() };
+            if (doing.call.verb === "apply") return this.window!.apply(doing.call.op);
+            return null;
+        }
+        if (doing.verb === "handle") return { events: [] };
+        if (doing.verb === "act") return { changed: doing.call.action !== "refused", refused: doing.call.action === "refused" ? "why" : null };
+        if (doing.verb === "save") return { destination: doing.path ?? "/kept.mei" };
+        if (doing.verb === "load") return true;
+        if (doing.verb === "close") {
+            this.open.delete(id);
+            this.closedHandlers.get(id)?.();
+            return false;
+        }
+        if (doing.verb === "playing") return true;
+        return null;
+    }
+
+    closedWith(): unknown {
+        return { mei: this.window!.mei(), path: "/left.mei" };
+    }
+
+    setClosedHandler(id: number, handler: (() => void) | null): void {
+        if (handler === null) this.closedHandlers.delete(id);
+        else this.closedHandlers.set(id, handler);
+    }
+
+    isOpen(id: number): boolean {
+        return this.open.has(id);
+    }
+
+    onMessage(): () => void {
+        return () => {};
+    }
+
+    verb(_window: unknown, name: string): void {
+        this.verbs.push(name);
+    }
+
+    async waitWhile(pred: () => boolean): Promise<boolean> {
+        return !pred();
+    }
+
+    asHost(): GuiHost {
+        return this as unknown as GuiHost;
+    }
 }
 
 if (!existsSync(engraver)) {
@@ -54,552 +110,77 @@ if (!existsSync(engraver)) {
 } else {
     setEngraverUrl(engraver.href);
 
-    test("the window is the page in a scroll over a status line", async () => {
-        const editor = new ScoreEditor(await Score.open(PHRASE));
-        const tree = editor.draw();
-        const [toolbar, work, status] = tree.children ?? [];
-        // the palettes stand beside the page, a divider between them
-        const [palettes, scroll] = work.children ?? [];
-        assert.equal((work as unknown as { split: boolean }).split, true);
-        assert.deepEqual(
-            (palettes.children ?? []).map((group) => (group as unknown as { title: string }).title),
-            [
-                "Notes",
-                "Accidentals",
-                "Articulations",
-                "Ornaments",
-                "Lines",
-                "Text",
-                "Dynamics",
-                "Measures",
-                "Repeats and jumps",
-                "Keys and clefs",
-                "Staves",
-            ],
-        );
-        // the toolbar is a row of the crate's tools, each under an id of its own
-        const tools = (toolbar.children ?? []).filter((tool) => "id" in tool);
-        assert.equal((toolbar as unknown as { flow: string }).flow, "row");
-        assert.equal(new Set(tools.map((tool) => tool.id)).size, 16);
-        // a tool is drawn with the engraver's own symbol: its label is the
-        // SMuFL character, and the window carries the outline the host draws
-        // it with
-        const values = tools.find((tool) => tool.type === "choice") as unknown as {
-            options: string[];
-        };
-        assert.equal(values.options[2], "\uE1D5");
-        const glyphs = (tree as unknown as { glyphs: Record<string, string> }).glyphs;
-        assert.ok(glyphs.E1D5.startsWith("M"));
-        assert.ok(Object.keys(glyphs).length > 19, "the tools' symbols, and the palettes'");
-        assert.equal(scroll.type, "plane");
-        const page = (scroll.children ?? [])[0] as GuiNode & Record<string, unknown>;
-        assert.equal(page.type, "score");
-        assert.equal(page.editable, true);
-        assert.equal(page.entry, false);
-        assert.ok("kinds" in page && !("notes" in page));
-        assert.equal(status.type, "label");
-        // the window carries the menu bar, which holds every action
-        const bar = (tree as unknown as { menu: { label: string }[] }).menu;
-        assert.deepEqual(
-            bar.map((title) => title.label),
-            ["File", "Edit", "View", "Play", "Notes", "Notation", "Measures", "Transform"],
-        );
-        // ...and its close mark does not ask: the score is this page's, kept
-        // whatever becomes of the window
-        assert.equal((tree as unknown as { ask_close: boolean }).ask_close, false);
-    });
-
-    test("opening writes the page from the model", async () => {
+    test("a score opens in the application, and a verb is a call to it", async () => {
+        const host = new FakeHost();
         const score = await Score.open(PHRASE);
-        new ScoreEditor(score);
-        assert.ok(score.mei().includes(`xml:id="n${items(score)[0].id}"`));
-    });
-
-    test("a verb edits the holder's score and walks back", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        const first = items(score)[0].id;
-        editor.select([`n${first}`]);
-        assert.deepEqual(editor.selected, [first]);
-        assert.ok(editor.articulation("stacc"));
-        assert.deepEqual(items(score)[0].marks?.articulations, ["stacc"]);
-        assert.ok(editor.undo());
-        assert.equal(items(score)[0].marks, undefined);
-        assert.ok(editor.redo());
-        assert.deepEqual(items(score)[0].marks?.articulations, ["stacc"]);
-    });
-
-    test("a spanner runs between the first and the last selected", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        const ids = items(score).map((item) => item.id);
-        editor.select([`n${ids[3]}`, `n${ids[0]}`]);
-        assert.ok(editor.spanner("slur"));
-        const sheet = score.sheet() as unknown as {
-            spanners: { kind: string; from: number; to: number }[];
-        };
-        assert.deepEqual(sheet.spanners, [{ kind: "slur", from: ids[0], to: ids[3] }]);
-    });
-
-    test("a verb with nothing selected changes nothing", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        const before = score.mei();
-        assert.equal(editor.delete(), false);
-        assert.equal(score.mei(), before);
-    });
-
-    test("the value in hand is the crate's", async () => {
-        const editor = new ScoreEditor(await Score.open(PHRASE), { value: [1, 8] });
-        assert.deepEqual(editor.value, [1, 8]);
-        editor.value = [1, 2];
-        assert.deepEqual(editor.value, [1, 2]);
-    });
-
-    test("a transformation runs over the measures selected", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        const octaves = () =>
-            (items(score) as unknown as { pitches: { octave: number }[] }[]).map(
-                (item) => item.pitches[0].octave,
-            );
-        const ids = items(score).map((item) => item.id);
-        const before = octaves();
-        editor.select([`n${ids[5]}`]); // a note of the second bar
-        assert.ok(editor.transform("transpose", { semitones: 12 }));
-        const after = octaves();
-        assert.deepEqual(after.slice(0, 4), before.slice(0, 4));
-        assert.deepEqual(after.slice(4), before.slice(4).map((octave) => octave + 1));
-        assert.equal(editor.transform("fold"), false);
-    });
-
-    test("entry is the crate's switch", async () => {
-        const editor = new ScoreEditor(await Score.open(PHRASE));
-        assert.equal(editor.entry, false, "the window opens outside note entry");
-        editor.entry = true;
-        assert.equal(editor.entry, true);
-    });
-
-    const drawnPage = (editor: ScoreEditor) =>
-        pageOf(editor.draw()) as unknown as {
-            vb: number[];
-            systems: number[][];
-        };
-
-    test("the layout is the window's and the paper is fixed", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        assert.equal(editor.layout, "page");
-        // the drawing is the paper nobody chose, A4, whatever the music needs
-        assert.deepEqual(drawnPage(editor).vb, [21000, 29700]);
-        editor.layout = "continuous";
-        assert.equal(editor.layout, "continuous");
-        assert.equal(drawnPage(editor).systems.length, 1);
-        assert.ok(!score.mei().includes("page.width"), "a layout writes nothing");
-    });
-
-    test("the page setup is the score's and walks back", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        assert.equal(editor.page.paper, "A4");
-        assert.ok(editor.page.papers.includes("Octavo"));
-        assert.ok(editor.setPage("Letter", { landscape: true, staff: 800 }));
-        const setup = editor.page;
-        assert.deepEqual([setup.paper, setup.landscape], ["Letter", true]);
-        assert.equal(setup.page.staff, 800);
-        assert.equal((score.sheet() as unknown as { page: { width: number } }).page.width, 2794);
-        assert.ok(score.mei().includes('page.width="279.4mm"'), "it travels in the document");
-        assert.equal(drawnPage(editor).vb[0], 27940);
-        assert.ok(editor.undo());
-        assert.equal((score.sheet() as unknown as { page?: unknown }).page, undefined);
-        assert.equal(editor.setPage("foolscap"), false);
-    });
-
-    test("a text of the page is written and placed", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        assert.ok(editor.setText("title", "A title"));
-        assert.ok(editor.setText("note", "* a footnote"));
-        assert.ok(editor.setText("composer", "A. Composer", { halign: "left", pages: "all" }));
-        const head = (score.sheet() as unknown as {
-            header: { title: string; notes: string[]; places: Record<string, { halign: string }> };
-        }).header;
-        assert.deepEqual([head.title, head.notes], ["A title", ["* a footnote"]]);
-        assert.equal(head.places.composer.halign, "left");
-        // each is drawn under its own id, which is what a press names
-        const page = pageOf(editor.draw()) as unknown as {
-            prims: { k: string; id?: string; s?: string }[];
-            kinds: Record<string, string>;
-        };
-        const drawn = Object.fromEntries(
-            page.prims.filter((p) => p.k === "text" && p.id).map((p) => [p.id, p.s]),
-        );
-        assert.equal(drawn["t-title"], "A title");
-        assert.equal(drawn["t-note-1"], "* a footnote");
-        assert.equal(page.kinds["t-title"], "rend");
-        assert.equal(editor.setText("motto", "x"), false);
-        assert.ok(editor.undo() && editor.undo() && editor.undo());
-        assert.equal((score.sheet() as unknown as { header?: unknown }).header, undefined);
-    });
-
-    test("the input state is the handle's and a press writes it", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score, { value: [1, 8] });
-        editor.draw();
-        assert.deepEqual([editor.dotted, editor.rest, editor.nextAccidental], [false, false, null]);
-        editor.dotted = true;
-        editor.nextAccidental = 1;
-        assert.deepEqual([editor.dotted, editor.nextAccidental], [true, 1]);
-        // in note entry, a press on a rest's column writes over it
-        const last = items(score).length - 1;
-        editor.select([`n${items(score)[last].id}`]);
-        assert.ok(editor.silence());
-        editor.entry = true;
-        const page = editor.view!.widget(editor, "page", editor.structure);
-        const rest = items(score)[last].id;
-        assert.ok(
-            // (a script's edit raised the floor, so the press states no version)
-            editor.apply("/gui_event", [page, 1, 0, "enter", `n${rest}`, -3, 0]),
-        );
-        const written = items(score)[last];
-        assert.deepEqual(written.dur, [3, 16]);
-        assert.equal(written.pitches?.[0].alter, 1);
-        assert.equal(editor.nextAccidental, null, "it was for that note");
-    });
-
-    test("the marks, signs and staves are methods too", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        editor.draw();
-        editor.select([`n${items(score)[0].id}`]);
-        assert.ok(editor.mark("tremolo", 2));
-        assert.equal(items(score)[0].marks?.tremolo, 2);
-        assert.ok(editor.lyric("la"));
-        assert.ok(editor.control("tempo", "Lento", 60));
-        assert.ok(editor.setKey("D"));
-        assert.ok(editor.navigation("segno"));
-        assert.ok(editor.multirests());
-        assert.ok(editor.setStaff({ label: "Flute" }));
-        const sheet = score.sheet() as unknown as Record<string, any>;
-        assert.equal(sheet.controls[0].bpm, 60);
-        assert.equal(sheet.key, "D");
-        assert.deepEqual(sheet.grid.marks, [[0, "segno"]]);
-        assert.equal(sheet.staves[0].label, "Flute");
-    });
-
-    test("without chrome the window is the page and the handle edits", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = (await edit(score, { open: false, chrome: false })) as unknown as ScoreEditor;
-        assert.ok(editor instanceof ScoreEditor);
-        assert.equal(editor.chrome, false);
-        const tree = editor.draw() as GuiNode & Record<string, unknown>;
-        // the page in its scroll over the status line, and nothing else: no
-        // toolbar, no palettes, no dialogs, no menu bar, no symbol to label a
-        // tool with -- and with no form to ask in, its close mark closes at
-        // once
-        assert.equal(tree.children?.length, 2);
-        const [scroll, status] = tree.children ?? [];
-        assert.equal(scroll.type, "plane");
-        assert.equal((scroll.children ?? [])[0].type, "score");
-        assert.equal(status.type, "label");
-        assert.ok(!("menu" in tree) && !("glyphs" in tree));
-        assert.equal(tree.ask_close, false);
-        // the keys are the window's, and stay
-        assert.deepEqual(tree.keys, ["score"]);
-        assert.equal(tree.plays, true);
-        // the handle edits, and is told of an edit a hand made on the page
-        const step = () => (items(score)[0].pitches?.[0] as { step?: string }).step;
-        const told: (string | undefined)[] = [];
-        editor.onChange = () => told.push(step());
-        const first = items(score)[0].id;
-        editor.select([`n${first}`]);
-        assert.ok(editor.move(1));
-        assert.deepEqual(told, ["d"]);
-        const page = editor.view!.widget(editor, "page", editor.structure);
-        // a drag names the staff position the note was let go on, here the G
-        // over the staff (a page's edit raised the floor, so the drag states
-        // no version)
-        assert.ok(editor.apply("/gui_event", [page, 1, 0, "transpose", `n${first}`, 1]));
-        assert.deepEqual(told, ["d", "g"]);
-        // what was edited is read on the score: its model, and the sequence
-        // it renders into, for the code to go on from
-        const played = [...score.renderEvents()].map(([, event]) => event.get("midinote"));
-        assert.equal(played.length, items(score).length);
-        assert.equal(played[0], 79);
-        // a verb refused answers so, and the status line and the handle say why
-        editor.select([]);
-        assert.equal(editor.tie(), false);
-        assert.ok(editor.refused, "the reason is the handle's too");
-        editor.select([`n${first}`]);
-        assert.ok(editor.articulation("stacc"));
+        const editor = new ScoreEditor(score, { value: [1, 8], chrome: false, width: 900 });
+        await editor.open(host.asHost());
+        const opened = host.calls[0]!;
+        assert.equal(opened.open, "score");
+        assert.ok(String(opened.options.mei).includes("<mei"));
+        assert.deepEqual(opened.options.value, [1, 8]);
+        assert.equal(opened.options.chrome, false);
+        assert.equal(opened.options.w, 900);
+        assert.equal(score.window, editor);
+        assert.ok(host.calls.some((c) => c.do?.verb === "end" && c.do.end === "contents"), "a pass ends where the music does");
+        assert.equal(await editor.articulation("stacc"), true);
+        assert.deepEqual(host.calls.find((c) => c.do?.verb === "act")!.do.call, { action: "articulation", name: "stacc" });
         assert.equal(editor.refused, undefined);
-        // and the whole window is what opens when nothing asks otherwise
-        assert.equal(new ScoreEditor(score).chrome, true);
+        await editor.select(["n1"]);
+        assert.deepEqual(host.calls.find((c) => c.do?.call?.verb === "select")!.do.call.elements, ["n1"]);
+        assert.deepEqual(await editor.value(), [1, 8]);
+        await editor.setValue([1, 2]);
+        assert.ok(host.calls.some((c) => c.do?.verb === "set" && String(c.do.call.value) === "1,2"));
+        assert.equal(await editor.dotted(), true);
+        assert.equal(editor.selectLeft(), true);
+        assert.deepEqual(host.verbs, ["select_left"]);
+        await editor.close();
     });
 
-    test("a tool and a menu pick are the editor's verbs", async () => {
+    test("a score's change goes to the window, and a close hands it back", async () => {
+        const host = new FakeHost();
         const score = await Score.open(PHRASE);
         const editor = new ScoreEditor(score);
-        editor.draw();
-        const first = items(score)[0].id;
-        editor.select([`n${first}`]);
-        // a tool that acts reports a click
-        const staccato = editor.view!.widget(editor, "tool", editor.structure, "stacc");
-        assert.ok(editor.apply("/gui_event", [staccato, 1, versionOf(editor), "click"]));
-        assert.deepEqual(items(score)[0].marks?.articulations, ["stacc"]);
-        // the verbs the menu and the tools use are methods too
-        assert.ok(editor.accidental(-1));
-        assert.equal(items(score)[0].pitches?.[0].alter, -1);
-        assert.ok(editor.voice(1));
-        const voices = (score.sheet() as unknown as { staves: { voices: unknown[] }[] }).staves[0]
-            .voices;
-        assert.equal(voices.length, 2);
-        assert.equal(editor.voice(1), false, "it is there already");
-        // a measure verb acts on the measures the selection covers
-        editor.select([`n${first}`]);
-        assert.ok(editor.setBarline("dbl"));
-        assert.ok(editor.insertMeasures(2));
-        assert.ok(editor.undo() && editor.undo());
-        // and a tool that holds state reports its value: an eighth
-        const value = editor.view!.widget(editor, "tool", editor.structure, "value");
-        editor.apply("/gui_event", [value, 2, versionOf(editor), 3]);
-        assert.deepEqual(editor.value, [1, 8]);
+        await editor.open(host.asHost());
+        const { id } = (score.sheet() as any).staves[0].voices[0].items[0];
+        assert.equal(score.apply({ op: "set_marks", id, marks: { articulations: ["stacc"] } } as never), true);
+        assert.ok((score.sheet() as any).staves[0].voices[0].items[0].marks, "the copy answers at once");
+        await editor.call({ query: "history" });
+        assert.ok(host.calls.some((c) => c.do?.verb === "page" && c.do.call.verb === "apply"));
+        assert.ok(host.window!.mei().includes("stacc"), "and the window has it");
+        await editor.close();
+        assert.equal(score.window, null);
+        assert.equal(score.path, "/left.mei");
+        assert.ok(score.mei().includes("stacc"), "it holds what the window left");
     });
 
-    test("a menu entry opens a form and OK writes one entry", async () => {
+    test("the score's file is the application's", async () => {
+        const host = new FakeHost();
         const score = await Score.open(PHRASE);
         const editor = new ScoreEditor(score);
-        const tree = editor.draw();
-        const stack = (tree.children ?? [])[3] as unknown as { flow: string; index: number };
-        assert.deepEqual([stack.flow, stack.index], ["stack", 0]);
-        const widget = (name: string) =>
-            editor.view!.widget(editor, "dialog", editor.structure, name);
-        const held = editor as unknown as { windowId: number | null };
-        held.windowId ??= 0;
-        const window = held.windowId;
-        // the bar's entry opens the form; its fields are typed; OK writes them
-        editor.apply("/gui_event", [window, 1, versionOf(editor), "menu", "dialog:text"]);
-        editor.apply("/gui_event", [widget("text:title"), 2, versionOf(editor), "A title"]);
-        editor.apply("/gui_event", [widget("text:notes"), 3, versionOf(editor), "* one\n* two"]);
-        const header = () => (score.sheet() as unknown as {
-            header?: { title: string; notes: string[] };
-        }).header;
-        assert.equal(header(), undefined, "nothing until OK");
-        assert.ok(editor.apply("/gui_event", [widget("text:ok"), 4, versionOf(editor), "click"]));
-        assert.deepEqual([header()?.title, header()?.notes], ["A title", ["* one", "* two"]]);
-        assert.ok(editor.undo());
-        assert.equal(header(), undefined, "the form was one entry");
+        await editor.open(host.asHost());
+        assert.equal(await editor.save("/a.mei"), "/a.mei");
+        assert.equal(score.path, "/a.mei");
+        assert.equal(await editor.load("/b.mei"), true);
+        assert.equal(score.path, "/b.mei");
+        assert.equal(await editor.unsaved(), false);
+        await editor.close();
     });
 
-    test("an entry of a palette is a verb over the selection", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        editor.draw();
-        const first = items(score)[0].id;
-        editor.select([`n${first}`]);
-        const entry = editor.view!.widget(editor, "palette", editor.structure, "ornaments:trill");
-        assert.ok(editor.apply("/gui_event", [entry, 1, versionOf(editor), "click"]));
-        assert.equal(items(score)[0].marks?.ornament, "trill");
-        // and the verb a palette brought is a method too
-        assert.ok(editor.grace("acc"));
-        assert.equal(items(score)[0].marks?.grace, "acc");
-        assert.ok(editor.grace());
-        assert.equal(items(score)[0].marks?.grace, undefined);
-    });
-
-    test("a score is written to a file and read back as itself", async () => {
-        const dir = mkdtempSync(join(tmpdir(), "clausters-score-"));
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        assert.ok(editor.setText("title", "A title"));
-        await assert.rejects(() => score.write(), /no file/);
-        const path = await score.write(join(dir, "a.mei"));
-        assert.equal(score.path, path);
-        const again = await Score.read(path);
-        assert.equal(again.path, path);
-        assert.deepEqual(again.sheet(), score.sheet(), "notes, marks and the page's text");
-        rmSync(dir, { recursive: true });
-    });
-
-    test("the File menu saves and opens through this client", async () => {
-        const dir = mkdtempSync(join(tmpdir(), "clausters-score-"));
-        const [saved, other] = [join(dir, "saved.mei"), join(dir, "other.mei")];
-        writeFileSync(other, (await Score.open("@clef:F-4\n@data:4CD/")).mei());
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        editor.draw();
-        (editor as unknown as { windowId: number | null }).windowId ??= 0;
-        const written = items(score).length;
-        const widget = (name: string) =>
-            editor.view!.widget(editor, "dialog", editor.structure, name);
-        const send = (id: number, ...payload: unknown[]) =>
-            editor.apply("/gui_event", [id, 1, versionOf(editor), ...payload]);
-        // a score with no file is asked for one, and is written there
-        send(0, "menu", "save");
-        send(widget("file:path"), saved);
-        send(widget("file:ok"), "click");
-        await editor.filed;
-        assert.deepEqual((await Score.read(saved)).sheet(), score.sheet());
-        assert.equal(score.path, saved);
-        // from then on the window's save writes it without asking
-        editor.select([`n${items(score)[0].id}`]);
-        assert.ok(editor.articulation("stacc"));
-        send(0, "save");
-        await editor.filed;
-        assert.deepEqual((await Score.read(saved)).sheet(), score.sheet());
-        // Open reads another document in place of the score, as one entry
-        send(0, "menu", "dialog:open");
-        send(widget("file:path"), other);
-        send(widget("file:ok"), "click");
-        await editor.filed;
-        assert.equal(items(score).length, 2);
-        assert.ok(editor.undo());
-        assert.equal(items(score).length, written);
-        // and the two are methods
-        assert.ok(await editor.load(other));
-        assert.equal(items(score).length, 2);
-        assert.equal(await editor.save(join(dir, "again.mei")), join(dir, "again.mei"));
-        rmSync(dir, { recursive: true });
-    });
-
-    test("New and Close in the File menu", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        editor.draw();
-        (editor as unknown as { windowId: number | null }).windowId ??= 0;
-        const send = (id: number, ...payload: unknown[]) =>
-            editor.apply("/gui_event", [id, 1, versionOf(editor), ...payload]);
-        // New: one staff, four empty bars, as one entry; nothing to lose yet
-        send(0, "menu", "new");
-        assert.deepEqual(
-            items(score).map((i) => i.kind),
-            ["rest", "rest", "rest", "rest"],
-        );
-        assert.equal(editor.unsaved, false);
-        // a change, and Close does not ask: the score is this page's, and it
-        // keeps the change -- to save, read, or open again
-        assert.ok(editor.setText("title", "A title"));
-        assert.equal(editor.unsaved, true);
-        send(0, "menu", "close");
-        assert.equal(editor.closed, true);
-        const kept = score.sheet() as unknown as { header?: { title: string } };
-        assert.equal(kept.header?.title, "A title");
-    });
-
-    test("Close with nothing unsaved closes at once", async () => {
-        const dir = mkdtempSync(join(tmpdir(), "clausters-score-"));
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        editor.draw();
-        (editor as unknown as { windowId: number | null }).windowId ??= 0;
-        assert.ok(editor.setText("title", "A title"));
-        await editor.save(join(dir, "a.mei"));
-        assert.equal(editor.unsaved, false);
-        editor.apply("/gui_event", [0, 1, versionOf(editor), "menu", "close"]);
-        assert.equal(editor.closed, true);
-        rmSync(dir, { recursive: true });
-    });
-
-    test("a score is exported as the sequence it renders", async () => {
-        const { EventSequence } = await import("../src/seq/sequence.ts");
-        const dir = mkdtempSync(join(tmpdir(), "clausters-score-"));
-        const score = await Score.open(PHRASE);
-        const editor = new ScoreEditor(score);
-        editor.draw();
-        (editor as unknown as { windowId: number | null }).windowId ??= 0;
-        const notes = items(score).length;
-        // a MIDI file, by its extension: the notes, at the score's own tempo
-        const path = await editor.export(join(dir, "a.mid"));
-        const read = EventSequence.fromSmf(new Uint8Array(readFileSync(path)));
-        assert.equal(read.length, notes);
-        assert.ok(Math.abs(read.tempoMap!.secsAt(2) - 1) < 1e-9);
-        // a clip, named or by its extension
-        const clip = await editor.export(join(dir, "a.midi2"));
-        assert.equal(EventSequence.fromClip(new Uint8Array(readFileSync(clip))).length, notes);
-        assert.equal(await editor.export(join(dir, "b.bin"), "clip"), join(dir, "b.bin"));
-        await assert.rejects(() => editor.export(join(dir, "c.mid"), "wav" as "smf"), /smf/);
-        // and the File menu's Export is the same, through its form
-        const widget = (name: string) =>
-            editor.view!.widget(editor, "dialog", editor.structure, name);
-        const send = (id: number, ...payload: unknown[]) =>
-            editor.apply("/gui_event", [id, 1, versionOf(editor), ...payload]);
-        send(0, "menu", "dialog:export_midi");
-        send(widget("file:path"), join(dir, "menu.mid"));
-        send(widget("file:ok"), "click");
-        await editor.filed;
-        const menu = EventSequence.fromSmf(new Uint8Array(readFileSync(join(dir, "menu.mid"))));
-        assert.equal(menu.length, notes);
-        rmSync(dir, { recursive: true });
-    });
-
-    test("edit opens a score in the score editor", async () => {
-        const score = await Score.open(PHRASE);
-        const editor = await edit(score, { open: false });
-        assert.ok(editor instanceof ScoreEditor);
-        assert.equal((editor as unknown as ScoreEditor).score, score);
-    });
-
-    /** A take played a little off the grid. */
-    const take = () =>
-        new EventSequence([
-            [0.03, new Event({ midinote: 60, dur: 0.93, velocity: 71 })],
-            [1.01, new Event({ midinote: 62, dur: 0.97, velocity: 64 })],
-            [1.98, new Event({ midinote: 64, dur: 1.02, velocity: 80 })],
-            [3.02, new Event({ midinote: 65, dur: 0.9, velocity: 77 })],
-        ]);
-
-    test("a sequence is edited on its page and only what was edited moves", async () => {
-        const played = take();
-        const before = played.toRows(["at", "midinote", "velocity"]);
-        const editor = (await edit(played, {
-            view: "score",
-            open: false,
-            division: 8,
-        })) as unknown as ScoreEditor;
-        assert.ok(editor instanceof ScoreEditor);
-        assert.ok(editor.structure === played && editor.sequence === played);
-        // the page is the take, read: four quarters -- and the take as it was
-        assert.deepEqual(
-            items(editor.score).map((item) => item.dur),
-            [[1, 4], [1, 4], [1, 4], [1, 4]],
-        );
-        assert.deepEqual(played.toRows(["at", "midinote", "velocity"]), before);
-
-        const third = items(editor.score)[2].id;
-        editor.select([`n${third}`]);
-        assert.ok(editor.articulation("stacc"));
-        // the third note is marked in the sequence, played when it was
-        assert.deepEqual(played.toRows(["at", "articulations"])[2], [1.98, ["stacc"]]);
-        // and the others are as they were played
-        const now = played.toRows(["at", "midinote", "velocity", "articulations"]);
-        assert.deepEqual(
-            now.map((row) => row.slice(0, 3)),
-            before,
-        );
-        assert.deepEqual(
-            now.filter((_, i) => i !== 2).map((row) => row[3]),
-            [null, null, null],
-        );
-
-        // the entry is the sequence's: its history walks it back, and the page follows
-        assert.ok(played.history.undo());
-        assert.deepEqual(played.toRows(["articulations"])[2], [null]);
-        assert.equal(items(editor.score)[2].marks, undefined);
-    });
-
-    test("a roll and a page over one sequence follow each other", async () => {
-        const played = take();
-        const roll = await edit(played, { open: false });
-        const page = (await edit(played, { view: "score", open: false })) as unknown as ScoreEditor;
-        assert.ok(roll instanceof NotesEditor && page instanceof ScoreEditor);
-        // a note moved through the sequence -- as a roll moves it -- is on the page
-        played.events.item(0).set("midinote", 67);
-        page.adopt();
-        const first = items(page.score)[0] as unknown as { pitches: { step: string }[] };
-        assert.equal(first.pitches[0].step, "g");
-        await assert.rejects(
-            edit(played, { view: "tablature" as "score", open: false }),
-            /no view/,
-        );
+    test("a page over a sequence opens beside a roll, and plays on a transport of its own", async () => {
+        const host = new FakeHost();
+        const take = new EventSequence([[0, new Event({ midinote: 60, dur: 1 })]]);
+        const page = await edit(take, { host: host.asHost(), view: "score", division: 8 });
+        assert.ok(page instanceof ScoreEditor);
+        assert.equal(page.sequence, take);
+        assert.equal(page.structure, take);
+        assert.ok(host.calls[0]!.options.sequence, "the sequence is handed over");
+        assert.equal(host.calls[0]!.options.how.division, 8);
+        assert.equal(await edit(take, { host: host.asHost(), view: "score" }), page);
+        await assert.rejects(edit(take, { view: "tablature", open: false } as never) as Promise<unknown>, /no view/);
+        await page.play(1);
+        assert.ok(host.calls.some((c) => c.do?.verb === "play" && c.do.beat === 1));
+        assert.ok(page.transport instanceof HostedTransport);
+        await page.close();
     });
 }

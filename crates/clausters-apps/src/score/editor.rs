@@ -404,7 +404,7 @@ impl ScoreEditor {
 
     /// Reads the page again where the sequence it is over is no longer the
     /// one it agreed with.
-    fn follow(&mut self) {
+    pub fn follow(&mut self) {
         let moved = self.over.as_ref().is_some_and(|over| {
             *over.sequence.lock().unwrap_or_else(|e| e.into_inner()) != over.seen
         });

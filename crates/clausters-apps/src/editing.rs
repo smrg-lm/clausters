@@ -367,6 +367,19 @@ enum Order<'a> {
     View(Object, &'a str),
     /// An order of its own.
     Own,
+    /// An order of its own, with its structure under the key, for a view to
+    /// join.
+    OwnNamed(&'a str),
+}
+
+/// **Where a window a client opened goes among the undo orders**: alone, its
+/// own, or beside a member showing the same contents, in that member's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Place {
+    /// An order of its own: another window's edits are no step of its.
+    Apart,
+    /// The order of this member, as one structure with it under the same key.
+    Beside(MemberId),
 }
 
 /// **Whether two paths name one file**: the file each resolves to, where
@@ -744,6 +757,14 @@ impl Editing {
         }
     }
 
+    /// **Takes a member in where `place` says**, under `key`.
+    pub fn join_at(&mut self, place: Place, key: &str, member: Member) -> MemberId {
+        match place {
+            Place::Apart => self.admit(member, Order::OwnNamed(key)),
+            Place::Beside(parent) => self.join_view(parent, key, member),
+        }
+    }
+
     /// **Takes a member in with an undo order of its own**: its object shares
     /// no history with any other member's, whatever was opened before it.
     /// Sharing an order is a composition the caller asks for ([`join`]).
@@ -768,6 +789,7 @@ impl Editing {
             Order::Context(key) => histories.join(object, key, &domain),
             Order::View(anchor, key) => histories.join_with(object, anchor, key, &domain),
             Order::Own => histories.focus(object, &domain),
+            Order::OwnNamed(key) => histories.own(object, key, &domain),
         };
         self.seats.push(Seat {
             member,

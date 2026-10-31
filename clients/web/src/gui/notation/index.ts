@@ -6,8 +6,10 @@
 // flat, resolution-independent display list the GUI host's `score` widget
 // consumes -- a SMuFL glyph-outline table plus placed primitives in page units,
 // each carrying the MEI `xml:id` it was engraved from. The host tessellates it;
-// **the engraver lives on the client, never in the host**, so any language
-// client reuses the same host renderer by sending the same display list.
+// **this engraver is the client's, for what opens no window**, so any language
+// client reuses the same host renderer by sending the same display list. The
+// score editor is the host's application, with an engraver of its own
+// (`ScoreEditor`).
 //
 // The whole layer is **shared**: the score model, the SVG walk and the MEI
 // encoder are `clausters_core::notation`, reached here through the core's wasm

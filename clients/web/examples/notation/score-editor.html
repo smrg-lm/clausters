@@ -103,7 +103,7 @@ tool and every palette entry is one of the editor's verbs, and each verb is a
 method: the fermata on the last note is put there by this page
 (<code>select</code>, <code>ornament</code>), as the Ornaments palette would.
 
-<b>The score plays on the engine, and the page's cursor follows it.</b> The
+<b>The score plays in the application, and the page's cursor follows it.</b> The
 space bar, the toolbar's transport and the Play menu play it from where the
 selection starts -- several notes selected are the stretch a loop repeats --
 on a transport of its own (<code>editor.play</code>,
@@ -244,7 +244,7 @@ B c d e | f2 e d | c B A B | G4 |
       // back, since a second window over the score would draw on the first
       // one's widgets.
       const alone = async () => {
-        editor.close();
+        await editor.close();
         const page = await gui.edit(score, {
           chrome: false, title: "The page alone", width: 900, height: 600,
           stage: el("alone"),
@@ -300,27 +300,26 @@ B c d e | f2 e d | c B A B | G4 |
 
         // The editor. The window is the application's, whole: the menu bar,
         // the toolbar, the palettes beside the page, the status line under it.
-        // The session is made ambient first, so the editor plays on its engine
-        // without being told which, and its host is opened wired to that
-        // engine: the page's cursor is drawn from the position of the
-        // transport the score plays on, which only a host that is a client of
-        // the engine can read.
+        // It runs in the GUI host, with the engraver and the playback, and this
+        // page is its handler: from here on a change through `score` is an edit
+        // of the window's, and when the window goes it holds what the window
+        // left it as.
         const session = (await Session.embed()).activate();
-        await session.gui();   // the host wired to this session's engine
+        await session.gui();   // the host the editor opens on
 
         editor = await gui.edit(score, {
           title: "Score editor (a document, and its model)",
           width: 1100, height: 800, stage: el("stage"),
         });
-        editor.value = [1, 8];         // note entry writes eighths
+        await editor.setValue([1, 8]); // note entry writes eighths
 
         // A pick and a method call are one path. The Ornaments palette puts a
         // fermata on what is selected. So does this: the last note of the line
         // is selected and given one, as one step of the history -- Ctrl+Z over
         // the window takes it back.
-        editor.select([`n${top.at(-1)}`]);
-        editor.ornament("fermata");
-        editor.select([]);
+        await editor.select([`n${top.at(-1)}`]);
+        await editor.ornament("fermata");
+        await editor.select([]);
 
         // The score's file. Saved once, the file is the score's: Ctrl+S and
         // File, Save write it again without asking. It is the score itself, as

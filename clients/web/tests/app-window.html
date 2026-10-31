@@ -25,7 +25,7 @@
       Verdict beaconed as a fetch, read from the access log.
     -->
     <script type="module">
-      import { Session, SoundFile, gui, opfs } from "../dist/index.js";
+      import { Event, EventSequence, Session, SoundFile, gui, opfs } from "../dist/index.js";
       import { Content, Multitrack, Session as SavedSession, Source } from "../dist/multitrack.js";
 
       const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
@@ -191,6 +191,32 @@
         await rival.close();
         await empty.close();
         log("stored: the multitrack and its relative sources read back from OPFS, handed back when another session took the window, and opened from OPFS in an empty one");
+
+        // **a roll is an application too**: the page's sequence is the window's,
+        // a second roll opens beside the first in one history with a transport
+        // of its own, and the last close hands the sequence back
+        const notes = new EventSequence([
+          [0, new Event({ midinote: 60, dur: 1 })],
+          [1, new Event({ midinote: 64, dur: 1 })],
+        ]);
+        const keys = await gui.edit(notes, { title: "keys" });
+        const hertz = await gui.edit(notes, { title: "hertz", yAxis: "hz" });
+        const note = notes.events.item(0);
+        note.set("midinote", 62);
+        const state = await keys.act("handle", { call: { verb: "state" } });
+        if (state.events[0].data.midinote !== 62) throw new Error(`the window has not the change: ${JSON.stringify(state)}`);
+        if (!(await hertz.undo())) throw new Error("the other roll walked nothing");
+        if (note.get("midinote") !== 60) throw new Error("the copy did not follow the step");
+        await keys.play(0);
+        if (!(await keys.playing()) || (await hertz.playing())) throw new Error("the transports are not one each");
+        await keys.stop();
+        await keys.close();
+        note.set("midinote", 67);
+        await hertz.close();
+        if (notes.window !== null || note.get("midinote") !== 67) {
+          throw new Error("the last close did not hand the sequence back");
+        }
+        log("roll: one history over two windows, a transport each, and the sequence handed back");
 
         verdict("PASS: an application's window opened at its declared size and a press on " +
           "it landed where it is drawn; one opened into an element drew there");

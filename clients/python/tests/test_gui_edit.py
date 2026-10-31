@@ -135,7 +135,7 @@ def opened(editor):
 # ---- the verb ----
 
 def test_edit_takes_the_ambient_servers_rate(monkeypatch):
-    """With no ``sample_rate``, the roll is laid out at the rate of the server
+    """With no ``sample_rate``, a curve is laid out at the rate of the server
     a play would resolve -- and at 48 kHz with none."""
     import types
 
@@ -145,13 +145,12 @@ def test_edit_takes_the_ambient_servers_rate(monkeypatch):
         def query_info(self, *_a, **_kw):
             return types.SimpleNamespace(nominal_sample_rate=96_000.0)
 
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))])
     monkeypatch.setattr(main, "server", None)
     monkeypatch.setattr(main, "_ambient_session", lambda: None)
-    assert edit(seq, open=False).sample_rate == 48_000.0, "no server anywhere"
+    assert edit(a_curve(), open=False).sample_rate == 48_000.0, "no server anywhere"
     monkeypatch.setattr(main, "server", Ambient())
-    assert edit(seq, open=False).sample_rate == 96_000.0
-    assert edit(seq, sample_rate=44_100.0, open=False).sample_rate == 44_100.0, "a rate given wins"
+    assert edit(a_curve(), open=False).sample_rate == 96_000.0
+    assert edit(a_curve(), sample_rate=44_100.0, open=False).sample_rate == 44_100.0, "a rate given wins"
 
 
 def test_the_verb_opens_the_editor_the_structure_asks_for():
@@ -344,148 +343,10 @@ def _roll(tempo=TEMPO):
     return timeline, editor
 
 
-def test_a_timeline_opens_as_the_events_it_renders_and_is_left_as_it_was():
-    timeline, editor = _roll()
-    _host, wid = opened(editor)
-    assert editor.apply("/gui_event", [wid, 1, 0, "notes",
-                                       1, 0.0, BEAT, 67, 13, 0,
-                                       2, 2 * BEAT, BEAT, 72, 13, 0]) is True
-    assert [(beat, e["midinote"]) for beat, e in editor.sequence] == [(0.0, 67), (2.0, 72)]
-    # The timeline is code, and the roll edited what it produced.
-    assert [(beat, event.midinote()) for beat, event in timeline] == [(0.0, 60.0), (1.0, 64.0)]
-    assert editor.undo() is True
-    assert [(beat, e["midinote"]) for beat, e in editor.sequence] == [(0.0, 60.0), (1.0, 64.0)]
-
-
-def test_a_sequence_is_edited_in_place_by_id():
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0, instrument="bell")),
-                         (1.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    editor = edit(seq, sample_rate=SR, open=False)
-    _host, wid = opened(editor)
-    first, second = seq.events
-    # Note 1 is gone and note 2 moved: order is no identity, so note 2 keeps
-    # its own keys and the one removed is the one named.
-    editor.apply("/gui_event", [wid, 1, 0, "notes", 2, 2 * BEAT, BEAT, 65, 13, 0])
-    assert list(seq.events) == [second] and first.sequence is None
-    assert (second.at, second["midinote"]) == (2.0, 65)
-
-
-def test_a_rolls_ruler_reads_the_sequences_own_map():
-    _timeline, editor = _roll()
-    tree = editor.view.build(editor)
-    roll = next(node for node in _walk(tree) if node.get("type") == "notes")
-    assert json.loads(roll["axes"]["x"]["tempo_map"]) == json.loads(TempoMap(TEMPO).dump())
-    assert roll["note_ids"] == [1, 2]
-    assert roll["notes"][:5] == [0.0, BEAT * 0.8, 60.0, 13.0, 0.0]
-
-
 def _walk(node):
     yield node
     for child in node.get("children", []) or []:
         yield from _walk(child)
-
-
-def test_a_roll_that_paints_what_is_played_says_so_to_the_host():
-    """``midi_in`` is the roll's own prop: the host opens its MIDI input and
-    paints what arrives, reported as the notes a hand's edit reports."""
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    plain, _ = opened(edit(seq, sample_rate=SR, open=False))
-    assert "midi_in" not in picture(plain.trees[0]), "off unless asked"
-    painting, _ = opened(edit(seq, sample_rate=SR, midi_in=True, open=False))
-    assert picture(painting.trees[0])["midi_in"] == 1
-
-
-def test_a_roll_lands_on_a_grid_in_beats():
-    """A sixteenth until somebody chooses another: the roll's time axis says
-    so, and ``grid`` reads and sets it -- the window's own, like its zoom."""
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    editor = edit(seq, sample_rate=SR, open=False)
-    host, _ = opened(editor)
-    assert picture(host.trees[0])["axes"]["x"]["grid"] == 0.25
-    assert editor.grid == 0.25
-    editor.grid = 1.0
-    assert editor.grid == 1.0
-    # snap to grid is a switch beside it, on until it is turned off
-    assert picture(host.trees[0])["axes"]["x"]["grid_snap"] is True
-    assert editor.snap_to_grid is True
-    editor.snap_to_grid = False
-    assert editor.snap_to_grid is False and editor.grid == 1.0
-
-
-def test_a_note_keeps_what_the_roll_cannot_draw():
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0, instrument="bell"))],
-                        tempo_map=TempoMap(TEMPO))
-    editor = edit(seq, sample_rate=SR, open=False)
-    _host, wid = opened(editor)
-    editor.apply("/gui_event", [wid, 1, 0, "notes", 1, 0.0, BEAT, 65, 13, 0])
-    _beat, event = next(iter(seq))
-    assert event.get("instrument") == "bell"
-    assert event.midinote() == 65.0
-
-
-def test_a_note_the_hand_made_gets_an_id_and_the_roll_is_told():
-    _timeline, editor = _roll()
-    host, wid = opened(editor)
-    editor.apply("/gui_event", [wid, 1, 0, "notes",
-                                1, 0.0, BEAT * 0.8, 60, 13, 0,
-                                2, BEAT, BEAT * 0.8, 64, 13, 0,
-                                0, 3 * BEAT, BEAT, 67, 90, 0])
-    assert [e.at for e in editor.sequence.events] == [0.0, 1.0, 3.0]
-    _seq, corrections, _reason = host.acks[-1]
-    assert corrections[0][1]["note_ids"] == [1, 2, 3]
-
-
-def test_what_the_roll_does_not_draw_is_kept():
-    from clausters.seq.timeline import OscItem
-
-    timeline = a_timeline()
-    timeline.add(3.0, OscItem("/mark"))
-    timeline.map = TempoMap(TEMPO)
-    editor = edit(timeline, sample_rate=SR, open=False)
-    _host, wid = opened(editor)
-    editor.apply("/gui_event", [wid, 1, 0, "notes", 1, 0.0, BEAT, 67, 13, 0])
-    assert [e.get("type", "note") for _b, e in editor.sequence] == ["note", "osc"]
-
-
-def test_a_marker_dragged_in_the_roll_moves_it():
-    from clausters.seq.timeline import OscItem
-
-    timeline = a_timeline()
-    timeline.add(3.0, OscItem("/hit", 7))
-    timeline.map = TempoMap(TEMPO)
-    editor = edit(timeline, sample_rate=SR, open=False)
-    _host, wid = opened(editor)
-    assert editor.apply("/gui_event", [wid, 1, 0, "osc", 1.5 * BEAT, "/hit"])
-    at = [(beat, e) for beat, e in editor.sequence if e.get("type") == "osc"]
-    assert at[0][0] == 1.5
-    assert at[0][1]["args"] == [7], "the message it sends is not the lane's to lose"
-    assert editor.undo_label == "edit the markers"
-    assert editor.undo() is True
-    assert [beat for beat, e in editor.sequence if e.get("type") == "osc"] == [3.0]
-
-
-def test_a_marker_removed_in_the_roll_leaves_its_neighbours_theirs():
-    from clausters.seq.timeline import OscItem
-
-    seq = EventSequence([(0.0, OscItem("/a", 1)), (1.0, OscItem("/b", 2)),
-                         (2.0, OscItem("/c", 3))], tempo_map=TempoMap(TEMPO))
-    editor = edit(seq, sample_rate=SR, open=False)
-    _host, wid = opened(editor)
-    assert editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", 2 * BEAT, "/c"])
-    assert [(e["addr"], e["args"]) for _b, e in seq] == [("/a", [1]), ("/c", [3])]
-
-
-def test_a_marker_added_in_the_roll_is_refused_and_says_why():
-    from clausters.seq.timeline import OscItem
-
-    seq = EventSequence([(0.0, OscItem("/a"))], tempo_map=TempoMap(TEMPO))
-    editor = edit(seq, sample_rate=SR, open=False)
-    host, wid = opened(editor)
-    assert editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", BEAT, ""]) is False
-    assert len(seq) == 1
-    seq_, corrections, reason = host.acks[-1]
-    assert seq_ == 1 and "a marker is the message it sends" in (reason or "")
-    assert corrections and corrections[0][1]["osc"] == [0.0, "/a"]
 
 
 # ---- the acceptance the track was opened with ----
@@ -500,13 +361,7 @@ def test_edit_over_a_structure_with_its_editor_open_hands_that_one_back():
     first = edit(curve, sample_rate=SR, host=host)
     assert edit(curve, sample_rate=SR, host=host, title="again") is first
     assert len(host.trees) == 1, "nothing else was opened"
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    keys = edit(seq, sample_rate=SR, host=host)
-    assert edit(seq, sample_rate=SR, host=host) is keys
-    hertz = edit(seq, sample_rate=SR, host=host, y_axis="hz")
-    assert hertz is not keys and edit(seq, sample_rate=SR, host=host, y_axis="hz") is hertz
-    # one structure, two editors of their own kinds: the curve's is not the
-    # roll's, and another curve is another window
+    # another curve is another window
     assert edit(a_curve(), sample_rate=SR, host=host) is not first
     first.close()
     assert edit(curve, sample_rate=SR, host=host) is not first
@@ -530,90 +385,7 @@ def test_two_editors_over_one_structure_share_one_stack():
     assert curve.to_points()[0:2] == pytest.approx([0.0, 200.0])
 
 
-def test_a_window_over_a_curve_and_a_roll_undoes_across_both_in_order():
-    # The composed case: two structures, one editing context, one order.
-    context = Editing()
-    curve = a_curve()
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    curve_editor = edit(curve, sample_rate=SR, context=context, open=False)
-    roll = edit(seq, sample_rate=SR, context=context, open=False)
-    _ch, curve_wid = opened(curve_editor)
-    _rh, roll_wid = opened(roll)
-
-    curve_editor.apply("/gui_event", [curve_wid, 1, 0, "points",
-                                      0.0, 300.0, 1, 0.0, 2.0, 900.0, 1, 0.0])
-    roll.apply("/gui_event", [roll_wid, 1, 0, "notes", 1, 0.0, BEAT, 67, 13, 0])
-    assert context.undo_label == "edit the notes"
-
-    # The notes go back first: one pile, walked in the order the edits landed.
-    assert roll.undo() is True
-    assert [e.midinote() for _b, e in seq] == [60.0]
-    assert curve.to_points()[1] == pytest.approx(300.0), "the curve has not moved yet"
-    assert curve_editor.undo() is True
-    assert curve.to_points()[1] == pytest.approx(200.0)
-
-
 # ---- a script's change is a turn ----
-
-
-def test_a_scripts_change_with_the_roll_open_redraws_it_and_is_undone_there():
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)), (1.0, Event(midinote=64, dur=1.0))],
-                        tempo_map=TempoMap(TEMPO))
-    roll = edit(seq, sample_rate=SR, open=False)
-    host, _wid = opened(roll)
-    told = []
-    roll.on_change = lambda: told.append(True)
-    first, second = seq.events
-    drawn = len(host.acks)
-    second["midinote"] = 67
-    _seq, corrections, _reason = host.acks[-1]
-    assert len(host.acks) == drawn + 1 and corrections[0][1]["notes"][7] == 67.0, \
-        "the roll is redrawn with the note where the script put it"
-    assert told == [True] and roll.undo_label == "set midinote"
-
-    with seq.history("humanize"):
-        for event in seq.events:
-            event.at += 0.25
-    assert len(host.acks) == drawn + 2, "one block, one redraw"
-    assert roll.undo_label == "humanize"
-    assert roll.undo() is True, "the window's Ctrl+Z takes the whole block back"
-    assert [event.at for event in seq.events] == [0.0, 1.0]
-    assert roll.undo() is True and second["midinote"] == 64
-    assert seq.history.redo() is True and second["midinote"] == 67
-    assert first is seq.events[0], "one event, one object, across the walk"
-
-
-def test_a_roll_opened_in_a_context_it_was_handed_claims_the_sequence():
-    context = Editing()
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    roll = edit(seq, sample_rate=SR, context=context, open=False)
-    opened(roll)
-    seq.events[0].at = 2.0
-    assert context.undo_label == "move an event", "the script's change is that context's"
-    assert Editing.of(seq) is context
-
-
-def test_a_window_over_a_held_curve_and_the_roll_are_one_order():
-    """A note's curve opened on its own is the sequence's, so its window joins
-    the roll's history: one gesture is one entry, the roll redraws it, and
-    either window takes it back."""
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    bend = seq.events[0].automation.add({"bend": True}, [(0.0, 0.0), (1.0, 2.0)])
-    roll = edit(seq, sample_rate=SR, open=False)
-    roll_host, _wid = opened(roll)
-    curve = edit(bend, sample_rate=SR, open=False)
-    _host, wid = opened(curve)
-    assert curve._editing is roll._editing
-    drawn = len(roll_host.acks)
-    curve.apply("/gui_event", [wid, 1, 0, "points", 0.0, 0.0, 1, 0.0, 1.0, -1.5, 1, 0.0])
-    assert [p["value"] for p in bend.points] == [0.0, -1.5]
-    assert len(roll_host.acks) > drawn, "the roll is redrawn"
-    assert roll.undo() is True and not roll.can_undo, "one gesture, one entry"
-    assert [p["value"] for p in bend.points] == [0.0, 2.0]
-    assert curve.redo() is True and [p["value"] for p in bend.points] == [0.0, -1.5]
-    # A bend is kept in its range, two semitones either way, as the roll
-    # draws it.
-    assert curve.rules["values"] == (-2.0, 2.0)
 
 
 def test_a_sequence_nobody_asked_a_history_of_records_nothing():
@@ -650,21 +422,6 @@ def test_a_catalogue_view_is_described_by_the_crate_and_not_by_this_client():
         _native.view_props("clip", {})
     with pytest.raises(ValueError, match="cannot be drawn"):
         _native.view_props("pianoroll", {"notes": "sixty"})
-
-
-def test_a_sequence_with_a_marker_still_draws_its_notes():
-    # The OSC markers are `time label` pairs, and a label is text: typed as
-    # numbers alone, one marker refused the whole roll and the window opened
-    # with nothing on it.
-    from clausters.seq.timeline import OscItem
-
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
-                         (3.0, OscItem("/mark", 1, "cue"))])
-    editor = NotesEditor(seq, sample_rate=SR)
-    roll = picture(editor.view.build(editor))
-    assert roll["type"] == "notes"
-    assert len(roll["notes"]) == 5, "the one note is on the roll"
-    assert roll["osc"][1] == "/mark", "and the marker beside it, by its label"
 
 
 # ---- the axis a curve is drawn against ----
@@ -757,55 +514,6 @@ class _PlayingServer(Server):
         return [note[0] for note in data[-1]["notes"]] if data else None
 
 
-def test_the_notes_editor_plays_on_its_own_transport_and_hears_an_edit():
-    server = _PlayingServer()
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
-                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    editor = NotesEditor(seq, sample_rate=SR, server=server)
-    _host, wid = opened(editor)
-    editor.play()
-    addrs = [addr for addr, _ in server.sent]
-    assert "/transport_group" in addrs and "/lane_new" in addrs
-    assert addrs[-1] == "/transport_play"
-    assert "/sched_atTransport" not in addrs, "the transport plays it, nothing is stamped"
-    # The two notes as the lane's data, at 100 samples a second and two beats
-    # a second: beat 0 at 0, beat 2 at 100.
-    assert server.lane() == [0, 100]
-    assert editor.playing
-
-    # An edit is the lane's new data, and no clock is asked for.
-    server.sent.clear()
-    editor.apply("/gui_event", [wid, 1, 0, "notes",
-                                1, 0.0, BEAT * 0.8, 60, 13, 0,
-                                2, 3 * BEAT, BEAT * 0.8, 67, 13, 0])
-    assert server.sent[0][0] == "/lane_set"
-    assert server.lane() == [0, 150], "the note moved to beat 3 is heard where it lands"
-    editor.stop()
-    assert "/transport_locateSample" in [addr for addr, _ in server.sent]
-
-
-def test_an_editor_that_plays_asks_for_a_host_on_its_server(monkeypatch):
-    """With no host named, the ambient one is asked for as a client of the
-    server the editor plays on -- what lets a host booted for the window read
-    the transport and draw the play cursor. An editor that plays nothing asks
-    for no server."""
-    import sys
-
-    asked = []
-
-    def ambient(server=None):
-        asked.append(server)
-        return FakeHost()
-
-    # the module, which the package's `plot` verb hides behind its own name
-    monkeypatch.setattr(sys.modules["clausters.plot"], "_ambient_host", ambient)
-    server = _PlayingServer()
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    NotesEditor(seq, sample_rate=SR, server=server).open()
-    PointsEditor(a_curve(), sample_rate=SR).open()
-    assert asked == [server, None]
-
-
 def test_play_answers_the_transport_the_sequence_plays_on():
     """No window: play(sequence) loads the lane on the server's notes
     transport and answers that transport, whose verbs speak the sequence's
@@ -840,31 +548,6 @@ def test_play_answers_the_transport_the_sequence_plays_on():
     assert server.sent, "each verb is the playback's"
     server.state["playing"] = False        # the pass reached its end
     assert transport.wait(timeout=1.0) is True
-
-
-def test_a_roll_hands_out_the_transport_play_answers():
-    """A roll's transport is its sequence's -- the object `play(sequence)`
-    answers -- and asking a roll for it plays nothing. Two sequences are two
-    transports: each one's verbs are about its own."""
-    server = _PlayingServer()
-    first = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    second = EventSequence([(0.0, Event(midinote=64, dur=1.0)),
-                            (2.0, Event(midinote=67, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    a = NotesEditor(first, sample_rate=SR, server=server)
-    b = NotesEditor(second, sample_rate=SR, server=server)
-    transport = first.play(server=server)
-    server.sent.clear()
-    other = b.transport
-    assert not server.sent, "asking for it plays nothing"
-    assert other is not transport and other.id != transport.id, "a transport each"
-    assert a.transport is transport and first.play(server=server) is transport
-    server.sent.clear()
-    other.loop(0.0, 2.0)
-    assert transport.span is None, "the other sequence's span is not this one's"
-    other.play()
-    assert server.lane() == [0, 100], "the second sequence is what plays"
-    assert {args[0] for addr, args in server.sent if addr.startswith("/transport_")} \
-        == {other.id}, "on its own transport, and nothing on the first's"
 
 
 def test_two_sequences_play_together_and_a_free_gives_the_transport_back():
@@ -908,38 +591,6 @@ def test_a_script_takes_a_transport_of_its_own_and_gives_it_back():
     assert server.ids.in_use(_native.IdSpaces.TRANSPORTS) == 1
 
 
-def test_a_transport_goes_back_with_the_last_roll_unless_a_script_holds_it():
-    """A roll takes its sequence's transport when it opens; the last roll over
-    the sequence gives it back by closing -- unless a script asked for it,
-    whose it then is to free."""
-    from clausters import _native
-
-    def taken(server):
-        return server.ids.in_use(_native.IdSpaces.TRANSPORTS)
-
-    server = _PlayingServer()
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    host = FakeHost()
-    one = NotesEditor(seq, sample_rate=SR, server=server)
-    two = NotesEditor(seq, sample_rate=SR, server=server, y_axis="hz")
-    one.open(host, 901)
-    two.open(host, 951)
-    assert taken(server) == 1, "two rolls over one sequence, one transport"
-    assert host.clocks[0][2] == host.clocks[1][2]
-    one.close()
-    assert taken(server) == 1, "the other roll is still open"
-    two.close()
-    assert taken(server) == 0
-
-    kept = NotesEditor(seq, sample_rate=SR, server=server)
-    kept.open(host, 901)
-    transport = kept.transport
-    kept.close()
-    assert taken(server) == 1, "the script's to free"
-    transport.free()
-    assert taken(server) == 0
-
-
 def test_a_loop_asked_while_stopped_is_kept_for_the_next_play():
     """A short pass ends before a script asks for its loop: the loop is the
     playback's state, kept stopped, and the next play loops the span."""
@@ -957,133 +608,6 @@ def test_a_loop_asked_while_stopped_is_kept_for_the_next_play():
         "beats [0, 2) at two beats a second and 100 samples a second"
     transport.unloop()
     assert not transport.looping and transport.span == (0.0, 2.0), "the span stays"
-
-
-def test_the_span_is_drawn_on_the_roll_and_a_sweep_is_the_span():
-    server = _PlayingServer()
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
-                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    roll = NotesEditor(seq, sample_rate=SR, server=server)
-    host, wid = opened(roll)
-    transport = seq.play(server=server)
-    transport.span = (1.0, 2.0)
-    _seq, corrections, _reason = host.acks[-1]
-    props = dict(corrections)[wid]
-    assert (props["sel_start"], props["sel_len"]) == (BEAT, BEAT), "the band a sweep leaves"
-    roll.apply("/gui_event", [wid, 1, 0, "selection", 0.0, 2 * BEAT])
-    assert transport.span == (0.0, 2.0), "a sweep is the transport's span"
-
-
-def test_what_the_roll_marks_is_the_events_themselves():
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
-                         (1.0, Event(midinote=62, dur=1.0)),
-                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    roll = edit(seq, sample_rate=SR, open=False)
-    opened(roll)
-    first, second, third = seq.events
-    assert roll.selected == []
-    roll.select(seq.events.range(1.0, 3.0))
-    assert roll.selected == [second, third]
-    for event in roll.selected:
-        event["velocity"] = 90
-    assert second["velocity"] == 90 and "velocity" not in first
-    roll.unselect()
-    assert roll.selected == []
-
-
-def test_two_rolls_over_one_sequence_send_the_lane_one_change_once():
-    """Every roll over a sequence is told of a change -- the one that made it,
-    and the other adopting it -- and the lane they share takes it once: the
-    same for a gesture and for a script's change."""
-    server = _PlayingServer()
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
-                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    keys = NotesEditor(seq, sample_rate=SR, server=server)
-    hertz = NotesEditor(seq, sample_rate=SR, server=server, y_axis="hz")
-    _host, wid = opened(keys)
-    opened(hertz)
-    keys.play()
-
-    def lane_sets():
-        return [addr for addr, _ in server.sent].count("/lane_set")
-
-    server.sent.clear()
-    keys.apply("/gui_event", [wid, 1, 0, "notes",
-                              1, 0.0, BEAT * 0.8, 60, 13, 0,
-                              2, 3 * BEAT, BEAT * 0.8, 67, 13, 0])
-    assert lane_sets() == 1 and server.lane() == [0, 150]
-    server.sent.clear()
-    seq.events[0].at = 1.0
-    assert lane_sets() == 1 and server.lane() == [50, 150]
-
-
-def test_the_roll_draws_its_play_cursor_from_its_transport_and_a_locate_cues_it():
-    server = _PlayingServer()
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    editor = NotesEditor(seq, sample_rate=SR, server=server)
-    host, wid = opened(editor)
-    transport = editor._playback.transport_id
-    assert host.clocks == [(901, "transport", transport)]
-    assert picture(host.trees[0])["axes"]["x"]["playhead_at"] == 0.0
-    placed = []
-    editor.on_locate = placed.append
-    server.sent.clear()
-    # One beat of the roll's axis.
-    editor.apply("/gui_event", [wid, 1, 0, "locate", BEAT])
-    assert editor.cursor == 1.0 and placed == [1.0]
-    assert [addr for addr, _ in server.sent] == ["/transport_locateSample"]
-
-
-def test_a_roll_in_hertz_draws_and_edits_frequencies():
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    editor = NotesEditor(seq, sample_rate=SR, y_axis="hz")
-    host, wid = opened(editor)
-    roll = picture(host.trees[0])
-    assert roll["axes"]["y"]["unit"] == "hz"
-    assert abs(roll["notes"][2] - 261.6256) < 1e-3, "middle C, in hertz"
-    editor.apply("/gui_event", [wid, 1, 0, "notes", 1, 0.0, BEAT * 0.8, 300.0, 100, 0])
-    moved = list(seq)[0][1]
-    assert abs(moved["freq"] - 300.0) < 1e-3
-    assert abs(moved["midinote"] - 62.37) < 0.01, "the MIDI note follows the frequency"
-
-
-def test_the_space_bar_plays_and_stops_the_roll_and_its_end_is_the_transports():
-    server = _PlayingServer()
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
-                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    editor = NotesEditor(seq, sample_rate=SR, server=server)
-    host, wid = opened(editor)
-    window = int(editor._window)
-    editor.end = "contents"
-    editor.apply("/gui_event", [window, 1, 0, "play", 0])
-    addrs = [addr for addr, _ in server.sent]
-    assert addrs[-1] == "/transport_play"
-    # Two beats a second at 100 samples a second: the last note sounds 0.8 of
-    # its beat (the default legato), so it ends on beat 2.8 -- sample 140.
-    ends = [args for addr, args in server.sent if addr == "/transport_end"]
-    assert [int(getattr(a, "value", a)) for a in ends[-1][1:]] == [140, 0]
-    server.sent.clear()
-    editor.apply("/gui_event", [window, 2, 0, "play", 0])
-    addrs = [addr for addr, _ in server.sent]
-    assert "/transport_stop" in addrs and "/transport_locateSample" in addrs, \
-        "a stop, back to the position cursor"
-
-
-def test_the_space_bar_plays_the_time_range_a_sweep_left():
-    server = _PlayingServer()
-    seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)),
-                         (2.0, Event(midinote=64, dur=1.0))], tempo_map=TempoMap(TEMPO))
-    editor = NotesEditor(seq, sample_rate=SR, server=server)
-    host, wid = opened(editor)
-    window = int(editor._window)
-    # A sweep from beat 1 to beat 2, on the roll's axis.
-    editor.apply("/gui_event", [wid, 1, 0, "selection", BEAT, BEAT])
-    editor.apply("/gui_event", [window, 2, 0, "play", 0])
-    sent = [(addr, [int(getattr(a, "value", a)) for a in args[1:]])
-            for addr, args in server.sent if addr in ("/transport_end", "/transport_locateSample")]
-    # 100 samples a second, two beats a second: beat 1 is sample 50, beat 2 is 100.
-    assert ("/transport_end", [100, 0]) in sent, sent
-    assert sent[-1] == ("/transport_locateSample", [50]), "from the range's start"
 
 
 def test_a_curve_window_has_its_menu_and_says_what_it_does_not_do():
