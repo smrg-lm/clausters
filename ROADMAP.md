@@ -123,6 +123,10 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
   load closing the playback tests' entry; rare.
 
+- ⬜ **The audio editor does not ask before unsaved work goes**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*: X25's common rule, which
+  the multitrack and the score editor share through `closing`; before X25 closes.
+
 - ⬜ **A def a client sent does not sound in an application's engine** and
   **Three handlers hold the door's code** *(`crates/clausters-apps/PLAN.md`,
   "Found by use")*: both found moving the roll to the host; the first waits on

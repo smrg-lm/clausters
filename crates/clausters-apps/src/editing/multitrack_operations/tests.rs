@@ -1480,7 +1480,7 @@ fn a_score_runs_through_the_applications_door() {
     land(&mut f, member, render.run, Ok(()));
     // a read that fails leaves the score
     let missing = f.folder.join("missing.mei");
-    let failed = start(&mut f, json!({"verb": "load", "path": missing}));
+    let failed = start(&mut f, json!({"verb": "open_file", "path": missing}));
     assert!(matches!(failed.end, Some(Err(_))), "{failed:?}");
     assert_eq!(score.lock().unwrap().mei(), mei);
     // File > Close, nothing to lose
@@ -1648,7 +1648,7 @@ fn close_file_lets_the_document_go_and_the_window_stays() {
     ));
     // a read that fails leaves it with none
     let missing = f.folder.join("missing.mei");
-    let failed = start(&mut f, json!({"verb": "load", "path": missing}));
+    let failed = start(&mut f, json!({"verb": "open_file", "path": missing}));
     assert!(matches!(failed.end, Some(Err(_))), "{failed:?}");
     assert_eq!(score_file(&mut f, member)["empty"], true);
     // New binds a new document, which has an order of its own
@@ -1674,7 +1674,7 @@ fn close_file_lets_the_document_go_and_the_window_stays() {
     land(&mut f, member, render.run, Ok(()));
     let written = std::fs::read_to_string(&path).unwrap();
     start(&mut f, json!({"verb": "close_file"}));
-    let opened = start(&mut f, json!({"verb": "load", "path": path}));
+    let opened = start(&mut f, json!({"verb": "open_file", "path": path}));
     assert!(matches!(opened.end, Some(Ok(_))), "{opened:?}");
     let file = score_file(&mut f, member);
     assert_eq!(
@@ -1686,6 +1686,43 @@ fn close_file_lets_the_document_go_and_the_window_stays() {
         _ => panic!(),
     };
     assert_eq!(mei, written);
+    // **which document the window holds is no entry**: Open and New over one
+    // walk nothing back, what they replaced handed over and its order gone
+    start(&mut f, turned(false));
+    f.editing.select(Some(member));
+    assert!(f.editing.can_undo());
+    let made = start(&mut f, json!({"verb": "new_file"}));
+    assert!(matches!(made.end, Some(Ok(_))), "{made:?}");
+    let left = made
+        .effects
+        .iter()
+        .find(|e| e["kind"] == "released")
+        .expect("what it replaced is handed over");
+    assert_eq!(left["snapshot"]["path"], json!(path));
+    f.editing.select(Some(member));
+    assert!(!f.editing.can_undo(), "no step back across the change");
+    assert_eq!(score_file(&mut f, member)["path"], Value::Null);
+    // a read that fails leaves the document and its order
+    start(&mut f, turned(true));
+    let held = match f.editing.member(member) {
+        Some(Member::Score(editor)) => editor.score().lock().unwrap().mei(),
+        _ => panic!(),
+    };
+    let bad = f.folder.join("missing-too.mei");
+    let failed = start(&mut f, json!({"verb": "open_file", "path": bad}));
+    assert!(matches!(failed.end, Some(Err(_))), "{failed:?}");
+    match f.editing.member(member) {
+        Some(Member::Score(editor)) => assert_eq!(editor.score().lock().unwrap().mei(), held),
+        _ => panic!(),
+    }
+    f.editing.select(Some(member));
+    assert!(f.editing.can_undo());
+}
+
+/// The page turned, an edit of the document that has a history.
+#[cfg(feature = "notation")]
+fn turned(landscape: bool) -> Value {
+    json!({"verb": "act", "call": {"action": "page", "landscape": landscape}})
 }
 
 /// **A window opened with nothing has no document**, and is not a new score.

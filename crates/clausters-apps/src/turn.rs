@@ -212,10 +212,15 @@ pub trait Converse {
     fn unsaved(&self) -> bool {
         false
     }
-    /// **Ask before closing**: the editor's close form shown, or why it
-    /// could not be. An editor with no form to ask in says so, and the
-    /// window stays.
-    fn ask_to_close(&mut self, _out: &mut Self::Outcome) -> (Option<String>, Vec<Correction>) {
+    /// **Ask before `leaving`**: the editor's close form shown, or why it
+    /// could not be. An editor that says it asks ([`asks_to_close`]) has one.
+    ///
+    /// [`asks_to_close`]: Self::asks_to_close
+    fn ask_before(
+        &mut self,
+        _leaving: crate::closing::Leaving,
+        _out: &mut Self::Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
         (
             Some(
                 "this window has changes that are not saved, and no form to ask about them".into(),
@@ -223,6 +228,10 @@ pub trait Converse {
             Vec::new(),
         )
     }
+    /// **The window's document changes**, nothing being lost by it: named on
+    /// the turn for whoever drives the editor. Only an editor with file verbs
+    /// is asked ([`crate::closing::change_file`]).
+    fn change_now(&mut self, _change: crate::closing::FileChange, _out: &mut Self::Outcome) {}
     /// A verb of the window itself -- a save, a play -- answered before the
     /// conversation reads the message; `true` when it was one.
     fn window_verb(

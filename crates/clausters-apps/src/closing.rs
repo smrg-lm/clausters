@@ -18,8 +18,17 @@
 //! The holder says which when it opens the editor
 //! ([`Converse::asks_to_close`]); what each application adds is whether it
 //! has something to lose ([`Converse::unsaved`]) and the form it asks in
-//! ([`Converse::ask_to_close`]), which it builds with [`dialog`]. The verb and
+//! ([`Converse::ask_before`]), which it builds with [`dialog`]. The verb and
 //! the turn that reads it are here, so every editor closes by the same rule.
+//!
+//! **A window's file is not an edit.** What a verb does falls in one of three
+//! classes, whatever the application: an edit of the document is an entry of
+//! its history; the window's own state (the selection, the cursor, the zoom)
+//! is none; and changing **which document the window holds** (File > New,
+//! Open, Close file) is none either, since each document has a history of its
+//! own: the one let go of takes its order with it, nothing walks back across
+//! the change, and what would be lost is asked about here, as a close asks
+//! ([`change_file`]). A Save and what waits for it are [`Leaving`].
 
 use serde_json::{Value, json};
 
@@ -59,6 +68,28 @@ pub fn choice(button: &str) -> Option<Choice> {
         CANCEL => Some(Choice::Cancel),
         _ => None,
     }
+}
+
+/// **A change of the document a window holds**, from its File menu: a new one
+/// in its place, the one at a path, or none. Never an entry of a history.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileChange {
+    /// A new document, with no file yet.
+    New,
+    /// The document at this path.
+    Open(String),
+    /// No document: the window goes on empty.
+    Close,
+}
+
+/// **What the close form is up for**, and what a Save it was answered with
+/// goes on to, once the store is confirmed and only if nothing moved since.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Leaving {
+    /// The window closes.
+    Window,
+    /// The window's document changes.
+    File(FileChange),
 }
 
 /// **The close form as a dialog**: the question, and `Don't save` apart from
@@ -195,9 +226,26 @@ pub fn close<E: Converse>(
     out: &mut E::Outcome,
 ) -> (Option<String>, Vec<Correction>) {
     if editor.asks_to_close() && editor.unsaved() {
-        return editor.ask_to_close(out);
+        return editor.ask_before(Leaving::Window, out);
     }
     out.set_close(true);
+    (None, Vec::new())
+}
+
+/// **A change of the document in `editor`'s window** (File > New, Open, Close
+/// file): at once, unless the window is the work's only holder and has
+/// something to lose -- then the form a close asks in asks first. A window a
+/// client holds hands the document back, so nothing is lost and nothing is
+/// asked.
+pub fn change_file<E: Converse>(
+    editor: &mut E,
+    change: FileChange,
+    out: &mut E::Outcome,
+) -> (Option<String>, Vec<Correction>) {
+    if editor.asks_to_close() && editor.unsaved() {
+        return editor.ask_before(Leaving::File(change), out);
+    }
+    editor.change_now(change, out);
     (None, Vec::new())
 }
 

@@ -71,13 +71,13 @@ class FakeHost {
         if (doing.verb === "handle") return { events: [] };
         if (doing.verb === "act") return { changed: doing.call.action !== "refused", refused: doing.call.action === "refused" ? "why" : null };
         if (doing.verb === "save") return { destination: doing.path ?? "/kept.mei" };
-        if (doing.verb === "load") return true;
-        if (doing.verb === "new_file") {
+        if (doing.verb === "new_file" && this.empty) {
             this.empty = false;
-            return true;
+            return null;
         }
-        if (doing.verb === "close_file") {
-            this.empty = true;
+        if (doing.verb === "open_file" && doing.path === "/bad.mei") throw new Error("/bad.mei: no such file");
+        if (doing.verb === "new_file" || doing.verb === "open_file" || doing.verb === "close_file") {
+            this.empty = doing.verb === "close_file";
             for (const listener of this.listeners) {
                 listener({ addr: "/gui_app_released", args: [id, JSON.stringify({ mei: this.window!.mei(), path: "/let-go.mei" })] });
             }
@@ -179,26 +179,40 @@ if (!existsSync(engraver)) {
         await editor.open(host.asHost());
         assert.equal(await editor.save("/a.mei"), "/a.mei");
         assert.equal(score.path, "/a.mei");
-        assert.equal(await editor.load("/b.mei"), true);
-        assert.equal(score.path, "/b.mei");
         assert.equal(await editor.unsaved(), false);
         await editor.close();
     });
 
-    test("close file lets the score go, and the window stays the host's", async () => {
+    for (const [name, change] of [
+        ["close file", (editor: ScoreEditor) => editor.closeFile()],
+        ["new file", (editor: ScoreEditor) => editor.newFile()],
+        ["open file", (editor: ScoreEditor) => editor.openFile("/b.mei")],
+    ] as const) {
+        test(`${name} lets the score go, and the window stays the host's`, async () => {
+            const host = new FakeHost();
+            const score = await Score.open(PHRASE);
+            const editor = new ScoreEditor(score);
+            const window = await editor.open(host.asHost());
+            let told = 0;
+            editor.onClosed(() => (told += 1));
+            await change(editor);
+            assert.equal(editor.closed, true);
+            assert.equal(told, 1);
+            assert.equal(score.window, null);
+            assert.equal(score.path, "/let-go.mei", "the score holds what the window left");
+            assert.equal(host.isOpen(window.id), true, "the window stays");
+            assert.equal(await editor.wait(), true);
+        });
+    }
+
+    test("a file that does not read leaves the handler on its window", async () => {
         const host = new FakeHost();
         const score = await Score.open(PHRASE);
         const editor = new ScoreEditor(score);
-        const window = await editor.open(host.asHost());
-        let told = 0;
-        editor.onClosed(() => (told += 1));
-        await editor.closeFile();
-        assert.equal(editor.closed, true);
-        assert.equal(told, 1);
-        assert.equal(score.window, null);
-        assert.equal(score.path, "/let-go.mei", "the score holds what the window left");
-        assert.equal(host.isOpen(window.id), true, "the window stays");
-        assert.equal(await editor.wait(), true);
+        await editor.open(host.asHost());
+        await assert.rejects(editor.openFile("/bad.mei"));
+        assert.equal(editor.closed, false);
+        assert.equal(score.window, editor);
     });
 
     test("a window over no score has no document until one is made", async () => {

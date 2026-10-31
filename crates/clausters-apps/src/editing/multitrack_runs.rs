@@ -866,10 +866,10 @@ impl Editing {
         // saves, and a close only once it is -- a save that fails keeps the
         // window, and says why
         if outcome.save || outcome.save_as.is_some() {
-            use crate::multitrack::operations::After;
+            use crate::closing::Leaving;
             let then = match (&outcome.file, outcome.close) {
-                (_, true) => Some(After::Close),
-                (Some(change), false) => Some(After::File(change.clone())),
+                (_, true) => Some(Leaving::Window),
+                (Some(change), false) => Some(Leaving::File(change.clone())),
                 (None, false) => None,
             };
             let save = super::multitrack_operations::SaveTo {

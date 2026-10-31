@@ -13,7 +13,7 @@ use clausters_editing::conversation::Correction;
 use crate::forms::{Said, corrections};
 
 use super::super::dialogs::{self, Form, Open};
-use super::{Closing, Outcome, ScoreEditor};
+use super::{Outcome, ScoreEditor};
 
 impl ScoreEditor {
     /// **Open `form`**, holding what the score holds: the reason it cannot
@@ -71,7 +71,7 @@ impl ScoreEditor {
                 (None, Vec::new())
             }
             Said::Cancel => {
-                self.closing = Closing::None;
+                self.leaving = None;
                 (None, corrections(self.dialogs.hide()))
             }
             // closing without saving: what was not saved is let go
@@ -101,10 +101,10 @@ impl ScoreEditor {
     /// **What the close form was asked about goes**: the window or its
     /// document, once whatever the turn saves is written.
     fn let_what_waits_go(&mut self, out: &mut Outcome) {
-        match std::mem::take(&mut self.closing) {
-            Closing::Window => out.close = true,
-            Closing::File => out.unbind = true,
-            Closing::None => {}
+        match self.leaving.take() {
+            Some(crate::closing::Leaving::Window) => out.close = true,
+            Some(crate::closing::Leaving::File(change)) => out.file = Some(change),
+            None => {}
         }
     }
 
@@ -149,7 +149,11 @@ impl ScoreEditor {
                         out.export = Some(serde_json::json!({"path": path, "format": format}));
                     }
                     (dialogs::File::Open, _) => {
-                        out.open = Some(path);
+                        // the form goes down, and the rule says whether
+                        // another comes up in its place
+                        let (reason, _) =
+                            self.change_file(crate::closing::FileChange::Open(path), out);
+                        return reason;
                     }
                     (_, None) => {
                         out.save = Some(path);

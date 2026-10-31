@@ -120,25 +120,7 @@ pub struct Outcome {
     pub file: Option<FileChange>,
 }
 
-/// **A change of the session a window holds**, from its File menu: a new
-/// one in its place, the one at a path, or none.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum FileChange {
-    /// A new session, empty and untitled.
-    New,
-    /// The session at this path.
-    Open(String),
-    /// No session: the window goes on empty.
-    Close,
-}
-
-/// **What the close form is up for**: the window's close, or a change of
-/// its session.
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Leaving {
-    Window,
-    File(FileChange),
-}
+pub use crate::closing::{FileChange, Leaving};
 
 turn::turned!(Outcome);
 
@@ -168,11 +150,19 @@ impl Converse for MultitrackEditor {
     }
 
     fn unsaved(&self) -> bool {
-        self.unsaved
+        self.unsaved && self.has_session()
     }
 
-    fn ask_to_close(&mut self, _out: &mut Outcome) -> (Option<String>, Vec<Correction>) {
-        self.ask_before(Leaving::Window)
+    fn ask_before(
+        &mut self,
+        leaving: Leaving,
+        _out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        self.ask_with_form(leaving)
+    }
+
+    fn change_now(&mut self, change: FileChange, out: &mut Outcome) {
+        out.file = Some(change);
     }
 
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
@@ -200,10 +190,10 @@ impl Converse for MultitrackEditor {
         }
         out.turn = Kind::Route;
         let (reason, corrections) = match message.tag.as_str() {
-            NEW_FILE_VERB => self.change_file(FileChange::New, out),
+            NEW_FILE_VERB => crate::closing::change_file(self, FileChange::New, out),
             OPEN_FILE_VERB => self.open_session_form(),
             _ if !self.has_session() => (Some("no file is open".into()), Vec::new()),
-            _ => self.change_file(FileChange::Close, out),
+            _ => crate::closing::change_file(self, FileChange::Close, out),
         };
         out.answer = Some(conversation::answer(
             message.seq,
@@ -854,7 +844,7 @@ impl MultitrackEditor {
 
     /// **The close form, up for `leaving`**, or why it cannot be: a window
     /// with no form to ask in stays as it is.
-    fn ask_before(&mut self, leaving: Leaving) -> (Option<String>, Vec<Correction>) {
+    fn ask_with_form(&mut self, leaving: Leaving) -> (Option<String>, Vec<Correction>) {
         let Some(ids) = self.close_form else {
             return (
                 Some(
@@ -866,23 +856,6 @@ impl MultitrackEditor {
         };
         self.leaving = Some(leaving);
         (None, crate::closing::shown(&ids, true))
-    }
-
-    /// **A change of the window's session** (File > New, Open, Close file):
-    /// at once, unless the window is the work's one holder and the session
-    /// has unsaved work -- then the close form asks first, by the rule a
-    /// close asks by ([`crate::closing`]). A window a client holds hands the
-    /// session back to it, so nothing is lost and nothing is asked.
-    fn change_file(
-        &mut self,
-        change: FileChange,
-        out: &mut Outcome,
-    ) -> (Option<String>, Vec<Correction>) {
-        if self.asks && self.unsaved && self.has_session() {
-            return self.ask_before(Leaving::File(change));
-        }
-        out.file = Some(change);
-        (None, Vec::new())
     }
 
     /// **The Open form, up**, its chooser where the hand last left it.
@@ -948,7 +921,7 @@ impl MultitrackEditor {
             return (Some("select a session to open".into()), Vec::new());
         };
         let mut corrections = crate::forms::corrections(self.dialogs.hide());
-        let (reason, asked) = self.change_file(FileChange::Open(path), out);
+        let (reason, asked) = crate::closing::change_file(self, FileChange::Open(path), out);
         corrections.extend(asked);
         (reason, corrections)
     }

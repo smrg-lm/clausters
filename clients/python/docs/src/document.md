@@ -537,12 +537,13 @@ back as the same page; it also reads MusicXML, ABC and Plaine & Easie,
 whichever the engraver finds the file to be. A path names the disk. The
 score remembers its file (`score.path`), which is what the File menu's **Save**
 and Ctrl+S write to; a score with none is asked for one, as **Save as...**
-always asks, and **Open...** reads another document in place of the score, as
-one step of the history. The same two are `editor.save()` and
-`editor.load(path)`. **New** puts an empty score in its place the same way —
-one staff in the treble clef, common time, C major, four empty bars, and no
-file yet — and **Close** closes the window, asking first when the score has
-changes its file does not hold (`editor.unsaved`): save, don't save, or cancel.
+always asks, and **Open...** puts another document in the window. The same two
+are `editor.save()` and `editor.open_file(path)`. **New** puts an empty one there the
+same way — one staff in the treble clef, common time, C major, four empty bars,
+and no file yet — **Close file** leaves the window with none, and **Close**
+closes it, each asking first where the window is the score's only holder and it
+has changes its file does not hold (`editor.unsaved`): save, don't save, or
+cancel.
 
 **A score is exported as what it renders.** The File menu's **Export MIDI...**
 and **Export clip...** — `editor.export(path)`, which takes the format from the
@@ -671,14 +672,16 @@ page.
 played, saved and rendered.
 
 
-**A window holds one document, and may hold none.** `ScoreEditor()` opens with no
-document, its File menu making or opening one (`new_file()`, `load(path)`). Over
-a document, `new_file()` and `load(path)` are one entry of the history, and a
-step puts the document and its file back. A file that does not read leaves the
-window as it was. `save(path)` answers once the file is written: only then is the
-path the score's. `close_file()` leaves the window with no document and its undo
-order gone: the script's score holds what the window left it as, and the window
-goes on as the host's own (`closed`, `has_document`).
+**A window holds one document, and may hold none.** Opened over no score it has
+none, its File menu making or opening one (`new_file()`, `open_file(path)`). **Which document the
+window holds is not an edit**: New, Open and Close file (`close_file()`) take the place of
+the one there, whose undo order goes with it, so nothing walks back across them.
+The script's score holds what the window left it as, and the window goes on as the
+host's own (`closed`, `has_document`); where the window is the score's only holder and it
+has changes, the same form a close asks in asks first. A file that does not read
+leaves the window as it was. `save(path)` answers once the file is written: only
+then is the path the score's. `Score.load(mei)` is an edit of the document, one
+entry of the history, and its file stays.
 
 ## The arrangement: tracks, take lanes, regions
 

@@ -1,5 +1,9 @@
 //! **A symbolic score's file**, over the shared application runtime: what a
-//! window writes, and the window letting its document go.
+//! window writes, and which document it holds.
+//!
+//! Which document the window holds is no edit ([`crate::closing`]): a new one,
+//! one read from a file or none each takes the place of the one there, whose
+//! order goes with it.
 //!
 //! A save is prepared from one revision of the score, stored, and confirmed
 //! only then: the file it names and what it holds become the score's when the
@@ -14,15 +18,6 @@ use crate::application::{
     services::{Application, Completion, Services},
 };
 
-/// **What a save is asked before**, done once it is confirmed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum After {
-    /// The window closes.
-    Close,
-    /// The window lets its document go and stays.
-    Unbind,
-}
-
 /// A prepared revision of the score, retained through storage confirmation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Saved {
@@ -31,7 +26,7 @@ pub struct Saved {
     /// Where: the score's file once the store is confirmed.
     pub path: String,
     /// What waits for the confirmation.
-    pub then: Option<After>,
+    pub then: Option<crate::closing::Leaving>,
 }
 
 /// Typed work on a window's document.
@@ -39,6 +34,13 @@ pub struct Saved {
 pub enum Command {
     /// Store a prepared revision and confirm it.
     Save(Box<Saved>),
+    /// Put this document in the window, read and written by the caller.
+    Replace {
+        /// Its contents.
+        mei: String,
+        /// The file that holds them, or none for a new one.
+        path: Option<String>,
+    },
     /// Let the document go, the window staying with none.
     Unbind,
 }
@@ -56,7 +58,6 @@ pub struct Request {
 #[derive(Debug)]
 pub struct Commit {
     target: Target,
-    generation: u64,
     change: Command,
 }
 
@@ -71,7 +72,7 @@ impl Application for ScoreEditor {
         }
         let mut batches = Vec::new();
         let access = match &request.command {
-            Command::Unbind => Access::Write,
+            Command::Replace { .. } | Command::Unbind => Access::Write,
             // what a store carries is a copy of one revision: the hand may
             // go on editing while it is written
             Command::Save(saved) => {
@@ -95,14 +96,13 @@ impl Application for ScoreEditor {
             reads: Vec::new(),
             commit: Commit {
                 target: request.target,
-                generation: self.generation(),
                 change: request.command,
             },
         })
     }
 
     fn commit(&mut self, delta: Commit, services: &mut Services) -> Completion<Outcome> {
-        if self.binding() != delta.target.object || self.generation() != delta.generation {
+        if self.binding() != delta.target.object {
             return self.abort(
                 delta,
                 IoResult::Failed("another document is in the window".into()),
@@ -116,14 +116,13 @@ impl Application for ScoreEditor {
                 self.confirm_saved(&saved);
                 outcome.saved = Some(saved);
             }
+            Command::Replace { mei, path } => {
+                outcome.left = self.replace_document(&mei, path);
+                close_order(services, &delta.target);
+            }
             Command::Unbind => {
-                outcome.left = Some(self.let_go());
-                // a document let go of takes its order with it: nothing walks
-                // what nobody holds
-                services.histories.close_order(Object {
-                    member: delta.target.member,
-                    id: delta.target.object,
-                });
+                outcome.left = self.let_go();
+                close_order(services, &delta.target);
             }
         }
         Completion {
@@ -150,4 +149,13 @@ impl Application for ScoreEditor {
             returned: Vec::new(),
         }
     }
+}
+
+/// A document let go of takes its order with it: nothing walks what nobody
+/// holds, and nothing walks back across the change.
+fn close_order(services: &mut Services, target: &Target) {
+    services.histories.close_order(Object {
+        member: target.member,
+        id: target.object,
+    });
 }

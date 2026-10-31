@@ -1217,9 +1217,10 @@ watermarks, while storage preserves those counters.
 A score window's file goes through the same runtime (`score::operations`): a
 Save stores one prepared revision and confirms it, so a pending close or Close
 file waits for the store and goes only over what it wrote; a replacement in the
-meantime is not confirmed as that file. Close file unbinds (the window keeps no
-document, and its undo order goes), while New and Open over a document stay one
-entry of the history, the entry carrying the file so a step puts both back.
+meantime is not confirmed as that file. New, Open and Close file change which
+document the window holds, by the rule the multitrack's session changes by
+(`closing::change_file`): no entry of a history, the old document's order gone,
+what would be lost asked about first. A script's `Score.load(mei)` is an edit.
 
 The **score editor** (`clausters_apps::score`, behind the crate's `notation`
 feature) opens a symbolic score and edits it **in place**: what it holds is the

@@ -133,7 +133,7 @@ export class ScoreEditor extends SequenceHandler {
     readonly #interp: Interpretation | undefined;
     #refused: string | undefined = undefined;
 
-    /** Over `score`, which is the edited one; left out, the window opens with no document, its File menu making or opening one ({@link newFile}, {@link load}). */
+    /** Over `score`, which is the edited one; left out, the window opens with no document, its File menu making or opening one ({@link newFile}, {@link openFile}). */
     constructor(score: Score | null = null, options: ScoreEditorOptions = {}) {
         super("Score", options);
         this.#score = score;
@@ -759,32 +759,32 @@ export class ScoreEditor extends SequenceHandler {
     }
 
     /**
-     * Open the document in the file at `path` in this editor, in place of the
-     * score, as one entry of the history: the score that was there is a step
-     * back. The File menu's Open, as a method; the file is then the score's.
-     */
-    async load(path: string): Promise<boolean> {
-        const loaded = Boolean(await this.act("load", { path: String(path) }));
-        if (loaded && this.#score !== null) this.#score.path = path;
-        await this.follow();
-        return loaded;
-    }
-
-    /**
      * **A new score in the window**, one staff and four empty bars with no
-     * file, as its File menu's New puts one there. Over a document it is one
-     * entry of the history, as {@link load} is, and the same score holds it.
+     * file, as its File menu's New puts one there. The document is another one,
+     * not an edit: the window lets go of the score it was opened over, which
+     * holds what the window left it as, as a close leaves it; nothing walks back
+     * across it, and the window goes on as the host's own ({@link closed}). A
+     * window opened over no score has nothing to let go of, and this handler
+     * stays.
      */
     async newFile(): Promise<void> {
         await this.act("new_file");
-        await this.follow();
     }
 
     /**
-     * **No document in the window**, as its File menu's Close file leaves it.
-     * The window lets go of the score it was opened over, which holds what the
-     * window left it as, as a close leaves it; its undo order goes with it, and
-     * the window goes on as the host's own ({@link closed}).
+     * **The document in the file at `path` in the window**, as its File menu's
+     * Open opens one, letting go of the score it was opened over as
+     * {@link newFile} does. A file that does not read rejects and leaves
+     * everything as it was, and one another window holds brings that window
+     * forward and rejects.
+     */
+    async openFile(path: string): Promise<void> {
+        await this.act("open_file", { path: String(path) });
+    }
+
+    /**
+     * **No document in the window**, as its File menu's Close file leaves it,
+     * letting go of the score it was opened over as {@link newFile} does.
      */
     async closeFile(): Promise<void> {
         await this.act("close_file");

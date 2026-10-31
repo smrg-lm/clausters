@@ -202,6 +202,16 @@ def test_a_saved_score_is_the_file_it_was_written_to(score, gui_host, tmp_path):
     editor.close()
 
 
+def test_a_score_with_a_file_opens_again_once_its_window_went(score, gui_host, tmp_path):
+    editor = opened(gui_host, ScoreEditor(score))
+    path = str(tmp_path / "again.mei")
+    editor.save(path)
+    editor.close()
+    again = opened(gui_host, ScoreEditor(score))
+    assert not again.closed and score.path == path
+    again.close()
+
+
 def test_a_save_that_fails_leaves_the_score_and_its_file(score, gui_host, tmp_path):
     editor = opened(gui_host, ScoreEditor(score))
     path = str(tmp_path / "kept.mei")
@@ -221,25 +231,49 @@ def test_a_document_that_does_not_read_leaves_the_window_as_it_was(score, gui_ho
     bad = tmp_path / "bad.mei"
     bad.write_text("this is no score")
     with pytest.raises(RuntimeError):
-        editor.load(str(bad))
+        editor.open_file(str(bad))
+    assert not editor.closed
     assert score.mei() == before
     assert score.path == path
     assert not editor.unsaved
     editor.close()
 
 
-def test_new_file_replaces_the_document_as_one_entry(score, gui_host, tmp_path):
+def test_new_and_open_put_another_document_in_the_window(score, gui_host, tmp_path):
+    editor = opened(gui_host, ScoreEditor(score))
+    path = str(tmp_path / "kept.mei")
+    editor.save(path)
+    assert editor.set_text("title", "After the save")
+    left = score.mei()
+    window = int(editor.window)
+    editor.new_file()
+    gui_host.pump(0.2)
+    assert editor.closed, "the handler is done with the window"
+    assert score.mei() == left, "the score holds what the window left it as"
+    assert score.path == path
+    assert gui_host.call_app(window, {"query": "history"})["canUndo"] is False
+    other = gui_host.call_app(window, {"query": "file"})
+    assert other["empty"] is False and other["path"] is None and other["dirty"] is False
+    # and a file read in its place walks nothing back either
+    gui_host.call_app(window, {"do": {"verb": "open_file", "path": path}})
+    opened_now = gui_host.call_app(window, {"query": "file"})
+    assert opened_now["path"] == path and opened_now["dirty"] is False
+    assert gui_host.call_app(window, {"query": "history"})["canUndo"] is False
+    gui_host.call_app(window, {"do": {"verb": "close"}})
+
+
+def test_a_script_s_load_is_an_edit_of_the_document(score, gui_host, tmp_path):
     editor = opened(gui_host, ScoreEditor(score))
     path = str(tmp_path / "kept.mei")
     editor.save(path)
     before = score.mei()
-    editor.new_file()
-    assert score.mei() != before, "the same score holds it"
-    assert editor.has_document
+    other = notation.Score("@clef:F-4\n@timesig:3/4\n@data:4CDE/")
+    assert score.load(other.mei())
+    assert score.mei() != before
+    assert not editor.closed and score.path == path, "the same document, the same file"
+    assert editor.unsaved, "its file does not hold it"
     assert editor.undo()
     assert score.mei() == before
-    assert not editor.unsaved, "the file came back with the document"
-    assert editor.save() == path
     editor.close()
 
 
@@ -276,7 +310,7 @@ def test_a_window_over_no_score_has_no_document_until_one_is_made(gui_host, tmp_
     path = str(tmp_path / "made.mei")
     assert editor.save(path) == path
     assert "<mei" in open(path, encoding="utf-8").read()
-    assert editor.load(path) in (True, False)
+    editor.open_file(path)
     assert editor.has_document and not editor.unsaved
     editor.close()
 

@@ -238,11 +238,21 @@
         // **a failed read leaves the window**, and a file reads back as written
         const held = score.mei();
         let failed = false;
-        try { await page.load("out/no-such-score.mei"); } catch { failed = true; }
+        try { await page.openFile("out/no-such-score.mei"); } catch { failed = true; }
         if (!failed || score.mei() !== held || score.path !== "out/app_window.mei") throw new Error("a failed read moved the score");
         await page.stop();
         await page.close();
         if (score.window !== null) throw new Error("the close did not hand the score back");
+        // **another document in the window is no edit**: the score is handed
+        // back, and the window goes on with no step back across the change
+        const handed = await gui.edit(score, { title: "score" });
+        const stays = handed.id;
+        await handed.newFile();
+        await handed.wait(5);
+        if (!handed.closed || score.window !== null) throw new Error("new did not hand the score back");
+        const after = await handed.host.callApp(stays, { query: "history" });
+        if (after.canUndo !== false) throw new Error("a new document has something to walk back");
+        await handed.host.callApp(stays, { do: { verb: "close" } });
         // **a page over the sequence a roll shows** is one history with it
         const shown = new EventSequence([[0, new Event({ midinote: 60, dur: 1 })], [1, new Event({ midinote: 62, dur: 1 })]]);
         const reel = await gui.edit(shown, { title: "roll" });

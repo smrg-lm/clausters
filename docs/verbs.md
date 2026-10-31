@@ -92,7 +92,7 @@ The verdict is one of three:
 | `multitrack` | `view_spectrogram` | `MultitrackEditor.view_spectrogram` | `MultitrackEditor.viewSpectrogram` | **api** |
 | `multitrack` | `notes_roll` | `MultitrackEditor.notes_view` | `MultitrackEditor.notesView` | **api** — `notes_view = "roll"` |
 | `multitrack` | `notes_score` | `MultitrackEditor.notes_view` | `MultitrackEditor.notesView` | **api** — `notes_view = "score"` |
-| `score` | `new_file` | `ScoreEditor.new_file` | `ScoreEditor.newFile` | **api** — a new score in place of the document, one entry of the history; over no document, its first |
+| `score` | `new_file` | `ScoreEditor.new_file` | `ScoreEditor.newFile` | **api** — a new score in the window's place; the one let go is handed back to the handler |
 | `score` | `close_file` | `ScoreEditor.close_file` | `ScoreEditor.closeFile` | **api** — no document: the window goes on empty, and the score is handed back to the handler |
 | `score` | `entry` | `ScoreEditor.entry` | `ScoreEditor.entry` | **api** |
 | `score` | `delete` | `ScoreEditor.delete` | `ScoreEditor.delete` | **api** |

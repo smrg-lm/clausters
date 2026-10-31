@@ -2860,14 +2860,10 @@ mod tests {
         );
         assert_eq!(refused["why"], "no file is open", "{refused}");
         // nobody holds the file now: a read takes it, and it is the same
-        assert_eq!(
-            ask(
-                &mut host,
-                window,
-                json!({"do": {"verb": "load",
-            "path": path.to_str().unwrap()}})
-            ),
-            true
+        ask(
+            &mut host,
+            window,
+            json!({"do": {"verb": "open_file", "path": path.to_str().unwrap()}}),
         );
         let file = ask(&mut host, window, json!({"query": "file"}));
         assert_eq!(file["path"], path.to_str().unwrap(), "{file}");

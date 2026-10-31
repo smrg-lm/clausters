@@ -43,19 +43,9 @@ pub struct Saved {
     pub path: String,
     /// What waits for this save to be confirmed: the window's close, or a
     /// change of its session.
-    pub then: Option<After>,
+    pub then: Option<crate::closing::Leaving>,
     /// A successful Save as replaces an explicit default destination.
     pub save_as: bool,
-}
-
-/// **What a save is asked before**, done once it is confirmed and only
-/// when nothing moved since it was captured: the close form's Save.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum After {
-    /// The window closes.
-    Close,
-    /// The window's session changes (File > New, Open, Close file).
-    File(super::editor::FileChange),
 }
 
 /// A session read and resolved by the host, ready for one binding transition.

@@ -3005,14 +3005,17 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
 
   - ✅ **Symbolic score: MEI files and standalone.** *Done 2026-10-31*:
     `score::operations` puts Save and Close file on the shared runtime, its
-    settling walk shared with the multitrack (`settle_operation`); New and Open
-    stay entries of the history, carrying the file. A window opened over nothing
-    has no document, and `--score` takes no file. Save confirms the prepared
-    revision before what waits for it. Distinguish no
+    settling walk shared with the multitrack (`settle_operation`). A window
+    opened over nothing has no document, and `--score` takes no file. Save
+    confirms the prepared revision before what waits for it. **New and Open are
+    not edits** (changed on the user's word, 2026-10-31, from this entry's
+    "keep their history contracts"): which document a window holds has no
+    history, in any application, so they replace the document and its order, by
+    the rule `closing::change_file` shares with the multitrack; only a script's
+    `Score.load(mei)` stays an entry. Distinguish no
     document from a new symbolic score, with one active document per window.
     Use common runtime open/save/checkpoint/close. Read or engraving failure
-    leaves the current document intact. Keep `load`/New object replacement
-    and history contracts; Close file explicitly unbinds. Save writes the
+    leaves the current document intact. Close file explicitly unbinds. Save writes the
     prepared revision and confirms it before a pending close proceeds.
     Adapt standalone to the same application while preserving `Owner` data
     and responsibilities; remove replaced coordination and playback from
@@ -6178,6 +6181,16 @@ wrong.
   **Fixed 2026-10-30.** Checkpoints compare contents independently of revision
   counters and event-id watermarks. Written snapshots retain the advancing
   values; restored sequence contents and an inactive session are covered.
+
+- ⬜ **The audio editor does not ask before unsaved work goes** (found
+  2026-10-31, moving the rule for a window's file into `closing`). The multitrack
+  and the score editor ask through `closing::close` and `closing::change_file`;
+  `AudioEditor` implements neither `asks_to_close` nor `unsaved`, so a window the
+  host holds alone closes a file or itself with its edits and says nothing,
+  although X25 asks the last holder to follow the common rule and the Python
+  docstring says it asks. It holds several files, so the form has to say which
+  it asks about, and its Save is a render. Its history already keeps the rule:
+  each file has its own, and New and Open add files, letting nothing go.
 
 - ⬜ **A sound file opens in two audio editor windows of one host**
   *(found 2026-10-30, making a session file open once in a host)*. A

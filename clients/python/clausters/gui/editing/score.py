@@ -50,7 +50,7 @@ class ScoreEditor(SequenceHandler):
     Args:
         score: the `clausters.gui.notation.Score` to edit. It is the edited
             one: read it after any gesture. Left out, the window opens with no
-            document, its File menu making or opening one (`new_file`, `load`).
+            document, its File menu making or opening one (`new_file`, `open_file`).
         title: the window's title.
         value: the written value a note entered on the page takes, as
             ``(numerator, denominator)`` of a whole note; a quarter by default.
@@ -628,27 +628,27 @@ class ScoreEditor(SequenceHandler):
         File menu's Close asks about before it closes the window."""
         return bool(self._call("unsaved").get("unsaved"))
 
-    def load(self, path) -> bool:
-        """Open the document in the file at ``path`` in this editor, in place
-        of the score, as one entry of the history: the score that was there is
-        a step back. The File menu's Open, as a method; the file is then the
-        score's."""
-        loaded = bool(self._do("load", path=str(path)))
-        if loaded and self.score is not None:
-            self.score.path = str(path)
-        return loaded
-
     def new_file(self) -> None:
         """**A new score in the window**, one staff and four empty bars with no
-        file, as its File menu's New puts one there. Over a document it is one
-        entry of the history, as `load` is, and the same score holds it."""
+        file, as its File menu's New puts one there. The document is another
+        one, not an edit: the window lets go of the score it was opened over,
+        which holds what the window left it as, as a close leaves it; nothing
+        walks back across it, and the window goes on as the host's own
+        (`closed`). A window opened over no score has nothing to let go of, and
+        this handler stays."""
         self._do("new_file")
+
+    def open_file(self, path) -> None:
+        """**The document in the file at ``path`` in the window**, as its File
+        menu's Open opens one, letting go of the score it was opened over as
+        `new_file` does. A file that does not read raises and leaves everything
+        as it was, and one another window holds brings that window forward and
+        raises."""
+        self._do("open_file", path=str(path))
 
     def close_file(self) -> None:
         """**No document in the window**, as its File menu's Close file leaves
-        it. The window lets go of the score it was opened over, which holds what
-        the window left it as, as a close leaves it; its undo order goes with
-        it, and the window goes on as the host's own (`closed`)."""
+        it, letting go of the score it was opened over as `new_file` does."""
         self._do("close_file")
 
     @property

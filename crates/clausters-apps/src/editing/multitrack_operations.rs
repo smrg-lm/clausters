@@ -8,7 +8,7 @@ use crate::multitrack::operations::{Command, Commit, Request};
 
 pub(super) struct SaveTo {
     pub path: Option<String>,
-    pub then: Option<crate::multitrack::operations::After>,
+    pub then: Option<crate::closing::Leaving>,
     pub save_as: bool,
 }
 
@@ -124,13 +124,13 @@ impl Editing {
             match then {
                 Some(_) if moved => ran.effects.push(json!({"kind":"say",
                         "reason":"the session changed while it was saved: it stays open"})),
-                Some(crate::multitrack::operations::After::Close) => {
+                Some(crate::closing::Leaving::Window) => {
                     if let Some(mut tracks) = self.tracks.remove(&member) {
                         self.close_tracks(member, &mut tracks, ids);
                     }
                     ran.effects.push(self.closing(member, "closeWindow"));
                 }
-                Some(crate::multitrack::operations::After::File(change)) => {
+                Some(crate::closing::Leaving::File(change)) => {
                     if let Some(mut tracks) = self
                         .tracks
                         .remove(&member)

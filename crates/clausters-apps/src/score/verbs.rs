@@ -64,13 +64,7 @@ pub enum Action {
     /// text, in any format the engraver reads (MEI, MusicXML, ABC, Plaine &
     /// Easie), and it replaces the score whole -- as one entry, so the score
     /// that was there is a step back.
-    Open {
-        data: String,
-        /// The file it was read from, which is the score's from then on and
-        /// holds it; left out, for text a script hands over, neither changes.
-        #[serde(default)]
-        path: Option<String>,
-    },
+    Open { data: String },
     /// Make the selected notes grace notes -- `acc`, an appoggiatura, or
     /// `unacc`, an acciaccatura -- or notes of the bar again, with none.
     Grace {

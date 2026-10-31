@@ -471,6 +471,16 @@ code that keeps it lives.
   the one left. A listing that comes back after the chooser moved on --
   climbed while a slow directory was read, opened again, drawn again --
   replaces nothing, even when it names the same directory.
+- **A verb is one of three classes, in every application.** An edit of the
+  document is an entry of its history. The window's own state (selection,
+  cursor, zoom) is none. **Changing which document the window holds (New, Open,
+  Close file) is none either**: a document has a history of its own, the one let
+  go of takes its order with it, and nothing walks back across the change. A
+  window that replaces its document asks first by the rule a close asks by, when
+  it is the work's only holder and has changes (`clausters_apps::closing`), and
+  hands the document back to the client that opened it otherwise. An audio
+  window adds files rather than replacing one, so its New and Open let nothing
+  go.
 - **An application that opens files opens without one, and outlives its
   last.** Where an application holds files or documents of its own -- opens,
   adds and closes them -- it opens with none, its window keeping the menu bar,
