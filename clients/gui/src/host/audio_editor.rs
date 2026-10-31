@@ -230,23 +230,23 @@ impl Host {
         self.open_app_for(AppKind::Multitrack, path, title, None)
     }
 
-    /// [`Host::open_multitrack`], its Save writing to `save_to` and nowhere
-    /// without one: what a host started over a session (`--session`,
-    /// `--save-to`) opens.
+    /// [`Host::open_multitrack`] as a host started over one opens it
+    /// (`--session [file]`, `--save-to`): the session at `path` saves to
+    /// `save_to` and nowhere without one, since overwriting the file it
+    /// opened is a decision; a window opened over none saves its first
+    /// session to `save_to`, or asks where.
     pub fn open_multitrack_saving_to(
         &mut self,
-        path: &str,
+        path: Option<&str>,
         save_to: Option<&str>,
         title: &str,
     ) -> Result<i32, String> {
-        self.open_app_saving(
-            AppKind::Multitrack,
-            Some(path),
-            None,
-            title,
-            None,
-            Some(save_to.map(str::to_string)),
-        )
+        let save_to = match (path, save_to) {
+            (_, Some(to)) => Some(Some(to.to_string())),
+            (Some(_), None) => Some(None),
+            (None, None) => None,
+        };
+        self.open_app_saving(AppKind::Multitrack, path, None, title, None, save_to)
     }
 
     /// An application of `kind` opened in a window of its own, answered to
@@ -1279,6 +1279,88 @@ mod tests {
         assert!(host.deliver(def_id, &save));
         until(&mut host, "the second save never wrote", |_| path.exists());
         assert_eq!(page(&host), 0);
+        host.close_audio(def_id);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// **A multitrack opened over no session opens one from its File
+    /// menu**: Open puts the form up, a pick in its chooser opens the
+    /// session in the window, and File > New over unsaved work asks first,
+    /// Don't save letting it go.
+    #[test]
+    fn an_empty_multitrack_opens_a_session_from_its_file_menu() {
+        use clausters_document::Document;
+        use clausters_document::session::Session;
+
+        let folder = std::env::temp_dir().join(format!("host-file-menu-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("chosen.json");
+        std::fs::write(
+            &path,
+            serde_json::to_string(&Session::new(Document::empty())).unwrap(),
+        )
+        .unwrap();
+        let mut host = host();
+        let def_id = host.open_multitrack_saving_to(None, None, "empty").unwrap();
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
+        let widget = |host: &Host, name: &str| host.own_widget_id(structure, AUDIO, name).unwrap();
+        let index = |host: &Host, stack: i32| match host.window_defs[&def_id]
+            .find(stack)
+            .map(|w| &w.kind)
+        {
+            Some(crate::host::widget::WidgetKind::Stack { index, .. }) => *index,
+            other => panic!("a stack: {other:?}"),
+        };
+        let dialogs = widget(&host, "dialog:stack");
+        let verb = |host: &mut Host, seq, verb: &str| {
+            let message = host.event_message(def_id, seq, vec![OscType::String(verb.into())]);
+            assert!(host.deliver(def_id, &message));
+        };
+        verb(&mut host, 1, "open_file");
+        until(&mut host, "the Open form never came up", |h| {
+            index(h, dialogs) == 2
+        });
+        let chooser = widget(&host, "dialog:open:path");
+        let picked = host.event_message(
+            chooser,
+            2,
+            vec![
+                OscType::String("pick".into()),
+                OscType::String(path.display().to_string()),
+            ],
+        );
+        assert!(host.deliver(def_id, &picked));
+        until(&mut host, "the session was never opened", |h| {
+            index(h, dialogs) == 0
+                && ask(h, def_id, json!({"query": "file"}))["path"] == json!(path)
+        });
+        // unsaved work: File > New asks, and Don't save lets it go
+        let edited = ask(
+            &mut host,
+            def_id,
+            json!({"do": {"verb": "handle", "call": {"verb": "apply",
+                "intent": {"intent": "setmarker", "marker": 7, "at": 1.0}}}}),
+        );
+        assert_eq!(edited["applied"], true, "{edited}");
+        verb(&mut host, 3, "new_file");
+        let close = widget(&host, "close_stack");
+        until(&mut host, "the close form never came up", |h| {
+            index(h, close) == 1
+        });
+        assert_eq!(
+            ask(&mut host, def_id, json!({"query": "file"}))["path"],
+            json!(path)
+        );
+        let discard = widget(&host, "close_discard");
+        let click = host.event_message(discard, 4, vec![OscType::String("click".into())]);
+        assert!(host.deliver(def_id, &click));
+        until(&mut host, "the new session never came", |h| {
+            index(h, close) == 0 && ask(h, def_id, json!({"query": "file"}))["path"].is_null()
+        });
         host.close_audio(def_id);
         let _ = std::fs::remove_dir_all(&folder);
     }

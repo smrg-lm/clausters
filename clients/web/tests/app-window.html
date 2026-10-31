@@ -165,14 +165,32 @@
         track.name = "before the new session";
         await sessionEditor.output();
         const window = sessionEditor.window;
-        await sessionEditor.act("new_file");
+        await sessionEditor.newFile();
         await until(() => sessionEditor.closed, "the window handing its session back");
         if ([...multitrack.tracks][0]?.name !== "before the new session") {
           throw new Error("the window did not hand back what it left the multitrack as");
         }
         sessionEditor.host.verb(window, "close");
         await until(() => !sessionEditor.host.isOpen(window.id), "the host's own window closing");
-        log("stored: the multitrack and its relative sources read back from OPFS, and handed back when another session took the window");
+        // **a window with no session opens one from OPFS in its place**,
+        // and a session another window holds brings that window forward
+        const empty = new gui.editing.MultitrackEditor(null, { title: "empty" });
+        await empty.open();
+        if ((await empty.query("file")).empty !== true) throw new Error("the window opened over a session");
+        await empty.openFile("out/app_window_retained.json");
+        const opened = await empty.query("file");
+        if (opened.path !== "out/app_window_retained.json" || empty.closed) {
+          throw new Error(`the window did not open the stored session: ${JSON.stringify(opened)}`);
+        }
+        const rival = new gui.editing.MultitrackEditor(null, { title: "rival" });
+        await rival.open();
+        const refused = await rival.openFile("out/app_window_retained.json").then(() => null, (error) => error);
+        if (!String(refused?.message ?? refused).includes("open in another window")) {
+          throw new Error(`a session open in a window was opened twice: ${refused}`);
+        }
+        await rival.close();
+        await empty.close();
+        log("stored: the multitrack and its relative sources read back from OPFS, handed back when another session took the window, and opened from OPFS in an empty one");
 
         verdict("PASS: an application's window opened at its declared size and a press on " +
           "it landed where it is drawn; one opened into an element drew there");

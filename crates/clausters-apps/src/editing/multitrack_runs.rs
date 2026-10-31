@@ -30,7 +30,7 @@ use serde_json::{Value, json};
 use super::held::{HeldList, HeldTake, PlacedList};
 use super::multitrack_action::{Action, Handle, HandleCall, Kind as ActionKind};
 use super::{Caller, Editing, Member, MemberId, Raised, Ran};
-use crate::multitrack::editor::{Kind, TransportVerb};
+use crate::multitrack::editor::{FileChange, Kind, TransportVerb};
 use crate::turn::Event;
 
 /// **One multitrack member's playback**, and what its tracks' readers were
@@ -68,7 +68,7 @@ impl Tracks {
         self.playback.end() == clausters_editing::playback::End::Contents
     }
 
-    fn new(editing: &mut Editing) -> Option<Tracks> {
+    pub(super) fn new(editing: &mut Editing) -> Option<Tracks> {
         let engine = editing.engine.as_mut()?;
         Some(Tracks {
             rate: engine.rate(),
@@ -124,8 +124,11 @@ impl Editing {
         caller: &mut dyn Caller,
         ids: &mut IdSpaces,
     ) -> Ran {
-        if matches!(self.member(member), Some(Member::Multitrack(editor)) if !editor.has_session())
-            && !action.allows_empty()
+        // with no session, what answers is the window's: its File verbs and
+        // the forms they put up
+        if matches!(self.member(member), Some(Member::Multitrack(editor))
+            if !editor.has_session() && !action.allows_empty()
+                && !matches!(&action.kind, ActionKind::Event(event) if editor.holds_form(event)))
         {
             return refused("value", "no file is open");
         }
@@ -263,6 +266,69 @@ impl Editing {
         Ok(())
     }
 
+    /// **The window's session changed** (File > New, Open, Close file, or
+    /// the door's verbs): a new untitled session, the one at a path, or
+    /// none, the window drawn again over it and its tracks sounded. A
+    /// session another window holds is not opened twice: that window comes
+    /// forward and this one stays as it is.
+    pub(super) fn change_file(
+        &mut self,
+        member: MemberId,
+        tracks: &mut Tracks,
+        change: FileChange,
+        caller: &mut dyn Caller,
+        ids: &mut IdSpaces,
+        ran: &mut Ran,
+    ) -> Result<Value, String> {
+        use crate::multitrack::operations::Command;
+        let answer = match &change {
+            FileChange::New => self
+                .change_multitrack_session(member, Command::New, ran)
+                .map(|()| Value::Null)?,
+            FileChange::Close => self
+                .change_multitrack_session(member, Command::Unbind, ran)
+                .map(|()| Value::Null)?,
+            FileChange::Open(path) => {
+                let here = match self.member(member) {
+                    Some(Member::Multitrack(editor)) => editor.window_id(),
+                    _ => None,
+                };
+                if let Some(window) = self
+                    .window_holding_session(path)
+                    .filter(|window| Some(*window) != here)
+                {
+                    ran.effects.push(effect("front", json!({"window": window})));
+                    return Err(format!("{path} is open in another window"));
+                }
+                self.open_session(member, path, caller, ran)?
+            }
+        };
+        self.stop_multitrack(member, tracks, ids);
+        if change != FileChange::Close {
+            self.sound(member, tracks, ids);
+        }
+        if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
+            if let FileChange::Open(_) = change {
+                editor.set_checkpoint(Some(editor.session_snapshot()));
+            }
+            // a window opened read-only was so over the session it opened:
+            // the one in its place saves
+            editor.set_saves(true);
+        }
+        ran.effects.push(effect("publish", json!({})));
+        ran.effects.push(effect("resync", json!({})));
+        // **the window told the version it draws now**: a gesture made
+        // against the session it let go of is refused, and one made after
+        // is not
+        let told = clausters_editing::conversation::Answer::Ack {
+            seq: 0,
+            doc_version: self.version,
+            reason: None,
+        };
+        ran.effects.push(effect("echo", json!({"answer": told})));
+        Ok(answer)
+    }
+
     /// **The session written** at `path`, or where it was opened from: the
     /// multitrack as it now is, its takes and its joins in the table, every
     /// file inside the session's folder named relative to it. A multitrack
@@ -302,7 +368,7 @@ impl Editing {
         let saved = crate::multitrack::operations::Saved {
             session,
             path: path.clone(),
-            close: save.close,
+            then: save.then,
             save_as: save.save_as,
         };
         let ticket = self.multitrack_runtime.prepare(
@@ -336,22 +402,11 @@ impl Editing {
             editor.file_mut().save_to = Some(save_to.clone());
         }
         let result = match &action.kind {
-            ActionKind::NewFile | ActionKind::CloseFile => {
-                let command = if matches!(action.kind, ActionKind::NewFile) {
-                    crate::multitrack::operations::Command::New
-                } else {
-                    crate::multitrack::operations::Command::Unbind
-                };
-                self.change_multitrack_session(member, command, &mut ran)
-                    .map(|()| {
-                        self.stop_multitrack(member, tracks, ids);
-                        if matches!(action.kind, ActionKind::NewFile) {
-                            self.sound(member, tracks, ids);
-                        }
-                        ran.effects.push(effect("publish", json!({})));
-                        ran.effects.push(effect("resync", json!({})));
-                        Value::Null
-                    })
+            ActionKind::NewFile => {
+                self.change_file(member, tracks, FileChange::New, caller, ids, &mut ran)
+            }
+            ActionKind::CloseFile => {
+                self.change_file(member, tracks, FileChange::Close, caller, ids, &mut ran)
             }
             ActionKind::Open {
                 snapshot: Some(snapshot),
@@ -374,40 +429,24 @@ impl Editing {
             ActionKind::Open {
                 session: Some(path),
                 ..
-            } => {
-                // **a session open in another window is not opened twice**:
-                // that window comes forward, and this one stays as it is
-                let here = match self.member(member) {
-                    Some(Member::Multitrack(editor)) => editor.window_id(),
-                    _ => None,
-                };
-                let elsewhere = self
-                    .window_holding_session(path)
-                    .filter(|window| Some(*window) != here);
-                let opened = match elsewhere {
-                    Some(window) => {
-                        ran.effects.push(effect("front", json!({"window": window})));
-                        Err(format!("{path} is open in another window"))
-                    }
-                    None => self.open_session(member, path, caller, &mut ran),
-                };
-                if opened.is_ok() {
-                    self.stop_multitrack(member, tracks, ids);
-                    self.sound(member, tracks, ids);
-                    if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
-                        editor.set_checkpoint(Some(editor.session_snapshot()));
-                    }
-                }
-                opened.map(|mut answer| {
+            } => self
+                .change_file(
+                    member,
+                    tracks,
+                    FileChange::Open(path.clone()),
+                    caller,
+                    ids,
+                    &mut ran,
+                )
+                .map(|mut answer| {
                     answer["transport"] = json!(tracks.playback.transport());
                     answer
-                })
-            }
+                }),
             ActionKind::Save { path } => match self.save_session(
                 member,
                 super::multitrack_operations::SaveTo {
                     path: path.clone(),
-                    close: false,
+                    then: None,
                     save_as: path.is_some(),
                 },
                 &mut ran,
@@ -532,6 +571,16 @@ impl Editing {
                 Ok(json!(false))
             }
         };
+        // **where the session it opened saves**, when the opener said: the
+        // session the window held before was another's
+        if result.is_ok()
+            && matches!(action.kind, ActionKind::Open { .. } | ActionKind::NewFile)
+            && let Some(save_to) = &action.save_to
+            && let Some(Member::Multitrack(editor)) = self.member_mut(member)
+        {
+            editor.file_mut().save_to = Some(save_to.clone());
+            editor.set_saves(save_to.is_some());
+        }
         if std::mem::take(&mut tracks.storing) {
             // a save ends when its storage lands
             return ran;
@@ -817,9 +866,15 @@ impl Editing {
         // saves, and a close only once it is -- a save that fails keeps the
         // window, and says why
         if outcome.save || outcome.save_as.is_some() {
+            use crate::multitrack::operations::After;
+            let then = match (&outcome.file, outcome.close) {
+                (_, true) => Some(After::Close),
+                (Some(change), false) => Some(After::File(change.clone())),
+                (None, false) => None,
+            };
             let save = super::multitrack_operations::SaveTo {
                 path: outcome.save_as.clone(),
-                close: outcome.close,
+                then,
                 save_as: outcome.save_as.is_some(),
             };
             match self.save_session(member, save, ran) {
@@ -831,6 +886,13 @@ impl Editing {
         if outcome.close {
             self.close_tracks(member, tracks, ids);
             ran.effects.push(self.closing(member, "closeWindow"));
+        }
+        // **File > New, Open, Close file**, with nothing to lose or the
+        // close form answered Don't save
+        if let Some(change) = outcome.file
+            && let Err(why) = self.change_file(member, tracks, change, caller, ids, ran)
+        {
+            ran.effects.push(effect("say", json!({"reason": why})));
         }
         json!(outcome.changed)
     }

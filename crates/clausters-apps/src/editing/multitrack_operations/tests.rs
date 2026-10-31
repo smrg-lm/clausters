@@ -980,3 +980,220 @@ fn a_session_open_in_one_window_brings_it_forward_instead_of_opening_twice() {
         None
     );
 }
+
+impl Fixture {
+    /// The window as a standalone host holds it: numbered, with its close
+    /// form and its dialogs, asking before it loses work when `asks`.
+    fn windowed(&mut self, asks: bool) -> crate::forms::Ids {
+        let ids: crate::forms::Ids = crate::multitrack::dialogs::names()
+            .into_iter()
+            .enumerate()
+            .map(|(k, name)| (name, 60 + k as i32))
+            .collect();
+        let Some(Member::Multitrack(editor)) = self.editing.member_mut(self.member) else {
+            panic!()
+        };
+        editor.set_close_form(Some(crate::closing::Ids {
+            stack: 50,
+            dialog: 51,
+            save: 52,
+            discard: 53,
+            cancel: 54,
+        }));
+        editor.set_asks_to_close(asks);
+        editor.set_saves(true);
+        editor.set_dialogs(ids.clone());
+        editor.window(40, 41);
+        editor.set_window(Some(39));
+        ids
+    }
+    fn gesture(&mut self, widget: i32, seq: i64, tag: &str, values: Value) -> Ran {
+        let mut args = vec![
+            json!(widget),
+            json!(seq),
+            json!(self.editing.version),
+            json!(tag),
+        ];
+        args.extend(values.as_array().cloned().unwrap_or_default());
+        self.editing.start(
+            self.member,
+            &json!({"verb":"event", "addr":"/gui_event", "args":args}),
+            None,
+            &mut self.disk,
+            &mut self.ids,
+        )
+    }
+    fn path(&mut self) -> Value {
+        self.editing.multitrack_query(self.member, "file")["path"].clone()
+    }
+}
+
+fn shows_close_form(ran: &Ran) -> bool {
+    ran.effects.iter().any(|effect| {
+        effect["kind"] == "echo"
+            && effect["answer"].to_string().contains(r#""widget":50"#)
+            && effect["answer"].to_string().contains(r#""index":1"#)
+    })
+}
+
+#[test]
+fn file_new_with_unsaved_work_asks_and_dont_save_replaces_the_session() {
+    let mut f = Fixture::new();
+    let measured = f.open("asked", 1);
+    f.land(measured.run, Ok(()));
+    f.windowed(true);
+    f.marker(f.member, 7);
+    let asked = f.gesture(39, 1, "new_file", json!([]));
+    assert!(shows_close_form(&asked), "{asked:?}");
+    assert!(f.path().as_str().unwrap().ends_with("asked.json"));
+    // Cancel keeps the session as it is
+    f.gesture(54, 2, "click", json!([]));
+    assert!(f.path().as_str().unwrap().ends_with("asked.json"));
+    assert_eq!(f.markers(f.member), Some(Ok(json!({"ids":[7]}))));
+    // asked again, Don't save lets it go
+    assert!(shows_close_form(&f.gesture(39, 3, "new_file", json!([]))));
+    let replaced = f.gesture(53, 4, "click", json!([]));
+    assert!(
+        replaced
+            .effects
+            .iter()
+            .any(|effect| effect["kind"] == "released"),
+        "{replaced:?}"
+    );
+    assert_eq!(f.path(), Value::Null);
+    assert_eq!(f.markers(f.member), Some(Ok(json!({"ids":[]}))));
+    assert!(
+        !f.editing.can_undo(),
+        "the new session has a history of its own"
+    );
+}
+
+#[test]
+fn file_close_after_save_waits_for_the_write_and_an_edit_meanwhile_keeps_it() {
+    let mut f = Fixture::new();
+    let measured = f.open("saving", 1);
+    f.land(measured.run, Ok(()));
+    f.windowed(true);
+    f.marker(f.member, 7);
+    assert!(shows_close_form(&f.gesture(39, 1, "close_file", json!([]))));
+    let saving = f.gesture(52, 2, "click", json!([]));
+    let render = saving.render.expect("the save waits on storage");
+    assert!(f.path().as_str().unwrap().ends_with("saving.json"));
+    // an edit while the save is written is work it does not hold
+    f.marker(f.member, 8);
+    let [Step::Store { path, contents }] = &render.steps[..] else {
+        panic!()
+    };
+    std::fs::write(path, contents).unwrap();
+    let landed = f.land(render.run, Ok(()));
+    assert!(
+        landed
+            .effects
+            .iter()
+            .any(|effect| effect["kind"] == "say" && effect["reason"].is_string()),
+        "{landed:?}"
+    );
+    assert!(f.path().as_str().unwrap().ends_with("saving.json"));
+    // saved again with nothing moving, the close follows the write
+    assert!(shows_close_form(&f.gesture(39, 3, "close_file", json!([]))));
+    let render = f.gesture(52, 4, "click", json!([])).render.unwrap();
+    let [Step::Store { path, contents }] = &render.steps[..] else {
+        panic!()
+    };
+    std::fs::write(path, contents).unwrap();
+    let closed = f.land(render.run, Ok(()));
+    assert!(matches!(closed.end, Some(Ok(_))), "{closed:?}");
+    assert_eq!(
+        f.editing.multitrack_query(f.member, "file"),
+        json!({"empty": true})
+    );
+}
+
+#[test]
+fn a_window_a_client_holds_changes_its_session_without_asking() {
+    let mut f = Fixture::new();
+    let measured = f.open("held", 1);
+    f.land(measured.run, Ok(()));
+    f.windowed(false);
+    f.marker(f.member, 7);
+    let closed = f.gesture(39, 1, "close_file", json!([]));
+    assert!(!shows_close_form(&closed));
+    assert!(
+        closed
+            .effects
+            .iter()
+            .any(|effect| effect["kind"] == "released"),
+        "{closed:?}"
+    );
+    assert_eq!(
+        f.editing.multitrack_query(f.member, "file"),
+        json!({"empty": true})
+    );
+}
+
+#[test]
+fn file_open_chooses_a_session_in_the_form_and_opens_it_in_the_window() {
+    let mut f = Fixture::new();
+    let mut other = Session::new(Document::empty());
+    other
+        .sources
+        .insert(SourceId(1), Source::file("chosen-1.wav", Lifetime::Session));
+    let path = f.folder.join("chosen.json");
+    std::fs::write(&path, serde_json::to_vec(&other).unwrap()).unwrap();
+    let ids = f.windowed(true);
+    let shown = f.gesture(39, 1, "open_file", json!([]));
+    assert!(
+        shown.effects.iter().any(|effect| effect["kind"] == "echo"
+            && effect["answer"]
+                .to_string()
+                .contains(&format!(r#""widget":{}"#, ids["stack"]))),
+        "{shown:?}"
+    );
+    // nothing chosen: the form stays up and says so
+    let refused = f.gesture(ids["open:ok"], 2, "click", json!([]));
+    assert!(
+        refused
+            .effects
+            .iter()
+            .any(|effect| effect["answer"].to_string().contains("select a session")),
+        "{refused:?}"
+    );
+    let picked = f.gesture(ids["open:path"], 3, "pick", json!([[path]]));
+    assert!(
+        picked
+            .effects
+            .iter()
+            .any(|effect| effect["kind"] == "publish"),
+        "{picked:?}"
+    );
+    assert_eq!(f.path(), json!(path));
+}
+
+#[test]
+fn a_session_opened_read_only_is_so_alone_and_the_one_in_its_place_saves() {
+    let mut f = Fixture::new();
+    let mut session = Session::new(Document::empty());
+    session
+        .sources
+        .insert(SourceId(1), Source::file("kept-1.wav", Lifetime::Session));
+    let path = f.folder.join("kept.json");
+    std::fs::write(&path, serde_json::to_vec(&session).unwrap()).unwrap();
+    f.windowed(false);
+    let opened = f.editing.start(
+        f.member,
+        &json!({"verb":"open", "session":path, "saveTo":null}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(matches!(opened.end, Some(Ok(_))), "{opened:?}");
+    let save = |f: &mut Fixture| f.editing.action_states(f.member)["save"].clone();
+    assert!(save(&mut f)["reason"].is_string(), "{}", save(&mut f));
+    let saving = f.gesture(39, 1, "save", json!([]));
+    assert!(saving.render.is_none(), "nothing written over the file");
+    f.gesture(39, 2, "new_file", json!([]));
+    assert!(save(&mut f)["reason"].is_null(), "{}", save(&mut f));
+    // the new session has no file: its Save asks where, in Save as
+    let asked = f.gesture(39, 3, "save", json!([]));
+    assert!(asked.render.is_none(), "{asked:?}");
+}

@@ -2893,11 +2893,27 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
       another client holds it. `--session` opens the host's first window,
       so it finds nothing; it goes through the same open. *Done
       2026-10-30.*
-    - ⬜ Wire the empty host opening and New/Open/Close file chrome and dialogs,
+    - ✅ Wire the empty host opening and New/Open/Close file chrome and dialogs,
       including holder-aware save/discard/cancel and confirmed deferred closes.
       Preserve all three opening paths and verify disk/OPFS read-back.
-    - ⬜ Refresh artifacts and finish the automatic and manual example-pair
-      acceptance after the complete binding path is in place.
+      The File menu has New session, Open session... (an Open form of the
+      shared mechanism, its chooser showing session files) and Close
+      session, read as window verbs that are never stale. One change of
+      session (`Editing::change_file`) serves the menu, the door's verbs
+      and the handlers' `new_file`/`open_file`/`close_file` (`newFile`,
+      `openFile`, `closeFile`). A window the host holds alone asks with the
+      close form, which now remembers what it is up for; its Save defers
+      the change (or the close) to the confirmed write and drops it when
+      the session moved meanwhile. A change tells the window the version
+      it draws, so a gesture after it is not refused as overtaken.
+      `--session` takes no file for an empty host, and the read-only of a
+      session opened without `--save-to` stays with that session. A form's
+      events reach an empty window. Disk read-back is the host's test
+      (`an_empty_multitrack_opens_a_session_from_its_file_menu`), OPFS the
+      applications' page (`tests/app-window.html`: an empty window opens a
+      stored session, and a second one is refused). *Done 2026-10-30.*
+    - ⬜ Refresh artifacts and finish the automatic example-pair acceptance
+      after the complete binding path is in place.
 
   - ⬜ **Roll review and points port.** Review roll actions, clipboard,
     history, conversations, close and invalidation. Extend its existing host

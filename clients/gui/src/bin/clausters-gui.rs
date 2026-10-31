@@ -53,7 +53,7 @@ usage:
                 [--udp [addr:]port] [--tcp [[addr:]port] | --no-tcp]
                 [--ws [[addr:]port]] [--max-frame <bytes>]
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
-                [--session <file> [--save-to <file>]]
+                [--session [file] [--save-to <file>]]
                 [--score <file> [--save-to <file>]] [--audio [file]]
                 [--theme <path>] [--keys <path>] [--font <path>] [--msaa <n>]
                 [--follow-block <seconds>] [--id-share <i/of>]
@@ -105,12 +105,14 @@ usage:
                             persist there; /gui_load reads from it). Defaults to
                             the same place the server uses ($CLAUSTERS_DATA_DIR,
                             $XDG_DATA_HOME/clausters, ~/.local/share/clausters).
-      --session <file>      open a session file in the multitrack editor, with
-                            **this host as its owner**: its takes are read from
-                            disk (their peaks kept in the session's peaks/
-                            folder), edited, undone and played here, on an
-                            engine this host opens on the machine's output, and
-                            saved to --save-to
+      --session [file]      open the multitrack editor, over a session file or
+                            over none, with **this host as its owner**: its
+                            takes are read from disk (their peaks kept in the
+                            session's peaks/ folder), edited, undone and played
+                            here, on an engine this host opens on the machine's
+                            output. The file is saved to --save-to, and is
+                            read-only without it; a session made or opened in
+                            the window saves where its own file is
       --score <file>        open a score (MEI, MusicXML, ABC -- what the engraver
                             reads) in the score editor, with this host as its
                             owner: edited and undone here, and Ctrl+S writes it
@@ -276,7 +278,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut cli_head: Option<HeadClock> = None;
     let mut standalone_flag = false;
     let mut cli_standalone_name: Option<String> = None;
-    let mut session_path: Option<String> = None;
+    let mut session_path: Option<Option<String>> = None;
     let mut audio: Option<Option<String>> = None;
     let mut score_path: Option<String> = None;
     let mut save_to: Option<String> = None;
@@ -404,11 +406,13 @@ fn run(args: &[String]) -> Result<(), String> {
                 }
             }
             "--session" => {
-                session_path = Some(
-                    it.next()
-                        .ok_or_else(|| format!("--session needs a path\n{USAGE}"))?
-                        .clone(),
-                );
+                // the file is optional: a multitrack with no session is the
+                // application on its own, whose File menu opens or makes one
+                let file = it.peek().filter(|next| !next.starts_with("--")).cloned();
+                if file.is_some() {
+                    it.next();
+                }
+                session_path = Some(file.cloned());
             }
             "--audio" => {
                 // the file is optional: an editor with none is the application
@@ -564,7 +568,7 @@ fn run(args: &[String]) -> Result<(), String> {
     // A session: the multitrack editor, with this host as its owner -- its
     // application, its engine and its takes' reading are in this process.
     if let Some(path) = session_path {
-        return run_multitrack(&path, save_to.as_deref(), udp_bind, look);
+        return run_multitrack(path.as_deref(), save_to.as_deref(), udp_bind, look);
     }
 
     // Standalone: boot a saved GuiDef against an embedded server, no separate
@@ -779,19 +783,24 @@ fn run_audio(path: Option<&str>, udp_bind: SocketAddr, look: Look) -> Result<(),
 /// tracks on an engine this host opens on the machine's output; Save writes
 /// where `--save-to` says, and nowhere without it.
 fn run_multitrack(
-    path: &str,
+    path: Option<&str>,
     save_to: Option<&str>,
     udp_bind: SocketAddr,
     look: Look,
 ) -> Result<(), String> {
     let mut host = Host::new();
     look.apply(&mut host);
-    let name = Path::new(path)
-        .file_name()
-        .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned());
-    let title = match save_to {
-        Some(_) => name,
-        None => format!("{name} (read-only: no --save-to)"),
+    let title = match path {
+        None => "Multitrack".to_string(),
+        Some(path) => {
+            let name = Path::new(path)
+                .file_name()
+                .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned());
+            match save_to {
+                Some(_) => name,
+                None => format!("{name} (read-only: no --save-to)"),
+            }
+        }
     };
     host.open_multitrack_saving_to(path, save_to, &title)
         .map_err(|e| format!("--session: {e}"))?;

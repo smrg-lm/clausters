@@ -580,6 +580,38 @@ export class MultitrackEditor implements WindowOver {
         this.filed = written;
         return written;
     }
+
+    // ---- the window's session ----
+
+    /**
+     * **A new, untitled session in the window**, as its File > New puts one
+     * there. The window lets go of the session it was opened over: this
+     * multitrack holds what the window left it as, as a close leaves it, and
+     * the window goes on as the host's own.
+     */
+    async newFile(): Promise<void> {
+        await this.act("new_file");
+    }
+
+    /**
+     * **The session file at `path` in the window**, as its File > Open opens
+     * one, letting go of the session it was opened over as
+     * {@link MultitrackEditor.newFile} does. A session another window of the
+     * host holds is not opened twice: that window comes forward and this
+     * rejects.
+     */
+    async openFile(path: string): Promise<void> {
+        await this.act("open", { session: String(path) });
+    }
+
+    /**
+     * **No session in the window**, as its File > Close session leaves it,
+     * letting go of the one it was opened over as
+     * {@link MultitrackEditor.newFile} does.
+     */
+    async closeFile(): Promise<void> {
+        await this.act("close_file");
+    }
 }
 
 /** The marking surface, merged so `editor.selected()` types as its own. */

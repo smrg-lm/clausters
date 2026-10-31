@@ -107,6 +107,18 @@ what the window left, contents and sources, without reading the file over
 changes made since. A client-held session does not ask to discard work on
 window close, because the script's multitrack holds it.
 
+**The window's File menu changes its session**: New session puts an empty,
+untitled one in its place, Open session... chooses a session file in the
+host's chooser and opens it, Close session leaves the window with none. The
+handler has the same three, `new_file()`, `open_file(path)` and
+`close_file()`, and each hands the script's multitrack back as above. A window
+the host holds alone asks first when its session has unsaved work (Don't
+save, Cancel, Save), and a Save there changes the session once the file is
+written, and not if the session moved while it was. A session already open in
+another window of the host is not opened again: that window comes forward,
+and `open_file` raises. A session opened read-only is so alone: the one the
+window opens or makes in its place saves where its own file is.
+
 **A `SoundFile` opens in the audio editor**, an application the GUI host holds: the host
 opens it in a window of its own, on an engine of the application's own, and every gesture,
 render and undo runs in the host's process. What `edit` answers is its **handler**,

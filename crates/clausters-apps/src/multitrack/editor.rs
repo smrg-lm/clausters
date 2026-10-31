@@ -113,6 +113,31 @@ pub struct Outcome {
     /// it, with nothing to lose or nothing to ask in.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub close: bool,
+    /// **The window's session to change** (File > New, Open, Close file),
+    /// with nothing to lose or once the close form was answered. With
+    /// [`save`](Self::save) the change waits for the session to be written.
+    #[serde(skip)]
+    pub file: Option<FileChange>,
+}
+
+/// **A change of the session a window holds**, from its File menu: a new
+/// one in its place, the one at a path, or none.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileChange {
+    /// A new session, empty and untitled.
+    New,
+    /// The session at this path.
+    Open(String),
+    /// No session: the window goes on empty.
+    Close,
+}
+
+/// **What the close form is up for**: the window's close, or a change of
+/// its session.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Leaving {
+    Window,
+    File(FileChange),
 }
 
 turn::turned!(Outcome);
@@ -147,20 +172,46 @@ impl Converse for MultitrackEditor {
     }
 
     fn ask_to_close(&mut self, _out: &mut Outcome) -> (Option<String>, Vec<Correction>) {
-        match self.close_form {
-            Some(ids) => (None, crate::closing::shown(&ids, true)),
-            None => (
-                Some(
-                    "this window has changes that are not saved, and no form to ask about them"
-                        .into(),
-                ),
-                Vec::new(),
-            ),
-        }
+        self.ask_before(Leaving::Window)
     }
 
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
         MultitrackEditor::resync(self, widget)
+    }
+
+    /// **The window's File > New, Open and Close file**: its session
+    /// changes, asking first when that loses work. They name no data a
+    /// gesture was made against, so they are never stale: a menu picked
+    /// after a script's edit is not refused as overtaken.
+    fn window_verb(
+        &mut self,
+        message: &conversation::Message,
+        _args: &[Value],
+        out: &mut Outcome,
+    ) -> bool {
+        if message.addr != "/gui_event"
+            || !message.is_window
+            || !matches!(
+                message.tag.as_str(),
+                NEW_FILE_VERB | OPEN_FILE_VERB | CLOSE_FILE_VERB
+            )
+        {
+            return false;
+        }
+        out.turn = Kind::Route;
+        let (reason, corrections) = match message.tag.as_str() {
+            NEW_FILE_VERB => self.change_file(FileChange::New, out),
+            OPEN_FILE_VERB => self.open_session_form(),
+            _ if !self.has_session() => (Some("no file is open".into()), Vec::new()),
+            _ => self.change_file(FileChange::Close, out),
+        };
+        out.answer = Some(conversation::answer(
+            message.seq,
+            out.version,
+            reason,
+            corrections,
+        ));
+        true
     }
 
     fn route(
@@ -170,18 +221,22 @@ impl Converse for MultitrackEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
-        // **The close form's answer**: Save writes and then closes, Don't
-        // save closes, Cancel keeps the window -- and the form goes down
+        // **The close form's answer**: Save writes and then does what the
+        // form was up for (closes the window, changes its session), Don't
+        // save does it now, Cancel keeps the window as it is -- and the form
+        // goes down
         if let Some(ids) = self.close_form.filter(|ids| ids.contains(widget)) {
             use crate::closing::Choice;
-            match ids.read(widget, tag) {
-                Some(Choice::Save) => {
-                    out.save = true;
-                    out.close = true;
+            let Some(choice) = ids.read(widget, tag) else {
+                return (None, Vec::new());
+            };
+            let leaving = self.leaving.take().unwrap_or(Leaving::Window);
+            if choice != Choice::Cancel {
+                out.save = choice == Choice::Save;
+                match leaving {
+                    Leaving::Window => out.close = true,
+                    Leaving::File(change) => out.file = Some(change),
                 }
-                Some(Choice::Discard) => out.close = true,
-                Some(Choice::Cancel) => {}
-                None => return (None, Vec::new()),
             }
             return (None, crate::closing::shown(&ids, false));
         }
@@ -304,6 +359,8 @@ pub struct MultitrackEditor {
     /// Whether the window is the work's one holder, so a close with
     /// something unsaved asks first -- a standalone host's, never a client's.
     asks: bool,
+    /// What the close form is up for, while it is.
+    leaving: Option<Leaving>,
     /// Whether the holder's work has changes its file does not hold, as the
     /// holder last said: the session is the holder's, not this editor's.
     unsaved: bool,
@@ -534,6 +591,7 @@ impl MultitrackEditor {
             controls: None,
             close_form: None,
             asks: false,
+            leaving: None,
             unsaved: false,
             saves: false,
             untitled: false,
@@ -784,9 +842,65 @@ impl MultitrackEditor {
         (None, crate::forms::corrections(shown))
     }
 
-    /// **What a widget of the dialogs said**: a field typed into, the form
+    /// **Whether `event` is said by one of the window's forms**: its
+    /// dialogs or its close form, which answer with no session open.
+    pub(crate) fn holds_form(&self, event: &Event) -> bool {
+        let Some(widget) = event.args.first().and_then(Value::as_i64) else {
+            return false;
+        };
+        self.close_form.is_some_and(|ids| ids.contains(widget))
+            || self.dialogs.name(widget).is_some()
+    }
+
+    /// **The close form, up for `leaving`**, or why it cannot be: a window
+    /// with no form to ask in stays as it is.
+    fn ask_before(&mut self, leaving: Leaving) -> (Option<String>, Vec<Correction>) {
+        let Some(ids) = self.close_form else {
+            return (
+                Some(
+                    "this window has changes that are not saved, and no form to ask about them"
+                        .into(),
+                ),
+                Vec::new(),
+            );
+        };
+        self.leaving = Some(leaving);
+        (None, crate::closing::shown(&ids, true))
+    }
+
+    /// **A change of the window's session** (File > New, Open, Close file):
+    /// at once, unless the window is the work's one holder and the session
+    /// has unsaved work -- then the close form asks first, by the rule a
+    /// close asks by ([`crate::closing`]). A window a client holds hands the
+    /// session back to it, so nothing is lost and nothing is asked.
+    fn change_file(
+        &mut self,
+        change: FileChange,
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        if self.asks && self.unsaved && self.has_session() {
+            return self.ask_before(Leaving::File(change));
+        }
+        out.file = Some(change);
+        (None, Vec::new())
+    }
+
+    /// **The Open form, up**, its chooser where the hand last left it.
+    fn open_session_form(&mut self) -> (Option<String>, Vec<Correction>) {
+        if !self.dialogs.numbered(dialogs::forms()) {
+            return (Some("this window has no dialogs".into()), Vec::new());
+        }
+        let shown = self.dialogs.open(dialogs::Form::Open, Default::default());
+        (None, crate::forms::corrections(shown))
+    }
+
+    /// **What a widget of the dialogs said**: a field typed into, a
+    /// chooser's selection or the directory it went into, the form
     /// cancelled, or `OK` -- the path the session is saved under, which the
-    /// outcome names for the holder to write. A form refused stays up.
+    /// outcome names for the holder to write, or the session to open, which
+    /// is opened as File > Open opens it. A pick in the chooser (a double
+    /// click or Enter on a file) opens it as `OK` does. A form refused
+    /// stays up.
     fn form_event(
         &mut self,
         name: &str,
@@ -803,6 +917,13 @@ impl MultitrackEditor {
         };
         match said {
             Said::Cancel | Said::Discard => (None, crate::forms::corrections(self.dialogs.hide())),
+            Said::Picked(_, paths) if open.form == dialogs::Form::Open => {
+                self.open_chosen(&paths, out)
+            }
+            Said::Accept if open.form == dialogs::Form::Open => {
+                let paths = self.dialogs.chosen("path").to_vec();
+                self.open_chosen(&paths, out)
+            }
             Said::Accept => {
                 let path = open.value("path").trim().to_string();
                 if path.is_empty() {
@@ -813,6 +934,23 @@ impl MultitrackEditor {
             }
             _ => (None, Vec::new()),
         }
+    }
+
+    /// **The session chosen in the Open form, opened**: the form goes down
+    /// and the window's session changes, asking first when it has unsaved
+    /// work. With none chosen the form stays up and says so.
+    fn open_chosen(
+        &mut self,
+        paths: &[String],
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        let Some(path) = paths.first().cloned() else {
+            return (Some("select a session to open".into()), Vec::new());
+        };
+        let mut corrections = crate::forms::corrections(self.dialogs.hide());
+        let (reason, asked) = self.change_file(FileChange::Open(path), out);
+        corrections.extend(asked);
+        (reason, corrections)
     }
 
     /// The window's own settings: the navigation group, the transport row, the
@@ -971,8 +1109,9 @@ impl MultitrackEditor {
     /// closed and its holder to be handed what the window left it as. One
     /// session file per window: nothing keeps the one let go.
     pub(crate) fn replace_session_binding(&mut self) -> Option<Released> {
-        let mut next = SessionState::new(self.next_session, super::shared(Multitrack::new()));
-        next.file.save_to = self.file().save_to.clone();
+        // where the one it replaces saved is that one's: a new session
+        // saves by its own path, or asks for one
+        let next = SessionState::new(self.next_session, super::shared(Multitrack::new()));
         self.next_session += 1;
         let previous = std::mem::replace(&mut self.session, next);
         let released = self.session_open.then(|| Released {
@@ -1449,6 +1588,9 @@ impl MultitrackEditor {
                         | LOOP_KEY
                         | SAVE_VERB
                         | SAVE_AS_VERB
+                        | NEW_FILE_VERB
+                        | OPEN_FILE_VERB
+                        | CLOSE_FILE_VERB
                         | PAUSE_VERB
                         | STOP_VERB
                         | STOP_AT_END_VERB
@@ -2162,6 +2304,12 @@ pub const PAUSE_VERB: &str = "pause";
 pub const SAVE_VERB: &str = "save";
 /// **The window's Save as**: the form that asks where the session is written.
 pub const SAVE_AS_VERB: &str = "save_as";
+/// **The window's File > New**: a new, untitled session in its place.
+pub const NEW_FILE_VERB: &str = "new_file";
+/// **The window's File > Open**: the form that chooses the session to open.
+pub const OPEN_FILE_VERB: &str = "open_file";
+/// **The window's File > Close file**: the window goes on with no session.
+pub const CLOSE_FILE_VERB: &str = "close_file";
 
 /// A box of notes drawn as a roll: the `notes_view` word, and the window's
 /// verb that asks for it.

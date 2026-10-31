@@ -77,6 +77,9 @@ The verdict is one of three:
 | `audio` | `apply` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** — the one effect today is the gain envelope |
 | `audio` | `apply_envelope` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** |
 | `audio` | `reverse` | `AudioEditor.reverse` | `AudioEditor.reverse` | **api** |
+| `multitrack` | `new_file` | `MultitrackEditor.new_file` | `MultitrackEditor.newFile` | **api** — a new, untitled session in the window's place; the one let go is handed back to the handler |
+| `multitrack` | `open_file` | `MultitrackEditor.open_file` | `MultitrackEditor.openFile` | **api** — a session file by its path, chosen in the host's chooser from the window; one another window holds brings that window forward |
+| `multitrack` | `close_file` | `MultitrackEditor.close_file` | `MultitrackEditor.closeFile` | **api** — no session: the window goes on empty |
 | `multitrack` | `save_as` | `MultitrackEditor.save` | `MultitrackEditor.save` | **api** — `save(path)` |
 | `multitrack` | `pause` | `MultitrackTransport.pause` | `MultitrackTransport.pause` | **api** |
 | `multitrack` | `stop` | `MultitrackTransport.stop` | `MultitrackTransport.stop` | **api** |

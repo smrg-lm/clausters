@@ -571,6 +571,27 @@ class MultitrackEditor(Marking):
             self._path = str(written)
         return written
 
+    # ---- the window's session ----
+
+    def new_file(self) -> None:
+        """**A new, untitled session in the window**, as its File > New puts
+        one there. The window lets go of the session it was opened over:
+        this multitrack holds what the window left it as, as a close leaves
+        it, and the window goes on as the host's own."""
+        self._do("new_file")
+
+    def open_file(self, path) -> None:
+        """**The session file at ``path`` in the window**, as its File > Open
+        opens one, letting go of the session it was opened over as
+        `new_file` does. A session another window of the host holds is not
+        opened twice: that window comes forward and this raises."""
+        self._do("open", session=str(path))
+
+    def close_file(self) -> None:
+        """**No session in the window**, as its File > Close session leaves
+        it, letting go of the one it was opened over as `new_file` does."""
+        self._do("close_file")
+
 
 def is_multitrack(structure) -> bool:
     """Whether ``structure`` is a `clausters.multitrack.Multitrack`."""

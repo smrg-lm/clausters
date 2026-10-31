@@ -288,6 +288,9 @@ pub const MULTITRACK_SCOPE: &str = "multitrack";
 /// where a pass ends, its rows' own commands, how its boxes of samples and
 /// of notes are drawn, and the automatic crossfade.
 pub const MULTITRACK: &[Verb] = &[
+    verb("new_file", &[], "New session"),
+    verb("open_file", &["Ctrl+O"], "Open session..."),
+    verb("close_file", &[], "Close session"),
     verb("save_as", &["Ctrl+Shift+S"], "Save as..."),
     verb("pause", &[], "Pause"),
     verb("stop", &[], "Stop"),

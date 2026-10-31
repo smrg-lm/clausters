@@ -76,6 +76,12 @@ class FakeHost:
         if do["verb"] == "close":
             self.close_window()
             return False
+        if do["verb"] in ("new_file", "close_file") or (
+                do["verb"] == "open" and "session" in do):
+            # the window lets go of its session, as the host says it
+            path = do.get("session")
+            self.release(None if do["verb"] == "close_file" else Multitrack().write(), path)
+            return None
         return self.answers.get(do["verb"])
 
     def bind(self, written, path=None):
@@ -288,3 +294,21 @@ def test_reopening_keeps_the_same_object_and_its_local_changes():
     assert "snapshot" in next(call for call in reversed(host.calls) if call[0] == "open")[2]
     host.close_window()
     assert track.name == "after close"
+
+
+def test_the_windows_file_verbs_hand_the_session_back():
+    host = FakeHost()
+    original = Multitrack()
+    original.tracks.add("original")
+    editor = edit(original, host=host)
+    editor.new_file()
+    assert host.calls[-1][2] == {"do": {"verb": "new_file"}}
+    assert editor.closed and editor.multitrack is original
+    editor.open(host)
+    editor.open_file("/songs/next.json")
+    assert host.calls[-1][2] == {"do": {"verb": "open", "session": "/songs/next.json"}}
+    assert editor.closed
+    editor.open(host)
+    editor.close_file()
+    assert host.calls[-1][2] == {"do": {"verb": "close_file"}}
+    assert editor.closed and host.held is None

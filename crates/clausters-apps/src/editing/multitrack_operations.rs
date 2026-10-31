@@ -8,7 +8,7 @@ use crate::multitrack::operations::{Command, Commit, Request};
 
 pub(super) struct SaveTo {
     pub path: Option<String>,
-    pub close: bool,
+    pub then: Option<crate::multitrack::operations::After>,
     pub save_as: bool,
 }
 
@@ -130,6 +130,8 @@ impl Editing {
                     .as_ref()
                     .map(|batch| batch.member)
                     .expect("a committed endpoint");
+                let mut moved = false;
+                let then = saved.then.clone();
                 if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
                     editor.set_checkpoint(Some(saved.session.clone()));
                     let file = editor.file_mut();
@@ -138,14 +140,37 @@ impl Editing {
                     if saved.save_as {
                         file.save_to = None;
                     }
-                }
-                if saved.close {
-                    if let Some(mut tracks) = self.tracks.remove(&member) {
-                        self.close_tracks(member, &mut tracks, ids);
-                    }
-                    ran.effects.push(self.closing(member, "closeWindow"));
+                    moved = editor.unsaved_contents();
                 }
                 ran.end = Some(Ok(json!({"destination":saved.path})));
+                // **what waited for the save is done only over what it
+                // wrote**: an edit made while it was being written is work
+                // the save does not hold, and the window keeps it
+                match then {
+                    Some(_) if moved => ran.effects.push(json!({"kind":"say",
+                        "reason":"the session changed while it was saved: it stays open"})),
+                    Some(crate::multitrack::operations::After::Close) => {
+                        if let Some(mut tracks) = self.tracks.remove(&member) {
+                            self.close_tracks(member, &mut tracks, ids);
+                        }
+                        ran.effects.push(self.closing(member, "closeWindow"));
+                    }
+                    Some(crate::multitrack::operations::After::File(change)) => {
+                        if let Some(mut tracks) = self
+                            .tracks
+                            .remove(&member)
+                            .or_else(|| super::multitrack_runs::Tracks::new(self))
+                        {
+                            if let Err(why) =
+                                self.change_file(member, &mut tracks, change, caller, ids, ran)
+                            {
+                                ran.effects.push(json!({"kind":"say", "reason":why}));
+                            }
+                            self.tracks.insert(member, tracks);
+                        }
+                    }
+                    None => {}
+                }
             }
             if let Some(error) = settled.protocol.error {
                 ran.end = Some(Err(Raised {

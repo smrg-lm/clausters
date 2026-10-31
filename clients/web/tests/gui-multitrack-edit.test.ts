@@ -75,6 +75,12 @@ class FakeHost {
             this.closeWindow();
             return false;
         }
+        if (doing.verb === "new_file" || doing.verb === "close_file" || (doing.verb === "open" && doing.session !== undefined)) {
+            // the window lets go of its session, as the host says it
+            const path = (doing.session as string | undefined) ?? null;
+            this.release(doing.verb === "close_file" ? null : (new Multitrack().write() as Call), path);
+            return null;
+        }
         return this.answers[doing.verb];
     }
 
@@ -333,4 +339,24 @@ test("reopening keeps the same object and its local changes", async () => {
     assert.ok(host.calls.filter(call => call[0] === "open").at(-1)![2].snapshot);
     host.closeWindow();
     assert.equal(track.name, "after close");
+});
+
+test("the window's file verbs hand the session back", async () => {
+    const host = new FakeHost();
+    const original = new Multitrack();
+    original.tracks.add("original");
+    const editor = (await edit(original, { host: host as unknown as GuiHost })) as MultitrackEditor;
+    await editor.newFile();
+    assert.deepEqual(host.last(), { do: { verb: "new_file" } });
+    assert.ok(editor.closed);
+    assert.equal(editor.multitrack, original);
+    await editor.open(host as unknown as GuiHost);
+    await editor.openFile("/songs/next.json");
+    assert.deepEqual(host.last(), { do: { verb: "open", session: "/songs/next.json" } });
+    assert.ok(editor.closed);
+    await editor.open(host as unknown as GuiHost);
+    await editor.closeFile();
+    assert.deepEqual(host.last(), { do: { verb: "close_file" } });
+    assert.ok(editor.closed);
+    assert.equal(host.held, null);
 });

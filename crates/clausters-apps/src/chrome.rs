@@ -124,7 +124,7 @@ fn sep() -> Value {
 #[must_use]
 pub fn menu(app: App, saves: bool) -> Value {
     let mut file = Vec::new();
-    if app == App::Audio {
+    if matches!(app, App::Audio | App::Multitrack) {
         file.extend([
             entry(app, "new_file"),
             entry(app, "open_file"),
