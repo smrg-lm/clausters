@@ -144,8 +144,19 @@ fn engraved(data: &str) -> Result<clausters_apps::score::Shared, String> {
         .map_err(|e| format!("the engraver could not read the score: {e}"))
 }
 
+/// **A symbolic score read by the page's engraver**: verovio in a worker this
+/// thread waits on.
+#[cfg(all(target_arch = "wasm32", feature = "notation"))]
+fn engraved(data: &str) -> Result<clausters_apps::score::Shared, String> {
+    super::web::engraver::open(data).map(|score| Arc::new(Mutex::new(score)))
+}
+
 /// A build with no engraver opens no score.
-#[cfg(all(feature = "notation", not(feature = "score")))]
+#[cfg(all(
+    feature = "notation",
+    not(feature = "score"),
+    not(target_arch = "wasm32")
+))]
 fn engraved(_: &str) -> Result<clausters_apps::score::Shared, String> {
     Err("this host was built without an engraver, so it opens no score".into())
 }
@@ -1208,10 +1219,14 @@ impl App {
     fn said(
         &mut self,
         def_id: i32,
-        #[cfg_attr(not(feature = "score"), allow(unused_mut))] mut ran: Ran,
+        #[cfg_attr(
+            not(any(feature = "score", all(target_arch = "wasm32", feature = "notation"))),
+            allow(unused_mut)
+        )]
+        mut ran: Ran,
         say: bool,
     ) {
-        #[cfg(feature = "score")]
+        #[cfg(any(feature = "score", all(target_arch = "wasm32", feature = "notation")))]
         if self.engrave(def_id) {
             ran.effects.push(json!({"kind": "resync"}));
         }
@@ -1310,7 +1325,7 @@ impl App {
     /// handed an engraver**, the first time it does: a score of its own,
     /// made here since the engraver is a library this build links. Answers
     /// whether it was, and the window is drawn again.
-    #[cfg(feature = "score")]
+    #[cfg(any(feature = "score", all(target_arch = "wasm32", feature = "notation")))]
     fn engrave(&mut self, def_id: i32) -> bool {
         use clausters_apps::editing::Member;
         use clausters_core::notation::{sheet_to_mei, voice_to_sheet};
@@ -1330,13 +1345,10 @@ impl App {
         }
         let opened = sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C"))
             .map_err(|e| e.to_string())
-            .and_then(|blank| {
-                clausters_notation::open(&blank, &clausters_notation::EngraveOptions::default())
-                    .map_err(|e| e.to_string())
-            });
+            .and_then(|blank| engraved(&blank));
         match opened {
             Ok(score) => {
-                editor.bind_engraver(Arc::new(Mutex::new(score)));
+                editor.bind_engraver(score);
                 true
             }
             Err(why) => {

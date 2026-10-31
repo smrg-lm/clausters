@@ -11,6 +11,8 @@
  * @module
  */
 
+import { engraverUrlOf } from "./notation/_verovio.ts";
+
 type HostGlue = typeof import("../gui-host/clausters_gui.js");
 
 /** What a thread posts the page (`apps-thread.ts`). */
@@ -41,6 +43,8 @@ export async function appsHost(
     let memory: WebAssembly.Memory | null = null;
     /** The worker that answers the threads' calls into the page's storage. */
     let files: Worker | null = null;
+    /** The worker that answers the threads' calls into the engraver. */
+    let engraver: Worker | null = null;
     /** A worker named `name` that runs the body at `body`; whether it was made. */
     const spawn = (name: string, body: number): boolean => {
         if (memory === null) return false;
@@ -66,8 +70,13 @@ export async function appsHost(
             const line = new MessageChannel();
             files ??= filesWorker(memory);
             files.postMessage({ port: line.port1 }, [line.port1]);
-            worker.postMessage({ glue: glueUrl, module, memory, body, stack: THREAD_STACK, files: line.port2 },
-                [line.port2]);
+            const engraving = new MessageChannel();
+            engraver ??= engraverWorker(memory);
+            engraver.postMessage({ port: engraving.port1 }, [engraving.port1]);
+            worker.postMessage({
+                glue: glueUrl, module, memory, body, stack: THREAD_STACK,
+                files: line.port2, engraver: engraving.port2,
+            }, [line.port2, engraving.port2]);
             return true;
         } catch (error) {
             console.error(`clausters: no worker for thread ${name}: ${String(error)}`);
@@ -97,6 +106,17 @@ function filesWorker(memory: WebAssembly.Memory): Worker {
     const worker = new Worker(new URL("./apps-files.js", import.meta.url), { type: "module", name: "files" });
     worker.onerror = (event) => console.error(`clausters: the files worker: ${event.message}`);
     worker.postMessage({ memory });
+    return worker;
+}
+
+/**
+ * The page's engraver worker, over the shared memory (`apps-engraver.ts`): made
+ * with the first thread, and it fetches verovio only when it is first asked.
+ */
+function engraverWorker(memory: WebAssembly.Memory): Worker {
+    const worker = new Worker(new URL("./apps-engraver.js", import.meta.url), { type: "module", name: "engraver" });
+    worker.onerror = (event) => console.error(`clausters: the engraver worker: ${event.message}`);
+    worker.postMessage({ memory, url: engraverUrlOf() });
     return worker;
 }
 

@@ -139,6 +139,70 @@ export class GuiBridge {
 }
 
 /**
+ * **The suite's check of a page's files** (`clients/web/tests/apps.html`):
+ * a thread makes a folder, writes a file, reads part of it back from where
+ * it sought, lists, moves and removes, through `clausters_core::files` --
+ * and the main thread is refused one.
+ */
+export function apps_files_check(): void;
+
+/**
+ * What the files check did: 0, 1 or 2 ([`apps_files_check`]).
+ */
+export function apps_files_checked(): number;
+
+/**
+ * The step the files check failed at, and why.
+ */
+export function apps_files_failed(): string;
+
+/**
+ * The folder the check holds, or why it failed.
+ */
+export function apps_folder(): string;
+
+/**
+ * **The suite's check of a page's working folder**: a thread finds a folder
+ * left by no tab, makes a working folder (`clausters_core::workspace`),
+ * which sweeps the left one and holds its own by a Web Lock, and holds it
+ * until [`apps_folder_check_wake`] wakes it to let it go.
+ */
+export function apps_folder_check(): void;
+
+/**
+ * Wakes the folder check's thread to let its folder go.
+ */
+export function apps_folder_check_wake(): void;
+
+/**
+ * What the folder check did ([`apps_folder_check`]).
+ */
+export function apps_folder_checked(): number;
+
+/**
+ * **The suite's check of a page's threads** (`clients/web/tests/apps.html`):
+ * spawns one that parks until [`apps_thread_check_wake`] wakes it from the
+ * main thread, with what it did read by [`apps_thread_checked`].
+ */
+export function apps_thread_check(): void;
+
+/**
+ * Wakes the check's thread, telling it it was woken.
+ */
+export function apps_thread_check_wake(): void;
+
+/**
+ * What the check's thread did: 0, 1 or 2 ([`apps_thread_check`]).
+ */
+export function apps_thread_checked(): number;
+
+/**
+ * **Runs a thread's body on the worker that was made for it**: the page's
+ * worker calls this once, with the pointer [`spawn`] handed it.
+ */
+export function apps_thread_run(body: number): void;
+
+/**
  * The ordered boot packets of a persisted bundle, for the page to send to the
  * in-page engine: `synthdefs`/`graphdefs` are arrays of `Uint8Array` (each
  * file's bytes verbatim), `boot_json` the optional `boot.json` text,
@@ -177,6 +241,17 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly apps_files_check: () => [number, number];
+    readonly apps_files_checked: () => number;
+    readonly apps_files_failed: () => [number, number];
+    readonly apps_folder: () => [number, number];
+    readonly apps_folder_check: () => [number, number];
+    readonly apps_folder_check_wake: () => void;
+    readonly apps_folder_checked: () => number;
+    readonly apps_thread_check: () => [number, number];
+    readonly apps_thread_check_wake: () => void;
+    readonly apps_thread_checked: () => number;
+    readonly apps_thread_run: (a: number) => void;
     readonly __wbg_guibridge_free: (a: number, b: number) => void;
     readonly bundle_boot_packets: (a: any, b: any, c: number, d: number, e: number, f: number, g: number) => any;
     readonly guibridge_attach: (a: number, b: number, c: any) => void;

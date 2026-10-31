@@ -62,12 +62,14 @@ mod canvas;
 mod capture;
 mod compose;
 mod disk;
+#[cfg(feature = "apps")]
+#[cfg(all(feature = "apps", feature = "notation"))]
+pub(crate) mod engraver;
 mod files;
 mod input;
 #[cfg(feature = "midi")]
 mod midi;
 mod serverleg;
-#[cfg(feature = "apps")]
 mod threads;
 
 pub use bridge::{GuiBridge, bundle_boot_packets, start};

@@ -43,6 +43,11 @@ export function setEngraverUrl(url: string): void {
     engraverUrl = url;
 }
 
+/** Where a page said the engraver module lives, or `null`: what a worker that engraves for it is told. */
+export function engraverUrlOf(): string | null {
+    return engraverUrl;
+}
+
 /**
  * The loaded engraver module. Idempotent: the module is built once per page and
  * every score shares it, exactly as every score in a process shares one

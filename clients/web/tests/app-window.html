@@ -218,6 +218,39 @@
         }
         log("roll: one history over two windows, a transport each, and the sequence handed back");
 
+        // **a symbolic score is an application too**: the page's engraver
+        // worker reads it for the application's thread, a verb is its turn, and
+        // the file is written to the page's storage
+        const score = await gui.notation.Score.open("@clef:G-2\n@timesig:4/4\n@data:4CDEF/ 4GABc'/");
+        const page = await gui.edit(score, { title: "score" });
+        const items = () => score.sheet().staves[0].voices[0].items;
+        const firstNote = items()[0].id;
+        await page.select([`n${firstNote}`]);
+        if (!(await page.articulation("stacc"))) throw new Error(`the verb did nothing: ${page.refused}`);
+        if (items()[0].marks?.articulations?.[0] !== "stacc") throw new Error("the copy did not follow the verb");
+        if ((await page.save("out/app_window.mei")) !== "out/app_window.mei") throw new Error("the score was not saved");
+        const pageOnDisk = await gui.notation.Score.read("out/app_window.mei");
+        if (!pageOnDisk.mei().includes("stacc")) throw new Error("the file does not hold the edit");
+        if (!(await page.undo())) throw new Error("the window walked nothing");
+        if (items()[0].marks !== undefined) throw new Error("the copy did not follow the step");
+        await page.play(0);
+        if (!(await page.playing())) throw new Error("the score does not play");
+        await page.stop();
+        await page.close();
+        if (score.window !== null) throw new Error("the close did not hand the score back");
+        // **a page over the sequence a roll shows** is one history with it
+        const shown = new EventSequence([[0, new Event({ midinote: 60, dur: 1 })], [1, new Event({ midinote: 62, dur: 1 })]]);
+        const reel = await gui.edit(shown, { title: "roll" });
+        const reading = await gui.edit(shown, { title: "page", view: "score", division: 8 });
+        shown.events.item(0).set("midinote", 67);
+        await reel.undoLabel();
+        if (!(await reading.undo()) || shown.events.item(0).get("midinote") !== 60) {
+          throw new Error("the page walked nothing of the roll's");
+        }
+        await reading.close();
+        await reel.close();
+        log("score: read and engraved by the worker, edited, saved to OPFS, and one history with a roll");
+
         verdict("PASS: an application's window opened at its declared size and a press on " +
           "it landed where it is drawn; one opened into an element drew there");
         await editor.close();

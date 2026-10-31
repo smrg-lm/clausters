@@ -2966,8 +2966,10 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
       window's at each read and a page holds a copy it follows, as a
       multitrack's does. Until the engraver worker lands a page's host refuses
       a score, saying why. *Done 2026-10-31.*
-    - ⬜ The page's engraver worker, which also gives a page's multitrack its
-      boxes as pages.
+    - ✅ The page's engraver worker, which also gives a page's multitrack its
+      boxes as pages. The pinned verovio in a worker (`apps-engraver.ts`) the
+      application's thread asks synchronously over the shared memory, fetched
+      the first time it is asked. *Done 2026-10-31.*
     - ⬜ Standalone on the same application, the replaced paths removed.
 
   - ⬜ **Symbolic score: actions and execution.** Compose shared chrome
@@ -6126,11 +6128,12 @@ wrong.
   score window. Waits on "The roll and the score editor as applications of
   their own" (Future directions).
 
-- ⬜ **A page's multitrack draws no box as its page** *(found 2026-10-29,
+- ✅ **A page's multitrack draws no box as its page** *(found 2026-10-29,
   the same pass)*. The application hands the multitrack an engraver the
   first time its boxes are drawn as scores, made from the engraver the
-  native host links; the page's application build links none, so there
-  a box stays a roll. The page's engraver is the web client's, in the page.
+  native host links; the page's application build linked none, so there
+  a box stayed a roll. *Fixed 2026-10-31: the application asks the page's
+  engraver worker.*
 
 - ✅ **An untitled multitrack's Save asks for nothing** *(found 2026-10-29,
   the same work)*. A multitrack handed over whole has no file, and Save from

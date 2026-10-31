@@ -20,6 +20,8 @@ interface ThreadStart {
     stack: number;
     /** The thread's line to the page's file worker (`apps-files.ts`). */
     files: MessagePort;
+    /** The thread's line to the page's engraver worker (`apps-engraver.ts`). */
+    engraver: MessagePort;
 }
 
 const scope = globalThis as unknown as {
@@ -32,13 +34,18 @@ const post = (message: unknown): void =>
     (globalThis as unknown as { postMessage(message: unknown): void }).postMessage(message);
 
 scope.onmessage = async (event) => {
-    const { glue, module, memory, body, stack, files } = event.data;
+    const { glue, module, memory, body, stack, files, engraver } = event.data;
     // **A call into the page's storage waits here**: the request's address
     // goes to the file worker, and this thread sleeps on its state until the
     // worker answers, which a worker may do and the main thread may not.
     (globalThis as { __claustersApps?: unknown }).__claustersApps = {
         file(request: number): void {
             files.postMessage(request);
+            Atomics.wait(new Int32Array(memory.buffer), request >> 2, 0);
+        },
+        /** A call into the page's engraver, waited for as a file's is. */
+        engrave(request: number): void {
+            engraver.postMessage(request);
             Atomics.wait(new Int32Array(memory.buffer), request >> 2, 0);
         },
         /** A thread of its own, which only the page makes: answered as made. */
