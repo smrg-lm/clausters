@@ -19,14 +19,6 @@ def _engraver() -> bool:
         return False
 
 
-def _engraver() -> bool:
-    try:
-        notation._abi._engraver()
-        return True
-    except RuntimeError:
-        return False
-
-
 @pytest.fixture
 def score(gui_host):
     if not _engraver():
@@ -207,6 +199,85 @@ def test_a_saved_score_is_the_file_it_was_written_to(score, gui_host, tmp_path):
     assert not editor.unsaved
     # reading it back is the same score, and takes the history's place
     assert notation.Score.read(path).sheet()["staves"]
+    editor.close()
+
+
+def test_a_save_that_fails_leaves_the_score_and_its_file(score, gui_host, tmp_path):
+    editor = opened(gui_host, ScoreEditor(score))
+    path = str(tmp_path / "kept.mei")
+    editor.save(path)
+    with pytest.raises(RuntimeError):
+        editor.save(str(tmp_path / "no" / "such" / "folder.mei"))
+    assert score.path == path
+    assert not editor.unsaved
+    editor.close()
+
+
+def test_a_document_that_does_not_read_leaves_the_window_as_it_was(score, gui_host, tmp_path):
+    editor = opened(gui_host, ScoreEditor(score))
+    path = str(tmp_path / "kept.mei")
+    editor.save(path)
+    before = score.mei()
+    bad = tmp_path / "bad.mei"
+    bad.write_text("this is no score")
+    with pytest.raises(RuntimeError):
+        editor.load(str(bad))
+    assert score.mei() == before
+    assert score.path == path
+    assert not editor.unsaved
+    editor.close()
+
+
+def test_new_file_replaces_the_document_as_one_entry(score, gui_host, tmp_path):
+    editor = opened(gui_host, ScoreEditor(score))
+    path = str(tmp_path / "kept.mei")
+    editor.save(path)
+    before = score.mei()
+    editor.new_file()
+    assert score.mei() != before, "the same score holds it"
+    assert editor.has_document
+    assert editor.undo()
+    assert score.mei() == before
+    assert not editor.unsaved, "the file came back with the document"
+    assert editor.save() == path
+    editor.close()
+
+
+def test_close_file_lets_the_score_go_and_the_window_stays(score, gui_host, tmp_path):
+    editor = opened(gui_host, ScoreEditor(score))
+    path = str(tmp_path / "kept.mei")
+    editor.save(path)
+    assert editor.set_text("title", "After the save")
+    left = score.mei()
+    window = int(editor.window)
+    told = []
+    editor.on_closed(lambda: told.append(True))
+    editor.close_file()
+    gui_host.pump(0.2)
+    assert editor.closed and told == [True]
+    assert score.path == path
+    assert score.mei() == left, "the score holds what the window left it as"
+    assert gui_host.call_app(window, {"query": "file"})["empty"] is True, "the window stays"
+    gui_host.call_app(window, {"do": {"verb": "close"}})
+
+
+def test_a_window_over_no_score_has_no_document_until_one_is_made(gui_host, tmp_path):
+    if not _engraver():
+        pytest.skip("no engraver")
+    editor = opened(gui_host, ScoreEditor())
+    assert editor.score is None
+    assert not editor.has_document
+    assert not editor.unsaved
+    with pytest.raises(ValueError, match="no file is open"):
+        editor.save(str(tmp_path / "nothing.mei"))
+    assert not (tmp_path / "nothing.mei").exists()
+    editor.new_file()
+    assert editor.has_document
+    path = str(tmp_path / "made.mei")
+    assert editor.save(path) == path
+    assert "<mei" in open(path, encoding="utf-8").read()
+    assert editor.load(path) in (True, False)
+    assert editor.has_document and not editor.unsaved
     editor.close()
 
 

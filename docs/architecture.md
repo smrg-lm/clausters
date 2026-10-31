@@ -1214,6 +1214,13 @@ source resolver and typed open operation; local edits made after closing are
 preserved. Content comparison ignores monotonic revision counters and event-id
 watermarks, while storage preserves those counters.
 
+A score window's file goes through the same runtime (`score::operations`): a
+Save stores one prepared revision and confirms it, so a pending close or Close
+file waits for the store and goes only over what it wrote; a replacement in the
+meantime is not confirmed as that file. Close file unbinds (the window keeps no
+document, and its undo order goes), while New and Open over a document stay one
+entry of the history, the entry carrying the file so a step puts both back.
+
 The **score editor** (`clausters_apps::score`, behind the crate's `notation`
 feature) opens a symbolic score and edits it **in place**: what it holds is the
 core's `Score` over `AnyEngraver` — any engraver behind a box, so the score a

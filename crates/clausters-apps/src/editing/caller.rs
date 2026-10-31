@@ -141,6 +141,8 @@ impl Editing {
         match self.member(member) {
             Some(Member::Audio(_)) => self.audio_landed(member, run, result, lease, caller, ids),
             Some(Member::Multitrack(_)) => self.multitrack_landed(member, run, result, caller, ids),
+            #[cfg(feature = "notation")]
+            Some(Member::Score(_)) => self.score_landed(member, run, result, ids),
             _ => refused(),
         }
     }
@@ -154,7 +156,7 @@ impl Editing {
             Some(Member::Multitrack(_)) => self.multitrack_query(member, query),
             Some(Member::Notes(_)) => self.notes_query(member, query),
             #[cfg(feature = "notation")]
-            Some(Member::Score(_)) => self.notes_query(member, query),
+            Some(Member::Score(_)) => self.score_query(member, query),
             _ => json!({"error": "the member answers no queries"}),
         }
     }

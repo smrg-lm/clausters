@@ -201,6 +201,7 @@ class HostedEditor(WindowVerbs):
         self._window = None
         self._on_closed = None
         self._settled = True
+        self._released = False
         self._depth = 0
         self._legs = None
 
@@ -254,8 +255,10 @@ class HostedEditor(WindowVerbs):
         self._host = host
         self._window = WindowHandle(host, int(window), {})
         self._settled = False
+        self._released = False
         self._window.on_closed(self._closed)
         host._set_changed_handler(int(window), self._changed)
+        host._set_released_handler(int(window), self._gave_up)
         held.editors.append(self)
         if beside is None:
             self._take()
@@ -275,12 +278,21 @@ class HostedEditor(WindowVerbs):
         if self._on_closed is not None:
             self._on_closed()
 
-    def _leave(self) -> None:
+    def _gave_up(self) -> None:
+        """The window let go of what it had and goes on as the host's own: the
+        structure holds what it left it as, and this handler is done with it."""
+        self._released = True
+        self._leave(self._host._closed_snapshot(int(self._window)))
+        if self._on_closed is not None:
+            self._on_closed()
+
+    def _leave(self, left: "dict | None" = None) -> None:
         if self._settled:
             return
         self._settled = True
         window = int(self._window)
-        left = self._host._closed_with(window)
+        if left is None:
+            left = self._host._closed_with(window)
         self._host._set_changed_handler(window, None)
         held = self._held()
         held.editors = [editor for editor in held.editors if editor is not self]
@@ -303,13 +315,14 @@ class HostedEditor(WindowVerbs):
 
     @property
     def closed(self) -> bool:
-        """Whether it has no window open."""
-        return self._window is None or self._window.closed
+        """Whether it is done with its window: the window is gone, or it let go
+        of what this handler opened (the window goes on as the host's own)."""
+        return self._window is None or self._window.closed or self._released
 
     def wait(self, timeout: "float | None" = None) -> bool:
         """Hold the calling thread until the window is closed: ``True`` when it
         closed, ``False`` when ``timeout`` ran out first."""
-        if self._window is None:
+        if self._window is None or self._released:
             return True
         done = self._window.wait(timeout)
         if done:

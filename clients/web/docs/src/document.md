@@ -762,6 +762,16 @@ page.
 `examples/notation/score-editor.html` is the whole of it: a document opened, operated on, edited,
 played, saved and rendered.
 
+
+**A window holds one document, and may hold none.** `new ScoreEditor()` opens
+with no document, its File menu making or opening one (`newFile()`,
+`load(path)`). Over a document, `newFile()` and `load(path)` are one entry of the
+history, and a step puts the document and its file back. A file that does not
+read leaves the window as it was. `save(path)` answers once the file is written:
+only then is the path the score's. `closeFile()` leaves the window with no
+document and its undo order gone: the page's score holds what the window left it
+as, and the window goes on as the host's own (`closed`, `hasDocument()`).
+
 ## The arrangement: tracks, take lanes, regions
 
 The model a multitrack editor edits is the one the three classic

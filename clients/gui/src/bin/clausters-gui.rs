@@ -51,7 +51,7 @@ usage:
                 [--ws [[addr:]port]] [--max-frame <bytes>]
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
                 [--session [file] [--save-to <file>]]
-                [--score <file> [--save-to <file>]] [--audio [file]]
+                [--score [file] [--save-to <file>]] [--audio [file]]
                 [--theme <path>] [--keys <path>] [--font <path>] [--msaa <n>]
                 [--follow-block <seconds>] [--id-share <i/of>]
       --port <n>            port for the GUI host's server front
@@ -107,8 +107,9 @@ usage:
                             output. The file is saved to --save-to, and is
                             read-only without it; a session made or opened in
                             the window saves where its own file is
-      --score <file>        open a score (MEI, MusicXML, ABC -- what the engraver
-                            reads) in the score editor, with this host as its
+      --score [file]        open a score (MEI, MusicXML, ABC -- what the engraver
+                            reads), or none, whose File menu makes or opens one,
+                            in the score editor, with this host as its
                             owner: edited, played and saved here, on an engine
                             this host opens on the machine's output, and Ctrl+S
                             writes it as MEI to --save-to, asking where without
@@ -274,7 +275,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut cli_standalone_name: Option<String> = None;
     let mut session_path: Option<Option<String>> = None;
     let mut audio: Option<Option<String>> = None;
-    let mut score_path: Option<String> = None;
+    let mut score_path: Option<Option<String>> = None;
     let mut save_to: Option<String> = None;
     let mut config_path: Option<String> = None;
     let mut theme_path: Option<String> = None;
@@ -418,11 +419,13 @@ fn run(args: &[String]) -> Result<(), String> {
                 audio = Some(file.cloned());
             }
             "--score" => {
-                score_path = Some(
-                    it.next()
-                        .ok_or_else(|| format!("--score needs a path\n{USAGE}"))?
-                        .clone(),
-                );
+                // the file is optional: an editor with none is the application
+                // on its own, whose File menu makes or opens one
+                let file = it.peek().filter(|next| !next.starts_with("--")).cloned();
+                if file.is_some() {
+                    it.next();
+                }
+                score_path = Some(file.cloned());
             }
             "--save-to" => {
                 save_to = Some(
@@ -551,11 +554,12 @@ fn run(args: &[String]) -> Result<(), String> {
     // with the engraver can read the file.
     if let Some(path) = score_path {
         #[cfg(feature = "score")]
-        return run_score(&path, save_to.as_deref(), udp_bind, look);
+        return run_score(path.as_deref(), save_to.as_deref(), udp_bind, look);
         #[cfg(not(feature = "score"))]
         return Err(format!(
-            "--score {path}: this clausters-gui was built without the engraver \
-             (rebuild with `--features score`)"
+            "--score {}: this clausters-gui was built without the engraver \
+             (rebuild with `--features score`)",
+            path.as_deref().unwrap_or("")
         ));
     }
 
@@ -810,27 +814,32 @@ fn run_multitrack(
 /// opened is not written over unasked.
 #[cfg(feature = "score")]
 fn run_score(
-    path: &str,
+    path: Option<&str>,
     save_to: Option<&str>,
     udp_bind: SocketAddr,
     look: Look,
 ) -> Result<(), String> {
     // a file that does not read is said here rather than by an empty host
-    let data = std::fs::read_to_string(path).map_err(|e| format!("--score {path}: {e}"))?;
-    clausters_notation::open(&data, &clausters_notation::EngraveOptions::default())
-        .map_err(|e| format!("--score {path}: {e}"))?;
+    if let Some(path) = path {
+        let data = std::fs::read_to_string(path).map_err(|e| format!("--score {path}: {e}"))?;
+        clausters_notation::open(&data, &clausters_notation::EngraveOptions::default())
+            .map_err(|e| format!("--score {path}: {e}"))?;
+    }
     let mut host = Host::new();
     look.apply(&mut host);
-    let name = Path::new(path)
-        .file_name()
-        .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned());
-    let title = match save_to {
-        Some(out) => format!("{name} -> {out}"),
-        None => format!("{name} (read-only: no --save-to)"),
+    let name = path.map(|path| {
+        Path::new(path)
+            .file_name()
+            .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned())
+    });
+    let title = match (name, save_to) {
+        (Some(name), Some(out)) => format!("{name} -> {out}"),
+        (Some(name), None) => format!("{name} (read-only: no --save-to)"),
+        (None, _) => "Score".to_string(),
     };
     host.open_score_saving_to(path, save_to, &title)
         .map_err(|e| format!("--score: {e}"))?;
-    tracing::info!("score: opened {path}");
+    tracing::info!("score: opened {}", path.unwrap_or("no document"));
     let socket =
         UdpSocket::bind(udp_bind).map_err(|e| format!("failed to bind UDP {udp_bind}: {e}"))?;
     gui::run(host, Arc::new(socket), None, None, None)

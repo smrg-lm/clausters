@@ -79,6 +79,16 @@ pub struct Outcome {
     /// names a file to save closes once that file is written.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub close: bool,
+    /// The revision a store confirmed, when the runtime settled one.
+    #[serde(skip)]
+    pub saved: Option<Box<super::operations::Saved>>,
+    /// What the window left its document as, when it let it go.
+    #[serde(skip)]
+    pub left: Option<Value>,
+    /// **Whether to let the document go**, the window staying with none: the
+    /// File menu's Close file, on the terms `close` has.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub unbind: bool,
     /// **The file to export the score's render to**, and as what:
     /// `{"path", "format"}`, the format `"smf"`, a Standard MIDI File, or
     /// `"clip"`, a MIDI 2.0 Clip File. Its holder renders the score and
@@ -144,11 +154,17 @@ pub struct ScoreEditor {
     /// opened, or when it was last saved, opened or made new. A score that
     /// is not this has changes to lose.
     saved: String,
-    /// The file an Open asked for, until its holder hands the document back.
-    opening: Option<String>,
-    /// Whether a save the close form asked for closes the window once a file
-    /// is named for it.
-    closing: bool,
+    /// **Whether the window has a document.** One with none has its File
+    /// verbs and nothing else, and the score it holds is a blank nobody sees.
+    document: bool,
+    /// The identity of the document in the window, as far as an undo order
+    /// goes: one let go of takes its order with it, and the next has its own.
+    binding: i64,
+    /// Which document is in the window, counted at every replacement: a store
+    /// prepared from one is not confirmed over another.
+    generation: u64,
+    /// What the close form's answer lets go of, when one is pending.
+    closing: Closing,
     /// Whether a pass loops: the loop switch, the toolbar's and the menu's.
     looping: bool,
     /// Where a pass starts with nothing selected, as a beat of the score.
@@ -250,6 +266,24 @@ pub struct Over {
     items: Vec<(u64, u64)>,
 }
 
+/// What a window with no document answers for everything else.
+pub const NO_FILE: &str = "no file is open";
+
+/// Why a page over a sequence has no file verbs.
+const OVER_NO_FILE: &str = "a page over a sequence has no file of its own";
+
+/// **What the close form asks about**: what goes once it is answered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum Closing {
+    /// Nothing is waiting.
+    #[default]
+    None,
+    /// The window.
+    Window,
+    /// The document, the window staying.
+    File,
+}
+
 /// What a score editor is opened with, as the context's door reads it.
 #[derive(Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -261,6 +295,8 @@ struct Opened {
     version: i64,
     chrome: bool,
     asks_to_close: bool,
+    /// No document, the window offering to make or open one.
+    empty: bool,
 }
 
 impl Default for Opened {
@@ -273,6 +309,7 @@ impl Default for Opened {
             version: 1,
             chrome: true,
             asks_to_close: false,
+            empty: false,
         }
     }
 }
@@ -309,8 +346,10 @@ impl ScoreEditor {
             palettes: palettes::Ids::new(),
             path: None,
             saved,
-            opening: None,
-            closing: false,
+            document: true,
+            binding: 0,
+            generation: 0,
+            closing: Closing::None,
             looping: false,
             stretch: false,
             cursor: 0.0,
@@ -382,7 +421,14 @@ impl ScoreEditor {
             .chain(keys)
             .map(|verb| {
                 let mut state = ActionState::new(verb, ActionTarget::Window);
+                if !self.document {
+                    if !matches!(verb.name, "close" | "keys" | "new_file") {
+                        state.refuse(NO_FILE);
+                    }
+                    return (verb.name, state);
+                }
                 match verb.name {
+                    "close_file" if self.over.is_some() => state.refuse(OVER_NO_FILE),
                     "undo" if !undo => state.refuse("there is nothing to undo"),
                     "redo" if !redo => state.refuse("there is nothing to redo"),
                     "entry" => state.checked = Some(entry),
@@ -809,6 +855,7 @@ impl ScoreEditor {
             paper: setup.paper(),
             landscape: setup.landscape(),
             dialogs: self.dialogs.numbered(dialogs::forms()),
+            document: self.document,
             looping: self.looping,
         })
     }
@@ -842,6 +889,13 @@ impl ScoreEditor {
     /// **The drawing**: every page of the paper one under another, each in its
     /// frame, or the one system of a continuous view.
     fn page(&mut self) -> Page {
+        if !self.document {
+            return Page {
+                draw: Default::default(),
+                cursors: Vec::new(),
+                notes: Vec::new(),
+            };
+        }
         self.lay_out();
         let paged = self.view == View::Page;
         let mut page = self.held().pages(if paged { PAGE_GAP } else { 0.0 }, paged);
@@ -991,6 +1045,9 @@ impl ScoreEditor {
     /// **What the status line says**: what is selected, and how it is
     /// written -- or what a hand can do, with nothing selected.
     pub fn describe(&self) -> String {
+        if !self.document {
+            return NO_FILE.into();
+        }
         let items = self.items();
         let held = self.held();
         let Some(sheet) = held.sheet() else {
@@ -1217,19 +1274,25 @@ impl ScoreEditor {
             self.follow();
             return applied;
         }
-        let mei = payload
-            .get("edit")
-            .unwrap_or(payload)
-            .get("mei")
-            .and_then(Value::as_str);
-        let Some(mei) = mei else {
+        let payload = payload.get("edit").unwrap_or(payload);
+        let Some(mei) = payload.get("mei").and_then(Value::as_str) else {
             return false;
         };
+        // **a document put back brings its file**: a step over an Open or a
+        // New leaves what Save writes to, and what it holds, as they were
+        let mut moved = false;
+        if let Some(saved) = payload.get("saved").and_then(Value::as_str) {
+            let path = payload.get("path").and_then(Value::as_str);
+            moved = self.path.as_deref() != path;
+            self.path = path.map(str::to_string);
+            self.saved = saved.to_string();
+            self.generation += 1;
+        }
         let mut held = self.held();
         if held.mei() == mei {
-            return false;
+            return moved;
         }
-        held.load(mei)
+        held.load(mei) || moved
     }
 
     /// **One verb a client calls** -- `{"action", ...}`, as [`verbs::Action`]
@@ -1257,9 +1320,12 @@ impl ScoreEditor {
     /// One verb, read, planned over the selection and applied; what it left
     /// is on `out`, and the answer is why it was refused, if it was.
     fn perform(&mut self, request: &Value, out: &mut Outcome) -> Option<String> {
+        if request["action"] == "new" {
+            return self.new_score(out);
+        }
         match serde_json::from_value::<Action>(request.clone()) {
             Err(why) => Some(format!("no such verb: {why}")),
-            Ok(Action::Open { data }) => self.open_document(&data, out),
+            Ok(Action::Open { data, path }) => self.open_document(&data, path, out),
             Ok(action) => {
                 // **A verb means what the selection makes it mean**
                 // (`selection`): Delete takes away what is selected, the slur
@@ -1299,7 +1365,15 @@ impl ScoreEditor {
     /// **Open the document `data` in place of the score**, as one entry: the
     /// engraver reads it, whatever format it is in, and the model is read off
     /// what it loaded. A document it cannot read leaves the score as it was.
-    fn open_document(&mut self, data: &str, out: &mut Outcome) -> Option<String> {
+    /// Read from a file (`path`), that file is the score's from now on and
+    /// holds it; text a script hands over changes neither.
+    fn open_document(
+        &mut self,
+        data: &str,
+        path: Option<String>,
+        out: &mut Outcome,
+    ) -> Option<String> {
+        let file = self.file_state();
         let before = self.held().mei();
         if !self.held().load(data) {
             self.held().load(&before);
@@ -1318,14 +1392,50 @@ impl ScoreEditor {
         self.stretch = false;
         out.selected = Some(Vec::new());
         self.laid.clear();
-        // the file it was read from is the score's from now on, and holds it
-        if let Some(path) = self.opening.take() {
-            self.path = Some(path);
+        if path.is_some() {
+            self.path = path;
+            let saved = self.held().mei();
+            self.saved = saved;
         }
-        let saved = self.held().mei();
-        self.saved = saved;
-        self.recorded(before, "open", out);
+        self.replaced(before, file, "open", out);
         None
+    }
+
+    /// The score's file and what it holds, as an entry over a document
+    /// carries them.
+    fn file_state(&self) -> Value {
+        json!({"path": self.path, "saved": self.saved})
+    }
+
+    /// **Another document is in the window**: one entry, its file carried
+    /// with it, and none when the window had no document to go back to.
+    fn replaced(&mut self, before: String, file: Value, label: &str, out: &mut Outcome) {
+        self.generation += 1;
+        if !std::mem::replace(&mut self.document, true) {
+            out.changed = true;
+            out.version += 1;
+            return;
+        }
+        if self.over.is_some() {
+            return self.recorded(before, label, out);
+        }
+        let mut forward = self.file_state();
+        forward["mei"] = json!(self.held().mei());
+        let mut backward = file;
+        backward["mei"] = json!(before);
+        if forward == backward {
+            return;
+        }
+        out.record = Some(Record {
+            label: label.into(),
+            legs: vec![Leg {
+                forward: json!({"edit": forward}),
+                backward,
+                ..Leg::default()
+            }],
+        });
+        out.changed = true;
+        out.version += 1;
     }
 
     /// **A new score in place of this one**, as one entry, as an Open is:
@@ -1343,6 +1453,7 @@ impl ScoreEditor {
         let Ok(mei) = sheet_to_mei(&sheet) else {
             return Some("a new score could not be written".into());
         };
+        let file = self.file_state();
         let before = self.held().mei();
         if !self.held().load(&mei) {
             self.held().load(&before);
@@ -1359,14 +1470,101 @@ impl ScoreEditor {
         self.path = None;
         let saved = self.held().mei();
         self.saved = saved;
-        self.recorded(before, "new", out);
+        self.replaced(before, file, "new", out);
         None
+    }
+
+    /// Whether the window has a document.
+    #[must_use]
+    pub fn has_document(&self) -> bool {
+        self.document
+    }
+
+    /// The identity of the document, as far as an undo order goes.
+    #[must_use]
+    pub fn binding(&self) -> i64 {
+        self.binding
+    }
+
+    /// Which document is in the window.
+    pub(super) fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// **The revision a store wrote is what the file holds**, and the file is
+    /// the score's from now on.
+    pub(super) fn confirm_saved(&mut self, saved: &super::operations::Saved) {
+        self.path = Some(saved.path.clone());
+        self.saved.clone_from(&saved.mei);
+    }
+
+    /// **The document let go of**: answers what the window left it as, for
+    /// whoever held it, and the window stays with none.
+    pub(super) fn let_go(&mut self) -> Value {
+        let left = json!({"mei": self.held().mei(), "path": self.path});
+        self.document = false;
+        self.binding += 1;
+        self.generation += 1;
+        self.path = None;
+        self.closing = Closing::None;
+        self.entry = false;
+        self.selection.clear();
+        self.stretch = false;
+        self.laid.clear();
+        self.cursor = 0.0;
+        self.place = None;
+        self.left = None;
+        self.entered = None;
+        // what it holds now is a blank nobody sees
+        if let Ok(blank) = sheet_to_mei(&Sheet::default()) {
+            self.held().load(&blank);
+        }
+        let saved = self.held().mei();
+        self.saved = saved;
+        left
+    }
+
+    /// **Close file**: the document goes once nothing is lost by it, by the
+    /// rule a close goes by ([`crate::closing`]): where the window is its only
+    /// holder and it has changes, the close form asks first. A page over a
+    /// sequence has no file of its own.
+    fn close_file(&mut self, out: &mut Outcome) -> (Option<String>, Option<Vec<Correction>>) {
+        if self.over.is_some() {
+            return (Some(OVER_NO_FILE.into()), None);
+        }
+        if self.asks && self.unsaved() && self.dialogs.numbered(dialogs::forms()) {
+            self.closing = Closing::File;
+            let (reason, shown) = self.open_form(dialogs::Form::Close);
+            return (reason, Some(shown));
+        }
+        out.unbind = true;
+        (None, Some(Vec::new()))
+    }
+
+    /// **Whether event `event` is one a window with no document answers**:
+    /// its File verbs, its forms and its close.
+    #[must_use]
+    pub fn allows_empty(&self, event: &Event) -> bool {
+        if event.addr != "/gui_event" {
+            return true;
+        }
+        let word = |at: usize| event.args.get(at).and_then(Value::as_str);
+        let form = event
+            .args
+            .first()
+            .and_then(Value::as_i64)
+            .is_some_and(|widget| self.dialogs.name(widget).is_some());
+        form || match word(3) {
+            Some(crate::closing::VERB) => true,
+            Some(turn::MENU) => matches!(word(4), Some("new_file" | "dialog:open" | "close")),
+            _ => false,
+        }
     }
 
     /// **Whether the score has changes its file does not hold.**
     #[must_use]
     pub fn unsaved(&self) -> bool {
-        self.held().mei() != self.saved
+        self.document && self.held().mei() != self.saved
     }
 
     /// **The score as it stands is what its file holds**: what a holder says
@@ -1460,6 +1658,7 @@ impl ScoreEditor {
                 shown = Some(corrections);
             }
             menu::Pick::Save => (reason, shown) = self.save(out),
+            menu::Pick::CloseFile => (reason, shown) = self.close_file(out),
             menu::Pick::New => reason = self.new_score(out),
             menu::Pick::Close => (reason, shown) = self.close(out),
             menu::Pick::Play => {
@@ -2067,7 +2266,7 @@ impl Converse for ScoreEditor {
     fn closed(&mut self) {
         self.window = None;
         self.dialogs.closed();
-        self.closing = false;
+        self.closing = Closing::None;
     }
 
     fn asks_to_close(&self) -> bool {
@@ -2079,6 +2278,7 @@ impl Converse for ScoreEditor {
     }
 
     fn ask_to_close(&mut self, _out: &mut Outcome) -> (Option<String>, Vec<Correction>) {
+        self.closing = Closing::Window;
         self.open_form(dialogs::Form::Close)
     }
 
@@ -2182,7 +2382,9 @@ impl Converse for ScoreEditor {
 /// only holder ([`ScoreEditor::set_asks_to_close`]); no client says it.
 pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
     let opened: Opened = serde_json::from_str(request).unwrap_or_default();
-    let editor = ScoreEditor::new(score, opened.version);
+    let empty = opened.empty;
+    let mut editor = ScoreEditor::new(score, opened.version);
+    editor.document = !empty;
     dressed(editor, opened)
 }
 
@@ -2442,6 +2644,12 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
             "{}".into()
         }
         "unsaved" => json!({"unsaved": editor.unsaved()}).to_string(),
+        "file" => json!({
+            "empty": !editor.document,
+            "path": editor.path,
+            "dirty": editor.unsaved(),
+        })
+        .to_string(),
         "render" => match editor.rendered() {
             Ok(sequence) => json!({"sequence": sequence}).to_string(),
             Err(why) => json!({"error": why}).to_string(),

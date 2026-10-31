@@ -97,6 +97,17 @@ pub enum Member {
 }
 
 impl Member {
+    /// Whether it is an editor whose window has nothing open in it, so has no
+    /// order to read.
+    fn is_without_document(&self) -> bool {
+        match self {
+            Member::Multitrack(editor) => !editor.has_session(),
+            #[cfg(feature = "notation")]
+            Member::Score(editor) => !editor.has_document(),
+            _ => false,
+        }
+    }
+
     fn domain(&self) -> String {
         match self {
             Member::Multitrack(_) => MULTITRACK.into(),
@@ -404,12 +415,60 @@ pub fn same_file(a: &str, b: &str) -> bool {
     plain(a) == plain(b) || Path::new(a) == Path::new(b)
 }
 
+/// **A dispatch of the runtime settled as far as it goes without waiting**:
+/// the endpoint committed or aborted on its application, and a refusal, whose
+/// application hands back nothing to recover, repaired at once. Whatever
+/// application it is, this is the walk; what the settled turn says is its own.
+fn settle_operation<A: crate::application::services::Application>(
+    runtime: &mut crate::application::runtime::Runtime<A::Commit, A::Outcome>,
+    services: &mut crate::application::services::Services,
+    version: &mut i64,
+    seats: &mut [Seat],
+    application: fn(&mut Member) -> &mut A,
+    mut dispatch: crate::application::runtime::Dispatch<A::Commit, A::Outcome>,
+) -> crate::application::runtime::Settled<A::Outcome>
+where
+    A::Outcome: crate::turn::Turned,
+{
+    use crate::application::runtime::{Control, Dispatch, Runtime, Settled};
+    loop {
+        let settled = match dispatch {
+            Dispatch::Finish(finished) => {
+                let member = finished.ticket.target.member;
+                let editor = application(&mut seats[member as usize].member);
+                runtime.settle_turn(editor, services, finished, version)
+            }
+            Dispatch::Repaired(repair) => {
+                Runtime::<A::Commit, A::Outcome>::repaired_turn(repair, *version)
+            }
+            Dispatch::Response(protocol) => Settled {
+                protocol,
+                outcome: None,
+                recovery: None,
+                returned: None,
+            },
+        };
+        match settled.protocol.repair {
+            Some(ticket) if settled.protocol.batch.is_none() => {
+                dispatch = runtime.control(
+                    &mut services.resources,
+                    Control::Repaired { ticket },
+                    *version,
+                );
+            }
+            _ => return settled,
+        }
+    }
+}
+
 /// The object a member's order is bound to: the audio file in focus, the
 /// multitrack's session, the one structure of any other editor.
 fn object_id(member: &Member) -> i64 {
     match member {
         Member::Audio(editor) => editor.focused_file(),
         Member::Multitrack(editor) => editor.session_binding(),
+        #[cfg(feature = "notation")]
+        Member::Score(editor) => editor.binding(),
         _ => 0,
     }
 }
@@ -424,6 +483,11 @@ pub struct Editing {
         multitrack::Outcome,
     >,
     multitrack_waits: std::collections::BTreeMap<u64, crate::application::operations::Prepared>,
+    #[cfg(feature = "notation")]
+    score_runtime:
+        crate::application::runtime::Runtime<crate::score::operations::Commit, score::Outcome>,
+    #[cfg(feature = "notation")]
+    score_waits: std::collections::BTreeMap<u64, crate::application::operations::Prepared>,
     version: i64,
     seats: Vec<Seat>,
     /// The most bytes of takes only the history holds, when there is a limit.
@@ -469,6 +533,10 @@ impl Editing {
             audio_runtime: Default::default(),
             multitrack_runtime: Default::default(),
             multitrack_waits: Default::default(),
+            #[cfg(feature = "notation")]
+            score_runtime: Default::default(),
+            #[cfg(feature = "notation")]
+            score_waits: Default::default(),
             version: FIRST_VERSION,
             seats: Vec::new(),
             bytes: None,
@@ -631,6 +699,13 @@ impl Editing {
             .invalidate(&mut self.services.resources, server);
         self.multitrack_waits
             .retain(|_, work| work.ticket.target.server != server);
+        #[cfg(feature = "notation")]
+        {
+            self.score_runtime
+                .invalidate(&mut self.services.resources, server);
+            self.score_waits
+                .retain(|_, work| work.ticket.target.server != server);
+        }
         self.services.resources.invalidate(server)
     }
 
@@ -825,6 +900,8 @@ impl Editing {
             // an editor with no file open has no order to focus
             Member::Audio(editor) if !editor.has_file() => return,
             Member::Multitrack(editor) if !editor.has_session() => return,
+            #[cfg(feature = "notation")]
+            Member::Score(editor) if !editor.has_document() => return,
             member => object_id(member),
         };
         let domain = seat.member.domain();

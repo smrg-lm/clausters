@@ -699,6 +699,11 @@ impl App {
             Some(AppData::Score { mei, over, request }) => (mei, over, request),
             _ => (None, None, json!({})),
         };
+        // **nothing named is no document**, which is not a new score: the
+        // window offers to make or open one
+        if mei.is_none() && path.is_none() && over.is_none() && !request["sequence"].is_object() {
+            request["empty"] = json!(true);
+        }
         let contents = match (mei, &path) {
             (Some(mei), _) => mei,
             (None, Some(path)) => {
@@ -1248,6 +1253,10 @@ impl App {
                     let Some(window) = self.windows.get_mut(&def_id) else {
                         continue;
                     };
+                    // what it let go of is nobody's to bring forward
+                    if window.kind == AppKind::Score {
+                        window.session = None;
+                    }
                     let handed = std::mem::take(&mut window.client_owned);
                     effect["handed"] = json!(handed);
                     if handed {

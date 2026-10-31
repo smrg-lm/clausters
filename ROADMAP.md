@@ -123,11 +123,6 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
   load closing the playback tests' entry; rare.
 
-- ⬜ **The other applications that open files open without one and outlive
-  their last** *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audio
-  editor and the multitrack keep the rule; the score editor follows it when
-  `X25` ports the lifecycle to it.
-
 - ⬜ **A def a client sent does not sound in an application's engine** and
   **Three handlers hold the door's code** *(`crates/clausters-apps/PLAN.md`,
   "Found by use")*: both found moving the roll to the host; the first waits on

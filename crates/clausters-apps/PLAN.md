@@ -3003,7 +3003,12 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     focus, redraw restoration and rejection of late answers. **Acceptance:**
     run and review the `notation/score_editor` pair before the next part.
 
-  - ⬜ **Symbolic score: MEI files and standalone.** Distinguish no
+  - ✅ **Symbolic score: MEI files and standalone.** *Done 2026-10-31*:
+    `score::operations` puts Save and Close file on the shared runtime, its
+    settling walk shared with the multitrack (`settle_operation`); New and Open
+    stay entries of the history, carrying the file. A window opened over nothing
+    has no document, and `--score` takes no file. Save confirms the prepared
+    revision before what waits for it. Distinguish no
     document from a new symbolic score, with one active document per window.
     Use common runtime open/save/checkpoint/close. Read or engraving failure
     leaves the current document intact. Keep `load`/New object replacement
@@ -4433,7 +4438,7 @@ Every entry carries a checkbox.
   without one; the client now tells the playback first, and the editor
   corrects only a meter it drew.
 
-- ⬜ **The other applications that open files open without one and outlive
+- ✅ **The other applications that open files open without one and outlive
   their last** (the user, 2026-10-21, in the X21 eye pass: an editor is an
   application that opens with no file, and closing the last file does not
   close it; this holds for other applications too, though not all). The rule
@@ -4445,10 +4450,13 @@ Every entry carries a checkbox.
   panel). Port with `X25`, reusing the audio editor's shape: an `empty` open,
   the window's own verbs answered and the rest refused with `no file is
   open`, and a `binding` the clients unbind.
+  **The score editor keeps it since 2026-10-31**: it opens with no document
+  (`--score` with no file, an empty `/gui_app_open`), its File menu makes, opens
+  and closes one, and Close file leaves the window open with the score handed
+  back.
   **The multitrack keeps it since 2026-10-30**: it opens with no session
   (`--session` with no file, an empty `/gui_app_open`), its File menu makes,
-  opens and closes one, and closing the last leaves the window open. The
-  score editor is what is left.
+  opens and closes one, and closing the last leaves the window open.
 
 - ✅ **First native eye pass over X20's actions** (2026-10-21). A copy
   announced "loop off": a completion re-sends the view's loop switch, and

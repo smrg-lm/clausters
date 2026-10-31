@@ -365,7 +365,9 @@ pub(crate) fn call_value(editing: &mut Editing, mut request: Value) -> Value {
                 .get("member")
                 .and_then(Value::as_u64)
                 .and_then(|id| MemberId::try_from(id).ok())
-                && matches!(editing.member(target), Some(Member::Multitrack(editor)) if !editor.has_session())
+                && editing
+                    .member(target)
+                    .is_some_and(Member::is_without_document)
             {
                 return json!({"version":editing.version(),"canUndo":false,"canRedo":false,"undoLabel":null,"redoLabel":null});
             }

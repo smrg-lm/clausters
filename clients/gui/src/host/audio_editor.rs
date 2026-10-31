@@ -276,13 +276,13 @@ impl Host {
     #[cfg(feature = "notation")]
     pub fn open_score_saving_to(
         &mut self,
-        path: &str,
+        path: Option<&str>,
         save_to: Option<&str>,
         title: &str,
     ) -> Result<i32, String> {
         self.open_app_saving(
             AppKind::Score,
-            Some(path),
+            path,
             Some(super::audio_app::AppData::Score {
                 mei: None,
                 over: None,
@@ -2713,7 +2713,7 @@ mod tests {
         std::fs::write(&read, "X:1\nM:4/4\nL:1/4\nK:C\nC D E F|\n").unwrap();
         let mut host = host();
         let told = host
-            .open_score_saving_to(read.to_str().unwrap(), out.to_str(), "told")
+            .open_score_saving_to(read.to_str(), out.to_str(), "told")
             .unwrap();
         until(&mut host, "the window was never drawn", |h| {
             h.window_def(told).is_some()
@@ -2724,7 +2724,7 @@ mod tests {
         let before = std::fs::read_to_string(&read).unwrap();
         ask(&mut host, told, json!({"do": {"verb": "close"}}));
         let alone = host
-            .open_score_saving_to(read.to_str().unwrap(), None, "alone")
+            .open_score_saving_to(read.to_str(), None, "alone")
             .unwrap();
         until(&mut host, "the window was never drawn", |h| {
             h.window_def(alone).is_some()
@@ -2802,6 +2802,84 @@ mod tests {
         assert_eq!(left["sequence"]["events"].as_array().map(Vec::len), Some(2));
     }
 
+    /// **Close file lets the document go, and the window stays**: the client
+    /// is handed what the window left, the file it had is nobody's to bring
+    /// forward, a verb is refused with why, and a later document is the
+    /// host's own.
+    #[cfg(feature = "score")]
+    #[test]
+    fn a_score_window_lets_its_document_go_and_stays() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let folder = std::env::temp_dir().join(format!("host-score-file-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("kept.mei");
+        let mut host = host();
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_992)));
+        let first = door(
+            &mut host,
+            GUI_APP_OPEN,
+            vec![
+                OscType::Int(1),
+                OscType::String("score".into()),
+                OscType::String(json!({"title": "score"}).to_string()),
+            ],
+            client,
+        );
+        let window = answered(&mut host, first, 1)["ok"]["window"]
+            .as_i64()
+            .expect("a window") as i32;
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(window).is_some()
+        });
+        ask(&mut host, window, json!({"do": {"verb": "new_file"}}));
+        let saved = ask(
+            &mut host,
+            window,
+            json!({"do": {"verb": "save", "path": path.to_str().unwrap()}}),
+        );
+        assert_eq!(saved["destination"], path.to_str().unwrap(), "{saved}");
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("<mei"), "{written}");
+        let page = json!({"do": {"verb": "page", "call": {"verb": "mei"}}});
+        assert_eq!(ask(&mut host, window, page.clone())["mei"], json!(written));
+        let sheet = json!({"do": {"verb": "page", "call": {"verb": "sheet"}}});
+        let contents = ask(&mut host, window, sheet.clone());
+        assert!(contents["sheet"]["staves"].is_array(), "{contents}");
+        ask(&mut host, window, json!({"do": {"verb": "close_file"}}));
+        assert_eq!(
+            ask(&mut host, window, json!({"query": "file"}))["empty"],
+            true
+        );
+        assert!(host.window_def(window).is_some(), "the window stays");
+        let refused = ask(
+            &mut host,
+            window,
+            json!({"do": {"verb": "page", "call": {"verb": "mei"}}}),
+        );
+        assert_eq!(refused["why"], "no file is open", "{refused}");
+        // nobody holds the file now: a read takes it, and it is the same
+        assert_eq!(
+            ask(
+                &mut host,
+                window,
+                json!({"do": {"verb": "load",
+            "path": path.to_str().unwrap()}})
+            ),
+            true
+        );
+        let file = ask(&mut host, window, json!({"query": "file"}));
+        assert_eq!(file["path"], path.to_str().unwrap(), "{file}");
+        assert_eq!(file["dirty"], false, "{file}");
+        // what the engraver mints for itself aside, it is what was written
+        assert_eq!(ask(&mut host, window, sheet), contents);
+        assert_eq!(
+            ask(&mut host, window, json!({"query": "history"}))["canUndo"],
+            false
+        );
+    }
+
     /// **A score is an application of this host's**: a client opens it over
     /// a document through the door, the engraver here draws its window, a
     /// verb is its turn, its file is read and written here, a file a window
@@ -2839,6 +2917,16 @@ mod tests {
                 clocks::HeadClock::Transport(_)
             ),
             "its play cursor reads a transport of its own"
+        );
+        // named nothing, it has no document, and is told to make one
+        assert_eq!(
+            ask(&mut host, window, json!({"query": "file"}))["empty"],
+            true
+        );
+        ask(&mut host, window, json!({"do": {"verb": "new_file"}}));
+        assert_eq!(
+            ask(&mut host, window, json!({"query": "file"}))["empty"],
+            false
         );
         assert_eq!(
             ask(&mut host, window, json!({"query": "transport"}))["rolling"],

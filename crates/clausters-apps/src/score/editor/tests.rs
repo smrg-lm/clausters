@@ -1497,6 +1497,12 @@ fn a_save_names_the_scores_file_and_asks_for_one_where_it_has_none() {
     let out = editor.event(&said("file:ok", "click"), 1);
     assert_eq!(out.save.as_deref(), Some("/tmp/a score.mei"));
     assert!(!out.changed && out.record.is_none(), "a save is no edit");
+    // the file is the score's once its holder confirmed the write
+    assert_eq!(editor.file_path(), None);
+    call_json(
+        &mut editor,
+        r#"{"verb": "sync", "path": "/tmp/a score.mei"}"#,
+    );
     let out = editor.event(&window_save(), 1);
     assert_eq!(out.save.as_deref(), Some("/tmp/a score.mei"));
     // and a script that read the score from a file says so
@@ -1781,7 +1787,7 @@ fn new_replaces_the_score_with_an_empty_one_as_one_entry() {
     let mut editor = with_dialogs();
     call_json(&mut editor, r#"{"verb": "sync", "path": "/tmp/a.mei"}"#);
     let before = editor.held().mei();
-    let out = editor.event(&pick("new", None), 1);
+    let out = editor.event(&pick("new_file", None), 1);
     let record = out.record.expect("an entry");
     assert_eq!(record.label, "new");
     assert_eq!(record.legs[0].backward["mei"], json!(before));
@@ -1857,6 +1863,7 @@ fn close_asks_first_only_when_there_is_something_to_lose() {
     let out = editor.event(&stamped(said("file:ok", "click"), 2), 2);
     assert_eq!(out.save.as_deref(), Some("/tmp/kept.mei"));
     assert!(out.close);
+    call_json(&mut editor, r#"{"verb": "sync", "path": "/tmp/kept.mei"}"#);
     // ...and with a file, Save names it and closes at once
     editor.event(&stamped(pick("close", None), 2), 2);
     let out = editor.event(&stamped(said("close:ok", "click"), 2), 2);
@@ -1913,6 +1920,136 @@ fn the_close_mark_asks_as_the_menus_close_does() {
     );
 }
 
+/// **Text a script hands over is no file's**: nothing says the file holds it,
+/// and the file stays where it was.
+#[test]
+fn a_document_handed_over_leaves_the_file_as_it_was() {
+    let mut editor = with_dialogs();
+    call_json(&mut editor, r#"{"verb": "sync", "path": "/tmp/a.mei"}"#);
+    let other = Sheet {
+        key: "D".into(),
+        ..Sheet::default()
+    };
+    let data = sheet_to_mei(&other).unwrap();
+    assert!(
+        editor
+            .act(&json!({"action": "open", "data": data}), 1)
+            .changed
+    );
+    assert_eq!(editor.file_path().as_deref(), Some("/tmp/a.mei"));
+    assert!(editor.unsaved());
+}
+
+/// **A step over an Open or a New brings the file back**: Save writes where
+/// the document came from, and only what its file does not hold is unsaved.
+#[test]
+fn a_step_over_an_open_puts_the_file_back() {
+    let mut editor = with_dialogs();
+    call_json(&mut editor, r#"{"verb": "sync", "path": "/tmp/a.mei"}"#);
+    let other = Sheet {
+        key: "D".into(),
+        ..Sheet::default()
+    };
+    let data = sheet_to_mei(&other).unwrap();
+    let out = editor.act(
+        &json!({"action": "open", "data": data, "path": "/tmp/b.mei"}),
+        1,
+    );
+    let leg = out.record.expect("an entry").legs.remove(0);
+    assert_eq!(editor.file_path().as_deref(), Some("/tmp/b.mei"));
+    assert!(editor.apply(&leg.backward));
+    assert_eq!(editor.file_path().as_deref(), Some("/tmp/a.mei"));
+    assert!(!editor.unsaved());
+    assert!(editor.apply(&leg.forward));
+    assert_eq!(editor.file_path().as_deref(), Some("/tmp/b.mei"));
+    assert!(!editor.unsaved());
+}
+
+/// **A document that does not read leaves the window as it was**: the score,
+/// its file and what it holds.
+#[test]
+fn an_open_that_does_not_read_leaves_the_document() {
+    let mut editor = holding_alone();
+    call_json(&mut editor, r#"{"verb": "sync", "path": "/tmp/a.mei"}"#);
+    let before = editor.held().mei();
+    let out = editor.act(
+        &json!({"action": "open", "data": "", "path": "/tmp/bad.mei"}),
+        1,
+    );
+    if !out.changed {
+        assert_eq!(editor.held().mei(), before);
+        assert_eq!(editor.file_path().as_deref(), Some("/tmp/a.mei"));
+        assert!(out.record.is_none());
+    }
+}
+
+/// **A window with no document** offers to make or open one and refuses the
+/// rest with why; its first document has no entry to go back over.
+#[test]
+fn a_window_with_no_document_has_its_file_verbs_and_nothing_else() {
+    let mut editor = with_dialogs();
+    editor.let_go();
+    assert!(!editor.has_document());
+    assert_eq!(editor.file_path(), None);
+    assert!(!editor.unsaved());
+    assert_eq!(editor.describe(), NO_FILE);
+    let actions = editor.actions(false, false);
+    assert!(actions["save"].reason.is_some());
+    assert!(actions["delete"].reason.is_some());
+    assert!(actions["close"].reason.is_none());
+    let menu = editor.menu().to_string();
+    assert!(menu.contains("new_file") && menu.contains("dialog:open"));
+    assert!(!menu.contains("close_file") && !menu.contains("\"save\""));
+    assert!(editor.allows_empty(&pick("new_file", None)));
+    assert!(editor.allows_empty(&pick("dialog:open", None)));
+    assert!(!editor.allows_empty(&pick("save", None)));
+    assert!(!editor.allows_empty(&pick("undo", None)));
+    let out = editor.event(&pick("new_file", None), 1);
+    assert!(out.changed && out.record.is_none(), "{:?}", out.record);
+    assert!(editor.has_document());
+    assert!(!editor.unsaved());
+}
+
+/// **Close file asks as a close does**, and the form's answer goes to the
+/// document, not to the window.
+#[test]
+fn close_file_asks_first_and_leaves_the_window() {
+    let mut editor = holding_alone();
+    let ids = named();
+    editor.window(
+        IDS,
+        Chrome {
+            dialogs: ids.clone(),
+            ..Chrome::default()
+        },
+    );
+    // nothing to lose: it goes
+    let out = editor.event(&pick("close_file", None), 1);
+    assert!(out.unbind && !out.close);
+    // something to lose: the form, whose Don't save lets the document go
+    editor.act(&json!({"action": "page", "landscape": true}), 1);
+    let out = editor.event(&stamped(pick("close_file", None), 2), 2);
+    assert!(!out.unbind);
+    assert_eq!(
+        corrections_of(&out)
+            .last()
+            .map(|c| (c.widget, c.props.clone())),
+        Some((i64::from(ids["stack"]), json!({"index": 5})))
+    );
+    let out = editor.event(&stamped(said("close:discard", "click"), 2), 2);
+    assert!(out.unbind && !out.close);
+    // Cancel keeps it, and a close after it is the window's
+    editor.event(&stamped(pick("close_file", None), 2), 2);
+    let out = editor.event(&stamped(said("close:cancel", "click"), 2), 2);
+    assert!(!out.unbind && !out.close);
+    // Save names the file and lets the document go once it is written
+    call_json(&mut editor, r#"{"verb": "sync", "path": "/tmp/a.mei"}"#);
+    editor.event(&stamped(pick("close_file", None), 2), 2);
+    let out = editor.event(&stamped(said("close:ok", "click"), 2), 2);
+    assert_eq!(out.save.as_deref(), Some("/tmp/a.mei"));
+    assert!(out.unbind && !out.close);
+}
+
 #[test]
 fn an_opened_file_is_the_scores_and_holds_it() {
     let mut editor = with_dialogs();
@@ -1920,7 +2057,10 @@ fn an_opened_file_is_the_scores_and_holds_it() {
     editor.event(&said("file:path", "/tmp/two.mei"), 1);
     editor.event(&said("file:ok", "click"), 1);
     let data = sheet_to_mei(&Sheet::default()).unwrap();
-    editor.act(&json!({"action": "open", "data": data}), 1);
+    editor.act(
+        &json!({"action": "open", "data": data, "path": "/tmp/two.mei"}),
+        1,
+    );
     assert!(!editor.unsaved());
     assert_eq!(
         editor

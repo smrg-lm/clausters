@@ -13,7 +13,7 @@ use clausters_editing::conversation::Correction;
 use crate::forms::{Said, corrections};
 
 use super::super::dialogs::{self, Form, Open};
-use super::{Outcome, ScoreEditor};
+use super::{Closing, Outcome, ScoreEditor};
 
 impl ScoreEditor {
     /// **Open `form`**, holding what the score holds: the reason it cannot
@@ -71,12 +71,12 @@ impl ScoreEditor {
                 (None, Vec::new())
             }
             Said::Cancel => {
-                self.closing = false;
+                self.closing = Closing::None;
                 (None, corrections(self.dialogs.hide()))
             }
             // closing without saving: what was not saved is let go
             Said::Discard => {
-                out.close = true;
+                self.let_what_waits_go(out);
                 (None, corrections(self.dialogs.hide()))
             }
             Said::Accept => {
@@ -95,6 +95,16 @@ impl ScoreEditor {
                 shown.extend(corrections(self.dialogs.hide()));
                 (None, shown)
             }
+        }
+    }
+
+    /// **What the close form was asked about goes**: the window or its
+    /// document, once whatever the turn saves is written.
+    fn let_what_waits_go(&mut self, out: &mut Outcome) {
+        match std::mem::take(&mut self.closing) {
+            Closing::Window => out.close = true,
+            Closing::File => out.unbind = true,
+            Closing::None => {}
         }
     }
 
@@ -121,11 +131,9 @@ impl ScoreEditor {
             // Save, and close once it is written; a score with no file is
             // asked for one first
             Form::Close => {
-                self.closing = true;
                 let (reason, _) = self.save(out);
                 if out.save.is_some() {
-                    self.closing = false;
-                    out.close = true;
+                    self.let_what_waits_go(out);
                 }
                 reason
             }
@@ -141,13 +149,11 @@ impl ScoreEditor {
                         out.export = Some(serde_json::json!({"path": path, "format": format}));
                     }
                     (dialogs::File::Open, _) => {
-                        self.opening = Some(path.clone());
                         out.open = Some(path);
                     }
                     (_, None) => {
-                        self.path = Some(path.clone());
                         out.save = Some(path);
-                        out.close = std::mem::take(&mut self.closing);
+                        self.let_what_waits_go(out);
                     }
                 }
                 None

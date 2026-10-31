@@ -2,7 +2,7 @@
 use super::*;
 use crate::application::{
     operations::{Prepared, Target},
-    runtime::{Control, Dispatch, Reply, Settled},
+    runtime::{Control, Dispatch, Reply},
 };
 use crate::multitrack::operations::{Command, Commit, Request};
 
@@ -79,125 +79,98 @@ impl Editing {
 
     pub(super) fn drive_multitrack_operation(
         &mut self,
-        mut dispatch: Dispatch<Commit, multitrack::Outcome>,
+        dispatch: Dispatch<Commit, multitrack::Outcome>,
         caller: &mut dyn Caller,
         ids: &mut clausters_core::ids::IdSpaces,
         ran: &mut Ran,
     ) {
-        loop {
-            let settled = match dispatch {
-                Dispatch::Finish(finished) => {
-                    let member = finished.ticket.target.member;
-                    let Member::Multitrack(editor) = &mut self.seats[member as usize].member else {
-                        unreachable!("the operation belongs to a multitrack member");
-                    };
-                    self.multitrack_runtime.settle_turn(
-                        editor.as_mut(),
-                        &mut self.services,
-                        finished,
-                        &mut self.version,
-                    )
-                }
-                Dispatch::Repaired(repair) => crate::application::runtime::Runtime::<
-                    Commit,
-                    multitrack::Outcome,
-                >::repaired_turn(repair, self.version),
-                Dispatch::Response(protocol) => Settled {
-                    protocol,
-                    outcome: None,
-                    recovery: None,
-                    returned: None,
-                },
-            };
-            if let Some(work) = settled.protocol.batch {
-                self.wait_multitrack_operation(work, ran);
-                return;
-            }
-            // a session's work leaves nothing to recover (its commit and
-            // abort hand back no steps), so a refusal is repaired at once,
-            // as the audio editor's is
-            if let Some(ticket) = settled.protocol.repair {
-                dispatch = self.multitrack_runtime.control(
-                    &mut self.services.resources,
-                    Control::Repaired { ticket },
-                    self.version,
-                );
-                continue;
-            }
-            if let Some(saved) = settled.outcome.and_then(|outcome| outcome.saved) {
-                let member = settled
-                    .recovery
-                    .as_ref()
-                    .map(|batch| batch.member)
-                    .expect("a committed endpoint");
-                let mut moved = false;
-                let then = saved.then.clone();
-                if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
-                    editor.set_checkpoint(Some(saved.session.clone()));
-                    let file = editor.file_mut();
-                    file.session = Some(saved.session);
-                    file.path = Some(saved.path.clone());
-                    if saved.save_as {
-                        file.save_to = None;
-                    }
-                    moved = editor.unsaved_contents();
-                }
-                ran.end = Some(Ok(json!({"destination":saved.path})));
-                // **what waited for the save is done only over what it
-                // wrote**: an edit made while it was being written is work
-                // the save does not hold, and the window keeps it
-                match then {
-                    Some(_) if moved => ran.effects.push(json!({"kind":"say",
-                        "reason":"the session changed while it was saved: it stays open"})),
-                    Some(crate::multitrack::operations::After::Close) => {
-                        if let Some(mut tracks) = self.tracks.remove(&member) {
-                            self.close_tracks(member, &mut tracks, ids);
-                        }
-                        ran.effects.push(self.closing(member, "closeWindow"));
-                    }
-                    Some(crate::multitrack::operations::After::File(change)) => {
-                        if let Some(mut tracks) = self
-                            .tracks
-                            .remove(&member)
-                            .or_else(|| super::multitrack_runs::Tracks::new(self))
-                        {
-                            if let Err(why) =
-                                self.change_file(member, &mut tracks, change, caller, ids, ran)
-                            {
-                                ran.effects.push(json!({"kind":"say", "reason":why}));
-                            }
-                            self.tracks.insert(member, tracks);
-                        }
-                    }
-                    None => {}
-                }
-            }
-            if let Some(error) = settled.protocol.error {
-                ran.end = Some(Err(Raised {
-                    kind: "command".into(),
-                    message: error,
-                }));
-            }
-            if let Some(reason) = settled.protocol.reason {
-                ran.end = Some(Err(Raised {
-                    kind: "command".into(),
-                    message: reason.clone(),
-                }));
-                ran.effects.push(json!({"kind":"say", "reason":reason}));
-            }
-            if settled.protocol.committed == Some(true)
-                && !ran
-                    .effects
-                    .iter()
-                    .any(|effect| effect["kind"] == "closeWindow")
-            {
-                ran.effects.push(json!({"kind":"resync"}));
-            }
-            let freed = self.release();
-            for freed in freed {
-                caller.delete(&freed.files);
-            }
+        let settled = super::settle_operation(
+            &mut self.multitrack_runtime,
+            &mut self.services,
+            &mut self.version,
+            &mut self.seats,
+            |member| match member {
+                Member::Multitrack(editor) => editor.as_mut(),
+                _ => unreachable!("the operation belongs to a multitrack member"),
+            },
+            dispatch,
+        );
+        if let Some(work) = settled.protocol.batch {
+            self.wait_multitrack_operation(work, ran);
             return;
+        }
+        if let Some(saved) = settled.outcome.and_then(|outcome| outcome.saved) {
+            let member = settled
+                .recovery
+                .as_ref()
+                .map(|batch| batch.member)
+                .expect("a committed endpoint");
+            let mut moved = false;
+            let then = saved.then.clone();
+            if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
+                editor.set_checkpoint(Some(saved.session.clone()));
+                let file = editor.file_mut();
+                file.session = Some(saved.session);
+                file.path = Some(saved.path.clone());
+                if saved.save_as {
+                    file.save_to = None;
+                }
+                moved = editor.unsaved_contents();
+            }
+            ran.end = Some(Ok(json!({"destination":saved.path})));
+            // **what waited for the save is done only over what it
+            // wrote**: an edit made while it was being written is work
+            // the save does not hold, and the window keeps it
+            match then {
+                Some(_) if moved => ran.effects.push(json!({"kind":"say",
+                        "reason":"the session changed while it was saved: it stays open"})),
+                Some(crate::multitrack::operations::After::Close) => {
+                    if let Some(mut tracks) = self.tracks.remove(&member) {
+                        self.close_tracks(member, &mut tracks, ids);
+                    }
+                    ran.effects.push(self.closing(member, "closeWindow"));
+                }
+                Some(crate::multitrack::operations::After::File(change)) => {
+                    if let Some(mut tracks) = self
+                        .tracks
+                        .remove(&member)
+                        .or_else(|| super::multitrack_runs::Tracks::new(self))
+                    {
+                        if let Err(why) =
+                            self.change_file(member, &mut tracks, change, caller, ids, ran)
+                        {
+                            ran.effects.push(json!({"kind":"say", "reason":why}));
+                        }
+                        self.tracks.insert(member, tracks);
+                    }
+                }
+                None => {}
+            }
+        }
+        if let Some(error) = settled.protocol.error {
+            ran.end = Some(Err(Raised {
+                kind: "command".into(),
+                message: error,
+            }));
+        }
+        if let Some(reason) = settled.protocol.reason {
+            ran.end = Some(Err(Raised {
+                kind: "command".into(),
+                message: reason.clone(),
+            }));
+            ran.effects.push(json!({"kind":"say", "reason":reason}));
+        }
+        if settled.protocol.committed == Some(true)
+            && !ran
+                .effects
+                .iter()
+                .any(|effect| effect["kind"] == "closeWindow")
+        {
+            ran.effects.push(json!({"kind":"resync"}));
+        }
+        let freed = self.release();
+        for freed in freed {
+            caller.delete(&freed.files);
         }
     }
 

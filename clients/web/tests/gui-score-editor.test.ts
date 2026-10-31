@@ -36,9 +36,14 @@ class FakeHost {
     next = 20;
     answers: Record<string, unknown> = {};
 
+    /** What listens to the window's messages. */
+    listeners = new Set<(msg: { addr: string; args: unknown[] }) => void>();
+    empty = false;
+
     async openApp(app: string, options: Call = {}): Promise<number> {
         this.calls.push({ open: app, options });
-        this.window = await Score.open(options.mei as string);
+        this.empty = options.mei === undefined && options.sequence === undefined && options.over === undefined;
+        if (!this.empty) this.window = await Score.open(options.mei as string);
         this.sequence = options.sequence ?? this.sequence;
         this.next += 1;
         this.open.add(this.next);
@@ -48,6 +53,7 @@ class FakeHost {
     async callApp(window: number | { id: number }, call: Call): Promise<unknown> {
         const id = typeof window === "number" ? window : window.id;
         this.calls.push({ window: id, ...call });
+        if (call.query === "file") return { empty: this.empty };
         if (call.query !== undefined) return {};
         if (call.member !== undefined) {
             const verb = call.member.verb;
@@ -66,6 +72,17 @@ class FakeHost {
         if (doing.verb === "act") return { changed: doing.call.action !== "refused", refused: doing.call.action === "refused" ? "why" : null };
         if (doing.verb === "save") return { destination: doing.path ?? "/kept.mei" };
         if (doing.verb === "load") return true;
+        if (doing.verb === "new_file") {
+            this.empty = false;
+            return true;
+        }
+        if (doing.verb === "close_file") {
+            this.empty = true;
+            for (const listener of this.listeners) {
+                listener({ addr: "/gui_app_released", args: [id, JSON.stringify({ mei: this.window!.mei(), path: "/let-go.mei" })] });
+            }
+            return null;
+        }
         if (doing.verb === "close") {
             this.open.delete(id);
             this.closedHandlers.get(id)?.();
@@ -88,8 +105,9 @@ class FakeHost {
         return this.open.has(id);
     }
 
-    onMessage(): () => void {
-        return () => {};
+    onMessage(listener: (msg: { addr: string; args: unknown[] }) => void): () => void {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
     }
 
     verb(_window: unknown, name: string): void {
@@ -165,6 +183,34 @@ if (!existsSync(engraver)) {
         assert.equal(score.path, "/b.mei");
         assert.equal(await editor.unsaved(), false);
         await editor.close();
+    });
+
+    test("close file lets the score go, and the window stays the host's", async () => {
+        const host = new FakeHost();
+        const score = await Score.open(PHRASE);
+        const editor = new ScoreEditor(score);
+        const window = await editor.open(host.asHost());
+        let told = 0;
+        editor.onClosed(() => (told += 1));
+        await editor.closeFile();
+        assert.equal(editor.closed, true);
+        assert.equal(told, 1);
+        assert.equal(score.window, null);
+        assert.equal(score.path, "/let-go.mei", "the score holds what the window left");
+        assert.equal(host.isOpen(window.id), true, "the window stays");
+        assert.equal(await editor.wait(), true);
+    });
+
+    test("a window over no score has no document until one is made", async () => {
+        const host = new FakeHost();
+        const editor = new ScoreEditor();
+        await editor.open(host.asHost());
+        assert.equal(host.calls[0]!.options.mei, undefined);
+        assert.equal(editor.score, null);
+        assert.equal(await editor.hasDocument(), false);
+        await editor.newFile();
+        assert.equal(await editor.hasDocument(), true);
+        assert.equal(await editor.save("/made.mei"), "/made.mei");
     });
 
     test("a page over a sequence opens beside a roll, and plays on a transport of its own", async () => {

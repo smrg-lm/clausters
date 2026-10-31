@@ -316,6 +316,8 @@ pub const NOTE_ENTRY_SCOPE: &str = "note_entry";
 /// **The score window's own keys**: over the selection, and into note entry.
 /// The chords are the settled ones of notation programs.
 pub const SCORE: &[Verb] = &[
+    verb("new_file", &[], "New"),
+    verb("close_file", &[], "Close file"),
     toggle("entry", &["N"], "Note entry on or off"),
     // over the selection: what note entry's own rows, read first while the
     // window is in it, give the cursor and the note written

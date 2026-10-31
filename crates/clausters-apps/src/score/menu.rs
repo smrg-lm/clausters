@@ -37,6 +37,9 @@ pub struct State<'a> {
     pub dialogs: bool,
     /// Whether a pass loops.
     pub looping: bool,
+    /// Whether the window has a document: with none its bar holds what
+    /// makes or opens one.
+    pub document: bool,
 }
 
 /// The written values a note is entered with, longest first, and their names.
@@ -79,6 +82,17 @@ fn sub(label: &str, entries: Vec<Value>) -> Value {
 #[must_use]
 pub fn menu(state: &State<'_>) -> Value {
     let sep = || json!("-");
+    if !state.document {
+        return json!([sub(
+            "File",
+            vec![
+                word("New", "new_file"),
+                form("Open...", "open", state),
+                sep(),
+                word("Close", "close"),
+            ],
+        )]);
+    }
     let mark =
         |label: &str, key: &str, name: &str| act(label, json!({"action": key, "name": name}));
     let transform = |label: &str, params: Value| {
@@ -127,7 +141,7 @@ pub fn menu(state: &State<'_>) -> Value {
                 sep(),
                 form("Page text...", "text", state),
                 sep(),
-                word("New", "new"),
+                word("New", "new_file"),
                 form("Open...", "open", state),
                 word("Save", "save"),
                 form("Save as...", "save", state),
@@ -135,6 +149,7 @@ pub fn menu(state: &State<'_>) -> Value {
                 form("Export MIDI...", "export_midi", state),
                 form("Export clip...", "export_clip", state),
                 sep(),
+                word("Close file", "close_file"),
                 word("Close", "close"),
             ],
         ),
@@ -357,6 +372,8 @@ pub enum Pick {
     New,
     /// The score, written to its file.
     Save,
+    /// The document let go of, the window staying with none.
+    CloseFile,
     /// The window, closed -- asking first when the score has changes its
     /// file does not hold.
     Close,
@@ -400,8 +417,9 @@ pub fn read(verb: &str, state: Option<i64>) -> Pick {
         "undo" => Pick::Undo,
         "redo" => Pick::Redo,
         "select_all" => Pick::SelectAll,
-        "new" => Pick::New,
+        "new_file" => Pick::New,
         "save" => Pick::Save,
+        "close_file" => Pick::CloseFile,
         "close" => Pick::Close,
         "play" => Pick::Play,
         "rewind" => Pick::Rewind,
@@ -424,6 +442,7 @@ mod tests {
             paper: Some("A4"),
             landscape: false,
             dialogs: true,
+            document: true,
             looping: false,
         }
     }

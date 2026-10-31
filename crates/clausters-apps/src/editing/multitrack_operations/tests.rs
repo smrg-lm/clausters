@@ -1457,15 +1457,27 @@ fn a_score_runs_through_the_applications_door() {
     assert!(matches!(no_file.end, Some(Err(_))), "{no_file:?}");
     let path = f.folder.join("score.mei");
     let saved = start(&mut f, json!({"verb": "save", "path": path}));
+    assert!(
+        saved.end.is_none(),
+        "a save is not confirmed before storage"
+    );
+    let render = saved.render.expect("the save waits on storage");
+    let [Step::Store { path: to, contents }] = &render.steps[..] else {
+        panic!("a storage step")
+    };
+    std::fs::write(to, contents).unwrap();
+    let landed = land(&mut f, member, render.run, Ok(()));
     assert_eq!(
-        saved.end.unwrap().unwrap()["destination"],
+        landed.end.unwrap().unwrap()["destination"],
         json!(path),
         "answered where"
     );
     let mei = score.lock().unwrap().mei();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), mei);
     let again = start(&mut f, json!({"verb": "save"}));
-    assert!(matches!(again.end, Some(Ok(_))), "{again:?}");
+    assert!(again.render.is_some(), "{again:?}");
+    let render = again.render.unwrap();
+    land(&mut f, member, render.run, Ok(()));
     // a read that fails leaves the score
     let missing = f.folder.join("missing.mei");
     let failed = start(&mut f, json!({"verb": "load", "path": missing}));
@@ -1485,4 +1497,222 @@ fn a_score_runs_through_the_applications_door() {
         "{closed:?}"
     );
     assert!(!f.editing.rolls.contains_key(&member));
+}
+
+/// A store of a score member landed.
+#[cfg(feature = "notation")]
+fn land(f: &mut Fixture, member: MemberId, run: u64, result: Result<(), String>) -> Ran {
+    f.editing
+        .land(member, run, result, None, &mut f.disk, &mut f.ids)
+}
+
+/// A score member of `f`'s, its window numbered, holding `f`'s one blank.
+#[cfg(feature = "notation")]
+fn score_member(f: &mut Fixture, request: Value) -> (MemberId, crate::score::Shared) {
+    use clausters_core::notation::{AnyEngraver, Score, sheet_to_mei, voice_to_sheet};
+    use std::sync::{Arc, Mutex};
+    let mei = sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C")).unwrap();
+    let engraver = AnyEngraver::new(crate::editing::tests::Kept(Mutex::new(String::new())));
+    let score = Arc::new(Mutex::new(Score::open(engraver, &mei).unwrap()));
+    let opened: Value = serde_json::from_str(&f.editing.open_score_at(
+        crate::editing::Place::Apart,
+        "score:file",
+        score.clone(),
+        &request.to_string(),
+    ))
+    .unwrap();
+    let member = opened["member"].as_u64().unwrap() as MemberId;
+    let ids: Vec<(String, i64)> = crate::score::dialogs::names()
+        .into_iter()
+        .zip(200..)
+        .collect();
+    let numbered: serde_json::Map<String, Value> =
+        ids.iter().map(|(n, i)| (n.clone(), json!(i))).collect();
+    for call in [
+        json!({"verb": "window", "widget": 80, "scroll": 81, "status": 82,
+            "dialogs": numbered}),
+        json!({"verb": "sync", "window": 79, "asks": true}),
+    ] {
+        call_json(
+            &mut f.editing,
+            &json!({"verb": "member", "member": member, "call": call}).to_string(),
+        );
+    }
+    f.editing.start(
+        member,
+        &json!({"verb": "open"}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    (member, score)
+}
+
+/// The file a score member's window has: its path and whether it is dirty.
+#[cfg(feature = "notation")]
+fn score_file(f: &mut Fixture, member: MemberId) -> Value {
+    f.editing.query(member, "file")
+}
+
+/// **A save that fails changes nothing**, and what waited for it stays: the
+/// close form's Save with a read-only target leaves the window, its document
+/// and the file it had; a save that lands confirms the revision it prepared,
+/// so an edit made meanwhile keeps the window open and the score unsaved.
+#[cfg(feature = "notation")]
+#[test]
+fn a_score_s_save_is_confirmed_before_what_waits_for_it() {
+    let mut f = Fixture::new();
+    let (member, score) = score_member(&mut f, json!({}));
+    let path = f.folder.join("kept.mei");
+    let start = |f: &mut Fixture, action: Value| {
+        f.editing
+            .start(member, &action, None, &mut f.disk, &mut f.ids)
+    };
+    let edit = json!({"verb": "act", "call": {"action": "page", "landscape": true}});
+    let saving = start(&mut f, json!({"verb": "save", "path": path}));
+    let render = saving.render.unwrap();
+    assert_eq!(score_file(&mut f, member)["path"], Value::Null, "not yet");
+    let failed = land(&mut f, member, render.run, Err("the disk is full".into()));
+    assert!(matches!(failed.end, Some(Err(_))), "{failed:?}");
+    assert_eq!(score_file(&mut f, member)["path"], Value::Null);
+    // a landing again is nobody's
+    assert!(land(&mut f, member, render.run, Ok(())).end.is_none());
+    // the prepared revision is what is written, whatever is typed meanwhile
+    let saving = start(&mut f, json!({"verb": "save", "path": path}));
+    let render = saving.render.unwrap();
+    let prepared = score.lock().unwrap().mei();
+    start(&mut f, edit.clone());
+    let [Step::Store { path: to, contents }] = &render.steps[..] else {
+        panic!("a storage step")
+    };
+    assert_eq!(contents, &prepared);
+    std::fs::write(to, contents).unwrap();
+    let landed = land(&mut f, member, render.run, Ok(()));
+    assert!(matches!(landed.end, Some(Ok(_))), "{landed:?}");
+    let file = score_file(&mut f, member);
+    assert_eq!(file["path"], json!(path));
+    assert_eq!(
+        file["dirty"], true,
+        "the edit is work the save does not hold"
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), prepared);
+    // another document meanwhile: the file is not taken for it
+    let saving = start(&mut f, json!({"verb": "save"}));
+    start(&mut f, json!({"verb": "new_file"}));
+    let landed = land(&mut f, member, saving.render.unwrap().run, Ok(()));
+    assert!(matches!(landed.end, Some(Err(_))), "{landed:?}");
+    assert_eq!(score_file(&mut f, member)["path"], Value::Null);
+}
+
+/// **Close file unbinds**: the window stays with no document, its order
+/// gone and its verbs refused, what it left handed over; New gives it another
+/// with a new order, and Open a file another window holds is refused.
+#[cfg(feature = "notation")]
+#[test]
+fn close_file_lets_the_document_go_and_the_window_stays() {
+    let mut f = Fixture::new();
+    let (member, _) = score_member(&mut f, json!({}));
+    let start = |f: &mut Fixture, action: Value| {
+        f.editing
+            .start(member, &action, None, &mut f.disk, &mut f.ids)
+    };
+    let edit = json!({"verb": "act", "call": {"action": "page", "landscape": true}});
+    start(&mut f, edit.clone());
+    f.editing.select(Some(member));
+    assert!(f.editing.can_undo());
+    let closed = start(&mut f, json!({"verb": "close_file"}));
+    assert!(matches!(closed.end, Some(Ok(_))), "{closed:?}");
+    let released = closed
+        .effects
+        .iter()
+        .find(|e| e["kind"] == "released")
+        .expect("handed over");
+    assert!(released["snapshot"]["mei"].is_string());
+    assert!(closed.effects.iter().any(|e| e["kind"] == "publish"));
+    assert_eq!(score_file(&mut f, member)["empty"], true);
+    f.editing.select(Some(member));
+    assert!(!f.editing.can_undo(), "the order went with it");
+    assert_eq!(f.editing.query(member, "history")["canUndo"], false);
+    // a verb with no document is refused, with why
+    let refused = start(&mut f, edit.clone());
+    let Some(Err(raised)) = refused.end else {
+        panic!("{refused:?}")
+    };
+    assert_eq!(raised.message, "no file is open");
+    let refused = start(&mut f, json!({"verb": "save", "path": "/tmp/nothing.mei"}));
+    assert!(refused.render.is_none(), "{refused:?}");
+    // closing the file again is nothing
+    assert!(matches!(
+        start(&mut f, json!({"verb": "close_file"})).end,
+        Some(Ok(_))
+    ));
+    // a read that fails leaves it with none
+    let missing = f.folder.join("missing.mei");
+    let failed = start(&mut f, json!({"verb": "load", "path": missing}));
+    assert!(matches!(failed.end, Some(Err(_))), "{failed:?}");
+    assert_eq!(score_file(&mut f, member)["empty"], true);
+    // New binds a new document, which has an order of its own
+    let made = start(&mut f, json!({"verb": "new_file"}));
+    assert!(
+        made.effects.iter().any(|e| e["kind"] == "publish"),
+        "{made:?}"
+    );
+    assert_eq!(score_file(&mut f, member)["empty"], false);
+    f.editing.select(Some(member));
+    assert!(!f.editing.can_undo(), "the first document is no entry");
+    start(&mut f, edit);
+    f.editing.select(Some(member));
+    assert!(f.editing.can_undo());
+    // a file is read back as what was saved
+    let path = f.folder.join("back.mei");
+    let saved = start(&mut f, json!({"verb": "save", "path": path}));
+    let render = saved.render.unwrap();
+    let [Step::Store { path: to, contents }] = &render.steps[..] else {
+        panic!("a storage step")
+    };
+    std::fs::write(to, contents).unwrap();
+    land(&mut f, member, render.run, Ok(()));
+    let written = std::fs::read_to_string(&path).unwrap();
+    start(&mut f, json!({"verb": "close_file"}));
+    let opened = start(&mut f, json!({"verb": "load", "path": path}));
+    assert!(matches!(opened.end, Some(Ok(_))), "{opened:?}");
+    let file = score_file(&mut f, member);
+    assert_eq!(
+        (file["path"].clone(), file["dirty"].clone()),
+        (json!(path), json!(false))
+    );
+    let mei = match f.editing.member(member) {
+        Some(Member::Score(editor)) => editor.score().lock().unwrap().mei(),
+        _ => panic!(),
+    };
+    assert_eq!(mei, written);
+}
+
+/// **A window opened with nothing has no document**, and is not a new score.
+#[cfg(feature = "notation")]
+#[test]
+fn a_score_window_opened_over_nothing_has_no_document() {
+    let mut f = Fixture::new();
+    let (member, _) = score_member(&mut f, json!({"empty": true}));
+    assert_eq!(score_file(&mut f, member)["empty"], true);
+    let at = f.editing.version;
+    let start = |f: &mut Fixture, action: Value| {
+        f.editing
+            .start(member, &action, None, &mut f.disk, &mut f.ids)
+    };
+    let refused = start(
+        &mut f,
+        json!({"verb": "event", "addr": "/gui_event", "args": [79, 1, at, "menu", "save"]}),
+    );
+    assert!(matches!(refused.end, Some(Err(_))), "{refused:?}");
+    let made = start(
+        &mut f,
+        json!({"verb": "event", "addr": "/gui_event", "args": [79, 1, at, "menu", "new_file"]}),
+    );
+    assert!(
+        made.effects.iter().any(|e| e["kind"] == "publish"),
+        "{made:?}"
+    );
+    assert_eq!(score_file(&mut f, member)["empty"], false);
+    assert_eq!(score_file(&mut f, member)["dirty"], false);
 }

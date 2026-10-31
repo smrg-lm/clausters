@@ -480,8 +480,8 @@ code that keeps it lives.
   Open, Close, the keys, the file list) answer and every verb that acts on a
   file is refused with `no file is open`. It does not apply to an editor over
   a structure a client handed it, which has nothing to open: the notes and
-  points editors, a panel. The audio editor keeps it; the others that open
-  files are pending (`crates/clausters-apps/PLAN.md`, "Found by use").
+  points editors, a panel. The audio editor, the multitrack and the score
+  editor keep it.
 - **A window drawn again shows the dialog that was up**, its fields holding
   what was typed and its chooser where it was, with nothing selected; a
   window closed and opened again has none up (`forms::Dialogs`).

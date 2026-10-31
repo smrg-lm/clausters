@@ -81,6 +81,7 @@ export abstract class HostedEditor {
     private handle: WindowHandle | null = null;
     private closedHandler: (() => void) | null = null;
     private settled = true;
+    private released = false;
     /** The page's changes, forwarded in the order they were made. */
     private queue: Promise<unknown> = Promise.resolve();
     private pending = 0;
@@ -134,14 +135,24 @@ export abstract class HostedEditor {
         this.hostOf = resolved;
         this.handle = new WindowHandle(resolved, window, new Map());
         this.settled = false;
+        this.released = false;
         this.handle.onClosed(() => this.closedNow());
         // **What a hand does in the window** is told (`/gui_app_changed`), and
-        // the copy the page holds follows it after the page's own changes
+        // the copy the page holds follows it after the page's own changes; **a
+        // document let go of** hands this one back (`/gui_app_released`), and
+        // the window goes on as the host's own
         this.unlisten = resolved.onMessage((msg) => {
-            if (msg.addr === "/gui_app_changed" && Number(msg.args[0]) === window) {
+            if (Number(msg.args[0]) !== window) return;
+            if (msg.addr === "/gui_app_changed") {
                 this.dirty = true;
                 this.pending += 1;
                 this.queue = this.queue.then(() => this.followed()).then(() => this.onChange?.());
+            } else if (msg.addr === "/gui_app_released" && msg.args.length > 1) {
+                // the window's own close, later, is nothing of this handler's
+                resolved.setClosedHandler(window, null);
+                this.released = true;
+                this.leave(JSON.parse(String(msg.args[1])) as Record<string, unknown>);
+                this.closedHandler?.();
             }
         });
         held.editors.push(this);
@@ -157,12 +168,12 @@ export abstract class HostedEditor {
         this.closedHandler?.();
     }
 
-    private leave(): void {
+    private leave(given: Record<string, unknown> | null = null): void {
         if (this.settled || this.handle === null) return;
         this.settled = true;
         this.unlisten?.();
         this.unlisten = null;
-        const left = (this.hostOf as GuiHost).closedWith(this.handle.id) as Record<string, unknown> | null;
+        const left = given ?? ((this.hostOf as GuiHost).closedWith(this.handle.id) as Record<string, unknown> | null);
         const held = this.heldBy();
         held.editors = held.editors.filter((editor) => editor !== this);
         this.settle(left ?? null, held.live() === null);
@@ -183,14 +194,14 @@ export abstract class HostedEditor {
         return this.handle === null ? null : this.handle.id;
     }
 
-    /** Whether it has no window open. */
+    /** Whether it is done with its window: the window is gone, or it let go of what this handler opened (the window goes on as the host's own). */
     get closed(): boolean {
-        return this.handle === null || this.handle.closed;
+        return this.handle === null || this.handle.closed || this.released;
     }
 
     /** Resolves when the window is closed, or on `timeout` seconds: `true` for the first. */
     async wait(timeout?: number): Promise<boolean> {
-        if (this.handle === null) return true;
+        if (this.handle === null || this.released) return true;
         const done = await this.handle.wait(timeout);
         if (done) this.leave();
         return done;

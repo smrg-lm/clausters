@@ -670,6 +670,16 @@ page.
 `examples/notation/score_editor.py` is the whole of it: a document opened, operated on, edited,
 played, saved and rendered.
 
+
+**A window holds one document, and may hold none.** `ScoreEditor()` opens with no
+document, its File menu making or opening one (`new_file()`, `load(path)`). Over
+a document, `new_file()` and `load(path)` are one entry of the history, and a
+step puts the document and its file back. A file that does not read leaves the
+window as it was. `save(path)` answers once the file is written: only then is the
+path the score's. `close_file()` leaves the window with no document and its undo
+order gone: the script's score holds what the window left it as, and the window
+goes on as the host's own (`closed`, `has_document`).
+
 ## The arrangement: tracks, take lanes, regions
 
 The model a multitrack editor edits is the one the three classic

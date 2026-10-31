@@ -117,9 +117,10 @@ export interface PageOptions {
  */
 export class ScoreEditor extends SequenceHandler {
     protected override readonly app = "score";
-    readonly #score: Score;
+    readonly #score: Score | null;
+    readonly #ownHeld = new Held();
     /** What the editor edits: the sequence it is over, or the score. */
-    readonly structure: Score | EventSequence;
+    readonly structure: Score | EventSequence | null;
     /**
      * The sequence this page is the reading of, in an editor opened over one
      * ({@link ScoreEditor.over}); `null` for an editor over a score of its
@@ -132,7 +133,8 @@ export class ScoreEditor extends SequenceHandler {
     readonly #interp: Interpretation | undefined;
     #refused: string | undefined = undefined;
 
-    constructor(score: Score, options: ScoreEditorOptions = {}) {
+    /** Over `score`, which is the edited one; left out, the window opens with no document, its File menu making or opening one ({@link newFile}, {@link load}). */
+    constructor(score: Score | null = null, options: ScoreEditorOptions = {}) {
         super("Score", options);
         this.#score = score;
         this.structure = options.over ?? score;
@@ -189,6 +191,7 @@ export class ScoreEditor extends SequenceHandler {
 
     protected override heldBy(): Held {
         if (this.sequence !== null) return super.heldBy();
+        if (this.#score === null) return this.#ownHeld;
         let held = heldScores.get(this.#score);
         if (held === undefined) {
             held = new Held();
@@ -202,6 +205,7 @@ export class ScoreEditor extends SequenceHandler {
     }
 
     protected override openingOptions(beside: HostedEditor | null): Record<string, unknown> {
+        if (this.#score === null) return {};
         const options: Record<string, unknown> = { mei: this.#score.mei() };
         if (this.#score.path !== null && this.sequence === null) options.path = this.#score.path;
         if (this.#value !== undefined) options.value = [Math.trunc(this.#value[0]), Math.trunc(this.#value[1])];
@@ -218,14 +222,14 @@ export class ScoreEditor extends SequenceHandler {
         const opening = this.closed;
         const window = await super.open(...args);
         if (opening) {
-            this.#score.window = this;
+            if (this.#score !== null) this.#score.window = this;
             await this.act("end", { end: "contents" });
         }
         return window;
     }
 
     protected override settle(left: Record<string, unknown> | null, last: boolean): void {
-        if (this.#score.window === this) {
+        if (this.#score !== null && this.#score.window === this) {
             this.#score.window = null;
             if (typeof left?.mei === "string") this.#score.holdWritten(left.mei);
             if (typeof left?.path === "string") this.#score.path = left.path;
@@ -235,8 +239,10 @@ export class ScoreEditor extends SequenceHandler {
     }
 
     protected override async follow(): Promise<void> {
-        const answer = await this.asked("page", { call: { verb: "mei" } });
-        if (typeof answer?.mei === "string") this.#score.holdWritten(answer.mei);
+        if (this.#score !== null) {
+            const answer = await this.asked("page", { call: { verb: "mei" } });
+            if (typeof answer?.mei === "string") this.#score.holdWritten(answer.mei);
+        }
         await this.followSequence();
     }
 
@@ -250,8 +256,8 @@ export class ScoreEditor extends SequenceHandler {
         void (direction === "undo" ? this.undo() : this.redo());
     }
 
-    /** The score on the page: the one the editor was opened over, or -- over a sequence -- the reading of it, which follows the sequence. */
-    get score(): Score {
+    /** The score on the page: the one the editor was opened over, or -- over a sequence -- the reading of it, which follows the sequence; `null` for an editor opened over no score. */
+    get score(): Score | null {
         return this.#score;
     }
 
@@ -743,7 +749,7 @@ export class ScoreEditor extends SequenceHandler {
     async save(path: string | null = null): Promise<string> {
         const answer = (await this.act("save", path === null ? {} : { path: String(path) })) ?? {};
         const written = String(answer.destination);
-        this.#score.path = written;
+        if (this.#score !== null) this.#score.path = written;
         return written;
     }
 
@@ -759,9 +765,34 @@ export class ScoreEditor extends SequenceHandler {
      */
     async load(path: string): Promise<boolean> {
         const loaded = Boolean(await this.act("load", { path: String(path) }));
-        if (loaded) this.#score.path = path;
+        if (loaded && this.#score !== null) this.#score.path = path;
         await this.follow();
         return loaded;
+    }
+
+    /**
+     * **A new score in the window**, one staff and four empty bars with no
+     * file, as its File menu's New puts one there. Over a document it is one
+     * entry of the history, as {@link load} is, and the same score holds it.
+     */
+    async newFile(): Promise<void> {
+        await this.act("new_file");
+        await this.follow();
+    }
+
+    /**
+     * **No document in the window**, as its File menu's Close file leaves it.
+     * The window lets go of the score it was opened over, which holds what the
+     * window left it as, as a close leaves it; its undo order goes with it, and
+     * the window goes on as the host's own ({@link closed}).
+     */
+    async closeFile(): Promise<void> {
+        await this.act("close_file");
+    }
+
+    /** Whether the window has a document: with none, its File verbs are all it answers. */
+    async hasDocument(): Promise<boolean> {
+        return (await this.query("file")).empty === false;
     }
 
     /**

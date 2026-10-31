@@ -49,7 +49,8 @@ class ScoreEditor(SequenceHandler):
 
     Args:
         score: the `clausters.gui.notation.Score` to edit. It is the edited
-            one: read it after any gesture.
+            one: read it after any gesture. Left out, the window opens with no
+            document, its File menu making or opening one (`new_file`, `load`).
         title: the window's title.
         value: the written value a note entered on the page takes, as
             ``(numerator, denominator)`` of a whole note; a quarter by default.
@@ -68,7 +69,7 @@ class ScoreEditor(SequenceHandler):
 
     _app = "score"
 
-    def __init__(self, score, *, title: str = "Score", value=None,
+    def __init__(self, score=None, *, title: str = "Score", value=None,
                  width: "int | None" = None, height: "int | None" = None,
                  chrome: bool = True, over: "EventSequence | None" = None,
                  how: "dict | None" = None, interp: "dict | None" = None):
@@ -88,12 +89,16 @@ class ScoreEditor(SequenceHandler):
     def _held(self) -> _Held:
         if self.sequence is not None:
             return _held_of(self.sequence)
+        if self._score is None:
+            return self.__dict__.setdefault("_own_windows", _Held())
         held = self._score.__dict__.get("_windows")
         if held is None:
             held = self._score.__dict__["_windows"] = _Held()
         return held
 
     def _options(self, beside) -> dict:
+        if self._score is None:
+            return {}
         options: dict = {"mei": self._score.mei()}
         path = getattr(self._score, "path", None)
         if path is not None and self.sequence is None:
@@ -116,7 +121,8 @@ class ScoreEditor(SequenceHandler):
         window = super().open(host)
         # the page reads and writes the window's from now on
         if opened:
-            self._score.__dict__["_page"] = self
+            if self._score is not None:
+                self._score.__dict__["_page"] = self
             self._do("end", end="contents")
         return window
 
@@ -125,7 +131,7 @@ class ScoreEditor(SequenceHandler):
             super()._take()
 
     def _settle(self, left: "dict | None", last: bool) -> None:
-        if self._score.__dict__.get("_page") is self:
+        if self._score is not None and self._score.__dict__.get("_page") is self:
             self._score.__dict__.pop("_page", None)
             self._score._settle(left)
         if last and self.sequence is not None:
@@ -161,7 +167,8 @@ class ScoreEditor(SequenceHandler):
     @property
     def score(self):
         """The score on the page: the one the editor was opened over, or --
-        over a sequence -- the reading of it, which follows the sequence."""
+        over a sequence -- the reading of it, which follows the sequence;
+        ``None`` for an editor opened over no score."""
         return self._score
 
     @property
@@ -611,7 +618,7 @@ class ScoreEditor(SequenceHandler):
         is written is then not a change the File menu's Close asks about."""
         args = {} if path is None else {"path": str(path)}
         written = (self._do("save", **args) or {}).get("destination")
-        if written is not None:
+        if written is not None and self.score is not None:
             self.score.path = str(written)
         return written
 
@@ -627,9 +634,28 @@ class ScoreEditor(SequenceHandler):
         a step back. The File menu's Open, as a method; the file is then the
         score's."""
         loaded = bool(self._do("load", path=str(path)))
-        if loaded:
+        if loaded and self.score is not None:
             self.score.path = str(path)
         return loaded
+
+    def new_file(self) -> None:
+        """**A new score in the window**, one staff and four empty bars with no
+        file, as its File menu's New puts one there. Over a document it is one
+        entry of the history, as `load` is, and the same score holds it."""
+        self._do("new_file")
+
+    def close_file(self) -> None:
+        """**No document in the window**, as its File menu's Close file leaves
+        it. The window lets go of the score it was opened over, which holds what
+        the window left it as, as a close leaves it; its undo order goes with
+        it, and the window goes on as the host's own (`closed`)."""
+        self._do("close_file")
+
+    @property
+    def has_document(self) -> bool:
+        """Whether the window has a document: with none, its File verbs are all
+        it answers."""
+        return not self._query("file").get("empty", True)
 
     def export(self, path, format: "str | None" = None) -> str:
         """Write the score **rendered** to the file at ``path`` and answer the

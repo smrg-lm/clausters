@@ -235,6 +235,11 @@
         if (items()[0].marks !== undefined) throw new Error("the copy did not follow the step");
         await page.play(0);
         if (!(await page.playing())) throw new Error("the score does not play");
+        // **a failed read leaves the window**, and a file reads back as written
+        const held = score.mei();
+        let failed = false;
+        try { await page.load("out/no-such-score.mei"); } catch { failed = true; }
+        if (!failed || score.mei() !== held || score.path !== "out/app_window.mei") throw new Error("a failed read moved the score");
         await page.stop();
         await page.close();
         if (score.window !== null) throw new Error("the close did not hand the score back");
