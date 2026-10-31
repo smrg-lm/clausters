@@ -44,9 +44,6 @@ use clausters_gui::host::ServerLink;
 use clausters_gui::host::bundle;
 #[cfg(feature = "standalone")]
 use clausters_gui::host::embed::EmbedServer;
-#[cfg(all(feature = "standalone", feature = "score"))]
-use clausters_gui::host::embed::EmbedSession;
-
 const USAGE: &str = "\
 usage:
   clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
@@ -85,10 +82,7 @@ usage:
                             meters/scopes, and the **samples** -- a take is
                             drawn by mapping it and edited by storing into it,
                             with nothing sent either way. Point it at the audio
-                            server's own --shm path. With --score it is where
-                            the editor's samples go, and what a player is
-                            started against (`clausters --shm <path>`);
-                            without one a path is picked and logged. Unix only
+                            server's own --shm path. Unix only
       --id-share <i/of>     the share of the audio server's node ids, buses
                             and buffers this host allocates from: share i of
                             of. A script that launches a host keeps 0/2 and
@@ -115,11 +109,11 @@ usage:
                             the window saves where its own file is
       --score <file>        open a score (MEI, MusicXML, ABC -- what the engraver
                             reads) in the score editor, with this host as its
-                            owner: edited and undone here, and Ctrl+S writes it
-                            as MEI to --save-to. Built with the `score` feature,
-                            which links the engraver (libverovio); with
-                            `standalone` too it plays, through a player, on
-                            the server's default def
+                            owner: edited, played and saved here, on an engine
+                            this host opens on the machine's output, and Ctrl+S
+                            writes it as MEI to --save-to, asking where without
+                            it. Built with the `score` feature, which links the
+                            engraver (libverovio)
       --audio [file]        open the audio editor, over a sound file (a WAV,
                             W64 or RF64) or over none, with this host as its
                             owner: edited, played and saved here, on an engine
@@ -557,7 +551,7 @@ fn run(args: &[String]) -> Result<(), String> {
     // with the engraver can read the file.
     if let Some(path) = score_path {
         #[cfg(feature = "score")]
-        return run_score(&path, save_to.as_deref(), udp_bind, look, shm, server);
+        return run_score(&path, save_to.as_deref(), udp_bind, look);
         #[cfg(not(feature = "score"))]
         return Err(format!(
             "--score {path}: this clausters-gui was built without the engraver \
@@ -809,43 +803,24 @@ fn run_multitrack(
     gui::run(host, Arc::new(socket), None, None, None)
 }
 
-/// Opens a score in the score editor, with this host as its **owner**: the
-/// engraver reads the file, the applications crate's editor draws and edits it,
-/// and Ctrl+S writes it as MEI where `--save-to` says.
-///
-/// **It plays as a session does**: an on-demand server in this process and a
-/// player beside it, which holds the devices; the score is rendered and played
-/// on a transport of its own, on the server's default def. A build without
-/// the `standalone` feature, or a machine with no player, edits and saves and
-/// plays nothing.
+/// **Opens a score in the score editor**, with this host as its owner: the same
+/// application a client's `edit(score)` opens, whose engraver reads the file,
+/// and which plays on an engine this host opens on the machine's output. Save
+/// writes as MEI where `--save-to` says, and asks where without it, so the file
+/// opened is not written over unasked.
 #[cfg(feature = "score")]
 fn run_score(
     path: &str,
     save_to: Option<&str>,
     udp_bind: SocketAddr,
     look: Look,
-    #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] shm: Option<String>,
-    #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] player: Option<String>,
 ) -> Result<(), String> {
-    use clausters_gui::host::document::Owner;
-
+    // a file that does not read is said here rather than by an empty host
     let data = std::fs::read_to_string(path).map_err(|e| format!("--score {path}: {e}"))?;
-    let score = clausters_notation::open(&data, &clausters_notation::EngraveOptions::default())
+    clausters_notation::open(&data, &clausters_notation::EngraveOptions::default())
         .map_err(|e| format!("--score {path}: {e}"))?;
-    let shared = Arc::new(std::sync::Mutex::new(score));
     let mut host = Host::new();
-    #[cfg(feature = "standalone")]
-    // The player is held, not used: dropping it stops it with the window.
-    let (bus, _player) = attach_server(&mut host, shm, player)?;
-    #[cfg(not(feature = "standalone"))]
-    let bus: Option<Arc<dyn clausters_gui::host::BusSource>> = None;
-    #[cfg(not(feature = "standalone"))]
-    tracing::warn!(
-        "score: this clausters-gui was built without standalone support, so the score \
-         does not play (rebuild with `--features standalone`)"
-    );
     look.apply(&mut host);
-    host.owner = Some(Owner::new());
     let name = Path::new(path)
         .file_name()
         .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned());
@@ -853,188 +828,12 @@ fn run_score(
         Some(out) => format!("{name} -> {out}"),
         None => format!("{name} (read-only: no --save-to)"),
     };
-    host.open_score(shared, &title, (960, 720), save_to.map(Into::into))
-        .ok_or_else(|| "--score: the editor could not open a window".to_string())?;
+    host.open_score_saving_to(path, save_to, &title)
+        .map_err(|e| format!("--score: {e}"))?;
     tracing::info!("score: opened {path}");
     let socket =
         UdpSocket::bind(udp_bind).map_err(|e| format!("failed to bind UDP {udp_bind}: {e}"))?;
-    gui::run(host, Arc::new(socket), bus, None, None)
-}
-
-/// **Gives a score host its two servers.**
-///
-/// - The **on-demand session**, in this process: the server the host's ids
-///   and clocks are read from. It has no audio device and needs none.
-/// - The **player**, another process (`clausters --shm <path>`): it holds the
-///   machine's input and output, and it is therefore the only one that can
-///   make a sound. It attaches to the same segment.
-/// - The **editor**, this host: it performs the actions, which is why it owns
-///   the transport and plays through the player.
-///
-/// **A failed boot is not a failed score.** Editing, undo and save need no
-/// server at all; what needs one is the sound. So a machine with no audio
-/// device still opens the file, and says why nothing plays.
-#[cfg(all(feature = "standalone", feature = "score"))]
-fn attach_server(
-    host: &mut Host,
-    shm: Option<String>,
-    player: Option<String>,
-) -> Result<Attached, String> {
-    let path = std::path::PathBuf::from(shm.unwrap_or_else(default_segment_path));
-    let session = match EmbedSession::open(&path, 48_000.0, 2) {
-        Ok(session) => session,
-        Err(e) => {
-            tracing::warn!(
-                "no on-demand server ({e}) -- the score opens and edits, and does not play"
-            );
-            return Ok((None, None));
-        }
-    };
-
-    // **The clocks, from the memory the server writes them in**: the same
-    // segment the player attaches to.
-    #[cfg(unix)]
-    let bus = gui::open_shm_buffers(Some(path.display().to_string())).0;
-    #[cfg(not(unix))]
-    let bus: Option<Arc<dyn clausters_gui::host::BusSource>> = None;
-    if bus.is_none() {
-        tracing::warn!("no data plane -- the play cursor will stand still");
-    }
-
-    // **The player**, given one: what sounds and moves the transport.
-    let owned = match attach_player(host, &path, player) {
-        Ok(owned) => {
-            host.set_owns_transport(true);
-            owned
-        }
-        Err(e) => {
-            tracing::warn!(
-                "no player ({e}) -- the score opens and edits, and nothing sounds. Start one \
-                 yourself with `clausters --shm {}` and pass --server",
-                path.display()
-            );
-            None
-        }
-    };
-    host.set_server_link(ServerLink::Session(session));
-    Ok((bus, owned))
-}
-
-/// A player process this editor started, killed when the editor goes.
-///
-/// An application starts its own engine -- the Python client boots a server
-/// when none answers, and this is the same posture: a person who opens a
-/// session wants to hear it, not to arrange two processes by hand. A player
-/// the user started themselves (`--server`) is not owned and not killed.
-#[cfg(all(feature = "standalone", feature = "score"))]
-struct OwnedPlayer(std::process::Child);
-
-/// What a session's servers hand back: the data plane its windows read, and
-/// the player process it owns, if it started one.
-#[cfg(all(feature = "standalone", feature = "score"))]
-type Attached = (
-    Option<Arc<dyn clausters_gui::host::BusSource>>,
-    Option<OwnedPlayer>,
-);
-
-#[cfg(all(feature = "standalone", feature = "score"))]
-impl Drop for OwnedPlayer {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-/// Starts a player against `segment` and returns where it is listening.
-///
-/// **The segment exists by now**, which is what fixes the ordering: the
-/// editor's session created it and claimed the command plane, so the player
-/// attaches to what is there instead of truncating it and taking the samples
-/// with it. Started the other way round it would be the owner, and the session
-/// would refuse to open.
-#[cfg(all(feature = "standalone", feature = "score"))]
-fn spawn_player(segment: &Path) -> Result<(OwnedPlayer, String), String> {
-    // The binary beside this one, unless an override says otherwise: an
-    // editor and its player ship together.
-    let here = std::env::current_exe().ok();
-    let dir = here.as_ref().and_then(|p| p.parent());
-    let exe = std::env::var_os("CLAUSTERS_BIN")
-        .map(std::path::PathBuf::from)
-        .or_else(|| dir.map(|d| d.join("clausters")).filter(|p| p.is_file()))
-        // The development checkout: this crate is its own workspace, so its
-        // binaries are under `clients/gui/target/<profile>` while the server's
-        // are under the repo's own. Guessed rather than required, because a
-        // person running from a build tree should not have to set a variable
-        // to hear their session.
-        .or_else(|| {
-            dir.and_then(|d| {
-                d.parent()?
-                    .parent()?
-                    .parent()?
-                    .parent()
-                    .map(Path::to_path_buf)
-            })
-            .map(|root| {
-                root.join("target")
-                    .join(if cfg!(debug_assertions) {
-                        "debug"
-                    } else {
-                        "release"
-                    })
-                    .join("clausters")
-            })
-            .filter(|p| p.is_file())
-        })
-        .unwrap_or_else(|| std::path::PathBuf::from("clausters"));
-    // A port of its own, so an editor never collides with a server somebody
-    // else is running on the default one.
-    let port = 57310 + (std::process::id() % 200) as u16;
-    let child = std::process::Command::new(&exe)
-        .arg("--shm")
-        .arg(segment)
-        .arg("--port")
-        .arg(port.to_string())
-        .arg("--client-name")
-        .arg("clausters-editor")
-        .spawn()
-        .map_err(|e| format!("cannot start a player ({}): {e}", exe.display()))?;
-    Ok((OwnedPlayer(child), format!("127.0.0.1:{port}")))
-}
-
-/// Attaches the player, started here unless one was named, and answers the
-/// process when this host owns it.
-#[cfg(all(feature = "standalone", feature = "score"))]
-fn attach_player(
-    host: &mut Host,
-    segment: &Path,
-    player: Option<String>,
-) -> Result<Option<OwnedPlayer>, String> {
-    // A player the user started is used as it is; with none named, the editor
-    // starts one of its own -- it is an application, and an application does
-    // not ask you to arrange its processes by hand.
-    let (owned, spec) = match player {
-        Some(spec) => (None, spec),
-        None => {
-            let (owned, spec) = spawn_player(segment)?;
-            (Some(owned), spec)
-        }
-    };
-    let target = resolve(&spec)?;
-    let leg = ServerLeg::connect(target).map_err(|e| format!("player leg: {e}"))?;
-    // A spawned player takes a moment to bind its socket, and every message
-    // below would land in nothing. Wait for it to answer before saying it is
-    // there -- three seconds is a boot, not a hang.
-    if owned.is_some() {
-        await_player(&leg)?;
-    }
-    tracing::info!(
-        "player at {} (it holds the devices; the segment is at {})",
-        leg.target(),
-        segment.display()
-    );
-    host.set_player_link(ServerLink::Udp(leg));
-    host.on_link_attached();
-    Ok(owned)
+    gui::run(host, Arc::new(socket), None, None, None)
 }
 
 /// `--id-share i/of`, as the share it names.
@@ -1046,53 +845,6 @@ fn parse_share(v: &str) -> Result<IdShare, String> {
         of.trim().parse().map_err(|_| bad())?,
     )
     .map_err(|_| bad())
-}
-
-/// Waits for a freshly started player to answer, so nothing is sent into a
-/// socket that is not listening yet.
-#[cfg(all(feature = "standalone", feature = "score"))]
-fn await_player(leg: &ServerLeg) -> Result<(), String> {
-    use std::time::{Duration, Instant};
-
-    let socket = leg.socket();
-    socket
-        .set_read_timeout(Some(Duration::from_millis(200)))
-        .map_err(|e| e.to_string())?;
-    let deadline = Instant::now() + Duration::from_secs(3);
-    let mut buf = [0u8; 4096];
-    let mut answered = false;
-    while !answered && Instant::now() < deadline {
-        leg.send(OscMessage {
-            addr: "/server_status".into(),
-            args: vec![],
-        })
-        .map_err(|e| e.to_string())?;
-        answered = socket.recv_from(&mut buf).is_ok();
-    }
-    // **The socket is the reply thread's too**, so the probe's timeout goes
-    // with the probe: left on, every read that waited longer than it ended
-    // the thread, and nothing the player said afterwards was heard.
-    socket.set_read_timeout(None).map_err(|e| e.to_string())?;
-    if answered {
-        Ok(())
-    } else {
-        Err("the player did not answer within 3s".into())
-    }
-}
-
-/// Where an editor puts its segment when nobody said: a memory filesystem if
-/// there is one, the temp directory otherwise, named for this process so two
-/// editors never share one.
-#[cfg(all(feature = "standalone", feature = "score"))]
-fn default_segment_path() -> String {
-    let dir = if Path::new("/dev/shm").is_dir() {
-        std::path::PathBuf::from("/dev/shm")
-    } else {
-        std::env::temp_dir()
-    };
-    dir.join(format!("clausters-editor-{}", std::process::id()))
-        .display()
-        .to_string()
 }
 
 /// Boots a saved GuiDef as a self-contained app: an embedded audio server, the

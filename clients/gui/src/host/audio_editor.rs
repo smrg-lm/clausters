@@ -271,6 +271,29 @@ impl Host {
         )
     }
 
+    /// **The score editor over the file at `path`, for this host alone**: what
+    /// `--score` opens. Its Save writes to `save_to`, and asks where without it.
+    #[cfg(feature = "notation")]
+    pub fn open_score_saving_to(
+        &mut self,
+        path: &str,
+        save_to: Option<&str>,
+        title: &str,
+    ) -> Result<i32, String> {
+        self.open_app_saving(
+            AppKind::Score,
+            Some(path),
+            Some(super::audio_app::AppData::Score {
+                mei: None,
+                over: None,
+                request: json!({}),
+            }),
+            title,
+            None,
+            Some(save_to.map(str::to_string)),
+        )
+    }
+
     /// **A roll opened over a sequence**, handed over in `request` or the
     /// one window `over` shows, answered to `reply` once it opened.
     pub(super) fn open_app_notes_for(
@@ -2676,6 +2699,39 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
             effects = host.take_effects();
         }
+    }
+
+    /// **`--score`'s window saves where the host said**, and the file it read
+    /// is not written over: without a destination a Save asks where.
+    #[cfg(feature = "score")]
+    #[test]
+    fn a_score_the_host_opens_saves_where_it_was_told() {
+        let folder = std::env::temp_dir().join(format!("host-own-score-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let (read, out) = (folder.join("read.abc"), folder.join("out.mei"));
+        std::fs::write(&read, "X:1\nM:4/4\nL:1/4\nK:C\nC D E F|\n").unwrap();
+        let mut host = host();
+        let told = host
+            .open_score_saving_to(read.to_str().unwrap(), out.to_str(), "told")
+            .unwrap();
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(told).is_some()
+        });
+        let saved = ask(&mut host, told, json!({"do": {"verb": "save"}}));
+        assert_eq!(saved["destination"], out.to_str().unwrap(), "{saved}");
+        assert!(std::fs::read_to_string(&out).unwrap().contains("<mei"));
+        let before = std::fs::read_to_string(&read).unwrap();
+        ask(&mut host, told, json!({"do": {"verb": "close"}}));
+        let alone = host
+            .open_score_saving_to(read.to_str().unwrap(), None, "alone")
+            .unwrap();
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(alone).is_some()
+        });
+        let refused = ask(&mut host, alone, json!({"do": {"verb": "save"}}));
+        assert!(refused["raised"].is_string(), "{refused}");
+        assert_eq!(std::fs::read_to_string(&read).unwrap(), before);
     }
 
     /// **A page over a sequence and a roll over it are one order**, through

@@ -464,7 +464,7 @@ impl App {
                         self.open_roll(def_id, &title, source, parent)
                     }
                     #[cfg(feature = "notation")]
-                    AppKind::Score => self.open_score(def_id, &key, &title, path, data),
+                    AppKind::Score => self.open_score(def_id, &key, &title, path, data, save_to),
                     AppKind::Notes => self.open_notes(def_id, &key, &title, data),
                 };
                 if let Some(window) = self.windows.get_mut(&def_id) {
@@ -692,6 +692,7 @@ impl App {
         title: &str,
         path: Option<String>,
         data: Option<AppData>,
+        save_to: Option<Option<String>>,
     ) -> Result<Vec<String>, String> {
         use clausters_core::notation::{sheet_to_mei, voice_to_sheet};
         let (mei, over, mut request) = match data {
@@ -741,7 +742,7 @@ impl App {
                 session: path,
                 snapshot: None,
                 client_owned: false,
-                save_to: None,
+                save_to,
                 ids: None,
                 widgets: Vec::new(),
                 _workspace: workspace,
@@ -1044,9 +1045,12 @@ impl App {
                     .windows
                     .get(&def_id)
                     .is_some_and(|window| window.client_owned);
+                // where its Save writes: the host's word when it said, or the
+                // file it read
+                let file = save_to.unwrap_or(session);
                 self.member_call(
                     member,
-                    json!({"verb": "sync", "window": def_id, "title": title, "path": session,
+                    json!({"verb": "sync", "window": def_id, "title": title, "path": file,
                         "asks": asks}),
                 );
                 let ran = self

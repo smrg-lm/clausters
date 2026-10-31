@@ -2970,7 +2970,11 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
       boxes as pages. The pinned verovio in a worker (`apps-engraver.ts`) the
       application's thread asks synchronously over the shared memory, fetched
       the first time it is asked. *Done 2026-10-31.*
-    - ⬜ Standalone on the same application, the replaced paths removed.
+    - ✅ Standalone on the same application, the replaced paths removed:
+      `--score` opens `AppKind::Score` over its file, its Save where
+      `--save-to` says, and plays on the application's engine rather than
+      through a player beside an on-demand session. `document::Owner`, the
+      host's own score editor and its playback went. *Done 2026-10-31.*
 
   - ⬜ **Symbolic score: actions and execution.** Compose shared chrome
     and action readings, preserving tools, palettes, keys and layout. Menu,

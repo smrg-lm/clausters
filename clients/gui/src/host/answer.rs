@@ -97,22 +97,10 @@ impl Host {
     /// application's turn, read out of the same message a client would get;
     /// anything else is a client's.
     pub fn deliver(&mut self, def_id: i32, message: &OscMessage) -> bool {
-        diag::debug!(
-            "deliver: window={def_id} owner={} args={:?}",
-            self.owner.is_some(),
-            message.args
-        );
+        diag::debug!("deliver: window={def_id} args={:?}", message.args);
         #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
         if self.owns_audio(def_id) {
             return self.answer_audio(def_id, message);
-        }
-        #[cfg(feature = "notation")]
-        if self
-            .owner
-            .as_ref()
-            .is_some_and(|o| o.scores.contains_key(&def_id))
-        {
-            return self.answer_score(def_id, message);
         }
         false
     }

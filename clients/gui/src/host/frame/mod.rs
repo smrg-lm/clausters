@@ -3371,18 +3371,23 @@ mod tests {
         }
         sheet.next_id = id;
         let mei = clausters_core::notation::sheet_to_mei(&sheet).unwrap();
-        let score = clausters_notation::open(&mei, &clausters_notation::EngraveOptions::default())
-            .expect("engraved");
         let mut host = crate::host::Host::new();
-        host.owner = Some(crate::host::document::Owner::new());
+        let (engine, _processed) = clausters_app_engine::AppEngine::detached(48_000.0, 2);
+        host.hold_audio_engine(std::sync::Arc::new(std::sync::Mutex::new(engine)));
         let def = host
-            .open_score(
-                std::sync::Arc::new(std::sync::Mutex::new(score)),
+            .open_app_score_for(
+                None,
+                Some(mei),
+                None,
+                serde_json::json!({"w": 1280, "h": 900}),
                 "score",
-                (1280, 900),
                 None,
             )
             .expect("a window");
+        while host.window_def(def).is_none() {
+            host.take_effects();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         let tree = host.window_def(def).unwrap();
         let inputs = FrameInputs {
             metrics: host.metrics_for(def),

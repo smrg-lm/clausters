@@ -321,7 +321,6 @@ impl Host {
         if let (Some(OscType::Int(transport)), Some(OscType::Int(playing))) =
             (args.get(12), args.get(3))
         {
-            self.transport_rolled(*transport, *playing != 0);
             let position = match args.get(7) {
                 Some(OscType::Long(p)) => *p,
                 _ => 0,

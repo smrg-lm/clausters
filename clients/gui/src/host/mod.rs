@@ -1033,13 +1033,6 @@ pub struct Host {
     /// **The server's node trees a `nodetree` draws**, by group, as last
     /// read ([`node_trees`]).
     node_trees: HashMap<i32, graphics::nodetree::NodeTree>,
-    /// The document this host owns, when it is its own owner.
-    ///
-    /// `None` is every host driven by a script: a gesture emits and waits, and
-    /// the script answers. `Some` is the **third writer** -- a standalone
-    /// editor, which has no script to wait for and must apply its own intents
-    /// (`document::Owner`).
-    pub owner: Option<document::Owner>,
     /// **The audio editor this host owns**, with the engine it plays on:
     /// opened by [`Host::open_audio`], its windows answered here.
     #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
@@ -1201,7 +1194,6 @@ impl Host {
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps", feature = "notation"))]
             dependents: HashMap::new(),
             node_trees: HashMap::new(),
-            owner: None,
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             audio: None,
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
