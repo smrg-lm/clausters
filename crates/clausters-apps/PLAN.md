@@ -2872,14 +2872,19 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     and last-session close on disk and OPFS; read saved sessions and source
     references back. Run and review `edit_multitrack` and `load_multitrack`
     in both clients before the next port.
-    - ⬜ One session file per window. The first branch kept every session
+    - ✅ One session file per window. The first branch kept every session
       a window had left as a retained object the client could go on
       editing through the window (object addressing on `query` and `do`,
-      `snapshot` on `/gui_app_open`, every retained session on
-      `/gui_closed`). It is withdrawn: when a window opens another session,
-      the client's object is settled as a close settles it, and holds what
-      the window left it as. A document already open in another window of
-      the host is not opened twice; its window comes forward.
+      every retained session on `/gui_closed`). It is withdrawn: when a
+      window lets go of its session, the session's order closes with it,
+      the client that opened the window is handed what the window left it
+      as (`/gui_app_released`) and settles its object as a close settles
+      it, and the window goes on as the host's own, asking before a close
+      loses work. The `snapshot` a handler opens over again stays: it is
+      one session's. *Done 2026-10-30.*
+    - ⬜ A document already open in another window of the host is not
+      opened twice: File > Open, `/gui_app_open` and `--session` bring its
+      window forward, as `edit()` already does in both clients.
     - ⬜ Wire the empty host opening and New/Open/Close file chrome and dialogs,
       including holder-aware save/discard/cancel and confirmed deferred closes.
       Preserve all three opening paths and verify disk/OPFS read-back.

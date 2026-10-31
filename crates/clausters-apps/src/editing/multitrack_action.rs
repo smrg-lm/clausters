@@ -7,7 +7,6 @@ use clausters_document::multitrack::{edit::MultitrackIntent, handle::Request};
 
 pub(super) struct Action {
     pub kind: Kind,
-    pub object: Option<i64>,
     // Missing keeps the current destination; explicit null is read-only.
     pub save_to: Option<Option<String>>,
 }
@@ -40,10 +39,6 @@ impl Action {
                 .map_err(|e| e.to_string())?;
         }
         Ok(Self {
-            object: value
-                .get("object")
-                .map(|id| id.as_i64().ok_or("the session object is not an integer"))
-                .transpose()?,
             kind,
             save_to: value
                 .get("saveTo")
@@ -58,7 +53,7 @@ pub(super) enum Kind {
     Open {
         session: Option<String>,
         #[serde(skip)]
-        snapshot: Option<Box<crate::multitrack::operations::Retained>>,
+        snapshot: Option<Box<crate::multitrack::operations::Snapshot>>,
     },
     NewFile,
     CloseFile,

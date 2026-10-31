@@ -1,4 +1,5 @@
-//! Execute work on a retained object without rebinding its window.
+//! Execute work on an object an editor holds out of focus (an audio file
+//! parked in the file list) without rebinding its window.
 
 /// The object storage an application already owns. A temporary exchange
 /// changes neither the window's binding nor its conversation.
@@ -11,7 +12,7 @@ pub(crate) trait Owner {
     fn park(&mut self, state: Self::State);
 }
 
-/// Run against one retained object and restore the previously focused state.
+/// Run against one parked object and restore the previously focused state.
 pub(crate) fn over<O: Owner, R>(
     owner: &mut O,
     id: O::Id,

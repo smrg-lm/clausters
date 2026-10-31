@@ -4,6 +4,7 @@
 //! cannot attach peaks to another session, even when source ids are reused.
 use super::editor::{MultitrackEditor, Outcome};
 use crate::application::{
+    histories::Object,
     operations::{Access, Batch, Operation, Result as IoResult, Target},
     services::{Application, Completion, Services},
 };
@@ -19,15 +20,17 @@ pub struct Request {
     pub command: Command,
 }
 
-/// A client-held session returned when its window closes and accepted on reopen.
-/// The checkpoint belongs to the captured contents, independently of its path.
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct Retained {
+/// **A session as its holder keeps it**: what a window hands the client
+/// that opened it when it lets the session go (closed, or another session
+/// in its place), and what a window opens from again. The checkpoint
+/// belongs to the contents, apart from the path.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct Snapshot {
     /// Current contents, including source locations and shared sequences.
     pub session: Session,
     /// Last confirmed destination, or none for an untitled session.
     pub path: Option<String>,
-    /// The confirmed checkpoint, retained through unsaved local changes.
+    /// The confirmed checkpoint, kept through changes not saved yet.
     pub saved: Option<Session>,
 }
 
@@ -187,12 +190,12 @@ impl Application for MultitrackEditor {
         let mut outcome = Outcome::default();
         match delta.change {
             Change::New => {
-                self.replace_session_binding();
+                outcome.released = self.replace_session_binding().map(Box::new);
                 self.file_mut().saved = Some(self.session_snapshot());
             }
-            Change::Unbind => self.unbind_session(),
+            Change::Unbind => outcome.released = self.unbind_session().map(Box::new),
             Change::Open(opened) => {
-                self.replace_session_binding();
+                outcome.released = self.replace_session_binding().map(Box::new);
                 self.set_multitrack(opened.session.multitrack);
                 self.set_takes(opened.resolved.takes);
                 self.set_segments(opened.resolved.segments);
@@ -211,6 +214,14 @@ impl Application for MultitrackEditor {
                 }
             }
             Change::Save(saved) => outcome.saved = Some(saved),
+        }
+        // a session let go of takes its order with it: one session file per
+        // window, and nothing walks a session nobody holds
+        if let Some(released) = &outcome.released {
+            services.histories.close(Object {
+                member: delta.target.member,
+                id: released.id,
+            });
         }
         Completion {
             committed: true,

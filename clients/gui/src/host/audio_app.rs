@@ -93,11 +93,12 @@ pub(super) const MULTITRACK_ROLES: &[&str] = &[
 /// The size a multitrack window opens at, in logical pixels.
 const MULTITRACK_SIZE: (i64, i64) = (1000, 560);
 
-/// Contents handed over by a client, or a retained session being reopened.
+/// Contents handed over by a client, or a session a handler opens again
+/// over what a window handed back.
 #[derive(Debug)]
 pub(super) enum MultitrackData {
     Contents(Value),
-    Retained(Box<clausters_apps::multitrack::operations::Retained>),
+    Snapshot(Box<clausters_apps::multitrack::operations::Snapshot>),
 }
 
 /// What the host asks of the application.
@@ -199,7 +200,7 @@ struct Window {
     kind: AppKind,
     /// The session a multitrack window opens, once it is bound.
     session: Option<String>,
-    snapshot: Option<Box<clausters_apps::multitrack::operations::Retained>>,
+    snapshot: Option<Box<clausters_apps::multitrack::operations::Snapshot>>,
     client_owned: bool,
     /// Where its Save writes, when the host said.
     save_to: Option<Option<String>>,
@@ -499,7 +500,7 @@ impl App {
         );
         let (multitrack, snapshot) = match data {
             Some(MultitrackData::Contents(contents)) => (Some(contents), None),
-            Some(MultitrackData::Retained(snapshot)) => (None, Some(snapshot)),
+            Some(MultitrackData::Snapshot(snapshot)) => (None, Some(snapshot)),
             None => (None, None),
         };
         let empty = multitrack.is_none();
@@ -777,26 +778,16 @@ impl App {
         } else if let Some(query) = call["query"].as_str() {
             // what the window reads of the editor: its transport, its
             // actions, the history of the file in focus
-            let answer = if let Some(object) = call.get("object") {
-                match object.as_i64() {
-                    Some(object) => {
-                        self.app
-                            .query_multitrack_object(&mut self.editing, member, object, query)
-                    }
-                    None => json!({"error":"the session object is not an integer"}),
-                }
-            } else {
-                match query {
-                    "actions" => self.app.call(
-                        &mut self.editing,
-                        &json!({"verb": "actions", "member": member}),
-                    ),
-                    "history" => self.app.call(
-                        &mut self.editing,
-                        &json!({"verb": "state", "member": member}),
-                    ),
-                    _ => self.app.query(&mut self.editing, member, query),
-                }
+            let answer = match query {
+                "actions" => self.app.call(
+                    &mut self.editing,
+                    &json!({"verb": "actions", "member": member}),
+                ),
+                "history" => self.app.call(
+                    &mut self.editing,
+                    &json!({"verb": "state", "member": member}),
+                ),
+                _ => self.app.query(&mut self.editing, member, query),
             };
             self.answer(reply, Ok(answer));
         } else if let Some(Value::Object(action)) = call.get("do") {
@@ -878,6 +869,20 @@ impl App {
         for mut effect in ran.effects {
             match effect["kind"].as_str().unwrap_or_default() {
                 "publish" => effect["def"] = self.window_def(def_id),
+                // **the session a client handed over is let go**: the host
+                // is the work's only holder now, so the window asks before
+                // a close loses it; a session no client held is nobody's
+                // to hand back
+                "released" => {
+                    let Some(window) = self.windows.get_mut(&def_id) else {
+                        continue;
+                    };
+                    if !std::mem::take(&mut window.client_owned) {
+                        continue;
+                    }
+                    let member = window.member;
+                    self.member_call(member, json!({"verb": "sync", "asks": true}));
+                }
                 "resync" => effect["props"] = self.props(def_id),
                 // a box of notes asked for its roll: the host makes its window
                 "open" => {

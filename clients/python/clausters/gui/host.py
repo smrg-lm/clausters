@@ -199,7 +199,11 @@ class GuiHost:
         # what an application left each closed window as (`/gui_closed`'s
         # second argument), until its handler takes it
         self._left: dict = {}
-        self._left_objects: dict = {}
+        # the session snapshot each window let go of (`/gui_closed`'s third
+        # argument, `/gui_app_released`'s second), until its handler takes it
+        self._left_snapshot: dict = {}
+        # who is told a window let go of the session it was opened over
+        self._on_released: dict = {}
         #: the ``clausters-gui`` process this host started and owns (`boot`), if
         #: any; stopped by `stop`. ``None`` when connected to a host it did not
         #: start.
@@ -1228,12 +1232,19 @@ class GuiHost:
         said nothing."""
         return self._left.pop(int(id), None)
 
-    def _closed_objects(self, id: int):
-        """Take the application's retained object snapshots, once."""
-        objects = self._left_objects.pop(int(id), None)
-        if objects is not None:
-            self._left.pop(int(id), None)
-        return objects
+    def _closed_snapshot(self, id: int):
+        """The session window ``id`` let go of, as a ``/gui_app_open``
+        snapshot takes it (its contents, file and last save), once; ``None``
+        when it said none."""
+        return self._left_snapshot.pop(int(id), None)
+
+    def _set_released_handler(self, id: int, func):
+        """Register (or clear) what is called when window ``id`` lets go of
+        the session it was opened over (``/gui_app_released``)."""
+        if func is None:
+            self._on_released.pop(int(id), None)
+        else:
+            self._on_released[int(id)] = func
 
     def _set_closed_handler(self, id: int, func):
         """Register (or clear) a `clausters.gui.handle.WindowHandle.on_closed`
@@ -1406,9 +1417,21 @@ class GuiHost:
             if len(args) > 1:
                 self._left[wid] = json.loads(str(args[1]))
             if len(args) > 2:
-                self._left_objects[wid] = json.loads(str(args[2]))
+                self._left_snapshot[wid] = json.loads(str(args[2]))
             self._open.discard(wid)
+            self._on_released.pop(wid, None)
             func = self._on_closed.get(wid)
+            if func is not None:
+                func()
+                return True
+        elif addr == "/gui_app_released" and len(args) > 1:
+            # the window goes on, the host's own: its opener is handed the
+            # session it was opened over, and the window's own close, later,
+            # is nothing of the handler's
+            wid = int(args[0])
+            self._left_snapshot[wid] = json.loads(str(args[1]))
+            self._on_closed.pop(wid, None)
+            func = self._on_released.pop(wid, None)
             if func is not None:
                 func()
                 return True

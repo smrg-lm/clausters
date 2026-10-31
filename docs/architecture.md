@@ -1193,22 +1193,25 @@ in one order; a client is its handler through the application door, and a
 script's multitrack reads and edits the member's while the window is open
 (`handle`, recorded in the same history).
 
-Each multitrack session has a stable object identity, distinct from the window's
-binding generation and conversation version. `SessionState` retains its shared
-multitrack, resolved takes, joined sources, sequences and file checkpoint when
-another session is bound. Object-addressed handle calls and history walks use
-`application::objects::over`, the same temporary access audio uses for inactive
-files; the active binding and selected history scope are restored afterward.
-Inactive work produces no playback or view corrections. Pending operations also
+Each multitrack session has an identity of its own, distinct from the window's
+binding generation and conversation version, and a window holds one session
+file at a time. `SessionState` groups a session's shared multitrack, resolved
+takes, joined sources, sequences and file checkpoint. A new session, an open
+or a Close file lets the previous one go (`Released`): its undo order is
+closed with it, a history leg or a late reply naming it reaches nothing
+(`MultitrackEditor::over_session` answers only the session the window holds),
+and the window says `released` with its snapshot. Pending operations also
 capture the binding generation, so reopening a view cannot accept an earlier
 measurement or save reply. A window with no session selects no history.
 
-On close the host returns every retained session snapshot, including source
-locations, destination and confirmed checkpoint. Both handlers localize their
-original objects from those snapshots. A reopen sends the retained session
-through the same source resolver and typed open operation; local edits made
-after closing are preserved. Content comparison ignores monotonic revision
-counters and event-id watermarks, while storage preserves those counters.
+A client that opened the window is handed the session it was let go of
+(`/gui_app_released`), and on close the one the window holds (`/gui_closed`'s
+third argument): its source locations, destination and confirmed checkpoint.
+After a release the window is the host's own work: it asks before a close
+loses it, and its close tells the opener with nothing to hand back. A reopen sends the snapshot through the same
+source resolver and typed open operation; local edits made after closing are
+preserved. Content comparison ignores monotonic revision counters and event-id
+watermarks, while storage preserves those counters.
 
 The **score editor** (`clausters_apps::score`, behind the crate's `notation`
 feature) opens a symbolic score and edits it **in place**: what it holds is the

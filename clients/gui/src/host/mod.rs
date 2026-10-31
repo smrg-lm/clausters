@@ -758,6 +758,13 @@ pub const GUI_APP_CALL: &str = "/gui_app_call";
 /// brings it to the window's; one that reads the window at every read has
 /// nothing to do. Its own calls are not told: it already knows them.
 pub const GUI_APP_CHANGED: &str = "/gui_app_changed";
+/// `/gui_app_released <window> <json>`: **a multitrack window let go of
+/// the session it was opened over**, told the client that opened it: the
+/// hand opened another, made a new one or closed it, and `json` is what the
+/// window left it as, in the shape a [`GUI_APP_OPEN`] `snapshot` takes. The
+/// client's handler holds that from then on and is done with the window,
+/// which goes on as the host's own: its [`GUI_CLOSED`] carries nothing.
+pub const GUI_APP_RELEASED: &str = "/gui_app_released";
 /// `/gui_app_reply <seq> <json>`: the answer to a [`GUI_APP_OPEN`] or a
 /// [`GUI_APP_CALL`] with the same `seq`: `{"ok": value}`, or
 /// `{"error": {"type", "message"}}` with the kind the application raised

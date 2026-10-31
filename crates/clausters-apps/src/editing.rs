@@ -58,7 +58,6 @@ mod door;
 mod exchange;
 pub mod held;
 mod multitrack_action;
-mod multitrack_objects;
 mod multitrack_operations;
 mod multitrack_runs;
 mod multitrack_walks;

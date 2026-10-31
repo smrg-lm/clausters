@@ -114,20 +114,6 @@ impl Editing {
             Ok(action) => action,
             Err(reason) => return refused("value", reason),
         };
-        if let Some(object) = action.object {
-            if !matches!(
-                action.kind,
-                ActionKind::Handle(_) | ActionKind::Undo | ActionKind::Redo
-            ) {
-                return refused("value", "this action requires the active session");
-            }
-            return self.over_multitrack(member, object, |editing| {
-                let mut ran = editing.multitrack_act_ready(member, &action, caller, ids);
-                let visible = matches!(editing.member(member), Some(Member::Multitrack(editor)) if editor.observes_session());
-                if !visible { ran.effects.retain(|effect| effect["kind"] == "say"); }
-                ran
-            }).unwrap_or_else(|error| refused("value",error));
-        }
         self.multitrack_act_ready(member, &action, caller, ids)
     }
 
@@ -208,6 +194,7 @@ impl Editing {
                     resolved,
                 },
             )),
+            ran,
         )?;
         if !measured.is_empty() {
             self.measure_multitrack(member, measured, ran)?;
@@ -220,10 +207,15 @@ impl Editing {
         Ok(json!({"unresolved": unresolved}))
     }
 
+    /// **The window's session changed** (`command` a new session, an open
+    /// or none at all): one transition through the session's runtime. The
+    /// session it let go of is said (`released`), for the host to hand its
+    /// holder what the window left it as.
     fn change_multitrack_session(
         &mut self,
         member: MemberId,
         command: crate::multitrack::operations::Command,
+        ran: &mut Ran,
     ) -> Result<(), String> {
         let seat = self
             .seats
@@ -256,6 +248,12 @@ impl Editing {
         );
         if settled.protocol.committed != Some(true) {
             return Err("the session changed before confirmation".into());
+        }
+        if let Some(released) = settled.outcome.and_then(|outcome| outcome.released) {
+            ran.effects.push(effect(
+                "released",
+                json!({"snapshot": serde_json::to_value(released.snapshot).unwrap_or(Value::Null)}),
+            ));
         }
         self.version += 1;
         editor.binding_changed(self.version);
@@ -342,15 +340,16 @@ impl Editing {
                 } else {
                     crate::multitrack::operations::Command::Unbind
                 };
-                self.change_multitrack_session(member, command).map(|()| {
-                    self.stop_multitrack(member, tracks, ids);
-                    if matches!(action.kind, ActionKind::NewFile) {
-                        self.sound(member, tracks, ids);
-                    }
-                    ran.effects.push(effect("publish", json!({})));
-                    ran.effects.push(effect("resync", json!({})));
-                    Value::Null
-                })
+                self.change_multitrack_session(member, command, &mut ran)
+                    .map(|()| {
+                        self.stop_multitrack(member, tracks, ids);
+                        if matches!(action.kind, ActionKind::NewFile) {
+                            self.sound(member, tracks, ids);
+                        }
+                        ran.effects.push(effect("publish", json!({})));
+                        ran.effects.push(effect("resync", json!({})));
+                        Value::Null
+                    })
             }
             ActionKind::Open {
                 snapshot: Some(snapshot),
@@ -630,11 +629,14 @@ impl Editing {
             }
             _ => Value::Null,
         };
-        let objects = match self.member(member) {
-            Some(Member::Multitrack(editor)) => editor.closing_objects(),
+        let snapshot = match self.member(member) {
+            Some(Member::Multitrack(editor)) => editor.closing_snapshot(),
             _ => Value::Null,
         };
-        effect(kind, json!({ "multitrack": multitrack, "objects":objects }))
+        effect(
+            kind,
+            json!({ "multitrack": multitrack, "snapshot": snapshot }),
+        )
     }
 
     /// **What a pass of member `member` is read off**: its window's time
@@ -964,7 +966,7 @@ impl Editing {
             };
         }
         if query == "session" && editor.has_session() {
-            return serde_json::to_value(editor.retained_snapshot()).unwrap_or(Value::Null);
+            return serde_json::to_value(editor.file_snapshot()).unwrap_or(Value::Null);
         }
         if !editor.has_session() {
             return if query == "history" {

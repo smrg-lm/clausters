@@ -90,6 +90,10 @@ struct AudioWindow {
     /// **What its application left it as**, when it closed: the
     /// multitrack's, told the opener with the close.
     last: Option<Value>,
+    /// **It let go of the session its opener handed it**
+    /// ([`GUI_APP_RELEASED`]): the opener still hears it close, since it
+    /// opened the window, but is handed nothing with the close.
+    released: bool,
 }
 
 /// **What an engine publishes, as the bus source a window reads**: the
@@ -277,14 +281,14 @@ impl Host {
 
     pub(super) fn open_multitrack_retained(
         &mut self,
-        snapshot: clausters_apps::multitrack::operations::Retained,
+        snapshot: clausters_apps::multitrack::operations::Snapshot,
         title: &str,
         reply: Option<Reply>,
     ) -> Result<i32, String> {
         self.open_app_saving(
             AppKind::Multitrack,
             None,
-            Some(super::audio_app::MultitrackData::Retained(Box::new(
+            Some(super::audio_app::MultitrackData::Snapshot(Box::new(
                 snapshot,
             ))),
             title,
@@ -325,6 +329,7 @@ impl Host {
                 marks: None,
                 opener,
                 last: None,
+                released: false,
             },
         );
         let asked = audio.ask(ToApp::Open {
@@ -668,6 +673,9 @@ impl Host {
                     };
                     self.set_props(def_id, props, &mut fx);
                 }
+                // the session the window was opened over is let go: its
+                // opener is handed it and is done with the window
+                "released" => self.released_audio(def_id, &effect["snapshot"]),
                 "closeWindow" => {
                     self.keep_last(def_id, &effect);
                     self.close_audio(def_id);
@@ -802,11 +810,38 @@ impl Host {
             .audio
             .as_mut()
             .and_then(|audio| audio.windows.get_mut(&def_id))
-            && (effect["multitrack"].is_object() || effect["objects"].is_object())
+            && !window.released
+            && (effect["multitrack"].is_object() || effect["snapshot"].is_object())
         {
             window.last =
-                Some(json!({"multitrack":effect["multitrack"],"objects":effect["objects"]}));
+                Some(json!({"multitrack":effect["multitrack"],"snapshot":effect["snapshot"]}));
         }
+    }
+
+    /// **Window `def_id` let go of the session it was opened over**: whoever
+    /// opened it is handed what the window left it as
+    /// ([`GUI_APP_RELEASED`]): the window is the host's own work from
+    /// then on, and its close hands the opener nothing more.
+    fn released_audio(&mut self, def_id: i32, snapshot: &Value) {
+        let Some(window) = self
+            .audio
+            .as_mut()
+            .and_then(|audio| audio.windows.get_mut(&def_id))
+        else {
+            return;
+        };
+        window.last = None;
+        window.released = true;
+        let Some(to) = window.opener else {
+            return;
+        };
+        self.pending_effects.push(HostEffect::Send {
+            to,
+            msg: OscMessage {
+                addr: GUI_APP_RELEASED.into(),
+                args: vec![OscType::Int(def_id), OscType::String(snapshot.to_string())],
+            },
+        });
     }
 
     /// **What window `def_id` holds moved by a hand**: whoever opened it is
@@ -843,10 +878,10 @@ impl Host {
         };
         if let Some(to) = window.opener {
             let mut args = vec![OscType::Int(def_id)];
-            if let Some(last) = window.last {
+            if let Some(last) = window.last.filter(|_| !window.released) {
                 args.push(OscType::String(last["multitrack"].to_string()));
-                if last["objects"].is_object() {
-                    args.push(OscType::String(last["objects"].to_string()));
+                if last["snapshot"].is_object() {
+                    args.push(OscType::String(last["snapshot"].to_string()));
                 }
             }
             self.pending_effects.push(HostEffect::Send {
@@ -1972,16 +2007,99 @@ mod tests {
         };
         let last: Value = serde_json::from_str(last).unwrap();
         assert_eq!(last["tracks"][0]["name"], "b", "{last}");
-        let Some(OscType::String(objects)) = told.get(2) else {
-            panic!("the close carries no retained objects: {told:?}");
+        let Some(OscType::String(snapshot)) = told.get(2) else {
+            panic!("the close carries no snapshot: {told:?}");
         };
-        let objects: Value = serde_json::from_str(objects).unwrap();
-        let active = objects["active"].as_i64().unwrap().to_string();
-        assert_eq!(objects["objects"][active]["session"]["multitrack"], last);
+        let snapshot: Value = serde_json::from_str(snapshot).unwrap();
+        assert_eq!(snapshot["session"]["multitrack"], last);
+    }
+
+    /// **A window that lets go of the session a client handed it hands it
+    /// back**: another session in its place tells the opener what the
+    /// window left the first as, and the window is the host's own from
+    /// then on, so its close hands the opener nothing.
+    #[test]
+    fn a_released_multitrack_is_handed_back_and_its_close_carries_nothing() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let mut host = host();
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_996)));
+        let multitrack = json!({"tracks": [{"id": 1, "name": "a", "takeLanes": [{"id": 2}]}]});
+        let options = json!({"multitrack": multitrack, "title": "untitled"}).to_string();
+        let first = door(
+            &mut host,
+            GUI_APP_OPEN,
+            vec![
+                OscType::Int(1),
+                OscType::String("multitrack".into()),
+                OscType::String(options),
+            ],
+            client,
+        );
+        let window = answered(&mut host, first, 1)["ok"]["window"]
+            .as_i64()
+            .expect("a window") as i32;
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(window).is_some()
+        });
+        let _rx = host.ask_audio(window, json!({"do": {"verb": "new_file"}}));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let released = loop {
+            let told = host.take_effects().into_iter().find_map(|e| match e {
+                HostEffect::Send { to, msg } if to == client && msg.addr == GUI_APP_RELEASED => {
+                    Some(msg.args)
+                }
+                _ => None,
+            });
+            if let Some(told) = told {
+                break told;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the opener was never handed its session"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        assert_eq!(released[0], OscType::Int(window));
+        let Some(OscType::String(snapshot)) = released.get(1) else {
+            panic!("the release carries no snapshot: {released:?}");
+        };
+        let snapshot: Value = serde_json::from_str(snapshot).unwrap();
+        assert_eq!(
+            snapshot["session"]["multitrack"]["tracks"][0]["name"], "a",
+            "{snapshot}"
+        );
+        assert_eq!(
+            ask(&mut host, window, json!({"query":"file"}))["empty"],
+            false
+        );
+        let _rx = host.ask_audio(window, json!({"do": {"verb": "close"}}));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let closed = loop {
+            let told = host.take_effects().into_iter().find_map(|e| match e {
+                HostEffect::Send { to, msg } if to == client && msg.addr == GUI_CLOSED => {
+                    Some(msg.args)
+                }
+                _ => None,
+            });
+            if let Some(told) = told {
+                break told;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the opener never heard the close"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        assert_eq!(
+            closed,
+            vec![OscType::Int(window)],
+            "the session was the host's own"
+        );
     }
 
     #[test]
-    fn a_multitrack_window_without_a_session_retains_its_unbound_objects() {
+    fn a_multitrack_window_opens_with_no_session_and_outlives_its_last() {
         let mut host = host();
         let window = host.open_multitrack(None, "empty").unwrap();
         until(&mut host, "the empty window was never drawn", |host| {
@@ -2011,12 +2129,6 @@ mod tests {
             ask(&mut host, window, json!({"query":"file"})),
             json!({"empty":true})
         );
-        let kept = ask(
-            &mut host,
-            window,
-            json!({"query":"session", "object":object}),
-        );
-        assert!(kept["session"].is_object(), "{kept}");
         host.close_audio(window);
     }
 

@@ -337,7 +337,8 @@ export class GuiHost {
     private readonly onClosedHandlers = new Map<number, () => void>();
     /** What an application left each closed window as (`/gui_closed`'s second argument), until its handler takes it. */
     private readonly left = new Map<number, unknown>();
-    private readonly leftObjects = new Map<number, unknown>();
+    /** The session each window let go of (`/gui_closed`'s third argument), until its handler takes it. */
+    private readonly leftSnapshot = new Map<number, unknown>();
     /**
      * What is waiting for a window to go away -- see {@link GuiHost.waitWhile}.
      * A set of checks rather than one promise, because several callers may be
@@ -1587,12 +1588,11 @@ export class GuiHost {
         return left;
     }
 
-    /** Take the application's retained object snapshots, once. @internal */
-    closedObjects(id: number): unknown {
-        const objects = this.leftObjects.get(id) ?? null;
-        this.leftObjects.delete(id);
-        if (objects !== null) this.left.delete(id);
-        return objects;
+    /** The session window `id` let go of when it closed, as a `/gui_app_open` snapshot takes it (its contents, file and last save), once; `null` when it said none. @internal */
+    closedSnapshot(id: number): unknown {
+        const snapshot = this.leftSnapshot.get(id) ?? null;
+        this.leftSnapshot.delete(id);
+        return snapshot;
     }
 
     /** Registers (or clears) the `WindowHandle.onClosed` callback for a window. */
@@ -1691,7 +1691,7 @@ export class GuiHost {
         } else if (msg.addr === "/gui_closed" && msg.args.length > 0) {
             const id = Number(msg.args[0]);
             if (msg.args.length > 1) this.left.set(id, JSON.parse(String(msg.args[1])));
-            if (msg.args.length > 2) this.leftObjects.set(id, JSON.parse(String(msg.args[2])));
+            if (msg.args.length > 2) this.leftSnapshot.set(id, JSON.parse(String(msg.args[2])));
             this.opened.delete(id);
             this.fitted.get(id)?.();
             this.fitted.delete(id);

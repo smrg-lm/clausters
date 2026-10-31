@@ -105,6 +105,10 @@ pub struct Outcome {
     /// Captured session and destination after storage confirmation.
     #[serde(skip)]
     pub saved: Option<Box<super::operations::Saved>>,
+    /// **The session the window let go of** in this turn, whose holder is
+    /// handed what the window left it as.
+    #[serde(skip)]
+    pub released: Option<Box<Released>>,
     /// **Whether to close the window** ([`crate::closing`]): a close asked of
     /// it, with nothing to lose or nothing to ask in.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -262,7 +266,6 @@ pub struct Applied {
 pub struct MultitrackEditor {
     rate: f64,
     session: SessionState,
-    retained: std::collections::BTreeMap<i64, SessionState>,
     next_session: i64,
     session_open: bool,
     displayed_session: Option<i64>,
@@ -368,7 +371,17 @@ pub(crate) struct SessionFile {
     pub saved: Option<clausters_document::session::Session>,
 }
 
-/// Contents and resolved sources retained independently of the window.
+/// **A session the window let go of**: its identity, whose order closes,
+/// and what the window left it as, which its holder is handed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Released {
+    /// The session's identity in the window.
+    pub id: i64,
+    /// What the window left it as.
+    pub snapshot: super::operations::Snapshot,
+}
+
+/// Contents and resolved sources of the session a window holds.
 #[derive(Clone, Debug)]
 pub(crate) struct SessionState {
     file: SessionFile,
@@ -460,8 +473,8 @@ impl SessionState {
         session
     }
 
-    fn retained_snapshot(&self) -> super::operations::Retained {
-        super::operations::Retained {
+    fn file_snapshot(&self) -> super::operations::Snapshot {
+        super::operations::Snapshot {
             session: self.snapshot(),
             path: self.file.path.clone(),
             saved: self.file.saved.clone(),
@@ -482,7 +495,6 @@ impl MultitrackEditor {
         Self {
             rate,
             session: SessionState::new(0, multitrack),
-            retained: Default::default(),
             next_session: 1,
             session_open: true,
             displayed_session: Some(0),
@@ -554,11 +566,14 @@ impl MultitrackEditor {
         stops_at_end: Option<bool>,
     ) -> std::collections::BTreeMap<&'static str, clausters_editing::verbs::ActionState> {
         let crossfade = self.multitrack().defaults.crossfade;
+        // with no session, what refuses a verb is that nothing is open, not
+        // what the history reads: the first reason given is the one kept
+        let open = self.has_session();
         let mut actions = crate::chrome::grid_actions(
             crate::chrome::App::Multitrack,
             self.saves,
-            undo,
-            redo,
+            undo || !open,
+            redo || !open,
             &|verb| match verb {
                 crate::notes::editor::SNAP_VERB => Some(self.snap),
                 CROSSFADE_VERB => Some(crossfade),
@@ -847,8 +862,8 @@ impl MultitrackEditor {
         self.session.snapshot()
     }
 
-    pub(crate) fn retained_snapshot(&self) -> super::operations::Retained {
-        self.session.retained_snapshot()
+    pub(crate) fn file_snapshot(&self) -> super::operations::Snapshot {
+        self.session.file_snapshot()
     }
 
     /// Whether contents differ from the confirmed checkpoint. Revision
@@ -875,20 +890,14 @@ impl MultitrackEditor {
         current != *saved
     }
 
-    /// Current and retained object snapshots for the client's close message.
-    pub(crate) fn closing_objects(&self) -> Value {
-        let mut objects = serde_json::Map::new();
-        for state in self
-            .retained
-            .values()
-            .chain(self.has_session().then_some(&self.session))
-        {
-            objects.insert(
-                state.id.to_string(),
-                serde_json::to_value(state.retained_snapshot()).unwrap_or(Value::Null),
-            );
+    /// **What the client that opened the window is handed when it goes**:
+    /// the session the window shows, or `null` with none.
+    pub(crate) fn closing_snapshot(&self) -> Value {
+        if self.has_session() {
+            serde_json::to_value(self.file_snapshot()).unwrap_or(Value::Null)
+        } else {
+            Value::Null
         }
-        json!({"active":self.has_session().then_some(self.session.id),"objects":objects})
     }
 
     /// The active session binding, independent of the conversation version.
@@ -906,18 +915,23 @@ impl MultitrackEditor {
         self.binding_generation
     }
 
-    /// Publish a new object while retaining the previous session's contents.
-    pub(crate) fn replace_session_binding(&mut self) {
+    /// **A new session in the window**, with an identity of its own: the
+    /// one it showed, if any, is let go and answered, for its order to be
+    /// closed and its holder to be handed what the window left it as. One
+    /// session file per window: nothing keeps the one let go.
+    pub(crate) fn replace_session_binding(&mut self) -> Option<Released> {
         let mut next = SessionState::new(self.next_session, super::shared(Multitrack::new()));
         next.file.save_to = self.file().save_to.clone();
         self.next_session += 1;
         let previous = std::mem::replace(&mut self.session, next);
-        if self.session_open {
-            self.retained.insert(previous.id, previous);
-        }
+        let released = self.session_open.then(|| Released {
+            id: previous.id,
+            snapshot: previous.file_snapshot(),
+        });
         self.session_open = true;
         self.binding_generation += 1;
         self.displayed_session = Some(self.session.id);
+        released
     }
 
     /// Whether this window has a session, including a new empty session.
@@ -930,17 +944,21 @@ impl MultitrackEditor {
         self.session_open && self.displayed_session == Some(self.session.id)
     }
 
-    /// Unbind a session while preserving the client object it represented.
-    pub(crate) fn unbind_session(&mut self) {
+    /// **The window left with no session**: the one it showed is let go,
+    /// as [`replace_session_binding`] lets it go.
+    ///
+    /// [`replace_session_binding`]: Self::replace_session_binding
+    pub(crate) fn unbind_session(&mut self) -> Option<Released> {
         if !self.session_open {
-            return;
+            return None;
         }
-        self.replace_session_binding();
+        let released = self.replace_session_binding();
         self.session_open = false;
         self.displayed_session = None;
         self.cursor = None;
         self.range = None;
         self.told = None;
+        released
     }
 
     /// A transition invalidates content events drawn for the previous binding.
@@ -951,13 +969,15 @@ impl MultitrackEditor {
         self.told = None;
     }
 
-    /// Apply object work without rebinding the window or its conversation.
+    /// **Work on session `id`**, when it is the one the window holds: a
+    /// history leg or a reply naming a session the window let go of
+    /// reaches nothing.
     pub(crate) fn over_session<R>(
         &mut self,
         id: i64,
         apply: impl FnOnce(&mut Self) -> R,
     ) -> Option<R> {
-        crate::application::objects::over(self, id, apply)
+        (self.session_open && self.session.id == id).then(|| apply(self))
     }
 
     /// **The joins a caller holds**, by source -- the segments each is made
@@ -2316,29 +2336,6 @@ pub fn call_value(editor: &mut MultitrackEditor, request: &Value) -> Value {
     )
 }
 
-impl crate::application::objects::Owner for MultitrackEditor {
-    type Id = i64;
-    type State = (SessionState, bool);
-
-    fn current(&self) -> Option<i64> {
-        self.session_open.then_some(self.session.id)
-    }
-    fn take(&mut self, id: i64) -> Option<Self::State> {
-        self.retained.remove(&id).map(|state| (state, true))
-    }
-    fn replace(&mut self, (state, open): Self::State) -> Self::State {
-        (
-            std::mem::replace(&mut self.session, state),
-            std::mem::replace(&mut self.session_open, open),
-        )
-    }
-    fn park(&mut self, (state, open): Self::State) {
-        if open {
-            self.retained.insert(state.id, state);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2390,23 +2387,17 @@ mod tests {
             "undo restores the checkpoint's contents"
         );
         assert_eq!(sequence.lock().unwrap().next_id, 1);
-        let original = editor.session_binding();
-        editor.replace_session_binding();
-        editor
-            .over_session(original, |editor| {
-                assert!(!editor.unsaved_contents());
-                let snapshot = editor.session_snapshot();
-                let clausters_document::session::Location::Events { sequence } =
-                    &snapshot.sources[&SourceId(7)].location
-                else {
-                    panic!()
-                };
-                assert_eq!(
-                    sequence.next_id, 1,
-                    "the written id watermark must not go back"
-                );
-            })
-            .unwrap();
+        assert!(!editor.unsaved_contents());
+        let released = editor.replace_session_binding().unwrap();
+        let clausters_document::session::Location::Events { sequence } =
+            &released.snapshot.session.sources[&SourceId(7)].location
+        else {
+            panic!()
+        };
+        assert_eq!(
+            sequence.next_id, 1,
+            "the written id watermark must not go back"
+        );
     }
 
     /// Two tracks: the first holding boxes 12 and 13, the second box 22.

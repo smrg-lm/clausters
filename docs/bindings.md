@@ -1277,14 +1277,14 @@ Python property that reads becomes a method, a property that writes becomes a
 - the default session's server: Python `main.server_or_boot()`; TypeScript
   `await main.serverOrBoot()`.
 
-The multitrack handlers retain one client object per host session identity.
-Python reads the current `editor.multitrack` binding through the host; the web
-handler updates its cached property after `/gui_app_changed`, alongside its
-existing asynchronous content mirror. Captured `Track` and `Multitrack` objects
-keep their original session address in both clients. Close returns full session
-snapshots for every retained object; reopen sends those snapshots through the
-same application door, preserving sources and local changes. These are JSON
-payloads on existing doors, with no new C/wasm symbol or ABI counter change.
+The multitrack handlers hold the one multitrack they were opened over. When
+the window lets it go for another session, Python hears it through the host
+(`/gui_app_released` calls the handler the host registered for the window) and
+the web handler through its own message listener, beside `/gui_app_changed`:
+the same message, read where each client reads the window's news. Both settle
+the multitrack from the snapshot, as a close does, and keep that snapshot by
+the multitrack for a later open. These are JSON payloads on the host's doors,
+with no new C/wasm symbol or ABI counter change.
 
 **Options are one object in TypeScript**, as everywhere in that client:
 Python `seq.play(at, server)`; TypeScript `seq.play({ at, server })`.

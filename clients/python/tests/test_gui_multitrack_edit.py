@@ -27,11 +27,12 @@ class FakeHost:
         self.verbs: list = []
         self._open: set = set()
         self.held = None
-        self.objects = {}
-        self.active = None
         self.path = None
+        self.left = None
+        self.snapshot = None
         self.recorded: list = []
         self.closed_handler = None
+        self.released_handler = None
         self.answers = {
             "playing": True,
             "save": {"destination": "/songs/song.json"},
@@ -48,18 +49,19 @@ class FakeHost:
     def open_app(self, app, options=None, timeout=5.0):
         options = dict(options or {})
         self.calls.append(("open", app, options))
-        self.bind(options.get("multitrack", {}) if "path" in options or "multitrack" in options else None, options.get("path"))
         if "snapshot" in options:
             snapshot = options["snapshot"]
             self.bind(snapshot["session"].get("multitrack", {}), snapshot.get("path"))
+        elif "path" in options or "multitrack" in options:
+            self.bind(options.get("multitrack", {}), options.get("path"))
+        else:
+            self.bind(None)
         self._open.add(9)
         return 9
 
     def call_app(self, window, call, timeout=None):
         self.calls.append(("call", int(window), call))
         if "query" in call:
-            if call["query"] == "file":
-                return {"empty": self.active is None, "object":self.active, "path":self.path}
             return self.answers.get(call["query"])
         do = call["do"]
         if do["verb"] == "handle":
@@ -67,8 +69,7 @@ class FakeHost:
             if asked["verb"] == "record":
                 self.recorded.append((do.get("label"), asked["legs"]))
                 return True
-            held = self.objects[do.get("object", self.active)]
-            answer = held.call(**asked)
+            answer = self.held.call(**asked)
             if asked["verb"] == "apply" and do.get("record", True):
                 self.recorded.append((do.get("label"), [asked["intent"]]))
             return answer
@@ -78,29 +79,43 @@ class FakeHost:
         return self.answers.get(do["verb"])
 
     def bind(self, written, path=None):
-        """A binding transition the Rust application would publish."""
+        """The session the window shows, as the application holds it."""
         self.path = path
-        if written is None:
-            self.active = None
-            self.held = None
-        else:
-            self.active = len(self.objects)
-            self.held = _native.MultitrackHandle(written)
-            self.objects[self.active] = self.held
+        self.held = None if written is None else _native.MultitrackHandle(written)
+
+    def snapshot_of(self):
+        """What the window hands back of its session: a ``/gui_app_open``
+        snapshot."""
+        if self.held is None:
+            return None
+        return {"session": {"format": SavedSession.format,
+                            "multitrack": self.held.call("state"), "sources": {}},
+                "path": self.path, "saved": None}
 
     def close_window(self):
         """The window goes, as the host says it: what it left the multitrack
         as rides with the close."""
         self.left = None if self.held is None else self.held.call("state")
+        self.snapshot = self.snapshot_of()
         self._open.discard(9)
         if self.closed_handler is not None:
             self.closed_handler[1]()
 
-    def _closed_objects(self, window):
-        return {"active":self.active,"objects":{str(identity):{"session":{"format":SavedSession.format,"multitrack":held.call("state"), "sources": {}}, "path":self.path if identity == self.active else None,"saved":None} for identity,held in self.objects.items()}}
+    def release(self, written=None, path=None):
+        """The hand put another session in the window (``/gui_app_released``):
+        its opener is handed the first, and the window goes on."""
+        self.snapshot = self.snapshot_of()
+        self.bind(written, path)
+        if self.released_handler is not None:
+            self.released_handler[1]()
+
+    def _closed_snapshot(self, window):
+        snapshot, self.snapshot = self.snapshot, None
+        return snapshot
 
     def _closed_with(self, window):
-        return getattr(self, "left", None)
+        left, self.left = self.left, None
+        return left
 
     def verb(self, window, verb):
         self.verbs.append((int(window), verb))
@@ -110,6 +125,9 @@ class FakeHost:
 
     def _set_closed_handler(self, window, func):
         self.closed_handler = (window, func)
+
+    def _set_released_handler(self, window, func):
+        self.released_handler = (window, func)
 
 
 def a_session(path="/songs/song.json") -> SavedSession:
@@ -228,49 +246,33 @@ def test_what_the_hand_holds_is_the_windows():
     assert editor.selected == [], "nothing is marked with no window open"
 
 
-def test_a_retained_object_is_not_retargeted_by_a_window_binding():
+def test_a_window_that_lets_go_of_the_session_hands_the_multitrack_back():
     host = FakeHost()
     original = Multitrack()
     track = original.tracks.add("original")
     editor = edit(original, host=host)
-    first_identity = host.active
+    track.name = "edited in the window"
     replacement = Multitrack()
     replacement.tracks.add("replacement")
-    host.bind(replacement.write())
-    current = editor.multitrack
-    assert current is not original
-    assert editor.multitrack is current, "one wrapper per session identity"
-    track.name = "retained"
-    assert host.calls[-1][2]["do"]["object"] == first_identity
-    assert host.objects[first_identity].call("state")["tracks"][0]["name"] == "retained"
-    assert current.tracks[0].name == "replacement"
-    original.history.undo()
-    assert host.calls[-1][2] == {"do":{"verb":"undo","object":first_identity}}
-    host.close_window()
-    assert track.name == "retained"
-    assert current.tracks[0].name == "replacement"
+    host.release(replacement.write(), "/songs/next.json")
+    assert editor.closed, "the handler is done with the window"
+    assert editor.multitrack is original
+    assert track.name == "edited in the window", "what the window left it as"
+    asked = len(host.calls)
     track.name = "local again"
-    assert current.tracks[0].name == "replacement"
+    assert len(host.calls) == asked, "the multitrack is the script's again"
+    assert host.held.call("state")["tracks"][0]["name"] == "replacement"
 
 
-def test_an_editor_can_open_without_a_session_and_keep_the_client_object_after_close_file():
+def test_an_editor_can_open_without_a_session():
     host = FakeHost()
     editor = MultitrackEditor()
     editor.open(host)
-    assert host.calls[0] == ("open","multitrack",{"title":"Multitrack"})
+    assert host.calls[0] == ("open", "multitrack", {"title": "Multitrack"})
     assert editor.multitrack is None
     assert editor.path is None
-    held = Multitrack()
-    held.tracks.add("new")
-    host.bind(held.write())
-    current = editor.multitrack
-    assert current is not None
-    host.bind(None)
-    assert editor.multitrack is None
-    assert current.tracks[0].name == "new"
     host.close_window()
-    assert editor.multitrack is None
-    assert current.tracks[0].name == "new"
+    assert editor.closed and editor.multitrack is None
 
 
 def test_reopening_keeps_the_same_object_and_its_local_changes():
@@ -286,19 +288,3 @@ def test_reopening_keeps_the_same_object_and_its_local_changes():
     assert "snapshot" in next(call for call in reversed(host.calls) if call[0] == "open")[2]
     host.close_window()
     assert track.name == "after close"
-
-
-def test_a_binding_first_observed_at_close_is_retained_for_reopen():
-    host = FakeHost()
-    editor = MultitrackEditor()
-    editor.open(host)
-    current = Multitrack()
-    current.tracks.add("from window")
-    host.bind(current.write(), "/songs/next.json")
-    host.close_window()
-    held = editor.multitrack
-    assert held.tracks[0].name == "from window"
-    assert editor.path == "/songs/next.json"
-    editor.open(host)
-    assert editor.multitrack is held
-    assert held.tracks[0].name == "from window"
