@@ -2044,3 +2044,31 @@ fn the_page_of_a_sequence_is_on_the_sequence_s_time() {
     opened().on_its_sequence_s_time(&mut page);
     assert_eq!(page.cursors[1].t, 500.0);
 }
+
+/// **What a page's window reads**: the history, what asks for a selection, its
+/// two switches, and what it does not do, with why.
+#[test]
+fn the_windows_actions_read_the_editor() {
+    let mut editor = ScoreEditor::new(holding(Vec::new()), 1);
+    let actions = editor.actions(false, true);
+    assert!(!actions["undo"].enabled && actions["redo"].enabled);
+    assert!(!actions["delete"].enabled, "nothing is selected");
+    assert_eq!(
+        actions["delete"].reason.as_deref(),
+        Some("nothing is selected")
+    );
+    assert!(!actions["quantize"].enabled && actions["quantize"].reason.is_some());
+    assert_eq!(actions["entry"].checked, Some(false));
+    assert!(
+        !actions.contains_key("pitch_a"),
+        "note entry's keys are its own"
+    );
+    editor.entry = true;
+    let actions = editor.actions(false, false);
+    assert_eq!(actions["entry"].checked, Some(true));
+    assert!(actions.contains_key("pitch_a"));
+    assert!(
+        actions["delete"].enabled,
+        "in note entry a key acts at the cursor"
+    );
+}

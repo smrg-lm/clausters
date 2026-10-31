@@ -365,6 +365,48 @@ impl ScoreEditor {
         Ok(editor)
     }
 
+    /// **The window's actions as they read now**, by verb: the window's, the
+    /// score's own and, in note entry, its keys: `undo` and `redo` as the
+    /// context's history reads, what asks for a selection refused without one,
+    /// the two switches, and what a page does not do refused with why.
+    #[must_use]
+    pub fn actions(
+        &self,
+        undo: bool,
+        redo: bool,
+    ) -> std::collections::BTreeMap<&'static str, clausters_editing::verbs::ActionState> {
+        use clausters_editing::verbs::{self, ActionState, ActionTarget};
+        let selected = !self.selection.is_empty();
+        let entry = self.entry;
+        let keys: &[verbs::Verb] = if entry { verbs::NOTE_ENTRY } else { &[] };
+        verbs::WINDOW
+            .iter()
+            .chain(verbs::SCORE)
+            .chain(keys)
+            .map(|verb| {
+                let mut state = ActionState::new(verb, ActionTarget::Window);
+                match verb.name {
+                    "undo" if !undo => state.refuse("there is nothing to undo"),
+                    "redo" if !redo => state.refuse("there is nothing to redo"),
+                    "entry" => state.checked = Some(entry),
+                    "loop" => state.checked = Some(self.looping),
+                    "snap" | "quantize" | "split" | "join" => {
+                        state.refuse("a page has no grid: its notes are written values");
+                    }
+                    "mix" => state.refuse("a page mixes nothing"),
+                    "delete" | "copy" | "cut" | "deselect" | "step_up" | "step_down"
+                    | "octave_up" | "octave_down"
+                        if !selected && !entry =>
+                    {
+                        state.refuse_unselected();
+                    }
+                    _ => {}
+                }
+                (verb.name, state)
+            })
+            .collect()
+    }
+
     /// The sequence this editor's page is the reading of, when it is one's.
     pub fn sequence(&self) -> Option<&crate::notes::Shared> {
         self.over.as_ref().map(|over| &over.sequence)

@@ -2976,7 +2976,12 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
       through a player beside an on-demand session. `document::Owner`, the
       host's own score editor and its playback went. *Done 2026-10-31.*
 
-  - ⬜ **Symbolic score: actions and execution.** Compose shared chrome
+  - ✅ **Symbolic score: actions and execution.** *Done 2026-10-31*: execution
+    is the host's, in the parts above, and a window reads its actions
+    (`ScoreEditor::actions`, read by `action_states`). Its menu bar, tools and
+    palettes keep their own composition, since no reading is lost and their
+    layout is preserved; a roll and a page over one sequence are tested
+    through the door in both views. Compose shared chrome
     and action readings, preserving tools, palettes, keys and layout. Menu,
     keyboard, tools and client calls use the same actions. Move coordination
     and playback into the host application, reusing notes playback and

@@ -324,3 +324,14 @@ def test_the_marks_signs_and_staves_are_methods_too(score, gui_host):
     assert sheet["grid"]["marks"] == [[0, "segno"]]
     assert sheet["staves"][0]["label"] == "Flute"
     editor.close()
+
+
+def test_the_windows_actions_are_read_from_the_application(score, gui_host):
+    editor = opened(gui_host, ScoreEditor(score))
+    actions = editor.actions
+    assert actions["delete"]["enabled"] is False
+    assert actions["delete"]["reason"] == "nothing is selected"
+    assert actions["entry"]["checked"] is False
+    editor.entry = True
+    assert editor.actions["entry"]["checked"] is True
+    editor.close()

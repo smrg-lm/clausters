@@ -699,6 +699,8 @@ impl Editing {
             }
             Member::Notes(editor) => json!(editor.actions(can_undo, can_redo)),
             Member::Points(editor) => json!(editor.actions(can_undo, can_redo)),
+            #[cfg(feature = "notation")]
+            Member::Score(editor) => json!(editor.actions(can_undo, can_redo)),
             _ => json!({}),
         }
     }
