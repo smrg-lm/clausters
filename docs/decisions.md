@@ -11503,3 +11503,27 @@ peer's write announced) and `/buffer_stream` (a recording's progress), and
 the transport's play, stop, locate, loop, end mark, fade and follow. The
 applications measure, read and join their takes themselves, with the core's
 functions (root `PLAN.md`, `S23`).
+
+## A symbolic score executes in the host (2026-10-31)
+
+*Decided by the user 2026-10-31, on the choice the applications' port left
+open.* The applications run in the host and both clients are their handlers,
+and the record also said the engraver lives on the client and never in the host.
+Both could not hold for the score editor: an application cannot lay out a page
+through a port only its client has, and a standalone host has no client to ask.
+Three shapes were weighed. Keeping the score where the engraver was keeps the
+rule and leaves coordination and playback written twice, in Python and in
+TypeScript, for one editor among five. Having the host ask a client for every
+engraving keeps the rule too, at a round trip per edit and with nothing for a
+standalone host. **The score goes with the others**: its document, its engraver
+and its playback are the host application's, and `Score` in a client is a remote
+handle while a window holds it, as a `Multitrack` is.
+
+The engraver stays a port (`notation::AnyEngraver`), so the crate still links
+none. Natively the host links libverovio, as `--score` already did. In a page it
+is the same pinned verovio in wasm, in a worker the application's thread asks
+synchronously over the shared memory, the way that thread reads the page's
+storage; it loads on first use, so a page that never engraves never fetches it.
+A host built without an engraver refuses the open and says why. A client keeps
+the engraver it has for what opens no window (`engrave`, a `Score` read and
+written from a script).

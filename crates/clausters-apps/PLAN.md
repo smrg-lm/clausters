@@ -2944,6 +2944,22 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     readings as its window opens. Sharing a sequence with the host-executed
     symbolic score is the score's own part below.
 
+  - **Where a symbolic score executes** *(decided with the user, 2026-10-31;
+    `docs/decisions.md`, "A symbolic score executes in the host")*: in the
+    host's application, its engraver with it, and both clients are handlers,
+    as for the multitrack. Natively the host links libverovio; in a page the
+    application's thread asks an engraver worker synchronously, over the shared
+    memory as it asks the file worker, and verovio loads on first use. A host
+    with no engraver refuses the open and says why. The parts below run in this
+    order:
+    - ⬜ The application: a score member through `Editing::start`, its
+      playback the roll's, and `AppKind::Score` on the application's thread.
+    - ⬜ The door and both handlers: `/gui_app_open score`, the client's
+      `Score` a remote handle while a window holds it.
+    - ⬜ The page's engraver worker, which also gives a page's multitrack its
+      boxes as pages.
+    - ⬜ Standalone on the same application, the replaced paths removed.
+
   - ⬜ **Symbolic score: actions and execution.** Compose shared chrome
     and action readings, preserving tools, palettes, keys and layout. Menu,
     keyboard, tools and client calls use the same actions. Move coordination
