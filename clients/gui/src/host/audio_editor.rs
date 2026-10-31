@@ -256,13 +256,34 @@ impl Host {
         &mut self,
         path: Option<&str>,
         mei: Option<String>,
+        over: Option<i32>,
+        request: Value,
         title: &str,
         reply: Option<Reply>,
     ) -> Result<i32, String> {
         self.open_app_saving(
             AppKind::Score,
             path,
-            mei.map(super::audio_app::AppData::Score),
+            Some(super::audio_app::AppData::Score { mei, over, request }),
+            title,
+            reply,
+            None,
+        )
+    }
+
+    /// **A roll opened over a sequence**, handed over in `request` or the
+    /// one window `over` shows, answered to `reply` once it opened.
+    pub(super) fn open_app_notes_for(
+        &mut self,
+        over: Option<i32>,
+        request: Value,
+        title: &str,
+        reply: Option<Reply>,
+    ) -> Result<i32, String> {
+        self.open_app_saving(
+            AppKind::Notes,
+            None,
+            Some(super::audio_app::AppData::Notes { over, request }),
             title,
             reply,
             None,
@@ -569,7 +590,7 @@ impl Host {
         let roles = match kind {
             AppKind::Audio => ROLES,
             AppKind::Multitrack => super::audio_app::MULTITRACK_ROLES,
-            AppKind::Roll { .. } => &["widget"],
+            AppKind::Roll { .. } | AppKind::Notes => &["widget"],
             #[cfg(feature = "notation")]
             AppKind::Score => super::audio_app::SCORE_ROLES,
         };
@@ -621,7 +642,7 @@ impl Host {
         };
         if let Some(window) = audio.windows.get_mut(&def_id) {
             window.takes = takes;
-            window.marks = (kind == AppKind::Multitrack)
+            window.marks = matches!(kind, AppKind::Multitrack | AppKind::Notes)
                 .then(|| ids["widget"].as_i64().map(|id| id as i32))
                 .flatten();
         }
@@ -778,22 +799,21 @@ impl Host {
         call: &Value,
         effects: &mut Vec<HostEffect>,
     ) -> Option<Value> {
-        let widget = self
-            .audio
-            .as_ref()?
-            .windows
-            .get(&def_id)
-            .filter(|w| w.kind == AppKind::Multitrack)?
-            .marks?;
+        let window = self.audio.as_ref()?.windows.get(&def_id)?;
+        let widget = window.marks?;
+        let kind = window.kind;
         if call["query"] == "selected" {
             let held: Vec<Value> = self
                 .live_props(widget)
                 .get("selected")
                 .and_then(Value::as_str)
-                .and_then(|names| serde_json::from_str::<Vec<String>>(names).ok())
+                .and_then(|names| serde_json::from_str::<Vec<Value>>(names).ok())
                 .unwrap_or_default()
                 .into_iter()
-                .map(|name| name.parse::<u64>().map_or(json!(name), |id| json!(id)))
+                .map(|name| match name.as_str().map(str::parse::<u64>) {
+                    Some(Ok(id)) => json!(id),
+                    _ => name,
+                })
                 .collect();
             return Some(json!({ "selected": held }));
         }
@@ -807,7 +827,12 @@ impl Host {
                     other => other.to_string(),
                 })
                 .collect();
-            let held = Value::from(json!(names).to_string());
+            // a roll marks its notes by their ids, as numbers
+            let held = if kind == AppKind::Notes {
+                Value::from(call["do"]["regions"].to_string())
+            } else {
+                Value::from(json!(names).to_string())
+            };
             self.set_props(widget, vec![("selected".into(), held)], effects);
             effects.push(HostEffect::Redraw(def_id));
             return Some(Value::Null);
@@ -873,10 +898,13 @@ impl Host {
             .as_mut()
             .and_then(|audio| audio.windows.get_mut(&def_id))
             && !window.released
-            && (effect["multitrack"].is_object() || effect["snapshot"].is_object())
         {
-            window.last =
-                Some(json!({"multitrack":effect["multitrack"],"snapshot":effect["snapshot"]}));
+            if effect["left"].is_object() {
+                window.last = Some(json!({"multitrack": effect["left"], "snapshot": null}));
+            } else if effect["multitrack"].is_object() || effect["snapshot"].is_object() {
+                window.last =
+                    Some(json!({"multitrack":effect["multitrack"],"snapshot":effect["snapshot"]}));
+            }
         }
     }
 
@@ -2465,6 +2493,242 @@ mod tests {
         assert!(!host.owns_an_application());
     }
 
+    /// A window a client opened through the door, drawn.
+    fn opened_app(host: &mut Host, client: ClientId, seq: i32, app: &str, options: Value) -> i32 {
+        let first = door(
+            host,
+            GUI_APP_OPEN,
+            vec![
+                OscType::Int(seq),
+                OscType::String(app.into()),
+                OscType::String(options.to_string()),
+            ],
+            client,
+        );
+        let answer = answered(host, first, seq);
+        let window = answer["ok"]["window"].as_i64().expect("a window") as i32;
+        until(host, "the window was never drawn", |h| {
+            h.window_def(window).is_some()
+        });
+        window
+    }
+
+    /// A sequence of two notes, as a client hands one over.
+    fn two_notes() -> Value {
+        json!({"events": [
+            {"at": 0.0, "id": 1, "data": {"midinote": 60, "dur": 1.0}},
+            {"at": 1.0, "id": 2, "data": {"midinote": 64, "dur": 1.0}},
+        ]})
+    }
+
+    /// **A roll is an application of this host's**: a client hands its
+    /// sequence over, a script's change through the handle is an entry of the
+    /// window's history, two rolls over it walk one order on a transport each,
+    /// and the close hands the sequence back as it was left.
+    #[test]
+    fn a_client_opens_a_roll_in_the_hosts_application() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let mut host = host();
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_990)));
+        let keys = opened_app(
+            &mut host,
+            client,
+            1,
+            "notes",
+            json!({"sequence": two_notes(), "title": "keys"}),
+        );
+        let hertz = opened_app(
+            &mut host,
+            client,
+            2,
+            "notes",
+            json!({"over": keys, "domain": "hz", "title": "hertz"}),
+        );
+        let one = ask(&mut host, keys, json!({"query": "transport"}));
+        let other = ask(&mut host, hertz, json!({"query": "transport"}));
+        assert_ne!(one["transport"], other["transport"], "a transport each");
+        // a script's change: applied, then recorded under its label
+        let applied = ask(
+            &mut host,
+            keys,
+            json!({"do": {"verb": "handle", "call": {"verb": "apply", "inverse": true,
+                "intent": {"intent": "remove", "id": 2}}}}),
+        );
+        assert_eq!(applied["applied"], true, "{applied}");
+        let recorded = ask(
+            &mut host,
+            keys,
+            json!({"do": {"verb": "handle", "label": "take it out", "call": {"verb": "record",
+                "legs": [{"forward": {"intent": "remove", "id": 2},
+                    "backward": applied["current"]}]}}}),
+        );
+        assert_eq!(recorded, true);
+        // the other roll reads it, and its history is the same one
+        let len = ask(
+            &mut host,
+            hertz,
+            json!({"do": {"verb": "handle", "call": {"verb": "len"}}}),
+        );
+        assert_eq!(len["len"], 1, "{len}");
+        let history = ask(&mut host, hertz, json!({"query": "history"}));
+        assert_eq!(history["undoLabel"], "take it out", "{history}");
+        assert_eq!(ask(&mut host, hertz, json!({"do": {"verb": "undo"}})), true);
+        let len = ask(
+            &mut host,
+            keys,
+            json!({"do": {"verb": "handle", "call": {"verb": "len"}}}),
+        );
+        assert_eq!(len["len"], 2, "{len}");
+        // the transport, as a script plays it
+        ask(
+            &mut host,
+            keys,
+            json!({"do": {"verb": "play", "beat": 0.5}}),
+        );
+        assert_eq!(
+            ask(&mut host, keys, json!({"do": {"verb": "playing"}})),
+            true
+        );
+        assert_eq!(
+            ask(&mut host, hertz, json!({"do": {"verb": "playing"}})),
+            false
+        );
+        ask(&mut host, keys, json!({"do": {"verb": "stop"}}));
+        // what the hand holds is each window's own
+        let called = |host: &mut Host, seq: i32, window: i32, call: Value| {
+            let first = door(
+                host,
+                GUI_APP_CALL,
+                vec![
+                    OscType::Int(seq),
+                    OscType::Int(window),
+                    OscType::String(call.to_string()),
+                ],
+                client,
+            );
+            answered(host, first, seq)
+        };
+        called(
+            &mut host,
+            10,
+            keys,
+            json!({"do": {"verb": "select", "regions": [1]}}),
+        );
+        let held = called(&mut host, 11, keys, json!({"query": "selected"}));
+        assert_eq!(held["ok"]["selected"], json!([1]), "{held}");
+        let held = called(&mut host, 12, hertz, json!({"query": "selected"}));
+        assert_eq!(held["ok"]["selected"], json!([]), "{held}");
+        // the close hands the sequence back
+        let closed = loop_closed(&mut host, client, keys);
+        let left: Value = serde_json::from_str(&closed).unwrap();
+        assert_eq!(
+            left["sequence"]["events"].as_array().map(Vec::len),
+            Some(2),
+            "{left}"
+        );
+        assert!(host.owns_audio(hertz), "the other window goes on");
+    }
+
+    /// Closes window `window` by its door and answers what its opener is
+    /// handed on `/gui_closed`.
+    fn loop_closed(host: &mut Host, client: ClientId, window: i32) -> String {
+        let first = door(
+            host,
+            GUI_APP_CALL,
+            vec![
+                OscType::Int(99),
+                OscType::Int(window),
+                OscType::String(json!({"do": {"verb": "close"}}).to_string()),
+            ],
+            client,
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let mut effects = first;
+        loop {
+            for effect in std::mem::take(&mut effects) {
+                if let HostEffect::Send { msg, .. } = effect
+                    && msg.addr == GUI_CLOSED
+                    && msg.args.first() == Some(&OscType::Int(window))
+                    && let Some(OscType::String(left)) = msg.args.get(1)
+                {
+                    return left.clone();
+                }
+            }
+            assert!(std::time::Instant::now() < deadline, "never told it closed");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            effects = host.take_effects();
+        }
+    }
+
+    /// **A page over a sequence and a roll over it are one order**, through
+    /// the door: the page is opened beside the roll, an edit in either walks
+    /// back from the other, each with its own conversation and transport, and
+    /// a script reads the page's document where the window has it.
+    #[cfg(feature = "score")]
+    #[test]
+    fn a_roll_and_a_page_a_client_opens_are_one_order() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let mut host = host();
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_989)));
+        let roll = opened_app(
+            &mut host,
+            client,
+            1,
+            "notes",
+            json!({"sequence": two_notes(), "title": "roll"}),
+        );
+        let page = opened_app(
+            &mut host,
+            client,
+            2,
+            "score",
+            json!({"over": roll, "title": "page", "how": {"division": 8}}),
+        );
+        let mei = ask(
+            &mut host,
+            page,
+            json!({"do": {"verb": "page", "call": {"verb": "mei"}}}),
+        );
+        assert!(
+            mei["mei"].as_str().is_some_and(|m| m.contains("<mei")),
+            "{mei}"
+        );
+        assert_ne!(
+            ask(&mut host, roll, json!({"query": "transport"}))["transport"],
+            ask(&mut host, page, json!({"query": "transport"}))["transport"],
+        );
+        let applied = ask(
+            &mut host,
+            page,
+            json!({"do": {"verb": "handle", "call": {"verb": "apply", "inverse": true,
+                "intent": {"intent": "remove", "id": 2}}}}),
+        );
+        ask(
+            &mut host,
+            page,
+            json!({"do": {"verb": "handle", "label": "out", "call": {"verb": "record",
+                "legs": [{"forward": {"intent": "remove", "id": 2},
+                    "backward": applied["current"]}]}}}),
+        );
+        assert_eq!(
+            ask(&mut host, roll, json!({"query": "history"}))["undoLabel"],
+            "out"
+        );
+        assert_eq!(ask(&mut host, roll, json!({"do": {"verb": "undo"}})), true);
+        let len = ask(
+            &mut host,
+            page,
+            json!({"do": {"verb": "handle", "call": {"verb": "len"}}}),
+        );
+        assert_eq!(len["len"], 2, "{len}");
+        let closed = loop_closed(&mut host, client, page);
+        let left: Value = serde_json::from_str(&closed).unwrap();
+        assert!(left["mei"].is_string(), "{left}");
+        assert_eq!(left["sequence"]["events"].as_array().map(Vec::len), Some(2));
+    }
+
     /// **A score is an application of this host's**: a client opens it over
     /// a document through the door, the engraver here draws its window, a
     /// verb is its turn, its file is read and written here, a file a window
@@ -2524,7 +2788,7 @@ mod tests {
         assert!(written.contains("<mei"), "{written}");
         // the file it holds now brings it forward, for the host's own open
         let again = host
-            .open_app_score_for(path.to_str(), None, "again", None)
+            .open_app_score_for(path.to_str(), None, None, json!({}), "again", None)
             .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
         while !host

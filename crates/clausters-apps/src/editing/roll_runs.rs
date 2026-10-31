@@ -127,7 +127,7 @@ impl Editing {
                     return true;
                 };
                 if outcome.turn == Kind::Closed {
-                    ran.effects.push(effect("closedWindow", json!({})));
+                    ran.effects.push(self.roll_closing(member, "closedWindow"));
                     ran.end = Some(Ok(json!(false)));
                     return false;
                 }
@@ -140,11 +140,12 @@ impl Editing {
                 if outcome.changed || stepped {
                     ran.effects.push(effect("notes", json!({})));
                     self.roll_update(member, roll, ids);
+                    self.sound_rolls(ids);
                 }
                 // **File > Close**, by the rule every window closes by: a roll
                 // edits what its multitrack holds, so nothing is asked
                 if outcome.close {
-                    ran.effects.push(effect("closeWindow", json!({})));
+                    ran.effects.push(self.roll_closing(member, "closeWindow"));
                     ran.end = Some(Ok(json!(false)));
                     return false;
                 }
@@ -159,8 +160,13 @@ impl Editing {
                 ran.end = Some(Ok(json!(outcome.changed)));
                 true
             }
-            "closed" | "close" => {
-                ran.effects.push(effect("closedWindow", json!({})));
+            "closed" => {
+                ran.effects.push(self.roll_closing(member, "closedWindow"));
+                ran.end = Some(Ok(json!(false)));
+                false
+            }
+            "close" => {
+                ran.effects.push(self.roll_closing(member, "closeWindow"));
                 ran.end = Some(Ok(json!(false)));
                 false
             }
@@ -180,13 +186,229 @@ impl Editing {
                 true
             }
             other => {
-                ran.end = Some(Err(Raised {
-                    kind: "value".into(),
-                    message: format!("no roll verb {other:?}"),
-                }));
+                ran.end = Some(
+                    match self.handler_verb(member, roll, other, action, ids, ran) {
+                        Some(answer) => answer.map_err(|message| Raised {
+                            kind: "command".into(),
+                            message,
+                        }),
+                        None => Err(Raised {
+                            kind: "value".into(),
+                            message: format!("no roll verb {other:?}"),
+                        }),
+                    },
+                );
                 true
             }
         }
+    }
+
+    /// **A handler's verb, a roll's and a page's alike**: the transport as a
+    /// script plays it, the history its window walks, a setting of the
+    /// window's, and one verb of the sequence's handle while the window has
+    /// it. `None` for a verb that is none of these.
+    fn handler_verb(
+        &mut self,
+        member: MemberId,
+        roll: &mut Roll,
+        verb: &str,
+        action: &Value,
+        ids: &mut IdSpaces,
+        ran: &mut Ran,
+    ) -> Option<Result<Value, String>> {
+        let rate = roll.rate;
+        Some(match verb {
+            "playing" => {
+                self.roll_rolling(roll);
+                Ok(json!(roll.playback.rolling()))
+            }
+            "play" => {
+                if let Some(beat) = action["beat"].as_f64() {
+                    roll.cursor = beat;
+                }
+                let (range, looping) = pass(action);
+                let cursor = roll.cursor;
+                self.roll_with(member, |sequence| {
+                    roll.playback
+                        .play_pass(sequence, cursor, range, looping, rate, ids)
+                        .unwrap_or_default()
+                });
+                Ok(Value::Null)
+            }
+            "pause" => {
+                roll.playback.pause();
+                Ok(Value::Null)
+            }
+            "resume" => {
+                roll.playback.resume();
+                Ok(Value::Null)
+            }
+            "stop" => {
+                self.roll_rolling(roll);
+                let back = action["mark"].as_f64().unwrap_or(roll.cursor);
+                roll.cursor = back;
+                self.roll_with(member, |sequence| roll.playback.stop(sequence, back, rate));
+                Ok(Value::Null)
+            }
+            "locate" => match action["at"].as_f64() {
+                Some(at) => {
+                    roll.cursor = at;
+                    self.roll_with(member, |sequence| roll.playback.place(sequence, at, rate));
+                    Ok(Value::Null)
+                }
+                None => Err("a locate names where: at".into()),
+            },
+            "loop" => {
+                let (range, looping) = pass(action);
+                self.roll_with(member, |sequence| {
+                    roll.playback.set_loop(sequence, range, looping, rate)
+                });
+                Ok(Value::Null)
+            }
+            "end" => match clausters_editing::playback::End::from_json(&action["end"]) {
+                Some(end) => {
+                    self.roll_with(member, |sequence| {
+                        roll.playback.set_end(end, sequence, rate)
+                    });
+                    Ok(Value::Null)
+                }
+                None => Err(format!("a pass ends nowhere like {}", action["end"])),
+            },
+            "undo" | "redo" => {
+                let direction = if verb == "undo" {
+                    clausters_document::history::Direction::Undo
+                } else {
+                    clausters_document::history::Direction::Redo
+                };
+                let before = self.version;
+                self.select(Some(member));
+                let stepped = self.walk_history(direction);
+                for corrected in &stepped.corrections {
+                    ran.effects
+                        .push(effect("echo", json!({"answer": corrected.answer})));
+                }
+                let moved = self.version != before;
+                if moved {
+                    self.roll_update(member, roll, ids);
+                    self.sound_rolls(ids);
+                    ran.effects.push(effect("resync", json!({})));
+                }
+                Ok(json!(moved))
+            }
+            // **a setting of the window's**, a member's verb that then redraws
+            // it: its grid, its value in hand, what is selected
+            "set" => {
+                let answer = self.member_text(member, &action["call"]);
+                ran.effects.push(effect("resync", json!({})));
+                Ok(answer)
+            }
+            "handle" => self.sequence_handle(member, roll, action, ids, ran),
+            _ => return None,
+        })
+    }
+
+    /// One verb of the member's own door, its text read.
+    fn member_text(&mut self, member: MemberId, call: &Value) -> Value {
+        let text = call.to_string();
+        let answer = match self.member_mut(member) {
+            Some(Member::Notes(editor)) => crate::notes::editor::call_json(editor, &text),
+            #[cfg(feature = "notation")]
+            Some(Member::Score(editor)) => crate::score::editor::call_json(editor, &text),
+            _ => "{}".into(),
+        };
+        serde_json::from_str(&answer).unwrap_or(Value::Null)
+    }
+
+    /// The sequence member `member` shows: a roll's, or that of a page opened
+    /// over one.
+    fn shown_sequence(&self, member: MemberId) -> Option<crate::notes::Shared> {
+        match self.member(member) {
+            Some(Member::Notes(editor)) => Some(editor.sequence().clone()),
+            #[cfg(feature = "notation")]
+            Some(Member::Score(editor)) => editor.sequence().cloned(),
+            _ => None,
+        }
+    }
+
+    /// **A script's call on the sequence this window has**: `call` is one
+    /// verb of the sequence's handle (`clausters_document::events::call_json`),
+    /// answered as the handle answers it. A change is applied, heard and
+    /// drawn in every window over the sequence; a `record` call (`legs`,
+    /// each `{"forward", "backward"}`) makes the changes a script made one
+    /// entry, named `label`, of the history its windows walk.
+    fn sequence_handle(
+        &mut self,
+        member: MemberId,
+        roll: &mut Roll,
+        action: &Value,
+        ids: &mut IdSpaces,
+        ran: &mut Ran,
+    ) -> Result<Value, String> {
+        use crate::turn::{Leg, Record};
+        let call = &action["call"];
+        if call["verb"] == "record" {
+            let legs: Vec<Leg> = call["legs"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|leg| Leg {
+                    holds_forward: Vec::new(),
+                    holds_backward: Vec::new(),
+                    key: String::new(),
+                    forward: json!({"edit": leg["forward"]}),
+                    backward: leg["backward"].clone(),
+                })
+                .collect();
+            let label = action["label"].as_str().unwrap_or("edit").to_string();
+            let taken = !legs.is_empty() && self.record(member, &Record { label, legs }, false);
+            return Ok(json!(taken));
+        }
+        let shared = self
+            .shown_sequence(member)
+            .ok_or("this window shows no sequence")?;
+        let request = call.to_string();
+        let mutates = clausters_document::events::mutates(&request);
+        let answer = {
+            let mut sequence = shared.lock().unwrap_or_else(|e| e.into_inner());
+            clausters_document::events::call_json(&mut sequence, &request)
+        };
+        let answer: Value = serde_json::from_str(&answer).map_err(|e| e.to_string())?;
+        if let Some(error) = answer.get("error").and_then(Value::as_str) {
+            return Err(error.to_string());
+        }
+        if mutates && answer["applied"] != false {
+            self.moved();
+            self.roll_update(member, roll, ids);
+            self.sound_rolls(ids);
+            ran.effects.push(effect("resync", json!({})));
+            ran.effects.push(effect("notes", json!({})));
+        }
+        Ok(answer)
+    }
+
+    /// **The window's closing effect**, carrying what its member leaves: what
+    /// a script that held it goes on holding.
+    fn roll_closing(&self, member: MemberId, kind: &str) -> Value {
+        let left = match self.member(member) {
+            Some(Member::Notes(editor)) => {
+                let sequence = editor.sequence().lock().unwrap_or_else(|e| e.into_inner());
+                json!({"sequence": &*sequence})
+            }
+            #[cfg(feature = "notation")]
+            Some(Member::Score(editor)) => {
+                let mei = editor
+                    .score()
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .mei();
+                let sequence = editor
+                    .sequence()
+                    .map(|shared| json!(&*shared.lock().unwrap_or_else(|e| e.into_inner())));
+                json!({"mei": mei, "path": editor.file_path(), "sequence": sequence})
+            }
+            _ => Value::Null,
+        };
+        effect(kind, json!({"left": left}))
     }
 
     /// **What a turn asked of the pass**, a roll's or a page's alike: the
@@ -302,6 +524,18 @@ impl Editing {
         }
     }
 
+    /// **The undo order member `member`'s object is in closes**: nothing
+    /// walks it again, as when the last window a client opened over a sequence
+    /// or a symbolic score goes. The next window over them starts a new one.
+    pub fn close_order_of(&mut self, member: MemberId) {
+        if let Some(seat) = self.seats.get(member as usize) {
+            let id = super::object_id(&seat.member);
+            self.services
+                .histories
+                .close_order(crate::application::histories::Object { member, id });
+        }
+    }
+
     /// **A roll is gone**: its lane, its graphs and its transport. Its
     /// member stays for the history and is taken again by the next roll over
     /// its sequence ([`Editing::open_notes`]).
@@ -370,10 +604,24 @@ impl Editing {
             ),
             // a handler's verb over what is selected: one entry of the history
             "act" => self.act(member, &action["call"]),
-            "closed" | "close" => {
-                ran.effects.push(effect("closedWindow", json!({})));
+            "closed" => {
+                ran.effects.push(self.roll_closing(member, "closedWindow"));
                 ran.end = Some(Ok(json!(false)));
                 return false;
+            }
+            "close" => {
+                ran.effects.push(self.roll_closing(member, "closeWindow"));
+                ran.end = Some(Ok(json!(false)));
+                return false;
+            }
+            "page" => {
+                ran.end = Some(self.score_page(member, roll, action, ids, ran).map_err(
+                    |message| Raised {
+                        kind: "command".into(),
+                        message,
+                    },
+                ));
+                return true;
             }
             "open" => {
                 match roll.playback.alloc_transport(ids) {
@@ -410,10 +658,18 @@ impl Editing {
                 return true;
             }
             other => {
-                ran.end = Some(Err(Raised {
-                    kind: "value".into(),
-                    message: format!("no score verb {other:?}"),
-                }));
+                ran.end = Some(
+                    match self.handler_verb(member, roll, other, action, ids, ran) {
+                        Some(answer) => answer.map_err(|message| Raised {
+                            kind: "command".into(),
+                            message,
+                        }),
+                        None => Err(Raised {
+                            kind: "value".into(),
+                            message: format!("no score verb {other:?}"),
+                        }),
+                    },
+                );
                 return true;
             }
         };
@@ -435,7 +691,7 @@ impl Editing {
             return true;
         };
         if outcome.turn == Kind::Closed {
-            ran.effects.push(effect("closedWindow", json!({})));
+            ran.effects.push(self.roll_closing(member, "closedWindow"));
             ran.end = Some(Ok(json!(false)));
             return false;
         }
@@ -446,6 +702,7 @@ impl Editing {
             .push(effect("echo", json!({"answer": outcome.answer})));
         if outcome.changed || stepped {
             self.roll_update(member, roll, ids);
+            self.sound_rolls(ids);
         }
         // **a close waits for the file it saves to**, and stays when it was
         // not written
@@ -460,7 +717,7 @@ impl Editing {
             None => true,
         };
         if outcome.close && written {
-            ran.effects.push(effect("closeWindow", json!({})));
+            ran.effects.push(self.roll_closing(member, "closeWindow"));
             ran.end = Some(Ok(json!(false)));
             return false;
         }
@@ -494,6 +751,117 @@ impl Editing {
             "selected": outcome.selected,
         })));
         true
+    }
+
+    /// **A script's call on the document this window has**, while it has it:
+    /// its reads (`mei`, `sheet`, `display_list`) and its edits, each one
+    /// entry of the history -- `apply` and `load` the editor's own verbs,
+    /// `transpose`, `transpose_to` and `edit` the MEI they leave. A page over
+    /// a sequence is edited by the editor's verbs, which write the sequence.
+    fn score_page(
+        &mut self,
+        member: MemberId,
+        roll: &mut Roll,
+        action: &Value,
+        ids: &mut IdSpaces,
+        ran: &mut Ran,
+    ) -> Result<Value, String> {
+        use crate::turn::{Leg, Record};
+        let call = &action["call"];
+        let verb = call["verb"].as_str().unwrap_or_default();
+        let (shared, over) = match self.member(member) {
+            Some(Member::Score(editor)) => (editor.score().clone(), editor.is_over()),
+            _ => return Err("the member is not a score".into()),
+        };
+        let edited = match verb {
+            "mei" => {
+                let score = shared.lock().unwrap_or_else(|e| e.into_inner());
+                return Ok(json!({"mei": score.mei()}));
+            }
+            "sheet" => {
+                let score = shared.lock().unwrap_or_else(|e| e.into_inner());
+                return score
+                    .sheet()
+                    .map(|sheet| json!({"sheet": sheet}))
+                    .ok_or_else(|| "the document could not be read into a model".to_string());
+            }
+            "display_list" => {
+                let mut score = shared.lock().unwrap_or_else(|e| e.into_inner());
+                let page = call["page"].as_i64().unwrap_or(1) as i32;
+                return serde_json::to_value(score.display_list(page)).map_err(|e| e.to_string());
+            }
+            "apply" | "load" => {
+                let asked = if verb == "apply" {
+                    json!({"action": "op", "op": call["op"]})
+                } else {
+                    json!({"action": "open", "data": call["mei"]})
+                };
+                let turned = self
+                    .act(member, &asked)
+                    .ok_or("the member is not a score")?;
+                for corrected in &turned.corrections {
+                    ran.effects
+                        .push(effect("echo", json!({"answer": corrected.answer})));
+                }
+                let super::Outcome::Score(outcome) = turned.outcome else {
+                    return Err("the member is not a score".into());
+                };
+                ran.effects
+                    .push(effect("echo", json!({"answer": outcome.answer})));
+                if outcome.changed {
+                    self.roll_update(member, roll, ids);
+                    self.sound_rolls(ids);
+                }
+                return Ok(json!(outcome.changed));
+            }
+            "transpose" | "transpose_to" | "edit" if over => {
+                return Err("a page over a sequence is edited by its editor's verbs".into());
+            }
+            "transpose" | "transpose_to" | "edit" => {
+                let mut score = shared.lock().unwrap_or_else(|e| e.into_inner());
+                let before = score.mei();
+                let id = call["id"].as_str().unwrap_or_default();
+                let done = match verb {
+                    "transpose" => score.transpose(id, call["steps"].as_i64().unwrap_or(0) as i32),
+                    "transpose_to" => score.transpose_to(
+                        id,
+                        call["position"].as_i64().unwrap_or(0) as i32,
+                        call["page"].as_i64().unwrap_or(1) as i32,
+                    ),
+                    _ => score.edit(
+                        call["action"].as_str().unwrap_or_default(),
+                        &call["param"].to_string(),
+                    ),
+                };
+                if !done {
+                    return Ok(json!(false));
+                }
+                let after = score.mei();
+                (after != before).then_some((before, after))
+            }
+            other => return Err(format!("no verb {other:?} of a score")),
+        };
+        if let Some((before, after)) = edited {
+            let label = call["label"].as_str().unwrap_or(verb).to_string();
+            let leg = Leg {
+                holds_forward: Vec::new(),
+                holds_backward: Vec::new(),
+                key: String::new(),
+                forward: json!({"edit": {"mei": after}}),
+                backward: json!({"mei": before}),
+            };
+            self.record(
+                member,
+                &Record {
+                    label,
+                    legs: vec![leg],
+                },
+                false,
+            );
+            self.roll_update(member, roll, ids);
+            ran.effects.push(effect("resync", json!({})));
+        }
+        Ok(json!(true))
     }
 
     /// The score as the sequence it plays as, as JSON.

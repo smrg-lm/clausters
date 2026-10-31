@@ -55,6 +55,8 @@ impl Host {
                 any(not(target_arch = "wasm32"), feature = "apps")
             ))]
             "score" => self.open_app_score(seq, &options, from, effects),
+            #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+            "notes" => self.open_app_notes(seq, &options, from, effects),
             other => effects.push(refused(seq, format!("no application named {other:?}"))),
         }
     }
@@ -149,9 +151,36 @@ impl Host {
         }
     }
 
+    /// **A roll opened for a client**, over a sequence its options hand over
+    /// (`sequence`) or the one a window it holds shows (`over`), or why not.
+    /// The rest of the options are how the roll opens (`domain`, `editable`,
+    /// `midi_in`, `chrome`, `w`, `h`).
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+    fn open_app_notes(
+        &mut self,
+        seq: i32,
+        options: &Value,
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let reply = super::audio_app::Reply::Client(from, seq);
+        let over = options["over"].as_i64().map(|over| over as i32);
+        let opened = self.open_app_notes_for(
+            over,
+            options.clone(),
+            options["title"].as_str().unwrap_or("Notes"),
+            Some(reply),
+        );
+        if let Err(message) = opened {
+            effects.push(refused(seq, message));
+        }
+    }
+
     /// **The score editor opened for a client**, over the file its options
-    /// name (`path`), a document they hand over (`mei`), or a blank page; or
-    /// why not.
+    /// name (`path`), a document they hand over (`mei`), or a blank page, or
+    /// over a sequence (`sequence`, or `over`, a window showing one), read as
+    /// `how` and `interp` say; or why not. The rest of the options are how
+    /// it opens (`value`, `chrome`, `w`, `h`).
     #[cfg(all(
         feature = "notation",
         any(not(target_arch = "wasm32"), feature = "apps")
@@ -167,6 +196,8 @@ impl Host {
         let opened = self.open_app_score_for(
             options["path"].as_str(),
             options["mei"].as_str().map(str::to_string),
+            options["over"].as_i64().map(|over| over as i32),
+            options.clone(),
             options["title"].as_str().unwrap_or("Score"),
             Some(reply),
         );

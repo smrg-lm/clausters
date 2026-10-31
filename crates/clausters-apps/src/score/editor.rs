@@ -365,6 +365,11 @@ impl ScoreEditor {
         Ok(editor)
     }
 
+    /// The sequence this editor's page is the reading of, when it is one's.
+    pub fn sequence(&self) -> Option<&crate::notes::Shared> {
+        self.over.as_ref().map(|over| &over.sequence)
+    }
+
     /// Whether this editor's page is the reading of a sequence.
     pub fn is_over(&self) -> bool {
         self.over.is_some()

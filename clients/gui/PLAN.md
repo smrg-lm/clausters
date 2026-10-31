@@ -9117,4 +9117,8 @@ module of its own.
   `cargo test --offline --lib` ended with signal 11 and no Rust failure
   report. The same suite with `-- --test-threads=1` passed 1400 tests (one
   ignored). Identify the concurrent path and add a deterministic regression;
-  no cause is established by the serial pass.
+  no cause is established by the serial pass. Caught under a debugger
+  2026-10-31: the fault is in `libvulkan` under wgpu's
+  `set_debug_utils_object_name`, creating a render pipeline in
+  `host::frame::tests::a_window_is_its_reference_picture` while other tests
+  run, so a test that holds a real device is where to look first.

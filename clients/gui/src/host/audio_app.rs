@@ -75,6 +75,9 @@ pub(super) enum AppKind {
     /// are the application's.
     #[cfg(feature = "notation")]
     Score,
+    /// **A roll a client opened** over a sequence it handed over, which the
+    /// window holds from then on.
+    Notes,
 }
 
 /// The widget roles a score window is numbered with: the page, the scroll it
@@ -85,6 +88,9 @@ pub(super) const SCORE_ROLES: &[&str] = &["widget", "scroll", "status"];
 /// The size a score window opens at, in logical pixels.
 #[cfg(feature = "notation")]
 const SCORE_SIZE: (i64, i64) = (960, 640);
+
+/// The size a roll's window opens at, in logical pixels.
+const ROLL_SIZE: (i64, i64) = (1000, 520);
 
 /// The widget roles a multitrack window is numbered with: the multitrack,
 /// its ruler, its transport row and the form a close asks in.
@@ -112,8 +118,22 @@ const MULTITRACK_SIZE: (i64, i64) = (1000, 560);
 pub(super) enum AppData {
     Contents(Value),
     Snapshot(Box<clausters_apps::multitrack::operations::Snapshot>),
+    /// A symbolic score: the document handed over, or none for what its
+    /// `path` holds or a blank page; the window it is another view beside;
+    /// and how the editor opens (`request`: its size, its chrome, the value
+    /// in hand, and over a sequence the sequence and how it is read).
     #[cfg(feature = "notation")]
-    Score(String),
+    Score {
+        mei: Option<String>,
+        over: Option<i32>,
+        request: Value,
+    },
+    /// A sequence of events: handed over (`sequence` in `request`), or that
+    /// of the window `over`, which this one is another view beside.
+    Notes {
+        over: Option<i32>,
+        request: Value,
+    },
 }
 
 /// **A symbolic score read by the engraver this build holds**, or why not.
@@ -242,6 +262,9 @@ struct Window {
     member: MemberId,
     /// Which application it is.
     kind: AppKind,
+    /// The structure it opened as, which another view over the same contents
+    /// joins.
+    key: String,
     /// The session a multitrack window opens, once it is bound.
     session: Option<String>,
     snapshot: Option<Box<clausters_apps::multitrack::operations::Snapshot>>,
@@ -402,11 +425,9 @@ impl App {
                     }
                     (AppKind::Multitrack, None) => path.clone().map(|path| (path, true)),
                     #[cfg(feature = "notation")]
-                    (AppKind::Score, Some(AppData::Score(_))) => {
-                        path.clone().map(|path| (path, false))
+                    (AppKind::Score, Some(AppData::Score { mei, .. })) => {
+                        path.clone().map(|path| (path, mei.is_none()))
                     }
-                    #[cfg(feature = "notation")]
-                    (AppKind::Score, None) => path.clone().map(|path| (path, true)),
                     _ => None,
                 };
                 if let Some((path, adopt)) = asked
@@ -433,6 +454,7 @@ impl App {
                     }
                     #[cfg(feature = "notation")]
                     AppKind::Score => self.open_score(def_id, &key, &title, path, data),
+                    AppKind::Notes => self.open_notes(def_id, &key, &title, data),
                 };
                 if let Some(window) = self.windows.get_mut(&def_id) {
                     window.client_owned = matches!(reply, Some(Reply::Client(..)));
@@ -564,6 +586,7 @@ impl App {
             Window {
                 member,
                 kind: AppKind::Audio,
+                key: key.to_string(),
                 session: None,
                 snapshot: None,
                 client_owned: false,
@@ -602,7 +625,8 @@ impl App {
             Some(AppData::Contents(contents)) => (Some(contents), None),
             Some(AppData::Snapshot(snapshot)) => (None, Some(snapshot)),
             #[cfg(feature = "notation")]
-            Some(AppData::Score(_)) => (None, None),
+            Some(AppData::Score { .. }) => (None, None),
+            Some(AppData::Notes { .. }) => (None, None),
             None => (None, None),
         };
         let empty = multitrack.is_none();
@@ -622,6 +646,7 @@ impl App {
             Window {
                 member,
                 kind: AppKind::Multitrack,
+                key: key.to_string(),
                 session: path,
                 snapshot,
                 client_owned: false,
@@ -658,9 +683,13 @@ impl App {
         data: Option<AppData>,
     ) -> Result<Vec<String>, String> {
         use clausters_core::notation::{sheet_to_mei, voice_to_sheet};
-        let contents = match (data, &path) {
-            (Some(AppData::Score(mei)), _) => mei,
-            (_, Some(path)) => {
+        let (mei, over, mut request) = match data {
+            Some(AppData::Score { mei, over, request }) => (mei, over, request),
+            _ => (None, None, json!({})),
+        };
+        let contents = match (mei, &path) {
+            (Some(mei), _) => mei,
+            (None, Some(path)) => {
                 let bytes =
                     clausters_core::files::read(path).map_err(|e| format!("{path}: {e}"))?;
                 String::from_utf8(bytes).map_err(|e| format!("{path}: {e}"))?
@@ -670,9 +699,25 @@ impl App {
         let score = engraved(&contents)?;
         let workspace = clausters_core::workspace::Workspace::create("score")
             .map_err(|e| format!("the working folder: {e}"))?;
-        let request = json!({"title": title, "w": SCORE_SIZE.0, "h": SCORE_SIZE.1}).to_string();
-        let opened: Value = serde_json::from_str(&self.editing.open_score(key, score, &request))
-            .map_err(|e| e.to_string())?;
+        request["title"] = json!(title);
+        for (name, size) in [("w", SCORE_SIZE.0), ("h", SCORE_SIZE.1)] {
+            if !request[name].is_number() {
+                request[name] = json!(size);
+            }
+        }
+        // **a page over a sequence**: the sequence the script handed over, or
+        // that of the window it stands beside, whose order it joins
+        let sequence = self.sequence_of(&mut request, over)?;
+        let key = match over.and_then(|over| self.windows.get(&over)) {
+            Some(window) => window.key.clone(),
+            None => key.to_string(),
+        };
+        let text = request.to_string();
+        let opened = match sequence {
+            Some(sequence) => self.editing.open_score_over(&key, score, sequence, &text),
+            None => self.editing.open_score(&key, score, &text),
+        };
+        let opened: Value = serde_json::from_str(&opened).map_err(|e| e.to_string())?;
         let member = opened["member"]
             .as_u64()
             .and_then(|m| MemberId::try_from(m).ok())
@@ -682,6 +727,7 @@ impl App {
             Window {
                 member,
                 kind: AppKind::Score,
+                key,
                 session: path,
                 snapshot: None,
                 client_owned: false,
@@ -710,6 +756,107 @@ impl App {
             );
         }
         Ok(names)
+    }
+
+    /// **The sequence a view opens over**: the one the window `over` shows,
+    /// or the one handed over (`sequence`, taken out of `request`); `None`
+    /// when neither is said.
+    fn sequence_of(
+        &self,
+        request: &mut Value,
+        over: Option<i32>,
+    ) -> Result<Option<clausters_apps::notes::Shared>, String> {
+        use clausters_apps::editing::Member;
+        if let Some(over) = over {
+            let member = self
+                .windows
+                .get(&over)
+                .map(|w| w.member)
+                .ok_or("the window it opens beside is gone")?;
+            return match self.editing.member(member) {
+                Some(Member::Notes(editor)) => Ok(Some(editor.sequence().clone())),
+                #[cfg(feature = "notation")]
+                Some(Member::Score(editor)) if editor.is_over() => Ok(editor.sequence().cloned()),
+                _ => Err("the window it opens beside shows no sequence".into()),
+            };
+        }
+        let Some(written) = request
+            .as_object_mut()
+            .and_then(|map| map.remove("sequence"))
+            .filter(|written| !written.is_null())
+        else {
+            return Ok(None);
+        };
+        let sequence: clausters_document::EventSequence = serde_json::from_value(written)
+            .map_err(|e| format!("not a sequence of events: {e}"))?;
+        Ok(Some(Arc::new(Mutex::new(sequence))))
+    }
+
+    /// **A roll a client opened**, in its working folder, over the sequence
+    /// it handed over or the one a window of it already shows, whose order
+    /// it joins.
+    fn open_notes(
+        &mut self,
+        def_id: i32,
+        key: &str,
+        title: &str,
+        data: Option<AppData>,
+    ) -> Result<Vec<String>, String> {
+        let (over, mut request) = match data {
+            Some(AppData::Notes { over, request }) => (over, request),
+            _ => (None, json!({})),
+        };
+        let sequence = self
+            .sequence_of(&mut request, over)?
+            .ok_or("a roll opens over a sequence")?;
+        let key = match over.and_then(|over| self.windows.get(&over)) {
+            Some(window) => window.key.clone(),
+            None => key.to_string(),
+        };
+        let rate = f64::from(
+            self.app
+                .engine()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .sample_rate(),
+        );
+        request["rate"] = json!(rate);
+        request["title"] = json!(title);
+        for (name, size) in [("w", ROLL_SIZE.0), ("h", ROLL_SIZE.1)] {
+            if !request[name].is_number() {
+                request[name] = json!(size);
+            }
+        }
+        let opened: Value = serde_json::from_str(&self.editing.open_notes(
+            &key,
+            sequence,
+            &request.to_string(),
+        ))
+        .map_err(|e| e.to_string())?;
+        let member = opened["member"]
+            .as_u64()
+            .and_then(|m| MemberId::try_from(m).ok())
+            .ok_or("the roll did not open")?;
+        let workspace = clausters_core::workspace::Workspace::create("roll")
+            .map_err(|e| format!("the working folder: {e}"))?;
+        self.windows.insert(
+            def_id,
+            Window {
+                member,
+                kind: AppKind::Notes,
+                key,
+                session: None,
+                snapshot: None,
+                client_owned: false,
+                save_to: None,
+                ids: None,
+                widgets: Vec::new(),
+                _workspace: workspace,
+                actions: None,
+                empty: false,
+            },
+        );
+        Ok(Vec::new())
     }
 
     /// **The roll over the box of notes `source` of multitrack window
@@ -761,6 +908,7 @@ impl App {
             Window {
                 member,
                 kind: AppKind::Roll { source, parent: 0 },
+                key: format!("sequence:{source}"),
                 session: None,
                 snapshot: None,
                 client_owned: false,
@@ -856,7 +1004,7 @@ impl App {
             AppKind::Multitrack => {
                 return self.bind_multitrack(def_id, member, &ids, session, save_to);
             }
-            AppKind::Roll { .. } => {
+            AppKind::Roll { .. } | AppKind::Notes => {
                 self.member_call(member, json!({"verb": "sync", "window": def_id}));
                 // its own transport, taken now: what its play cursor reads
                 let ran = self
@@ -937,16 +1085,17 @@ impl App {
         let ran = self.app.act(&mut self.editing, member, action, 0, lease);
         self.said(def_id, ran, true);
         // **A hand moved the context**: every multitrack window's opener
-        // is told, a roll's edit being its multitrack's sequence
+        // is told, a roll's edit being its multitrack's sequence, and every
+        // window a client holds
         let version = self.editing.version();
         if version != before {
-            let multitracks: Vec<i32> = self
+            let told: Vec<i32> = self
                 .windows
                 .iter()
-                .filter(|(_, w)| w.kind == AppKind::Multitrack)
+                .filter(|(_, w)| w.kind == AppKind::Multitrack || w.client_owned)
                 .map(|(id, _)| *id)
                 .collect();
-            for def_id in multitracks {
+            for def_id in told {
                 self.out
                     .send(Vec::new(), FromApp::Changed { def_id, version });
             }
@@ -1271,6 +1420,16 @@ impl App {
     fn forget(&mut self, def_id: i32) {
         if let Some(window) = self.windows.remove(&def_id) {
             self.app.forget(&mut self.editing, window.member);
+            // **the last view a client opened over a structure**: nothing
+            // walks its order again, and it was handed back with the close
+            let last = !self.windows.values().any(|w| w.key == window.key);
+            let hosted = !matches!(
+                window.kind,
+                AppKind::Audio | AppKind::Multitrack | AppKind::Roll { .. }
+            );
+            if last && hosted {
+                self.editing.close_order_of(window.member);
+            }
             // only this window's: another's goes on waiting for its render
             let gone: Vec<u64> = self
                 .asked
