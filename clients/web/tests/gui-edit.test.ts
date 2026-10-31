@@ -1310,3 +1310,20 @@ test("a window verb is asked of the host by name or by member", async () => {
     assert.equal(editor.paste(), true);
     assert.deepEqual(host.verbs, [[window, "view_all"], [window, "select_all"], [window, "paste"]]);
 });
+
+test("a curve window has its menu and says what it does not do", async () => {
+    // A curve's window carries the bar that holds the window's verbs and the
+    // history, and its readings refuse the rest with why; `chrome: false`
+    // draws the curve alone. It reads them from the moment it opens.
+    const host = new FakeHost();
+    const editor = (await edit(aCurve(), { sampleRate: SR, host: host as unknown as GuiHost })) as unknown as PointsEditor;
+    const tree = host.trees[host.trees.length - 1] as unknown as { menu: { label: string }[] };
+    assert.deepEqual(tree.menu.map((title) => title.label), ["File", "Edit", "View", "Help"]);
+    const read = host.props.get(editor.id!)!.actions as unknown as Record<string, { enabled: boolean }>;
+    assert.equal(read.undo.enabled, false);
+    const actions = editor.actions as Record<string, { reason?: string }>;
+    assert.ok(actions.paste.reason?.includes("clipboard"));
+    assert.ok(actions.play.reason?.includes("does not play"));
+    const bare = new PointsEditor(aCurve(), { sampleRate: SR, chrome: false });
+    assert.equal((bare.draw() as unknown as { menu?: unknown }).menu, undefined);
+});

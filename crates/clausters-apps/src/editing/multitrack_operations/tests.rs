@@ -1197,3 +1197,208 @@ fn a_session_opened_read_only_is_so_alone_and_the_one_in_its_place_saves() {
     let asked = f.gesture(39, 3, "save", json!([]));
     assert!(asked.render.is_none(), "{asked:?}");
 }
+
+fn a_roll(f: &mut Fixture, parent: MemberId, key: &str) -> MemberId {
+    let sequence: crate::notes::Shared = Default::default();
+    let opened: Value =
+        serde_json::from_str(
+            &f.editing
+                .open_notes_in(parent, key, sequence, r#"{"rate": 100.0}"#),
+        )
+        .unwrap();
+    let member = opened["member"].as_u64().unwrap() as MemberId;
+    for call in [
+        json!({"verb": "window", "widget": 80}),
+        json!({"verb": "sync", "window": 79}),
+    ] {
+        call_json(
+            &mut f.editing,
+            &json!({"verb": "member", "member": member, "call": call}).to_string(),
+        );
+    }
+    member
+}
+
+#[test]
+fn a_session_let_go_takes_the_order_its_rolls_are_in() {
+    let mut f = Fixture::new();
+    let first = f.member;
+    let roll = a_roll(&mut f, first, "sequence:5");
+    f.marker(first, 7);
+    f.editing.select(Some(roll));
+    assert!(
+        f.editing.can_undo(),
+        "the roll walks its multitrack's order"
+    );
+    let replaced = f.editing.start(
+        first,
+        &json!({"verb":"new_file"}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(matches!(replaced.end, Some(Ok(_))), "{replaced:?}");
+    f.editing.select(Some(roll));
+    assert!(!f.editing.can_undo(), "nothing walks a session let go of");
+    f.editing.select(Some(first));
+    assert!(
+        !f.editing.can_undo(),
+        "and the new session has its own order"
+    );
+}
+
+#[test]
+fn a_rolls_file_close_closes_it_and_lets_its_transport_go() {
+    let mut f = Fixture::new();
+    let first = f.member;
+    let roll = a_roll(&mut f, first, "sequence:5");
+    let opened = f
+        .editing
+        .start(roll, &json!({"verb":"open"}), None, &mut f.disk, &mut f.ids);
+    assert!(matches!(opened.end, Some(Ok(_))), "{opened:?}");
+    assert!(f.editing.rolls.contains_key(&roll));
+    let closed = f.editing.start(
+        roll,
+        &json!({"verb":"event", "addr":"/gui_event", "args":[79, 1, f.editing.version, "menu", "close"]}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(
+        closed
+            .effects
+            .iter()
+            .any(|effect| effect["kind"] == "closeWindow"),
+        "{closed:?}"
+    );
+    assert!(!f.editing.rolls.contains_key(&roll));
+}
+
+/// **Two views of one sequence are one history and two conversations**: an
+/// edit in one is corrected in the other and undone from either, a gesture
+/// the other made against the picture before it is refused as overtaken
+/// there alone, and the grid each snaps to stays its own.
+#[test]
+fn two_rolls_share_edits_and_history_and_keep_their_conversations() {
+    use clausters_document::EventSequence;
+    use clausters_document::events::Event as SeqEvent;
+    use std::sync::{Arc, Mutex};
+
+    let sequence = Arc::new(Mutex::new(EventSequence::new(vec![SeqEvent::new(
+        0.0,
+        json!({"midinote": 60, "sustain": 1.0, "amp": 0.1}),
+    )])));
+    let mut editing = Editing::new();
+    let mut open = |widget: i64, window: i64| {
+        let opened: Value = serde_json::from_str(&editing.open_notes(
+            "seq",
+            sequence.clone(),
+            r#"{"rate": 100.0}"#,
+        ))
+        .unwrap();
+        let member = opened["member"].as_u64().unwrap() as MemberId;
+        for call in [
+            json!({"verb": "window", "widget": widget}),
+            json!({"verb": "sync", "window": window}),
+        ] {
+            call_json(
+                &mut editing,
+                &json!({"verb": "member", "member": member, "call": call}).to_string(),
+            );
+        }
+        member
+    };
+    let (left, right) = (open(40, 39), open(50, 49));
+    assert_eq!(editing.structure(left), editing.structure(right));
+    let gesture = |widget: i64, against: i64, tag: &str, values: Vec<Value>| {
+        let mut args = vec![json!(widget), json!(1), json!(against), json!(tag)];
+        args.extend(values);
+        crate::turn::Event {
+            addr: "/gui_event".into(),
+            args,
+        }
+    };
+    let moved = |pitch: f64| {
+        vec![
+            json!(1),
+            json!(50.0),
+            json!(100.0),
+            json!(pitch),
+            json!(13.0),
+            json!(0.0),
+        ]
+    };
+    let against = editing.version();
+    let turned = editing
+        .event(left, &gesture(40, against, "notes", moved(67.0)))
+        .unwrap();
+    assert!(turned.outcome.changed());
+    assert!(
+        turned.corrections.iter().any(|c| c.member == right),
+        "the other window is corrected"
+    );
+    let stale = editing
+        .event(right, &gesture(50, against, "notes", moved(72.0)))
+        .unwrap();
+    assert!(
+        !stale.outcome.changed(),
+        "overtaken in the window that drew the old picture"
+    );
+    assert_eq!(
+        sequence.lock().unwrap().get(1).unwrap().data.0["midinote"],
+        json!(67.0)
+    );
+    let now = editing.version();
+    let left_turn = editing
+        .event(left, &gesture(40, now, "notes", moved(69.0)))
+        .unwrap();
+    assert!(left_turn.outcome.changed(), "and only there");
+    let at = editing.version();
+    editing
+        .event(left, &gesture(39, at, "snap", vec![]))
+        .unwrap();
+    let (snap_left, snap_right) = match (editing.member(left), editing.member(right)) {
+        (Some(Member::Notes(a)), Some(Member::Notes(b))) => (a.snap(), b.snap()),
+        _ => panic!(),
+    };
+    assert_ne!(snap_left, snap_right, "the view's own");
+    editing.select(Some(right));
+    assert!(
+        editing.step(Direction::Undo).stepped,
+        "undone from the other"
+    );
+    assert_eq!(
+        sequence.lock().unwrap().get(1).unwrap().data.0["midinote"],
+        json!(67.0)
+    );
+}
+
+/// **A roll closed and opened again is the same member over the same
+/// object**, and its entries are still walked.
+#[test]
+fn a_roll_closed_and_reopened_keeps_its_object_and_its_entries() {
+    let mut f = Fixture::new();
+    let first = f.member;
+    let sequence: crate::notes::Shared = Default::default();
+    let open = |f: &mut Fixture, sequence: &crate::notes::Shared| -> MemberId {
+        let opened: Value = serde_json::from_str(&f.editing.open_notes_in(
+            first,
+            "sequence:5",
+            sequence.clone(),
+            r#"{"rate": 100.0}"#,
+        ))
+        .unwrap();
+        opened["member"].as_u64().unwrap() as MemberId
+    };
+    let roll = open(&mut f, &sequence);
+    f.marker(first, 7);
+    f.editing.forget_roll(roll, &mut f.ids);
+    let again = open(&mut f, &sequence);
+    assert_eq!(again, roll);
+    let Some(Member::Notes(editor)) = f.editing.member(again) else {
+        panic!()
+    };
+    assert!(std::sync::Arc::ptr_eq(editor.sequence(), &sequence));
+    f.editing.select(Some(again));
+    assert!(f.editing.can_undo());
+}

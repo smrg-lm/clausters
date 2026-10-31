@@ -240,6 +240,27 @@ impl Histories {
         }
     }
 
+    /// **Close the order `object` is in, with every view in it**: a session
+    /// let go of takes the rolls opened from it along. In the shared context
+    /// only `object` leaves, since the others there are their own.
+    pub fn close_order(&mut self, object: Object) {
+        let Some(scope) = self.objects.get(&object).map(|binding| binding.scope) else {
+            return;
+        };
+        if scope == ScopeId(0) {
+            return self.close(object);
+        }
+        let bound: Vec<Object> = self
+            .objects
+            .iter()
+            .filter(|(_, binding)| binding.scope == scope)
+            .map(|(object, _)| *object)
+            .collect();
+        for object in bound {
+            self.close(object);
+        }
+    }
+
     /// A structure registered under a shared-context key.
     pub fn named(&self, key: &str) -> Option<StructureId> {
         self.orders.get(&ScopeId(0))?.keys.get(key).copied()

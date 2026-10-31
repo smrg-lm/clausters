@@ -128,6 +128,10 @@ already carry it.
   editor and the multitrack keep the rule; the score editor follows it when
   `X25` ports the lifecycle to it.
 
+- ⬜ **`a_loop_moved_while_it_plays_is_crossfaded` fails now and then**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Under load only; what is
+  open is whether the test's pacing or the crossfade is at fault.
+
 - ⬜ **A sound file opens in two audio editor windows of one host**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. A multitrack's session
   is open once in a host now; the audio editor's open finds the file in its

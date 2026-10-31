@@ -189,6 +189,7 @@ export class PointsEditor extends Editor<EditableCurve> {
             points: curve.toPoints().map(Number),
             name: nameOf(curve),
             target: targetOf(curve),
+            chrome: this.chrome,
         };
         if (min !== undefined) Object.assign(request, { min, max });
         if (start !== undefined) Object.assign(request, { start, end });

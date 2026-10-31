@@ -91,8 +91,9 @@ class Editor:
             sent or kept current. **The keys stay** -- they are the window's,
             not the menu's, and F1 lists them -- and so do every verb of the
             handle and the status line, where a verb refused says why. The
-            score, audio, multitrack and notes editors have chrome; an editor
-            with none opens the same either way.
+            score, audio, multitrack, notes and points editors have chrome
+            (a curve's is its menu bar alone); an editor with none opens the
+            same either way.
         base_id: the first widget id a **host-less** draw counts from (tests and
             tree inspection). Once `open`ed, the ids come from the host's own
             recycling pool instead, so the two never collide and a redraw's ids
@@ -432,6 +433,7 @@ class Editor:
         self._window = self._host.open(tree, id=id)
         self._editing.attach(self)
         self._announce()
+        self._publish_actions()
         self._host.subscribe(self.apply)
         self._host.loop            # built and started on first use
         return self._window

@@ -1654,3 +1654,32 @@ fn a_forgotten_audio_member_lets_go_of_what_only_it_named() {
         Some(Member::Audio(editor)) if !editor.has_file()
     ));
 }
+
+/// **A points editor needs no audio service**: opened in a context with no
+/// engine, it edits, reads its actions and walks its history.
+#[test]
+fn a_points_editor_runs_with_no_engine() {
+    let mut editing = Editing::default();
+    let member = call(
+        &mut editing,
+        json!({"verb": "openPoints", "key": "object:1", "rate": 100.0,
+               "points": [0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0]}),
+    )["member"]
+        .clone();
+    call(
+        &mut editing,
+        json!({"verb": "member", "member": member, "call": {"verb": "window", "widget": 40}}),
+    );
+    let actions = call(&mut editing, json!({"verb": "actions", "member": member}));
+    assert_eq!(actions["undo"]["enabled"], false, "{actions}");
+    let turned = call(
+        &mut editing,
+        json!({"verb": "event", "member": member, "addr": "/gui_event",
+               "args": [40, 1, 0, "points", 0.0, 0.0, 1, 0.0, 1.0, 0.5, 1, 0.0]}),
+    );
+    assert_eq!(turned["outcome"]["points"][5], 0.5, "{turned}");
+    let actions = call(&mut editing, json!({"verb": "actions", "member": member}));
+    assert_eq!(actions["undo"]["enabled"], true, "{actions}");
+    let stepped = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
+    assert_eq!(stepped["effects"][0]["points"][5], 1.0, "{stepped}");
+}

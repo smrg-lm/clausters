@@ -73,6 +73,9 @@ pub struct PointsEditor {
     /// The ranges the caller declared; the curve's own parameter fills in the
     /// value range where it declared none ([`Rules::of`]).
     declared: Rules,
+    /// **A window with no chrome** -- no menu bar -- for a client that
+    /// composes its own around it.
+    bare: bool,
 }
 
 /// What a points editor is opened with, as the context's door reads it.
@@ -90,6 +93,8 @@ struct Opened {
     start: Option<f64>,
     end: Option<f64>,
     version: i64,
+    /// Whether the window has its menu bar.
+    chrome: bool,
 }
 
 impl Default for Opened {
@@ -104,6 +109,7 @@ impl Default for Opened {
             start: None,
             end: None,
             version: 1,
+            chrome: true,
         }
     }
 }
@@ -133,7 +139,38 @@ impl PointsEditor {
             size: (1000, 520),
             held: Held::default(),
             declared: Rules::default(),
+            bare: false,
         }
+    }
+
+    /// **The window's actions as they read now**, by verb: `undo` and `redo`
+    /// as the context's history reads, and the rest of the window's verbs
+    /// refused with why, so a key or an entry that asks for one says so
+    /// rather than doing nothing. A curve plays nothing here, has no grid,
+    /// and its points have no clipboard: they are drawn by hand, and no
+    /// other structure's are turned into them. Its curve is the script's,
+    /// so the window writes no file.
+    #[must_use]
+    pub fn actions(
+        &self,
+        undo: bool,
+        redo: bool,
+    ) -> std::collections::BTreeMap<&'static str, clausters_editing::verbs::ActionState> {
+        let mut actions =
+            crate::chrome::grid_actions(crate::chrome::App::Points, false, undo, redo, &|_| None);
+        for (verb, state) in &mut actions {
+            match *verb {
+                "play" | "loop" | "to_start" | "to_end" => {
+                    state.refuse("a curve does not play here");
+                }
+                "copy" | "cut" | "paste" | "delete" | "select_all" => {
+                    state.refuse("a curve's points are drawn by hand: they have no clipboard");
+                }
+                "snap" | "quantize" | "split" | "join" => state.refuse("a curve has no grid"),
+                _ => {}
+            }
+        }
+        actions
     }
 
     /// The curve it edits.
@@ -160,7 +197,17 @@ impl PointsEditor {
         self.shape = ids.shape;
         let curve = self.held().clone();
         let rules = self.rules();
-        window(&curve, &mut self.held, &rules, ids, &self.title, self.size)
+        let mut window = window(&curve, &mut self.held, &rules, ids, &self.title, self.size);
+        if !self.bare {
+            use crate::chrome::{self, App};
+            chrome::dress(
+                &mut window,
+                chrome::menu(App::Points, false),
+                Value::Null,
+                ids.curve,
+            );
+        }
+        window
     }
 
     /// The selected segment, while it is one: a point starts it and another
@@ -395,14 +442,16 @@ impl Converse for PointsEditor {
 }
 
 /// **A points editor from JSON**: `{"rate", "title", "w", "h", "min", "max",
-/// "start", "end", "version"}` over `curve`. `min` and `max` declare the range
-/// its values are kept in, over the range of the parameter it automates;
-/// `start` and `end` the range its times are kept in.
+/// "start", "end", "version", "chrome"}` over `curve`. `min` and `max` declare
+/// the range its values are kept in, over the range of the parameter it
+/// automates; `start` and `end` the range its times are kept in; `chrome`
+/// `false` for a window with no menu bar.
 pub fn new_json(curve: Shared, request: &str) -> PointsEditor {
     let opened: Opened = serde_json::from_str(request).unwrap_or_default();
     let mut editor = PointsEditor::new(curve, opened.rate, opened.version);
     editor.title = opened.title;
     editor.size = (opened.w, opened.h);
+    editor.bare = !opened.chrome;
     let ordered = |a: f64, b: f64| (a.min(b), a.max(b));
     editor.declared = Rules {
         values: opened.min.zip(opened.max).map(|(a, b)| ordered(a, b)),

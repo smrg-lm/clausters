@@ -1084,3 +1084,20 @@ def test_the_space_bar_plays_the_time_range_a_sweep_left():
     # 100 samples a second, two beats a second: beat 1 is sample 50, beat 2 is 100.
     assert ("/transport_end", [100, 0]) in sent, sent
     assert sent[-1] == ("/transport_locateSample", [50]), "from the range's start"
+
+
+def test_a_curve_window_has_its_menu_and_says_what_it_does_not_do():
+    """A curve's window carries the bar that holds the window's verbs and the
+    history, and its readings refuse the rest with why; `chrome=False` draws
+    the curve alone. It reads them from the moment it opens."""
+    host = FakeHost()
+    set_props = []
+    host.set = lambda wid, **props: set_props.append((wid, props))
+    editor = edit(a_curve(), sample_rate=SR, host=host)
+    assert [title["label"] for title in host.trees[-1]["menu"]] == ["File", "Edit", "View", "Help"]
+    assert set_props[-1][0] == int(editor.window)
+    assert set_props[-1][1]["actions"]["undo"]["enabled"] is False
+    assert "clipboard" in editor.actions["paste"]["reason"]
+    assert "does not play" in editor.actions["play"]["reason"]
+    bare = PointsEditor(a_curve(), sample_rate=SR, chrome=False)
+    assert "menu" not in bare.draw()

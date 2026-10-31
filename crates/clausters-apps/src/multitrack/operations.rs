@@ -229,7 +229,7 @@ impl Application for MultitrackEditor {
         // a session let go of takes its order with it: one session file per
         // window, and nothing walks a session nobody holds
         if let Some(released) = &outcome.released {
-            services.histories.close(Object {
+            services.histories.close_order(Object {
                 member: delta.target.member,
                 id: released.id,
             });

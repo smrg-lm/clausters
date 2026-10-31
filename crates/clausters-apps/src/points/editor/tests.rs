@@ -251,3 +251,57 @@ fn menu_choice(index: i64) -> Event {
         args: vec![json!(41), json!(1), json!(0), json!(index)],
     }
 }
+
+/// **A curve's window has the window's own verbs and the history's**: its
+/// bar holds those, no tools ride above the curve, and a client composing
+/// its own chrome gets none.
+#[test]
+fn the_window_has_the_curve_s_menu_and_no_tools() {
+    let ids = Ids {
+        curve: 40,
+        shape: Some(41),
+    };
+    let mut e = editor(shared(), r#"{"rate": 100.0}"#);
+    let tree = e.window(ids);
+    let verbs: Vec<&str> = tree["menu"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|title| title["menu"].as_array().unwrap())
+        .filter_map(|entry| entry["verb"].as_str())
+        .collect();
+    assert_eq!(verbs, ["close", "undo", "redo", "view_all", "keys"]);
+    assert_eq!(tree["main"], 40);
+    assert_eq!(tree["children"][0]["id"], 40, "the curve heads the window");
+    let mut bare = editor(shared(), r#"{"rate": 100.0, "chrome": false}"#);
+    assert!(bare.window(ids).get("menu").is_none());
+}
+
+/// **What a curve does not do is refused with why**: a key or an entry
+/// that asks for it says so, rather than doing nothing.
+#[test]
+fn the_actions_refuse_what_a_curve_does_not_do_and_say_why() {
+    let e = editor(shared(), r#"{"rate": 100.0}"#);
+    let actions = e.actions(true, false);
+    assert!(actions["undo"].enabled);
+    assert_eq!(
+        actions["redo"].reason.as_deref(),
+        Some("there is nothing to redo")
+    );
+    assert!(actions["view_all"].enabled && actions["close"].enabled);
+    for (verb, why) in [
+        ("play", "does not play"),
+        ("paste", "no clipboard"),
+        ("delete", "no clipboard"),
+        ("snap", "no grid"),
+        ("save", "writes no file"),
+    ] {
+        let state = &actions[verb];
+        assert!(!state.enabled, "{verb}");
+        assert!(
+            state.reason.as_deref().is_some_and(|r| r.contains(why)),
+            "{verb}: {:?}",
+            state.reason
+        );
+    }
+}

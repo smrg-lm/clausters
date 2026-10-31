@@ -935,16 +935,18 @@ impl App {
                 // **the session a client handed over is let go**: the host
                 // is the work's only holder now, so the window asks before
                 // a close loses it; a session no client held is nobody's
-                // to hand back
+                // to hand back, and the host still hears of it, for the
+                // rolls opened from it to go
                 "released" => {
                     let Some(window) = self.windows.get_mut(&def_id) else {
                         continue;
                     };
-                    if !std::mem::take(&mut window.client_owned) {
-                        continue;
+                    let handed = std::mem::take(&mut window.client_owned);
+                    effect["handed"] = json!(handed);
+                    if handed {
+                        let member = window.member;
+                        self.member_call(member, json!({"verb": "sync", "asks": true}));
                     }
-                    let member = window.member;
-                    self.member_call(member, json!({"verb": "sync", "asks": true}));
                 }
                 "resync" => effect["props"] = self.props(def_id),
                 // a box of notes asked for its roll: the host makes its window

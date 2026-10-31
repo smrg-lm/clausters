@@ -1,5 +1,5 @@
-//! **The chrome of the audio, multitrack and notes editors**: the menu bar and
-//! the toolbar, in one vocabulary.
+//! **The chrome of the audio, multitrack, notes and points editors**: the menu
+//! bar and the toolbar, in one vocabulary.
 //!
 //! The three applications share most of what a hand asks of them, so they
 //! share its words: a verb names the same act in every window -- `cut` is a
@@ -31,7 +31,9 @@
 //! the rows' own commands (`add_track`, `reset_heights`, `compact_tracks`), a
 //! transport that pauses (`pause`, `stop`), how its boxes of notes are drawn
 //! (`notes_roll`, `notes_score`), and `save` where the window is the work's
-//! only holder.
+//! only holder. The points editor adds nothing and has no tools: its bar holds
+//! the window's own verbs and the history, and what a curve does not do is
+//! refused with why.
 //!
 //! What has a gesture and no meaning without one -- moving a box, trimming
 //! it, drawing a curve -- is the hand's, and is in no menu. What is about one
@@ -54,6 +56,9 @@ pub enum App {
     Multitrack,
     /// The notes editor, over a roll.
     Notes,
+    /// The points editor, over a curve: no transport, no grid and no
+    /// clipboard, so its bar holds the window's own and the history.
+    Points,
 }
 
 /// **Back to the start**: a bar and a triangle pointing at it, drawn here
@@ -102,7 +107,7 @@ fn scope(app: App) -> &'static [Verb] {
     match app {
         App::Multitrack => verbs::MULTITRACK,
         App::Audio => verbs::AUDIO,
-        App::Notes => &[],
+        App::Notes | App::Points => &[],
     }
 }
 
@@ -123,6 +128,16 @@ fn sep() -> Value {
 /// window writes its work itself -- File has Save then.
 #[must_use]
 pub fn menu(app: App, saves: bool) -> Value {
+    // a curve is drawn and walked through, and nothing else: what the bar
+    // would offer of the others' is refused where it is asked (`actions`)
+    if app == App::Points {
+        return json!([
+            sub("File", vec![entry(app, "close")]),
+            sub("Edit", vec![entry(app, "undo"), entry(app, "redo")]),
+            sub("View", vec![entry(app, "view_all")]),
+            sub("Help", vec![entry(app, "keys")]),
+        ]);
+    }
     let mut file = Vec::new();
     if matches!(app, App::Audio | App::Multitrack) {
         file.extend([
@@ -312,6 +327,7 @@ fn edits(app: App) -> Vec<Value> {
             .map(|verb| tool(app, verb, None))
             .collect(),
         App::Multitrack | App::Notes => vec![tool(app, "snap", Some(&glyph(SNAP)))],
+        App::Points => Vec::new(),
     }
 }
 
@@ -334,9 +350,9 @@ pub fn toolbar(app: App, lead: Option<Vec<Value>>) -> Value {
     })
 }
 
-/// **Dresses `window`**: the menu bar, the toolbar on top of what it holds,
-/// the outlines the tools are drawn with, and the view the window's commands
-/// address (`main`).
+/// **Dresses `window`**: the menu bar, the toolbar on top of what it holds
+/// (none for `null`), the outlines the tools are drawn with, and the view
+/// the window's commands address (`main`).
 /// **The channel entries of an audio window's View menu**, for a take of
 /// `channels`: show them all, and a submenu each to fold one (or unfold it) and
 /// to show one alone. The verbs carry the channel after a colon
@@ -373,7 +389,10 @@ pub fn dress(window: &mut Value, menu: Value, toolbar: Value, main: i32) {
     map.insert("menu".into(), menu);
     map.insert("main".into(), json!(main));
     map.insert("glyphs".into(), glyphs());
-    if let Some(Value::Array(children)) = map.get_mut("children") {
+    // a window with no tools (a curve's) has no row for them
+    if !toolbar.is_null()
+        && let Some(Value::Array(children)) = map.get_mut("children")
+    {
         children.insert(0, toolbar);
     }
 }

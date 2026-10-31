@@ -119,7 +119,8 @@ class PointsEditor(Editor):
         request = {"rate": self.sample_rate, "title": self.title,
                    "w": int(self.size[0]), "h": int(self.size[1]),
                    "points": [float(x) for x in curve.to_points()],
-                   "name": _name(curve), "target": _target(curve)}
+                   "name": _name(curve), "target": _target(curve),
+                   "chrome": self.chrome}
         if min is not None:
             request.update(min=float(min), max=float(max))
         if start is not None:

@@ -685,6 +685,7 @@ impl Editing {
                 json!(editor.actions(can_undo, can_redo, stops))
             }
             Member::Notes(editor) => json!(editor.actions(can_undo, can_redo)),
+            Member::Points(editor) => json!(editor.actions(can_undo, can_redo)),
             _ => json!({}),
         }
     }

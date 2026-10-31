@@ -123,8 +123,9 @@ export interface GenericEditorOptions<S> {
      * composed, so none of it is sent or kept current. **The keys stay** --
      * they are the window's, not the menu's, and F1 lists them -- and so do
      * every verb of the handle and the status line, where a verb refused says
-     * why. The score, audio, multitrack and notes editors have chrome; an
-     * editor with none opens the same either way.
+     * why. The score, audio, multitrack, notes and points editors have
+     * chrome (a curve's is its menu bar alone); an editor with none opens the
+     * same either way.
      */
     chrome?: boolean;
     /**
@@ -575,6 +576,7 @@ export class Editor<S = unknown> implements Adopting {
         this.editing.attach(this);
         this.listen(resolved);
         this.announce();
+        this.publishActions();
         return handle;
     }
 

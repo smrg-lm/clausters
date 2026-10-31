@@ -141,6 +141,13 @@ impl Editing {
                     ran.effects.push(effect("notes", json!({})));
                     self.roll_update(member, roll, ids);
                 }
+                // **File > Close**, by the rule every window closes by: a roll
+                // edits what its multitrack holds, so nothing is asked
+                if outcome.close {
+                    ran.effects.push(effect("closeWindow", json!({})));
+                    ran.end = Some(Ok(json!(false)));
+                    return false;
+                }
                 if outcome.locate.is_some() || outcome.play.is_some() {
                     // whether it rolls is the engine's: a pass may have ended
                     // on its own

@@ -688,7 +688,16 @@ impl Host {
                 }
                 // the session the window was opened over is let go: its
                 // opener is handed it and is done with the window
-                "released" => self.released_audio(def_id, &effect["snapshot"]),
+                // and a roll of the session let go goes with it: what it
+                // draws is no longer the window's
+                "released" => {
+                    for roll in self.take_dependents(def_id) {
+                        self.close_audio(roll);
+                    }
+                    if effect["handed"] == true {
+                        self.released_audio(def_id, &effect["snapshot"]);
+                    }
+                }
                 "closeWindow" => {
                     self.keep_last(def_id, &effect);
                     self.close_audio(def_id);
@@ -1486,10 +1495,42 @@ mod tests {
             again.is_some_and(|again| h.window_def(again).is_some())
         });
         let roll = again.unwrap();
-        host.close_audio(def_id);
-        until(&mut host, "the roll stayed open", |h| {
-            h.window_def(roll).is_none()
+        // **The File menu's Close closes it** too
+        let close = host.event_message(
+            roll,
+            4,
+            vec![
+                OscType::String("menu".into()),
+                OscType::String("close".into()),
+            ],
+        );
+        assert!(host.deliver(roll, &close), "the entry is the roll's");
+        until(&mut host, "File > Close left the roll", |h| {
+            !h.owns_audio(roll) && h.window_def(roll).is_none()
         });
+        let find = |h: &Host| {
+            h.audio.as_ref().and_then(|audio| {
+                audio
+                    .windows
+                    .iter()
+                    .find(|(_, w)| matches!(w.kind, AppKind::Roll { source: 5, .. }))
+                    .map(|(id, _)| *id)
+            })
+        };
+        assert!(host.deliver(def_id, &open), "opened again");
+        until(&mut host, "the roll never opened a third time", |h| {
+            find(h).is_some_and(|roll| h.window_def(roll).is_some())
+        });
+        let roll = find(&host).unwrap();
+        // **A session let go takes its rolls along**: what they draw is no
+        // longer the window's, and the multitrack goes on
+        let new = host.event_message(def_id, 5, vec![OscType::String("new_file".into())]);
+        assert!(host.deliver(def_id, &new));
+        until(&mut host, "a roll outlived its session", |h| {
+            !h.owns_audio(roll) && h.window_def(roll).is_none()
+        });
+        assert!(host.owns_audio(def_id), "the multitrack stays");
+        host.close_audio(def_id);
         let _ = std::fs::remove_dir_all(&folder);
     }
 
