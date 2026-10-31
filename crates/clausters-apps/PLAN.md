@@ -2836,6 +2836,27 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
       - ✅ Decode the remaining multitrack action and handle requests at the
         boundary and replace internal JSON dispatch with typed calls.
 
+  - ✅ **Each editor opened on its own is a unit of editing** *(decided
+    with the user, 2026-10-30, reviewing this milestone's first branch: one
+    `clausters.Session` opens as many editing units as it asks for, each
+    window a different thing to its user (two multitracks' sessions, two
+    rolls over different sequences, later two plots), and the same
+    session in two windows is one session with several views, not two)*.
+    The unit is the open document, not the window: an audio editor's window
+    holds several files, and a multitrack's session is drawn by its window
+    and by the rolls opened from its boxes. No type is added for it and the
+    word "session" is not stretched to name it: in a client it is the
+    handler `edit()` answers, in the application a member with an order of
+    its own. A host multitrack joined the context's one shared order, so
+    an undo in one window undid the last edit of another, and a roll's key
+    (`sequence:{source}`) named one structure under two multitracks. A
+    session now has its own order unless `sharedHistory` composes it, and a
+    roll joins its multitrack's order (`Editing::join_view`,
+    `open_notes_in`). Opening a document already open in the same host
+    brings its window forward: `edit()` already does in both clients;
+    the host's own opens (File > Open, `/gui_app_open`, `--session`) are
+    part of the file lifecycle below.
+
   - ⬜ **The multitrack's file lifecycle.** Distinguish no session, a new
     session with no path, and a saved session; an empty multitrack is open.
     Open without a session and keep chrome/forms after closing the last.
@@ -2851,10 +2872,14 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     and last-session close on disk and OPFS; read saved sessions and source
     references back. Run and review `edit_multitrack` and `load_multitrack`
     in both clients before the next port.
-    - ✅ Complete stable session-object addressing and retained content/file
-      checkpoints before exposing binding transitions. Finish the Python
-      reference handler, then port its object routing and close snapshots to
-      the web handler; existing client objects must keep their original session.
+    - ⬜ One session file per window. The first branch kept every session
+      a window had left as a retained object the client could go on
+      editing through the window (object addressing on `query` and `do`,
+      `snapshot` on `/gui_app_open`, every retained session on
+      `/gui_closed`). It is withdrawn: when a window opens another session,
+      the client's object is settled as a close settles it, and holds what
+      the window left it as. A document already open in another window of
+      the host is not opened twice; its window comes forward.
     - ⬜ Wire the empty host opening and New/Open/Close file chrome and dialogs,
       including holder-aware save/discard/cancel and confirmed deferred closes.
       Preserve all three opening paths and verify disk/OPFS read-back.

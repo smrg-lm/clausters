@@ -571,7 +571,8 @@ impl App {
                 .sample_rate(),
         );
         let request = json!({"rate": rate, "title": title, "w": 1000, "h": 520}).to_string();
-        let opened: Value = serde_json::from_str(&self.editing.open_notes(
+        let opened: Value = serde_json::from_str(&self.editing.open_notes_in(
+            parent,
             &format!("sequence:{source}"),
             shared,
             &request,

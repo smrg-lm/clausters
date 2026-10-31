@@ -348,6 +348,26 @@ pub struct Stepped {
     pub version: i64,
 }
 
+/// Which undo order a member is taken into.
+enum Order<'a> {
+    /// The context's shared order, as the structure the key names.
+    Context(&'a str),
+    /// The order another member's object is in, as the key names there.
+    View(Object, &'a str),
+    /// An order of its own.
+    Own,
+}
+
+/// The object a member's order is bound to: the audio file in focus, the
+/// multitrack's session, the one structure of any other editor.
+fn object_id(member: &Member) -> i64 {
+    match member {
+        Member::Audio(editor) => editor.focused_file(),
+        Member::Multitrack(editor) => editor.session_binding(),
+        _ => 0,
+    }
+}
+
 /// **The editing context**: a history, its version, and the members it holds.
 #[derive(Debug)]
 pub struct Editing {
@@ -671,7 +691,23 @@ impl Editing {
     /// member with the same key already has, or a new one -- in the
     /// context's shared order.
     pub fn join(&mut self, key: &str, member: Member) -> MemberId {
-        self.admit(member, Some(key))
+        self.admit(member, Order::Context(key))
+    }
+
+    /// **Takes a member in as a view of `parent`'s editor**: in the order of
+    /// the object `parent` has open, as the structure `key` names there. A
+    /// roll opened from a multitrack's box shares that multitrack's history
+    /// and no other editor's, and the same key under another editor is
+    /// another structure.
+    pub fn join_view(&mut self, parent: MemberId, key: &str, member: Member) -> MemberId {
+        let anchor = self.seats.get(parent as usize).map(|seat| Object {
+            member: parent,
+            id: object_id(&seat.member),
+        });
+        match anchor {
+            Some(anchor) => self.admit(member, Order::View(anchor, key)),
+            None => self.admit(member, Order::Context(key)),
+        }
     }
 
     /// **Takes a member in with an undo order of its own**: its object shares
@@ -680,25 +716,24 @@ impl Editing {
     ///
     /// [`join`]: Self::join
     pub fn open_independent(&mut self, member: Member) -> MemberId {
-        self.admit(member, None)
+        self.admit(member, Order::Own)
     }
 
-    fn admit(&mut self, mut member: Member, shared: Option<&str>) -> MemberId {
+    fn admit(&mut self, mut member: Member, order: Order<'_>) -> MemberId {
         if let Member::Audio(editor) = &mut member {
             editor.share(self.shared.clone());
         }
         let id = self.seats.len() as MemberId;
         let object = Object {
             member: id,
-            id: match &member {
-                Member::Audio(editor) => editor.focused_file(),
-                _ => 0,
-            },
+            id: object_id(&member),
         };
         let domain = member.domain();
-        let structure = match shared {
-            Some(key) => self.services.histories.join(object, key, &domain),
-            None => self.services.histories.focus(object, &domain),
+        let histories = &mut self.services.histories;
+        let structure = match order {
+            Order::Context(key) => histories.join(object, key, &domain),
+            Order::View(anchor, key) => histories.join_with(object, anchor, key, &domain),
+            Order::Own => histories.focus(object, &domain),
         };
         self.seats.push(Seat {
             member,
@@ -731,10 +766,8 @@ impl Editing {
         let object = match &seat.member {
             // an editor with no file open has no order to focus
             Member::Audio(editor) if !editor.has_file() => return,
-            Member::Audio(editor) => editor.focused_file(),
             Member::Multitrack(editor) if !editor.has_session() => return,
-            Member::Multitrack(editor) => editor.session_binding(),
-            _ => 0,
+            member => object_id(member),
         };
         let domain = seat.member.domain();
         let structure = self

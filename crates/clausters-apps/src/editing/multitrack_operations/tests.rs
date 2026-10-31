@@ -947,3 +947,95 @@ fn a_retained_snapshot_reopens_unsaved_contents_sources_and_checkpoint() {
     );
     assert_eq!(f.editing.multitrack_query(f.member, "session"), captured);
 }
+
+impl Fixture {
+    fn second(&mut self) -> MemberId {
+        let opened: Value = serde_json::from_str(&call_json(
+            &mut self.editing,
+            &json!({"verb":"openMultitrack", "key":"other", "multitrack":{}}).to_string(),
+        ))
+        .unwrap();
+        opened["member"].as_u64().unwrap() as u32
+    }
+    fn marker(&mut self, member: MemberId, marker: i64) {
+        let edited = self.editing.start(
+            member,
+            &json!({"verb":"handle", "call":{"verb":"apply",
+                "intent":{"intent":"setmarker", "marker":marker, "at":2.0, "name":"cue"}}}),
+            None,
+            &mut self.disk,
+            &mut self.ids,
+        );
+        assert_eq!(edited.end.unwrap().unwrap()["applied"], true);
+    }
+    fn markers(&mut self, member: MemberId) -> Option<Result<Value, Raised>> {
+        self.editing
+            .start(
+                member,
+                &json!({"verb":"handle", "call":{"verb":"ids", "of":"markers"}}),
+                None,
+                &mut self.disk,
+                &mut self.ids,
+            )
+            .end
+    }
+}
+
+#[test]
+fn two_sessions_in_one_application_keep_their_histories_apart() {
+    let mut f = Fixture::new();
+    let other = f.second();
+    f.marker(f.member, 7);
+    let undone = f.editing.start(
+        other,
+        &json!({"verb":"undo"}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert_eq!(undone.end, Some(Ok(json!(false))), "nothing to undo there");
+    assert_eq!(f.markers(f.member), Some(Ok(json!({"ids":[7]}))));
+    f.marker(other, 8);
+    let undone = f.editing.start(
+        f.member,
+        &json!({"verb":"undo"}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert_eq!(undone.end, Some(Ok(json!(true))));
+    assert_eq!(f.markers(f.member), Some(Ok(json!({"ids":[]}))));
+    assert_eq!(f.markers(other), Some(Ok(json!({"ids":[8]}))));
+}
+
+#[test]
+fn a_roll_joins_its_own_multitracks_order_whatever_its_key() {
+    let mut f = Fixture::new();
+    let other = f.second();
+    let sequence = || -> crate::notes::Shared { Default::default() };
+    let roll = |f: &mut Fixture, parent| {
+        let opened: Value =
+            serde_json::from_str(
+                &f.editing
+                    .open_notes_in(parent, "sequence:1", sequence(), "{}"),
+            )
+            .unwrap();
+        opened["member"].as_u64().unwrap() as u32
+    };
+    let first = f.member;
+    let first_roll = roll(&mut f, first);
+    let other_roll = roll(&mut f, other);
+    assert_ne!(
+        f.editing.structure(first_roll),
+        f.editing.structure(other_roll),
+        "one key under two editors is two structures"
+    );
+    f.marker(first, 7);
+    f.editing.select(Some(first_roll));
+    assert!(
+        f.editing.can_undo(),
+        "the roll walks its multitrack's order"
+    );
+    f.editing.select(Some(other_roll));
+    assert!(!f.editing.can_undo(), "and not the other multitrack's");
+}

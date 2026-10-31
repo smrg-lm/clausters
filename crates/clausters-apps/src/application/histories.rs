@@ -159,21 +159,43 @@ impl Histories {
 
     /// Join the context under a key; a second observer shares its structure.
     pub fn join(&mut self, object: Object, key: &str, domain: &str) -> StructureId {
+        self.join_scope(object, ScopeId(0), key, domain)
+    }
+
+    /// Join the order `anchor` is bound to, under a key of that order: a view
+    /// opened from inside another editor shares its history and no other.
+    /// Keys are per order, so the same key in two orders names two
+    /// structures. An unbound anchor joins the shared context.
+    pub fn join_with(
+        &mut self,
+        object: Object,
+        anchor: Object,
+        key: &str,
+        domain: &str,
+    ) -> StructureId {
+        let scope = self
+            .objects
+            .get(&anchor)
+            .map_or(ScopeId(0), |binding| binding.scope);
+        self.join_scope(object, scope, key, domain)
+    }
+
+    fn join_scope(
+        &mut self,
+        object: Object,
+        scope: ScopeId,
+        key: &str,
+        domain: &str,
+    ) -> StructureId {
         if let Some(binding) = self.objects.get(&object) {
             return binding.structure;
         }
-        let order = self.orders.entry(ScopeId(0)).or_default();
+        let order = self.orders.entry(scope).or_default();
         let structure = *order
             .keys
             .entry(key.into())
             .or_insert_with(|| order.history.register(domain));
-        self.objects.insert(
-            object,
-            Binding {
-                scope: ScopeId(0),
-                structure,
-            },
-        );
+        self.objects.insert(object, Binding { scope, structure });
         structure
     }
 
@@ -207,7 +229,9 @@ impl Histories {
         order.history.forget(binding.structure);
         order.keys.retain(|_, id| *id != binding.structure);
         self.released.extend(order.history.released_sources());
-        if binding.scope != ScopeId(0) {
+        // an order outlives the structure while another observer is in it
+        let observed = self.objects.values().any(|b| b.scope == binding.scope);
+        if binding.scope != ScopeId(0) && !observed {
             self.released.extend(order.history.held_sources());
             self.orders.remove(&binding.scope);
             if self.selected == binding.scope {
@@ -366,5 +390,32 @@ mod tests {
         histories.clear();
         assert_eq!(histories.released_sources(), [SourceId(7)]);
         assert_ne!(histories.join(a, "same", "samples"), structure);
+    }
+
+    #[test]
+    fn a_view_joins_its_anchors_order_and_the_same_key_elsewhere_is_another_structure() {
+        let mut histories = Histories::new();
+        let first = Object { member: 0, id: 1 };
+        let second = Object { member: 1, id: 1 };
+        let first_structure = histories.focus(first, "multitrack");
+        histories.focus(second, "multitrack");
+        let view = Object { member: 2, id: 0 };
+        let other_view = Object { member: 3, id: 0 };
+        let view_structure = histories.join_with(view, first, "sequence:1", "notes");
+        let other_structure = histories.join_with(other_view, second, "sequence:1", "notes");
+        assert_ne!(view_structure, other_structure);
+        record(&mut histories, first_structure, "box", 7);
+        record(&mut histories, view_structure, "note", 8);
+        histories.focus(view, "notes");
+        assert_eq!(histories.undo_label().as_deref(), Some("note"));
+        histories.focus(second, "multitrack");
+        assert!(!histories.can_undo(), "the other editor's order is its own");
+        histories.focus(first, "multitrack");
+        assert_eq!(histories.undo_label().as_deref(), Some("note"));
+        // the editor closing first leaves its view's order in place
+        histories.close(first);
+        histories.focus(view, "notes");
+        assert_eq!(histories.undo_label().as_deref(), Some("note"));
+        assert_eq!(histories.sources_for(2), [SourceId(8)]);
     }
 }

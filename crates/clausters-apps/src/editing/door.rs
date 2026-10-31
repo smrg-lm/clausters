@@ -31,7 +31,9 @@ struct RecordedLeg {
 ///
 /// - `openMultitrack` -- `key`, and what a multitrack editor is built from
 ///   (`clausters_apps::multitrack::editor::new_json`, the version aside):
-///   `{"member", "structure"}`, or `{"error"}`.
+///   `{"member", "structure"}`, or `{"error"}`. Its session has an undo
+///   order of its own unless `sharedHistory` joins it to the context's, under
+///   `key`.
 /// - `openAudio` -- `key`, and what an audio editor is built from
 ///   (`clausters_apps::audio::editor::new_json`): `{"member", "structure"}`,
 ///   or `{"error"}`. Its file has an undo order of its own; `sharedHistory`
@@ -91,7 +93,15 @@ pub(crate) fn call_value(editing: &mut Editing, mut request: Value) -> Value {
     }
     match verb.as_str() {
         "openMultitrack" => match multitrack::new_json(&request.to_string()) {
-            Some(editor) => joined(editing, &key, Member::Multitrack(Box::new(editor))),
+            // a session's history is its own, as an audio file's is, unless
+            // the caller composes it into the context's shared order
+            Some(editor) if request["sharedHistory"] == true => {
+                joined(editing, &key, Member::Multitrack(Box::new(editor)))
+            }
+            Some(editor) => {
+                let member = editing.open_independent(Member::Multitrack(Box::new(editor)));
+                json!({"member": member, "structure": editing.structure(member)})
+            }
             None => json!({ "error": "the request names no multitrack" }),
         },
         "openAudio" => match audio::new_json(&request.to_string()) {
@@ -388,6 +398,33 @@ impl Editing {
     /// the same sequence: its seat, with a new editor, so a window opened
     /// and closed over one box adds no member each time.
     pub fn open_notes(&mut self, key: &str, sequence: Shared, request: &str) -> String {
+        self.notes_over(None, key, sequence, request)
+    }
+
+    /// **Opens a notes editor as a view of `parent`'s editor**, over a
+    /// sequence that editor holds, as a roll over a multitrack's box: its
+    /// entries go in the order of the session `parent` has open, as the
+    /// structure `key` names there, so the multitrack's undo walks them and
+    /// no other editor's does. Otherwise what [`open_notes`] does.
+    ///
+    /// [`open_notes`]: Self::open_notes
+    pub fn open_notes_in(
+        &mut self,
+        parent: MemberId,
+        key: &str,
+        sequence: Shared,
+        request: &str,
+    ) -> String {
+        self.notes_over(Some(parent), key, sequence, request)
+    }
+
+    fn notes_over(
+        &mut self,
+        parent: Option<MemberId>,
+        key: &str,
+        sequence: Shared,
+        request: &str,
+    ) -> String {
         let mut request = serde_json::from_str::<Value>(request).unwrap_or_else(|_| json!({}));
         if let Some(map) = request.as_object_mut() {
             map.insert("version".into(), json!(self.version));
@@ -405,7 +442,15 @@ impl Editing {
             let structure = self.structure(member).map(|s| s.0);
             return json!({ "member": member, "structure": structure }).to_string();
         }
-        joined(self, key, Member::Notes(Box::new(editor))).to_string()
+        let editor = Member::Notes(Box::new(editor));
+        match parent {
+            Some(parent) => {
+                let member = self.join_view(parent, key, editor);
+                json!({"member": member, "structure": self.structure(member).map(|s| s.0)})
+                    .to_string()
+            }
+            None => joined(self, key, editor).to_string(),
+        }
     }
 }
 

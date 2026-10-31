@@ -694,7 +694,8 @@ fn a_roll_plays_its_notes_on_a_transport_of_its_own() {
     };
     let request = serde_json::json!({"rate": SR, "title": "roll"}).to_string();
     let opened: serde_json::Value =
-        serde_json::from_str(&editing.open_notes("sequence:5", shared, &request)).unwrap();
+        serde_json::from_str(&editing.open_notes_in(multitrack, "sequence:5", shared, &request))
+            .unwrap();
     let roll = opened["member"].as_u64().unwrap() as u32;
     const WINDOW: i64 = 900;
     app.call(
@@ -745,7 +746,8 @@ fn a_roll_plays_its_notes_on_a_transport_of_its_own() {
         _ => panic!("not a multitrack"),
     };
     let again: serde_json::Value =
-        serde_json::from_str(&editing.open_notes("sequence:5", shared, &request)).unwrap();
+        serde_json::from_str(&editing.open_notes_in(multitrack, "sequence:5", shared, &request))
+            .unwrap();
     assert_eq!(again["member"].as_u64(), Some(u64::from(roll)));
     assert_eq!(again["structure"], opened["structure"]);
     let _ = std::fs::remove_dir_all(&folder);

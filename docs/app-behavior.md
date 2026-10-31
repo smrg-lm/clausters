@@ -80,6 +80,14 @@ code that keeps it lives.
   `sharedHistory` puts its first file in the context's shared order. So with
   edits in A and an empty B in focus, undo is disabled and A is untouched,
   whichever was opened first.
+  **Each editor opened on its own is a unit of editing with an order of its
+  own**, however many share an application: two multitracks' sessions in
+  two windows of one host, two rolls over different sequences, each
+  window's undo walks its own and never the other's. A view opened from
+  inside an editor is a view of that unit, not another one: a roll opened
+  from a multitrack's box takes its entries into that session's order, so
+  the multitrack's undo walks them, and the same sequence under another
+  multitrack is another structure in another order.
   A scripted history step with a malformed or unknown member is refused
   before selecting an order or preparing I/O. It cannot use the previously
   selected order or truncate an oversized id to address another member.
