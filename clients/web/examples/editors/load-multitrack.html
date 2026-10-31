@@ -36,6 +36,12 @@ keys track plays the notes the file holds, as the roll left them if a save came
 after an edit -- double click it to open the roll again. Save writes the session
 back. <b>Close and reopen the window</b> once: the page keeps its multitrack
 object, its contents and its sources while the view is gone.
+<b>The window's File menu changes its session</b>: Close session leaves it
+empty, Open session... chooses a session file in the host's chooser, New
+session starts an untitled one. Each hands this page's multitrack back as the
+window left it (<code>editor.closed</code> turns true), and the window goes on
+as the host's own, asking before it loses unsaved work. A session another
+window holds is not opened twice: that window comes forward.
 <b>What it needs:</b> open <code>edit-multitrack.html</code> once first, on the
 same origin, which saves <code>out/edit_multitrack.json</code> and its takes.</div>
       <button id="run">reopen the multitrack</button>

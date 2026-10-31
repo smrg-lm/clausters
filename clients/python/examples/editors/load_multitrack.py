@@ -17,6 +17,12 @@ program would.
   edit -- double click it to open the roll again. Save writes the session back.
 - **Close and reopen the window** once: the client keeps its multitrack object,
   its contents and its sources while the view is gone.
+- **The window's File menu changes its session**: Close session leaves it
+  empty, Open session... chooses a session file in the host's chooser, New
+  session starts an untitled one. Each hands this script's multitrack back as
+  the window left it (``editor.closed`` turns true), and the window goes on as
+  the host's own, asking before it loses unsaved work. A session another
+  window holds is not opened twice: that window comes forward.
 
 **What it needs:** run ``edit_multitrack.py`` once first, which saves
 ``clients/python/examples/out/edit_multitrack.json`` and its takes. A display

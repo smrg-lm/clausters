@@ -2857,7 +2857,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     the host's own opens (File > Open, `/gui_app_open`, `--session`) are
     part of the file lifecycle below.
 
-  - ⬜ **The multitrack's file lifecycle.** Distinguish no session, a new
+  - ✅ **The multitrack's file lifecycle.** Distinguish no session, a new
     session with no path, and a saved session; an empty multitrack is open.
     Open without a session and keep chrome/forms after closing the last.
     Content verbs refuse with `no file is open` without choosing another
@@ -2912,8 +2912,12 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
       (`an_empty_multitrack_opens_a_session_from_its_file_menu`), OPFS the
       applications' page (`tests/app-window.html`: an empty window opens a
       stored session, and a second one is refused). *Done 2026-10-30.*
-    - ⬜ Refresh artifacts and finish the automatic example-pair acceptance
-      after the complete binding path is in place.
+    - ✅ Refresh artifacts and finish the automatic example-pair acceptance
+      after the complete binding path is in place. The installed client
+      and its binaries refreshed; `edit_multitrack` and `load_multitrack`
+      run to their end against a headless host (`[gui] headless`), and the
+      pair audit finds the two languages' calls the same. Both describe
+      the File menu. *Done 2026-10-30.*
 
   - ⬜ **Roll review and points port.** Review roll actions, clipboard,
     history, conversations, close and invalidation. Extend its existing host
@@ -4391,6 +4395,10 @@ Every entry carries a checkbox.
   panel). Port with `X25`, reusing the audio editor's shape: an `empty` open,
   the window's own verbs answered and the rest refused with `no file is
   open`, and a `binding` the clients unbind.
+  **The multitrack keeps it since 2026-10-30**: it opens with no session
+  (`--session` with no file, an empty `/gui_app_open`), its File menu makes,
+  opens and closes one, and closing the last leaves the window open. The
+  score editor is what is left.
 
 - ✅ **First native eye pass over X20's actions** (2026-10-21). A copy
   announced "loop off": a completion re-sends the view's loop switch, and

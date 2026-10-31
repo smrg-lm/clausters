@@ -125,8 +125,8 @@ already carry it.
 
 - ⬜ **The other applications that open files open without one and outlive
   their last** *(`crates/clausters-apps/PLAN.md`, Found by use)*. The audio
-  editor keeps the rule; the score editor and the multitrack with a session
-  file follow it when `X25` ports the lifecycle.
+  editor and the multitrack keep the rule; the score editor follows it when
+  `X25` ports the lifecycle to it.
 
 - ⬜ **A sound file opens in two audio editor windows of one host**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. A multitrack's session
