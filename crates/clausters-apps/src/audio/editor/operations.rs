@@ -628,6 +628,22 @@ impl Application for AudioEditor {
             delta.outcome.answer = Some(conversation::answer(seq, 0, reason, corrections));
         }
         delta.outcome.prepared_complete = true;
+        // what waited for this save goes on, over what it wrote
+        if applied && delta.outcome.saved.is_some() {
+            let (reason, shown) = self.after_save(&mut delta.outcome);
+            if reason.is_some() || !shown.is_empty() {
+                let seq = match delta.outcome.answer {
+                    Some(Answer::Ack { seq, .. } | Answer::Push { seq, .. }) => seq,
+                    _ => 0,
+                };
+                let mut corrections = match delta.outcome.answer.take() {
+                    Some(Answer::Push { corrections, .. }) => corrections,
+                    _ => Vec::new(),
+                };
+                corrections.extend(shown);
+                delta.outcome.answer = Some(conversation::answer(seq, 0, reason, corrections));
+            }
+        }
         if applied && delta.outcome.changed && self.window_state.active {
             delta.outcome.playback_update = self
                 .over_file(delta.target.object, |editor| editor.playback_file())
@@ -665,7 +681,9 @@ impl Application for AudioEditor {
                 Some(Answer::Ack { seq, .. } | Answer::Push { seq, .. }) => seq,
                 _ => 0,
             };
-            outcome.answer = Some(conversation::answer(seq, 0, Some(reason), self.reread()));
+            let mut corrections = self.reread();
+            corrections.extend(self.save_refused());
+            outcome.answer = Some(conversation::answer(seq, 0, Some(reason), corrections));
         }
         // nothing was published: the list is what it was, and the files a
         // failed batch wrote are its scratch, which the caller deletes

@@ -212,6 +212,12 @@ pub trait Converse {
     fn unsaved(&self) -> bool {
         false
     }
+    /// **Whether `change` lets go of work its file does not hold**: everything
+    /// unsaved, where a window holds one document; a window that holds several
+    /// says which of them goes.
+    fn loses(&self, _change: &crate::closing::FileChange) -> bool {
+        self.unsaved()
+    }
     /// **Ask before `leaving`**: the editor's close form shown, or why it
     /// could not be. An editor that says it asks ([`asks_to_close`]) has one.
     ///

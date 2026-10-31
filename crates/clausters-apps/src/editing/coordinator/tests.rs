@@ -954,3 +954,160 @@ fn a_closed_file_stops_being_read_before_what_it_measured_is_deleted() {
         "{trace:?}"
     );
 }
+
+/// An audio window with no client beside it: its dialogs numbered from 400,
+/// and it asks before unsaved work goes.
+fn asking(client: &mut Client, editing: &mut Editing) -> (MemberId, BTreeMap<String, i64>) {
+    let member = opened(client, editing, false);
+    let names = client.call(
+        editing,
+        json!({"verb": "member", "member": member, "call": {"verb": "dialogs"}}),
+    )["dialogs"]
+        .clone();
+    let ids: BTreeMap<String, i64> = names
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.as_str().unwrap().to_string(), 400 + i as i64))
+        .collect();
+    client.call(
+        editing,
+        json!({"verb": "member", "member": member,
+            "call": {"verb": "window", "widget": 12, "meter": 13, "filesWidget": 14, "dialogs": ids}}),
+    );
+    client.call(
+        editing,
+        json!({"verb": "member", "member": member, "call": {"verb": "sync", "asks": true}}),
+    );
+    (member, ids)
+}
+
+/// One of the window's own verbs.
+fn verb_of_window(seq: i64, editing: &Editing, verb: &str) -> Value {
+    json!({"verb": "event", "addr": "/gui_event", "window": true,
+        "args": [900, seq, editing.version(), verb]})
+}
+
+/// A button of the close form.
+fn answered(seq: i64, editing: &Editing, ids: &BTreeMap<String, i64>, button: &str) -> Value {
+    json!({"verb": "event", "addr": "/gui_event", "window": true,
+        "args": [ids[&format!("close:{button}")], seq, editing.version(), "click"]})
+}
+
+fn closes(client: &Client) -> bool {
+    client.effects.iter().any(|e| e["kind"] == "closeWindow")
+}
+
+/// **A window the work's only holder asks before it goes**: nothing to lose
+/// closes at once, Cancel keeps everything, and Don't save lets the work go.
+#[test]
+fn a_close_asks_when_it_would_lose_work_and_a_client_s_does_not() {
+    let mut editing = Editing::new();
+    let mut client = Client::new();
+    let (member, ids) = asking(&mut client, &mut editing);
+    let action = cut(1, &editing);
+    client.run(&mut editing, member, action);
+    assert_eq!(binding(&mut editing, member)["dirty"], true);
+    let action = verb_of_window(2, &editing, "close");
+    client.run(&mut editing, member, action);
+    assert!(!closes(&client), "it asks: {:?}", client.effects);
+    let action = answered(3, &editing, &ids, "cancel");
+    client.run(&mut editing, member, action);
+    assert!(!closes(&client));
+    assert_eq!(
+        binding(&mut editing, member)["dirty"],
+        true,
+        "the work stays"
+    );
+    let action = verb_of_window(4, &editing, "close");
+    client.run(&mut editing, member, action);
+    let action = answered(5, &editing, &ids, "discard");
+    client.run(&mut editing, member, action);
+    assert!(closes(&client), "{:?}", client.effects);
+
+    // a client holds its file, and its window goes at once
+    let mut editing = Editing::new();
+    let mut client = Client::new();
+    let member = opened(&mut client, &mut editing, false);
+    let action = cut(1, &editing);
+    client.run(&mut editing, member, action);
+    let action = verb_of_window(2, &editing, "close");
+    client.run(&mut editing, member, action);
+    assert!(closes(&client));
+}
+
+/// **The form's Save closes once the write is confirmed**, and not before.
+#[test]
+fn what_waits_for_a_save_goes_over_what_it_wrote() {
+    let mut editing = Editing::new();
+    let mut client = Client::new();
+    let (member, ids) = asking(&mut client, &mut editing);
+    let action = cut(1, &editing);
+    client.run(&mut editing, member, action);
+    let action = verb_of_window(2, &editing, "close");
+    client.run(&mut editing, member, action);
+    let action = answered(3, &editing, &ids, "ok");
+    let first = client.begin(&mut editing, member, action);
+    let write = until(&mut client, &mut editing, member, first, "batch", 1);
+    assert!(!closes(&client), "not before the write is confirmed");
+    let saved = client.finish(&mut editing, member, write);
+    assert!(saved["error"].is_null(), "{saved}");
+    assert!(closes(&client), "{:?}", client.effects);
+}
+
+/// **Close file asks about the file in view only**: a clean one goes though
+/// another has changes, and Don't save lets a changed one go with the window
+/// staying.
+#[test]
+fn close_file_asks_about_the_file_it_closes() {
+    let mut editing = Editing::new();
+    let mut client = Client::new();
+    let (member, ids) = asking(&mut client, &mut editing);
+    let action = cut(1, &editing);
+    client.run(&mut editing, member, action);
+    let action = verb_of_window(2, &editing, "close_file");
+    client.run(&mut editing, member, action);
+    assert_eq!(
+        binding(&mut editing, member)["dirty"],
+        true,
+        "it asks first"
+    );
+    let action = answered(3, &editing, &ids, "discard");
+    client.run(&mut editing, member, action);
+    assert_eq!(
+        binding(&mut editing, member)["empty"],
+        true,
+        "the file went"
+    );
+    assert!(!closes(&client), "the window stays");
+}
+
+/// **A close goes through the files with changes in turn**, bringing each
+/// into view to ask about it, and a clean file asks nothing.
+#[test]
+fn a_close_brings_each_file_with_changes_into_view() {
+    let mut editing = Editing::new();
+    let mut client = Client::new();
+    let (member, ids) = asking(&mut client, &mut editing);
+    let first = binding(&mut editing, member)["id"].clone();
+    let action = cut(1, &editing);
+    client.run(&mut editing, member, action);
+    client.run(
+        &mut editing,
+        member,
+        json!({"verb": "openFile", "paths": ["/takes/b.wav"], "window": true}),
+    );
+    assert_ne!(binding(&mut editing, member)["id"], first);
+    let action = verb_of_window(2, &editing, "close");
+    client.run(&mut editing, member, action);
+    assert_eq!(
+        binding(&mut editing, member)["id"],
+        first,
+        "the one with changes"
+    );
+    assert!(!closes(&client));
+    let action = answered(3, &editing, &ids, "discard");
+    client.run(&mut editing, member, action);
+    assert!(closes(&client), "{:?}", client.effects);
+}

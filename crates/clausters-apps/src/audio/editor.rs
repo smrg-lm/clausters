@@ -354,6 +354,59 @@ impl Converse for AudioEditor {
         self.window_state.active = false;
         self.window_state.binding_generation += 1;
         self.window_state.dialogs.closed();
+        self.window_state.leaving = None;
+        self.window_state.let_go.clear();
+    }
+
+    fn asks_to_close(&self) -> bool {
+        self.window_state.asks
+    }
+
+    /// Any file of the window with changes, but those the hand already said
+    /// to let go of on the way out.
+    fn unsaved(&self) -> bool {
+        self.next_unsaved().is_some()
+    }
+
+    /// Close file lets only the file in focus go.
+    fn loses(&self, _change: &crate::closing::FileChange) -> bool {
+        self.open_files.open && self.file.dirty
+    }
+
+    /// **The form up for what goes.** A window holds several files, and the
+    /// question is about the one it shows: a close brings forward each file
+    /// with changes in turn.
+    fn ask_before(
+        &mut self,
+        leaving: crate::closing::Leaving,
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        if !self.has_dialogs() {
+            return (
+                Some(
+                    "this window has changes that are not saved, and no form to ask about them"
+                        .into(),
+                ),
+                Vec::new(),
+            );
+        }
+        if leaving == crate::closing::Leaving::Window
+            && let Some(file) = self.next_unsaved().filter(|file| *file != self.file.id.0)
+        {
+            out.file_action = Some(FileAction {
+                verb: FileVerb::FocusFile,
+                file,
+            });
+        }
+        self.window_state.leaving = Some(leaving);
+        self.open_form(dialogs::Form::Close)
+    }
+
+    fn change_now(&mut self, _change: crate::closing::FileChange, out: &mut Outcome) {
+        out.file_action = Some(FileAction {
+            verb: FileVerb::CloseFile,
+            file: self.file.id.0,
+        });
     }
 
     fn owns(&self, widget: i64, _tag: &str) -> bool {
@@ -472,6 +525,7 @@ impl Converse for AudioEditor {
             "toggle_files" | "spectrogram_settings" | "close_file"
         ) {
             out.turn = Kind::Route;
+            let mut asked = (None, Vec::new());
             if message.tag == "toggle_files" {
                 self.window_state.files_visible = !self.window_state.files_visible;
                 out.restructure = true;
@@ -479,16 +533,14 @@ impl Converse for AudioEditor {
                 self.window_state.settings_visible = !self.window_state.settings_visible;
                 out.restructure = true;
             } else {
-                out.file_action = Some(FileAction {
-                    verb: FileVerb::CloseFile,
-                    file: self.file.id.0,
-                });
+                // by the rule a close asks by
+                asked = crate::closing::change_file(self, crate::closing::FileChange::Close, out);
             }
             out.answer = Some(conversation::answer(
                 message.seq,
                 out.version,
-                None,
-                Vec::new(),
+                asked.0,
+                asked.1,
             ));
             return true;
         }
@@ -745,6 +797,15 @@ struct AudioWindowState {
     pane: Option<i32>,
     meters: Option<(i32, usize)>,
     dialogs: dialogs::Dialogs,
+    /// **Whether the window is the work's only holder**, so unsaved work asks
+    /// before it goes ([`crate::closing`]). A client holds its file and loses
+    /// nothing, so by default no.
+    asks: bool,
+    /// What the close form is up for, until what waits for a save is done.
+    leaving: Option<crate::closing::Leaving>,
+    /// The files with changes the hand said to let go of, on the way out of a
+    /// close that goes through them in turn.
+    let_go: std::collections::BTreeSet<i64>,
     conversation: Conversation,
     files_widget: Option<i32>,
     files_visible: bool,
@@ -846,6 +907,9 @@ impl AudioEditor {
                 pane: None,
                 meters: None,
                 dialogs: dialogs::Dialogs::default(),
+                asks: false,
+                leaving: None,
+                let_go: std::collections::BTreeSet::new(),
                 conversation: Conversation::new(version),
                 files_widget: None,
                 files_visible: true,
@@ -1442,6 +1506,15 @@ impl AudioEditor {
         self.compose_settings(&mut tree);
         self.refresh_files();
         self.compose_files(&mut tree);
+        if let Some(root) = tree.as_object_mut() {
+            root.insert(
+                "ask_close".into(),
+                json!(crate::closing::asks(
+                    self.window_state.asks,
+                    self.has_dialogs()
+                )),
+            );
+        }
         tree
     }
 

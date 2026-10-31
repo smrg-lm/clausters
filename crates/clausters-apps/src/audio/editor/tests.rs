@@ -1600,3 +1600,51 @@ fn the_spectrogram_settings_panel_sets_the_pictures_props() {
     let actions = editor.actions(0, Default::default(), false, false, false, false);
     assert_eq!(actions["spectrogram_settings"].checked, Some(true));
 }
+
+/// **What waits for a save goes only over what it wrote**: work newer than the
+/// write keeps the window, and a save refused lets nothing go and takes the
+/// form down.
+#[test]
+fn what_waits_for_a_save_stays_over_work_it_does_not_hold() {
+    use crate::closing::Leaving;
+    let (mut editor, _) = with_dialogs(json!({"verb": "sync", "asks": true}));
+    event(&mut editor, json!([12, 1, 0, "cut", 10.0, 20.0]));
+    assert!(editor.file.dirty);
+    let mut out = Outcome::default();
+    crate::turn::Converse::ask_before(&mut editor, Leaving::Window, &mut out);
+    let mut landed = Outcome::default();
+    let (reason, _) = editor.after_save(&mut landed);
+    assert!(reason.is_some_and(|why| why.contains("stays open")));
+    assert!(!landed.close);
+    assert!(editor.window_state.leaving.is_none());
+
+    crate::turn::Converse::ask_before(&mut editor, Leaving::Window, &mut out);
+    let down = editor.save_refused();
+    assert_eq!(down.len(), 1, "the form goes down");
+    assert!(editor.window_state.leaving.is_none());
+    assert!(editor.window_state.dialogs.up().is_none());
+}
+
+/// **The window carries `ask_close` only where it asks**, and has a form to
+/// ask in.
+#[test]
+fn only_a_window_with_no_client_holds_its_close_mark() {
+    let (mut client, ids) = with_dialogs(json!({"verb": "sync"}));
+    let held = call(
+        &mut client,
+        json!({"verb": "window", "widget": 12, "dialogs": ids}),
+    );
+    assert_eq!(held["ask_close"], false);
+    let (mut alone, ids) = with_dialogs(json!({"verb": "sync", "asks": true}));
+    let held = call(
+        &mut alone,
+        json!({"verb": "window", "widget": 12, "dialogs": ids}),
+    );
+    assert_eq!(held["ask_close"], true);
+    let mut bare = opened(1);
+    call(&mut bare, json!({"verb": "sync", "asks": true}));
+    assert_eq!(
+        call(&mut bare, json!({"verb": "window", "widget": 12}))["ask_close"],
+        false
+    );
+}

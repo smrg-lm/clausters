@@ -262,8 +262,9 @@ export class AudioEditor {
     }
 
     /**
-     * Close the editor, as File -> Close does: a file with edits it does not
-     * hold asks first, in the window.
+     * Close the editor without asking: a window a client holds loses nothing by
+     * it, and what asks about unsaved work is the window of a host with no
+     * client beside it.
      */
     async close(): Promise<this> {
         if (!this.closed) await this.act("close");

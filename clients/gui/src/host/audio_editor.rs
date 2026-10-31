@@ -2876,6 +2876,38 @@ mod tests {
         );
     }
 
+    /// **An audio window asks only where no client holds its file**: the
+    /// host's own carries `ask_close`, and a client's goes at once.
+    #[test]
+    fn an_audio_window_asks_only_where_no_client_holds_it() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let mut host = host();
+        let own = host.open_audio(None, "alone").expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(own).is_some()
+        });
+        assert!(!host.close_request(own), "its owner is asked first");
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_993)));
+        let asked = door(
+            &mut host,
+            GUI_APP_OPEN,
+            vec![
+                OscType::Int(1),
+                OscType::String("audio".into()),
+                OscType::String(json!({"title": "client"}).to_string()),
+            ],
+            client,
+        );
+        let window = answered(&mut host, asked, 1)["ok"]["window"]
+            .as_i64()
+            .expect("a window") as i32;
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(window).is_some()
+        });
+        assert!(host.close_request(window), "it goes at once");
+    }
+
     /// **A score is an application of this host's**: a client opens it over
     /// a document through the door, the engraver here draws its window, a
     /// verb is its turn, its file is read and written here, a file a window

@@ -314,6 +314,9 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
             if let Some(visible) = request.get("filesVisible").and_then(Value::as_bool) {
                 editor.window_state.files_visible = visible;
             }
+            if let Some(asks) = request.get("asks").and_then(Value::as_bool) {
+                editor.window_state.asks = asks;
+            }
             if let Ok(facts) = serde_json::from_value::<Facts>(request.clone()) {
                 editor.adopt(Facts {
                     layers: None,

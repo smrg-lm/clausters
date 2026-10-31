@@ -404,7 +404,7 @@ impl AudioEditor {
     }
 
     /// Whether the window numbered the widgets of its dialogs.
-    fn has_dialogs(&self) -> bool {
+    pub(super) fn has_dialogs(&self) -> bool {
         self.window_state.dialogs.numbered(dialogs::forms())
     }
 
@@ -418,7 +418,7 @@ impl AudioEditor {
         let values = match form {
             Form::New => dialogs::new_of(self.file.channels, self.file.rate),
             Form::SaveAs => [("path".to_string(), self.file.target.clone())].into(),
-            Form::Open => BTreeMap::new(),
+            Form::Open | Form::Close => BTreeMap::new(),
         };
         (
             None,
@@ -430,12 +430,11 @@ impl AudioEditor {
         if tag == "save" {
             return !(self.untitled() && self.has_dialogs());
         }
-        let Some(open) = self
-            .window_state
-            .dialogs
-            .up()
-            .filter(|open| open.form == Form::SaveAs)
-        else {
+        // the close form's Save of a file not written yet asks where first
+        let writes = |open: &&forms::Open<Form>| {
+            open.form == Form::SaveAs || (open.form == Form::Close && !self.untitled())
+        };
+        let Some(open) = self.window_state.dialogs.up().filter(writes) else {
             return false;
         };
         self.dialog_name(widget).is_some_and(|name| {
@@ -465,6 +464,101 @@ impl AudioEditor {
         }
     }
 
+    /// **The next file a close would lose work in**: the one in view first,
+    /// then the others, leaving out those the hand said to let go of.
+    pub(super) fn next_unsaved(&self) -> Option<i64> {
+        if !self.open_files.open {
+            return None;
+        }
+        std::iter::once(&self.file)
+            .chain(self.open_files.parked.values())
+            .filter(|file| file.dirty && !self.window_state.let_go.contains(&file.id.0))
+            .map(|file| file.id.0)
+            .next()
+    }
+
+    /// **The close form answered**: Don't save (`discard`) lets the file in
+    /// view go; Save writes it, or asks where for one not written yet, and
+    /// what the form was up for waits for the write ([`Self::after_save`]).
+    fn close_answered(
+        &mut self,
+        discard: bool,
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        if !discard {
+            let (reason, shown) = self.save_from_window(out);
+            if reason.is_some() || !shown.is_empty() {
+                return (reason, shown);
+            }
+            return (None, forms::corrections(self.window_state.dialogs.hide()));
+        }
+        let hidden = forms::corrections(self.window_state.dialogs.hide());
+        let (reason, shown) = self.leave_next(out);
+        let mut corrections = hidden;
+        corrections.extend(shown);
+        (reason, corrections)
+    }
+
+    /// **The file in view is dealt with: what the form was up for goes on.**
+    /// Close file closes it. A close marks it dealt with and asks about the
+    /// next with changes, and with none left the window closes.
+    fn leave_next(&mut self, out: &mut Outcome) -> (Option<String>, Vec<Correction>) {
+        use crate::closing::Leaving;
+        match self.window_state.leaving.take() {
+            Some(Leaving::File(_)) => {
+                out.file_action = Some(FileAction {
+                    verb: FileVerb::CloseFile,
+                    file: self.file.id.0,
+                });
+                (None, Vec::new())
+            }
+            Some(Leaving::Window) => {
+                self.window_state.let_go.insert(self.file.id.0);
+                if self.next_unsaved().is_some() {
+                    return crate::turn::Converse::ask_before(self, Leaving::Window, out);
+                }
+                self.window_state.let_go.clear();
+                out.close = true;
+                (None, Vec::new())
+            }
+            None => (None, Vec::new()),
+        }
+    }
+
+    /// **A save landed**: what waited for it is done only over what it wrote.
+    /// An edit made while it was written is work the save does not hold, and
+    /// the window keeps it. Answers the corrections to carry.
+    pub(super) fn after_save(&mut self, out: &mut Outcome) -> (Option<String>, Vec<Correction>) {
+        if self.window_state.leaving.is_none() {
+            return (None, Vec::new());
+        }
+        if self.file.dirty {
+            self.window_state.leaving = None;
+            self.window_state.let_go.clear();
+            return (
+                Some("the file changed while it was saved: it stays open".into()),
+                Vec::new(),
+            );
+        }
+        self.leave_next(out)
+    }
+
+    /// **A save refused**: nothing goes, and the form is down.
+    pub(super) fn save_refused(&mut self) -> Vec<Correction> {
+        let waited = self.window_state.leaving.take().is_some();
+        self.window_state.let_go.clear();
+        let up = self
+            .window_state
+            .dialogs
+            .up()
+            .is_some_and(|open| open.form == Form::Close);
+        if waited && up {
+            forms::corrections(self.window_state.dialogs.hide())
+        } else {
+            Vec::new()
+        }
+    }
+
     /// **What a widget of the dialogs said**: a field typed into, a chooser's
     /// selection or the directory it went into, a form cancelled, or `OK` --
     /// a new file's shape or files to open, which the outcome names for the
@@ -484,9 +578,17 @@ impl AudioEditor {
         let Some(open) = self.window_state.dialogs.up().cloned() else {
             return (None, Vec::new());
         };
+        // **The close form's answer**: Cancel keeps everything, Don't save
+        // lets the file in view go, and Save writes it and then does what the
+        // form was up for
+        if open.form == Form::Close && matches!(said, Said::Discard | Said::Accept) {
+            return self.close_answered(said == Said::Discard, out);
+        }
         let reason = match said {
             Said::Field(..) | Said::Chosen(..) | Said::Entered(..) => return (None, Vec::new()),
             Said::Cancel | Said::Discard => {
+                self.window_state.leaving = None;
+                self.window_state.let_go.clear();
                 return (None, forms::corrections(self.window_state.dialogs.hide()));
             }
             Said::Picked(_, paths) if open.form == Form::Open => open_paths(&paths, out),
@@ -507,6 +609,8 @@ impl AudioEditor {
                     let paths = self.window_state.dialogs.chosen("path").to_vec();
                     open_paths(&paths, out)
                 }
+                // answered above
+                Form::Close => None,
                 Form::SaveAs => {
                     let path = open.value("path").trim().to_string();
                     if path.is_empty() {

@@ -6182,7 +6182,7 @@ wrong.
   counters and event-id watermarks. Written snapshots retain the advancing
   values; restored sequence contents and an inactive session are covered.
 
-- ⬜ **The audio editor does not ask before unsaved work goes** (found
+- ✅ **The audio editor does not ask before unsaved work goes** (found
   2026-10-31, moving the rule for a window's file into `closing`). The multitrack
   and the score editor ask through `closing::close` and `closing::change_file`;
   `AudioEditor` implements neither `asks_to_close` nor `unsaved`, so a window the
@@ -6191,6 +6191,11 @@ wrong.
   docstring says it asks. It holds several files, so the form has to say which
   it asks about, and its Save is a render. Its history already keeps the rule:
   each file has its own, and New and Open add files, letting nothing go.
+  **Fixed 2026-10-31**: a window no client holds asks, by `closing`'s rule, about
+  the file it shows. Close file asks about that file alone; a close brings each
+  file with changes into view in turn, and Don't save and Save go on to the
+  next. A Save lets what waits go only once its store is confirmed, and over
+  what it wrote.
 
 - ⬜ **A sound file opens in two audio editor windows of one host**
   *(found 2026-10-30, making a session file open once in a host)*. A

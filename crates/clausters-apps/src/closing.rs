@@ -242,7 +242,7 @@ pub fn change_file<E: Converse>(
     change: FileChange,
     out: &mut E::Outcome,
 ) -> (Option<String>, Vec<Correction>) {
-    if editor.asks_to_close() && editor.unsaved() {
+    if editor.asks_to_close() && editor.loses(&change) {
         return editor.ask_before(Leaving::File(change), out);
     }
     editor.change_now(change, out);

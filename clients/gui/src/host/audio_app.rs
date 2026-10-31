@@ -1072,9 +1072,15 @@ impl App {
             }
             AppKind::Audio => {}
         }
+        // **A window no client holds is the work's only holder**, and asks
+        // before unsaved work goes
+        let asks = !self
+            .windows
+            .get(&def_id)
+            .is_some_and(|window| window.client_owned);
         self.member_call(
             member,
-            json!({"verb": "sync", "window": def_id, "title": title}),
+            json!({"verb": "sync", "window": def_id, "title": title, "asks": asks}),
         );
         self.member_call(member, json!({"verb": "attach_view"}));
         let mut first = Ran {

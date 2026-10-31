@@ -480,7 +480,8 @@ code that keeps it lives.
   it is the work's only holder and has changes (`clausters_apps::closing`), and
   hands the document back to the client that opened it otherwise. An audio
   window adds files rather than replacing one, so its New and Open let nothing
-  go.
+  go; it asks about the file it shows, Close file about that one, and a close
+  brings each file with changes into view in turn.
 - **An application that opens files opens without one, and outlives its
   last.** Where an application holds files or documents of its own -- opens,
   adds and closes them -- it opens with none, its window keeping the menu bar,

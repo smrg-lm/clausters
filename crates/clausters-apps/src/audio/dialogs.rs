@@ -1,5 +1,6 @@
 //! **The audio editor's dialogs**: a new file's shape, the path a file is
-//! saved under and the file to open -- three forms of the shared mechanism ([`crate::forms`]).
+//! saved under, the file to open and the question unsaved work asks -- four
+//! forms of the shared mechanism ([`crate::forms`]).
 
 use std::collections::BTreeMap;
 
@@ -14,7 +15,13 @@ pub enum Form {
     SaveAs,
     /// Files to open in this editor, chosen in the host's chooser.
     Open,
+    /// **Whether to save the file in focus before it goes**: the window has
+    /// it in view, so the question names it by showing it.
+    Close,
 }
+
+/// What the close form asks.
+pub const UNSAVED: &str = "This file has changes that are not saved.";
 
 impl Spec for Form {
     fn prefix(self) -> &'static str {
@@ -22,6 +29,7 @@ impl Spec for Form {
             Form::New => "new",
             Form::SaveAs => "file",
             Form::Open => "open",
+            Form::Close => "close",
         }
     }
 
@@ -30,6 +38,7 @@ impl Spec for Form {
             Form::New => 1,
             Form::SaveAs => 2,
             Form::Open => 3,
+            Form::Close => 4,
         }
     }
 
@@ -38,6 +47,7 @@ impl Spec for Form {
             Form::New => "New file",
             Form::SaveAs => "Save as",
             Form::Open => "Open file",
+            Form::Close => "Close",
         }
     }
 
@@ -50,7 +60,12 @@ impl Spec for Form {
             ],
             Form::SaveAs => vec![("path", "File")],
             Form::Open => vec![("path", "Files")],
+            Form::Close => Vec::new(),
         }
+    }
+
+    fn closes(self) -> Option<&'static str> {
+        (self == Form::Close).then_some(UNSAVED)
     }
 
     /// The files to open are chosen in the host's own chooser, where Ctrl
@@ -73,7 +88,7 @@ pub const AUDIO: &[&str] = &[
 ];
 
 /// The forms the window holds, in the order of their pages.
-const FORMS: [Form; 3] = [Form::New, Form::SaveAs, Form::Open];
+const FORMS: [Form; 4] = [Form::New, Form::SaveAs, Form::Open, Form::Close];
 
 /// **Every widget of the dialogs, by name**, for a caller to number.
 #[must_use]
@@ -176,7 +191,12 @@ mod tests {
             .chain(AUDIO)
             .filter_map(|v| v.label.strip_suffix("..."))
             .collect();
-        let titles: Vec<&str> = FORMS.iter().map(|f| f.title()).collect();
+        // the close form asks, and no verb opens it
+        let titles: Vec<&str> = FORMS
+            .iter()
+            .filter(|f| **f != Form::Close)
+            .map(|f| f.title())
+            .collect();
         assert_eq!(asks.len(), titles.len(), "{asks:?}");
         for title in titles {
             assert!(asks.contains(&title), "{title} opens a form");
@@ -184,11 +204,15 @@ mod tests {
     }
 
     #[test]
-    fn the_two_forms_are_pages_of_a_stack() {
+    fn the_forms_are_pages_of_a_stack() {
         let ids = ids();
         let stack = forms::stack(&FORMS, &ids).expect("numbered");
         let pages = stack["children"].as_array().unwrap();
-        assert_eq!(pages.len(), 4, "no dialog, a new file, a save and an open");
+        assert_eq!(
+            pages.len(),
+            5,
+            "no dialog, a new file, a save, an open and the close form"
+        );
         assert_eq!(pages[1]["children"][0]["title"], "New file");
         assert_eq!(pages[2]["children"][0]["title"], "Save as");
         assert_eq!(pages[3]["children"][0]["title"], "Open file");
