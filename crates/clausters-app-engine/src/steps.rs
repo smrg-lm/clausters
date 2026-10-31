@@ -51,38 +51,97 @@ pub fn carry_while(
         .collect();
     let total: u64 = frames.iter().sum();
     let mut before = 0;
-    for (step, frames) in steps.iter().zip(&frames) {
-        if !live.load(Ordering::Acquire) {
-            return Err("called off".into());
+    let mut moved = Vec::new();
+    let carried = (|| {
+        for (step, frames) in steps.iter().zip(&frames) {
+            carry_one(
+                step,
+                *frames,
+                total,
+                &mut before,
+                live,
+                &mut progress,
+                &mut moved,
+            )?;
         }
-        match step {
-            Step::Render(job) => {
-                render_while(job, live, |done, _| {
-                    progress(&job.label, (before + done).min(total), total.max(1))
-                })?;
-                before += frames;
-            }
-            Step::Measure { path, peaks, label } => {
-                clausters_core::peaks::measure::file(path, peaks, live, |done, _| {
-                    progress(label, (before + done).min(total), total.max(1))
-                })
-                .map_err(|e| failed(path, e))?;
-                before += frames;
-            }
-            Step::Move { from, to } => clausters_core::files::rename(from, to)
-                .map_err(|e| format!("moving {from} to {to} failed: {e}"))?,
-            Step::Store { path, contents } => clausters_core::files::write(path, contents)
-                .map_err(|e| format!("writing {path} failed: {e}"))?,
-            Step::Send(message) => {
-                tracing::warn!(
-                    "app engine: {} is a server's message and is not carried out here",
-                    message.addr
-                );
-            }
-            Step::AwaitDone { .. } | Step::Sync(_) => {}
+        Ok(())
+    })();
+    match carried {
+        Ok(()) => Ok(()),
+        Err(reason) => Err(put_back(moved, reason)),
+    }
+}
+
+/// **The moves of steps that did not all land, undone**, last first: a save over
+/// a file moves the file away and then its render in, and the file must not stay
+/// in a working folder that goes with the window because the second did not
+/// land. A move that cannot be undone says where the file is.
+fn put_back(moved: Vec<(&str, &str)>, mut reason: String) -> String {
+    for (from, to) in moved.into_iter().rev() {
+        if let Err(e) = clausters_core::files::move_file(to, from) {
+            tracing::error!("app engine: {from} is at {to}: {e}");
+            reason = format!("{reason}; {from} is at {to}: {e}");
         }
     }
+    reason
+}
+
+/// One step of [`carry_while`].
+fn carry_one<'a>(
+    step: &'a Step,
+    frames: u64,
+    total: u64,
+    before: &mut u64,
+    live: &AtomicBool,
+    progress: &mut impl FnMut(&str, u64, u64),
+    moved: &mut Vec<(&'a str, &'a str)>,
+) -> Result<(), String> {
+    if !live.load(Ordering::Acquire) {
+        return Err("called off".into());
+    }
+    match step {
+        Step::Render(job) => {
+            render_while(job, live, |done, _| {
+                progress(&job.label, (*before + done).min(total), total.max(1))
+            })?;
+            *before += frames;
+        }
+        Step::Measure { path, peaks, label } => {
+            clausters_core::peaks::measure::file(path, peaks, live, |done, _| {
+                progress(label, (*before + done).min(total), total.max(1))
+            })
+            .map_err(|e| failed(path, e))?;
+            *before += frames;
+        }
+        Step::Move { from, to } => {
+            clausters_core::files::move_file(from, to)
+                .map_err(|e| format!("moving {from} to {to} failed: {e}"))?;
+            moved.push((from.as_str(), to.as_str()));
+        }
+        Step::Store { path, contents } => {
+            store(path, contents).map_err(|e| format!("writing {path} failed: {e}"))?;
+        }
+        Step::Send(message) => {
+            tracing::warn!(
+                "app engine: {} is a server's message and is not carried out here",
+                message.addr
+            );
+        }
+        Step::AwaitDone { .. } | Step::Sync(_) => {}
+    }
     Ok(())
+}
+
+/// **A document stored whole or not at all**: written beside its file and named
+/// that once it is, so a write that fails leaves the file it would replace.
+fn store(path: &str, contents: &str) -> std::io::Result<()> {
+    let writing = format!("{path}.writing");
+    let written = clausters_core::files::write(&writing, contents)
+        .and_then(|()| clausters_core::files::rename(&writing, path));
+    if written.is_err() {
+        let _ = clausters_core::files::remove_file(&writing);
+    }
+    written
 }
 
 /// **One render**: the score rendered into its file.
@@ -263,6 +322,48 @@ mod tests {
         assert!(from.exists() && !to.exists(), "nothing was moved");
         assert_eq!(carry(&steps, |_, _, _| {}), Ok(()));
         assert!(to.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **Moves that do not all land are undone**: the file a save moved away
+    /// comes back when the render cannot take its place, and when the steps are
+    /// called off between the two.
+    #[test]
+    fn a_move_that_does_not_land_puts_back_the_one_before_it() {
+        let dir = std::env::temp_dir().join(format!("clausters-put-back-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = |name: &str| dir.join(name).to_string_lossy().into_owned();
+        std::fs::write(path("file"), b"the file").unwrap();
+        let moving = |from: String, to: String| Step::Move { from, to };
+        let steps = [
+            moving(path("file"), path("held")),
+            moving(path("no-render"), path("file")),
+        ];
+        let failed = carry(&steps, |_, _, _| {}).unwrap_err();
+        assert!(failed.contains("no-render"), "{failed}");
+        assert_eq!(std::fs::read(path("file")).unwrap(), b"the file");
+        assert!(!dir.join("held").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A document is stored whole**: replaced at once, with nothing beside it.
+    #[test]
+    fn a_stored_document_replaces_its_file_and_leaves_nothing_beside_it() {
+        let dir = std::env::temp_dir().join(format!("clausters-store-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.json");
+        std::fs::write(&path, "before").unwrap();
+        let name = path.to_string_lossy().into_owned();
+        store(&name, "after").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "after");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        let nowhere = dir
+            .join("no-folder")
+            .join("x")
+            .to_string_lossy()
+            .into_owned();
+        assert!(store(&nowhere, "after").is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "after");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

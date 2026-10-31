@@ -514,6 +514,45 @@ pub fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
     imp::rename(from.as_ref(), to.as_ref())
 }
 
+/// **Moves the file at `from` to `to`, wherever they are**, over whatever is
+/// there. A rename cannot cross filesystems, and a working folder is rarely on
+/// the same one as the file a save replaces, so across them the file is copied
+/// beside `to`, named `to` when it is whole, and only then taken from `from`: a
+/// copy that fails leaves both as they were.
+pub fn move_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
+    let (from, to) = (from.as_ref(), to.as_ref());
+    match imp::rename(from, to) {
+        Err(e) if e.kind() == io::ErrorKind::CrossesDevices => move_across(from, to),
+        moved => moved,
+    }
+}
+
+/// [`move_file`]'s copy, for a move a rename cannot make.
+fn move_across(from: &Path, to: &Path) -> io::Result<()> {
+    let mut partial = to.as_os_str().to_owned();
+    partial.push(".moving");
+    let partial = Path::new(&partial);
+    let copied = copy_whole(from, partial).and_then(|()| imp::rename(partial, to));
+    if let Err(e) = copied {
+        let _ = imp::remove_file(partial);
+        return Err(e);
+    }
+    imp::remove_file(from)
+}
+
+/// The file at `from`, read a piece at a time into a new one at `to`.
+fn copy_whole(from: &Path, to: &Path) -> io::Result<()> {
+    let mut source = File::open(from)?;
+    let mut copy = File::create(to)?;
+    let mut piece = vec![0u8; 1 << 20];
+    loop {
+        match source.read(&mut piece)? {
+            0 => return Ok(()),
+            read => copy.write_all(&piece[..read])?,
+        }
+    }
+}
+
 /// Removes the file at `path`.
 pub fn remove_file(path: impl AsRef<Path>) -> io::Result<()> {
     imp::remove_file(path.as_ref())
@@ -557,6 +596,31 @@ pub fn read_dir(path: impl AsRef<Path>) -> io::Result<Vec<Entry>> {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+
+    /// **A move across filesystems is a whole copy, then the name**: nothing
+    /// is left half way, and what it cannot copy it leaves as it was.
+    #[test]
+    fn a_move_across_filesystems_copies_whole_and_leaves_nothing_on_failure() {
+        let dir = std::env::temp_dir().join(format!("clausters-move-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (from, to) = (dir.join("from"), dir.join("to"));
+        let contents = vec![7u8; (1 << 20) + 13];
+        std::fs::write(&from, &contents).unwrap();
+        std::fs::write(&to, b"what was there").unwrap();
+        move_across(&from, &to).unwrap();
+        assert!(!from.exists());
+        assert_eq!(std::fs::read(&to).unwrap(), contents);
+        assert!(!dir.join("to.moving").exists());
+        // a destination that cannot be written: the file stays where it was
+        std::fs::write(&from, b"kept").unwrap();
+        let nowhere = dir.join("no-folder").join("to");
+        assert!(move_across(&from, &nowhere).is_err());
+        assert_eq!(std::fs::read(&from).unwrap(), b"kept");
+        // an ordinary move is a rename
+        move_file(&from, &to).unwrap();
+        assert_eq!(std::fs::read(&to).unwrap(), b"kept");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_file_is_written_read_sought_and_moved() {
