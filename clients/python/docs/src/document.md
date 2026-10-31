@@ -1318,9 +1318,8 @@ The editor's `save` waits for storage confirmation. It writes the contents
 captured when the save began: an edit made while it waits remains unsaved.
 Failure preserves the previous destination and checkpoint, so saving can be
 tried again. A close that asks to save waits for this confirmation too.
-After resolving a pending repair's I/O failure, `editor.retry_pending()`
-retries the repair without repeating the edit or measurement. A failed retry
-keeps the affected session locked; a successful one lets editing continue.
+A save or a measurement that fails publishes nothing and leaves the session
+free to edit at once: its work has nothing on disk to restore.
 
 ### Mixing is the multitrack's
 

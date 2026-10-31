@@ -237,8 +237,6 @@ test("the transport and the save are calls to the application", async () => {
     assert.equal((await editor.output()).starved, 0);
     assert.equal(await editor.save("/songs/song.json"), "/songs/song.json");
     assert.deepEqual(host.last(), { do: { verb: "save", path: "/songs/song.json" } });
-    await editor.retryPending();
-    assert.deepEqual(host.last(), { do: { verb: "retry" } });
     assert.ok(editor.undo());
     assert.deepEqual(host.verbs[host.verbs.length - 1], [9, "undo"]);
     assert.ok(editor.split());

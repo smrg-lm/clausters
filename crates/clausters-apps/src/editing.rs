@@ -205,6 +205,18 @@ impl Outcome {
             Outcome::Score(o) => o.answer = Some(answer),
         }
     }
+
+    /// No answer now: a step whose walk is still out answers when it lands.
+    fn hold_answer(&mut self) {
+        match self {
+            Outcome::Multitrack(o) => o.answer = None,
+            Outcome::Audio(o) => o.answer = None,
+            Outcome::Notes(o) => o.answer = None,
+            Outcome::Points(o) => o.answer = None,
+            #[cfg(feature = "notation")]
+            Outcome::Score(o) => o.answer = None,
+        }
+    }
 }
 
 /// **What one message to a member came to.**
@@ -965,9 +977,7 @@ impl Editing {
             } else {
                 Direction::Undo
             };
-            let step = self
-                .prepare_audio_walk(direction)
-                .unwrap_or_else(|| self.step(direction));
+            let step = self.walk_history(direction);
             let pending = step.operation.as_ref().map(|prepared| prepared.ticket);
             if let Some(ticket) = pending {
                 self.audio_runtime.acknowledge_walk(ticket, member, seq);
@@ -996,25 +1006,7 @@ impl Editing {
                 }
             }
             if pending.is_some() {
-                use crate::turn::Turned;
-                match &mut outcome {
-                    Outcome::Audio(outcome) => {
-                        outcome.take_answer();
-                    }
-                    Outcome::Multitrack(outcome) => {
-                        outcome.take_answer();
-                    }
-                    Outcome::Notes(outcome) => {
-                        outcome.take_answer();
-                    }
-                    Outcome::Points(outcome) => {
-                        outcome.take_answer();
-                    }
-                    #[cfg(feature = "notation")]
-                    Outcome::Score(outcome) => {
-                        outcome.take_answer();
-                    }
-                }
+                outcome.hold_answer();
             }
             stepped = Some(step);
         }
@@ -1060,6 +1052,17 @@ impl Editing {
             freed,
             version: self.version,
         })
+    }
+
+    /// **A step of the selected order, whoever asked for it**: one whose
+    /// legs include an audio file is prepared as an operation (its I/O is
+    /// the caller's to carry, `Stepped::operation`); any other is taken
+    /// at once ([`step`]).
+    ///
+    /// [`step`]: Self::step
+    pub(super) fn walk_history(&mut self, direction: Direction) -> Stepped {
+        self.prepare_audio_walk(direction)
+            .unwrap_or_else(|| self.step(direction))
     }
 
     /// **One step of the history**, handed round the members.

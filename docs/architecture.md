@@ -1582,8 +1582,9 @@ distinct run id; duplicate landings cannot consume the next batch. A session
 binding changes before its sources are published, and a delta of an earlier
 binding cannot attach peaks or confirm a save on the replacement. Measurements
 publish their peaks together after all sources succeed; partial caches remain
-reusable files and do not become document edits. A failed repair remains
-reachable through either client's explicit retry verb.
+reusable files and do not become document edits. A session's work hands
+back no recovery steps, so a refused turn is repaired at once, as an audio
+operation's is, and leaves no repair to retry.
 
 A session save captures its multitrack, source table and shared sequences.
 `Step::Store` writes that immutable UTF-8 document through `clausters_core::files`

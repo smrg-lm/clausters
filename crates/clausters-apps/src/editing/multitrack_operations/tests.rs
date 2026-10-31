@@ -38,7 +38,6 @@ impl HeldEngine for Engine {
 
 #[derive(Default)]
 struct Disk {
-    fail_repair: bool,
     repairs: usize,
 }
 impl Caller for Disk {
@@ -54,14 +53,9 @@ impl Caller for Disk {
     fn stamps(&mut self, _: &[String]) -> Value {
         Value::Null
     }
-    fn carry(&mut self, steps: &[Step]) -> Result<(), String> {
-        assert!(steps.is_empty(), "a cache refusal has no file to restore");
+    fn carry(&mut self, _: &[Step]) -> Result<(), String> {
         self.repairs += 1;
-        if self.fail_repair {
-            Err("storage unavailable".into())
-        } else {
-            Ok(())
-        }
+        Ok(())
     }
     fn delete(&mut self, _: &[String]) {}
     fn call_off(&mut self, _: MemberId) {}
@@ -277,16 +271,17 @@ fn a_reply_of_a_previous_session_cannot_attach_peaks_to_reused_source_ids() {
 }
 
 #[test]
-fn partial_failure_retains_the_original_lock_through_failed_repair_and_retry() {
+fn a_partial_failure_publishes_nothing_and_releases_its_lock_at_once() {
     let mut f = Fixture::new();
     let first = f.open("partial", 2);
     let work = f.editing.multitrack_waits[&first.run].clone();
     let second = f.land(first.run, Ok(())).render.unwrap();
-    f.disk.fail_repair = true;
     let failed = f.land(second.run, Err("measurement failed".into()));
     assert!(f.peaks(1).is_none() && f.peaks(2).is_none());
+    // a session's work has nothing to recover: the refusal is repaired
+    // at once, and the session takes edits again
     assert!(
-        f.editing
+        !f.editing
             .multitrack_runtime
             .operations
             .busy(work.ticket.target)
@@ -295,24 +290,9 @@ fn partial_failure_retains_the_original_lock_through_failed_repair_and_retry() {
         e["reason"]
             .as_str()
             .unwrap_or("")
-            .contains("storage unavailable")
+            .contains("measurement failed")
     }));
-    f.disk.fail_repair = false;
-    let retried = f.editing.start(
-        f.member,
-        &json!({"verb":"retry"}),
-        None,
-        &mut f.disk,
-        &mut f.ids,
-    );
-    assert!(matches!(retried.end, Some(Ok(_))));
-    assert!(
-        !f.editing
-            .multitrack_runtime
-            .operations
-            .busy(work.ticket.target)
-    );
-    assert_eq!(f.disk.repairs, 2);
+    assert_eq!(f.disk.repairs, 0, "no recovery was carried");
     assert!(f.land(second.run, Ok(())).effects.is_empty());
     assert!(!f.editing.can_undo());
 }

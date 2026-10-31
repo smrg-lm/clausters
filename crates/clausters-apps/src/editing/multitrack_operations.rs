@@ -13,45 +13,6 @@ pub(super) struct SaveTo {
 }
 
 impl Editing {
-    pub(super) fn retry_multitrack(
-        &mut self,
-        member: MemberId,
-        caller: &mut dyn Caller,
-        ids: &mut clausters_core::ids::IdSpaces,
-        ran: &mut Ran,
-    ) {
-        let Dispatch::Response(protocol) = self.multitrack_runtime.control(
-            &mut self.services.resources,
-            Control::PendingRepairs { member },
-            self.version,
-        ) else {
-            unreachable!("repair discovery has no domain transition")
-        };
-        for repair in protocol.repairs.unwrap_or_default() {
-            let dispatch = self.multitrack_runtime.control(
-                &mut self.services.resources,
-                Control::RetryRepair {
-                    ticket: repair.ticket,
-                },
-                self.version,
-            );
-            let mut retried = Ran::default();
-            self.drive_multitrack_operation(dispatch, caller, ids, &mut retried);
-            if !self
-                .multitrack_runtime
-                .operations
-                .busy(repair.ticket.target)
-            {
-                retried.effects.retain(|effect| effect["kind"] != "say");
-                retried.end = Some(Ok(Value::Null));
-            }
-            ran.effects.extend(retried.effects);
-            if ran.end.as_ref().is_none_or(Result::is_ok) {
-                ran.end = retried.end;
-            }
-        }
-    }
-
     pub(super) fn measure_multitrack(
         &mut self,
         member: MemberId,
@@ -152,19 +113,13 @@ impl Editing {
                 self.wait_multitrack_operation(work, ran);
                 return;
             }
+            // a session's work leaves nothing to recover (its commit and
+            // abort hand back no steps), so a refusal is repaired at once,
+            // as the audio editor's is
             if let Some(ticket) = settled.protocol.repair {
-                let result = settled
-                    .protocol
-                    .recoveries
-                    .unwrap_or_default()
-                    .iter()
-                    .try_for_each(|batch| caller.carry(&batch.steps));
                 dispatch = self.multitrack_runtime.control(
                     &mut self.services.resources,
-                    match result {
-                        Ok(()) => Control::Repaired { ticket },
-                        Err(reason) => Control::RepairFailed { ticket, reason },
-                    },
+                    Control::Repaired { ticket },
                     self.version,
                 );
                 continue;

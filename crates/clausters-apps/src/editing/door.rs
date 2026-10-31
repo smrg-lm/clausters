@@ -266,8 +266,7 @@ pub(crate) fn call_value(editing: &mut Editing, mut request: Value) -> Value {
                 .as_str()
                 .and_then(Direction::parse)
                 .unwrap_or(Direction::Undo);
-            let prepared = editing.prepare_audio_walk(direction);
-            to_value(&prepared.unwrap_or_else(|| editing.step(direction)))
+            to_value(&editing.walk_history(direction))
         }
         "record" => {
             let coalesce = get(&request, "coalesce").as_bool().unwrap_or(false);

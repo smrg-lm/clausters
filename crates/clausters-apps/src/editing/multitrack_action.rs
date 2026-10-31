@@ -15,12 +15,7 @@ pub(super) struct Action {
 impl Action {
     pub fn allows_empty(&self) -> bool {
         match &self.kind {
-            Kind::Open { .. }
-            | Kind::NewFile
-            | Kind::Close
-            | Kind::Closed
-            | Kind::Retry
-            | Kind::Sound => true,
+            Kind::Open { .. } | Kind::NewFile | Kind::Close | Kind::Closed | Kind::Sound => true,
             Kind::Verb { call } => call.allows_empty(),
             Kind::Event(event) => {
                 event.addr == "/gui_closed"
@@ -71,7 +66,6 @@ pub(super) enum Kind {
     Save {
         path: Option<String>,
     },
-    Retry,
     Event(Event),
     Verb {
         call: crate::multitrack::calls::Call,

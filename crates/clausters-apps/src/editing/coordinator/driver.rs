@@ -181,7 +181,7 @@ impl Editing {
             return false;
         }
         let _ = member;
-        let freed = self.audio_carry_step(stepped, caller, ids, ran);
+        let freed = self.carry_step(stepped, caller, ids, ran);
         for freed in freed {
             caller.delete(&freed.files);
         }
@@ -189,9 +189,11 @@ impl Editing {
         true
     }
 
-    /// The step's operation or its files' effects carried out; answers what
-    /// it let go of.
-    pub(in crate::editing) fn audio_carry_step(
+    /// The step's operation or its files' effects carried out, whichever
+    /// window stepped; answers what it let go of. An operation is an audio
+    /// file's, the one participant whose walk does I/O, so it runs on the
+    /// audio coordinator.
+    pub(in crate::editing) fn carry_step(
         &mut self,
         stepped: Stepped,
         caller: &mut dyn Caller,
@@ -218,7 +220,7 @@ impl Editing {
             );
             ran.effects.extend(nested.effects);
             if let (Some(Ok(_)), Some(stepped)) = (nested.end, completed.and_then(|c| c.stepped)) {
-                freed.extend(self.audio_carry_step(stepped, caller, ids, ran));
+                freed.extend(self.carry_step(stepped, caller, ids, ran));
             }
             return freed;
         }

@@ -43,6 +43,9 @@ pub(super) struct Tracks {
     /// its readers play.
     taken: HashMap<NodeId, (Vec<PlacedRegion>, PlannedFeed)>,
     revision: u64,
+    /// **A save this turn handed to storage**: the turn's end is that
+    /// storage's, when it lands, not the turn's own.
+    storing: bool,
 }
 
 impl Tracks {
@@ -72,6 +75,7 @@ impl Tracks {
             playback: MultitrackPlayback::in_medium(engine.medium()),
             taken: HashMap::new(),
             revision: 0,
+            storing: false,
         })
     }
 }
@@ -383,14 +387,7 @@ impl Editing {
                     answer
                 })
             }
-            ActionKind::Retry => {
-                self.retry_multitrack(member, caller, ids, &mut ran);
-                if ran.end.is_none() {
-                    ran.end = Some(Ok(Value::Null));
-                }
-                return ran;
-            }
-            ActionKind::Save { path } => self.save_session(
+            ActionKind::Save { path } => match self.save_session(
                 member,
                 super::multitrack_operations::SaveTo {
                     path: path.clone(),
@@ -398,7 +395,13 @@ impl Editing {
                     save_as: path.is_some(),
                 },
                 &mut ran,
-            ),
+            ) {
+                Ok(answer) => {
+                    tracks.storing = true;
+                    Ok(answer)
+                }
+                Err(why) => Err(why),
+            },
             ActionKind::Open {
                 session: None,
                 snapshot: None,
@@ -484,14 +487,12 @@ impl Editing {
                     clausters_document::history::Direction::Redo
                 };
                 let before = self.version;
-                let stepped = self
-                    .prepare_audio_walk(direction)
-                    .unwrap_or_else(|| self.step(direction));
+                let stepped = self.walk_history(direction);
                 for corrected in &stepped.corrections {
                     ran.effects
                         .push(effect("echo", json!({"answer": corrected.answer})));
                 }
-                for freed in self.audio_carry_step(stepped, caller, ids, &mut ran) {
+                for freed in self.carry_step(stepped, caller, ids, &mut ran) {
                     caller.delete(&freed.files);
                 }
                 let applied = self.version != before;
@@ -515,17 +516,14 @@ impl Editing {
                 Ok(json!(false))
             }
         };
-        if !ran.render.as_ref().is_some_and(|render| {
-            render
-                .steps
-                .iter()
-                .any(|step| matches!(step, clausters_editing::apply::Step::Store { .. }))
-        }) {
-            ran.end = Some(result.map_err(|message: String| Raised {
-                kind: "value".into(),
-                message,
-            }));
+        if std::mem::take(&mut tracks.storing) {
+            // a save ends when its storage lands
+            return ran;
         }
+        ran.end = Some(result.map_err(|message: String| Raised {
+            kind: "value".into(),
+            message,
+        }));
         ran
     }
 
@@ -701,7 +699,7 @@ impl Editing {
                                 .push(effect("echo", json!({"answer":corrected.answer})));
                         }
                     }
-                    for freed in self.audio_carry_step(step, caller, ids, ran) {
+                    for freed in self.carry_step(step, caller, ids, ran) {
                         caller.delete(&freed.files);
                     }
                 }
@@ -804,8 +802,9 @@ impl Editing {
                 close: outcome.close,
                 save_as: outcome.save_as.is_some(),
             };
-            if let Err(why) = self.save_session(member, save, ran) {
-                ran.effects.push(effect("say", json!({"reason":why})));
+            match self.save_session(member, save, ran) {
+                Ok(_) => tracks.storing = true,
+                Err(why) => ran.effects.push(effect("say", json!({"reason":why}))),
             }
             return json!(outcome.changed);
         }

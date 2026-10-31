@@ -2823,7 +2823,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     results go to their originating runtime, never to handler-owned policy.
     **Acceptance:** unchanged audio traces/results; a real multitrack
     operation over the same services with a distinct delta covers partial
-    failure, failed repair/retry, cancellation, duplicate completion and
+    failure, repair, cancellation, duplicate completion and
     invalidation. Undo/redo uses common coordination and preserves order on
     failure. Prove isolated builds with and without `notation`.
     - ✅ Extract common preparation and turn settlement before changing
