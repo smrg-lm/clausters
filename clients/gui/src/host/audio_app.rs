@@ -71,7 +71,20 @@ pub(super) enum AppKind {
     /// **The roll over a box of notes** of multitrack window `parent`: a
     /// notes member over the box's sequence (`source`), in the same context.
     Roll { source: u64, parent: i32 },
+    /// The score editor, over a symbolic score: its document and its engraver
+    /// are the application's.
+    #[cfg(feature = "notation")]
+    Score,
 }
+
+/// The widget roles a score window is numbered with: the page, the scroll it
+/// sits in and the status line.
+#[cfg(feature = "notation")]
+pub(super) const SCORE_ROLES: &[&str] = &["widget", "scroll", "status"];
+
+/// The size a score window opens at, in logical pixels.
+#[cfg(feature = "notation")]
+const SCORE_SIZE: (i64, i64) = (960, 640);
 
 /// The widget roles a multitrack window is numbered with: the multitrack,
 /// its ruler, its transport row and the form a close asks in.
@@ -94,11 +107,27 @@ pub(super) const MULTITRACK_ROLES: &[&str] = &[
 const MULTITRACK_SIZE: (i64, i64) = (1000, 560);
 
 /// Contents handed over by a client, or a session a handler opens again
-/// over what a window handed back.
+/// over what a window handed back; or a symbolic score, as MEI.
 #[derive(Debug)]
-pub(super) enum MultitrackData {
+pub(super) enum AppData {
     Contents(Value),
     Snapshot(Box<clausters_apps::multitrack::operations::Snapshot>),
+    #[cfg(feature = "notation")]
+    Score(String),
+}
+
+/// **A symbolic score read by the engraver this build holds**, or why not.
+#[cfg(feature = "score")]
+fn engraved(data: &str) -> Result<clausters_apps::score::Shared, String> {
+    clausters_notation::open(data, &clausters_notation::EngraveOptions::default())
+        .map(|score| Arc::new(Mutex::new(score)))
+        .map_err(|e| format!("the engraver could not read the score: {e}"))
+}
+
+/// A build with no engraver opens no score.
+#[cfg(all(feature = "notation", not(feature = "score")))]
+fn engraved(_: &str) -> Result<clausters_apps::score::Shared, String> {
+    Err("this host was built without an engraver, so it opens no score".into())
 }
 
 /// What the host asks of the application.
@@ -115,7 +144,7 @@ pub(super) enum ToApp {
         path: Option<String>,
         /// The multitrack to open, as the document's JSON, when it has no
         /// file: an untitled session.
-        data: Option<MultitrackData>,
+        data: Option<AppData>,
         /// Where a multitrack's Save writes, when the host that opened it
         /// said: `Some(None)` writes nowhere.
         save_to: Option<Option<String>>,
@@ -368,10 +397,16 @@ impl App {
                 // **a session open in a window is not opened twice**: an open
                 // of it is that window's, which comes forward instead
                 let asked = match (&kind, &data) {
-                    (AppKind::Multitrack, Some(MultitrackData::Snapshot(snapshot))) => {
+                    (AppKind::Multitrack, Some(AppData::Snapshot(snapshot))) => {
                         snapshot.path.clone().map(|path| (path, false))
                     }
                     (AppKind::Multitrack, None) => path.clone().map(|path| (path, true)),
+                    #[cfg(feature = "notation")]
+                    (AppKind::Score, Some(AppData::Score(_))) => {
+                        path.clone().map(|path| (path, false))
+                    }
+                    #[cfg(feature = "notation")]
+                    (AppKind::Score, None) => path.clone().map(|path| (path, true)),
                     _ => None,
                 };
                 if let Some((path, adopt)) = asked
@@ -396,6 +431,8 @@ impl App {
                     AppKind::Roll { source, parent } => {
                         self.open_roll(def_id, &title, source, parent)
                     }
+                    #[cfg(feature = "notation")]
+                    AppKind::Score => self.open_score(def_id, &key, &title, path, data),
                 };
                 if let Some(window) = self.windows.get_mut(&def_id) {
                     window.client_owned = matches!(reply, Some(Reply::Client(..)));
@@ -481,7 +518,7 @@ impl App {
                     .is_some_and(|opening| clausters_apps::editing::same_file(opening, path))
             })
             .map(|(def_id, _)| *def_id)
-            .or_else(|| self.editing.window_holding_session(path))
+            .or_else(|| self.editing.window_holding_file(path))
     }
 
     /// **The editor opened**, in its working folder, over `path` or none.
@@ -549,7 +586,7 @@ impl App {
         key: &str,
         title: &str,
         path: Option<String>,
-        data: Option<MultitrackData>,
+        data: Option<AppData>,
         save_to: Option<Option<String>>,
     ) -> Result<Vec<String>, String> {
         let workspace = clausters_core::workspace::Workspace::create("multitrack")
@@ -562,8 +599,10 @@ impl App {
                 .sample_rate(),
         );
         let (multitrack, snapshot) = match data {
-            Some(MultitrackData::Contents(contents)) => (Some(contents), None),
-            Some(MultitrackData::Snapshot(snapshot)) => (None, Some(snapshot)),
+            Some(AppData::Contents(contents)) => (Some(contents), None),
+            Some(AppData::Snapshot(snapshot)) => (None, Some(snapshot)),
+            #[cfg(feature = "notation")]
+            Some(AppData::Score(_)) => (None, None),
             None => (None, None),
         };
         let empty = multitrack.is_none();
@@ -602,6 +641,75 @@ impl App {
             .filter_map(|n| n.as_str().map(str::to_string))
             .collect();
         Ok(dialogs)
+    }
+
+    /// **The score editor opened**, in its working folder, over the document
+    /// a client handed over, the file at `path`, or a blank page: read here,
+    /// by the engraver this application holds. Answers the names of the
+    /// widgets the window numbers, each under the group it belongs to; a
+    /// document that does not read opens nothing.
+    #[cfg(feature = "notation")]
+    fn open_score(
+        &mut self,
+        def_id: i32,
+        key: &str,
+        title: &str,
+        path: Option<String>,
+        data: Option<AppData>,
+    ) -> Result<Vec<String>, String> {
+        use clausters_core::notation::{sheet_to_mei, voice_to_sheet};
+        let contents = match (data, &path) {
+            (Some(AppData::Score(mei)), _) => mei,
+            (_, Some(path)) => {
+                let bytes =
+                    clausters_core::files::read(path).map_err(|e| format!("{path}: {e}"))?;
+                String::from_utf8(bytes).map_err(|e| format!("{path}: {e}"))?
+            }
+            _ => sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C")).map_err(|e| e.to_string())?,
+        };
+        let score = engraved(&contents)?;
+        let workspace = clausters_core::workspace::Workspace::create("score")
+            .map_err(|e| format!("the working folder: {e}"))?;
+        let request = json!({"title": title, "w": SCORE_SIZE.0, "h": SCORE_SIZE.1}).to_string();
+        let opened: Value = serde_json::from_str(&self.editing.open_score(key, score, &request))
+            .map_err(|e| e.to_string())?;
+        let member = opened["member"]
+            .as_u64()
+            .and_then(|m| MemberId::try_from(m).ok())
+            .ok_or_else(|| opened["error"].as_str().unwrap_or("not opened").to_string())?;
+        self.windows.insert(
+            def_id,
+            Window {
+                member,
+                kind: AppKind::Score,
+                session: path,
+                snapshot: None,
+                client_owned: false,
+                save_to: None,
+                ids: None,
+                widgets: Vec::new(),
+                _workspace: workspace,
+                actions: None,
+                empty: false,
+            },
+        );
+        let mut names = Vec::new();
+        for (verb, group) in [
+            ("tools", "tool"),
+            ("dialogs", "dialog"),
+            ("palettes", "palette"),
+        ] {
+            let listed = self.member_call(member, json!({"verb": verb}));
+            names.extend(
+                listed[verb]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(|name| format!("{group}:{name}")),
+            );
+        }
+        Ok(names)
     }
 
     /// **The roll over the box of notes `source` of multitrack window
@@ -751,6 +859,29 @@ impl App {
             AppKind::Roll { .. } => {
                 self.member_call(member, json!({"verb": "sync", "window": def_id}));
                 // its own transport, taken now: what its play cursor reads
+                let ran = self
+                    .app
+                    .act(&mut self.editing, member, json!({"verb": "open"}), 0, None);
+                let mut first = Ran {
+                    member,
+                    token: 0,
+                    effects: vec![json!({"kind": "publish"})],
+                    end: ran.end,
+                };
+                first.effects.extend(ran.effects);
+                return self.said(def_id, first, true);
+            }
+            #[cfg(feature = "notation")]
+            AppKind::Score => {
+                let asks = !self
+                    .windows
+                    .get(&def_id)
+                    .is_some_and(|window| window.client_owned);
+                self.member_call(
+                    member,
+                    json!({"verb": "sync", "window": def_id, "title": title, "path": session,
+                        "asks": asks}),
+                );
                 let ran = self
                     .app
                     .act(&mut self.editing, member, json!({"verb": "open"}), 0, None);
@@ -961,6 +1092,27 @@ impl App {
                         );
                     }
                     continue;
+                }
+                // the writer of a MIDI file is this build's to link
+                #[cfg(feature = "notation")]
+                "export" => {
+                    let path = effect["path"].as_str().unwrap_or_default().to_string();
+                    let clip = effect["format"] == "clip";
+                    let written = serde_json::from_value(effect["sequence"].take())
+                        .map_err(|e| e.to_string())
+                        .and_then(|sequence| {
+                            super::score_editor::midi_file(&sequence, clip)
+                                .ok_or_else(|| "this host has no MIDI file writer".to_string())
+                        })
+                        .and_then(|data| {
+                            clausters_core::files::write(&path, data).map_err(|e| e.to_string())
+                        });
+                    match written {
+                        Ok(()) => continue,
+                        Err(why) => {
+                            effect = json!({"kind": "say", "reason": format!("{path}: {why}")});
+                        }
+                    }
                 }
                 // a roll's sequence changed: the multitrack plays it again
                 "notes" => {

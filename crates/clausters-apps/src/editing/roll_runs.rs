@@ -148,37 +148,14 @@ impl Editing {
                     ran.end = Some(Ok(json!(false)));
                     return false;
                 }
-                if outcome.locate.is_some() || outcome.play.is_some() {
-                    // whether it rolls is the engine's: a pass may have ended
-                    // on its own
-                    self.roll_rolling(roll);
-                }
-                // **a cursor placed moves the music** where it plays
-                if let Some(beat) = outcome.locate {
-                    roll.cursor = beat;
-                    self.roll_with(member, |sequence| {
-                        roll.playback.place(sequence, beat, roll.rate)
-                    });
-                }
-                if let Some(asked) = &outcome.play {
-                    let (range, looping) = pass(asked);
-                    let (cursor, rate) = (roll.cursor, roll.rate);
-                    self.roll_with(member, |sequence| {
-                        if roll.playback.rolling() {
-                            roll.playback.stop(sequence, cursor, rate)
-                        } else {
-                            roll.playback
-                                .play_pass(sequence, cursor, range, looping, rate, ids)
-                                .unwrap_or_default()
-                        }
-                    });
-                }
-                if let Some(asked) = &outcome.relooped {
-                    let (range, looping) = pass(asked);
-                    self.roll_with(member, |sequence| {
-                        roll.playback.set_loop(sequence, range, looping, roll.rate)
-                    });
-                }
+                self.roll_pass(
+                    member,
+                    roll,
+                    outcome.locate,
+                    outcome.play.as_ref(),
+                    outcome.relooped.as_ref(),
+                    ids,
+                );
                 ran.end = Some(Ok(json!(outcome.changed)));
                 true
             }
@@ -212,19 +189,78 @@ impl Editing {
         }
     }
 
-    /// Runs `f` over the sequence of notes member `member`, locked; what it
-    /// answers is carried out on the engine as it was made.
+    /// **What a turn asked of the pass**, a roll's or a page's alike: the
+    /// cursor placed, a play or a stop, the loop switch.
+    fn roll_pass(
+        &self,
+        member: MemberId,
+        roll: &mut Roll,
+        locate: Option<f64>,
+        play: Option<&Value>,
+        relooped: Option<&Value>,
+        ids: &mut IdSpaces,
+    ) {
+        if locate.is_some() || play.is_some() {
+            // whether it rolls is the engine's: a pass may have ended on its
+            // own
+            self.roll_rolling(roll);
+        }
+        // **a cursor placed moves the music** where it plays
+        if let Some(beat) = locate {
+            roll.cursor = beat;
+            self.roll_with(member, |sequence| {
+                roll.playback.place(sequence, beat, roll.rate)
+            });
+        }
+        if let Some(asked) = play {
+            // a page plays from where its selection starts, which it names
+            if let Some(from) = asked["from"].as_f64() {
+                roll.cursor = from;
+            }
+            let (range, looping) = pass(asked);
+            let (cursor, rate) = (roll.cursor, roll.rate);
+            self.roll_with(member, |sequence| {
+                if roll.playback.rolling() {
+                    roll.playback.stop(sequence, cursor, rate)
+                } else {
+                    roll.playback
+                        .play_pass(sequence, cursor, range, looping, rate, ids)
+                        .unwrap_or_default()
+                }
+            });
+        }
+        if let Some(asked) = relooped {
+            let (range, looping) = pass(asked);
+            self.roll_with(member, |sequence| {
+                roll.playback.set_loop(sequence, range, looping, roll.rate)
+            });
+        }
+    }
+
+    /// Runs `f` over what member `member` plays: a roll's sequence, locked,
+    /// or a page's score rendered at the engraver's tempo. What it answers is
+    /// carried out on the engine as it was made.
     fn roll_with<T>(
         &self,
         member: MemberId,
         f: impl FnOnce(&clausters_document::EventSequence) -> T,
     ) -> Option<T> {
-        let Some(Member::Notes(editor)) = self.member(member) else {
-            return None;
-        };
-        let shared = editor.sequence().clone();
-        let sequence = shared.lock().unwrap_or_else(|e| e.into_inner());
-        Some(f(&sequence))
+        match self.member(member) {
+            Some(Member::Notes(editor)) => {
+                let shared = editor.sequence().clone();
+                let sequence = shared.lock().unwrap_or_else(|e| e.into_inner());
+                Some(f(&sequence))
+            }
+            #[cfg(feature = "notation")]
+            Some(Member::Score(editor)) => {
+                let sequence = editor
+                    .rendered()
+                    .and_then(|value| serde_json::from_value(value).map_err(|e| e.to_string()))
+                    .ok()?;
+                Some(f(&sequence))
+            }
+            _ => None,
+        }
     }
 
     /// Whether the roll's transport rolls, as the engine says now.
@@ -261,7 +297,7 @@ impl Editing {
                 "transport": roll.playback.transport(),
                 "rolling": roll.playback.rolling(),
             }),
-            ("transport", None) => json!({"error": "the roll has no transport"}),
+            ("transport", None) => json!({"error": "it has no transport"}),
             _ => json!({"error": format!("no roll query {query:?}")}),
         }
     }
@@ -276,5 +312,256 @@ impl Editing {
         if matches!(self.member(member), Some(Member::Notes(_))) {
             self.unwindowed.insert(member);
         }
+    }
+}
+
+#[cfg(feature = "notation")]
+impl Editing {
+    /// **An action of a score member in the application**: a gesture, a
+    /// handler's verb, or the file and the window. The page plays as a roll
+    /// plays, on a transport of its own, its score rendered; the file goes
+    /// through the storage the application reads and writes, disk or a page's.
+    pub(crate) fn score_act(
+        &mut self,
+        member: MemberId,
+        action: &Value,
+        ids: &mut IdSpaces,
+    ) -> Ran {
+        let mut roll = match self.rolls.remove(&member) {
+            Some(roll) => roll,
+            None => match Roll::new(self) {
+                Some(roll) => roll,
+                None => {
+                    return Ran {
+                        end: Some(Err(Raised {
+                            kind: "runtime".into(),
+                            message: "the score has no engine".into(),
+                        })),
+                        ..Ran::default()
+                    };
+                }
+            },
+        };
+        let mut ran = Ran::default();
+        if self.score_run(member, &mut roll, action, ids, &mut ran) {
+            self.rolls.insert(member, roll);
+        } else {
+            let _ = roll.playback.close(ids);
+        }
+        ran
+    }
+
+    /// Carries `action` out; answers whether the window stays.
+    fn score_run(
+        &mut self,
+        member: MemberId,
+        roll: &mut Roll,
+        action: &Value,
+        ids: &mut IdSpaces,
+        ran: &mut Ran,
+    ) -> bool {
+        let turned = match action["verb"].as_str().unwrap_or_default() {
+            "event" => self.event(
+                member,
+                &Event {
+                    addr: action["addr"].as_str().unwrap_or_default().to_string(),
+                    args: action["args"].as_array().cloned().unwrap_or_default(),
+                },
+            ),
+            // a handler's verb over what is selected: one entry of the history
+            "act" => self.act(member, &action["call"]),
+            "closed" | "close" => {
+                ran.effects.push(effect("closedWindow", json!({})));
+                ran.end = Some(Ok(json!(false)));
+                return false;
+            }
+            "open" => {
+                match roll.playback.alloc_transport(ids) {
+                    Ok(transport) => ran
+                        .effects
+                        .push(effect("transport", json!({"transport": transport}))),
+                    Err(e) => ran.effects.push(effect(
+                        "say",
+                        json!({"reason": format!("the score cannot be played: {e}")}),
+                    )),
+                }
+                ran.end = Some(Ok(Value::Null));
+                return true;
+            }
+            "save" => {
+                let path = action["path"].as_str().map(str::to_string);
+                ran.end = Some(self.score_save(member, path).map_err(|message| Raised {
+                    kind: "command".into(),
+                    message,
+                }));
+                return true;
+            }
+            "load" => {
+                let path = action["path"].as_str().unwrap_or_default().to_string();
+                match self.score_read(member, &path, roll, ids, ran) {
+                    Ok(changed) => ran.end = Some(Ok(json!(changed))),
+                    Err(message) => {
+                        ran.end = Some(Err(Raised {
+                            kind: "command".into(),
+                            message,
+                        }));
+                    }
+                }
+                return true;
+            }
+            other => {
+                ran.end = Some(Err(Raised {
+                    kind: "value".into(),
+                    message: format!("no score verb {other:?}"),
+                }));
+                return true;
+            }
+        };
+        let Some(turned) = turned else {
+            ran.end = Some(Ok(json!(false)));
+            return true;
+        };
+        for corrected in turned
+            .corrections
+            .iter()
+            .chain(turned.stepped.iter().flat_map(|s| &s.corrections))
+        {
+            ran.effects
+                .push(effect("echo", json!({"answer": corrected.answer})));
+        }
+        let stepped = turned.stepped.as_ref().is_some_and(|s| s.stepped);
+        let super::Outcome::Score(outcome) = turned.outcome else {
+            ran.end = Some(Ok(json!(false)));
+            return true;
+        };
+        if outcome.turn == Kind::Closed {
+            ran.effects.push(effect("closedWindow", json!({})));
+            ran.end = Some(Ok(json!(false)));
+            return false;
+        }
+        if stepped {
+            ran.effects.push(effect("resync", json!({})));
+        }
+        ran.effects
+            .push(effect("echo", json!({"answer": outcome.answer})));
+        if outcome.changed || stepped {
+            self.roll_update(member, roll, ids);
+        }
+        // **a close waits for the file it saves to**, and stays when it was
+        // not written
+        let written = match &outcome.save {
+            Some(path) => match self.score_save(member, Some(path.clone())) {
+                Ok(_) => true,
+                Err(why) => {
+                    ran.effects.push(effect("say", json!({"reason": why})));
+                    false
+                }
+            },
+            None => true,
+        };
+        if outcome.close && written {
+            ran.effects.push(effect("closeWindow", json!({})));
+            ran.end = Some(Ok(json!(false)));
+            return false;
+        }
+        if let Some(path) = &outcome.open
+            && let Err(why) = self.score_read(member, path, roll, ids, ran)
+        {
+            ran.effects.push(effect("say", json!({"reason": why})));
+        }
+        // the writer of a MIDI file is the holder's, which links it
+        if let Some(export) = &outcome.export {
+            match self.score_rendered(member) {
+                Ok(sequence) => ran.effects.push(effect(
+                    "export",
+                    json!({"path": export["path"], "format": export["format"],
+                        "sequence": sequence}),
+                )),
+                Err(why) => ran.effects.push(effect("say", json!({"reason": why}))),
+            }
+        }
+        self.roll_pass(
+            member,
+            roll,
+            outcome.locate,
+            outcome.play.as_ref(),
+            outcome.relooped.as_ref(),
+            ids,
+        );
+        ran.end = Some(Ok(json!({
+            "changed": outcome.changed,
+            "refused": outcome.refused,
+            "selected": outcome.selected,
+        })));
+        true
+    }
+
+    /// The score as the sequence it plays as, as JSON.
+    fn score_rendered(&self, member: MemberId) -> Result<Value, String> {
+        match self.member(member) {
+            Some(Member::Score(editor)) => editor.rendered(),
+            _ => Err("the member is not a score".into()),
+        }
+    }
+
+    /// **The score written as MEI**, at `path` or at the file it has, which
+    /// is its from then on; its changes are then not what a close asks about.
+    /// Answers the path. A write that fails changes nothing.
+    fn score_save(&mut self, member: MemberId, path: Option<String>) -> Result<Value, String> {
+        let Some(Member::Score(editor)) = self.member_mut(member) else {
+            return Err("the member is not a score".into());
+        };
+        let path = path
+            .or_else(|| editor.file_path())
+            .ok_or("the score has no file yet: save it as")?;
+        let mei = editor
+            .score()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .mei();
+        clausters_core::files::write(&path, mei).map_err(|e| format!("{path}: {e}"))?;
+        crate::score::editor::call_json(editor, &json!({"verb": "sync", "path": path}).to_string());
+        crate::score::editor::call_json(editor, r#"{"verb": "saved"}"#);
+        Ok(json!({"destination": path}))
+    }
+
+    /// **The document at `path`, read in place of the score** as one entry
+    /// of the history, the score there a step back, and heard. A read that
+    /// fails leaves the score as it is. Whether it changed.
+    fn score_read(
+        &mut self,
+        member: MemberId,
+        path: &str,
+        roll: &mut Roll,
+        ids: &mut IdSpaces,
+        ran: &mut Ran,
+    ) -> Result<bool, String> {
+        let bytes = clausters_core::files::read(path).map_err(|e| format!("{path}: {e}"))?;
+        let data = String::from_utf8(bytes).map_err(|e| format!("{path}: {e}"))?;
+        let turned = self
+            .act(member, &json!({"action": "open", "data": data}))
+            .ok_or("the member is not a score")?;
+        for corrected in &turned.corrections {
+            ran.effects
+                .push(effect("echo", json!({"answer": corrected.answer})));
+        }
+        let super::Outcome::Score(outcome) = turned.outcome else {
+            return Err("the member is not a score".into());
+        };
+        ran.effects
+            .push(effect("echo", json!({"answer": outcome.answer})));
+        if let Some(why) = outcome.refused {
+            return Err(why);
+        }
+        if outcome.changed {
+            self.roll_update(member, roll, ids);
+            if let Some(Member::Score(editor)) = self.member_mut(member) {
+                crate::score::editor::call_json(
+                    editor,
+                    &json!({"verb": "sync", "path": path}).to_string(),
+                );
+            }
+        }
+        Ok(outcome.changed)
     }
 }

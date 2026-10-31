@@ -463,6 +463,11 @@ impl ScoreEditor {
         self.asks = asks;
     }
 
+    /// The file the score was read from or last saved to, if any.
+    pub fn file_path(&self) -> Option<String> {
+        self.path.clone()
+    }
+
     fn held(&self) -> std::sync::MutexGuard<'_, Score<AnyEngraver>> {
         // A poisoned lock is a panic elsewhere while the score was held; the
         // document is still the score, and refusing it here would lose it.
@@ -2312,6 +2317,9 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
             }
             if let Some(entry) = request.get("entry").and_then(Value::as_bool) {
                 editor.set_entry(entry);
+            }
+            if let Some(asks) = request.get("asks").and_then(Value::as_bool) {
+                editor.asks = asks;
             }
             // `null` is a score with no file; left out, the path stays
             if let Some(path) = request.get("path") {

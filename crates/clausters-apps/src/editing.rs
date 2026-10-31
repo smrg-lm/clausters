@@ -811,11 +811,20 @@ impl Editing {
         self.seats[member as usize].structure = structure;
     }
 
-    /// **The window that holds the session file at `path`**, if one does:
-    /// a multitrack open in a window over that file. A document is open
-    /// once in a host, so an open of it brings that window forward instead.
-    pub fn window_holding_session(&self, path: &str) -> Option<i32> {
+    /// **The window that holds the document at `path`**, if one does: a
+    /// multitrack over that session file, or a score over that file. A
+    /// document is open once in a host, so an open of it brings that window
+    /// forward instead.
+    pub fn window_holding_file(&self, path: &str) -> Option<i32> {
         self.seats.iter().find_map(|seat| match &seat.member {
+            #[cfg(feature = "notation")]
+            Member::Score(editor)
+                if editor
+                    .file_path()
+                    .is_some_and(|held| same_file(&held, path)) =>
+            {
+                crate::turn::Converse::window_id(editor.as_ref())
+            }
             Member::Multitrack(editor)
                 if editor.has_session()
                     && editor

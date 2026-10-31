@@ -249,6 +249,26 @@ impl Host {
         self.open_app_saving(AppKind::Multitrack, path, None, title, None, save_to)
     }
 
+    /// **The score editor opened for a client or by this host**, in a window
+    /// of its own, over the file at `path`, the MEI `mei`, or a blank page.
+    #[cfg(feature = "notation")]
+    pub(super) fn open_app_score_for(
+        &mut self,
+        path: Option<&str>,
+        mei: Option<String>,
+        title: &str,
+        reply: Option<Reply>,
+    ) -> Result<i32, String> {
+        self.open_app_saving(
+            AppKind::Score,
+            path,
+            mei.map(super::audio_app::AppData::Score),
+            title,
+            reply,
+            None,
+        )
+    }
+
     /// An application of `kind` opened in a window of its own, answered to
     /// `reply` once it opened, or failed.
     pub(super) fn open_app_for(
@@ -272,7 +292,7 @@ impl Host {
         self.open_app_saving(
             AppKind::Multitrack,
             None,
-            Some(super::audio_app::MultitrackData::Contents(multitrack)),
+            Some(super::audio_app::AppData::Contents(multitrack)),
             title,
             reply,
             None,
@@ -288,9 +308,7 @@ impl Host {
         self.open_app_saving(
             AppKind::Multitrack,
             None,
-            Some(super::audio_app::MultitrackData::Snapshot(Box::new(
-                snapshot,
-            ))),
+            Some(super::audio_app::AppData::Snapshot(Box::new(snapshot))),
             title,
             reply,
             None,
@@ -301,7 +319,7 @@ impl Host {
         &mut self,
         kind: AppKind,
         path: Option<&str>,
-        data: Option<super::audio_app::MultitrackData>,
+        data: Option<super::audio_app::AppData>,
         title: &str,
         reply: Option<Reply>,
         save_to: Option<Option<String>>,
@@ -552,6 +570,8 @@ impl Host {
             AppKind::Audio => ROLES,
             AppKind::Multitrack => super::audio_app::MULTITRACK_ROLES,
             AppKind::Roll { .. } => &["widget"],
+            #[cfg(feature = "notation")]
+            AppKind::Score => super::audio_app::SCORE_ROLES,
         };
         for role in roles.iter().map(|r| (*r).to_string()) {
             let Some(id) = self.own_widget(structure, AUDIO, &role) else {
@@ -560,21 +580,41 @@ impl Host {
             ids.insert(role, json!(id));
             widgets.push(id);
         }
-        let mut dialog_ids = serde_json::Map::new();
+        // the widgets the application named: a dialog's, or -- where it says
+        // which, as a score does -- a tool's or a palette entry's
+        let (mut dialog_ids, mut tool_ids, mut palette_ids) = (
+            serde_json::Map::new(),
+            serde_json::Map::new(),
+            serde_json::Map::new(),
+        );
         for name in dialogs {
-            let Some(id) = self.own_widget(structure, AUDIO, &format!("dialog:{name}")) else {
+            let (group, plain) = match name.split_once(':') {
+                Some((group @ ("tool" | "palette" | "dialog"), plain))
+                    if !matches!(kind, AppKind::Multitrack | AppKind::Audio) =>
+                {
+                    (group, plain.to_string())
+                }
+                _ => ("dialog", name),
+            };
+            let Some(id) = self.own_widget(structure, AUDIO, &format!("{group}:{plain}")) else {
                 return answer(self, Err(("runtime".into(), "out of widget ids".into())));
             };
-            dialog_ids.insert(name, json!(id));
+            match group {
+                "tool" => tool_ids.insert(plain, json!(id)),
+                "palette" => palette_ids.insert(plain, json!(id)),
+                _ => dialog_ids.insert(plain, json!(id)),
+            };
             widgets.push(id);
         }
         ids.insert("dialogs".into(), Value::Object(dialog_ids));
+        ids.insert("tools".into(), Value::Object(tool_ids));
+        ids.insert("palettes".into(), Value::Object(palette_ids));
         let takes = match kind {
             AppKind::Audio => vec![
                 ids["widget"].as_i64().unwrap_or(0) as i32,
                 ids["lane"].as_i64().unwrap_or(0) as i32,
             ],
-            AppKind::Multitrack | AppKind::Roll { .. } => Vec::new(),
+            _ => Vec::new(),
         };
         let Some(audio) = self.audio.as_mut() else {
             return;
@@ -2393,6 +2433,132 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// **With no engraver a score is refused, and says why**, and no window
+    /// is left behind.
+    #[cfg(all(feature = "notation", not(feature = "score")))]
+    #[test]
+    fn a_host_with_no_engraver_refuses_a_score_and_says_why() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let mut host = host();
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_992)));
+        let first = door(
+            &mut host,
+            GUI_APP_OPEN,
+            vec![
+                OscType::Int(1),
+                OscType::String("score".into()),
+                OscType::String(json!({"title": "s"}).to_string()),
+            ],
+            client,
+        );
+        let answer = answered(&mut host, first, 1);
+        assert!(
+            answer["error"]["message"]
+                .as_str()
+                .is_some_and(|why| why.contains("engraver")),
+            "{answer}"
+        );
+        assert!(!host.owns_an_application());
+    }
+
+    /// **A score is an application of this host's**: a client opens it over
+    /// a document through the door, the engraver here draws its window, a
+    /// verb is its turn, its file is read and written here, a file a window
+    /// holds is not opened twice, and File > Close frees the window and tells
+    /// the client.
+    #[cfg(feature = "score")]
+    #[test]
+    fn a_client_opens_a_score_in_the_hosts_application() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let folder = std::env::temp_dir().join(format!("host-score-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut host = host();
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_991)));
+        let first = door(
+            &mut host,
+            GUI_APP_OPEN,
+            vec![
+                OscType::Int(1),
+                OscType::String("score".into()),
+                OscType::String(json!({"title": "score"}).to_string()),
+            ],
+            client,
+        );
+        let window = answered(&mut host, first, 1)["ok"]["window"]
+            .as_i64()
+            .expect("a window") as i32;
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(window).is_some()
+        });
+        assert!(
+            matches!(
+                host.head_clock_of(window, None),
+                clocks::HeadClock::Transport(_)
+            ),
+            "its play cursor reads a transport of its own"
+        );
+        assert_eq!(
+            ask(&mut host, window, json!({"query": "transport"}))["rolling"],
+            false
+        );
+        let refused = ask(
+            &mut host,
+            window,
+            json!({"do": {"verb": "act", "call": {"action": "articulation", "name": "stacc"}}}),
+        );
+        assert!(refused["refused"].is_string(), "{refused}");
+        let path = folder.join("score.mei");
+        let saved = ask(
+            &mut host,
+            window,
+            json!({"do": {"verb": "save", "path": path.to_str().unwrap()}}),
+        );
+        assert_eq!(saved["destination"], path.to_str().unwrap(), "{saved}");
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("<mei"), "{written}");
+        // the file it holds now brings it forward, for the host's own open
+        let again = host
+            .open_app_score_for(path.to_str(), None, "again", None)
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !host
+            .take_effects()
+            .iter()
+            .any(|e| matches!(e, HostEffect::Raise(id) if *id == window))
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "never brought forward"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(!host.owns_audio(again));
+        let close = host.event_message(
+            window,
+            2,
+            vec![
+                OscType::String("menu".into()),
+                OscType::String("close".into()),
+            ],
+        );
+        assert!(host.deliver(window, &close));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !host.take_effects().iter().any(|e| {
+            matches!(e, HostEffect::Send { to, msg } if *to == client && msg.addr == GUI_CLOSED)
+        }) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the client never heard the close"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(host.window_def(window).is_none());
         let _ = std::fs::remove_dir_all(&folder);
     }
 

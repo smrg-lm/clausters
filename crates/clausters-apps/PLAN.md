@@ -2884,7 +2884,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
       one session's. *Done 2026-10-30.*
     - ✅ A document already open in another window of the host is not
       opened twice. The context answers which window holds a session file
-      (`Editing::window_holding_session`, the same file however its path
+      (`Editing::window_holding_file`, the same file however its path
       is written); an in-window open of it (the door's `open`, which the
       window's File > Open will call) refuses and brings that window
       forward, and so does the host's own open. A client's
@@ -2952,8 +2952,11 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     memory as it asks the file worker, and verovio loads on first use. A host
     with no engraver refuses the open and says why. The parts below run in this
     order:
-    - ⬜ The application: a score member through `Editing::start`, its
+    - ✅ The application: a score member through `Editing::start`, its
       playback the roll's, and `AppKind::Score` on the application's thread.
+      `/gui_app_open score` opens it, natively, with a handler's verbs, its file
+      and File > Close through the door; a file a window holds is not opened
+      twice, and a build with no engraver refuses it. *Done 2026-10-31.*
     - ⬜ The door and both handlers: `/gui_app_open score`, the client's
       `Score` a remote handle while a window holds it.
     - ⬜ The page's engraver worker, which also gives a page's multitrack its
@@ -6153,7 +6156,7 @@ wrong.
   of its windows holds, so two windows edit one file with two histories
   and the second save writes over the first. The audio editor's window
   holds several files, so the open finds the window and the file in it
-  (`Editing::window_holding_session` is the multitrack's half), focuses
+  (`Editing::window_holding_file` is the multitrack's half), focuses
   that file and brings the window forward, from File > Open, a client's
   `/gui_app_open` and `--audio`. **Acceptance:** the same file opened from
   each of the three, written two ways, is one window and one history.

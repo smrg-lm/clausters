@@ -348,7 +348,10 @@ impl Host {
 /// Standard MIDI File: what a client's `to_clip` and `to_smf` write, at the
 /// ticks per beat they write it at, with the writer they bind.
 #[cfg(all(feature = "midi", not(target_arch = "wasm32")))]
-fn midi_file(sequence: &clausters_document::events::EventSequence, clip: bool) -> Option<Vec<u8>> {
+pub(super) fn midi_file(
+    sequence: &clausters_document::events::EventSequence,
+    clip: bool,
+) -> Option<Vec<u8>> {
     const PPQ: u16 = 480;
     if clip {
         return Some(clausters_midi::write_clip_ump(&sequence.to_ump(PPQ), PPQ));
@@ -372,7 +375,7 @@ fn midi_file(sequence: &clausters_document::events::EventSequence, clip: bool) -
 
 /// A host without the MIDI crate writes no MIDI file.
 #[cfg(not(all(feature = "midi", not(target_arch = "wasm32"))))]
-fn midi_file(_: &clausters_document::events::EventSequence, _: bool) -> Option<Vec<u8>> {
+pub(super) fn midi_file(_: &clausters_document::events::EventSequence, _: bool) -> Option<Vec<u8>> {
     None
 }
 

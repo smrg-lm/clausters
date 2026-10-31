@@ -88,7 +88,7 @@ fn a_notes_editor_edits_the_shared_sequence_and_undoes_through_the_context() {
 /// edit in the roll opened on the same handle corrects that picture.
 /// An engraver that keeps the document it is handed and draws nothing.
 #[cfg(feature = "notation")]
-struct Kept(std::sync::Mutex<String>);
+pub(super) struct Kept(pub(super) std::sync::Mutex<String>);
 
 #[cfg(feature = "notation")]
 impl clausters_core::notation::Engraver for Kept {

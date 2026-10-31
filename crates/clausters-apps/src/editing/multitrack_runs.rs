@@ -294,7 +294,7 @@ impl Editing {
                     _ => None,
                 };
                 if let Some(window) = self
-                    .window_holding_session(path)
+                    .window_holding_file(path)
                     .filter(|window| Some(*window) != here)
                 {
                     ran.effects.push(effect("front", json!({"window": window})));

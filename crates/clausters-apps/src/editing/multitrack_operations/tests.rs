@@ -938,7 +938,7 @@ fn a_session_open_in_one_window_brings_it_forward_instead_of_opening_twice() {
     // written another way, it is the same file
     let written = f.folder.join(".").join("held.json");
     assert_eq!(
-        f.editing.window_holding_session(written.to_str().unwrap()),
+        f.editing.window_holding_file(written.to_str().unwrap()),
         Some(39)
     );
     let before = f.editing.multitrack_query(other, "file");
@@ -975,10 +975,7 @@ fn a_session_open_in_one_window_brings_it_forward_instead_of_opening_twice() {
     );
     // a window that went holds nothing
     f.editing.forget_multitrack(f.member, &mut f.ids);
-    assert_eq!(
-        f.editing.window_holding_session(path.to_str().unwrap()),
-        None
-    );
+    assert_eq!(f.editing.window_holding_file(path.to_str().unwrap()), None);
 }
 
 impl Fixture {
@@ -1401,4 +1398,91 @@ fn a_roll_closed_and_reopened_keeps_its_object_and_its_entries() {
     assert!(std::sync::Arc::ptr_eq(editor.sequence(), &sequence));
     f.editing.select(Some(again));
     assert!(f.editing.can_undo());
+}
+
+/// **A score is an application's member**: opened in the context that holds
+/// the engine it takes a transport from, a handler's verb and a gesture are
+/// its turns, its file goes through the application's storage, a read that
+/// fails leaves it, and File > Close closes it and lets the transport go.
+#[cfg(feature = "notation")]
+#[test]
+fn a_score_runs_through_the_applications_door() {
+    use clausters_core::notation::{AnyEngraver, Score, sheet_to_mei, voice_to_sheet};
+    use std::sync::{Arc, Mutex};
+
+    let mut f = Fixture::new();
+    let mei = sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C")).unwrap();
+    let engraver = AnyEngraver::new(crate::editing::tests::Kept(Mutex::new(String::new())));
+    let score = Arc::new(Mutex::new(Score::open(engraver, &mei).unwrap()));
+    let opened: Value =
+        serde_json::from_str(&f.editing.open_score("score:1", score.clone(), "{}")).unwrap();
+    let member = opened["member"].as_u64().unwrap() as MemberId;
+    for call in [
+        json!({"verb": "window", "widget": 80, "scroll": 81, "status": 82}),
+        json!({"verb": "sync", "window": 79}),
+    ] {
+        call_json(
+            &mut f.editing,
+            &json!({"verb": "member", "member": member, "call": call}).to_string(),
+        );
+    }
+    let start = |f: &mut Fixture, action: Value| {
+        f.editing
+            .start(member, &action, None, &mut f.disk, &mut f.ids)
+    };
+    let transport = start(&mut f, json!({"verb": "open"}));
+    assert!(
+        transport
+            .effects
+            .iter()
+            .any(|effect| effect["kind"] == "transport"),
+        "{transport:?}"
+    );
+    assert!(f.editing.rolls.contains_key(&member));
+    assert_eq!(
+        f.editing.query(member, "transport")["rolling"],
+        false,
+        "it answers as a roll does"
+    );
+    // nothing selected: refused, with why, and still answered
+    let refused = start(
+        &mut f,
+        json!({"verb": "act", "call": {"action": "articulation", "name": "stacc"}}),
+    );
+    let end = refused.end.unwrap().unwrap();
+    assert_eq!(end["changed"], false);
+    assert!(end["refused"].is_string(), "{end}");
+    // the file: no path yet, then written and its own
+    let no_file = start(&mut f, json!({"verb": "save"}));
+    assert!(matches!(no_file.end, Some(Err(_))), "{no_file:?}");
+    let path = f.folder.join("score.mei");
+    let saved = start(&mut f, json!({"verb": "save", "path": path}));
+    assert_eq!(
+        saved.end.unwrap().unwrap()["destination"],
+        json!(path),
+        "answered where"
+    );
+    let mei = score.lock().unwrap().mei();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), mei);
+    let again = start(&mut f, json!({"verb": "save"}));
+    assert!(matches!(again.end, Some(Ok(_))), "{again:?}");
+    // a read that fails leaves the score
+    let missing = f.folder.join("missing.mei");
+    let failed = start(&mut f, json!({"verb": "load", "path": missing}));
+    assert!(matches!(failed.end, Some(Err(_))), "{failed:?}");
+    assert_eq!(score.lock().unwrap().mei(), mei);
+    // File > Close, nothing to lose
+    let at = f.editing.version;
+    let closed = start(
+        &mut f,
+        json!({"verb": "event", "addr": "/gui_event", "args": [79, 1, at, "menu", "close"]}),
+    );
+    assert!(
+        closed
+            .effects
+            .iter()
+            .any(|effect| effect["kind"] == "closeWindow"),
+        "{closed:?}"
+    );
+    assert!(!f.editing.rolls.contains_key(&member));
 }

@@ -50,6 +50,11 @@ impl Host {
         match app {
             "audio" => self.open_app_audio(seq, &options, from, effects),
             "multitrack" => self.open_app_multitrack(seq, &options, from, effects),
+            #[cfg(all(
+                feature = "notation",
+                any(not(target_arch = "wasm32"), feature = "apps")
+            ))]
+            "score" => self.open_app_score(seq, &options, from, effects),
             other => effects.push(refused(seq, format!("no application named {other:?}"))),
         }
     }
@@ -141,6 +146,32 @@ impl Host {
                 seq,
                 Err(("value".into(), message)),
             )));
+        }
+    }
+
+    /// **The score editor opened for a client**, over the file its options
+    /// name (`path`), a document they hand over (`mei`), or a blank page; or
+    /// why not.
+    #[cfg(all(
+        feature = "notation",
+        any(not(target_arch = "wasm32"), feature = "apps")
+    ))]
+    fn open_app_score(
+        &mut self,
+        seq: i32,
+        options: &Value,
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let reply = super::audio_app::Reply::Client(from, seq);
+        let opened = self.open_app_score_for(
+            options["path"].as_str(),
+            options["mei"].as_str().map(str::to_string),
+            options["title"].as_str().unwrap_or("Score"),
+            Some(reply),
+        );
+        if let Err(message) = opened {
+            effects.push(refused(seq, message));
         }
     }
 
