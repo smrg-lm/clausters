@@ -2994,11 +2994,14 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     events, close/reopen, and the host route through both handlers. Run and
     review the `notation/score_editor` pair before the next part.
 
-  - ⬜ **Symbolic score: dialogs.** Move `forms::Spec` forms into
-    `forms::Dialogs`, removing duplicate open/value/accept/cancel state.
-    Preserve content, semantics, modality, focus, redraw restoration and
-    rejection of late answers. **Acceptance:** run and review the
-    `notation/score_editor` pair before the next part.
+  - ✅ **Symbolic score: dialogs.** *Done 2026-10-31*: the score's window
+    holds a `forms::Dialogs`, and a window drawn again now shows the form
+    that was up, including a question of a dialog several forms share (the
+    mechanism draws a page as the form up, not the one naming the page). Move
+    `forms::Spec` forms into `forms::Dialogs`, removing duplicate
+    open/value/accept/cancel state. Preserve content, semantics, modality,
+    focus, redraw restoration and rejection of late answers. **Acceptance:**
+    run and review the `notation/score_editor` pair before the next part.
 
   - ⬜ **Symbolic score: MEI files and standalone.** Distinguish no
     document from a new symbolic score, with one active document per window.

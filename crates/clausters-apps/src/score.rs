@@ -71,7 +71,7 @@ pub struct Chrome {
     /// The toolbar's tools.
     pub tools: tools::Ids,
     /// The dialogs' widgets: all of them, or the window has no dialogs.
-    pub dialogs: dialogs::Ids,
+    pub dialogs: crate::forms::Ids,
     /// The palettes' entries.
     pub palettes: palettes::Ids,
 }
@@ -141,7 +141,7 @@ pub struct Window<'a> {
     pub menu: Option<Value>,
     /// The toolbar ([`tools::toolbar`]), when the caller numbered its tools.
     pub toolbar: Option<Value>,
-    /// The dialogs ([`dialogs::stack`]), when the caller numbered them.
+    /// The dialogs ([`crate::forms::stack`]), when the caller numbered them.
     pub dialogs: Option<Value>,
     /// **Whether the window asks before it closes** -- its `ask_close`
     /// ([`crate::closing::asks`]).

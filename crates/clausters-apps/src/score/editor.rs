@@ -133,12 +133,10 @@ pub struct ScoreEditor {
     asks: bool,
     /// The toolbar's widgets, by the tool each one is ([`tools::TOOLS`]).
     tools: tools::Ids,
-    /// The dialogs' widgets, by name ([`dialogs::names`]).
-    dialogs: dialogs::Ids,
+    /// The dialogs: their widgets by name, and the form that is up.
+    dialogs: dialogs::Dialogs,
     /// The palettes' entries, by name ([`palettes::names`]).
     palettes: palettes::Ids,
-    /// The form that is up, and what its fields hold as they are typed.
-    dialog: Option<dialogs::Open>,
     /// The file the score is saved to: the one it was read from, or the last
     /// one a save named. `None` for a score that has no file yet.
     path: Option<String>,
@@ -307,9 +305,8 @@ impl ScoreEditor {
             bare: false,
             asks: false,
             tools: tools::Ids::new(),
-            dialogs: dialogs::Ids::new(),
+            dialogs: dialogs::Dialogs::default(),
             palettes: palettes::Ids::new(),
-            dialog: None,
             path: None,
             saved,
             opening: None,
@@ -532,10 +529,8 @@ impl ScoreEditor {
         let chrome = if self.bare { Chrome::default() } else { chrome };
         self.ids = Some(ids);
         self.tools = chrome.tools;
-        self.dialogs = chrome.dialogs;
+        self.dialogs.ids = chrome.dialogs;
         self.palettes = chrome.palettes;
-        // a window drawn again opens with no form up
-        self.dialog = None;
         // the tools' symbols are the engraver's, asked for before the page is
         // drawn since asking loads the document again
         let labelled = !self.tools.is_empty() || !self.palettes.is_empty();
@@ -566,8 +561,8 @@ impl ScoreEditor {
             scale: self.scale(),
             menu: (!self.bare).then(|| self.menu()),
             toolbar: tools::toolbar(&self.tools, &self.input(), &outlines),
-            dialogs: dialogs::stack(&self.dialogs),
-            ask_close: crate::closing::asks(self.asks, dialogs::numbered(&self.dialogs)),
+            dialogs: self.dialogs.stack(dialogs::forms()),
+            ask_close: crate::closing::asks(self.asks, self.dialogs.numbered(dialogs::forms())),
             palettes: palettes::column(&self.palettes, &outlines),
             glyphs: &outlines,
         })
@@ -813,7 +808,7 @@ impl ScoreEditor {
             value: self.value,
             paper: setup.paper(),
             landscape: setup.landscape(),
-            dialogs: dialogs::numbered(&self.dialogs),
+            dialogs: self.dialogs.numbered(dialogs::forms()),
             looping: self.looping,
         })
     }
@@ -1586,7 +1581,7 @@ impl ScoreEditor {
         if let Some(name) = self.tool_of(widget).map(str::to_string) {
             return self.tool(&name, tag, out);
         }
-        if let Some(name) = self.dialog_widget(widget).map(str::to_string) {
+        if let Some(name) = self.dialogs.name(widget).map(str::to_string) {
             return self.form_said(&name, tag, values, out);
         }
         // an entry of a palette is a verb over what is selected
@@ -2071,6 +2066,8 @@ impl Converse for ScoreEditor {
 
     fn closed(&mut self) {
         self.window = None;
+        self.dialogs.closed();
+        self.closing = false;
     }
 
     fn asks_to_close(&self) -> bool {
@@ -2088,7 +2085,7 @@ impl Converse for ScoreEditor {
     fn owns(&self, widget: i64, _tag: &str) -> bool {
         self.ids.map(|ids| i64::from(ids.page)) == Some(widget)
             || self.tool_of(widget).is_some()
-            || self.dialog_widget(widget).is_some()
+            || self.dialogs.name(widget).is_some()
             || self.palette_entry(widget).is_some()
     }
 

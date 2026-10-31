@@ -7,38 +7,19 @@
 
 use std::collections::BTreeMap;
 
-use serde_json::Value;
-
 use clausters_core::notation::Op;
 use clausters_editing::conversation::Correction;
 
-use super::super::dialogs::{self, Form, Open, Said};
+use crate::forms::{Said, corrections};
+
+use super::super::dialogs::{self, Form, Open};
 use super::{Outcome, ScoreEditor};
 
-/// `(widget, props)` pairs as the corrections an answer carries.
-fn corrected(pairs: Vec<(i32, Value)>) -> Vec<Correction> {
-    pairs
-        .into_iter()
-        .map(|(widget, props)| Correction {
-            widget: i64::from(widget),
-            props,
-        })
-        .collect()
-}
-
 impl ScoreEditor {
-    /// The widget of the dialogs `widget` is, by name.
-    pub(super) fn dialog_widget(&self, widget: i64) -> Option<&str> {
-        self.dialogs
-            .iter()
-            .find(|(_, id)| i64::from(**id) == widget)
-            .map(|(name, _)| name.as_str())
-    }
-
     /// **Open `form`**, holding what the score holds: the reason it cannot
     /// be, or the corrections that show it.
     pub(super) fn open_form(&mut self, form: Form) -> (Option<String>, Vec<Correction>) {
-        if !dialogs::numbered(&self.dialogs) {
+        if !self.dialogs.numbered(dialogs::forms()) {
             return (Some("this window has no dialogs".into()), Vec::new());
         }
         let values = match form {
@@ -67,10 +48,7 @@ impl ScoreEditor {
                 [("path".to_string(), offered)].into()
             }
         };
-        let open = Open { form, values };
-        let shown = corrected(open.shown(&self.dialogs));
-        self.dialog = Some(open);
-        (None, shown)
+        (None, corrections(self.dialogs.open(form, values)))
     }
 
     /// **A widget of the dialogs reported**: a field's text is kept, `Cancel`
@@ -83,53 +61,41 @@ impl ScoreEditor {
         values: &[serde_json::Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
-        let Some(open) = self.dialog.as_mut() else {
+        let Some(said) = self.dialogs.read(name, tag, values) else {
             return (None, Vec::new());
         };
-        match dialogs::read(open.form, name, tag, values) {
-            // the score editor's forms have no chooser
-            None | Some(Said::Chosen(..) | Said::Picked(..) | Said::Entered(..)) => {
+        match said {
+            // what a field holds is kept by the reading, and the score
+            // editor's forms have no chooser
+            Said::Field(..) | Said::Chosen(..) | Said::Picked(..) | Said::Entered(..) => {
                 (None, Vec::new())
             }
-            Some(Said::Field(field, text)) => {
-                open.values.insert(field, text);
-                (None, Vec::new())
-            }
-            Some(Said::Cancel) => {
-                self.dialog = None;
+            Said::Cancel => {
                 self.closing = false;
-                (None, corrected(dialogs::hidden(&self.dialogs)))
+                (None, corrections(self.dialogs.hide()))
             }
             // closing without saving: what was not saved is let go
-            Some(Said::Discard) => {
-                self.dialog = None;
+            Said::Discard => {
                 out.close = true;
-                (None, corrected(dialogs::hidden(&self.dialogs)))
+                (None, corrections(self.dialogs.hide()))
             }
-            Some(Said::Accept) => {
-                let open = open.clone();
+            Said::Accept => {
+                let Some(open) = self.dialogs.up().cloned() else {
+                    return (None, Vec::new());
+                };
                 if let Some(reason) = self.accept(&open, out) {
                     return (Some(reason), Vec::new());
                 }
                 // a save the close form asked for, with no file yet, asks for
                 // one: the file form is now the one up
-                if self.dialog.as_ref().is_some_and(|up| up.form != open.form) {
-                    return (None, corrected(self.dialog_shown()));
+                if let Some(up) = self.dialogs.up().filter(|up| up.form != open.form) {
+                    return (None, corrections(up.shown(&self.dialogs.ids)));
                 }
-                self.dialog = None;
-                let mut corrections = self.corrections();
-                corrections.extend(corrected(dialogs::hidden(&self.dialogs)));
-                (None, corrections)
+                let mut shown = self.corrections();
+                shown.extend(corrections(self.dialogs.hide()));
+                (None, shown)
             }
         }
-    }
-
-    /// What the window is corrected with to show the form that is up.
-    fn dialog_shown(&self) -> Vec<(i32, Value)> {
-        self.dialog
-            .as_ref()
-            .map(|up| up.shown(&self.dialogs))
-            .unwrap_or_default()
     }
 
     /// Write what `open` holds to the score; the answer is why it was not.

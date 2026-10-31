@@ -228,16 +228,19 @@ pub fn stack<F: Spec>(forms: &[F], ids: &Ids) -> Option<Value> {
 }
 
 /// The stack, turned to the page of the form `up` with its fields holding
-/// what it holds -- the window drawn again while a dialog is up.
+/// what it holds -- the window drawn again while a dialog is up. **Forms may
+/// share a page**, a dialog that serves several questions: `forms` names the
+/// page by one of them, and a page is drawn as the question it is asking.
 fn stack_with<F: Spec>(forms: &[F], ids: &Ids, up: Option<&Open<F>>) -> Option<Value> {
     if !numbered(forms, ids) {
         return None;
     }
-    let up = up.filter(|open| forms.contains(&open.form));
+    let up = up.filter(|open| forms.iter().any(|form| form.page() == open.form.page()));
     let pages: Vec<Value> = std::iter::once(json!({"type": "layout"}))
         .chain(forms.iter().map(|form| {
-            let open = up.filter(|open| open.form == *form);
-            json!({"type": "layout", "children": [dialog(*form, ids, open)]})
+            let open = up.filter(|open| open.form.page() == form.page());
+            let asked = open.map_or(*form, |open| open.form);
+            json!({"type": "layout", "children": [dialog(asked, ids, open)]})
         }))
         .collect();
     Some(json!({
@@ -706,6 +709,64 @@ mod tests {
             d.stack(&FORMS).unwrap()["index"],
             0,
             "a closed window has none up"
+        );
+    }
+
+    /// **Two questions of one dialog**: the page is named by one and drawn
+    /// as whichever is up.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Asked {
+        First,
+        Second,
+    }
+
+    impl Spec for Asked {
+        fn prefix(self) -> &'static str {
+            "asked"
+        }
+        fn page(self) -> i32 {
+            1
+        }
+        fn title(self) -> &'static str {
+            match self {
+                Asked::First => "First",
+                Asked::Second => "Second",
+            }
+        }
+        fn fields(self) -> Vec<(&'static str, &'static str)> {
+            match self {
+                Asked::First => vec![("value", "One")],
+                Asked::Second => vec![("value", "Two")],
+            }
+        }
+        fn label(self) -> Option<&'static str> {
+            Some("asked")
+        }
+    }
+
+    #[test]
+    fn a_window_drawn_again_shows_the_question_a_shared_dialog_was_asking() {
+        let forms = [Asked::First];
+        let mut d = Dialogs {
+            ids: names(&forms)
+                .into_iter()
+                .enumerate()
+                .map(|(i, name)| (name, 100 + i as i32))
+                .collect(),
+            ..Dialogs::default()
+        };
+        d.open(
+            Asked::Second,
+            BTreeMap::from([("value".into(), "typed".into())]),
+        );
+        let stack = d.stack(&forms).unwrap();
+        assert_eq!(stack["index"], 1);
+        let dialog = find(&stack, d.ids["asked"]).unwrap();
+        assert_eq!(dialog["title"], "Second");
+        assert_eq!(dialog["children"][0]["children"][0]["text"], "Two");
+        assert_eq!(
+            find(&stack, d.ids["asked:value"]).unwrap()["value"],
+            "typed"
         );
     }
 

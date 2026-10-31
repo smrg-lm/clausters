@@ -1,40 +1,22 @@
-//! **The score editor's dialogs**: the forms a menu entry opens over the
-//! window while it is up.
+//! **The score editor's dialogs**: five forms of the shared mechanism
+//! ([`crate::forms`]) -- the page's text, a transformation's parameter, the
+//! page's margins and staff, a file's path, and the question a window closed
+//! with changes not saved asks.
 //!
-//! Five of them -- the page's text, a transformation's parameter, the page's
-//! margins and staff, a file's path, and the question a window closed with
-//! changes not saved asks -- and one rule for how a window comes to show one.
-//! A
-//! dialog is a node of the tree and an editor answers with props, never with
-//! nodes, so every dialog is **in the window from the start, on a page of a
-//! `stack`**: a hidden page is not placed, which is a dialog that is not up,
-//! and opening one is the stack's `index` set to its page ([`Form::page`]),
-//! with its fields corrected to what the score holds. Nothing is defined and
-//! nothing is freed, so the standalone host and every client open the same
-//! dialog by the same correction.
-//!
-//! The widgets are named here ([`names`]) and numbered by the caller, as the
-//! tools are; a window composed without them has no dialogs, and the menu
-//! entries that would open one are disabled.
-//!
-//! A field reports its text as it is typed, which the editor keeps
-//! ([`Open`]); nothing reaches the score until `OK`, which is then **one
-//! entry** of the history however many fields changed.
+//! A form's fields are corrected to what the score holds when it opens, and
+//! nothing reaches the score until `OK`, which is then **one entry** of the
+//! history however many fields changed.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
-use clausters_core::notation::{FIELDS, Header, PageSetup};
+use crate::forms::{self, Spec};
 
-/// The caller's widget id for each widget of the dialogs it numbered.
-pub type Ids = crate::forms::Ids;
+use clausters_core::notation::{FIELDS, Header, PageSetup};
 
 /// The field of the text form holding the footnotes, one to a line.
 pub const NOTES: &str = "notes";
-
-/// The stack the dialogs are pages of.
-pub const STACK: &str = crate::forms::STACK;
 
 /// **One of the forms.**
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -238,10 +220,27 @@ impl Form {
             _ => return None,
         })
     }
+}
 
+/// The forms the window holds; the parameter's is one form whatever
+/// transformation asks, and the file's one whichever way the file goes.
+const FORMS: [Form; 5] = [
+    Form::Text,
+    Form::Param(Param::Transpose),
+    Form::Page,
+    Form::File(File::Open),
+    Form::Close,
+];
+
+/// What the close form asks.
+pub const UNSAVED: &str = "The score has changes that are not saved.";
+
+/// How high the footnotes' field is: four lines of them.
+const NOTES_H: f64 = 76.0;
+
+impl Spec for Form {
     /// The prefix its widgets are named under.
-    #[must_use]
-    pub fn prefix(self) -> &'static str {
+    fn prefix(self) -> &'static str {
         match self {
             Form::Text => "text",
             Form::Param(_) => "param",
@@ -252,8 +251,7 @@ impl Form {
     }
 
     /// The page of the stack it is on; page 0 is no dialog.
-    #[must_use]
-    pub fn page(self) -> i32 {
+    fn page(self) -> i32 {
         match self {
             Form::Text => 1,
             Form::Param(_) => 2,
@@ -264,8 +262,7 @@ impl Form {
     }
 
     /// Its fields, by name, each with what it is labelled.
-    #[must_use]
-    pub fn fields(self) -> Vec<(&'static str, &'static str)> {
+    fn fields(self) -> Vec<(&'static str, &'static str)> {
         match self {
             Form::Text => vec![
                 ("title", "Title"),
@@ -292,8 +289,7 @@ impl Form {
 
     /// What its dialog is titled; a form that serves several questions is
     /// corrected with the one it is asking when it is shown.
-    #[must_use]
-    pub fn title(self) -> &'static str {
+    fn title(self) -> &'static str {
         match self {
             Form::Text => "Page text",
             Form::Param(Param::Transpose) => "Transpose",
@@ -316,40 +312,6 @@ impl Form {
             Form::Close => "Close",
         }
     }
-}
-
-/// The forms the window holds; the parameter's is one form whatever
-/// transformation asks, and the file's one whichever way the file goes.
-const FORMS: [Form; 5] = [
-    Form::Text,
-    Form::Param(Param::Transpose),
-    Form::Page,
-    Form::File(File::Open),
-    Form::Close,
-];
-
-/// What the close form asks.
-pub const UNSAVED: &str = "The score has changes that are not saved.";
-
-/// How high the footnotes' field is: four lines of them.
-const NOTES_H: f64 = 76.0;
-
-impl crate::forms::Spec for Form {
-    fn prefix(self) -> &'static str {
-        Form::prefix(self)
-    }
-
-    fn page(self) -> i32 {
-        Form::page(self)
-    }
-
-    fn title(self) -> &'static str {
-        Form::title(self)
-    }
-
-    fn fields(self) -> Vec<(&'static str, &'static str)> {
-        Form::fields(self)
-    }
 
     fn label(self) -> Option<&'static str> {
         match self {
@@ -370,37 +332,23 @@ impl crate::forms::Spec for Form {
     }
 }
 
-/// **Every widget of the dialogs, by name**, for a caller to number
-/// ([`crate::forms::names`]).
+/// **Every widget of the dialogs, by name**, for a caller to number.
 #[must_use]
 pub fn names() -> Vec<String> {
-    crate::forms::names(&FORMS)
+    forms::names(&FORMS)
 }
 
-/// Whether `ids` numbers every widget of the dialogs: a window has all of
-/// them or none.
+/// The forms the window holds, in the order of their pages.
 #[must_use]
-pub fn numbered(ids: &Ids) -> bool {
-    crate::forms::numbered(&FORMS, ids)
+pub fn forms() -> &'static [Form] {
+    &FORMS
 }
 
-/// **The dialogs, as the stack the window holds** -- or `None` when the
-/// caller did not number them ([`crate::forms::stack`]).
-#[must_use]
-pub fn stack(ids: &Ids) -> Option<Value> {
-    crate::forms::stack(&FORMS, ids)
-}
-
-pub use crate::forms::{Said, hidden};
-
-/// **What the widget `name` reporting `tag` said** ([`crate::forms::read`]).
-#[must_use]
-pub fn read(form: Form, name: &str, tag: &str, values: &[Value]) -> Option<Said> {
-    crate::forms::read(form, name, tag, values)
-}
+/// **The window's dialogs**, held whole ([`forms::Dialogs`]).
+pub type Dialogs = forms::Dialogs<Form>;
 
 /// **A form that is up**: which, and what its fields hold as they are typed.
-pub type Open = crate::forms::Open<Form>;
+pub type Open = forms::Open<Form>;
 
 /// **The text form, holding `header`**: each field its text, and the
 /// footnotes one to a line.
@@ -518,6 +466,8 @@ mod tests {
     }
     use super::*;
 
+    use crate::forms::{Ids, STACK, Said, hidden, read, stack};
+
     fn ids() -> Ids {
         names()
             .into_iter()
@@ -529,7 +479,7 @@ mod tests {
     #[test]
     fn the_dialogs_are_pages_of_a_stack_that_shows_none() {
         let ids = ids();
-        let stack = stack(&ids).expect("numbered");
+        let stack = stack(&FORMS, &ids).expect("numbered");
         assert_eq!(
             (stack["flow"].as_str(), stack["index"].as_i64()),
             (Some("stack"), Some(0))
@@ -556,7 +506,7 @@ mod tests {
         // and a window that numbered only some has none
         let mut some = ids.clone();
         some.remove("page:staff");
-        assert!(super::stack(&some).is_none());
+        assert!(crate::forms::stack(&FORMS, &some).is_none());
     }
 
     #[test]

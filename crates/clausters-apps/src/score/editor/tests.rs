@@ -1156,7 +1156,7 @@ fn a_tool_that_acts_is_a_verb_over_the_selection() {
 }
 
 /// The dialogs' widgets, numbered from 200 in the order the crate names them.
-fn named() -> dialogs::Ids {
+fn named() -> crate::forms::Ids {
     dialogs::names()
         .into_iter()
         .enumerate()
@@ -1312,6 +1312,64 @@ fn a_form_is_cancelled_by_its_button_and_by_the_dialog_itself() {
         );
     }
     assert_eq!(editor.setup().margins, [127; 4], "nothing was written");
+}
+
+/// **A window drawn again shows the form that was up**, asking what it was
+/// asking and holding what was typed.
+#[test]
+fn a_window_drawn_again_shows_the_form_that_was_up() {
+    let mut editor = with_dialogs();
+    let ids = named();
+    editor.event(&pick("dialog:stretch", None), 1);
+    editor.event(&said("param:value", "5/4"), 1);
+    let chrome = || Chrome {
+        dialogs: named(),
+        ..Chrome::default()
+    };
+    let shown = editor.window(IDS, chrome());
+    fn find(tree: &Value, id: i32) -> Option<&Value> {
+        if tree["id"] == id {
+            return Some(tree);
+        }
+        tree["children"]
+            .as_array()?
+            .iter()
+            .find_map(|child| find(child, id))
+    }
+    let stack = find(&shown, ids["stack"]).expect("the window holds its stack");
+    assert_eq!(stack["index"], 2);
+    assert_eq!(find(&shown, ids["param"]).unwrap()["title"], "Stretch");
+    assert_eq!(find(&shown, ids["param:label"]).unwrap()["text"], "Factor");
+    assert_eq!(find(&shown, ids["param:value"]).unwrap()["value"], "5/4");
+    // and it still answers: OK writes what it holds
+    let out = editor.event(&said("param:ok", "click"), 1);
+    assert_eq!(
+        corrections_of(&out).last().map(|c| c.props.clone()),
+        Some(json!({"index": 0}))
+    );
+}
+
+/// **An answer that comes late is nobody's**: a form taken down, or another
+/// form than the one up, writes nothing.
+#[test]
+fn a_late_answer_of_a_form_is_ignored() {
+    let mut editor = with_dialogs();
+    editor.event(&pick("dialog:page", None), 1);
+    editor.event(&said("page:top", "30"), 1);
+    editor.event(&said("page:cancel", "click"), 1);
+    let out = editor.event(&said("page:ok", "click"), 1);
+    assert!(!out.changed && out.record.is_none());
+    assert!(corrections_of(&out).is_empty());
+    assert_eq!(editor.setup().margins, [127; 4]);
+    // another form's button, with this one up
+    editor.event(&pick("dialog:text", None), 1);
+    let out = editor.event(&said("page:ok", "click"), 1);
+    assert!(!out.changed && out.record.is_none());
+    assert_eq!(editor.setup().margins, [127; 4]);
+    // a window gone takes its form with it
+    crate::turn::Converse::closed(&mut editor);
+    let out = editor.event(&said("text:ok", "click"), 1);
+    assert!(!out.changed && out.record.is_none());
 }
 
 #[test]
