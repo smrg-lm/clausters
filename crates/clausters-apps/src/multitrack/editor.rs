@@ -270,6 +270,15 @@ pub struct MultitrackEditor {
     session_open: bool,
     displayed_session: Option<i64>,
     binding_generation: u64,
+    /// **The checkpoint's generation**: moved by each [`set_checkpoint`],
+    /// for [`unsaved_at`] to tell a new checkpoint from the one it read.
+    ///
+    /// [`set_checkpoint`]: Self::set_checkpoint
+    /// [`unsaved_at`]: Self::unsaved_at
+    checkpoint: u64,
+    /// What [`unsaved_at`](Self::unsaved_at) last answered, and what it
+    /// read it at.
+    dirty: std::cell::Cell<Option<(DirtyKey, bool)>>,
     meters: Vec<Meter>,
     link: Option<i64>,
     transport: Transport,
@@ -369,6 +378,15 @@ pub(crate) struct SessionFile {
     pub path: Option<String>,
     pub save_to: Option<Option<String>>,
     pub saved: Option<clausters_document::session::Session>,
+}
+
+/// What an unsaved reading was read at ([`MultitrackEditor::unsaved_at`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DirtyKey {
+    version: i64,
+    multitrack: u64,
+    session: i64,
+    checkpoint: u64,
 }
 
 /// **A session the window let go of**: its identity, whose order closes,
@@ -499,6 +517,8 @@ impl MultitrackEditor {
             session_open: true,
             displayed_session: Some(0),
             binding_generation: 0,
+            checkpoint: 0,
+            dirty: std::cell::Cell::new(None),
             meters: Vec::new(),
             link: None,
             transport: Transport::Absent,
@@ -864,6 +884,37 @@ impl MultitrackEditor {
 
     pub(crate) fn file_snapshot(&self) -> super::operations::Snapshot {
         self.session.file_snapshot()
+    }
+
+    /// **The session's confirmed checkpoint**: what it was last opened or
+    /// saved as, or none.
+    pub(crate) fn set_checkpoint(&mut self, saved: Option<clausters_document::session::Session>) {
+        self.session.file.saved = saved;
+        self.checkpoint += 1;
+    }
+
+    /// **Whether there is unsaved work**, read at the context's `version`:
+    /// [`unsaved_contents`] again only when something it reads may have
+    /// moved (the context, the multitrack, the session, the checkpoint),
+    /// and its last answer otherwise. A window asks at every event, and
+    /// building the session to compare it is not a pointer's cost.
+    ///
+    /// [`unsaved_contents`]: Self::unsaved_contents
+    pub(crate) fn unsaved_at(&self, version: i64) -> bool {
+        let key = DirtyKey {
+            version,
+            multitrack: self.multitrack().version,
+            session: self.session.id,
+            checkpoint: self.checkpoint,
+        };
+        if let Some((read, dirty)) = self.dirty.get()
+            && read == key
+        {
+            return dirty;
+        }
+        let dirty = self.unsaved_contents();
+        self.dirty.set(Some((key, dirty)));
+        dirty
     }
 
     /// Whether contents differ from the confirmed checkpoint. Revision
@@ -2365,13 +2416,28 @@ mod tests {
         region
     }
 
+    /// **A window asks whether there is unsaved work at every event**, and
+    /// the session is built to compare only when something it reads moved.
+    #[test]
+    fn an_unsaved_reading_is_read_again_only_when_what_it_reads_moved() {
+        let mut editor = editor();
+        editor.set_checkpoint(Some(editor.session_snapshot()));
+        assert!(!editor.unsaved_at(1));
+        // a change that moves no counter is not seen until one moves
+        editor.multitrack().channels = 6;
+        assert!(!editor.unsaved_at(1), "the same reading at the same key");
+        assert!(editor.unsaved_at(2), "the context moved: read again");
+        editor.set_checkpoint(Some(editor.session_snapshot()));
+        assert!(!editor.unsaved_at(2), "a new checkpoint is read again");
+    }
+
     #[test]
     fn a_restored_sequence_checkpoint_is_clean_while_its_id_watermark_is_kept() {
         use clausters_document::events::{Event, EventSequence, EventsIntent};
         let mut editor = MultitrackEditor::new(Multitrack::new(), SR, 0);
         let sequence = std::sync::Arc::new(std::sync::Mutex::new(EventSequence::default()));
         editor.bind_sequence(SourceId(7), sequence.clone());
-        editor.file_mut().saved = Some(editor.session_snapshot());
+        editor.set_checkpoint(Some(editor.session_snapshot()));
         let before = sequence.lock().unwrap().state();
         sequence
             .lock()

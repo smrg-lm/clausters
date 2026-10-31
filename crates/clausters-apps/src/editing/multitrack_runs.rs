@@ -202,7 +202,9 @@ impl Editing {
         if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
             editor.file_mut().session = Some(session);
             editor.file_mut().path = path;
-            editor.file_mut().saved = Some(checkpoint.unwrap_or_else(|| editor.session_snapshot()));
+            editor.set_checkpoint(Some(
+                checkpoint.unwrap_or_else(|| editor.session_snapshot()),
+            ));
         }
         Ok(json!({"unresolved": unresolved}))
     }
@@ -378,7 +380,7 @@ impl Editing {
                     self.stop_multitrack(member, tracks, ids);
                     self.sound(member, tracks, ids);
                     if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
-                        editor.file_mut().saved = Some(editor.session_snapshot());
+                        editor.set_checkpoint(Some(editor.session_snapshot()));
                     }
                 }
                 opened.map(|mut answer| {
@@ -410,7 +412,7 @@ impl Editing {
                 if matches!(action.kind, ActionKind::Open { .. })
                     && let Some(Member::Multitrack(editor)) = self.member_mut(member)
                 {
-                    editor.file_mut().saved = Some(editor.session_snapshot());
+                    editor.set_checkpoint(Some(editor.session_snapshot()));
                 }
                 Ok(json!({"transport": tracks.playback.transport()}))
             }
@@ -672,9 +674,10 @@ impl Editing {
     ) -> Value {
         // what a close asks about: whether anything moved since the session
         // was last written
+        let version = self.version;
         if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
             let file = editor.file();
-            let unsaved = editor.unsaved_contents();
+            let unsaved = editor.unsaved_at(version);
             let untitled = file.path.is_none() && !matches!(file.save_to, Some(Some(_)));
             editor.set_unsaved(unsaved);
             editor.set_untitled(untitled);
@@ -954,6 +957,7 @@ impl Editing {
     /// transport, whether it rolls) or `output` (each track's meter buses,
     /// and the samples played as silence).
     pub(crate) fn multitrack_query(&mut self, member: MemberId, query: &str) -> Value {
+        let version = self.version;
         let Some(Member::Multitrack(editor)) = self.member(member) else {
             return json!({"error":"the member is not a multitrack"});
         };
@@ -962,7 +966,7 @@ impl Editing {
                 json!({"empty":true})
             } else {
                 json!({"empty":false, "object":editor.session_binding(), "path":editor.file().path.as_ref(),
-                    "dirty":editor.unsaved_contents()})
+                    "dirty":editor.unsaved_at(version)})
             };
         }
         if query == "session" && editor.has_session() {

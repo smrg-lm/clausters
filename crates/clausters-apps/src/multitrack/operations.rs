@@ -191,7 +191,7 @@ impl Application for MultitrackEditor {
         match delta.change {
             Change::New => {
                 outcome.released = self.replace_session_binding().map(Box::new);
-                self.file_mut().saved = Some(self.session_snapshot());
+                self.set_checkpoint(Some(self.session_snapshot()));
             }
             Change::Unbind => outcome.released = self.unbind_session().map(Box::new),
             Change::Open(opened) => {

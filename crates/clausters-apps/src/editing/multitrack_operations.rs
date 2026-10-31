@@ -131,8 +131,8 @@ impl Editing {
                     .map(|batch| batch.member)
                     .expect("a committed endpoint");
                 if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
+                    editor.set_checkpoint(Some(saved.session.clone()));
                     let file = editor.file_mut();
-                    file.saved = Some(saved.session.clone());
                     file.session = Some(saved.session);
                     file.path = Some(saved.path.clone());
                     if saved.save_as {
