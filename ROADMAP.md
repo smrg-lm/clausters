@@ -174,6 +174,10 @@ already carry it.
   examples show it in several forms, and the decision changes a written
   layout rule.
 
+- ⬜ **A page's play cursor stayed unseen once, until the next measure**
+  *(`clients/gui/PLAN.md`, Found by use)*. Not reproduced; waits for the next
+  time it is seen.
+
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and

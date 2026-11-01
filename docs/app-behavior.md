@@ -338,7 +338,9 @@ code that keeps it lives.
 - **The cursor moves the music.** A click placing the position cursor, or a
   selection let go (whose start the cursor goes to), moves the play cursor
   there too: a stopped transport stands on it, and a file playing goes on
-  from it, its pass ending as the loop switch says from there. The two
+  from it, its pass ending as the loop switch says from there. What sounded
+  is cut, and what starts on the place it lands on sounds, as a stop, a
+  rewind and a play would have it. The two
   cursors move together everywhere but in play, where the position cursor
   stays where the pass began: a selection made whole at once (select all) is
   one let go, and the window is told the position cursor moved.

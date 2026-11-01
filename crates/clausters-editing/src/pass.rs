@@ -238,7 +238,10 @@ impl Passes {
 
     /// **The position cursor was placed at `frame` in what plays**: rolling,
     /// the music goes on from it, its pass ending as `pass` says from there;
-    /// stopped, the transport stands on it ([`Self::cue`]).
+    /// stopped, the transport stands on it ([`Self::cue`]). The pass goes
+    /// first, as in [`Self::play`]: a server feeds its lanes again on a change
+    /// of pass, from where the transport has got to by then, so a change after
+    /// the locate lost the note the locate landed on.
     pub fn place(
         &mut self,
         transport: Option<i32>,
@@ -249,8 +252,8 @@ impl Passes {
         if !self.rolling {
             return self.cue(transport, frame, at);
         }
-        let mut ops = locate(transport, frame, at);
-        ops.extend(self.set_pass(transport, pass, at));
+        let mut ops = self.set_pass(transport, pass, at);
+        ops.extend(locate(transport, frame, at));
         ops
     }
 }
@@ -435,8 +438,9 @@ mod tests {
         );
         passes.play(Some(1), 0, until, &same);
         let placed = passes.place(Some(1), 30, until, &same);
-        assert_eq!(placed[0], locate(Some(1), 30, &same)[0]);
-        assert_eq!(&placed[1..], &pass_ops(1, until, &same)[..]);
+        let (pass, located) = placed.split_at(placed.len() - 1);
+        assert_eq!(pass, &pass_ops(1, until, &same)[..]);
+        assert_eq!(located, &locate(Some(1), 30, &same)[..]);
         passes.pause(Some(1));
         assert!(passes.paused());
         passes.resume(Some(1));

@@ -1295,6 +1295,18 @@ impl OscServer {
         }
     }
 
+    /// **Transport `k` is about to land on `position`**: every lane on it is
+    /// cleared and fed again from there, ahead of the locate.
+    pub(in crate::osc::server) fn lanes_jumped_to(&mut self, k: usize, position: u64) {
+        for id in self.lanes.on(k) {
+            if let Some(cmd) = self.lanes.clear(id, false, &mut self.translator)
+                && self.send_lane(cmd).is_ok()
+            {
+                self.feed_lane_from(id, k, position);
+            }
+        }
+    }
+
     /// Where transport `k` stands, as a reply would say: a locate sent and not
     /// yet applied counts as done.
     pub(in crate::osc::server) fn transport_position(&self, k: usize) -> u64 {
@@ -1323,9 +1335,14 @@ impl OscServer {
         else {
             return;
         };
+        self.feed_lane_from(id, k, self.transport_position(k));
+    }
+
+    /// Tops lane `id`, on transport `k`, up from `position`.
+    fn feed_lane_from(&mut self, id: i32, k: usize, position: u64) {
         let t = self.transports[k];
         let standing = Standing {
-            position: self.transport_position(k),
+            position,
             window: (LOOKAHEAD_SECS * self.info.actual_sample_rate) as u64,
             looping: t.loop_span.map(|(a, b)| (a.max(0) as u64, b.max(0) as u64)),
             end: t.end_mark.map(|(e, _)| e.max(0) as u64),

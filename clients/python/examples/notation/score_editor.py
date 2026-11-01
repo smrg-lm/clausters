@@ -88,8 +88,8 @@ What it shows, in the order it does it:
   writes it, Escape leaves it); File, Page text edits them all.
 * **A score is saved as itself.** The script saves it once (`editor.save`),
   so the file is the score's and Ctrl+S, or File, Save, writes it again
-  without asking; File, Open reads another document in its place, as one step
-  of the history.
+  without asking; File, Open reads another document in its place, with a
+  history of its own, and the window goes on as the host's.
 * **A score is rendered into a sequence, one way.** `score.render_events()`
   is what plays, and `roll()` opens it in the notes editor: the notes, a
   channel to a voice, and the crescendo as each channel's automation. File,

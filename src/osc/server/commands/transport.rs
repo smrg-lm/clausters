@@ -117,12 +117,16 @@ impl OscServer {
     /// this server broadcasts.
     fn locate_engine(&mut self, k: usize, position: u64) -> Answer {
         let from = self.handle.current_transport_samples(k);
+        // **The lanes first, built for where it lands**: an entry waits on the
+        // engine for the position to reach it, so one queued before the locate
+        // fires as it lands. Queued after, a block of a rolling transport may
+        // pass between the two and leave the note it landed on behind.
+        self.lanes_jumped_to(k, position);
         self.send_engine(Cmd::TransportLocate {
             transport: k,
             position,
         })?;
         self.transports[k].pending_locate = Some((position, from));
-        self.lanes_jumped(k);
         Ok(())
     }
 

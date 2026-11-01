@@ -9141,3 +9141,11 @@ module of its own.
   to stretch, what that does to every window, and whether a container's `h`
   may stay under what its children's floors add up to. Pinned today by
   `a_natural_size_only_binds_its_own_axis`, so this changes a written rule.
+
+- ⬜ **A page's play cursor stayed unseen once, until the next measure** *(found
+  2026-11-01 by the user, by eye on `notation/score_editor`)*. A note picked and
+  played sounded and the cursor did not show for a while. Not reproduced: at
+  once afterwards the same half note of the lower staff and a quarter of the
+  upper drew it, and so did a script on a real and a headless window. A capture
+  draws the window whole, so a script reading captures cannot see a fault of
+  the live layer alone. Waits for the next time it is seen.

@@ -162,6 +162,24 @@ fn a_locate_releases_the_sounding_notes_and_plays_on_from_there() {
     assert_eq!(sounding(&after), vec![(1000, 3000)]);
 }
 
+/// **A locate onto a note plays it**, however long the transport rolled before:
+/// the entry is queued ahead of the locate and waits for it. The note it landed
+/// on sounds from the block the locate lands on, whatever passed the position.
+#[test]
+fn a_locate_back_onto_a_note_plays_that_note() {
+    let mut server = server();
+    set_lane(&mut server, &[(0, 3200), (20_000, 21_000)]);
+    play(&mut server);
+    pull(&mut server, 100);
+    send(
+        &mut server,
+        "/transport_locateSample",
+        vec![OscType::Int(0), OscType::Long(0)],
+    );
+    let after = pull(&mut server, 50);
+    assert_eq!(sounding(&after), vec![(0, 3200)]);
+}
+
 /// **An edit is heard at once, and what sounds keeps its release**: moving a
 /// note ahead of the position plays it where it now is, while the note that
 /// is sounding ends where it would have.
