@@ -48,17 +48,30 @@ pub(super) struct Sizing {
     pub(super) at: f64,
 }
 
+/// The tag a hand on the control of a parameter a curve drives reports with: the
+/// track, the port and the value it holds, and the two alone as it lets go.
+const PORT_HOLD: &str = "port_hold";
+
+/// The parameter of a track's graph its header's level knob is the control of.
+pub(super) const LEVEL_PORT: &str = "gain";
+
 /// A **level knob** the hand is on, kept for the same reason a clip's grab is:
 /// the value is read from the pointer against what the press found.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Fading {
     pub(super) track: usize,
+    /// The parameter of the track's graph this is the control of.
+    pub(super) port: &'static str,
     /// The knob's own cell -- how far a full turn is, in pixels.
     pub(super) cell: Rect,
     /// The level the press found: a turn is measured from it.
     pub(super) from: f32,
     /// The y the press landed at, which the drag is measured against.
     pub(super) at: f64,
+    /// **What a hand holds over a curve**, once it turned: not a level of the
+    /// track, which the curve owns, but what is heard until it lets go. `None`
+    /// on a parameter no curve drives, and before the first turn.
+    pub(super) held: Option<f32>,
 }
 
 /// The block a hand took, as `(index, offset, row)` per clip -- the snapshot
@@ -206,11 +219,21 @@ impl Multitrack {
                 // reading would jump the value to wherever the press landed.
                 // The press itself changes nothing; what it takes is the level
                 // it found and the pixel it found it at.
+                let row = &self.tracks[track];
+                let from = self
+                    .read_controls
+                    .borrow()
+                    .get(&(row.name.clone(), LEVEL_PORT.to_string()))
+                    .copied()
+                    .filter(|_| self.automation_of(row, LEVEL_PORT).is_some())
+                    .unwrap_or(row.gain);
                 self.fading = Some(Fading {
                     track,
+                    port: LEVEL_PORT,
                     cell,
-                    from: self.tracks[track].gain,
+                    from,
                     at: at.1,
+                    held: None,
                 });
                 Claim::take()
             }
@@ -482,8 +505,22 @@ impl Multitrack {
             self.zoom.insert(self.tracks[s.track].name.clone(), height);
             return Events::none();
         }
-        if let Some(f) = self.fading {
-            self.tracks[f.track].gain = track::level_after(f.from, at.1 - f.at, f.cell);
+        if let Some(mut f) = self.fading {
+            let level = track::level_after(f.from, at.1 - f.at, f.cell);
+            let row = &self.tracks[f.track];
+            if self.automation_of(row, f.port).is_some() {
+                let name = row.name.clone();
+                f.held = Some(level);
+                self.fading = Some(f);
+                return Events::message(vec![
+                    OscType::String(PORT_HOLD.into()),
+                    OscType::String(name),
+                    OscType::String(f.port.into()),
+                    OscType::Float(level),
+                ]);
+            }
+            let track = f.track;
+            self.tracks[track].gain = level;
             return self.tracks_event();
         }
         let Some(grab) = self.grab else {
@@ -562,8 +599,16 @@ impl Multitrack {
             // multitrack is not asked about it.
             return Events::none();
         }
-        if self.fading.take().is_some() {
-            // Already reported on the way, like any other control.
+        if let Some(f) = self.fading.take() {
+            // Already reported on the way, like any other control. A hand that
+            // held the parameter over a curve gives it back.
+            if f.held.is_some() {
+                return Events::message(vec![
+                    OscType::String(PORT_HOLD.into()),
+                    OscType::String(self.tracks[f.track].name.clone()),
+                    OscType::String(f.port.into()),
+                ]);
+            }
             return Events::none();
         }
         let Some(grab) = self.grab.take() else {

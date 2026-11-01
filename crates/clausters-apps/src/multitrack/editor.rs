@@ -73,6 +73,10 @@ pub struct Outcome {
     /// Where the position cursor was placed, in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locate: Option<f64>,
+    /// A hand on the control of a parameter a curve drives: the track, the
+    /// parameter, and the value it holds, or `None` as it lets go.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port_hold: Option<(u64, String, Option<f32>)>,
     /// The selection a sweep left, in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection: Option<Value>,
@@ -2235,6 +2239,15 @@ impl MultitrackEditor {
                 self.cursor = Some(secs);
                 out.locate = Some(secs);
             }
+            // Heard, and never written: the curve takes the parameter back when
+            // the hand lets go.
+            "port_hold" => {
+                let text = |i: usize| values.get(i).map(crate::turn::text).unwrap_or_default();
+                if let Ok(track) = text(0).parse() {
+                    let value = values.get(2).map(|v| number(v) as f32);
+                    out.port_hold = Some((track, text(1), value));
+                }
+            }
             "selection" => {
                 let at = |i: usize| values.get(i).map_or(0.0, |v| self.secs_at(number(v)));
                 let mut selection = json!({ "start": at(0), "len": at(1) });
@@ -3323,6 +3336,32 @@ mod tests {
             })
         );
         assert!(matches!(out.answer, Some(Answer::Ack { seq: 2, .. })));
+    }
+
+    /// **A hand on a control over a curve is heard and never written**: it asks
+    /// the playback to hold the parameter, and nothing reaches the history.
+    #[test]
+    fn a_hand_held_parameter_is_no_edit() {
+        let mut ed = editor();
+        let before = ed.multitrack().clone();
+        let held = ed.event(
+            &event(
+                41,
+                2,
+                1,
+                "port_hold",
+                vec![json!("10"), json!("gain"), json!(0.5)],
+            ),
+            1,
+        );
+        assert_eq!(held.port_hold, Some((10, "gain".to_string(), Some(0.5))));
+        assert!(!held.changed && held.record.is_none());
+        let gone = ed.event(
+            &event(41, 3, 1, "port_hold", vec![json!("10"), json!("gain")]),
+            1,
+        );
+        assert_eq!(gone.port_hold, Some((10, "gain".to_string(), None)));
+        assert_eq!(*ed.multitrack(), before);
     }
 
     /// **`L` is the window's too**: the loop switch's new state and the time

@@ -483,6 +483,21 @@ pub fn hidden(multitrack: &Multitrack) -> String {
     names.join(" ")
 }
 
+/// **Which parameter of its track's graph each track automation moves**, as flat
+/// `curve port` pairs: what a control of that parameter reads, and what a hand on
+/// it takes over from while it holds. Only a curve the engine reads is here.
+pub fn automated(multitrack: &Multitrack) -> Vec<Value> {
+    picture::curves(multitrack)
+        .iter()
+        .filter(|curve| curve.enabled && !curve.points.is_empty())
+        .filter_map(|curve| {
+            let port = curve.target.0.get("port")?.as_str()?;
+            Some([json!(curve.automation.0.to_string()), json!(port)])
+        })
+        .flatten()
+        .collect()
+}
+
 /// Which boxes wrap, by name. A box that loops has always more past its end,
 /// which is what an edge drag may do and how the samples draw under a box
 /// longer than they are.
@@ -569,6 +584,7 @@ pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
     points.extend(fade_points(multitrack, look));
     out.insert("points".into(), Value::Array(points));
     out.insert("hidden".into(), json!(hidden(multitrack)));
+    out.insert("automated".into(), Value::Array(automated(multitrack)));
     out.insert("loops".into(), json!(loops(multitrack)));
     out.insert("rates".into(), Value::Array(rates(multitrack, look)));
     out.insert("notes".into(), Value::Array(notes(multitrack, look)));

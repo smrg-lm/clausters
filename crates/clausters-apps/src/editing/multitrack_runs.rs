@@ -798,6 +798,9 @@ impl Editing {
         if let Some(place) = outcome.follow {
             tracks.playback.follow(view, place);
         }
+        if let Some((track, port, value)) = &outcome.port_hold {
+            tracks.playback.hold_port(*track, port, *value);
+        }
         // a cursor placed moves the music where it plays
         if let Some(secs) = outcome.locate {
             let frame = tracks.frame(secs);

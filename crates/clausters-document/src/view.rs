@@ -275,7 +275,7 @@ impl View {
 /// What a client does with the tags is still the client's: it writes them into
 /// its own screen state, which is not this crate's to hold. What is settled
 /// here is only *which ones* those are.
-pub const NOT_AN_EDIT: [&str; 8] = [
+pub const NOT_AN_EDIT: [&str; 9] = [
     "selection",
     "view",
     "view_x",
@@ -284,6 +284,7 @@ pub const NOT_AN_EDIT: [&str; 8] = [
     "focus",
     "locate",
     "height",
+    "port_hold",
 ];
 
 /// Whether `tag` names screen state rather than an edit -- [`NOT_AN_EDIT`] asked

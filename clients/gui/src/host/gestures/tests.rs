@@ -2301,6 +2301,7 @@ fn the_headers_automation_toggle_answers_where_it_is_drawn() {
         mute: Some(false),
         solo: Some(false),
         level: Some(1.0),
+        live_level: false,
         curves: Some(false),
         meters: vec![(0.0, 0.0); 2],
     };

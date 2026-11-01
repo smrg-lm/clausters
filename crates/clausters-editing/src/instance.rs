@@ -522,6 +522,9 @@ pub struct Instance {
     clips: BTreeMap<u64, ClipState>,
     readers: BTreeMap<String, Ports>,
     curves: BTreeMap<u64, CurveState>,
+    /// **The curves a hand on a control took over from**, unmapped until it lets
+    /// go ([`Instance::hold_port`]).
+    held: BTreeSet<u64>,
     /// **How many times each box has been made.**
     ///
     /// A handle is a name for "the node that plays region 3" and stays the same
@@ -1116,6 +1119,51 @@ impl Instance {
                 forget: Vec::new(),
             });
         }
+    }
+
+    /// **A hand holds parameter `port` of track `track`'s graph at `value`, or
+    /// lets go with `None`.**
+    ///
+    /// A control and the curve over its parameter are one parameter, so while a
+    /// hand is on the control it is the hand that sets the port: the curve's map
+    /// is lifted, and given back when the hand lets go, where the curve is at by
+    /// then. Nothing here is an edit, and a parameter no curve drives has nothing
+    /// to hold.
+    pub fn hold_port(&mut self, track: u64, port: &str, value: Option<f32>) -> Vec<Op> {
+        let Some((&id, curve)) = self
+            .curves
+            .iter()
+            .find(|(_, c)| !c.owner_is_clip && c.owner_id == track && c.port == port)
+        else {
+            self.held.retain(|held| self.curves.contains_key(held));
+            return Vec::new();
+        };
+        let (handle, port) = (curve.owner.clone(), curve.port.clone());
+        let mut ops = Vec::new();
+        match value {
+            Some(value) => {
+                if self.held.insert(id) {
+                    ops.push(Op::Unmap {
+                        handle: handle.clone(),
+                        port: port.clone(),
+                    });
+                }
+                ops.push(Op::Set {
+                    handle,
+                    ports: [(port, Port::from(value))].into_iter().collect(),
+                });
+            }
+            None => {
+                if self.held.remove(&id) {
+                    ops.push(Op::Map {
+                        handle,
+                        port,
+                        bus: curve_bus_handle(id),
+                    });
+                }
+            }
+        }
+        ops
     }
 
     /// Put each curve's table on the server and map the port to it.
@@ -1938,6 +1986,38 @@ mod tests {
             .position(|op| matches!(op, Op::FreeBuffer { handle } if handle == "curvebuf:4:0"))
             .expect("and the old one goes back");
         assert!(made < set && set < freed, "{ops:?}");
+    }
+
+    /// **A hand on a parameter takes over from its curve and gives it back**:
+    /// the map lifted once, the value set at every turn, and the map again where
+    /// the curve is by then. A parameter no curve drives has nothing to hold.
+    #[test]
+    fn a_hand_holds_a_parameter_over_its_curve_and_gives_it_back() {
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].automation.push(gain_curve(4, 1.0));
+        let mut instance = Instance::new();
+        instance.reconcile(&planned(&multitrack), 0.5);
+        let track = multitrack.tracks[0].id.0;
+        let handle_is = |handle: &str| handle == format!("track:{track}");
+        let turned = instance.hold_port(track, "gain", Some(0.25));
+        assert!(matches!(&turned[0], Op::Unmap { handle, port }
+                                     if handle_is(handle) && port == "gain"));
+        assert!(matches!(&turned[1], Op::Set { handle, ports }
+                                     if handle_is(handle) && ports.contains_key("gain")));
+        let again = instance.hold_port(track, "gain", Some(0.5));
+        assert_eq!(again.len(), 1, "the map is lifted once: {again:?}");
+        let gone = instance.hold_port(track, "gain", None);
+        assert!(matches!(&gone[0], Op::Map { handle, port, .. }
+                                   if handle_is(handle) && port == "gain"));
+        assert!(instance.hold_port(track, "gain", None).is_empty(), "once");
+        assert!(
+            instance.hold_port(track, "pan", Some(0.5)).is_empty(),
+            "no curve"
+        );
+        assert!(
+            instance.hold_port(999, "gain", Some(0.5)).is_empty(),
+            "no track"
+        );
     }
 
     /// A curve the multitrack no longer has gives its port back. **Unmapping is not

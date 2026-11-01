@@ -295,6 +295,7 @@
       }
     },
     "props": {
+      "automated": [],
       "clips": [
         "3",
         "1",
@@ -472,6 +473,7 @@
     "rate": 48000.0,
     "sources": {},
     "props": {
+      "automated": [],
       "clips": [
         "3",
         "1",
@@ -665,6 +667,7 @@
       }
     },
     "props": {
+      "automated": [],
       "clips": [
         "3",
         "1",

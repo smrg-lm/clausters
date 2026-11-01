@@ -342,6 +342,13 @@ code that keeps it lives.
   cursors move together everywhere but in play, where the position cursor
   stays where the pass began: a selection made whole at once (select all) is
   one let go, and the window is told the position cursor moved.
+- **A control and the automation of its parameter are one parameter.** A track
+  automation moves a parameter of the track's graph, and a control of that
+  parameter (a header's level) shows it: it reads the curve at the play cursor,
+  playing or stopped. A hand on the control takes over for as long as it holds,
+  and is heard; it writes nothing, neither the curve nor the track's own value,
+  and letting go gives the parameter back to the curve. Any parameter is asked
+  by its port (`automated`), never by a list of the ones known today.
 - **A click lets go of a time range.** Anywhere on the view, on a box or a note
   too: a range is swept on purpose, and any place clicked after it ends it. A
   drag of something else keeps it, and so does a press on a header's control.

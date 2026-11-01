@@ -90,6 +90,11 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
         layer: props.get("layer").and_then(Value::as_str).and_then(named),
         hidden: parse_hidden(props),
         loops: parse_names(props, "loops"),
+        automated: props
+            .get("automated")
+            .map(parse_automated)
+            .unwrap_or_default(),
+        read_controls: std::cell::RefCell::default(),
         rates: parse_rates(props),
         meters: parse_meters(props),
         zoom: HashMap::new(),
@@ -307,6 +312,23 @@ pub(super) fn parse_points(props: &Map<String, Value>) -> HashMap<String, Vec<f6
             .extend(q[1..].iter().map(|v| v.as_f64().unwrap_or(0.0)));
     }
     out
+}
+
+/// The `automated` prop: the flat `curve port` pairs.
+fn parse_automated(value: &Value) -> Vec<(String, String)> {
+    let text = |v: &Value| v.as_str().map(str::to_string);
+    parse::as_array_props("automated", value)
+        .get("automated")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .filter_map(|[curve, port]| Some((text(curve)?, text(port)?)))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The `hidden` prop: the layers that are not drawn, space-separated.
@@ -588,6 +610,10 @@ impl Multitrack {
             }
             "loops" => {
                 self.loops = names_of(v);
+                true
+            }
+            "automated" => {
+                self.automated = parse_automated(v);
                 true
             }
             "rates" => {

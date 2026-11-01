@@ -8,6 +8,7 @@
 //! and what a box's edges may reach.
 
 use super::*;
+use crate::host::structures::points;
 
 impl Multitrack {
     /// The axis this draws against: the navigation group's window when it is on
@@ -234,6 +235,7 @@ impl Multitrack {
             mute: Some(track.mute),
             solo: Some(track.solo),
             level: Some(track.gain),
+            live_level: self.automation_of(track, LEVEL_PORT).is_some(),
             // **Offered on every track, including the ones with nothing to
             // show** *(asked for by the user 2026-09-12)*. The first press on a
             // bare track is what **adds** its gain automation, the way a double
@@ -258,11 +260,65 @@ impl Multitrack {
         }
     }
 
+    /// **The curve that moves parameter `port` of this track's graph**: a row
+    /// under it the `automated` prop says that of, with its break-points.
+    pub(super) fn automation_of(
+        &self,
+        track: &TrackRow,
+        port: &str,
+    ) -> Option<&crate::host::elements::curve::Curve> {
+        self.curves
+            .iter()
+            .filter(|curve| curve.owner == track.name)
+            .find(|curve| {
+                self.automated
+                    .iter()
+                    .any(|(name, driven)| *name == curve.name && driven == port)
+            })
+            .and_then(|curve| self.bodies.get(&curve.name))
+            .filter(|body| !body.points().is_empty())
+    }
+
+    /// **What the control of a parameter stands at.** A control and the curve
+    /// over its parameter are one parameter: the control reads the curve at the
+    /// play cursor, and a hand on the control is what is heard while it holds.
+    /// With no curve it stands at `value`, the track's own.
+    pub(super) fn control_value(
+        &self,
+        track: &TrackRow,
+        port: &str,
+        value: f32,
+        time: Option<TimeSpace>,
+    ) -> f32 {
+        let held = self
+            .fading
+            .filter(|f| f.port == port)
+            .filter(|f| {
+                self.tracks
+                    .get(f.track)
+                    .is_some_and(|t| t.name == track.name)
+            })
+            .and_then(|f| f.held);
+        if let Some(held) = held {
+            return held;
+        }
+        let Some(curve) = self.automation_of(track, port) else {
+            return value;
+        };
+        let at = time.and_then(|t| t.head.or(t.cursor)).unwrap_or(0.0);
+        let read = points::value_at(curve.points(), at).clamp(0.0, 1.0);
+        self.read_controls
+            .borrow_mut()
+            .insert((track.name.clone(), port.to_string()), read);
+        read
+    }
+
     /// The same header with the **levels read**, which only a draw can do: the
     /// values are in the shared segment and are one atomic load each, so a
     /// meter costs a frame's read rather than a message.
     pub(super) fn live_header(&self, track: &TrackRow, ctx: &Ctx) -> track::Header {
         let mut header = self.header(track, ctx.indent);
+        header.level = Some(self.control_value(track, LEVEL_PORT, track.gain, ctx.time));
         let Some(meter) = self.meters.get(&track.name) else {
             return header;
         };

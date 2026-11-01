@@ -58,6 +58,9 @@ pub struct Header {
     pub solo: Option<bool>,
     /// The level knob's value over `[0, 1]`, when the track offers one.
     pub level: Option<f32>,
+    /// Whether the knob is on the live layer ([`draw_level`]) rather than in
+    /// the picture of the description, since a curve moves its parameter.
+    pub live_level: bool,
     /// **Whether this track's automation rows are shown**, when the track offers
     /// the toggle. `None` on a track with no automation to show or hide -- a
     /// button for rows that do not exist is a button that does nothing.
@@ -307,18 +310,28 @@ fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
     // -- the toggle reads as on when there is something to see, the way the two
     // beside it read as on when they are doing something.
     toggle(parts.curves, header.curves == Some(true), "A", theme.accent);
-    if let (Some(r), Some(level)) = (parts.level, header.level) {
-        // The same dial a `knob` widget draws, and deliberately: a control that
-        // read one way here and another way there would be two controls.
-        let radius = (r.w.min(r.h) * 0.5 - 1.0).max(2.0);
-        super::controls::knob_dial(
-            &mut Draw::new(mesh, m, theme),
-            r.x + r.w * 0.5,
-            r.y + r.h * 0.5,
-            radius,
-            level,
-        );
+    if !header.live_level {
+        draw_level_dial(&mut Draw::new(mesh, m, theme), parts.level, header.level);
     }
+}
+
+/// The dial of a level. The same one a `knob` widget draws, and deliberately: a
+/// control that read one way here and another way there would be two controls.
+fn draw_level_dial(d: &mut Draw, cell: Option<Rect>, level: Option<f32>) {
+    if let (Some(r), Some(level)) = (cell, level) {
+        let radius = (r.w.min(r.h) * 0.5 - 1.0).max(2.0);
+        super::controls::knob_dial(d, r.x + r.w * 0.5, r.y + r.h * 0.5, radius, level);
+    }
+}
+
+/// **A header's level alone**, for a track whose level moves with what plays.
+pub fn draw_level(d: &mut Draw, rect: Rect, header: &Header, indent: f32) {
+    let band = timeline::gutter_band(rect, indent);
+    let cell = {
+        let (_, m, _) = d.parts();
+        header_parts(band, header, m).level
+    };
+    draw_level_dial(d, cell, header.level);
 }
 
 /// **A header's meters alone**, where [`draw`] puts them: what a track draws
@@ -1009,6 +1022,7 @@ mod tests {
             mute: Some(false),
             solo: Some(false),
             level: Some(0.8),
+            live_level: false,
             ..Header::default()
         };
         assert!(full.width(&m) >= m.header_w);
@@ -1035,6 +1049,7 @@ mod tests {
             mute: Some(true),
             solo: Some(false),
             level: Some(0.5),
+            live_level: false,
             ..Header::default()
         };
         let band = Rect::new(0.0, 0.0, header.width(&m), 60.0);

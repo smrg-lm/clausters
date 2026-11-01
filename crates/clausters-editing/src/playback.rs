@@ -414,6 +414,13 @@ impl<M: Medium> MultitrackPlayback<M> {
         self.plain(ops)
     }
 
+    /// **A hand holds a parameter of a track's graph, or lets go of it**
+    /// ([`Instance::hold_port`]).
+    pub fn hold_port(&mut self, track: u64, port: &str, value: Option<f32>) -> Vec<Step> {
+        let ops = self.instance.hold_port(track, port, value);
+        self.plain(ops)
+    }
+
     /// **The selection was redrawn while the pass loops**: the loop is now
     /// over the span the view's loop covers -- the selection, or everything
     /// with none -- and with `place` the transport goes to its start

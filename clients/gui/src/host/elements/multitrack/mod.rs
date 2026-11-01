@@ -62,7 +62,7 @@ mod views;
 
 // The children share one type and see each other's helpers: what one question
 // needs of another's answer is named rather than re-derived.
-use hand::{Block, Fading, Grab, Sizing};
+use hand::{Block, Fading, Grab, LEVEL_PORT, Sizing};
 use views::{BoxView, take_frames};
 
 /// **How a box of notes is drawn**: the presentation its contents take.
@@ -221,6 +221,14 @@ pub struct Multitrack {
     /// here is what an edge drag may do and how the samples are drawn under a
     /// box longer than they are.
     loops: Vec<String>,
+    /// **Which parameter of its track's graph each track automation moves**, as
+    /// `(curve, port)` -- the `automated` prop, which only the owner can say,
+    /// since what a curve drives is written in the document.
+    pub(super) automated: Vec<(String, String)>,
+    /// What each automated control last read, by track and port: where a hand
+    /// that takes the control starts from, since a press is handed no play
+    /// cursor.
+    pub(super) read_controls: std::cell::RefCell<HashMap<(String, String), f32>>,
     /// **How many frames of its source one sample of a box is**, by box name --
     /// the `rates` prop.
     ///
@@ -350,6 +358,8 @@ impl Default for Multitrack {
             hidden: Vec::new(),
             holding: None,
             loops: Vec::new(),
+            automated: Vec::new(),
+            read_controls: std::cell::RefCell::default(),
             rates: HashMap::new(),
             meters: HashMap::new(),
             zoom: HashMap::new(),
@@ -740,6 +750,7 @@ impl OnAxis for Multitrack {
             mute: Some(false),
             solo: Some(false),
             level: Some(1.0),
+            live_level: false,
             curves: Some(true),
             meters: vec![(0.0, 0.0); widest],
         };

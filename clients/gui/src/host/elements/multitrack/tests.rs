@@ -1240,6 +1240,103 @@ fn the_headers_level_is_a_knob_and_turns_by_the_drag() {
     assert!(!mt.tracks_event().into_messages().is_empty());
 }
 
+/// **A control and the curve over its parameter are one parameter.** The knob
+/// reads the curve at the play cursor, a turn holds the parameter for as long as
+/// the hand is on it and edits nothing, and letting go gives it back.
+#[test]
+fn a_curve_moves_the_knob_and_a_hand_on_the_knob_holds_over_the_curve() {
+    let m = Metrics::default();
+    let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+    let len = 1000.0;
+    let mut mt = from_props(&props(
+        r#"{"tracks": ["noise", "", 100, 0, 0, 0.5, 1],
+            "clips": ["a", "noise", 0, 500, 0, "", 0],
+            "curves": ["5", "noise", "gain", 0.0, 1.0, 40],
+            "points": ["5", 0, 0.0, 1, 0.0, "5", 1000, 1.0, 1, 0.0],
+            "automated": ["5", "gain"]}"#,
+    ));
+    let row = mt.tracks[0].clone();
+    assert!(mt.header(&row, 100.0).live_level, "drawn as it moves");
+    let at = |head: f64| {
+        let mut time = TimeSpace::of(View { start: 0.0, len }, len);
+        time.head = Some(head);
+        Some(time)
+    };
+    let read = |mt: &Multitrack, head: f64| mt.control_value(&row, LEVEL_PORT, row.gain, at(head));
+    assert!((read(&mt, 250.0) - 0.25).abs() < 1e-3, "the curve, not 0.5");
+    assert!((read(&mt, 750.0) - 0.75).abs() < 1e-3);
+
+    let inp = input(&m, rect, len);
+    let band = crate::host::timeline::gutter_band(mt.track_rects(rect)[0], 100.0);
+    let cell = track::header_parts(band, &mt.header(&row, 100.0), &m)
+        .level
+        .unwrap();
+    let on = (
+        f64::from(cell.x + cell.w * 0.5),
+        f64::from(cell.y + cell.h * 0.5),
+    );
+    assert!(matches!(mt.press(on, &inp), Claim::Take(_)));
+    let turned = mt.drag((on.0, on.1 - 4.0), &inp).into_messages();
+    let [turned] = turned.as_slice() else {
+        panic!("one report: {turned:?}");
+    };
+    assert_eq!(turned[0], OscType::String("port_hold".into()));
+    assert_eq!(turned[1], OscType::String("noise".into()));
+    assert_eq!(turned[2], OscType::String("gain".into()));
+    let OscType::Float(held) = turned[3] else {
+        panic!("a value: {turned:?}");
+    };
+    assert!(held > 0.75, "from where the curve had it, upward: {held}");
+    assert_eq!(
+        mt.tracks[0].gain, 0.5,
+        "the track's own level is not written"
+    );
+    assert_eq!(read(&mt, 250.0), held, "the hand is what stands");
+
+    let released = mt.release((on.0, on.1 - 4.0), true, &inp).into_messages();
+    assert_eq!(
+        released,
+        vec![vec![
+            OscType::String("port_hold".into()),
+            OscType::String("noise".into()),
+            OscType::String("gain".into()),
+        ]]
+    );
+    assert!(
+        (read(&mt, 250.0) - 0.25).abs() < 1e-3,
+        "and the curve again"
+    );
+}
+
+/// **A curve over another parameter does not take this control.**
+#[test]
+fn a_curve_over_another_parameter_leaves_the_knob_alone() {
+    let m = Metrics::default();
+    let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+    let len = 1000.0;
+    let mut mt = from_props(&props(
+        r#"{"tracks": ["noise", "", 100, 0, 0, 0.5, 1],
+            "curves": ["5", "noise", "pan", 0.0, 1.0, 40],
+            "points": ["5", 0, 0.0, 1, 0.0, "5", 1000, 1.0, 1, 0.0],
+            "automated": ["5", "pan"]}"#,
+    ));
+    let row = mt.tracks[0].clone();
+    assert!(!mt.header(&row, 100.0).live_level);
+    let inp = input(&m, rect, len);
+    let band = crate::host::timeline::gutter_band(mt.track_rects(rect)[0], 100.0);
+    let cell = track::header_parts(band, &mt.header(&row, 100.0), &m)
+        .level
+        .unwrap();
+    let on = (
+        f64::from(cell.x + cell.w * 0.5),
+        f64::from(cell.y + cell.h * 0.5),
+    );
+    mt.press(on, &inp);
+    let turned = mt.drag((on.0, on.1 - 4.0), &inp).into_messages();
+    assert_eq!(turned[0][0], OscType::String("tracks".into()), "an edit");
+    assert!(mt.tracks[0].gain > 0.5);
+}
+
 /// **A drag snaps to the edges of the boxes already on the track**, which is
 /// what makes two of them meetable at the sample: with no quantization a
 /// hand never lands one box exactly where another ends, so `j` never had

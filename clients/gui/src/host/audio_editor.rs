@@ -3399,7 +3399,7 @@ mod tests {
     /// A session of one track and one box over a take, in a folder of its own.
     fn song_session(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
         use clausters_document::multitrack::{
-            Content, Multitrack, Region, TakeLane, Track, Window as RegionWindow,
+            Automation, Content, Multitrack, Region, TakeLane, Track, Window as RegionWindow,
         };
         use clausters_document::session::{Session, Source};
         use clausters_document::{Document, Lifetime, NodeId, Opaque, SourceId, SourceRef};
@@ -3433,6 +3433,15 @@ mod tests {
             )],
             ..TakeLane::new(NodeId(3))
         };
+        let mut gain = Automation::new(NodeId(5), Opaque(json!({"port": "gain"})));
+        gain.points = [(0.0, 0.0), (0.5, 1.0)]
+            .map(|(at, value)| clausters_document::Point {
+                at: clausters_document::Second(at),
+                value,
+                data: Opaque::none(),
+            })
+            .to_vec();
+        track.automation.push(gain);
         let session = Session::new(Document::empty())
             .with_multitrack(Multitrack {
                 tracks: vec![track],
@@ -3460,6 +3469,51 @@ mod tests {
             }
         }
         host.take_effects();
+    }
+
+    /// **The window knows which parameter a curve moves, and a hand on its
+    /// control is heard and never written**, through the host's application.
+    #[test]
+    fn a_hand_on_an_automated_control_reaches_the_playback_and_no_history() {
+        use crate::host::gestures::GestureEffect;
+
+        let (folder, path) = song_session("hold");
+        let mut host = host();
+        let def_id = host
+            .open_multitrack(Some(path.to_str().unwrap()), "song")
+            .expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
+        let widget = host.own_widget_id(structure, AUDIO, "widget").unwrap();
+        until(&mut host, "the automated prop never came", |h| {
+            let props = ask(
+                h,
+                def_id,
+                json!({"member": {"verb": "props", "widget": widget}}),
+            );
+            props["automated"] == json!(["5", "gain"])
+        });
+        let arg = |text: &str| OscType::String(text.into());
+        for args in [
+            vec![arg("port_hold"), arg("2"), arg("gain"), OscType::Float(0.5)],
+            vec![arg("port_hold"), arg("2"), arg("gain")],
+        ] {
+            delivered(
+                &mut host,
+                vec![GestureEffect::Emit {
+                    def_id,
+                    widget_id: widget,
+                    seq: 1,
+                    args,
+                }],
+            );
+        }
+        let history = ask(&mut host, def_id, json!({"query": "history"}));
+        assert_eq!(history["canUndo"], false, "{history}");
+        host.close_audio(def_id);
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     /// **The space bar is the window's after a press on a tool of its

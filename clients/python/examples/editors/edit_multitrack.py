@@ -32,6 +32,11 @@ What to do in the window:
   flat at unity across the multitrack, heard like any other. The same shape the
   double click that adds a track has, the verb making the thing rather than
   asking about it. Try it on **bass**, which this file gives no automation.
+- **A curve moves the control of what it automates.** Press **A** on **bass**
+  and draw its `gain` curve: the header's knob follows the curve at the play
+  cursor, playing or stopped. Turn the knob while it plays and the hand is what
+  is heard while it holds; let go and the curve has it again, with nothing
+  written.
 - **The secondary button over a track** opens its **context menu**: each of
   its curves, to show or hide one at a time -- the `A` shows or hides them
   all -- a track added under it, and the rows' heights as a whole: **Reset

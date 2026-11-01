@@ -155,6 +155,9 @@ impl Multitrack {
             if shown(at[i]) && self.meters.contains_key(&track.name) {
                 track::draw_meters(d, at[i], &self.live_header(track, ctx), ctx.indent);
             }
+            if shown(at[i]) && self.automation_of(track, LEVEL_PORT).is_some() {
+                track::draw_level(d, at[i], &self.live_header(track, ctx), ctx.indent);
+            }
         }
         if let Some(time) = ctx.time
             && let Some(pos) = time.head
@@ -211,6 +214,7 @@ impl Multitrack {
                         mute: None,
                         solo: None,
                         level: None,
+                        live_level: false,
                         curves: None,
                         meters: Vec::new(),
                     },
