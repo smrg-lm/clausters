@@ -269,6 +269,9 @@ pub(super) fn report(
     let selected = events.selection().inspect(|&((a, b), values)| {
         super::nav::set_selection(host, out, ctx.def_id, id, a, b, values);
     });
+    if events.lets_go_range() {
+        super::nav::let_go_range(host, out, ctx.def_id, id);
+    }
     // ...and the list, if it asked for one: it opens over the window, in the
     // popup layer, hanging off the rectangle the element named.
     let opened = events.take_popup().map(|request| {

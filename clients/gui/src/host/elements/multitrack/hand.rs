@@ -586,9 +586,11 @@ impl Multitrack {
             // depending on what happens next, and collapsing the selection at
             // the press would let go of a block the hand was about to move.
             //
-            // Nothing leaves: a selection is the hand's, not the document's.
+            // Nothing leaves: a selection is the hand's, not the document's. A
+            // time range goes, as any click lets go of it; the axis is the
+            // machine's, so it is asked to.
             self.selected = vec![grab.clip];
-            return Events::none();
+            return Events::none().and_let_go_range();
         }
         self.clips_event()
     }

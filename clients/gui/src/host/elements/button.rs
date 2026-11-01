@@ -92,7 +92,7 @@ pub struct Button {
     /// place when there is none.
     pub icon: Option<char>,
     /// The `flat` prop: no fill until the pointer is over it -- the look a row
-    /// of tools wants.
+    /// of tools wants, and like a tool it takes no focus.
     pub flat: bool,
     /// The `verb` prop: the button is a **tool** -- a click performs the verb
     /// as a key bound to it would, and reports nothing of its own. A tool
@@ -244,8 +244,11 @@ impl Element for Button {
         }
     }
 
+    /// **A tool takes no focus**, a verb's or a flat one: a press on it must
+    /// leave the keys where they were, or the space bar after a press on
+    /// Rewind would press Rewind again instead of playing.
     fn accepts_focus(&self) -> bool {
-        self.verb.is_none()
+        self.verb.is_none() && !self.flat
     }
 
     fn tool_verb(&self) -> Option<&str> {

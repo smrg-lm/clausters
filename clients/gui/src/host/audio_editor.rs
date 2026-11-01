@@ -3395,4 +3395,121 @@ mod tests {
         assert!(!first.is_empty() && !second.is_empty(), "{first} {second}");
         assert_ne!(first, second, "each new file is a file of its own");
     }
+
+    /// A session of one track and one box over a take, in a folder of its own.
+    fn song_session(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        use clausters_document::multitrack::{
+            Content, Multitrack, Region, TakeLane, Track, Window as RegionWindow,
+        };
+        use clausters_document::session::{Session, Source};
+        use clausters_document::{Document, Lifetime, NodeId, Opaque, SourceId, SourceRef};
+
+        let folder = std::env::temp_dir().join(format!("host-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::rename(take(tag, 24_000), folder.join("take.wav")).unwrap();
+        let content = Content::Window {
+            window: RegionWindow {
+                source: SourceRef {
+                    source: SourceId(1),
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                },
+                start: 0.0,
+                duration: 0.5,
+            },
+            playrate: 1.0,
+            args: Opaque::none(),
+            looping: false,
+        };
+        let mut track = Track::new(NodeId(2), NodeId(3));
+        track.take_lanes[0] = TakeLane {
+            regions: vec![Region::new(
+                NodeId(4),
+                clausters_document::Second(0.0),
+                clausters_document::Second(0.5),
+                content,
+            )],
+            ..TakeLane::new(NodeId(3))
+        };
+        let session = Session::new(Document::empty())
+            .with_multitrack(Multitrack {
+                tracks: vec![track],
+                ..Multitrack::default()
+            })
+            .with_source(SourceId(1), Source::file("take.wav", Lifetime::Session));
+        let path = folder.join("song.json");
+        std::fs::write(&path, serde_json::to_string(&session).unwrap()).unwrap();
+        (folder, path)
+    }
+
+    /// What the front does with a gesture's effects: each event reaches the
+    /// application that holds the window, and the application's turn runs.
+    fn delivered(host: &mut Host, effects: Vec<crate::host::gestures::GestureEffect>) {
+        for effect in effects {
+            if let crate::host::gestures::GestureEffect::Emit {
+                def_id,
+                widget_id,
+                seq,
+                args,
+            } = effect
+            {
+                let message = host.event_message(widget_id, seq, args);
+                host.deliver(def_id, &message);
+            }
+        }
+        host.take_effects();
+    }
+
+    /// **The space bar is the window's after a press on a tool of its
+    /// transport row.** Rewind took the focus, so the space bar pressed Rewind
+    /// again and nothing played.
+    #[test]
+    fn the_space_bar_plays_after_a_press_on_the_transport_row() {
+        use crate::host::gestures::{GestureCtx, Gestures};
+        use crate::host::widget::element::Key;
+
+        let (folder, path) = song_session("space");
+        let mut host = host();
+        let def_id = host
+            .open_multitrack(Some(path.to_str().unwrap()), "song")
+            .expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
+        let rewind = host.own_widget_id(structure, AUDIO, "rewind").unwrap();
+        let ctx = GestureCtx::new(def_id, 1000, 560);
+        let mut hand = Gestures::default();
+        let rolling =
+            |h: &mut Host| ask(h, def_id, json!({"query": "transport"}))["rolling"].clone();
+        let tool = host
+            .layout_window(def_id, 1000, 560)
+            .unwrap()
+            .iter()
+            .find(|p| p.widget.id == Some(rewind))
+            .unwrap()
+            .rect;
+        let at = (
+            f64::from(tool.x + tool.w * 0.5),
+            f64::from(tool.y + tool.h * 0.5),
+        );
+        let pressed = hand.press(&mut host, &ctx, at.0, at.1);
+        delivered(&mut host, pressed);
+        let released = hand.release(&mut host, &ctx, at.0, at.1);
+        delivered(&mut host, released);
+        assert_eq!(
+            host.focused(),
+            None,
+            "a tool leaves the keys where they were"
+        );
+        let space = hand
+            .press_key(&mut host, &ctx, Key::Char(' '), Some(at))
+            .unwrap();
+        delivered(&mut host, space);
+        assert_eq!(rolling(&mut host), true);
+        host.close_audio(def_id);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
 }

@@ -266,6 +266,41 @@ pub(super) fn set_selection(
     emit(host, out, def_id, id, args);
 }
 
+/// **The time range over view `id` goes, if there is one**, told as a selection
+/// of no length at its start. A view with no range has nothing to say.
+pub(super) fn let_go_range(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32, id: i32) {
+    let swept = host
+        .timeline_key(id)
+        .and_then(|key| host.timelines().state(key))
+        .filter(|state| state.sel_len > 0.0)
+        .map(|state| state.sel_start);
+    let Some(start) = swept else {
+        return;
+    };
+    // Not by `set_selection`: a span from a sample to itself holds that sample.
+    let roots = host.set_timeline_selection(id, None, Some(0.0));
+    if let Some(editor) = host
+        .window_def_mut(def_id)
+        .and_then(|t| t.find_mut(id))
+        .and_then(|w| w.kind.editor_mut())
+    {
+        (editor.sel_min, editor.sel_max) = (0.0, 0.0);
+    }
+    redraw_all(out, &roots);
+    transport_follows_selection(host, def_id, id, start, 0.0, false);
+    emit(
+        host,
+        out,
+        def_id,
+        id,
+        vec![
+            OscType::String("selection".into()),
+            frames_arg(start),
+            frames_arg(0.0),
+        ],
+    );
+}
+
 /// **A selection let go**: the span is the transport's loop, and the owner
 /// hears it complete (the trailing `true`) -- an audio editor puts its
 /// position cursor at the span's start, and the music with it. What a sweep

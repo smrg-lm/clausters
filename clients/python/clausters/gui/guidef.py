@@ -1587,7 +1587,8 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
     there is none: there are no icons in the host and there are fonts, so an
     icon is a glyph (`clausters.gui.guidef.ICON` names the ones the host's own
     face draws). ``flat`` draws no box until the pointer is over the button --
-    the look a row of tools wants. ``menu`` is a `menu` tree: the button then
+    the look a row of tools wants, and like a tool it takes no focus. ``menu``
+    is a `menu` tree: the button then
     opens it under itself instead of firing, and what it reports is the entry
     picked, as ``("menu", verb)``.
 

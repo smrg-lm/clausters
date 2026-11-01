@@ -2126,7 +2126,7 @@ export interface ButtonOptions extends WidgetOptions {
      * a glyph ({@link ICON} names the ones the host's own face draws).
      */
     icon?: string;
-    /** No box until the pointer is over the button -- what a row of tools wants. */
+    /** No box until the pointer is over the button -- what a row of tools wants; like a tool, it takes no focus. */
     flat?: boolean;
     /**
      * A {@link menu} tree: the button then opens it under itself instead of

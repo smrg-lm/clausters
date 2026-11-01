@@ -1139,6 +1139,8 @@ pub struct Events {
     interface: Vec<Vec<OscType>>,
     voices: Vec<Voice>,
     select: Option<SelectRequest>,
+    /// See [`Events::and_let_go_range`].
+    let_go_range: bool,
     popup: Option<PopupRequest>,
     command: Option<String>,
 }
@@ -1271,6 +1273,14 @@ impl Events {
         self
     }
 
+    /// Asks the machine to let go of the **container's time range**, for a
+    /// click an element took that still lets go of it, as one on what the
+    /// element leaves to the axis does.
+    pub fn and_let_go_range(mut self) -> Self {
+        self.let_go_range = true;
+        self
+    }
+
     /// Asks the machine to move the **container's time selection** to
     /// `(start, end)` in the axis' own units (either order).
     ///
@@ -1338,6 +1348,7 @@ impl Events {
         self.interface.extend(other.interface);
         self.voices.extend(other.voices);
         self.select = other.select.or(self.select);
+        self.let_go_range |= other.let_go_range;
         self.popup = other.popup.or(self.popup);
         self.command = other.command.or(self.command);
         self
@@ -1348,6 +1359,7 @@ impl Events {
             && self.interface.is_empty()
             && self.voices.is_empty()
             && self.select.is_none()
+            && !self.let_go_range
             && self.popup.is_none()
             && self.command.is_none()
     }
@@ -1375,6 +1387,11 @@ impl Events {
     /// The list asked for, for the machine that opens it.
     pub(crate) fn take_popup(&mut self) -> Option<PopupRequest> {
         self.popup.take()
+    }
+
+    /// Whether the element asked for the time range to go.
+    pub(crate) fn lets_go_range(&self) -> bool {
+        self.let_go_range
     }
 
     /// The container-selection request, for the machine that performs it.

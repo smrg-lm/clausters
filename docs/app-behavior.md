@@ -342,6 +342,9 @@ code that keeps it lives.
   cursors move together everywhere but in play, where the position cursor
   stays where the pass began: a selection made whole at once (select all) is
   one let go, and the window is told the position cursor moved.
+- **A click lets go of a time range.** Anywhere on the view, on a box or a note
+  too: a range is swept on purpose, and any place clicked after it ends it. A
+  drag of something else keeps it, and so does a press on a header's control.
 - **The multitrack and the roll play by the audio editor's rules.** What
   the space bar plays, how a pass ends, what the loop switch does to a pass
   in progress, what a placed cursor and a selection let go do to the music,
@@ -424,6 +427,10 @@ code that keeps it lives.
   table.** A verb the owner gives no reading (the audio editor has no
   `split`, `join`, `quantize` or `snap`) does nothing from its key and is not
   on the key sheet, so the sheet lists what the window does.
+- **A tool takes no focus.** A button of a toolbar (a verb's, or any `flat`
+  one) leaves the keys where they were, so the space bar after Rewind plays
+  rather than pressing Rewind again. Tab reaches the controls of a form, whose
+  Space presses them.
 - **A dialog is modal for verbs as for the pointer.** While one is up, a key,
   a menu entry or a tool reaches only the element focused inside it -- a
   field's undo is the field's -- and never the object behind it.

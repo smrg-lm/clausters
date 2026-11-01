@@ -374,6 +374,9 @@ impl Gestures {
             return out;
         }
         if let Some(c) = click {
+            // **A click lets go of a time range**: a place in the view, so what
+            // was swept over it is over, whichever gesture swept it.
+            super::nav::let_go_range(host, &mut out, ctx.def_id, c.id);
             // **A click on a marker is that marker's moment**, not the pixel's:
             // the arrow is a handle onto an exact time, which is most of what a
             // marker is for. Anywhere else it is the ordinary placing, at the

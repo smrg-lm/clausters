@@ -449,13 +449,19 @@ fn a_drag_that_came_back_reports_nothing() {
     let away = xy(&mt, &m, rect, 400.0, len, 0);
 
     mt.press(from, &input(&m, rect, len));
-    assert!(mt.release(from, true, &input(&m, rect, len)).is_empty());
+    assert!(
+        mt.release(from, true, &input(&m, rect, len))
+            .into_messages()
+            .is_empty()
+    );
 
     mt.press(from, &input(&m, rect, len));
     mt.drag(away, &input(&m, rect, len));
     mt.drag(from, &input(&m, rect, len));
     assert!(
-        mt.release(from, true, &input(&m, rect, len)).is_empty(),
+        mt.release(from, true, &input(&m, rect, len))
+            .into_messages()
+            .is_empty(),
         "it is where the press found it"
     );
 }
