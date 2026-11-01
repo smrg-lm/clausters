@@ -357,7 +357,9 @@ code that keeps it lives.
   at the engraver's tempo.
 - **A rewind is where the next pass starts.** It lets go of one item picked on a
   page, which would start the pass there; a stretch is what a pass plays, as a
-  time range is, and stays. Home and End on a page are the same placing.
+  time range is, so it stays and the rewind goes to its start. Home and End on
+  a page are the same placing. A press selecting on a page places the cursor
+  there as a click on a time axis does, so a pass in progress moves to it.
 - **A click lets go of a time range.** Anywhere on the view, on a box or a note
   too: a range is swept on purpose, and any place clicked after it ends it. A
   drag of something else keeps it, and so does a press on a header's control.

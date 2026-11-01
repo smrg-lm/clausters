@@ -1731,12 +1731,36 @@ fn a_rewind_lets_go_of_the_place_a_pick_left_and_keeps_a_stretch() {
     editor.event(&gesture("element", &[json!("n2")]), 1);
     editor.event(&gesture("element", &[json!("n3"), json!("extend")]), 1);
     assert!(editor.items().len() > 1);
+    let start = editor.event(&window("play", 0), 1).play.unwrap()["from"]
+        .as_f64()
+        .unwrap();
+    editor.event(&window("play", 0), 1);
+    assert!(start > 0.0);
     let out = editor.event(&window("to_start", 0), 1);
-    assert_eq!(out.locate, Some(0.0));
+    assert_eq!(out.locate, Some(start), "back to the stretch's own start");
     assert!(editor.items().len() > 1, "a stretch stays");
 
     let out = editor.event(&window("to_end", 0), 1);
     assert!(out.locate.unwrap() > 0.0, "past the last item");
+}
+
+/// **A press on the page places the cursor**: on one note it moves the music
+/// there and ends the stretch a pass was playing; a press that adds to the
+/// selection, or lands on nothing, places nothing.
+#[test]
+fn a_press_on_a_note_places_the_cursor_and_ends_the_pass_of_a_stretch() {
+    let mut editor = with_tools();
+    let out = editor.event(&gesture("element", &[json!("n3")]), 1);
+    let at = out.locate.expect("the note's beat");
+    assert!(at > 0.0);
+    let pass = out.relooped.unwrap();
+    assert_eq!(pass["range"], Value::Null);
+    assert_eq!(pass["from"], at);
+
+    let out = editor.event(&gesture("element", &[json!("n2"), json!("extend")]), 1);
+    assert_eq!(out.locate, None);
+    let out = editor.event(&gesture("element", &[json!("")]), 1);
+    assert_eq!(out.locate, None);
 }
 
 #[test]

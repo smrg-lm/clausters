@@ -443,6 +443,15 @@ impl Editing {
             // own
             self.roll_rolling(roll);
         }
+        // the pass first, which a locate after it lands in: a change of pass
+        // feeds the lanes again from where the transport stands, so after the
+        // locate it would feed from before it landed
+        if let Some(asked) = relooped {
+            let (range, looping) = pass(asked);
+            self.roll_with(member, |sequence| {
+                roll.playback.set_loop(sequence, range, looping, roll.rate)
+            });
+        }
         // **a cursor placed moves the music** where it plays
         if let Some(beat) = locate {
             roll.cursor = beat;
@@ -465,12 +474,6 @@ impl Editing {
                         .play_pass(sequence, cursor, range, looping, rate, ids)
                         .unwrap_or_default()
                 }
-            });
-        }
-        if let Some(asked) = relooped {
-            let (range, looping) = pass(asked);
-            self.roll_with(member, |sequence| {
-                roll.playback.set_loop(sequence, range, looping, roll.rate)
             });
         }
     }

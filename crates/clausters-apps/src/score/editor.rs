@@ -1515,9 +1515,10 @@ impl ScoreEditor {
     /// **Back to the start**: the cursor a pass starts from is the score's
     /// first beat, and a stopped playback is cued there. One item picked is a
     /// place a pass would start from instead, so it goes; a stretch is what a
-    /// pass plays, as a time range is, and stays.
+    /// pass plays, as a time range is, so it stays, and the start is its own.
     fn rewind(&mut self, out: &mut Outcome) -> Vec<Correction> {
-        self.go_to(0.0, out)
+        let start = self.pass()["range"][0].as_f64().unwrap_or(0.0);
+        self.go_to(start, out)
     }
 
     /// **On to the end**: past what the last item ends at, by the rule of
@@ -1780,6 +1781,14 @@ impl ScoreEditor {
                 let mode = values.get(1).map(text).unwrap_or_default();
                 self.select_by(&picked, &mode);
                 out.selected = Some(self.selection.clone());
+                // **A press on the page places the cursor**, as a click does on
+                // a time axis, and the pass in progress is the new selection's.
+                if mode.is_empty() && !self.selection.is_empty() {
+                    let pass = self.pass();
+                    self.cursor = pass["from"].as_f64().unwrap_or(self.cursor);
+                    out.locate = Some(self.cursor);
+                    out.relooped = Some(pass);
+                }
                 (None, self.selected())
             }
             // A drag named the staff position a note reaches.
