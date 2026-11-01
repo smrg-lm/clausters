@@ -721,6 +721,19 @@ test("a window verb is asked of the host by name or by member", async () => {
     assert.deepEqual(host.verbs, [[window, "view_all"], [window, "select_all"], [window, "paste"]]);
 });
 
+test("the window's play is the curve's holder's", async () => {
+    const host = new FakeHost();
+    const played: boolean[] = [];
+    const editor = (await edit(aCurve(), { sampleRate: SR, host: host as unknown as GuiHost })) as PointsEditor;
+    const actions = () => editor.actions as Record<string, { enabled?: boolean; reason?: string }>;
+    assert.ok(actions().play.reason?.includes("does not play"));
+    editor.onPlay = () => played.push(true);
+    assert.equal(actions().play.enabled, true);
+    const window = Number(editor.id);
+    assert.equal(editor.apply("/gui_event", [window, 2, 0, "play", 0]), false, "no edit");
+    assert.deepEqual(played, [true]);
+});
+
 test("a curve window has its menu and says what it does not do", async () => {
     // A curve's window carries the bar that holds the window's verbs and the
     // history, and its readings refuse the rest with why; `chrome: false`
@@ -728,7 +741,7 @@ test("a curve window has its menu and says what it does not do", async () => {
     const host = new FakeHost();
     const editor = (await edit(aCurve(), { sampleRate: SR, host: host as unknown as GuiHost })) as unknown as PointsEditor;
     const tree = host.trees[host.trees.length - 1] as unknown as { menu: { label: string }[] };
-    assert.deepEqual(tree.menu.map((title) => title.label), ["File", "Edit", "View", "Help"]);
+    assert.deepEqual(tree.menu.map((title) => title.label), ["File", "Edit", "Help"]);
     const read = host.props.get(editor.id!)!.actions as unknown as Record<string, { enabled: boolean }>;
     assert.equal(read.undo.enabled, false);
     const actions = editor.actions as Record<string, { reason?: string }>;

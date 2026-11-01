@@ -57,6 +57,8 @@ interface Outcome {
     answer?: Answer;
     points?: number[];
     locate?: number;
+    /** The window's play was asked for, where this page plays the curve. */
+    play?: boolean;
 }
 
 /**
@@ -105,6 +107,8 @@ export class PointsView extends View<EditableCurve> {
     }
 
     override props(editor: Editor<EditableCurve>, widgetId: number): Record<string, PropValue> {
+        // the curve as the page holds it now, which `adopt` draws
+        (editor as PointsEditor).syncCore();
         return (editor as PointsEditor).coreCall("props", { widget: widgetId }) as Record<
             string,
             PropValue
@@ -166,6 +170,23 @@ export class PointsEditor extends Editor<EditableCurve> {
     }
     /** The curve's widget id, once drawn. @internal */
     curveId: number | null = null;
+    private playing: (() => unknown) | null = null;
+
+    /**
+     * What plays the curve, called with nothing when the window's play is asked
+     * for: the space bar, or a widget of `extra` that names the verb
+     * (`button({ verb: "play" })`). A curve plays nothing by itself, so with
+     * `null` the window has no play.
+     */
+    get onPlay(): (() => unknown) | null {
+        return this.playing;
+    }
+
+    set onPlay(func: (() => unknown) | null) {
+        this.playing = func;
+        this.syncCore();
+        this.publishActions();
+    }
 
     constructor(curve: EditableCurve, options: PointsEditorOptions) {
         const { min, max, start, end, ...rest } = options;
@@ -229,6 +250,7 @@ export class PointsEditor extends Editor<EditableCurve> {
             points: this.structure.toPoints().map(Number),
             name: nameOf(this.structure),
             target: targetOf(this.structure),
+            plays: this.playing !== null,
         });
     }
 
@@ -290,6 +312,7 @@ export class PointsEditor extends Editor<EditableCurve> {
             this.composedIn?.locate(this.cursor);
             this.onLocate?.(this.cursor);
         }
+        if (outcome.play === true) this.playing?.();
         this.echo.send(outcome.answer);
         this.closing(outcome);
         return changed;

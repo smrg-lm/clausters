@@ -46,6 +46,9 @@ pub struct Curve {
     /// The grab in flight -- the state that used to be two `Drag` variants,
     /// because the widget could not hold it.
     grab: Option<Grab>,
+    /// **The points as the press found them**, so a press that moved nothing is
+    /// no edit: a click that selects a segment reports only that.
+    pressed: Vec<BpfPoint>,
     /// **The selected segment**, by the point that starts it: the one a press
     /// on a segment chose, which an editor's controls act on -- its shape,
     /// say. View state, set back by the `segment` prop and reported by the
@@ -147,6 +150,7 @@ fn from_props(props: &Map<String, Value>) -> Curve {
         exp: props.get("exp").and_then(truthy).unwrap_or(false),
         label: label(props),
         grab: None,
+        pressed: Vec::new(),
         selected: None,
         editable: props.get("editable").and_then(truthy).unwrap_or(true),
         editor: standalone_chrome(props),
@@ -678,6 +682,7 @@ impl Element for Curve {
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
+        self.pressed.clone_from(&self.points);
         if !self.editable {
             // Consumed and said out loud, like the roll's: a curve drawn from
             // samples this editor cannot write is not a dead widget.
@@ -779,7 +784,7 @@ impl Element for Curve {
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         // What the drag amounts to, once -- see `drag`.
         let held = self.grab.take().is_some();
-        if held {
+        if held && self.points != self.pressed {
             self.points_event()
         } else {
             Events::none()
@@ -1212,7 +1217,10 @@ mod tests {
             vec![OscType::String("segment".into()), OscType::Int(0)]
         );
         assert_eq!(c.selected, Some(0));
-        c.release(mid, true, &input(&m, rect, None));
+        assert!(
+            c.release(mid, true, &input(&m, rect, None)).is_empty(),
+            "a press that moved nothing is no edit"
+        );
         let corner = (field.x as f64, field.y as f64 + field.h as f64);
         let Claim::Take(take) = c.press(corner, &input(&m, rect, None)) else {
             panic!("the point's press");

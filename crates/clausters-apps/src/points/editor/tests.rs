@@ -270,11 +270,30 @@ fn the_window_has_the_curve_s_menu_and_no_tools() {
         .flat_map(|title| title["menu"].as_array().unwrap())
         .filter_map(|entry| entry["verb"].as_str())
         .collect();
-    assert_eq!(verbs, ["close", "undo", "redo", "view_all", "keys"]);
+    assert_eq!(verbs, ["close", "undo", "redo", "keys"]);
     assert_eq!(tree["main"], 40);
     assert_eq!(tree["children"][0]["id"], 40, "the curve heads the window");
     let mut bare = editor(shared(), r#"{"rate": 100.0, "chrome": false}"#);
     assert!(bare.window(ids).get("menu").is_none());
+}
+
+/// **The window's play is its holder's, where it says it plays the curve**: read
+/// as available, and the verb reaches it as nothing else does.
+#[test]
+fn a_holder_that_plays_the_curve_is_asked_by_the_window_s_play() {
+    let mut e = editor(shared(), r#"{"rate": 100.0}"#);
+    e.window = Some(9);
+    let asked = Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(9), json!(1), json!(0), json!("play"), json!(0)],
+    };
+    assert!(e.actions(false, false)["play"].absent);
+    assert!(!e.event(&asked, 1).play, "it does not play");
+    e.plays = true;
+    assert!(e.actions(false, false)["play"].enabled);
+    let out = e.event(&asked, 1);
+    assert!(out.play && !out.changed);
+    assert!(out.record.is_none(), "a play is no edit");
 }
 
 /// **What a curve does not do is refused with why**: a key or an entry
@@ -288,7 +307,8 @@ fn the_actions_refuse_what_a_curve_does_not_do_and_say_why() {
         actions["redo"].reason.as_deref(),
         Some("there is nothing to redo")
     );
-    assert!(actions["view_all"].enabled && actions["close"].enabled);
+    assert!(actions["close"].enabled);
+    assert!(actions["view_all"].absent, "a curve's window does not zoom");
     for (verb, why) in [
         ("play", "does not play"),
         ("paste", "no clipboard"),

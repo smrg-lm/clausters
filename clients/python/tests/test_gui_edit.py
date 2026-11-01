@@ -610,6 +610,33 @@ def test_a_loop_asked_while_stopped_is_kept_for_the_next_play():
     assert not transport.looping and transport.span == (0.0, 2.0), "the span stays"
 
 
+def test_the_window_s_play_is_the_curve_s_holder_s():
+    """A curve plays nothing, so the window's play is whoever said it plays it:
+    read as available from then on, and called by the verb."""
+    played = []
+    editor = edit(a_curve(), sample_rate=SR, open=False)
+    host, _ = opened(editor)
+    window = int(editor.window)
+    assert "does not play" in editor.actions["play"]["reason"]
+    editor.apply("/gui_event", [window, 1, 0, "play", 0])
+    editor.on_play = lambda: played.append(True)
+    assert editor.actions["play"]["enabled"] is True
+    assert editor.apply("/gui_event", [window, 2, 0, "play", 0]) is False, "no edit"
+    assert played == [True]
+
+
+def test_adopt_draws_the_curve_as_the_script_holds_it():
+    """What a script wrote is what `adopt` tells the window: a gesture after it
+    is made against that, and takes nothing back to the curve before it."""
+    curve = a_curve()
+    editor = edit(curve, sample_rate=SR, open=False)
+    host, wid = opened(editor)
+    curve.set_points([0.0, 0.5, 1, 0.0, 1.0, 0.25, 1, 0.0])
+    editor.adopt()
+    corrected = [props for _, corrections, _ in host.acks for w, props in corrections if w == wid]
+    assert corrected[-1]["points"] == [0.0, 0.5, 1, 0.0, 1.0, 0.25, 1, 0.0]
+
+
 def test_a_curve_window_has_its_menu_and_says_what_it_does_not_do():
     """A curve's window carries the bar that holds the window's verbs and the
     history, and its readings refuse the rest with why; `chrome=False` draws
@@ -618,7 +645,7 @@ def test_a_curve_window_has_its_menu_and_says_what_it_does_not_do():
     set_props = []
     host.set = lambda wid, **props: set_props.append((wid, props))
     editor = edit(a_curve(), sample_rate=SR, host=host)
-    assert [title["label"] for title in host.trees[-1]["menu"]] == ["File", "Edit", "View", "Help"]
+    assert [title["label"] for title in host.trees[-1]["menu"]] == ["File", "Edit", "Help"]
     assert set_props[-1][0] == int(editor.window)
     assert set_props[-1][1]["actions"]["undo"]["enabled"] is False
     assert "clipboard" in editor.actions["paste"]["reason"]

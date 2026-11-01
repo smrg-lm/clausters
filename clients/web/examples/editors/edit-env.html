@@ -35,7 +35,8 @@ between its neighbours); <b>drag a segment</b> vertically to bend its curvature;
 shape</b> menu in the row under the curve; <b>hover</b> a point or a
 segment and the readout in the corner says its time, its value against the
 range and the segment's shape; <b>Ctrl+Z</b> / <b>Ctrl+Shift+Z</b> undo and
-redo -- the history belongs to the envelope, not to the window.
+redo -- the history belongs to the envelope, not to the window; <b>the space
+bar</b> plays it, as the <b>play</b> button under the curve does.
 </div>
 
       <button id="run">open the editor</button>
@@ -101,9 +102,9 @@ redo -- the history belongs to the envelope, not to the window.
           // rulers, and the readout of the point under the pointer against
           // them. A normalized envelope would be the same with `end: 1.0`.
           min: 0.0, max: 1.0, start: 0.0, end: 2.0,
-          extra: [gui.button({ name: "play", label: "play" })],
+          extra: [gui.button({ name: "play", verb: "play", icon: gui.ICON.play })],
         });
-        editor.window.widget("play").onClick(() => play());
+        editor.onPlay = play;
         log(`opened window ${editor.id} -- draw the envelope, then press play`);
 
         // The envelope is the page's object, so the page may write it too:

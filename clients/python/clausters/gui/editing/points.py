@@ -67,6 +67,8 @@ class PointsView(View):
         return tree
 
     def props(self, editor, widget_id: int) -> dict:
+        # the curve as the script holds it now, which `adopt` draws
+        editor._sync_core()
         return editor._call("props", widget=int(widget_id))
 
 
@@ -116,6 +118,7 @@ class PointsEditor(Editor):
                          view=PointsView(), title=title, **options)
         #: The curve's widget id, once drawn.
         self._curve = None
+        self._on_play = None
         request = {"rate": self.sample_rate, "title": self.title,
                    "w": int(self.size[0]), "h": int(self.size[1]),
                    "points": [float(x) for x in curve.to_points()],
@@ -138,7 +141,22 @@ class PointsEditor(Editor):
         self._call("sync", window=self._window, rate=self.sample_rate,
                    title=self.title, w=int(self.size[0]), h=int(self.size[1]),
                    points=[float(x) for x in self.structure.to_points()],
-                   name=_name(self.structure), target=_target(self.structure))
+                   name=_name(self.structure), target=_target(self.structure),
+                   plays=self._on_play is not None)
+
+    @property
+    def on_play(self):
+        """What plays the curve, called with nothing when the window's play is
+        asked for: the space bar, or a widget of ``extra`` that names the verb
+        (``button(verb="play")``). A curve plays nothing by itself, so with
+        ``None`` the window has no play."""
+        return self._on_play
+
+    @on_play.setter
+    def on_play(self, func) -> None:
+        self._on_play = func
+        self._sync_core()
+        self._publish_actions()
 
     @property
     def rules(self) -> dict:
@@ -195,6 +213,8 @@ class PointsEditor(Editor):
                 self.composed_in.locate(self.cursor)
             if callable(self.on_locate):
                 self.on_locate(self.cursor)
+        if outcome.get("play") and self._on_play is not None:
+            self._on_play()
         self.echo.send(outcome.get("answer"))
         self._closing(outcome)
         return changed

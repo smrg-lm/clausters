@@ -18,7 +18,8 @@ What to do in the window:
 - **hover** a point or a segment: the readout in the corner says its time,
   its value against the range, and the segment's shape;
 - **Ctrl+Z** / **Ctrl+Shift+Z** undo and redo -- the history belongs to the
-  envelope, not to the window.
+  envelope, not to the window;
+- **the space bar** plays it, as the **play** button under the curve does.
 
 The sibling `edit_curve.py` opens the same widget over a `clausters.defs.Bpf` --
 the same envelope in absolute coordinates -- and never plays it. This one is the
@@ -42,7 +43,7 @@ import sys
 
 from clausters import Session, Synth
 from clausters.defs import DoneAction, Env, SynthDef, env_gen, out, sine
-from clausters.gui import button, edit
+from clausters.gui import ICON, button, edit
 
 # %% [markdown]
 # ## Launch the server and the GUI
@@ -80,13 +81,14 @@ def play():
 
 
 # %% [markdown]
-# ## One verb, with a widget of the script's own
+# ## One verb, with a widget of the script's own, and who plays it
 # `clausters.gui.edit` dispatches on **what the structure holds**: an `Env` can
 # give and take break points, so it opens as a
 # `clausters.gui.editing.PointsEditor`. ``extra`` appends widgets to the row
 # under the curve, beside the segment shape menu -- they are the script's, and
-# the editor never touches their ids -- and
-# `clausters.gui.editing.Editor.window` resolves them by name.
+# the editor never touches their ids. A button that names a verb is that verb,
+# so the one here and the space bar are one play, and ``on_play`` is what it
+# does: a curve plays nothing by itself.
 
 
 # %%
@@ -98,9 +100,9 @@ editor = edit(
     # the readout of the point under the pointer against them. A normalized
     # envelope would be the same with ``end=1.0``.
     min=0.0, max=1.0, start=0.0, end=2.0,
-    extra=[button(name="play", label="play")],
+    extra=[button(name="play", verb="play", icon=ICON.play)],
 )
-editor.window["play"].on_click(lambda *_: play())
+editor.on_play = play
 print(f"opened window {editor.id} -- draw the envelope, then press play")
 
 # %% [markdown]
@@ -118,7 +120,7 @@ print("the editor now holds a percussive envelope instead")
 # ## Drive it
 # Cell-run: keep drawing and call `play()` between cells, or press the button.
 # Script-run: hold the window open until you close it -- editing is silent, the
-# **play** button sends the note -- then tear everything down.
+# **play** button and the space bar send the note -- then tear everything down.
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):

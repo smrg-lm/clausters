@@ -134,7 +134,6 @@ pub fn menu(app: App, saves: bool) -> Value {
         return json!([
             sub("File", vec![entry(app, "close")]),
             sub("Edit", vec![entry(app, "undo"), entry(app, "redo")]),
-            sub("View", vec![entry(app, "view_all")]),
             sub("Help", vec![entry(app, "keys")]),
         ]);
     }

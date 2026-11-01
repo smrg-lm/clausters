@@ -49,6 +49,9 @@ pub struct Outcome {
     /// it, with nothing to lose or nothing to ask in.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub close: bool,
+    /// The window's play was asked for, where its holder plays the curve.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub play: bool,
 }
 
 turn::turned!(Outcome);
@@ -76,6 +79,9 @@ pub struct PointsEditor {
     /// **A window with no chrome** -- no menu bar -- for a client that
     /// composes its own around it.
     bare: bool,
+    /// **Whether the curve's holder plays it**: a curve plays nothing here, so
+    /// the window's play is only theirs to answer, when they said they do.
+    plays: bool,
 }
 
 /// What a points editor is opened with, as the context's door reads it.
@@ -140,6 +146,7 @@ impl PointsEditor {
             held: Held::default(),
             declared: Rules::default(),
             bare: false,
+            plays: false,
         }
     }
 
@@ -160,9 +167,11 @@ impl PointsEditor {
             crate::chrome::grid_actions(crate::chrome::App::Points, false, undo, redo, &|_| None);
         for (verb, state) in &mut actions {
             match *verb {
+                "play" if self.plays => {}
                 "play" | "loop" | "to_start" | "to_end" => {
                     state.refuse_absent("a curve does not play here");
                 }
+                "view_all" => state.refuse_absent("a curve's window shows all of it"),
                 "copy" | "cut" | "paste" | "delete" | "select_all" => {
                     state.refuse_absent(
                         "a curve's points are drawn by hand: they have no clipboard",
@@ -434,6 +443,32 @@ impl Converse for PointsEditor {
         self.resync_widget(widget)
     }
 
+    /// **The window's play is the holder's**, from the space bar or a tool that
+    /// names the verb, where it plays the curve.
+    fn window_verb(
+        &mut self,
+        message: &conversation::Message,
+        _args: &[Value],
+        out: &mut Outcome,
+    ) -> bool {
+        if !self.plays
+            || message.addr != "/gui_event"
+            || !message.is_window
+            || message.tag != "play"
+        {
+            return false;
+        }
+        out.play = true;
+        out.turn = Kind::Route;
+        out.answer = Some(conversation::answer(
+            message.seq,
+            out.version,
+            None,
+            Vec::new(),
+        ));
+        true
+    }
+
     fn route(
         &mut self,
         widget: i64,
@@ -503,6 +538,9 @@ pub fn call_json(editor: &mut PointsEditor, request: &str) -> String {
         "sync" => {
             if let Some(window) = request.get("window") {
                 editor.window = window.as_i64().map(|w| w as i32);
+            }
+            if let Some(plays) = request.get("plays").and_then(Value::as_bool) {
+                editor.plays = plays;
             }
             if let Some(flat) = request.get("points").and_then(Value::as_array) {
                 // The holder's curve as it stands -- a script may have changed
