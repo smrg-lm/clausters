@@ -2783,7 +2783,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     use). A write too short for a hand to edit through is checked by the
     fault traces, not by either pass.
 
-- ⬜ **X25 - Port the proven lifecycle to the other existing editors.** After
+- ✅ **X25 - Port the proven lifecycle to the other existing editors.** After
   `X24`, compose multitrack, notes, points and score editors with the same
   contracts, retaining domain-specific state and verbs. Preserve external
   client objects and standalone `Owner` session data. Closing a view does
@@ -3022,7 +3022,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     clients and standalone. **Acceptance:** read back saved MEI and contents;
     run and review the `notation/score_editor` pair in both clients.
 
-  - ⬜ **Cross-application verification and manual acceptance.** Exercise
+  - ✅ **Cross-application verification and manual acceptance.** Exercise
     delayed, failed and reordered service replies; assert contents, history
     and resource retention as well as effects. Use existing activity and
     playback instrumentation for stopped, hidden and closed windows, with no
@@ -3048,6 +3048,22 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     whole, a refused operation's corrections never reached its window, the audio
     close form stayed up through the write where the others go down, and File >
     Close on a multitrack with no session was refused.
+    *Manual part closed 2026-11-01, by the user's decision.* The multitrack, the
+    notes editor and its page, the curve and the score editor were gone through
+    by eye and ear in their windows, the audio editor's having been accepted in
+    `X24`; the feature matrix is the user's. What it found is fixed, each in its
+    commit: a tool holding the keys, a click not letting go of a time range, a
+    control and the curve over its parameter disagreeing, a window not told the
+    version a script's edit moved it to, a page over a sequence not playing that
+    sequence, a curve window out of step with its script, a window's handle
+    hanging the encoder on File > Close, a combobox keeping the keys, a box under
+    its text, and the note a locate lands on not sounding on an engine the
+    application holds. Left open at the end of their plans: this file's "A
+    multitrack's window does not say whether its session is unsaved" and "A new
+    session's first Save or track failed once in the eye pass", and
+    `clients/gui/PLAN.md`'s "A pass can play with no play cursor until a frame
+    happens to come" and "A control's size does not follow what it says, in a row
+    or across one".
 
   Out of scope: new notation operations, domain conversions, the roll's
   pending recording, new session formats and persistent recovery. The second

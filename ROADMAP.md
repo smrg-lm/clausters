@@ -174,9 +174,9 @@ already carry it.
   examples show it in several forms, and the decision changes a written
   layout rule.
 
-- ⬜ **A page's play cursor stayed unseen once, until the next measure**
-  *(`clients/gui/PLAN.md`, Found by use)*. Not reproduced; waits for the next
-  time it is seen.
+- ⬜ **A pass can play with no play cursor until a frame happens to come**
+  *(`clients/gui/PLAN.md`, Found by use)*. A frame log shows no live frame for
+  seconds while the transport rolls; the cause is still to be found.
 
 ## 2. Tests and reviews pending
 
@@ -310,12 +310,11 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`X25` — port the proven lifecycle to the other existing editors**
-  *(`crates/clausters-apps/PLAN.md`, "The milestones")*. **Taken next**:
-  the audio editor's lifecycle, on the application that holds its engine
-  since `X34`, carried to the other editors. **Related:** the apps plan's
-  "Working on one channel of a take" (Future directions), the channel a
-  paste lands from.
+- ⬜ **`X26`, then `X27` — scoped services for simple GuiDef instances, then the
+  cross-application validation and documentation**
+  *(`crates/clausters-apps/PLAN.md`, "The milestones")*. **Taken next**, when
+  asked for. **Related:** the apps plan's "Working on one channel of a take"
+  (Future directions), the channel a paste lands from.
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable

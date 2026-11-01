@@ -9142,10 +9142,15 @@ module of its own.
   may stay under what its children's floors add up to. Pinned today by
   `a_natural_size_only_binds_its_own_axis`, so this changes a written rule.
 
-- ⬜ **A page's play cursor stayed unseen once, until the next measure** *(found
-  2026-11-01 by the user, by eye on `notation/score_editor`)*. A note picked and
-  played sounded and the cursor did not show for a while. Not reproduced: at
-  once afterwards the same half note of the lower staff and a quarter of the
-  upper drew it, and so did a script on a real and a headless window. A capture
-  draws the window whole, so a script reading captures cannot see a fault of
-  the live layer alone. Waits for the next time it is seen.
+- ⬜ **A pass can play with no play cursor until a frame happens to come**
+  *(found 2026-11-01 by the user, by ear and eye on `notation/score_editor`)*.
+  After many actions in no particular order a play sounds and the page shows no
+  cursor; when it does appear it stands on the note sounding, so the position
+  is right and what is missing is the frame. A log of every frame showed it:
+  `draw_live` was not called for 5.8 s while the transport's clock went from
+  144000 to 423040, and for shorter stretches (0.4 to 1.4 s) at other plays. So
+  the window is not asked for live frames while it plays, and the place to look
+  is what asks: the window's demand (`Host::playhead_ticks`, which reads the
+  source's `pass.rolling`), the tick in `gui/app.rs` and `asks_next_frame`. Not
+  reproduced by a script, and a capture cannot show it: it draws the window
+  whole. Find the cause before changing any of them.
