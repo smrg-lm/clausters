@@ -129,6 +129,27 @@ fn a_press_on_a_tool_leaves_the_focus_where_it_was() {
     assert_eq!(host.focused(), focused);
 }
 
+/// A combobox picked by hand keeps the keys off it the same way, and Tab still
+/// reaches it: a space bar after a pick plays instead of opening its list.
+#[test]
+fn a_press_on_a_combobox_leaves_the_focus_and_tab_reaches_it() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","children":[
+            {"id":5,"type":"choice","options":["a","b"]},
+            {"id":6,"type":"text","h":32}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    let at = mid(rect_of(&host, &ctx, 6));
+    click(&mut g, &mut host, &ctx, at);
+    let focused = host.focused();
+    assert_eq!(focused, Some((1, 6)));
+    let at = mid(rect_of(&host, &ctx, 5));
+    click(&mut g, &mut host, &ctx, at);
+    assert_eq!(host.focused(), focused);
+    assert!(super::focus::ring(&host, &ctx).contains(&5));
+}
+
 /// **A bar entry is its verb performed**, the way its key performs it: Select
 /// all holds every note and reports no pick. A verb the host does not perform
 /// is still the owner's, reported as the pick it always was.

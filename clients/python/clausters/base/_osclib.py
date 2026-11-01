@@ -59,7 +59,7 @@ class Float64:
         return repr(self.value)
 
 
-_INT32 = range(-(1 << 31), 1 << 31)
+_INT32_MIN, _INT32_END = -(1 << 31), 1 << 31
 
 
 def message(addr: str, *args) -> bytes:
@@ -74,7 +74,9 @@ def message(addr: str, *args) -> bytes:
             tags, data = tags + "h", data + struct.pack(">q", a.value)
         elif isinstance(a, Float64):
             tags, data = tags + "d", data + struct.pack(">d", a.value)
-        elif isinstance(a, int) and a not in _INT32:
+        # compared rather than `in range(...)`: a range answers an int subclass
+        # (a window's handle) by walking every value before it
+        elif isinstance(a, int) and not _INT32_MIN <= a < _INT32_END:
             # never wrapped and never refused: a frame of a take of hours
             tags, data = tags + "h", data + struct.pack(">q", a)
         elif isinstance(a, int):

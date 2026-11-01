@@ -114,7 +114,9 @@ pub(super) fn on_press(
     hit: Option<(i32, &WidgetKind)>,
 ) {
     let to = hit
-        .filter(|(_, kind)| kind.accepts_focus())
+        .filter(|(_, kind)| {
+            kind.accepts_focus() && kind.as_element().is_none_or(|el| el.press_takes_focus())
+        })
         .map(|(id, _)| id);
     match to {
         // A press on a widget that takes the focus moves it there.
@@ -131,6 +133,10 @@ pub(super) fn on_press(
         None if hit
             .and_then(|(_, kind)| kind.as_element())
             .is_some_and(|el| el.tool_verb().is_some()) => {}
+        // Nor on an element that takes the focus by Tab and not by hand.
+        None if hit
+            .and_then(|(_, kind)| kind.as_element())
+            .is_some_and(|el| el.accepts_focus() && !el.press_takes_focus()) => {}
         // A press anywhere else drops it -- but only if it was *this* window's:
         // clicking in one window must not take the focus out of another.
         None if host.focused().is_some_and(|(d, _)| d == ctx.def_id) => set(host, out, ctx, None),

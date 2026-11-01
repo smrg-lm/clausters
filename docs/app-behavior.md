@@ -445,6 +445,8 @@ code that keeps it lives.
   one) leaves the keys where they were, so the space bar after Rewind plays
   rather than pressing Rewind again. Tab reaches the controls of a form, whose
   Space presses them.
+  A combobox keeps the keys off a press the same way: after a hand picks from
+  its list the space bar plays. Tab reaches it, and then Space opens its list.
 - **A dialog is modal for verbs as for the pointer.** While one is up, a key,
   a menu entry or a tool reaches only the element focused inside it -- a
   field's undo is the field's -- and never the object behind it.

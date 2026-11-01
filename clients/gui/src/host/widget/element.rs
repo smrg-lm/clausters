@@ -1902,6 +1902,13 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// Whether a **press** moves the focus here, for an element that takes it.
+    /// `false` keeps the element a stop on the tab ring while a hand that
+    /// reaches it leaves the keys where they were.
+    fn press_takes_focus(&self) -> bool {
+        true
+    }
+
     /// **The focus left this element**: what it was in the middle of is
     /// settled, and whatever that comes to is reported like a key's answer.
     ///

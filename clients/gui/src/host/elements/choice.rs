@@ -299,6 +299,13 @@ impl Element for Choice {
         true
     }
 
+    /// **A combobox picked by hand leaves the keys where they were**: holding
+    /// them, its Space would open its list again instead of playing. Tab
+    /// reaches it, and then Space opens it.
+    fn press_takes_focus(&self) -> bool {
+        self.view != View::Combo
+    }
+
     fn reports_focus(&self) -> bool {
         false
     }
@@ -369,6 +376,15 @@ mod tests {
         // What `/gui_set` carries a list as: its JSON string.
         assert!(c.set("options", &Value::from(r#"["x","y"]"#)));
         assert_eq!(c.options, ["x", "y"]);
+    }
+
+    /// Only the view whose Space opens something keeps the keys off a press.
+    #[test]
+    fn a_combobox_is_on_the_ring_and_a_press_does_not_take_the_keys() {
+        let combo = from_props(&props(r#"{"options":["a","b"]}"#));
+        assert!(combo.accepts_focus() && !combo.press_takes_focus());
+        let radio = from_props(&props(r#"{"options":["a","b"],"view":"radio"}"#));
+        assert!(radio.accepts_focus() && radio.press_takes_focus());
     }
 
     #[test]

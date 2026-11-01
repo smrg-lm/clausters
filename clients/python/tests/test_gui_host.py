@@ -773,3 +773,19 @@ def test_a_number_is_never_narrowed_on_the_way_to_the_host():
     assert args == [5, "cursor", day + 1, "view_start", day + 0.5, "flag", 1]
     raw = _osclib.message("/x", day + 1, _osclib.Float64(0.5), 7)
     assert b",hdi" in raw
+
+
+def test_a_window_handle_encodes_at_once():
+    """An int subclass goes through the encoder as an int, without a walk over
+    every value an int32 holds -- what a window's handle freeing itself is."""
+    import time
+
+    from clausters.base import _osclib
+
+    class Handle(int):
+        pass
+
+    started = time.monotonic()
+    addr, args = _osclib.decode(_osclib.message("/gui_free", Handle(1002)))
+    assert (addr, args) == ("/gui_free", [1002])
+    assert time.monotonic() - started < 1.0
