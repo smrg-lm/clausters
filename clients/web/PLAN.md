@@ -5036,14 +5036,13 @@ sound.
   terms: the next timeout's output names the step.
 
 
-- ⬜ **The example-pair audit misreads the persistent plugin pair** *(found
-  2026-10-14)*. `scripts/audit-example-pairs.py plugins/persistent` maps Python's
-  native `Session.live` boot to `embed` while retaining the page's `live`
-  attachment, and counts JavaScript array `find`/`push` as client API calls.
-  Reading the pair verb by verb confirms the same plugin, transport, lane,
-  routine and cleanup calls, with native boot versus page attachment named in
-  both examples. The extractor needs to distinguish those platform and
-  language operations so a correct pair passes without hiding API divergence.
+- ✅ **The example-pair audit misreads the persistent plugin pair** *(found
+  2026-10-14)*. The extractor was not at fault: the pair's rows were stale.
+  They declared an `Array.find` and two `Array.push` the pages no longer made,
+  so `find` hid the page's `catalog.find`, which is the pair's real call. Those
+  rows are gone, the pages' own `click` went with them, and a row that finds
+  nothing to drop now fails the audit. What stays declared is `embed`/`live`:
+  the script boots its server and the page attaches to one.
 
 - ✅ **A client's own file write makes its directories in a tab, and not
   under node** *(found 2026-10-22, accepting the audio editor)*.

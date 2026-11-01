@@ -94,6 +94,6 @@ if (smoke) {
     await $("list").onclick();
     const wanted = [...$("plugin").options].find((o) => JSON.parse(o.value).name === params.get("name"));
     if (wanted) $("plugin").value = wanted.value;
-    $("open").click();
+    $("open").onclick();
 }
 </script></html>

@@ -106,10 +106,6 @@ already carry it.
   reports the step it stopped at and the page's console; what is open is the
   diagnosis, from the next timeout's output.
 
-- ⬜ **The example-pair audit misreads the persistent plugin pair**
-  *(`clients/web/PLAN.md`, Found by use)*. The pair is correct; the extractor
-  counts a platform's boot and a language's array calls as client API.
-
 - ⬜ **A clip's lane stacks every channel evenly, however short the lane**
   and **A short channel row's ruler labels collide at its edges**
   *(`clients/gui/PLAN.md`, Found by use)*. Both left by the audio editor's

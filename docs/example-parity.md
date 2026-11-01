@@ -126,7 +126,9 @@ Per pair, and only for what the platform makes impossible on the other side. A
 row is a decision; anything not listed here is a defect the audit reports. A
 row drops the **last** call of that name on that side, since what is declared is
 almost always the file's ending; `×2` in the call cell drops the last two, and
-`(first)` counts from the start instead.
+`(first)` counts from the start instead. A row that finds nothing to drop fails the
+audit: the file it was written about has moved on, and left in place it would
+hide the next real difference of that name.
 
 The right answer is almost always to **fix the example**, not to add a row —
 the pairs below are the ones where fixing it is not available. Most of them say
@@ -393,12 +395,6 @@ in the middle of an example.
 |---|---|---|
 | python | `gui_is_up` | the launcher's probe: it asks whether a host **process** is still answering on a port after the guest handle let go. A page has neither a process nor a port -- its host is the tab, and the two windows on screen are the same answer |
 
-### `editors/multitrack`
-
-| Only in | Call | Why |
-|---|---|---|
-| web | `events` | a clip spec's event builder. The script keeps the specs as dicts and subscripts one (`spec["events"](...)`, no call of its own); an object literal reads it as a property, so the same builder is reached by name |
-
 ### `buffers/offline_render`
 
 | Only in | Call | Why |
@@ -468,13 +464,6 @@ in the middle of an example.
 | web | `Synth` | the reporter, instanced -- the script's `feeder.send("/note", ...)` loop |
 | web | `free` | the reporter, freed where the script stops its feeder socket |
 
-### `views/recording_mapped`
-
-| Only in | Call | Why |
-|---|---|---|
-| python | `ShmClient` | the two numbers the script prints for the finished take -- how many bytes of samples the region holds and how many its summary does -- are read off the mapped segment. A page maps nothing, which is the difference the whole pair is about |
-| python | `region_path` | the other half of the row above |
-
 ### `views/editor`
 
 | Only in | Call | Why |
@@ -486,7 +475,6 @@ in the middle of an example.
 
 | Only in | Call | Why |
 |---|---|---|
-| web | `push` | the clip envelope added to the first box's automation: `Array.push`, which the audit reads as the host's `push`. The script's `list.append` is the same line and is no call on the client |
 | web | `set` ×3 | an entry of the saved session's source table: the table is a `Map`, so the page sets it with `Map.set`, which the audit reads as a node's `set`. The script assigns a dict key, which is no call |
 
 ### `editors/span_selected`
@@ -509,8 +497,6 @@ in the middle of an example.
 |---|---|---|
 | python | `embed` | audit false positive: the global `Session.live`/`Session.embed` idiom normalizes the script's live call; this pair explicitly attaches the page to a native server, so both actually call `Session.live` |
 | web | `live` | the other half of the row above: the page explicitly names the native server WebSocket URL |
-| web | `find` | `Array.find` selects the scanned native identity; the script's `next` over the same rows performs the same selection |
-| web | `push` ×2 | `Array.push` appends native input/output port rows; the script's `list.append` performs the same two operations |
 
 
 ### `plugins/persistent`
@@ -519,5 +505,3 @@ in the middle of an example.
 |---|---|---|
 | python | `embed` | audit false positive: the global `Session.live`/`Session.embed` idiom normalizes the script's live call; this pair explicitly attaches the page to a native server, so both actually call `Session.live` |
 | web | `live` | the other half of the row above: the page explicitly names the native server WebSocket URL |
-| web | `find` | `Array.find` selects the scanned native identity; the script's `next` over the same rows performs the same selection |
-| web | `push` ×2 | `Array.push` appends native input/output port rows; the script's `list.append` performs the same two operations |

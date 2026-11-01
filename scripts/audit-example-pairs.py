@@ -1241,7 +1241,11 @@ def main() -> int:
         web_seq = filter_surface(apply_idioms(_js_calls(web_path), idioms, "web"), surface)
         for side, name, count in tables.allowances.get(key, []):
             seq = py_seq if side == "python" else web_seq
+            before = len(seq)
             seq[:] = _drop(seq, camel(name) if side == "python" else name, count)
+            if before - len(seq) < abs(count):
+                print(f"\n{key}: the row for {side} `{name}` finds nothing to drop")
+                failures += 1
         if args.verbose:
             print(f"# {key}\n  py : {' '.join(py_seq)}\n  web: {' '.join(web_seq)}")
         if py_seq == web_seq:
@@ -1254,6 +1258,11 @@ def main() -> int:
             print(f"    {line}")
 
     audit_all = not args.patterns
+    paired = {key for key, _py, _web in pairs}
+    for key in (sorted(set(tables.allowances) - paired) if audit_all else []):
+        print(f"\n{key}: rows in docs/example-parity.md for a pair that does not exist")
+        failures += 1
+
     for key, path in (lonely if audit_all else []):
         print(f"\n{key}: no page twin, and no row in docs/example-parity.md")
         print(f"  {path.relative_to(ROOT)}")
