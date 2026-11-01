@@ -278,7 +278,7 @@ pub(super) fn open_keys(host: &mut Host, ctx: &GestureCtx) -> Vec<GestureEffect>
     let mut entries = Vec::new();
     let sheet = host
         .keys
-        .sheet_offered(&scopes, &|verb| host.offers(ctx.def_id, verb));
+        .sheet_offered(&scopes, &|verb| host.lists(ctx.def_id, verb));
     for section in sheet {
         if !entries.is_empty() {
             entries.push(Entry::separator());

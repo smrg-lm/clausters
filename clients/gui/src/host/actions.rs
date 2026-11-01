@@ -91,6 +91,16 @@ impl Host {
         })
     }
 
+    /// **Whether a key sheet lists verb `name` for window `def`**: what it offers,
+    /// but for what its owner reads as not the window's at all, which a key
+    /// still explains and a list of what the window does leaves out.
+    pub(crate) fn lists(&self, def: i32, name: &str) -> bool {
+        self.offers(def, name)
+            && !self
+                .action_state(def, name, &self.clipboard)
+                .is_some_and(|state| state.absent)
+    }
+
     /// **The dialog up in window `def`**, if one is: the modal panel a
     /// reader sees -- not one in a hidden page of a stack, nor in an invisible
     /// subtree.

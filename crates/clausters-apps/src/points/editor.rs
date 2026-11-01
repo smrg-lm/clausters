@@ -161,12 +161,16 @@ impl PointsEditor {
         for (verb, state) in &mut actions {
             match *verb {
                 "play" | "loop" | "to_start" | "to_end" => {
-                    state.refuse("a curve does not play here");
+                    state.refuse_absent("a curve does not play here");
                 }
                 "copy" | "cut" | "paste" | "delete" | "select_all" => {
-                    state.refuse("a curve's points are drawn by hand: they have no clipboard");
+                    state.refuse_absent(
+                        "a curve's points are drawn by hand: they have no clipboard",
+                    );
                 }
-                "snap" | "quantize" | "split" | "join" => state.refuse("a curve has no grid"),
+                "snap" | "quantize" | "split" | "join" => {
+                    state.refuse_absent("a curve has no grid");
+                }
                 _ => {}
             }
         }

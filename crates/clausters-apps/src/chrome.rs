@@ -281,6 +281,10 @@ pub(crate) fn grid_actions(
             match verb.name {
                 "undo" if !undo => state.refuse("there is nothing to undo"),
                 "redo" if !redo => state.refuse("there is nothing to redo"),
+                // a roll's and a curve's are the script's: never a file of theirs
+                "save" | "save_as" if !saves && matches!(app, App::Notes | App::Points) => {
+                    state.refuse_absent("this window writes no file");
+                }
                 "save" | "save_as" if !saves => state.refuse("this window writes no file"),
                 _ => {}
             }

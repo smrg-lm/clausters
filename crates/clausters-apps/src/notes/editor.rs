@@ -101,6 +101,9 @@ pub struct NotesEditor {
     /// until somebody turns it off: off, a drag, a paste and step entry land
     /// where the hand puts them, and a quantize still moves onto the grid.
     snap: bool,
+    /// **The loop switch**, as the host last said it: the host keeps it, and the
+    /// window's tool and menu entry read it here.
+    looping: bool,
 }
 
 /// What a notes editor is opened with, as the context's door reads it.
@@ -185,6 +188,7 @@ impl NotesEditor {
             midi_in: false,
             grid: crate::DEFAULT_GRID,
             snap: true,
+            looping: false,
         }
     }
 
@@ -206,9 +210,17 @@ impl NotesEditor {
         undo: bool,
         redo: bool,
     ) -> std::collections::BTreeMap<&'static str, clausters_editing::verbs::ActionState> {
-        crate::chrome::grid_actions(crate::chrome::App::Notes, false, undo, redo, &|verb| {
-            (verb == SNAP_VERB).then_some(self.snap)
-        })
+        crate::chrome::grid_actions(
+            crate::chrome::App::Notes,
+            false,
+            undo,
+            redo,
+            &|verb| match verb {
+                SNAP_VERB => Some(self.snap),
+                "loop" => Some(self.looping),
+                _ => None,
+            },
+        )
     }
 
     /// The sequence it edits.
@@ -459,6 +471,7 @@ impl Converse for NotesEditor {
         }
         out.turn = Kind::Route;
         let looping = args.get(4).and_then(Value::as_i64).is_some_and(|v| v != 0);
+        self.looping = looping;
         let pass = json!({
             "looping": looping,
             "range": self.range.map(|(a, b)| json!([a, b])),

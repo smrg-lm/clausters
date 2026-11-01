@@ -347,6 +347,9 @@ pub struct MultitrackEditor {
     /// The transport row's ids, once they are known: numbered here, or learned
     /// by name after the window opened.
     controls: Option<TransportIds>,
+    /// **The loop switch**, as the host last said it: the host keeps it, and the
+    /// window's menu entry reads it here.
+    looping: bool,
     /// **The close form's widgets**, when the holder numbered them
     /// ([`crate::closing`]); and whether it is up.
     close_form: Option<crate::closing::Ids>,
@@ -583,6 +586,7 @@ impl MultitrackEditor {
             conversation: Conversation::new(version),
             told: None,
             controls: None,
+            looping: false,
             close_form: None,
             asks: false,
             leaving: None,
@@ -650,6 +654,7 @@ impl MultitrackEditor {
                 crate::notes::editor::SNAP_VERB => Some(self.snap),
                 CROSSFADE_VERB => Some(crossfade),
                 STOP_AT_END_VERB => stops_at_end,
+                LOOP_KEY => Some(self.looping),
                 NOTES_ROLL_VERB => Some(self.notes_view == ROLL),
                 NOTES_SCORE_VERB => Some(self.notes_view == SCORE),
                 VIEW_WAVE_VERB => Some(self.samples_view == WAVE),
@@ -1920,9 +1925,10 @@ impl MultitrackEditor {
             return (None, Vec::new());
         }
         if self.window.map(i64::from) == Some(widget) && tag == LOOP_KEY {
+            self.looping = values.first().is_some_and(|v| number(v) != 0.0);
             out.transport = Some(TransportVerb::Loop {
                 range: self.range,
-                looping: values.first().is_some_and(|v| number(v) != 0.0),
+                looping: self.looping,
             });
             return (None, Vec::new());
         }
@@ -3370,6 +3376,7 @@ mod tests {
     fn the_loop_key_asks_the_pass_in_progress_to_follow() {
         let mut ed = editor();
         let out = ed.event(&event(39, 2, 1, LOOP_KEY, vec![json!(1)]), 1);
+        assert_eq!(ed.actions(false, false, None)["loop"].checked, Some(true));
         assert_eq!(
             out.transport,
             Some(TransportVerb::Loop {

@@ -131,6 +131,22 @@ fn a_roll_that_cannot_be_edited_refuses_and_says_why() {
     assert!(reason.unwrap().contains("rendering"));
 }
 
+/// **The window's loop tool reads the switch**, which the host keeps and tells
+/// the window of as it turns.
+#[test]
+fn the_loop_switch_is_read_where_a_tool_reads_it() {
+    let mut e = editor(shared());
+    assert_eq!(e.actions(false, false)["loop"].checked, Some(false));
+    let turned = |on: i64| Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(39), json!(3), json!(0), json!("loop"), json!(on)],
+    };
+    e.event(&turned(1), 1);
+    assert_eq!(e.actions(false, false)["loop"].checked, Some(true));
+    e.event(&turned(0), 1);
+    assert_eq!(e.actions(false, false)["loop"].checked, Some(false));
+}
+
 #[test]
 fn the_space_bar_over_the_window_asks_for_a_play() {
     let mut e = editor(shared());

@@ -475,10 +475,12 @@ impl Editing {
         }
     }
 
-    /// Runs `f` over what member `member` plays: a roll's sequence, locked,
-    /// or a page's score rendered at the engraver's tempo. What it answers is
-    /// carried out on the engine as it was made.
-    fn roll_with<T>(
+    /// Runs `f` over what member `member` plays: a roll's sequence, locked; a
+    /// page over a sequence that same sequence, with its tempo and its curves,
+    /// which are what its play cursor is timed on; or a page of its own, its
+    /// score rendered at the engraver's tempo. What it answers is carried out on
+    /// the engine as it was made.
+    pub(crate) fn roll_with<T>(
         &self,
         member: MemberId,
         f: impl FnOnce(&clausters_document::EventSequence) -> T,
@@ -491,6 +493,10 @@ impl Editing {
             }
             #[cfg(feature = "notation")]
             Some(Member::Score(editor)) => {
+                if let Some(shared) = editor.sequence() {
+                    let sequence = shared.lock().unwrap_or_else(|e| e.into_inner());
+                    return Some(f(&sequence));
+                }
                 let sequence = editor
                     .rendered()
                     .and_then(|value| serde_json::from_value(value).map_err(|e| e.to_string()))

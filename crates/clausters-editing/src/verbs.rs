@@ -126,6 +126,11 @@ pub struct ActionState {
     /// refuses it again if nothing is selected when it arrives.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unselected: bool,
+    /// **Whether it is not this window's at all**, whatever its state: a verb
+    /// of the table the structure cannot do. It is refused with why, and a key
+    /// sheet does not list it among what the window does.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub absent: bool,
 }
 
 impl ActionState {
@@ -144,6 +149,7 @@ impl ActionState {
             pending: false,
             paste: None,
             unselected: false,
+            absent: false,
         }
     }
 
@@ -157,6 +163,14 @@ impl ActionState {
             self.unselected = false;
             self.reason = Some(reason.into());
         }
+    }
+
+    /// Marks it as **not this window's at all**: refused with `reason`, so a key
+    /// that asks for it says why, and left off the window's key sheet
+    /// ([`ActionState::absent`]).
+    pub fn refuse_absent(&mut self, reason: &str) {
+        self.refuse(reason);
+        self.absent = true;
     }
 
     /// Marks it unavailable because nothing is selected, unless it is

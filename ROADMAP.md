@@ -119,6 +119,9 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once, after saving the
   session before it; not reproduced.
 
+- ⬜ **Quantize on a page** *(`crates/clausters-apps/PLAN.md`, Future
+  directions)*. Raised by the user reading the score editor's key sheet.
+
 - ⬜ **The audio editor's switches are menu entries, not checks**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
   the audio editor's menus.

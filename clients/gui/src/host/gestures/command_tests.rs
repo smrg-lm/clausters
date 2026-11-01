@@ -368,6 +368,37 @@ fn reading(kind: &str) -> serde_json::Value {
         "target": {"kind": "document", "member": 0, "object": 1}})
 }
 
+/// **What is not the window's at all stays off its key sheet**, where what it
+/// cannot do just now stays on: a key still says why for both.
+#[test]
+fn a_key_sheet_leaves_out_what_a_window_does_not_do() {
+    let mut host = host_from(ROLL);
+    let mut absent = reading("command");
+    absent["enabled"] = false.into();
+    absent["reason"] = "a page has no grid".into();
+    absent["absent"] = true.into();
+    let mut later = reading("command");
+    later["enabled"] = false.into();
+    later["reason"] = "there is nothing to undo".into();
+    publish_actions(
+        &mut host,
+        serde_json::json!({"split": absent, "undo": later, "keys": reading("command")}),
+    );
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    g.press_key(&mut host, &ctx, Key::F(1), None).unwrap();
+    let stack = host.popup(1).expect("the sheet is up");
+    let labels: Vec<&str> = stack.levels[0]
+        .entries
+        .iter()
+        .map(|e| e.label.as_str())
+        .collect();
+    assert!(!labels.contains(&"Split"), "{labels:?}");
+    assert!(labels.contains(&"Undo"), "{labels:?}");
+    assert!(host.lists(1, "undo") && !host.lists(1, "split"));
+    assert!(host.offers(1, "split"), "a key still says why");
+}
+
 /// **An action that cannot be taken is refused alike** from a tool, a
 /// client's command and a key, its entry is disabled, and the same verb runs
 /// from all three once the owner says it can.

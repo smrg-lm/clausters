@@ -1705,6 +1705,40 @@ fn the_loop_switch_is_one_whoever_turns_it_and_a_rewind_cues_the_start() {
     assert_eq!(editor.event(&pick("rewind", None), 1).locate, Some(0.0));
 }
 
+/// **A rewind is where the next pass starts.** One item picked would start it
+/// there instead, so it goes; a stretch is what a pass plays, and stays. Home
+/// and End are the same placing, from the keys.
+#[test]
+fn a_rewind_lets_go_of_the_place_a_pick_left_and_keeps_a_stretch() {
+    let mut editor = with_tools();
+    editor.event(&gesture("element", &[json!("n3")]), 1);
+    let picked = editor.event(&window("play", 0), 1).play.unwrap();
+    assert!(
+        picked["from"].as_f64().unwrap() > 0.0,
+        "from the pick: {picked}"
+    );
+    editor.event(&window("play", 0), 1);
+
+    let out = editor.event(&tool("rewind", json!("click")), 1);
+    assert_eq!(out.locate, Some(0.0));
+    assert_eq!(out.selected, Some(Vec::new()), "the pick went");
+    assert!(editor.items().is_empty());
+    assert_eq!(
+        editor.event(&window("play", 0), 1).play.unwrap()["from"],
+        0.0
+    );
+
+    editor.event(&gesture("element", &[json!("n2")]), 1);
+    editor.event(&gesture("element", &[json!("n3"), json!("extend")]), 1);
+    assert!(editor.items().len() > 1);
+    let out = editor.event(&window("to_start", 0), 1);
+    assert_eq!(out.locate, Some(0.0));
+    assert!(editor.items().len() > 1, "a stretch stays");
+
+    let out = editor.event(&window("to_end", 0), 1);
+    assert!(out.locate.unwrap() > 0.0, "past the last item");
+}
+
 #[test]
 fn the_score_plays_as_its_render_on_the_engravers_time() {
     let mut editor = opened();
@@ -2180,6 +2214,12 @@ fn a_roll_and_a_page_over_one_sequence_are_one_order() {
         "one structure: the sequence"
     );
     let member = page["member"].as_u64().unwrap() as u32;
+    // what plays is that sequence, curves and tempo with it, and not a render
+    // of the page: the play cursor is timed on it
+    assert_eq!(
+        editing.roll_with(member, Clone::clone).as_ref(),
+        Some(&before)
+    );
     let third = match editing.member_mut(member) {
         Some(Member::Score(editor)) => {
             editor.window(IDS, Chrome::default());
@@ -2260,7 +2300,8 @@ fn the_page_of_a_sequence_is_on_the_sequence_s_time() {
 }
 
 /// **What a page's window reads**: the history, what asks for a selection, its
-/// two switches, and what it does not do, with why.
+/// two switches, and what it does not do: refused with why, and not on its key
+/// sheet.
 #[test]
 fn the_windows_actions_read_the_editor() {
     let mut editor = ScoreEditor::new(holding(Vec::new()), 1);
@@ -2271,7 +2312,10 @@ fn the_windows_actions_read_the_editor() {
         actions["delete"].reason.as_deref(),
         Some("nothing is selected")
     );
-    assert!(!actions["quantize"].enabled && actions["quantize"].reason.is_some());
+    for verb in ["snap", "quantize", "split", "join", "mix"] {
+        assert!(!actions[verb].enabled && actions[verb].reason.is_some());
+        assert!(actions[verb].absent, "{verb} is not a page's");
+    }
     assert_eq!(actions["entry"].checked, Some(false));
     assert!(
         !actions.contains_key("pitch_a"),

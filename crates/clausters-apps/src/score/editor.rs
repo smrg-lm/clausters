@@ -418,9 +418,9 @@ impl ScoreEditor {
                     "entry" => state.checked = Some(entry),
                     "loop" => state.checked = Some(self.looping),
                     "snap" | "quantize" | "split" | "join" => {
-                        state.refuse("a page has no grid: its notes are written values");
+                        state.refuse_absent("a page has no grid: its notes are written values");
                     }
-                    "mix" => state.refuse("a page mixes nothing"),
+                    "mix" => state.refuse_absent("a page mixes nothing"),
                     "delete" | "copy" | "cut" | "deselect" | "step_up" | "step_down"
                     | "octave_up" | "octave_down"
                         if !selected && !entry =>
@@ -1513,10 +1513,43 @@ impl ScoreEditor {
     }
 
     /// **Back to the start**: the cursor a pass starts from is the score's
-    /// first beat, and a stopped playback is cued there.
-    fn rewind(&mut self, out: &mut Outcome) {
-        self.cursor = 0.0;
-        out.locate = Some(0.0);
+    /// first beat, and a stopped playback is cued there. One item picked is a
+    /// place a pass would start from instead, so it goes; a stretch is what a
+    /// pass plays, as a time range is, and stays.
+    fn rewind(&mut self, out: &mut Outcome) -> Vec<Correction> {
+        self.go_to(0.0, out)
+    }
+
+    /// **On to the end**: past what the last item ends at, by the rule of
+    /// [`Self::rewind`].
+    fn go_to_end(&mut self, out: &mut Outcome) -> Vec<Correction> {
+        let end = self.held().sheet().and_then(|sheet| {
+            sheet
+                .staves
+                .iter()
+                .flat_map(|staff| &staff.voices)
+                .map(|voice| {
+                    voice
+                        .items
+                        .iter()
+                        .fold(Ratio::ZERO, |end, item| end + item.dur())
+                })
+                .max()
+                .map(|end| end.to_f64() * RENDER_BEAT_UNIT as f64)
+        });
+        self.go_to(end.unwrap_or(0.0), out)
+    }
+
+    /// The position cursor at `beat`, and what picking an item left of it gone.
+    fn go_to(&mut self, beat: f64, out: &mut Outcome) -> Vec<Correction> {
+        self.cursor = beat;
+        out.locate = Some(beat);
+        if self.stretch || self.items().len() != 1 {
+            return Vec::new();
+        }
+        self.select_by("", "");
+        out.selected = Some(Vec::new());
+        self.selected()
     }
 
     /// **The loop switch**, turned: a pass in progress follows it, and the
@@ -1605,10 +1638,7 @@ impl ScoreEditor {
                 out.play = Some(self.pass());
                 shown = Some(self.leave_to_play());
             }
-            menu::Pick::Rewind => {
-                self.rewind(out);
-                shown = Some(Vec::new());
-            }
+            menu::Pick::Rewind => shown = Some(self.rewind(out)),
             menu::Pick::Loop(on) => shown = Some(self.set_looping(on, true, out)),
             menu::Pick::Layout(view) => self.view = view,
             menu::Pick::Entry(on) => self.set_entry(on),
@@ -2178,10 +2208,7 @@ impl ScoreEditor {
                 out.extend(self.chrome());
                 return (None, out);
             }
-            tools::Tool::Rewind => {
-                self.rewind(out);
-                return (None, Vec::new());
-            }
+            tools::Tool::Rewind => return (None, self.rewind(out)),
             tools::Tool::Loop(on) => return (None, self.set_looping(on, true, out)),
             tools::Tool::Act(action) => {
                 let reason = self.perform(&action, out);
@@ -2281,6 +2308,21 @@ impl Converse for ScoreEditor {
                 } else {
                     let on = args.get(4).and_then(Value::as_i64).is_some_and(|v| v != 0);
                     self.set_looping(on, false, out)
+                };
+                out.answer = Some(conversation::answer(
+                    message.seq,
+                    out.version,
+                    None,
+                    corrections,
+                ));
+            }
+            // Home and End: a page is on no axis the host could place them on
+            "to_start" | "to_end" => {
+                out.turn = Kind::Route;
+                let corrections = if message.tag == "to_start" {
+                    self.rewind(out)
+                } else {
+                    self.go_to_end(out)
                 };
                 out.answer = Some(conversation::answer(
                     message.seq,

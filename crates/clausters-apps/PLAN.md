@@ -4428,6 +4428,11 @@ Every entry carries a checkbox.
   hold different parts, which the parts list does not yet: that is the
   design question this entry carries.
 
+- ⬜ **Quantize on a page** *(raised by the user, 2026-11-01, reading the score
+  editor's key sheet)*. A page has no grid, so its window offers no quantize; a
+  page's written values could still be quantized as a verb of its own, which is
+  a design of its own rather than the grid's.
+
 ## Found by use: the running list of fixes
 
 - ⬜ **A failed endpoint walk leaves unissued steps queued** (2026-10-30,
