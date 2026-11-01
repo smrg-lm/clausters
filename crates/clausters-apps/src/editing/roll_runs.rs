@@ -361,6 +361,7 @@ impl Editing {
                 .collect();
             let label = action["label"].as_str().unwrap_or("edit").to_string();
             let taken = !legs.is_empty() && self.record(member, &Record { label, legs }, false);
+            ran.effects.push(self.told_version());
             return Ok(json!(taken));
         }
         let shared = self
@@ -386,6 +387,7 @@ impl Editing {
             self.sound_rolls(ids);
             ran.effects.push(effect("resync", json!({})));
             ran.effects.push(effect("notes", json!({})));
+            ran.effects.push(self.told_version());
         }
         Ok(answer)
     }
@@ -1204,14 +1206,9 @@ impl Editing {
         self.sound_rolls(ids);
         ran.effects.push(effect("publish", json!({})));
         ran.effects.push(effect("resync", json!({})));
-        // the window told the version it draws now: a gesture made against
-        // the document it let go of is refused, and one made after is not
-        let told = clausters_editing::conversation::Answer::Ack {
-            seq: 0,
-            doc_version: self.version,
-            reason: None,
-        };
-        ran.effects.push(effect("echo", json!({"answer": told})));
+        // a gesture made against the document it let go of is refused, and one
+        // made after is not
+        ran.effects.push(self.told_version());
         Ok(())
     }
 }

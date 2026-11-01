@@ -317,15 +317,9 @@ impl Editing {
         }
         ran.effects.push(effect("publish", json!({})));
         ran.effects.push(effect("resync", json!({})));
-        // **the window told the version it draws now**: a gesture made
-        // against the session it let go of is refused, and one made after
-        // is not
-        let told = clausters_editing::conversation::Answer::Ack {
-            seq: 0,
-            doc_version: self.version,
-            reason: None,
-        };
-        ran.effects.push(effect("echo", json!({"answer": told})));
+        // a gesture made against the session it let go of is refused, and one
+        // made after is not
+        ran.effects.push(self.told_version());
         Ok(answer)
     }
 
@@ -645,6 +639,7 @@ impl Editing {
                 .map(|recorded| leg(&recorded.forward, &recorded.backward))
                 .collect();
             let taken = !legs.is_empty() && self.record(member, &Record { label, legs }, false);
+            ran.effects.push(self.told_version());
             return Ok(json!(taken));
         }
         let HandleCall::Request(request) = call else {
@@ -682,7 +677,21 @@ impl Editing {
         }
         self.sound(member, tracks, ids);
         ran.effects.push(effect("resync", json!({})));
+        ran.effects.push(self.told_version());
         Ok(answer)
+    }
+
+    /// **The window told the version it draws now**, after what moved it came
+    /// by no gesture of its own: a script's edit, or a change of session. What
+    /// it draws is already that, so the next gesture is made against it and is
+    /// not refused as overtaken.
+    pub(super) fn told_version(&self) -> Value {
+        let told = clausters_editing::conversation::Answer::Ack {
+            seq: 0,
+            doc_version: self.version,
+            reason: None,
+        };
+        effect("echo", json!({"answer": told}))
     }
 
     /// **The window's closing effect** (`closeWindow` or `closedWindow`),

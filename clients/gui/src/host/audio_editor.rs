@@ -2587,6 +2587,10 @@ mod tests {
                     "backward": applied["current"]}]}}}),
         );
         assert_eq!(recorded, true);
+        // and the window was told, so a gesture after it is not overtaken
+        host.take_effects();
+        let at = ask(&mut host, keys, json!({"query": "history"}))["version"].clone();
+        assert_eq!(json!(host.outbox.borrow().version()), at);
         // the other roll reads it, and its history is the same one
         let len = ask(
             &mut host,
@@ -3563,6 +3567,45 @@ mod tests {
             .unwrap();
         delivered(&mut host, space);
         assert_eq!(rolling(&mut host), true);
+        host.close_audio(def_id);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// **A script's edit is not a change the hand was overtaken by**: the window
+    /// draws it at once, so a gesture made after it is applied, whether it is
+    /// the window's first. Both reach the host's outbox as the version it names.
+    #[test]
+    fn a_gesture_after_a_script_s_edit_is_not_refused() {
+        let (folder, path) = song_session("after-script");
+        let mut host = host();
+        let def_id = host
+            .open_multitrack(Some(path.to_str().unwrap()), "song")
+            .expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let handle = |host: &mut Host, call: Value| {
+            ask(
+                host,
+                def_id,
+                json!({"do": {"verb": "handle", "call": call}}),
+            )
+        };
+        let state = handle(&mut host, json!({"verb": "state"}));
+        let mut tracks = state["tracks"].clone();
+        tracks[0]["level"] = json!(0.5);
+        let applied = handle(
+            &mut host,
+            json!({"verb": "apply", "intent": {"intent": "settracks", "tracks": tracks}}),
+        );
+        assert_eq!(applied["applied"], true, "{applied}");
+        host.take_effects();
+        let at = ask(&mut host, def_id, json!({"query": "history"}))["version"].clone();
+        assert_eq!(
+            json!(host.outbox.borrow().version()),
+            at,
+            "the window is told"
+        );
         host.close_audio(def_id);
         let _ = std::fs::remove_dir_all(&folder);
     }

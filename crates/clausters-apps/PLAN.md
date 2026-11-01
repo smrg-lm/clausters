@@ -6260,3 +6260,10 @@ wrong.
   screen shows it, so a save or an edit since the last one is seen only by what
   the close form does. Which mark, and whether every application's window wears
   the same one, is to be decided with the entry.
+
+- ⬜ **A new session's first Save or track failed once in the eye pass** *(found by
+  the user, 2026-10-31, in the multitrack's session steps)*. Right after a session
+  was saved and closed from the close form, File > New, a track added and File >
+  Save did not do what they do; it did not happen again. Walked by script, the
+  window's version, the file and the Save as form all come out right, so what the
+  hand did differently is open, and the symptom is what to write down next time.
