@@ -169,6 +169,11 @@ already carry it.
   *(`clients/gui/PLAN.md`, Found by use)*. Not reproduced; waits for the next
   failure's output.
 
+- ⬜ **A control's size does not follow what it says, in a row or across one**
+  *(`clients/gui/PLAN.md`, Found by use)*. Found on the curve window; the
+  examples show it in several forms, and the decision changes a written
+  layout rule.
+
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and

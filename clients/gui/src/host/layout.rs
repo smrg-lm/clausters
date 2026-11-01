@@ -789,6 +789,45 @@ mod tests {
     /// container did not measure what it held. With `hug` it takes exactly its
     /// content and the view keeps the rest -- and the resolution order is
     /// unchanged, this is just another natural size.
+    /// **The real curve window**: its chooser's row is as tall as the chooser
+    /// asks, and a script's tool beside it does not stretch.
+    #[test]
+    fn a_curve_window_gives_its_chooser_all_it_asks_for() {
+        use clausters_apps::points::{self, Ids, editor};
+        let curve =
+            points::shared_of(&serde_json::json!({"points": [0.0, 0.0, 1, 0.0, 1.0, 1.0, 1, 0.0]}));
+        let mut e = editor::new_json(curve, r#"{"rate": 100.0, "w": 600, "h": 400}"#);
+        let mut def = e.window(Ids {
+            curve: 2,
+            shape: Some(3),
+        });
+        def["children"][1]["children"][0]["children"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"id": 4, "type": "button", "label": "x", "flat": true}));
+        let w = tree(&def.to_string());
+        let m = Metrics::default();
+        let placed = layout(area(), &w, &m);
+        let rect = |id: i32| {
+            placed
+                .iter()
+                .find(|p| p.widget.id == Some(id))
+                .unwrap()
+                .rect
+        };
+
+        let wanted = placed
+            .iter()
+            .find(|p| p.widget.id == Some(3))
+            .unwrap()
+            .widget
+            .natural_size(&m, 1.0)
+            .1
+            .unwrap();
+        assert_eq!(rect(3).h, wanted);
+        assert!(rect(4).w < 60.0, "{:?}", rect(4));
+    }
+
     /// A packed row is a row of tools: each as wide as what it says, and the
     /// one child that names a weight takes what is left -- the spring.
     #[test]

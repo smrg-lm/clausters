@@ -45,13 +45,21 @@ pub fn body_rect(rect: Rect, has_label: bool, m: &Metrics) -> Rect {
 
 /// The control body (the rect minus its label strip -- sized by the widget's
 /// `text_size` -- and a small inset).
+///
+/// **In a short cell the inset gives way before the body does**, for the same
+/// reason the label goes first ([`label_height`]): the inset is air, and a box
+/// shorter than its text is a drawing that lies. So a cell with room for the
+/// text and not for the air around it gets a body as tall as the text or as
+/// the cell, and the sides keep their inset.
 pub fn body_rect_at(rect: Rect, has_label: bool, text_size: f32, m: &Metrics) -> Rect {
     let top = rect.y + label_height(rect.h, has_label, text_size, m);
+    let room = (rect.y + rect.h - top).max(0.0);
+    let inset = ((room - font::height(text_size)) * 0.5).clamp(0.0, m.pad);
     Rect::new(
         rect.x + m.pad,
-        top + m.pad,
+        top + inset,
         (rect.w - 2.0 * m.pad).max(0.0),
-        (rect.y + rect.h - top - 2.0 * m.pad).max(0.0),
+        room - 2.0 * inset,
     )
 }
 
@@ -930,6 +938,26 @@ pub fn knob_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
 mod tests {
     use super::*;
     use crate::host::theme::Theme;
+
+    /// A cell too short for the inset keeps its text inside its box; one with
+    /// room keeps the inset, and one shorter than the text is all box.
+    #[test]
+    fn a_short_cell_gives_up_the_inset_before_the_box_is_under_its_text() {
+        let m = Metrics::default();
+        let text = font::height(m.text_scale);
+        let cell = |h: f32| Rect::new(0.0, 10.0, 100.0, h);
+
+        let roomy = body_rect_at(cell(m.control_h + 2.0 * m.pad), false, m.text_scale, &m);
+        assert_eq!((roomy.y, roomy.h), (10.0 + m.pad, m.control_h));
+
+        let short = body_rect_at(cell(text + m.pad), false, m.text_scale, &m);
+        assert_eq!(short.h, text, "as tall as the text, centred in the cell");
+        assert_eq!(short.y, 10.0 + m.pad * 0.5);
+        assert_eq!((short.x, short.w), (m.pad, 100.0 - 2.0 * m.pad));
+
+        let shorter = body_rect_at(cell(text - 2.0), false, m.text_scale, &m);
+        assert_eq!((shorter.y, shorter.h), (10.0, text - 2.0));
+    }
 
     #[test]
     fn slider_fraction_spans_the_body() {

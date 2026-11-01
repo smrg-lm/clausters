@@ -9122,3 +9122,22 @@ module of its own.
   `set_debug_utils_object_name`, creating a render pipeline in
   `host::frame::tests::a_window_is_its_reference_picture` while other tests
   run, so a test that holds a real device is where to look first.
+
+- ⬜ **A control's size does not follow what it says, in a row or across one**
+  *(found 2026-11-01 by the user, by eye on the curve window, as something the
+  examples keep showing)*. The layout has no rule for the two cases left once
+  a box covers its text. **Along a row**, a button or a chooser with no `w`
+  takes an even share unless the row carries `pack`, so `play` and `stop` are
+  each half a window wide. **Across a row**, the cross axis fills without
+  reading the child's size: a chooser or a button in a tall cell is a block as
+  tall as the cell, and a chooser's body grows with it, while a row given an
+  `h` below what it holds squeezes its children: a knob becomes a dot and a
+  check box loses its frame. Measured on the windows of `panels/panel`,
+  `panels/style`, `views/layers`, `views/bulk`, `notation/score_from_data` and
+  `editors/patch1`. A row's height written as a number does not know its own
+  margins either: a row in a row at 40 leaves a cell of 16. What is wrong is
+  the rule and not each example, so the decision to take is whether a control
+  with content keeps its content's size on both axes unless a `weight` asks it
+  to stretch, what that does to every window, and whether a container's `h`
+  may stay under what its children's floors add up to. Pinned today by
+  `a_natural_size_only_binds_its_own_axis`, so this changes a written rule.

@@ -183,9 +183,6 @@ pub struct Ids {
     pub shape: Option<i32>,
 }
 
-/// How tall the row of controls under the curve is.
-pub const CONTROLS_H: f64 = 40.0;
-
 /// **The shapes a segment can take**, in the order of their numbers, so a
 /// chooser's index is the shape: what an envelope's segments are written with.
 pub fn shapes() -> Vec<&'static str> {
@@ -195,8 +192,9 @@ pub fn shapes() -> Vec<&'static str> {
 }
 
 /// **The row of controls under the curve**: the chooser that sets the selected
-/// segment's shape, side by side with whatever the client appends to it, the
-/// lot in a quarter of the width and the rest left empty.
+/// segment's shape, side by side with whatever the client appends to it, each
+/// as big as what it says and the rest left empty. The row is as tall as what
+/// it holds, which is no number written here: a client may append anything.
 fn controls(shape: Option<i32>) -> Value {
     let mut chooser = json!({
         "type": "choice",
@@ -210,11 +208,12 @@ fn controls(shape: Option<i32>) -> Value {
     json!({
         "type": "layout",
         "flow": "row",
-        "h": CONTROLS_H,
+        "hug": true,
         "gap": 6.0,
         "children": [
-            {"type": "layout", "flow": "row", "weight": 1.0, "gap": 6.0, "children": [chooser]},
-            {"type": "layout", "weight": 3.0},
+            {"type": "layout", "flow": "row", "hug": true, "pack": true, "margin": 0.0,
+             "gap": 6.0, "children": [chooser]},
+            {"type": "layout", "weight": 1.0},
         ],
     })
 }

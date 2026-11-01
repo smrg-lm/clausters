@@ -100,7 +100,8 @@ editor = edit(
     # the readout of the point under the pointer against them. A normalized
     # envelope would be the same with ``end=1.0``.
     min=0.0, max=1.0, start=0.0, end=2.0,
-    extra=[button(name="play", verb="play", icon=ICON.play)],
+    extra=[button(name="play", verb="play", icon=ICON.play, flat=True, text_size=2.0,
+                  tip="Play")],
 )
 editor.on_play = play
 print(f"opened window {editor.id} -- draw the envelope, then press play")

@@ -194,7 +194,8 @@ fn the_window_shows_its_rulers() {
 }
 
 /// **The row under the curve holds the shape menu**, over every shape a
-/// segment can take, in the order of their numbers, in a quarter of the width.
+/// segment can take, in the order of their numbers, in a row as tall as what it
+/// holds rather than one a number says.
 #[test]
 fn the_window_has_a_row_with_the_shape_menu() {
     let mut e = editor(shared(), r#"{"rate": 100.0}"#);
@@ -205,7 +206,9 @@ fn the_window_has_a_row_with_the_shape_menu() {
     assert_eq!(tree["flow"], "col");
     let row = &tree["children"][1];
     assert_eq!(row["flow"], "row");
-    assert_eq!(row["children"][1]["weight"], 3.0, "the rest of the width");
+    assert_eq!(row["hug"], true);
+    assert!(row.get("h").is_none());
+    assert_eq!(row["children"][1]["weight"], 1.0, "the rest of the width");
     let menu = &row["children"][0]["children"][0];
     assert_eq!(menu["id"], 41);
     assert_eq!(menu["options"][2], "exp");
