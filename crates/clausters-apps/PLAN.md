@@ -6253,3 +6253,10 @@ wrong.
   only maker of a move, so the branch looks unreachable. `X27`'s removal of
   obsolete coordination decides: gone from both clients, with a test that nothing
   hands one out.
+
+- ⬜ **A multitrack's window does not say whether its session is unsaved**
+  *(found by the user, 2026-10-31, in the eye pass of `X25`)*. The editor knows
+  (`MultitrackEditor::unsaved_at`, what its close form asks by), and nothing on
+  screen shows it, so a save or an edit since the last one is seen only by what
+  the close form does. Which mark, and whether every application's window wears
+  the same one, is to be decided with the entry.
