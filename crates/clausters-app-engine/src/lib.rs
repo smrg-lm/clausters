@@ -291,6 +291,7 @@ impl AppEngine {
             }
         }
         let mut jumped = Vec::new();
+        let mut located = Vec::new();
         for cmd in &cmds {
             match cmd {
                 Cmd::TransportRun { transport, rolling } => {
@@ -305,10 +306,26 @@ impl AppEngine {
                     self.standings.entry(*transport).or_default().1 = mark.map(|m| m.end);
                     jumped.push(*transport);
                 }
-                Cmd::TransportLocate { transport, .. } => jumped.push(*transport),
+                Cmd::TransportLocate {
+                    transport,
+                    position,
+                } => located.push((*transport, *position)),
                 _ => {}
             }
         }
+        // **The lanes first, built for where it lands**: the position the
+        // engine publishes is the old one until the locate lands, and an entry
+        // waits for the position to reach it. Fed after, from the old position,
+        // the next turn fed from past the place and its note never sounded.
+        for &(transport, position) in &located {
+            for lane in self.lanes.on(transport) {
+                if let Some(cmd) = self.lanes.clear(lane, false, &mut self.translator) {
+                    let _ = self.handle.send(cmd);
+                }
+                self.feed_lane_from(lane, transport, position);
+            }
+        }
+        jumped.retain(|transport| !located.iter().any(|(t, _)| t == transport));
         self.translator.prepare_compensation(&mut cmds, 0);
         if cmds.is_empty() {
             return true;
@@ -377,9 +394,15 @@ impl AppEngine {
         else {
             return;
         };
+        let position = self.handle.current_transport_position(transport);
+        self.feed_lane_from(lane, transport, position);
+    }
+
+    /// Lane `lane`, on transport `transport`, topped up ahead of `position`.
+    fn feed_lane_from(&mut self, lane: i32, transport: usize, position: u64) {
         let (looping, end) = self.standings.get(&transport).copied().unwrap_or_default();
         let standing = clausters::osc::server::lanes::Standing {
-            position: self.handle.current_transport_position(transport),
+            position,
             window: (clausters::osc::server::lanes::LOOKAHEAD_SECS * f64::from(self.sample_rate))
                 as u64,
             looping,
