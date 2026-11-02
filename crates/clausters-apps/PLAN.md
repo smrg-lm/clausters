@@ -6231,7 +6231,7 @@ wrong.
   next. A Save lets what waits go only once its store is confirmed, and over
   what it wrote.
 
-- ⬜ **A sound file opens in two audio editor windows of one host**
+- ✅ **A sound file opens in two audio editor windows of one host**
   *(found 2026-10-30, making a session file open once in a host)*. A
   multitrack's session is open in one window of a host and an open of it
   brings that window forward; the audio editor still opens a file another
@@ -6242,6 +6242,13 @@ wrong.
   that file and brings the window forward, from File > Open, a client's
   `/gui_app_open` and `--audio`. **Acceptance:** the same file opened from
   each of the three, written two ways, is one window and one history.
+  *Fixed 2026-11-02.* A file read into a window (`Task::Read`, which File >
+  Open and a script's `openFile` share) is looked for first in every audio
+  member's list (`Editing::audio_file_holding`, over the path a save writes
+  and the compressed file a take was decoded from): one this window holds
+  is focused, and one another holds is a `front` effect the host turns into
+  that window's focus and raise. The host's open (`/gui_app_open`,
+  `--audio`) answers the holding window the same way.
 
 - ⬜ **A def a client sent does not sound in an application's engine**
   *(found 2026-10-31, moving the roll to the host)*. A note names its def, and

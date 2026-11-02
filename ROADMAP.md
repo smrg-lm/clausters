@@ -139,11 +139,6 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Under load only; what is
   open is whether the test's pacing or the crossfade is at fault.
 
-- ⬜ **A sound file opens in two audio editor windows of one host**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. A multitrack's session
-  is open once in a host now; the audio editor's open finds the file in its
-  window's list and focuses it.
-
 - ⬜ **A write in place behind an undrained replacement can miss a shared
   buffer** *(root `PLAN.md`, Found by use)*. The narrower race left after the
   gain preview's fix; no client writes before an allocation's `/done`.

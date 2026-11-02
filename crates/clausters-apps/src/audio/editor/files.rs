@@ -38,6 +38,24 @@ impl AudioEditor {
         self.file.id.0
     }
 
+    /// **The open file that is the file at `path`**, in focus or parked: the
+    /// one a save writes over, or the compressed file it was decoded from. A
+    /// file is open once in a host, so an open of it focuses this one.
+    pub fn file_holding(&self, path: &str) -> Option<i64> {
+        if !self.open_files.open {
+            return None;
+        }
+        std::iter::once(&self.file)
+            .chain(self.open_files.parked.values())
+            .find(|file| {
+                [Some(file.target.as_str()), file.decoded_from.as_deref()]
+                    .into_iter()
+                    .flatten()
+                    .any(|held| !held.is_empty() && crate::editing::same_file(held, path))
+            })
+            .map(|file| file.id.0)
+    }
+
     /// Apply object work without changing focus, bindings or conversation state.
     pub(crate) fn over_file<T>(
         &mut self,

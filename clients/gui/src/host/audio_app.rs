@@ -441,6 +441,24 @@ impl App {
                     }
                     _ => None,
                 };
+                // **a sound file open in a window is not opened twice**:
+                // that window comes forward with the file in focus
+                if let (AppKind::Audio, Some(path)) = (&kind, &path)
+                    && let Some((member, file)) = self.editing.audio_file_holding(path)
+                    && let Some(window) = self.window_of(member)
+                {
+                    self.focus_file(window, member, file);
+                    return self.out.send(
+                        Vec::new(),
+                        FromApp::Held {
+                            def_id,
+                            window,
+                            path: path.clone(),
+                            adopt: true,
+                            reply,
+                        },
+                    );
+                }
                 if let Some((path, adopt)) = asked
                     && let Some(window) = self.holding(&path)
                 {
@@ -552,6 +570,23 @@ impl App {
             })
             .map(|(def_id, _)| *def_id)
             .or_else(|| self.editing.window_holding_file(path))
+    }
+
+    /// The window audio member `member` is drawn in.
+    fn window_of(&self, member: MemberId) -> Option<i32> {
+        self.windows
+            .iter()
+            .find(|(_, window)| window.member == member)
+            .map(|(def_id, _)| *def_id)
+    }
+
+    /// **File `file` of audio window `def_id` focused**, as a click on it in
+    /// its list focuses it: an open of a file the window holds.
+    fn focus_file(&mut self, def_id: i32, member: MemberId, file: i64) {
+        let action = json!({"verb": "verb", "window": true,
+            "call": {"verb": "focus_file", "file": file}});
+        let ran = self.app.act(&mut self.editing, member, action, 0, None);
+        self.said(def_id, ran, false);
     }
 
     /// **The editor opened**, in its working folder, over `path` or none.
@@ -1247,8 +1282,23 @@ impl App {
         }
         let mut effects = Vec::with_capacity(ran.effects.len());
         let mut notes = false;
+        let mut focus = Vec::new();
         for mut effect in ran.effects {
             match effect["kind"].as_str().unwrap_or_default() {
+                // **a sound file another window holds**: that window comes
+                // forward with the file in focus
+                "front" => {
+                    if let (Some(member), Some(file)) = (
+                        effect["member"]
+                            .as_u64()
+                            .and_then(|m| MemberId::try_from(m).ok()),
+                        effect["file"].as_i64(),
+                    ) && let Some(window) = self.window_of(member)
+                    {
+                        effect["window"] = json!(window);
+                        focus.push((window, member, file));
+                    }
+                }
                 "publish" => effect["def"] = self.window_def(def_id),
                 // **the session a client handed over is let go**: the host
                 // is the work's only holder now, so the window asks before
@@ -1338,6 +1388,9 @@ impl App {
                 say,
             },
         );
+        for (window, member, file) in focus {
+            self.focus_file(window, member, file);
+        }
     }
 
     /// **A multitrack window that draws its boxes of notes as pages is

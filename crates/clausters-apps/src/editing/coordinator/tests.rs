@@ -433,6 +433,69 @@ fn an_opened_file_comes_into_focus_and_its_meter_is_told_before_the_redraw() {
     assert!(file_id(&editing, member).is_some());
 }
 
+/// **A sound file is open once in a host**: an open of a file another
+/// window holds reads nothing and brings that window forward with the file
+/// in focus, and an open of one this window holds focuses it in its list.
+#[test]
+fn a_sound_file_another_window_holds_is_focused_there_and_not_read_again() {
+    let mut editing = Editing::new();
+    let mut client = Client::new();
+    let holder = opened(&mut client, &mut editing, false);
+    let held = editing.audio(holder).unwrap().focused_file();
+    let other = opened(&mut client, &mut editing, true);
+    client.trace.clear();
+    client.effects.clear();
+    let answer = client.run(
+        &mut editing,
+        other,
+        json!({"verb": "openFile", "paths": ["/in/take3.wav"], "window": true}),
+    );
+    assert!(answer["error"].is_null(), "{answer}");
+    assert!(
+        !client.trace.iter().any(|k| k == "await:shape"),
+        "{:?}",
+        client.trace
+    );
+    assert!(!editing.audio(other).unwrap().has_file(), "nothing opened");
+    let front = client
+        .effects
+        .iter()
+        .find(|e| e["kind"] == "front")
+        .expect("the holder comes forward");
+    assert_eq!(front["member"], json!(holder));
+    assert_eq!(front["file"], json!(held));
+    assert_eq!(
+        editing.audio_file_holding("/in/take3.wav"),
+        Some((holder, held))
+    );
+
+    // in the window that holds it, a second file is read and the first is
+    // focused again rather than read twice
+    client.run(
+        &mut editing,
+        holder,
+        json!({"verb": "openFile", "paths": ["/takes/a.wav"], "window": true}),
+    );
+    assert_ne!(editing.audio(holder).unwrap().focused_file(), held);
+    client.trace.clear();
+    let answer = client.run(
+        &mut editing,
+        holder,
+        json!({"verb": "openFile", "paths": ["/in/take3.wav"], "window": true}),
+    );
+    assert!(answer["error"].is_null(), "{answer}");
+    assert!(
+        !client.trace.iter().any(|k| k == "await:shape"),
+        "{:?}",
+        client.trace
+    );
+    assert_eq!(editing.audio(holder).unwrap().focused_file(), held);
+    assert_eq!(
+        editing.audio_file_holding("/takes/a.wav").map(|(m, _)| m),
+        Some(holder)
+    );
+}
+
 #[test]
 fn the_space_bar_plays_or_stops_as_the_transport_rolls() {
     let mut editing = Editing::new();

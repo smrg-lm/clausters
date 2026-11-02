@@ -183,6 +183,27 @@ impl Session {
                 if !files.is_empty() {
                     self.push(id, vec![Task::Read(files)]);
                 }
+                // **A sound file is open once in a host**: one this window
+                // holds is focused in its list, and one another window holds
+                // is focused there, that window brought forward
+                if let Wanted::Path(path) = &file
+                    && let Some((holder, held)) = editing.audio_file_holding(path)
+                {
+                    let focus = FileAction {
+                        verb: FileVerb::FocusFile,
+                        file: held,
+                    };
+                    if holder == member {
+                        self.push(id, vec![Task::VerbTake(focus)]);
+                    } else {
+                        let window = editing
+                            .audio(holder)
+                            .and_then(crate::turn::Converse::window_id);
+                        effects.push(Said::Window(json!({"kind": "front",
+                            "window": window, "member": holder, "file": held})));
+                    }
+                    return Flow::Next;
+                }
                 Flow::Await(Await::Shape(file), Resume::Read)
             }
             Task::AddFile(file) => {

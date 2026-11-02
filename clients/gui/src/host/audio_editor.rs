@@ -2383,6 +2383,103 @@ mod tests {
         );
     }
 
+    /// **A sound file open in a window is not opened twice**: a client's
+    /// open of it is answered that window, which comes forward with the file
+    /// in focus, and the window's own open of it focuses it in its list.
+    #[test]
+    fn a_sound_file_already_open_is_focused_in_its_window() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let a = take("held-a", 4_800);
+        let b = take("held-b", 4_800);
+        let mut host = host();
+        let window = opened(&mut host, &a);
+        let focused = |host: &mut Host| ask(host, window, json!({"member": {"verb": "file"}}));
+        // a second file read into the window, which takes the focus
+        ask(
+            &mut host,
+            window,
+            json!({"do": {"verb": "openFile", "paths": [b.clone()]}}),
+        );
+        settled(&mut host, window);
+        assert_eq!(focused(&mut host)["path"], json!(b));
+        // the first opened again from the window: focused, not read twice
+        ask(
+            &mut host,
+            window,
+            json!({"do": {"verb": "openFile", "paths": [a.clone()]}}),
+        );
+        assert_eq!(focused(&mut host)["path"], json!(a));
+        let files = ask(&mut host, window, json!({"member": {"verb": "files"}}));
+        assert_eq!(files["files"].as_array().map(Vec::len), Some(2), "{files}");
+        ask(
+            &mut host,
+            window,
+            json!({"do": {"verb": "openFile", "paths": [b.clone()]}}),
+        );
+        // a client's open of the first: that window, forward, the file in focus
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_992)));
+        let options = json!({"path": a}).to_string();
+        let mut seen = door(
+            &mut host,
+            GUI_APP_OPEN,
+            vec![
+                OscType::Int(1),
+                OscType::String("audio".into()),
+                OscType::String(options),
+            ],
+            client,
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while reply_of(&seen, 1).is_none() {
+            assert!(std::time::Instant::now() < deadline, "never answered");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            seen.extend(host.take_effects());
+        }
+        assert_eq!(reply_of(&seen, 1).unwrap()["ok"]["window"], window);
+        assert!(
+            seen.iter()
+                .any(|e| matches!(e, HostEffect::Raise(id) if *id == window)),
+            "the window was not brought forward"
+        );
+        until(&mut host, "the file was never focused", |host| {
+            focused(host)["path"] == json!(a)
+        });
+        assert_eq!(host.audio.as_ref().unwrap().windows.len(), 1);
+        // another window's File > Open of the second: it opens nothing, and
+        // the window holding it comes forward with it in focus
+        let other = host.open_audio(None, "empty").expect("opened");
+        until(&mut host, "the second window was never drawn", |h| {
+            h.window_def(other).is_some()
+        });
+        let rx = host.ask_audio(
+            other,
+            json!({"do": {"verb": "openFile", "paths": [b.clone()]}}),
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let (mut raised, mut ended) = (false, false);
+        while !(raised && ended) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "raised {raised}, ended {ended}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            raised |= host
+                .take_effects()
+                .iter()
+                .any(|e| matches!(e, HostEffect::Raise(id) if *id == window));
+            ended |= rx.try_recv().is_ok();
+        }
+        assert_eq!(focused(&mut host)["path"], json!(b));
+        assert_eq!(
+            ask(&mut host, other, json!({"member": {"verb": "file"}}))["empty"],
+            true,
+            "the second window opened nothing"
+        );
+        let _ = std::fs::remove_file(&a);
+        let _ = std::fs::remove_file(&b);
+    }
+
     /// **A session open in a window is not opened twice**: a client that
     /// asks for it again is answered that window, which comes forward and
     /// is its from then on when no client held it; another client is told

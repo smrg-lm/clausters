@@ -127,7 +127,7 @@ render and undo runs in the host's process. What `edit` answers is its **handler
 `clausters.gui.editing.AudioEditor`: each of its members is a call to the application
 (`GuiHost.open_app`, `GuiHost.call_app`), and what it reads is asked again each time. A
 server buffer is not edited, since it is loaded on a server the application does not
-reach: `buffer.write(path)` and edit the file. It writes nothing it was handed while it edits. The take is **a list of spans of files**, and
+reach: `buffer.write(path)` and edit the file. It writes nothing it was handed while it edits. **A sound file is open once in a host**: `edit` of a file a window already holds answers that window, which comes forward with the file in focus, and an open from a window's File > Open or `open_file` does the same rather than read it twice. The take is **a list of spans of files**, and
 every edit leaves a new list: a cut takes a span out, a paste of a copy puts its spans in,
 and an edit that makes new samples -- a pencil stroke, a pasted block, a mix
 (Ctrl+Shift+V), a gain curve applied, Process -> Reverse -- **renders** them offline into a

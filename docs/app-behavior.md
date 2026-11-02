@@ -91,7 +91,9 @@ code that keeps it lives.
   **A document is open once in a host.** Opening a session file a window
   already holds brings that window forward and opens nothing: from the
   window's File > Open, from a client (`/gui_app_open`), or from the host's
-  own start. A client that asked for the file alone is answered that window
+  own start. A sound file is the same, held in an audio editor's list: the
+  window that holds it comes forward with that file in focus, and an open
+  of it in its own window focuses it. A client that asked for the file alone is answered that window
   and is its holder from then on when no client held it; one held by
   another client is refused, with the window named.
   A scripted history step with a malformed or unknown member is refused

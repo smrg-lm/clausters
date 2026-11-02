@@ -912,12 +912,30 @@ impl Editing {
         self.seats[member as usize].structure = structure;
     }
 
+    /// **The audio member that holds the sound file at `path`**, and that
+    /// file's identity in its list. A sound file is open once in a host, so
+    /// an open of it focuses that file in that member's window instead.
+    pub fn audio_file_holding(&self, path: &str) -> Option<(MemberId, i64)> {
+        self.seats
+            .iter()
+            .enumerate()
+            .find_map(|(member, seat)| match &seat.member {
+                Member::Audio(editor) => editor
+                    .file_holding(path)
+                    .map(|file| (member as MemberId, file)),
+                _ => None,
+            })
+    }
+
     /// **The window that holds the document at `path`**, if one does: a
-    /// multitrack over that session file, or a score over that file. A
-    /// document is open once in a host, so an open of it brings that window
-    /// forward instead.
+    /// multitrack over that session file, a score over that file, or an
+    /// audio editor with that sound file in its list. A document is open once
+    /// in a host, so an open of it brings that window forward instead.
     pub fn window_holding_file(&self, path: &str) -> Option<i32> {
         self.seats.iter().find_map(|seat| match &seat.member {
+            Member::Audio(editor) if editor.file_holding(path).is_some() => {
+                crate::turn::Converse::window_id(editor.as_ref())
+            }
             #[cfg(feature = "notation")]
             Member::Score(editor)
                 if editor

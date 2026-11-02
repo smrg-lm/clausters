@@ -227,7 +227,10 @@ shared memory only to a page that is **cross-origin isolated** (served with
 `tools/serve.py --isolated` serves the package so). There the host is the build that holds
 the application, its files are the page's storage, and `edit(file)` opens as it does under
 node with a native host; in a page that is not isolated it rejects saying the host holds no
-audio editor. It writes nothing it was handed while it edits. The take is **a list
+audio editor. It writes nothing it was handed while it edits. **A sound file is open once
+in a host**: `edit` of a file a window already holds answers that window, which comes forward
+with the file in focus, and an open from a window's File > Open or `openFile` does the same
+rather than read it twice. The take is **a list
 of spans of files**, and every edit leaves a new list: a cut takes a span out, a paste of a
 copy puts its spans in, and an edit that makes new samples (a pencil stroke, a pasted block,
 a mix with Ctrl+Shift+V, a gain curve applied, Process -> Reverse) **renders** them offline into

@@ -492,7 +492,12 @@ class AudioEditor:
                                    "rate": float(rate)})
 
     def open_file(self, paths) -> None:
-        """Open a path or a list of paths in this editor, focusing the last."""
+        """Open a path or a list of paths in this editor, focusing the last.
+
+        A file a window of the host already holds is not read again: in this
+        editor it is focused, and in another window that window comes forward
+        with it in focus.
+        """
         self._do("openFile", paths=list(paths) if isinstance(paths, (list, tuple))
                  else str(paths))
 
