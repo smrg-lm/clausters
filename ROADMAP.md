@@ -114,6 +114,10 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once, after saving the
   session before it; not reproduced.
 
+- ⬜ **A box drawn as its page opens its roll** *(`crates/clausters-apps/PLAN.md`,
+  Found by use)*. Unblocked since the score editor runs in the host's
+  application: the double click asks for the view the box is drawn in.
+
 - ⬜ **Quantize on a page** *(`crates/clausters-apps/PLAN.md`, Future
   directions)*. Raised by the user reading the score editor's key sheet.
 

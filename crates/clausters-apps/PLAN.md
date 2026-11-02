@@ -21,10 +21,10 @@ applier). What is here is the application: the composition, the controls beside
 the structure, and the answer to each gesture.
 
 **The undo order is the crate's too.** `editing::Editing` holds one history and
-seats every editor as a member (`Member::{Multitrack, Samples, External}`), so
-two applications opened in one context walk one order and one opened alone is a
-context of one. A structure the crate does not apply (a curve, a timeline, a
-score) joins as an external member and gets its legs back.
+seats every editor as a member (`Member::{Multitrack, Audio, Notes, Points,
+Score, External}`), so two applications composed in one context walk one order
+and one opened alone is a context of one. A structure the crate does not apply
+joins as an external member and gets its legs back.
 
 **One `edit` for every application** *(the user, 2026-10-05, planning `X5`:
 the `edit` API has to stay consistent across all the applications)*. Each
@@ -39,9 +39,10 @@ or does not depart:
   is addressed by (`close`, `on_closed`, `undo`/`redo`). Never the data.
 - **The edited data is read on the structure passed in**, which is the edited
   one. The two exceptions are stated in `edit`'s own docstring and are part of
-  the contract: a buffer, which the audio editor edits as a copy and writes
-  back on `save`, and a timeline, which is code and is rendered first, its
-  events being the editor's `sequence`.
+  the contract: a sound file, which the audio editor writes only on `save`
+  (its `file` reads what it is now), and a timeline, which is code and is
+  rendered first, its events being the editor's `sequence`. A server buffer
+  opens in no editor since `X34`.
 - **The options common to every editor** (`title`, `width`, `height`,
   `base_id`, `extra`, `context`) mean the same in all of them; a domain's own
   option (`min`/`max`/`start`/`end` for a curve, `y_axis` for a roll, `until`
@@ -58,9 +59,17 @@ both clients, with its row in `edit`'s docstring and TSDoc.
 
 | Application | In the crate | Recorded in |
 | --- | --- | --- |
-| multitrack editor | `multitrack::{window, props}`, `multitrack::editor::MultitrackEditor` | `crates/clausters-document/PLAN.md`, `O32`-`O33` |
-| samples editor | `samples::{window, props, measures}`, `samples::editor::SamplesEditor` | `clients/gui/PLAN.md`, `AP7` |
-| the undo order | `editing::Editing`, `turn` | `clients/gui/PLAN.md`, `AP7` step 4 |
+| multitrack editor | `multitrack`, `multitrack::editor::MultitrackEditor` | `crates/clausters-document/PLAN.md`, `O32`-`O33`; here, `X8`, `X34` |
+| audio editor | `audio`, `audio::editor::AudioEditor`, its window in `samples` | here, `X1`, `X7`, `X12`-`X14`, `X28`, `X30`-`X32` |
+| notes editor (the roll) | `notes`, `notes::editor::NotesEditor` | here, `X3` |
+| points editor | `points`, `points::editor::PointsEditor` | here, `X4`, `X10` |
+| score editor | `score`, `score::editor::ScoreEditor` (feature `notation`) | here, `X5` |
+| the undo order | `editing::Editing`, `turn` | `clients/gui/PLAN.md`, `AP7` step 4; here, `X25` |
+| state and services | `application` (`Services`, runtimes, walks), `closing`, `chrome`, `forms`, `panels` | here, `X15`-`X25` |
+| the engine an application holds | `crates/clausters-app-engine` | here, `X30`, `X34` |
+
+*(The table was first written with the multitrack and a samples editor, which
+the audio editor replaced on 2026-09-23; brought up to date 2026-11-02.)*
 
 **The shape every application here has had**, and the one each milestone below
 follows unless it finds a reason not to: the window and its props in the crate;
@@ -336,7 +345,11 @@ opened it.
   writes it back on a save. What remains of its path is the in-place write,
   `/buffer_setRange` through `clausters_editing::samples::write_steps`, and
   whether a table is drawn in place or through the audio editor is this
-  milestone's first question.)*
+  milestone's first question. *2026-11-02:* the second half of that question
+  is gone too: since `X34` the audio editor opens no server buffer (its
+  takes are files on the engine its application holds), and `write_steps`
+  has no caller but its own tests. A table drawn by hand needs a path of its
+  own to the buffer it edits.)*
 
   **A history step re-reads what it changed, not the whole buffer** *(moved
   here from `X1.7`, 2026-09-22)*. An editor that writes a buffer in place --
@@ -345,8 +358,9 @@ opened it.
   samples. `/gui_ack` already carries `source generation` pairs that the host
   keeps and nothing reads, and no client sends one. What
   it waits on is what a source id is on that path -- a document's source, or
-  a widget's `buffer=N`; the audio editor answered it for itself (its takes'
-  ids are their buffer numbers), which is the precedent to read first.
+  a widget's `buffer=N`; the audio editor answered it for itself while its
+  takes were buffers (their ids were their buffer numbers), which is the
+  precedent to read first, though its takes are files now.
 
   **What a table is on this server, and what the editor has to respect**
   (`docs/schemas.md`, "Table generation and the wavetable format"):
@@ -370,8 +384,9 @@ opened it.
 - ⬜ **X3 - The notes editor.** *(Decided by the user 2026-09-14: the notes editor is
   complex, so it is worth making an application, since implementing it twice
   would be no good at all.)* The editor behind the `pianoroll` — a
-  MIDI editor — written once here. Today it is `NotesDomain`, `NotesView` and
-  `NotesEditor` in both clients (`clausters/gui/editing/events.py`,
+  MIDI editor — written once here. When this milestone opened it was
+  `NotesDomain`, `NotesView` and `NotesEditor` in both clients (deleted by
+  `X3.7`) (`clausters/gui/editing/events.py`,
   `src/gui/editing/events.ts`), over the host's `notes` element (the largest
   element after the multitrack and the signal family).
 
@@ -3233,9 +3248,12 @@ written; none is left open:
 turn comes before `X25`, which ports the audio editor's lifecycle to the other
 editors and should port this one.
 
-- ⬜ **X28 - The audio editor edits files on disk.** *(Replaced by `X30`–`X32` for the application model and by `X25`
-  for the remaining lifecycle ports. Its concrete eye/ear acceptance below
-  remains pending; replacement does not mark it complete.)* After `S21`, `S22`,
+- ✅ **X28 - The audio editor edits files on disk.** *(Replaced by `X30`–`X32` for the application model and by `X25`
+  for the remaining lifecycle ports. Closed 2026-11-02: everything below
+  is in the tree and measured; the eye and ear passes over the audio editor
+  on files are the user's, as every visual check is, and they ran in
+  `G44c`'s native pass over long takes (2026-10-28) and in `X25`'s
+  cross-application pass.)* After `S21`, `S22`,
   `O34` and `G45`. Opening a file reads its header and its peaks (measured
   once if it has none) and nothing else; every edit is a list; the clipboard
   holds segments; processing (gain, reverse, mix, a stroke,
@@ -3275,10 +3293,15 @@ editors and should port this one.
   (2026-10-23, the seventh decision), and so was the effect previewed live
   and then applied (the eighth).*
 
-- ⬜ **X29 - The multitrack and the standalone host read takes from disk.**
+- ✅ **X29 - The multitrack and the standalone host read takes from disk.**
   *(Replaced by `X34` for track reading and by `X25` for session lifecycle.
-  The concrete native/page/standalone acceptance below remains pending;
-  replacement does not mark it complete.)*
+  Closed 2026-11-02, its acceptance met there: hour-long takes open in the
+  time of their peaks and a comp of quarter seconds plays with nothing
+  starved (`X34`, "Measured"); the session's peaks are kept in its `peaks/`
+  (`X34`, "A session opens from its files"); a saved session opens and
+  sounds natively, in a page (`multitrack-editor.html?isolated`) and in the
+  standalone host (`--session`), and the pair `edit_multitrack` and
+  `load_multitrack` runs in both clients (`X25`).)*
   After `X28`. Loading a session (`clausters-editing`, `load.rs`) stops
   reading files into pool buffers and stitching joins in memory: a track
   plays its regions through the RT list reader, and a bounce or a freeze is an
@@ -3810,7 +3833,7 @@ only for a choice with non-obvious context.
 
 Every entry carries a checkbox.
 
-- ⬜ **The roll and the score editor as applications of their own** *(the
+- ✅ **The roll and the score editor as applications of their own** *(the
   user, 2026-10-29, after the eye pass over the multitrack on its
   application)*. The audio editor and the multitrack run on the
   application's thread, with its engine; a roll opened from a box runs
@@ -3820,6 +3843,11 @@ Every entry carries a checkbox.
   own owner and its server. Porting both onto the application is what
   would let a box drawn as its page open the score editor again (Found by
   use, "A box drawn as its page opens its roll"). To weigh after `S23`.
+  *Done 2026-10-31 in `X25`* ("Where a symbolic score executes"): a roll
+  or a score a script opens runs in the host's application
+  (`/gui_app_open notes`, `/gui_app_open score`), a roll and a page over one
+  sequence are one order there, and `--score` opens `AppKind::Score`; the
+  host's own owner and its score editor went.
 
 - ⬜ **An effect heard live before it is applied** *(the user, 2026-10-23,
   removing the gain envelope's preview)*. An effect that runs in real time
@@ -6198,7 +6226,12 @@ wrong.
   editor over its sequence while the multitrack was a client's; on the
   application it opens the roll, since the application's thread holds no
   score window. Waits on "The roll and the score editor as applications of
-  their own" (Future directions).
+  their own" (Future directions). *2026-11-02:* that entry is done, so this
+  one waits on nothing: the application holds score windows now, and a page
+  opens `over` a sequence a roll shows. What is left is the multitrack's
+  double click (`MultitrackEditor`, the `open` tag, which names only a
+  sequence) asking for the view the box is drawn in, and the host opening a
+  score member over the box's sequence as it opens a roll.
 
 - ✅ **A page's multitrack draws no box as its page** *(found 2026-10-29,
   the same pass)*. The application hands the multitrack an engraver the
