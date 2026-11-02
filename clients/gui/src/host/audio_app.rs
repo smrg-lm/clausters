@@ -1318,6 +1318,7 @@ impl App {
                         continue;
                     };
                     // what it let go of is nobody's to bring forward
+                    #[cfg(feature = "notation")]
                     if window.kind == AppKind::Score {
                         window.session = None;
                     }
