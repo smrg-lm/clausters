@@ -33,6 +33,11 @@ impl AudioEditor {
         new_json(r#"{"empty": true}"#).expect("an empty editor")
     }
 
+    /// The title its window was opened with.
+    pub fn title(&self) -> &str {
+        &self.window_state.title
+    }
+
     /// The focused open file's identity.
     pub fn focused_file(&self) -> i64 {
         self.file.id.0

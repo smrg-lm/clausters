@@ -912,6 +912,31 @@ impl Editing {
         self.seats[member as usize].structure = structure;
     }
 
+    /// **The title member `member`'s window shows** as its work stands: its
+    /// own, led by the unsaved mark while the window is the work's only
+    /// holder and holds work its file does not
+    /// ([`crate::closing::shown_title`]). `None` for a member with no window
+    /// of its own to title.
+    pub fn window_title(&self, member: MemberId) -> Option<String> {
+        use crate::turn::Converse;
+        let (title, asks, unsaved) = match self.member(member)? {
+            Member::Audio(editor) => (editor.title(), editor.asks_to_close(), editor.unsaved()),
+            Member::Multitrack(editor) => (
+                editor.title(),
+                editor.asks_to_close(),
+                editor.has_session() && editor.unsaved_at(self.version),
+            ),
+            #[cfg(feature = "notation")]
+            Member::Score(editor) => (
+                editor.title(),
+                editor.asks_to_close(),
+                editor.asks_to_close() && editor.unsaved_at(self.version),
+            ),
+            _ => return None,
+        };
+        Some(crate::closing::shown_title(title, asks, unsaved))
+    }
+
     /// **The audio member that holds the sound file at `path`**, and that
     /// file's identity in its list. A sound file is open once in a host, so
     /// an open of it focuses that file in that member's window instead.

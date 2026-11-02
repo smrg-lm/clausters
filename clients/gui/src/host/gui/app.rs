@@ -500,6 +500,14 @@ impl App {
                         window.focus_window();
                     }
                 }
+                HostEffect::Retitle(id) => {
+                    if let (Some(window), Some(title)) = (
+                        self.windows.get(&id).and_then(|ws| ws.gpu.window()),
+                        self.host.window_title(id),
+                    ) {
+                        window.set_title(&title);
+                    }
+                }
                 HostEffect::Redraw(id) => {
                     if let Some(ws) = self.windows.get(&id) {
                         ws.repaint();

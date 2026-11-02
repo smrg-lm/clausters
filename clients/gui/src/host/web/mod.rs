@@ -477,6 +477,15 @@ impl WebApp {
                         let _ = canvas.focus();
                     }
                 }
+                // a page's window has no title bar: its canvas is labelled
+                HostEffect::Retitle(id) => {
+                    if let (Some(canvas), Some(title)) = (
+                        self.canvases.get(&id).and_then(|s| s.window.canvas()),
+                        self.host.window_title(id),
+                    ) {
+                        let _ = canvas.set_attribute("aria-label", &title);
+                    }
+                }
                 HostEffect::Redraw(id) => {
                     if self.canvases.contains_key(&id) {
                         // A `/gui_set` may have retargeted a meter/scope `bus`:

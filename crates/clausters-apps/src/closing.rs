@@ -36,6 +36,24 @@ use clausters_editing::conversation::Correction;
 
 use crate::turn::{Converse, Turned};
 
+/// **What leads a window's title while it holds unsaved work**: the mark a
+/// desktop's document windows wear, so a save or an edit since the last one
+/// is seen before a close asks about it.
+pub const UNSAVED_MARK: &str = "*";
+
+/// **The title a window shows**: `title`, led by [`UNSAVED_MARK`] when the
+/// window is the work's only holder ([`Converse::asks_to_close`]) and holds
+/// work its file does not (`unsaved`). A window whose work a client holds
+/// loses nothing by a close and wears no mark, as it asks nothing.
+#[must_use]
+pub fn shown_title(title: &str, asks: bool, unsaved: bool) -> String {
+    if asks && unsaved {
+        format!("{UNSAVED_MARK}{title}")
+    } else {
+        title.to_string()
+    }
+}
+
 /// **The window's close**: what a window carrying `ask_close` reports when
 /// its close mark is pressed, and the File menu's Close.
 pub const VERB: &str = "close";
@@ -304,6 +322,19 @@ mod tests {
         fn unsaved(&self) -> bool {
             self.unsaved
         }
+    }
+
+    /// **Only a window that asks before it closes wears the unsaved mark**,
+    /// and only while it holds unsaved work.
+    #[test]
+    fn the_unsaved_mark_leads_the_title_of_a_window_that_would_ask() {
+        assert_eq!(shown_title("song", true, true), "*song");
+        assert_eq!(shown_title("song", true, false), "song");
+        assert_eq!(
+            shown_title("song", false, true),
+            "song",
+            "a client holds it"
+        );
     }
 
     fn closed(unsaved: bool, alone: bool) -> Out {

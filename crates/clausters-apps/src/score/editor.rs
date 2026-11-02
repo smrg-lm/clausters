@@ -153,6 +153,12 @@ pub struct ScoreEditor {
     /// opened, or when it was last saved, opened or made new. A score that
     /// is not this has changes to lose.
     saved: String,
+    /// How many times `saved` was written: with the context's version, what
+    /// [`ScoreEditor::unsaved_at`] reads again by.
+    saves: u64,
+    /// The last [`ScoreEditor::unsaved_at`] answer, by the context's version
+    /// and `saves`: comparing the document writes it out whole.
+    dirty: std::cell::Cell<Option<((i64, u64), bool)>>,
     /// **Whether the window has a document.** One with none has its File
     /// verbs and nothing else, and the score it holds is a blank nobody sees.
     document: bool,
@@ -331,6 +337,8 @@ impl ScoreEditor {
             palettes: palettes::Ids::new(),
             path: None,
             saved,
+            saves: 0,
+            dirty: std::cell::Cell::new(None),
             document: true,
             binding: 0,
             leaving: None,
@@ -381,7 +389,7 @@ impl ScoreEditor {
         });
         editor.read_again()?;
         let mei = editor.held().mei();
-        editor.saved = mei;
+        editor.set_saved(mei);
         Ok(editor)
     }
 
@@ -1408,7 +1416,18 @@ impl ScoreEditor {
     /// the score's from now on.
     pub(super) fn confirm_saved(&mut self, saved: &super::operations::Saved) {
         self.path = Some(saved.path.clone());
-        self.saved.clone_from(&saved.mei);
+        self.set_saved(saved.mei.clone());
+    }
+
+    /// The title its window was opened with.
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// The score its file holds, from now on.
+    fn set_saved(&mut self, mei: String) {
+        self.saved = mei;
+        self.saves += 1;
     }
 
     /// What the window leaves its document as, for whoever held it; nothing
@@ -1431,7 +1450,7 @@ impl ScoreEditor {
         self.left = None;
         self.entered = None;
         let saved = self.held().mei();
-        self.saved = saved;
+        self.set_saved(saved);
     }
 
     /// **Another document in the window**, read from `path` or new. Answers
@@ -1499,11 +1518,27 @@ impl ScoreEditor {
         self.document && self.held().mei() != self.saved
     }
 
+    /// **Whether there is unsaved work**, read at the context's `version`:
+    /// [`Self::unsaved`] again only when an edit or a save may have moved
+    /// it, and its last answer otherwise, since the window's title asks after
+    /// every turn and the comparison writes the document out.
+    pub(crate) fn unsaved_at(&self, version: i64) -> bool {
+        let key = (version, self.saves);
+        if let Some((read, dirty)) = self.dirty.get()
+            && read == key
+        {
+            return dirty;
+        }
+        let dirty = self.unsaved();
+        self.dirty.set(Some((key, dirty)));
+        dirty
+    }
+
     /// **The score as it stands is what its file holds**: what a holder says
     /// once it has written the file a save named.
     pub fn mark_saved(&mut self) {
         let saved = self.held().mei();
-        self.saved = saved;
+        self.set_saved(saved);
     }
 
     /// **Close**, by the rule every editor closes by ([`crate::closing`]).

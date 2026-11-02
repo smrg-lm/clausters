@@ -291,6 +291,9 @@ struct Window {
     _workspace: clausters_core::workspace::Workspace,
     /// The actions last said, so an unchanged set is not said again.
     actions: Option<Value>,
+    /// **The title last set on it or published with its tree**, so an
+    /// unchanged one is not set again.
+    told_title: Option<String>,
     /// Whether it opened over no file.
     empty: bool,
 }
@@ -641,6 +644,7 @@ impl App {
                 widgets: Vec::new(),
                 _workspace: workspace,
                 actions: None,
+                told_title: None,
                 empty: path.is_none(),
             },
         );
@@ -701,6 +705,7 @@ impl App {
                 widgets: Vec::new(),
                 _workspace: workspace,
                 actions: None,
+                told_title: None,
                 empty: false,
             },
         );
@@ -787,6 +792,7 @@ impl App {
                 widgets: Vec::new(),
                 _workspace: workspace,
                 actions: None,
+                told_title: None,
                 empty: false,
             },
         );
@@ -913,6 +919,7 @@ impl App {
                 widgets: Vec::new(),
                 _workspace: workspace,
                 actions: None,
+                told_title: None,
                 empty: false,
             },
         );
@@ -977,6 +984,7 @@ impl App {
                 widgets: Vec::new(),
                 _workspace: workspace,
                 actions: None,
+                told_title: None,
                 empty: false,
             },
         );
@@ -1377,6 +1385,9 @@ impl App {
                     .act(&mut self.editing, member, json!({"verb": "sound"}), 0, None);
             }
         }
+        if let Some(title) = self.title(def_id) {
+            effects.push(json!({"kind": "set", "widget": def_id, "props": {"title": title}}));
+        }
         let actions = self.actions(def_id);
         self.out.send(
             self.editing.said(),
@@ -1438,7 +1449,18 @@ impl App {
             return Value::Null;
         };
         ids["verb"] = json!("window");
-        self.member_call(member, ids)
+        let mut tree = self.member_call(member, ids);
+        // **the title as the work stands**, its unsaved mark with it: a tree
+        // drawn again keeps what the window says of its work
+        if let (Some(title), Some(window)) = (
+            self.editing.window_title(member),
+            self.windows.get_mut(&def_id),
+        ) && tree.is_object()
+        {
+            tree["title"] = json!(title);
+            window.told_title = Some(title);
+        }
+        tree
     }
 
     /// Every widget's props, as a history step leaves them.
@@ -1475,6 +1497,20 @@ impl App {
         }
         window.actions = Some(actions.clone());
         Some(actions)
+    }
+
+    /// **The title window `def_id` shows, when it moved**: its own, marked
+    /// while it holds unsaved work ([`Editing::window_title`]), and nothing
+    /// when it reads as it was last set.
+    fn title(&mut self, def_id: i32) -> Option<String> {
+        let member = self.windows.get(&def_id)?.member;
+        let title = self.editing.window_title(member)?;
+        let window = self.windows.get_mut(&def_id)?;
+        if window.told_title.as_ref() == Some(&title) {
+            return None;
+        }
+        window.told_title = Some(title.clone());
+        Some(title)
     }
 
     /// The actions said on their own, after a call that may have moved them.

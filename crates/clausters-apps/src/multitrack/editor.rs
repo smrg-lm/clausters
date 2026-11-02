@@ -1106,6 +1106,11 @@ impl MultitrackEditor {
         released
     }
 
+    /// The title its window was opened with.
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
     /// Whether this window has a session, including a new empty session.
     pub fn has_session(&self) -> bool {
         self.session_open

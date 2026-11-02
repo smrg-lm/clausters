@@ -128,6 +128,8 @@ fn handle(
             }
             HostEffect::CloseWindow(id) => diag::info!("gui_free {id}: window closed (headless)"),
             HostEffect::Raise(id) => diag::info!("window {id}: brought forward (headless)"),
+            // no title bar headless
+            HostEffect::Retitle(_) => {}
             // nothing to repaint headless
             HostEffect::Redraw(_) | HostEffect::RedrawLive(_) => {}
             HostEffect::Pointer { window, .. } => {

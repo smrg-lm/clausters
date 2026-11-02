@@ -797,6 +797,10 @@ pub enum HostEffect {
     /// **Bring the window rooted at this id to the front**: a document
     /// asked to be opened again is the window that already holds it.
     Raise(i32),
+    /// **The title of the window rooted at this id was set** (its `title`
+    /// prop): the front writes it where the window shows one -- a desktop
+    /// window's title bar, a page's canvas label.
+    Retitle(i32),
     /// A live `/gui_set` changed a widget in the window rooted at this id; the
     /// front should repaint it (the typed tree is already updated in place).
     Redraw(i32),
@@ -1439,6 +1443,19 @@ impl Host {
     /// (see [`window_def_mut`](Self::window_def_mut)).
     pub fn window_def(&self, id: i32) -> Option<&Widget> {
         self.window_defs.get(&id)
+    }
+
+    /// **The title window `id` shows**: its `title` prop, which its owner
+    /// sets as the work it holds moves, or the host's name for it.
+    pub fn window_title(&self, id: i32) -> Option<String> {
+        match &self.window_def(id)?.kind {
+            WidgetKind::Window { title, .. } => Some(
+                title
+                    .clone()
+                    .unwrap_or_else(|| format!("clausters-gui {id}")),
+            ),
+            _ => None,
+        }
     }
 
     /// **The key table's scopes in force in window `id`** -- its `keys` prop

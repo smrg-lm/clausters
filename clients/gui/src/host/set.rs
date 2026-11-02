@@ -222,6 +222,9 @@ impl Host {
                 } else {
                     HostEffect::Redraw(root)
                 });
+                if id == root && keys.iter().any(|k| *k == "title") {
+                    effects.push(HostEffect::Retitle(root));
+                }
             }
         }
         // A new list for a take is told to the answerer before the view asks

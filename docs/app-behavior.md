@@ -88,6 +88,12 @@ code that keeps it lives.
   from a multitrack's box takes its entries into that session's order, so
   the multitrack's undo walks them, and the same sequence under another
   multitrack is another structure in another order.
+  **A window that holds unsaved work says so**: where the window is the
+  work's only holder (it asks before a close), its title is led by `*`
+  while the work differs from its file, in every application, and loses
+  the mark when a save lands or an undo walks back to what was saved
+  (`closing::shown_title`, read after every run). A window a client holds
+  wears no mark, since a close loses nothing there.
   **A document is open once in a host.** Opening a session file a window
   already holds brings that window forward and opens nothing: from the
   window's File > Open, from a client (`/gui_app_open`), or from the host's

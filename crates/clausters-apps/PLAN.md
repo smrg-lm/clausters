@@ -6297,12 +6297,23 @@ wrong.
   obsolete coordination decides: gone from both clients, with a test that nothing
   hands one out.
 
-- ⬜ **A multitrack's window does not say whether its session is unsaved**
+- ✅ **A multitrack's window does not say whether its session is unsaved**
   *(found by the user, 2026-10-31, in the eye pass of `X25`)*. The editor knows
   (`MultitrackEditor::unsaved_at`, what its close form asks by), and nothing on
   screen shows it, so a save or an edit since the last one is seen only by what
   the close form does. Which mark, and whether every application's window wears
   the same one, is to be decided with the entry.
+  *Fixed 2026-11-02.* The mark is a `*` leading the window's title, the
+  desktop convention for a document window with unsaved changes, and every
+  application wears it by one rule (`closing::shown_title`): only a window
+  that is the work's only holder, since a client's loses nothing by a close.
+  `Editing::window_title` reads it (the multitrack and the score through a
+  reading cached by version, as the comparison is not a pointer's cost), the
+  host sets it on the window after every run and publishes the tree with it,
+  and a window's `title` prop is now set live (`HostEffect::Retitle`: a
+  desktop window's title bar, a page's canvas label). Host tests over the
+  audio editor and the multitrack: an edit marks, a save clears, an undo past
+  the save marks again.
 
 - ⬜ **A new session's first Save or track failed once in the eye pass** *(found by
   the user, 2026-10-31, in the multitrack's session steps)*. Right after a session

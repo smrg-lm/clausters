@@ -110,10 +110,6 @@ already carry it.
   *(`clients/gui/PLAN.md`, Found by use)*. Left by the audio editor's
   layout: the clip's half of the folded channels.
 
-- ⬜ **A multitrack's window does not say whether its session is unsaved**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in the
-  eye pass of the multitrack.
-
 - ⬜ **A new session's first Save or track failed once in the eye pass**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once, after saving the
   session before it; not reproduced.

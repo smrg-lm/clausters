@@ -53,6 +53,12 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             *keys = super::build::scopes(v);
             true
         }
+        // what its owner says of the work it holds (an unsaved mark), and
+        // what the front writes in the window's title bar
+        WidgetKind::Window { title, .. } if key == "title" => {
+            *title = v.as_str().map(str::to_string);
+            true
+        }
         // What a `layout` shows of itself -- its title, its frame, whether it
         // is folded or a dialog -- is the layout's alone, answered before the
         // arm it shares with the window.

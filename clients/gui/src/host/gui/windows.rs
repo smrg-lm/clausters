@@ -18,9 +18,9 @@ use crate::host::bulk::MmapLoader;
 use crate::host::elements::signal;
 use crate::host::frame::Batches;
 use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
+use crate::host::widget::Widget;
 use crate::host::widget::element::SlotKey;
 use crate::host::widget::element::{Bulk, Loaded, SlotKind};
-use crate::host::widget::{Widget, WidgetKind};
 use crate::host::{BulkLoader, ClientId, GUI_CLOSED};
 use crate::spectrogram::Stft;
 use crate::view::Renderers;
@@ -65,14 +65,7 @@ impl App {
     pub(super) fn open_window(&mut self, lp: Loop, id: i32, origin: ClientId) {
         // Read the window metadata, releasing the host borrow before mutating
         // and before re-borrowing the tree for the waveforms.
-        let Some(title) = self.host.window_def(id).and_then(|t| match &t.kind {
-            WidgetKind::Window { title, .. } => Some(
-                title
-                    .clone()
-                    .unwrap_or_else(|| format!("clausters-gui {id}")),
-            ),
-            _ => None,
-        }) else {
+        let Some(title) = self.host.window_title(id) else {
             return; // freed between the effect and now, or not a window
         };
         // What it asks for: its declared size, or its content's where it hugs.

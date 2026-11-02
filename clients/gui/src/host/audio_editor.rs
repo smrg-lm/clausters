@@ -1331,6 +1331,57 @@ mod tests {
         let _ = std::fs::remove_dir_all(&folder);
     }
 
+    /// **A multitrack's window says whether its session is unsaved**, as
+    /// every application's does: an edit marks its title, a save takes the
+    /// mark away, and an undo past the save puts it back.
+    #[test]
+    fn a_multitrack_with_unsaved_work_marks_its_title() {
+        let folder = std::env::temp_dir().join(format!("host-mt-marked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut host = host();
+        let multitrack = json!({"tracks": [{"id": 1, "name": "a", "takeLanes": [{"id": 2}]}]});
+        let def_id = host
+            .open_multitrack_over(multitrack, "song", None)
+            .expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let title = |host: &mut Host| host.window_title(def_id).unwrap();
+        let handle = |host: &mut Host, call: Value| {
+            ask(
+                host,
+                def_id,
+                json!({"do": {"verb": "handle", "call": call}}),
+            )
+        };
+        let mut tracks = handle(&mut host, json!({"verb": "state"}))["tracks"].clone();
+        tracks[0]["name"] = json!("b");
+        handle(
+            &mut host,
+            json!({"verb": "apply", "intent": {"intent": "settracks", "tracks": tracks}}),
+        );
+        until(&mut host, "the edit never marked the title", |host| {
+            title(host) == "*song"
+        });
+        let path = folder.join("song.json");
+        let saved = ask(
+            &mut host,
+            def_id,
+            json!({"do": {"verb": "save", "path": path.to_str().unwrap()}}),
+        );
+        assert!(saved.get("raised").is_none(), "{saved}");
+        until(&mut host, "the save never took the mark away", |host| {
+            title(host) == "song"
+        });
+        ask(&mut host, def_id, json!({"do": {"verb": "undo"}}));
+        until(&mut host, "the undo never marked the title", |host| {
+            title(host) == "*song"
+        });
+        host.close_audio(def_id);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
     /// **An untitled multitrack's Save asks where**: the window's Save opens
     /// the Save as form, whose `OK` writes the session at the path typed,
     /// and a later Save writes there again without asking.
@@ -1948,6 +1999,64 @@ mod tests {
         );
         assert_eq!(parts(&mut host, def_id)[0]["path"], json!(path));
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// **A window that holds unsaved work says so in its title**: an edit
+    /// leads the title with the unsaved mark, the front told of it, a save
+    /// takes the mark away, and an undo past the save puts it back.
+    #[test]
+    fn a_window_with_unsaved_work_marks_its_title() {
+        let path = take("marked", 24_000);
+        let out =
+            std::env::temp_dir().join(format!("host-audio-marked-out-{}.wav", std::process::id()));
+        let mut host = host();
+        let def_id = opened(&mut host, &path);
+        let plain = host.window_title(def_id).unwrap();
+        assert!(!plain.starts_with('*'), "{plain}");
+        // the title turns; answers whether the front heard of it meanwhile
+        // (an `ask` between takes the effects it waited through)
+        let turned = |host: &mut Host, marked: bool| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            let mut told = false;
+            loop {
+                told |= host
+                    .take_effects()
+                    .iter()
+                    .any(|e| matches!(e, HostEffect::Retitle(id) if *id == def_id));
+                let title = host.window_title(def_id).unwrap();
+                if title.starts_with('*') == marked {
+                    return (title, told);
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the title stayed {title:?}"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        };
+        let widget = widget_of(&host, def_id);
+        let delete = host.event_message(
+            widget,
+            1,
+            vec![
+                OscType::String("delete".into()),
+                OscType::Float(0.0),
+                OscType::Float(12_000.0),
+            ],
+        );
+        assert!(host.deliver(def_id, &delete));
+        assert_eq!(turned(&mut host, true), (format!("*{plain}"), true));
+        ask(
+            &mut host,
+            def_id,
+            json!({"do": {"verb": "save", "request": {"path": out.to_string_lossy()}}}),
+        );
+        assert_eq!(turned(&mut host, false).0, plain);
+        let undo = host.event_message(def_id, 2, vec![OscType::String("undo".into())]);
+        assert!(host.deliver(def_id, &undo));
+        turned(&mut host, true);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&out);
     }
 
     /// **A take may be cut down to nothing**: a delete of all of it leaves
