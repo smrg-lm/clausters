@@ -122,10 +122,6 @@ already carry it.
 - ⬜ **Quantize on a page** *(`crates/clausters-apps/PLAN.md`, Future
   directions)*. Raised by the user reading the score editor's key sheet.
 
-- ⬜ **The audio editor's switches are menu entries, not checks**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found by the user in
-  the audio editor's menus.
-
 - ⬜ **A wrap on a block's edge can play a block of silence nobody counts**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
   load closing the playback tests' entry; rare.

@@ -2383,6 +2383,66 @@ mod tests {
         );
     }
 
+    /// **The audio editor's switches are checks in its menus**, and its
+    /// choices one of a group, each kept in step with the state it reads:
+    /// the file list and the loop a check, the views and the body the hand
+    /// edits a radio, and a switch turned from a script reads turned.
+    #[test]
+    fn the_audio_editors_switches_read_as_checks_in_its_menus() {
+        use crate::host::menu::{self, Entry, EntryKind};
+
+        fn find<'a>(entries: &'a [Entry], verb: &str) -> Option<&'a Entry> {
+            entries.iter().find_map(|entry| match &entry.kind {
+                EntryKind::Submenu(children) => find(children, verb),
+                _ => (entry.verb.as_deref() == Some(verb)).then_some(entry),
+            })
+        }
+        let path = take("checks", 4_800);
+        let mut host = host();
+        let window = opened(&mut host, &path);
+        let marked = |host: &Host| {
+            let info = host.window_def(window).unwrap().info();
+            let menu = info.iter().find(|(k, _)| k == "menu").unwrap().1.clone();
+            let menu: Value = serde_json::from_str(menu.as_str().unwrap()).unwrap();
+            let mut entries = menu::parse(&menu);
+            host.action_entries(window, &mut entries);
+            entries
+        };
+        let kind = |entries: &[Entry], verb: &str| {
+            find(entries, verb)
+                .unwrap_or_else(|| panic!("no {verb} in the menus"))
+                .kind
+                .clone()
+        };
+        let entries = marked(&host);
+        assert_eq!(kind(&entries, "toggle_files"), EntryKind::Check(true));
+        assert_eq!(
+            kind(&entries, "spectrogram_settings"),
+            EntryKind::Check(false)
+        );
+        assert_eq!(kind(&entries, "loop"), EntryKind::Check(false));
+        let radio = |group: &str, on: bool| EntryKind::Radio {
+            group: group.into(),
+            on,
+        };
+        assert_eq!(kind(&entries, "view_wave"), radio("views", true));
+        assert_eq!(kind(&entries, "view_both"), radio("views", false));
+        assert_eq!(kind(&entries, "layer_take"), radio("layer", true));
+        assert_eq!(kind(&entries, "show_envelope"), radio("layer", false));
+        for verb in ["hide_files", "view_both"] {
+            ask(
+                &mut host,
+                window,
+                json!({"do": {"verb": "verb", "call": {"verb": verb}}}),
+            );
+        }
+        let entries = marked(&host);
+        assert_eq!(kind(&entries, "toggle_files"), EntryKind::Check(false));
+        assert_eq!(kind(&entries, "view_wave"), radio("views", false));
+        assert_eq!(kind(&entries, "view_both"), radio("views", true));
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// **A sound file open in a window is not opened twice**: a client's
     /// open of it is answered that window, which comes forward with the file
     /// in focus, and the window's own open of it focuses it in its list.

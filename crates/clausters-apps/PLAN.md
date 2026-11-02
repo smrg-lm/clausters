@@ -4558,12 +4558,20 @@ Every entry carries a checkbox.
   The web example's second editor also gets its own canvas; reusing the
   first editor's explicit stage had hidden one window behind the other.
 
-- ⬜ **The audio editor's switches are menu entries, not checks** *(the user,
+- ✅ **The audio editor's switches are menu entries, not checks** *(the user,
   2026-10-17)*. The preview of the gain envelope is two entries of the Edit
   menu, *Preview on* and *Preview off*, where it is one state; it belongs in
   View as one checked entry, and so do the editor's other view switches. Open:
   the menu needs a checked entry the owner keeps in step with the state, the
   same in the host and in both clients.
+  *Closed 2026-11-02, with a test.* Two commits after the entry had already
+  done it and left it open: the actions' readings (2026-10-21) give every
+  toggle its `checked` and every choice its group, which the host turns into
+  a check or a radio wherever the verb appears, and the preview was removed
+  from the editor (2026-10-23), so no on/off pair is left. A host test now
+  reads the window's menus marked: Files, Spectrogram settings and Loop are
+  checks, the views and the body the hand edits radios, and a switch turned
+  from a script reads turned.
 
 - ✅ **Cut, Copy, Paste and Paste mix in the audio editor do not agree with
   the selection and the position cursor** *(the user, 2026-10-17)*. A paste
