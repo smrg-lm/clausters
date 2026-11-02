@@ -290,9 +290,12 @@
         log("score: read and engraved by the worker, edited, saved to OPFS, and one history with a roll");
 
         // **the audio window's file verbs**: a file opened beside another and
-        // closed again, one written and read back from OPFS
+        // closed again, one written and read back from OPFS; and a file
+        // another window holds is not opened twice, but focused there
         const sound = await gui.edit(await write("app_window_sound.wav"), { title: "sound" });
         await sound.openFile("out/app_window_staged.wav");
+        if ((await sound.files()).length !== 1) throw new Error("a file the staged window holds was opened again");
+        await sound.openFile((await write("app_window_beside.wav")).path);
         if ((await sound.files()).length !== 2) throw new Error("the window did not open a second file");
         await sound.closeFile();
         if ((await sound.files()).length !== 1) throw new Error("Close file did not close the file in view");
