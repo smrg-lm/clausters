@@ -1395,30 +1395,89 @@ pub(crate) fn draw_ticks_v_side(
 }
 
 pub(crate) fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, row: Rect, ticks: &[Tick]) {
-    if row.h <= 4.0 {
-        return;
+    draw_ticks_v_shared(d, body_x, strip_x, row, ticks, Shared::default());
+}
+
+/// **Which edges of a row it shares with a row ruled beside it**: the rows
+/// of a stack of channels, each ruled on its own.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Shared {
+    /// The row above meets this one's top.
+    pub top: bool,
+    /// The row below meets this one's bottom.
+    pub bottom: bool,
+}
+
+impl Shared {
+    /// Row `index` of `rows` stacked edge to edge: every edge but the
+    /// stack's own two is shared.
+    pub(crate) fn of(index: usize, rows: usize) -> Shared {
+        Shared {
+            top: index > 0,
+            bottom: index + 1 < rows,
+        }
     }
-    let (mesh, metrics, theme) = d.parts();
-    let scale = metrics.caption_scale;
+}
+
+/// **The top of each label `ticks` draws beside `row`**, in order, `None`
+/// for a tick drawn bare. A label is placed where its tick puts it and kept
+/// inside the row; one a **shared** edge would have to push, or that comes
+/// closer to it than half the clear space between two labels, is dropped
+/// and its tick stays -- so the labels of two stacked rows keep the space
+/// the labels of one row keep, and the edge they share is ruled once, by
+/// the row whose label clears it.
+fn label_tops(row: Rect, ticks: &[Tick], line: f32, gap: f32, shared: Shared) -> Vec<Option<f32>> {
     // **A row shorter than one caption keeps its ticks and drops their
     // labels** -- the rule a squeezed control already follows
     // ([`crate::host::graphics::controls::label_height`]): a line that does not
     // fit is a drawing that lies, while a tick with no number is merely terser.
     // It is also what keeps the placement below well-formed: the label's band
     // is `row.y ..= row.y + row.h - line`, which inverts exactly here.
-    let line = font::height(scale);
     let labelled = row.h >= line;
-    for tick in ticks {
+    let clear = gap * 0.5;
+    ticks
+        .iter()
+        .map(|tick| {
+            tick.label.as_ref().filter(|_| labelled)?;
+            let y = row.y + row.h * (1.0 - tick.frac as f32);
+            let top = y - 3.0;
+            if (shared.top && top < row.y + clear)
+                || (shared.bottom && top + line > row.y + row.h - clear)
+            {
+                return None;
+            }
+            Some(top.clamp(row.y, row.y + row.h - line))
+        })
+        .collect()
+}
+
+/// [`draw_ticks_v`] for a row of a stack, `shared` naming the edges it
+/// meets another row at (`label_tops`).
+pub(crate) fn draw_ticks_v_shared(
+    d: &mut Draw,
+    body_x: f32,
+    strip_x: f32,
+    row: Rect,
+    ticks: &[Tick],
+    shared: Shared,
+) {
+    if row.h <= 4.0 {
+        return;
+    }
+    let (mesh, metrics, theme) = d.parts();
+    let scale = metrics.caption_scale;
+    let line = font::height(scale);
+    let tops = label_tops(row, ticks, line, metrics.gap, shared);
+    for (tick, top) in ticks.iter().zip(tops) {
         let y = row.y + row.h * (1.0 - tick.frac as f32);
         let w = if tick.label.is_some() { 8.0 } else { 4.0 };
         mesh.rect(
             Rect::new(body_x - w, y, w, metrics.divider_w),
             theme.ruler_line,
         );
-        if let Some(label) = tick.label.as_ref().filter(|_| labelled) {
+        if let (Some(label), Some(ty)) = (tick.label.as_ref(), top) {
             let lw = font::width(label, scale);
             let lx = (body_x - LABEL_GAP - lw).max(strip_x);
-            let ty = (y - 3.0).clamp(row.y, row.y + row.h - line);
             font::text(mesh, label, lx, ty, scale, theme.ruler_text);
         }
     }
@@ -1432,6 +1491,64 @@ mod tests {
 
     fn labels(ticks: &[Tick]) -> Vec<&str> {
         ticks.iter().filter_map(|t| t.label.as_deref()).collect()
+    }
+
+    /// **Two stacked channel rows keep the space between their labels that
+    /// one row keeps**: eight channels at the row floor drew the bottom
+    /// label of one row (`-1`) and the top label of the next (`1`) a few
+    /// pixels apart. On a shared edge the label that cannot keep clear of it
+    /// is dropped, and the stack's own edges keep theirs.
+    #[test]
+    fn stacked_rows_keep_their_labels_clear_across_the_edge_they_share() {
+        let m = Metrics::default();
+        let line = font::height(m.caption_scale);
+        let g = Gaps::of(&m);
+        let rows = 3;
+        let h = (line * 3.0).round();
+        for (unit, label) in [(RulerY::Norm, "normalized"), (RulerY::Db, "dB")] {
+            let ticks = amp_ticks(unit, h as f64, 16, 0.0, 1.0, &m);
+            // each row's labels, top to bottom
+            let rows_of: Vec<Vec<f32>> = (0..rows)
+                .map(|index| {
+                    let row = Rect::new(0.0, 100.0 + h * index as f32, 300.0, h);
+                    let mut tops: Vec<f32> =
+                        label_tops(row, &ticks, line, m.gap, Shared::of(index, rows))
+                            .into_iter()
+                            .flatten()
+                            .collect();
+                    tops.sort_by(f32::total_cmp);
+                    tops
+                })
+                .collect();
+            assert!(
+                rows_of.iter().all(|tops| !tops.is_empty()),
+                "{label}: every row keeps a label"
+            );
+            // across each shared edge, the space one row keeps between labels
+            for pair in rows_of.windows(2) {
+                let above = pair[0].last().unwrap() + line;
+                let below = pair[1][0];
+                assert!(
+                    below - above >= g.gap as f32 - 0.5,
+                    "{label}: labels across the edge are {} apart",
+                    below - above
+                );
+            }
+        }
+        // a row alone keeps its end labels against its own edges
+        let ticks = amp_ticks(RulerY::Norm, h as f64, 16, 0.0, 1.0, &m);
+        let alone = label_tops(
+            Rect::new(0.0, 0.0, 300.0, h),
+            &ticks,
+            line,
+            m.gap,
+            Shared::default(),
+        );
+        assert_eq!(
+            alone.iter().flatten().count(),
+            labels(&ticks).len(),
+            "nothing is dropped where no row meets it"
+        );
     }
 
     /// **A row too short for a line of text still draws its ticks, and drops

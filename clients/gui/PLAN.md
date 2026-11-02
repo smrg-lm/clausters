@@ -8589,11 +8589,19 @@ module of its own.
   a lane a third of the editor's height draws sixteen lines. The layout is
   there to reuse; what is undecided is who holds a clip's folded set -- the
   region, the track or the view -- and whether a lane scrolls at all.
-- ⬜ **A short channel row's ruler labels collide at its edges** *(found
+- ✅ **A short channel row's ruler labels collide at its edges** *(found
   2026-10-16, by eye on eight channels at the row floor)*. Each row is ruled
   on its own, so at three controls tall the bottom label of one row (`-1`)
   and the top label of the next (`1`) are drawn a few pixels apart. The ruler
   could drop the end labels where a row is short, or rule shared edges once.
+  *Fixed 2026-11-02, by ruling shared edges once.* A row of a stack knows
+  which of its edges another row meets (`ruler::Shared`), and on such an
+  edge a label that would be pushed by it, or come closer than half the clear
+  space between two labels, is dropped and its tick stays; the stack's own
+  edges keep theirs. The signal rows of the audio editor and the multitrack,
+  and the plot's and the spectrum's channel rows, all draw through it. A
+  test rules three rows three lines tall in two units and measures the
+  space across each shared edge.
 
 
 - ✅ **The audio editor's meter is cut at the window's right edge** *(found

@@ -640,12 +640,14 @@ pub(super) fn draw_timeline_meshes(
                     ),
                     _ => Vec::new(),
                 };
-                ruler::draw_ticks_v(
+                // a row of a stack rules the edge it shares once
+                ruler::draw_ticks_v_shared(
                     &mut Draw::new(mesh, m, th),
                     body.x,
                     item.rect.x,
                     row,
                     &ticks,
+                    ruler::Shared::of(ch, rows),
                 );
             }
         }

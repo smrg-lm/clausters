@@ -299,6 +299,10 @@ code that keeps it lives.
   and a scroll when the floor does not fit. Drawing, the ruler, the
   spectrogram's viewports, the cursor readout, a value-restricted sweep, a held
   sample and a zoom's anchor all read it, so none of them can disagree.
+  Each row is ruled on its own, and **an edge two rows share is ruled once**:
+  a label that cannot keep half the clear space between labels from it is
+  dropped and its tick stays, so the labels of two rows keep the space the
+  labels of one row keep (`ruler::label_tops`).
 - **One object, one colour.** The channels of a take stacked in rows are drawn
   in one colour, since colours of their own read as separate tracks; only
   channels overlaid on one row are told apart by colour.

@@ -292,12 +292,15 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
         if ch == 0 || !p.overlay {
             if let Some(strip_x) = g.strip_x {
                 let ticks = ruler::value_ticks(lo as f64, hi as f64, row.h as f64, m);
-                ruler::draw_ticks_v(
+                // a row of a stack rules the edge it shares once
+                let stacked = if p.overlay { 1 } else { g.channels };
+                ruler::draw_ticks_v_shared(
                     &mut Draw::new(mesh, m, theme),
                     g.body.x,
                     strip_x,
                     row,
                     &ticks,
+                    ruler::Shared::of(if p.overlay { 0 } else { ch }, stacked),
                 );
             }
             // A zero baseline, when 0 is within the displayed range -- the same
@@ -381,12 +384,19 @@ fn draw_spectrum(d: &mut Draw, g: &Geom, p: &PlotParams) {
             && let Some(strip_x) = g.strip_x
         {
             let ticks = ruler::value_ticks(dlo as f64, dhi as f64, row.h as f64, m);
-            ruler::draw_ticks_v(
+            // a row of a stack rules the edge it shares once
+            let (index, stacked) = if p.overlay {
+                (0, 1)
+            } else {
+                (ch % g.channels, g.channels)
+            };
+            ruler::draw_ticks_v_shared(
                 &mut Draw::new(mesh, m, theme),
                 g.body.x,
                 strip_x,
                 row,
                 &ticks,
+                ruler::Shared::of(index, stacked),
             );
         }
         let color = theme.series(ch);
