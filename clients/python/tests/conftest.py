@@ -20,10 +20,15 @@ def pytest_sessionfinish(session, exitstatus):
     shutil.rmtree(_CACHE, ignore_errors=True)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def gui_host(tmp_path_factory):
     """**A real GUI host, no window on screen** (``[gui] headless``): what opens
-    an application the host holds. Skipped where no host is built."""
+    an application the host holds. Skipped where no host is built.
+
+    One per module: an application holds an engine on the machine's output
+    for as long as its host lives, and the device CI gives it (ALSA's null
+    output) is written to as fast as it is filled, so a host left for the
+    whole session keeps a core busy under every later test."""
     import os
 
     from clausters._cli import gui_path

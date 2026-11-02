@@ -121,6 +121,10 @@ code that keeps it lives.
 
 - **Successful I/O still requires application confirmation.** A sample edit changes contents/history only after its batches succeed and the original revision is accepted. A rejected commit retains its pending sources until repair settles. A save confirms its destination and saved content revision after I/O; undo to that revision is clean, and edits made during save remain dirty. A completion for a closed/recreated view cannot update its widgets or recreate playback.
 - **Collection does not return allocator ids before acknowledgement.** Unreferenced owned sources enter retiring storage in the resource service. Failed cleanup keeps the reservation and its error for retry; an exact release ticket is consumed once. Closing a file follows this same cleanup path. Invalidating a server retires its operations, repairs, locks and cleanup tickets without sending frees to its replacement.
+- **An application answers on every front.** A host with no window and no
+  adapter draws nothing, and its applications still open and answer their
+  verbs: an application's answers wake the loop that serves the protocol, as
+  they wake a windowed one.
 
 ## Views and layers
 

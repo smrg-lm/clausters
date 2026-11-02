@@ -73,14 +73,24 @@ fn waker(socket: &UdpSocket) -> io::Result<Waker> {
 /// server's command loop. Window effects are logged rather than acted on --
 /// this front has no display (the windowed front lives in [`super::gui`]); it
 /// is for tests, automation and no-display environments.
+///
+/// **The applications the host holds answer here too.** An application runs
+/// on a thread of its own and its answers wait on the host
+/// ([`Host::take_effects`]); its thread wakes this loop with the same
+/// zero-length datagram the TCP/WS readers send, and every turn carries out
+/// what the host produced on its own, as the windowed front's loop does.
 pub fn serve(
     mut host: Host,
     socket: UdpSocket,
     mut tcp: Option<TcpHub>,
     mut ws: Option<WsHub>,
 ) -> io::Result<()> {
+    let wake = waker(&socket)?;
+    host.set_app_wake(Arc::new(move || wake.wake()));
     let mut buf = vec![0u8; 65536];
     loop {
+        let effects = host.take_effects();
+        perform(&mut host, effects, None, &socket, &tcp, &ws);
         // Framed TCP/WS requests first: the wake datagram only says "look".
         while let Some((id, bytes)) = tcp.as_mut().and_then(|hub| hub.next_frame()) {
             handle(&mut host, &bytes, ClientId::Tcp(id), &socket, &tcp, &ws);
@@ -119,9 +129,28 @@ fn handle(
         Ok(packet) => packet,
         Err(e) => return diag::warn!("malformed OSC packet from {from}: {e}"),
     };
-    for effect in host.handle_packet(packet, from) {
+    let effects = host.handle_packet(packet, from);
+    perform(host, effects, Some(from), socket, tcp, ws);
+}
+
+/// Carries out `effects`: those of a packet from `from`, or, with no
+/// requester, those the host produced on its own (an application's answer
+/// names its own destination, and a reply with nobody to go to is dropped).
+fn perform(
+    host: &mut Host,
+    effects: Vec<HostEffect>,
+    from: Option<ClientId>,
+    socket: &UdpSocket,
+    tcp: &Option<TcpHub>,
+    ws: &Option<WsHub>,
+) {
+    let reply = |to: Option<ClientId>, msg: OscMessage| match to {
+        Some(to) => send_reply(socket, tcp, ws, to, msg),
+        None => diag::info!("{}: nobody asked (headless)", msg.addr),
+    };
+    for effect in effects {
         match effect {
-            HostEffect::Reply(msg) => send_reply(socket, tcp, ws, from, msg),
+            HostEffect::Reply(msg) => reply(from, msg),
             HostEffect::Send { to, msg } => send_reply(socket, tcp, ws, to, msg),
             HostEffect::OpenWindow(id) => {
                 diag::info!("gui_def {id}: window requested (headless front: not opening a window)")
@@ -135,10 +164,7 @@ fn handle(
             HostEffect::Pointer { window, .. } => {
                 diag::info!("gui_pointer {window}: no window to play a hand to (headless)")
             }
-            HostEffect::Capture { window, path } => send_reply(
-                socket,
-                tcp,
-                ws,
+            HostEffect::Capture { window, path } => reply(
                 from,
                 super::captured(window, &path, Some("this front draws nothing")),
             ),
@@ -157,7 +183,7 @@ fn handle(
                     {
                         let message = host.event_message(widget_id, seq, args);
                         if !host.deliver(def_id, &message) {
-                            send_reply(socket, tcp, ws, from, message);
+                            reply(from, message);
                         }
                     }
                 }

@@ -301,8 +301,14 @@ jobs:
       # capture the trapping instruction the next time it fires, so the cause
       # stops being guessed at.
       - uses: ./.github/actions/coredump
+      # The runner has no sound card, and an application the GUI host holds
+      # opens an engine on the default output: ALSA's null output is one.
+      - name: A default audio output with no card
+        run: printf 'pcm.!default {\n    type null\n}\n' > "$RUNNER_TEMP/null-alsa.conf"
       - name: pytest
         working-directory: clients/python
+        env:
+          ALSA_CONFIG_PATH: ${{ runner.temp }}/null-alsa.conf
         run: ulimit -c unlimited && python -m pytest -q
       - uses: ./.github/actions/coredump
         if: failure()
