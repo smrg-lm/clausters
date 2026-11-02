@@ -125,3 +125,39 @@ def test_renders_called_off_are_not_begun(tmp_path):
                   called_off=called_off)
     assert first.exists(), "the piece under way is finished"
     assert not second.exists(), "the next one is not begun"
+
+
+class _Refusing(_Server):
+    """A server that refuses every command a step waits on."""
+
+    def request(self, addr, *args, expect=(), timeout=None):
+        self.sent.append(addr)
+        return "/fail", [addr, "refused"]
+
+
+def test_a_failed_walk_leaves_nothing_for_the_next_on_its_runner(tmp_path):
+    """**A walk given up on sends nothing more**: after a refused server wait,
+    a failed store and a failed render, the next batch on the same runner goes
+    out alone, and the runner is idle after it."""
+    import pytest
+
+    from clausters.errors import CommandError
+
+    server = _Refusing()
+    runner = _native.StepRunner()
+    failing = [
+        [{"send": {"addr": "/buffer_alloc", "args": []}},
+         {"await": {"command": "/buffer_alloc", "index": None}}],
+        [{"store": {"path": str(tmp_path / "missing" / "session.json"), "contents": "{}"}}],
+        [{"render": {"score": _score().hex(), "path": str(tmp_path / "missing" / "x.w64"),
+                     "rate": 48_000.0, "channels": 1, "format": "float"}}],
+    ]
+    for walk in failing:
+        server.sent.clear()
+        with pytest.raises(CommandError):
+            run_steps(server, runner, walk + [{"send": {"addr": "/stale", "args": []}}])
+        assert "/stale" not in server.sent
+        run_steps(server, runner, [{"send": {"addr": "/fresh", "args": []}}])
+        assert server.sent[-1] == "/fresh"
+        assert "/stale" not in server.sent
+        assert runner.call("idle") == {"idle": True}

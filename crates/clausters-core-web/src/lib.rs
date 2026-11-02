@@ -1928,7 +1928,7 @@ impl JsStepRunner {
         JsStepRunner(clausters_editing::run::Runner::new())
     }
 
-    /// One verb: `push`, `ready`, `reply`, `idle`.
+    /// One verb: `push`, `ready`, `reply`, `rendered`, `idle`, `retire`.
     pub fn call(&mut self, request: &str) -> String {
         clausters_editing::run::call_json(&mut self.0, request)
     }

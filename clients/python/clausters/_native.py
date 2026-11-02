@@ -1587,8 +1587,9 @@ class StepRunner:
 
     Every verb crosses through `call`, as JSON: ``push`` steps for a server,
     ``ready`` answers the messages that may go out -- the awaited one last,
-    with what it awaits -- ``reply`` hands a server's answer back, and ``idle``
-    says whether anything is left.
+    with what it awaits -- ``reply`` hands a server's answer back, ``idle``
+    says whether anything is left, and ``retire`` drops what a walk given up
+    on left unsent.
     """
 
     def __init__(self):

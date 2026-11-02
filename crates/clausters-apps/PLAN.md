@@ -4451,7 +4451,7 @@ Every entry carries a checkbox.
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A failed endpoint walk leaves unissued steps queued** (2026-10-30,
+- ✅ **A failed endpoint walk leaves unissued steps queued** (2026-10-30,
   reading the document-store adapters). `clausters_editing::run::Runner`
   deliberately releases its queue after a refusal; its
   `a_refused_command_releases_the_queue_with_its_reason` test preserves
@@ -4462,6 +4462,13 @@ Every entry carries a checkbox.
   an explicit retirement boundary. **Acceptance:** reuse one runner after a
   refused render, store and server wait; none of the failed walk's unissued
   messages goes out, and independent queued work follows its stated policy.
+  *Fixed 2026-11-02.* `Runner::retire` (the JSON door's `retire`) drops
+  what is left unsent, the awaited step included; Python `run_steps` and
+  web `runSteps` call it on whatever ends a walk early, so a runner is idle
+  after a failure. The raw runner still releases its queue on a refusal,
+  which the host's shared queue relies on, and the policy is written on
+  `Reply::Refused`. Tested in the runner and in both clients over a
+  refused wait, a failed store and a failed render.
 
 - ✅ **The audio meter is corrected while the window does not draw it**
   (2026-10-21, the eye pass over the editor with no file). After a file is

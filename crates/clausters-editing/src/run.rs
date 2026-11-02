@@ -50,7 +50,9 @@ pub enum Reply {
     Released,
     /// A `/fail` of the awaited command. It releases the queue too -- a queue
     /// held forever behind a refusal never sounds again -- and carries the
-    /// refusal's arguments so the endpoint can say why.
+    /// refusal's arguments so the endpoint can say why. What was behind it
+    /// stays queued: a walk that gives up on the refusal retires it
+    /// ([`Runner::retire`]), and one that goes on sends it.
     Refused(Vec<OscType>),
 }
 
@@ -168,6 +170,19 @@ impl Runner {
     pub fn is_idle(&self) -> bool {
         self.awaiting.is_none() && self.queue.is_empty()
     }
+
+    /// **A walk given up on**: every step not carried out yet, and the one
+    /// the queue is held behind, dropped unsent; answers how many. An
+    /// endpoint that walks one batch at a time and raises on a failure
+    /// retires what is left, so the next batch on the same runner sends
+    /// nothing of the one that failed. A queue many callers feed (a host's)
+    /// does not: a refusal releases it and the rest goes on.
+    pub fn retire(&mut self) -> usize {
+        let retired = self.queue.len() + usize::from(self.awaiting.is_some());
+        self.queue.clear();
+        self.awaiting = None;
+        retired
+    }
 }
 
 /// The name a server goes by over JSON.
@@ -199,6 +214,8 @@ fn server_name(server: Server) -> &'static str {
 ///   (`awaiting.step.move`), or writes a prepared UTF-8 document
 ///   (`awaiting.step.store`, with `path` and `contents`).
 /// - `idle` -- answers `{"idle": bool}`.
+/// - `retire` -- drops what is left unsent ([`Runner::retire`]): answers
+///   `{"retired": n}`.
 ///
 /// A verb it does not know answers `{"error": ...}`.
 pub fn call_json(run: &mut Runner, request: &str) -> String {
@@ -275,6 +292,7 @@ pub fn call_json(run: &mut Runner, request: &str) -> String {
             }
         }
         Some("idle") => json!({ "idle": run.is_idle() }),
+        Some("retire") => json!({ "retired": run.retire() }),
         other => json!({ "error": format!("the runner has no verb {other:?}") }),
     };
     answer.to_string()
@@ -509,6 +527,33 @@ mod tests {
             Reply::Refused(args) if args.len() == 2
         ));
         assert_eq!(addrs(&run.ready()), [(Server::Sound, "/node_set")]);
+    }
+
+    /// **A walk given up on sends nothing more**: what was left of it,
+    /// awaited step included, is dropped, and the next batch on the same
+    /// runner goes out alone.
+    #[test]
+    fn a_retired_walk_leaves_nothing_for_the_next() {
+        let mut run = Runner::new();
+        run.push(
+            Server::Sound,
+            [
+                Step::AwaitDone {
+                    command: "/buffer_alloc".into(),
+                    index: None,
+                },
+                send("/stale", vec![]),
+            ],
+        );
+        run.ready();
+        assert_eq!(run.retire(), 2);
+        assert!(run.is_idle());
+        run.push(Server::Sound, [send("/fresh", vec![])]);
+        assert_eq!(addrs(&run.ready()), [(Server::Sound, "/fresh")]);
+        assert_eq!(
+            call_json(&mut run, r#"{"verb": "retire"}"#),
+            r#"{"retired":0}"#
+        );
     }
 
     /// **A buffer waits for its reads where the samples are, and is attached

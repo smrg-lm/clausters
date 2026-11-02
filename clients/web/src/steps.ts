@@ -115,7 +115,9 @@ const walking = new WeakMap<StepRunner, Promise<void>>();
  * each call there returns when its steps are done -- but a page does not
  * block, and a verb nobody awaited (a `cue`, a `stop`) is still walking when
  * the next one comes: so the walks on a runner go in the order they were
- * asked for, and a failed one does not hold up the next.
+ * asked for, and a failed one does not hold up the next: whatever ends a
+ * walk early retires the steps it did not send, so none of them goes out
+ * ahead of the next walk's.
  */
 export function runSteps(
     server: Server,
@@ -162,104 +164,112 @@ async function walkSteps(
     const call = (request: object): Record<string, unknown> =>
         JSON.parse(runner.call(JSON.stringify(request))) as Record<string, unknown>;
     call({ verb: "push", to, steps });
-    for (;;) {
-        const ready = call({ verb: "ready" }) as {
-            messages?: { addr: string; args: StepArg[] }[];
-            awaiting?: { step: Step } | null;
-        };
-        const messages = ready.messages ?? [];
-        const awaiting = ready.awaiting ?? null;
-        if (awaiting === null || "render" in awaiting.step || "move" in awaiting.step || "store" in awaiting.step) {
-            for (const message of messages) {
-                server.sendMsg(message.addr, ...message.args.map(stepArg));
-            }
-            if (awaiting === null) return;
-            if ("store" in awaiting.step) {
-                const stored = awaiting.step.store;
-                try {
-                    if (signal?.aborted) throw new Error("called off");
-                    await disk.store(stored.path, stored.contents);
-                } catch (error) {
-                    call({ verb: "rendered", error: String((error as Error)?.message ?? error) });
-                    throw error;
+    try {
+        for (;;) {
+            const ready = call({ verb: "ready" }) as {
+                messages?: { addr: string; args: StepArg[] }[];
+                awaiting?: { step: Step } | null;
+            };
+            const messages = ready.messages ?? [];
+            const awaiting = ready.awaiting ?? null;
+            if (awaiting === null || "render" in awaiting.step || "move" in awaiting.step || "store" in awaiting.step) {
+                for (const message of messages) {
+                    server.sendMsg(message.addr, ...message.args.map(stepArg));
                 }
-                call({ verb: "rendered" });
-                continue;
-            }
-            if ("move" in awaiting.step) {
-                // **A file moved**, where this client's paths are: what a save
-                // over a file the take reads does with it.
-                const move = awaiting.step.move;
+                if (awaiting === null) return;
+                if ("store" in awaiting.step) {
+                    const stored = awaiting.step.store;
+                    try {
+                        if (signal?.aborted) throw new Error("called off");
+                        await disk.store(stored.path, stored.contents);
+                    } catch (error) {
+                        call({ verb: "rendered", error: String((error as Error)?.message ?? error) });
+                        throw error;
+                    }
+                    call({ verb: "rendered" });
+                    continue;
+                }
+                if ("move" in awaiting.step) {
+                    // **A file moved**, where this client's paths are: what a save
+                    // over a file the take reads does with it.
+                    const move = awaiting.step.move;
+                    let failed: unknown = null;
+                    try {
+                        await disk.move(move.from, move.to);
+                    } catch (error) {
+                        failed = error;
+                    }
+                    call(failed === null
+                        ? { verb: "moved" }
+                        : { verb: "moved", error: String((failed as Error)?.message ?? failed) });
+                    if (failed !== null) {
+                        throw new Error(`clausters: moving ${move.from} to ${move.to} failed: ${String((failed as Error)?.message ?? failed)}`);
+                    }
+                    continue;
+                }
+                // **An offline render**: nothing is sent for it; this client
+                // renders the score into its file and says how it went.
+                const render = (awaiting.step as { render: RenderStep }).render;
+                if (signal?.aborted) {
+                    call({ verb: "rendered", error: "called off" });
+                    throw new Error("clausters: called off");
+                }
                 let failed: unknown = null;
                 try {
-                    await disk.move(move.from, move.to);
+                    await disk.render(render, progress === undefined
+                        ? undefined : (done, total) => progress(render, done, total));
                 } catch (error) {
                     failed = error;
+                } finally {
+                    progress?.(render, null, null);
                 }
-                call(failed === null
-                    ? { verb: "moved" }
-                    : { verb: "moved", error: String((failed as Error)?.message ?? failed) });
+                const answered = call(failed === null
+                    ? { verb: "rendered" }
+                    : { verb: "rendered", error: String((failed as Error)?.message ?? failed) });
                 if (failed !== null) {
-                    throw new Error(`clausters: moving ${move.from} to ${move.to} failed: ${String((failed as Error)?.message ?? failed)}`);
+                    throw new Error(`clausters: the render into ${render.path} failed: ${String((failed as Error)?.message ?? failed)}`);
+                }
+                if (answered.reply !== "released") {
+                    throw new Error("clausters: the runner did not wait on the render it asked for");
                 }
                 continue;
             }
-            // **An offline render**: nothing is sent for it; this client
-            // renders the score into its file and says how it went.
-            const render = (awaiting.step as { render: RenderStep }).render;
-            if (signal?.aborted) {
-                call({ verb: "rendered", error: "called off" });
-                throw new Error("clausters: called off");
-            }
-            let failed: unknown = null;
-            try {
-                await disk.render(render, progress === undefined
-                    ? undefined : (done, total) => progress(render, done, total));
-            } catch (error) {
-                failed = error;
-            } finally {
-                progress?.(render, null, null);
-            }
-            const answered = call(failed === null
-                ? { verb: "rendered" }
-                : { verb: "rendered", error: String((failed as Error)?.message ?? failed) });
-            if (failed !== null) {
-                throw new Error(`clausters: the render into ${render.path} failed: ${String((failed as Error)?.message ?? failed)}`);
+            const last = messages.pop();
+            if (last === undefined) throw new Error("clausters: the runner waits on a step nothing was sent for");
+            const reply = await exclusive(() => {
+                for (const message of messages) {
+                    server.sendMsg(message.addr, ...message.args.map(stepArg));
+                }
+                return "sync" in awaiting.step
+                    ? server.request(last.addr, last.args.map(stepArg), {
+                          expect: ["/server_sync.reply"],
+                          timeout,
+                      })
+                    : server.request(last.addr, last.args.map(stepArg), {
+                          expect: ["/done", "/fail"],
+                          cmd: last.addr,
+                          timeout,
+                      });
+            });
+            const answered = call({
+                verb: "reply",
+                from: to,
+                addr: reply.addr,
+                args: reply.args.map(tagged),
+            });
+            if (answered.reply === "refused") {
+                throw new Error(`clausters: ${last.addr} failed: ${reply.args.slice(1).join(" ")}`);
             }
             if (answered.reply !== "released") {
-                throw new Error("clausters: the runner did not wait on the render it asked for");
+                throw new Error(`clausters: ${last.addr} was answered by ${reply.addr}, which is not what it waits on`);
             }
-            continue;
         }
-        const last = messages.pop();
-        if (last === undefined) throw new Error("clausters: the runner waits on a step nothing was sent for");
-        const reply = await exclusive(() => {
-            for (const message of messages) {
-                server.sendMsg(message.addr, ...message.args.map(stepArg));
-            }
-            return "sync" in awaiting.step
-                ? server.request(last.addr, last.args.map(stepArg), {
-                      expect: ["/server_sync.reply"],
-                      timeout,
-                  })
-                : server.request(last.addr, last.args.map(stepArg), {
-                      expect: ["/done", "/fail"],
-                      cmd: last.addr,
-                      timeout,
-                  });
-        });
-        const answered = call({
-            verb: "reply",
-            from: to,
-            addr: reply.addr,
-            args: reply.args.map(tagged),
-        });
-        if (answered.reply === "refused") {
-            throw new Error(`clausters: ${last.addr} failed: ${reply.args.slice(1).join(" ")}`);
-        }
-        if (answered.reply !== "released") {
-            throw new Error(`clausters: ${last.addr} was answered by ${reply.addr}, which is not what it waits on`);
-        }
+    } catch (error) {
+        // **A walk given up on leaves nothing behind**: what it did not send,
+        // the step it waited on included, is retired, so the next walk on
+        // this runner sends nothing of this one.
+        call({ verb: "retire" });
+        throw error;
     }
 }
 

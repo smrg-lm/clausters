@@ -757,7 +757,7 @@ export class StepRunner {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * One verb: `push`, `ready`, `reply`, `idle`.
+     * One verb: `push`, `ready`, `reply`, `rendered`, `idle`, `retire`.
      */
     call(request: string): string;
     /**

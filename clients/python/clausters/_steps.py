@@ -45,85 +45,94 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
 
     Raises:
         CommandError: when the server refuses a step, or answers one with
-            something it does not wait on.
+            something it does not wait on. Whatever ends the walk early (that,
+            a failed render, a timeout) retires the steps it did not send, so
+            the runner is left idle for the next batch.
     """
     runner.call("push", to=to, steps=steps)
-    while True:
-        ready = runner.call("ready")
-        messages = ready.get("messages", [])
-        awaiting = ready.get("awaiting")
-        if awaiting is None or any(kind in awaiting["step"] for kind in ("render", "move", "store")):
-            for message in messages:
-                server.send_msg(message["addr"], *[step_arg(a) for a in message["args"]])
-            if awaiting is None:
-                return
-            if "store" in awaiting["step"]:
-                from pathlib import Path
-                stored = awaiting["step"]["store"]
+    try:
+        while True:
+            ready = runner.call("ready")
+            messages = ready.get("messages", [])
+            awaiting = ready.get("awaiting")
+            if awaiting is None or any(kind in awaiting["step"] for kind in ("render", "move", "store")):
+                for message in messages:
+                    server.send_msg(message["addr"], *[step_arg(a) for a in message["args"]])
+                if awaiting is None:
+                    return
+                if "store" in awaiting["step"]:
+                    from pathlib import Path
+                    stored = awaiting["step"]["store"]
+                    try:
+                        if called_off is not None and called_off.is_set():
+                            raise CommandError("called off")
+                        Path(stored["path"]).write_bytes(stored["contents"].encode("utf-8"))
+                    except Exception as error:
+                        runner.call("rendered", error=str(error))
+                        raise CommandError(f"writing {stored['path']} failed: {error}") from error
+                    runner.call("rendered")
+                    continue
+                if "move" in awaiting["step"]:
+                    # **A file moved**, on this client's disk: what a save over a
+                    # file the take reads does with it.
+                    move = awaiting["step"]["move"]
+                    try:
+                        import os
+                        os.replace(move["from"], move["to"])
+                        failed = None
+                    except OSError as error:
+                        failed = error
+                    runner.call("moved", **({} if failed is None else {"error": str(failed)}))
+                    if failed is not None:
+                        raise CommandError(f"moving {move['from']} to {move['to']} failed: {failed}")
+                    continue
+                # **An offline render**: nothing is sent for it; this client
+                # renders the score into its file and says how it went.
+                render = awaiting["step"]["render"]
+                if called_off is not None and called_off.is_set():
+                    runner.call("rendered", error="called off")
+                    raise CommandError("called off")
+                told = None if progress is None else (
+                    lambda done, total, render=render: progress(render, done, total))
                 try:
-                    if called_off is not None and called_off.is_set():
-                        raise CommandError("called off")
-                    Path(stored["path"]).write_bytes(stored["contents"].encode("utf-8"))
-                except Exception as error:
-                    runner.call("rendered", error=str(error))
-                    raise CommandError(f"writing {stored['path']} failed: {error}") from error
-                runner.call("rendered")
-                continue
-            if "move" in awaiting["step"]:
-                # **A file moved**, on this client's disk: what a save over a
-                # file the take reads does with it.
-                move = awaiting["step"]["move"]
-                try:
-                    import os
-                    os.replace(move["from"], move["to"])
+                    render_step(render, progress=told)
                     failed = None
-                except OSError as error:
+                except Exception as error:  # noqa: BLE001 -- the runner is told, then it is raised
                     failed = error
-                runner.call("moved", **({} if failed is None else {"error": str(failed)}))
+                finally:
+                    if progress is not None:
+                        progress(render, None, None)
+                answer = runner.call("rendered", **({} if failed is None else {"error": str(failed)}))
                 if failed is not None:
-                    raise CommandError(f"moving {move['from']} to {move['to']} failed: {failed}")
+                    raise CommandError(f"the render into {awaiting['step']['render']['path']} failed: {failed}")
+                if answer.get("reply") != "released":
+                    raise CommandError("the runner did not wait on the render it asked for")
                 continue
-            # **An offline render**: nothing is sent for it; this client
-            # renders the score into its file and says how it went.
-            render = awaiting["step"]["render"]
-            if called_off is not None and called_off.is_set():
-                runner.call("rendered", error="called off")
-                raise CommandError("called off")
-            told = None if progress is None else (
-                lambda done, total, render=render: progress(render, done, total))
-            try:
-                render_step(render, progress=told)
-                failed = None
-            except Exception as error:  # noqa: BLE001 -- the runner is told, then it is raised
-                failed = error
-            finally:
-                if progress is not None:
-                    progress(render, None, None)
-            answer = runner.call("rendered", **({} if failed is None else {"error": str(failed)}))
-            if failed is not None:
-                raise CommandError(f"the render into {awaiting['step']['render']['path']} failed: {failed}")
+            if not messages:
+                raise CommandError("the runner waits on a step nothing was sent for")
+            *first, last = messages
+            expect = (("/server_sync.reply",) if "sync" in awaiting["step"]
+                      else ("/done", "/fail"))
+            with lock if lock is not None else _UNLOCKED:
+                for message in first:
+                    server.send_msg(message["addr"], *[step_arg(a) for a in message["args"]])
+                raddr, rargs = server.request(
+                    last["addr"], *[step_arg(a) for a in last["args"]], expect=expect,
+                    timeout=timeout)
+            answer = runner.call("reply", **{"from": to}, addr=raddr,
+                                 args=[tagged(a) for a in rargs])
+            if answer.get("reply") == "refused":
+                raise CommandError(f"{last['addr']} failed: {rargs}")
             if answer.get("reply") != "released":
-                raise CommandError("the runner did not wait on the render it asked for")
-            continue
-        if not messages:
-            raise CommandError("the runner waits on a step nothing was sent for")
-        *first, last = messages
-        expect = (("/server_sync.reply",) if "sync" in awaiting["step"]
-                  else ("/done", "/fail"))
-        with lock if lock is not None else _UNLOCKED:
-            for message in first:
-                server.send_msg(message["addr"], *[step_arg(a) for a in message["args"]])
-            raddr, rargs = server.request(
-                last["addr"], *[step_arg(a) for a in last["args"]], expect=expect,
-                timeout=timeout)
-        answer = runner.call("reply", **{"from": to}, addr=raddr,
-                             args=[tagged(a) for a in rargs])
-        if answer.get("reply") == "refused":
-            raise CommandError(f"{last['addr']} failed: {rargs}")
-        if answer.get("reply") != "released":
-            raise CommandError(
-                f"{last['addr']} was answered by {raddr} {rargs}, "
-                "which is not what it waits on")
+                raise CommandError(
+                    f"{last['addr']} was answered by {raddr} {rargs}, "
+                    "which is not what it waits on")
+    except BaseException:
+        # **A walk given up on leaves nothing behind**: what it did not send,
+        # the step it waited on included, is retired, so the next batch on
+        # this runner sends nothing of this one.
+        runner.call("retire")
+        raise
 
 
 def render_step(render: dict, progress=None) -> None:

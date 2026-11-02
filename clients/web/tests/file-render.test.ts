@@ -175,6 +175,49 @@ test("a document store writes its snapshot before releasing the queue", async ()
     }
 });
 
+test("a failed walk leaves nothing for the next on its runner", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clausters-failed-walk-"));
+    try {
+        const nrt = new OscNrtInterface();
+        const def = new SynthDef("tone", out(0, sine(660).mul(0.5)));
+        nrt.addBundle(0, [
+            { addr: "/def_send", args: [s("synth"), s(def.dumpDef())] },
+            { addr: "/synth_new", args: [s("tone"), i(1000), i(0), i(0)] },
+        ]);
+        nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
+        const score = [...nrt.score.bytes()].map((b) => b.toString(16).padStart(2, "0")).join("");
+        const sent: string[] = [];
+        // a server that refuses every command a step waits on
+        const server = {
+            sendMsg: (addr: string) => sent.push(addr),
+            request: async (addr: string) => {
+                sent.push(addr);
+                return { addr: "/fail", args: [addr, "refused"] };
+            },
+        } as unknown as Server;
+        const runner = new StepRunner();
+        const missing = join(dir, "missing");
+        const failing: unknown[][] = [
+            [
+                { send: { addr: "/buffer_alloc", args: [] } },
+                { await: { command: "/buffer_alloc", index: null } },
+            ],
+            [{ store: { path: join(missing, "session.json"), contents: "{}" } }],
+            [{ render: { score, path: join(missing, "x.w64"), rate: RATE, channels: 1, format: "float" } }],
+        ];
+        for (const walk of failing) {
+            sent.length = 0;
+            await assert.rejects(runSteps(server, runner, [...walk, { send: { addr: "/stale", args: [] } }]));
+            await runSteps(server, runner, [{ send: { addr: "/fresh", args: [] } }]);
+            assert.equal(sent.at(-1), "/fresh");
+            assert.ok(!sent.includes("/stale"), `${sent}`);
+            assert.deepEqual(JSON.parse(runner.call(JSON.stringify({ verb: "idle" }))), { idle: true });
+        }
+    } finally {
+        await rm(dir, { recursive: true, force: true });
+    }
+});
+
 test("a render step writes its file and releases what follows it", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clausters-file-render-"));
     try {
