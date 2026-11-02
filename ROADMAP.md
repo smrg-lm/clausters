@@ -130,10 +130,6 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Under load only; what is
   open is whether the test's pacing or the crossfade is at fault.
 
-- ⬜ **A write in place behind an undrained replacement can miss a shared
-  buffer** *(root `PLAN.md`, Found by use)*. The narrower race left after the
-  gain preview's fix; no client writes before an allocation's `/done`.
-
 - ⬜ **A press in a multitrack lands off its mark again at a density of 0.8
   — seen only in the automated browser** *(`clients/gui/PLAN.md`, Found by
   use)*. A difference between the native host and the page.

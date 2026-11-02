@@ -772,6 +772,104 @@ fn writes_in_place_sent_back_to_back_reach_a_shared_buffer() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// **A write in place behind a replacement the drain has not taken yet
+/// reaches the shared buffer.**
+///
+/// A `/buffer_fill` sent behind a `/buffer_alloc` over a buffer, with no
+/// `/done` waited between them, builds on the buffer the queue made. The drain then copies
+/// that buffer into a region, and with one job a turn the fill runs after the
+/// copy: it wrote into the queue's own buffer, which nobody reads once the
+/// region is installed. No client sends such a pair today (each awaits the
+/// allocation's `/done`), which is why it was never seen.
+#[test]
+fn a_write_behind_an_undrained_alloc_reaches_the_shared_buffer() {
+    let path = std::env::temp_dir().join(format!(
+        "clausters-shm-behind-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    let segment = Segment::create(&path).expect("segment");
+    let (mut engine, handle) = engine_pair_full(
+        SR,
+        2,
+        0,
+        Some(Arc::clone(&segment)),
+        128,
+        1024,
+        clausters::dsp::Limits::default(),
+    );
+    let mut server = OscServer::headless(
+        ServerInfo {
+            nominal_sample_rate: SR as f64,
+            actual_sample_rate: SR as f64,
+        },
+        handle,
+        0.0,
+    );
+    server
+        .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
+        .unwrap();
+    server.share_buffers_at(path.clone());
+    // one job a turn: the allocation is drained, and shared, before the
+    // fill behind it runs
+    server.set_budget(clausters::osc::server::ServeBudget {
+        nrt_jobs: 1,
+        ..clausters::osc::server::ServeBudget::default()
+    });
+    let client = IpcPeer::new(Arc::clone(&segment), Role::Client);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let mut turn = |server: &mut OscServer| {
+        server.step();
+        engine.process_block(&mut out);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    };
+    let alloc = encode(
+        "/buffer_alloc",
+        vec![OscType::Int(4), OscType::Int(64), OscType::Int(1)],
+    );
+    let fill = |start: i32, value: f32| {
+        encode(
+            "/buffer_fill",
+            vec![
+                OscType::Int(4),
+                OscType::Int(start),
+                OscType::Int(32),
+                OscType::Float(value),
+            ],
+        )
+    };
+    // a buffer to write into first, as a parse needs one; then another
+    // allocation over it, and the fills sent behind it at once
+    assert!(client.push(0, &alloc));
+    for _ in 0..40 {
+        turn(&mut server);
+        if segment.buffer_info(4).is_some() {
+            break;
+        }
+    }
+    for bytes in [alloc, fill(0, 0.25), fill(32, 0.75)] {
+        assert!(client.push(0, &bytes));
+    }
+    for _ in 0..40 {
+        turn(&mut server);
+    }
+    let (_, mapped) = segment.map_buffer(&path, 4).expect("mapped");
+    assert_eq!(
+        (mapped.at(0), mapped.at(31), mapped.at(32), mapped.at(63)),
+        (0.25, 0.25, 0.75, 0.75),
+        "both fills, in the samples the peer maps"
+    );
+    // and a write after the drain, which builds on the region itself
+    assert!(client.push(0, &fill(0, 0.5)));
+    for _ in 0..20 {
+        turn(&mut server);
+    }
+    let (_, mapped) = segment.map_buffer(&path, 4).expect("mapped");
+    assert_eq!((mapped.at(0), mapped.at(32)), (0.5, 0.75));
+
+    let _ = std::fs::remove_file(&path);
+}
+
 /// **The arrangement's own test**: a second server attaches to a segment that
 /// already holds samples, plays the owner's very cells, and takes none of it
 /// with it when it goes.

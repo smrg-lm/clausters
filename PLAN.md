@@ -4586,7 +4586,7 @@ should confirm before the fix.
   **Fixed 2026-10-30:** both walks read a widget's declarations through
   `ParamSpec::declare`, and `/def_query` reports the unit and, for a log
   scale over a range above zero, the `exp` warp.
-- ⬜ **A write in place behind an undrained replacement can miss a shared
+- ✅ **A write in place behind an undrained replacement can miss a shared
   buffer** *(found 2026-10-16, fixing the audio editor's gain preview)*. While
   a `/buffer_alloc`, read, gen or stitch on an index is still in the NRT queue,
   a `/buffer_set`, fill, gain, reverse or mix sent behind it builds on the
@@ -4596,6 +4596,15 @@ should confirm before the fix.
   awaits an allocation's `/done` before writing, which is why nothing has hit
   it; closing it means the chain learning the shared buffer, or the share
   happening on the NRT thread before the result is returned.
+  *Fixed 2026-11-02, by neither.* A write in place that built on the queue's
+  own buffer answers that buffer as a replacement (`NrtChain::run`): the
+  drain installs and shares it again, with every write behind it, and the
+  index owes a replacement until that result is drained (`nrt::owes`), so a
+  write sent meanwhile chains too rather than landing in a region the next
+  install leaves behind. A region a new install replaces is unlinked by name,
+  as a freed one is. `tests/ipc.rs` reproduces the race with one job a turn
+  (two fills behind a reallocation, both lost before) and checks a write
+  after the drain.
 
 - ✅ **Idle shared-memory level publication scans every allocated audio bus**
   (2026-10-19, audio-editor window review). Each block cleared all bus samples

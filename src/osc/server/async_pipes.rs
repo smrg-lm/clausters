@@ -192,7 +192,7 @@ impl OscServer {
             self.nrt_drained += 1;
             self.profile
                 .job(result.cmd, result.busy_nanos, result.waited_nanos);
-            if crate::server::nrt::replaces(result.cmd)
+            if result.owed
                 && let std::collections::hash_map::Entry::Occupied(mut e) =
                     self.nrt_replacing.entry(result.index)
             {
@@ -317,7 +317,11 @@ impl OscServer {
                 );
             }
         }
-        self.shared_buffers[index] = Some(region_path);
+        // the region it replaces goes by name; a peer still mapping it keeps
+        // its mapping, as a freed buffer's does
+        if let Some(replaced) = self.shared_buffers[index].replace(region_path) {
+            Region::unlink(&replaced);
+        }
         // Shared samples are samples somebody may be drawing, so the buffer
         // publishes how far it has been written: a recording fills a picture
         // in another process with one relaxed store per block and no message
@@ -395,7 +399,7 @@ impl OscServer {
             self.fail(from, cmd, "NRT thread is down");
         } else {
             self.nrt_submitted += 1;
-            if crate::server::nrt::replaces(cmd) {
+            if crate::server::nrt::owes(cmd, chained) {
                 *self.nrt_replacing.entry(index).or_insert(0) += 1;
             }
         }

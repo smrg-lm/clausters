@@ -189,6 +189,9 @@ pub struct NrtResult {
     pub index: i32,
     pub client: ClientId,
     pub outcome: Result<NrtAction, String>,
+    /// **Whether the job was one the index owed a replacement for**
+    /// ([`owes`]): the submitter counts it in, and its result counts it out.
+    pub owed: bool,
     /// Nanoseconds the job ran, and nanoseconds it waited in the queue
     /// before that (`/server_profile`).
     pub busy_nanos: u64,
@@ -208,7 +211,15 @@ impl NrtResult {
             queued,
         } = request;
         let outcome = chain.run(index, chained, job);
-        Self::finished(cmd, index, client, queued, started, outcome)
+        Self::finished(
+            cmd,
+            index,
+            client,
+            owes(cmd, chained),
+            queued,
+            started,
+            outcome,
+        )
     }
 
     /// The result of a job queued at `queued` that started running at
@@ -217,6 +228,7 @@ impl NrtResult {
         cmd: &'static str,
         index: i32,
         client: ClientId,
+        owed: bool,
         queued: crate::server::meters::Stamp,
         started: crate::server::meters::Stamp,
         outcome: Result<NrtAction, String>,
@@ -227,6 +239,7 @@ impl NrtResult {
             index,
             client,
             outcome,
+            owed,
             busy_nanos,
             waited_nanos: queued.elapsed_nanos().saturating_sub(busy_nanos),
         }
@@ -248,6 +261,27 @@ pub fn replaces(cmd: &str) -> bool {
     )
 }
 
+/// Whether `cmd` writes samples **in place** into the buffer at its index
+/// (`/buffer_set` and its forms, `/buffer_fill`): the jobs [`NrtChain`]
+/// builds on the queue's own buffer while a replacement is owed.
+pub fn writes_in_place(cmd: &str) -> bool {
+    matches!(
+        cmd,
+        "/buffer_set"
+            | "/buffer_setRange"
+            | "/buffer_setChannel"
+            | "/buffer_setRangeChannel"
+            | "/buffer_fill"
+    )
+}
+
+/// **Whether a job of `cmd`, submitted `chained`, leaves its index owing a
+/// replacement until it is drained**: a replacement does, and so does a write
+/// in place behind one, which the queue installs again ([`NrtChain`]).
+pub fn owes(cmd: &str, chained: bool) -> bool {
+    replaces(cmd) || (chained && writes_in_place(cmd))
+}
+
 /// What the queue has most recently produced per buffer index.
 ///
 /// The queue is the serialization point for buffer mutation, so "the current
@@ -266,6 +300,16 @@ pub fn replaces(cmd: &str) -> bool {
 /// the `Arc` recorded here can be a copy nobody reads any more. That is also
 /// what keeps a buffer installed outside the queue (the embed door's
 /// `install_buffer`) from being undone by a stale entry.
+///
+/// **A write in place behind a replacement is installed again.** The drain
+/// may copy the replacement into a shared region before or after the write
+/// runs, and the write lands in the queue's own buffer either way, which
+/// nobody reads once the region is installed. So a chained write that built
+/// on the queue's buffer answers that buffer as a replacement: the drain
+/// installs it (and shares it) again, with every write behind it, and the
+/// index owes a replacement until that result is drained ([`owes`]), so a
+/// write sent meanwhile chains too instead of landing in the region the next
+/// install leaves behind.
 #[derive(Default)]
 pub struct NrtChain(std::collections::HashMap<i32, Arc<Buffer>>);
 
@@ -273,18 +317,23 @@ impl NrtChain {
     /// Swaps in the queue's own view of the buffer this job builds on, and
     /// records what the job produced for the next one.
     fn run(&mut self, index: i32, chained: bool, job: NrtJob) -> Result<NrtAction, String> {
-        let job = match job {
-            NrtJob::Set { base, writes } if chained => NrtJob::Set {
-                base: self.0.get(&index).cloned().unwrap_or(base),
+        let queued = self.0.get(&index).filter(|_| chained).cloned();
+        let job = match (job, &queued) {
+            (NrtJob::Set { writes, .. }, Some(queued)) => NrtJob::Set {
+                base: Arc::clone(queued),
                 writes,
             },
-            NrtJob::Fill { base, fills } if chained => NrtJob::Fill {
-                base: self.0.get(&index).cloned().unwrap_or(base),
+            (NrtJob::Fill { fills, .. }, Some(queued)) => NrtJob::Fill {
+                base: Arc::clone(queued),
                 fills,
             },
-            other => other,
+            (other, _) => other,
         };
-        let outcome = run_job(job);
+        let mut outcome = run_job(job);
+        // written into the queue's own buffer: installed again
+        if let (Some(queued), Ok(NrtAction::Wrote { .. })) = (queued, &outcome) {
+            outcome = Ok(NrtAction::Install(queued));
+        }
         match &outcome {
             Ok(NrtAction::Install(buffer)) => {
                 self.0.insert(index, Arc::clone(buffer));
@@ -629,6 +678,7 @@ impl NrtRunner {
             request.cmd,
             request.index,
             request.client,
+            owes(request.cmd, request.chained),
             request.queued,
             started,
             outcome.map(|()| NrtAction::None),
