@@ -436,6 +436,16 @@ code that keeps it lives.
   channels are folded, the scroll and the zoom are not, nor the
   spectrogram's settings, which are the window's whichever file is in
   focus.
+- **What is played is not an edit; what the hand does is, once per
+  gesture.** A value moved by live input (a controller, an automation
+  playing, a bus, another client) makes no history entry, in any
+  application. A hand's gesture is one entry, from press to release; a
+  recording pass is one entry of the application that records, and each
+  later edit of what it recorded is its own. Where a value has several
+  writers, which is a live node parameter in a panel and never a document
+  with its one owner, an undo writes the value the entry stored, whatever
+  the parameter holds by then (`docs/decisions.md`, "A live parameter's
+  undo writes the value it had").
 - **An application is an API; a menu is a caller.** Every action is a verb
   of the application in the shared crate, which both clients call by the same
   name; a menu entry, a key and a tool only call it and hold no state.

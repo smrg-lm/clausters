@@ -11540,3 +11540,36 @@ sequence, where two rolls used to share one; and a roll's undo order goes with
 its last window, as a multitrack's does, where a client's order outlived it. A
 roll is no longer composed into a client's own window (`extra`, `context`):
 that stays the points editor's, which edits the client's curve.
+
+## A live parameter's undo writes the value it had (2026-11-02)
+
+*Decided with the user, opening `X26` (`crates/clausters-apps/PLAN.md`).* A
+panel's control bound to a node's control is not the only writer of that
+parameter: a controller through the server's MIDI bindings, another client,
+a plugin's own window, a bus and the script's `/gui_set` all reach it, and the
+host sees them only as a read-back that differs from what it showed. So an
+undo of the hand's last move may find the parameter somewhere the entry never
+left it.
+
+Three answers were weighed. **Dropping the parameter's entries** when another
+writer moves it is the rule the host's text field already has (`/gui_set
+value` starts its history over), and it was the first proposal; it reads a
+parameter as a document the script replaces whole, which it is not, and a
+parameter a bus drives would never have an undo. **Refusing the undo** while
+the value differs keeps an entry nobody can walk past. **Writing the stored
+value** is what audio software does with a parameter's undo, and what was
+chosen: an undo writes the entry's first value and a redo its second, whatever
+the parameter holds; a writer that keeps driving it takes it back on its next
+write, which costs nothing, and a controller left where it was may disagree
+with the value until it moves, as it does elsewhere.
+
+The rule has a general half and a half that applies only here. **For every
+application**, what is played is not an edit: live input makes no entry, a
+hand's gesture is one, and a recording pass is one entry of the application
+that records it (`docs/app-behavior.md`). **Writing the stored value matters
+only where a value has several writers**, which is a live parameter. A
+document has one owner and nothing changes it outside its history, so its
+undo restores exactly what was there, which is the same thing seen from the
+side where nobody else writes. A multitrack's knob over an automated port is
+that case already: the hand holds the port while it holds the knob, and
+nothing is written or recorded.

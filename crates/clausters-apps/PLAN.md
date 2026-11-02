@@ -3099,6 +3099,77 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   authored GuiDef starts a fresh runtime context without silently restoring
   previous session resources or history. No new server process is launched.
 
+  **The decisions** *(taken 2026-11-02 with the user; `docs/decisions.md`,
+  "A live parameter's undo writes the value it had")*. What exists under
+  them: a `/gui_bind` sends a widget's value straight to the server or to
+  another widget, the script out of the loop (`host::bind`); a binding to a
+  node's control is read back every 200 ms, leaving alone the widget a hand
+  holds and the field the keyboard is in, and stops at the node's
+  `/node_end` (`host::readback`); `undo` and `redo` on a plain window are
+  reported to its owner, the host holding no history (`docs/gui-protocol.md`,
+  the events table); the host-wide clipboard is the document crate's typed
+  one (`host::clipboard`); and the orders are `application::Histories` over
+  `clausters_document::history::History`, which the host links already.
+
+  - ✅ **The owner, and how a window asks for it.** A window's `history:
+    true` gives that instance an order of its own, kept by the host's
+    applications layer (an independent scope of `Histories`, not a second
+    history type), since a binding never passes through the script that
+    would otherwise keep it. With it, the host performs `undo` and `redo` on
+    that window instead of reporting them; a script asks for them through
+    the door it already has, `/gui_verb id undo`. Without it nothing
+    changes. Two instances are two orders; composing several into one is
+    not offered until a use asks for it.
+  - ✅ **The baseline.** An entry holds the value the target had when the
+    gesture began, as the widget showed it, and the value it left. No state
+    is read from the server to make one.
+  - ✅ **A gesture is one entry.** A hold, from press to release, is one
+    entry however many values it sent. A run of wheel or key steps on one
+    control is one entry while it stays the order's newest and no other
+    target, undo or redo comes between, as a run of typing is one step of a
+    field. A text field keeps its own history while it holds the focus
+    (`docs/app-behavior.md`); what it changed from focus to blur is one
+    entry of the instance. A command (a button, a click) is never an entry.
+  - ✅ **The target is the parameter, never the widget.** A server binding's
+    target is its address and prefix (`/node_set 1001 freq`: the node's
+    control), the key the read-back already matches replies by, so two
+    widgets bound to one control are one target and a widget and its server
+    parameter are never two. A widget bound to a widget is its own target,
+    and its binding applies the walked value to the other as a hand's change
+    would. An unbound control is its own target too; walking it delivers
+    the `/gui_event` a hand would, so the script cannot tell the two apart.
+  - ✅ **A walk writes the stored value, absolute.** An undo writes the
+    entry's first value and a redo its second, through the widget's
+    ordinary delivery (its binding, or its event), whatever the parameter
+    holds by then. Another writer that keeps driving it (an automation, a
+    bus, a controller) takes it back on its next write, as the field's
+    convention has it.
+  - ✅ **What another writer does is not an entry.** A value that reaches a
+    widget by read-back (MIDI through the server, another client, a
+    plugin's own window, a bus) or by the script's `/gui_set` makes no
+    entry and moves no entry. A recording pass is one entry of the
+    application that records it, never of a panel.
+  - ✅ **A lost target leaves the order.** At a node's `/node_end` the
+    entries naming its controls are dropped; a node later made under the
+    same number is another target. So are the entries of a target no widget
+    of the instance writes any more (a widget freed, or bound elsewhere),
+    since the instance writes only through its widgets.
+  - ✅ **The instance lives as long as its window.** A `/gui_def` over the
+    open window of the same id keeps its order, and an entry whose target a
+    rebuilt widget still writes stays walkable. Freeing the window ends it.
+    `/gui_load` of an authored GuiDef, and any new window, start a fresh
+    one; `history` is authored, the entries never are.
+  - ✅ **The clipboard is the host's one.** Copy on a focused control puts
+    its value on the host-wide clipboard as text, which crosses to the
+    platform's; paste on a control reads a number from text and is an
+    entry. Any other kind held (samples, elements) is refused, naming what
+    is held, with no conversion.
+
+  - ⬜ The instance's order and the walk, in the host, with its tests.
+  - ⬜ The clipboard on controls.
+  - ⬜ The `history` prop in `docs/gui-protocol.md` and both clients'
+    builders, the paired panel example and the books.
+
 - ⬜ **X27 - Finish cross-application validation and documentation.** After
   `X26`, check there is one owner and one policy implementation per contract,
   and remove remaining obsolete coordination. Complete the architecture,
