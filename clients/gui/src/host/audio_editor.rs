@@ -685,6 +685,8 @@ impl Host {
 
     /// **What a run left the window**, carried out on it.
     fn perform_audio(&mut self, def_id: i32, effects: Vec<Value>, actions: Option<Value>) {
+        // what the run sent the engine is taken at its next block
+        self.settle_window(def_id);
         let mut fx = Vec::new();
         for effect in effects {
             match effect["kind"].as_str().unwrap_or_default() {
@@ -3264,6 +3266,53 @@ mod tests {
         assert_eq!(frames(&path), 12_000, "the work is in the file");
         let _ = std::fs::remove_dir_all(&folder);
         let _ = std::fs::remove_file(&source);
+    }
+
+    /// **A play asks for the window's frames before the engine has taken
+    /// it.** The run that plays ends, and the window is told, before the
+    /// engine's next block takes the command, so the transport still reads
+    /// stopped when the front asks what the window needs. A front that found
+    /// nothing to tick for slept, and the play cursor stood still for seconds
+    /// while the pass sounded, until another event happened to wake it. The
+    /// window keeps the tick for a settling after its application answers,
+    /// as a playhead over the server's transport does after a push, and a
+    /// play that never lands gives it back.
+    #[test]
+    fn a_play_keeps_the_tick_until_the_engine_takes_it() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        // an engine nothing processes: the play is never taken
+        let mut host = host();
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_989)));
+        let roll = opened_app(
+            &mut host,
+            client,
+            1,
+            "notes",
+            json!({"sequence": two_notes(), "title": "keys"}),
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !host.tree_demand(roll, true).is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the roll never settled"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        ask(&mut host, roll, json!({"do": {"verb": "play"}}));
+        assert_eq!(
+            host.tree_demand(roll, true),
+            vec![crate::host::activity::Reason::Playhead],
+            "the play is asked for before the engine reads it rolling"
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !host.tree_demand(roll, true).is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a play that never lands kept the tick"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
     }
 
     /// **A stopped window of any application costs nothing**: with a client's

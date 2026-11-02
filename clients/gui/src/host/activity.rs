@@ -48,6 +48,13 @@ pub const GUI_ACTIVITY_REPLY: &str = "/gui_activity.reply";
 /// counter a block before it lands. A quarter of a second at the frame rate.
 pub const SETTLE_TICKS: u32 = 8;
 
+/// **How long a window over an application's engine keeps the tick after its
+/// application answered**: [`SETTLE_TICKS`] at the frame rate, as wall time,
+/// since the engine takes a play, a stop or a locate at its next block, after
+/// the run that sent it has ended and the window was told.
+pub const SETTLE_APP: std::time::Duration =
+    std::time::Duration::from_millis(33 * SETTLE_TICKS as u64);
+
 /// **Why a window is ticking**: each is a source of change that sends no
 /// message when it changes, so the front looks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -245,6 +252,9 @@ pub(crate) struct TransportSeen {
 pub(crate) struct Activities {
     windows: HashMap<i32, Activity>,
     transports: HashMap<usize, TransportSeen>,
+    /// Until when each window over an application's engine keeps its
+    /// playheads' tick ([`Host::settle_window`]).
+    settling: HashMap<i32, web_time::Instant>,
 }
 
 impl Host {
@@ -308,6 +318,29 @@ impl Host {
     /// with it.
     pub(crate) fn forget_activity(&mut self, def_id: i32) {
         self.activity.windows.remove(&def_id);
+        self.activity.settling.remove(&def_id);
+    }
+
+    /// **Window `def_id`'s application has answered**: what its run sent the
+    /// engine -- a play, a stop, a locate -- is taken at the engine's next
+    /// block, after the window was told. Until then the transport reads as it
+    /// was, so a play reads stopped, and a front that asked the window then
+    /// found nothing to tick for and slept while the pass sounded. Its
+    /// playheads keep the tick for [`SETTLE_APP`], as one over a server's
+    /// transport does after a push.
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+    pub(crate) fn settle_window(&mut self, def_id: i32) {
+        self.activity
+            .settling
+            .insert(def_id, web_time::Instant::now() + SETTLE_APP);
+    }
+
+    /// Whether window `def_id` is settling after its application answered.
+    fn window_settles(&self, def_id: i32) -> bool {
+        self.activity
+            .settling
+            .get(&def_id)
+            .is_some_and(|until| web_time::Instant::now() < *until)
     }
 
     /// The [`GUI_ACTIVITY_REPLY`] for window `def_id`: its counters, or the id
@@ -381,10 +414,11 @@ impl Host {
         // application's stopped transport ticked its window thirty times a
         // second for as long as it was open.
         let own = self.source_of(def_id);
+        let settles = own.is_some() && self.window_settles(def_id);
         self.device_drawn(def_id)
             || self.transports_drawn(def_id).into_iter().any(|t| {
                 match own.as_ref().and_then(|source| source.transport_reading(t)) {
-                    Some(reading) => reading.pass.rolling,
+                    Some(reading) => reading.pass.rolling || settles,
                     None => self.transport_ticks(t),
                 }
             })

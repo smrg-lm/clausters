@@ -9150,7 +9150,7 @@ module of its own.
   may stay under what its children's floors add up to. Pinned today by
   `a_natural_size_only_binds_its_own_axis`, so this changes a written rule.
 
-- ⬜ **A pass can play with no play cursor until a frame happens to come**
+- ✅ **A pass can play with no play cursor until a frame happens to come**
   *(found 2026-11-01 by the user, by ear and eye on `notation/score_editor`)*.
   After many actions in no particular order a play sounds and the page shows no
   cursor; when it does appear it stands on the note sounding, so the position
@@ -9162,3 +9162,16 @@ module of its own.
   source's `pass.rolling`), the tick in `gui/app.rs` and `asks_next_frame`. Not
   reproduced by a script, and a capture cannot show it: it draws the window
   whole. Find the cause before changing any of them.
+  *Fixed 2026-11-02.* The cause was the order of two things: a run that
+  plays ends, and its window is told, before the engine's next block takes
+  the command, so the transport still read stopped when the front asked what
+  the window needed (`playhead_ticks` reads the engine's `pass.rolling` raw).
+  Finding nothing, the front slept, and only another event woke it; when the
+  application happened to say something else a block later the cursor came,
+  which is why it was intermittent and why a script, which asks again at
+  once, never showed it. A window over an application's engine now keeps its
+  playheads' tick for a settling after each answer of its application
+  (`Host::settle_window`, `SETTLE_APP`), as one over a server's transport
+  does after a push, and gives it back when no play lands. A host test plays
+  a roll on an engine nothing processes: the demand was empty after the run
+  and is `Playhead` now, until the settling ends.

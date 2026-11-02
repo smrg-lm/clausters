@@ -155,10 +155,6 @@ already carry it.
   examples show it in several forms, and the decision changes a written
   layout rule.
 
-- ⬜ **A pass can play with no play cursor until a frame happens to come**
-  *(`clients/gui/PLAN.md`, Found by use)*. A frame log shows no live frame for
-  seconds while the transport rolls; the cause is still to be found.
-
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and

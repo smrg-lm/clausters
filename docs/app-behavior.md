@@ -233,6 +233,11 @@ code that keeps it lives.
   times analyzes only the last. Going back to one of the last two analyses
   left draws its picture of the whole take at once and asks nothing for it;
   an edit keeps none of them.
+- **A play is drawn from its first block.** What a run sends the engine (a
+  play, a stop, a locate) is taken at the engine's next block, after the
+  window has heard the run end, so a window keeps its playheads' tick for a
+  settling after each answer of its application rather than read the
+  transport once and sleep (`Host::settle_window`).
 - **A playing window draws what moves, not the window.** A frame asked for
   by a playhead, a meter or a live reading copies the picture kept under
   the live layers and draws them over it, antialiased as a whole frame
