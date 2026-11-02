@@ -730,6 +730,9 @@ impl Gestures {
         cy: f64,
         out: &mut Vec<GestureEffect>,
     ) -> bool {
+        // A press starts a gesture of its own: whatever run the window's order
+        // had open is over.
+        host.panel_close(ctx.def_id);
         let claim = element::press(host, ctx, at, cx, cy).unwrap_or(Claim::Decline);
         let Claim::Take(take) = claim else {
             return false;

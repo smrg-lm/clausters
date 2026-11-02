@@ -554,6 +554,8 @@ impl Gestures {
             if let Some(events) = events {
                 element::report(host, &mut out, ctx, at.id, events);
             }
+            // The hold is one entry of the window's own order, closed here.
+            host.panel_close(def_id);
             out.push(GestureEffect::Redraw(def_id));
         }
         out

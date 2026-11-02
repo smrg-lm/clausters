@@ -3112,10 +3112,10 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   `clausters_document::history::History`, which the host links already.
 
   - ✅ **The owner, and how a window asks for it.** A window's `history:
-    true` gives that instance an order of its own, kept by the host's
-    applications layer (an independent scope of `Histories`, not a second
-    history type), since a binding never passes through the script that
-    would otherwise keep it. With it, the host performs `undo` and `redo` on
+    true` gives that instance an order of its own, kept by the host (the
+    document crate's `History`, one per window, not a second history type),
+    since a binding never passes through the script that would otherwise
+    keep it. With it, the host performs `undo` and `redo` on
     that window instead of reporting them; a script asks for them through
     the door it already has, `/gui_verb id undo`. Without it nothing
     changes. Two instances are two orders; composing several into one is
@@ -3165,7 +3165,20 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     entry. Any other kind held (samples, elements) is refused, naming what
     is held, with no conversion.
 
-  - ⬜ The instance's order and the walk, in the host, with its tests.
+  - ✅ The instance's order and the walk, in the host, with its tests.
+    *Done 2026-11-02* (`clients/gui/src/host/panel.rs`, its tests in
+    `gestures/panel_tests.rs`): the `history` prop, an entry per hold
+    recorded where every value is delivered (`effects::deliver`; a walk
+    goes through `route` and records nothing), the run closed at a press, a
+    release and a walk, the baseline kept from the def, every set and every
+    entry, the walk in the window's verb before its owner is told, the
+    target lost at its node's `/node_end` or when no widget writes it, and
+    the order kept across a redefinition and dropped with the window. The
+    prop's reference is in `docs/gui-protocol.md`.
+  - ⬜ What the first part left: a run of wheel or key steps follows the
+    same rule and has no test of its own; a text field's run is closed by a
+    press but not by its blur (Tab away), so its entry is not yet focus to
+    blur.
   - ⬜ The clipboard on controls.
   - ⬜ The `history` prop in `docs/gui-protocol.md` and both clients'
     builders, the paired panel example and the books.

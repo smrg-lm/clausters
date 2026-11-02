@@ -55,6 +55,7 @@ pub mod activity;
 pub mod bind;
 // The other way of a binding: what a bound widget writes, asked for and read
 // back onto it.
+pub(crate) mod panel;
 pub mod readback;
 // A `nodetree`'s tree, asked for and read back the same way in both fronts.
 pub mod node_trees;
@@ -948,6 +949,9 @@ pub struct Host {
     /// The nodes a read-back binding reads that the server has said are there
     /// ([`readback`]).
     read_live: std::collections::HashSet<i32>,
+    /// The undo orders of the windows whose `history` prop asks for one,
+    /// by window id ([`panel`]).
+    panels: HashMap<i32, panel::Panel>,
     /// The verbatim `/gui_def` JSON per def id -- the source of truth for
     /// persistence (a GuiDef with a `name` is saved as-is) and for replaying a
     /// `/gui_load`.
@@ -1172,6 +1176,7 @@ impl Host {
             disk: None,
             bindings: HashMap::new(),
             read_live: Default::default(),
+            panels: HashMap::new(),
             def_json: HashMap::new(),
             store: None,
             timelines: timeline::TimelineGroups::default(),

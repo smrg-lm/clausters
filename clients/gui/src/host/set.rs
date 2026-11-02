@@ -227,6 +227,9 @@ impl Host {
                 }
             }
         }
+        // What a control shows after a set is the baseline its next gesture
+        // starts from, in a window that keeps an order of its own.
+        self.panel_saw(id);
         // A new list for a take is told to the answerer before the view asks
         // about it again: a view's own (`segments`), or one of the takes a
         // multitrack draws its boxes from (`lists`).

@@ -137,6 +137,12 @@ pub enum WidgetKind {
         /// its window comes back. Off by default: a window's owner hears
         /// nothing it did not ask for.
         activation: bool,
+        /// The `history` prop: **the window keeps an undo order of its
+        /// own** ([`crate::host::panel`]) -- what a hand does to its controls,
+        /// bound or not, which `undo` and `redo` walk in the host instead of
+        /// being reported to the owner. Read when the window is defined. Off
+        /// by default: an ordinary GuiDef holds no history.
+        history: bool,
     },
     /// A nestable container.
     Panel {

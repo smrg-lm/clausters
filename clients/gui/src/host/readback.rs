@@ -203,6 +203,7 @@ impl Host {
             }
             "/node_end" => {
                 self.read_live.remove(&node);
+                self.panels_node_ended(node);
             }
             _ => {}
         }
@@ -236,7 +237,7 @@ impl Host {
     /// over numbers all read -- or the `index` of a choice over its rows, or
     /// the `text` of a label, which reports nothing and so is bound only to be
     /// read back: a value shown as text.
-    fn read_back_prop(&self, id: i32, value: &OscType) -> Option<(String, Value)> {
+    pub(crate) fn read_back_prop(&self, id: i32, value: &OscType) -> Option<(String, Value)> {
         let record = self.registry.get(id)?;
         let value = match value {
             OscType::String(text) => Value::from(text.clone()),

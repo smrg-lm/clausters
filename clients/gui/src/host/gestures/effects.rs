@@ -103,6 +103,21 @@ pub(super) fn deliver(
     widget_id: i32,
     value: OscType,
 ) {
+    // **What the hand did is an entry** of the window's own order, when it
+    // keeps one; a walk of that order delivers through [`route`] and records
+    // nothing.
+    host.panel_record(def_id, widget_id, &value);
+    route(host, out, def_id, widget_id, value);
+}
+
+/// [`deliver`] without the record: where a value goes, bound or not.
+pub(super) fn route(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    widget_id: i32,
+    value: OscType,
+) {
     let mut effects = Vec::new();
     if host.forward(widget_id, value.clone(), &mut effects) {
         // Bound: the value went straight to its destination, and whatever the

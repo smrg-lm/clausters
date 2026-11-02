@@ -507,6 +507,8 @@ pub(crate) fn report(
 #[cfg(test)]
 mod command_tests;
 #[cfg(test)]
+mod panel_tests;
+#[cfg(test)]
 mod popup_tests;
 #[cfg(test)]
 mod tests;

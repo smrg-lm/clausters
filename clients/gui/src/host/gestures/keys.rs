@@ -338,6 +338,13 @@ impl Gestures {
         } else if let Some(out) = self.command_held(host, ctx, name, clipboard) {
             return out;
         }
+        // **A window that keeps its own order walks it here**, after the
+        // focused field had its own undo; any other window's owner is told.
+        if matches!(name, "undo" | "redo")
+            && let Some(writes) = host.panel_walk(ctx.def_id, name == "undo")
+        {
+            return walk_writes(host, ctx.def_id, writes);
+        }
         let mut out = Vec::new();
         if super::popups::pick_verb(host, ctx, &mut out, name).is_none() {
             emit(
@@ -1076,5 +1083,30 @@ pub(super) fn with_clipboard<R>(host: &mut Host, f: impl FnOnce(&mut Host, &mut 
     let mut clip = std::mem::take(&mut host.clipboard);
     let out = f(host, &mut clip);
     host.clipboard = clip;
+    out
+}
+
+/// **Writes what a walk of a window's own order handed back**: every widget
+/// that writes the target shows the value, and the first one delivers it --
+/// its binding, or the event a hand would have sent -- recording nothing.
+fn walk_writes(
+    host: &mut Host,
+    def_id: i32,
+    writes: Vec<crate::host::panel::Write>,
+) -> Vec<GestureEffect> {
+    let mut out = Vec::new();
+    for write in writes {
+        let mut effects = Vec::new();
+        for id in &write.writers {
+            if let Some(prop) = host.read_back_prop(*id, &write.value) {
+                host.set_props(*id, vec![prop], &mut effects);
+            }
+        }
+        super::effects::redraws(&mut out, effects);
+        if let Some(first) = write.writers.first() {
+            super::effects::route(host, &mut out, def_id, *first, write.value);
+        }
+    }
+    out.push(GestureEffect::Redraw(def_id));
     out
 }

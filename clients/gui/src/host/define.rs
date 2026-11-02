@@ -196,6 +196,15 @@ impl Host {
         // carries its own bindings (the standalone path) and a live script may
         // bind without a separate `/gui_bind`.
         self.register_inline_bindings(&node);
+        // **The window's own undo order**, opened, kept or dropped as its
+        // `history` prop now says, over what its controls now show.
+        if let Some(root) = if node.kind == "window" {
+            Some(id)
+        } else {
+            inside
+        } {
+            self.panel_defined(root);
+        }
         // A GuiDef with a `name` persists to the store the way a named SynthDef
         // does on `/def_send synth` -- no separate save command.
         if let Some(name) = node.props.get("name").and_then(Value::as_str)
@@ -334,6 +343,7 @@ impl Host {
         self.prune_timeline_groups();
         self.prune_monitor();
         self.prune_voices();
+        self.panels_forget_gone();
     }
 
     /// Registers a [`Binding`] for every widget that declares an inline `bind`
