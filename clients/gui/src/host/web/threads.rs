@@ -7,6 +7,7 @@
 //! worker hands the box back to [`apps_thread_run`], which runs it on the
 //! worker's own stack. The page side is `clients/web/src/gui/apps.ts`.
 
+#[cfg(feature = "apps")]
 use std::io;
 
 use wasm_bindgen::prelude::*;
@@ -49,6 +50,7 @@ thread_local! {
 /// storage as their files**: from now on `clausters_core::threads::spawn`
 /// makes a worker and `clausters_core::files` reads and writes the origin's
 /// storage from one.
+#[cfg(feature = "apps")]
 pub(super) fn register() {
     clausters_core::threads::set_spawner(spawn);
     clausters_core::files::set_bridge(file);
@@ -57,11 +59,13 @@ pub(super) fn register() {
 /// **What wakes host `host`'s loop** when one of its applications has said
 /// something, from the application's thread: the page posts it to the main
 /// thread, where the loop takes the host's effects.
+#[cfg(feature = "apps")]
 pub(super) fn wake(host: u32) -> std::sync::Arc<dyn Fn() + Send + Sync> {
     std::sync::Arc::new(move || page_said(host))
 }
 
 /// One call into the page's storage, made from a worker.
+#[cfg(feature = "apps")]
 fn file(request: &clausters_core::files::Request) -> io::Result<()> {
     if !WORKER.with(|w| w.get()) {
         return Err(io::Error::new(
@@ -73,6 +77,7 @@ fn file(request: &clausters_core::files::Request) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "apps")]
 fn spawn(name: &str, body: Body) -> io::Result<()> {
     let ptr = Box::into_raw(Box::new(body));
     if page_spawn(name, ptr as u32) {

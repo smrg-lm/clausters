@@ -976,7 +976,7 @@ pub struct Host {
     /// number a client attached to this host defines.
     widget_ids: clausters_core::widgetids::WidgetIds,
     /// The drawer this host names its own widgets as, in that table.
-    #[cfg(any(not(target_arch = "wasm32"), feature = "apps", feature = "notation"))]
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     drawer: i64,
     /// **The take monitor's nodes** -- the audio editor's playback, the one
     /// every endpoint holds ([`clausters_editing::audio_playback`]), on the
@@ -1032,7 +1032,7 @@ pub struct Host {
     /// an application opened from inside another -- a roll from the
     /// multitrack -- is the outer one's, and closes when it closes
     /// ([`depend`](Self::depend)).
-    #[cfg(any(not(target_arch = "wasm32"), feature = "apps", feature = "notation"))]
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     dependents: HashMap<i32, Vec<i32>>,
     /// **The server's node trees a `nodetree` draws**, by group, as last
     /// read ([`node_trees`]).
@@ -1181,7 +1181,7 @@ impl Host {
                 clausters_core::ids::IdShare::WHOLE,
             ),
             widget_ids,
-            #[cfg(any(not(target_arch = "wasm32"), feature = "apps", feature = "notation"))]
+            #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             drawer,
             monitor: clausters_editing::audio_playback::AudioEditorPlayback::new(
                 clausters_editing::apply::Endpoint::default(),
@@ -1195,7 +1195,7 @@ impl Host {
             status: Default::default(),
             popups: HashMap::new(),
             close_asked: Default::default(),
-            #[cfg(any(not(target_arch = "wasm32"), feature = "apps", feature = "notation"))]
+            #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             dependents: HashMap::new(),
             node_trees: HashMap::new(),
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
@@ -1531,7 +1531,7 @@ impl Host {
     /// **The windows that depend on `parent`**, still open, taken off the
     /// table: what closes with it. Each one's own dependents go with it when
     /// it is closed in turn.
-    #[cfg(any(not(target_arch = "wasm32"), feature = "apps", feature = "notation"))]
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     pub(crate) fn take_dependents(&mut self, parent: i32) -> Vec<i32> {
         let children = self.dependents.remove(&parent).unwrap_or_default();
         children

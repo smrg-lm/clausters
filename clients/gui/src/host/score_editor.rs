@@ -30,8 +30,12 @@ pub(super) fn midi_file(
     Some(clausters_midi::write_smf_with_tempo(&events, PPQ, &tempo))
 }
 
-/// A host without the MIDI crate writes no MIDI file.
-#[cfg(not(all(feature = "midi", not(target_arch = "wasm32"))))]
+/// A host without the MIDI crate writes no MIDI file. Only an application
+/// asks for one, so a page without them has nothing to ask.
+#[cfg(all(
+    not(all(feature = "midi", not(target_arch = "wasm32"))),
+    any(not(target_arch = "wasm32"), feature = "apps")
+))]
 pub(super) fn midi_file(_: &clausters_document::events::EventSequence, _: bool) -> Option<Vec<u8>> {
     None
 }
