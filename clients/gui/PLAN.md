@@ -8774,13 +8774,15 @@ module of its own.
   that cannot map draws every take from its summary"). The same paste is
   eight requests, 59 kB and about 120 ms in headless Chrome.
 
-- ⬜ **The GUI host's library suite stopped once on a SIGSEGV** *(found
+- ✅ **The GUI host's library suite stopped once on a SIGSEGV** *(found
   2026-10-22, closing the entries of the audio editor's acceptance)*. One
   `cargo test --lib` in `clients/gui` ended with signal 11 and no failing
   test named; the next two runs and fifteen runs of the same test binary
   passed. The output named no test, so neither the case nor the cause is
   known. What is open is the next failure's output, run with
   `--test-threads=1` to name the test.
+  *Closed 2026-11-02, with the entry below:* the same suite, the same signal
+  and no test named is the crash found there, whose cause is known now.
 
 - ✅ **An edit of a long take costs a native server with a segment a pass
   over it** *(found 2026-10-22, measuring the summaries of G44a)*. A server
@@ -9120,7 +9122,7 @@ module of its own.
   lists and opens another window; the native load example draws every clip's
   waveform after immediate close/reopen.
 
-- ⬜ **The parallel default host suite can exit with SIGSEGV**
+- ✅ **The parallel default host suite can exit with SIGSEGV**
   *(found 2026-10-30 during session-lifecycle verification)*. A permitted
   `cargo test --offline --lib` ended with signal 11 and no Rust failure
   report. The same suite with `-- --test-threads=1` passed 1400 tests (one
@@ -9130,6 +9132,19 @@ module of its own.
   `set_debug_utils_object_name`, creating a render pipeline in
   `host::frame::tests::a_window_is_its_reference_picture` while other tests
   run, so a test that holds a real device is where to look first.
+  *Fixed 2026-11-02.* Reproduced by running the frame tests on eight threads:
+  13 runs in 40 crashed. Under the debugger the faulting thread was creating
+  a device and another was in `dlclose`: the Vulkan loader unloads its
+  drivers when the last instance goes, and every device was asked of an
+  instance of its own, so a test dropping its device on one thread unloaded
+  the driver under another's creation. A first instance is now kept for the
+  life of the process (`gpu::new_instance`), so the drivers are never
+  unloaded; each caller still gets an instance of its own, since sharing one
+  made the GL backend's context current on two threads and it refused the
+  second (tried, and 56 runs in 60 failed so). After it, 0 in 60 runs of the
+  frame tests and 0 in 10 of the whole suite in parallel. A test opens and
+  drops 48 devices on eight threads: 8 runs in 10 crashed without the kept
+  instance, none in 20 with it.
 
 - ⬜ **A control's size does not follow what it says, in a row or across one**
   *(found 2026-11-01 by the user, by eye on the curve window, as something the

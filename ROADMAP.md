@@ -146,10 +146,6 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
-- ⬜ **The GUI host's library suite stopped once on a SIGSEGV**
-  *(`clients/gui/PLAN.md`, Found by use)*. Not reproduced; waits for the next
-  failure's output.
-
 - ⬜ **A control's size does not follow what it says, in a row or across one**
   *(`clients/gui/PLAN.md`, Found by use)*. Found on the curve window; the
   examples show it in several forms, and the decision changes a written

@@ -299,8 +299,22 @@ async fn new_instance() -> wgpu::Instance {
     wgpu::util::new_instance_with_webgpu_detection(desc).await
 }
 
+///
+/// **Natively a first instance is kept for the life of the process.** The
+/// Vulkan loader unloads its drivers when the last instance that loaded them
+/// goes, and an instance dropped on one thread while another thread was
+/// creating a device on an instance of its own unloaded the driver under that
+/// call: a SIGSEGV in `libvulkan` under `set_debug_utils_object_name`, with
+/// another thread in `dlclose`. The host's tests open and drop devices on
+/// several threads at once, and about one run in three crashed so. With one
+/// instance that never goes the drivers are never unloaded, and a window
+/// opened after another does not load them again. Each caller still gets an
+/// instance of its own: the GL backend's context is made current by whoever
+/// asks it for an adapter, and one shared between threads refuses the second.
 #[cfg(not(target_arch = "wasm32"))]
 async fn new_instance() -> wgpu::Instance {
+    static KEPT: std::sync::OnceLock<wgpu::Instance> = std::sync::OnceLock::new();
+    KEPT.get_or_init(wgpu::Instance::default);
     wgpu::Instance::default()
 }
 
@@ -385,5 +399,30 @@ mod tests {
             Some(F::Rgba16Float)
         );
         assert_eq!(plain_format(F::Bgra8UnormSrgb, &[F::Bgra8UnormSrgb]), None);
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod threads {
+    /// **Devices opened and dropped on several threads at once do not
+    /// crash.** Each drop of the last instance unloaded the Vulkan drivers,
+    /// under a device another thread was creating; the host's own tests
+    /// crashed so about one run in three ([`super::new_instance`]). With a
+    /// machine that has no adapter there is nothing to open, and nothing
+    /// to check.
+    #[test]
+    fn devices_opened_and_dropped_on_threads_at_once_do_not_crash() {
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    for _ in 0..6 {
+                        let _ = pollster::block_on(super::Gpu::offscreen(8, 8, 1));
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().expect("a thread that opened devices");
+        }
     }
 }
