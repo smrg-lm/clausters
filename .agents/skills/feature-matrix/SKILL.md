@@ -91,6 +91,7 @@ under one set of `cfg`s is not always right under another.
 | 5 | `cargo clippy --all-targets --no-default-features --features synth` | **no** |
 | 6 | `cargo clippy --all-targets --no-default-features --features faust` | **no** |
 | 7 | `cargo clippy -p clausters-ffi --features verovio --all-targets` | **no** |
+| 7a | `cargo clippy -p clausters-midi --no-default-features --all-targets` | **no** |
 | 7b | `cargo build --no-default-features` with `FAUST_PREFIX` aimed at nothing | **no** |
 | 8 | `cargo doc --no-deps --workspace` | **no** |
 | 9 | `cargo doc --no-deps --workspace --no-default-features` | **no** |
@@ -139,7 +140,10 @@ Configuration 7 is the same kind of gap one crate over: `verovio` is off by
 default, so CI's `--workspace` run never enables it and the notation layer it
 pulls in is linted by nothing. It needs no libverovio present — clippy checks
 and never links — so it lints the code under the feature's `cfg`s, not the
-library's presence.
+library's presence. Configuration 7a is its mirror: `clausters-midi`'s C ABI
+(`cabi`) is a default that every crate linking it from Rust turns off, and
+`--workspace` unifies it back on, so the crate as those binaries build it is
+linted only here.
 
 Configurations 8–12 are the doc build, and it walks the def families for the
 same reason clippy does: a link whose target is compiled away by a feature

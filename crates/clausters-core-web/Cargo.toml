@@ -29,8 +29,9 @@ clausters-apps = { path = "../clausters-apps", features = ["notation"] }
 # virtual OS port, which is precisely what a page cannot have; what a page does
 # need is `write_smf`/`write_clip`, which are pure Rust over midly and compile
 # to wasm unchanged. Same reasoning as the native side's: one writer, so a `.mid`
-# saved from a tab and one saved from a script are the same bytes.
-clausters-midi = { path = "../clausters-midi" }
+# saved from a tab and one saved from a script are the same bytes. Without its
+# C ABI (`cabi`), whose symbols a page never calls and a cdylib would export.
+clausters-midi = { path = "../clausters-midi", default-features = false }
 
 # The JS binding surface only exists on the wasm target.
 [target.'cfg(target_arch = "wasm32")'.dependencies]

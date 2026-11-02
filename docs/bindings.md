@@ -71,7 +71,11 @@ its sizing pass changes nothing (see [the document](#the-document)).
 length through an out pointer, and the caller frees it with
 `clausters_midi_free`. It is its own library with its own cdylib, and a file
 writer's answer is produced once and kept by the caller, which is the ordinary C
-shape for that.
+shape for that. **Its symbols are exported by that library alone**: they are
+the crate's `cabi` feature, a default, and every crate that links it into a
+binary of its own and calls it from Rust (the server, the GUI host, the wasm
+cores) leaves the feature off, since a cdylib exports every `no_mangle`
+function of every crate it links.
 
 In wasm neither applies: a call returns the bytes or the string.
 

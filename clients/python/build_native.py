@@ -110,7 +110,8 @@ _CRATES = {
     # `live` is not this crate's default -- the file writers (SMF, MIDI 2.0
     # clip) need no system MIDI -- but the wheel always ships it, because
     # `MidiFunc`/`MidiReceiver` open a virtual port and without the feature a
-    # client can only write MIDI files, never play or record one.
+    # client can only write MIDI files, never play or record one. Its C ABI
+    # (`cabi`) is a default and stays on: it is what `_midi` binds.
     "clausters_midi": ("clausters-midi", "live"),
 }
 

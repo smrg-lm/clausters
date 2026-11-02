@@ -412,7 +412,7 @@ pub mod mpe;
 // ---- C ABI ----
 
 /// Returns [`MIDI_ABI_VERSION`]; call before anything else.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub extern "C" fn clausters_midi_abi_version() -> u32 {
     MIDI_ABI_VERSION
 }
@@ -463,7 +463,7 @@ fn leak_bytes(bytes: Vec<u8>, out_len: *mut usize) -> *mut u8 {
 /// # Safety
 /// `ticks` must be readable for `n` `u32`s, `msgs` for `3 * n` bytes, and
 /// `out_len` must be a valid `*mut usize`.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_midi_write_smf(
     ticks: *const u32,
     msgs: *const u8,
@@ -486,7 +486,7 @@ pub unsafe extern "C" fn clausters_midi_write_smf(
 ///
 /// # Safety
 /// Same as [`clausters_midi_write_smf`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_midi_write_clip(
     ticks: *const u32,
     msgs: *const u8,
@@ -510,7 +510,7 @@ pub unsafe extern "C" fn clausters_midi_write_clip(
 /// # Safety
 /// `ticks` and `sizes` readable for `n` values, `words` for the sum of
 /// `sizes`, and `out_len` a valid `*mut usize`.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_midi_write_clip_ump(
     ticks: *const u32,
     sizes: *const u8,
@@ -568,7 +568,7 @@ pub fn ump_events(ticks: &[u32], sizes: &[u8], words: &[u32]) -> Vec<(u32, Vec<u
 ///
 /// # Safety
 /// As [`clausters_midi_read_smf`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_midi_read_clip(
     data: *const u8,
     len: usize,
@@ -593,7 +593,7 @@ pub unsafe extern "C" fn clausters_midi_read_clip(
 /// # Safety
 /// As [`clausters_midi_write_smf`], and `tempo_ticks`/`tempo_micros` readable
 /// for `tn` `u32`s each.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_midi_write_smf_tempo(
     ticks: *const u32,
     msgs: *const u8,
@@ -633,7 +633,7 @@ pub unsafe extern "C" fn clausters_midi_write_smf_tempo(
 ///
 /// # Safety
 /// `data` must be readable for `len` bytes and `out_len` a valid `*mut usize`.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_midi_read_smf(
     data: *const u8,
     len: usize,
@@ -669,7 +669,7 @@ pub fn read_smf_json(bytes: &[u8]) -> String {
 /// # Safety
 /// `ptr`/`len` must be exactly what a `clausters_midi_*` call returned, freed
 /// once.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_midi_free(ptr: *mut u8, len: usize) {
     if ptr.is_null() {
         return;
@@ -702,7 +702,7 @@ pub mod live {
     ///
     /// # Safety
     /// `name` must be readable for `name_len` bytes.
-    #[unsafe(no_mangle)]
+    #[cfg_attr(feature = "cabi", unsafe(no_mangle))]
     pub unsafe extern "C" fn clausters_midi_output_open(
         name: *const u8,
         name_len: usize,
@@ -730,7 +730,7 @@ pub mod live {
     /// # Safety
     /// `handle` must come from [`clausters_midi_output_open`] (not yet closed);
     /// `bytes` must be readable for `len`.
-    #[unsafe(no_mangle)]
+    #[cfg_attr(feature = "cabi", unsafe(no_mangle))]
     pub unsafe extern "C" fn clausters_midi_output_send(
         handle: *mut Output,
         bytes: *const u8,
@@ -752,7 +752,7 @@ pub mod live {
     ///
     /// # Safety
     /// `handle` must come from [`clausters_midi_output_open`], closed once.
-    #[unsafe(no_mangle)]
+    #[cfg_attr(feature = "cabi", unsafe(no_mangle))]
     pub unsafe extern "C" fn clausters_midi_output_close(handle: *mut Output) {
         if handle.is_null() {
             return;
@@ -813,7 +813,7 @@ pub mod live {
     ///
     /// # Safety
     /// `name` must be readable for `name_len` bytes.
-    #[unsafe(no_mangle)]
+    #[cfg_attr(feature = "cabi", unsafe(no_mangle))]
     pub unsafe extern "C" fn clausters_midi_input_open(
         name: *const u8,
         name_len: usize,
@@ -841,7 +841,7 @@ pub mod live {
     /// `handle` must come from [`clausters_midi_input_open`] (not yet closed);
     /// `out` must be writable for `cap` bytes and `out_len` a valid
     /// `*mut usize`.
-    #[unsafe(no_mangle)]
+    #[cfg_attr(feature = "cabi", unsafe(no_mangle))]
     pub unsafe extern "C" fn clausters_midi_input_poll(
         handle: *mut Input,
         out: *mut u8,
@@ -871,7 +871,7 @@ pub mod live {
     ///
     /// # Safety
     /// `handle` must come from [`clausters_midi_input_open`], closed once.
-    #[unsafe(no_mangle)]
+    #[cfg_attr(feature = "cabi", unsafe(no_mangle))]
     pub unsafe extern "C" fn clausters_midi_input_close(handle: *mut Input) {
         if handle.is_null() {
             return;

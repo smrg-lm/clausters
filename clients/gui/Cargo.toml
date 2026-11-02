@@ -122,8 +122,9 @@ clausters = { path = "../..", default-features = false, features = ["embed", "re
 # Live MIDI input (the `midi` feature): the message reader and the MPE decoder,
 # the server's own, which is what turns a device's bytes into the notes a roll
 # paints. Pure Rust and on every target; the port it also has is added for the
-# native one alone, below.
-clausters-midi = { path = "../../crates/clausters-midi", optional = true }
+# native one alone, below. Without its C ABI (`cabi`): the host calls it from
+# Rust, and its cdylib would export every symbol of it to a page otherwise.
+clausters-midi = { path = "../../crates/clausters-midi", default-features = false, optional = true }
 # GuiDef = JSON inside one OSC argument, exactly as a SynthDef/GraphDef. serde's
 # number handling keeps ids i32 and control values f32 across the wire.
 serde = { version = "1", features = ["derive"] }
@@ -162,7 +163,7 @@ libc = "0.2"
 # machine's output, spoken to with built commands. A page's is in its
 # worklet, over shared memory.
 clausters-app-engine = { path = "../../crates/clausters-app-engine", features = ["realtime"] }
-clausters-midi = { path = "../../crates/clausters-midi", features = ["live"], optional = true }
+clausters-midi = { path = "../../crates/clausters-midi", default-features = false, features = ["live"], optional = true }
 # The stream legs of the script front -- TCP, and WebSocket (`--ws`), the
 # browser's carrier into a native host -- and the hub the headless loop
 # drains: the audio server's own, so the two fronts have one implementation.

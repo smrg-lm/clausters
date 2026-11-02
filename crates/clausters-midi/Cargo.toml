@@ -11,7 +11,13 @@ description = "Reusable MIDI file I/O for clausters clients and server: a flat-d
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = []
+default = ["cabi"]
+# **The C ABI's symbols** (`clausters_midi_*`, `clausters_mpe_*`): what the
+# library exports to a client that binds it. A crate that links this one
+# into a binary of its own and calls it from Rust (the wasm cores, the GUI
+# host) leaves it off, since a cdylib exports every `no_mangle` function of
+# every crate it links and nothing there calls these by name.
+cabi = []
 # Live MIDI output over the OS's standard MIDI (ALSA seq on Linux) via midir --
 # a virtual output port. Off by default so the file writers (SMF/clip) need no
 # system MIDI dependency; build the client cdylib with it for live output.

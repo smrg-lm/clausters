@@ -666,7 +666,7 @@ fn side_of(upper: i32) -> Side {
 }
 
 /// A new decoder with no zone. Free it with [`clausters_mpe_decoder_free`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub extern "C" fn clausters_mpe_decoder_new() -> *mut Decoder {
     Box::into_raw(Box::new(Decoder::new()))
 }
@@ -675,7 +675,7 @@ pub extern "C" fn clausters_mpe_decoder_new() -> *mut Decoder {
 ///
 /// # Safety
 /// `handle` must come from [`clausters_mpe_decoder_new`] and not be used after.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_mpe_decoder_free(handle: *mut Decoder) {
     if !handle.is_null() {
         // SAFETY: per the contract.
@@ -688,7 +688,7 @@ pub unsafe extern "C" fn clausters_mpe_decoder_free(handle: *mut Decoder) {
 ///
 /// # Safety
 /// `handle` must be a live decoder.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_mpe_decoder_set_zone(
     handle: *mut Decoder,
     upper: i32,
@@ -707,7 +707,7 @@ pub unsafe extern "C" fn clausters_mpe_decoder_set_zone(
 ///
 /// # Safety
 /// `handle` must be a live decoder and `bytes` readable for `len`.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_mpe_decoder_feed(
     handle: *mut Decoder,
     bytes: *const u8,
@@ -734,7 +734,7 @@ pub const MPE_RECORD: usize = 12;
 ///
 /// # Safety
 /// `handle` must be a live decoder and `out` writable for `cap` bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_mpe_decoder_poll(
     handle: *mut Decoder,
     out: *mut u8,
@@ -785,7 +785,7 @@ fn record(event: MpeEvent) -> [u8; MPE_RECORD] {
 
 /// A new assigner over the lower (`upper` 0) or upper zone of `members`. Free
 /// it with [`clausters_mpe_assigner_free`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub extern "C" fn clausters_mpe_assigner_new(upper: i32, members: i32) -> *mut Assigner {
     let members = u8::try_from(members.clamp(0, 15)).unwrap_or(0);
     Box::into_raw(Box::new(Assigner::new(side_of(upper), members)))
@@ -795,7 +795,7 @@ pub extern "C" fn clausters_mpe_assigner_new(upper: i32, members: i32) -> *mut A
 ///
 /// # Safety
 /// `handle` must come from [`clausters_mpe_assigner_new`] and not be used after.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_mpe_assigner_free(handle: *mut Assigner) {
     if !handle.is_null() {
         // SAFETY: per the contract.
@@ -807,7 +807,7 @@ pub unsafe extern "C" fn clausters_mpe_assigner_free(handle: *mut Assigner) {
 ///
 /// # Safety
 /// `handle` must be a live assigner.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_mpe_assigner_note_on(handle: *mut Assigner, key: u8) -> i32 {
     if handle.is_null() {
         return -1;
@@ -821,7 +821,7 @@ pub unsafe extern "C" fn clausters_mpe_assigner_note_on(handle: *mut Assigner, k
 ///
 /// # Safety
 /// `handle` must be a live assigner.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_mpe_assigner_note_off(
     handle: *mut Assigner,
     channel: u8,
@@ -841,7 +841,7 @@ pub unsafe extern "C" fn clausters_mpe_assigner_note_off(
 ///
 /// # Safety
 /// `out` must be writable for `cap` bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_mpe_zone_messages(
     upper: i32,
     members: i32,
@@ -863,7 +863,7 @@ pub unsafe extern "C" fn clausters_mpe_zone_messages(
 ///
 /// # Safety
 /// `out` must be writable for three bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_mpe_bend_message(
     channel: u8,
     semitones: f32,
@@ -885,7 +885,7 @@ pub unsafe extern "C" fn clausters_mpe_bend_message(
 ///
 /// # Safety
 /// `out` must be writable for `cap` bytes.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "cabi", unsafe(no_mangle))]
 pub unsafe extern "C" fn clausters_mpe_expression_messages(
     channel: u8,
     bend: f32,

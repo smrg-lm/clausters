@@ -127,6 +127,9 @@ clippy "clippy: VST3 fixture" --manifest-path crates/clausters-plugin-host/tests
 # that the library is actually installed is a different question, and the one
 # `third_party/build-verovio.sh` answers.
 clippy "clippy: ffi with verovio" -p clausters-ffi --features verovio --all-targets
+# The MIDI crate as every binary that links it from Rust takes it: without its
+# C ABI (`cabi`), the symbols a cdylib would otherwise export.
+clippy "clippy: midi without its C ABI" -p clausters-midi --no-default-features --all-targets
 
 # --- The third gap: the featureless build with no libfaust to link ------------
 #
