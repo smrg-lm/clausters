@@ -26,12 +26,64 @@
 
 import type { GuiHost, Stage, WindowActivity, WindowProfile } from "../host.ts";
 import type { WindowHandle } from "../handle.ts";
-import { MultitrackTransport } from "./multitrack.ts";
 
 /** One leg of a page's block: the change, and the edit that puts it back. */
-interface Leg {
+export interface Leg {
     forward: unknown;
     backward: unknown;
+}
+
+/** **The multitrack's transport**, as a script plays it: each verb one call to the application, in the multitrack's seconds. */
+export class MultitrackTransport {
+    private readonly editor: { act(verb: string, args?: Record<string, unknown>): Promise<any> };
+
+    constructor(editor: { act(verb: string, args?: Record<string, unknown>): Promise<any> }) {
+        this.editor = editor;
+    }
+
+    /** Whether the transport rolls. */
+    async playing(): Promise<boolean> {
+        return Boolean(await this.editor.act("playing"));
+    }
+
+    /**
+     * **Roll**: over `start`..`end` seconds when both are given (and over and
+     * over with `looping`), else from where it stands.
+     */
+    async play(start: number | null = null, end: number | null = null, { looping = false }: { looping?: boolean } = {}): Promise<this> {
+        const args: Record<string, unknown> = { looping: Boolean(looping) };
+        if (start !== null && end !== null) args.range = [Number(start), Number(end)];
+        await this.editor.act("play", args);
+        return this;
+    }
+
+    /** Hold where it is; a `play` goes on from there. */
+    async pause(): Promise<this> {
+        await this.editor.act("pause");
+        return this;
+    }
+
+    /** Stop, and go back to `mark` seconds. */
+    async stop(mark = 0): Promise<this> {
+        await this.editor.act("stop", { mark: Number(mark) });
+        return this;
+    }
+
+    /** Stand the transport at `at` seconds. */
+    async locate(at: number): Promise<this> {
+        await this.editor.act("locate", { at: Number(at) });
+        return this;
+    }
+
+    /** Resolves when the transport stops, or on `timeout` seconds: whether it stopped. */
+    async wait(timeout?: number): Promise<boolean> {
+        const deadline = timeout === undefined ? null : Date.now() + timeout * 1000;
+        while (await this.playing()) {
+            if (deadline !== null && Date.now() >= deadline) return false;
+            await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        return true;
+    }
 }
 
 /**
@@ -62,10 +114,11 @@ export interface HostedEditorOptions {
 }
 
 /**
- * **The page's handle of a window the host holds**: its opening, its door and
- * its closing, which a roll and a page share. An editor says which application
- * it is, how it opens, what it takes back when a window goes, and how the copy
- * this page holds follows the window's.
+ * **The page's handle of a window the host holds**: its opening, its door, its
+ * history and its closing, which every application's handler shares (the audio
+ * editor, the multitrack, a roll, a page). An editor says which application it
+ * is, how it opens, what is the window's once it opens, what it takes back when
+ * a window goes, and how the copy this page holds follows the window's.
  */
 export abstract class HostedEditor {
     /** The window's title. */
@@ -74,20 +127,21 @@ export abstract class HostedEditor {
     readonly chrome: boolean;
     /** Called after any gesture that **changed the data**, in this window or another over the same structure. */
     onChange: (() => void) | null = null;
-    /** Whether a hand has changed the data since this was last cleared. */
-    dirty = false;
     private readonly size: [number | undefined, number | undefined];
     private hostOf: GuiHost | null = null;
     private handle: WindowHandle | null = null;
     private closedHandler: (() => void) | null = null;
     private settled = true;
-    private released = false;
+    /** The window let go of what this handler opened, and goes on as the host's own. @internal */
+    protected released = false;
     /** The page's changes, forwarded in the order they were made. */
     private queue: Promise<unknown> = Promise.resolve();
-    private pending = 0;
+    /** The page's changes not yet followed by the copy it holds. @internal */
+    protected pending = 0;
     private unlisten: (() => void) | null = null;
     private depth = 0;
-    private legs: Leg[] | null = null;
+    /** The legs of the page's block under way, or `null` outside one. @internal */
+    protected legs: Leg[] | null = null;
     private blockLabel = "edit";
 
     protected constructor(fallback: string, { title, width, height, chrome = true }: HostedEditorOptions) {
@@ -108,6 +162,8 @@ export abstract class HostedEditor {
     protected abstract settle(left: Record<string, unknown> | null, last: boolean): void;
     /** Brings the copy the page holds to the window's. */
     protected abstract follow(): Promise<void>;
+    /** A hand moved what the window holds. */
+    protected changedByHand(): void {}
 
     // ---- the window ----
 
@@ -119,6 +175,12 @@ export abstract class HostedEditor {
      */
     async open(host?: GuiHost, { stage }: { stage?: Stage | null } = {}): Promise<WindowHandle> {
         if (this.handle !== null && !this.closed) return this.handle;
+        if (this.handle !== null) {
+            // a window that went before its close was heard: what it left is
+            // taken back first
+            this.leave();
+            await this.queue;
+        }
         const resolved = host ?? (await (await import("../../plot.ts")).resolveHost());
         const held = this.heldBy();
         const beside = held.live();
@@ -144,7 +206,7 @@ export abstract class HostedEditor {
         this.unlisten = resolved.onMessage((msg) => {
             if (Number(msg.args[0]) !== window) return;
             if (msg.addr === "/gui_app_changed") {
-                this.dirty = true;
+                this.changedByHand();
                 this.pending += 1;
                 this.queue = this.queue.then(() => this.followed()).then(() => this.onChange?.());
             } else if (msg.addr === "/gui_app_released" && msg.args.length > 1) {
@@ -224,7 +286,7 @@ export abstract class HostedEditor {
         return this;
     }
 
-    private opened(): WindowHandle {
+    protected opened(): WindowHandle {
         if (this.handle === null) throw new Error(`open() the ${this.app} editor first`);
         return this.handle;
     }
@@ -234,7 +296,8 @@ export abstract class HostedEditor {
     /** One call to the application, and its answer: after the page's changes it is behind. */
     async call(call: Record<string, unknown>, timeout: number | null = null): Promise<any> {
         await this.queue;
-        return (this.hostOf as GuiHost).callApp(this.opened(), call, timeout);
+        const window = this.opened();
+        return (this.hostOf as GuiHost).callApp(window, call, timeout);
     }
 
     /** One verb of the window's editor, read; it changes nothing the window draws. */

@@ -25,6 +25,7 @@ import { SoundFile } from "../../soundfile.ts";
 import { Segment } from "../../segments.ts";
 import type { GuiHost, Stage } from "../host.ts";
 import type { WindowHandle } from "../handle.ts";
+import { Held, HostedEditor } from "./hosted.ts";
 
 /** The containers a part of a list reads in place. */
 const STREAMED = ["wav", "w64", "rf64"];
@@ -188,117 +189,61 @@ export interface AudioEditorOptions {
  * verb that acts on a file rejects with a `RangeError` until one is added
  * (`newFile`, `openFile`).
  */
-export class AudioEditor {
-    /** The window's title. */
-    readonly title: string;
+export class AudioEditor extends HostedEditor {
     /** The file it opens on, which `edit` finds an open editor by. */
     readonly opening: SoundFile | null;
+    protected readonly app = "audio";
     private readonly openLayers: readonly unknown[] | null;
-    private hostOf: GuiHost | null = null;
-    private handle: WindowHandle | null = null;
+    private readonly holders = new Held();
 
     constructor(file: SoundFile | null = null, { title = "Audio", layers }: AudioEditorOptions = {}) {
+        super("Audio", { title });
         this.opening = file;
-        this.title = String(title);
         this.openLayers = layers ?? null;
     }
 
     // ---- the window ----
 
+    /** A sound file is read where it is, by this window alone. */
+    protected heldBy(): Held {
+        return this.holders;
+    }
+
+    protected openingOptions(): Record<string, unknown> {
+        return this.opening !== null && this.opening.path !== null ? { path: this.opening.path } : {};
+    }
+
+    /** Nothing to hand back: the file is where it was, and the editor keeps no copy of it. */
+    protected settle(): void {}
+
+    /** Nothing to follow: every read asks the application. */
+    protected async follow(): Promise<void> {}
+
     /**
      * **Ask the host to open the editor**, on `host` or the ambient one, and
      * answer its window. An editor already open answers the window it has.
      */
-    async open(host?: GuiHost, { stage }: { stage?: Stage | null } = {}): Promise<WindowHandle> {
-        if (this.handle !== null) return this.handle;
-        const resolved = host ?? (await (await import("../../plot.ts")).resolveHost());
-        const options: Record<string, unknown> = { title: this.title };
-        if (this.opening !== null && this.opening.path !== null) options.path = this.opening.path;
-        const window = await resolved.openApp("audio", options, 5.0, { element: stage });
-        const { WindowHandle } = await import("../handle.ts");
-        this.hostOf = resolved;
-        this.handle = new WindowHandle(resolved, window, new Map());
-        // silence not written anywhere yet: a new file of its shape
-        if (this.opening !== null && this.opening.path === null) {
-            const { channels, frames, sampleRate } = this.opening;
-            await this.newFile(channels, frames, sampleRate);
+    override async open(host?: GuiHost, options: { stage?: Stage | null } = {}): Promise<WindowHandle> {
+        const opening = this.closed;
+        const window = await super.open(host, options);
+        if (opening) {
+            // silence not written anywhere yet: a new file of its shape
+            if (this.opening !== null && this.opening.path === null) {
+                const { channels, frames, sampleRate } = this.opening;
+                await this.newFile(channels, frames, sampleRate);
+            }
+            if (this.openLayers !== null) await this.setLayers(this.openLayers);
         }
-        if (this.openLayers !== null) await this.setLayers(this.openLayers);
-        return this.handle;
-    }
-
-    /** The {@link GuiHost} the editor is open on, or `null`. */
-    get host(): GuiHost | null {
-        return this.hostOf;
-    }
-
-    /** The open window's handle, or `null`. */
-    get window(): WindowHandle | null {
-        return this.handle;
-    }
-
-    /** The open window's id, or `null`. */
-    get id(): number | null {
-        return this.handle?.id ?? null;
-    }
-
-    /** Whether the editor's window is gone. */
-    get closed(): boolean {
-        return this.handle === null || this.handle.closed;
-    }
-
-    /**
-     * Resolves when the editor's window is closed, or on `timeout` seconds:
-     * `true` for the first, `false` for the second.
-     */
-    wait(timeout?: number): Promise<boolean> {
-        return this.handle === null ? Promise.resolve(true) : this.handle.wait(timeout);
-    }
-
-    /** Call `handler()` when the editor's window is closed. `null` clears it. */
-    onClosed(handler: (() => void) | null): this {
-        this.opened().onClosed(handler);
-        return this;
-    }
-
-    /**
-     * Close the editor without asking: a window a client holds loses nothing by
-     * it, and what asks about unsaved work is the window of a host with no
-     * client beside it.
-     */
-    async close(): Promise<this> {
-        if (!this.closed) await this.act("close");
-        return this;
-    }
-
-    private opened(): WindowHandle {
-        if (this.handle === null) throw new Error("open() the editor first");
-        return this.handle;
+        return window;
     }
 
     // ---- the door ----
 
-    /** One call to the application, and its answer. */
-    async call(call: Record<string, unknown>, timeout: number | null = null): Promise<any> {
-        const window = this.opened();
-        return (this.hostOf as GuiHost).callApp(window, call, timeout);
-    }
-
     /** One verb of the editor; a `RangeError` when it needs a file and none is open. */
-    async member(verb: string, args: Record<string, unknown> = {}): Promise<Record<string, any>> {
-        const answer = ((await this.call({ member: { verb, ...args } })) ?? {}) as Record<string, any>;
+    override async coreCall(verb: string, args: Record<string, unknown> = {}): Promise<Record<string, any>> {
+        const answer = await super.coreCall(verb, args);
         if (answer.error === NO_FILE) throw new RangeError(NO_FILE);
         return answer;
-    }
-
-    /** One of the editor's readings: `transport`, `actions` or `history`. */
-    async query(name: string): Promise<Record<string, any>> {
-        return ((await this.call({ query: name })) ?? {}) as Record<string, any>;
-    }
-
-    /** One action of the editor, carried to its end, and its result. */
-    async act(verb: string, args: Record<string, unknown> = {}): Promise<any> {
-        return this.call({ do: { verb, ...args } });
     }
 
     private async version(): Promise<number> {
@@ -307,90 +252,8 @@ export class AudioEditor {
 
     // ---- the window's verbs ----
 
-    /**
-     * **Perform the window's verb `name`**, as its key, its menu entry or its
-     * tool would (`docs/verbs.md`). Answers whether it was asked: `false`
-     * with no window open.
-     */
-    verb(name: string): boolean {
-        if (this.closed) return false;
-        (this.hostOf as GuiHost).verb(this.opened(), String(name));
-        return true;
-    }
-
-    /**
-     * **A hand played to the window**: a `"press"`, `"move"` or `"release"`
-     * at `(x, y)` in its device pixels, with `mods` held. Answers whether it
-     * was sent.
-     */
-    pointer(kind: "press" | "move" | "release", x: number, y: number, mods = ""): boolean {
-        if (this.closed) return false;
-        (this.hostOf as GuiHost).pointer(this.opened(), kind, x, y, mods);
-        return true;
-    }
-
-    /** A press and a release at `(x, y)`, with `mods` held ({@link AudioEditor.pointer}). */
-    click(x: number, y: number, mods = ""): boolean {
-        return this.pointer("press", x, y, mods) && this.pointer("release", x, y, mods);
-    }
-
-    /**
-     * **A drag from `start` to `end`**, each an `[x, y]` in the window's
-     * device pixels: a press, `steps` moves and a release.
-     */
-    drag(start: [number, number], end: [number, number], mods = "", steps = 8): boolean {
-        const [x0, y0] = start;
-        const [x1, y1] = end;
-        if (!this.pointer("press", x0, y0, mods)) return false;
-        const n = Math.max(Math.trunc(steps), 1);
-        for (let i = 1; i <= n; i++) {
-            const t = i / n;
-            this.pointer("move", x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, mods);
-        }
-        return this.pointer("release", x1, y1, mods);
-    }
-
-    /** **Write the window's picture to `path`** as a PNG, and answer the path. */
-    capture(path: string, timeout = 5.0): Promise<string> {
-        return (this.hostOf as GuiHost).capture(this.opened(), path, timeout);
-    }
-
-    /** **What the window costs, and why** ({@link GuiHost.activity}). */
-    activity(timeout = 1.0): ReturnType<GuiHost["activity"]> {
-        return (this.hostOf as GuiHost).activity(this.opened(), timeout);
-    }
-
-    /** **What the window costs over the next `seconds`** ({@link GuiHost.profile}). */
-    profile(seconds = 5.0, timeout = 1.0): ReturnType<GuiHost["profile"]> {
-        return (this.hostOf as GuiHost).profile(this.opened(), seconds, timeout);
-    }
-
-    /** The whole take in view: the window's `view_all` ({@link AudioEditor.verb}). */
-    viewAll(): boolean { return this.verb("view_all"); }
-
-    /** Cut what is selected: the window's `cut`. */
-    cut(): boolean { return this.verb("cut"); }
-
-    /** Copy what is selected: the window's `copy`. */
-    copy(): boolean { return this.verb("copy"); }
-
-    /** Paste at the cursor: the window's `paste`. */
-    paste(): boolean { return this.verb("paste"); }
-
     /** Delete what is selected: the window's `delete`. */
     delete(): boolean { return this.verb("delete"); }
-
-    /** Select the whole take: the window's `select_all`. */
-    selectAll(): boolean { return this.verb("select_all"); }
-
-    /** The cursor to the start: the window's `to_start`. */
-    toStart(): boolean { return this.verb("to_start"); }
-
-    /** The cursor to the end: the window's `to_end`. */
-    toEnd(): boolean { return this.verb("to_end"); }
-
-    /** The loop switch, on or off: the window's `loop`. */
-    loop(): boolean { return this.verb("loop"); }
 
     /** Paste onto what is there, mixed with it: the window's `mix`. */
     mix(): boolean { return this.verb("mix"); }
@@ -404,12 +267,12 @@ export class AudioEditor {
     // ---- the history: the order of the file in focus ----
 
     /** Step the file in focus back one edit. Answers whether anything was undone. */
-    undo(): Promise<boolean> { return this.step("undo"); }
+    override undo(): Promise<boolean> { return this.stepFocused("undo"); }
 
     /** Step the file in focus forward again. Answers whether anything was redone. */
-    redo(): Promise<boolean> { return this.step("redo"); }
+    override redo(): Promise<boolean> { return this.stepFocused("redo"); }
 
-    private async step(direction: "undo" | "redo"): Promise<boolean> {
+    private async stepFocused(direction: "undo" | "redo"): Promise<boolean> {
         const history = await this.query("history");
         if (history[direction === "undo" ? "canUndo" : "canRedo"] !== true) return false;
         await this.act("event", {
@@ -417,36 +280,6 @@ export class AudioEditor {
             args: [this.opened().id, 0, Number(history.version ?? 0), direction],
         });
         return true;
-    }
-
-    /** Whether the file in focus has an edit to step back over. */
-    async canUndo(): Promise<boolean> {
-        return (await this.query("history")).canUndo === true;
-    }
-
-    /** Whether the file in focus has an undone edit to step forward into. */
-    async canRedo(): Promise<boolean> {
-        return (await this.query("history")).canRedo === true;
-    }
-
-    /** What an undo of the file in focus would be called. */
-    async undoLabel(): Promise<string | null> {
-        return ((await this.query("history")).undoLabel as string | null | undefined) ?? null;
-    }
-
-    /** What a redo of the file in focus would be called. */
-    async redoLabel(): Promise<string | null> {
-        return ((await this.query("history")).redoLabel as string | null | undefined) ?? null;
-    }
-
-    /**
-     * **The window's actions as they read now**, by verb: what each
-     * addresses (`target`), whether it can be taken (`enabled`, and `reason`
-     * when not), a switch's `checked`, and whether work it depends on is
-     * `pending`.
-     */
-    actions(): Promise<Record<string, any>> {
-        return this.query("actions");
     }
 
     // ---- the transport, and what is marked ----
@@ -461,7 +294,7 @@ export class AudioEditor {
 
     /** The rate of the file in focus, in hertz. */
     async sampleRate(): Promise<number> {
-        return Number((await this.member("binding")).rate ?? 0);
+        return Number((await this.coreCall("binding")).rate ?? 0);
     }
 
     /**
@@ -469,7 +302,7 @@ export class AudioEditor {
      * file open.
      */
     async cursor(): Promise<number | null> {
-        const binding = await this.member("binding");
+        const binding = await this.coreCall("binding");
         if (binding.cursor === null || binding.cursor === undefined || !binding.rate) return null;
         return Number(binding.cursor) / Number(binding.rate);
     }
@@ -505,7 +338,7 @@ export class AudioEditor {
      * written yet, and `null` with no file open.
      */
     async file(): Promise<SoundFile | null> {
-        const answer = await this.member("file");
+        const answer = await this.coreCall("file");
         const path = typeof answer.path === "string" ? answer.path : null;
         const frames = Number(answer.frames ?? 0);
         const channels = Number(answer.channels ?? 1);
@@ -519,7 +352,7 @@ export class AudioEditor {
 
     /** The open {@link SoundFile}s, in list order. */
     async files(): Promise<(SoundFile | null)[]> {
-        const rows = (await this.member("files")).files as { file: Record<string, any> }[];
+        const rows = (await this.coreCall("files")).files as { file: Record<string, any> }[];
         return rows.map(({ file: f }) =>
             f.path !== null || f.untitled
                 ? new SoundFile(f.path ?? null, Number(f.frames), Number(f.channels), Number(f.rate),
@@ -533,7 +366,7 @@ export class AudioEditor {
      * fades and shape.
      */
     async parts(): Promise<Record<string, unknown>[]> {
-        return [...(((await this.member("segments")).parts as Record<string, unknown>[] | undefined) ?? [])];
+        return [...(((await this.coreCall("segments")).parts as Record<string, unknown>[] | undefined) ?? [])];
     }
 
     /**
@@ -542,7 +375,7 @@ export class AudioEditor {
      * leaves it clean.
      */
     async dirty(): Promise<boolean> {
-        return (await this.member("binding")).dirty === true;
+        return (await this.coreCall("binding")).dirty === true;
     }
 
     /**
@@ -615,7 +448,7 @@ export class AudioEditor {
      * window's, whichever file is in focus; a view state, outside the history.
      */
     async spectrogram(): Promise<SpectrogramSettings> {
-        return { ...((await this.member("spectrogram")).spectrogram as SpectrogramSettings) };
+        return { ...((await this.coreCall("spectrogram")).spectrogram as SpectrogramSettings) };
     }
 
     /**
@@ -655,7 +488,7 @@ export class AudioEditor {
      * vertical axis; use `y: "box"` for the overlaid amplitude layer.
      */
     async layers(): Promise<unknown[]> {
-        return [...(((await this.member("binding")).layers as unknown[] | undefined) ?? [])];
+        return [...(((await this.coreCall("binding")).layers as unknown[] | undefined) ?? [])];
     }
 
     /** Set the visual layers ({@link AudioEditor.layers}). */
@@ -669,7 +502,7 @@ export class AudioEditor {
 
     /** The active edit body, separate from the take's visual layers. */
     async layer(): Promise<string> {
-        return String((await this.member("layer")).layer);
+        return String((await this.coreCall("layer")).layer);
     }
 
     /** Put the edit body `name` in hand. */
@@ -705,7 +538,7 @@ export class AudioEditor {
 
     /** The channels drawn folded, in order. A view state, outside the history. */
     async folded(): Promise<number[]> {
-        return [...((await this.member("folded")).folded as number[])];
+        return [...((await this.coreCall("folded")).folded as number[])];
     }
 
     /** Fold channel `channel` (from 0) to a strip, or unfold it. */
@@ -737,7 +570,7 @@ export class AudioEditor {
      * it into a new take.
      */
     async envelope(): Promise<number[]> {
-        return [...((await this.member("envelope")).points as number[])];
+        return [...((await this.coreCall("envelope")).points as number[])];
     }
 
     /** Set gain quads as one undoable edit. Times must increase. */

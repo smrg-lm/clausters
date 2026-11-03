@@ -6404,11 +6404,20 @@ wrong.
   them in the document, is a way for data to pass between clients and
   applications, which the user means to decide on its own.
 
-- ⬜ **Three handlers hold the door's code** *(found 2026-10-31)*. In both
+- ✅ **Three handlers hold the door's code** *(found 2026-10-31)*. In both
   clients `AudioEditor`, `MultitrackEditor` and `HostedEditor` each hold the
   opening, the closing and the history a window has. `HostedEditor` is the
   general one; the other two should take it, which `X27`'s audit of one owner
   per contract would otherwise find.
+  *Fixed 2026-11-02 (`X27`)*: in both clients the audio editor and the
+  multitrack are `HostedEditor`s, keeping only what is theirs (how each opens,
+  what the multitrack hands back when its window goes, the audio editor's undo
+  of the file in focus). `MultitrackTransport` moved beside `HostedEditor`, as
+  in Python, so the web modules import no cycle. Both gained what the general
+  handler has: `id` is the window's number in both, the multitrack has
+  `dirty`, `on_change` and the history's readings, and its `undo` and `redo`
+  carry the step to its end and answer whether anything moved, as a roll's do,
+  rather than only asking the window.
 
 - ⬜ **`a_loop_moved_while_it_plays_is_crossfaded` fails now and then**
   *(found 2026-10-31, running the app engine's tests beside other builds)*.

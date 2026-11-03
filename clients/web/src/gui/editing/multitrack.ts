@@ -38,60 +38,10 @@ import { Multitrack, Region, Session } from "../../multitrack.ts";
 import type { Extra, WindowHistory, WindowOver } from "../../multitrack.ts";
 import type { GuiHost, Stage } from "../host.ts";
 import type { WindowHandle } from "../handle.ts";
+import { Held, HostedEditor, MultitrackTransport } from "./hosted.ts";
 import { Marking, marking } from "./marking.ts";
 
-/** **The multitrack's transport**, as a script plays it: each verb one call to the application, in the multitrack's seconds. */
-export class MultitrackTransport {
-    private readonly editor: { act(verb: string, args?: Record<string, unknown>): Promise<any> };
-
-    constructor(editor: { act(verb: string, args?: Record<string, unknown>): Promise<any> }) {
-        this.editor = editor;
-    }
-
-    /** Whether the transport rolls. */
-    async playing(): Promise<boolean> {
-        return Boolean(await this.editor.act("playing"));
-    }
-
-    /**
-     * **Roll**: over `start`..`end` seconds when both are given (and over and
-     * over with `looping`), else from where it stands.
-     */
-    async play(start: number | null = null, end: number | null = null, { looping = false }: { looping?: boolean } = {}): Promise<this> {
-        const args: Record<string, unknown> = { looping: Boolean(looping) };
-        if (start !== null && end !== null) args.range = [Number(start), Number(end)];
-        await this.editor.act("play", args);
-        return this;
-    }
-
-    /** Hold where it is; a `play` goes on from there. */
-    async pause(): Promise<this> {
-        await this.editor.act("pause");
-        return this;
-    }
-
-    /** Stop, and go back to `mark` seconds. */
-    async stop(mark = 0): Promise<this> {
-        await this.editor.act("stop", { mark: Number(mark) });
-        return this;
-    }
-
-    /** Stand the transport at `at` seconds. */
-    async locate(at: number): Promise<this> {
-        await this.editor.act("locate", { at: Number(at) });
-        return this;
-    }
-
-    /** Resolves when the transport stops, or on `timeout` seconds: whether it stopped. */
-    async wait(timeout?: number): Promise<boolean> {
-        const deadline = timeout === undefined ? null : Date.now() + timeout * 1000;
-        while (await this.playing()) {
-            if (deadline !== null && Date.now() >= deadline) return false;
-            await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-        return true;
-    }
-}
+export { MultitrackTransport };
 
 /** What a {@link MultitrackEditor} opens over by its file: a saved session. */
 export interface SavedSession {
@@ -105,12 +55,6 @@ export interface SavedSession {
 export interface MultitrackEditorOptions {
     /** The window's title; the session file's name when not given, `"Untitled"` for a multitrack. */
     title?: string;
-}
-
-/** One leg of a page's block: the change, and the edit that puts it back. */
-interface Leg {
-    forward: unknown;
-    backward: unknown;
 }
 
 /** A session as a window hands it back, and as `/gui_app_open` takes it again: its contents, its file, its last save. */
@@ -141,132 +85,95 @@ const snapshots = new WeakMap<Multitrack, Snapshot>();
  * multitrack's: it enters no history, and nothing is marked with no window
  * open. (The time range a sweep leaves is the transport's.)
  */
-export class MultitrackEditor implements WindowOver {
-    /** The window's title. */
-    readonly title: string;
+export class MultitrackEditor extends HostedEditor implements WindowOver {
+    /** Whether a hand has changed the data since this was last cleared. */
+    dirty = false;
+
+    protected override changedByHand(): void {
+        this.dirty = true;
+    }
+
     /** The session it was opened over, or `null` for an untitled one. */
     readonly session: SavedSession | null;
     /** The multitrack it was opened over: the window's while it is open, `null` for one opened over nothing. */
     readonly multitrack: Multitrack | null;
+    protected readonly app = "multitrack";
     private filed: string | null;
     private snapshot: Snapshot | null = null;
-    /** The window let go of the multitrack for another session. */
-    private released = false;
-    private hostOf: GuiHost | null = null;
-    private handle: WindowHandle | null = null;
-    private closedHandler: (() => void) | null = null;
-    /** The page's changes, forwarded in the order they were made. */
-    private queue: Promise<unknown> = Promise.resolve();
-    private pending = 0;
-    /** Stops listening for what a hand does in the window. */
-    private unlisten: (() => void) | null = null;
-    private depth = 0;
-    private legs: Leg[] | null = null;
-    private blockLabel = "edit";
+    private readonly holders = new Held();
 
     constructor(structure: SavedSession | Multitrack | null = null, { title }: MultitrackEditorOptions = {}) {
-        if (structure === null) {
-            this.session = null;
-            this.multitrack = null;
-            this.filed = null;
-            this.title = title !== undefined ? String(title) : "Multitrack";
-            return;
-        }
-        if (structure instanceof Multitrack) {
-            this.session = null;
-            this.multitrack = structure;
-            this.filed = null;
-            this.title = title !== undefined ? String(title) : "Untitled";
-            this.kept();
-            return;
-        }
-        if (structure.path === null || structure.path === undefined) {
+        if (structure !== null && !(structure instanceof Multitrack)
+            && (structure.path === null || structure.path === undefined)) {
             throw new RangeError(
                 "the multitrack opens a session from its file, and this one has " +
                     "none: save it first (`session.save(path)`)",
             );
         }
-        this.session = structure;
-        this.multitrack = structure.multitrack;
-        this.filed = String(structure.path);
-        this.title = title !== undefined ? String(title) : this.filed.split("/").pop()!;
-        this.kept();
-    }
-
-    /** What a window left this multitrack as, if one did: it is opened over that. */
-    private kept(): void {
-        this.snapshot = this.multitrack === null ? null : (snapshots.get(this.multitrack) ?? null);
+        const filed = structure === null || structure instanceof Multitrack ? null : String(structure.path);
+        const fallback = structure === null ? "Multitrack"
+            : filed === null ? "Untitled" : filed.split("/").pop()!;
+        super(fallback, { title });
+        this.filed = filed;
+        if (structure === null) {
+            this.session = null;
+            this.multitrack = null;
+            return;
+        }
+        if (structure instanceof Multitrack) {
+            this.session = null;
+            this.multitrack = structure;
+        } else {
+            this.session = structure;
+            this.multitrack = structure.multitrack;
+        }
+        // what a window left this multitrack as, if one did: it is opened over that
+        this.snapshot = snapshots.get(this.multitrack) ?? null;
         if (this.snapshot !== null) this.filed = this.snapshot.path;
     }
 
     // ---- the window ----
 
-    /**
-     * **Ask the host to open the multitrack**, on `host` or the ambient one,
-     * and answer its window. One already open answers the window it has. From
-     * then on the multitrack it was opened over is the window's (the module's
-     * documentation); opened again after its window went, it is opened over
-     * what that window left it as.
-     */
-    async open(host?: GuiHost, { stage }: { stage?: Stage | null } = {}): Promise<WindowHandle> {
-        if (this.handle !== null && !this.closed) return this.handle;
-        if (this.handle !== null) {
-            this.settle();
-            await this.queue;
-        }
-        const resolved = host ?? (await (await import("../../plot.ts")).resolveHost());
-        const options: Record<string, unknown> = { title: this.title };
-        if (this.snapshot !== null && this.multitrack !== null) {
-            options.snapshot = { ...this.snapshot, session: { ...this.snapshot.session, multitrack: this.multitrack.write() } };
-        } else if (this.filed !== null) options.path = this.filed;
-        else if (this.multitrack !== null) options.multitrack = this.multitrack.write();
-        const window = await resolved.openApp("multitrack", options, 5.0, { element: stage });
-        const { WindowHandle } = await import("../handle.ts");
-        this.hostOf = resolved;
-        this.handle = new WindowHandle(resolved, window, new Map());
-        this.released = false;
-        this.handle.onClosed(() => this.closedNow());
-        // **What a hand does in the window** is told (`/gui_app_changed`),
-        // and the copy the page holds follows it after the page's own
-        // changes; **a session put in its place** hands this one back
-        // (`/gui_app_released`), and the window goes on as the host's own
-        this.unlisten = resolved.onMessage((msg) => {
-            if (Number(msg.args[0]) !== window) return;
-            if (msg.addr === "/gui_app_changed") {
-                this.pending += 1;
-                this.queue = this.queue.then(() => this.follow());
-            } else if (msg.addr === "/gui_app_released" && msg.args.length > 1) {
-                // the window's own close, later, is nothing of this handler's
-                resolved.setClosedHandler(window, null);
-                this.released = true;
-                this.closedNow(JSON.parse(String(msg.args[1])) as Snapshot);
-            }
-        });
-        // the page's multitrack is the window's from now on
-        if (this.multitrack !== null) this.multitrack.window = this;
-        return this.handle;
+    protected heldBy(): Held {
+        return this.holders;
     }
 
-    /** The window went, or let go of the multitrack: it holds what the window left it as. */
-    private closedNow(released: Snapshot | null = null): void {
-        this.unlisten?.();
-        this.unlisten = null;
-        this.settle(released);
-        this.closedHandler?.();
+    /** Opened again after its window went, it is opened over what that window left it as (the module's documentation). */
+    protected openingOptions(): Record<string, unknown> {
+        if (this.snapshot !== null && this.multitrack !== null) {
+            return { snapshot: { ...this.snapshot, session: { ...this.snapshot.session, multitrack: this.multitrack.write() } } };
+        }
+        if (this.filed !== null) return { path: this.filed };
+        if (this.multitrack !== null) return { multitrack: this.multitrack.write() };
+        return {};
+    }
+
+    /** The page's multitrack is the window's from now on. */
+    protected taken(): void {
+        if (this.multitrack !== null) this.multitrack.window = this;
     }
 
     /**
      * Hand the page's multitrack back, once the window is done with it: what
      * the window left it as, and the session it was opened over brought to
-     * the same.
+     * the same. A window that let go hands its snapshot over as `left`; one
+     * that closed, the multitrack, with the snapshot beside it.
      */
-    private settle(released: Snapshot | null = null): void {
+    protected settle(given: Record<string, unknown> | null): void {
+        const host = this.host as GuiHost;
+        const id = this.opened().id;
+        let snapshot: Snapshot | null;
+        let left: unknown;
+        if (this.released) {
+            snapshot = given as Snapshot | null;
+            left = host.closedWith(id);
+        } else {
+            snapshot = host.closedSnapshot(id) as Snapshot | null;
+            left = given;
+        }
         const multitrack = this.multitrack;
-        if (multitrack === null || multitrack.window !== this || this.handle === null) return;
+        if (multitrack === null || multitrack.window !== this) return;
         multitrack.window = null;
-        const host = this.hostOf as GuiHost;
-        const snapshot = released ?? (host.closedSnapshot(this.handle.id) as Snapshot | null);
-        let left = host.closedWith(this.handle.id);
         if (snapshot !== null) left = snapshot.session.multitrack ?? left;
         if (left !== null && typeof left === "object") multitrack.holdWritten(left as Extra);
         if (snapshot === null) return;
@@ -278,77 +185,19 @@ export class MultitrackEditor implements WindowOver {
         }
     }
 
+    /** Brings the copy the page holds to the window's, when no change of the page's is still waiting. */
+    protected async follow(): Promise<void> {
+        if (this.multitrack === null) return;
+        const state = await this.asked("handle", { call: { verb: "state" } });
+        if (this.pending === 0 && state !== null && typeof state === "object") this.multitrack?.holdWritten(state as Extra);
+    }
+
     /** The session file it opened, or `null` for an untitled one. */
     get path(): string | null {
         return this.filed;
     }
 
-    /** The {@link GuiHost} it is open on, or `null`. */
-    get host(): GuiHost | null {
-        return this.hostOf;
-    }
-
-    /** The open window's handle, or `null`. */
-    get window(): WindowHandle | null {
-        return this.handle;
-    }
-
-    /**
-     * Whether it is done with its window: the window is gone, or it let go
-     * of this multitrack for another session (the window goes on as the
-     * host's own).
-     */
-    get closed(): boolean {
-        return this.handle === null || this.handle.closed || this.released;
-    }
-
-    /** Resolves when the window is closed, or on `timeout` seconds: `true` for the first. */
-    async wait(timeout?: number): Promise<boolean> {
-        if (this.handle === null) return true;
-        const done = await this.handle.wait(timeout);
-        if (done) this.settle();
-        return done;
-    }
-
-    /** Call `handler()` when the window is closed. `null` clears it. */
-    onClosed(handler: (() => void) | null): this {
-        this.opened();
-        this.closedHandler = handler;
-        return this;
-    }
-
-    /** Close the window, and what plays it. */
-    async close(): Promise<this> {
-        if (!this.closed) {
-            await this.act("close");
-            await this.wait(5);
-        }
-        this.settle();
-        return this;
-    }
-
-    private opened(): WindowHandle {
-        if (this.handle === null) throw new Error("open() the multitrack first");
-        return this.handle;
-    }
-
     // ---- the door ----
-
-    /** One call to the application, and its answer: after the page's changes it is behind. */
-    async call(call: Record<string, unknown>, timeout: number | null = null): Promise<any> {
-        await this.queue;
-        return (this.hostOf as GuiHost).callApp(this.opened(), call, timeout);
-    }
-
-    /** One of its readings: `transport`, `output` or `history`. */
-    async query(name: string): Promise<Record<string, any>> {
-        return ((await this.call({ query: name })) ?? {}) as Record<string, any>;
-    }
-
-    /** One action of the multitrack, carried to its end, and its result. */
-    async act(verb: string, args: Record<string, unknown> = {}): Promise<any> {
-        return this.call({ do: { verb, ...args } });
-    }
 
     /**
      * A change the page's multitrack made, `current` the edit that puts it
@@ -361,98 +210,13 @@ export class MultitrackEditor implements WindowOver {
     forward(intent: Extra, label: string, current: unknown): void {
         if (this.legs !== null) {
             this.legs.push({ forward: intent, backward: current });
-            this.send({ verb: "apply", intent }, label, false);
+            this.send("handle", { call: { verb: "apply", intent }, label, record: false });
             return;
         }
-        this.send({ verb: "apply", intent }, label, true);
-    }
-
-    /** One verb of the multitrack's handle, in the page's order; the copy the page holds follows the window's once nothing else is waiting. */
-    private send(call: Extra, label: string, record: boolean): void {
-        this.pending += 1;
-        const host = this.hostOf as GuiHost;
-        const window = this.opened();
-        this.queue = this.queue
-            .then(() => host.callApp(window, { do: { verb: "handle", call, label, ...(record ? {} : { record: false }) } }, null))
-            .catch((error: unknown) => console.warn(`clausters: the window refused a change: ${String(error)}`))
-            .then(() => this.follow());
-    }
-
-    /** Brings the copy the page holds to the window's, when no change of the page's is still waiting. */
-    private async follow(): Promise<void> {
-        this.pending -= 1;
-        if (this.pending > 0 || this.closed) return;
-        const state = await (this.hostOf as GuiHost).callApp(this.opened(), { do: { verb: "handle", call: { verb: "state" } } }, null);
-        if (this.pending === 0 && state !== null && typeof state === "object") this.multitrack?.holdWritten(state as Extra);
-    }
-
-    /** A step of the window's history, and the copy the page holds brought to it. */
-    private async step(verb: "undo" | "redo"): Promise<boolean> {
-        const stepped = Boolean(await this.act(verb));
-        this.pending += 1;
-        await this.follow();
-        return stepped;
-    }
-
-    /** **The window's history**, as the page's multitrack reads it while the window is open. @internal */
-    get history(): WindowHistory {
-        return {
-            entry: <T>(label: string, run: () => T): T => {
-                this.depth += 1;
-                if (this.depth === 1) {
-                    this.legs = [];
-                    this.blockLabel = String(label);
-                }
-                try {
-                    return run();
-                } finally {
-                    this.depth -= 1;
-                    if (this.depth === 0) {
-                        const legs = this.legs ?? [];
-                        this.legs = null;
-                        if (legs.length > 0 && !this.closed) this.send({ verb: "record", legs }, this.blockLabel, true);
-                    }
-                }
-            },
-            undo: () => this.step("undo"),
-            redo: () => this.step("redo"),
-            canUndo: async () => Boolean((await this.query("history")).canUndo),
-            canRedo: async () => Boolean((await this.query("history")).canRedo),
-            undoLabel: async () => ((await this.query("history")).undoLabel ?? null) as string | null,
-            redoLabel: async () => ((await this.query("history")).redoLabel ?? null) as string | null,
-        };
+        this.send("handle", { call: { verb: "apply", intent }, label });
     }
 
     // ---- the window's verbs ----
-
-    /**
-     * **Perform the window's verb `name`**, as its key, its menu entry or its
-     * tool would (`docs/verbs.md`). Answers whether it was asked: `false` with
-     * no window open.
-     */
-    verb(name: string): boolean {
-        if (this.closed) return false;
-        (this.hostOf as GuiHost).verb(this.opened(), String(name));
-        return true;
-    }
-
-    /**
-     * Ask the window to undo ({@link MultitrackEditor.verb}); whether the verb was sent.
-     * The result does not confirm completion. A script waiting for the history step
-     * awaits `multitrack.history.undo()`.
-     */
-    undo(): boolean {
-        return this.verb("undo");
-    }
-
-    /**
-     * Ask the window to redo ({@link MultitrackEditor.verb}); whether the verb was sent.
-     * The result does not confirm completion. A script waiting for the history step
-     * awaits `multitrack.history.redo()`.
-     */
-    redo(): boolean {
-        return this.verb("redo");
-    }
 
     /** Split the box under the cursor: the window's `split`. */
     split(): boolean {

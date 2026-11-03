@@ -255,8 +255,10 @@ test("the transport and the save are calls to the application", async () => {
     assert.equal((await editor.output()).starved, 0);
     assert.equal(await editor.save("/songs/song.json"), "/songs/song.json");
     assert.deepEqual(host.last(), { do: { verb: "save", path: "/songs/song.json" } });
-    assert.ok(editor.undo());
-    assert.deepEqual(host.verbs[host.verbs.length - 1], [9, "undo"]);
+    // an undo is a step of the window's history, carried to its end
+    host.answers.undo = true;
+    assert.equal(await editor.undo(), true);
+    assert.ok(host.calls.some((c) => c[0] === "call" && JSON.stringify(c[2]) === JSON.stringify({ do: { verb: "undo" } })));
     assert.ok(editor.split());
     assert.deepEqual(host.verbs[host.verbs.length - 1], [9, "split"]);
 });

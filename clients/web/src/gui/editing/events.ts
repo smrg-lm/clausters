@@ -56,6 +56,13 @@ export function heldOf(sequence: EventSequence): Held {
  * @internal
  */
 export abstract class SequenceHandler extends HostedEditor {
+    /** Whether a hand has changed the data since this was last cleared. */
+    dirty = false;
+
+    protected override changedByHand(): void {
+        this.dirty = true;
+    }
+
     /** The sequence the window shows, or `null`. */
     protected abstract readonly shown: EventSequence | null;
 

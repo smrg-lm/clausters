@@ -22,6 +22,8 @@ entry names is written again, so an undo is the list before.
 _STREAMED = ("wav", "w64", "rf64")
 
 #: Why a verb that acts on a file is refused by an editor with none open.
+from .hosted import HostedEditor, _Held
+
 _NO_FILE = "no file is open"
 
 
@@ -106,7 +108,7 @@ class AudioTransport:
         return True
 
 
-class AudioEditor:
+class AudioEditor(HostedEditor):
     """**The audio editor the GUI host holds, and this script its handler.**
 
     `clausters.gui.edit` over a `clausters.SoundFile` answers one, open. Each
@@ -134,196 +136,53 @@ class AudioEditor:
             own when not given.
     """
 
+    _app = "audio"
+
     def __init__(self, file=None, *, title: str = "Audio", layers=None):
+        super().__init__(title=title)
         self._file = file
-        #: The window's title.
-        self.title = str(title)
         self._layers = layers
-        self._host = None
-        self._window = None
+        self._holders = _Held()
 
     # ---- the window ----
+
+    def _held(self) -> _Held:
+        # a sound file is read where it is, by this window alone
+        return self._holders
+
+    def _options(self, beside) -> dict:
+        if self._file is not None and self._file.path is not None:
+            return {"path": str(self._file.path)}
+        return {}
 
     def open(self, host=None):
         """**Ask the host to open the editor**, on ``host`` or the ambient
         one, and answer its window. An editor already open answers the window
         it has."""
-        if self._window is not None:
-            return self._window
-        from ..handle import WindowHandle
-        from .application import _resolve_host
-
-        host = _resolve_host(host, None)
-        options = {"title": self.title}
-        if self._file is not None and self._file.path is not None:
-            options["path"] = str(self._file.path)
-        window = host.open_app("audio", options)
-        self._host = host
-        self._window = WindowHandle(host, int(window), {})
-        # the host's loop delivers the window's close from now on
-        host.loop
-        # silence not written anywhere yet: a new file of its shape
-        if self._file is not None and self._file.path is None:
-            self.new_file(self._file.channels, self._file.frames, self._file.sample_rate)
-        if self._layers is not None:
-            self.layers = self._layers
-        return self._window
-
-    @property
-    def host(self):
-        """The `clausters.gui.host.GuiHost` the editor is open on, or ``None``."""
-        return self._host
-
-    @property
-    def window(self):
-        """The open window's handle, or ``None``."""
-        return self._window
-
-    @property
-    def id(self):
-        """The open window's id, or ``None``."""
-        return self._window
-
-    @property
-    def closed(self) -> bool:
-        """Whether the editor's window is gone."""
-        return self._window is None or self._window.closed
-
-    def wait(self, timeout: "float | None" = None) -> bool:
-        """Hold the calling thread until the editor's window is closed:
-        ``True`` when it closed, ``False`` when ``timeout`` ran out first."""
-        return True if self._window is None else self._window.wait(timeout)
-
-    def on_closed(self, func) -> "AudioEditor":
-        """Call ``func()`` when the editor's window is closed, and return
-        ``self``. ``None`` clears it."""
-        self._opened().on_closed(func)
-        return self
-
-    def close(self) -> "AudioEditor":
-        """Close the editor without asking: a window a client holds loses
-        nothing by it, and what asks about unsaved work is the window of a host
-        with no client beside it."""
-        if not self.closed:
-            self._do("close")
-        return self
-
-    def _opened(self):
-        if self._window is None:
-            raise RuntimeError("open() the editor first")
-        return self._window
+        opening = self.closed
+        window = super().open(host)
+        if opening:
+            # silence not written anywhere yet: a new file of its shape
+            if self._file is not None and self._file.path is None:
+                self.new_file(self._file.channels, self._file.frames, self._file.sample_rate)
+            if self._layers is not None:
+                self.layers = self._layers
+        return window
 
     # ---- the door ----
 
-    def _call(self, call: dict, timeout: "float | None" = None):
-        """One call to the application, and its answer."""
-        window = self._opened()
-        return self._host.call_app(window, call, timeout)
-
-    def _member(self, verb: str, **args) -> dict:
+    def _call(self, verb: str, **args) -> dict:
         """One verb of the editor, answered at once; ``ValueError`` when it
         needs a file and none is open."""
-        answer = self._call({"member": {"verb": verb, **args}}) or {}
+        answer = super()._call(verb, **args)
         if answer.get("error") == _NO_FILE:
             raise ValueError(_NO_FILE)
         return answer
-
-    def _query(self, name: str) -> dict:
-        return self._call({"query": name}) or {}
-
-    def _do(self, verb: str, **args):
-        """One action of the editor, carried to its end, and its result."""
-        return self._call({"do": {"verb": verb, **args}})
 
     def _version(self) -> int:
         return int(self._query("history").get("version", 0))
 
     # ---- the window's verbs ----
-
-    def verb(self, name: str) -> bool:
-        """**Perform the window's verb ``name``**, as its key, its menu entry
-        or its tool would (``docs/verbs.md``). Answers whether it was asked:
-        ``False`` with no window open."""
-        if self.closed:
-            return False
-        self._host.verb(self._window, str(name))
-        return True
-
-    def pointer(self, kind: str, x: float, y: float, mods: str = "") -> bool:
-        """**A hand played to the window**: a ``"press"``, ``"move"`` or
-        ``"release"`` at ``(x, y)`` in its device pixels, with ``mods`` held.
-        Answers whether it was sent."""
-        if self.closed:
-            return False
-        self._host.pointer(self._window, kind, x, y, mods)
-        return True
-
-    def click(self, x: float, y: float, mods: str = "") -> bool:
-        """A press and a release at ``(x, y)``, with ``mods`` held (`pointer`)."""
-        return self.pointer("press", x, y, mods) and self.pointer("release", x, y, mods)
-
-    def drag(self, start, end, mods: str = "", steps: int = 8) -> bool:
-        """**A drag from ``start`` to ``end``**, each an ``(x, y)`` in the
-        window's device pixels: a press, ``steps`` moves and a release."""
-        (x0, y0), (x1, y1) = start, end
-        if not self.pointer("press", x0, y0, mods):
-            return False
-        n = max(int(steps), 1)
-        for i in range(1, n + 1):
-            t = i / n
-            self.pointer("move", x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, mods)
-        return self.pointer("release", x1, y1, mods)
-
-    def capture(self, path, timeout: float = 5.0) -> str:
-        """**Write the window's picture to ``path``** as a PNG, and answer
-        the path (`clausters.gui.host.GuiHost.capture`)."""
-        return self._host.capture(self._opened(), path, timeout)
-
-    def activity(self, timeout: float = 1.0) -> dict:
-        """**What the window costs, and why**
-        (`clausters.gui.host.GuiHost.activity`)."""
-        return self._host.activity(self._opened(), timeout)
-
-    def profile(self, seconds: float = 5.0, timeout: float = 1.0) -> dict:
-        """**What the window costs over the next ``seconds``**
-        (`clausters.gui.host.GuiHost.profile`)."""
-        return self._host.profile(self._opened(), seconds, timeout)
-
-    def view_all(self) -> bool:
-        """The whole take in view: the window's ``view_all`` (`verb`)."""
-        return self.verb("view_all")
-
-    def cut(self) -> bool:
-        """Cut what is selected: the window's ``cut`` (`verb`)."""
-        return self.verb("cut")
-
-    def copy(self) -> bool:
-        """Copy what is selected: the window's ``copy`` (`verb`)."""
-        return self.verb("copy")
-
-    def paste(self) -> bool:
-        """Paste at the cursor: the window's ``paste`` (`verb`)."""
-        return self.verb("paste")
-
-    def delete(self) -> bool:
-        """Delete what is selected: the window's ``delete`` (`verb`)."""
-        return self.verb("delete")
-
-    def select_all(self) -> bool:
-        """Select the whole take: the window's ``select_all`` (`verb`)."""
-        return self.verb("select_all")
-
-    def to_start(self) -> bool:
-        """The cursor to the start: the window's ``to_start`` (`verb`)."""
-        return self.verb("to_start")
-
-    def to_end(self) -> bool:
-        """The cursor to the end: the window's ``to_end`` (`verb`)."""
-        return self.verb("to_end")
-
-    def loop(self) -> bool:
-        """The loop switch, on or off: the window's ``loop`` (`verb`)."""
-        return self.verb("loop")
 
     def mix(self) -> bool:
         """Paste onto what is there, mixed with it: the window's ``mix`` (`verb`)."""
@@ -354,34 +213,6 @@ class AudioEditor:
         self._do("event", addr="/gui_event", args=args)
         return True
 
-    @property
-    def can_undo(self) -> bool:
-        """Whether the file in focus has an edit to step back over."""
-        return bool(self._query("history").get("canUndo"))
-
-    @property
-    def can_redo(self) -> bool:
-        """Whether the file in focus has an undone edit to step forward into."""
-        return bool(self._query("history").get("canRedo"))
-
-    @property
-    def undo_label(self) -> "str | None":
-        """What an undo of the file in focus would be called."""
-        return self._query("history").get("undoLabel")
-
-    @property
-    def redo_label(self) -> "str | None":
-        """What a redo of the file in focus would be called."""
-        return self._query("history").get("redoLabel")
-
-    @property
-    def actions(self) -> dict:
-        """**The window's actions as they read now**, by verb: what each
-        addresses (``target``), whether it can be taken (``enabled``, and
-        ``reason`` when not), a switch's ``checked``, and whether work it
-        depends on is ``pending``."""
-        return self._query("actions")
-
     # ---- the transport, and what is marked ----
 
     @property
@@ -393,13 +224,13 @@ class AudioEditor:
     @property
     def sample_rate(self) -> float:
         """The rate of the file in focus, in hertz."""
-        return float(self._member("binding").get("rate") or 0.0)
+        return float(self._call("binding").get("rate") or 0.0)
 
     @property
     def cursor(self) -> "float | None":
         """Where the cursor of the file in focus is, in seconds, or ``None``
         with no file open."""
-        binding = self._member("binding")
+        binding = self._call("binding")
         if binding.get("cursor") is None or not binding.get("rate"):
             return None
         return float(binding["cursor"]) / float(binding["rate"])
@@ -437,7 +268,7 @@ class AudioEditor:
         not been written yet, and ``None`` with no file open."""
         from ...soundfile import SoundFile
 
-        answer = self._member("file")
+        answer = self._call("file")
         path = answer.get("path")
         frames, channels = int(answer.get("frames", 0)), int(answer.get("channels", 1))
         rate = float(answer.get("rate") or 0.0)
@@ -455,21 +286,21 @@ class AudioEditor:
             SoundFile(f["path"], int(f["frames"]), int(f["channels"]), float(f["rate"]),
                       f["codec"], f["sample_format"])
             if f["path"] is not None or f["untitled"] else None
-            for row in self._member("files")["files"] for f in [row["file"]])
+            for row in self._call("files")["files"] for f in [row["file"]])
 
     @property
     def parts(self) -> list:
         """What the take is made of now: one ``dict`` per span of a file, in
         reading order -- its ``path``, the ``start`` and the ``frames`` of it
         read, and its fades and shape."""
-        return list(self._member("segments").get("parts") or ())
+        return list(self._call("segments").get("parts") or ())
 
     @property
     def dirty(self) -> bool:
         """**Whether the file in focus has edits its file does not hold.** A
         save that has not completed leaves it dirty; an undo back to what was
         written leaves it clean."""
-        return bool(self._member("binding").get("dirty"))
+        return bool(self._call("binding").get("dirty"))
 
     def save(self, path: "str | None" = None, *, sample_format: str = "float") -> str:
         """**Write the take as the edits have left it**: over the file it was
@@ -535,7 +366,7 @@ class AudioEditor:
         blocks of measured magnitudes) and ``normalize`` (each frequency band
         at its own scale). The window's, whichever file is in focus; a view
         state, outside the history."""
-        return dict(self._member("spectrogram")["spectrogram"])
+        return dict(self._call("spectrogram")["spectrogram"])
 
     def set_spectrogram(self, **settings) -> None:
         """Change the settings named (`spectrogram`), the others kept.
@@ -569,7 +400,7 @@ class AudioEditor:
         """Visual layers, back to front: names or objects with `draw`,
         `visible`, `solo`, `alpha` and `y`. Two different domains cannot share
         the vertical axis; use `y="box"` for the overlaid amplitude layer."""
-        return tuple(self._member("binding").get("layers") or ())
+        return tuple(self._call("binding").get("layers") or ())
 
     @layers.setter
     def layers(self, stack) -> None:
@@ -581,7 +412,7 @@ class AudioEditor:
     @property
     def layer(self) -> str:
         """The active edit body, separate from the take's visual layers."""
-        return self._member("layer")["layer"]
+        return self._call("layer")["layer"]
 
     @layer.setter
     def layer(self, name: str) -> None:
@@ -620,7 +451,7 @@ class AudioEditor:
     def folded(self) -> list:
         """The channels drawn folded, in order. A view state, outside the
         history."""
-        return list(self._member("folded")["folded"])
+        return list(self._call("folded")["folded"])
 
     def fold_channel(self, channel: int) -> None:
         """Fold channel ``channel`` (from 0) to a strip, or unfold it."""
@@ -647,7 +478,7 @@ class AudioEditor:
         """Gain envelope as time/value/shape/curve quads, with time in
         seconds. One is unity. Editing the curve is non-destructive;
         `apply_envelope` renders it into a new take."""
-        return list(self._member("envelope")["points"])
+        return list(self._call("envelope")["points"])
 
     def set_envelope(self, points) -> bool:
         """Set gain quads as one undoable edit. Times must increase."""

@@ -170,10 +170,12 @@ class _Held:
 
 
 class HostedEditor(WindowVerbs):
-    """**The script's handle of a window the host holds**: its opening, its door
-    and its closing, which a roll and a page share. An editor says which
-    application it is (``_app``), how it opens (``_options``), and what it
-    takes back when a window goes (``_settle``).
+    """**The script's handle of a window the host holds**: its opening, its door,
+    its history and its closing, which every application's handler shares (the
+    audio editor, the multitrack, a roll, a page). An editor says which
+    application it is (``_app``), how it opens (``_options``), what is the
+    window's once it opens (``_take``) and what it takes back when a window
+    goes (``_settle``).
 
     Args:
         title: the window's title.
@@ -195,8 +197,7 @@ class HostedEditor(WindowVerbs):
         #: data**, in this window or another over the same structure. ``None``
         #: to be told nothing.
         self.on_change = None
-        #: Whether a hand has changed the data since this was last cleared.
-        self.dirty = False
+        self._dirty = False
         self._host = None
         self._window = None
         self._on_closed = None
@@ -204,6 +205,15 @@ class HostedEditor(WindowVerbs):
         self._released = False
         self._depth = 0
         self._legs = None
+
+    @property
+    def dirty(self) -> bool:
+        """Whether a hand has changed the data since this was last cleared."""
+        return self._dirty
+
+    @dirty.setter
+    def dirty(self, value: bool) -> None:
+        self._dirty = bool(value)
 
     # ---- the window ----
 
@@ -236,6 +246,10 @@ class HostedEditor(WindowVerbs):
         from ..handle import WindowHandle
         from .application import _resolve_host
 
+        if self._window is not None:
+            # a window that went before its close was heard: what it left is
+            # taken back first
+            self._leave()
         host = _resolve_host(host, None)
         held = self._held()
         beside = held.live()
@@ -260,15 +274,16 @@ class HostedEditor(WindowVerbs):
         host._set_changed_handler(int(window), self._changed)
         host._set_released_handler(int(window), self._gave_up)
         held.editors.append(self)
+        # the host's loop delivers the window's close from now on, and the
+        # answers of what follows
+        host.loop
         if beside is None:
             self._take()
-        # the host's loop delivers the window's close from now on
-        host.loop
         return self._window
 
     def _changed(self) -> None:
         """A hand moved what the window holds."""
-        self.dirty = True
+        self._dirty = True
         if self.on_change is not None:
             self.on_change()
 
@@ -353,21 +368,27 @@ class HostedEditor(WindowVerbs):
 
     # ---- the door ----
 
+    def _app_call(self, call: dict):
+        """One call to the application through the window's door, and its
+        answer."""
+        window = self._opened()
+        return self._host.call_app(window, call)
+
     def _call(self, verb: str, **args) -> dict:
         """One verb of the window's editor, read; it changes nothing the window
         draws."""
-        return self._host.call_app(self._opened(), {"member": {"verb": verb, **args}}) or {}
+        return self._app_call({"member": {"verb": verb, **args}}) or {}
 
     def _set(self, **args) -> None:
         """A setting of the window's, which then redraws it."""
         self._do("set", call={"verb": "sync", **args})
 
     def _query(self, name: str) -> dict:
-        return self._host.call_app(self._opened(), {"query": name}) or {}
+        return self._app_call({"query": name}) or {}
 
     def _do(self, verb: str, **args):
         """One action of the application, carried to its end, and its result."""
-        return self._host.call_app(self._opened(), {"do": {"verb": verb, **args}})
+        return self._app_call({"do": {"verb": verb, **args}})
 
     # ---- the history its window walks ----
 

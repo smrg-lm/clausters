@@ -131,6 +131,9 @@ class FakeHost:
     def _wait_while(self, pred, timeout=None):
         return not pred()
 
+    def _set_changed_handler(self, window, func):
+        self.changed_handler = (window, func)
+
     def _set_closed_handler(self, window, func):
         self.closed_handler = (window, func)
 
@@ -218,7 +221,9 @@ def test_the_transport_and_the_save_are_calls_to_the_application():
     assert editor.output["starved"] == 0
     assert editor.save("/songs/song.json") == "/songs/song.json"
     assert host.calls[-1][2] == {"do": {"verb": "save", "path": "/songs/song.json"}}
-    assert editor.undo() and host.verbs[-1] == (9, "undo")
+    # an undo is a step of the window's history, carried to its end
+    host.answers["undo"] = True
+    assert editor.undo() and host.calls[-1][2] == {"do": {"verb": "undo"}}
     assert editor.split() and host.verbs[-1] == (9, "split")
 
 

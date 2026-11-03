@@ -63,6 +63,18 @@ class FakeHost {
 
     setClosedHandler(): void {}
 
+    onMessage(): () => void {
+        return () => {};
+    }
+
+    closedWith(): unknown {
+        return null;
+    }
+
+    closedSnapshot(): unknown {
+        return null;
+    }
+
     /** The last call's object. */
     last(): Call {
         const call = this.calls[this.calls.length - 1]!;

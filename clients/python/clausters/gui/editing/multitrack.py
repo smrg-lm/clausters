@@ -28,7 +28,7 @@ multitrack.
 import os
 import weakref
 
-from .hosted import MultitrackTransport, _Block, _RemoteHandle, _RemoteHistory
+from .hosted import HostedEditor, MultitrackTransport, _Block, _Held, _RemoteHandle, _RemoteHistory
 from .marking import Marking
 
 # **What a window left each multitrack as**, by the multitrack: its session,
@@ -38,7 +38,7 @@ from .marking import Marking
 _snapshots = weakref.WeakKeyDictionary()
 
 
-class MultitrackEditor(Marking):
+class MultitrackEditor(Marking, HostedEditor):
     """**The multitrack the GUI host holds, and this script its handler.**
 
     `clausters.gui.edit` over a `clausters.multitrack.Session` that has a
@@ -88,83 +88,55 @@ class MultitrackEditor(Marking):
             self._multitrack = structure.multitrack
             self._path = str(path)
             default = os.path.basename(self._path)
-        #: The window's title.
-        self.title = str(title) if title is not None else default
-        self._host = None
-        self._window = None
+        HostedEditor.__init__(self, title=str(title) if title is not None else default)
         self._local = None
-        self._released = False
+        self._holders = _Held()
         self._snapshot = _snapshots.get(self._multitrack) if self._multitrack is not None else None
         if self._snapshot is not None:
             self._path = self._snapshot.get("path")
-        self._on_closed = None
-        self._depth = 0
-        self._legs = None
+
+    _app = "multitrack"
 
     # ---- the window ----
 
-    def open(self, host=None):
-        """**Ask the host to open the multitrack**, on ``host`` or the ambient
-        one, and answer its window. One already open answers the window it
-        has. From then on the multitrack it was opened over is the window's
-        (the module's docstring); opened again after its window went, it is
-        opened over what that window left it as."""
-        if self._window is not None and not self.closed:
-            return self._window
-        from ..handle import WindowHandle
-        from .application import _resolve_host
+    def _held(self) -> _Held:
+        return self._holders
 
-        self._settle()
-        host = _resolve_host(host, None)
+    def _options(self, beside) -> dict:
+        """Opened again after its window went, it is opened over what that
+        window left it as (the module's docstring)."""
         if self._snapshot is not None:
             snapshot = dict(self._snapshot)
             snapshot["session"] = dict(snapshot["session"], multitrack=self._multitrack.write())
-            options = {"title": self.title, "snapshot": snapshot}
-        elif self._path is not None:
-            options = {"title": self.title, "path": self._path}
-        elif self._multitrack is not None:
-            options = {"title": self.title, "multitrack": self._multitrack.write()}
-        else:
-            options = {"title": self.title}
-        window = host.open_app("multitrack", options)
-        self._host = host
-        self._window = WindowHandle(host, int(window), {})
-        self._released = False
-        self._window.on_closed(self._closed)
-        host._set_released_handler(int(window), self._let_go)
+            return {"snapshot": snapshot}
+        if self._path is not None:
+            return {"path": self._path}
+        if self._multitrack is not None:
+            return {"multitrack": self._multitrack.write()}
+        return {}
+
+    def _take(self) -> None:
         # the script's multitrack reads and writes the window's from now on
         if self._multitrack is not None:
             self._local = self._multitrack._mt
             self._multitrack._mt = _RemoteHandle(self)
-        # the host's loop delivers the window's close from now on
-        host.loop
-        return self._window
 
-    def _closed(self) -> None:
-        """The window went: the multitrack holds what it left it as."""
-        self._settle()
-        if self._on_closed is not None:
-            self._on_closed()
-
-    def _let_go(self) -> None:
-        """The window let go of the session (another, a new one, or none in
-        its place): the multitrack holds what it left it as, and this handler
-        is done with the window, which goes on as the host's own."""
-        self._released = True
-        self._closed()
-
-    def _settle(self) -> None:
+    def _settle(self, left: "dict | None", last: bool) -> None:
         """Hand the script's multitrack back, once the window is done with
         it: what the window left it as, and the session it was opened over
-        brought to the same."""
+        brought to the same. A window that let go hands its snapshot over as
+        ``left``; one that closed, the multitrack, with the snapshot beside
+        it."""
+        window = int(self._window)
+        if self._released:
+            snapshot, left = left, self._host._closed_with(window)
+        else:
+            snapshot = self._host._closed_snapshot(window)
         if self._local is None:
             return
         from ... import _native
         from ...multitrack import Session
 
-        window = int(self._window)
-        snapshot = self._host._closed_snapshot(window)
-        left = self._host._closed_with(window)
         if snapshot is not None:
             left = snapshot["session"].get("multitrack", left)
         local, self._local = self._local, None
@@ -198,72 +170,15 @@ class MultitrackEditor(Marking):
         untitled one."""
         return self._path
 
-    @property
-    def host(self):
-        """The `clausters.gui.host.GuiHost` it is open on, or ``None``."""
-        return self._host
-
-    @property
-    def window(self):
-        """The open window's handle, or ``None``."""
-        return self._window
-
-    @property
-    def closed(self) -> bool:
-        """Whether it is done with its window: the window is gone, or it let
-        go of this multitrack for another session (the window goes on as the
-        host's own)."""
-        return self._window is None or self._window.closed or self._released
-
-    def wait(self, timeout: "float | None" = None) -> bool:
-        """Hold the calling thread until the window is closed: ``True`` when
-        it closed, ``False`` when ``timeout`` ran out first."""
-        if self._window is None or self._released:
-            return True
-        done = self._window.wait(timeout)
-        if done:
-            self._settle()
-        return done
-
-    def on_closed(self, func) -> "MultitrackEditor":
-        """Call ``func()`` when it is done with its window (`closed`), and
-        return ``self``. ``None`` clears it."""
-        self._opened()
-        self._on_closed = func
-        return self
-
-    def close(self) -> "MultitrackEditor":
-        """Close the window, and what plays it."""
-        if not self.closed:
-            self._do("close")
-            self._host._wait_while(lambda: not self.closed, 5.0)
-        self._settle()
-        return self
-
-    def _opened(self):
-        if self._window is None:
-            raise RuntimeError("open() the multitrack first")
-        return self._window
-
     # ---- the door ----
-
-    def _call(self, call: dict, timeout: "float | None" = None):
-        """One call to the application, and its answer."""
-        return self._host.call_app(self._opened(), call, timeout)
-
-    def _query(self, name: str) -> dict:
-        return self._call({"query": name}) or {}
-
-    def _do(self, verb: str, **args):
-        """One action of the multitrack, carried to its end, and its result."""
-        return self._call({"do": {"verb": verb, **args}})
 
     def _handle(self, call: dict, *, label: "str | None" = None):
         """One verb of the multitrack's handle, asked of the window's. An edit
         inside a ``with multitrack.history(...)`` block is applied now and
         recorded when the block ends."""
         if self.closed:
-            self._settle()
+            if self._window is not None:
+                self._leave()
             return self._multitrack._mt.call(**call)
         args = {"call": call}
         if label is not None:
@@ -290,31 +205,6 @@ class MultitrackEditor(Marking):
         return _RemoteHistory(self)
 
     # ---- the window's verbs ----
-
-    def verb(self, name: str) -> bool:
-        """**Perform the window's verb ``name``**, as its key, its menu entry
-        or its tool would (``docs/verbs.md``). Answers whether it was asked:
-        ``False`` with no window open."""
-        if self.closed:
-            return False
-        self._host.verb(self._window, str(name))
-        return True
-
-    def undo(self) -> bool:
-        """Ask the window to undo (`verb`); whether the verb was sent.
-
-        The result does not confirm completion. A script waiting for the
-        history step uses `multitrack.history.undo()`.
-        """
-        return self.verb("undo")
-
-    def redo(self) -> bool:
-        """Ask the window to redo (`verb`); whether the verb was sent.
-
-        The result does not confirm completion. A script waiting for the
-        history step uses `multitrack.history.redo()`.
-        """
-        return self.verb("redo")
 
     def split(self) -> bool:
         """Split the box under the cursor: the window's ``split`` (`verb`)."""

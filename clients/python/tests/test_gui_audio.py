@@ -61,6 +61,18 @@ class FakeHost:
     def _wait_while(self, pred, timeout=None):
         return not pred()
 
+    def _set_changed_handler(self, window, func):
+        self.changed_handler = (window, func)
+
+    def _set_released_handler(self, window, func):
+        self.released_handler = (window, func)
+
+    def _closed_with(self, window):
+        return None
+
+    def _closed_snapshot(self, window):
+        return None
+
     def _set_closed_handler(self, window, func):
         self.closed_handler = (window, func)
 
