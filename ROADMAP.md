@@ -125,10 +125,9 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
   load closing the playback tests' entry; rare.
 
-- ⬜ **A def a client sent does not sound in an application's engine** and
-  **Three handlers hold the door's code** *(`crates/clausters-apps/PLAN.md`,
-  "Found by use")*: both found moving the roll to the host; the first waits on
-  how data passes between clients and applications, the second goes with `X27`.
+- ⬜ **A def a client sent does not sound in an application's engine**
+  *(`crates/clausters-apps/PLAN.md`, "Found by use")*: found moving the roll to
+  the host; it waits on how data passes between clients and applications.
 
 - ⬜ **`a_loop_moved_while_it_plays_is_crossfaded` fails now and then**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Under load only; what is
@@ -286,11 +285,6 @@ its plan; the plan is where its acceptance is read.
   "unscheduled" reads as a decision rather than an oversight.
 
 ### The near work
-
-- ⬜ **`X27` — the cross-application validation and documentation**
-  *(`crates/clausters-apps/PLAN.md`, "The milestones")*. **Taken next**, when
-  asked for. **Related:** the apps plan's "Working on one channel of a take"
-  (Future directions), the channel a paste lands from.
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable

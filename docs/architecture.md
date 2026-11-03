@@ -1464,35 +1464,41 @@ than the window. `docs/decisions.md` records why for each of the three.
 
 ### Application state and services: implementation contract
 
-The following is the target contract for the application-state migration,
-audited against the audio editor on 2026-10-18. The ownership table records
-that audit's starting point. The file/window separation described immediately
-below, the editing/resource services and the audio coordinator are
-implemented; the completion contracts of the other editors follow it. The
-application milestones in the apps plan
-own its delivery. No new public API, wire message or ABI symbol is introduced
-by this contract.
+This is the contract every editing application follows, and the record of
+who owns each piece of state. It started as an audit of the audio editor
+(2026-10-18) and was carried through every application: the audio editor
+first, as the reference, then the multitrack, the notes editor, the curve
+and the score editor, and last a GuiDef window that is no application at all
+(a panel of a synth's controls). The apps plan's application track
+(`crates/clausters-apps/PLAN.md`, `X15`-`X27`) holds the milestones; what
+the audit found to change is in the git history.
 
-#### Current ownership and the migration
+#### Who owns what
 
-Paths below are relative to the repository root. A resource owner decides
-when a resource is retained or freed; an adapter executing `/buffer_free`
-is not thereby that owner.
+Paths are relative to the repository root. A resource owner decides when a
+resource is retained or freed; an adapter executing `/buffer_free` is not
+thereby that owner. Each row has one owner and one implementation of its
+policy; the clients execute effects and project state onto their language
+objects, and hold no copy of a rule.
 
-| State or service | Current owner and evidence | Target owner, identity and lifetime |
+| State or service | Owner | Identity and lifetime |
 |---|---|---|
-| Open audio contents | `crates/clausters-apps/src/audio/editor.rs`: `AudioEditor` holds `parts::Take`, format, target, dirty flag and buffer tables | `AudioFileState`, addressed by `FileId` independent of a path, buffer number or widget; retained while an application, external handle or operation holds it |
-| Open-file collection and focus | `audio/editor/files.rs`: `parked` holds entire editors; `focus_file` swaps `self`, and `bind_window` copies window fields and conversation | `AudioAppState` owns the ordered files and focused `FileId`; switching selects a file, without moving a window, context or service |
-| File presentation | `AudioEditor` mixes cursor, selection, folds, layers and view configuration with contents | `AudioFileViewState` belongs to a window/file binding; components of that binding share time and selection, with independent vertical navigation per view; it is transient and outside undo |
-| Window and conversation | `AudioEditor` holds widget ids, dialogs and `Conversation`; client editors hold `Echo` | `AudioWindowState` owns its component bindings and dialogs; each view retains its conversation/acknowledgement state; rebind increments its binding generation |
-| Undo contexts | `crates/clausters-apps/src/editing.rs`: `Editing` holds `History`, members, versions, source accounting and audio-specific scope tables | Keep `Editing` and `clausters_document::History`; generalize context selection around explicit object/context associations. Shared objects reference one context, rather than copying a history into each window |
-| Playback and effects | `crates/clausters-editing/src/audio_playback.rs`: `AudioEditorPlayback` already distinguishes `viewed` from playing `focus`; output `width` only grows | Keep that mechanism, composed as an explicitly supplied service. A playback instance owns transport/routing and leases its sources. Its playing file, viewed file and bus capacity are distinct facts |
-| Clipboard | `clausters_document::Clipboard` describes contents -- a copy over takes on disk is `Content::Segments`, parts naming their files by absolute path, so it carries no blob and crosses as text; host `Clip` stores document/blobs/system-text mirror; `application::clipboard::Exchange` owns immutable remote publications and pending-reader leases; adapters keep endpoint-scoped service handles | A host-scope clipboard service owns publication and replacement; a resource service owns storage leases. Applications acquire immutable clipboard snapshots. Sharing a host does not make server-local buffer numbers portable |
-| Samples and temporary storage | `AudioEditor` holds its files in `sources` and renders into its working folder; `Editing` emits `Freed` -- buffers, and the files to delete; adapters execute them | Explicit resource service associated with a supplied server instance and connection generation. Contents, history, clipboard, playback and pending operations are retention roots. Disk/OPFS storage survives view redraw, not application disposal unless explicitly persisted |
-| Pending work | Before the coordinator: Python audio `_take` ran steps synchronously; TypeScript `take` scheduled through `AudioDomain.after`; policy was distributed across handlers | Application coordinator owns operation identity, dependencies, commit and cleanup; adapters only execute effects and return results |
-| Host interaction and demand | `clients/gui/src/host` owns navigation, focus, gesture feedback and GPU state; `live.rs` provides `LiveDemand` (currently consumed by the browser front) | Keep host-local interaction there. Application projections restore file-specific state explicitly; subscription demand follows visible consumers and playback needs, with equivalent native/browser behavior |
-| Client window set | Python/TypeScript `gui/editing/application` owns host resolution, widget-id allocation, editor registration and event draining | Keep these as language/platform adapters. Shared lifecycle and effect ordering move to the Rust coordinator, without another client policy copy |
-| Standalone document | The audio and multitrack editors run in the application the host holds (`audio_app.rs`, `clausters_app_engine::app::App`), on an engine of its own; the score editor and a client's roll among them | The renderer owns no domain document; an application the host holds is driven through the same door a client's is |
+| An application | `clausters_app_engine::app::App` on the GUI host's application thread (`clients/gui/src/host/audio_app.rs`, `AppKind`: audio, multitrack, roll, score); a curve (`points`) is the one editor a client's context runs, with no engine | One per window; the clients are handlers that reach it through `/gui_app_call` |
+| Open audio contents | `AudioFileState` in `crates/clausters-apps/src/audio/editor.rs`: the take as a list over files on disk, its format, target and saved revision | `FileId`, independent of a path, buffer or widget; retained while the application, an external handle or an operation holds it |
+| Open files and focus | `AudioFiles`: the ordered files and the focused `FileId` | Switching selects a file; no window, context or service moves |
+| A file's presentation | `AudioFileViewState`: cursor, selection, folds, layers, views | Belongs to a window/file binding; transient and outside undo |
+| Window and conversation | `AudioWindowState` (widget ids, dialogs, `Conversation`); each other editor its own window state | A rebind advances its binding generation; each view keeps its own acknowledgement |
+| Undo orders | `clausters_apps::application::histories::Histories` over `clausters_document::history::History`, selected by `Editing` | One order per editing unit (a file, a session, a symbolic score) unless a caller composes a shared one (`sharedHistory`); a view joins its document's order (`Editing::join_view`) |
+| A panel's undo order | `clients/gui/src/host/panel.rs`, one `History` per window with `history: true` | The window's lifetime; kept across a redefinition, fresh after `/gui_load` |
+| Pending operations | `application::runtime::Runtime<Commit, Outcome>` per application, over the shared `Services` | Operation identity, dependencies, commit and cleanup; a late result addresses its original object |
+| The audio coordinator | `clausters_apps::editing::coordinator`, one per audio member | Owns the member's `AudioEditorPlayback` and the transport facts a script and a hand share |
+| Resources | `application::resources::Resources`: one graph of sources and retention roots | `ResourceId` = server instance + local id; roots are contents, history, clipboard, playback and pending work |
+| Clipboard | The host's `Clip` (`clients/gui/src/host/clipboard.rs`: the typed document, its blobs, the system-text mirror) and `application::clipboard::Exchange` (publications and pending-reader leases) | One host-wide clipboard; a publication outlives its source window and is scoped to one connection incarnation |
+| Actions | `clausters_editing::verbs` (one row per verb: kind, keys, label) and each editor's `actions` reading (`ActionState`), resolved by the host (`clients/gui/src/host/actions.rs`) | Computed on each call; published as the window's `actions` prop only when it moves |
+| File selection and forms | The front lists, `host::files::Chooser` holds the listing, `clausters_apps::forms::Dialogs` the choice | Late listings are refused by ticket |
+| Changing a window's document | `clausters_apps::closing` (`change_file`, the save/discard/cancel rule) | Which document a window holds has no history |
+| Host interaction and demand | `clients/gui/src/host` (navigation, focus, gestures, GPU) and `host::activity` | Equivalent in both fronts; demand follows visible consumers and playback |
+| Client window set | Python and TypeScript `gui/editing/application`: host resolution, widget-id allocation, event draining | Language and platform adapters only |
 
 An object, an undo context, a window and a server have different identities.
 A `FileId` is allocated once per open object and never recycled while an
@@ -1618,7 +1624,7 @@ Resource collection transfers an unreferenced owned source into retiring storage
 
 A step resolves each structure back to the object that was registered, including an inactive audio file. The audio composition applies to that file's contents while retaining the focused file, binding generation and conversation. Its `Effect::Audio` includes both ordered server steps and the edited file's playback projection. Both adapters execute the steps and update that file's playback graph; they do not infer the target from whatever is now focused. Whole-step rollback also restores the original target object.
 
-`Resources` records a `ResourceId` as a `ServerInstance` plus a local buffer number, its byte size, release endpoint and resident/stored location. `RootKind` separates contents, history, clipboard, playback and pending operations. For takes on disk the same three roots are the document's own (`clausters_document::workspace`): a render is a temporary source in a `Workspace` -- the audio editor's temporary folder, or a multitrack's session folder -- and `Session::release_renders` hands back the files no document node, no held history entry and no clipboard part names, while `Session::for_saving` writes a session that names no temporary file. Replacing one root does not drop another consumer's lease; invalid acquisitions leave the previous root intact. Collection reports each unreferenced owned source once, and never frees a borrowed source. History roots include inactive orders. The audio adapters retain playback roots after their graph updates and drop them after closing the graph, so trimming a history or closing a file cannot free a source playback still holds. Clipboard publications and paste readers use those resource leases through `application::clipboard::Exchange`; general operation commit integration remains pending.
+`Resources` records a `ResourceId` as a `ServerInstance` plus a local buffer number, its byte size, release endpoint and resident/stored location. `RootKind` separates contents, history, clipboard, playback and pending operations. For takes on disk the same three roots are the document's own (`clausters_document::workspace`): a render is a temporary source in a `Workspace` -- the audio editor's temporary folder, or a multitrack's session folder -- and `Session::release_renders` hands back the files no document node, no held history entry and no clipboard part names, while `Session::for_saving` writes a session that names no temporary file. Replacing one root does not drop another consumer's lease; invalid acquisitions leave the previous root intact. Collection reports each unreferenced owned source once, and never frees a borrowed source. History roots include inactive orders. The audio adapters retain playback roots after their graph updates and drop them after closing the graph, so trimming a history or closing a file cannot free a source playback still holds. Clipboard publications and paste readers use those resource leases through `application::clipboard::Exchange`, and a publication is an operation of the runtime like any other.
 
 The byte limit applies independently to each undo order, with endpoint-aware accounting that excludes sources held by another service. An audio editor's takes are files and hold no buffer, so it bounds nothing of theirs: a render no entry names is deleted, and the history holds lists. The working folder is the client's: a folder of the user's cache on disk natively and under node, a folder of the page's storage in a tab, made when the editor opens and removed when it closes but for what the clipboard still names.
 
@@ -1626,7 +1632,7 @@ Each adapter supplies a random connection identity and an allocator incarnation.
 
 The services need no renderer of their own: a render is a step the endpoint carries out offline, natively on an `--nrt` process and in a page on the NRT worker over the page's storage. Playback remains `clausters_editing::audio_playback::AudioEditorPlayback`, held by the member's coordinator, with one transport per editor; injecting an editing context does not share a transport.
 
-`application::clipboard::Exchange` is independent of open documents and receives endpoint identity through its port. Both adapters keep one service handle per server connection incarnation, using the existing editing JSON door. The table stores handles rather than copied-buffer state or compatibility policy. After copy steps complete, `publish` installs a fresh immutable publication; `event` resolves paste/mix references and acquires a pending-reader lease; `release` ends that lease on completion or failure. Replacement drops only the publication root, so a pending paste can finish using the old snapshot. Invalidating an incarnation forgets it without freeing ids on the replacement. A source window's close does not close the exchange. Python serializes service lookup and each complete EditingCore size/fill response (including disposal), since ctypes releases the GIL and the host callback can race a script query; this is adapter synchronization rather than application policy.
+`application::clipboard::Exchange` is independent of open documents and receives endpoint identity through its port. The application that holds the editor calls it typed, in process (`Editing::exchange_event`, `exchange_publish`, `exchange_release`); no client keeps a handle to it. After copy steps complete, a publish installs a fresh immutable publication; a paste or a mix resolves its reference and acquires a pending-reader lease, which its completion or failure releases. Replacement drops only the publication root, so a pending paste can finish using the old snapshot. Invalidating an incarnation forgets it without freeing ids on the replacement. A source window's close does not close the exchange.
 
 The host `Clip` continues to own the typed document, blobs and system-text mirror. Typed publication updates the mirror; changed external text becomes `Content::Text`, rather than implicitly trusting JSON as a live reference. The application observes replacement on its next clipboard action and releases its previous publication, unless a paste still holds it. There is no background poll and retention is bounded to one unused publication per endpoint. Cross-connection buffer transfer is explicitly refused; matching addresses do not establish identity. Bulk `Samples` may travel with a complete payload. Resampling is never implicit: insertion preserves source rate through the existing parts ratio, and mixing requires matching rates. A block of another width goes by the paste's rule (`clausters_core::channel_matrix::ChannelMatrix::fit`): a routing (a mono block duplicated, channels laid in one by one) is written into the parts' maps and reads nothing, and a mix into a mono take is rendered, since a part's picture is composed from its file's peaks one channel at a time. A cut first prepares and publishes a copy, then validates the original file and contents before recording removal. Destination-owned paste buffers use the existing history budgets and disk/OPFS spill path; the publication never becomes an undo entry.
 
@@ -1641,8 +1647,7 @@ gesture or a menu entry (`event`), a script's edit (`act`) or member verb
 coordinator owns the member's `AudioEditorPlayback` and the transport facts a
 script and a hand share (the span, the loop switch, a script's pause), and
 decides the order of everything an action leads to through the context's
-doors (`member`, `event`, `act`, `operation`, `retainMember`, `dropRoot`), so
-the editor's rules stay in the editor. Its caller is the application that
+typed calls, so the editor's rules stay in the editor. Its caller is the application that
 holds the editor's engine (`clausters_app_engine::app::App`, on the
 GUI host's application thread); the coordinator plays only on that engine,
 whose readers read each file's list, and nothing is stitched on a server.
@@ -1741,22 +1746,71 @@ notes and symbolic-score edits attach through theirs. Shared routing asks a
 capability whether an action is understood and available. It never tests an
 application-class list to decide whether contents can be edited.
 
-To add an application or option:
+**Composing an application.** An application is an editor over one
+structure, a member of an editing context, and a window the host draws:
 
-1. Define the domain state and supported operations; reuse existing contents
-   and edit semantics before introducing another representation.
-2. Compose only the required services with explicit scope and ownership;
-   associate objects with contexts and bind components to their observed
-   object, axis, dimensions and generation.
-3. Define each action once, with its target, arguments, availability/reason
-   and presentation kind (command, toggle or choice). Menus, tools, shortcuts
-   and scripts invoke that definition. An action need not make an undo entry.
-4. Implement transitions and effects through the contracts below. A domain
-   operation may add effects, but must use the common operation and cleanup
-   lifecycle. New service capabilities extend that contract for all consumers.
-5. Bind the same Rust behavior in both clients and existing standalone paths;
-   compare traces and exercise the paired runnable examples when behavior
-   changes. Do not add client-only coordination for an option.
+1. **The editor** (`crates/clausters-apps/src/<name>/editor.rs`) holds the
+   domain state and answers the window (`window`: the GuiDef tree, its
+   widgets named after what they draw through `WidgetIds`), its events (a
+   gesture becomes an edit of the existing vocabulary, or a typed command
+   when it produces samples or touches storage) and its readings
+   (`actions`). Reuse the contents and edit semantics that exist (a
+   `Segment`, a sequence, a curve, the document's `Edit`) before adding a
+   representation.
+2. **The member**: a variant of `editing::Member`, opened by `Editing`
+   with an order of its own (`open_independent`), in a shared one
+   (`join`) or in another document's (`join_view`). The context records its
+   edits, walks its history and publishes its readings
+   (`Editing::action_states`); nothing in the editor keeps a history.
+3. **The work that waits**: a typed `Application` (`application::services`:
+   `Command`, `Commit`, `Outcome`, `prepare`, `commit`, `abort`) run by an
+   `application::runtime::Runtime` over the shared `Services`. Opening,
+   saving and anything that renders or reads a file go through it, so a
+   late, failed or duplicate result is settled by one implementation.
+4. **The host's application** (`AppKind` in
+   `clients/gui/src/host/audio_app.rs`) opens it for `/gui_app_open` and
+   `--<name>` and carries its effects out; both clients get a handler
+   (`HostedEditor`) whose verbs are calls through `/gui_app_call`, the
+   same in Python and TypeScript, with an example pair.
+5. **Only what it needs.** Capabilities are explicit: a curve's editor runs
+   with no engine (`a_points_editor_runs_with_no_engine`), and a panel of a
+   synth's controls is no application at all: a GuiDef window with
+   `history: true` gets an undo order from the host
+   (`clients/gui/src/host/panel.rs`) and nothing else.
+
+**Adding an action.** One row in `clausters_editing::verbs` (the window's
+table, or the application's scope: kind, default keys, label); the editor's
+`actions` reading says what it addresses, whether it is available and why
+not, a switch's state or a choice's value; the editor performs it where its
+events are answered. The menu (`chrome`), the key table, the key sheet, a
+tool and a script's `verb` read that one definition, and the host refuses a
+disabled reading the same way whoever asked. A script's named method for it
+is one line over `verb` in each client (`reverse()` is `verb("reverse")`);
+the clients hold no rule of it. The audio editor's spectrogram settings,
+added after its migration, are the check: the change is the application
+crate (a settings module, the editor's readings and door, one menu row in
+`chrome`) and, in each client, a property and three methods that call the
+handler's door; no client or host lifecycle code moved.
+
+**Adding a view.** A view is a widget the host draws, named in the editor's
+window tree; a picture that does not exist yet is a host element, added by
+the recipe in "Adding a widget" below and the `gui-widgets` skill, in both
+clients' builders. What a view shows is projected from the editor's state
+and corrected through the window's conversation; it keeps no copy of the
+document, and a redraw keeps what the host owns (navigation, selection,
+layers) by reconciling ids.
+
+**Adding a service capability.** A service is a field of
+`application::services::Services`, constructed explicitly and passed to
+every runtime: extend the contract there, with every consumer, rather than
+giving one application a private mechanism. Its state is per context,
+server or object, never global; a resource it holds is a root of the one
+`Resources` graph; its results re-enter the runtime that asked for them.
+
+**What a change must not add**: a client-side copy of a rule, a timer in an
+application or a client (demand is the host's activity), a history or a
+clipboard of a component's own, or a test of an application-class list to
+decide whether an edit exists.
 
 Reusable components compose existing `chrome`, `forms`, `closing` and the
 host's `files`/table elements. A file chooser owns transient navigation,
@@ -1876,39 +1930,36 @@ and reason. Concurrent indistinguishable waits on one connection must be
 serialized by the adapter/shared runner. `/server_sync` is an ordering barrier,
 not proof that every preceding command succeeded.
 
-`Content::Buffer` carries server identity, connection generation and a publication nonce through its optional location. The host stores the typed document while the owning composition retains its source; adapter tables route service handles and leases rather than duplicating ownership policy. Publication refuses a source retained as mutable contents. The existing C/wasm JSON entry points adapt typed operation and cleanup contracts, without new ABI symbols or server commands. Cross-server paste refuses without changing the destination. Insertion preserves source rate, mixing requires matching rates, and a block of another width goes by the paste's channel rule.
+`Content::Buffer` carries server identity, connection generation and a publication nonce through its optional location. The host stores the typed document while the owning composition retains its source. Publication refuses a source retained as mutable contents. The existing C/wasm JSON entry points adapt typed operation and cleanup contracts, without new ABI symbols or server commands. Cross-server paste refuses without changing the destination. Insertion preserves source rate, mixing requires matching rates, and a block of another width goes by the paste's channel rule.
 
-#### Regression cases and remaining decisions
+#### Regression cases, and where each is checked
 
-These are executable acceptance scenarios to implement with the affected
-modules, not claims that the reported failures were reproduced. The audit
-establishes structural risks: whole-editor swapping, premature save metadata,
-split clipboard ownership, duplicated effect policy and a runner that is not
-a transaction manager. It does not establish which caused any reported GUI
-symptom or the idle CPU usage.
+The audit named structural risks (whole-editor swapping, premature save
+metadata, split clipboard ownership, duplicated effect policy, a runner that
+is not a transaction manager) without claiming which caused a reported
+symptom. Each scenario it derived is now a test; the paired examples
+`editors/audio_lifecycle` and `panels/undo` walk the same contract by hand.
 
-| Scenario and controlled ordering | Required assertion and verification layer |
+| Scenario | Checked by |
 |---|---|
-| Copy/cut A, paste B, copy again; repeat with external text arriving between copies | Correct kind, numeric samples and undo; publication/replacement leases released once. Shared transition tests plus real-server tests and paired examples |
-| Copy A, close its view/object, paste B; replace clipboard while paste is pending | Clipboard snapshot and destination/undo sources remain valid; failed copy retains old entry. Resource tests with delayed completion |
-| Two servers both allocate buffer 7; disconnect/reconnect one before paste | Identity/generation prevents aliasing; transfer or explicit refusal, no destination change. Fake service plus integration |
-| Play A while showing B; switch mono, stereo and multichannel files in both directions | A continues; B has no A playhead; meter dimensions follow its declared signal rather than maximum bus width. Rust binding tests and visual/audio review |
-| Start save A, focus B, edit A, then complete/fail the write; undo to saved revision | Result applies to A; only written revision becomes clean; failed save preserves target. Deterministic transition/adapter tests |
-| Close with pending save/copy/restore; deliver late and duplicate results after view rebind | No stale correction/second commit; owned resources released once; newer unsaved work survives. Transition and resource tests |
-| Fail an allocation or restore before a stitch, with success steps still queued | No dependent stitch, clipboard publication or history commit; successful allocations cleaned up. Runner/coordinator trace tests |
-| Leave stopped windows idle, then hide/show, play/stop and close them | Deterministic demand/query/upload counts; measure CPU against a recorded baseline and review reactivation. Host tests and physical examples |
-| Add a non-audio action or simple parameter panel | Common routing/disposal without audio-only dependencies or new client coordination. Composition tests during migration |
+| Copy/cut A, paste B, copy again, external text between copies | `application::clipboard` (`publishing_mutable_contents_preserves_the_previous_clipboard`, `a_copy_of_segments_stays_named_while_it_is_pasted`); `a_render_the_clipboard_names_outlives_the_entry_that_made_it` in `crates/clausters-app-engine/tests/coordinator.rs` |
+| Close A's view, paste B; replace the clipboard while a paste is pending | `replacement_readers_and_foreign_incarnations_are_independent`, `clipboard_and_history_retain_the_same_source_in_one_graph` |
+| Two servers allocate the same id; reconnect one | `server_incarnations_disambiguate_ids_and_invalidation_sends_no_frees`, `invalidation_retires_failed_repairs_and_late_replies_without_freeing_on_replacement` |
+| Play A while showing B; mono, stereo and multichannel files | `a_pass_goes_on_while_the_window_shows_another_file`, `meters_follow_the_viewed_file_and_only_read_its_playback`, `redraw_keeps_the_playhead_bound_to_the_playing_file` |
+| Save A, focus B, edit A, the write completes or fails | `an_edit_during_a_save_stays_dirty_and_its_undo_is_clean`, `a_failed_save_keeps_the_target_and_a_retry_writes_it`, `a_delayed_save_reports_the_original_snapshots_destination_and_shape` |
+| Close with pending work; late and duplicate results after a rebind | `a_duplicate_completion_is_refused_and_changes_nothing`, `a_closed_view_cannot_be_repopulated_by_a_late_measurement`, `saves_of_different_applications_land_each_on_its_own`, and the `faults` traces both clients replay (`clients/web/tests/audio-trace-vectors.json`) |
+| A failed step before the steps that depend on it | `distinct_application_types_share_services_and_rejected_commit_repairs_once`, `a_lost_endpoint_refuses_its_step_without_blocking_unrelated_context_edits` |
+| Idle windows, hidden and shown, played and stopped, closed | `a_settled_stopped_editor_asks_for_nothing`, `a_stopped_or_closed_window_of_any_application_asks_for_nothing`; the CPU baseline recorded in the apps plan, `X23` |
+| A non-audio application, and a parameter panel | `a_points_editor_runs_with_no_engine`; a window's own undo order in `clients/gui/src/host/gestures/panel_tests.rs` |
 
-Remaining implementation decisions have explicit owners in the apps plan:
-context/source accounting generalization with service composition; clipboard
-channel conversion and cross-server transfer/refusal with clipboard exchange;
-completion envelope and timeout policy with pending operations; action
-availability and text-focus precedence with contextual actions; native/browser
-activity parity and measured idle behavior with subscription work. Workspace
-persistence and crash recovery remain future designs. This track persists
-one audio file's samples/format/path; open-file order, focus, view state,
-clipboard, history, temporary resources and pending work remain transient.
-Applications consume supplied connections and do not supervise new servers.
+What stays outside this contract has its own entry at the end of the apps
+plan, under Future directions: a multi-file workspace that persists ("Persist
+an application's multi-file workspace") and crash recovery with a persistent
+undo ("Application crash recovery and persistent undo"). An application
+persists one document's contents, format and path; its open files, focus,
+view state, clipboard, history, temporary resources and pending work are
+transient. Applications use the server connection they are given and
+supervise no server.
 
 ### Playback time in a session: read, never computed
 

@@ -2301,8 +2301,9 @@ opened it.
 *Opened 2026-10-18 by the user after recurring audio-editor defects exposed
 unclear ownership and call ordering. This plan owns the work, including its
 host and client adapters; the GUI plan's completed AP track is the precedent,
-not a second implementation plan. The checkboxes track the staged migration;
-`docs/architecture.md` distinguishes migrated code from target contracts.*
+not a second implementation plan. The checkboxes track the staged migration,
+done with `X27`; `docs/architecture.md`, "Application state and services:
+implementation contract", is the contract as built.*
 
 **The purpose: one modular application framework.** Applications follow one
 consistent design, even if this project remains its only consumer. State,
@@ -3197,7 +3198,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     a field bound to the knob's control, a script's set, the shared
     clipboard, a synth freed), and a section in each client's GUI chapter.
 
-- ⬜ **X27 - Finish cross-application validation and documentation.** After
+- ✅ **X27 - Finish cross-application validation and documentation.** After
   `X26`, check there is one owner and one policy implementation per contract,
   and remove remaining obsolete coordination. Complete the architecture,
   behavior rules, binding table and affected user docs; curate non-obvious
@@ -3212,6 +3213,24 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   action, view or service capability using the existing contracts. Verify
   that an additional option in a migrated editor requires no new lifecycle
   orchestration in clients or application-specific shared infrastructure.
+
+  *Done 2026-11-02.* The audit found one contract with two owners left: the
+  clients still carried the clipboard-exchange and resource-cleanup
+  adapters of the time the audio editor ran in them, reached through six
+  verbs of the context's JSON door, though the host's application had
+  called both typed since the coordinator moved there. They and the verbs
+  are removed. `docs/architecture.md` now states the contract as built: who
+  owns each state and service (one row each), every regression scenario of
+  the audit with the test that checks it, what stays outside (the two
+  Future directions entries on workspaces and recovery), and a guide to
+  composing an application and adding an action, a view or a service
+  capability, checked against the spectrogram settings added to the audio
+  editor after its migration (application crate and the handlers' door
+  only). `docs/bindings.md` no longer lists the removed verbs. The two
+  "Found by use" entries left to this milestone are fixed: the clients'
+  walk of steps refuses the file steps only the application carries out,
+  and the audio editor and the multitrack are `HostedEditor`s in both
+  clients. No required work is left outside the plans.
 
 ### The turn: an application's takes live on disk
 
