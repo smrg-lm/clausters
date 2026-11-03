@@ -287,8 +287,7 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`X26`, then `X27` — scoped services for simple GuiDef instances, then the
-  cross-application validation and documentation**
+- ⬜ **`X27` — the cross-application validation and documentation**
   *(`crates/clausters-apps/PLAN.md`, "The milestones")*. **Taken next**, when
   asked for. **Related:** the apps plan's "Working on one channel of a take"
   (Future directions), the channel a paste lands from.

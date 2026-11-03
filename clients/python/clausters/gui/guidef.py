@@ -1095,6 +1095,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          status: bool | None = None, plays: bool | None = None,
          keys: list | str | None = None, verbs: dict | None = None,
          ask_close: bool | None = None, activation: bool | None = None,
+         history: bool | None = None,
          progress: float | None = None, progress_label: str | None = None,
          split: bool | None = None, menu: list | None = None,
          main: int | None = None, glyphs: dict | None = None,
@@ -1164,6 +1165,20 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     it gains or loses the platform's focus, or its page is shown or hidden --
     as the window's ``activated`` verb, ``1`` or ``0``. Off by default.
 
+    ``history`` gives the window **an undo order of its own**, kept by the
+    host: what a hand does to its controls is an entry per gesture (a hold, a
+    run of steps on one control, a field's typing, a paste), whether the
+    control is bound to the server (`GuiHost.bind`) or reports to the script,
+    and ``undo`` and ``redo`` walk it instead of reaching the owner. The
+    target of an entry is the parameter a binding writes, so two controls
+    bound to one synth control are one target. A walk writes the value the
+    entry stored, whatever the parameter holds by then; what reaches a
+    control from elsewhere (a read-back, a ``host.set``) is no entry, and a
+    node that ends takes its entries out of the walk. Two windows are two
+    orders, a redefinition keeps one, and loading a stored def starts it
+    afresh. For a panel of a synth's controls, which has no document to keep
+    a history in; an application keeps its own. Off by default.
+
     ``progress`` is **work the owner is doing for the window**, a fraction in
     ``0..1`` with ``progress_label`` naming it, drawn at the right end of the
     status bar while it is set; a negative value takes it away. An owner sets
@@ -1214,6 +1229,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
         extra["ask_close"] = 1 if ask_close else 0
     if activation is not None:
         extra["activation"] = 1 if activation else 0
+    if history is not None:
+        extra["history"] = 1 if history else 0
     if progress is not None:
         extra["progress"] = float(progress)
     if progress_label is not None:

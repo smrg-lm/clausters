@@ -575,6 +575,42 @@ writes. A control mapped to a control bus reads back what the bus carries, so
 its knob follows the bus; one mapped to an audio bus reads back what was last
 set on it.
 
+### A panel that keeps its own undo
+
+A bound panel has no document behind it, and its values never pass through
+this process, so the script cannot keep what the hand did to it. The window
+can:
+
+```python
+win = view(knob(freq), slider(amp), title="lead", history=True).open()
+win.bind(synth)
+```
+
+With `history=True` the host keeps an **undo order of its own** for that
+window, and Ctrl+Z and Ctrl+Shift+Z (or the window's `undo`/`redo` verbs) walk
+it there instead of reporting them to the script. Its rules:
+
+- **A gesture is one entry**: a drag from press to release, a run of wheel
+  notches or arrow keys on one control, what was typed in a field while it held
+  the keys, a paste. A button is never one.
+- **The target is the parameter.** Two widgets bound to one synth control are
+  one target, and an undo moves both.
+- **An undo writes the value the entry stored**, through the widget's binding
+  (or as the event a hand would send, for an unbound control), whatever the
+  parameter holds by then. A value that comes from elsewhere (a read-back, a
+  `host.set`) is no entry.
+- **A node that ends takes its entries out of the order**, and so does a target
+  no widget of the window writes any more.
+- **Each window is its own order.** Defining the window again keeps it, freeing
+  it ends it, and loading a stored def starts it afresh: `history` is part of
+  the def, the entries never are.
+
+A focused `knob`, `slider` or `number` also **copies its value** (Ctrl+C) onto
+the host's clipboard as text and **pastes a number** (Ctrl+V), so a value
+travels between two panels, or to and from another program. Anything else on
+the clipboard is refused, and the status line says what it holds.
+`examples/panels/undo.py` has two such panels side by side.
+
 ## The signal element: every view of a signal
 
 Six names in the old catalog — a waveform, a plot, an oscilloscope, a

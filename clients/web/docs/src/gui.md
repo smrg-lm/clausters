@@ -130,7 +130,12 @@ there for a bus, another widget or an arbitrary address. **A binding to a
 node's control comes back**, as in the reference client: the host asks the
 server with `/synth_get` (and `/synth_getText` for a value as text), so a bound
 widget follows the control whoever changes it, and the one a hand is holding is
-left alone.
+left alone. **A window keeps its own undo** with `history: true`
+(`gui.view({ title: "lead", history: true }, ...)`): the host records what a
+hand does to its controls, one entry per gesture, and walks it on Ctrl+Z, with
+the rules the reference client's chapter lists; a focused `knob`, `slider` or
+`number` copies its value as text and pastes a number.
+`examples/panels/undo.html` has two such panels side by side.
 
 The two switches spell the same thing in both clients and need no idiom of their
 own: `button(gate, { label: "hold" })` sends `on` while it is held and `off` when

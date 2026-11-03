@@ -3085,7 +3085,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   real application is the multitrack; symbolic scores execute in the host
   while preserving shared objects and views.
 
-- ⬜ **X26 - Use scoped services from simple GuiDef instances.** After
+- ✅ **X26 - Use scoped services from simple GuiDef instances.** After
   `X25`, provide the lightweight instance context for synthesis panels
   without editor state. Before parameter undo, define its owner/baseline,
   gesture coalescing, bound-target identity, external/MIDI changes, missing
@@ -3190,8 +3190,12 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     the order of the window it reopens before defining it, so loading over
     the open window of its id restores the authored `history` and none of
     the hand's entries (`host::wire`, with its test).
-  - ⬜ The `history` prop in `docs/gui-protocol.md` and both clients'
-    builders, the paired panel example and the books.
+  - ✅ The `history` prop in `docs/gui-protocol.md` and both clients'
+    builders, the paired panel example and the books. *Done 2026-11-02*:
+    `view(history=...)` and `view({ history })`, their sweep vectors, the
+    pair `panels/undo.py` and `panels/undo.html` (two bound panels: a drag,
+    a field bound to the knob's control, a script's set, the shared
+    clipboard, a synth freed), and a section in each client's GUI chapter.
 
 - ⬜ **X27 - Finish cross-application validation and documentation.** After
   `X26`, check there is one owner and one policy implementation per contract,

@@ -1569,6 +1569,22 @@ export function view(
      */
     askClose?: boolean;
     /**
+     * **An undo order of its own**, kept by the host: what a hand does to
+     * the window's controls is an entry per gesture (a hold, a run of steps
+     * on one control, a field's typing, a paste), whether the control is
+     * bound to the server (`GuiHost.bind`) or reports to the script, and `undo`
+     * and `redo` walk it instead of reaching the owner. The target of an
+     * entry is the parameter a binding writes, so two controls bound to one
+     * synth control are one target. A walk writes the value the entry
+     * stored, whatever the parameter holds by then; what reaches a control
+     * from elsewhere (a read-back, a `host.set`) is no entry, and a node that
+     * ends takes its entries out of the walk. Two windows are two orders, a
+     * redefinition keeps one, and loading a stored def starts it afresh. For
+     * a panel of a synth's controls, which has no document to keep a history
+     * in; an application keeps its own. Off by default.
+     */
+    history?: boolean;
+    /**
      * **The owner is told when the window comes back** -- it gains or loses
      * the platform's focus, or its page is shown or hidden -- as the window's
      * `activated` verb, `1` or `0`. Off by default.
@@ -1621,7 +1637,7 @@ export function view(
 ): View {
     const {
         title, flow, layout, margin, gap, cols, hug, status, plays, keys, verbs, askClose,
-        activation, progress, progressLabel, theme, split, menu: bar, main, glyphs, ...rest
+        history, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs, ...rest
     } = options;
     return node("window", {
         ...rest,
@@ -1642,6 +1658,7 @@ export function view(
             ["keys", keys === undefined ? undefined : [...keys]],
             ["verbs", verbs === undefined ? undefined : { ...verbs }],
             ["ask_close", flag(askClose)],
+            ["history", flag(history)],
             ["activation", flag(activation)],
             ["progress", progress],
             ["progress_label", progressLabel],

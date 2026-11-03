@@ -4416,6 +4416,15 @@
  },
  {
   "builder": "view",
+  "option": "history",
+  "value": true,
+  "tree": {
+   "type": "window",
+   "history": 1
+  }
+ },
+ {
+  "builder": "view",
   "option": "progress",
   "value": 3.5,
   "tree": {
@@ -5163,6 +5172,15 @@
   "tree": {
    "type": "window",
    "activation": 1
+  }
+ },
+ {
+  "builder": "window",
+  "option": "history",
+  "value": true,
+  "tree": {
+   "type": "window",
+   "history": 1
   }
  },
  {

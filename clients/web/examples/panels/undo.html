@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a panel that keeps its own undo</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .panels { display: flex; gap: 12px; flex-wrap: wrap; align-self: stretch; }
+      .panels > div { width: 300px; max-width: 100%; height: 380px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A panel that keeps its own undo: what the hand did to a
+synth's controls.
+
+A panel of a synth's controls has no document behind it, and a control
+<b>bound</b> to the synth sends its value straight to the server with this
+script out of the loop (<code>bind.html</code>), so the script cannot keep what
+the hand did. The window can: <code>view({ history: true }, ...)</code> gives it
+an undo order of its own, kept by the GUI host, and Ctrl+Z / Ctrl+Shift+Z walk
+it there.
+
+Two windows, one synth each, show what the order holds and what it does not:
+<ul>
+<li><b>A gesture is one entry.</b> Drag the <code>freq</code> knob around and
+let go: one Ctrl+Z takes the whole drag back. A run of wheel notches or arrow
+keys on one control is one entry too, and so is what was typed in a field while
+it held the keys.</li>
+<li><b>The target is the parameter.</b> The <code>freq</code> field is bound to
+the same synth control as the knob, so the two are one target: undo a drag of
+the knob and the field shows it too.</li>
+<li><b>Undo writes the value it had.</b> Click <code>nudge from the
+script</code>: the script sets the synth's <code>freq</code> itself, the
+controls follow it on their read-back, and nothing is recorded. Ctrl+Z then
+writes the value the last entry stored, whatever the synth holds now.</li>
+<li><b>The clipboard is the host's one.</b> Click the knob in one window,
+Ctrl+C, click the knob in the other, Ctrl+V: the value travels as text (paste
+it in a text editor too), and the paste is one entry of the window it landed
+in. Anything else on the clipboard (a range of samples an editor copied) is
+refused, and the status line says what it holds.</li>
+<li><b>Two windows are two orders</b>, and Ctrl+Z in one never reaches the
+other.</li>
+<li><b>A target that is gone leaves the order.</b> Click <code>free the
+synth</code> in the second window: its node ends, and Ctrl+Z there says there
+is nothing left to undo. The status line says each step.</li>
+</ul></div>
+
+      <button id="run">boot and open</button>
+      <div class="panels"><div id="a"></div><div id="b"></div></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/undo.py, call for call:
+      a session, a def over two controls, two synths, two panels with
+      `history: true` bound to them, and a button on each.
+
+      The platform's differences: the script boots an audio server process and
+      a windowed `clausters-gui` beside it, where a tab has the engine and the
+      host in itself (`Session.embed()` + `session.gui()`); the panels draw
+      into two elements instead of two OS windows; and nothing waits for the
+      windows to close -- the page has an event loop, so the script's
+      `gui.wait()` has no counterpart.
+
+      Serve clients/web (the package root) and open /examples/panels/undo.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, Synth, gui } from "../../dist/index.js";
+      import { SynthDef, control, out, sine } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      async function run() {
+        $("run").disabled = true;
+
+        // ---- the session, the GUI and two synths to drive ----
+        // The same def twice, a fifth apart, so the two windows are two
+        // instruments.
+        const session = await Session.embed();
+        const server = session.server;
+        await session.gui();
+
+        const FREQ = control("freq", 440.0);
+        const AMP = control("amp", 0.1);
+
+        // A quiet stereo sine over the `freq` and `amp` controls.
+        function tone(name = "undo_tone") {
+          const sig = sine(FREQ).mul(AMP);
+          return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+        }
+
+        await tone().send(server);
+        const first = new Synth("undo_tone", { freq: 440.0 }, { server });
+        const second = new Synth("undo_tone", { freq: 660.0 }, { server });
+
+        // ---- two panels that keep their own undo ----
+        // `history: true` is the whole of it: the host records what a hand does
+        // to the window's controls and walks it on Ctrl+Z. The knob and the
+        // slider are built from the def's controls and bound in one verb,
+        // `win.bind(synth)`; the field is bound by hand to the same `freq`,
+        // which makes it the knob's target too. The button is not bound: its
+        // click comes here, and a command is never an entry.
+
+        // One synth's panel: its pitch twice, its level and one button.
+        function panel(title, freq, act) {
+          return gui.view(
+            { title, history: true, flow: "col" },
+            gui.knob(FREQ, { min: 220.0, max: 1760.0, warp: "exp", value: freq }),
+            gui.number({ name: "typed", label: "freq", min: 220.0, max: 1760.0,
+                         step: 1.0, value: freq }),
+            gui.slider(AMP, { min: 0.0, max: 0.3 }),
+            gui.button({ name: "act", label: act }),
+          );
+        }
+
+        const a = await panel("first", 440.0, "nudge from the script").open($("a"));
+        a.bind(first);
+        a.widget("typed").bind("/node_set", first.id, "freq");
+        // Another writer: the script sets the parameter itself. The controls
+        // follow on their read-back and the order records nothing.
+        a.widget("act").onClick(() => first.set({ freq: 880.0 }));
+
+        const b = await panel("second", 660.0, "free the synth").open($("b"));
+        b.bind(second);
+        b.widget("typed").bind("/node_set", second.id, "freq");
+        // The target goes: the node ends, and its entries leave the second
+        // order.
+        b.widget("act").onClick(() => second.free());
+
+        log("drag, turn, type and paste in either window; Ctrl+Z and "
+          + "Ctrl+Shift+Z walk that window's own order, and its status line "
+          + "says each step.");
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>
