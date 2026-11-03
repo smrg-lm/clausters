@@ -412,3 +412,88 @@ fn a_field_typed_in_is_one_entry_from_focus_to_blur() {
         "the whole typing in one step"
     );
 }
+
+/// The lines window 1's status bar holds, oldest first.
+fn said(host: &Host) -> Vec<String> {
+    host.statuses()
+        .get(&1)
+        .map(|s| s.lines().map(|l| l.text.clone()).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_value_copied_from_one_control_pastes_on_another_as_one_entry() {
+    let mut host = panel(true);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 400, 200);
+    focus(&mut host, 10, true);
+    g.command(&mut host, &ctx, "copy");
+    assert_eq!(host.clipboard.text(), "2.5", "the value, as text");
+    focus(&mut host, 11, true);
+    // A run of keys on the control, then the paste: two entries.
+    g.press_key(&mut host, &ctx, Key::Right, None);
+    let stepped = value(&host, 1, 11);
+    let out = g.command(&mut host, &ctx, "paste");
+    assert_eq!(value(&host, 1, 11), 2.5);
+    assert_eq!(emitted(&out, 11), vec![vec![OscType::Float(2.5)]]);
+
+    focus(&mut host, 11, false);
+    g.command(&mut host, &ctx, "undo");
+    assert_eq!(value(&host, 1, 11), stepped, "the paste alone");
+    g.command(&mut host, &ctx, "undo");
+    assert_eq!(value(&host, 1, 11), 5.0);
+}
+
+#[test]
+fn a_paste_lands_inside_the_range_on_its_step() {
+    let mut host = Host::new();
+    def(
+        &mut host,
+        1,
+        r#"{"type":"window","children":[
+            {"id":11,"type":"knob","min":0.0,"max":10.0,"step":0.5,"value":5.0}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 400, 200);
+    focus(&mut host, 11, true);
+    host.clipboard.set_text(" 3,3 ");
+    g.command(&mut host, &ctx, "paste");
+    assert_eq!(
+        value(&host, 1, 11),
+        3.5,
+        "a comma reads as a point, on the step"
+    );
+    host.clipboard.set_text("40");
+    g.command(&mut host, &ctx, "paste");
+    assert_eq!(value(&host, 1, 11), 10.0, "and never past the end");
+}
+
+#[test]
+fn a_paste_of_anything_but_a_number_is_refused_naming_it() {
+    let mut host = panel(true);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 400, 200);
+    focus(&mut host, 11, true);
+    host.clipboard
+        .put_samples(std::sync::Arc::from(vec![0.0_f32; 8]), 2, 48000.0);
+    let out = g.command(&mut host, &ctx, "paste");
+    assert_eq!(value(&host, 1, 11), 5.0);
+    assert!(emitted(&out, 11).is_empty());
+    assert!(
+        said(&host).iter().any(|l| l.contains("samples")),
+        "the refusal names what is held: {:?}",
+        said(&host)
+    );
+    host.clipboard.set_text("loud");
+    g.command(&mut host, &ctx, "paste");
+    assert_eq!(value(&host, 1, 11), 5.0);
+    assert!(said(&host).iter().any(|l| l.contains("not a number")));
+    focus(&mut host, 11, false);
+    g.command(&mut host, &ctx, "undo");
+    assert!(
+        said(&host)
+            .last()
+            .is_some_and(|l| l.contains("nothing to undo")),
+        "a refused paste is no entry"
+    );
+}

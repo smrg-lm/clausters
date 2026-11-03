@@ -510,7 +510,12 @@ impl Gestures {
         };
         let events = element::with(host, ctx, at, |el, _| el.verb(verb, &mut input)).flatten()?;
         let mut out = Vec::new();
+        // A verb is a gesture of its own: a paste on a control is one entry of
+        // the window's order, neither merged into a run of keys before it nor
+        // taking the steps after it.
+        host.panel_close(ctx.def_id);
         element::report(host, &mut out, ctx, id, events);
+        host.panel_close(ctx.def_id);
         // A content edit moves the extent the shared axis spans.
         host.sync_track_totals_keeping_view();
         out.push(GestureEffect::Redraw(ctx.def_id));

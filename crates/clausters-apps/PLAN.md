@@ -3181,7 +3181,11 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     blur, a press that moves its caret included (the run closes as the
     focus leaves, in `Host::focus` and `Host::clear_focus`), each with its
     test.
-  - ⬜ The clipboard on controls.
+  - ✅ The clipboard on controls. *Done 2026-11-02*: copy and paste on a
+    focused `knob`, `slider` or `number` (`elements/control.rs`, shared by
+    the three), the paste one entry of a window's order and closed off from
+    the runs around it, other kinds refused naming them; the reference is in
+    `docs/gui-protocol.md`, "The clipboard, and who may read what".
   - ⬜ The `history` prop in `docs/gui-protocol.md` and both clients'
     builders, the paired panel example and the books.
 

@@ -13,13 +13,17 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
+use crate::host::clipboard::Clip;
 use crate::host::graphics::controls;
 use crate::host::graphics::controls::knob_h;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::Range;
-use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput};
+use crate::host::widget::element::{
+    Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput, Verb,
+};
 use crate::host::widget::size::{Natural, body_inset, text_box};
+use clausters_editing::verbs::{ActionState, ActionTarget, Verb as ActionVerb};
 
 use super::control::{self, Dial};
 
@@ -144,6 +148,20 @@ impl Element for Knob {
     /// The wheel turns it, a notch a step, wherever the pointer is on it.
     fn wheel(&mut self, _at: (f64, f64), delta: (f64, f64), input: &Input) -> Option<Events> {
         Some(control::wheel(&mut self.range, delta.1, input.mods))
+    }
+
+    /// Copy and paste of the value (`control::clip_verb`).
+    fn action_state(
+        &self,
+        verb: &ActionVerb,
+        target: ActionTarget,
+        clipboard: &Clip,
+    ) -> Option<ActionState> {
+        control::clip_state(verb, target, clipboard)
+    }
+
+    fn verb(&mut self, verb: Verb, input: &mut KeyInput) -> Option<Events> {
+        control::clip_verb(&mut self.range, verb, input)
     }
 
     fn clone_box(&self) -> Box<dyn Element> {

@@ -24,11 +24,14 @@
 //! them.
 
 use clausters_core::osc::OscType;
+use clausters_document::clipboard::Content;
+use clausters_editing::verbs::{ActionState, ActionTarget, Verb as ActionVerb};
 use serde_json::Value;
 
+use crate::host::clipboard::Clip;
 use crate::host::graphics::controls;
 use crate::host::layout::Rect;
-use crate::host::widget::element::{Claim, Events, Input, Key, Mods};
+use crate::host::widget::element::{Claim, Events, Input, Key, KeyInput, Mods, Verb};
 use crate::host::widget::{Range, parse};
 
 /// Applies one `/gui_set` key to a control's range -- the props all three share.
@@ -267,6 +270,80 @@ pub(super) fn body(r: &Range, input: &Input) -> Rect {
     )
 }
 
+/// **Copy and paste on a focused control**, the host's one clipboard: a copy
+/// puts the value on it as text, which crosses to the platform's, and a
+/// paste reads a number from text and lands it inside the range, on its
+/// step -- delivered as a hand's change, so a window that keeps its own
+/// order holds it as an entry. Any other kind held (samples, elements) is
+/// refused, naming it, with no conversion.
+pub(super) fn clip_state(
+    verb: &ActionVerb,
+    target: ActionTarget,
+    clip: &Clip,
+) -> Option<ActionState> {
+    let mut state = ActionState::new(verb, target);
+    match verb.name {
+        "copy" => {}
+        "paste" => {
+            if let Err(why) = pasted(clip) {
+                state.refuse(&why);
+            }
+        }
+        _ => return None,
+    }
+    Some(state)
+}
+
+/// [`clip_state`]'s verbs, performed on range `r`.
+pub(super) fn clip_verb(r: &mut Range, verb: Verb, input: &mut KeyInput) -> Option<Events> {
+    match verb {
+        Verb::Copy => {
+            input.clipboard.set_text(&copied(r.value));
+            Some(Events::none())
+        }
+        Verb::Paste => Some(match pasted(input.clipboard) {
+            Ok(v) => {
+                r.set_value(v);
+                Events::value(OscType::Float(r.value))
+            }
+            Err(why) => Events::refused("paste", &why),
+        }),
+        _ => None,
+    }
+}
+
+/// A value as a copy writes it: six significant digits, trailing zeros
+/// dropped -- what `f32` holds without its last digit's noise (a step of a
+/// tenth lands on `5.2999997`, which is `5.3`).
+fn copied(v: f32) -> String {
+    if v == 0.0 || !v.is_finite() {
+        return "0".into();
+    }
+    let digits = (5 - f64::from(v.abs()).log10().floor() as i32).clamp(0, 9) as usize;
+    let text = format!("{v:.digits$}");
+    if text.contains('.') {
+        text.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        text
+    }
+}
+
+/// The number a paste would land, or why there is none.
+fn pasted(clip: &Clip) -> Result<f32, String> {
+    let Some(doc) = clip.doc().filter(|d| !d.is_empty()) else {
+        return Err("the clipboard is empty".into());
+    };
+    let Content::Text { text } = &doc.content else {
+        return Err(format!("the clipboard holds {}, not a number", doc.kind()));
+    };
+    let text = text.trim();
+    text.parse::<f32>()
+        .or_else(|_| text.replace(',', ".").parse::<f32>())
+        .ok()
+        .filter(|v| v.is_finite())
+        .ok_or_else(|| "the clipboard holds text that is not a number".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,5 +478,15 @@ mod tests {
         let mut r = range(10.0, 0.0, 0.0, 1.0);
         r.set_fraction(0.66);
         assert_eq!(r.value, 3.0);
+    }
+
+    /// A copy writes what the value means, not the last digit's noise.
+    #[test]
+    fn a_copy_writes_six_digits_without_trailing_zeros() {
+        assert_eq!(super::copied(5.299_999_7), "5.3");
+        assert_eq!(super::copied(440.25), "440.25");
+        assert_eq!(super::copied(0.001), "0.001");
+        assert_eq!(super::copied(-12.0), "-12");
+        assert_eq!(super::copied(0.0), "0");
     }
 }

@@ -1587,6 +1587,13 @@ impl Range {
         self.value = self.snap(v);
     }
 
+    /// Sets the value from a number given whole (a paste): inside the range,
+    /// then onto the step's grid.
+    pub fn set_value(&mut self, v: f32) {
+        let (lo, hi) = (self.min.min(self.max), self.min.max(self.max));
+        self.value = self.snap(v.clamp(lo, hi));
+    }
+
     /// `v` on the step's grid, counted from `min` and never past `max` -- the
     /// clamp is a step count rather than a clamp on the value, so a grid that
     /// does not divide the range (`0..10` by `3`) ends on `9` instead of an

@@ -356,6 +356,14 @@ places, whether the roll pasted it itself or the window asked the owner to. A
 paste onto a view that holds no notes is refused with the reason, as is a
 `samples` block, whose owner has to write it.
 
+**A continuous control copies its value** (`knob`, `slider`, `number`, with
+the focus): Ctrl+C puts the value on the host-wide clipboard as text, which
+crosses to the platform's, and Ctrl+V reads a number from text (a comma reads
+as a point) and lands it inside `min..max`, on the `step`, delivered as a
+hand's change — bound, or as its `/gui_event`. Anything else held (samples,
+elements) is refused, naming the kind, with no conversion. In a window with
+`history`, a paste is one entry of its order.
+
 ### Answering an event
 
 An event is a **proposal**, not a fact. The host owns no data — a placement belongs to the arrangement, a sample to a source, a note to whoever holds the timeline — so what it emits is an edit for the owner to apply, and between the gesture and the answer there is a gap the host draws across. `/gui_ack` is what closes it.
