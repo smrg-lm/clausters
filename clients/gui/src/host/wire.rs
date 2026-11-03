@@ -90,6 +90,10 @@ impl Host {
             Err(e) => return diag::warn!("{from}: {GUI_LOAD} {name}: {e}"),
         };
         diag::info!("{from}: {GUI_LOAD} {name}: instantiating GuiDef {id}");
+        // **A load starts a fresh instance**, even over the open window of its
+        // id: `history` is authored and comes back with the def, the entries
+        // a hand made are never restored.
+        self.panels.remove(&id);
         self.on_def(
             &[
                 OscType::Int(id),

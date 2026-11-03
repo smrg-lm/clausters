@@ -497,3 +497,39 @@ fn a_paste_of_anything_but_a_number_is_refused_naming_it() {
         "a refused paste is no entry"
     );
 }
+
+#[test]
+fn a_loaded_def_starts_a_fresh_order_even_over_its_open_window() {
+    let dir = std::env::temp_dir().join(format!(
+        "clausters_panel_load_{}_{:?}",
+        std::process::id(),
+        std::time::Instant::now()
+    ));
+    let store = crate::host::store::GuiStore::open(&dir).unwrap();
+    let mut host = Host::new().with_store(store);
+    // A named def persists as it is defined.
+    def(
+        &mut host,
+        1,
+        r#"{"type":"window","name":"panel","history":true,"children":[
+            {"id":11,"type":"slider","min":0.0,"max":10.0,"value":5.0}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 400, 200);
+    hold(&mut g, &mut host, &ctx, 11, 10.0);
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: crate::host::GUI_LOAD.into(),
+            args: vec![OscType::String("panel".into())],
+        }),
+        from(),
+    );
+    assert!(host.window_history(1), "history is authored and comes back");
+    g.command(&mut host, &ctx, "undo");
+    let line = said(&host);
+    assert!(
+        line.last().is_some_and(|l| l.contains("nothing to undo")),
+        "the hand's entries are not: {line:?}"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}

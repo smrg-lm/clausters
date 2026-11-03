@@ -3186,6 +3186,10 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     the three), the paste one entry of a window's order and closed off from
     the runs around it, other kinds refused naming them; the reference is in
     `docs/gui-protocol.md`, "The clipboard, and who may read what".
+  - ✅ A load starts a fresh instance. *Done 2026-11-02*: `/gui_load` drops
+    the order of the window it reopens before defining it, so loading over
+    the open window of its id restores the authored `history` and none of
+    the hand's entries (`host::wire`, with its test).
   - ⬜ The `history` prop in `docs/gui-protocol.md` and both clients'
     builders, the paired panel example and the books.
 
