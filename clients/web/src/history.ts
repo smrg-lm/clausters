@@ -618,12 +618,6 @@ export class Editing {
         return this.version;
     }
 
-    /** The explicit service handle retained by endpoint adapters. @internal */
-    get serviceCore(): EditingCore {
-        if (this.#core === null) throw new Error("the editing context is closed");
-        return this.#core;
-    }
-
     /** One shared application-service request. @internal */
     serviceCall<T = Record<string, unknown>>(verb: string, args: Record<string, unknown> = {}): T {
         return this.#call(verb, args) as T;

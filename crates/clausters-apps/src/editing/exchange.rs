@@ -1,6 +1,6 @@
 //! **The clipboard's exchange**: a gesture's clipboard lease taken, a copy
-//! published, a lease let go -- typed calls of the context, and the JSON
-//! door the clients' cores reach them through.
+//! published, a lease let go -- typed calls of the context, made by the
+//! application that holds the editor.
 use super::*;
 use clausters_document::clipboard::Clipboard;
 
@@ -61,60 +61,5 @@ impl Editing {
         self.services
             .clipboard
             .release(&mut self.services.resources, lease);
-    }
-
-    pub(super) fn exchange_json(&mut self, request: &Value) -> Value {
-        let server = serde_json::from_value(request["server"].clone()).unwrap_or_default();
-        let mut result = match request["action"].as_str().unwrap_or_default() {
-            "event" => {
-                let args = request["args"].as_array().cloned().unwrap_or_default();
-                let (args, lease) = self.exchange_event(args, server);
-                let mut result = json!({"args": args});
-                if let Some(lease) = lease {
-                    result["lease"] = json!(lease);
-                }
-                result
-            }
-            "publish" => match self.exchange_publish(
-                request["member"].as_u64().unwrap_or(0) as MemberId,
-                request["document"].as_str().unwrap_or_default(),
-                server,
-            ) {
-                Ok(document) => json!({"document": document}),
-                Err(error) => json!({"error": error}),
-            },
-            "acquire" => match self.services.clipboard.acquire(
-                &mut self.services.resources,
-                Clipboard::parse(request["document"].as_str().unwrap_or_default()),
-                server,
-            ) {
-                Ok(lease) => json!({"lease":lease}),
-                Err(error) => json!({"error":error}),
-            },
-            "release" => {
-                if let Some(lease) = request["lease"].as_u64() {
-                    self.exchange_release(lease);
-                }
-                json!({})
-            }
-            "clear" => {
-                self.services.clipboard.clear(&mut self.services.resources);
-                json!({})
-            }
-            "invalidate" => {
-                self.invalidate_server(server);
-                self.services.clipboard.clear(&mut self.services.resources);
-                json!({})
-            }
-            _ => json!({"error":"unknown clipboard exchange action"}),
-        };
-        let released = self.services.resources.collect();
-        result["released"] = json!(
-            released
-                .into_iter()
-                .map(|source| source.id)
-                .collect::<Vec<_>>()
-        );
-        result
     }
 }

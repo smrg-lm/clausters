@@ -213,9 +213,7 @@ impl Client {
     }
 
     fn pending_cleanup(&mut self) -> usize {
-        self.call(json!({"verb": "cleanup", "action": "pending"}))["tickets"]
-            .as_array()
-            .map_or(0, Vec::len)
+        self.editing.resources().pending_releases().len()
     }
 
     /// How many renders of `what` the working folder holds.
