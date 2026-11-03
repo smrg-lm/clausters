@@ -1270,13 +1270,21 @@ impl Host {
     /// front repaints that one too).
     pub fn focus(&mut self, def_id: i32, widget_id: i32) -> Option<i32> {
         let previous = self.focused.replace((def_id, widget_id));
+        if let Some((def, _)) = previous.filter(|p| *p != (def_id, widget_id)) {
+            // A run of keys, or a field's typing, is over as the keys leave.
+            self.panel_close(def);
+        }
         previous.map(|(d, _)| d).filter(|d| *d != def_id)
     }
 
     /// Clears the focus, returning the def id that held it (so the front can
     /// repaint it without its ring) when there was one.
     pub fn clear_focus(&mut self) -> Option<i32> {
-        self.focused.take().map(|(def_id, _)| def_id)
+        let def = self.focused.take().map(|(def_id, _)| def_id);
+        if let Some(def) = def {
+            self.panel_close(def);
+        }
+        def
     }
 
     /// Attaches the audio-server client leg (host -> audio server) over UDP.

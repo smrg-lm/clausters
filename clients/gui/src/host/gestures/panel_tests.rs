@@ -5,6 +5,7 @@ use clausters_core::osc::{OscMessage, OscPacket, OscType};
 
 use super::super::{ClientId, GUI_DEF, GUI_SET, Host};
 use super::*;
+use crate::host::widget::element::Key;
 
 fn from() -> ClientId {
     ClientId::Udp(std::net::SocketAddr::from((
@@ -295,4 +296,119 @@ fn a_button_is_never_an_entry() {
     g.release(&mut host, &ctx, bx, by);
     g.command(&mut host, &ctx, "undo");
     assert_eq!(value(&host, 1, 11), 5.0, "the undo went past the button");
+}
+
+fn focus(host: &mut Host, id: i32, on: bool) {
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_SET.into(),
+            args: vec![
+                OscType::Int(id),
+                OscType::String("focus".into()),
+                OscType::Int(i32::from(on)),
+            ],
+        }),
+        from(),
+    );
+}
+
+#[test]
+fn a_run_of_wheel_steps_is_one_entry_until_another_target_comes_between() {
+    let mut host = panel(true);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 400, 200);
+    let (x11, y11) = at(&host, &ctx, 11);
+    let (x10, y10) = at(&host, &ctx, 10);
+    for _ in 0..3 {
+        g.wheel(&mut host, &ctx, x11, y11, 1.0);
+    }
+    let first = value(&host, 1, 11);
+    assert!(first > 5.0, "the wheel turned it up: {first}");
+    g.wheel(&mut host, &ctx, x10, y10, 1.0);
+    g.wheel(&mut host, &ctx, x11, y11, 1.0);
+    g.wheel(&mut host, &ctx, x11, y11, 1.0);
+    assert!(value(&host, 1, 11) > first);
+
+    g.command(&mut host, &ctx, "undo");
+    assert_eq!(value(&host, 1, 11), first, "the second run, whole");
+    g.command(&mut host, &ctx, "undo");
+    assert_eq!(value(&host, 1, 10), 2.5, "the other target came between");
+    g.command(&mut host, &ctx, "undo");
+    assert_eq!(value(&host, 1, 11), 5.0, "and the first run, whole");
+}
+
+#[test]
+fn a_run_of_key_steps_is_one_entry_until_the_keys_leave() {
+    let mut host = panel(true);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 400, 200);
+    focus(&mut host, 11, true);
+    for _ in 0..3 {
+        g.press_key(&mut host, &ctx, Key::Right, None);
+    }
+    let first = value(&host, 1, 11);
+    assert!(first > 5.0, "the keys stepped it up: {first}");
+    // Away and back: the keys left, so the next steps are a run of their own.
+    focus(&mut host, 11, false);
+    focus(&mut host, 11, true);
+    g.press_key(&mut host, &ctx, Key::Right, None);
+    assert!(value(&host, 1, 11) > first);
+
+    focus(&mut host, 11, false);
+    g.command(&mut host, &ctx, "undo");
+    assert_eq!(value(&host, 1, 11), first);
+    g.command(&mut host, &ctx, "undo");
+    assert_eq!(value(&host, 1, 11), 5.0);
+}
+
+#[test]
+fn a_field_typed_in_is_one_entry_from_focus_to_blur() {
+    let mut host = Host::new();
+    def(
+        &mut host,
+        1,
+        r#"{"type":"window","history":true,"children":[
+            {"id":40,"type":"text","value":"la"},
+            {"id":11,"type":"slider","min":0.0,"max":10.0,"value":5.0}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 400, 200);
+    let (fx, fy) = at(&host, &ctx, 40);
+    g.press(&mut host, &ctx, fx, fy);
+    g.release(&mut host, &ctx, fx, fy);
+    g.key(&mut host, &ctx, Key::Char('b'));
+    // A press in the field moves its caret and is no new gesture.
+    g.press(&mut host, &ctx, fx, fy);
+    g.release(&mut host, &ctx, fx, fy);
+    g.key(&mut host, &ctx, Key::Char('c'));
+    let typed = match host
+        .window_def(1)
+        .unwrap()
+        .find(40)
+        .unwrap()
+        .kind
+        .event_value()
+    {
+        Some(OscType::String(s)) => s,
+        other => panic!("not a field: {other:?}"),
+    };
+    assert_eq!(typed.len(), 4);
+    // Tab away: the focus leaves, and the run with it.
+    g.press_key(&mut host, &ctx, Key::Tab, None);
+    g.press_key(&mut host, &ctx, Key::Right, None);
+    focus(&mut host, 11, false);
+
+    g.command(&mut host, &ctx, "undo");
+    assert_eq!(value(&host, 1, 11), 5.0, "the slider's steps first");
+    g.command(&mut host, &ctx, "undo");
+    assert_eq!(
+        host.window_def(1)
+            .unwrap()
+            .find(40)
+            .unwrap()
+            .kind
+            .event_value(),
+        Some(OscType::String("la".into())),
+        "the whole typing in one step"
+    );
 }

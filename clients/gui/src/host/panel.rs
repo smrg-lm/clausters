@@ -19,8 +19,9 @@
 //!   moved.
 //! - **A gesture is one entry.** The run of values a hold, or a run of wheel
 //!   or key steps on one control, delivers merges into one entry until the
-//!   run closes: at a release, at the next press and at a walk. A command (a
-//!   button) is never an entry.
+//!   run closes: at a release, at the next press, at a walk and as the focus
+//!   leaves a widget. A field's typing is one run from focus to blur, a press
+//!   that moves its caret included. A command (a button) is never an entry.
 //! - **A walk writes the stored value, absolute**, through the widget's
 //!   ordinary delivery, whatever the parameter holds by then.
 //! - **A lost target leaves the order**: a node's `/node_end`, or no widget of
@@ -271,10 +272,24 @@ impl Host {
     }
 
     /// **The run in window `def_id` closes**: what the next change delivers
-    /// is an entry of its own. At a release, a press and a walk.
+    /// is an entry of its own. At a walk and as the focus leaves a widget;
+    /// a press and a release close it through [`Host::panel_gesture_over`].
     pub(crate) fn panel_close(&mut self, def_id: i32) {
         if let Some(panel) = self.panels.get_mut(&def_id) {
             panel.open = None;
+        }
+    }
+
+    /// **A press on widget `id`, or its release**: a gesture of its own, so
+    /// the open run closes -- but for the field the keys are typing in,
+    /// where a press moves the caret and its run lasts from focus to blur.
+    pub(crate) fn panel_gesture_over(&mut self, def_id: i32, id: i32) {
+        let typing_here = self.focused() == Some((def_id, id))
+            && self
+                .widget_kind(def_id, id)
+                .is_some_and(|kind| kind.takes_text());
+        if !typing_here {
+            self.panel_close(def_id);
         }
     }
 

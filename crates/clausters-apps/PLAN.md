@@ -3175,10 +3175,12 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     target lost at its node's `/node_end` or when no widget writes it, and
     the order kept across a redefinition and dropped with the window. The
     prop's reference is in `docs/gui-protocol.md`.
-  - ⬜ What the first part left: a run of wheel or key steps follows the
-    same rule and has no test of its own; a text field's run is closed by a
-    press but not by its blur (Tab away), so its entry is not yet focus to
-    blur.
+  - ✅ What the first part left. *Done 2026-11-02*: a run of wheel or key
+    steps is one entry until another target comes between or the keys
+    leave the control, and a text field's typing is one entry from focus to
+    blur, a press that moves its caret included (the run closes as the
+    focus leaves, in `Host::focus` and `Host::clear_focus`), each with its
+    test.
   - ⬜ The clipboard on controls.
   - ⬜ The `history` prop in `docs/gui-protocol.md` and both clients'
     builders, the paired panel example and the books.

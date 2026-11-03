@@ -732,7 +732,7 @@ impl Gestures {
     ) -> bool {
         // A press starts a gesture of its own: whatever run the window's order
         // had open is over.
-        host.panel_close(ctx.def_id);
+        host.panel_gesture_over(ctx.def_id, at.id);
         let claim = element::press(host, ctx, at, cx, cy).unwrap_or(Claim::Decline);
         let Claim::Take(take) = claim else {
             return false;
