@@ -151,25 +151,40 @@ test("a file a render streams is decoded when it is not a WAV", async () => {
     }
 });
 
-test("a document store writes its snapshot before releasing the queue", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "clausters-document-store-"));
+test("a step that works on files is refused and does nothing", async () => {
+    // **Nothing hands a client a file step**: a render, a store and a move
+    // are the application's, which holds every editor that saves or renders.
+    // One that arrives is refused, naming it, before what is sent with it
+    // goes out, and the storage is left as it was.
+    const dir = await mkdtemp(join(tmpdir(), "clausters-file-steps-"));
     try {
-        const path = join(dir, "session.json");
-        const contents = '{"sources":{},"channels":2}\n';
-        const sent: string[] = [];
-        const server = { sendMsg: (addr: string) => sent.push(addr) } as unknown as Server;
-        await runSteps(server, new StepRunner(), [
-            { send: { addr: "/before", args: [] } },
-            { store: { path, contents } },
-            { send: { addr: "/after", args: [] } },
-        ]);
-        assert.equal(await readFile(path, "utf8"), contents);
-        assert.deepEqual(sent, ["/before", "/after"]);
-        await assert.rejects(runSteps(server, new StepRunner(), [
-            { store: { path: join(dir, "missing", "session.json"), contents } },
-            { send: { addr: "/unreachable", args: [] } },
-        ]));
-        assert.deepEqual(sent, ["/before", "/after"]);
+        const kept = join(dir, "kept.wav");
+        await writeFile(kept, "RIFF");
+        const nrt = new OscNrtInterface();
+        nrt.addBundle(0, [{ addr: "/status", args: [] }]);
+        const score = [...nrt.score.bytes()].map((b) => b.toString(16).padStart(2, "0")).join("");
+        const fileSteps: Record<string, unknown> = {
+            store: { path: join(dir, "session.json"), contents: "{}" },
+            render: { score, path: join(dir, "tone.w64"), rate: RATE, channels: 1, format: "float" },
+            move: { from: kept, to: join(dir, "moved.wav") },
+        };
+        for (const [kind, step] of Object.entries(fileSteps)) {
+            const sent: string[] = [];
+            const server = { sendMsg: (addr: string) => sent.push(addr) } as unknown as Server;
+            const runner = new StepRunner();
+            await assert.rejects(
+                runSteps(server, runner, [
+                    { send: { addr: "/before", args: [] } },
+                    { [kind]: step },
+                    { send: { addr: "/after", args: [] } },
+                ]),
+                new RegExp(`a ${kind} step`),
+            );
+            assert.deepEqual(sent, [], kind);
+            assert.deepEqual(JSON.parse(runner.call(JSON.stringify({ verb: "idle" }))), { idle: true });
+        }
+        const { readdir } = await import("node:fs/promises");
+        assert.deepEqual(await readdir(dir), ["kept.wav"]);
     } finally {
         await rm(dir, { recursive: true, force: true });
     }
@@ -218,33 +233,6 @@ test("a failed walk leaves nothing for the next on its runner", async () => {
     }
 });
 
-test("a render step writes its file and releases what follows it", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "clausters-file-render-"));
-    try {
-        const nrt = new OscNrtInterface();
-        const def = new SynthDef("tone", out(0, sine(660).mul(0.5)));
-        nrt.addBundle(0, [
-            { addr: "/def_send", args: [s("synth"), s(def.dumpDef())] },
-            { addr: "/synth_new", args: [s("tone"), i(1000), i(0), i(0)] },
-        ]);
-        nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
-        const score = [...nrt.score.bytes()].map((b) => b.toString(16).padStart(2, "0")).join("");
-        const path = join(dir, "tone.w64");
-        const sent: string[] = [];
-        const server = { sendMsg: (addr: string) => sent.push(addr) } as unknown as Server;
-        await runSteps(server, new StepRunner(), [
-            { send: { addr: "/before", args: [] } },
-            { render: { score, path, rate: RATE, channels: 1, format: "float" } },
-            { send: { addr: "/after", args: [] } },
-        ]);
-        assert.deepEqual(sent, ["/before", "/after"]);
-        const back = await decodeSoundfile(await readFile(path), path, 0, -1);
-        assert.equal(back.frames, 24_000);
-    } finally {
-        await rm(dir, { recursive: true, force: true });
-    }
-});
-
 test("a render with no path keeps no output and does its work", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clausters-file-render-"));
     try {
@@ -257,8 +245,8 @@ test("a render with no path keeps no output and does its work", async () => {
         ]);
         nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
         const score = [...nrt.score.bytes()].map((b) => b.toString(16).padStart(2, "0")).join("");
-        const { renderStep } = await import("../src/steps.ts");
-        await renderStep({ score, path: "", rate: RATE, channels: 1, format: "float" });
+        const { renderFile } = await import("../src/engine/file-render.ts");
+        await renderFile({ score: nrt.score.bytes(), sampleRate: RATE, channels: 1, seed: 0n, path: "", sampleFormat: "float" });
         const head = new TextDecoder().decode((await readFile(written)).subarray(0, 4));
         assert.equal(head, "RIFF");
         // what the DiskOut wrote, and no rendered file

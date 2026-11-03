@@ -3,9 +3,14 @@
  *
  * A verb of the shared crate answers **steps** -- a message to send, a `/done`
  * the rest waits for, a barrier -- and {@link runSteps} is the one walk of them
- * in this client: a multitrack's playback and a session's load go through it. Which
- * reply releases what is the runner's (`StepRunner`), as it is the script's and
- * the GUI host's; what is left here is a socket and waiting on it.
+ * in this client: a roll's playback goes through it. Which reply releases what
+ * is the runner's (`StepRunner`), as it is the script's and the GUI host's;
+ * what is left here is a socket and waiting on it.
+ *
+ * The steps that work on files (a render, a document stored, a file moved) are
+ * the GUI host's application's, which holds every editor that saves or
+ * renders; none reaches a client, and the walk refuses one, naming it, rather
+ * than doing in this page's storage what the application does on its own.
  *
  * @module
  */
@@ -32,12 +37,6 @@ export type Step =
     | { move: { from: string; to: string } }
     | { store: { path: string; contents: string } };
 
-/**
- * **How an offline render goes**, told by {@link runSteps}: the frames done and
- * the frames it comes to as it runs, and `null` for both once it has ended.
- */
-export type RenderProgress = (render: RenderStep, done: number | null, total: number | null) => void;
-
 /** **An offline render a step asks for**: the score, in hex, and the file it
  *  is rendered into. */
 export interface RenderStep {
@@ -51,44 +50,12 @@ export interface RenderStep {
     label?: string;
 }
 
-/**
- * **A render step carried out**: the score rendered offline into its file, in
- * a Worker of its own in a page and on this thread under node
- * (`engine/file-render.ts`), so two renders run at once. `onProgress` is told
- * the frames done and the frames the render comes to.
- */
-export async function renderStep(
-    render: RenderStep,
-    onProgress?: (done: number, total: number) => void,
-): Promise<void> {
-    const { renderFile } = await import("./engine/file-render.ts");
-    const { entropySeed } = await import("./engine/render.ts");
-    const score = new Uint8Array(render.score.length / 2);
-    for (let i = 0; i < score.length; i++) score[i] = parseInt(render.score.slice(2 * i, 2 * i + 2), 16);
-    await renderFile({
-        score,
-        sampleRate: render.rate,
-        channels: render.channels,
-        seed: entropySeed(),
-        path: render.path,
-        sampleFormat: render.format || "float",
-    }, onProgress);
-}
-
 /** How {@link runSteps} carries its steps out. */
 export interface StepOptions {
     /** Which server the runner addresses the steps to. */
     to?: "sound" | "samples";
     /** How long each awaited reply may take, in seconds. */
     timeout?: number;
-    /** Told how each offline render goes. */
-    progress?: RenderProgress;
-    /** Runs each awaited request, alone on its server. */
-    exclusive?: <T>(request: () => Promise<T>) => Promise<T>;
-    /** Calls the steps off once aborted: a render not begun yet is not
-     *  begun, which is what the window's work-in-progress panel asks of a
-     *  long reverse. */
-    signal?: AbortSignal;
 }
 
 /** The walk each runner is on, so the next one starts after it. */
@@ -103,11 +70,7 @@ const walking = new WeakMap<StepRunner, Promise<void>>();
  * back, which releases the rest. `to` is which server the runner addresses them
  * to, `"sound"` or `"samples"`; a client's is one server either way. Rejects
  * when the server refuses a step or answers one with something it does not
- * wait on. `progress` is told how each offline render goes -- `(render, done,
- * total)` as it runs, in frames, and `(render, null, null)` once it has ended,
- * either way. `exclusive` runs each awaited request, and never a render, so
- * two walks on one server cannot take each other's `/done` while their
- * renders run at once.
+ * wait on, or when a step that works on files arrives.
  *
  * **One walk at a time per runner.** The runner holds one sequence, so a
  * second walk begun while the first waits on a reply would find the first's
@@ -131,35 +94,14 @@ export function runSteps(
     return walk;
 }
 
-/**
- * **What a step does on the disk**, by the verb: render a score into a file,
- * move a file, write a prepared document, remove one. A test replaces them to
- * record what a run asked for rather than doing it.
- *
- * @internal
- */
-export const disk = {
-    render: (render: RenderStep, onProgress?: (done: number, total: number) => void): Promise<void> =>
-        renderStep(render, onProgress),
-    move: async (from: string, to: string): Promise<void> => {
-        const { moveFileAt } = await import("./base/files.ts");
-        await moveFileAt(from, to);
-    },
-    store: async (path: string, contents: string): Promise<void> => {
-        const { writeFileAt } = await import("./base/files.ts");
-        await writeFileAt(path, new TextEncoder().encode(contents));
-    },
-    remove: async (path: string): Promise<void> => {
-        const { removeFileAt } = await import("./base/files.ts");
-        await removeFileAt(path);
-    },
-};
+/** The steps only the application that holds an editor carries out. */
+const THE_APPLICATIONS = ["render", "store", "move", "measure"] as const;
 
 async function walkSteps(
     server: Server,
     runner: StepRunner,
     steps: unknown[],
-    { to = "sound", timeout, progress, exclusive = (request) => request(), signal }: StepOptions,
+    { to = "sound", timeout }: StepOptions,
 ): Promise<void> {
     const call = (request: object): Record<string, unknown> =>
         JSON.parse(runner.call(JSON.stringify(request))) as Record<string, unknown>;
@@ -172,85 +114,31 @@ async function walkSteps(
             };
             const messages = ready.messages ?? [];
             const awaiting = ready.awaiting ?? null;
-            if (awaiting === null || "render" in awaiting.step || "move" in awaiting.step || "store" in awaiting.step) {
+            if (awaiting === null) {
                 for (const message of messages) {
                     server.sendMsg(message.addr, ...message.args.map(stepArg));
                 }
-                if (awaiting === null) return;
-                if ("store" in awaiting.step) {
-                    const stored = awaiting.step.store;
-                    try {
-                        if (signal?.aborted) throw new Error("called off");
-                        await disk.store(stored.path, stored.contents);
-                    } catch (error) {
-                        call({ verb: "rendered", error: String((error as Error)?.message ?? error) });
-                        throw error;
-                    }
-                    call({ verb: "rendered" });
-                    continue;
-                }
-                if ("move" in awaiting.step) {
-                    // **A file moved**, where this client's paths are: what a save
-                    // over a file the take reads does with it.
-                    const move = awaiting.step.move;
-                    let failed: unknown = null;
-                    try {
-                        await disk.move(move.from, move.to);
-                    } catch (error) {
-                        failed = error;
-                    }
-                    call(failed === null
-                        ? { verb: "moved" }
-                        : { verb: "moved", error: String((failed as Error)?.message ?? failed) });
-                    if (failed !== null) {
-                        throw new Error(`clausters: moving ${move.from} to ${move.to} failed: ${String((failed as Error)?.message ?? failed)}`);
-                    }
-                    continue;
-                }
-                // **An offline render**: nothing is sent for it; this client
-                // renders the score into its file and says how it went.
-                const render = (awaiting.step as { render: RenderStep }).render;
-                if (signal?.aborted) {
-                    call({ verb: "rendered", error: "called off" });
-                    throw new Error("clausters: called off");
-                }
-                let failed: unknown = null;
-                try {
-                    await disk.render(render, progress === undefined
-                        ? undefined : (done, total) => progress(render, done, total));
-                } catch (error) {
-                    failed = error;
-                } finally {
-                    progress?.(render, null, null);
-                }
-                const answered = call(failed === null
-                    ? { verb: "rendered" }
-                    : { verb: "rendered", error: String((failed as Error)?.message ?? failed) });
-                if (failed !== null) {
-                    throw new Error(`clausters: the render into ${render.path} failed: ${String((failed as Error)?.message ?? failed)}`);
-                }
-                if (answered.reply !== "released") {
-                    throw new Error("clausters: the runner did not wait on the render it asked for");
-                }
-                continue;
+                return;
+            }
+            const held = THE_APPLICATIONS.find((kind) => kind in awaiting.step);
+            if (held !== undefined) {
+                throw new Error(`clausters: a ${held} step is carried out by the application that holds the editor, never by a client`);
             }
             const last = messages.pop();
             if (last === undefined) throw new Error("clausters: the runner waits on a step nothing was sent for");
-            const reply = await exclusive(() => {
-                for (const message of messages) {
-                    server.sendMsg(message.addr, ...message.args.map(stepArg));
-                }
-                return "sync" in awaiting.step
-                    ? server.request(last.addr, last.args.map(stepArg), {
-                          expect: ["/server_sync.reply"],
-                          timeout,
-                      })
-                    : server.request(last.addr, last.args.map(stepArg), {
-                          expect: ["/done", "/fail"],
-                          cmd: last.addr,
-                          timeout,
-                      });
-            });
+            for (const message of messages) {
+                server.sendMsg(message.addr, ...message.args.map(stepArg));
+            }
+            const reply = "sync" in awaiting.step
+                ? await server.request(last.addr, last.args.map(stepArg), {
+                      expect: ["/server_sync.reply"],
+                      timeout,
+                  })
+                : await server.request(last.addr, last.args.map(stepArg), {
+                      expect: ["/done", "/fail"],
+                      cmd: last.addr,
+                      timeout,
+                  });
             const answered = call({
                 verb: "reply",
                 from: to,

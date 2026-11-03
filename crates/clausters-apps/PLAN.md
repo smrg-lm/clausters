@@ -6419,7 +6419,7 @@ wrong.
   reader falls behind. **Acceptance:** the assertion's output from a failure
   says which, and the test holds under a loaded machine.
 
-- ⬜ **The clients' walk of steps keeps a move no save hands it** *(found
+- ✅ **The clients' walk of steps keeps a move no save hands it** *(found
   2026-10-31, verifying the save's moves)*. `clients/python/clausters/_steps.py`
   and `clients/web/src/steps.ts` carry a `move` step with their own rename, which
   neither rolls back nor crosses filesystems as the application's walk does
@@ -6427,6 +6427,13 @@ wrong.
   only maker of a move, so the branch looks unreachable. `X27`'s removal of
   obsolete coordination decides: gone from both clients, with a test that nothing
   hands one out.
+  *Fixed 2026-11-02 (`X27`)*: not only the move. Every step that works on files
+  (a render, a store, a move, a measure) is the application's, and the clients'
+  walk, which only a roll's playback still uses, carried all four. They are gone
+  from both, with the options only they read (a render's progress, calling
+  renders off, the per-endpoint lock); a file step that reaches a client is
+  refused, naming it, before anything of its batch goes out
+  (`tests/test_steps_walk.py`, `file-render.test.ts`).
 
 - ✅ **A multitrack's window does not say whether its session is unsaved**
   *(found by the user, 2026-10-31, in the eye pass of `X25`)*. The editor knows

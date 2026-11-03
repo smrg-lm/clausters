@@ -2,23 +2,27 @@
 
 A verb of the shared crate answers **steps** -- a message to send, a ``/done``
 the rest waits for, a barrier -- and `run_steps` is the one walk of them in this
-client: a multitrack's playback and a session's load go through it. Which reply
-releases what is the runner's (`clausters._native.StepRunner`), as it is the
-page's and the GUI host's; what is left here is a socket and waiting on it.
+client: a roll's playback goes through it. Which reply releases what is the
+runner's (`clausters._native.StepRunner`), as it is the page's and the GUI
+host's; what is left here is a socket and waiting on it.
+
+The steps that work on files (a render, a document stored, a file moved) are
+the GUI host's application's, which holds every editor that saves or renders;
+none reaches a client, and the walk refuses one, naming it, rather than doing
+on this machine's disk what the application does on its own.
 """
 
 from array import array
-from contextlib import nullcontext
 
 from .base import _osclib
 from .errors import CommandError
 
-_UNLOCKED = nullcontext()
+#: The steps only the application that holds an editor carries out.
+_THE_APPLICATIONS = ("render", "store", "move", "measure")
 
 
 def run_steps(server, runner, steps: list, *, to: str = "sound",
-              timeout: "float | None" = None, progress=None, lock=None,
-              called_off=None) -> None:
+              timeout: "float | None" = None) -> None:
     """Carry ``steps`` out on ``server`` through ``runner``.
 
     What may go out is sent; where something is awaited, the runner puts the
@@ -33,21 +37,13 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
         to: which server the runner addresses them to, ``"sound"`` or
             ``"samples"``; a client's is one server either way.
         timeout: how long each awaited reply may take.
-        progress: told how each offline render goes -- ``(render, done,
-            total)`` as it runs, in frames, and ``(render, None, None)`` once
-            it has ended, either way.
-        lock: held around each awaited request and never across a render,
-            so two batches on one server cannot take each other's ``/done``
-            while their renders run at once.
-        called_off: a `threading.Event` that, once set, calls the steps
-            off: a render not begun yet is not begun, which is what the
-            window's work-in-progress panel asks of a long reverse.
 
     Raises:
-        CommandError: when the server refuses a step, or answers one with
-            something it does not wait on. Whatever ends the walk early (that,
-            a failed render, a timeout) retires the steps it did not send, so
-            the runner is left idle for the next batch.
+        CommandError: when the server refuses a step, answers one with
+            something it does not wait on, or a step that works on files
+            arrives. Whatever ends the walk early (that, a timeout) retires
+            the steps it did not send, so the runner is left idle for the next
+            batch.
     """
     runner.call("push", to=to, steps=steps)
     try:
@@ -55,70 +51,25 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
             ready = runner.call("ready")
             messages = ready.get("messages", [])
             awaiting = ready.get("awaiting")
-            if awaiting is None or any(kind in awaiting["step"] for kind in ("render", "move", "store")):
+            if awaiting is None:
                 for message in messages:
                     server.send_msg(message["addr"], *[step_arg(a) for a in message["args"]])
-                if awaiting is None:
-                    return
-                if "store" in awaiting["step"]:
-                    from pathlib import Path
-                    stored = awaiting["step"]["store"]
-                    try:
-                        if called_off is not None and called_off.is_set():
-                            raise CommandError("called off")
-                        Path(stored["path"]).write_bytes(stored["contents"].encode("utf-8"))
-                    except Exception as error:
-                        runner.call("rendered", error=str(error))
-                        raise CommandError(f"writing {stored['path']} failed: {error}") from error
-                    runner.call("rendered")
-                    continue
-                if "move" in awaiting["step"]:
-                    # **A file moved**, on this client's disk: what a save over a
-                    # file the take reads does with it.
-                    move = awaiting["step"]["move"]
-                    try:
-                        import os
-                        os.replace(move["from"], move["to"])
-                        failed = None
-                    except OSError as error:
-                        failed = error
-                    runner.call("moved", **({} if failed is None else {"error": str(failed)}))
-                    if failed is not None:
-                        raise CommandError(f"moving {move['from']} to {move['to']} failed: {failed}")
-                    continue
-                # **An offline render**: nothing is sent for it; this client
-                # renders the score into its file and says how it went.
-                render = awaiting["step"]["render"]
-                if called_off is not None and called_off.is_set():
-                    runner.call("rendered", error="called off")
-                    raise CommandError("called off")
-                told = None if progress is None else (
-                    lambda done, total, render=render: progress(render, done, total))
-                try:
-                    render_step(render, progress=told)
-                    failed = None
-                except Exception as error:  # noqa: BLE001 -- the runner is told, then it is raised
-                    failed = error
-                finally:
-                    if progress is not None:
-                        progress(render, None, None)
-                answer = runner.call("rendered", **({} if failed is None else {"error": str(failed)}))
-                if failed is not None:
-                    raise CommandError(f"the render into {awaiting['step']['render']['path']} failed: {failed}")
-                if answer.get("reply") != "released":
-                    raise CommandError("the runner did not wait on the render it asked for")
-                continue
+                return
+            held = [kind for kind in _THE_APPLICATIONS if kind in awaiting["step"]]
+            if held:
+                raise CommandError(
+                    f"a {held[0]} step is carried out by the application that "
+                    "holds the editor, never by a client")
             if not messages:
                 raise CommandError("the runner waits on a step nothing was sent for")
             *first, last = messages
             expect = (("/server_sync.reply",) if "sync" in awaiting["step"]
                       else ("/done", "/fail"))
-            with lock if lock is not None else _UNLOCKED:
-                for message in first:
-                    server.send_msg(message["addr"], *[step_arg(a) for a in message["args"]])
-                raddr, rargs = server.request(
-                    last["addr"], *[step_arg(a) for a in last["args"]], expect=expect,
-                    timeout=timeout)
+            for message in first:
+                server.send_msg(message["addr"], *[step_arg(a) for a in message["args"]])
+            raddr, rargs = server.request(
+                last["addr"], *[step_arg(a) for a in last["args"]], expect=expect,
+                timeout=timeout)
             answer = runner.call("reply", **{"from": to}, addr=raddr,
                                  args=[tagged(a) for a in rargs])
             if answer.get("reply") == "refused":
@@ -133,20 +84,6 @@ def run_steps(server, runner, steps: list, *, to: str = "sound",
         # this runner sends nothing of this one.
         runner.call("retire")
         raise
-
-
-def render_step(render: dict, progress=None) -> None:
-    """**A render step carried out**: the score rendered offline into its file
-    by an offline server of its own (a ``--nrt`` process), so two renders run
-    at once on two of them. ``progress`` is told the frames done and the frames
-    the render comes to."""
-    from .render import render_to_file
-
-    # An empty path keeps nothing of the output (`--nrt`'s `-`): the render's
-    # work is what its synths write.
-    render_to_file(bytes.fromhex(render["score"]), render["path"] or "-", float(render["rate"]),
-                   int(render["channels"]), 0, None, render.get("format", "float"),
-                   progress=progress)
 
 
 def step_arg(arg: dict):

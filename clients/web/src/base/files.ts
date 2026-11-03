@@ -69,29 +69,6 @@ export async function statAt(path: string): Promise<{ modified: number; size: nu
 }
 
 /**
- * **Moves the file at `from` to `to`**, over whatever is there: on the disk
- * under node, in the page's storage in a tab.
- */
-export async function moveFileAt(from: string, to: string): Promise<void> {
-    if (underNode()) {
-        const { rename } = await import("node:fs/promises");
-        await rename(from, to);
-        return;
-    }
-    await opfs.moveFile(from, to);
-}
-
-/** **Removes the file at `path`**; one that is not there is no error. */
-export async function removeFileAt(path: string): Promise<void> {
-    if (underNode()) {
-        const { rm } = await import("node:fs/promises");
-        await rm(path, { force: true });
-        return;
-    }
-    await opfs.removeFile(path);
-}
-
-/**
  * **Removes directory `path`**: with `recursive`, and what it holds; without,
  * only when it is empty -- one that still holds something is left as it is.
  */
