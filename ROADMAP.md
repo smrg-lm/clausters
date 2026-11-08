@@ -129,9 +129,9 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Under load only; what is
   open is whether the test's pacing or the crossfade is at fault.
 
-- ⬜ **A press in a multitrack lands off its mark again at a density of 0.8
-  — seen only in the automated browser** *(`clients/gui/PLAN.md`, Found by
-  use)*. A difference between the native host and the page.
+- ⬜ **A multitrack's track heights do not follow the window's scale**
+  *(`clients/gui/PLAN.md`, Found by use)*. Found measuring the press at a
+  density of 0.8, which lands where it is drawn.
 
 - ⬜ **A MIDI file and an OSC score are sources, as a sound file is, and a
   session holds neither inside** *(`crates/clausters-document/PLAN.md`, Found
