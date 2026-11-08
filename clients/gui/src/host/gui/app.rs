@@ -1301,7 +1301,22 @@ impl ApplicationHandler<UserEvent> for App {
                 // the verbs it names are the gesture machine's. What is left
                 // here is what only a desktop window has -- Escape with nothing
                 // open closes it.
-                let consumed = to_key(&pressed).is_some_and(|k| self.press_key(def_id, k));
+                //
+                // **A commit of several characters is typed whole**, each in
+                // turn, as the page types what its input field composed: an
+                // input method hands over a word, a compose sequence a letter
+                // and its mark.
+                let keys: Vec<_> = match &pressed {
+                    Key::Character(text) if text.chars().nth(1).is_some() => text
+                        .chars()
+                        .filter_map(|c| to_key(&Key::Character(c.to_string().into())))
+                        .collect(),
+                    _ => to_key(&pressed).into_iter().collect(),
+                };
+                let mut consumed = false;
+                for key in keys {
+                    consumed |= self.press_key(def_id, key);
+                }
                 if !consumed && matches!(pressed, Key::Named(NamedKey::Escape)) {
                     self.user_close(def_id, Loop::Shown(event_loop));
                 }

@@ -680,6 +680,45 @@ pub fn column_at(s: &str, dx: f32, scale: f32) -> usize {
     at + ((dx - x) / cell).round().max(0.0) as usize
 }
 
+/// **Where a caret at byte `at` of `s` is drawn**, in pixels from the left
+/// of `s` drawn at `scale`: the logical position at its visual place, which
+/// in a line that mixes directions is not the width of what comes before it
+/// (`shape::Shaped::caret_x`). With the bitmap it is that width.
+pub fn caret_x(s: &str, at: usize, scale: f32) -> f32 {
+    #[cfg(feature = "font-atlas")]
+    if atlas::has_face() {
+        return shape::shape(s, scale).caret_x(s, at);
+    }
+    width(&s[..at.min(s.len())], scale)
+}
+
+/// **The caret position a click `dx` pixels from the left of `s` lands on**:
+/// the grapheme boundary of `s` whose [`caret_x`] is nearest, as a byte.
+pub fn byte_at(s: &str, dx: f32, scale: f32) -> usize {
+    use unicode_segmentation::UnicodeSegmentation;
+    s.grapheme_indices(true)
+        .map(|(at, _)| at)
+        .chain(std::iter::once(s.len()))
+        .map(|at| (at, (caret_x(s, at, scale) - dx).abs()))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map_or(0, |(at, _)| at)
+}
+
+/// **What the bytes `[from, to)` of `s` cover where `s` is drawn**: the
+/// spans a selection paints, `(left, right)` in pixels from its left --
+/// several where it crosses a change of direction.
+pub fn spans(s: &str, from: usize, to: usize, scale: f32) -> Vec<(f32, f32)> {
+    #[cfg(feature = "font-atlas")]
+    if atlas::has_face() {
+        return shape::shape(s, scale).spans(from, to);
+    }
+    let (from, to) = (from.min(s.len()), to.min(s.len()));
+    if to <= from {
+        return Vec::new();
+    }
+    vec![(width(&s[..from], scale), width(&s[..to], scale))]
+}
+
 /// The size a script's `text_size` actually draws at -- **the one place two
 /// builds of this host legitimately differ**.
 ///

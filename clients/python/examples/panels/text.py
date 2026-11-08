@@ -103,9 +103,9 @@ def alphabet() -> dict:
     """What the face carries, at the size the chrome is drawn at."""
     return panel(label(ALPHABET),
                  label(ACCENTED),
-                 # The same string in a field you can type into: the caret and
-                 # the selection measure by the cell, so an accent costs no
-                 # width and a descender no height.
+                 # The same string in a field you can type into: the caret
+                 # steps over a letter and its accent at once, and an accent
+                 # costs no width and a descender no height.
                  text(name="field", value="una canción, un año, ¡qué más!",
                       label="editable"),
                  layout="col", h=140.0)
@@ -114,8 +114,11 @@ def alphabet() -> dict:
 def scripts() -> dict:
     """The writing systems the host shapes, and a line that mixes two."""
     return panel(label(ARABIC), label(HEBREW), label(DEVANAGARI), label(MARKS),
-                 label(MIXED),
-                 layout="col", h=150.0)
+                 # The mixed line in a field: the arrows walk it in the order it
+                 # was typed, so inside the Hebrew word the caret moves left,
+                 # and a selection across the word paints both runs.
+                 text(name="mixed", value=MIXED, label="editable, mixed"),
+                 layout="col", h=170.0)
 
 
 def controls() -> dict:

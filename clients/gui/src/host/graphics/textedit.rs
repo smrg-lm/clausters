@@ -1,12 +1,17 @@
 //! The pure text-editing model for the editable `text` widget.
 //!
 //! This is the `text` field's own complex logic, kept out of the widget and
-//! drawing code so neither is obscured by caret arithmetic. It is deliberately
-//! **std-only** (no `unicode-segmentation`): the caret and the selection anchor
-//! are byte offsets into the widget's `value` string, always kept on `char`
-//! boundaries, and every motion is by `char` -- the right granularity for the
-//! embedded bitmap font, which is per-cell. The operations mutate the string in
-//! place (`String::insert_str`/`replace_range`) so the `value` stays the single
+//! drawing code so neither is obscured by caret arithmetic. The caret and the
+//! selection anchor are byte offsets into the widget's `value` string, and
+//! every motion is by **grapheme cluster** (`unicode-segmentation`): one
+//! perceived character, however many code points write it, so an arrow never
+//! leaves a mark without its base or splits a Devanagari syllable's vowel sign
+//! from its consonant, and a backspace takes back what one key wrote. A
+//! column ([`line_col`], [`offset_of`]) counts clusters too. Positions are
+//! **logical** -- the order the text is stored and typed in -- and where one
+//! is drawn, in a line that mixes directions, is the drawing's question
+//! (`font::caret_x`). The operations mutate the string in place
+//! (`String::insert_str`/`replace_range`) so the `value` stays the single
 //! source of truth the widget already emits as its event value.
 //!
 //! The module is platform-agnostic and window-free, so it unit-tests without a
@@ -44,20 +49,32 @@ impl Caret {
     }
 }
 
-/// The byte offset of the char boundary just before `pos` (or 0 at the start).
+/// The byte offset of the grapheme cluster boundary just before `pos` (or 0
+/// at the start).
 fn prev_boundary(value: &str, pos: usize) -> usize {
-    value[..pos]
-        .char_indices()
-        .next_back()
-        .map_or(0, |(i, _)| i)
+    use unicode_segmentation::GraphemeCursor;
+    GraphemeCursor::new(pos, value.len(), true)
+        .prev_boundary(value, 0)
+        .ok()
+        .flatten()
+        .unwrap_or(0)
 }
 
-/// The byte offset of the char boundary just after `pos` (or the end).
+/// The byte offset of the grapheme cluster boundary just after `pos` (or the
+/// end).
 fn next_boundary(value: &str, pos: usize) -> usize {
-    value[pos..]
-        .char_indices()
-        .nth(1)
-        .map_or(value.len(), |(i, _)| pos + i)
+    use unicode_segmentation::GraphemeCursor;
+    GraphemeCursor::new(pos, value.len(), true)
+        .next_boundary(value, 0)
+        .ok()
+        .flatten()
+        .unwrap_or(value.len())
+}
+
+/// How many grapheme clusters `s` is: a column's count.
+fn clusters(s: &str) -> usize {
+    use unicode_segmentation::UnicodeSegmentation;
+    s.graphemes(true).count()
 }
 
 /// Re-lands `pos`/`anchor` on valid char boundaries within `value` -- called
@@ -416,7 +433,7 @@ pub fn move_up(value: &str, caret: &mut Caret, select: bool) {
     if start == 0 {
         return; // already on the first line
     }
-    let col = value[start..caret.pos].chars().count();
+    let col = clusters(&value[start..caret.pos]);
     let prev_start = line_start(value, start - 1);
     caret.pos = col_to_byte(value, prev_start, start - 1, col);
 }
@@ -430,17 +447,18 @@ pub fn move_down(value: &str, caret: &mut Caret, select: bool) {
     if end >= value.len() {
         return; // already on the last line
     }
-    let col = value[start..caret.pos].chars().count();
+    let col = clusters(&value[start..caret.pos]);
     let next_start = end + 1;
     let next_end = line_end(value, next_start);
     caret.pos = col_to_byte(value, next_start, next_end, col);
 }
 
 /// The byte offset of column `col` within the line `[start, end)` (clamped to
-/// the line's char count).
+/// the line's cluster count).
 fn col_to_byte(value: &str, start: usize, end: usize, col: usize) -> usize {
+    use unicode_segmentation::UnicodeSegmentation;
     value[start..end]
-        .char_indices()
+        .grapheme_indices(true)
         .nth(col)
         .map_or(end, |(i, _)| start + i)
 }
@@ -454,10 +472,10 @@ pub fn select_all(value: &str, caret: &mut Caret) {
 // --- Layout helpers shared by the renderer and the hit-test ----------------
 
 /// The `(line, column)` of byte `pos`: the line is the count of newlines before
-/// it, the column the char count since the line start.
+/// it, the column the grapheme clusters since the line start.
 pub fn line_col(value: &str, pos: usize) -> (usize, usize) {
     let line = value[..pos].bytes().filter(|&b| b == b'\n').count();
-    let col = value[line_start(value, pos)..pos].chars().count();
+    let col = clusters(&value[line_start(value, pos)..pos]);
     (line, col)
 }
 

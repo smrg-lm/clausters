@@ -130,6 +130,88 @@ pub fn shape(s: &str, scale: f32) -> Rc<Shaped> {
     shaped
 }
 
+impl Shaped {
+    /// **Where a caret at byte `at` of `s` (the string this was shaped from)
+    /// is drawn**: a logical position, drawn at its visual one. Before a
+    /// cluster it is that cluster's leading edge -- its left in a
+    /// left-to-right run, its right in a right-to-left one; after the last
+    /// cluster before it, that cluster's trailing edge; and inside a cluster
+    /// a ligature drew whole (`fi`), the share of it the graphemes before
+    /// `at` take.
+    pub fn caret_x(&self, s: &str, at: usize) -> f32 {
+        use unicode_segmentation::UnicodeSegmentation;
+        // the extent of every item of the cluster that starts at `start`
+        let extent = |start: usize| {
+            self.items.iter().filter(|item| item.cluster == start).fold(
+                None,
+                |span: Option<(f32, f32, bool)>, item| {
+                    let (l, r) = (item.pen, item.pen + item.advance);
+                    Some(match span {
+                        Some((a, b, rtl)) => (a.min(l), b.max(r), rtl || item.rtl),
+                        None => (l, r, item.rtl),
+                    })
+                },
+            )
+        };
+        if let Some((left, right, rtl)) = extent(at) {
+            return if rtl { right } else { left };
+        }
+        // the cluster before `at`, and where the next one starts
+        let Some(before) = self
+            .items
+            .iter()
+            .map(|item| item.cluster)
+            .filter(|&c| c < at)
+            .max()
+        else {
+            return 0.0;
+        };
+        let next = self
+            .items
+            .iter()
+            .map(|item| item.cluster)
+            .filter(|&c| c > before)
+            .min()
+            .unwrap_or(s.len());
+        let Some((left, right, rtl)) = extent(before) else {
+            return 0.0;
+        };
+        let share = if at < next && next <= s.len() {
+            let of = s[before..next].graphemes(true).count().max(1);
+            s[before..at].graphemes(true).count() as f32 / of as f32
+        } else {
+            1.0
+        };
+        if rtl {
+            right - share * (right - left)
+        } else {
+            left + share * (right - left)
+        }
+    }
+
+    /// **What the bytes `[from, to)` of `s` cover on the line**: the visual
+    /// spans of the items they hold, `(left, right)`, joined where they
+    /// touch -- several where the range crosses a change of direction.
+    pub fn spans(&self, from: usize, to: usize) -> Vec<(f32, f32)> {
+        let mut covered: Vec<(f32, f32)> = self
+            .items
+            .iter()
+            .filter(|item| item.cluster >= from && item.cluster < to)
+            .map(|item| (item.pen, item.pen + item.advance))
+            .filter(|(l, r)| r > l)
+            .collect();
+        covered.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut out: Vec<(f32, f32)> = Vec::new();
+        for (l, r) in covered {
+            match out.last_mut() {
+                Some(last) if l <= last.1 + 0.01 => last.1 = last.1.max(r),
+                _ => out.push((l, r)),
+            }
+        }
+        out
+    }
+}
+
 /// What a piece of a run is drawn with.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Piece {
@@ -395,5 +477,88 @@ mod tests {
         let run = shaped(&format!("a{}b", super::symbol::PLAY));
         assert_eq!(run.items[1].kind, Kind::Char(super::symbol::PLAY));
         assert_eq!(run.items[1].advance, ADVANCE as f32 * 2.0);
+    }
+}
+
+#[cfg(test)]
+mod caret_tests {
+    use super::*;
+    use crate::host::graphics::textedit::{self, Caret};
+
+    /// **A caret walks a mixed line cluster by cluster, logically, and is
+    /// drawn where it stands**: the arrows step one cluster at a time through
+    /// Latin, a Hebrew word and Latin again; inside the Hebrew word each step
+    /// moves the drawn caret left, elsewhere right; and a click at the place
+    /// a caret is drawn lands on that caret.
+    #[test]
+    fn a_caret_walks_a_mixed_line_and_lands_where_it_was_clicked() {
+        assert!(atlas::set_embedded());
+        let line = "ab \u{05E9}\u{05DC}\u{05D5}\u{05DD} cd";
+        let scale = 2.0;
+        let mut caret = Caret::default();
+        let mut walked = vec![0];
+        while caret.pos < line.len() {
+            textedit::move_right(line, &mut caret, false);
+            walked.push(caret.pos);
+        }
+        let boundaries: Vec<usize> = line
+            .grapheme_indices(true)
+            .map(|(at, _)| at)
+            .chain(std::iter::once(line.len()))
+            .collect();
+        assert_eq!(walked, boundaries, "one cluster a step");
+        let xs: Vec<f32> = walked
+            .iter()
+            .map(|&at| super::super::caret_x(line, at, scale))
+            .collect();
+        let hebrew = 3..11; // the bytes of the Hebrew word
+        for (i, pair) in walked.windows(2).enumerate() {
+            let inside = hebrew.contains(&pair[0]) && hebrew.contains(&pair[1]);
+            if inside {
+                assert!(xs[i + 1] < xs[i], "leftward inside the word: {xs:?}");
+            }
+        }
+        assert!(
+            xs[1] > xs[0] && xs.last() > xs.get(xs.len() - 2),
+            "rightward in Latin"
+        );
+        for &at in &walked {
+            let x = super::super::caret_x(line, at, scale);
+            let landed = super::super::byte_at(line, x, scale);
+            assert_eq!(
+                super::super::caret_x(line, landed, scale),
+                x,
+                "a click at {x} lands on the caret drawn there ({at})"
+            );
+        }
+    }
+
+    /// **A selection across a change of direction copies the logical text
+    /// and paints every run it covers**: from inside the Latin into the
+    /// Hebrew word, the copy is the bytes between the two ends, and the
+    /// highlight is two spans, one in each run.
+    #[test]
+    fn a_selection_across_a_direction_change_paints_both_runs() {
+        assert!(atlas::set_embedded());
+        let line = "ab \u{05E9}\u{05DC}\u{05D5}\u{05DD} cd";
+        let caret = Caret {
+            pos: 7,
+            anchor: Some(1),
+        };
+        assert_eq!(textedit::selected(line, &caret), Some("b \u{05E9}\u{05DC}"));
+        let spans = super::super::spans(line, 1, 7, 2.0);
+        assert_eq!(spans.len(), 2, "{spans:?}");
+    }
+
+    /// **A mark goes with its base**: an arrow steps over a letter and its
+    /// combining mark at once, and a backspace takes both back.
+    #[test]
+    fn an_arrow_and_a_backspace_take_a_cluster_whole() {
+        let mut value = String::from("e\u{0301}x");
+        let mut caret = Caret::default();
+        textedit::move_right(&value, &mut caret, false);
+        assert_eq!(caret.pos, 3);
+        textedit::backspace(&mut value, &mut caret);
+        assert_eq!((value.as_str(), caret.pos), ("x", 0));
     }
 }

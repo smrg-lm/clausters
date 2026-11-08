@@ -315,10 +315,6 @@ its plan; the plan is where its acceptance is read.
   solve. **Related:** "Staleness per node rather than per document" in the same
   list is its seam, and gives nothing until this exists.
 
-- ⬜ **`G43b` — a field edits shaped text** *(`clients/gui/PLAN.md`, "G43 —
-  Text is shaped: every script a field accepts is drawn right")*. Labels are
-  shaped (`G43a`); the field's caret and selection still walk characters.
-
 ### The larger questions, and the plans' own Future directions
 
 Named, not enumerated: each is written where it belongs and is read there.

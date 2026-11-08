@@ -135,17 +135,20 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
         { layout: "col", h: 140.0 },
         gui.label(ALPHABET),
         gui.label(ACCENTED),
-        // The same string in a field you can type into: the caret and the
-        // selection measure by the cell, so an accent costs no width and a
+        // The same string in a field you can type into: the caret steps over
+        // a letter and its accent at once, and an accent costs no width and a
         // descender no height.
         gui.text({ name: "field", value: "una canción, un año, ¡qué más!", label: "editable" }),
       );
 
       /** The writing systems the host shapes, and a line that mixes two. */
       const scripts = () => gui.panel(
-        { layout: "col", h: 150.0 },
+        { layout: "col", h: 170.0 },
         gui.label(ARABIC), gui.label(HEBREW), gui.label(DEVANAGARI), gui.label(MARKS),
-        gui.label(MIXED),
+        // The mixed line in a field: the arrows walk it in the order it was
+        // typed, so inside the Hebrew word the caret moves left, and a
+        // selection across the word paints both runs.
+        gui.text({ name: "mixed", value: MIXED, label: "editable, mixed" }),
       );
 
       /** The controls at two text sizes, with labels long enough to clip. */
