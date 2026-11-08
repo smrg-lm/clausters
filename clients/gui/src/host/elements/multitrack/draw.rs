@@ -57,7 +57,7 @@ impl Multitrack {
         time: Option<TimeSpace>,
     ) -> Vec<(usize, Rect, View)> {
         let nav = self.view(time);
-        let at = self.track_rects(rect);
+        let at = self.track_rects(rect, metrics);
         let shown = |r: Rect| r.y + r.h >= rect.y && r.y <= rect.y + rect.h;
         let mut out = Vec::new();
         for (n, clip) in self.clips.iter().enumerate() {
@@ -100,8 +100,8 @@ impl Multitrack {
         time: Option<TimeSpace>,
     ) -> Vec<(&str, Rect, TimeSpace)> {
         let nav = self.view(time);
-        let stack = self.stack();
-        let rows = stack.rects(rect, self.scroll);
+        let stack = self.stack(metrics);
+        let rows = stack.rects(rect, self.scrolled(metrics));
         let shown = |r: Rect| r.y + r.h >= rect.y && r.y <= rect.y + rect.h;
         let span = model::extent(&self.clips).max(nav.start + nav.len);
         let mut out = Vec::new();
@@ -149,7 +149,7 @@ impl Multitrack {
     /// track is making, and the playhead across the stack. Everything else it
     /// draws is the description, which a tick does not change.
     pub(super) fn paint_live(&self, d: &mut Draw, ctx: &Ctx) {
-        let at = self.track_rects(ctx.rect);
+        let at = self.track_rects(ctx.rect, ctx.metrics);
         let shown = |r: Rect| r.y + r.h >= ctx.rect.y && r.y <= ctx.rect.y + ctx.rect.h;
         for (i, track) in self.tracks.iter().enumerate() {
             if shown(at[i]) && self.meters.contains_key(&track.name) {
@@ -172,7 +172,7 @@ impl Multitrack {
     }
 
     pub(super) fn paint(&self, d: &mut Draw, ctx: &Ctx) {
-        let at = self.track_rects(ctx.rect);
+        let at = self.track_rects(ctx.rect, ctx.metrics);
         // A track scrolled off either end is skipped rather than drawn and
         // clipped: `stack` reports every track so a hit test reads the same
         // rects, and the drawing is what decides it has nothing to do.
@@ -196,8 +196,12 @@ impl Multitrack {
         // **A track automation is a row of its own**, under the track it names
         // and with no boxes on it: what it draws runs the whole timeline the
         // track does, so it is a row and not a layer.
-        let stack = self.stack();
-        for (i, row) in stack.rects(ctx.rect, self.scroll).iter().enumerate() {
+        let stack = self.stack(ctx.metrics);
+        for (i, row) in stack
+            .rects(ctx.rect, self.scrolled(ctx.metrics))
+            .iter()
+            .enumerate()
+        {
             let Some(stack::Row::Curve(n)) = stack.row(i) else {
                 continue;
             };

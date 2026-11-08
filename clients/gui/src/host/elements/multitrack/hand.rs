@@ -83,8 +83,8 @@ impl Multitrack {
     /// since a later clip is drawn over an earlier one and the eye takes the
     /// one it can see.
     pub(super) fn clip_at(&self, input: &Input, at: (f64, f64)) -> Option<(usize, Part)> {
-        let i = self.track_at(input.rect, at.1)?;
-        let rect = self.track_rects(input.rect)[i];
+        let i = self.track_at(input.rect, input.metrics, at.1)?;
+        let rect = self.track_rects(input.rect, input.metrics)[i];
         // A band carries its gap, and nothing of a track is drawn there: a press
         // in it is a press on bare stack, which the container sweeps.
         if (at.1 as f32) >= rect.y + rect.h {
@@ -146,7 +146,7 @@ impl Multitrack {
         at: (f64, f64),
         input: &Input,
     ) -> Claim {
-        let rect = self.track_rects(input.rect)[track];
+        let rect = self.track_rects(input.rect, input.metrics)[track];
         let band = crate::host::timeline::gutter_band(rect, input.indent);
         let parts = track::header_parts(
             band,
@@ -466,8 +466,8 @@ impl Multitrack {
         let (t0, t1) = (self.time_at(input, from.0), self.time_at(input, to.0));
         // The same continuous answer a drag takes: a corner in a gap or past
         // an end still means the sweep passed through those tracks.
-        let r0 = self.track_toward(input.rect, from.1) as f32;
-        let r1 = self.track_toward(input.rect, to.1) as f32;
+        let r0 = self.track_toward(input.rect, input.metrics, from.1) as f32;
+        let r1 = self.track_toward(input.rect, input.metrics, to.1) as f32;
         self.selected = boxes::in_rect(self, t0, t1, r0, r1);
         Swept {
             changed: before != self.selected.len() || !self.selected.is_empty(),
@@ -500,7 +500,9 @@ impl Multitrack {
             return Events::none();
         }
         if let Some(s) = self.sizing {
-            let height = (s.from + (at.1 - s.at) as f32).clamp(MIN_LANE_H, MAX_LANE_H);
+            // The pointer moves in device pixels and the height is logical.
+            let moved = (at.1 - s.at) as f32 / input.metrics.ui_scale;
+            let height = (s.from + moved).clamp(MIN_LANE_H, MAX_LANE_H);
             self.tracks[s.track].height = height;
             self.zoom.insert(self.tracks[s.track].name.clone(), height);
             return Events::none();
@@ -541,7 +543,8 @@ impl Multitrack {
                     }
                     _ => boxes::snap(now - grab.grabbed_at, self.snap),
                 };
-                let dr = self.track_toward(input.rect, at.1) as f32 - grab.track as f32;
+                let dr =
+                    self.track_toward(input.rect, input.metrics, at.1) as f32 - grab.track as f32;
                 // **The grabbed box's own two edges look for a neighbour.** The
                 // box under the hand is what the hand is aiming with, so it is
                 // the one that snaps; the rest of a block travels with it, as
@@ -702,7 +705,11 @@ impl Multitrack {
             // at its end answers by doing nothing: reaching the last track and
             // having the multitrack zoom under the hand is the gesture turning into
             // a different gesture at the moment the hand leans on it.
-            self.scroll = self.clamped_scroll(input.rect, self.scroll - steps as f32 * WHEEL_ROWS);
+            self.scroll = self.clamped_scroll(
+                input.rect,
+                input.metrics,
+                self.scroll - steps as f32 * WHEEL_ROWS,
+            );
             return Some(Events::none());
         }
         None

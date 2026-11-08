@@ -129,10 +129,6 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Under load only; what is
   open is whether the test's pacing or the crossfade is at fault.
 
-- ⬜ **A multitrack's track heights do not follow the window's scale**
-  *(`clients/gui/PLAN.md`, Found by use)*. Found measuring the press at a
-  density of 0.8, which lands where it is drawn.
-
 - ⬜ **A MIDI file and an OSC score are sources, as a sound file is, and a
   session holds neither inside** *(`crates/clausters-document/PLAN.md`, Found
   by use)*. **Related:** `T10` writes the file this one points at.

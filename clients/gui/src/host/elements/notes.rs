@@ -329,7 +329,7 @@ impl Notes {
             indent,
             m,
         );
-        let rows = self.rows_h(r.grid.h);
+        let rows = self.rows_h(r.grid.h, m);
         r.grid.h -= rows;
         r.keyboard.h -= rows;
         r

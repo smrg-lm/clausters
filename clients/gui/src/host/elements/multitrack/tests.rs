@@ -32,7 +32,7 @@ fn multitrack() -> Multitrack {
 fn xy(mt: &Multitrack, m: &Metrics, rect: Rect, t: f64, len: f64, i: usize) -> (f64, f64) {
     let body = track::track_body(rect, false, 100.0, m);
     let x = f64::from(body.x) + t / len * f64::from(body.w);
-    let at = mt.track_rects(rect);
+    let at = mt.track_rects(rect, &Metrics::default());
     (x, f64::from(at[i].y + at[i].h / 2.0))
 }
 
@@ -510,10 +510,13 @@ fn an_automation_is_a_row_and_an_envelope_is_a_layer() {
     assert_eq!(mt.bodies.len(), 2, "one element per curve, however placed");
 
     // The row is under `noise`, and the second track sits below it.
-    let stack = mt.stack();
+    let stack = mt.stack(&Metrics::default());
     assert_eq!(stack.len(), 3);
     assert_eq!(stack.row(1), Some(stack::Row::Curve(0)));
-    assert_eq!(mt.track_rects(rect)[1].y, 100.0 + 40.0 + 2.0 * GAP);
+    assert_eq!(
+        mt.track_rects(rect, &Metrics::default())[1].y,
+        100.0 + 40.0 + 2.0 * GAP
+    );
 
     let drawn = mt.curves_on_screen(rect, 100.0, &m, mt_time(500.0));
     let row = drawn.iter().find(|(n, ..)| *n == "gain").expect("the row");
@@ -593,7 +596,7 @@ fn a_press_beside_the_line_still_moves_the_box() {
     let mut mt = curved();
     // The envelope on `a` runs from its floor to its ceiling, so the top
     // left corner of the box is far from the line.
-    let at = mt.track_rects(rect);
+    let at = mt.track_rects(rect, &Metrics::default());
     let body = track::track_body(at[0], false, 100.0, &m);
     let corner = (f64::from(body.x) + 2.0, f64::from(at[0].y) + 3.0);
     assert!(matches!(
@@ -683,7 +686,8 @@ fn a_track_is_zoomed_by_its_bottom_edge_and_keeps_it() {
     let len = 1000.0;
     let mut mt = multitrack();
     let inp = input(&m, rect, len);
-    let band = crate::host::timeline::gutter_band(mt.track_rects(rect)[0], 100.0);
+    let band =
+        crate::host::timeline::gutter_band(mt.track_rects(rect, &Metrics::default())[0], 100.0);
     let edge = (f64::from(band.x) + 4.0, f64::from(band.y + band.h) - 1.0);
     let was = mt.tracks[0].height;
 
@@ -717,6 +721,41 @@ fn a_track_is_zoomed_by_its_bottom_edge_and_keeps_it() {
     assert!(mt.zoom.is_empty());
 }
 
+/// **A row's height is logical**, as `h` is: a window at a scale of 2 draws a
+/// track of 100 two hundred device pixels tall, and a hand pulling its edge by
+/// sixty device pixels has made it thirty taller.
+#[test]
+fn a_track_s_height_is_resolved_at_the_window_s_scale() {
+    let one = Metrics::default();
+    let two = Metrics::default().resolved(2.0);
+    let rect = Rect::new(0.0, 0.0, 600.0, 800.0);
+    let mut mt = multitrack();
+    let was = mt.tracks[0].height;
+    let at_one = mt.track_rects(rect, &one);
+    let at_two = mt.track_rects(rect, &two);
+    assert_eq!(at_two[1].y - rect.y, 2.0 * (at_one[1].y - rect.y));
+    assert_eq!(at_two[0].h, 2.0 * at_one[0].h);
+
+    let inp = input(&two, rect, 1000.0);
+    let band = crate::host::timeline::gutter_band(at_two[0], inp.indent);
+    let edge = (f64::from(band.x) + 4.0, f64::from(band.y + band.h) - 1.0);
+    assert!(matches!(mt.press(edge, &inp), Claim::Take(_)));
+    mt.drag((edge.0, edge.1 + 60.0), &inp);
+    assert_eq!(
+        mt.tracks[0].height,
+        was + 30.0,
+        "the hand's pixels, made logical"
+    );
+    mt.release((edge.0, edge.1 + 60.0), true, &inp);
+
+    // The scroll is kept logical too: as far down as there is to go is the
+    // same place in the stack at either scale.
+    let short = Rect::new(0.0, 0.0, 600.0, 100.0);
+    let deepest = mt.clamped_scroll(short, &two, f32::MAX);
+    let content = mt.stack(&two).content_height();
+    assert_eq!(deepest, (content - short.h) / 2.0);
+}
+
 /// **The stack has vertical gestures of its own** *(asked for by the user
 /// 2026-09-12, to make the example a multitrack editor worth trying)*: the
 /// wheel scrolls it and zooms one row.
@@ -742,7 +781,10 @@ fn the_wheel_scrolls_the_stack_and_zooms_one_row() {
     }];
     let inp = input(&m, rect, len);
     let plain = |mods: Mods| Input { mods, ..inp };
-    let on_track = (10.0, f64::from(mt.track_rects(rect)[0].y) + 5.0);
+    let on_track = (
+        10.0,
+        f64::from(mt.track_rects(rect, &Metrics::default())[0].y) + 5.0,
+    );
 
     // The plain wheel is the axis', so nothing here answers it.
     assert!(
@@ -758,7 +800,7 @@ fn the_wheel_scrolls_the_stack_and_zooms_one_row() {
     };
     assert!(mt.wheel(on_track, (0.0, -1.0), &plain(shift)).is_some());
     assert!(mt.scroll > 0.0, "it moved down: {}", mt.scroll);
-    let over = mt.stack().content_height() - rect.h;
+    let over = mt.stack(&Metrics::default()).content_height() - rect.h;
     for _ in 0..50 {
         mt.wheel(on_track, (0.0, -1.0), &plain(shift));
     }
@@ -784,7 +826,7 @@ fn the_wheel_scrolls_the_stack_and_zooms_one_row() {
     assert!(mt.tracks[0].height > was, "the track grew");
     assert_eq!(mt.tracks[1].height, was, "and only that row");
 
-    let row = mt.stack().rects(rect, mt.scroll)[1];
+    let row = mt.stack(&Metrics::default()).rects(rect, mt.scroll)[1];
     let on_curve = (10.0, f64::from(row.y) + 5.0);
     assert!(matches!(
         mt.row_kind(&inp, on_curve.1),
@@ -839,13 +881,16 @@ fn the_toggle_hides_the_row_and_shows_it_again() {
         ..input(&m, rect, len)
     };
     let rows = |mt: &Multitrack| {
-        let stack = mt.stack();
+        let stack = mt.stack(&Metrics::default());
         (0..stack.len())
             .filter_map(|i| stack.row(i))
             .collect::<Vec<_>>()
     };
     let press = |mt: &mut Multitrack| {
-        let band = crate::host::timeline::gutter_band(mt.track_rects(rect)[0], indent);
+        let band = crate::host::timeline::gutter_band(
+            mt.track_rects(rect, &Metrics::default())[0],
+            indent,
+        );
         let cell = track::header_parts(band, &mt.header(&mt.tracks[0], indent), &m)
             .curves
             .expect("the toggle");
@@ -899,7 +944,7 @@ fn a_track_made_here_shows_the_automation_its_toggle_asked_for() {
     // The double click under the last header: a track, at the end.
     let under = (
         f64::from(rect.x) + 5.0,
-        f64::from(mt.track_rects(rect)[0].y + mt.tracks[0].height) + 20.0,
+        f64::from(mt.track_rects(rect, &Metrics::default())[0].y + mt.tracks[0].height) + 20.0,
     );
     let twice = Input { clicks: 2, ..inp };
     let Claim::Take(_) = mt.press(under, &twice) else {
@@ -916,7 +961,8 @@ fn a_track_made_here_shows_the_automation_its_toggle_asked_for() {
     ));
 
     // `A` on the new row.
-    let band = crate::host::timeline::gutter_band(mt.track_rects(rect)[1], indent);
+    let band =
+        crate::host::timeline::gutter_band(mt.track_rects(rect, &Metrics::default())[1], indent);
     let cell = track::header_parts(band, &mt.header(&mt.tracks[1], indent), &m)
         .curves
         .expect("the toggle");
@@ -944,7 +990,7 @@ fn a_track_made_here_shows_the_automation_its_toggle_asked_for() {
     assert!(mt.set("hidden", &Value::from("")));
 
     // And the row is in the stack, under the track it belongs to.
-    let stack = mt.stack();
+    let stack = mt.stack(&Metrics::default());
     let rows: Vec<stack::Row> = (0..stack.len()).filter_map(|i| stack.row(i)).collect();
     assert_eq!(
         rows,
@@ -979,24 +1025,28 @@ fn a_hidden_curve_gives_its_row_back() {
         max: 1.0,
         height: CURVE_H,
     }];
-    let with_row = mt.stack().content_height();
-    let rows = mt.stack().len();
+    let with_row = mt.stack(&Metrics::default()).content_height();
+    let rows = mt.stack(&Metrics::default()).len();
 
     assert!(mt.set("hidden", &Value::from("c")));
-    assert_eq!(mt.stack().len(), rows - 1, "the row is gone, not blank");
     assert_eq!(
-        mt.stack().content_height(),
+        mt.stack(&Metrics::default()).len(),
+        rows - 1,
+        "the row is gone, not blank"
+    );
+    assert_eq!(
+        mt.stack(&Metrics::default()).content_height(),
         with_row - (CURVE_H + mt.gap),
         "and the stack is shorter by exactly that row"
     );
     // The track under it moves up, which is the whole of what a hand sees.
-    let after = mt.track_rects(rect)[1].y;
+    let after = mt.track_rects(rect, &Metrics::default())[1].y;
     assert!(mt.set("hidden", &Value::from("")));
     assert!(
-        mt.track_rects(rect)[1].y > after,
+        mt.track_rects(rect, &Metrics::default())[1].y > after,
         "and showing it puts the row back"
     );
-    assert_eq!(mt.stack().len(), rows);
+    assert_eq!(mt.stack(&Metrics::default()).len(), rows);
 }
 
 /// **`A` in a track's header shows and hides its automation rows** *(asked
@@ -1027,7 +1077,10 @@ fn the_headers_automation_toggle_reports_the_tracks() {
     // button nobody could reach to make the first.
     assert!(
         track::header_parts(
-            crate::host::timeline::gutter_band(mt.track_rects(rect)[0], indent),
+            crate::host::timeline::gutter_band(
+                mt.track_rects(rect, &Metrics::default())[0],
+                indent
+            ),
             &mt.header(&mt.tracks[0], indent),
             &m,
         )
@@ -1035,7 +1088,8 @@ fn the_headers_automation_toggle_reports_the_tracks() {
         .is_some(),
         "a track with nothing to show still offers the verb"
     );
-    let band = crate::host::timeline::gutter_band(mt.track_rects(rect)[0], indent);
+    let band =
+        crate::host::timeline::gutter_band(mt.track_rects(rect, &Metrics::default())[0], indent);
     let cell = track::header_parts(band, &mt.header(&mt.tracks[0], indent), &m)
         .curves
         .expect("the track has automation, so it has the toggle");
@@ -1181,7 +1235,7 @@ fn an_automation_rows_header_addresses_no_track() {
     let inp = input(&m, rect, len);
     // The curve row is the second entry of the stack: `noise`, its `gain`
     // row, then `tone`.
-    let rows = mt.stack().rects(rect, 0.0);
+    let rows = mt.stack(&Metrics::default()).rects(rect, 0.0);
     let curve_row = rows[1];
     let on = (f64::from(rect.x) + 4.0, f64::from(curve_row.y) + 2.0);
 
@@ -1213,7 +1267,7 @@ fn the_headers_level_is_a_knob_and_turns_by_the_drag() {
     let mut mt = multitrack();
     mt.tracks[0].gain = 0.5;
     let inp = input(&m, rect, len);
-    let at = mt.track_rects(rect);
+    let at = mt.track_rects(rect, &Metrics::default());
     let band = crate::host::timeline::gutter_band(at[0], 100.0);
     let parts = track::header_parts(band, &mt.header(&mt.tracks[0], 100.0), &m);
     let cell = parts.level.expect("the track offers a level");
@@ -1267,7 +1321,8 @@ fn a_curve_moves_the_knob_and_a_hand_on_the_knob_holds_over_the_curve() {
     assert!((read(&mt, 750.0) - 0.75).abs() < 1e-3);
 
     let inp = input(&m, rect, len);
-    let band = crate::host::timeline::gutter_band(mt.track_rects(rect)[0], 100.0);
+    let band =
+        crate::host::timeline::gutter_band(mt.track_rects(rect, &Metrics::default())[0], 100.0);
     let cell = track::header_parts(band, &mt.header(&row, 100.0), &m)
         .level
         .unwrap();
@@ -1323,7 +1378,8 @@ fn a_curve_over_another_parameter_leaves_the_knob_alone() {
     let row = mt.tracks[0].clone();
     assert!(!mt.header(&row, 100.0).live_level);
     let inp = input(&m, rect, len);
-    let band = crate::host::timeline::gutter_band(mt.track_rects(rect)[0], 100.0);
+    let band =
+        crate::host::timeline::gutter_band(mt.track_rects(rect, &Metrics::default())[0], 100.0);
     let cell = track::header_parts(band, &mt.header(&row, 100.0), &m)
         .level
         .unwrap();
@@ -1479,7 +1535,7 @@ fn the_header_selects_a_track_makes_one_and_delete_takes_it_away() {
     let inp = input(&m, rect, len);
     // The band beside the controls, on the second track's row: the top of it,
     // which is where the name is drawn and no control is.
-    let at = mt.track_rects(rect);
+    let at = mt.track_rects(rect, &Metrics::default());
     let beside = |i: usize| (f64::from(rect.x) + 4.0, f64::from(at[i].y) + 2.0);
 
     assert!(matches!(mt.press(beside(1), &inp), Claim::Take(_)));
@@ -1697,7 +1753,7 @@ fn the_header_reports_the_lanes_and_never_the_clips() {
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
     let mut mt = multitrack();
-    let at = mt.track_rects(rect);
+    let at = mt.track_rects(rect, &Metrics::default());
     let band = crate::host::timeline::gutter_band(at[0], 100.0);
     let parts = track::header_parts(band, &mt.header(&mt.tracks[0], 100.0), &m);
 
@@ -2073,7 +2129,7 @@ fn a_drag_through_the_gap_between_lanes_does_not_jump() {
     ));
     mt.gap = 8.0;
 
-    let at = mt.track_rects(rect);
+    let at = mt.track_rects(rect, &Metrics::default());
     let from = xy(&mt, &m, rect, 250.0, len, 0);
     mt.press(from, &input(&m, rect, len));
 
@@ -2162,7 +2218,12 @@ fn an_edge_is_grabbed_by_the_grip_that_is_drawn_there() {
     let len = 1000.0;
     let mt = multitrack();
 
-    let body = track::track_body(mt.track_rects(rect)[0], false, 100.0, &m);
+    let body = track::track_body(
+        mt.track_rects(rect, &Metrics::default())[0],
+        false,
+        100.0,
+        &m,
+    );
     let nav = View { start: 0.0, len };
     let (x0, x1) = stack::clip_x(&mt.clips[0], body, &nav, MIN_CLIP_W).expect("on screen");
     let cr = track::clip_rect(body, x0, x1);
@@ -2282,7 +2343,12 @@ fn the_grip_a_drag_is_holding_does_not_depend_on_the_pointer() {
     let len = 1000.0;
     let mut mt = multitrack();
 
-    let body = track::track_body(mt.track_rects(rect)[0], false, 100.0, &m);
+    let body = track::track_body(
+        mt.track_rects(rect, &Metrics::default())[0],
+        false,
+        100.0,
+        &m,
+    );
     let nav = View { start: 0.0, len };
     let (x0, x1) = stack::clip_x(&mt.clips[0], body, &nav, MIN_CLIP_W).expect("on screen");
     let cr = track::clip_rect(body, x0, x1);

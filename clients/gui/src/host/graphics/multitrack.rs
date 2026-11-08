@@ -69,7 +69,7 @@ impl Stack {
     /// **Every curve in the list takes a row**; a caller that hides some says
     /// so with [`Stack::shown`].
     pub fn new(tracks: &[TrackRow], curves: &[Curve], gap: f32) -> Stack {
-        Self::shown(tracks, curves, gap, |_| true)
+        Self::shown(tracks, curves, gap, 1.0, |_| true)
     }
 
     /// The rows, with the curves `shown` answers `false` for **left out
@@ -83,22 +83,31 @@ impl Stack {
     /// with or without a line in it. The indices `Row::Curve` carries are still
     /// **into the whole list**, so a caller looks a row up the way it always
     /// did.
+    ///
+    /// **The heights and the gap are logical**, as a `height` on the wire is
+    /// a length like `h`, and `scale` (the window's `ui_scale`) resolves them
+    /// to the device pixels everything else here is measured in -- so a track
+    /// of 100 is as tall beside its header at every density.
     pub fn shown(
         tracks: &[TrackRow],
         curves: &[Curve],
         gap: f32,
+        scale: f32,
         shown: impl Fn(&Curve) -> bool,
     ) -> Stack {
         let mut entries = Vec::with_capacity(tracks.len() + curves.len());
         for (i, track) in tracks.iter().enumerate() {
-            entries.push((Row::TrackRow(i), track.height));
+            entries.push((Row::TrackRow(i), track.height * scale));
             for (n, curve) in curves.iter().enumerate() {
                 if curve.owner == track.name && shown(curve) {
-                    entries.push((Row::Curve(n), curve.height));
+                    entries.push((Row::Curve(n), curve.height * scale));
                 }
             }
         }
-        Stack { entries, gap }
+        Stack {
+            entries,
+            gap: gap * scale,
+        }
     }
 
     /// The bands the rows make, each carrying its own gap.

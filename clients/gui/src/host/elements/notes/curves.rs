@@ -142,8 +142,11 @@ impl Notes {
 
     /// How tall the rows are drawn under a plane of `height`: their own
     /// heights, together at most half of it.
-    pub(super) fn rows_h(&self, height: f32) -> f32 {
-        let want: f32 = self.rows.iter().map(|r| r.height).sum();
+    ///
+    /// A row's height is logical, as the wire states it, and `height` is in
+    /// device pixels, so the rows are resolved at the window's scale first.
+    pub(super) fn rows_h(&self, height: f32, m: &Metrics) -> f32 {
+        let want: f32 = self.rows.iter().map(|r| r.height).sum::<f32>() * m.ui_scale;
         want.min(height * MAX_ROWS_SHARE).max(0.0)
     }
 
@@ -157,7 +160,7 @@ impl Notes {
             indent,
             m,
         );
-        let room = self.rows_h(full.grid.h);
+        let room = self.rows_h(full.grid.h, m);
         let total: f32 = self.rows.iter().map(|r| r.height).sum();
         let scale = if total > 0.0 { room / total } else { 0.0 };
         let mut y = full.grid.y + full.grid.h - room;

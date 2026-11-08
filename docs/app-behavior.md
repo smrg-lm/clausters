@@ -318,6 +318,13 @@ code that keeps it lives.
   a label that cannot keep half the clear space between labels from it is
   dropped and its tick stays, so the labels of two rows keep the space the
   labels of one row keep (`ruler::label_tops`).
+- **A row's height is a length, so it is logical.** A track's or an
+  automation row's `height`, the gap between rows, the floor and ceiling a hand
+  zooms one between and the stack's scroll are kept as the wire states them and
+  resolved at the window's scale only where a picture or a hit test reads them
+  (`Multitrack::stack`, the roll's automation rows), so a track is as tall
+  beside its header at every density, and a hand's drag is made logical before
+  it changes one.
 - **One object, one colour.** The channels of a take stacked in rows are drawn
   in one colour, since colours of their own read as separate tracks; only
   channels overlaid on one row are told apart by colour.

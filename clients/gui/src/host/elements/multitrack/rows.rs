@@ -32,31 +32,40 @@ impl Multitrack {
 
     /// The track a pointer is **on**, or `None` off the stack -- the *press*'
     /// question, over the same bands the drawing used.
-    pub(super) fn track_at(&self, rect: Rect, y: f64) -> Option<usize> {
-        self.stack().track_at(rect, self.scroll, y)
+    pub(super) fn track_at(&self, rect: Rect, m: &Metrics, y: f64) -> Option<usize> {
+        self.stack(m).track_at(rect, self.scrolled(m), y)
     }
 
     /// **The vertical axis**: the tracks and the automation rows under them, in
     /// the order they are drawn. Built per ask rather than kept, because it is
     /// derived from two lists a `/gui_set` replaces whole.
-    pub(super) fn stack(&self) -> stack::Stack {
-        stack::Stack::shown(&self.tracks, &self.curves, self.gap, |c| {
+    ///
+    /// **Resolved at the window's scale** (`m`): the heights, the gap and the
+    /// scroll are kept logical, as the wire states them, and only the stack a
+    /// picture or a hit test reads is in device pixels.
+    pub(super) fn stack(&self, m: &Metrics) -> stack::Stack {
+        stack::Stack::shown(&self.tracks, &self.curves, self.gap, m.ui_scale, |c| {
             !self.is_hidden(&c.name)
         })
     }
 
+    /// The vertical scroll in device pixels, as the stack at `m` reads it.
+    pub(super) fn scrolled(&self, m: &Metrics) -> f32 {
+        self.scroll * m.ui_scale
+    }
+
     /// Where each **track** lands, by track index.
-    pub(super) fn track_rects(&self, rect: Rect) -> Vec<Rect> {
-        self.stack()
-            .track_rects(rect, self.scroll, self.tracks.len())
+    pub(super) fn track_rects(&self, rect: Rect, m: &Metrics) -> Vec<Rect> {
+        self.stack(m)
+            .track_rects(rect, self.scrolled(m), self.tracks.len())
     }
 
     /// The track a hand **is heading for**, always -- the *drag*'s question, and
     /// the sweep's. It answers for the gaps between tracks and clamps past
     /// either end, which is the whole of why a dragged clip neither jumps nor
     /// oscillates.
-    pub(super) fn track_toward(&self, rect: Rect, y: f64) -> usize {
-        self.stack().track_toward(rect, self.scroll, y)
+    pub(super) fn track_toward(&self, rect: Rect, m: &Metrics, y: f64) -> usize {
+        self.stack(m).track_toward(rect, self.scrolled(m), y)
     }
 
     /// The time a pointer x names on the shared axis.
@@ -106,8 +115,8 @@ impl Multitrack {
         input: &Input,
         at: (f64, f64),
     ) -> Option<(usize, track::HeaderPart)> {
-        let i = self.track_at(input.rect, at.1)?;
-        let rect = self.track_rects(input.rect)[i];
+        let i = self.track_at(input.rect, input.metrics, at.1)?;
+        let rect = self.track_rects(input.rect, input.metrics)[i];
         let band = crate::host::timeline::gutter_band(rect, input.indent);
         let header = self.header(&self.tracks[i], input.indent);
         let part = track::header_hit(band, &header, input.metrics, at.0, at.1)?;
@@ -147,16 +156,17 @@ impl Multitrack {
     /// bottom, so the last row can always be brought into view and never past
     /// it. A stack shorter than its window has a ceiling of zero, which is the
     /// same statement: there is nothing to scroll to.
-    pub(super) fn clamped_scroll(&self, rect: Rect, want: f32) -> f32 {
-        let over = (self.stack().content_height() - rect.h).max(0.0);
+    /// Logical, as the scroll is kept.
+    pub(super) fn clamped_scroll(&self, rect: Rect, m: &Metrics, want: f32) -> f32 {
+        let over = (self.stack(m).content_height() - rect.h).max(0.0) / m.ui_scale;
         want.clamp(0.0, over)
     }
 
     /// **What kind of row a y is on** -- a track, an automation row, or nothing
     /// at all past either end of the stack.
     pub(super) fn row_kind(&self, input: &Input, y: f64) -> Option<stack::Row> {
-        let stack = self.stack();
-        stack.row(stack.row_at(input.rect, self.scroll, y)?)
+        let stack = self.stack(input.metrics);
+        stack.row(stack.row_at(input.rect, self.scrolled(input.metrics), y)?)
     }
 
     /// **How far a snap reaches**, in the axis' own units: a few device pixels
