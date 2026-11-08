@@ -9086,6 +9086,18 @@ module of its own.
     multitrack states another meter, key or smallest value for it;
   - a page is engraved whole when its sequence changes, and what that
     costs for a sequence of thousands of notes is not measured;
+    *measured 2026-11-07* (`what_a_box_page_costs`, release, one box):
+    a thousand notes engrave in about 190 ms and five thousand in about
+    2.3 s, on the application's thread, after every edit of the sequence;
+    a picture with nothing changed costs 1.8 ms and 12.7 ms against 0.6 ms
+    and 2.4 ms as rolls, almost all of it copying the page (some 2 MB of
+    display list at five thousand notes), which every picture hands over
+    and the host parses again. The comparison that decides whether a page
+    is stale no longer copies the sequence, and the anchors are kept with
+    the page. **What is open**: a page engraved and stated only where a
+    sequence changed -- by system or by a span of bars, which is the score
+    editor's kept parts in `G46` seen from the engraving side -- and the
+    `scores` prop restated only when a page moved;
   - ✅ a rest has no id on the page, so it stands where the stretch between
     its neighbours puts it rather than at its own time;
     *fixed 2026-11-07*: it had an id (`n<id>`, as a note's) and no anchor;

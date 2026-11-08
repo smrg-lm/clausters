@@ -427,11 +427,11 @@ impl std::fmt::Debug for Engraver {
 struct Engraved {
     /// The sequence it is the page of.
     of: clausters_document::events::EventSequence,
-    /// The display list a `score` widget takes.
-    page: Map<String, Value>,
-    /// Each item of the page that sounds: the id it is drawn under, and the
-    /// beat it starts at.
-    onsets: Vec<(String, f64)>,
+    /// The rate its anchors are in frames of.
+    rate: f64,
+    /// The display list a `score` widget takes, with the `anchors` of what
+    /// on it has a time: what a picture hands over as it is.
+    page: Value,
 }
 
 /// The file facts of one session, retained with its contents and history.
@@ -742,10 +742,18 @@ impl MultitrackEditor {
             let Some(shared) = self.session.sequences.get(&source) else {
                 continue;
             };
-            let sequence = shared.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let mut pages = self.pages.borrow_mut();
-            let stale = pages.get(&source).is_none_or(|kept| kept.of != sequence);
-            if stale {
+            // **a page read again unchanged is not copied to find out**: the
+            // sequence is compared where it is held, and copied only to be
+            // engraved
+            let sequence = {
+                let held = shared.lock().unwrap_or_else(|e| e.into_inner());
+                let stale = pages
+                    .get(&source)
+                    .is_none_or(|kept| kept.of != *held || kept.rate != self.rate);
+                stale.then(|| held.clone())
+            };
+            if let Some(sequence) = sequence {
                 let Ok(got) = read(&sequence, &how, &default_interpretation()) else {
                     continue;
                 };
@@ -761,53 +769,47 @@ impl MultitrackEditor {
                 held.relayout(&layout_options(&PageSetup::default(), View::Continuous));
                 let mut page = crate::score::drawing(&held.pages(0.0, false));
                 page.remove("cursors");
+                // where each note stands: its second in the sequence, in the
+                // sequence's frames, as a note of the box's roll is -- the
+                // box reads both through its window
+                let map = sequence
+                    .tempo_map
+                    .clone()
+                    .unwrap_or_else(|| TempoMap::new(1.0));
                 // every item that sounds, and every rest before a voice's
                 // last note, at the beat the page writes it: a rest stands
                 // at its own time. One after the last note fills a bar
                 // nobody wrote, and has none.
-                let mut onsets = Vec::new();
+                let mut anchors = Vec::new();
                 for voice in sheet.voices() {
                     let mut at = clausters_core::ratio::Ratio::ZERO;
-                    let mut written = onsets.len();
+                    let mut written = anchors.len();
                     for item in &voice.items {
-                        let beat = at.to_f64() * beat_unit;
-                        onsets.push((format!("n{}", item.id()), beat));
+                        let frame = map.secs_at(at.to_f64() * beat_unit) * self.rate;
+                        anchors.extend([json!(format!("n{}", item.id())), json!(frame)]);
                         if item.sounds() {
                             // a chord is drawn as its pitches
-                            onsets.push((format!("n{}-p1", item.id()), beat));
-                            written = onsets.len();
+                            anchors.extend([json!(format!("n{}-p1", item.id())), json!(frame)]);
+                            written = anchors.len();
                         }
                         at = at + item.dur();
                     }
-                    onsets.truncate(written);
+                    anchors.truncate(written);
                 }
+                page.insert("anchors".into(), Value::Array(anchors));
                 pages.insert(
                     source,
                     Engraved {
-                        of: sequence.clone(),
-                        page,
-                        onsets,
+                        of: sequence,
+                        rate: self.rate,
+                        page: Value::Object(page),
                     },
                 );
             }
             let Some(kept) = pages.get(&source) else {
                 continue;
             };
-            // where each note stands: its second in the sequence, in the
-            // sequence's frames, as a note of the box's roll is -- the box
-            // reads both through its window
-            let map = sequence
-                .tempo_map
-                .clone()
-                .unwrap_or_else(|| TempoMap::new(1.0));
-            let anchors: Vec<Value> = kept
-                .onsets
-                .iter()
-                .flat_map(|(id, beat)| [json!(id), json!(map.secs_at(*beat) * self.rate)])
-                .collect();
-            let mut page = kept.page.clone();
-            page.insert("anchors".into(), Value::Array(anchors));
-            out.insert(box_.region.0.to_string(), Value::Object(page));
+            out.insert(box_.region.0.to_string(), kept.page.clone());
         }
         Some(Value::Object(out))
     }

@@ -2897,6 +2897,98 @@ mod tests {
         assert!(!host.owns_an_application());
     }
 
+    /// **What a box's page costs the multitrack's picture**: a sequence of
+    /// a thousand and of five thousand notes, drawn as rolls, then engraved
+    /// the first time, read again unchanged, and engraved again once a note
+    /// moved. A measurement
+    /// rather than a check:
+    /// `cargo test --release --features score --lib what_a_box_page_costs
+    /// -- --ignored --nocapture`.
+    #[cfg(feature = "score")]
+    #[test]
+    #[ignore = "a measurement, run by hand in release"]
+    fn what_a_box_page_costs() {
+        use clausters_apps::multitrack::Transport;
+        use clausters_apps::multitrack::editor::MultitrackEditor;
+        use clausters_core::notation::{sheet_to_mei, voice_to_sheet};
+        use clausters_document::events::{Event, EventSequence};
+        use clausters_document::multitrack::{Content, Multitrack, Region, Track, Window};
+        use clausters_document::{Lifetime, NodeId, Second, SourceId, SourceRef};
+        use std::time::Instant;
+
+        for count in [1_000usize, 5_000] {
+            let events = (0..count)
+                .map(|i| {
+                    Event::new(
+                        i as f64 * 0.5,
+                        json!({"midinote": 60 + (i % 24) as i64, "dur": 0.5}),
+                    )
+                })
+                .collect();
+            let sequence = Arc::new(Mutex::new(EventSequence::new(events)));
+            let length = count as f64 * 0.5;
+            let mut region = Region::new(
+                NodeId(12),
+                Second(0.0),
+                Second(length),
+                Content::Unknown(Value::Null),
+            );
+            region.content = Content::window(Window {
+                source: SourceRef {
+                    source: SourceId(1),
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                },
+                start: 0.0,
+                duration: length,
+            });
+            let mut track = Track::new(NodeId(10), NodeId(11));
+            track.take_lanes[0].regions = vec![region];
+            let multitrack = Multitrack {
+                tracks: vec![track],
+                ..Multitrack::default()
+            };
+            let mut editor = MultitrackEditor::new(multitrack, 48_000.0, 1);
+            editor.chrome(None, Transport::Unnumbered, "m", (1000, 560));
+            editor.window(40, 41);
+            editor.set_window(Some(39));
+            editor.bind_sequence(SourceId(1), sequence.clone());
+            let blank = sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C")).unwrap();
+            let score = clausters_notation::open(&blank, &Default::default()).unwrap();
+            editor.bind_engraver(Arc::new(Mutex::new(score)));
+            assert!(editor.set_notes_view("score"));
+            let timed = |editor: &MultitrackEditor| {
+                let start = Instant::now();
+                let props = editor.picture(40);
+                assert!(props.contains_key("scores"));
+                start.elapsed().as_secs_f64() * 1e3
+            };
+            assert!(editor.set_notes_view("roll"));
+            let rolled = {
+                let start = Instant::now();
+                for _ in 0..10 {
+                    editor.picture(40);
+                }
+                start.elapsed().as_secs_f64() * 1e2
+            };
+            assert!(editor.set_notes_view("score"));
+            let first = timed(&editor);
+            let kept: Vec<f64> = (0..10).map(|_| timed(&editor)).collect();
+            sequence.lock().unwrap().events[count / 2].at.0 += 0.25;
+            let moved = timed(&editor);
+            let median = {
+                let mut kept = kept.clone();
+                kept.sort_by(f64::total_cmp);
+                kept[kept.len() / 2]
+            };
+            println!(
+                "{count} notes: as rolls {rolled:.2} ms; as pages, engraved {first:.1} ms, \
+                 unchanged {median:.2} ms, one note moved {moved:.1} ms"
+            );
+        }
+    }
+
     /// **A multitrack in a host with no engraver offers no page**: the View
     /// menu's entry is refused and says why, choosing it changes nothing,
     /// and a box of notes still opens its roll.
