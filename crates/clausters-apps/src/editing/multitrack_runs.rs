@@ -863,7 +863,10 @@ impl Editing {
             None => {}
         }
         if let Some(source) = outcome.open {
-            ran.effects.push(effect("open", json!({"source": source})));
+            ran.effects.push(effect(
+                "open",
+                json!({"source": source, "page": outcome.open_page}),
+            ));
         }
         ran.effects
             .push(effect("echo", json!({"answer": outcome.answer})));

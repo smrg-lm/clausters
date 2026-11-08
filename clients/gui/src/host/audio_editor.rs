@@ -411,21 +411,30 @@ impl Host {
         Ok(def_id)
     }
 
-    /// **The roll over box of notes `source` of multitrack window `parent`**,
-    /// in a window of its own that goes when the multitrack's does; one
-    /// already open is left as it is.
-    fn open_roll_of(&mut self, parent: i32, source: u64) {
-        let open = self.audio.as_ref().is_some_and(|audio| {
-            audio
-                .windows
-                .values()
-                .any(|w| w.kind == (AppKind::Roll { source, parent }))
-        });
+    /// **The view over box of notes `source` of multitrack window
+    /// `parent`** -- its roll, or its page (`page`) where the boxes are drawn
+    /// as pages -- in a window of its own that goes when the multitrack's
+    /// does; one already open is left as it is.
+    fn open_roll_of(&mut self, parent: i32, source: u64, page: bool) {
+        #[cfg(feature = "notation")]
+        let (kind, title) = if page {
+            (AppKind::Page { source, parent }, format!("score {source}"))
+        } else {
+            (AppKind::Roll { source, parent }, format!("notes {source}"))
+        };
+        #[cfg(not(feature = "notation"))]
+        let (kind, title) = {
+            let _ = page;
+            (AppKind::Roll { source, parent }, format!("notes {source}"))
+        };
+        let open = self
+            .audio
+            .as_ref()
+            .is_some_and(|audio| audio.windows.values().any(|w| w.kind == kind));
         if open || !self.owns_audio(parent) {
             return;
         }
-        let title = format!("notes {source}");
-        match self.open_app_for(AppKind::Roll { source, parent }, None, &title, None) {
+        match self.open_app_for(kind, None, &title, None) {
             Ok(def_id) => self.depend(def_id, parent),
             Err(why) => diag::warn!("roll: {why}"),
         }
@@ -561,7 +570,11 @@ impl Host {
                     adopt,
                     reply,
                 } => self.held_audio(def_id, window, &path, adopt, reply),
-                FromApp::Roll { parent, source } => self.open_roll_of(parent, source),
+                FromApp::Roll {
+                    parent,
+                    source,
+                    page,
+                } => self.open_roll_of(parent, source, page),
                 FromApp::Changed { def_id, version } => self.changed_audio(def_id, version),
             }
         }
@@ -615,7 +628,7 @@ impl Host {
             AppKind::Multitrack => super::audio_app::MULTITRACK_ROLES,
             AppKind::Roll { .. } | AppKind::Notes => &["widget"],
             #[cfg(feature = "notation")]
-            AppKind::Score => super::audio_app::SCORE_ROLES,
+            AppKind::Score | AppKind::Page { .. } => super::audio_app::SCORE_ROLES,
         };
         for role in roles.iter().map(|r| (*r).to_string()) {
             let Some(id) = self.own_widget(structure, AUDIO, &role) else {
@@ -1518,12 +1531,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&folder);
     }
 
-    /// **A double click on a box of notes opens its roll in the
-    /// application**: a window of its own over the box's sequence, played
-    /// on a transport of its own by the space bar, which goes when the
-    /// multitrack's does.
-    #[test]
-    fn a_box_of_notes_opens_its_roll_in_the_application() {
+    /// **A session in `folder` holding one box of notes**: region 3 over
+    /// sequence 5, one note long; the path of its file.
+    fn a_session_with_a_box_of_notes(folder: &std::path::Path) -> std::path::PathBuf {
         use clausters_document::events::{Event, EventSequence};
         use clausters_document::multitrack::{
             Content, Multitrack, Region, TakeLane, Track, Window as RegionWindow,
@@ -1531,9 +1541,8 @@ mod tests {
         use clausters_document::session::{Location, Session, Source};
         use clausters_document::{Document, Lifetime, NodeId, Opaque, SourceId, SourceRef};
 
-        let folder = std::env::temp_dir().join(format!("host-roll-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&folder);
-        std::fs::create_dir_all(&folder).unwrap();
+        let _ = std::fs::remove_dir_all(folder);
+        std::fs::create_dir_all(folder).unwrap();
         let mut source = Source::file("", Lifetime::Session);
         source.location = Location::Events {
             sequence: Box::new(EventSequence::new(vec![Event::new(
@@ -1574,7 +1583,17 @@ mod tests {
             .with_source(SourceId(5), source);
         let path = folder.join("notes.json");
         std::fs::write(&path, serde_json::to_string(&session).unwrap()).unwrap();
+        path
+    }
 
+    /// **A double click on a box of notes opens its roll in the
+    /// application**: a window of its own over the box's sequence, played
+    /// on a transport of its own by the space bar, which goes when the
+    /// multitrack's does.
+    #[test]
+    fn a_box_of_notes_opens_its_roll_in_the_application() {
+        let folder = std::env::temp_dir().join(format!("host-roll-{}", std::process::id()));
+        let path = a_session_with_a_box_of_notes(&folder);
         let mut host = host();
         let def_id = host
             .open_multitrack(Some(path.to_str().unwrap()), "notes")
@@ -1674,6 +1693,100 @@ mod tests {
             !h.owns_audio(roll) && h.window_def(roll).is_none()
         });
         assert!(host.owns_audio(def_id), "the multitrack stays");
+        host.close_audio(def_id);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// **A double click on a box drawn as its page opens its page**: a
+    /// score window over the box's sequence, beside the multitrack, opened
+    /// once however often it is asked for, and gone with the session it was
+    /// opened from; drawn as rolls again, the box opens its roll.
+    #[cfg(feature = "score")]
+    #[test]
+    fn a_box_drawn_as_its_page_opens_its_page() {
+        let folder = std::env::temp_dir().join(format!("host-page-{}", std::process::id()));
+        let path = a_session_with_a_box_of_notes(&folder);
+        let mut host = host();
+        let def_id = host
+            .open_multitrack(Some(path.to_str().unwrap()), "notes")
+            .expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let menu = |host: &mut Host, seq: i32, verb: &str| {
+            let message = host.event_message(
+                def_id,
+                seq,
+                vec![OscType::String("menu".into()), OscType::String(verb.into())],
+            );
+            assert!(host.deliver(def_id, &message), "{verb} is the multitrack's");
+        };
+        menu(&mut host, 1, "notes_score");
+        let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
+        let widget = host.own_widget_id(structure, AUDIO, "widget").unwrap();
+        let open = host.event_message(
+            widget,
+            2,
+            vec![OscType::String("open".into()), OscType::String("3".into())],
+        );
+        let find = |h: &Host, page: bool| {
+            h.audio.as_ref().and_then(|audio| {
+                audio
+                    .windows
+                    .iter()
+                    .find(|(_, w)| match w.kind {
+                        AppKind::Page { source: 5, .. } => page,
+                        AppKind::Roll { source: 5, .. } => !page,
+                        _ => false,
+                    })
+                    .map(|(id, _)| *id)
+            })
+        };
+        assert!(
+            host.deliver(def_id, &open),
+            "the gesture is the multitrack's"
+        );
+        until(&mut host, "the page never opened", |h| {
+            find(h, true).is_some_and(|page| h.window_def(page).is_some())
+        });
+        assert!(
+            find(&host, false).is_none(),
+            "a roll opened beside the page"
+        );
+        let page = find(&host, true).unwrap();
+        // **over the box's own sequence**, the multitrack's
+        let len = ask(
+            &mut host,
+            page,
+            json!({"do": {"verb": "handle", "call": {"verb": "len"}}}),
+        );
+        assert_eq!(len["len"], 1, "{len}");
+        // asked again, the page already open is the one there is
+        assert!(host.deliver(def_id, &open));
+        for _ in 0..20 {
+            host.take_effects();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let pages = host.audio.as_ref().map_or(0, |audio| {
+            audio
+                .windows
+                .values()
+                .filter(|w| matches!(w.kind, AppKind::Page { .. }))
+                .count()
+        });
+        assert_eq!(pages, 1, "a second page opened");
+        // **drawn as rolls, the box opens its roll**
+        menu(&mut host, 3, "notes_roll");
+        assert!(host.deliver(def_id, &open));
+        until(&mut host, "the roll never opened", |h| {
+            find(h, false).is_some_and(|roll| h.window_def(roll).is_some())
+        });
+        // **a session let go takes its page along**
+        let new = host.event_message(def_id, 4, vec![OscType::String("new_file".into())]);
+        assert!(host.deliver(def_id, &new));
+        until(&mut host, "a page outlived its session", |h| {
+            !h.owns_audio(page) && h.window_def(page).is_none()
+        });
         host.close_audio(def_id);
         let _ = std::fs::remove_dir_all(&folder);
     }

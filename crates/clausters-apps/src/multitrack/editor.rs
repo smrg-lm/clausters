@@ -97,6 +97,11 @@ pub struct Outcome {
     /// context. The one box the multitrack opens: it edits no take.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open: Option<u64>,
+    /// **Whether what `open` asks for is the box's page** rather than its
+    /// roll: the view the box is drawn in, so a double click opens what the
+    /// hand was on.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub open_page: bool,
     /// **Save before closing**: the close form's Save. The holder writes
     /// the session where it saves it, and closes the window once it is
     /// written -- a save that fails keeps the window.
@@ -670,6 +675,20 @@ impl MultitrackEditor {
             }
         }
         actions
+    }
+
+    /// **Whether a box of notes is drawn as its page**: the view says so and
+    /// an engraver was handed over, without which a box is a roll whatever
+    /// the view.
+    pub fn draws_pages(&self) -> bool {
+        #[cfg(feature = "notation")]
+        {
+            self.notes_view == SCORE && self.engraver.is_some()
+        }
+        #[cfg(not(feature = "notation"))]
+        {
+            false
+        }
     }
 
     /// Whether an engraver was handed over: what a holder that makes one only
@@ -2040,9 +2059,11 @@ impl MultitrackEditor {
                 return (None, Vec::new());
             }
         }
-        // **A double click on a box of notes asks for its roll.** Nothing is
-        // edited here: the caller opens a notes editor over the sequence the
-        // box reads, and what that editor does is what reaches a history.
+        // **A double click on a box of notes asks for the view it is drawn
+        // in**: its roll, or its page where the boxes are drawn as pages.
+        // Nothing is edited here: the caller opens an editor over the
+        // sequence the box reads, and what that editor does is what reaches
+        // a history.
         if tag == "open" {
             let named = values.first().map(crate::turn::text).unwrap_or_default();
             out.open = clausters_document::multitrack::picture::boxes(&self.multitrack())
@@ -2051,6 +2072,7 @@ impl MultitrackEditor {
                 .and_then(|b| b.source)
                 .filter(|source| self.session.sequences.contains_key(source))
                 .map(|source| source.0);
+            out.open_page = out.open.is_some() && self.draws_pages();
             return (None, Vec::new());
         }
         if NOT_AN_EDIT.contains(&tag) {

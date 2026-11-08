@@ -6337,7 +6337,7 @@ wrong.
   rolls before acting, and a cursor placed while it plays moves the music
   (`place`).
 
-- ⬜ **A box drawn as its page opens its roll** *(found 2026-10-29 by
+- ✅ **A box drawn as its page opens its roll** *(found 2026-10-29 by
   the user, the eye pass over the multitrack on its application)*. With the
   boxes of notes drawn as scores, a double click on one opened the score
   editor over its sequence while the multitrack was a client's; on the
@@ -6349,6 +6349,12 @@ wrong.
   double click (`MultitrackEditor`, the `open` tag, which names only a
   sequence) asking for the view the box is drawn in, and the host opening a
   score member over the box's sequence as it opens a roll.
+  *Fixed 2026-11-07*: the double click's `open` says whether the box is
+  drawn as its page (`MultitrackEditor::draws_pages`: the view and a bound
+  engraver, the condition the drawing reads), and the host opens a score
+  window over the box's sequence beside the multitrack, in its order and
+  gone with its session, as it opens a roll
+  (`a_box_drawn_as_its_page_opens_its_page`).
 
 - ✅ **A page's multitrack draws no box as its page** *(found 2026-10-29,
   the same pass)*. The application hands the multitrack an engraver the
