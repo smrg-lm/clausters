@@ -643,7 +643,7 @@ fn bitmap_glyph(mesh: &mut Mesh, ch: char, x: f32, y: f32, scale: f32, color: Co
 }
 
 /// The pixel width of `s` rendered at `scale` (font-pixels per cell-pixel):
-/// with a face loaded, the width of `s` **shaped** ([`shape`]), which is
+/// with a face loaded, the width of `s` **shaped** (`shape`), which is
 /// what [`text`] draws; with the bitmap, its cells.
 pub fn width(s: &str, scale: f32) -> f32 {
     #[cfg(feature = "font-atlas")]
