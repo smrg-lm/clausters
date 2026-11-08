@@ -812,7 +812,9 @@ pub fn draw_clip_selection(d: &mut Draw, cr: Rect) {
 /// starts there, which is the one place it must never be. It truncates with the
 /// ellipsis instead, the rule every other single line in the host follows, and
 /// a clip with no room for a glyph draws no name rather than a stray mark.
-pub fn draw_clip_label(d: &mut Draw, cr: Rect, label: &str) {
+///
+/// Answers the plate it drew, if any.
+pub fn draw_clip_label(d: &mut Draw, cr: Rect, label: &str) -> Option<Rect> {
     let (pad, scale, color) = (d.m.pad, d.m.caption_scale, d.theme.text);
     super::plate_text(
         d,
@@ -822,7 +824,19 @@ pub fn draw_clip_label(d: &mut Draw, cr: Rect, label: &str) {
         cr.w - 2.0 * pad,
         scale,
         color,
-    );
+    )
+}
+
+/// **How far down a box its name's plate reaches**, from the box's top:
+/// what [`draw_clip_label`] covers, and what a body that must not be hidden
+/// under it -- a page's meter, written over its staff -- leaves above itself.
+/// Nothing for a box with no name.
+pub fn clip_label_reach(m: &Metrics, label: &str) -> f32 {
+    if label.is_empty() {
+        return 0.0;
+    }
+    // the plate stands `pad` in and reaches half a `pad` past its glyphs
+    m.pad * 1.5 + font::height(m.caption_scale)
 }
 
 /// Draws one clip **body** -- a child element of a clip -- into the clip's
@@ -1009,6 +1023,27 @@ mod tests {
     fn track() -> Rect {
         // A 500-wide track: header 96 + a 404-wide track body.
         Rect::new(0.0, 0.0, 500.0, 60.0)
+    }
+
+    /// **What a box's name covers is what a body under it leaves above
+    /// itself**: the reach is the plate's bottom edge, at every scale, and
+    /// a box with no name covers nothing.
+    #[test]
+    fn a_box_s_name_reaches_as_far_down_as_its_plate() {
+        let theme = Theme::default();
+        for scale in [1.0, 1.5, 2.0] {
+            let m = Metrics::default().resolved(scale);
+            let cr = Rect::new(40.0, 30.0, 300.0, 80.0);
+            let mut mesh = Mesh::new();
+            let plate = draw_clip_label(&mut Draw::new(&mut mesh, &m, &theme), cr, "keys")
+                .expect("a plate");
+            let reach = clip_label_reach(&m, "keys");
+            assert!(
+                (plate.y + plate.h - (cr.y + reach)).abs() < 1e-3,
+                "{plate:?} against {reach} at {scale}"
+            );
+        }
+        assert_eq!(clip_label_reach(&Metrics::default(), ""), 0.0);
     }
 
     #[test]

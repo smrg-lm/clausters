@@ -9092,8 +9092,11 @@ module of its own.
     the multitrack anchors every rest before a voice's last note, and none
     after it, which fills a bar nobody wrote
     (`a_box_of_notes_is_stated_as_its_page_once_an_engraver_is_bound`);
-  - the box's label and the meter over the first note share the box's top
+  - ✅ the box's label and the meter over the first note share the box's top
     left corner.
+    *fixed 2026-11-07*: the page starts under the name's plate, which
+    `track::clip_label_reach` measures as the plate is drawn
+    (`a_box_s_name_reaches_as_far_down_as_its_plate`).
 
 - ✅ **The audio editor in a page: the pointer lands off the picture, and the
   body draws a dark column and stray ticks** *(found 2026-10-28 by the user,

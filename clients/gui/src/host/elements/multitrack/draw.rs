@@ -435,6 +435,15 @@ impl Multitrack {
         else {
             return false;
         };
+        // **the page starts under the box's name**: the meter is written
+        // over the staff, at the box's first note, which is where the name's
+        // plate is
+        let reach = self
+            .clips
+            .get(n)
+            .map_or(0.0, |clip| track::clip_label_reach(d.m, clip.shown()))
+            .min(cr.h);
+        let cr = Rect::new(cr.x, cr.y + reach, cr.w, cr.h - reach);
         let (mesh, _, theme) = d.parts();
         // the row the box is on, as far across as the tracks are drawn
         let row = Rect::new(body.x + indent, cr.y, (body.w - indent).max(0.0), cr.h);
