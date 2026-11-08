@@ -9086,8 +9086,12 @@ module of its own.
     multitrack states another meter, key or smallest value for it;
   - a page is engraved whole when its sequence changes, and what that
     costs for a sequence of thousands of notes is not measured;
-  - a rest has no id on the page, so it stands where the stretch between
+  - ✅ a rest has no id on the page, so it stands where the stretch between
     its neighbours puts it rather than at its own time;
+    *fixed 2026-11-07*: it had an id (`n<id>`, as a note's) and no anchor;
+    the multitrack anchors every rest before a voice's last note, and none
+    after it, which fills a bar nobody wrote
+    (`a_box_of_notes_is_stated_as_its_page_once_an_engraver_is_bound`);
   - the box's label and the meter over the first note share the box's top
     left corner.
 

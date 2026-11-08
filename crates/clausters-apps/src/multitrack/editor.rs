@@ -761,19 +761,25 @@ impl MultitrackEditor {
                 held.relayout(&layout_options(&PageSetup::default(), View::Continuous));
                 let mut page = crate::score::drawing(&held.pages(0.0, false));
                 page.remove("cursors");
-                // every item that sounds, at the beat the page writes it
+                // every item that sounds, and every rest before a voice's
+                // last note, at the beat the page writes it: a rest stands
+                // at its own time. One after the last note fills a bar
+                // nobody wrote, and has none.
                 let mut onsets = Vec::new();
                 for voice in sheet.voices() {
                     let mut at = clausters_core::ratio::Ratio::ZERO;
+                    let mut written = onsets.len();
                     for item in &voice.items {
+                        let beat = at.to_f64() * beat_unit;
+                        onsets.push((format!("n{}", item.id()), beat));
                         if item.sounds() {
-                            let beat = at.to_f64() * beat_unit;
-                            onsets.push((format!("n{}", item.id()), beat));
                             // a chord is drawn as its pitches
                             onsets.push((format!("n{}-p1", item.id()), beat));
+                            written = onsets.len();
                         }
                         at = at + item.dur();
                     }
+                    onsets.truncate(written);
                 }
                 pages.insert(
                     source,

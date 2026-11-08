@@ -172,7 +172,36 @@ fn a_box_of_notes_is_stated_as_its_page_once_an_engraver_is_bound() {
     sequence.lock().unwrap().events[1].at.0 = 2.0;
     let again = picture(&mut editing);
     let (_, page) = again["scores"].as_object().unwrap().iter().next().unwrap();
-    assert_eq!(page["anchors"][5], 2.0 * SR);
+    let anchors: Vec<(String, f64)> = page["anchors"]
+        .as_array()
+        .unwrap()
+        .chunks(2)
+        .map(|pair| {
+            (
+                pair[0].as_str().unwrap().to_string(),
+                pair[1].as_f64().unwrap(),
+            )
+        })
+        .collect();
+    // a note is anchored with its pitch beside it, a rest alone
+    let note = |id: &str| {
+        anchors
+            .iter()
+            .any(|(named, _)| *named == format!("{id}-p1"))
+    };
+    let heads: Vec<(bool, f64)> = anchors
+        .iter()
+        .filter(|(id, _)| !id.ends_with("-p1"))
+        .map(|(id, t)| (note(id), *t))
+        .collect();
+    // **the rest the move opened stands at its own time**, a beat in, and
+    // nothing after the last note is anchored: the rest that fills its bar
+    // is nobody's
+    assert_eq!(
+        heads,
+        vec![(true, 0.0), (false, SR), (true, 2.0 * SR)],
+        "{anchors:?}"
+    );
 }
 
 #[test]
