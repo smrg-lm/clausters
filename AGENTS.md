@@ -9,8 +9,10 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   edit vocabulary and the edit log, shared by every client and by the
   `standalone` host) and `crates/clausters-apps/PLAN.md` (the applications over
   the document, each written once: the audio, notes and score editors after the
-  multitrack), all in English — a roadmap plus a checkbox status per
-  milestone, not an expanded completion narrative.
+  multitrack) and `crates/clausters-notate/PLAN.md` (from a performance to a
+  page: beats, quantization, meter, voices, spelling), all in English — a
+  roadmap plus a checkbox status per milestone, not an expanded completion
+  narrative.
   - **`ROADMAP.md` (root) orders them and defines nothing.** It says which of
     the milestones already written in the `PLAN.md` set is taken next and why
     that one first, naming each by its own label. A milestone's content, its

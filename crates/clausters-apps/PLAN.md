@@ -2295,6 +2295,83 @@ opened it.
 
 - ✅ **X14 - Gain envelope over an audio take.** The take holds the region's existing `Automation<Second>` alongside its parts. Project a curve body through the shared points intake and SetAutomation intent; edit and apply share the existing Editing undo order. View -> Gain envelope selects the body; Edit -> Apply gain envelope copies the take and chains existing `/buffer_gain` shaped segments, resetting the curve to unity in the same history entry. Both clients expose the same verbs through existing JSON doors. Acceptance: model/history, gesture/verb, client and server-render signal tests; paired example captures and docs. No protocol or ABI addition. Preview remains separate work. The user runs the full feature matrix.
 
+- ⬜ **X35 - The roll in notation mode.** *(Opened 2026-11-08 by the user,
+  while settling how a roll and a page relate.)* A roll edits a sequence in
+  one of its two modes (`crates/clausters-document/PLAN.md`, "The notation
+  mode: a sequence that is written, not only played"). In **interpretation**
+  it is the roll it is today: the events as played, MIDI 1.0, 2.0 or MPE, with
+  their lanes and per-note curves, and no tie to a page. In **notation** it is
+  a view of the notation: it shows a staff or a system of staves, a note
+  belongs to a staff and a voice, its length is a written value, and the
+  articulations, ties, slurs and pedal written on it are what its events
+  sound. How a polyphony is written (in one voice with ties, or in voices) is
+  the part's, and the roll offers it as a choice that changes no sound.
+  **Needs** `O35` from the second step on, `O37` from the fourth and `O36`
+  for the sixth; the conversion of a performance into notation runs the
+  module planned in `crates/clausters-notate/PLAN.md`.
+  - ⬜ **X35.1 - Barlines on the ruler, in both modes.** The projection
+    (`clausters_editing::notes::Projection`) gains the bars of the sequence's
+    grid (its meters by measure, an irregular bar, an anacrusis) and the host's
+    `notes` element draws them on the ruler and the plane. This is the meter
+    half of the Future direction "A roll may need its tempo and its barlines as
+    parameters"; the tempo half stays there.
+  - ⬜ **X35.2 - The mode as state and as verbs.** The roll shows the mode of
+    its sequence; `notation_mode` and `interpretation_mode` are verbs of the
+    window (`clausters_editing::verbs`, `docs/verbs.md`), each the conversion
+    of `X35.7`. The rule goes in `docs/app-behavior.md`.
+  - ⬜ **X35.3 - A staff or a system.** The view holds what it shows (a part, a
+    staff, or the whole system) and the voice being edited (a staff and a
+    voice); both are the window's state, not the document's. The notes are
+    coloured by voice (the projection gains each note's voice beside its id),
+    a note of another voice is dimmed and not taken by a press, and the hover
+    names the staff and the voice. The vertical axis stays the pitch.
+  - ⬜ **X35.4 - Editing by the rules of notation.** Behind the `notation`
+    feature: an onset lands on the reading's division and its tuplets, a
+    length on a written value (plain, dotted, a tuplet's), and a value across a
+    barline stays whole, which the page writes with ties. An edit writes `at`,
+    `value`, `dur`, the editing voice's `staff` and `voice`, and `pitches`
+    spelled in the key, and never `sustain`, which is derived (`O37`). In a
+    part written in voices, two notes of one voice that overlap are a chord
+    when they start and end together and are refused with the reason
+    otherwise; in a part written with ties they are kept. A note past the
+    part's `limit` is refused with the reason.
+  - ⬜ **X35.5 - The written length and the sounding one, together.** A note
+    is drawn as long as it is written, with what it sounds inside it, so a
+    staccato or a slurred note is seen as it is heard.
+  - ⬜ **X35.6 - Articulations on a selection.** Slur, tie, staccato and
+    pedal over the selected notes are page edits, the score editor's own
+    operations (`clausters_core::notation::edit`, `ops`), and are heard at
+    once through `O37`'s derived performance.
+  - ⬜ **X35.7 - The conversions, each one intent.** Notation to
+    interpretation is a render: the mode changes and what sounds is kept.
+    Interpretation to notation runs the module of
+    `crates/clausters-notate/PLAN.md`, first as its trivial pipeline (today's
+    grid reading, with a meter, a division and a writing given in a dialog).
+    The events, the section and the mode change in one undo step.
+    Open, recommended: notation to interpretation keeps the notation keys and
+    the section, as the last notation, so converting back starts from them.
+    Open, recommended: a conversion changes the sequence in place, with undo,
+    and "into a copy" is offered beside it.
+  - ⬜ **X35.8 - How a polyphony is written, from the roll and the page.** One
+    verb sets the part's writing (`SetParts`); the roll recolours its voices
+    and the page is written again, and nothing sounds different.
+  - ⬜ **X35.9 - Both clients.** The notes editor's mode, the part, staff and
+    voice it shows, and the conversions, in Python and on the web, with the
+    sequence's `mode` and `parts`; the example of the notes editor in both
+    languages gains a sequence in notation mode.
+  - ⬜ **X35.10 - Tests.** The intake's rules per mode in
+    `clausters-editing`, the window's verbs, both clients' notes editor tests,
+    and a guard that a sequence in interpretation mode is edited, drawn and
+    heard exactly as before.
+  - Open, recommended: in notation mode the velocity is the dynamics' and is
+    not edited in the roll; a performance is tuned by converting it to
+    interpretation.
+  - **Acceptance:** a piano part on two staves edited in the roll in notation
+    mode is the same page in the score editor with no further reading; a slur
+    or a staccato drawn on the page is heard and seen on the roll at once; a
+    sequence converted from notation to interpretation and back with the same
+    reading gives the same page.
+
 
 ## Application state and services
 
@@ -4075,6 +4152,8 @@ Every entry carries a checkbox.
   roll as it does on a page. So what the ruler reads is not one meter but the
   page's own grid, its meters by measure, which the sequence's `notation`
   section holds and a reading already takes.)*
+  *(2026-11-08: the meter half, the bars on the ruler read from the page's
+  grid, is `X35.1`; the tempo half stays here.)*
 
 - ✅ **From the roll to the score** *(the user, 2026-10-05, planning `X5`:
   the conversion to a roll goes one way, and the way back takes decisions

@@ -9098,6 +9098,8 @@ module of its own.
     (`a_host_with_no_engraver_offers_no_page_and_says_why`);
   - the box is read with the transcription's defaults, and nothing on the
     multitrack states another meter, key or smallest value for it;
+    *(2026-11-08: the reading stored with the sequence,
+    `crates/clausters-document/PLAN.md`, `O35`, is where it will be stated)*;
   - a page is engraved whole when its sequence changes, and what that
     costs for a sequence of thousands of notes is not measured;
     *measured 2026-11-07* (`what_a_box_page_costs`, release, one box):

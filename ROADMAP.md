@@ -67,6 +67,7 @@ Where the work lives:
 | `Wx` | `clients/web/PLAN.md` | the web client |
 | `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux`, `Jx` | `PLAN.md` (root) | the server, its engine in the browser (`Bx`), and third-party plugins (`Jx`) |
 | `APx` | `clients/gui/PLAN.md` (AP track) | the application scope: the window set, the derived widget id, the reconcile, one undo order |
+| `Qx` | `crates/clausters-notate/PLAN.md` | from a performance to a page: beats, quantization, meter, voices, spelling |
 
 Entries that carry no label are **plan entries, not milestones** — they are named
 by their own title and by the plan that holds them. **A pointer names the plan
@@ -273,6 +274,24 @@ its plan; the plan is where its acceptance is read.
   "unscheduled" reads as a decision rather than an oversight.
 
 ### The near work
+
+- ⬜ **The roll's notation mode: `O35`-`O37`, then `X35`**
+  *(`crates/clausters-document/PLAN.md`, "The notation mode: a sequence that
+  is written, not only played"; `crates/clausters-apps/PLAN.md`, `X35`)*. A
+  sequence is edited in interpretation (as played) or in notation (staves,
+  voices, written values, and a performance derived from them); the parts
+  are the document's. `O35` first (the mode, the parts, the stored reading),
+  then `O36`, which folds in the open entry of `clients/python/PLAN.md`, "An
+  edit to a voice's legato or slur does not rewrite the other", and `O37`;
+  `X35.1` (barlines on the roll's ruler) needs none of them. Each carries open
+  choices, with a recommendation, for the user to confirm.
+
+- ⬜ **From a performance to a page, the `Q` track**
+  *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,
+  quantization, meter, voices and spelling as separate operations, today's
+  reading as the assembler and its heuristics as the baselines. `Q0` (the
+  module's documentation, with its bibliography) and `Q1` first; the roll's
+  conversion (`X35.7`) uses the baselines until a method beats them.
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
