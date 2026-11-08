@@ -2897,6 +2897,61 @@ mod tests {
         assert!(!host.owns_an_application());
     }
 
+    /// **A multitrack in a host with no engraver offers no page**: the View
+    /// menu's entry is refused and says why, choosing it changes nothing,
+    /// and a box of notes still opens its roll.
+    #[cfg(not(feature = "score"))]
+    #[test]
+    fn a_host_with_no_engraver_offers_no_page_and_says_why() {
+        let folder = std::env::temp_dir().join(format!("host-no-page-{}", std::process::id()));
+        let path = a_session_with_a_box_of_notes(&folder);
+        let mut host = host();
+        let def_id = host
+            .open_multitrack(Some(path.to_str().unwrap()), "notes")
+            .expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let actions = ask(&mut host, def_id, json!({"query": "actions"}));
+        let page = &actions["notes_score"];
+        assert_eq!(page["enabled"], false, "{page}");
+        assert!(
+            page["reason"]
+                .as_str()
+                .is_some_and(|why| why.contains("engraver")),
+            "{page}"
+        );
+        let chosen = host.event_message(
+            def_id,
+            1,
+            vec![
+                OscType::String("menu".into()),
+                OscType::String("notes_score".into()),
+            ],
+        );
+        host.deliver(def_id, &chosen);
+        let actions = ask(&mut host, def_id, json!({"query": "actions"}));
+        assert_eq!(actions["notes_roll"]["checked"], true, "{actions}");
+        let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
+        let widget = host.own_widget_id(structure, AUDIO, "widget").unwrap();
+        let open = host.event_message(
+            widget,
+            2,
+            vec![OscType::String("open".into()), OscType::String("3".into())],
+        );
+        assert!(host.deliver(def_id, &open));
+        until(&mut host, "the roll never opened", |h| {
+            h.audio.as_ref().is_some_and(|audio| {
+                audio
+                    .windows
+                    .values()
+                    .any(|w| matches!(w.kind, AppKind::Roll { source: 5, .. }))
+            })
+        });
+        host.close_audio(def_id);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
     /// A window a client opened through the door, drawn.
     fn opened_app(host: &mut Host, client: ClientId, seq: i32, app: &str, options: Value) -> i32 {
         let first = door(

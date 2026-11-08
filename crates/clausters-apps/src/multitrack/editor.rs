@@ -387,6 +387,10 @@ pub struct MultitrackEditor {
     /// **How a box of notes is drawn**: `"roll"`, or `"score"` -- its page,
     /// each note at its time. The window's own, like its zoom.
     notes_view: String,
+    /// **Why no box of notes can be drawn as its page here**, when its
+    /// holder said it will hand over no engraver: the View menu's entry is
+    /// refused with it, and the view stays the roll.
+    no_pages: Option<String>,
     /// **How a box of samples is drawn**: `"trace"`, its waveform, or
     /// `"spectrogram"` -- the audio editor's view of its take, which draws
     /// either. The window's own, like `notes_view`.
@@ -603,6 +607,7 @@ impl MultitrackEditor {
             grid: crate::DEFAULT_GRID,
             snap: true,
             notes_view: ROLL.into(),
+            no_pages: None,
             samples_view: WAVE,
             #[cfg(feature = "notation")]
             engraver: None,
@@ -614,11 +619,19 @@ impl MultitrackEditor {
     /// **How a box of notes is drawn**: `"roll"`, or `"score"`. A word that
     /// is neither leaves it as it is, and says so.
     pub fn set_notes_view(&mut self, view: &str) -> bool {
-        if view != ROLL && view != SCORE {
+        if view != ROLL && view != SCORE || view == SCORE && self.no_pages.is_some() {
             return false;
         }
         self.notes_view = view.to_string();
         true
+    }
+
+    /// **Its holder hands over no engraver**, for `why`: a box of notes is
+    /// drawn as its roll from now on, and the View menu's page entry says
+    /// why it is refused rather than offering a view that draws nothing new.
+    pub fn refuse_pages(&mut self, why: &str) {
+        self.no_pages = Some(why.into());
+        self.notes_view = ROLL.into();
     }
 
     /// How a box of notes is drawn.
@@ -667,6 +680,11 @@ impl MultitrackEditor {
                 _ => None,
             },
         );
+        if let Some(why) = &self.no_pages
+            && let Some(state) = actions.get_mut(NOTES_SCORE_VERB)
+        {
+            state.refuse(why);
+        }
         if !self.has_session() {
             for (verb, state) in &mut actions {
                 if !matches!(*verb, "close" | "keys" | "new_file" | "open_file") {

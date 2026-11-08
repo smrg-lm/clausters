@@ -179,6 +179,10 @@ fn engraved(_: &str) -> Result<clausters_apps::score::Shared, String> {
     Err("this host was built without an engraver, so it opens no score".into())
 }
 
+/// Why a multitrack in a build with no engraver draws no box as its page.
+#[cfg(not(any(feature = "score", all(target_arch = "wasm32", feature = "notation"))))]
+const NO_ENGRAVER: &str = "this host was built without an engraver, so it draws no page";
+
 /// What the host asks of the application.
 #[derive(Debug)]
 pub(super) enum ToApp {
@@ -1115,6 +1119,14 @@ impl App {
         // **It saves unless it was opened read-only**: an untitled one too,
         // whose first Save asks where in the Save as form
         let saves = !matches!(save_to, Some(None));
+        // **a build that links no engraver draws no page**, and its View
+        // menu says so rather than offering one
+        #[cfg(not(any(feature = "score", all(target_arch = "wasm32", feature = "notation"))))]
+        if let Some(clausters_apps::editing::Member::Multitrack(editor)) =
+            self.editing.member_mut(member)
+        {
+            editor.refuse_pages(NO_ENGRAVER);
+        }
         self.member_call(
             member,
             json!({"verb": "sync", "window": def_id, "controls": controls,

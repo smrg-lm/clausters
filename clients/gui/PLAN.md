@@ -9075,8 +9075,13 @@ module of its own.
 
 - ⬜ **What a score box of the multitrack left open** *(moved here
   2026-10-28 when `N9` closed; each for when it is met)*.
-  - the standalone host binds no engraver to its multitrack, so there a
+  - ✅ the standalone host binds no engraver to its multitrack, so there a
     box of notes is a roll whatever the menu says;
+    *fixed 2026-11-07*: the host binds one wherever its build links an
+    engraver (since `a186abd6`), and a build that links none tells the
+    multitrack so (`refuse_pages`): the View menu's *Notes as scores* is
+    refused with why, and the view stays the roll
+    (`a_host_with_no_engraver_offers_no_page_and_says_why`);
   - the box is read with the transcription's defaults, and nothing on the
     multitrack states another meter, key or smallest value for it;
   - a page is engraved whole when its sequence changes, and what that
