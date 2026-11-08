@@ -39,6 +39,9 @@ mod tess;
 
 #[cfg(test)]
 mod tests;
+/// A dense page of two-staff systems, for a test outside this module.
+#[cfg(test)]
+pub(crate) use tests::dense_page as dense_page_for_tests;
 
 use std::collections::HashMap;
 
@@ -490,6 +493,10 @@ pub struct ScoreData {
     /// walk that engraved the page is what knows. What a kind admits is
     /// `clausters_core::notation::admits`, read through [`ScoreData::admits`].
     pub kinds: HashMap<String, String>,
+    /// **The part of the ink each primitive is drawn in**, by its place in
+    /// `prims`: worked out the first time the ink is drawn, from the staves,
+    /// which a page does not change.
+    pub(super) parts: std::cell::OnceCell<Vec<usize>>,
 }
 
 impl ScoreData {
@@ -546,6 +553,7 @@ impl Default for ScoreData {
             elements: std::collections::HashSet::new(),
             systems: Vec::new(),
             kinds: HashMap::new(),
+            parts: std::cell::OnceCell::new(),
         }
     }
 }

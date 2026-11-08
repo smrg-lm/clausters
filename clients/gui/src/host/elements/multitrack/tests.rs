@@ -2918,3 +2918,67 @@ fn a_box_turns_from_its_waveform_to_its_spectrogram_keeping_its_take() {
         Some(SlotKind::Geometry { .. })
     ));
 }
+
+/// **A box is drawn again only when what it is drawn from moves**: a frame
+/// drawn from the kept boxes is the frame a fresh element draws in one pass,
+/// and a box moved by a set is the one box drawn again -- its neighbours on
+/// the track and the boxes of the other tracks are copied.
+#[test]
+fn a_moved_box_is_the_one_box_drawn_again() {
+    use crate::host::paint::{Draw, Mesh};
+    use crate::host::theme::Theme;
+    let world = crate::host::world::World::default();
+    let metrics = Metrics::default();
+    let theme = Theme::default();
+    let ctx = Ctx {
+        world: &world,
+        metrics: &metrics,
+        rect: Rect::new(0.0, 0.0, 800.0, 300.0),
+        indent: 120.0,
+        scale: 1.0,
+        time: None,
+        clip: None,
+        focused: false,
+        hovered: false,
+        clock: 0.0,
+    };
+    let clips = |second: i64| {
+        format!(
+            r#"["a", "one", 0, 24000, 0, "a", -1, "b", "one", {second}, 24000, 0, "b", -1,
+               "c", "two", 80000, 24000, 0, "c", -1]"#
+        )
+    };
+    let mt = from_props(&props(&format!(
+        r#"{{"tracks": ["one", "", 100, 0, 0, 1, 0, "two", "", 100, 0, 0, 1, 0],
+            "clips": {},
+            "notes": ["a", 0, 6000, 60, 100, 0, "b", 3000, 6000, 64, 100, 0,
+                      "c", 0, 12000, 67, 100, 0],
+            "sample_rate": 48000}}"#,
+        clips(48_000)
+    )));
+    let drawn = |mt: &Multitrack| {
+        let mut mesh = Mesh::new();
+        mt.draw(&mut Draw::new(&mut mesh, &metrics, &theme), &ctx);
+        mesh
+    };
+    let first = drawn(&mt);
+    assert_eq!(mt.kept.drawn(), 3, "each box drawn once");
+    let again = drawn(&mt);
+    assert_eq!(mt.kept.drawn(), 3, "and copied after");
+    assert!(again.near(&first, 0.0));
+    assert!(again.near(&drawn(&mt.clone()), 0.0), "the single pass");
+    let mut mt = mt;
+    // inside the axis, which the last box's end bounds and this one does not
+    assert!(mt.set("clips", &serde_json::from_str(&clips(40_000)).unwrap()));
+    let moved = drawn(&mt);
+    assert_eq!(mt.kept.drawn(), 4, "the moved box alone");
+    assert!(moved.near(&drawn(&mt.clone()), 0.0), "the single pass");
+    assert!(!moved.near(&first, 0.0), "and it moved");
+    // new contents are every box's
+    assert!(mt.set(
+        "notes",
+        &serde_json::from_str(r#"["a", 0, 6000, 61, 100, 0]"#).unwrap()
+    ));
+    drawn(&mt);
+    assert_eq!(mt.kept.drawn(), 7);
+}

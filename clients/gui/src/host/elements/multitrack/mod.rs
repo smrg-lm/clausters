@@ -65,6 +65,26 @@ mod views;
 use hand::{Block, Fading, Grab, LEVEL_PORT, Sizing};
 use views::{BoxView, take_frames};
 
+/// **What a box is drawn from**: where it is and what clips it, in what ink,
+/// theme and sizes, whether it is held, the axis its contents are read on,
+/// how notes are drawn, the contents and the text's generation. A box whose
+/// key is the one it was drawn under is copied.
+#[derive(PartialEq)]
+pub(super) struct BoxKey {
+    pub(super) rect: Rect,
+    pub(super) area: Rect,
+    pub(super) indent: f32,
+    pub(super) clip: Option<Rect>,
+    pub(super) ink: crate::host::paint::Ink,
+    pub(super) theme: crate::host::theme::Theme,
+    pub(super) metrics: crate::host::metrics::Metrics,
+    pub(super) selected: bool,
+    pub(super) space: TimeSpace,
+    pub(super) view: NotesView,
+    pub(super) contents: u64,
+    pub(super) text: u64,
+}
+
 /// **How a box of notes is drawn**: the presentation its contents take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NotesView {
@@ -334,6 +354,14 @@ pub struct Multitrack {
     /// is drawn as its roll.
     #[cfg(feature = "notation")]
     scores: HashMap<String, ScoreBody>,
+    /// **What the boxes hold, as a count**: moved on every `notes` and
+    /// `scores` set, which replace every box's contents, so a kept box's key
+    /// says which contents it was drawn from.
+    contents: u64,
+    /// **Each box as it was last drawn** -- its frame and its body, a roll or
+    /// a page -- by its place in `clips`: a drag of one box draws that box
+    /// again and copies the rest.
+    kept: crate::host::paint::KeptParts<BoxKey>,
     /// The drag in flight. **The state lives in the element**; the machine
     /// keeps only the sequence.
     grab: Option<Grab>,
@@ -383,6 +411,8 @@ impl Default for Multitrack {
             notes_view: NotesView::default(),
             #[cfg(feature = "notation")]
             scores: HashMap::new(),
+            contents: 0,
+            kept: Default::default(),
             grab: None,
             block: Vec::new(),
             fading: None,

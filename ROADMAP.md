@@ -324,10 +324,9 @@ its plan; the plan is where its acceptance is read.
   decides with measured numbers.
 
 - ⬜ **A complex element is described again only where it changed**
-  *(`clients/gui/PLAN.md`, `G46`)*. The multitrack and the score editor keep
-  their picture in parts and redraw only what a change reached. **Related:**
-  "What a whole frame still costs" (Found by use, done), whose `KeptPage` is the
-  whole-page form of it.
+  *(`clients/gui/PLAN.md`, `G46`)*. Done natively for the score and the
+  multitrack (`paint::KeptParts`); left: the measurement in a page, the roll,
+  and whether the window's own `Kept` is worth splitting.
 
 ### The larger questions, and the plans' own Future directions
 

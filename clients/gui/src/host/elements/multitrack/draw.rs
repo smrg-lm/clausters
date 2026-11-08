@@ -229,19 +229,12 @@ impl Multitrack {
         // **One pass over the clips, each onto the track it names.** A clip
         // whose track is gone draws nowhere and is still held, which is what
         // lets it come back in a report to be re-homed.
+        // **Each box is kept**, its frame and its body: a box whose key is
+        // the one it was drawn under is copied, so a drag draws the box under
+        // the hand again and no other.
+        self.kept.keep(self.clips.len());
         for (n, cr, local) in self.boxes_on_screen(ctx.rect, ctx.indent, ctx.metrics, ctx.time) {
             let clip = &self.clips[n];
-            track::draw_clip(d, cr, self.selected.contains(&n));
-            // **The base view is what its contents are.** Samples are the
-            // audio editor's view of the take, drawn in the box's own slot
-            // over the box's window onto it ([`Self::view_slots`]) -- so they
-            // are not drawn here. Notes draw as the roll's body, handed the
-            // box's own axis and drawing no chrome of their own. A box with
-            // neither draws its frame and nothing in it, which is the honest
-            // picture of a window onto something nobody loaded.
-            let Some(roll) = self.rolls.get(&clip.name) else {
-                continue;
-            };
             let space = TimeSpace::of(local, clip.place.dur).with_window(SourceWindow {
                 start: clip.place.start,
                 // Frames of the sequence per sample of the box: one, unless
@@ -250,18 +243,66 @@ impl Multitrack {
                 looping: self.wraps(&clip.name),
                 ..SourceWindow::default()
             });
-            // **A box of notes has two presentations**: its roll, and its
-            // page -- drawn on the box's own axis, each note at its time. A
-            // box with no page, or a row too low for a staff to be read, is
-            // drawn as its roll.
-            #[cfg(feature = "notation")]
-            let paged = self.notes_view == NotesView::Score
-                && self.draw_page(d, cr, ctx.rect, ctx.indent, &space, n);
-            #[cfg(not(feature = "notation"))]
-            let paged = false;
-            if !paged {
-                roll.draw_body(d, cr, &space);
-            }
+            let selected = self.selected.contains(&n);
+            let key = BoxKey {
+                rect: cr,
+                area: ctx.rect,
+                indent: ctx.indent,
+                clip: d.mesh.clip(),
+                ink: d.mesh.ink(),
+                theme: d.theme.clone(),
+                metrics: *d.m,
+                selected,
+                space,
+                view: self.notes_view,
+                contents: self.contents,
+                text: crate::host::font::generation(),
+            };
+            let (m, theme) = (d.m, d.theme);
+            self.kept.draw(d.mesh, n, key, |mesh| {
+                let d = &mut Draw::new(mesh, m, theme);
+                self.paint_box(d, ctx, n, cr, &space, selected);
+            });
+        }
+    }
+
+    /// **One box, its frame and its body**: what [`paint`](Self::paint)
+    /// keeps of it.
+    fn paint_box(
+        &self,
+        d: &mut Draw,
+        ctx: &Ctx,
+        n: usize,
+        cr: Rect,
+        space: &TimeSpace,
+        selected: bool,
+    ) {
+        let clip = &self.clips[n];
+        track::draw_clip(d, cr, selected);
+        // **The base view is what its contents are.** Samples are the
+        // audio editor's view of the take, drawn in the box's own slot
+        // over the box's window onto it ([`Self::view_slots`]) -- so they
+        // are not drawn here. Notes draw as the roll's body, handed the
+        // box's own axis and drawing no chrome of their own. A box with
+        // neither draws its frame and nothing in it, which is the honest
+        // picture of a window onto something nobody loaded.
+        let Some(roll) = self.rolls.get(&clip.name) else {
+            return;
+        };
+        // **A box of notes has two presentations**: its roll, and its
+        // page -- drawn on the box's own axis, each note at its time. A
+        // box with no page, or a row too low for a staff to be read, is
+        // drawn as its roll.
+        #[cfg(feature = "notation")]
+        let paged = self.notes_view == NotesView::Score
+            && self.draw_page(d, cr, ctx.rect, ctx.indent, space, n);
+        #[cfg(not(feature = "notation"))]
+        let paged = {
+            let _ = ctx;
+            false
+        };
+        if !paged {
+            roll.draw_body(d, cr, space);
         }
     }
 

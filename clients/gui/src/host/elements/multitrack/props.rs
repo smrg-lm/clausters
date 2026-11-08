@@ -130,6 +130,8 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
             .unwrap_or_default(),
         #[cfg(feature = "notation")]
         scores: props.get("scores").map(parse_scores).unwrap_or_default(),
+        contents: 0,
+        kept: Default::default(),
         grab: None,
         block: Vec::new(),
         fading: None,
@@ -633,6 +635,7 @@ impl Multitrack {
                     .into_iter()
                     .map(|(name, notes)| (name, roll_body(&notes)))
                     .collect();
+                self.contents += 1;
                 true
             }
             // **How a box of samples is drawn**: its take's waveform or its
@@ -657,6 +660,7 @@ impl Multitrack {
             #[cfg(feature = "notation")]
             "scores" => {
                 self.scores = parse_scores(v);
+                self.contents += 1;
                 true
             }
             // **The spans a join is drawn from**, replaced whole like every

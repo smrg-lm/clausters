@@ -828,7 +828,7 @@ fn a_page_keeps_the_fills_it_tessellated() {
 /// across with a stem beside each -- a dense page, as `(data, rect)` fitted
 /// one to one. A third of the noteheads are rests' furniture rather than
 /// elements, so a search has to step over what does not sound.
-fn dense_page(systems: usize, notes: usize) -> (ScoreData, Rect) {
+pub(crate) fn dense_page(systems: usize, notes: usize) -> (ScoreData, Rect) {
     let (w, step) = (20.0 * notes as f32 + 200.0, 90.0);
     let mut prims = Vec::new();
     let mut elements = Vec::new();

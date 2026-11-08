@@ -782,6 +782,113 @@ impl Mesh {
     }
 }
 
+/// **A picture kept in parts**: what an element draws, as meshes built once
+/// and copied into the frame's while what each was drawn from stays the same.
+///
+/// An element that draws much from little -- a page of notation, a stack of
+/// tracks -- splits its picture into parts and says, for each, the key it is
+/// drawn from: where it is, its clip, its ink, the theme's colors, the text's
+/// generation and the part's own state. A part whose key is the one it was
+/// built under is copied; one whose key moved is drawn again, and nothing
+/// else is. Copying a part is appending finished vertices, so a frame drawn
+/// from kept parts is the frame drawn in one pass, part for part.
+///
+/// One facility for every element that keeps its picture, rather than a
+/// cache written into each.
+pub struct KeptParts<K> {
+    parts: std::cell::RefCell<Vec<Option<(K, Mesh)>>>,
+    /// How many parts were drawn again, for a test that counts them.
+    #[cfg(test)]
+    drawn: std::cell::Cell<usize>,
+}
+
+impl<K> Default for KeptParts<K> {
+    fn default() -> Self {
+        Self {
+            parts: std::cell::RefCell::new(Vec::new()),
+            #[cfg(test)]
+            drawn: std::cell::Cell::new(0),
+        }
+    }
+}
+
+impl<K> Clone for KeptParts<K> {
+    /// A copy draws its own parts the first time.
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl<K> std::fmt::Debug for KeptParts<K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "KeptParts({})", self.parts.borrow().len())
+    }
+}
+
+impl<K: PartialEq> KeptParts<K> {
+    /// **Part `part`, drawn into `mesh`**: copied when it was built under
+    /// `key`, and built by `draw` first otherwise -- into a mesh of its own
+    /// carrying `mesh`'s clip and ink, as it would have been drawn there.
+    /// Answers whether it was drawn again.
+    pub fn draw(&self, mesh: &mut Mesh, part: usize, key: K, draw: impl FnOnce(&mut Mesh)) -> bool {
+        let mut parts = self.parts.borrow_mut();
+        if parts.len() <= part {
+            parts.resize_with(part + 1, || None);
+        }
+        let again = parts[part].as_ref().is_none_or(|(was, _)| *was != key);
+        if again {
+            let mut built = Mesh::new();
+            built.set_ink(mesh.ink());
+            built.set_clip(mesh.clip());
+            draw(&mut built);
+            parts[part] = Some((key, built));
+            #[cfg(test)]
+            self.drawn.set(self.drawn.get() + 1);
+        }
+        if let Some((_, built)) = &parts[part] {
+            mesh.append(built);
+        }
+        again
+    }
+
+    /// **What it holds is not the picture any more**: every part is drawn
+    /// again the next time.
+    pub fn forget(&mut self) {
+        self.parts.get_mut().clear();
+    }
+
+    /// Parts from `parts` on are gone: the picture has fewer now.
+    pub fn keep(&self, parts: usize) {
+        self.parts.borrow_mut().truncate(parts);
+    }
+
+    /// How many parts it holds built.
+    #[cfg(test)]
+    pub fn built(&self) -> usize {
+        self.parts
+            .borrow()
+            .iter()
+            .filter(|part| part.is_some())
+            .count()
+    }
+
+    /// How many parts were drawn again since it was made.
+    #[cfg(test)]
+    pub fn drawn(&self) -> usize {
+        self.drawn.get()
+    }
+
+    /// Every part it holds, in order, as one mesh.
+    #[cfg(test)]
+    pub fn joined(&self) -> Mesh {
+        let mut out = Mesh::new();
+        for (_, part) in self.parts.borrow().iter().flatten() {
+            out.append(part);
+        }
+        out
+    }
+}
+
 /// Uploads a [`Mesh`] and draws it.
 pub struct Painter {
     pipeline: wgpu::RenderPipeline,

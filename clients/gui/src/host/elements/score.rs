@@ -44,24 +44,23 @@ pub struct Score {
     /// step count is measured from, so it is absolute from the snapshot rather
     /// than accumulated. `None` when no drag is in flight.
     origin_y: Option<f64>,
-    /// The page as it was last drawn ([`KeptPage`]).
-    kept: KeptPage,
+    /// **The page's ink as it was last drawn, a staff to a part.** A whole
+    /// frame tessellated the page again though nothing on it had moved: a
+    /// set elsewhere in the window, a gesture on the toolbar, a resize of
+    /// something beside it. What the ink is drawn from is the display list,
+    /// where it is drawn and in what, and what a drag or a text being typed
+    /// over changes of it, so each staff's triangles are kept while none of
+    /// that changes for it, and drawing the page again is copying them; a
+    /// drag draws its own staff again and no other. A new display list lets
+    /// them all go. What the hand marks -- the selection, the edit cursor --
+    /// is drawn fresh under them every frame, so a press that selects keeps
+    /// the page.
+    kept: crate::host::paint::KeptParts<PageKey>,
 }
 
-/// **The page's triangles, as they were last drawn**, and what they were
-/// drawn for: the placement, the clip, the colors and the ink, and the
-/// text's [`generation`](crate::host::font::generation).
-///
-/// A whole frame tessellated the page again though nothing on it had moved:
-/// a set elsewhere in the window, a gesture on the toolbar, a resize of
-/// something beside it. What a page is drawn from is the element's own state
-/// and those five, so the triangles are kept while none of them changes, and
-/// drawing the page again is copying them. Every way the element's state
-/// changes -- a set, a key, a press, a drag, a release, the focus leaving --
-/// lets them go.
-#[derive(Default)]
-struct KeptPage(std::cell::RefCell<Option<(PageKey, crate::host::paint::Mesh)>>);
-
+/// **What a part of the page's ink is drawn from**: where the page is and in
+/// what, and -- for a part a drag or a text being typed over reaches
+/// (`ScoreData::moved_parts`) -- that state.
 #[derive(PartialEq)]
 struct PageKey {
     rect: crate::host::layout::Rect,
@@ -69,26 +68,10 @@ struct PageKey {
     colors: ScoreColors,
     ink: crate::host::paint::Ink,
     text: u64,
-}
-
-impl KeptPage {
-    /// The element changed: what was drawn of it is not the page any more.
-    fn forget(&mut self) {
-        *self.0.get_mut() = None;
-    }
-}
-
-impl Clone for KeptPage {
-    /// A copy draws its own page the first time.
-    fn clone(&self) -> Self {
-        Self::default()
-    }
-}
-
-impl std::fmt::Debug for KeptPage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("KeptPage")
-    }
+    state: Option<(
+        Option<crate::host::graphics::score::ScoreDrag>,
+        Option<crate::host::graphics::score::TextEditing>,
+    )>,
 }
 
 pub(super) fn build(
@@ -98,7 +81,7 @@ pub(super) fn build(
     Ok(Box::new(Score {
         data: ScoreData::parse(props),
         origin_y: None,
-        kept: KeptPage::default(),
+        kept: Default::default(),
     }))
 }
 
@@ -109,7 +92,6 @@ impl Score {
     /// page goes back to drawing what it engraved either way. The owner
     /// answers with a page that says it.
     fn finish(&mut self) -> Events {
-        self.kept.forget();
         let Some(edit) = self.data.editing.take() else {
             return Events::none();
         };
@@ -126,7 +108,6 @@ impl Score {
 
 impl Element for Score {
     fn set(&mut self, key: &str, v: &Value) -> bool {
-        self.kept.forget();
         let data = &mut self.data;
         match key {
             // Replace the engraved page in place -- the answer to an edit, and
@@ -137,6 +118,7 @@ impl Element for Score {
             // this page *is* now, so it retires here.
             "display_list" => match parse::as_props(v) {
                 Some(props) => {
+                    self.kept.forget();
                     let page = ScoreData::parse(&props);
                     let keep = std::mem::replace(data, page);
                     data.playhead = keep.playhead;
@@ -202,24 +184,27 @@ impl Element for Score {
             playhead: theme.playhead,
             selection: theme.selection,
         };
-        let key = PageKey {
-            rect: ctx.rect,
-            clip: ctx.clip,
-            colors,
-            ink: mesh.ink(),
-            text: crate::host::font::generation(),
-        };
-        let mut kept = self.kept.0.borrow_mut();
-        if kept.as_ref().is_none_or(|(was, _)| *was != key) {
-            let mut page = crate::host::paint::Mesh::new();
-            page.set_ink(key.ink);
-            page.set_clip(ctx.clip);
-            self.data
-                .render(&mut page, ctx.rect, ctx.clip, -1.0, colors);
-            *kept = Some((key, page));
-        }
-        if let Some((_, page)) = kept.as_ref() {
-            mesh.append(page);
+        // what the hand marks, under the ink and drawn fresh: a press that
+        // selects changes these and nothing kept
+        self.data.render_marks(mesh, ctx.rect, ctx.clip, colors);
+        // the ink in parts, a staff each: a drag or a text typed over draws
+        // the parts it reaches again, and every other part is copied
+        let moved = self.data.moved_parts();
+        let parts = self.data.ink_parts();
+        self.kept.keep(parts);
+        for part in 0..parts {
+            let key = PageKey {
+                rect: ctx.rect,
+                clip: ctx.clip,
+                colors,
+                ink: mesh.ink(),
+                text: crate::host::font::generation(),
+                state: moved.contains(&part).then(|| self.data.ink_state()),
+            };
+            self.kept.draw(mesh, part, key, |page| {
+                self.data
+                    .render_ink_part(page, ctx.rect, ctx.clip, colors, part);
+            });
         }
     }
 
@@ -278,7 +263,6 @@ impl Element for Score {
     /// leaves it as it was, and the rest edit the line as a field's do. With
     /// no text in hand a page has no key of its own.
     fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
-        self.kept.forget();
         let edit = self.data.editing.as_mut()?;
         match key {
             Key::Enter => Some(self.finish()),
@@ -299,7 +283,6 @@ impl Element for Score {
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
-        self.kept.forget();
         // A press names the engraved element under it by its MEI id -- the same
         // id the client engraved from, so a driver resolves it in its own
         // score. Pressing blank paper clears the selection.
@@ -431,7 +414,6 @@ impl Element for Score {
     }
 
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
-        self.kept.forget();
         // Absolute from the press, quantized to whole steps: the page is
         // redrawn only when the drag crosses one, so the pixels between two
         // pitches cost nothing. Nothing is reported until the release -- what
@@ -447,7 +429,6 @@ impl Element for Score {
     }
 
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
-        self.kept.forget();
         self.origin_y = None;
         let Some(drag) = self.data.drag.as_ref() else {
             return Events::none();
@@ -487,6 +468,7 @@ mod tests {
     use super::*;
     use crate::host::layout::Rect;
     use crate::host::metrics::Metrics;
+    use crate::host::paint::Mesh;
     use crate::host::widget::element::Mods;
 
     /// A one-staff page with two identified noteheads, engraved the way the
@@ -518,24 +500,127 @@ mod tests {
     }
 
     /// **A page is drawn once and copied while nothing it shows changes.**
-    /// Drawn twice it is the same triangles; selected, it is drawn again with
-    /// the selection; under another ink it is drawn in it.
+    /// Drawn twice it is the same triangles; selected, the ink is still the
+    /// kept one and the selection is drawn under it; a drag draws the ink
+    /// again, and so does a new display list or another ink. And whatever is
+    /// kept, the frame is the single pass's.
     #[test]
     fn a_kept_page_is_the_page_until_what_it_shows_changes() {
         let ink = crate::host::paint::Ink::default();
+        let single = |score: &Score| {
+            let mut mesh = Mesh::new();
+            let theme = crate::host::theme::Theme::default();
+            mesh.rect(Rect::new(0.0, 0.0, 400.0, 400.0), theme.panel);
+            let colors = ScoreColors {
+                ink: theme.text,
+                playhead: theme.playhead,
+                selection: theme.selection,
+            };
+            score.data.render(
+                &mut mesh,
+                Rect::new(0.0, 0.0, 400.0, 400.0),
+                None,
+                -1.0,
+                colors,
+            );
+            mesh
+        };
+        let kept_page = |score: &Score| (score.kept.built() > 0).then(|| score.kept.joined());
         let mut score = page(true);
         let first = drawn(&score, ink);
-        assert!(score.kept.0.borrow().is_some(), "kept");
+        let ink_mesh = kept_page(&score).expect("kept");
         assert!(first.near(&drawn(&score, ink), 0.0));
+        assert!(first.near(&single(&score), 0.0), "the single pass");
         assert!(score.set("selected", &Value::from("n1")));
-        assert!(score.kept.0.borrow().is_none(), "a set lets it go");
         let selected = drawn(&score, ink);
         assert!(!selected.near(&first, 0.0), "the selection is on it");
+        assert!(selected.near(&single(&score), 0.0), "the single pass");
+        assert!(
+            kept_page(&score).is_some_and(|page| page.near(&ink_mesh, 0.0)),
+            "a selection keeps the ink"
+        );
+        score.data.drag = Some(crate::host::graphics::score::ScoreDrag {
+            id: "n1".into(),
+            steps: 2,
+        });
+        let dragged = drawn(&score, ink);
+        assert!(dragged.near(&single(&score), 0.0), "the single pass");
+        assert!(
+            kept_page(&score).is_some_and(|page| !page.near(&ink_mesh, 0.0)),
+            "a drag draws the ink again"
+        );
+        score.data.drag = None;
         let faded = crate::host::paint::Ink { alpha: 0.5, ..ink };
         assert!(!drawn(&score, faded).near(&selected, 0.0), "and the ink");
+        assert!(score.set("display_list", &Value::Object(page_props(true))));
+        assert_eq!(score.kept.built(), 0, "a new page lets it go");
+    }
+
+    /// **A drag draws its own staff again, and only it**: a page of three
+    /// systems of two staves, a note of the first staff dragged, is one part
+    /// drawn again per move, and the frame is still the single pass's.
+    #[test]
+    fn a_drag_draws_only_its_own_staff_again() {
+        let ink = crate::host::paint::Ink::default();
+        let (data, _) = crate::host::graphics::score::dense_page_for_tests(3, 8);
+        let score = Score {
+            data,
+            origin_y: None,
+            kept: Default::default(),
+        };
+        let parts = score.data.ink_parts();
+        assert_eq!(parts, 6, "a part to each staff");
+        drawn(&score, ink);
+        assert_eq!(score.kept.drawn(), parts);
+        drawn(&score, ink);
+        assert_eq!(score.kept.drawn(), parts, "copied, drawn again never");
+        let mut score = score;
+        let id = score
+            .data
+            .prims
+            .iter()
+            .find_map(|prim| prim.id().filter(|id| score.data.elements.contains(*id)))
+            .expect("a note")
+            .to_string();
+        for steps in 1..=3 {
+            score.data.drag = Some(crate::host::graphics::score::ScoreDrag {
+                id: id.clone(),
+                steps,
+            });
+            let frame = drawn(&score, ink);
+            assert_eq!(
+                score.kept.drawn(),
+                parts + steps as usize,
+                "one part a move"
+            );
+            let mut single = Mesh::new();
+            let theme = crate::host::theme::Theme::default();
+            single.rect(Rect::new(0.0, 0.0, 400.0, 400.0), theme.panel);
+            score.data.render(
+                &mut single,
+                Rect::new(0.0, 0.0, 400.0, 400.0),
+                None,
+                -1.0,
+                ScoreColors {
+                    ink: theme.text,
+                    playhead: theme.playhead,
+                    selection: theme.selection,
+                },
+            );
+            assert!(frame.near(&single, 0.0), "the single pass, {steps} steps");
+        }
     }
 
     fn page(editable: bool) -> Score {
+        Score {
+            data: ScoreData::parse(&page_props(editable)),
+            origin_y: None,
+            kept: Default::default(),
+        }
+    }
+
+    /// The display list [`page`] parses.
+    fn page_props(editable: bool) -> Map<String, Value> {
         // Five staff lines one space (two diatonic steps) apart, because a
         // pitch edit is reported as a position *on a staff* and a page without
         // one has no position to name. The noteheads are placed two steps below
@@ -555,11 +640,7 @@ mod tests {
                 "kinds":{{"n1":"note","n2":"note"}}}}"#
         ))
         .unwrap();
-        Score {
-            data: ScoreData::parse(&props),
-            origin_y: None,
-            kept: KeptPage::default(),
-        }
+        props
     }
 
     /// The same page **as the engraver actually draws it**: the staff lines
@@ -583,7 +664,7 @@ mod tests {
         Score {
             data: ScoreData::parse(&props),
             origin_y: None,
-            kept: KeptPage::default(),
+            kept: Default::default(),
         }
     }
 
@@ -607,7 +688,7 @@ mod tests {
         Score {
             data: ScoreData::parse(&props),
             origin_y: None,
-            kept: KeptPage::default(),
+            kept: Default::default(),
         }
     }
 
@@ -1106,7 +1187,7 @@ mod tests {
         let mut score = Score {
             data: ScoreData::parse(&props),
             origin_y: None,
-            kept: KeptPage::default(),
+            kept: Default::default(),
         };
         // Only the notehead sounds; the dynamic is drawn and named like any
         // other element of the score.
@@ -1190,7 +1271,7 @@ mod tests {
         let mut score = Score {
             data: ScoreData::parse(&props),
             origin_y: None,
-            kept: KeptPage::default(),
+            kept: Default::default(),
         };
         assert_eq!(score.data.staves.len(), 4, "four staves drawn");
         // A press on the *second* system's lower staff is staff 1 of the score

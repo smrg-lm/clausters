@@ -17,7 +17,7 @@ use lyon::tessellation::{
 };
 
 use super::glyphs::build_path;
-use super::{Affine, FillOf, Prim, ScoreColors, ScoreData, Staff};
+use super::{Affine, FillOf, Prim, ScoreColors, ScoreData, ScoreDrag, Staff, TextEditing};
 use crate::host::layout::Rect;
 use crate::host::paint::{Color, Mesh};
 
@@ -54,13 +54,28 @@ impl ScoreData {
         head: f64,
         colors: ScoreColors,
     ) {
-        let color = colors.ink;
+        self.render_marks(mesh, rect, clip, colors);
+        self.render_ink(mesh, rect, clip, colors);
+        mesh.set_clip(Some(intersect(rect, clip)));
+        self.draw_playhead(mesh, self.fit(rect), head, colors.playhead);
+        mesh.set_clip(clip);
+    }
+
+    /// **What the hand marks on the page, under the ink**: the selection and
+    /// note entry's edit cursor, the first two layers of [`render`]. They are
+    /// apart from the ink because they change with every press while the ink
+    /// does not, so a caller that keeps the ink draws these fresh under it.
+    ///
+    /// [`render`]: ScoreData::render
+    pub fn render_marks(
+        &self,
+        mesh: &mut Mesh,
+        rect: Rect,
+        clip: Option<Rect>,
+        colors: ScoreColors,
+    ) {
         let fit = self.fit(rect);
         mesh.set_clip(Some(intersect(rect, clip)));
-        // Curve-flattening tolerance in page units so it lands ~1/3 device
-        // pixel after fitting -- fine enough to read smooth, coarse enough to
-        // keep the triangle count bounded by the screen, not the notation.
-        let tol_page = 0.33 / fit.sx.max(f32::MIN_POSITIVE);
         // under the ink, so the engraving still reads through the highlight
         self.draw_selection(mesh, fit, colors.selection);
         // the edit cursor of note entry, under the ink as the selection is,
@@ -72,12 +87,114 @@ impl ScoreData {
                 crate::host::theme::with_alpha(colors.playhead, 0.35),
             );
         }
+        mesh.set_clip(clip);
+    }
+
+    /// **What the ink depends on besides the page**: the element a drag is
+    /// moving and by how far, and the text being typed over. A caller that
+    /// keeps the ink keys it on this, with the page and where it is drawn.
+    pub fn ink_state(&self) -> (Option<ScoreDrag>, Option<TextEditing>) {
+        (self.drag.clone(), self.editing.clone())
+    }
+
+    /// **The engraving**: every primitive in the ink, the dragged element
+    /// displaced with its ledger lines and a text being typed over drawn as
+    /// it stands -- the third layer of [`render`], and what depends only on
+    /// the page and [`ink_state`](Self::ink_state). It is its
+    /// [`ink_parts`](Self::ink_parts) drawn in turn.
+    ///
+    /// [`render`]: ScoreData::render
+    pub fn render_ink(&self, mesh: &mut Mesh, rect: Rect, clip: Option<Rect>, colors: ScoreColors) {
+        for part in 0..self.ink_parts() {
+            self.render_ink_part(mesh, rect, clip, colors, part);
+        }
+    }
+
+    /// **How many parts the ink is kept in**: one to each staff, which is
+    /// what a primitive is nearest, and one for a page with none.
+    pub fn ink_parts(&self) -> usize {
+        self.staves.len().max(1)
+    }
+
+    /// **The part the primitive at `at` is drawn in**: the staff its height
+    /// is nearest, as a note off the staff still belongs to it.
+    fn part_of(&self, at: usize) -> usize {
+        let parts = self.parts.get_or_init(|| {
+            self.prims
+                .iter()
+                .map(|prim| {
+                    let y = match prim {
+                        Prim::Line { pts, .. } => {
+                            pts.iter().map(|p| p[1]).sum::<f32>() / pts.len().max(1) as f32
+                        }
+                        Prim::Glyph { xf, .. } | Prim::Fill { xf, .. } => xf.ty,
+                        Prim::Text { y, .. } => *y,
+                    };
+                    self.staff_index_at(y).unwrap_or(0)
+                })
+                .collect()
+        });
+        parts.get(at).copied().unwrap_or(0)
+    }
+
+    /// **The parts the ink state reaches**: those that hold a primitive of
+    /// the element being dragged, or one its ledger lines replace, or the
+    /// text being typed over -- and the part the drag's own ledger lines are
+    /// drawn in. Every other part is the page alone.
+    pub fn moved_parts(&self) -> Vec<usize> {
+        let ledgers = self.drag_ledgers();
+        let drag = self.drag.as_ref().map(|d| d.id.as_str());
+        let typed = self.editing.as_ref().map(|e| e.id.as_str());
+        if drag.is_none() && typed.is_none() {
+            return Vec::new();
+        }
+        let mut parts: Vec<usize> = self
+            .prims
+            .iter()
+            .enumerate()
+            .filter(|(_, prim)| {
+                let id = prim.id();
+                (id.is_some() && (id == drag || id == typed))
+                    || ledgers.as_ref().is_some_and(|l| l.covers(prim, self.vb_w))
+            })
+            .map(|(at, _)| self.part_of(at))
+            .collect();
+        if let Some(l) = &ledgers {
+            parts.extend(self.staff_index_at(0.5 * (l.staff.y0 + l.staff.y1)));
+        }
+        parts.sort_unstable();
+        parts.dedup();
+        parts
+    }
+
+    /// **One part of the engraving**: the primitives drawn in `part`, in the
+    /// page's order, and the drag's ledger lines where they are drawn.
+    pub fn render_ink_part(
+        &self,
+        mesh: &mut Mesh,
+        rect: Rect,
+        clip: Option<Rect>,
+        colors: ScoreColors,
+        part: usize,
+    ) {
+        let color = colors.ink;
+        let fit = self.fit(rect);
+        mesh.set_clip(Some(intersect(rect, clip)));
+        // Curve-flattening tolerance in page units so it lands ~1/3 device
+        // pixel after fitting -- fine enough to read smooth, coarse enough to
+        // keep the triangle count bounded by the screen, not the notation.
+        let tol_page = 0.33 / fit.sx.max(f32::MIN_POSITIVE);
         // A dragged notehead takes its ledger lines with it: the engraved ones
         // stay where the staff put them, so they are dropped and re-derived at
         // the displaced pitch -- which is also how they disappear when the note
         // comes back onto the staff.
         let ledgers = self.drag_ledgers();
-        if let Some(l) = &ledgers {
+        if let Some(l) = &ledgers
+            && self
+                .staff_index_at(0.5 * (l.staff.y0 + l.staff.y1))
+                .unwrap_or(0)
+                == part
+        {
             let w = (l.width * fit.sx).max(1.0);
             for y in &l.ys {
                 mesh.line(fit.apply(l.x0, *y), fit.apply(l.x1, *y), w, color);
@@ -95,7 +212,9 @@ impl ScoreData {
             }
         };
         for (at, prim) in self.prims.iter().enumerate() {
-            if ledgers.as_ref().is_some_and(|l| l.covers(prim, self.vb_w)) {
+            if self.part_of(at) != part
+                || ledgers.as_ref().is_some_and(|l| l.covers(prim, self.vb_w))
+            {
                 continue;
             }
             // the page fit, displaced while this element is being dragged
@@ -191,7 +310,6 @@ impl ScoreData {
                 }
             }
         }
-        self.draw_playhead(mesh, fit, head, colors.playhead);
         mesh.set_clip(clip);
     }
 

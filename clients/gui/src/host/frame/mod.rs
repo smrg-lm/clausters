@@ -3419,6 +3419,278 @@ mod tests {
         );
     }
 
+    /// **What a change inside a complex element costs a whole frame**: the
+    /// two cases the partial invalidation is measured on. A score of several
+    /// pages whose own state changed (the selection set, which lets every
+    /// kept triangle of the page go today), against the same frame with
+    /// nothing changed; and a multitrack of many tracks, each with boxes of
+    /// notes, drawn whole as a drag of one box draws it on every move.
+    ///
+    /// Run with `cargo test --release --features score --lib
+    /// what_a_change_costs -- --ignored --nocapture`.
+    #[cfg(feature = "score")]
+    #[test]
+    #[ignore = "timing: only meaningful under --release"]
+    fn what_a_change_costs() {
+        use clausters_core::notation::{Item, Marks, Pitch, Sheet, Staff, Step, Voice};
+        use clausters_core::ratio::Ratio;
+        use serde_json::json;
+
+        crate::host::font::atlas::set_embedded();
+        let median = |mut took: Vec<f64>| {
+            took.sort_by(f64::total_cmp);
+            took[took.len() / 2]
+        };
+        // ---- a score of several pages ----
+        let mut id = 1;
+        let mut notes = |octave: i32| -> Vec<Item> {
+            (0..512u64)
+                .map(|i| {
+                    id += 1;
+                    Item::Note {
+                        id,
+                        pitches: vec![Pitch {
+                            step: [Step::C, Step::E, Step::G, Step::B][i as usize % 4],
+                            alter: if i % 7 == 0 { 1 } else { 0 },
+                            octave,
+                            forced: false,
+                        }],
+                        dur: Ratio::new(1, 8),
+                        tie: false,
+                        marks: Marks::default(),
+                    }
+                })
+                .collect()
+        };
+        let staves = ["G2", "G2", "C3", "F4"]
+            .iter()
+            .zip([5, 4, 4, 3])
+            .map(|(clef, octave)| Staff {
+                clef: (*clef).into(),
+                voices: vec![Voice {
+                    items: notes(octave),
+                }],
+                ..Staff::default()
+            })
+            .collect();
+        let mut sheet = Sheet {
+            staves,
+            ..Sheet::default()
+        };
+        sheet.next_id = id + 1;
+        let mei = clausters_core::notation::sheet_to_mei(&sheet).unwrap();
+        let mut host = crate::host::Host::new();
+        let (engine, _processed) = clausters_app_engine::AppEngine::detached(48_000.0, 2);
+        host.hold_audio_engine(std::sync::Arc::new(std::sync::Mutex::new(engine)));
+        let def = host
+            .open_app_score_for(
+                None,
+                Some(mei),
+                None,
+                serde_json::json!({"w": 1280, "h": 900}),
+                "score",
+                None,
+            )
+            .expect("a window");
+        while host.window_def(def).is_none() {
+            host.take_effects();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let page = host.app_widget(def, "widget").unwrap();
+        let none = (HashMap::new(), HashMap::new());
+        let frame = |host: &crate::host::Host| {
+            let inputs = FrameInputs {
+                metrics: host.metrics_for(def),
+                world: World {
+                    timelines: host.timelines(),
+                    ..World::default()
+                },
+                ..FrameInputs::default()
+            };
+            let start = std::time::Instant::now();
+            let drawn = picture(
+                host.window_def(def).unwrap(),
+                &inputs,
+                &host.theme,
+                &none.0,
+                &none.1,
+                (1280, 900),
+            );
+            let took = start.elapsed().as_secs_f64() * 1e3;
+            (took, drawn.base.vertex_count())
+        };
+        let (_, vertices) = frame(&host);
+        let still = median((0..30).map(|_| frame(&host).0).collect());
+        let changed = median(
+            (0..30)
+                .map(|i| {
+                    let mut fx = Vec::new();
+                    let selected = if i % 2 == 0 { "n2" } else { "" };
+                    host.set_props(page, vec![("selected".into(), json!(selected))], &mut fx);
+                    frame(&host).0
+                })
+                .collect(),
+        );
+        println!(
+            "score, 4 x 512 notes: {still:.3} ms unchanged, {changed:.3} ms after its \
+             selection changed; {vertices} vertices"
+        );
+
+        // ---- a multitrack of many tracks ----
+        let (tracks, boxes) = (32, 24);
+        let mut track_list = Vec::new();
+        let mut clips = Vec::new();
+        let mut placed = Vec::new();
+        for t in 0..tracks {
+            let name = format!("t{t}");
+            track_list.extend([
+                json!(name),
+                json!(name),
+                json!(60),
+                json!(0),
+                json!(0),
+                json!(1),
+                json!(0),
+            ]);
+            for b in 0..boxes {
+                let clip = format!("c{t}-{b}");
+                clips.extend([
+                    json!(clip),
+                    json!(name),
+                    json!(b * 24_000),
+                    json!(20_000),
+                    json!(0),
+                    json!(clip),
+                    json!(-1),
+                ]);
+                for n in 0..8 {
+                    placed.extend([
+                        json!(clip),
+                        json!(n * 2_500),
+                        json!(2_000),
+                        json!(48 + (n * 5 + t) % 36),
+                        json!(100),
+                        json!(0),
+                    ]);
+                }
+            }
+        }
+        // every box's page: a staff and the box's notes on it, anchored
+        let mut prims = Vec::new();
+        for line in 0..5 {
+            let y = 200 + 180 * line;
+            prims.push(json!({"k": "line", "pts": [[0, y], [4000, y]], "w": 13, "id": "staff"}));
+        }
+        let mut anchors = Vec::new();
+        for n in 0..8 {
+            let id = format!("n{n}");
+            prims.push(json!({"k": "glyph", "cp": "E0A4",
+                "xf": [400 + 400 * n, 380 + 90 * (n % 5), 0.72, -0.72], "id": id}));
+            prims.push(
+                json!({"k": "line", "pts": [[600 + 400 * n, 380], [600 + 400 * n, 0]],
+                "w": 13, "id": id}),
+            );
+            anchors.extend([json!(id), json!(n * 2_500)]);
+        }
+        let ids: Vec<String> = (0..8).map(|n| format!("n{n}")).collect();
+        let page = json!({"vb": [4000, 1400], "step": 90,
+            "glyphs": {"E0A4": "M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z"},
+            "prims": prims, "elements": ids, "anchors": anchors});
+        let mut scores = serde_json::Map::new();
+        for clip in clips.chunks(7) {
+            scores.insert(clip[0].as_str().unwrap().to_string(), page.clone());
+        }
+        let tree = json!({"type": "window", "w": 1280, "h": 900, "children": [
+            {"id": 3, "type": "multitrack", "tracks": track_list, "clips": clips,
+             "notes": placed, "sample_rate": 48_000}]});
+        let mut host = crate::host::Host::new();
+        host.handle_packet(
+            clausters_core::osc::OscPacket::Message(clausters_core::osc::OscMessage {
+                addr: crate::host::GUI_DEF.into(),
+                args: vec![
+                    clausters_core::osc::OscType::Int(1),
+                    clausters_core::osc::OscType::String(tree.to_string()),
+                ],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        let inputs = FrameInputs {
+            metrics: host.metrics_for(1),
+            world: World {
+                timelines: host.timelines(),
+                ..World::default()
+            },
+            ..FrameInputs::default()
+        };
+        let draw = || {
+            picture(
+                host.window_def(1).unwrap(),
+                &inputs,
+                &host.theme,
+                &none.0,
+                &none.1,
+                (1280, 900),
+            )
+        };
+        let vertices = draw().base.vertex_count();
+        let whole = median(
+            (0..30)
+                .map(|_| {
+                    let start = std::time::Instant::now();
+                    std::hint::black_box(draw());
+                    start.elapsed().as_secs_f64() * 1e3
+                })
+                .collect(),
+        );
+        println!(
+            "multitrack, {tracks} tracks x {boxes} boxes of notes: {whole:.3} ms a whole \
+             frame, as every move of a drag draws it; {vertices} vertices"
+        );
+        let mut fx = Vec::new();
+        host.set_props(
+            3,
+            vec![
+                ("scores".into(), serde_json::Value::Object(scores)),
+                ("notes_view".into(), json!("score")),
+            ],
+            &mut fx,
+        );
+        let inputs = FrameInputs {
+            metrics: host.metrics_for(1),
+            world: World {
+                timelines: host.timelines(),
+                ..World::default()
+            },
+            ..FrameInputs::default()
+        };
+        let draw = || {
+            picture(
+                host.window_def(1).unwrap(),
+                &inputs,
+                &host.theme,
+                &none.0,
+                &none.1,
+                (1280, 900),
+            )
+        };
+        let vertices = draw().base.vertex_count();
+        let whole = median(
+            (0..30)
+                .map(|_| {
+                    let start = std::time::Instant::now();
+                    std::hint::black_box(draw());
+                    start.elapsed().as_secs_f64() * 1e3
+                })
+                .collect(),
+        );
+        println!(
+            "the same, its boxes drawn as pages: {whole:.3} ms a whole frame; {vertices} vertices"
+        );
+    }
+
     /// **With a dialog up nothing is kept**, and the window's moving lines and
     /// its overlays stay in the batch under the one the scrim and the dialog
     /// are drawn in: a batch draws its glyphs after all its flat geometry, so

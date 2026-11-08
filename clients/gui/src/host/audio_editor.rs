@@ -440,6 +440,14 @@ impl Host {
         }
     }
 
+    /// **The id of the widget window `def_id` numbers `role`**, for a test
+    /// outside this module that drives one of an application's widgets.
+    #[cfg(all(test, feature = "score"))]
+    pub(crate) fn app_widget(&self, def_id: i32, role: &str) -> Option<i32> {
+        let structure = self.audio.as_ref()?.windows.get(&def_id)?.structure;
+        self.own_widget_id(structure, AUDIO, role)
+    }
+
     /// **Asks window `def_id`'s editor `call`** from this process, answered
     /// on the channel this returns: a member's verb, a query or an action, as
     /// the door's [`GUI_APP_CALL`] takes them.
