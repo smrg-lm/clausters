@@ -341,11 +341,10 @@ fn envelope(curve: &[GainPoint]) -> Vec<Value> {
     inputs
 }
 
-/// **A span reversed**: the list read into memory on the offline server (a
-/// join of the parts' spans, read into buffers there) and played backwards.
-/// What it holds is the span, which is the work in hand; a reader that runs
-/// backwards would hold nothing (the root plan's "A list reader plays
-/// backwards").
+/// **A span reversed**: the list read from its last frame to its first by
+/// the application's reader, which fills the stream in the order it is
+/// played (`TakeRead::Backwards`), and written as it comes. Nothing holds
+/// the span: the reading is a ring ahead of the render, as a play's is.
 pub fn reverse(list: &List, out: &Output) -> Step {
     let mut def = Def::new();
     let channels: Vec<usize> = (0..list.channels)

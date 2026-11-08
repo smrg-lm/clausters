@@ -11573,3 +11573,26 @@ undo restores exactly what was there, which is the same thing seen from the
 side where nobody else writes. A multitrack's knob over an automated port is
 that case already: the hand holds the port while it holds the knob, and
 nothing is written or recorded.
+
+## Backwards is a reading, not a transport (2026-11-08)
+
+*Taken closing the root plan's "A list reader plays backwards".* Three
+places could hold the direction a take is played in: the transport (a
+position that runs down), the reader node (a `TransportDiskIn` input that
+walks its ring backwards) and the reading (the list the application's
+thread renders into the ring). The first changes every transport-positioned
+node, the clock axis and what a bundle scheduled on the transport means; the
+second changes the one node whose refill, splice, loop and crossfade logic
+is the most delicate on the audio thread, and every step of it assumes a
+frame that grows.
+
+The third was already there and is the one kept: `TakeRead::Backwards`
+renders frame `k` of a reading as frame `frames - 1 - k` of the take, a
+chunk read forwards and turned round, so the ring is filled ahead in the
+order it is played and the node reads it as it reads any list. A part's
+fades, seams, channel map and resampling are the forward reading's,
+mirrored, because the frames are read by the same code. The cost is a
+mapping where a backwards play meets the take: a pass's cue, loop and end,
+and the play cursor, are said in the reading's frames and drawn in the
+take's. That mapping belongs to the playback that offers the play, and is
+written there when one does.

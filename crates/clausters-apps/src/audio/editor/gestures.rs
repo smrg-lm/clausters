@@ -521,9 +521,10 @@ impl AudioEditor {
         }
         // **In pieces, from the end**: each piece of the span reversed into a
         // file of its own, and the pieces in the reverse order of the span's.
-        // A render reads what it reverses into memory, so a piece is what is
-        // held at once, whatever the span's length -- the whole span of a take
-        // of hours was, and the machine ran out of memory.
+        // The pieces date from a render that read what it reversed into
+        // memory, where the whole span of a take of hours ran the machine out
+        // of it; the reading streams now (`renders::reverse`), and a piece is
+        // a file of its own.
         let (mut steps, mut pieces) = (Vec::new(), Vec::new());
         let mut end = start + len;
         while end > start {

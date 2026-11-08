@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use clausters::server::engine::{BLOCK_SIZE, Engine, engine_pair};
-use clausters_app_engine::take::{Headers, ReadList, TakeFeed};
+use clausters_app_engine::take::{Headers, ReadList, TakeFeed, TakeRead};
 use clausters_app_engine::{AppEngine, EngineMedium};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
 use clausters_document::clipboard::SegmentPart;
@@ -95,6 +95,12 @@ struct Rig {
 
 impl Rig {
     fn new(name: &str) -> Rig {
+        Rig::reading(name, false)
+    }
+
+    /// The rig over the take read forwards, or from its last frame to its
+    /// first (`backwards`).
+    fn reading(name: &str, backwards: bool) -> Rig {
         let paths = files(name);
         let parts: Vec<SegmentPart> = PARTS
             .iter()
@@ -118,7 +124,11 @@ impl Rig {
         let list = ReadList::of(&parts, 1, SR, &mut Headers::default()).expect("the files read");
         assert_eq!(list.frames(), TAKE as u64);
         let feed = TakeFeed::start(1);
-        feed.set(Arc::new(list));
+        if backwards {
+            feed.set(TakeRead::Backwards(Arc::new(list)));
+        } else {
+            feed.set(Arc::new(list));
+        }
         let buffers = AppEngine::alloc_take(1, &mut ids).unwrap();
         assert!(
             app.lock()
@@ -301,4 +311,57 @@ fn a_locate_never_plays_a_stale_frame() {
         }
     }
     assert!(went.is_some(), "the take was heard from where it went");
+}
+
+/// **A take read backwards plays backwards, live**: the reading thread fills
+/// the ring from the take's last frame towards its first, so a cued play
+/// over the backwards reading is heard frame for frame from where it starts
+/// down through both seams, and a loop over it has no silent frame.
+#[test]
+fn a_take_read_backwards_plays_down_through_its_seams() {
+    let mut rig = Rig::reading("backwards", true);
+    // frame `x` of the backwards reading is frame `TAKE - 1 - x` of the take
+    let back = |x: usize| heard_at(TAKE - 1 - x);
+    let from = 1_000;
+    rig.playback.play(
+        1,
+        from as u64,
+        Pass::Until {
+            end: Some(TAKE as u64),
+            back: 0,
+        },
+    );
+    let heard = rig.blocks(260);
+    let start = rolled(&heard);
+    for (i, &s) in heard.iter().enumerate().skip(start + RAMP) {
+        let x = from + i - start;
+        if x >= TAKE {
+            break;
+        }
+        assert_eq!(s, back(x), "sample {i}: frame {x} of the backwards reading");
+    }
+    assert!(
+        from + heard.len() - start > 16_000 + 500,
+        "both seams were heard, from the third file down into the first"
+    );
+
+    let mut rig = Rig::reading("backwards-loop", true);
+    let (from, to) = (6_000usize, 20_000usize);
+    rig.playback.play(
+        1,
+        from as u64,
+        Pass::Loop {
+            from: from as u64,
+            to: to as u64,
+        },
+    );
+    let heard = rig.blocks(1_200);
+    let start = rolled(&heard);
+    let span = to - from;
+    assert!(heard.len() - start > 4 * span, "four times round the loop");
+    for (i, &s) in heard.iter().enumerate().skip(start + RAMP) {
+        let x = from + (i - start) % span;
+        assert!(s != 0.0, "sample {i}: silence at frame {x}");
+        assert_eq!(s, back(x), "sample {i}: frame {x}");
+    }
 }
