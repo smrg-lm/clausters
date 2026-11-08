@@ -33,6 +33,12 @@
 //! visible way: a bitmap glyph's own pixels must stay equal, so it is drawn at
 //! whole steps of the screen's pixels ([`bitmap_pixel`]) whatever size was
 //! asked, while with an atlas the size is continuous.
+//!
+//! **With a face loaded, text is shaped** (`shape`): a string is turned
+//! into the glyphs that draw it, in the order they stand -- right-to-left
+//! runs, joined Arabic, marks over their bases, reordered Devanagari -- and
+//! [`width`], [`text`], the ellipsis and the wrap all read that one result,
+//! so what is measured is what is drawn. The bitmap is never shaped.
 
 use super::layout::Rect;
 use super::paint::{Color, Mesh};
@@ -40,6 +46,8 @@ use super::paint::{Color, Mesh};
 #[cfg(feature = "font-atlas")]
 pub mod atlas;
 pub mod outline;
+#[cfg(feature = "font-atlas")]
+pub mod shape;
 
 /// **The symbol set**: the characters the host draws as its own icons, each at
 /// the Unicode codepoint that means it.
@@ -634,33 +642,42 @@ fn bitmap_glyph(mesh: &mut Mesh, ch: char, x: f32, y: f32, scale: f32, color: Co
     }
 }
 
-/// The pixel width of `s` rendered at `scale` (font-pixels per cell-pixel).
+/// The pixel width of `s` rendered at `scale` (font-pixels per cell-pixel):
+/// with a face loaded, the width of `s` **shaped** ([`shape`]), which is
+/// what [`text`] draws; with the bitmap, its cells.
 pub fn width(s: &str, scale: f32) -> f32 {
+    #[cfg(feature = "font-atlas")]
+    if atlas::has_face() {
+        return shape::shape(s, scale).width;
+    }
     s.chars().map(|c| advance_of(c, scale)).sum()
 }
 
 /// The width of the first `cols` characters of `s` -- where a caret sits, and
 /// where a selection band starts and ends.
 pub fn prefix_width(s: &str, cols: usize, scale: f32) -> f32 {
-    let taken: String = s.chars().take(cols).collect();
-    width(&taken, scale)
+    let end = s.char_indices().nth(cols).map_or(s.len(), |(at, _)| at);
+    width(&s[..end], scale)
 }
 
 /// The inverse: the character boundary of `s` nearest `dx` pixels from its
 /// start -- where a click lands. Past the end of `s` it keeps counting in
 /// nominal cells, so a click in the empty space right of a line still answers
-/// a column (which the caller clamps to the line).
+/// a column (which the caller clamps to the line). Measured as [`width`]
+/// measures, so a click and a caret agree.
 pub fn column_at(s: &str, dx: f32, scale: f32) -> usize {
     let mut x = 0.0;
-    for (i, c) in s.chars().enumerate() {
-        let step = advance_of(c, scale);
-        if dx < x + step * 0.5 {
+    let mut at = 0usize;
+    for (i, (byte, c)) in s.char_indices().enumerate() {
+        let next = width(&s[..byte + c.len_utf8()], scale);
+        if dx < x + (next - x) * 0.5 {
             return i;
         }
-        x += step;
+        x = next;
+        at = i + 1;
     }
     let cell = advance(scale).max(1.0);
-    s.chars().count() + ((dx - x) / cell).round().max(0.0) as usize
+    at + ((dx - x) / cell).round().max(0.0) as usize
 }
 
 /// The size a script's `text_size` actually draws at -- **the one place two
@@ -721,31 +738,43 @@ pub fn ascent(scale: f32) -> f32 {
 pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) {
     #[cfg(feature = "font-atlas")]
     if atlas::has_face() {
+        // **Shaped first** ([`shape`]): the glyphs that draw `s` and where
+        // each stands, in the order they stand on the line.
+        let run = shape::shape(s, scale);
         atlas::with(|a| {
             // The baseline is the body box's bottom, which is where the face's
             // cap height was fitted: an accented capital overshoots above `y`
             // and a tail hangs below the box, exactly as the bitmap's do.
             let baseline = y + a.baseline(scale);
-            let mut pen = x;
-            for ch in s.chars() {
-                // A symbol is a shape in the bitmap's cell, whatever the face,
-                // and a character a window brought the outline of is its own.
-                if symbol_shape(mesh, ch, pen.round(), y, scale, color) {
-                    pen += ADVANCE as f32 * scale;
-                    continue;
+            for item in &run.items {
+                let pen = x + item.pen;
+                match item.kind {
+                    // A symbol is a shape in the bitmap's cell, whatever the
+                    // face, and a character a window brought the outline of
+                    // is its own.
+                    shape::Kind::Char(ch) => {
+                        if !symbol_shape(mesh, ch, pen.round(), y, scale, color) {
+                            outline::draw(mesh, ch, pen, y, scale, color);
+                        }
+                    }
+                    shape::Kind::Glyph { face, id } => {
+                        let Some(g) = a.glyph_id(face as usize, id, scale) else {
+                            continue;
+                        };
+                        if g.w > 0.0 {
+                            // Whole pixels: the glyph was rasterized at this
+                            // size, so a quad on the pixel grid samples its
+                            // texels one to one. The shaper's offset is up.
+                            let quad = Rect::new(
+                                (pen + item.offset[0] + g.dx).round(),
+                                (baseline - item.offset[1] + g.dy).round(),
+                                g.w,
+                                g.h,
+                            );
+                            mesh.glyph(quad, g.uv, color);
+                        }
+                    }
                 }
-                if let Some(step) = outline::draw(mesh, ch, pen, y, scale, color) {
-                    pen += step;
-                    continue;
-                }
-                let Some(g) = a.glyph(ch, scale) else { break };
-                if g.w > 0.0 {
-                    // Whole pixels: the glyph was rasterized at this size, so a
-                    // quad on the pixel grid samples its texels one to one.
-                    let quad = Rect::new((pen + g.dx).round(), (baseline + g.dy).round(), g.w, g.h);
-                    mesh.glyph(quad, g.uv, color);
-                }
-                pen += g.advance;
             }
         });
         return;
@@ -819,64 +848,80 @@ pub fn text_ellipsis(
         text(mesh, s, x, y, scale, color);
         return;
     }
+    if let Some(cut) = ellipsized(s, max_w, scale) {
+        text(mesh, &cut, x, y, scale, color);
+    }
+}
+
+/// **`s` cut to fit `max_w` and ending in an ellipsis**, or `None` where not
+/// even the ellipsis fits. Cut at a grapheme cluster -- a mark is never left
+/// without its base -- and measured as drawn: the longest start of `s` that,
+/// with the ellipsis after it, is no wider than `max_w`.
+pub fn ellipsized(s: &str, max_w: f32, scale: f32) -> Option<String> {
+    use unicode_segmentation::UnicodeSegmentation;
     let ellipsis = '\u{2026}';
-    let mut cut = String::new();
-    let mut w = advance_of(ellipsis, scale);
-    if w > max_w {
-        return; // not even the ellipsis fits
+    if width(&ellipsis.to_string(), scale) > max_w {
+        return None;
     }
-    for c in s.chars() {
-        let step = advance_of(c, scale);
-        if w + step > max_w {
-            break;
+    let ends: Vec<usize> = s
+        .grapheme_indices(true)
+        .map(|(at, g)| at + g.len())
+        .collect();
+    let fits = |end: usize| {
+        let mut cut = s[..end].to_string();
+        cut.push(ellipsis);
+        width(&cut, scale) <= max_w
+    };
+    // the widths of the starts grow with them, so the longest that fits is
+    // found by halving
+    let (mut lo, mut hi) = (0usize, ends.len());
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        if fits(ends[mid - 1]) {
+            lo = mid;
+        } else {
+            hi = mid - 1;
         }
-        w += step;
-        cut.push(c);
     }
+    let mut cut = s[..if lo == 0 { 0 } else { ends[lo - 1] }].to_string();
     cut.push(ellipsis);
-    text(mesh, &cut, x, y, scale, color);
+    Some(cut)
 }
 
 /// Greedy word wrap: `s` split into lines no wider than `max_w` pixels at
 /// `scale`, breaking at whitespace (a single word too long for a line
-/// hard-breaks mid-word). Measured per character, so it holds for either face;
-/// cheap width math, no shaping.
+/// hard-breaks mid-word, at a grapheme cluster). Each line is measured as it
+/// is drawn ([`width`]), so a wrap and the drawing cannot disagree.
 pub fn wrap(s: &str, max_w: f32, scale: f32) -> Vec<String> {
-    let space = advance_of(' ', scale);
+    use unicode_segmentation::UnicodeSegmentation;
     let max_w = max_w.max(advance(scale));
     let mut lines = Vec::new();
     let mut line = String::new();
-    let mut used = 0.0f32;
     for word in s.split_whitespace() {
-        let mut chars: Vec<char> = word.chars().collect();
-        while !chars.is_empty() {
-            let sep = if line.is_empty() { 0.0 } else { space };
-            let word_w: f32 = chars.iter().map(|&c| advance_of(c, scale)).sum();
-            if used + sep + word_w <= max_w {
-                if sep > 0.0 {
-                    line.push(' ');
-                }
-                line.extend(chars.drain(..));
-                used = width(&line, scale);
+        let mut rest = word;
+        while !rest.is_empty() {
+            let joined = if line.is_empty() {
+                rest.to_string()
+            } else {
+                format!("{line} {rest}")
+            };
+            if width(&joined, scale) <= max_w {
+                line = joined;
+                rest = "";
             } else if line.is_empty() {
                 // A word wider than a whole line: hard-break it at the last
-                // character that still fits (at least one, or nothing ends).
-                let mut fits = 0;
-                let mut w = 0.0;
-                for &c in &chars {
-                    let step = advance_of(c, scale);
-                    if w + step > max_w && fits > 0 {
+                // grapheme that still fits (at least one, or nothing ends).
+                let mut end = 0;
+                for (at, g) in rest.grapheme_indices(true) {
+                    if end > 0 && width(&rest[..at + g.len()], scale) > max_w {
                         break;
                     }
-                    w += step;
-                    fits += 1;
+                    end = at + g.len();
                 }
-                line.extend(chars.drain(..fits));
-                lines.push(std::mem::take(&mut line));
-                used = 0.0;
+                lines.push(rest[..end].to_string());
+                rest = &rest[end..];
             } else {
                 lines.push(std::mem::take(&mut line));
-                used = 0.0;
             }
         }
     }

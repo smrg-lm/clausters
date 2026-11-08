@@ -58,9 +58,11 @@ produced them.
 
 **Text is drawn with a real typeface**: the crate's `font-atlas` feature, on
 by default, is a glyph rasterizer and one atlas texture per window, and the
-host carries the face it draws with -- a subset of DejaVu Sans, compiled in
-(`assets/fonts/`, with its license and the script that makes it), the same in
-a native window and in a page. To draw with another, name it:
+host carries the faces it draws with -- a subset of DejaVu Sans and one of
+Noto Sans Devanagari it falls back to, compiled in (`assets/fonts/`, with
+their licenses and the script that makes them), the same in a native window
+and in a page -- and shapes the text before it draws it (`font::shape`). To
+draw with another, name it:
 
 ```sh
 ./target/release/clausters-gui --font /usr/share/fonts/truetype/noto/NotoSans-Regular.ttf

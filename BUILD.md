@@ -336,9 +336,11 @@ packaging choice here (`clients/gui/README.md`).
 
 The GUI host's `font-atlas` -- an outline typeface behind a glyph rasterizer
 (`clients/gui/README.md`) -- is on by default too, in the wheel's host and in
-the web package's alike, and the host carries the face it draws with: a subset
-of DejaVu Sans, a quarter of a megabyte, compiled into the binary and the wasm
-(`clients/gui/assets/fonts/`, with its license and the script that makes it).
+the web package's alike, and the host carries the faces it draws with: a
+subset of DejaVu Sans and one of Noto Sans Devanagari it falls back to, under
+half a megabyte together, compiled into the binary and the wasm with the shaper
+that reads their layout tables (`clients/gui/assets/fonts/`, with their
+licenses and the script that makes them).
 A build without the feature draws with the embedded bitmap face.
 
 ### Building a package with a piece left out

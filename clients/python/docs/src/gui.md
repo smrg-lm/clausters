@@ -1092,8 +1092,10 @@ turns it off — because it is the render pass that is multisampled: one
 attachment per window, nothing per widget.
 
 The **typeface** is the host's too, for the same reason. It carries the one it
-draws with — a subset of DejaVu Sans, the same in a native window and in a
-page — and another may be handed over at any point:
+draws with — a subset of DejaVu Sans, with a subset of Noto Sans Devanagari
+it falls back to, the same in a native window and in a page, and shaped:
+Arabic joins, a mark stands over its base, and a right-to-left word reads from
+the right — and another may be handed over at any point:
 
 ```python
 gui.font(Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf").read_bytes())

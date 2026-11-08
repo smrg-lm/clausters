@@ -11596,3 +11596,17 @@ mapping where a backwards play meets the take: a pass's cue, loop and end,
 and the play cursor, are said in the reading's frames and drawn in the
 take's. That mapping belongs to the playback that offers the play, and is
 written there when one does.
+
+## The host ships the faces it shapes (2026-11-08)
+
+*Taken in `G43a` (`clients/gui/PLAN.md`).* Shaping Arabic, Hebrew and
+Devanagari needs faces that draw them with their layout tables, and the plan
+left open whether the host bundles them or reaches a system face natively and
+a fetched one in a page through `FontSource`. Both are bundled: DejaVu Sans
+grows by Arabic, Hebrew and its layout tables to under 300 KB, and a subset of
+Noto Sans Devanagari of under 150 KB sits beside it as the face the host falls
+back to, chosen grapheme by grapheme. Reaching a system face would make what a
+window draws depend on the machine and leave a page with a fetch the window does
+not need, and the acceptance's tests shape against the face the host ships; the
+cost is about a megabyte of wasm with the shaper, measured in the plan. A face a
+client loads replaces only the first, so the fallbacks stay under it.

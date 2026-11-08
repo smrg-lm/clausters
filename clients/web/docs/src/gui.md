@@ -252,8 +252,11 @@ keyboard trap. A script points the focus itself with
 `win.widget("name").focus()`, and hears every move as a `"focus"` event.
 
 **The host draws text with a typeface it carries, and a page may hand over
-another.** The face is compiled into the host — a subset of DejaVu Sans, the
-same in a page and in a native window — so text needs nothing fetched. To draw
+another.** The face is compiled into the host — a subset of DejaVu Sans, with
+a subset of Noto Sans Devanagari it falls back to, the same in a page and in a
+native window — so text needs nothing fetched, and the host shapes it: Arabic
+joins, a mark stands over its base, and a right-to-left word reads from the
+right. To draw
 with another, reaching its bytes is the platform's half (a page fetches a URL,
 a native host maps a file), and *handing them over* is the protocol's:
 `host.font(bytes)` is `/gui_font`, the same call in both clients, and the

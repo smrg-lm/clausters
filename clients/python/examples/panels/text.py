@@ -6,16 +6,18 @@ Every text-bearing light widget -- ``label``, ``button``, ``toggle``, ``text``,
 ``text_size``: a glyph scale over the host's font, whose default 1.5 writes
 capitals three quarters of the line they stand in.
 
-The face writes **both cases** and the **Latin-1** letters, so a label, a track
-name or a file path in Spanish, French or German reads as written. Its cell is 5
-columns by a 7-row body -- the height a line reserves -- and a diacritic draws
-above that body while a descender draws below it, which is why an accented line
-needs no more room than an unaccented one.
+**Text is shaped before it is drawn.** The host writes Latin, Greek and Cyrillic,
+Arabic and Hebrew with the face it ships, and Devanagari with a second face it
+falls back to: Arabic letters take the forms that join them, a combining mark
+stands over its base, a Devanagari vowel sign is drawn where it is read, and a
+right-to-left word reads from the right, inside a left-to-right line too. A line
+reserves the same height whatever it holds: a diacritic draws above it and a
+descender below, so an accented line needs no more room than an unaccented one.
 
 ``label`` additionally takes:
 
-- ``wrap=True`` -- word wrap on the measured width of the words (a cheap width
-  computation, no shaping); lines past the label's bottom edge are dropped;
+- ``wrap=True`` -- word wrap on the width of the words as they are drawn; lines
+  past the label's bottom edge are dropped;
 - ``align`` -- ``"start"`` (the default left edge), ``"center"`` or ``"end"``,
   applied per line.
 
@@ -23,19 +25,15 @@ Single-line text that overflows its rect -- a long label on a narrow control, a
 value read-out wider than a knob -- clips with an ellipsis instead of bleeding
 into its neighbor.
 
-**The same window in a real typeface.** A GUI host built with its optional
-``font-atlas`` feature draws through a glyph rasterizer instead of the bitmap
-face, and takes ``text_size`` continuously rather than on half-steps -- nothing
-else changes, because the sizing table never followed the typeface. To see this
-window either way, build the host with the feature and point the launcher at
-it::
+**The same window in the bitmap face.** A GUI host built without its default
+``font-atlas`` feature draws a 5x7 bitmap face instead of the faces it ships:
+Latin-1 and no shaping, and ``text_size`` on half-steps -- nothing else changes,
+because the sizing table never followed the typeface. To see this window that
+way, build the host without the feature and point the launcher at it::
 
-    cd clients/gui && cargo build --release --features font-atlas --bin clausters-gui
+    cd clients/gui && cargo build --release --no-default-features --bin clausters-gui
     CLAUSTERS_GUI_BIN=$PWD/target/release/clausters-gui \
         python clients/python/examples/panels/text.py
-
-With no ``--font``, that host draws with one of the system's own faces; it ships
-none.
 
 The example opens one window showing all of it side by side, then exercises the
 props live over ``set`` (a growing title, a re-aligned paragraph) -- addressed by
@@ -68,9 +66,20 @@ LOREM = ("a wrapped label lays its words out on their own measured width, "
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ / abcdefghijklmnopqrstuvwxyz / 0123456789"
 ACCENTED = "canción, año, ¿qué? ¡olé! Ñandú Ángel  ---  crème brûlée, Grüße, mañana"
 
+# Text that is not a row of its characters. Arabic joins its letters; Hebrew
+# and Arabic read from the right; Devanagari writes the vowel sign i after its
+# consonant and draws it before; and a mark with no precomposed letter stands
+# over its base. The last line is one left-to-right line with a Hebrew word in
+# it, which still reads from the right.
+ARABIC = "مرحبا بالعالم"
+HEBREW = "שלום עולם"
+DEVANAGARI = "नमस्ते दुनिया, किताब"
+MARKS = "q̃ x̄ ŋ̊ ǫ́ ẏ̆"
+MIXED = "play שלום twice, then stop"
+
 
 # %% [markdown]
-# ## The three panels
+# ## The panels
 # All widgets are id-less: the host fills the ids in. Only the two the script
 # later drives are *named* (the ``title`` label and the ``center`` paragraph).
 
@@ -102,6 +111,13 @@ def alphabet() -> dict:
                  layout="col", h=140.0)
 
 
+def scripts() -> dict:
+    """The writing systems the host shapes, and a line that mixes two."""
+    return panel(label(ARABIC), label(HEBREW), label(DEVANAGARI), label(MARKS),
+                 label(MIXED),
+                 layout="col", h=150.0)
+
+
 def controls() -> dict:
     """The controls at two text sizes, with labels long enough to clip."""
     return panel(slider(label="a deliberately long slider label", value=0.4),
@@ -119,10 +135,10 @@ def controls() -> dict:
 gui = GuiHost().boot()
 win = view(
     label(name="title", text="title", text_size=3.0, align="center", h=40.0),
-    sizes(), alphabet(), alignments(), controls(),
-    title="Text", w=980, h=820, layout="col").open()
-print("one window: sizes, the face's own alphabet, wrapped alignments, "
-      "and clipped controls")
+    sizes(), alphabet(), scripts(), alignments(), controls(),
+    title="Text", w=980, h=980, layout="col").open()
+print("one window: sizes, the face's own alphabet, the scripts it shapes, "
+      "wrapped alignments, and clipped controls")
 
 # %% [markdown]
 # ## The props are live

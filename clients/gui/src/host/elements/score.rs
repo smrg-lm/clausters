@@ -527,6 +527,8 @@ mod tests {
         };
         let kept_page = |score: &Score| (score.kept.built() > 0).then(|| score.kept.joined());
         let mut score = page(true);
+        // the process's text generation, which another test may move
+        let generation = crate::host::font::generation();
         let first = drawn(&score, ink);
         let ink_mesh = kept_page(&score).expect("kept");
         assert!(first.near(&drawn(&score, ink), 0.0));
@@ -535,8 +537,9 @@ mod tests {
         let selected = drawn(&score, ink);
         assert!(!selected.near(&first, 0.0), "the selection is on it");
         assert!(selected.near(&single(&score), 0.0), "the single pass");
+        let generation_stood = crate::host::font::generation() == generation;
         assert!(
-            kept_page(&score).is_some_and(|page| page.near(&ink_mesh, 0.0)),
+            !generation_stood || kept_page(&score).is_some_and(|page| page.near(&ink_mesh, 0.0)),
             "a selection keeps the ink"
         );
         score.data.drag = Some(crate::host::graphics::score::ScoreDrag {
@@ -570,10 +573,18 @@ mod tests {
         };
         let parts = score.data.ink_parts();
         assert_eq!(parts, 6, "a part to each staff");
+        // The text's generation is the process's: another test that sends
+        // outlines moves it, and every kept part is rightly drawn again. The
+        // counts are read only while it stood.
+        let generation = crate::host::font::generation();
+        let stood = || crate::host::font::generation() == generation;
         drawn(&score, ink);
-        assert_eq!(score.kept.drawn(), parts);
+        assert!(!stood() || score.kept.drawn() == parts);
         drawn(&score, ink);
-        assert_eq!(score.kept.drawn(), parts, "copied, drawn again never");
+        assert!(
+            !stood() || score.kept.drawn() == parts,
+            "copied, drawn again never"
+        );
         let mut score = score;
         let id = score
             .data
@@ -588,9 +599,8 @@ mod tests {
                 steps,
             });
             let frame = drawn(&score, ink);
-            assert_eq!(
-                score.kept.drawn(),
-                parts + steps as usize,
+            assert!(
+                !stood() || score.kept.drawn() == parts + steps as usize,
                 "one part a move"
             );
             let mut single = Mesh::new();

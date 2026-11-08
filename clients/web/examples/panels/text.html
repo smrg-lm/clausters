@@ -14,7 +14,7 @@
       button { font: inherit; padding: 4px 10px; }
       pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
             white-space: pre-wrap; align-self: stretch; }
-      #stage { width: 980px; max-width: 100%; height: 820px; }
+      #stage { width: 980px; max-width: 100%; height: 980px; }
     </style>
   </head>
   <body>
@@ -28,14 +28,17 @@ and the control labels on <code>slider</code>/<code>knob</code> -- takes a
 <code>textSize</code>: a glyph scale over the host's font, whose default 1.5
 writes capitals three quarters of the line they stand in.
 
-The face writes <b>both cases</b> and the <b>Latin-1</b> letters, so a label, a
-track name or a file path in Spanish, French or German reads as written. Its
-cell is 5 columns by a 7-row body -- the height a line reserves -- and a diacritic
-draws above that body while a descender draws below it, which is why an accented
-line needs no more room than an unaccented one.
+<b>Text is shaped before it is drawn.</b> The host writes Latin, Greek and
+Cyrillic, Arabic and Hebrew with the face it ships, and Devanagari with a second
+face it falls back to: Arabic letters take the forms that join them, a combining
+mark stands over its base, a Devanagari vowel sign is drawn where it is read,
+and a right-to-left word reads from the right, inside a left-to-right line too.
+A line reserves the same height whatever it holds: a diacritic draws above it and
+a descender below, so an accented line needs no more room than an unaccented one.
 
 <code>label</code> additionally takes <code>wrap</code> (word wrap on the
-measured width of the words; lines past the label's bottom edge are dropped) and
+width of the words as they are drawn; lines past the label's bottom edge are
+dropped) and
 <code>align</code> -- <code>"start"</code>, <code>"center"</code> or
 <code>"end"</code>, applied per line. Single-line text that overflows its rect
 clips with an ellipsis instead of bleeding into its neighbor.</div>
@@ -49,8 +52,9 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
 
     <!--
       The web sibling of clients/python/examples/panels/text.py, call for call:
-      the four panels (sizes, the face's own alphabet, wrapped alignments,
-      clipped controls), then the same props pushed live by name.
+      the five panels (sizes, the face's own alphabet, the scripts it shapes,
+      wrapped alignments, clipped controls), then the same props pushed live by
+      name.
 
       The platform's differences are the usual two, and only those: the host is
       the wasm one in this tab and draws into an element, and nothing is pumped.
@@ -95,7 +99,19 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
       const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ / abcdefghijklmnopqrstuvwxyz / 0123456789";
       const ACCENTED = "canción, año, ¿qué? ¡olé! Ñandú Ángel  ---  crème brûlée, Grüße, mañana";
 
-      // ---- the four panels ----
+      // Text that is not a row of its characters. Arabic joins its letters;
+      // Hebrew and Arabic read from the right; Devanagari writes the vowel
+      // sign i after its consonant and draws it before; and a mark with no
+      // precomposed letter stands over its base. The last line is one
+      // left-to-right line with a Hebrew word in it, which still reads from
+      // the right.
+      const ARABIC = "مرحبا بالعالم";
+      const HEBREW = "שלום עולם";
+      const DEVANAGARI = "नमस्ते दुनिया, किताब";
+      const MARKS = "q̃ x̄ ŋ̊ ǫ́ ẏ̆";
+      const MIXED = "play שלום twice, then stop";
+
+      // ---- the five panels ----
       // All widgets are id-less: the host fills the ids in. Only the ones the
       // script later drives are *named* (the `title` label, the `center`
       // paragraph and the `field`).
@@ -125,6 +141,13 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
         gui.text({ name: "field", value: "una canción, un año, ¡qué más!", label: "editable" }),
       );
 
+      /** The writing systems the host shapes, and a line that mixes two. */
+      const scripts = () => gui.panel(
+        { layout: "col", h: 150.0 },
+        gui.label(ARABIC), gui.label(HEBREW), gui.label(DEVANAGARI), gui.label(MARKS),
+        gui.label(MIXED),
+      );
+
       /** The controls at two text sizes, with labels long enough to clip. */
       const controls = () => gui.panel(
         { layout: "row" },
@@ -142,12 +165,12 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
         const host = await new GuiHost().boot();
 
         win = await gui.view(
-          { title: "Text", w: 980, h: 820, layout: "col" },
+          { title: "Text", w: 980, h: 980, layout: "col" },
           gui.label("title", { name: "title", textSize: 3.0, align: "center", h: 40.0 }),
-          sizes(), alphabet(), alignments(), controls(),
+          sizes(), alphabet(), scripts(), alignments(), controls(),
         ).open($("stage"));
-        log("one window: sizes, the face's own alphabet, wrapped alignments, "
-          + "and clipped controls");
+        log("one window: sizes, the face's own alphabet, the scripts it shapes, "
+          + "wrapped alignments, and clipped controls");
 
         // The props are live: retitle bigger and re-align the centered
         // paragraph -- the same keys the GuiDef carried, pushed by name through

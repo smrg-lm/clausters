@@ -70,9 +70,20 @@ pub struct Glyph {
     pub advance: f32,
 }
 
-/// The loaded typeface and the two ratios every size is derived from.
-struct Face {
+/// One loaded typeface: the rasterizer's reading of it, and its bytes, which
+/// the shaper reads its layout tables from.
+struct Loaded {
     font: Font,
+    data: std::sync::Arc<[u8]>,
+}
+
+/// **The faces text is drawn with**: the host's face first, and after it the
+/// faces it falls back to for a character the first does not draw -- the
+/// face the host embeds, when another was loaded over it, and the
+/// Devanagari one ([`DEVANAGARI`]). Every size is derived from the first one's
+/// two ratios, so a fallback face is drawn at the size the host's is.
+struct Face {
+    faces: Vec<Loaded>,
     /// Cap height per pixel size: what makes a capital fill the body box.
     cap: f32,
     /// The advance of a digit per pixel size -- the *nominal* cell, for the size
@@ -80,8 +91,24 @@ struct Face {
     digit: f32,
 }
 
+impl Face {
+    /// The host's face.
+    fn first(&self) -> &Font {
+        &self.faces[0].font
+    }
+
+    /// **The face that draws `c`**: the first that has a glyph for it, or the
+    /// host's, which draws its box for a character none has.
+    fn of(&self, c: char) -> usize {
+        self.faces
+            .iter()
+            .position(|f| f.font.has_glyph(c))
+            .unwrap_or(0)
+    }
+}
+
 /// The glyph cache and its texture: coverage bytes, a shelf packer over them,
-/// and the map from `(character, pixel size)` to where it landed.
+/// and the map from `(face, glyph id, pixel size)` to where it landed.
 pub struct Atlas {
     face: Option<Face>,
     /// The sheet: [`SIDE`] texels wide and [`rows`](Self::rows) high.
@@ -91,7 +118,7 @@ pub struct Atlas {
     pen_x: u32,
     shelf_y: u32,
     shelf_h: u32,
-    map: HashMap<(char, u32), Glyph>,
+    map: HashMap<(u8, u16, u32), Glyph>,
     version: u64,
     epoch: u64,
 }
@@ -128,6 +155,24 @@ impl Atlas {
         let Ok(font) = Font::from_bytes(bytes, settings) else {
             return false;
         };
+        // the faces it falls back to: the embedded one, unless it is the one
+        // loaded, and the Devanagari one
+        let mut faces = vec![Loaded {
+            font,
+            data: std::sync::Arc::from(bytes),
+        }];
+        for fallback in [EMBEDDED, DEVANAGARI] {
+            if fallback == bytes {
+                continue;
+            }
+            if let Ok(font) = Font::from_bytes(fallback, settings) {
+                faces.push(Loaded {
+                    font,
+                    data: std::sync::Arc::from(fallback),
+                });
+            }
+        }
+        let font = &faces[0].font;
         // The cap height: how tall the face draws a capital at the reference
         // size. Falling back to the ascent covers a face whose 'H' has no
         // outline (a symbol face), which still measures and still draws.
@@ -138,7 +183,7 @@ impl Atlas {
                 .map_or(REF_PX * 0.7, |m| m.ascent),
         } / REF_PX;
         let digit = font.metrics('0', REF_PX).advance_width / REF_PX;
-        self.face = Some(Face { font, cap, digit });
+        self.face = Some(Face { faces, cap, digit });
         self.reset();
         true
     }
@@ -174,11 +219,45 @@ impl Atlas {
             .map_or(0.0, |f| (f.digit * self.px(scale)).max(1.0))
     }
 
-    /// How far the pen steps over `c` at `scale`, without rasterizing it.
+    /// How far the pen steps over `c` at `scale`, without rasterizing it, in
+    /// the face that draws it.
     pub fn advance_of(&self, c: char, scale: f32) -> f32 {
+        self.face.as_ref().map_or(0.0, |f| {
+            f.faces[f.of(c)]
+                .font
+                .metrics(c, self.px(scale))
+                .advance_width
+        })
+    }
+
+    /// How many faces text is drawn with: the host's and its fallbacks.
+    pub fn faces(&self) -> usize {
+        self.face.as_ref().map_or(0, |f| f.faces.len())
+    }
+
+    /// The bytes of face `face`, which the shaper reads.
+    pub fn data(&self, face: usize) -> Option<std::sync::Arc<[u8]>> {
+        Some(self.face.as_ref()?.faces.get(face)?.data.clone())
+    }
+
+    /// Whether face `face` has a glyph for `c`.
+    pub fn covers(&self, face: usize, c: char) -> bool {
         self.face
             .as_ref()
-            .map_or(0.0, |f| f.font.metrics(c, self.px(scale)).advance_width)
+            .and_then(|f| f.faces.get(face))
+            .is_some_and(|f| f.font.has_glyph(c))
+    }
+
+    /// Pixels per font unit of face `face` at `scale`: what turns the
+    /// shaper's positions, which are in the face's units, into the pixels
+    /// its glyphs are rasterized at.
+    pub fn units_to_px(&self, face: usize, scale: f32) -> f32 {
+        let units = self
+            .face
+            .as_ref()
+            .and_then(|f| f.faces.get(face))
+            .map_or(1.0, |f| f.font.units_per_em());
+        self.px(scale) / units.max(1.0)
     }
 
     /// The distance from the body box's top to the baseline at `scale` -- where
@@ -198,20 +277,31 @@ impl Atlas {
         let px = self.px(scale);
         self.face
             .as_ref()
-            .and_then(|f| f.font.horizontal_line_metrics(px))
+            .and_then(|f| f.first().horizontal_line_metrics(px))
             .map_or(0.0, |m| m.ascent - m.descent + m.line_gap)
     }
 
-    /// `c` at `scale`, rasterized into the texture if it is not there yet.
-    /// `None` only when no face is loaded.
+    /// `c` at `scale`, in the face that draws it, rasterized into the texture
+    /// if it is not there yet. `None` only when no face is loaded.
     pub fn glyph(&mut self, c: char, scale: f32) -> Option<Glyph> {
+        let face = self.face.as_ref()?;
+        let at = face.of(c);
+        let id = face.faces[at].font.lookup_glyph_index(c);
+        self.glyph_id(at, id, scale)
+    }
+
+    /// **Glyph `id` of face `face`** at `scale` -- what the shaper names, which
+    /// a ligature, a contextual form or a mark is and a character is not --
+    /// rasterized into the texture if it is not there yet. `None` when no
+    /// face is loaded or there is no such face.
+    pub fn glyph_id(&mut self, face: usize, id: u16, scale: f32) -> Option<Glyph> {
         let px = self.px(scale);
-        let key = (c, px as u32);
+        let key = (face as u8, id, px as u32);
         if let Some(g) = self.map.get(&key) {
             return Some(*g);
         }
-        let face = self.face.as_ref()?;
-        let (metrics, coverage) = face.font.rasterize(c, px);
+        let font = &self.face.as_ref()?.faces.get(face)?.font;
+        let (metrics, coverage) = font.rasterize_indexed(id, px);
         let (w, h) = (metrics.width as u32, metrics.height as u32);
         let glyph = if w == 0 || h == 0 {
             // A space (or any inked-nothing): it advances and draws no quad.
@@ -356,11 +446,17 @@ pub fn has_face() -> bool {
 }
 
 /// **The face the host draws with when nobody names another**: a subset of
-/// DejaVu Sans -- Latin, Greek and Cyrillic, and the punctuation, arrows and
-/// symbols an interface writes -- compiled into the host, so a native window
-/// and a page draw the same text with nothing to find and nothing to fetch.
+/// DejaVu Sans -- Latin, Greek, Cyrillic, Arabic and Hebrew, and the
+/// punctuation, arrows and symbols an interface writes, with its layout tables
+/// for the shaper -- compiled into the host, so a native window and a page
+/// draw the same text with nothing to find and nothing to fetch.
 /// `assets/fonts/` holds it, its license and the script that makes it.
 pub const EMBEDDED: &[u8] = include_bytes!("../../../assets/fonts/DejaVuSans.ttf");
+
+/// **The face the host draws Devanagari with**, which [`EMBEDDED`] does not
+/// draw: a subset of Noto Sans Devanagari, compiled in beside it and fallen
+/// back to for a character the host's face has no glyph for.
+pub const DEVANAGARI: &[u8] = include_bytes!("../../../assets/fonts/NotoSansDevanagari.ttf");
 
 /// Loads [`EMBEDDED`] as the host's typeface, where none is loaded: a second
 /// host of one page finds the first one's face, or the one a client handed
@@ -399,18 +495,22 @@ mod tests {
             .face
             .as_ref()
             .unwrap()
-            .font
+            .first()
             .lookup_glyph_index('\u{10FFFF}');
         for c in [
             'A', 'g', '7', '\u{F1}', '\u{E9}', '\u{3A9}', '\u{416}', '\u{2192}', '\u{266F}',
         ] {
-            let index = a.face.as_ref().unwrap().font.lookup_glyph_index(c);
+            let index = a.face.as_ref().unwrap().first().lookup_glyph_index(c);
             assert_ne!(index, missing, "U+{:04X} is in the face", c as u32);
             let g = a.glyph(c, 2.0).unwrap();
             assert!(g.w > 0.0 && g.advance > 0.0, "U+{:04X} has ink", c as u32);
         }
-        // a quarter of a megabyte, not the megabyte the whole family is
-        assert!(EMBEDDED.len() < 300_000, "{}", EMBEDDED.len());
+        // under a third of a megabyte with Arabic, Hebrew and the layout
+        // tables, not the three quarters the whole family is; and the
+        // Devanagari face beside it, a seventh of one (the plan's G43a has
+        // the measurements)
+        assert!(EMBEDDED.len() < 310_000, "{}", EMBEDDED.len());
+        assert!(DEVANAGARI.len() < 160_000, "{}", DEVANAGARI.len());
     }
 
     #[test]

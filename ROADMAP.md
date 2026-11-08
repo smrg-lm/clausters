@@ -315,13 +315,9 @@ its plan; the plan is where its acceptance is read.
   solve. **Related:** "Staleness per node rather than per document" in the same
   list is its seam, and gives nothing until this exists.
 
-- ⬜ **`G43` — text is shaped**, `G43a` and `G43b` *(`clients/gui/PLAN.md`,
-  "G43 — Text is shaped: every script a field accepts is drawn right")*. A
-  field accepts every script since composed input closed, and the host draws
-  only Latin, Greek and Cyrillic without marks right: `G43a` shapes and
-  reorders labels, `G43b` makes the field's caret and selection walk the
-  shaped text. **Related:** the bundled face's coverage and size, which `G43a`
-  decides with measured numbers.
+- ⬜ **`G43b` — a field edits shaped text** *(`clients/gui/PLAN.md`, "G43 —
+  Text is shaped: every script a field accepts is drawn right")*. Labels are
+  shaped (`G43a`); the field's caret and selection still walk characters.
 
 ### The larger questions, and the plans' own Future directions
 

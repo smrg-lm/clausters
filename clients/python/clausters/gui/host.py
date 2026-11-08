@@ -599,10 +599,11 @@ class GuiHost:
         becomes continuous rather than quantized to half-steps of the cell,
         which a bitmap glyph's own pixels require.
 
-        Until then the host draws with the face it carries, a subset of
-        DejaVu Sans that is the same in a native window and in a page. Bytes
-        it cannot read are logged and leave it on the face it had, and so does
-        a host built without a rasterizer, which draws with its embedded
+        Until then the host draws with the faces it carries, a subset of
+        DejaVu Sans and one of Noto Sans Devanagari under it, the same in a
+        native window and in a page. The handed face replaces the first.
+        Bytes it cannot read are logged and leave it on the face it had, and so
+        does a host built without a rasterizer, which draws with its embedded
         bitmap face. Neither is an error here. The launch-time spelling is
         `clausters.launch.GuiProcess`'s
         ``font=`` (the host's ``--font``), for a face that should be in place

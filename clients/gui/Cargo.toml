@@ -76,7 +76,7 @@ patcher = []
 # what a window shows, and the bitmap is legible and no more. A build without
 # it draws the bitmap face, which stays the floor under every build: what a
 # host with no face loaded draws with.
-font-atlas = ["dep:fontdue"]
+font-atlas = ["dep:fontdue", "dep:rustybuzz", "dep:unicode-bidi"]
 # **The editing applications in a page**: the host the web package builds a
 # second time, with these compiled in, over shared memory, with the nightly
 # pinned in `wasm-apps-toolchain` (`clients/web/build.sh`). A page that is
@@ -146,6 +146,19 @@ winit = "0.30.13"
 # system dependency and no C toolchain -- which is the whole reason it is this
 # crate rather than a FreeType binding.
 fontdue = { version = "0.9", optional = true }
+# The `font-atlas` feature's shaper: a pure-Rust port of the standard shaping
+# engine, over the same font parser fontdue reads with, so it compiles for
+# wasm32 with nothing else -- the posture fontdue was chosen for. It turns a
+# run of text into glyph ids and positions: ligatures, contextual forms, marks
+# over their bases.
+rustybuzz = { version = "0.20", optional = true }
+# The Unicode bidirectional algorithm: a label's paragraph reordered into
+# visual runs, right-to-left ones included, before each run is shaped.
+unicode-bidi = { version = "0.3", optional = true }
+# Grapheme clusters: what a caret steps over and what text is cut at, with
+# or without a face -- one user-perceived character, however many code
+# points it is written with.
+unicode-segmentation = "1.12"
 
 # Read-only mmap of the audio server's shared-memory segment, for zero-message
 # meters/scopes (`host::shm`). Unix-only -- the same raw-mmap path the server's
