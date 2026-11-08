@@ -3424,7 +3424,8 @@ mod tests {
     /// pages whose own state changed (the selection set, which lets every
     /// kept triangle of the page go today), against the same frame with
     /// nothing changed; and a multitrack of many tracks, each with boxes of
-    /// notes, drawn whole as a drag of one box draws it on every move.
+    /// notes, drawn whole as a drag of one box draws it on every move, as
+    /// rolls and as pages; and a roll of many notes, which keeps no parts.
     ///
     /// Run with `cargo test --release --features score --lib
     /// what_a_change_costs -- --ignored --nocapture`.
@@ -3689,6 +3690,63 @@ mod tests {
         println!(
             "the same, its boxes drawn as pages: {whole:.3} ms a whole frame; {vertices} vertices"
         );
+
+        // ---- a roll of many notes ----
+        let mut notes = Vec::new();
+        for n in 0..4_000 {
+            notes.extend([
+                json!(n as f64 * 0.25),
+                json!(0.2),
+                json!(36 + (n * 7) % 60),
+                json!(100),
+                json!(0),
+            ]);
+        }
+        let tree = json!({"type": "window", "w": 1280, "h": 900, "children": [
+            {"id": 3, "type": "notes", "notes": notes}]});
+        let mut host = crate::host::Host::new();
+        host.handle_packet(
+            clausters_core::osc::OscPacket::Message(clausters_core::osc::OscMessage {
+                addr: crate::host::GUI_DEF.into(),
+                args: vec![
+                    clausters_core::osc::OscType::Int(1),
+                    clausters_core::osc::OscType::String(tree.to_string()),
+                ],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        let inputs = FrameInputs {
+            metrics: host.metrics_for(1),
+            world: World {
+                timelines: host.timelines(),
+                ..World::default()
+            },
+            ..FrameInputs::default()
+        };
+        let draw = || {
+            picture(
+                host.window_def(1).unwrap(),
+                &inputs,
+                &host.theme,
+                &none.0,
+                &none.1,
+                (1280, 900),
+            )
+        };
+        let vertices = draw().base.vertex_count();
+        let whole = median(
+            (0..30)
+                .map(|_| {
+                    let start = std::time::Instant::now();
+                    std::hint::black_box(draw());
+                    start.elapsed().as_secs_f64() * 1e3
+                })
+                .collect(),
+        );
+        println!("a roll of 4000 notes: {whole:.3} ms a whole frame; {vertices} vertices");
     }
 
     /// **With a dialog up nothing is kept**, and the window's moving lines and

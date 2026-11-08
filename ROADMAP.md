@@ -323,11 +323,6 @@ its plan; the plan is where its acceptance is read.
   shaped text. **Related:** the bundled face's coverage and size, which `G43a`
   decides with measured numbers.
 
-- ⬜ **A complex element is described again only where it changed**
-  *(`clients/gui/PLAN.md`, `G46`)*. Done natively for the score and the
-  multitrack (`paint::KeptParts`); left: the measurement in a page, the roll,
-  and whether the window's own `Kept` is worth splitting.
-
 ### The larger questions, and the plans' own Future directions
 
 Named, not enumerated: each is written where it belongs and is read there.
