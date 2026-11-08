@@ -292,6 +292,20 @@ impl Lanes {
         crate::host::layout::Rect::new(body.x, top, body.w, h)
     }
 
+    /// **The rows inside a box** placed on somebody else's stack, at `floor`
+    /// the least an open row is given: the same folds and strips, no scroll
+    /// of their own (the stack the box sits on is what scrolls), or `None`
+    /// when `rows` do not fit in `h` at that floor -- and the caller draws
+    /// the channels another way rather than as lines too thin to read.
+    pub fn placed(self, rows: usize, h: f32, floor: f32) -> Option<Lanes> {
+        let at = Lanes {
+            min: floor,
+            scroll: 0.0,
+            ..self
+        };
+        (at.overflow(rows, h) <= 0.0).then_some(at)
+    }
+
     /// The row a position `y` in screen pixels falls in, clamped to the stack.
     pub fn at(&self, body: crate::host::layout::Rect, rows: usize, y: f32) -> usize {
         let bands = self.bands(rows, body.h);
@@ -429,5 +443,32 @@ mod tests {
             "no floor, no scroll"
         );
         assert_eq!(Lanes::mask([0, 70]), 1, "past the sixty-fourth is ignored");
+    }
+
+    /// **A box lays its rows out by its view's lanes**, at a floor of its own
+    /// and with no scroll: a stereo take splits the box as it always did, a
+    /// folded channel is a strip there too, and sixteen channels in a short
+    /// box do not fit -- the caller draws them another way.
+    #[test]
+    fn a_box_s_rows_are_its_view_s_lanes_without_a_scroll() {
+        let view = Lanes {
+            folded: 0,
+            strip: 20.0,
+            min: 60.0,
+            scroll: 30.0,
+        };
+        let two = view.placed(2, 80.0, 20.0).expect("two rows fit");
+        assert_eq!(two.scroll, 0.0, "a box does not scroll");
+        assert_eq!(two.bands(2, 80.0).band(1), (40.0, 40.0), "the even split");
+
+        let folded = Lanes {
+            folded: Lanes::mask([1, 2]),
+            ..view
+        };
+        let four = folded.placed(4, 100.0, 20.0).expect("two open rows fit");
+        assert_eq!(four.bands(4, 100.0).band(1), (30.0, 20.0), "a strip");
+        assert_eq!(four.bands(4, 100.0).band(3), (70.0, 30.0));
+
+        assert_eq!(view.placed(16, 96.0, 20.0), None, "sixteen do not fit");
     }
 }

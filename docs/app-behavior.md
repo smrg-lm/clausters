@@ -325,6 +325,13 @@ code that keeps it lives.
   (`Multitrack::stack`, the roll's automation rows), so a track is as tall
   beside its header at every density, and a hand's drag is made logical before
   it changes one.
+- **A box's rows are its view's rows, with no scroll.** A box of samples lays
+  its channels out by the audio editor's own layout (`Lanes::placed`): the
+  view's folds and strips, an open row never thinner than one control, and no
+  scroll, since the stack the box sits on is what scrolls. A take whose
+  channels do not fit at that floor is drawn overlaid on one row, every
+  channel still in it, and pulling the track's edge gives the rows back; a
+  spectrogram, which cannot be overlaid, shares the box evenly instead.
 - **One object, one colour.** The channels of a take stacked in rows are drawn
   in one colour, since colours of their own read as separate tracks; only
   channels overlaid on one row are told apart by colour.

@@ -45,6 +45,7 @@ impl SignalElement {
             min,
             max,
             &self.layers,
+            self.lanes(d.m),
             self.display.overlay,
             self.editor.sample_rate,
             self.written_frames(),

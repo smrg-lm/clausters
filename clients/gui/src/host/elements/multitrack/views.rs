@@ -186,6 +186,21 @@ impl Multitrack {
                         ..
                     } = frame
                     {
+                        // The box's rows, as its waveform lays them: the
+                        // view's folds at a floor of one control and no
+                        // scroll; a picture that cannot be overlaid shares
+                        // the box evenly when they do not fit.
+                        let lanes = if overlay {
+                            lanes
+                        } else {
+                            lanes
+                                .placed(view.body.channels(), cr.h, ctx.metrics.control_h)
+                                .unwrap_or(crate::host::bands::Lanes {
+                                    min: 0.0,
+                                    scroll: 0.0,
+                                    ..lanes
+                                })
+                        };
                         out.push((
                             view.key,
                             SlotFrame::Signal {

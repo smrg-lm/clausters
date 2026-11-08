@@ -8584,7 +8584,7 @@ module of its own.
   (`host::node_trees`), read in the shared reply path; a page asks on the
   read-back's beat and at once on a `/node_start` or `/node_end`, as a
   window does.
-- ⬜ **A clip's lane stacks every channel evenly, however short the lane**
+- ✅ **A clip's lane stacks every channel evenly, however short the lane**
   *(found 2026-10-16, closing the audio editor's folded channels)*. The
   stacked view of a take folds and scrolls (`host::bands::Lanes`), but a
   clip's body in a multitrack lane still splits its height evenly
@@ -8592,6 +8592,17 @@ module of its own.
   a lane a third of the editor's height draws sixteen lines. The layout is
   there to reuse; what is undecided is who holds a clip's folded set -- the
   region, the track or the view -- and whether a lane scrolls at all.
+  *Fixed 2026-11-08, both decided*: the **view** holds the folded set -- a
+  box of samples is the audio editor's view placed, and its body already
+  carries that view's folds -- and **a box does not scroll**, since the stack
+  it sits on does and a second scroll under the same wheel is a gesture
+  conflict. The waveform drew the even split while a box's spectrogram read
+  the view's `Lanes` and overflowed the box; both now ask `Lanes::placed`:
+  the view's folds and strips at a floor of one control and no scroll, and
+  where the channels do not fit at that floor the waveform is drawn
+  overlaid on one row (every channel still in it, and the track's edge
+  gives the rows back) while a spectrogram shares the box evenly
+  (`a_box_s_rows_are_its_view_s_lanes_without_a_scroll`).
 - ✅ **A short channel row's ruler labels collide at its edges** *(found
   2026-10-16, by eye on eight channels at the row floor)*. Each row is ruled
   on its own, so at three controls tall the bottom label of one row (`-1`)

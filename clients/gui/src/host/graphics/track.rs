@@ -913,6 +913,7 @@ pub(crate) fn draw_take(
     min: f32,
     max: f32,
     layers: &Stack,
+    lanes: crate::host::bands::Lanes,
     overlay: bool,
     sample_rate: f64,
     written: Option<u64>,
@@ -929,7 +930,19 @@ pub(crate) fn draw_take(
     // is the same choice the standalone view offers, and it arrives the same
     // way (the element's own prop), so the two never disagree about what a
     // channel is.
-    let rows = if overlay { 1 } else { trace.channels().max(1) };
+    //
+    // **The rows are the view's** (`lanes`, its folds and strips), with the
+    // box's floor of one control and no scroll of its own; a take whose
+    // channels do not fit at that floor is drawn **overlaid**, every channel
+    // on one row, rather than as lines too thin to read -- and a hand that
+    // zooms the track by its edge gets the rows back.
+    let channels = trace.channels().max(1);
+    let placed = if overlay {
+        None
+    } else {
+        lanes.placed(channels, cr.h, m.control_h)
+    };
+    let rows = if placed.is_some() { channels } else { 1 };
     // **The window is drawn a run at a time**, each run a stretch of clip time
     // over which it stays inside the contents -- one run for the ordinary case,
     // one per iteration for a looping clip, and none at all where a clip
@@ -938,8 +951,8 @@ pub(crate) fn draw_take(
     // run list rather than in the maps, so nothing downstream has to know
     // whether a clip loops.
     let runs = window.runs(local.start, local.start + local.len, dur, total);
-    for ch in 0..trace.channels().max(1) {
-        let row = crate::host::frame::channel_rect(cr, rows, if overlay { 0 } else { ch });
+    for ch in 0..channels {
+        let row = placed.map_or(cr, |lanes| lanes.rect(cr, rows, ch));
         if row.h <= 0.0 {
             continue;
         }

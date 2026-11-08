@@ -106,10 +106,6 @@ already carry it.
   reports the step it stopped at and the page's console; what is open is the
   diagnosis, from the next timeout's output.
 
-- ⬜ **A clip's lane stacks every channel evenly, however short the lane**
-  *(`clients/gui/PLAN.md`, Found by use)*. Left by the audio editor's
-  layout: the clip's half of the folded channels.
-
 - ⬜ **A new session's first Save or track failed once in the eye pass**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once, after saving the
   session before it; not reproduced.
