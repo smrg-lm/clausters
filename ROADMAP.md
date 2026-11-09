@@ -273,6 +273,12 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
+- ⬜ **A score that writes its meter, key and clefs on each staff is read
+  in 4/4 and C** *(`clients/gui/PLAN.md`, Found by use, the entry of that
+  title)*. First, because opening and saving such a score rewrites it
+  wrong; the same pass loses left barlines, a staff group's name and the
+  engraver's running head.
+
 - ⬜ **The roll's two modes are not yet an editor a hand can trust**
   *(`crates/clausters-apps/PLAN.md`, Found by use, the entry of that title)*.
   The first eye pass over the notation mode and the editing options found

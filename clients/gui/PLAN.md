@@ -9317,3 +9317,28 @@ module of its own.
   does after a push, and gives it back when no play lands. A host test plays
   a roll on an engine nothing processes: the demand was empty after the run
   and is `Playhead` now, until the settling ends.
+
+- ⬜ **A score that writes its meter, key and clefs on each staff is read
+  in 4/4 and C** *(found 2026-11-09 by the user, opening an MEI exported by
+  a notation program in the score editor: the opening repeat barline was
+  missing)*. The reader takes the meter, the key and the clef from the
+  `scoreDef` alone; MEI 5 writes them on each `staffDef` (`meter.count`,
+  `keysig`, a `<clef>` child), and the engraver keeps them there in the MEI
+  it hands back. So a zamba of 32 bars in 6/8 with one flat came back as 24
+  bars of 4/4 in C, and every edit and save wrote that. The same pass lost:
+  - **a left barline** (`left="rptstart"` on the measure a repeat opens): the
+    model keeps only each measure's right barline, so a repeat that opens
+    the score has nowhere to be, and one written as the right barline of the
+    measure before is drawn at the end of a system where the engraver's
+    convention draws it at the start of the next (it splits only `rptboth`
+    at a system break);
+  - **the instrument's name** written on the staff group (`<label>`,
+    `<labelAbbr>` on a `staffGrp`), which the reader looks for on a staff;
+  - **the running head the engraver writes** (`<rend type="subtitle">`,
+    `type="poet"`, `type="composer"` inside `pgHead`): the title stays, the
+    subtitle, the poet and the composer go.
+  To check with them: an empty `<verse>`, which carries nothing and may
+  stay dropped, and the mid-score `<clef>` changes, which may be the same
+  gap. The repeat barline in the model is a design: where a left barline
+  lives, and whether a start repeat is written as a measure's `left`
+  everywhere, which is how the engraver encodes and draws it.
