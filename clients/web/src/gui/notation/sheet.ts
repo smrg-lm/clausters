@@ -933,9 +933,10 @@ export function setPage(sheet: Sheet, page: Record<string, unknown> | null): She
 }
 
 /**
- * Give `measure` (1-based) a right barline: `"end"`, `"rptstart"`, `"rptend"`,
- * `"rptboth"`, `"dbl"`, `"invis"` -- or `"single"`, which takes the override
- * back rather than storing one saying "ordinary".
+ * Give `measure` (1-based) a right barline -- `"end"`, `"rptend"`,
+ * `"rptboth"`, `"dbl"`, `"invis"` -- or open a repeat at it, `"rptstart"` (its
+ * left barline, so a repeat can open the score); or `"single"`, which takes
+ * the overrides back rather than storing one saying "ordinary".
  *
  * A repeat barline is **notation**: it is drawn, and it is not what makes a
  * passage play twice. Repetition is written out ({@link repeat}), which is why
@@ -1041,12 +1042,19 @@ export function setStaff(
 
 /**
  * Group the staves, whole: each group a `{first, last, symbol}` -- staves from
- * zero, joined by a `"brace"`, a `"bracket"` or a `"line"`. None is the
- * default, a brace over several staves.
+ * zero, joined by a `"brace"`, a `"bracket"` or a `"line"` -- and, where the
+ * group is one instrument, its name `label` and short name `abbr`. None is
+ * the default, a brace over several staves.
  */
 export function setGroups(
     sheet: Sheet,
-    groups: readonly { first: number; last: number; symbol: string }[],
+    groups: readonly {
+        first: number;
+        last: number;
+        symbol: string;
+        label?: string;
+        abbr?: string;
+    }[],
 ): Sheet {
     return apply(sheet, { op: "set_groups", groups: [...groups] });
 }

@@ -473,7 +473,8 @@ fn documents(sheet: &Sheet, cut: Cut) -> Result<Vec<String>, String> {
             while m + k < count
                 && empty(m + k)
                 && quiet_inside(m + k)
-                && !grid.barlines.iter().any(|(b, _)| *b == m + k - 1)
+                && right_barline(grid, m + k - 1).is_none()
+                && left_barline(grid, m + k).is_empty()
             {
                 k += 1;
             }
@@ -619,6 +620,12 @@ fn staff_groups(sheet: &Sheet, staves: &[&Staff]) -> String {
                 "<staffGrp symbol=\"{}\" bar.thru=\"true\">",
                 escape(&group.symbol)
             ));
+            if !group.label.is_empty() {
+                out.push_str(&format!("<label>{}</label>", escape(&group.label)));
+            }
+            if !group.abbr.is_empty() {
+                out.push_str(&format!("<labelAbbr>{}</labelAbbr>", escape(&group.abbr)));
+            }
         }
         out.push_str(&def(i, staff));
         for _ in sheet.groups.iter().filter(|g| g.last == i) {
@@ -690,11 +697,12 @@ fn multirest_xml(
     last: bool,
 ) -> String {
     let lastm = first + k - 1;
-    let right = match grid.barlines.iter().find(|(m, _)| *m == lastm) {
-        Some((_, kind)) => format!(" right=\"{kind}\""),
+    let right = match right_barline(grid, lastm) {
+        Some(kind) => format!(" right=\"{kind}\""),
         None if last => " right=\"end\"".to_string(),
         None => String::new(),
     };
+    let right = format!("{}{right}", left_barline(grid, first));
     let brk = match grid.breaks.iter().find(|(m, _)| *m == first) {
         Some((_, kind)) if kind == "page" => "<pb/>",
         Some(_) => "<sb/>",
@@ -1259,11 +1267,12 @@ fn measure_xml(
     let repeated = grid.repeats.contains(&index);
     // A barline somebody chose wins over the final one the last measure gets by
     // default: a score that ends on a repeat ends on a repeat.
-    let right = match grid.barlines.iter().find(|(m, _)| *m == index) {
-        Some((_, kind)) => format!(" right=\"{kind}\""),
+    let right = match right_barline(grid, index) {
+        Some(kind) => format!(" right=\"{kind}\""),
         None if last => " right=\"end\"".to_string(),
         None => String::new(),
     };
+    let right = format!("{}{right}", left_barline(grid, index));
     let brk = match grid.breaks.iter().find(|(m, _)| *m == index) {
         Some((_, kind)) if kind == "page" => "<pb/>",
         Some(_) => "<sb/>",
@@ -2090,6 +2099,28 @@ fn element_id(id: u64, suffix: Option<usize>) -> String {
         (0, _) => String::new(),
         (id, None) => format!(" xml:id=\"n{id}\""),
         (id, Some(n)) => format!(" xml:id=\"n{id}-{n}\""),
+    }
+}
+
+/// The right barline written at `measure`, where it is not the ordinary one.
+fn right_barline(grid: &Grid, measure: usize) -> Option<&str> {
+    grid.barlines
+        .iter()
+        .find(|(m, kind)| *m == measure && kind != "rptstart")
+        .map(|(_, kind)| kind.as_str())
+}
+
+/// The left barline of `measure` as an attribute: a repeat opening there, or
+/// nothing.
+fn left_barline(grid: &Grid, measure: usize) -> &'static str {
+    if grid
+        .barlines
+        .iter()
+        .any(|(m, kind)| *m == measure && kind == "rptstart")
+    {
+        " left=\"rptstart\""
+    } else {
+        ""
     }
 }
 

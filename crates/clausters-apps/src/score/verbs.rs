@@ -113,8 +113,9 @@ pub enum Action {
         #[serde(default)]
         count: Option<usize>,
     },
-    /// Give the last selected measure a right barline: `single`, `dbl`, `end`,
-    /// `rptstart`, `rptend`, `rptboth` or `invis`.
+    /// Give the last selected measure a right barline -- `single`, `dbl`,
+    /// `end`, `rptend`, `rptboth` or `invis` -- or open a repeat at the first
+    /// selected measure, `rptstart`.
     Barline { kind: String },
     /// Break the line or the page before the first selected measure
     /// (`system`, `page`), or take the break back (`none`).
@@ -455,6 +456,7 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
                 first: a,
                 last: b,
                 symbol: symbol.clone(),
+                ..Default::default()
             });
             groups.sort_by_key(|g| (g.first, std::cmp::Reverse(g.last)));
         }
@@ -485,8 +487,11 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
             };
         }
         Action::Barline { kind } => {
+            // a repeat opens at the first measure selected; every other
+            // barline ends the last
+            let measure = if kind == "rptstart" { first } else { last };
             return Ok(vec![Op::SetBarline {
-                measure: last,
+                measure,
                 kind: kind.clone(),
             }]);
         }

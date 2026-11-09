@@ -547,8 +547,9 @@ export class ScoreEditor extends SequenceHandler {
     }
 
     /**
-     * Give the last selected measure a right barline: `single`, `dbl`, `end`,
-     * `rptstart`, `rptend`, `rptboth` or `invis`.
+     * Give the last selected measure a right barline -- `single`, `dbl`,
+     * `end`, `rptend`, `rptboth` or `invis` -- or open a repeat at the first
+     * selected measure, `rptstart`.
      */
     setBarline(kind: string): Promise<boolean> {
         return this.#act({ action: "barline", kind: String(kind) });

@@ -41,8 +41,14 @@ pub fn unroll(grid: &Grid, count: usize) -> Vec<Played> {
     let barline = |m: usize| {
         grid.barlines
             .iter()
-            .find(|(b, _)| *b == m)
+            .find(|(b, kind)| *b == m && kind != "rptstart")
             .map(|(_, kind)| kind.as_str())
+    };
+    // a repeat that opens at a measure: its left barline
+    let opens = |m: usize| {
+        grid.barlines
+            .iter()
+            .any(|(b, k)| *b == m && k == "rptstart")
     };
     let mark = |m: usize, kind: &str| grid.marks.iter().any(|(b, k)| *b == m && k == kind);
     let sign = |kind: &str| grid.marks.iter().find(|(_, k)| k == kind).map(|(m, _)| *m);
@@ -85,9 +91,9 @@ pub fn unroll(grid: &Grid, count: usize) -> Vec<Played> {
             }
             pass = 1;
         }
-        if matches!(right, Some("rptstart" | "rptboth")) {
+        if right == Some("rptboth") || opens(m + 1) {
             start = m + 1;
-            if right == Some("rptstart") {
+            if right != Some("rptboth") {
                 pass = 1;
             }
         }
@@ -148,8 +154,11 @@ mod tests {
         };
         assert_eq!(order(&grid, 3), vec![0, 1, 0, 1, 2]);
         // a start sign moves where it goes back to
-        grid.barlines = vec![(0, "rptstart".into()), (2, "rptend".into())];
+        grid.barlines = vec![(1, "rptstart".into()), (2, "rptend".into())];
         assert_eq!(order(&grid, 4), vec![0, 1, 2, 1, 2, 3]);
+        // and one that opens the score goes back to its start
+        grid.barlines = vec![(0, "rptstart".into()), (1, "rptend".into())];
+        assert_eq!(order(&grid, 3), vec![0, 1, 0, 1, 2]);
         // first and second endings
         grid.barlines = vec![(1, "rptend".into())];
         grid.endings = vec![(1, 1, "1".into()), (2, 2, "2".into())];

@@ -445,6 +445,7 @@ mod tests {
             first: 0,
             last: 1,
             symbol: "bracket".into(),
+            ..Group::default()
         }];
 
         let score =

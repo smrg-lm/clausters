@@ -228,10 +228,27 @@ impl Reader {
             self.sheet.grid.repeats.push(self.measure);
         }
         let last = self.measure + span.max(1) as usize - 1;
-        if let Some(right) = measure.attribute("right")
-            && right != "single"
-        {
-            self.sheet.grid.barlines.push((last, right.to_string()));
+        // **A repeat opens at the measure whose left barline it is**, which
+        // is how MEI and the engraver write it; written as the right barline
+        // of the measure before, it opens at the next one. A double repeat on
+        // the left is the right barline of the measure before, where there is
+        // one.
+        match measure.attribute("left") {
+            Some("rptstart") => self.open_repeat(self.measure),
+            Some("rptboth") if self.measure > 0 => self
+                .sheet
+                .grid
+                .barlines
+                .push((self.measure - 1, "rptboth".to_string())),
+            Some("rptboth") => self.open_repeat(self.measure),
+            _ => {}
+        }
+        match measure.attribute("right") {
+            Some("rptstart") => self.open_repeat(last + 1),
+            Some(right) if right != "single" => {
+                self.sheet.grid.barlines.push((last, right.to_string()));
+            }
+            _ => {}
         }
         for node in measure.children().filter(Node::is_element) {
             let name = node.tag_name().name();
@@ -279,6 +296,14 @@ impl Reader {
         self.measure = last + 1;
     }
 
+    /// A repeat that opens at `measure`, once.
+    fn open_repeat(&mut self, measure: usize) {
+        let opens = (measure, "rptstart".to_string());
+        if !self.sheet.grid.barlines.contains(&opens) {
+            self.sheet.grid.barlines.push(opens);
+        }
+    }
+
     fn finish(mut self) -> Sheet {
         let mut sheet = std::mem::take(&mut self.sheet);
         sheet.grid.meters = if self.meters.is_empty() {
@@ -295,6 +320,10 @@ impl Reader {
                 .barlines
                 .retain(|(m, kind)| !(*m == last && kind == "end"));
         }
+        // a repeat opened after the last measure opens nothing
+        let count = self.measure;
+        sheet.grid.barlines.retain(|(m, _)| *m < count);
+        sheet.grid.barlines.sort();
 
         let content = std::mem::take(&mut self.content);
         sheet.staves = content
@@ -411,13 +440,47 @@ fn read_header(root: Node) -> Header {
             .unwrap_or_default()
             .to_string();
     }
-    Header {
+    // a person named by a role, as MEI 5 writes the responsibilities
+    let person = |roles: &[&str]| -> String {
+        head.descendants()
+            .filter(|n| n.has_tag_name("persName"))
+            .find(|n| n.attribute("role").is_some_and(|r| roles.contains(&r)))
+            .map(text_in)
+            .unwrap_or_default()
+    };
+    let either = |a: String, b: String| if a.is_empty() { b } else { a };
+    let mut header = Header {
         title,
         subtitle: named("subordinate"),
-        composer: text_of(head, "composer"),
-        lyricist: text_of(head, "lyricist"),
+        composer: either(text_of(head, "composer"), person(&["composer"])),
+        lyricist: either(text_of(head, "lyricist"), person(&["lyricist", "poet"])),
+        arranger: either(text_of(head, "arranger"), person(&["arranger"])),
+        translator: person(&["translator"]),
         ..Header::default()
+    };
+    // **What the engraver's own running head says** where the document head
+    // does not: an importer writes the subtitle, the poet and the composer as
+    // typed blocks of the first page's head
+    let typed = |kind: &str| -> String {
+        root.descendants()
+            .filter(|n| n.has_tag_name("pgHead"))
+            .flat_map(|head| head.descendants())
+            .find(|n| n.has_tag_name("rend") && n.attribute("type") == Some(kind))
+            .map(text_in)
+            .unwrap_or_default()
+    };
+    for (field, kinds) in [
+        (&mut header.title, ["title", "title"]),
+        (&mut header.subtitle, ["subtitle", "subtitle"]),
+        (&mut header.composer, ["composer", "composer"]),
+        (&mut header.lyricist, ["lyricist", "poet"]),
+        (&mut header.arranger, ["arranger", "arranger"]),
+    ] {
+        if field.is_empty() {
+            *field = either(typed(kinds[0]), typed(kinds[1]));
+        }
     }
+    header
 }
 
 /// The staves, in order, as their definitions say them: the clef as the
@@ -496,12 +559,29 @@ fn read_groups(score_def: Node, staves: usize) -> Vec<super::model::Group> {
                 .map(str::to_string)
         });
         let Some(symbol) = symbol else { continue };
-        let default = group == top && symbol == "brace" && first == 0 && last + 1 == staves;
+        // its name, where the group names the instrument rather than its
+        // staves doing it each
+        let named = |tag: &str| {
+            group
+                .children()
+                .find(|n| n.has_tag_name(tag))
+                .map(text_in)
+                .unwrap_or_default()
+        };
+        let (label, abbr) = (named("label"), named("labelAbbr"));
+        let default = group == top
+            && symbol == "brace"
+            && first == 0
+            && last + 1 == staves
+            && label.is_empty()
+            && abbr.is_empty();
         if !default {
             groups.push(super::model::Group {
                 first,
                 last,
                 symbol,
+                label,
+                abbr,
             });
         }
     }
@@ -511,7 +591,7 @@ fn read_groups(score_def: Node, staves: usize) -> Vec<super::model::Group> {
         .descendants()
         .skip(1)
         .any(|n| n.is_element() && n.tag_name().name() == "staffGrp");
-    if !nested && groups.len() == 1 && groups[0].symbol == "brace" {
+    if !nested && groups.len() == 1 && groups[0].symbol == "brace" && groups[0].label.is_empty() {
         groups.clear();
     }
     groups
@@ -520,8 +600,8 @@ fn read_groups(score_def: Node, staves: usize) -> Vec<super::model::Group> {
 /// A change of key a score definition inside the music states, if it states
 /// one.
 fn read_key_change(score_def: Node) -> Option<String> {
-    let states = score_def.attribute("key.sig").is_some()
-        || score_def.attribute("keysig").is_some()
+    let states = stated(score_def, "key.sig").is_some()
+        || stated(score_def, "keysig").is_some()
         || find(score_def, "keySig").is_some();
     states.then(|| read_key(score_def))
 }
@@ -532,9 +612,8 @@ fn read_key_change(score_def: Node) -> Option<String> {
 /// both spellings are read -- which is the sort of difference that is invisible
 /// until a document makes a round trip through the engraver.
 fn read_key(score_def: Node) -> String {
-    let sig = score_def
-        .attribute("key.sig")
-        .or_else(|| score_def.attribute("keysig"))
+    let sig = stated(score_def, "key.sig")
+        .or_else(|| stated(score_def, "keysig"))
         .or_else(|| find(score_def, "keySig")?.attribute("sig"))
         .unwrap_or("0");
     const NAMES: [(&str, &str); 15] = [
@@ -591,15 +670,25 @@ fn read_page(def: Node) -> Option<super::PageSetup> {
     setup.check().ok().map(|()| setup)
 }
 
+/// What a score definition states, on itself or -- as MEI 5 and the engraver
+/// write a meter and a key -- on its first staff's definition: the model
+/// holds one meter and one key for every staff.
+fn stated<'a>(score_def: Node<'a, '_>, name: &str) -> Option<&'a str> {
+    score_def.attribute(name).or_else(|| {
+        score_def
+            .descendants()
+            .filter(|n| n.has_tag_name("staffDef"))
+            .find_map(|def| def.attribute(name))
+    })
+}
+
 /// The meter this `scoreDef` states, if it states one.
 fn read_meter(score_def: Node, measure: usize) -> Option<Meter> {
-    let count = score_def
-        .attribute("meter.count")
+    let count = stated(score_def, "meter.count")
         .or_else(|| find(score_def, "meterSig")?.attribute("count"))?
         .parse()
         .ok()?;
-    let unit = score_def
-        .attribute("meter.unit")
+    let unit = stated(score_def, "meter.unit")
         .or_else(|| find(score_def, "meterSig")?.attribute("unit"))?
         .parse()
         .ok()?;
@@ -1554,6 +1643,7 @@ mod tests {
             first: 0,
             last: 1,
             symbol: "bracket".into(),
+            ..Group::default()
         }];
         round_trips(&sheet).unwrap();
         let back = mei_to_sheet(&sheet_to_mei(&sheet).unwrap()).unwrap();
@@ -2033,5 +2123,92 @@ mod tests {
             Item::Note { tie: true, .. }
         ));
         assert_eq!(back.staves[0].voices[0].items.len(), 4, "not merged");
+    }
+
+    /// **A score as MEI 5 writes it**, and as the engraver hands it back:
+    /// the meter, the key and the clefs on each staff's definition, the
+    /// instrument named on the staff group, the people named by role, a
+    /// running head of typed blocks and a repeat opening at a measure's left
+    /// barline -- every one of them read, and every one written back so.
+    #[test]
+    fn a_score_written_staff_by_staff_reads_whole() {
+        let mei = "<mei xmlns=\"http://www.music-encoding.org/ns/mei\"><meiHead><fileDesc>\
+            <titleStmt><title type=\"main\">A zamba</title><respStmt>\
+            <persName role=\"composer\">A composer</persName>\
+            <persName role=\"lyricist\">A poet</persName></respStmt></titleStmt>\
+            </fileDesc></meiHead><music><body><mdiv><score><scoreDef>\
+            <pgHead func=\"first\"><rend type=\"subtitle\">Zamba</rend></pgHead>\
+            <staffGrp><staffGrp symbol=\"brace\" bar.thru=\"true\">\
+            <label>Piano</label><labelAbbr>Pno.</labelAbbr>\
+            <staffDef n=\"1\" lines=\"5\" keysig=\"1f\" meter.count=\"6\" meter.unit=\"8\">\
+            <clef shape=\"G\" line=\"2\"/></staffDef>\
+            <staffDef n=\"2\" lines=\"5\" keysig=\"1f\" meter.count=\"6\" meter.unit=\"8\">\
+            <clef shape=\"F\" line=\"4\"/></staffDef>\
+            </staffGrp></staffGrp></scoreDef><section>\
+            <measure n=\"1\" left=\"rptstart\"><staff n=\"1\"><layer n=\"1\">\
+            <note dur=\"2\" dots=\"1\" pname=\"f\" oct=\"4\"/></layer></staff>\
+            <staff n=\"2\"><layer n=\"1\"><note dur=\"2\" dots=\"1\" pname=\"f\" oct=\"3\"/>\
+            </layer></staff></measure>\
+            <measure n=\"2\" right=\"rptend\"><staff n=\"1\"><layer n=\"1\">\
+            <note dur=\"2\" dots=\"1\" pname=\"a\" oct=\"4\"/></layer></staff>\
+            <staff n=\"2\"><layer n=\"1\"><note dur=\"2\" dots=\"1\" pname=\"c\" oct=\"3\"/>\
+            </layer></staff></measure>\
+            </section></score></mdiv></body></music></mei>";
+        let sheet = mei_to_sheet(mei).unwrap();
+        assert_eq!(
+            (sheet.grid.meters[0].count, sheet.grid.meters[0].unit),
+            (6, 8)
+        );
+        assert_eq!(sheet.key, "F");
+        assert_eq!(
+            (sheet.staves[0].clef.as_str(), sheet.staves[1].clef.as_str()),
+            ("G2", "F4")
+        );
+        // a dotted half fills a bar of 6/8: two bars, not one and a half
+        assert_eq!(sheet.staves[0].voices[0].items.len(), 2);
+        assert_eq!(
+            sheet.grid.barlines,
+            vec![(0, "rptstart".to_string()), (1, "rptend".to_string())]
+        );
+        assert_eq!(
+            (
+                sheet.groups[0].label.as_str(),
+                sheet.groups[0].abbr.as_str()
+            ),
+            ("Piano", "Pno.")
+        );
+        let h = &sheet.header;
+        assert_eq!(
+            (
+                h.title.as_str(),
+                h.subtitle.as_str(),
+                h.composer.as_str(),
+                h.lyricist.as_str()
+            ),
+            ("A zamba", "Zamba", "A composer", "A poet")
+        );
+        // and it is written so: the repeat on the left of the measure it opens
+        let written = sheet_to_mei(&sheet).unwrap();
+        assert!(written.contains("n=\"1\" left=\"rptstart\""), "{written}");
+        assert!(written.contains("<label>Piano</label>"), "{written}");
+        let back = mei_to_sheet(&written).unwrap();
+        assert_eq!(back.grid, sheet.grid);
+        assert_eq!(back.groups, sheet.groups);
+        assert_eq!(back.key, sheet.key);
+    }
+
+    /// A start repeat written as the right barline of the measure before, as
+    /// MEI allows and some writers do, opens at the next measure.
+    #[test]
+    fn a_start_repeat_on_the_right_opens_the_next_measure() {
+        let mut mei = sheet_to_mei(&quarters(8)).unwrap();
+        mei = mei.replacen(
+            "<measure xml:id=\"m1\" n=\"1\"",
+            "<measure xml:id=\"m1\" n=\"1\" right=\"rptstart\"",
+            1,
+        );
+        assert!(mei.contains("right=\"rptstart\""));
+        let sheet = mei_to_sheet(&mei).unwrap();
+        assert_eq!(sheet.grid.barlines, vec![(1, "rptstart".to_string())]);
     }
 }

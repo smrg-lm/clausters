@@ -11685,3 +11685,18 @@ writes in three places: it attacks the continuation of a tie again, plays
 the notes under an octave line as written, and holds a staccato for its
 whole value. The model's reading holds the tie, hears the octave and
 shortens the staccato, which is what the score plays everywhere else.
+
+## A start repeat is the left barline of the measure it opens (2026-11-09)
+
+The model kept every barline as a measure's right one, a start repeat
+included: the barline after the measure. That cannot say a repeat that opens
+the score, which has no measure before it, and the engraver draws a right
+barline at the end of its system, so a repeat opening a system was drawn at
+the end of the one before -- it splits only a double repeat at a system break.
+MEI and the engraver write a start repeat as `left="rptstart"` on the measure
+it opens. So the grid's `(measure, "rptstart")` now names the measure a repeat
+**opens at**, and is written as its left barline; every other barline stays
+the measure's right one, and a measure may hold both. A document that writes
+the start repeat on the right of the measure before is read as opening the
+next one, which is what it draws. Found opening a score exported by a notation
+program, whose opening repeat was missing.

@@ -860,11 +860,14 @@ pub fn set_page(mut sheet: Sheet, page: Option<super::PageSetup>) -> Result<Shee
     Ok(sheet)
 }
 
-/// Give a measure a right barline other than the ordinary single one.
+/// Give a measure a barline other than the ordinary single one: a right
+/// barline, or with `rptstart` a repeat that opens at the measure -- its left
+/// barline, as MEI writes one, so a repeat can open the score.
 ///
-/// `measure` is 1-based, as everywhere a caller names one. `single` removes the
-/// override rather than storing one, so the state a caller asks for is the
-/// state it gets and a sheet never carries a note saying "ordinary".
+/// `measure` is 1-based, as everywhere a caller names one. Each side replaces
+/// only itself, so a measure can open a repeat and close one. `single` removes
+/// the overrides rather than storing one, so the state a caller asks for is
+/// the state it gets and a sheet never carries a note saying "ordinary".
 ///
 /// # Errors
 /// When the measure number is 0, or the kind is not one MEI draws.
@@ -879,7 +882,13 @@ pub fn set_barline(mut sheet: Sheet, measure: usize, kind: &str) -> Result<Sheet
             KINDS.join(", ")
         ));
     }
-    sheet.grid.barlines.retain(|(m, _)| *m != index);
+    // a start repeat is the measure's left barline and any other its right
+    // one, so each replaces only its own side; `single` gives back both
+    let left = |k: &str| k == "rptstart";
+    sheet
+        .grid
+        .barlines
+        .retain(|(m, k)| *m != index || (kind != "single" && left(k) != left(kind)));
     if kind != "single" {
         sheet.grid.barlines.push((index, kind.to_string()));
         sheet.grid.barlines.sort();

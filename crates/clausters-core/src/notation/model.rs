@@ -426,12 +426,20 @@ fn is_zero_i32(n: &i32) -> bool {
 }
 
 /// **A group of staves**, from `first` to `last` (both counted from zero),
-/// joined at the left by a `brace`, a `bracket` or a `line`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// joined at the left by a `brace`, a `bracket` or a `line` -- and the name of
+/// the instrument it is, where the group is one: a piano's two staves are
+/// named once, beside the brace, rather than staff by staff.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Group {
     pub first: usize,
     pub last: usize,
     pub symbol: String,
+    /// The instrument's name, beside the group on the first system.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
+    /// Its short name, on every other system.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub abbr: String,
 }
 
 /// **Something written at one point of the music** rather than on a note:
@@ -528,8 +536,12 @@ pub struct Grid {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub irregular: Vec<(usize, Ratio)>,
     /// Measures whose **right barline** is not the ordinary single one, as
-    /// `(measure, kind)` -- `end`, `rptstart`, `rptend`, `rptboth`, `dbl`,
-    /// `invis`. It is on the grid because a barline is where a measure ends,
+    /// `(measure, kind)` -- `end`, `rptend`, `rptboth`, `dbl`, `invis` -- and
+    /// the measures a repeat **opens** at, as `(measure, "rptstart")`: a start
+    /// repeat is the left barline of the measure it opens, which is how MEI
+    /// and the engraver write it, so one can open the score and one at the
+    /// start of a system is drawn there rather than at the end of the system
+    /// before. It is on the grid because a barline is where a measure ends,
     /// which is the grid's whole subject.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub barlines: Vec<(usize, String)>,

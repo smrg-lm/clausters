@@ -711,9 +711,11 @@ def set_page(sheet: dict, page: "dict | None") -> dict:
 
 
 def set_barline(sheet: dict, measure: int, kind: str) -> dict:
-    """Give ``measure`` (1-based) a right barline: ``"end"``, ``"rptstart"``,
-    ``"rptend"``, ``"rptboth"``, ``"dbl"``, ``"invis"`` -- or ``"single"``, which
-    takes the override back rather than storing one saying "ordinary".
+    """Give ``measure`` (1-based) a right barline -- ``"end"``, ``"rptend"``,
+    ``"rptboth"``, ``"dbl"``, ``"invis"`` -- or open a repeat at it,
+    ``"rptstart"`` (its left barline, so a repeat can open the score); or
+    ``"single"``, which takes the overrides back rather than storing one
+    saying "ordinary".
 
     A repeat barline is **notation**: it is drawn, and it is not what makes a
     passage play twice. Repetition is written out (`repeat`), which is why the
@@ -794,7 +796,9 @@ def set_staff(sheet: dict, staff: int = 0, *, lines: int | None = None,
 def set_groups(sheet: dict, groups: list) -> dict:
     """Group the staves, whole: each group a ``{"first", "last", "symbol"}``
     -- staves from zero, joined by a ``"brace"``, a ``"bracket"`` or a
-    ``"line"``. None is the default, a brace over several staves."""
+    ``"line"`` -- and, where the group is one instrument, its name
+    ``"label"`` and short name ``"abbr"``. None is the default, a brace over
+    several staves."""
     return apply(sheet, {"op": "set_groups", "groups": list(groups)})
 
 

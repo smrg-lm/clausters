@@ -296,12 +296,14 @@ pub enum Op {
         #[serde(default)]
         header: Header,
     },
-    /// Give a measure a right barline other than the ordinary single one.
+    /// Give a measure a barline other than the ordinary single one: a right
+    /// barline, or -- `rptstart` -- a repeat that opens at it.
     SetBarline {
         /// Which measure, 1-based, as a reader says it.
         measure: usize,
-        /// `single` (which removes the override), `end`, `rptstart`, `rptend`,
-        /// `rptboth`, `dbl` or `invis`.
+        /// `single` (which gives the measure back its ordinary barlines),
+        /// `end`, `rptstart` (its left barline: the repeat opens there),
+        /// `rptend`, `rptboth`, `dbl` or `invis`.
         kind: String,
     },
     /// Break the system or the page before a measure.

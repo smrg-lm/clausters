@@ -452,9 +452,9 @@ class ScoreEditor(SequenceHandler):
         return self._act({"action": "measures", "edit": "remove"})
 
     def set_barline(self, kind: str) -> bool:
-        """Give the last selected measure a right barline: ``single``,
-        ``dbl``, ``end``, ``rptstart``, ``rptend``, ``rptboth`` or
-        ``invis``."""
+        """Give the last selected measure a right barline -- ``single``,
+        ``dbl``, ``end``, ``rptend``, ``rptboth`` or ``invis`` -- or open a
+        repeat at the first selected measure, ``rptstart``."""
         return self._act({"action": "barline", "kind": str(kind)})
 
     def set_break(self, kind: str) -> bool:

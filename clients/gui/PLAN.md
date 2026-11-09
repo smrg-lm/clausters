@@ -9318,7 +9318,7 @@ module of its own.
   a roll on an engine nothing processes: the demand was empty after the run
   and is `Playhead` now, until the settling ends.
 
-- ⬜ **A score that writes its meter, key and clefs on each staff is read
+- ✅ **A score that writes its meter, key and clefs on each staff is read
   in 4/4 and C** *(found 2026-11-09 by the user, opening an MEI exported by
   a notation program in the score editor: the opening repeat barline was
   missing)*. The reader takes the meter, the key and the clef from the
@@ -9342,3 +9342,21 @@ module of its own.
   gap. The repeat barline in the model is a design: where a left barline
   lives, and whether a start repeat is written as a measure's `left`
   everywhere, which is how the engraver encodes and draws it.
+  *Fixed 2026-11-09.* The meter and the key are read where a score
+  definition states them or on its first staff's (`read::stated`); the
+  clef was already read from a `<clef>` child. The staff group carries its
+  instrument's name (`Group.label`, `Group.abbr`, written as the group's
+  `<label>`); the document head's people are read by role (`persName
+  role=...`), and the engraver's typed running head fills what the head
+  leaves empty. **A start repeat is a measure's left barline**: the grid's
+  `(measure, "rptstart")` is the measure the repeat opens at, written
+  `left="rptstart"` as MEI and the engraver write it -- so one can open the
+  score, and one at the start of a system is drawn there -- and read back
+  from either side (a `right="rptstart"` opens the next measure); the
+  decision record says why ("A start repeat is the left barline of the
+  measure it opens"). The score editor's Repeat start opens at the first
+  selected measure; the other barlines still end the last. The empty
+  `<verse>` stays dropped, and the file holds no clef change. The zamba
+  reads as 32 bars of 6/8 in F with its repeat, its piano's name and its
+  head, writes back the same, and the engraver says nothing about it
+  (`a_score_written_staff_by_staff_reads_whole`).
