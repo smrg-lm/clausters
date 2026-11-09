@@ -127,6 +127,13 @@ impl Pitch {
             octave,
         }
     }
+
+    /// Whether `other` is the same written note: the letter, the alteration
+    /// and the octave, whether or not either prints its accidental -- what a
+    /// tie holds from one item into the next.
+    pub fn same_note(&self, other: &Pitch) -> bool {
+        (self.step, self.alter, self.octave) == (other.step, other.alter, other.octave)
+    }
 }
 
 /// The marks a note carries beyond its pitch and value.
@@ -196,6 +203,12 @@ pub struct Marks {
     /// that ends in `-` running on into the next note's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lyrics: Vec<String>,
+    /// **The pitches a tie holds into the next item**, where it holds only
+    /// some of those the two share: a note held under a repeated one, whose
+    /// repetition is attacked again. Empty, a tie holds every pitch the two
+    /// share ([`Item::holds`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tied: Vec<Pitch>,
 }
 
 impl Marks {
@@ -216,6 +229,7 @@ impl Marks {
             && self.fingering.is_none()
             && self.harmony.is_none()
             && self.lyrics.is_empty()
+            && self.tied.is_empty()
     }
 }
 
@@ -322,6 +336,27 @@ impl Item {
     /// Whether this item sounds -- a note with pitches, as against a rest.
     pub fn sounds(&self) -> bool {
         !self.pitches().is_empty()
+    }
+
+    /// **Whether this item's tie holds `pitch` into `next`**, the item after
+    /// it in its voice: it is tied, both items have the pitch, and the tie
+    /// names it where it names only some ([`Marks::tied`]). A tie holds the
+    /// pitches the two share and nothing else, so a note tied into a chord
+    /// goes on while the chord's other notes are attacked, and a chord tied
+    /// into one note lets the others go.
+    pub fn holds(&self, next: &Item, pitch: &Pitch) -> bool {
+        let Item::Note {
+            tie: true,
+            pitches,
+            marks,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        pitches.iter().any(|p| p.same_note(pitch))
+            && next.pitches().iter().any(|p| p.same_note(pitch))
+            && (marks.tied.is_empty() || marks.tied.iter().any(|p| p.same_note(pitch)))
     }
 
     /// A rest of the same length, keeping the id -- what silencing a note is,

@@ -328,6 +328,19 @@ test("notes are joined and unjoined as one line", () => {
     assert.deepEqual([...written.events].map((e) => e.get("joins") ?? null), [null, null]);
 });
 
+test("a performance is derived from what is written", () => {
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60, staff: 0, voice: 0, value: [1, 4], sustain: 1.0, articulations: ["stacc"] })],
+        [1.0, new Event({ midinote: 62, staff: 0, voice: 0, value: [1, 4], sustain: 1.0 })],
+    ]);
+    seq.realize();
+    const [staccato, plain] = [...seq.events].map((e) => e.get("sustain") as number);
+    assert.ok(staccato! < plain! && plain === 1.0, "the staccato is held short");
+    assert.deepEqual([...seq.events].map((e) => e.get("midinote")), [60, 62], "what is written stays");
+    seq.realize({ detach: 0.5 });
+    assert.equal(seq.events.item(1).get("sustain"), 0.5);
+});
+
 test("a sequence's curves go to a MIDI file and back", () => {
     const seq = new EventSequence([
         [0.0, new Event({ midinote: 60, velocity: 100, sustain: 1.0 })],

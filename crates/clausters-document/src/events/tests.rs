@@ -1064,7 +1064,8 @@ fn every_verb_fixture() -> (EventSequence, NodeId, NodeId) {
 /// multitrack's: an exhaustive match numbers the verbs, so a new one fails
 /// to compile until it has an entry here.
 fn every_verb(cc: NodeId, held: NodeId) -> Vec<EventsIntent> {
-    let all = vec![
+    #[allow(unused_mut)]
+    let mut all = vec![
         EventsIntent::SetEvents {
             events: vec![note(3.0, 48)],
         },
@@ -1124,6 +1125,11 @@ fn every_verb(cc: NodeId, held: NodeId) -> Vec<EventsIntent> {
         },
         EventsIntent::Unjoin { ids: vec![4, 100] },
     ];
+    // a performance derived from a page needs the notation layer
+    #[cfg(feature = "notation")]
+    all.push(EventsIntent::Realize {
+        interpretation: None,
+    });
     let slot = |intent: &EventsIntent| match intent {
         EventsIntent::SetEvents { .. } => 0,
         EventsIntent::Add { .. } => 1,
@@ -1144,8 +1150,10 @@ fn every_verb(cc: NodeId, held: NodeId) -> Vec<EventsIntent> {
         EventsIntent::SetReading { .. } => 16,
         EventsIntent::Join { .. } => 17,
         EventsIntent::Unjoin { .. } => 18,
+        EventsIntent::Realize { .. } => 19,
     };
-    let mut seen = [false; 19];
+    let mut seen = [false; 20];
+    seen[19] = cfg!(not(feature = "notation"));
     for intent in &all {
         assert!(!seen[slot(intent)], "{intent:?} is listed twice");
         seen[slot(intent)] = true;

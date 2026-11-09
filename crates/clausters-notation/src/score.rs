@@ -763,13 +763,19 @@ mod tests {
         assert_eq!(said(&sheet), Vec::<String>::new());
         assert_eq!(said(&read), Vec::<String>::new());
         assert_eq!(said(&mei_to_sheet(&after).unwrap()), Vec::<String>::new());
-        // which is not silence by construction: a tie into another pitch is
-        // what it complains of
+        // a tie into another pitch holds nothing, so nothing of it is written
         let mut wrong = sheet.clone();
         if let Item::Note { tie, .. } = &mut wrong.staves[0].voices[0].items[1] {
             *tie = true;
         }
-        let heard = said(&wrong);
+        assert_eq!(said(&wrong), Vec::<String>::new());
+        // which is not silence by construction: a tie into another pitch is
+        // what it complains of, written by hand
+        let mei =
+            sheet_to_mei(&sheet)
+                .unwrap()
+                .replacen("xml:id=\"n2\"", "xml:id=\"n2\" tie=\"i\"", 1);
+        let heard = crate::complaints(&mei, &EngraveOptions::default()).expect("engraves");
         assert!(heard.iter().any(|line| line.contains("@tie")), "{heard:?}");
     }
 

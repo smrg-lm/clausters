@@ -11610,3 +11610,28 @@ window draws depend on the machine and leave a page with a fetch the window does
 not need, and the acceptance's tests shape against the face the host ships; the
 cost is about a megabyte of wasm with the shaper, measured in the plan. A face a
 client loads replaces only the first, so the fallbacks stay under it.
+
+## A tie holds the pitches two items share (2026-11-09)
+
+*Taken in `O37` (`crates/clausters-document/PLAN.md`).* A part written with
+ties is one voice of chords, every note cut where another starts or ends, so
+a tie there holds some notes of a chord and not others. The model's tie was
+the item's (`Item::Note.tie`), and the interpreter and the MEI writer read it
+as tying the whole item into the next: a note tied into a chord silenced the
+chord's other notes, and a chord tied into one note held them all on. MEI
+ties note by note, and so does the page.
+
+The rule now is that **a tie holds the pitches the two items share** and
+nothing else (`Item::holds`), which is what a page means by it and what
+`settle_ties` already kept a tie by. One case is still out of reach of a flag
+on the item: a pitch held under the same pitch repeated, where both items have
+it and the tie must not hold it. For that one the tied item names the pitches
+it holds (`Marks.tied`), empty in every other case, so nothing saved changes
+its shape. What plays differently is a tie into a chord or out of one, which
+now attacks or lets go the notes the two do not share, as the page says.
+
+The other shape was a tie flag on each `Pitch`, which is MEI's. It was not
+taken because a pitch is a value compared and copied everywhere a spelling is
+(more than sixty places build one), and a pitch that differs by whether it is
+tied stops being the same note to every comparison that does not care, which
+is all of them but this one.

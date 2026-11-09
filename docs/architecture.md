@@ -1314,7 +1314,10 @@ written, what has two ends and what stands at a point by event id, and the
 marks no key says — makes a rendered score read back as it was written.
 Everything else is a rule there rather than in a client: an onset snapped to
 its beat's grid, a staff to a channel (one staff to an MPE zone, where a
-channel is a note's), a voice found where notes overlap, a number spelled by
+channel is a note's) or, where the sequence states its parts, to its part's
+staves by the channels the part is played on, a voice found where notes
+overlap (as many a staff as the part writes) or, for a part written with
+ties, one voice of chords cut and tied where a note starts or ends, a number spelled by
 the key on the line of fifths, a level read back as a dynamic or a hairpin
 where a curve is made of steps and straight ramps. The sequence is never
 changed by it — how finely it is read is the `Transcription` that crosses
@@ -1335,7 +1338,11 @@ applied to the sequence's own events — and recorded as an edit of the
 sequence, put back by restoring it. The score is derived state there: it is
 held while it agrees with the sequence, so the ids a selection names stand
 across the page's own edits, and read again when the sequence has changed
-under it, which every verb of the editor checks before it answers.
+under it, which every verb of the editor checks before it answers. What the
+sequence sounds can also be written again whole from what it says
+(`clausters_document::events::realize`, the `Realize` edit): the page read,
+rendered, and each note's held length, level and joins, and the curves of its
+lines, taken from its render, with what is written left as it is.
 
 **And a box of the multitrack is drawn as that page.** The multitrack editor
 (`clausters_apps::multitrack::editor`) reads the sequence of each box of

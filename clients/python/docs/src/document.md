@@ -590,8 +590,13 @@ and a channel's side by side.
 page names an instrument by and what plays it: its name and short name, how
 many consecutive staves it is written on, the channels its notes are played
 on (or an MPE zone), how its polyphony is written — in voices, or in one voice
-with ties — and its transposition. A page read from the sequence takes each
-staff's name and transposition from its part. A sequence that names none reads
+with ties — and its transposition. A page read from the sequence puts each
+note on its part's staves, by its channel (the notes of a part with more
+staves than channels split at middle C), and takes each staff's name and
+transposition from its part. A part written with ties is one voice of chords,
+each note cut and tied where another starts or ends; written in voices, as
+many a staff as it says. The two are the same music, and changing one for the
+other changes no event. A sequence that names none reads
 as one part per staff, a staff to each channel its notes are on, and
 `parts_stated` says which of the two it is. Its `reading` is the options a page is
 read with (the meter, the key, the smallest value...), stored with the
@@ -603,6 +608,18 @@ seq.parts = [{"name": "Piano", "abbr": "Pno.", "staves": 2, "channels": [0, 1]},
              {"name": "Clarinet in B flat", "channels": [2], "transpose": -2}]
 seq.reading = {"meter": "3/4", "division": 8}   # how every page of it is read
 seq.parts_stated                                 # True; [] goes back to one part per staff
+```
+
+**What a sequence written as notation sounds is derived from what is
+written.** Its notes still hold what they sound — how long each is held, how
+loud, which goes on from which, the dynamics' and the pedal's curves — and an
+edit of its page writes back only what it changed. `realize` writes it all
+again from the page: a staccato short, a dynamic a level, a slur that joins
+one line, a pedal held. What is written stays as it is, and it is one edit.
+
+```python
+seq.realize()                                   # as the default interpretation plays a page
+seq.realize({"detach": 0.8})                    # or as another one does
 ```
 
 ### A sequence as plain data, and in parts

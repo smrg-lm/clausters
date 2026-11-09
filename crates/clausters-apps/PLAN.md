@@ -2308,7 +2308,7 @@ opened it.
   sound. How a polyphony is written (in one voice with ties, or in voices) is
   the part's, and the roll offers it as a choice that changes no sound.
   **Needs** `O35` from the third step on, `O37` from the fourth and `O36`
-  for the sixth; the conversion of a performance into notation runs the
+  for the sixth, all three shipped; the conversion of a performance into notation runs the
   module planned in `crates/clausters-notate/PLAN.md`.
   - ⬜ **X35.1 - Barlines on the ruler, in both modes.** The projection
     (`clausters_editing::notes::Projection`) gains the bars of the sequence's

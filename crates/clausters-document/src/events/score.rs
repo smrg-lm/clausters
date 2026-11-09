@@ -55,7 +55,9 @@
 //! A tie is one sound, as the interpreter reads it: the chain is one event,
 //! whose `value` is the chain's whole written length -- two tied quarters
 //! render as a half, which is what they sound and what a page written back
-//! from the event shows.
+//! from the event shows. A tie holds the pitches two items share, so in a
+//! chord the chain is each pitch's own: a note held under a moving one is one
+//! event however many items it is tied across.
 
 use std::collections::BTreeMap;
 
@@ -63,7 +65,7 @@ use serde_json::{Map, Value, json};
 
 use clausters_core::envshape::SHAPE_HOLD;
 use clausters_core::notation::{
-    DynamicsAs, Interpretation, Item, Sheet, heard_beats, levels, performance,
+    DynamicsAs, Interpretation, Item, Pitch, Sheet, heard_beats, levels, performance,
 };
 use clausters_core::ratio::Ratio;
 
@@ -84,28 +86,48 @@ fn channels(sheet: &Sheet) -> BTreeMap<(usize, usize), usize> {
         .collect()
 }
 
-/// The item `id` of `sheet`, and the written value of the sound it starts:
-/// its own, and that of every note it is tied into -- the chain the
-/// interpreter reads as one.
-fn item_of(sheet: &Sheet, id: u64) -> Option<(&Item, Ratio)> {
-    for voice in sheet.staves.iter().flat_map(|s| s.voices.iter()) {
-        let Some(at) = voice.items.iter().position(|item| item.id() == id) else {
-            continue;
-        };
-        let mut value = voice.items[at].dur();
-        let mut last = at;
-        while let Item::Note { tie: true, .. } = voice.items[last] {
-            match voice.items.get(last + 1) {
-                Some(next) if next.sounds() => {
-                    value = value + next.dur();
-                    last += 1;
-                }
-                _ => break,
-            }
+/// The item `id` of `sheet`, and the voice it is in with its index there.
+fn item_of(sheet: &Sheet, id: u64) -> Option<(&[Item], usize)> {
+    sheet
+        .staves
+        .iter()
+        .flat_map(|s| s.voices.iter())
+        .find_map(|voice| {
+            let at = voice.items.iter().position(|item| item.id() == id)?;
+            Some((voice.items.as_slice(), at))
+        })
+}
+
+/// The written value of the sound `pitch` starts at `items[at]`: its own, and
+/// that of every item a tie holds it into -- the chain the interpreter reads
+/// as one, pitch by pitch. `held` is every `(item, pitch)` a chain already
+/// took, so of two notes of one pitch in a chord only one goes on, as the
+/// interpreter plays them.
+fn tied_value(
+    items: &[Item],
+    at: usize,
+    pitch: &Pitch,
+    held: &mut std::collections::BTreeSet<(u64, usize)>,
+) -> Ratio {
+    let mut value = items[at].dur();
+    let mut last = at;
+    while let Some(next) = items.get(last + 1) {
+        if !items[last].holds(next, pitch) {
+            break;
         }
-        return Some((&voice.items[at], value));
+        let Some(j) = next
+            .pitches()
+            .iter()
+            .enumerate()
+            .position(|(j, q)| q.same_note(pitch) && !held.contains(&(next.id(), j)))
+        else {
+            break;
+        };
+        held.insert((next.id(), j));
+        value = value + next.dur();
+        last += 1;
     }
-    None
+    value
 }
 
 /// **Render `sheet` under `interp` into a sequence** (see the module).
@@ -124,6 +146,7 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
     // order the interpreter sounds them, so two notes of one number in a
     // chord still take a pitch each.
     let mut taken: BTreeMap<u64, Vec<bool>> = BTreeMap::new();
+    let mut held = std::collections::BTreeSet::new();
     let mut first_event: BTreeMap<u64, u64> = BTreeMap::new();
     let mut items: Vec<Value> = Vec::new();
     let mut events: Vec<Event> = Vec::new();
@@ -141,7 +164,8 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
         keys.insert("channel".into(), json!(channel));
         keys.insert("staff".into(), json!(note.staff));
         keys.insert("voice".into(), json!(note.voice));
-        if let Some((item, value)) = item_of(&sheet, note.id) {
+        if let Some((voice, at)) = item_of(&sheet, note.id) {
+            let item = &voice[at];
             let used = taken
                 .entry(note.id)
                 .or_insert_with(|| vec![false; item.pitches().len()]);
@@ -150,10 +174,18 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
                 .iter()
                 .enumerate()
                 .find(|(i, pitch)| !used[*i] && pitch.midi() == note.pitch);
-            if let Some((i, pitch)) = written {
-                used[i] = true;
-                keys.insert("pitches".into(), json!([pitch]));
-            }
+            // the value of what it sounds: its pitch's chain, else the first
+            let value = match written {
+                Some((i, pitch)) => {
+                    used[i] = true;
+                    keys.insert("pitches".into(), json!([pitch]));
+                    tied_value(voice, at, pitch, &mut held)
+                }
+                None => item
+                    .pitches()
+                    .first()
+                    .map_or(item.dur(), |pitch| tied_value(voice, at, pitch, &mut held)),
+            };
             keys.insert("value".into(), json!(value));
         }
         let marks = &note.marks;

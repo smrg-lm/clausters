@@ -244,6 +244,21 @@ class EventSequence:
         ids = [int(e._id) for e in events]
         self._edit({"intent": "unjoin", "ids": ids}, "unjoin")
 
+    def realize(self, interpretation: "dict | None" = None) -> None:
+        """**Derive the performance from what is written**: each note's held
+        length (``sustain``), level and ``joins``, and the curves of its lines
+        (the dynamics' controller, the pedal), written again from the page the
+        sequence reads as -- a staccato short, a dynamic a level, a slur that
+        joins one line. What is written stays: onsets, written lengths,
+        pitches and the notation keys. ``interpretation`` is how a page is
+        played (its fields as `clausters.gui.notation` writes them); ``None``
+        for the default. One edit. `ValueError` when the sequence cannot be
+        read into a page."""
+        intent: dict = {"intent": "realize"}
+        if interpretation is not None:
+            intent["interpretation"] = dict(interpretation)
+        self._edit(intent, "derive the performance")
+
     # ---- editing ----
 
     def _apply(self, intent: dict, *, inverse: bool = True) -> dict:

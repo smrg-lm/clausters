@@ -19,11 +19,20 @@
 //!   read only where it is asked for.
 //! - **Where.** A staff is what an event says (`staff`), else its channel --
 //!   in MIDI 1.0 and 2.0 a channel is a line -- and in an MPE zone, where a
-//!   channel is one note's, one staff for the zone. A voice is what the
-//!   events say (`voice`), else found: notes that start and end together are
-//!   a chord, and a note that starts while another still **sounds** goes to
-//!   the next voice -- one that starts after it was let go follows it in its
-//!   own, and cuts its written value there.
+//!   channel is one note's, one staff for the zone. Where the sequence states
+//!   its parts, a channel is its part's: a part is on its consecutive staves,
+//!   a staff to each channel it is played on, and the last of its channels
+//!   splits at middle C onto the staff below where the part has more staves
+//!   than channels. A voice is what the events say (`voice`), else found:
+//!   notes that start and end together are a chord, and a note that starts
+//!   while another still **sounds** goes to the next voice -- one that starts
+//!   after it was let go follows it in its own, and cuts its written value
+//!   there -- up to as many voices a staff as the part writes.
+//! - **With ties.** A part written with ties is one voice of chords on each
+//!   of its staves: every note cut where another starts or ends and tied
+//!   across the cut, the `voice` its events say aside. It is the same music
+//!   as the part written in voices and sounds the same; which one a part is
+//!   written in is its `writing`, and changing it changes no event.
 //! - **As what.** A pitch is the event's `pitches`, else its number spelled
 //!   by the key -- the spelling nearest the tonic on the line of fifths -- or
 //!   by the event's `spelling`. The key is the reading's, the section's, or
@@ -56,6 +65,7 @@ use clausters_core::notation::{
 };
 use clausters_core::ratio::Ratio;
 
+use super::part::{Part, Polyphony, Writing};
 use super::{CurveKind, EventSequence, MidiSpec};
 
 pub use super::reading::Transcription;
@@ -430,14 +440,17 @@ pub fn read(
         })
         .collect();
 
-    // Where: the staff each is on.
+    // Where: the staff each is on -- by its part, where the sequence states
+    // its parts.
     let channels = sequence.note_channels();
+    let layout = (!sequence.parts.is_empty()).then(|| Layout::of(&sequence.parts, &channels));
     for note in &mut notes {
         let stated = note.keys.get("staff").and_then(Value::as_f64);
-        note.staff = match stated {
-            Some(staff) => staff as usize,
-            None if mpe => 0,
-            None => channels
+        note.staff = match (stated, &layout) {
+            (Some(staff), _) => staff as usize,
+            (None, Some(layout)) => layout.staff_of(note.channel, note.midi),
+            (None, None) if mpe => 0,
+            (None, None) => channels
                 .iter()
                 .position(|c| *c == note.channel)
                 .unwrap_or(0),
@@ -449,6 +462,7 @@ pub fn read(
         .max()
         .unwrap_or(1)
         .max(section.staves.len())
+        .max(layout.as_ref().map_or(0, |layout| layout.staves))
         .max(1);
 
     let key = how
@@ -507,148 +521,172 @@ pub fn read(
             // where it stops sounding: no later than it is written to
             note.until = grids.snap(note.at + note.held).min(note.end);
         }
-        // Chords: what was one item of a score, else what starts and ends
-        // together in one voice.
-        let mut groups: Vec<Group> = Vec::new();
-        let mut order = on.clone();
-        order.sort_by(|a, b| {
-            let (a, b) = (&notes[*a], &notes[*b]);
-            a.start.cmp(&b.start).then(b.midi.cmp(&a.midi))
-        });
-        for i in order {
-            let note = &notes[i];
-            let voice = note
-                .keys
-                .get("voice")
-                .and_then(Value::as_f64)
-                .map(|v| v as usize);
-            let joins = groups.iter_mut().rev().find(|group| {
-                let first = &notes[group.notes[0]];
-                group.start == note.start
-                    && group.voice == voice
-                    && match (first.source, note.source) {
-                        (Some(a), Some(b)) => a == b,
-                        _ => group.end == note.end,
-                    }
+        // How the staff's part writes its polyphony: in one voice of
+        // chords, each note cut and tied where another starts or ends, or in
+        // voices.
+        let writing = layout.as_ref().and_then(|layout| layout.writing_of(staff));
+        let written = if writing.is_some_and(|w| w.polyphony == Polyphony::Ties) {
+            vec![tied_voice(
+                &on,
+                &notes,
+                &grids,
+                fifths,
+                &mut mint,
+                &mut items_of,
+                &mut placed,
+                staff,
+            )]
+        } else {
+            // Chords: what was one item of a score, else what starts and ends
+            // together in one voice.
+            let mut groups: Vec<Group> = Vec::new();
+            let mut order = on.clone();
+            order.sort_by(|a, b| {
+                let (a, b) = (&notes[*a], &notes[*b]);
+                a.start.cmp(&b.start).then(b.midi.cmp(&a.midi))
             });
-            match joins {
-                Some(group) => {
-                    group.until = group.until.max(note.until);
-                    group.notes.push(i);
-                }
-                None => groups.push(Group {
-                    start: note.start,
-                    end: note.end,
-                    until: note.until,
-                    notes: vec![i],
-                    voice,
-                }),
-            }
-        }
-        for group in &mut groups {
-            group.notes.sort_by_key(|i| notes[*i].midi);
-        }
-        // Voices: the one a group states, else the first that is free.
-        let most = how.voices.max(1);
-        let stated_voices = groups
-            .iter()
-            .filter_map(|g| g.voice)
-            .max()
-            .map_or(0, |v| v + 1);
-        let mut voices: Vec<Vec<Group>> = (0..stated_voices).map(|_| Vec::new()).collect();
-        for group in groups {
-            // A voice is free once its last note has stopped **sounding**: a
-            // note written long and let go early -- an event's `dur` is the
-            // time to the next of a line, not what it holds -- leaves its
-            // voice to the next one, and its value is cut where that starts.
-            let free =
-                |voice: &Vec<Group>| voice.last().is_none_or(|last| last.until <= group.start);
-            let at = match group.voice {
-                Some(voice) => voice,
-                None => match voices.iter().position(free) {
-                    Some(voice) => voice,
-                    None if voices.len() < most.max(stated_voices) => {
-                        voices.push(Vec::new());
-                        voices.len() - 1
+            for i in order {
+                let note = &notes[i];
+                let voice = note
+                    .keys
+                    .get("voice")
+                    .and_then(Value::as_f64)
+                    .map(|v| v as usize);
+                let joins = groups.iter_mut().rev().find(|group| {
+                    let first = &notes[group.notes[0]];
+                    group.start == note.start
+                        && group.voice == voice
+                        && match (first.source, note.source) {
+                            (Some(a), Some(b)) => a == b,
+                            _ => group.end == note.end,
+                        }
+                });
+                match joins {
+                    Some(group) => {
+                        group.until = group.until.max(note.until);
+                        group.notes.push(i);
                     }
-                    // no voice is free: the one that ends soonest gives way
-                    None => voices
-                        .iter()
-                        .enumerate()
-                        .min_by_key(|(_, voice)| voice.last().map(|last| last.until))
-                        .map_or(0, |(at, _)| at),
-                },
-            };
-            if voices.len() <= at {
-                voices.resize_with(at + 1, Vec::new);
-            }
-            match voices[at].last_mut() {
-                // two that start together in one voice are one chord
-                Some(last) if last.start == group.start => {
-                    last.until = last.until.max(group.until);
-                    last.notes.extend(group.notes);
+                    None => groups.push(Group {
+                        start: note.start,
+                        end: note.end,
+                        until: note.until,
+                        notes: vec![i],
+                        voice,
+                    }),
                 }
-                Some(last) => {
-                    // no note outlasts the next one of its voice
-                    last.end = last.end.min(group.start);
-                    voices[at].push(group);
-                }
-                None => voices[at].push(group),
             }
-        }
-        if voices.is_empty() {
-            voices.push(Vec::new());
-        }
+            for group in &mut groups {
+                group.notes.sort_by_key(|i| notes[*i].midi);
+            }
+            // Voices: the one a group states, else the first that is free.
+            let most = writing
+                .map_or(how.voices, |w| usize::from(w.voices_per_staff))
+                .max(1);
+            let stated_voices = groups
+                .iter()
+                .filter_map(|g| g.voice)
+                .max()
+                .map_or(0, |v| v + 1);
+            let mut voices: Vec<Vec<Group>> = (0..stated_voices).map(|_| Vec::new()).collect();
+            for group in groups {
+                // A voice is free once its last note has stopped **sounding**: a
+                // note written long and let go early -- an event's `dur` is the
+                // time to the next of a line, not what it holds -- leaves its
+                // voice to the next one, and its value is cut where that starts.
+                let free =
+                    |voice: &Vec<Group>| voice.last().is_none_or(|last| last.until <= group.start);
+                let at = match group.voice {
+                    Some(voice) => voice,
+                    None => match voices.iter().position(free) {
+                        Some(voice) => voice,
+                        None if voices.len() < most.max(stated_voices) => {
+                            voices.push(Vec::new());
+                            voices.len() - 1
+                        }
+                        // no voice is free: the one that ends soonest gives way
+                        None => voices
+                            .iter()
+                            .enumerate()
+                            .min_by_key(|(_, voice)| voice.last().map(|last| last.until))
+                            .map_or(0, |(at, _)| at),
+                    },
+                };
+                if voices.len() <= at {
+                    voices.resize_with(at + 1, Vec::new);
+                }
+                match voices[at].last_mut() {
+                    // two that start together in one voice are one chord
+                    Some(last) if last.start == group.start => {
+                        last.until = last.until.max(group.until);
+                        last.notes.extend(group.notes);
+                        // a chord's notes low to high, however they met
+                        last.notes.sort_by_key(|i| notes[*i].midi);
+                    }
+                    Some(last) => {
+                        // no note outlasts the next one of its voice
+                        last.end = last.end.min(group.start);
+                        voices[at].push(group);
+                    }
+                    None => voices[at].push(group),
+                }
+            }
+            if voices.is_empty() {
+                voices.push(Vec::new());
+            }
 
-        // The items: each voice back to back, a gap a rest, everything cut
-        // where a tuplet's beat ends.
-        let mut written = Vec::new();
-        for (v, voice) in voices.iter().enumerate() {
-            let mut items = Vec::new();
-            let mut cursor = Ratio::ZERO;
-            for group in voice {
-                if group.start > cursor {
-                    for pair in grids.cuts(cursor, group.start).windows(2) {
-                        items.push(Item::Rest {
-                            id: mint(),
-                            dur: pair[1] - pair[0],
+            // The items: each voice back to back, a gap a rest, everything cut
+            // where a tuplet's beat ends.
+            let mut written = Vec::new();
+            for (v, voice) in voices.iter().enumerate() {
+                let mut items = Vec::new();
+                let mut cursor = Ratio::ZERO;
+                for group in voice {
+                    if group.start > cursor {
+                        for pair in grids.cuts(cursor, group.start).windows(2) {
+                            items.push(Item::Rest {
+                                id: mint(),
+                                dur: pair[1] - pair[0],
+                            });
+                        }
+                    }
+                    let first = &notes[group.notes[0]];
+                    let pitches: Vec<Pitch> = group
+                        .notes
+                        .iter()
+                        .map(|i| pitch_of(&notes[*i], fifths))
+                        .collect();
+                    let cuts = grids.cuts(group.start, group.end);
+                    let parts = cuts.len() - 1;
+                    for (k, pair) in cuts.windows(2).enumerate() {
+                        let id = mint();
+                        if k == 0 {
+                            for i in &group.notes {
+                                items_of.insert(notes[*i].event, id);
+                            }
+                            placed.push((staff, v, group.start, id));
+                        }
+                        let dur = pair[1] - pair[0];
+                        let last = k + 1 == parts;
+                        items.push(Item::Note {
+                            id,
+                            pitches: pitches.clone(),
+                            dur,
+                            tie: !last
+                                || first.keys.get("tie").and_then(Value::as_bool) == Some(true),
+                            marks: if k == 0 {
+                                marks_of(group, &notes, &grids, parts == 1)
+                            } else {
+                                Marks::default()
+                            },
                         });
                     }
+                    cursor = group.end.max(cursor);
                 }
-                let first = &notes[group.notes[0]];
-                let pitches: Vec<Pitch> = group
-                    .notes
-                    .iter()
-                    .map(|i| pitch_of(&notes[*i], fifths))
-                    .collect();
-                let cuts = grids.cuts(group.start, group.end);
-                let parts = cuts.len() - 1;
-                for (k, pair) in cuts.windows(2).enumerate() {
-                    let id = mint();
-                    if k == 0 {
-                        for i in &group.notes {
-                            items_of.insert(notes[*i].event, id);
-                        }
-                        placed.push((staff, v, group.start, id));
-                    }
-                    let dur = pair[1] - pair[0];
-                    let last = k + 1 == parts;
-                    items.push(Item::Note {
-                        id,
-                        pitches: pitches.clone(),
-                        dur,
-                        tie: !last || first.keys.get("tie").and_then(Value::as_bool) == Some(true),
-                        marks: if k == 0 {
-                            marks_of(group, &notes, &grids, parts == 1)
-                        } else {
-                            Marks::default()
-                        },
-                    });
-                }
-                cursor = group.end.max(cursor);
+                written.push(Voice { items });
             }
-            written.push(Voice { items });
-        }
+
+            written
+        };
 
         // The staff: the section's own where it says one, its voices these.
         let mut out: Staff = section
@@ -753,6 +791,250 @@ pub fn read(
         .filter_map(|event| Some((event.id, *items_of.get(&event.id)?)))
         .collect();
     Ok(Transcribed { sheet, items })
+}
+
+/// **Where a sequence's stated parts put its notes**: each part on its
+/// consecutive staves, each played on its channels, or on an MPE zone, or --
+/// for a part that names neither -- on the channels no other part claims, one
+/// a staff, in order. A channel no part plays reads as a staff of its own,
+/// after the parts'.
+struct Layout {
+    /// Each staff's part's writing, for the parts' staves.
+    writing: Vec<Writing>,
+    /// A channel's part: its first staff, the channel's rank among the
+    /// part's, and whether its notes are split by register onto the staff
+    /// below -- the last channel of a part with more staves than channels.
+    channels: BTreeMap<i64, (usize, usize, usize, bool)>,
+    /// The zone's part, its first staff and how many it has.
+    zone: Option<(usize, usize)>,
+    /// The channels no part plays, each a staff after the parts'.
+    loose: Vec<i64>,
+    /// The parts' staves: a loose channel's is there where a note is on it.
+    staves: usize,
+}
+
+impl Layout {
+    fn of(parts: &[Part], heard: &[i64]) -> Self {
+        let claimed: BTreeSet<i64> = parts.iter().flat_map(|p| p.channels.clone()).collect();
+        let has_zone = parts.iter().any(|p| p.zone.is_some());
+        let mut free = heard.iter().filter(|c| !claimed.contains(c)).copied();
+        let mut out = Self {
+            writing: Vec::new(),
+            channels: BTreeMap::new(),
+            zone: None,
+            loose: Vec::new(),
+            staves: 0,
+        };
+        let mut first = 0;
+        for part in parts {
+            let staves = part.staves.max(1);
+            let played: Vec<i64> = if !part.channels.is_empty() {
+                part.channels.clone()
+            } else if part.zone.is_some() {
+                if out.zone.is_none() {
+                    out.zone = Some((first, staves));
+                }
+                Vec::new()
+            } else if has_zone {
+                // what no part names is the zone's
+                Vec::new()
+            } else {
+                free.by_ref().take(staves).collect()
+            };
+            for (rank, channel) in played.iter().enumerate() {
+                let split = played.len() < staves && rank + 1 == played.len();
+                out.channels.entry(*channel).or_insert((
+                    first,
+                    rank.min(staves - 1),
+                    staves,
+                    split,
+                ));
+            }
+            out.writing
+                .extend(std::iter::repeat_n(part.writing, staves));
+            first += staves;
+        }
+        if !has_zone {
+            out.loose = free.collect();
+        }
+        out.staves = first;
+        out
+    }
+
+    /// The staff a note on `channel` sounding `midi` is written on. A part
+    /// with more staves than channels splits its last channel's notes at
+    /// middle C, the lower onto the staff below.
+    fn staff_of(&self, channel: i64, midi: i32) -> usize {
+        let low = usize::from(midi < 60);
+        if let Some(&(first, rank, staves, split)) = self.channels.get(&channel) {
+            let rank = if split { rank + low } else { rank };
+            return first + rank.min(staves - 1);
+        }
+        if let Some((first, staves)) = self.zone {
+            return first + low.min(staves - 1);
+        }
+        let parts = self.writing.len();
+        self.loose
+            .iter()
+            .position(|c| *c == channel)
+            .map_or(0, |at| parts + at)
+    }
+
+    /// How the part of `staff` writes its polyphony, for a part's staff.
+    fn writing_of(&self, staff: usize) -> Option<Writing> {
+        self.writing.get(staff).copied()
+    }
+}
+
+/// **One staff written in one voice of chords**: every note cut where
+/// another starts or ends, and tied across the cut -- the polyphony of a part
+/// written with ties. A note lasts as it is written, but not past the next
+/// note of its pitch; a pitch that ends where the same pitch starts again is
+/// attacked again, so the tie across that cut names the pitches it holds.
+#[allow(clippy::too_many_arguments)]
+fn tied_voice(
+    on: &[usize],
+    notes: &[Heard],
+    grids: &Grids,
+    fifths: i32,
+    mint: &mut impl FnMut() -> u64,
+    items_of: &mut BTreeMap<u64, u64>,
+    placed: &mut Vec<(usize, usize, Ratio, u64)>,
+    staff: usize,
+) -> Voice {
+    // (note, start, end), a note cut where the next of its pitch starts
+    let mut extent: Vec<(usize, Ratio, Ratio)> = on
+        .iter()
+        .map(|i| (*i, notes[*i].start, notes[*i].end))
+        .collect();
+    extent.sort_by(|a, b| a.1.cmp(&b.1).then(notes[a.0].midi.cmp(&notes[b.0].midi)));
+    for a in 0..extent.len() {
+        let (i, start, end) = extent[a];
+        let next = extent
+            .iter()
+            .filter(|(j, s, _)| *j != i && notes[*j].midi == notes[i].midi && *s > start)
+            .map(|(_, s, _)| *s)
+            .min();
+        if let Some(next) = next
+            && next < end
+        {
+            extent[a].2 = next;
+        }
+    }
+    let points: Vec<Ratio> = extent
+        .iter()
+        .flat_map(|(_, s, e)| [*s, *e])
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let sounding = |a: Ratio| -> Vec<(usize, Ratio, Ratio)> {
+        let mut here: Vec<_> = extent
+            .iter()
+            .filter(|(_, s, e)| *s <= a && *e > a)
+            .copied()
+            .collect();
+        here.sort_by_key(|(i, ..)| notes[*i].midi);
+        here
+    };
+    let mut items = Vec::new();
+    let rests = |items: &mut Vec<Item>, mint: &mut dyn FnMut() -> u64, from: Ratio, to: Ratio| {
+        for pair in grids.cuts(from, to).windows(2) {
+            items.push(Item::Rest {
+                id: mint(),
+                dur: pair[1] - pair[0],
+            });
+        }
+    };
+    if let Some(first) = points.first()
+        && *first > Ratio::ZERO
+    {
+        rests(&mut items, mint, Ratio::ZERO, *first);
+    }
+    for (w, pair) in points.windows(2).enumerate() {
+        let (a, b) = (pair[0], pair[1]);
+        let here = sounding(a);
+        if here.is_empty() {
+            rests(&mut items, mint, a, b);
+            continue;
+        }
+        let pitches: Vec<Pitch> = here
+            .iter()
+            .map(|(i, ..)| pitch_of(&notes[*i], fifths))
+            .collect();
+        let starting: Vec<usize> = here
+            .iter()
+            .filter(|(_, s, _)| *s == a)
+            .map(|(i, ..)| *i)
+            .collect();
+        // what sounds on into the next cut, and whether the next cut also
+        // attacks a pitch this one has, which the tie must then not hold
+        let held: Vec<Pitch> = here
+            .iter()
+            .zip(&pitches)
+            .filter(|((_, _, e), _)| *e > b)
+            .map(|(_, p)| *p)
+            .collect();
+        let next: Vec<Pitch> = points
+            .get(w + 2)
+            .map(|_| sounding(b))
+            .unwrap_or_default()
+            .iter()
+            .map(|(i, ..)| pitch_of(&notes[*i], fifths))
+            .collect();
+        let shared = pitches
+            .iter()
+            .filter(|p| next.iter().any(|q| q.same_note(p)))
+            .count();
+        let tied = if held.len() < shared {
+            held.clone()
+        } else {
+            Vec::new()
+        };
+        let cuts = grids.cuts(a, b);
+        let parts = cuts.len() - 1;
+        let whole = parts == 1
+            && starting
+                .iter()
+                .all(|i| extent.iter().any(|(j, _, e)| j == i && *e == b));
+        let marks = if starting.is_empty() {
+            Marks::default()
+        } else {
+            let group = Group {
+                start: a,
+                end: b,
+                until: b,
+                notes: starting.clone(),
+                voice: Some(0),
+            };
+            marks_of(&group, notes, grids, whole)
+        };
+        for (k, cut) in cuts.windows(2).enumerate() {
+            let id = mint();
+            if k == 0 && !starting.is_empty() {
+                for i in &starting {
+                    items_of.insert(notes[*i].event, id);
+                }
+                placed.push((staff, 0, a, id));
+            }
+            let last = k + 1 == parts;
+            let mut carried = if k == 0 {
+                marks.clone()
+            } else {
+                Marks::default()
+            };
+            if last {
+                carried.tied.clone_from(&tied);
+            }
+            items.push(Item::Note {
+                id,
+                pitches: pitches.clone(),
+                dur: cut[1] - cut[0],
+                tie: !last || !held.is_empty(),
+                marks: carried,
+            });
+        }
+    }
+    Voice { items }
 }
 
 /// The written pitch of one note: the one its event states, else its number
@@ -1385,6 +1667,188 @@ mod tests {
                 ("Clarinet in B flat", "", -2)
             ]
         );
+    }
+
+    fn part(value: Value) -> crate::events::Part {
+        serde_json::from_value(value).expect("a part")
+    }
+
+    /// The notes of a sequence as `(at, midinote, dur, sustain)`, in order.
+    fn heard(seq: &EventSequence) -> Vec<(f64, i64, f64, f64)> {
+        let mut out: Vec<(f64, i64, f64, f64)> = seq
+            .events
+            .iter()
+            .map(|event| {
+                let keys = event.keys();
+                let number = |key: &str| keys.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+                (
+                    event.at.0,
+                    number("midinote") as i64,
+                    number("dur"),
+                    number("sustain"),
+                )
+            })
+            .collect();
+        out.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        out
+    }
+
+    #[test]
+    fn a_part_reads_its_channels_onto_its_staves() {
+        let mut seq = sequence(json!([
+            {"at": 0.0, "data": {"midinote": 72, "dur": 1.0, "channel": 3}},
+            {"at": 0.0, "data": {"midinote": 48, "dur": 1.0, "channel": 3}},
+            {"at": 0.0, "data": {"midinote": 79, "dur": 1.0, "channel": 0}},
+            {"at": 0.0, "data": {"midinote": 60, "dur": 1.0, "channel": 5}},
+        ]));
+        seq.parts = vec![
+            part(json!({"name": "Flute", "channels": [0]})),
+            part(json!({"name": "Piano", "staves": 2, "channels": [3]})),
+        ];
+        let sheet = read_plain(&seq, json!({})).sheet;
+        let staves: Vec<Vec<i32>> = sheet
+            .staves
+            .iter()
+            .map(|staff| {
+                staff.voices[0]
+                    .items
+                    .iter()
+                    .flat_map(|item| item.pitches().iter().map(Pitch::midi))
+                    .collect()
+            })
+            .collect();
+        // the flute's staff, the piano's two split at middle C, and a channel
+        // no part plays on a staff of its own
+        assert_eq!(staves, vec![vec![79], vec![72], vec![48], vec![60]]);
+        assert_eq!(sheet.staves[1].label, "Piano");
+    }
+
+    #[test]
+    fn a_part_writes_as_many_voices_a_staff_as_it_says() {
+        let mut seq = sequence(json!([
+            {"at": 0.0, "data": {"midinote": 60, "dur": 4.0}},
+            {"at": 0.0, "data": {"midinote": 72, "dur": 1.0}},
+            {"at": 1.0, "data": {"midinote": 74, "dur": 1.0}},
+        ]));
+        assert_eq!(read_plain(&seq, json!({})).sheet.staves[0].voices.len(), 2);
+        seq.parts = vec![part(
+            json!({"writing": {"polyphony": "voices", "voices_per_staff": 1}}),
+        )];
+        assert_eq!(read_plain(&seq, json!({})).sheet.staves[0].voices.len(), 1);
+    }
+
+    /// **A part written with ties is one voice of chords**: each note cut
+    /// where another starts or ends and tied across, a pitch repeated under
+    /// a held one attacked again -- and it sounds as the same part written in
+    /// voices, reads back as itself, and changes nothing of the events.
+    #[test]
+    fn a_part_written_with_ties_is_one_voice_of_chords() {
+        // C held a whole note, E twice under it, then G
+        let mut seq = sequence(json!([
+            {"at": 0.0, "data": {"midinote": 60, "dur": 4.0}},
+            {"at": 0.0, "data": {"midinote": 64, "dur": 1.0}},
+            {"at": 1.0, "data": {"midinote": 64, "dur": 1.0}},
+            {"at": 2.0, "data": {"midinote": 67, "dur": 2.0}},
+        ]));
+        let events = seq.events.clone();
+        let voices = read_plain(&seq, json!({}));
+        seq.edit(crate::events::EventsIntent::SetParts {
+            parts: vec![part(
+                json!({"writing": {"polyphony": "ties", "voices_per_staff": 1}}),
+            )],
+        })
+        .unwrap();
+        assert_eq!(seq.events, events, "the writing changes no event");
+        let ties = read_plain(&seq, json!({}));
+        assert_eq!(ties.sheet.staves[0].voices.len(), 1);
+        assert_eq!(
+            line(&ties.sheet, 0, 0),
+            vec![
+                (vec![60, 64], (1, 4)),
+                (vec![60, 64], (1, 4)),
+                (vec![60, 67], (1, 2)),
+            ]
+        );
+        let tie_of = |item: &Item| match item {
+            Item::Note { tie, marks, .. } => (*tie, marks.tied.iter().map(Pitch::midi).collect()),
+            Item::Rest { .. } => (false, Vec::new()),
+        };
+        let items = &ties.sheet.staves[0].voices[0].items;
+        let said: Vec<(bool, Vec<i32>)> = items.iter().map(tie_of).collect();
+        assert_eq!(
+            said,
+            vec![(true, vec![60]), (true, Vec::new()), (false, Vec::new())],
+            "the repeated E is attacked again"
+        );
+        assert!(sheet_to_mei(&ties.sheet).is_ok());
+
+        // the two writings sound the same
+        let interp = Interpretation::default();
+        let as_voices = render(&voices.sheet, &interp).unwrap();
+        let as_ties = render(&ties.sheet, &interp).unwrap();
+        assert_eq!(heard(&as_voices), heard(&as_ties));
+
+        // what the page renders reads back as the page
+        let mut again = as_ties.clone();
+        again.parts.clone_from(&seq.parts);
+        let back = read_plain(&again, json!({}));
+        assert_eq!(
+            sheet_to_mei(&back.sheet).unwrap(),
+            sheet_to_mei(&ties.sheet).unwrap()
+        );
+
+        // and back to voices: the same events, read as before
+        seq.edit(crate::events::EventsIntent::SetParts { parts: Vec::new() })
+            .unwrap();
+        assert_eq!(seq.events, events);
+        assert_eq!(read_plain(&seq, json!({})).sheet, voices.sheet);
+    }
+
+    /// **What a page renders reads back as that page**, for any sequence
+    /// written as notation: a sequence read into a page, rendered and read
+    /// again gives the same page, written in voices or with ties. The
+    /// sequences are made by a seeded generator, so a failure names its seed.
+    #[test]
+    fn a_page_rendered_reads_back_as_itself() {
+        let mut state: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut next = |below: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % below
+        };
+        for seed in 0..200 {
+            let count = 2 + next(10);
+            let events: Vec<Value> = (0..count)
+                .map(|_| {
+                    json!({
+                        "at": next(32) as f64 / 4.0,
+                        "data": {
+                            "midinote": 48 + next(36),
+                            "dur": (1 + next(8)) as f64 / 4.0,
+                            "channel": next(2),
+                        }
+                    })
+                })
+                .collect();
+            for polyphony in ["voices", "ties"] {
+                let mut seq = sequence(Value::Array(events.clone()));
+                seq.parts = vec![part(json!({
+                    "staves": 2,
+                    "writing": {"polyphony": polyphony, "voices_per_staff": 2},
+                }))];
+                let page = read_plain(&seq, json!({})).sheet;
+                let mut rendered = render(&page, &Interpretation::default())
+                    .unwrap_or_else(|why| panic!("seed {seed}, {polyphony}: {why}"));
+                rendered.parts.clone_from(&seq.parts);
+                let back = read_plain(&rendered, json!({})).sheet;
+                assert_eq!(
+                    sheet_to_mei(&back).unwrap(),
+                    sheet_to_mei(&page).unwrap(),
+                    "seed {seed}, {polyphony}: {events:?}"
+                );
+            }
+        }
     }
 
     #[test]

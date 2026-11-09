@@ -697,12 +697,24 @@ fn read_items(
             }
             "chord" => {
                 let dur = duration(child, scale).unwrap_or(Ratio::new(1, 4));
-                let pitches: Vec<Pitch> = child
+                // each note's pitch, and whether it opens a tie: a chord's
+                // notes are tied one by one
+                let read: Vec<(Pitch, bool)> = child
                     .children()
                     .filter(|n| n.has_tag_name("note"))
-                    .filter_map(|n| pitch_of(n, key, in_force))
+                    .filter_map(|n| {
+                        let opens = n.attribute("tie").is_some_and(|t| t != "t");
+                        Some((pitch_of(n, key, in_force)?, opens))
+                    })
                     .collect();
+                let pitches: Vec<Pitch> = read.iter().map(|(p, _)| *p).collect();
+                let tied: Vec<Pitch> = read.iter().filter(|(_, o)| *o).map(|(p, _)| *p).collect();
                 let mut marks = marks_of(child);
+                // which of them the tie holds, where it is not all of them
+                // (settled once the next item is known)
+                if tied.len() < pitches.len() {
+                    marks.tied.clone_from(&tied);
+                }
                 // the lyrics stand on the chord's first note
                 if marks.lyrics.is_empty()
                     && let Some(note) = child.children().find(|n| n.has_tag_name("note"))
@@ -713,7 +725,7 @@ fn read_items(
                     id: id_of(child),
                     pitches,
                     dur,
-                    tie: false,
+                    tie: !tied.is_empty(),
                     marks,
                 });
             }
@@ -1040,13 +1052,27 @@ fn rejoin(sheet: &mut Sheet) {
                 at = at + item.dur();
                 measure = grid.position(at).0;
             }
-            // Then fold each run of same-id items into the one item it was.
+            // Then fold each run of same-id items into the one item it was,
+            // tied into what follows as its last part is: the ties between
+            // its parts are the barline's.
             let mut folded: Vec<Item> = Vec::new();
             for item in voice.items.drain(..) {
                 match folded.last_mut() {
                     Some(previous) if previous.id() != 0 && previous.id() == item.id() => {
                         let joined = previous.dur() + item.dur();
                         *previous = previous.with_dur(joined);
+                        if let (
+                            Item::Note { tie, marks, .. },
+                            Item::Note {
+                                tie: last,
+                                marks: last_marks,
+                                ..
+                            },
+                        ) = (previous, &item)
+                        {
+                            *tie = *last;
+                            marks.tied.clone_from(&last_marks.tied);
+                        }
                     }
                     _ => folded.push(item),
                 }
@@ -1297,19 +1323,54 @@ fn apply_ties(sheet: &mut Sheet, ties: &[(String, String)]) {
     let item = |reference: &str| -> Option<u64> {
         reference.strip_prefix('n')?.split('-').next()?.parse().ok()
     };
-    let starts: Vec<u64> = ties
-        .iter()
-        .filter_map(|(start, end)| {
-            let start = item(start)?;
-            (item(end) != Some(start)).then_some(start)
-        })
-        .collect();
+    // a tie from one note of a chord names it: `n7-p2` is the second pitch
+    // of item 7
+    let pitch = |reference: &str| -> Option<usize> {
+        let index = reference.rsplit('-').next()?.strip_prefix('p')?;
+        index.parse::<usize>().ok()?.checked_sub(1)
+    };
+    let mut starts: BTreeMap<u64, Option<Vec<usize>>> = BTreeMap::new();
+    for (start, end) in ties {
+        let Some(from) = item(start) else { continue };
+        if item(end) == Some(from) {
+            continue;
+        }
+        let named = starts.entry(from).or_insert_with(|| Some(Vec::new()));
+        match (pitch(start), named.as_mut()) {
+            (Some(k), Some(list)) => list.push(k),
+            // a tie from the whole item holds all it shares
+            _ => *named = None,
+        }
+    }
     for voice in sheet.voices_mut() {
         for item in &mut voice.items {
-            if starts.contains(&item.id())
-                && let Item::Note { tie, .. } = item
+            if let Item::Note {
+                id,
+                tie,
+                pitches,
+                marks,
+                ..
+            } = item
+                && let Some(named) = starts.get(id)
             {
+                // a tie the notes' own `@tie` already said is not undone
+                let tied: Vec<Pitch> = pitches
+                    .iter()
+                    .enumerate()
+                    .filter(|(k, pitch)| {
+                        named.as_ref().is_none_or(|list| list.contains(k))
+                            || (*tie
+                                && (marks.tied.is_empty()
+                                    || marks.tied.iter().any(|q| q.same_note(pitch))))
+                    })
+                    .map(|(_, pitch)| *pitch)
+                    .collect();
                 *tie = true;
+                marks.tied = if tied.len() >= pitches.len() {
+                    Vec::new()
+                } else {
+                    tied
+                };
             }
         }
     }
@@ -1338,6 +1399,53 @@ mod tests {
             return Err(format!("wrote\n{once}\nread back and wrote\n{twice}"));
         }
         Ok(())
+    }
+
+    /// **A tie that holds some of a chord's pitches comes back as it was**:
+    /// each note of the chord is tied on its own, and a tie naming only some
+    /// of what the two items share is read as naming them.
+    #[test]
+    fn a_tie_over_some_of_a_chords_pitches_comes_back() {
+        let pitch = |m: i32| Pitch::from_midi(m, false);
+        let chord = |id: u64, midis: &[i32], tie: bool, tied: &[i32]| Item::Note {
+            id,
+            pitches: midis.iter().map(|m| pitch(*m)).collect(),
+            dur: Ratio::new(1, 4),
+            tie,
+            marks: Marks {
+                tied: tied.iter().map(|m| pitch(*m)).collect(),
+                ..Marks::default()
+            },
+        };
+        let mut sheet = quarters(1);
+        sheet.staves[0].voices[0].items = vec![
+            chord(1, &[60, 64], true, &[60]),
+            chord(2, &[60, 64], true, &[]),
+            chord(3, &[64, 67], false, &[]),
+            chord(4, &[60], false, &[]),
+        ];
+        let mei = sheet_to_mei(&sheet).unwrap();
+        let back = mei_to_sheet(&mei).unwrap();
+        let ties: Vec<(bool, Vec<i32>)> = back.staves[0].voices[0]
+            .items
+            .iter()
+            .map(|item| match item {
+                Item::Note { tie, marks, .. } => {
+                    (*tie, marks.tied.iter().map(Pitch::midi).collect())
+                }
+                Item::Rest { .. } => (false, Vec::new()),
+            })
+            .collect();
+        assert_eq!(
+            ties,
+            vec![
+                (true, vec![60]),
+                (true, Vec::new()),
+                (false, Vec::new()),
+                (false, Vec::new())
+            ]
+        );
+        round_trips(&sheet).unwrap();
     }
 
     /// **Everything the model grew comes back**: the marks a note carries,

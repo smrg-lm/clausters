@@ -47,7 +47,7 @@ pub struct Written {
 }
 
 /// The events each item of a render sounds, in the order it sounds them.
-fn by_item(rendered: &EventSequence) -> BTreeMap<u64, Vec<&Event>> {
+pub(super) fn by_item(rendered: &EventSequence) -> BTreeMap<u64, Vec<&Event>> {
     let mut out: BTreeMap<u64, Vec<&Event>> = BTreeMap::new();
     let pairs = rendered
         .notation
@@ -77,7 +77,7 @@ fn item_of(rendered: &EventSequence) -> BTreeMap<u64, u64> {
 }
 
 /// A curve without the identity a holder gave it.
-fn bare(curve: &Automation<Beat>) -> Automation<Beat> {
+pub(super) fn bare(curve: &Automation<Beat>) -> Automation<Beat> {
     Automation {
         id: crate::NodeId(0),
         ..curve.clone()
@@ -97,7 +97,7 @@ fn alike(a: &Event, b: &Event) -> bool {
 
 /// What a curve of a sequence drives and on which channel: what makes two of
 /// them the same lane, whatever either is called.
-fn lane_of(curve: &Automation<Beat>) -> String {
+pub(super) fn lane_of(curve: &Automation<Beat>) -> String {
     let target = &curve.target.0;
     let kind = match CurveKind::of(target) {
         CurveKind::Cc(number) => format!("cc {number}"),
@@ -114,7 +114,7 @@ fn lane_of(curve: &Automation<Beat>) -> String {
 }
 
 /// The MIDI note an event sounds, rounded.
-fn midi_of(event: &Event) -> i64 {
+pub(super) fn midi_of(event: &Event) -> i64 {
     let keys = event.keys();
     keys_of::pitch_of(&keys)
         .midinote(&keys_of::scale_of(&keys))

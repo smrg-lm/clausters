@@ -423,17 +423,42 @@ pub fn tie(mut sheet: Sheet, id: u64, tied: bool) -> Result<Sheet, String> {
 /// reading: a tie stays where the next item of the voice shares a pitch with
 /// this one -- the letter, the alteration and the octave, whether or not its
 /// accidental is printed -- and is dropped where it does not.
+///
+/// The pitches a tie names ([`super::Marks::tied`]) are settled the same
+/// way: a name the next item does not share goes, a tie left naming none
+/// goes with it, and one naming every pitch the two share names none, which
+/// says the same.
 pub fn settle_ties(sheet: &mut Sheet) {
-    let same = |a: &Pitch, b: &Pitch| (a.step, a.alter, a.octave) == (b.step, b.alter, b.octave);
     for voice in sheet.voices_mut() {
         for index in 0..voice.items.len() {
-            let holds = voice.items.get(index + 1).is_some_and(|next| {
-                let here = voice.items[index].pitches();
-                here.iter()
-                    .any(|p| next.pitches().iter().any(|q| same(p, q)))
-            });
-            if !holds && let Item::Note { tie, .. } = &mut voice.items[index] {
+            let next = voice.items.get(index + 1).cloned();
+            let Item::Note {
+                tie,
+                pitches,
+                marks,
+                ..
+            } = &mut voice.items[index]
+            else {
+                continue;
+            };
+            let shared: Vec<Pitch> = match &next {
+                Some(next) => pitches
+                    .iter()
+                    .filter(|p| next.pitches().iter().any(|q| p.same_note(q)))
+                    .copied()
+                    .collect(),
+                None => Vec::new(),
+            };
+            let named = !marks.tied.is_empty();
+            marks.tied.retain(|p| shared.iter().any(|q| p.same_note(q)));
+            let all = shared
+                .iter()
+                .all(|p| marks.tied.iter().any(|q| p.same_note(q)));
+            if shared.is_empty() || (named && marks.tied.is_empty()) {
                 *tie = false;
+            }
+            if !*tie || all {
+                marks.tied.clear();
             }
         }
     }

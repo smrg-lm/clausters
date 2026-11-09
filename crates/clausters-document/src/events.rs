@@ -348,6 +348,16 @@ pub enum EventsIntent {
         /// The notes.
         ids: Vec<u64>,
     },
+    /// **The performance derived from what is written**: each note's held
+    /// length, level and joins, and the curves of its lines, written again
+    /// from the page the sequence reads as, played as `interpretation` says
+    /// (the default when none). What is written stays. Needs the `notation`
+    /// feature, and is refused without it. See `realize`.
+    Realize {
+        /// How a page is played, as its fields are written.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        interpretation: Option<Value>,
+    },
     /// The sequence as it was: what every edit's inverse is.
     Restore {
         /// All of it.
@@ -620,6 +630,28 @@ impl EventSequence {
         Ok(())
     }
 
+    /// The sequence with its performance derived from what is written, played
+    /// as `interpretation` says.
+    #[cfg(feature = "notation")]
+    fn realized(&self, interpretation: Option<Value>) -> Result<Self, String> {
+        let interp = match interpretation.filter(|i| !i.is_null()) {
+            Some(given) => serde_json::from_value(given)
+                .map_err(|e| format!("the interpretation could not be read: {e}"))?,
+            None => clausters_core::notation::default_interpretation(),
+        };
+        realize::realize(self, &interp)
+    }
+
+    /// Without the notation layer there is no page to derive it from.
+    #[cfg(not(feature = "notation"))]
+    fn realized(&self, _interpretation: Option<Value>) -> Result<Self, String> {
+        Err(
+            "deriving a performance from what is written needs the notation layer, \
+             which this build leaves out"
+                .into(),
+        )
+    }
+
     /// The edit that puts the sequence back as it is now.
     pub fn state(&self) -> EventsIntent {
         EventsIntent::Restore {
@@ -793,6 +825,7 @@ impl EventSequence {
                 articulation::unjoin(&mut after, &ids)?;
                 *self = after;
             }
+            EventsIntent::Realize { interpretation } => *self = self.realized(interpretation)?,
             EventsIntent::AutomationToEvents { curve } => {
                 let mut after = self.clone();
                 after.automation_to_events(curve)?;
@@ -1057,6 +1090,7 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
         | EventsIntent::SetReading { .. }
         | EventsIntent::Join { .. }
         | EventsIntent::Unjoin { .. }
+        | EventsIntent::Realize { .. }
         | EventsIntent::AutomationToEvents { .. }
         | EventsIntent::EventsToAutomation { .. } => return None,
     })
@@ -1312,6 +1346,8 @@ mod midi;
 pub mod part;
 pub use part::{Part, Polyphony, Writing, Zone};
 pub mod reading;
+#[cfg(feature = "notation")]
+pub mod realize;
 pub mod rows;
 mod scopes;
 #[cfg(feature = "notation")]

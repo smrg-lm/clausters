@@ -333,6 +333,22 @@ export class EventSequence {
         this.edit({ intent: "unjoin", ids }, "unjoin");
     }
 
+    /**
+     * **Derive the performance from what is written**: each note's held length
+     * (`sustain`), level and `joins`, and the curves of its lines (the
+     * dynamics' controller, the pedal), written again from the page the
+     * sequence reads as -- a staccato short, a dynamic a level, a slur that
+     * joins one line. What is written stays: onsets, written lengths, pitches
+     * and the notation keys. `interpretation` is how a page is played (its
+     * fields as the notation module writes them); left out for the default.
+     * One edit. Throws when the sequence cannot be read into a page.
+     */
+    realize(interpretation?: Record<string, unknown>): void {
+        const intent: Record<string, unknown> = { intent: "realize" };
+        if (interpretation !== undefined) intent.interpretation = { ...interpretation };
+        this.edit(intent, "derive the performance");
+    }
+
     // ---- editing ----
 
     /**

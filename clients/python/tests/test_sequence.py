@@ -298,6 +298,20 @@ def test_notes_are_joined_and_unjoined_as_one_line():
     assert [e.get("joins") for e in written.events] == [None, None]
 
 
+def test_a_performance_is_derived_from_what_is_written():
+    seq = EventSequence([
+        (0.0, Event(midinote=60, staff=0, voice=0, value=[1, 4], sustain=1.0,
+                    articulations=["stacc"])),
+        (1.0, Event(midinote=62, staff=0, voice=0, value=[1, 4], sustain=1.0)),
+    ])
+    seq.realize()
+    staccato, plain = (e["sustain"] for e in seq.events)
+    assert staccato < plain == 1.0, "the staccato is held short"
+    assert [e["midinote"] for e in seq.events] == [60, 62], "what is written stays"
+    seq.realize({"detach": 0.5})
+    assert seq.events[1]["sustain"] == 0.5
+
+
 def test_a_sequences_curves_go_to_a_midi_file_and_back():
     seq = EventSequence([(0.0, Event(midinote=60, velocity=100, sustain=1.0)),
                          (0.0, Event(midinote=64, velocity=100, sustain=1.0))])

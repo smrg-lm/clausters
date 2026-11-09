@@ -941,7 +941,10 @@ fn project(
     let mut bar = bar_ticks(grid, 0)?;
     // Whether the previous item tied into this one, so a tie the caller wrote
     // and a tie a barline forced compose instead of overwriting each other.
-    let mut tied_in = false;
+    let mut tied_in: Vec<Pitch> = Vec::new();
+    // the index in the voice of the unit's first item, so each item knows
+    // the one after it, which is what its tie holds into
+    let mut index = 0;
     // where the unit starts, in whole notes: what a change of clef is at
     let mut onset = Ratio::ZERO;
     // the second note of a two-note tremolo, written with the first
@@ -955,6 +958,12 @@ fn project(
         };
         let starts = onset;
         onset = onset + span;
+        let base = index;
+        index += match unit {
+            Unit::Plain(_) => 1,
+            Unit::Tuplet { items, .. } => items.len(),
+        };
+        let next_of = |k: usize| voice.items.get(base + k + 1);
         if let Unit::Plain(item) = unit
             && skip == Some(item.id())
         {
@@ -980,13 +989,13 @@ fn project(
         {
             let total = ticks(item.dur() + next.dur())?;
             if let (Some((value, dots)), true) = (single_value(total), total <= bar - pos) {
-                let a = element(item, value, dots, None, None, printed, words)?;
-                let b = element(next, value, dots, None, None, printed, words)?;
+                let a = element(item, value, dots, &[], None, printed, words)?;
+                let b = element(next, value, dots, &[], None, printed, words)?;
                 measures[measure].push(format!("<fTrem unitdur=\"16\">{a}{b}</fTrem>"));
                 pos += total;
                 onset = onset + next.dur();
                 skip = Some(next.id());
-                tied_in = false;
+                tied_in.clear();
                 continue;
             }
         }
@@ -1013,7 +1022,6 @@ fn project(
                     ));
                 }
                 let mut inner = String::new();
-                let last = items.len() - 1;
                 for (k, item) in items.iter().enumerate() {
                     let written = item.dur() * Ratio::new(num, numbase);
                     let (value, dots) = single_value(ticks(written)?).ok_or_else(|| {
@@ -1022,18 +1030,17 @@ fn project(
                              every note of a group has to be one"
                         )
                     })?;
-                    let opens = item.sounds() && matches!(item, Item::Note { tie: true, .. });
-                    let closes = item.sounds() && k == 0 && tied_in;
+                    let next = next_of(k);
                     inner.push_str(&element(
                         item,
                         value,
                         dots,
-                        tie_of(opens, closes),
+                        &ties_of(item, next, &tied_in, true, true),
                         None,
                         printed,
                         words,
                     )?);
-                    tied_in = k == last && opens;
+                    tied_in = held_into(item, next);
                 }
                 measures[measure].push(format!(
                     "<tuplet num=\"{num}\" numbase=\"{numbase}\">{inner}</tuplet>"
@@ -1074,15 +1081,22 @@ fn project(
                     } else {
                         let suffix = (!first).then_some(2);
                         for (value, dots) in parts(take) {
-                            measures[measure]
-                                .push(element(item, value, dots, None, suffix, printed, words)?);
+                            measures[measure].push(element(
+                                item,
+                                value,
+                                dots,
+                                &[],
+                                suffix,
+                                printed,
+                                words,
+                            )?);
                         }
                     }
                     first = false;
                     pos += take;
                     remaining -= take;
                 }
-                tied_in = false;
+                tied_in.clear();
             }
             Unit::Plain(item) => {
                 let total = ticks(item.dur())?;
@@ -1105,28 +1119,21 @@ fn project(
                     pos += take;
                     remaining -= take;
                 }
-                let sounds = item.sounds();
-                let tied_out = matches!(item, Item::Note { tie: true, .. });
+                let next = next_of(0);
                 let n = specs.len();
                 for (idx, (value, dots, m)) in specs.iter().copied().enumerate() {
-                    // A part opens a tie when it is not the last of a split
-                    // item, or when the caller tied this item to the next; it
-                    // closes one when it is not the first, or when the previous
-                    // item tied into this one.
-                    let opens = sounds && (idx + 1 < n || (idx + 1 == n && tied_out));
-                    let closes = sounds && (idx > 0 || (idx == 0 && tied_in));
                     let suffix = (idx > 0).then_some(idx + 1);
                     measures[m].push(element(
                         item,
                         value,
                         dots,
-                        tie_of(opens, closes),
+                        &ties_of(item, next, &tied_in, idx == 0, idx + 1 == n),
                         suffix,
                         printed,
                         words,
                     )?);
                 }
-                tied_in = tied_out && sounds;
+                tied_in = held_into(item, next);
             }
         }
     }
@@ -1157,12 +1164,47 @@ fn project(
                 dur: Ratio::ZERO,
             };
             for (value, dots) in parts(bar - pos) {
-                measures[measure].push(element(&rest, value, dots, None, None, printed, words)?);
+                measures[measure].push(element(&rest, value, dots, &[], None, printed, words)?);
             }
         }
         pos = bar;
     }
     Ok(measures)
+}
+
+/// **The `@tie` of each pitch of one part of `item`**: a pitch opens a tie
+/// where the part is not the item's last, or where the item's tie holds it
+/// into `next`; it closes one where the part is not the item's first, or
+/// where the item before held it in (`tied_in`). A tie holds the pitches two
+/// items share ([`Item::holds`]), so in a chord some notes may be tied and
+/// others attacked.
+fn ties_of(
+    item: &Item,
+    next: Option<&Item>,
+    tied_in: &[Pitch],
+    first: bool,
+    last: bool,
+) -> Vec<Option<&'static str>> {
+    item.pitches()
+        .iter()
+        .map(|pitch| {
+            let opens = !last || next.is_some_and(|next| item.holds(next, pitch));
+            let closes = !first || tied_in.iter().any(|p| p.same_note(pitch));
+            tie_of(opens, closes)
+        })
+        .collect()
+}
+
+/// The pitches `item` holds into `next`.
+fn held_into(item: &Item, next: Option<&Item>) -> Vec<Pitch> {
+    let Some(next) = next else {
+        return Vec::new();
+    };
+    item.pitches()
+        .iter()
+        .filter(|pitch| item.holds(next, pitch))
+        .copied()
+        .collect()
 }
 
 /// MEI's `@tie` from the two facts a part knows: whether a tie starts here and
@@ -2030,11 +2072,12 @@ fn element(
     item: &Item,
     value: i32,
     dots: i32,
-    tie: Option<&str>,
+    ties: &[Option<&str>],
     suffix: Option<usize>,
     printed: &std::collections::HashSet<(u64, usize)>,
     words: &Words,
 ) -> Result<String, String> {
+    let tie = |i: usize| ties.get(i).copied().flatten();
     let d = if dots != 0 { " dots=\"1\"" } else { "" };
     let id = element_id(item.id(), suffix);
     let marks = item.marks();
@@ -2069,7 +2112,7 @@ fn element(
             one,
             Some(value),
             dots,
-            tie,
+            tie(0),
             &id,
             marks,
             suffix.is_none() && printed.contains(&(item.id(), 0)),
@@ -2091,7 +2134,7 @@ fn element(
                         p,
                         None,
                         0,
-                        tie,
+                        tie(i),
                         &pid,
                         None,
                         suffix.is_none() && printed.contains(&(item.id(), i)),

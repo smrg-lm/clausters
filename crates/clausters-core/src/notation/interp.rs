@@ -600,6 +600,9 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
     let mut notes: Vec<Note> = Vec::new();
     let mut heard: Vec<(u64, f64)> = Vec::new();
     let mut merged: HashSet<usize> = HashSet::new();
+    // (item, pitch) of every pitch a tie holds in from the item before, which
+    // sounds on from there rather than attacking
+    let mut continued: HashSet<(usize, usize)> = HashSet::new();
     for (i, p) in placed.iter().enumerate() {
         for t in heard_at(p.t) {
             heard.push((p.item.id(), beat(t)));
@@ -607,57 +610,80 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
         if !p.item.sounds() || merged.contains(&i) {
             continue;
         }
-        // A tie is one sound of the summed length: the chain's items are
-        // consumed here so they do not attack again on their own.
-        let mut written = p.item.dur();
-        let mut last = i;
-        while let Item::Note { tie: true, .. } = placed[last].item {
-            let Some(next) = placed.get(last + 1) else {
-                break;
-            };
-            if next.staff != p.staff || next.voice != p.voice || !next.item.sounds() {
-                break;
+        // **A tie is one sound of the summed length**, pitch by pitch: what a
+        // tie holds into the next item is consumed here so it does not attack
+        // again there, and what the next item adds is attacked on its own.
+        let all = p.item.pitches();
+        let mut chains: Vec<(&Pitch, Ratio, usize)> = Vec::new();
+        for (k, pitch) in all.iter().enumerate() {
+            if continued.contains(&(i, k)) {
+                continue;
             }
-            written = written + next.item.dur();
-            last += 1;
-            merged.insert(last);
-        }
-
-        let marks = p.item.marks();
-        let written_beats = written.to_f64() * beats;
-        let mut sustain = match marks.and_then(|m| m.sounding) {
-            // What the writer stated outright; no table is consulted.
-            Some(sounding) => sounding.to_f64() * beats,
-            None => {
-                // The shortest articulation wins: a note that is both staccato
-                // and something else is as short as the shortest of them says.
-                let factor = marks
-                    .map(|m| {
-                        m.articulations
-                            .iter()
-                            .filter_map(|a| interp.articulations.get(a))
-                            .map(|a| a.factor)
-                            .fold(f64::INFINITY, f64::min)
+            let mut written = p.item.dur();
+            let mut last = i;
+            while let Some(next) = placed.get(last + 1) {
+                if next.staff != p.staff
+                    || next.voice != p.voice
+                    || !placed[last].item.holds(next.item, pitch)
+                {
+                    break;
+                }
+                let Some(at) =
+                    next.item.pitches().iter().enumerate().position(|(j, q)| {
+                        q.same_note(pitch) && !continued.contains(&(last + 1, j))
                     })
-                    .filter(|f| f.is_finite())
-                    .unwrap_or(if slurred.contains(&p.item.id()) {
-                        interp.slur
-                    } else {
-                        interp.detach
-                    });
-                written_beats * factor
+                else {
+                    break;
+                };
+                written = written + next.item.dur();
+                last += 1;
+                continued.insert((last, at));
             }
-        };
-        if let Some(marks) = marks {
-            match marks.breath.as_deref() {
-                Some("caesura") => sustain *= interp.caesura,
-                Some(_) => sustain *= interp.breath,
-                None => {}
-            }
-            if marks.ring {
-                sustain = sustain.max(written_beats * interp.ring);
-            }
+            chains.push((pitch, written, last));
         }
+        if chains.is_empty() {
+            continue;
+        }
+        let marks = p.item.marks();
+        // the written length of a sound, in beats, and how long it is held
+        let held_for = |written: Ratio| -> f64 {
+            let written_beats = written.to_f64() * beats;
+            let mut sustain = match marks.and_then(|m| m.sounding) {
+                // What the writer stated outright; no table is consulted.
+                Some(sounding) => sounding.to_f64() * beats,
+                None => {
+                    // The shortest articulation wins: a note that is both
+                    // staccato and something else is as short as the
+                    // shortest of them says.
+                    let factor = marks
+                        .map(|m| {
+                            m.articulations
+                                .iter()
+                                .filter_map(|a| interp.articulations.get(a))
+                                .map(|a| a.factor)
+                                .fold(f64::INFINITY, f64::min)
+                        })
+                        .filter(|f| f.is_finite())
+                        .unwrap_or(if slurred.contains(&p.item.id()) {
+                            interp.slur
+                        } else {
+                            interp.detach
+                        });
+                    written_beats * factor
+                }
+            };
+            if let Some(marks) = marks {
+                match marks.breath.as_deref() {
+                    Some("caesura") => sustain *= interp.caesura,
+                    Some(_) => sustain *= interp.breath,
+                    None => {}
+                }
+                if marks.ring {
+                    sustain = sustain.max(written_beats * interp.ring);
+                }
+            }
+            sustain
+        };
 
         // The level the staff is at, unless the reading hears a dynamic in
         // its curve alone: the attack is then the unmarked level.
@@ -680,48 +706,63 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
         // **The level while it is held**, where the reading hears a dynamic in
         // the attack and in the curve both: a held note under a hairpin moves
         // with it, as a sustained sound does.
-        let under_hairpin = if interp.dynamics_as == DynamicsAs::Both {
-            hairpin_of(&hairpins, p.staff, p.t, sustain / beats)
-                .into_iter()
-                .map(|(after, factor)| (after * beats, factor))
-                .collect()
-        } else {
-            Vec::new()
+        let under_hairpin = |sustain: f64| -> Vec<(f64, f64)> {
+            if interp.dynamics_as == DynamicsAs::Both {
+                hairpin_of(&hairpins, p.staff, p.t, sustain / beats)
+                    .into_iter()
+                    .map(|(after, factor)| (after * beats, factor))
+                    .collect()
+            } else {
+                Vec::new()
+            }
         };
 
         // A glissando is written from the note it leaves, which in a tied
         // chain is the last: the tied part holds its pitch.
-        let (gliss, gliss_from) = (i..=last)
-            .rev()
-            .find_map(|k| {
-                let tied = &placed[k];
-                let gliss = glissandos.get(&tied.item.id())?;
-                Some((Some(*gliss), (tied.t - p.t).to_f64() * beats))
-            })
-            .unwrap_or((None, 0.0));
+        let gliss_of = |last: usize| -> (Option<f64>, f64) {
+            (i..=last)
+                .rev()
+                .find_map(|k| {
+                    let tied = &placed[k];
+                    let gliss = glissandos.get(&tied.item.id())?;
+                    Some((Some(*gliss), (tied.t - p.t).to_f64() * beats))
+                })
+                .unwrap_or((None, 0.0))
+        };
 
         let by = shifted(p.staff, p.t);
-        let note = |t: f64, dur: f64, sustain: f64, pitch: &Pitch| Note {
-            t,
-            dur,
-            sustain,
-            pitch: pitch.midi() + by,
-            amp,
-            staff: p.staff,
-            voice: p.voice,
-            id: p.item.id(),
-            spelling: match pitch.alter {
-                0 => None,
-                n if n > 0 => Some("sharp".into()),
-                _ => Some("flat".into()),
-            },
-            accidental: pitch.forced.then(|| "written".to_string()),
-            marks: marks.cloned().unwrap_or_default(),
-            gliss,
-            gliss_from,
-            hairpin: Vec::new(),
+        let note = |t: f64, dur: f64, sustain: f64, pitch: &Pitch, last: usize| {
+            let (gliss, gliss_from) = gliss_of(last);
+            Note {
+                t,
+                dur,
+                sustain,
+                pitch: pitch.midi() + by,
+                amp,
+                staff: p.staff,
+                voice: p.voice,
+                id: p.item.id(),
+                spelling: match pitch.alter {
+                    0 => None,
+                    n if n > 0 => Some("sharp".into()),
+                    _ => Some("flat".into()),
+                },
+                accidental: pitch.forced.then(|| "written".to_string()),
+                marks: marks.cloned().unwrap_or_default(),
+                gliss,
+                gliss_from,
+                hairpin: Vec::new(),
+            }
         };
-        let pitches = p.item.pitches();
+        // what a tremolo and an alternation repeat: the item's attacked
+        // pitches, for the longest of their sounds
+        let (_, longest, longest_last) = chains
+            .iter()
+            .copied()
+            .max_by_key(|(_, written, _)| *written)
+            .unwrap_or((&all[0], p.item.dur(), i));
+        let written_beats = longest.to_f64() * beats;
+        let pitches: Vec<&Pitch> = chains.iter().map(|(pitch, ..)| *pitch).collect();
         // **Two notes alternating**, sixteenths of each in turn for the time
         // the two take together; the second note is heard only in it.
         let partner = alternating
@@ -738,9 +779,13 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
                 let total = written_beats + other.dur().to_f64() * beats;
                 let count = (total / unit).round().max(2.0) as usize;
                 for k in 0..count {
-                    let these = if k % 2 == 0 { pitches } else { other.pitches() };
+                    let these: Vec<&Pitch> = if k % 2 == 0 {
+                        pitches.clone()
+                    } else {
+                        other.pitches().iter().collect()
+                    };
                     for pitch in these {
-                        notes.push(note(t0 + k as f64 * unit, unit, unit, pitch));
+                        notes.push(note(t0 + k as f64 * unit, unit, unit, pitch, longest_last));
                     }
                 }
                 continue;
@@ -752,37 +797,40 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
                     (Ratio::new(1, 4) / Ratio::from(1i64 << strokes.clamp(1, 3))).to_f64() * beats;
                 let count = (written_beats / unit).floor().max(1.0) as usize;
                 for k in 0..count {
-                    for pitch in pitches {
-                        notes.push(note(t0 + k as f64 * unit, unit, unit, pitch));
+                    for pitch in &pitches {
+                        notes.push(note(t0 + k as f64 * unit, unit, unit, pitch, longest_last));
                     }
                 }
                 continue;
             }
             // **A rolled chord** starts each note a little after the one
             // below it -- above it, rolled down -- and lets go with the rest.
-            let mut order: Vec<&Pitch> = pitches.iter().collect();
+            let mut order = chains.clone();
             let rolled = marks.and_then(|m| m.arpeggio.as_deref());
             if rolled == Some("down") {
-                order.sort_by_key(|p| std::cmp::Reverse(p.midi()));
+                order.sort_by_key(|(p, ..)| std::cmp::Reverse(p.midi()));
             } else {
-                order.sort_by_key(|p| p.midi());
+                order.sort_by_key(|(p, ..)| p.midi());
             }
             let step = if rolled.is_some() && order.len() > 1 {
                 (interp.roll.to_f64() * beats).min(written_beats / (2.0 * order.len() as f64))
             } else {
                 0.0
             };
-            for (k, pitch) in order.into_iter().enumerate() {
+            for (k, (pitch, written, last)) in order.into_iter().enumerate() {
                 let late = step * k as f64;
+                let written_beats = written.to_f64() * beats;
+                let sustain = held_for(written);
                 let mut n = note(
                     t0 + late,
                     written_beats - late,
                     (sustain - late).max(step),
                     pitch,
+                    last,
                 );
                 // a note rolled in late follows the hairpin from where it
                 // comes in
-                n.hairpin = under_hairpin
+                n.hairpin = under_hairpin(sustain)
                     .iter()
                     .map(|&(after, factor)| ((after - late).max(0.0), factor))
                     .collect();
@@ -1471,6 +1519,65 @@ mod tests {
         assert_eq!(notes[0].dur, 2.0);
         assert_eq!(notes[0].sustain, 2.0);
         assert_eq!(notes[1].t, 2.0);
+    }
+
+    /// A voice of chords, each `(midis, quarters, tied, the pitches the tie
+    /// names)`.
+    fn chords(items: &[(&[i32], i64, bool, &[i32])]) -> Sheet {
+        let mut sheet = Sheet::default();
+        sheet.staves[0].voices = vec![Voice {
+            items: items
+                .iter()
+                .enumerate()
+                .map(|(i, (midis, quarters, tie, named))| Item::Note {
+                    id: i as u64 + 1,
+                    pitches: midis.iter().map(|m| Pitch::from_midi(*m, false)).collect(),
+                    dur: Ratio::new(*quarters, 4),
+                    tie: *tie,
+                    marks: Marks {
+                        tied: named.iter().map(|m| Pitch::from_midi(*m, false)).collect(),
+                        ..Marks::default()
+                    },
+                })
+                .collect(),
+        }];
+        sheet
+    }
+
+    /// **A tie holds the pitches two items share, and nothing else**: a note
+    /// tied into a chord sounds on while the chord's other note is attacked,
+    /// a chord tied into one note lets its other note go, and a tie that
+    /// names its pitches leaves a repeated one attacked again.
+    #[test]
+    fn a_tie_holds_the_pitches_two_items_share() {
+        let heard = |sheet: Sheet| -> Vec<(f64, i32, f64)> {
+            let mut notes: Vec<(f64, i32, f64)> = perform(sheet, &Interpretation::default())
+                .unwrap()
+                .iter()
+                .map(|n| (n.t, n.pitch, n.dur))
+                .collect();
+            notes.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            notes
+        };
+        // C tied into C and E: C is one half note, E attacked on beat 2
+        let into_chord = chords(&[(&[60], 1, true, &[]), (&[60, 64], 1, false, &[])]);
+        assert_eq!(heard(into_chord), vec![(0.0, 60, 2.0), (1.0, 64, 1.0)]);
+        // C and E tied into C: E lets go at beat 2
+        let out_of_chord = chords(&[(&[60, 64], 1, true, &[]), (&[60], 1, false, &[])]);
+        assert_eq!(heard(out_of_chord), vec![(0.0, 60, 2.0), (0.0, 64, 1.0)]);
+        // C held under E repeated: the tie names C, so E attacks again
+        let repeated = chords(&[(&[60, 64], 1, true, &[60]), (&[60, 64], 1, false, &[])]);
+        assert_eq!(
+            heard(repeated),
+            vec![(0.0, 60, 2.0), (0.0, 64, 1.0), (1.0, 64, 1.0)]
+        );
+        // a chain: C into C and E into E, two sounds overlapping
+        let chain = chords(&[
+            (&[60], 1, true, &[]),
+            (&[60, 64], 1, true, &[]),
+            (&[64], 1, false, &[]),
+        ]);
+        assert_eq!(heard(chain), vec![(0.0, 60, 2.0), (1.0, 64, 2.0)]);
     }
 
     #[test]

@@ -1796,7 +1796,26 @@ follows the parts, and a performance derived from what is written.
     data from Python and from the web client; sequences saved before sound
     the same.
 
-- ⬜ **O37 - How a part is written, and the performance derived from it.**
+- ✅ **O37 - How a part is written, and the performance derived from it.**
+  *(Done 2026-11-09: the reading puts a note on its part's staves by the
+  channels the part is played on (a part that names none takes the channels
+  no other part claims, one a staff; the last channel of a part with more
+  staves than channels splits at middle C), writes as many voices a staff as
+  the part says, and writes a part with ties as one voice of chords cut and
+  tied where a note starts or ends; `events::realize` and the intent
+  `Realize`, refused in a build without the notation layer, with `realize` on
+  both clients' `EventSequence`. **A tie holds the pitches two items share**:
+  the interpreter, the render's `value`, the MEI writer and reader now follow
+  a tie pitch by pitch, so a note tied into a chord goes on while the
+  chord's other notes are attacked, and `Marks.tied` names the pitches a tie
+  holds where it holds only some of them (a note held under a repeated one);
+  `settle_ties` keeps it. A chord merged from two groups is ordered low to
+  high, which the property test found. **The voice keys are kept**: under
+  ties the reading sets aside the `voice` an event states rather than
+  rewriting it, so a part written with ties and back with voices reads its
+  voices again and its events are the same, which is the acceptance's
+  identity. The property is a seeded generator of 200 sequences, read,
+  rendered and read again in both writings.)*
   - **The reading follows the parts**: a staff comes from the part's channels,
     `voices_per_staff` replaces `voices` for that part, and a part written
     with `ties` is read as one voice of chords, each note cut and tied on the
