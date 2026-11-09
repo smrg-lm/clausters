@@ -256,11 +256,12 @@ its plan; the plan is where its acceptance is read.
   "unscheduled" reads as a decision rather than an oversight.
 
 - ⬜ **A control's size does not follow what it says, in a row or across one**
-  *(`clients/gui/PLAN.md`, Found by use)*. Found on the curve window; the
-  examples show it in several forms. **The decision:** whether a control with
-  content keeps its content's size on both axes unless a `weight` stretches
-  it, and whether a container's `h` may stay under its children's floors; it
-  changes a written layout rule (`a_natural_size_only_binds_its_own_axis`).
+  *(`clients/gui/PLAN.md`, Found by use)*. The principles are decided: a
+  control keeps its content's size unless asked to change it, and a
+  container's `h` never goes under its children's floors. **The decision
+  left:** the default rule of each standard element type on each axis,
+  chosen by looking at `panels/palette`, which shows every standard element
+  at its defaults in a row, a tall row, a short row, a grid and a column.
 
 - ⬜ **A def a client sent does not sound in an application's engine**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*: found moving the roll to

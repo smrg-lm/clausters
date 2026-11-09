@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the standard elements at their defaults</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      #palette { width: 1400px; max-width: 100%; height: 900px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The standard elements at their defaults, in every layout.
+
+One view holds the same set of standard controls -- a label, a button, a
+toggle, a choice, a number, a knob, a slider, a text field, a progress bar and
+a separator -- five times over, each time in a different container, and with
+nothing asked of any of them: no <code>w</code>, no <code>h</code>, no
+<code>weight</code>, no <code>pack</code>. So what is drawn is what the layout
+does with an element's defaults:
+<ul>
+<li><b>a row</b> as wide as the view: how the width is shared along it;</li>
+<li><b>a tall row</b> (<code>h: 140</code>): what each element does across a
+cell taller than it is;</li>
+<li><b>a short row</b> (<code>h: 28</code>): what each one gives up in a cell
+shorter than it is;</li>
+<li><b>a grid</b> of four columns: an element in a cell it did not choose;</li>
+<li><b>a column</b>, on the right: how the height is shared down it.</li>
+</ul>
+It is the surface the per-element sizing rules are read against: an element
+that keeps its content's size reads the same in all five, and one that takes
+what its cell gives changes with each.</div>
+
+      <button id="run">open the palette</button>
+      <div id="palette"></div>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/palette.py, call for
+      call: the same set, the same five containers, one view opened once.
+
+      One difference, the platform's: the script boots a windowed
+      `clausters-gui` process and holds until its window is closed; here the
+      host is the wasm one in this tab and the view draws into an element the
+      document places, so there is nothing to hold.
+
+      Serve clients/web (the package root) and open /examples/panels/palette.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui, loadCore } from "../../dist/index.js";
+
+      // The numeric core is wasm here and is fetched on demand, so a page
+      // that boots a host of its own asks for it first. In Python the same
+      // code is already in the process.
+      await loadCore();
+
+      const $ = (id) => document.getElementById(id);
+
+      // ---- the set ----
+      // Every standard control, each with a caption where it takes one, and
+      // nothing that sizes it. A function rather than a list, because a view
+      // is a tree: each container gets elements of its own.
+      function standard() {
+        return [
+          gui.label("a label"),
+          gui.button({ label: "button" }),
+          gui.toggle({ label: "toggle" }),
+          gui.choice(["one", "two", "three"], { label: "choice" }),
+          gui.number({ label: "number", min: 0.0, max: 10.0, value: 3.0 }),
+          gui.knob({ label: "knob", value: 0.5 }),
+          gui.slider({ label: "slider", value: 0.5 }),
+          gui.text({ label: "text", value: "typed" }),
+          gui.progress(0.4, { label: "progress" }),
+          gui.separator(),
+        ];
+      }
+
+      async function run() {
+        $("run").disabled = true;
+
+        // ---- the containers ----
+        // The same set in five containers. The two rows with a height are the
+        // only sizes in the file, and they are on the containers, never on an
+        // element.
+        await new GuiHost().boot();
+
+        const v = gui.view(
+          { title: "Palette", w: 1400, h: 900, layout: "row" },
+          gui.panel(
+            { layout: "col" },
+            gui.panel({ layout: "row", title: "row" }, ...standard()),
+            gui.panel({ layout: "row", title: "row, h=140", h: 140 }, ...standard()),
+            gui.panel({ layout: "row", title: "row, h=28", h: 28 }, ...standard()),
+            gui.panel({ layout: "grid", cols: 4, title: "grid, 4 columns" }, ...standard()),
+          ),
+          gui.panel({ layout: "col", title: "col", w: 260 }, ...standard()),
+        );
+
+        await v.open($("palette"));
+      }
+
+      $("run").addEventListener("click", () => run().catch((e) => {
+        console.error(e);
+        $("run").textContent = String(e);
+      }));
+    </script>
+  </body>
+</html>

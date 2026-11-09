@@ -9292,6 +9292,16 @@ module of its own.
   to stretch, what that does to every window, and whether a container's `h`
   may stay under what its children's floors add up to. Pinned today by
   `a_natural_size_only_binds_its_own_axis`, so this changes a written rule.
+  **Decided 2026-11-09 by the user**, as principles: a control with content
+  keeps its content's size on both axes unless it is asked to change it
+  (`w`, `h`, `weight`), and a container's `h` never goes under what its
+  children's floors add up to. What is wrong is the **defaults**, so what
+  is open is a rule per **standard** element type (not a custom one): on
+  each axis, whether it keeps its content's size, may grow when asked, or
+  takes what the layout gives -- the kind of per-type default a toolkit
+  declares for each of its widgets. The rules are chosen by looking at
+  every standard element at its defaults in every layout (`row`, `col`,
+  `grid`, a tall cell, a short one), which no example shows today.
 
 - ✅ **A pass can play with no play cursor until a frame happens to come**
   *(found 2026-11-01 by the user, by ear and eye on `notation/score_editor`)*.
