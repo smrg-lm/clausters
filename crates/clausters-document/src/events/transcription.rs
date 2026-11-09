@@ -46,7 +46,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Map, Value};
 
 use clausters_core::envshape::{SHAPE_HOLD, SHAPE_LINEAR, SHAPE_STEP};
@@ -58,49 +58,7 @@ use clausters_core::ratio::Ratio;
 
 use super::{CurveKind, EventSequence, MidiSpec};
 
-/// **How a sequence is read into a score**: what the events do not say and a
-/// reader has to. Every field has a default, so `{}` is a reading.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Transcription {
-    /// The meter, as `"3/4"`. Left out, the sequence's own where it was
-    /// rendered from a score, else `4/4`.
-    pub meter: Option<String>,
-    /// The key, as a tonic name (`"F"`, `"Bb"`). Left out, the sequence's own,
-    /// else the signature most of its notes are in.
-    pub key: Option<String>,
-    /// The clef of every staff the sequence does not say one for. Left out,
-    /// each staff's is chosen by its register.
-    pub clef: Option<String>,
-    /// Which written value is one beat, as its denominator: `4` for a quarter.
-    pub beat_unit: i64,
-    /// The smallest written value an onset is snapped to, as its denominator:
-    /// `16` for a sixteenth.
-    pub division: i64,
-    /// The tuplets a beat may be read as, each the parts it is divided in:
-    /// `[3]` admits triplets. Empty, a beat is read in `division` alone --
-    /// but for the tuplets the events themselves state in their `value`.
-    pub tuplets: Vec<i64>,
-    /// The most voices found on one staff.
-    pub voices: usize,
-    /// Whether levels are read back as dynamics and hairpins.
-    pub dynamics: bool,
-}
-
-impl Default for Transcription {
-    fn default() -> Self {
-        Self {
-            meter: None,
-            key: None,
-            clef: None,
-            beat_unit: 4,
-            division: 16,
-            tuplets: Vec::new(),
-            voices: 2,
-            dynamics: true,
-        }
-    }
-}
+pub use super::reading::Transcription;
 
 /// A sequence read: the sheet, and which item each event became.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -473,12 +431,7 @@ pub fn read(
         .collect();
 
     // Where: the staff each is on.
-    let channels: Vec<i64> = notes
-        .iter()
-        .map(|note| note.channel)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
+    let channels = sequence.note_channels();
     for note in &mut notes {
         let stated = note.keys.get("staff").and_then(Value::as_f64);
         note.staff = match stated {
@@ -712,6 +665,20 @@ pub fn read(
         }
         out.voices = written;
         staves.push(out);
+    }
+
+    // What a staff is called and how it transposes: its part's, where the
+    // sequence states its parts.
+    let mut first = 0;
+    for part in &sequence.parts {
+        for (i, staff) in staves.iter_mut().skip(first).take(part.staves).enumerate() {
+            if i == 0 {
+                staff.label.clone_from(&part.name);
+                staff.abbr.clone_from(&part.abbr);
+            }
+            staff.transpose = part.transpose;
+        }
+        first += part.staves;
     }
 
     let mut sheet = Sheet {
@@ -1378,5 +1345,73 @@ mod tests {
         assert_eq!(first.marks().unwrap().fingering.as_deref(), Some("3"));
         assert_eq!(got.sheet.controls.len(), 1);
         assert_eq!(got.sheet.controls[0].bpm, Some(60.0));
+    }
+
+    #[test]
+    fn a_staff_is_named_and_transposed_by_its_part() {
+        let mut seq = sequence(json!([
+            {"at": 0.0, "data": {"midinote": 72, "dur": 1.0, "channel": 0}},
+            {"at": 0.0, "data": {"midinote": 48, "dur": 1.0, "channel": 1}},
+            {"at": 0.0, "data": {"midinote": 62, "dur": 1.0, "channel": 2}},
+        ]));
+        seq.parts = vec![
+            crate::events::Part {
+                name: "Piano".into(),
+                abbr: "Pno.".into(),
+                staves: 2,
+                ..crate::events::Part::default()
+            },
+            crate::events::Part {
+                name: "Clarinet in B flat".into(),
+                transpose: -2,
+                ..crate::events::Part::default()
+            },
+        ];
+        let sheet = read_plain(&seq, json!({})).sheet;
+        let named: Vec<(&str, &str, i32)> = sheet
+            .staves
+            .iter()
+            .map(|s| (s.label.as_str(), s.abbr.as_str(), s.transpose))
+            .collect();
+        assert_eq!(
+            named,
+            vec![
+                ("Piano", "Pno.", 0),
+                ("", "", 0),
+                ("Clarinet in B flat", "", -2)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_sequence_is_read_as_its_stored_reading_says() {
+        let mut seq = sequence(json!([
+            {"at": 0.0, "data": {"midinote": 60, "dur": 1.0}},
+            {"at": 3.0, "data": {"midinote": 62, "dur": 1.0}},
+        ]));
+        assert_eq!(Transcription::of(&seq), Transcription::default());
+        seq.edit(crate::events::EventsIntent::SetReading {
+            reading: Some(json!({"meter": "3/4"})),
+        })
+        .unwrap();
+        let how = Transcription::of(&seq);
+        assert_eq!(how.meter.as_deref(), Some("3/4"));
+        assert_eq!(how.division, 16, "what it leaves out keeps its default");
+        let sheet = read(&seq, &how, &Interpretation::default()).unwrap().sheet;
+        assert_eq!(sheet.grid, Grid::uniform(3, 4));
+        // an opener's options go over it, one by one
+        let given = Transcription::over(&seq, &json!({"division": 8})).unwrap();
+        assert_eq!((given.meter.as_deref(), given.division), (Some("3/4"), 8));
+        assert_eq!(Transcription::over(&seq, &json!({})).unwrap(), how);
+        assert_eq!(Transcription::over(&seq, &Value::Null).unwrap(), how);
+        assert!(Transcription::over(&seq, &json!([])).is_err());
+        // and a reading the options refuse is not stored
+        assert!(
+            seq.edit(crate::events::EventsIntent::SetReading {
+                reading: Some(json!({"division": "sixteen"})),
+            })
+            .unwrap_err()
+            .contains("reading")
+        );
     }
 }

@@ -1701,7 +1701,8 @@ export function sheetPerform(sheet: string, interp: string): string;
  * written as they say it, and what they do not decided by `how`, the
  * transcription (`clausters_document::events::transcription::read`).
  * `interp` is the reading whose dynamics name a level. Each of the two is
- * empty for its default.
+ * empty for its default -- `how` naming only what goes over the reading the
+ * sequence states.
  */
 export function sheetReadEvents(sequence: string, how: string, interp: string): string;
 

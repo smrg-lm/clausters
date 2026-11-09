@@ -265,6 +265,52 @@ export class EventSequence {
         this.edit({ intent: "midi", midi: written }, "write it for another MIDI spec");
     }
 
+    /**
+     * **The sequence's parts**, top to bottom: each an object of what is
+     * written on which staves and played on which channels -- `name`, `abbr`,
+     * `staves` (how many consecutive staves), `channels` or an MPE `zone`,
+     * `writing` (`{polyphony: "voices" | "ties", voices_per_staff: 1 | 2}`)
+     * and `transpose`, in semitones. A sequence that states none reads as one
+     * part per staff, derived; see {@link EventSequence.partsStated}. Setting
+     * the list is an edit, and `[]` goes back to the derived parts. Throws
+     * when two parts claim a channel, or a part is on no staff or has more
+     * than two voices a staff.
+     */
+    get parts(): Record<string, unknown>[] {
+        return [...(this.call("parts").parts as Record<string, unknown>[])];
+    }
+
+    set parts(value: readonly Record<string, unknown>[]) {
+        this.edit({ intent: "setparts", parts: value.map((p) => ({ ...p })) }, "set the parts");
+    }
+
+    /**
+     * Whether the sequence states its {@link EventSequence.parts}, rather than
+     * reading them as one part per staff.
+     */
+    get partsStated(): boolean {
+        return Boolean(this.call("parts").stated);
+    }
+
+    /**
+     * **How the sequence is read into a page**: the options a score editor and
+     * a multitrack's box drawn as a page read it with -- `meter`, `key`,
+     * `clef`, `beat_unit`, `division`, `tuplets`, `voices`, `dynamics` -- each
+     * left out at its default; `null` for the default reading. Setting it is
+     * an edit, and throws when an option does not read.
+     */
+    get reading(): Record<string, unknown> | null {
+        const notation = this.data().notation;
+        if (notation === null || typeof notation !== "object") return null;
+        const reading = (notation as Record<string, unknown>).reading;
+        return reading === undefined || reading === null ? null : reading as Record<string, unknown>;
+    }
+
+    set reading(value: Record<string, unknown> | null) {
+        const written = value === null ? null : { ...value };
+        this.edit({ intent: "setreading", reading: written }, "change the reading");
+    }
+
     // ---- editing ----
 
     /**

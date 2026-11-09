@@ -268,6 +268,38 @@ test("a MIDI spec admits the curves it can say", () => {
     assert.equal(seq.midi, null);
 });
 
+test("a sequence states its parts or reads one per staff", () => {
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 72, channel: 0 })],
+        [0.0, new Event({ midinote: 48, channel: 1 })],
+    ]);
+    assert.ok(!seq.partsStated);
+    assert.deepEqual(seq.parts, [{ channels: [0] }, { channels: [1] }]);
+    assert.ok(!("parts" in seq.data()), "derived parts are not written");
+    seq.parts = [{ name: "Piano", staves: 2, channels: [0, 1] }];
+    assert.ok(seq.partsStated);
+    assert.deepEqual(seq.parts, [{ name: "Piano", staves: 2, channels: [0, 1] }]);
+    assert.throws(() => {
+        seq.parts = [{ channels: [1] }, { channels: [1] }];
+    }, /channel 1/);
+    seq.parts = [];
+    assert.ok(!seq.partsStated);
+});
+
+test("a sequence keeps the reading it is read with", () => {
+    const seq = sequence();
+    assert.equal(seq.reading, null);
+    seq.reading = { meter: "3/4", division: 8 };
+    assert.deepEqual(seq.reading, { meter: "3/4", division: 8 });
+    assert.deepEqual(seq.data().notation, { reading: { meter: "3/4", division: 8 } });
+    assert.throws(() => {
+        seq.reading = { division: "sixteen" };
+    }, /reading/);
+    seq.reading = null;
+    assert.equal(seq.reading, null);
+    assert.ok(!("notation" in seq.data()));
+});
+
 test("a sequence's curves go to a MIDI file and back", () => {
     const seq = new EventSequence([
         [0.0, new Event({ midinote: 60, velocity: 100, sustain: 1.0 })],

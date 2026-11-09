@@ -9096,10 +9096,11 @@ module of its own.
     multitrack so (`refuse_pages`): the View menu's *Notes as scores* is
     refused with why, and the view stays the roll
     (`a_host_with_no_engraver_offers_no_page_and_says_why`);
-  - the box is read with the transcription's defaults, and nothing on the
+  - ✅ the box is read with the transcription's defaults, and nothing on the
     multitrack states another meter, key or smallest value for it;
-    *(2026-11-08: the reading stored with the sequence,
-    `crates/clausters-document/PLAN.md`, `O35`, is where it will be stated)*;
+    *fixed 2026-11-08* (`crates/clausters-document/PLAN.md`, `O35`): a box
+    is read with the reading its sequence stores (`notation.reading`,
+    `Transcription::of`), as a score editor over the sequence is;
   - a page is engraved whole when its sequence changes, and what that
     costs for a sequence of thousands of notes is not measured;
     *measured 2026-11-07* (`what_a_box_page_costs`, release, one box):

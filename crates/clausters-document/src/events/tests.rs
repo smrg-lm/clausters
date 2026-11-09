@@ -1095,6 +1095,16 @@ fn every_verb(cc: NodeId, held: NodeId) -> Vec<EventsIntent> {
         EventsIntent::Restore {
             sequence: Box::new(EventSequence::new(vec![note(0.0, 48)])),
         },
+        EventsIntent::SetParts {
+            parts: vec![Part {
+                name: "Piano".into(),
+                staves: 2,
+                ..Part::default()
+            }],
+        },
+        EventsIntent::SetReading {
+            reading: Some(json!({"meter": "6/8"})),
+        },
     ];
     let slot = |intent: &EventsIntent| match intent {
         EventsIntent::SetEvents { .. } => 0,
@@ -1112,8 +1122,10 @@ fn every_verb(cc: NodeId, held: NodeId) -> Vec<EventsIntent> {
         EventsIntent::AutomationToEvents { .. } => 12,
         EventsIntent::EventsToAutomation { .. } => 13,
         EventsIntent::Restore { .. } => 14,
+        EventsIntent::SetParts { .. } => 15,
+        EventsIntent::SetReading { .. } => 16,
     };
-    let mut seen = [false; 15];
+    let mut seen = [false; 17];
     for intent in &all {
         assert!(!seen[slot(intent)], "{intent:?} is listed twice");
         seen[slot(intent)] = true;
@@ -1143,4 +1155,257 @@ fn every_verb_applies_and_inverts_to_the_sequence_it_started_from() {
         sequence.next_id = before.next_id;
         assert_eq!(sequence, before, "{intent:?}");
     }
+}
+
+#[test]
+fn a_sequence_saved_before_parts_and_readings_writes_itself_unchanged() {
+    let written = json!({
+        "events": [
+            {"id": 1, "at": 0.0, "data": {"midinote": 60, "channel": 1}},
+            {"id": 2, "at": 1.0, "data": {"midinote": 64}},
+        ],
+        "midi": "1.0",
+        "notation": {"key": "C"},
+        "next_id": 2,
+    });
+    let sequence: EventSequence = serde_json::from_value(written.clone()).unwrap();
+    assert!(sequence.parts.is_empty());
+    assert_eq!(sequence.reading(), None);
+    assert_eq!(serde_json::to_value(&sequence).unwrap(), written);
+    // and what it writes reads back to the same bytes
+    let text = serde_json::to_string(&sequence).unwrap();
+    let again: EventSequence = serde_json::from_str(&text).unwrap();
+    assert_eq!(serde_json::to_string(&again).unwrap(), text);
+}
+
+#[test]
+fn a_part_writes_only_what_it_does_not_default() {
+    let part = Part {
+        name: "Piano".into(),
+        staves: 2,
+        ..Part::default()
+    };
+    assert_eq!(
+        serde_json::to_value(&part).unwrap(),
+        json!({"name": "Piano", "staves": 2})
+    );
+    let read: Part = serde_json::from_value(json!({
+        "channels": [0, 1],
+        "writing": {"polyphony": "ties", "voices_per_staff": 1},
+        "transpose": -2,
+    }))
+    .unwrap();
+    assert_eq!(read.staves, 1);
+    assert_eq!(read.writing.polyphony, Polyphony::Ties);
+    assert_eq!(read.writing.voices_per_staff, 1);
+    assert_eq!(read.transpose, -2);
+    assert_eq!(
+        serde_json::from_value::<Part>(json!({})).unwrap(),
+        Part::default()
+    );
+}
+
+#[test]
+fn a_sequence_with_no_parts_reads_as_one_part_per_staff() {
+    // a staff is a channel where no note says its staff
+    let mut sequence = EventSequence::new(vec![
+        Event::new(0.0, json!({"midinote": 60, "channel": 3})),
+        Event::new(0.0, json!({"midinote": 48, "channel": 1})),
+    ]);
+    sequence.notation = Some(json!({"staves": [{"label": "Flute", "transpose": 0}]}));
+    let parts = sequence.parts_read();
+    assert_eq!(parts.len(), 2);
+    assert_eq!(
+        (parts[0].name.as_str(), parts[0].channels.clone()),
+        ("Flute", vec![1])
+    );
+    assert_eq!(parts[1].channels, vec![3]);
+    // derived, and not written back
+    assert!(sequence.parts.is_empty());
+    assert!(
+        serde_json::to_value(&sequence)
+            .unwrap()
+            .get("parts")
+            .is_none()
+    );
+    // a note that says its staff places it, and an MPE zone is one part
+    let mut zoned = EventSequence::new(vec![
+        Event::new(0.0, json!({"midinote": 60, "channel": 2})),
+        Event::new(0.0, json!({"midinote": 62, "channel": 3})),
+    ]);
+    zoned.midi = Some(MidiSpec::Mpe {
+        upper: false,
+        members: 15,
+    });
+    let parts = zoned.parts_read();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(
+        parts[0].zone,
+        Some(Zone {
+            upper: false,
+            members: 15
+        })
+    );
+    let staffed = EventSequence::new(vec![Event::new(0.0, json!({"midinote": 60, "staff": 2}))]);
+    assert_eq!(staffed.parts_read().len(), 3);
+}
+
+#[test]
+fn parts_are_set_whole_and_refused_where_they_disagree() {
+    let mut history = History::new();
+    let roll = history.register(EVENTS);
+    let mut sequence = EventSequence::new(vec![note(0.0, 60)]);
+    let piano = Part {
+        name: "Piano".into(),
+        staves: 2,
+        channels: vec![0],
+        ..Part::default()
+    };
+    let applied = history.apply(
+        roll,
+        &mut sequence,
+        &payload(&EventsIntent::SetParts {
+            parts: vec![piano.clone()],
+        }),
+        "set the parts",
+    );
+    assert!(applied.applied);
+    assert_eq!(sequence.parts, vec![piano.clone()]);
+    assert_eq!(sequence.parts_read(), vec![piano.clone()]);
+    // one undo step
+    for (_, payload) in history.undo().unwrap().legs {
+        sequence.apply(&payload);
+    }
+    assert!(sequence.parts.is_empty());
+
+    let refused = |parts: Vec<Part>| {
+        let mut sequence = EventSequence::new(Vec::new());
+        sequence
+            .edit(EventsIntent::SetParts { parts })
+            .expect_err("refused")
+    };
+    let other = Part {
+        name: "Bass".into(),
+        channels: vec![0],
+        ..Part::default()
+    };
+    assert!(refused(vec![piano.clone(), other]).contains("channel 0"));
+    let three = Part {
+        writing: Writing {
+            voices_per_staff: 3,
+            ..Writing::default()
+        },
+        ..Part::default()
+    };
+    assert!(refused(vec![three]).contains("one or two"));
+    let both = Part {
+        channels: vec![1],
+        zone: Some(Zone {
+            upper: false,
+            members: 15,
+        }),
+        ..Part::default()
+    };
+    assert!(refused(vec![both]).contains("one or the other"));
+    let none = Part {
+        staves: 0,
+        ..Part::default()
+    };
+    assert!(refused(vec![none]).contains("no staff"));
+    let far = Part {
+        channels: vec![16],
+        ..Part::default()
+    };
+    assert!(refused(vec![far]).contains("0 to 15"));
+}
+
+#[test]
+fn the_reading_is_kept_in_the_notation_section_and_taken_out_whole() {
+    let mut sequence = EventSequence::new(vec![note(0.0, 60)]);
+    sequence
+        .edit(EventsIntent::SetReading {
+            reading: Some(json!({"meter": "3/4", "division": 8})),
+        })
+        .unwrap();
+    assert_eq!(
+        sequence.reading(),
+        Some(&json!({"meter": "3/4", "division": 8}))
+    );
+    assert_eq!(
+        sequence.notation,
+        Some(json!({"reading": {"meter": "3/4", "division": 8}}))
+    );
+    sequence
+        .edit(EventsIntent::SetReading { reading: None })
+        .unwrap();
+    assert_eq!(
+        sequence.notation, None,
+        "a section of the reading alone goes with it"
+    );
+    // beside what a render wrote, only the reading moves
+    sequence.notation = Some(json!({"key": "F"}));
+    sequence
+        .edit(EventsIntent::SetReading {
+            reading: Some(json!({"key": "G"})),
+        })
+        .unwrap();
+    sequence
+        .edit(EventsIntent::SetReading { reading: None })
+        .unwrap();
+    assert_eq!(sequence.notation, Some(json!({"key": "F"})));
+    assert!(
+        sequence
+            .edit(EventsIntent::SetReading {
+                reading: Some(json!(4))
+            })
+            .unwrap_err()
+            .contains("object")
+    );
+}
+
+#[test]
+fn the_parts_door_says_whether_they_are_stated() {
+    let mut sequence = EventSequence::new(vec![note(0.0, 60)]);
+    let answer: Value =
+        serde_json::from_str(&call_json(&mut sequence, r#"{"verb": "parts"}"#)).unwrap();
+    assert_eq!(answer["stated"], false);
+    assert_eq!(answer["parts"], json!([{"channels": [0]}]));
+    let set =
+        json!({"verb": "apply", "intent": {"intent": "setparts", "parts": [{"name": "Oboe"}]}});
+    call_json(&mut sequence, &set.to_string());
+    let answer: Value =
+        serde_json::from_str(&call_json(&mut sequence, r#"{"verb": "parts"}"#)).unwrap();
+    assert_eq!(answer, json!({"parts": [{"name": "Oboe"}], "stated": true}));
+}
+
+#[test]
+fn a_line_separated_keeps_the_part_it_is_of() {
+    let mut sequence = EventSequence::new(vec![
+        Event::new(0.0, json!({"midinote": 72, "staff": 0, "channel": 0})),
+        Event::new(0.0, json!({"midinote": 48, "staff": 1, "channel": 1})),
+        Event::new(0.0, json!({"midinote": 67, "staff": 2, "channel": 2})),
+    ]);
+    sequence.parts = vec![
+        Part {
+            name: "Piano".into(),
+            staves: 2,
+            channels: vec![0, 1],
+            ..Part::default()
+        },
+        Part {
+            name: "Horn".into(),
+            channels: vec![2],
+            transpose: -7,
+            ..Part::default()
+        },
+    ];
+    let staves = rows::separate(&sequence, rows::By::Staff);
+    let names: Vec<(&str, usize)> = staves
+        .iter()
+        .map(|s| (s.parts[0].name.as_str(), s.parts[0].staves))
+        .collect();
+    assert_eq!(names, vec![("Piano", 1), ("Piano", 1), ("Horn", 1)]);
+    let channels = rows::separate(&sequence, rows::By::Channel);
+    assert_eq!(channels[2].parts[0].transpose, -7);
+    assert_eq!(channels[0].parts[0].staves, 2);
 }

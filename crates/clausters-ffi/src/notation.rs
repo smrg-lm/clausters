@@ -392,9 +392,10 @@ pub unsafe extern "C" fn clausters_core_sheet_render_events(
 /// `sequence` is the sequence's data, whole or a bare list of events. `how`
 /// is the transcription -- the meter, the key, the clef, the beat, the
 /// smallest value, the tuplets admitted, the voices a staff may have,
-/// whether levels are read as dynamics -- and `interp` the reading whose
-/// dynamics name a level; each null or `{}` for its default, any field left
-/// out keeping its own.
+/// whether levels are read as dynamics -- each option it names over the
+/// reading the sequence states (`notation.reading`), so null or `{}` is that
+/// reading -- and `interp` the reading whose dynamics name a level, null or
+/// `{}` for its default; any field left out keeps its own.
 ///
 /// # Safety
 /// Each pointer must be readable for its length, and `out` writable for
@@ -418,9 +419,10 @@ pub unsafe extern "C" fn clausters_core_sheet_read_events(
     };
     // SAFETY: caller guarantees the ranges; a null pointer is the default.
     let (how, interp) = unsafe { (text(how, how_len), text(interp, interp_len)) };
+    // what is given goes over the reading the sequence states
     let how = match how.as_deref().filter(|s| !s.trim().is_empty()) {
-        None => Ok(Transcription::default()),
-        Some(text) => serde_json::from_str::<Transcription>(text),
+        None => Ok(serde_json::Value::Null),
+        Some(text) => serde_json::from_str::<serde_json::Value>(text),
     };
     let interp = match interp.as_deref().filter(|s| !s.trim().is_empty()) {
         None => Ok(default_interpretation()),
@@ -432,9 +434,11 @@ pub unsafe extern "C" fn clausters_core_sheet_read_events(
         interp,
     ) {
         (Err(e), _, _) => envelope_error(&format!("the sequence could not be read: {e}")),
-        (_, Err(e), _) => envelope_error(&format!("the transcription could not be read: {e}")),
         (_, _, Err(e)) => envelope_error(&format!("the interpretation could not be read: {e}")),
-        (Ok(sequence), Ok(how), Ok(interp)) => match read(&sequence, &how, &interp) {
+        (_, Err(e), _) => envelope_error(&format!("the transcription could not be read: {e}")),
+        (Ok(sequence), Ok(how), Ok(interp)) => match Transcription::over(&sequence, &how)
+            .and_then(|how| read(&sequence, &how, &interp))
+        {
             Ok(read) => serde_json::json!({ "ok": read }).to_string(),
             Err(e) => envelope_error(&e),
         },

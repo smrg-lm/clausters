@@ -3477,18 +3477,21 @@ pub fn sheet_render_events(sheet: &str, interp: &str) -> Result<String, JsError>
 /// written as they say it, and what they do not decided by `how`, the
 /// transcription (`clausters_document::events::transcription::read`).
 /// `interp` is the reading whose dynamics name a level. Each of the two is
-/// empty for its default.
+/// empty for its default -- `how` naming only what goes over the reading the
+/// sequence states.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = sheetReadEvents)]
 pub fn sheet_read_events(sequence: &str, how: &str, interp: &str) -> Result<String, JsError> {
     use clausters_document::events::transcription::{Transcription, read};
     let sequence: clausters_document::events::EventSequence =
         serde_json::from_str(sequence).map_err(|e| JsError::new(&format!("sequence: {e}")))?;
-    let how: Transcription = if how.trim().is_empty() {
-        Transcription::default()
+    // what is given goes over the reading the sequence states
+    let how: serde_json::Value = if how.trim().is_empty() {
+        serde_json::Value::Null
     } else {
         serde_json::from_str(how).map_err(|e| JsError::new(&format!("transcription: {e}")))?
     };
+    let how = Transcription::over(&sequence, &how).map_err(|e| JsError::new(&e))?;
     let interp: clausters_core::notation::Interpretation = if interp.trim().is_empty() {
         clausters_core::notation::default_interpretation()
     } else {

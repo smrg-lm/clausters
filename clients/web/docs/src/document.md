@@ -680,6 +680,27 @@ one line, since there each note takes a channel and the line's own curves the
 master's; and MIDI 2.0 where it is several voices, which says a note's curve
 and a channel's side by side.
 
+**A sequence names its parts, and keeps how it is read.** A part is what a
+page names an instrument by and what plays it: its name and short name, how
+many consecutive staves it is written on, the channels its notes are played
+on (or an MPE zone), how its polyphony is written — in voices, or in one voice
+with ties — and its transposition. A page read from the sequence takes each
+staff's name and transposition from its part. A sequence that names none reads
+as one part per staff, a staff to each channel its notes are on, and
+`partsStated` says which of the two it is. Its `reading` is the options a page is
+read with (the meter, the key, the smallest value...), stored with the
+sequence, so a score editor opened over it and a multitrack's box drawn as a
+page read it alike. Both are edits, and both are undone as one.
+
+```js
+seq.parts = [
+    { name: "Piano", abbr: "Pno.", staves: 2, channels: [0, 1] },
+    { name: "Clarinet in B flat", channels: [2], transpose: -2 },
+];
+seq.reading = { meter: "3/4", division: 8 };   // how every page of it is read
+seq.partsStated;                               // true; [] goes back to one part per staff
+```
+
 ### A sequence as plain data, and in parts
 
 What the editor made is in the events, and a page often wants it back as

@@ -2175,14 +2175,13 @@ fn articulations(editor: &ScoreEditor, n: usize) -> Vec<String> {
 #[test]
 fn an_edit_on_the_page_of_a_sequence_is_an_edit_of_the_sequence() {
     use clausters_core::notation::default_interpretation;
-    use clausters_document::events::transcription::Transcription;
 
     let sequence = played();
     let before = sequence.lock().unwrap().clone();
     let mut editor = ScoreEditor::over(
         holding(Vec::new()),
         Arc::clone(&sequence),
-        Transcription::default(),
+        serde_json::json!({}),
         default_interpretation(),
         1,
     )
@@ -2280,7 +2279,6 @@ fn a_roll_and_a_page_over_one_sequence_are_one_order() {
 fn the_page_of_a_sequence_is_on_the_sequence_s_time() {
     use clausters_core::notation::{Cursor, Page, default_interpretation};
     use clausters_core::tempomap::TempoMap;
-    use clausters_document::events::transcription::Transcription;
 
     let at = |ms: f64| Cursor {
         t: ms,
@@ -2304,7 +2302,7 @@ fn the_page_of_a_sequence_is_on_the_sequence_s_time() {
         ScoreEditor::over(
             holding(Vec::new()),
             Arc::clone(sequence),
-            Transcription::default(),
+            serde_json::json!({}),
             default_interpretation(),
             1,
         )

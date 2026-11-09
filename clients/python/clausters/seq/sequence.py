@@ -184,6 +184,48 @@ class EventSequence:
             written = spec
         self._edit({"intent": "midi", "midi": written}, "write it for another MIDI spec")
 
+    @property
+    def parts(self) -> list:
+        """**The sequence's parts**, top to bottom: each a dict of what is
+        written on which staves and played on which channels -- ``name``,
+        ``abbr``, ``staves`` (how many consecutive staves), ``channels`` or an
+        MPE ``zone``, ``writing`` (``{"polyphony": "voices" | "ties",
+        "voices_per_staff": 1 | 2}``) and ``transpose``, in semitones. A
+        sequence that states none reads as one part per staff, derived; see
+        `parts_stated`. Setting the list is an edit, and ``[]`` goes back to
+        the derived parts. `ValueError` when two parts claim a channel, or a
+        part is on no staff or has more than two voices a staff."""
+        return list(self._seq.call("parts")["parts"])
+
+    @parts.setter
+    def parts(self, value) -> None:
+        self._edit({"intent": "setparts", "parts": [dict(p) for p in value]},
+                   "set the parts")
+
+    @property
+    def parts_stated(self) -> bool:
+        """Whether the sequence states its `parts`, rather than reading them
+        as one part per staff."""
+        return bool(self._seq.call("parts")["stated"])
+
+    @property
+    def reading(self) -> "dict | None":
+        """**How the sequence is read into a page**: the options a score
+        editor and a multitrack's box drawn as a page read it with -- ``meter``,
+        ``key``, ``clef``, ``beat_unit``, ``division``, ``tuplets``,
+        ``voices``, ``dynamics`` -- each left out at its default; ``None`` for
+        the default reading. Setting it is an edit; `ValueError` when an
+        option does not read."""
+        notation = self.data().get("notation")
+        if not isinstance(notation, dict):
+            return None
+        return notation.get("reading")
+
+    @reading.setter
+    def reading(self, value: "dict | None") -> None:
+        written = None if value is None else dict(value)
+        self._edit({"intent": "setreading", "reading": written}, "change the reading")
+
     # ---- editing ----
 
     def _apply(self, intent: dict, *, inverse: bool = True) -> dict:

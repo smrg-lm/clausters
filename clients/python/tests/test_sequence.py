@@ -246,6 +246,34 @@ def test_a_midi_spec_admits_the_curves_it_can_say():
     assert seq.midi is None
 
 
+def test_a_sequence_states_its_parts_or_reads_one_per_staff():
+    seq = EventSequence([(0.0, Event(midinote=72, channel=0)),
+                         (0.0, Event(midinote=48, channel=1))])
+    assert not seq.parts_stated
+    assert seq.parts == [{"channels": [0]}, {"channels": [1]}]
+    assert "parts" not in seq.data(), "derived parts are not written"
+    seq.parts = [{"name": "Piano", "staves": 2, "channels": [0, 1]}]
+    assert seq.parts_stated
+    assert seq.parts == [{"name": "Piano", "staves": 2, "channels": [0, 1]}]
+    with pytest.raises(ValueError, match="channel 1"):
+        seq.parts = [{"channels": [1]}, {"channels": [1]}]
+    seq.parts = []
+    assert not seq.parts_stated
+
+
+def test_a_sequence_keeps_the_reading_it_is_read_with():
+    seq = _sequence()
+    assert seq.reading is None
+    seq.reading = {"meter": "3/4", "division": 8}
+    assert seq.reading == {"meter": "3/4", "division": 8}
+    assert seq.data()["notation"] == {"reading": {"meter": "3/4", "division": 8}}
+    with pytest.raises(ValueError, match="reading"):
+        seq.reading = {"division": "sixteen"}
+    seq.reading = None
+    assert seq.reading is None
+    assert "notation" not in seq.data()
+
+
 def test_a_sequences_curves_go_to_a_midi_file_and_back():
     seq = EventSequence([(0.0, Event(midinote=60, velocity=100, sustain=1.0)),
                          (0.0, Event(midinote=64, velocity=100, sustain=1.0))])

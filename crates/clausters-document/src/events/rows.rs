@@ -372,10 +372,36 @@ pub fn separate(sequence: &EventSequence, by: By) -> Vec<EventSequence> {
                 next_id: sequence.next_id,
                 extra: sequence.extra.clone(),
                 midi: None,
+                parts: part_of(&sequence.parts, by, place),
             };
             part.midi = sequence.midi.and_then(|_| part.midi_fit());
             part
         })
+        .collect()
+}
+
+/// **The part a line separated from a sequence is**: of the parts the
+/// sequence states, the one that claims its channel, or that its staff is on
+/// -- cut to that one staff, since the line is a score of its own. None where
+/// the sequence states none, or no part holds the line.
+fn part_of(parts: &[super::Part], by: By, place: (i64, i64)) -> Vec<super::Part> {
+    let found = match by {
+        By::Channel => parts.iter().find(|p| p.channels.contains(&place.0)),
+        By::Staff | By::Voice => {
+            let mut first = 0i64;
+            parts.iter().find(|p| {
+                let holds = (first..first + p.staves as i64).contains(&place.0);
+                first += p.staves as i64;
+                holds
+            })
+        }
+    };
+    found
+        .map(|part| super::Part {
+            staves: if by == By::Channel { part.staves } else { 1 },
+            ..part.clone()
+        })
+        .into_iter()
         .collect()
 }
 

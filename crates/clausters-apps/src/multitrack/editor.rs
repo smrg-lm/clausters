@@ -731,8 +731,6 @@ impl MultitrackEditor {
             return None;
         }
         let engraver = &self.engraver.as_ref()?.0;
-        let how = Transcription::default();
-        let beat_unit = how.beat_unit.max(1) as f64;
         let mut out = Map::new();
         let multitrack = self.multitrack();
         for box_ in picture::boxes(&multitrack) {
@@ -754,6 +752,9 @@ impl MultitrackEditor {
                 stale.then(|| held.clone())
             };
             if let Some(sequence) = sequence {
+                // each box read as its sequence says it is read
+                let how = Transcription::of(&sequence);
+                let beat_unit = how.beat_unit.max(1) as f64;
                 let Ok(got) = read(&sequence, &how, &default_interpretation()) else {
                     continue;
                 };

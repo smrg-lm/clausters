@@ -257,8 +257,10 @@ pub(crate) enum Kept {
 pub struct Over {
     /// The sequence, shared with its holder and with every roll over it.
     sequence: crate::notes::Shared,
-    /// How it is read where its events do not say.
-    how: Transcription,
+    /// How it is read where its events do not say: the options the opener
+    /// gave, over the reading the sequence states, which is read again with
+    /// the sequence (`Transcription::over`).
+    how: Value,
     /// The reading both ways: what a mark sounds as, and what a level is
     /// named.
     interp: Interpretation,
@@ -365,7 +367,9 @@ impl ScoreEditor {
     }
 
     /// **An editor over `sequence`**, on its page: `score` is loaded with the
-    /// sequence read as `how` says, and from then on an edit of the page is
+    /// sequence read as `how` says over the sequence's own reading
+    /// (`Transcription::over`; null or `{}` for the sequence's alone), read
+    /// again with it -- and from then on an edit of the page is
     /// an edit of the sequence (see [`Over`]). What `score` held is replaced.
     ///
     /// # Errors
@@ -373,7 +377,7 @@ impl ScoreEditor {
     pub fn over(
         score: Shared,
         sequence: crate::notes::Shared,
-        how: Transcription,
+        how: Value,
         interp: Interpretation,
         version: i64,
     ) -> Result<Self, String> {
@@ -464,7 +468,8 @@ impl ScoreEditor {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
-        let read = transcription::read(&sequence, &over.how, &over.interp)?;
+        let how = Transcription::over(&sequence, &over.how)?;
+        let read = transcription::read(&sequence, &how, &over.interp)?;
         let mei = sheet_to_mei(&read.sheet)?;
         let mut held = self.score.lock().unwrap_or_else(|e| e.into_inner());
         if held.mei() != mei {
@@ -909,7 +914,9 @@ impl ScoreEditor {
         let Ok(played) = performance(over.sheet.clone(), &default_interpretation()) else {
             return;
         };
-        let engraved = played.tempo_map(over.how.beat_unit.max(1));
+        let beat_unit = Transcription::over(&over.seen, &over.how)
+            .map_or(Transcription::default().beat_unit, |how| how.beat_unit);
+        let engraved = played.tempo_map(beat_unit.max(1));
         // one beat a second where it states none, as a roll's axis reads it
         let own = over
             .seen
@@ -2424,7 +2431,8 @@ pub fn new_json(score: Shared, request: &str) -> ScoreEditor {
 
 /// **A score editor over a sequence, from the request a binding crosses
 /// with**: [`new_json`]'s, and beside it `how` -- the transcription the
-/// sequence is read by, any key of it left out keeping its default -- and
+/// sequence is read by, any key of it left out keeping the sequence's own
+/// reading, else its default -- and
 /// `interp`, the reading. The score is loaded with the sequence read
 /// ([`ScoreEditor::over`]).
 ///
@@ -2438,11 +2446,12 @@ pub fn over_json(
 ) -> Result<ScoreEditor, String> {
     let said: Value = serde_json::from_str(request).unwrap_or_else(|_| json!({}));
     let opened: Opened = serde_json::from_value(said.clone()).unwrap_or_default();
-    let how = match said.get("how").filter(|how| !how.is_null()) {
-        Some(how) => serde_json::from_value::<Transcription>(how.clone())
-            .map_err(|e| format!("the transcription could not be read: {e}"))?,
-        None => Transcription::default(),
-    };
+    let how = said.get("how").cloned().unwrap_or(Value::Null);
+    {
+        // what does not read is refused before anything is opened
+        let held = sequence.lock().unwrap_or_else(|e| e.into_inner());
+        Transcription::over(&held, &how)?;
+    }
     let interp = match said.get("interp").filter(|interp| !interp.is_null()) {
         Some(interp) => serde_json::from_value::<Interpretation>(interp.clone())
             .map_err(|e| format!("the interpretation could not be read: {e}"))?,

@@ -1687,7 +1687,17 @@ follows the parts, and a performance derived from what is written.
 
 ### The milestones
 
-- ⬜ **O35 - The sequence's parts and its reading.**
+- ✅ **O35 - The sequence's parts and its reading.** *(Done 2026-11-08:
+  `events::part` (`Part`, `Writing`, `Zone`, `EventSequence::parts_read`,
+  the `parts` verb), `events::reading` (`Transcription` out of the gated
+  module, `Transcription::of` and `over`: what an opener gives goes over the
+  stored reading, option by option), `SetParts` and `SetReading`; the read
+  names and transposes a staff by its part; the score editor over a
+  sequence, the read door of both clients and the multitrack's boxes read
+  the stored reading; `parts`, `parts_stated`/`partsStated` and `reading` on
+  both clients' `EventSequence`. A line separated from a sequence keeps its
+  part. No test opens a box drawn as a page, which needs an engraver; what
+  it reads is `Transcription::of`, tested.)*
   - **The parts are a field of the sequence, not of its `notation` section,
     and not behind the `notation` feature**: the roll's MIDI mode reads them
     too (a part's channels), so both modes read the same part. A `Part`

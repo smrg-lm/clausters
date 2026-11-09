@@ -124,6 +124,11 @@ pub struct EventSequence {
     /// for the server, where every curve is legal. See [`MidiSpec`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub midi: Option<MidiSpec>,
+    /// **Its parts**: what is written on which staves and played on which
+    /// channels (see [`Part`]). None stated, it reads as one part per staff
+    /// ([`EventSequence::parts_read`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<Part>,
     /// **What a score says that is not any note's**, when the sequence was
     /// rendered from one: the meter and its changes, the key, the clefs, the
     /// barlines and breaks, the page and its text -- and what has two ends, a
@@ -135,7 +140,9 @@ pub struct EventSequence {
     /// It is held as it was written and not read here: the score's model is
     /// the notation layer's (`clausters_core::notation`, a feature this crate
     /// does not ask for), and nothing a sequence does -- playing, editing an
-    /// event, drawing a roll -- depends on it.
+    /// event, drawing a roll -- depends on it. Its `reading` is how the
+    /// sequence is read into a page ([`EventSequence::reading`]), so every
+    /// view that opens it as one reads it alike.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notation: Option<Value>,
     /// The last id minted. Kept, so an id is never handed out twice, not even
@@ -165,6 +172,8 @@ enum Written {
         #[serde(default)]
         midi: Option<MidiSpec>,
         #[serde(default)]
+        parts: Vec<Part>,
+        #[serde(default)]
         notation: Option<Value>,
         #[serde(default)]
         next_id: u64,
@@ -185,6 +194,7 @@ impl From<Written> for EventSequence {
                 tempo_map,
                 automation,
                 midi,
+                parts,
                 notation,
                 next_id,
                 extra,
@@ -193,6 +203,7 @@ impl From<Written> for EventSequence {
                 tempo_map,
                 automation,
                 midi,
+                parts,
                 notation,
                 next_id,
                 extra,
@@ -307,6 +318,21 @@ pub enum EventsIntent {
         /// The notes' channel, or none for every note.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         channel: Option<i64>,
+    },
+    /// The sequence's parts, whole: none for the ones it reads as derived.
+    /// Refused where two parts claim a channel, or a part is written on no
+    /// staff or with more than two voices a staff.
+    SetParts {
+        /// The parts, top to bottom.
+        #[serde(default)]
+        parts: Vec<Part>,
+    },
+    /// How the sequence is read into a page (`notation.reading`), or none
+    /// for the default reading.
+    SetReading {
+        /// The reading, as its options are written.
+        #[serde(default)]
+        reading: Option<Value>,
     },
     /// The sequence as it was: what every edit's inverse is.
     Restore {
@@ -539,6 +565,47 @@ impl EventSequence {
         Ok(sequence)
     }
 
+    /// **How the sequence is read into a page**, as its options are written
+    /// (`notation.reading`), or `None` for the default reading.
+    pub fn reading(&self) -> Option<&Value> {
+        self.notation
+            .as_ref()
+            .and_then(|n| n.get("reading"))
+            .filter(|r| !r.is_null())
+    }
+
+    /// Writes the reading into the `notation` section, or takes it out --
+    /// and the section with it, when nothing else is in it.
+    fn set_reading(&mut self, reading: Option<Value>) -> Result<(), String> {
+        let reading = reading.filter(|r| !r.is_null());
+        if let Some(reading) = &reading {
+            if !reading.is_object() {
+                return Err("a reading is written as an object of its options".into());
+            }
+            serde_json::from_value::<reading::Transcription>(reading.clone())
+                .map_err(|e| format!("the reading could not be read: {e}"))?;
+        }
+        let mut section = match self.notation.take() {
+            Some(Value::Object(map)) => map,
+            Some(other) => {
+                // a section this crate cannot read is kept as it was
+                self.notation = Some(other);
+                return Err("the sequence's notation section is not an object".into());
+            }
+            None => Map::new(),
+        };
+        match reading {
+            Some(reading) => {
+                section.insert("reading".into(), reading);
+            }
+            None => {
+                section.remove("reading");
+            }
+        }
+        self.notation = (!section.is_empty()).then_some(Value::Object(section));
+        Ok(())
+    }
+
     /// The edit that puts the sequence back as it is now.
     pub fn state(&self) -> EventsIntent {
         EventsIntent::Restore {
@@ -693,6 +760,13 @@ impl EventSequence {
                     .ok_or_else(|| format!("event {id} holds no curve {}", curve.0))?;
                 curves.remove(j);
             }
+            EventsIntent::SetParts { parts } => {
+                if let Some(why) = part::refusal(&parts) {
+                    return Err(why);
+                }
+                self.parts = parts;
+            }
+            EventsIntent::SetReading { reading } => self.set_reading(reading)?,
             EventsIntent::AutomationToEvents { curve } => {
                 let mut after = self.clone();
                 after.automation_to_events(curve)?;
@@ -953,6 +1027,8 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
         | EventsIntent::RemoveAutomation { .. }
         | EventsIntent::RemoveEventAutomation { .. }
         | EventsIntent::Midi { .. }
+        | EventsIntent::SetParts { .. }
+        | EventsIntent::SetReading { .. }
         | EventsIntent::AutomationToEvents { .. }
         | EventsIntent::EventsToAutomation { .. } => return None,
     })
@@ -986,6 +1062,9 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
 ///   rows say ([`rows::from_rows`]), answering `{"len": n}`.
 /// - `"separate"` with `by` (`"voice"`, `"staff"` or `"channel"`):
 ///   `{"parts": [sequence]}`, a sequence for each ([`rows::separate`]).
+/// - `"parts"`: `{"parts": [part], "stated": bool}`, the parts as they are
+///   read ([`EventSequence::parts_read`]) and whether the sequence states
+///   them or they are derived.
 /// - `"automation"`: `{"automation": [curve]}`, the sequence's curves -- or,
 ///   with `id`, that event's, and `null` when it holds no such event.
 /// - `"apply"` with `intent`: the edit applied, answering `{"applied",
@@ -1138,6 +1217,10 @@ pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
                 )}),
             }
         }
+        Some("parts") => json!({
+            "parts": sequence.parts_read(),
+            "stated": !sequence.parts.is_empty(),
+        }),
         Some("automation") => match request.get("id").and_then(Value::as_u64) {
             Some(id) => sequence
                 .get(id)
@@ -1197,6 +1280,9 @@ pub fn mutates(request: &str) -> bool {
 }
 
 mod midi;
+pub mod part;
+pub use part::{Part, Polyphony, Writing, Zone};
+pub mod reading;
 pub mod rows;
 mod scopes;
 #[cfg(feature = "notation")]
