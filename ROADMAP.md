@@ -273,14 +273,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`N10` — the written page breaks** *(`clients/gui/PLAN.md`, N track)*.
-  Its first part, a page's notes read from the model, shipped. The second
-  waits on a **decision**: laid out as a selection of the one document,
-  verovio draws the lines across a page break right but draws no running
-  elements (title, heads, page numbers), and its automatic cast-off
-  ignores `<pb>`. The plan lists the ways left; the runs of separate
-  documents, and their broken lines, stay until one is chosen.
-
 - ⬜ **The roll's two modes are not yet an editor a hand can trust**
   *(`crates/clausters-apps/PLAN.md`, Found by use, the entry of that title)*.
   The first eye pass over the notation mode and the editing options found

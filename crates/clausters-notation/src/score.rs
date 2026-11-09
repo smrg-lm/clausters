@@ -664,46 +664,102 @@ mod tests {
         page.draw.kinds.values().filter(|k| *k == kind).count()
     }
 
-    /// A slur and a hairpin across a written page break are drawn on both
-    /// pages, each run of pages holding the part that is its own: the
-    /// engraver matches an end written as a beat of the run's last measure,
-    /// and one written before the first beat of the run's first.
+    /// **Every line across a written page break is drawn as the engraver
+    /// draws one across a system**: on both pages, each part under the
+    /// line's one id, so a press on either names the line -- a slur, a phrase
+    /// mark, both hairpins, an octave line, a bracket, a glissando, the pedal
+    /// pressed on one page and let go on the next, and a tie over the turn --
+    /// and the engraver has nothing to say about any of them.
     #[test]
     fn a_line_across_a_page_break_is_drawn_on_both_pages() {
         use clausters_core::notation::{
-            PageSetup, Sheet, View, add_spanner, layout_options, sheet_to_mei, voice_to_sheet,
+            PageSetup, Prim, Sheet, View, add_spanner, layout_options, sheet_to_mei, voice_to_sheet,
         };
 
-        let voice: Vec<Slot> = (0..16).map(|i| Slot::note(vec![60 + i % 8], 8)).collect();
+        // seven quarters, a half note over the barline into the third bar,
+        // and seven more: the page turns before the third bar
+        let mut voice: Vec<Slot> = (0..7).map(|i| Slot::note(vec![64 + i % 5], 8)).collect();
+        voice.push(Slot::note(vec![67], 16));
+        voice.extend((0..7).map(|i| Slot::note(vec![72 - i % 5], 8)));
         let mut sheet: Sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
-        sheet = add_spanner(sheet, "slur", 6, 11).unwrap();
-        sheet = add_spanner(sheet, "crescendo", 6, 11).unwrap();
+        for (kind, from, to) in [
+            ("slur", 6, 10),
+            ("phrase", 5, 12),
+            ("crescendo", 6, 9),
+            ("diminuendo", 7, 10),
+            ("8va", 7, 11),
+            ("bracket", 5, 11),
+            ("gliss", 7, 9),
+            ("pedal", 6, 10),
+        ] {
+            sheet = add_spanner(sheet, kind, from, to).unwrap();
+        }
         let laid = |sheet: &Sheet| {
             let mut score =
                 open(&sheet_to_mei(sheet).unwrap(), &EngraveOptions::default()).expect("opens");
             assert!(score.relayout(&layout_options(&PageSetup::default(), View::Page)));
             score.pages(1000.0, true)
         };
-        // how many drawings the page holds under an element's name
-        let parts = |page: &Page, id: &str| {
-            let named = |p: &&clausters_core::notation::Prim| p.id() == Some(id);
-            page.draw.prims.iter().filter(named).count()
-        };
         let one = laid(&sheet);
-        assert_eq!((drawn(&one, "slur"), drawn(&one, "hairpin")), (1, 1));
-        assert_eq!(parts(&one, "a-slur-6-11"), 1);
         sheet.grid.breaks = vec![(2, "page".to_string())];
         let two = laid(&sheet);
-        // one slur and one hairpin still, each drawn once on each page under
-        // the one name: a press on either part names the line
-        assert_eq!((drawn(&two, "slur"), drawn(&two, "hairpin")), (1, 1));
-        assert_eq!(parts(&two, "a-slur-6-11"), 2);
-        assert_eq!(parts(&two, "a-crescendo-6-11"), 2);
-        // and it has nothing to say about either run: no end it cannot match
-        for run in clausters_core::notation::sheet_to_mei_pages(&sheet).unwrap() {
-            let said = crate::complaints(&run, &EngraveOptions::default()).expect("engraves");
-            assert_eq!(said, Vec::<String>::new());
+        assert!(two.draw.vb[1] > 1.9 * one.draw.vb[1], "two pages");
+        let page_height = (two.draw.vb[1] - 1000.0) / 2.0;
+
+        // the page a primitive is on, by where it starts
+        let page_of = |prim: &Prim| -> usize {
+            let y = match prim {
+                Prim::Glyph { xf, .. } => xf[1],
+                Prim::Line { pts, .. } => pts[0][1],
+                Prim::Text { y, .. } => *y,
+                Prim::Fill { d, xf, .. } => {
+                    let first: Vec<f64> = d
+                        .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+                        .filter_map(|n| n.parse().ok())
+                        .take(2)
+                        .collect();
+                    xf[1] + xf[3] * first.get(1).copied().unwrap_or(0.0)
+                }
+            };
+            usize::from(y > page_height)
+        };
+        let pages_of = |id: &str| -> Vec<usize> {
+            let mut on: Vec<usize> = two
+                .draw
+                .prims
+                .iter()
+                .filter(|p| p.id() == Some(id))
+                .map(page_of)
+                .collect();
+            on.sort_unstable();
+            on.dedup();
+            on
+        };
+        for line in [
+            "a-slur-6-10",
+            "a-phrase-5-12",
+            "a-crescendo-6-9",
+            "a-diminuendo-7-10",
+            "a-8va-7-11",
+            "a-bracket-5-11",
+            "a-gliss-7-9",
+        ] {
+            assert_eq!(pages_of(line), vec![0, 1], "{line} on both pages");
         }
+        assert_eq!(pages_of("a-pedal-6-10"), vec![0], "pressed on the first");
+        assert_eq!(pages_of("a-pedal-6-10-up"), vec![1], "let go on the second");
+        let ties: Vec<&String> = two
+            .draw
+            .kinds
+            .iter()
+            .filter(|(_, kind)| *kind == "tie")
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(ties.len(), 1, "one tie");
+        assert_eq!(pages_of(ties[0]), vec![0, 1], "its halves on both pages");
+        // and the engraver says nothing about the document
+        let said = crate::complaints(&sheet_to_mei(&sheet).unwrap(), &EngraveOptions::default());
+        assert_eq!(said.expect("engraves"), Vec::<String>::new());
     }
 
     /// A slur into a measure drawn as a repeat, and a hairpin out of it, are

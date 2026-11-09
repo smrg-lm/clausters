@@ -330,7 +330,7 @@ pub fn voice_to_sheet(voice: &[Slot], meter: &str, clef: &str, key: &str) -> She
 /// cannot be split without ceasing to be a tuplet), a group whose written
 /// values do not add up to a value at all, and an accidental past a double.
 pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
-    Ok(documents(sheet, false)?.remove(0))
+    Ok(documents(sheet, Cut::Whole)?.remove(0))
 }
 
 /// **The score cut at its written page breaks**: one document per run of
@@ -347,11 +347,36 @@ pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
 /// # Errors
 /// As [`sheet_to_mei`].
 pub fn sheet_to_mei_pages(sheet: &Sheet) -> Result<Vec<String>, String> {
-    documents(sheet, true)
+    documents(sheet, Cut::Runs)
 }
 
-/// The score as one document, or -- `split` -- as one per run of pages.
-fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
+/// **The score as one document with its every page and system break
+/// written**, and the running elements of every page: what a page view lays
+/// out in the engraver's `encoded` mode once it knows where the engraver
+/// breaks each run of pages, so that one layout honours the written page
+/// breaks and draws every line across a turn as the engraver draws it inside
+/// one document. The breaks are the sheet's (`grid.breaks`), which the caller
+/// sets to the ones the engraver chose.
+///
+/// # Errors
+/// As [`sheet_to_mei`].
+pub fn sheet_to_mei_paged(sheet: &Sheet) -> Result<String, String> {
+    Ok(documents(sheet, Cut::Paged)?.remove(0))
+}
+
+/// What a writing of the score is cut into.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Cut {
+    /// One document, as the score is held.
+    Whole,
+    /// One document per run of pages its written page breaks make.
+    Runs,
+    /// One document, numbered for a layout with every break written.
+    Paged,
+}
+
+/// The score as one document, or as one per run of pages.
+fn documents(sheet: &Sheet, cut: Cut) -> Result<Vec<String>, String> {
     let default_staff = Staff::default();
     let staves: Vec<&Staff> = if sheet.staves.is_empty() {
         vec![&default_staff]
@@ -370,7 +395,7 @@ fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
     // where a run of pages starts: the first measure, and each one a page
     // break was written before
     let mut starts = vec![0];
-    if split {
+    if cut == Cut::Runs {
         starts.extend(
             grid.breaks
                 .iter()
@@ -499,7 +524,9 @@ fn documents(sheet: &Sheet, split: bool) -> Result<Vec<String>, String> {
         .iter()
         .zip(ends)
         .map(|(&first, end)| {
-            let running = if first == 0 {
+            let running = if cut == Cut::Paged {
+                super::pagetext::numbered_xml(&sheet.header, escape)
+            } else if first == 0 {
                 super::pagetext::running_xml(&sheet.header, escape)
             } else {
                 super::pagetext::continued_xml(&sheet.header, escape)

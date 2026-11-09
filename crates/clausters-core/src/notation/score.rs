@@ -27,7 +27,7 @@ use serde::Serialize;
 
 use super::{
     Cursor, DisplayList, Op, Sheet, TimemapEntry, apply, cursor_track, mei_to_sheet, sheet_to_mei,
-    sheet_to_mei_pages, svg_to_display_list,
+    sheet_to_mei_paged, sheet_to_mei_pages, svg::system_starts, svg_to_display_list,
 };
 
 /// verovio's `keyDown` codes for the arrow keys (`vrvdef.h`): what moves a note
@@ -190,6 +190,9 @@ pub struct Score<E: Engraver> {
     /// reaches through drawing state the load does not build), and since every
     /// edit reloads, two edits in a row would hit exactly that.
     drawn: bool,
+    /// The layout options last asked for ([`Score::relayout`]): what a page
+    /// view puts back after laying the score out with its breaks written.
+    options: Option<String>,
 }
 
 impl<E: Engraver> Score<E> {
@@ -215,6 +218,7 @@ impl<E: Engraver> Score<E> {
             undo: Vec::new(),
             redo: Vec::new(),
             drawn: false,
+            options: None,
         })
     }
 
@@ -235,12 +239,16 @@ impl<E: Engraver> Score<E> {
     /// those a question about which widget.
     ///
     /// **A written page break turns the page** in a framed view, which the
-    /// engraver does not do by itself: it turns a page where the paper is full
-    /// and nowhere else. So a score that has one is laid out in runs, each the
-    /// measures from one page break to the next ([`sheet_to_mei_pages`]), and
-    /// their pages are stacked with the numbers the whole score gives them; the
-    /// document stays the whole score, and the cursors and the notes are read
-    /// from it.
+    /// engraver does not do by itself: its cast-off turns a page where the
+    /// paper is full and nowhere else, and only its `encoded` mode honours a
+    /// written one. So a score that has one is laid out twice, every decision
+    /// the engraver's: each run of pages from one page break to the next as a
+    /// document of its own ([`sheet_to_mei_pages`]), to read where the
+    /// engraver breaks it into systems and pages; then the one document with
+    /// all of those breaks written ([`sheet_to_mei_paged`]), in `encoded`
+    /// mode, which is the drawing -- one document, so a line across a page
+    /// turn is drawn open at the edge on both sides, as the engraver draws one
+    /// across a system, and every page carries its running elements.
     pub fn pages(&mut self, gap: f64, frame: bool) -> Page {
         let _guard = self.engraver.lock();
         let runs = self
@@ -249,25 +257,9 @@ impl<E: Engraver> Score<E> {
             .filter(|_| frame)
             .and_then(|sheet| sheet_to_mei_pages(sheet).ok())
             .filter(|runs| runs.len() > 1);
-        let pages = match runs {
-            Some(runs) => {
-                let whole = self.mei_locked();
-                let mut pages = Vec::new();
-                for run in &runs {
-                    if !self.engraver.load_data(run) {
-                        continue;
-                    }
-                    for page in 1..=self.engraver.page_count().max(1) {
-                        pages.push(svg_to_display_list(&self.engraver.render_svg(page)));
-                    }
-                }
-                self.engraver.load_data(&whole);
-                // the engraver counted the pages of each run from one
-                for (index, page) in pages.iter_mut().enumerate() {
-                    page.number_page(index + 1);
-                }
-                pages
-            }
+        let paged = runs.and_then(|runs| self.paged_locked(&runs));
+        let pages = match paged {
+            Some(pages) => pages,
             // one document: the engraver's count is the score's, and each
             // number still goes to its page's outer corner
             None => (1..=self.engraver.page_count().max(1))
@@ -287,6 +279,61 @@ impl<E: Engraver> Score<E> {
             cursors,
             notes,
         }
+    }
+
+    /// **The pages of a score with written page breaks**, or `None` where the
+    /// engraver could not lay them out so (the caller lays the document out
+    /// as it is). The document is put back as it was, under the options it
+    /// had.
+    fn paged_locked(&mut self, runs: &[String]) -> Option<Vec<DisplayList>> {
+        let sheet = self.sheet.clone()?;
+        let held = self.mei_locked();
+        // where the engraver breaks each run: every page opens on a page
+        // turn and every other system on a system break, the score's first
+        // measure on neither
+        let mut breaks: Vec<(usize, String)> = Vec::new();
+        for run in runs {
+            if !self.engraver.load_data(run) {
+                self.engraver.load_data(&held);
+                return None;
+            }
+            for page in 1..=self.engraver.page_count().max(1) {
+                let svg = self.engraver.render_svg(page);
+                for (k, id) in system_starts(&svg).iter().enumerate() {
+                    let Some(m) = measure_id(id).map(|(m, _)| m - 1).filter(|m| *m > 0) else {
+                        continue;
+                    };
+                    let kind = if k == 0 { "page" } else { "system" };
+                    breaks.push((m, kind.to_string()));
+                }
+            }
+        }
+        let mut written = sheet;
+        written.grid.breaks = breaks;
+        let pages = sheet_to_mei_paged(&written).ok().and_then(|mei| {
+            if !self.engraver.set_options(r#"{"breaks": "encoded"}"#)
+                || !self.engraver.load_data(&mei)
+            {
+                return None;
+            }
+            Some(
+                (1..=self.engraver.page_count().max(1))
+                    .map(|page| svg_to_display_list(&self.engraver.render_svg(page)))
+                    .collect::<Vec<_>>(),
+            )
+        });
+        // the options the score was laid out under, and its own document
+        let restore = self
+            .options
+            .clone()
+            .unwrap_or_else(|| r#"{"breaks": "auto"}"#.to_string());
+        self.engraver.set_options(&restore);
+        self.engraver.load_data(&held);
+        let mut pages = pages?;
+        for (index, page) in pages.iter_mut().enumerate() {
+            page.number_page(index + 1);
+        }
+        Some(pages)
     }
 
     /// **The engraver's outlines for `codes`** -- SMuFL codepoints, in hex --
@@ -329,6 +376,7 @@ impl<E: Engraver> Score<E> {
         if !self.engraver.set_options(options) {
             return false;
         }
+        self.options = Some(options.to_string());
         self.load_locked(&mei)
     }
 

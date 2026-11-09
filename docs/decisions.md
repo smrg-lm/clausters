@@ -9689,45 +9689,41 @@ in a scope and nowhere else, since leaving a mode is a dismissal; and it now
 reaches the focused element before the front's own close, which a text being
 typed over on the page had needed and never had.
 
-## A page break is honoured by laying the score out in runs
+## A page break is honoured by laying the score out twice
 
 The engraver turns a page where the paper is full and nowhere else: its cast
 off reads a system break and has no visit for a page break, which only its
 `encoded` mode honours -- the mode that breaks nowhere it was not told to. That
 is the engraver's design, and patching it was ruled out (the user, 2026-10-05).
 
-**So the page view lays a score with page breaks out in runs**
-(`notation::sheet_to_mei_pages`, `Score::pages`): each run is the measures from
-one page break to the next, written as a document of its own and engraved on
-its own, and the runs' pages are stacked as the page view always stacked one
-document's. A run keeps the measures' own numbers and every element its id, so
-a selection, a press and a cursor name on a run's page what they name in the
-whole score; the document the editor holds, saves and plays stays the whole
-score, and the cursors and the notes are read from it. A run after the first
-opens with the meter in force there, writes only what is on every page, and
-carries the page number, which the engraver counts from one in each document --
-so the page view writes the score's number over it (`PAGE_NUMBER`).
+**So a score with written page breaks is laid out twice** (`Score::pages`,
+2026-11-09), every decision the engraver's. First each run of pages -- the
+measures from one page break to the next -- is laid out as a document of its
+own (`notation::sheet_to_mei_pages`), only to read where the engraver breaks
+it: the first measure of each system on each page. Then the one document is
+written with all of those breaks, a page break before each page and a system
+break before each other system (`notation::sheet_to_mei_paged`), and laid out
+in `encoded` mode. That layout is the drawing: one document, so a line across
+a page turn is drawn open at the edge on both sides as the engraver draws one
+across a system, a tie over the turn is two halves, and every page carries its
+running elements -- the first page's head, and the page number on every other.
+The runs' own writing (a line cut at each run's edges, the head of a run that
+does not start the score) is read for its breaks and never drawn.
 
-**A line across a page break is written once in each run it is in.** A slur,
-a hairpin, a phrase mark, a bracket or an octave line joins two documents, and
-an end naming a note of another one is an end the engraver cannot match -- it
-drew the line in neither. So each run holds the part that is its own: to the
-end of the run's last measure (`tstamp2`, the beat after its last), through the
-whole of a run it only passes, and from before the first beat of the run it
-ends in (`tstamp="0"`). That is the picture the engraver itself draws across a
-system break, open at the edge. The measures on to that end are counted as they
-are written, since a run of empty ones drawn as one numbered rest is one
-measure of the document.
+Until then the runs were the drawing, and across them a tie was dropped, a
+glissando was not drawn and every other line was closed at the run's edge. A
+selection of the one document was tried first: it draws the lines right, but
+a selected page has no running elements (no title, no page numbers), so it
+was left. What the two layouts cost: a score with page breaks is laid out once
+per run and once more whole on every edit; and the last system before a page
+break is justified to the full width, which a run laid out alone did not do,
+since `encoded` mode justifies every system but the document's last.
 
-The same writing serves **an item of a measure drawn as a repeat**, in the one
-document too: the sign stands where the item's element would be, so a line or
-a mark at that item is written at its beat of the measure, and the reader puts
-it back on the item the measure holds there -- which is the repeated measure's
-copy of it, since reading a repeat makes its items again.
-
-What it costs: a score with page breaks is engraved once more per run on every
-edit. A glissando is a line between two noteheads and a beam across a barline
-is between its notes, so across a page break neither is drawn.
+**A line through a measure drawn as a repeat** is written at its beat of the
+measure: the sign stands where the item's element would be, so a line or a
+mark at that item is written at its beat, and the reader puts it back on the
+item the measure holds there -- which is the repeated measure's copy of it,
+since reading a repeat makes its items again.
 
 ## What a page writes is what it plays, and the cursor follows the reading
 
@@ -11668,9 +11664,9 @@ whole curves open at the edge, a tie as halves, a hairpin left partly open, an
 octave line restated as `(8)`, a bracket without hooks, a glissando at half its
 slope), and it does the same at the edge of a selection of measures. So where
 this project cuts a score into documents of its own, as the page view does at
-a written page break ("A page break is honoured by laying the score out in
-runs"), the cut is ours to remove in favour of verovio's selection, not ours
-to patch.
+a written page break, the cut is ours to remove, not ours to patch: the page
+view now lays the one document out in verovio's `encoded` mode with the breaks
+verovio chose ("A page break is honoured by laying the score out twice").
 
 ## A page's notes are the model's reading (2026-11-09)
 

@@ -178,7 +178,7 @@ fn word<T: Serialize>(value: T) -> String {
 /// second page on.
 #[must_use]
 pub fn running_xml(header: &Header, escape: impl Fn(&str) -> String) -> String {
-    running(header, escape, false)
+    running(header, escape, false, false)
 }
 
 /// The id of the page number the running head writes: what a caller that lays
@@ -194,12 +194,27 @@ pub const PAGE_NUMBER: &str = "page-number";
 /// page, and the page number.
 #[must_use]
 pub fn continued_xml(header: &Header, escape: impl Fn(&str) -> String) -> String {
-    running(header, escape, true)
+    running(header, escape, true, false)
 }
 
-fn running(header: &Header, escape: impl Fn(&str) -> String, continued: bool) -> String {
+/// **The running elements of a score laid out with its every page break
+/// written**: the first page's blocks, and the page number on every page but
+/// the first -- even where the header writes nothing, since a page view that
+/// turns pages numbers them. The first page's head is written empty where it
+/// holds nothing, or the engraver would put the number there too.
+#[must_use]
+pub fn numbered_xml(header: &Header, escape: impl Fn(&str) -> String) -> String {
+    running(header, escape, false, true)
+}
+
+fn running(
+    header: &Header,
+    escape: impl Fn(&str) -> String,
+    continued: bool,
+    numbered: bool,
+) -> String {
     let entries = entries(header);
-    if entries.is_empty() && !continued {
+    if entries.is_empty() && !continued && !numbered {
         return String::new();
     }
     let mut out = String::new();
@@ -234,6 +249,8 @@ fn running(header: &Header, escape: impl Fn(&str) -> String, continued: bool) ->
                 out.push_str(&format!(
                     "\n\x20\x20\x20<{tag} func=\"{func}\">{rends}</{tag}>"
                 ));
+            } else if numbered && region == Region::Head && pages == Pages::First {
+                out.push_str(&format!("\n\x20\x20\x20<{tag} func=\"{func}\"/>"));
             }
         }
     }

@@ -151,6 +151,29 @@ impl Prim {
     }
 }
 
+/// **Where the engraver broke a page into systems**: the id of each system's
+/// first measure, in the order the page draws them -- what it decided in a
+/// layout, read off the page it drew. Empty for a malformed SVG.
+pub(super) fn system_starts(svg: &str) -> Vec<String> {
+    let Ok(doc) = Document::parse(svg) else {
+        return Vec::new();
+    };
+    let has = |node: &Node, class: &str| {
+        node.attribute("class")
+            .is_some_and(|c| c.split_whitespace().any(|c| c == class))
+    };
+    doc.descendants()
+        .filter(|node| node.has_tag_name("g") && has(node, "system"))
+        .filter_map(|system| {
+            system
+                .descendants()
+                .find(|node| node.has_tag_name("g") && has(node, "measure"))
+                .and_then(|measure| measure.attribute("id"))
+                .map(str::to_string)
+        })
+        .collect()
+}
+
 /// Walk a verovio SVG string into a `score` display list. Split out of the
 /// engraving step so it is testable on a captured SVG without verovio; the
 /// producer of the SVG (native libverovio or wasm verovio) is interchangeable.
@@ -309,7 +332,18 @@ fn walk(
     // sounding element claims everything drawn inside it (`owned`), dropping its
     // parts' ids; everything above it still takes its own id, or the layer and
     // staff would swallow the clefs and bar lines.
-    let own = node.attribute("id");
+    // A line that crosses a system or a page turn is drawn in parts, and the
+    // engraver names only the first by `id`: each later part is a group whose
+    // classes carry `spanning` and `id-<the line's id>`. Every part is the
+    // one line, so each is read under its id.
+    let own = node.attribute("id").or_else(|| {
+        let class = node.attribute("class")?;
+        let mut tokens = class.split_whitespace();
+        tokens
+            .clone()
+            .any(|c| c == "spanning")
+            .then(|| tokens.find_map(|c| c.strip_prefix("id-")))?
+    });
     let nid: Option<&str> = match own {
         Some(own) if !owned => {
             let class = node.attribute("class").unwrap_or("");
@@ -980,6 +1014,33 @@ mod tests {
         assert_eq!(dl.prims.len(), 1);
         assert_eq!(dl.prims[0].id(), Some("reh-1"));
         assert!(!dl.kinds.contains_key("sd-1"));
+    }
+
+    /// A line drawn in parts across a turn is one line: the engraver names
+    /// only its first part by `id`, and each later one by `id-<its id>` among
+    /// its classes, beside `spanning`.
+    #[test]
+    fn every_part_of_a_spanning_line_is_read_under_its_id() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg">
+          <svg class="definition-scale" viewBox="0 0 1000 400">
+            <g id="a-slur-2-9" class="slur"><path d="M10 10 C20 20 30 30 40 40Z"/></g>
+            <g class="slur id-a-slur-2-9 spanning"><path d="M10 210 C20 220 30 230 40 240Z"/></g>
+          </svg></svg>"##;
+        let dl = svg_to_display_list(svg);
+        assert_eq!(dl.prims.len(), 2);
+        assert!(dl.prims.iter().all(|p| p.id() == Some("a-slur-2-9")));
+        assert_eq!(dl.kinds.get("a-slur-2-9").map(String::as_str), Some("slur"));
+    }
+
+    /// Where a page breaks into systems is the first measure of each.
+    #[test]
+    fn a_page_s_systems_start_at_their_first_measures() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg">
+          <g id="s1" class="system"><g id="m1" class="measure"/><g id="m2" class="measure"/></g>
+          <g id="s2" class="system"><g id="m3" class="measure"/></g>
+        </svg>"##;
+        assert_eq!(system_starts(svg), vec!["m1", "m3"]);
+        assert!(system_starts("not svg").is_empty());
     }
 
     #[test]

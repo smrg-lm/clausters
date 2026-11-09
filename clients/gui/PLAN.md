@@ -4217,8 +4217,8 @@ Whatever symbols the model itself needs owe their rows either way
   - **Left open**, each for when it is met: "What a score box of the
     multitrack left open" (Found by use).
 
-- ⬜ **N10 — A page's notes are the model's, and a written page break is a
-  selection of the one document.** *(Added 2026-11-09. It began as engraving
+- ✅ **N10 — A page's notes are the model's, and a written page break is
+  drawn in one document.** *(Added 2026-11-09. It began as engraving
   only what changed, for the score editor; measuring and reading upstream
   turned it into these two parts, under "Verovio is followed, not adapted" in
   `docs/decisions.md`: what is verovio's to do is left to verovio, and what is
@@ -4252,63 +4252,40 @@ Whatever symbols the model itself needs owe their rows either way
   from 119 ms to 46 ms at a thousand notes and from 1.78 s to 0.37 s at five
   thousand.
 
-  **Part two: the page breaks.**
+  **Part two: the page breaks.** A written page break laid the score out in
+  runs, each a document of its own, and across two documents the engraver
+  has no other end to work from: a tie across the break was dropped on both
+  pages, a glissando was not drawn, a slur or a hairpin was drawn **closed**
+  at the run's barline, an octave line ended in a hook and restarted as `8`
+  without parentheses, a bracket got hooks on both sides of the turn. Inside
+  one document the engraver draws every one of them by the convention: a
+  slur or a phrase mark as two curves, each whole and open at the edge; a
+  tie as two halves; a hairpin left open and coming back partly open; an
+  octave line without its hook, restated as `(8)`; a bracket without hooks;
+  a glissando at half its slope.
 
-  **What is there.** A written page break lays the score out in runs, each a
-  document of its own (`sheet_to_mei_pages`; `docs/decisions.md`, "A page
-  break is honoured by laying the score out in runs"), and across two
-  documents the engraver has no other end to work from. Drawn and checked:
-  a tie across the break is dropped on both pages (the engraver logs "unable
-  to match @tie"), a glissando is not drawn, a slur or a hairpin is written
-  to the run's barline and drawn **closed** there, an octave line ends in a
-  hook and restarts as `8` without parentheses, a bracket gets hooks on both
-  sides of the turn, and a phrase mark can flip below the staff.
-
-  **What the engraver does instead, checked by drawing it.** Inside one
-  document it draws every line across a system or a page turn by the
-  convention (a slur or a phrase mark as two curves, each whole and open at
-  the edge; a tie as two halves; a hairpin left open and coming back partly
-  open; an octave line without its hook, restated as `(8)`; a bracket without
-  hooks; a glissando at half its slope). It can lay out **a selection** of a
-  document (`select` with a first and a last measure, then a layout, both in
-  the C wrapper and in the wasm exports), and draws a line that leaves the
-  selection the same way, since the measures outside it stay in the
-  document.
-
-  **Found while building it (2026-11-09): a selection has no running
-  elements.** A page laid out under a selection takes a copy of the system's
-  score definition without its `pgHead`/`pgFoot` (`Page::GetHeader` reads
-  the page's own score), so the title, the running heads and the page
-  numbers are gone from every page of a score laid out by selection; and the
-  engraver's automatic cast-off has no visit for `<pb>` (only its `encoded`
-  mode honours one). The selection was built and taken out again; it is kept
-  as a patch outside the tree. **Open, and the user's to decide**, among:
-  keep the runs of separate documents and their broken lines; lay each run
-  out as today only to read where verovio breaks its systems and pages, then
-  write those breaks and the page breaks into the one document and lay it
-  out in `encoded` mode, which draws every line across a turn and every
-  running element (two layouts, every decision still verovio's; a short last
-  system before a page break would be justified to the full width); or ask
-  upstream for running elements under a selection, or for `<pb>` in the
-  automatic cast-off, and wait.
-
-  **The work, as first written.** The page view lays out each run of pages
-  as a selection of the one loaded document instead of a document of its
-  own, and the cutting that writes a line once per run (`attachments`, the
-  `run_of` parts) is removed together with the separate documents and
-  `sheet_to_mei_pages`, in every client that binds it. What a run's first page carries today (the
-  meter in force, what is written on every page, the score's page number)
-  is checked against what a selection draws, and taken from the engraver
-  where it already says it. The decision record of the runs is rewritten.
-
-  **Acceptance:**
-  - Every line kind across a written page break is drawn as the engraver
-    draws it across a system turn, and the engraver says nothing: slur,
-    phrase mark, tie, both hairpins, the four octave lines, bracket, pedal
-    and glissando.
-  - The pages of a score with page breaks keep their numbers, their running
-    heads and the title on the first page alone, as the runs do today.
-  - The score editor's example with a written page break is run by hand.
+  *Done 2026-11-09, the second way.* A selection of the one document was
+  built first and taken out: it draws the lines right, but a selected page
+  has no running elements (its score definition is a copy without
+  `pgHead`/`pgFoot`), so the title and the page numbers were gone. What
+  shipped lays the score out twice, every decision the engraver's: each run
+  as today, only to read where the engraver breaks it into systems and pages
+  (`svg::system_starts`), then the one document with all those breaks
+  written (`sheet_to_mei_paged`, numbered by `pagetext::numbered_xml`) in
+  `encoded` mode, which is the drawing (`Score::paged_locked`). The layout
+  options are put back after it (`Score::relayout` now keeps them). On the
+  way, the walk learned the engraver's name for the later parts of a line
+  across a turn (`class="... id-<id> spanning"`), so every part of a line,
+  across a system or a page, is pressed as the line. The cost, as recorded:
+  a score with page breaks is laid out once per run and once whole, and the
+  last system before a page break is justified to the full width. The
+  decision record is rewritten ("A page break is honoured by laying the
+  score out twice"). Acceptance met by
+  `a_line_across_a_page_break_is_drawn_on_both_pages` (slur, phrase mark,
+  both hairpins, octave line, bracket, glissando, pedal and tie, each on
+  both pages under its one id, and nothing said by the engraver) and by
+  `a_written_page_break_turns_the_page` (the title on the first page alone,
+  the page numbers on the others).
 
   **Not taken: engraving only what changed.** Measured at five thousand notes
   (release, one staff, a slur every four bars), `Score::pages` costs 1.78 s
