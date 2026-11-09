@@ -1,11 +1,11 @@
 ---
 name: gui-widgets
-description: Domain knowledge for designing and implementing the Clausters GUI's graphical elements: what an element *is*, its algorithm, its visual parameters, its data source. Carries the extension recipe every widget follows, the rules fixing how big an element is (elastic vs natural size, the font cell as the base unit, integer text scales, pixel snapping, optical weight, hit slop), the table of what can feed one (shm control buses, the server's audio taps, bulk caches, streamed values), the placement rule deciding whether new compute belongs in the shared core or stays display-only, the invariants of editing data back to whoever owns it, and worked designs for the scope family and the editor-grade waveform/spectrogram. Also says how a widget is checked by script before any eye pass: a headless host, a capture of each state, a scripted pointer and keyboard. Consult whenever work touches any GUI widget or view, an application's views included (the multitrack, the audio, notes and score editors draw through the same widgets): adding one, deepening one, sizing or spacing one, picking where its data comes from, deciding how an edit travels back, or checking what it draws. That holds **including widgets it has no section on yet**, since the recipe, the placement rule and the edit-back invariants govern those too. The crate around them is mapped by clausters-gui.
+description: Domain knowledge for designing and implementing the Clausters GUI's graphical elements: what an element *is*, its algorithm, its visual parameters, its data source. Carries the extension recipe every widget follows, the rules fixing how big an element is (elastic vs natural size, the font cell as the base unit, integer text scales, pixel snapping, optical weight, hit slop), the table of what can feed one (shm control buses, the server's audio taps, bulk caches, streamed values), the placement rule deciding whether new compute belongs in the shared core or stays display-only, the invariants of editing data back to whoever owns it, and worked designs for the scope family and the editor-grade waveform/spectrogram. Also says how a widget is checked by script before any eye pass: a headless host, a capture of each state, a scripted pointer and keyboard. Consult whenever work touches any GUI widget or view, an application's views included (the multitrack, the audio, notes and score editors draw through the same widgets): adding one, deepening one, sizing or spacing one, picking where its data comes from, deciding the payload an edit of it sends back, or checking what it draws. That holds **including widgets it has no section on yet**, since the recipe, the placement rule and the edit-back invariants govern those too. How views, state, documents, history and verbs work together in an application is gui-apps; the crate around them is mapped by clausters-gui.
 ---
 
 # GUI widgets: per-element domain knowledge
 
-This skill is the widget-level companion of [[clausters-gui]] (the track map: protocol, architecture, rendering machinery) — what [[ugen-dsp]] is to the server's UGens. It covers what each graphical element *is*: its algorithm, visual parameters, data source and implementation pattern. `clients/gui/PLAN.md` wins on milestone scoping, staging and design rationale.
+This skill is the widget-level companion of [[clausters-gui]] (the track map: protocol, architecture, rendering machinery), what [[ugen-dsp]] is to the server's UGens. It covers what each graphical element *is*: its algorithm, visual parameters, data source and implementation pattern, and the payload an edit of it sends to whoever owns the data. **What it does not cover is the application around an element**: which component of an application carries a behavior, whose state a gesture changes, which history an edit enters, which verb a client calls, what two windows share. That is [[gui-apps]], and the two meet at one seam: an element emits an intent in the owner's terms and draws what comes back; everything the owner does with it is the application's. `clients/gui/PLAN.md` wins on milestone scoping, staging and design rationale.
 
 ## Adapt the view that exists; never write a second one
 
@@ -37,10 +37,10 @@ How to apply it, before writing any picture:
    presentation would have been a fourth copy. Found by the user
    2026-10-29; the record is `crates/clausters-apps/PLAN.md`, "A box of
    samples is not the audio editor's view of its take".
-4. **The same for behavior**: a transport, a cursor, a pass that ends, a
-   gesture. The audio editor's rules are written in `docs/app-behavior.md`;
-   another application meets them by calling what carries them out, not
-   by re-deriving them in its own units.
+4. **The same rule for a behavior** (a transport, a cursor, a pass that
+   ends, a dialog, a close) is an application's component, written once and
+   composed by every application: [[gui-apps]], "An application is a
+   composition of modular components".
 
 ## The extension recipe (every new widget follows it)
 
@@ -65,7 +65,7 @@ A widget is not finished when its tests pass: what it draws is checked too, and 
 - **Each state it draws.** Hovered (a `move` with nothing pressed), pressed, dragged (with the snap on and off, with each modifier the drag reads), focused (a `Tab`), typed into (`type_text`, accented letters included), disabled (`enabled` off), selected, and a menu or a list opened over it; a capture after each step. A drag is the machine's own, so it snaps and clamps as a mouse's does, and a key goes through the popup layer, the focus ring, the focused element and then the key table.
 - **What it reports, before what it looks like.** Each step's `/gui_event` is asserted in the owner's terms (steps, beats, samples; never pixels), and `host.query(id)` gives back what the widget holds now, which a later `/gui_set` must accept. A picture is read for what a number cannot say.
 - **What it costs at rest.** `host.activity(id)` says what it drew since it opened and why it is ticking now: a settled window reports no demand, and a live part shows as live frames rather than whole ones (the live layer, below). Two captures half a second apart show whether something that should move did.
-- **Two windows when it shares anything** (a navigation group, a selection, a transport), the second one checked after a step in the first. `docs/app-behavior.md` lists what an application's windows share.
+- **What it shares is the application's to check.** A widget that joins a navigation group, a selection or a transport is checked inside the application that composes it, with two windows open, by the process in [[gui-apps]].
 - **The page too** when the widget has a page acceptance in `clients/web/tests`: the same Rust in a tab, driven by the same verbs (`pointer`, `pressKey`, `typeText`, `capture` into the page's storage).
 
 ## How big your widget is
@@ -162,6 +162,8 @@ The heavy views receive data; edit-back is the reverse direction, and it does no
 - **To the script**: `/gui_event id <tag> <values...>` with the edited structure as flat OSC primitives (the `bpf`'s list as `"points" t0 v0 shape0 curve0 t1 v1 ...`, keeping ints int and floats float), or as one compact blob for bulk data (the `samples_to_blob` little-endian `f32` layout — the existing client↔host convention). New event *payloads*, not new addresses.
 - **To the server**: the binding path — a bound editor forwards its edit straight to the audio server, the widget-value binding generalized to a flat list (`Binding::message_args`/`Host::forward_args` send `addr prefix… values…`; `/buffer_getRange.reply` for a future drawn buffer region), bypassing the script exactly as a bound knob does.
 
+What the owner does with the intent (applying it, acknowledging it with the effective value, entering it in a history, correcting the window, refusing a stale one) is the conversation of [[gui-apps]]; this side's job ends at a payload in the owner's terms and the drawing of what comes back.
+
 Two invariants: **the host's mapped resources stay read-only** (the mmap bulk path is a read path by design — writes go through the server or the script, never by the host scribbling on a shared file), and **flat primitives at the boundary** (no structured/nested encoding on the wire beyond the JSON-in-OSC def itself). The later drawn-buffer and automation cases are applications of this pattern, not new designs.
 
 ## Where the design is not firm yet
@@ -174,4 +176,4 @@ So where that roadmap has no staged design for something, **do not invent one**.
 
 ## Conventions
 
-The track's rules apply unchanged (see [[clausters-gui]]): build/test from `clients/gui/`, fmt/clippy clean, English throughout, GPU-free logic unit-tested, the E2E single-invocation rule, and closing work means a clear commit message + the `clients/gui/PLAN.md` checkbox + docs + a commented example (what the scripted check drives, and where the user's eye pass looks afterwards), not just code. Windowing/FFT correctness patterns are in [[ugen-dsp]] and [[audio-testing]]; the shm/RT boundaries in [[realtime-audio]]; the Python driving side in [[clausters-python]].
+The track's rules apply unchanged (see [[clausters-gui]]): build/test from `clients/gui/`, fmt/clippy clean, English throughout, GPU-free logic unit-tested, the E2E single-invocation rule, and closing work means a clear commit message + the `clients/gui/PLAN.md` checkbox + docs + a commented example (what the scripted check drives, and where the user's eye pass looks afterwards), not just code. Windowing/FFT correctness patterns are in [[ugen-dsp]] and [[audio-testing]]; the shm/RT boundaries in [[realtime-audio]]; the Python driving side in [[clausters-python]]; the application that composes a widget in [[gui-apps]].
