@@ -25,6 +25,10 @@
 //! chosen and the directory the field opens in; and what the paths are for
 //! is the application's, read at `OK` or at a pick ([`Said::Picked`]).
 //!
+//! **A field may be one of several** ([`Spec::options`]): it is then the
+//! host's `choice`, and what the field holds is the text of the option
+//! chosen, as a typed field holds its text.
+//!
 //! [`Dialogs`] is the whole mechanism held for one window: the ids, the form
 //! that is up, what its choosers chose and where each opens again. An
 //! application that holds one opens, reads and hides its forms through it,
@@ -68,6 +72,17 @@ pub trait Spec: Copy + PartialEq {
     fn chooser(self, _name: &str) -> Option<Chooser> {
         None
     }
+    /// **The options field `name` is chosen among** rather than typed: each
+    /// the text the field then holds, shown in the host's `choice`. `None`
+    /// (the default) for a text field.
+    fn options(self, _name: &str) -> Option<&'static [&'static str]> {
+        None
+    }
+}
+
+/// Where `text` is among `options`: the first when it is none of them.
+fn option_index(options: &[&str], text: &str) -> usize {
+    options.iter().position(|o| *o == text).unwrap_or(0)
 }
 
 /// **A field chosen in the host's file chooser**: which files it shows,
@@ -171,7 +186,18 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
                     "weight": 1,
                     "h": chooser.h,
                 }),
-                None => json!({"type": "text", "id": id(name), "value": held(name), "w": FIELD_W}),
+                None => match form.options(name) {
+                    Some(options) => json!({
+                        "type": "choice",
+                        "id": id(name),
+                        "options": options,
+                        "index": option_index(options, held(name)),
+                        "w": FIELD_W,
+                    }),
+                    None => {
+                        json!({"type": "text", "id": id(name), "value": held(name), "w": FIELD_W})
+                    }
+                },
             };
             if let Some(map) = field.as_object_mut() {
                 form.field(name, map);
@@ -315,6 +341,13 @@ pub fn read<F: Spec>(form: F, name: &str, tag: &str, values: &[Value]) -> Option
             _ => None,
         };
     }
+    // A choice reports the index of what was chosen, which the field holds
+    // as the option's text.
+    if let Some(options) = form.options(part) {
+        let index = tag.parse::<f64>().ok()?.round().max(0.0) as usize;
+        let option = options.get(index)?;
+        return Some(Said::Field(part.to_string(), (*option).to_string()));
+    }
     match part {
         "ok" => (tag == "click").then_some(Said::Accept),
         "cancel" => (tag == "click").then_some(Said::Cancel),
@@ -354,12 +387,16 @@ impl<F: Spec> Open<F> {
                 // A chooser's text is the directory it opens in; setting its
                 // path lists it afresh with nothing selected, and the keyboard
                 // goes to it, where Enter picks and the arrows move.
-                Some(match self.form.chooser(name) {
-                    Some(_) => {
+                Some(match (self.form.chooser(name), self.form.options(name)) {
+                    (Some(_), _) => {
                         let dir = Some(self.value(name)).filter(|d| !d.is_empty());
                         (id, json!({"path": dir.unwrap_or(START), "focus": 1}))
                     }
-                    None => (id, json!({"value": self.value(name)})),
+                    (None, Some(options)) => (
+                        id,
+                        json!({"index": option_index(options, self.value(name))}),
+                    ),
+                    (None, None) => (id, json!({"value": self.value(name)})),
                 })
             })
             .collect();

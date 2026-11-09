@@ -1025,7 +1025,7 @@ impl App {
                 empty: false,
             },
         );
-        Ok(Vec::new())
+        Ok(self.roll_dialogs(member))
     }
 
     /// **The roll over the box of notes `source` of multitrack window
@@ -1090,7 +1090,19 @@ impl App {
                 empty: false,
             },
         );
-        Ok(Vec::new())
+        Ok(self.roll_dialogs(member))
+    }
+
+    /// **The widgets a roll's window names for the host to number**: its
+    /// dialog's, each under the dialog group.
+    fn roll_dialogs(&mut self, member: MemberId) -> Vec<String> {
+        self.member_call(member, json!({"verb": "dialogs"}))["dialogs"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(|name| format!("dialog:{name}"))
+            .collect()
     }
 
     /// **A multitrack window bound**: the editor told its window, its

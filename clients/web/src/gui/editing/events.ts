@@ -346,12 +346,17 @@ export class NotesEditor extends SequenceHandler {
     /**
      * Sets the roll's mode: no edit, but for **entering notation over a
      * sequence written as no notation**, which converts it in place first
-     * ({@link NotesEditor.toNotation}, one entry of the history). Going to
-     * MIDI converts nothing.
+     * with the reading it stores ({@link NotesEditor.toNotation}, one entry
+     * of the history) -- where a hand entering notation in the window is
+     * asked how first. Going to MIDI converts nothing.
      */
     async setMode(mode: "midi" | "notation"): Promise<void> {
         if (mode !== "midi" && mode !== "notation") {
             throw new Error(`a roll's mode is "midi" or "notation", not ${JSON.stringify(mode)}`);
+        }
+        // the window's verb asks a hand how to convert; a script has said
+        if (mode === "notation" && (await this.coreCall("editing")).written === false) {
+            this.structure.toNotation();
         }
         this.verb(`${mode}_mode`);
     }

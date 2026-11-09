@@ -12,7 +12,8 @@ use clausters_document::{EventSequence, Opaque};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 use clausters_editing::notes::{self as roll, Axis, Editing, Mode, Scope, YDomain};
 
-use super::{Shared, correction, props, window};
+use super::{Shared, correction, dialogs, props, window};
+use crate::forms::{self, Said};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record};
 
 /// The vocabulary the editor's structure is registered under.
@@ -151,6 +152,8 @@ pub struct NotesEditor {
     /// **How the roll edits** -- monophonically or not: the window's own, as
     /// snap is, and never the sequence's.
     editing: Editing,
+    /// The dialog: its widgets by name, and the form that is up.
+    dialogs: dialogs::Dialogs,
 }
 
 /// What a notes editor is opened with, as the context's door reads it.
@@ -237,6 +240,7 @@ impl NotesEditor {
             snap: true,
             looping: false,
             editing: Editing::default(),
+            dialogs: dialogs::Dialogs::default(),
         }
     }
 
@@ -336,7 +340,12 @@ impl NotesEditor {
     /// [`NOTATION_VERBS`]): the window's state changed, or the one edit it
     /// makes -- a conversion entering notation over a sequence written as
     /// none, a writing of every part. The refusal, if any.
-    fn mode_verb(&mut self, verb: &str, out: &mut Outcome) -> Option<String> {
+    fn mode_verb(
+        &mut self,
+        verb: &str,
+        out: &mut Outcome,
+        shown: &mut Vec<Correction>,
+    ) -> Option<String> {
         let staves = || {
             self.held()
                 .parts_read()
@@ -349,6 +358,15 @@ impl NotesEditor {
             "midi_mode" => self.editing.mode = Mode::Midi,
             "notation_mode" => {
                 let written = self.held().written_as_notation();
+                // **a window with the dialog asks how first**, and converts
+                // at its OK
+                if !written && self.dialogs.numbered(dialogs::forms()) {
+                    let held = dialogs::notation_of(&self.held());
+                    shown.extend(forms::corrections(
+                        self.dialogs.open(dialogs::Form::Notation, held),
+                    ));
+                    return None;
+                }
                 if !written
                     && let Some(why) = self.record(
                         EventsIntent::ToNotation {
@@ -421,6 +439,62 @@ impl NotesEditor {
         None
     }
 
+    /// **The conversion `reading` and `writing` say**, made as one entry, and
+    /// the roll put in notation mode. The refusal, if any.
+    fn convert(
+        &mut self,
+        reading: Value,
+        writing: clausters_document::events::Writing,
+        out: &mut Outcome,
+    ) -> Option<String> {
+        let intent = EventsIntent::ToNotation {
+            reading: Some(reading),
+            writing: Some(writing),
+            interpretation: None,
+        };
+        if let Some(why) = self.record(intent, "write as notation", out) {
+            return Some(why);
+        }
+        self.editing.mode = Mode::Notation;
+        None
+    }
+
+    /// **What a widget of the dialog said**: a field kept as it is typed or
+    /// chosen, `OK` the conversion it holds -- the dialog left up with the
+    /// reason when it is refused -- and `Cancel` the dialog taken down, the
+    /// roll left in its mode.
+    fn form_said(
+        &mut self,
+        name: &str,
+        tag: &str,
+        values: &[Value],
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        let roll = self.widget.map_or(0, i64::from);
+        match self.dialogs.read(name, tag, values) {
+            Some(Said::Accept) => {
+                let Some(open) = self.dialogs.up().cloned() else {
+                    return (None, Vec::new());
+                };
+                let converted =
+                    dialogs::conversion(&open).and_then(|(reading, writing)| {
+                        match self.convert(reading, writing, out) {
+                            Some(why) => Err(why),
+                            None => Ok(()),
+                        }
+                    });
+                if let Err(why) = converted {
+                    return (Some(why), Vec::new());
+                }
+                let mut corrections = forms::corrections(self.dialogs.hide());
+                corrections.extend(self.resync_widget(roll));
+                (None, corrections)
+            }
+            Some(Said::Cancel | Said::Discard) => (None, forms::corrections(self.dialogs.hide())),
+            _ => (None, Vec::new()),
+        }
+    }
+
     /// The sequence it edits.
     pub fn sequence(&self) -> &Shared {
         &self.sequence
@@ -460,6 +534,13 @@ impl NotesEditor {
                 chrome::toolbar(App::Notes, None),
                 widget,
             );
+            // **the dialog stands over the window**, on a page of its stack
+            if let (Some(stack), Some(children)) = (
+                self.dialogs.stack(dialogs::forms()),
+                window.get_mut("children").and_then(Value::as_array_mut),
+            ) {
+                children.push(stack);
+            }
         }
         window
     }
@@ -635,10 +716,11 @@ impl Converse for NotesEditor {
 
     fn closed(&mut self) {
         self.window = None;
+        self.dialogs.closed();
     }
 
     fn owns(&self, widget: i64, _tag: &str) -> bool {
-        self.widget.map(i64::from) == Some(widget)
+        self.widget.map(i64::from) == Some(widget) || self.dialogs.name(widget).is_some()
     }
 
     fn resync(&mut self, widget: i64) -> Vec<Correction> {
@@ -652,6 +734,9 @@ impl Converse for NotesEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        if let Some(name) = self.dialogs.name(widget).map(str::to_string) {
+            return self.form_said(&name, tag, values, out);
+        }
         self.gesture(widget, tag, values, out)
     }
 
@@ -673,14 +758,11 @@ impl Converse for NotesEditor {
         if MODE_VERBS.contains(&message.tag.as_str()) {
             let tag = message.tag.clone();
             out.turn = Kind::Route;
-            let why = self.mode_verb(&tag, out);
+            let mut shown = Vec::new();
+            let why = self.mode_verb(&tag, out, &mut shown);
             let roll = self.widget.map_or(0, i64::from);
-            out.answer = Some(conversation::answer(
-                message.seq,
-                out.version,
-                why,
-                self.resync_widget(roll),
-            ));
+            shown.extend(self.resync_widget(roll));
+            out.answer = Some(conversation::answer(message.seq, out.version, why, shown));
             return true;
         }
         if message.tag == SNAP_VERB || message.tag == MONOPHONIC_VERB {
@@ -757,7 +839,11 @@ pub fn shared_of(request: &str) -> Shared {
 
 /// **One verb of the editor's own door**, over JSON:
 ///
-/// - `window` -- `widget`: the GuiDef, the roll under that id.
+/// - `window` -- `widget`, `dialogs` (the id of each widget of the dialog,
+///   by its name; without all of them the window has none): the GuiDef, the
+///   roll under that id.
+/// - `dialogs` -- `{"dialogs"}`: the names of the dialog's widgets, for a
+///   caller to number and hand to `window`; none for a bare editor.
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `rate`, `editable`,
 ///   `midi_in`, `grid` (in beats, `0` for none), `snap` (the snap-to-grid
@@ -767,7 +853,9 @@ pub fn shared_of(request: &str) -> Shared {
 /// - `grid` -- `{"grid": beats, "snap": bool}`: the grid a note lands on, and
 ///   whether a hand snaps to it.
 /// - `editing` -- how the roll edits ([`Editing`]): `{"monophonic", "mode",
-///   "scope", "voice"}`. The mode is changed by its verbs (`midi_mode`,
+///   "scope", "voice"}`, and `written`, whether the sequence is written as
+///   notation already -- entering notation over one that is not converts
+///   it, or asks how in a window with the dialog. The mode is changed by its verbs (`midi_mode`,
 ///   `notation_mode`), since entering notation may convert the sequence,
 ///   which is an edit.
 /// - `state` -- the sequence, whole.
@@ -785,7 +873,25 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
         .and_then(Value::as_str)
         .unwrap_or_default()
     {
-        "window" => editor.window(widget).to_string(),
+        "window" => {
+            // what the caller numbered, by the names the crate gave: a name
+            // that is none of them numbers nothing
+            let names = dialogs::names();
+            editor.dialogs.ids = request
+                .get("dialogs")
+                .and_then(Value::as_object)
+                .filter(|_| !editor.bare)
+                .map(|map| {
+                    map.iter()
+                        .filter(|(name, _)| names.contains(name))
+                        .filter_map(|(name, id)| Some((name.clone(), id.as_i64()? as i32)))
+                        .collect()
+                })
+                .unwrap_or_default();
+            editor.window(widget).to_string()
+        }
+        "dialogs" if editor.bare => json!({"dialogs": []}).to_string(),
+        "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
         "props" => match editor.resync_widget(i64::from(widget)).into_iter().next() {
             Some(c) => c.props.to_string(),
             None => "{}".into(),
@@ -845,7 +951,11 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
         "state" => serde_json::to_string(&*editor.held()).unwrap_or_else(|_| "{}".into()),
         "range" => json!({ "range": editor.range }).to_string(),
         "grid" => json!({ "grid": editor.grid, "snap": editor.snap }).to_string(),
-        "editing" => json!(editor.editing).to_string(),
+        "editing" => {
+            let mut said = json!(editor.editing);
+            said["written"] = json!(editor.held().written_as_notation());
+            said.to_string()
+        }
         "span" => {
             editor.range = request
                 .get("span")

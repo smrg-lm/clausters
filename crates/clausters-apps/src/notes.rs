@@ -21,7 +21,16 @@
 //! the sequence's vocabulary, applied to the shared sequence, and recorded with
 //! the sequence as it was as its inverse. The answer corrects the roll, since a
 //! note the hand made has an id only once the sequence has given it one.
+//!
+//! # The dialog
+//!
+//! Entering notation over a sequence written as no notation asks how it is
+//! read ([`dialogs`]): a meter, the shortest value and how the polyphony is
+//! written, held as the sequence's reading says until the hand changes them.
+//! A window composed without the dialog converts with the reading the
+//! sequence stores.
 
+pub mod dialogs;
 pub mod editor;
 
 use std::sync::{Arc, Mutex};

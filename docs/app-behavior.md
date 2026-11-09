@@ -658,7 +658,12 @@ code that keeps it lives.
   no mode, and two rolls over one sequence may be in different modes.
   Entering notation over a sequence written as no notation converts it in
   place, one entry of the history; over one already written it writes
-  nothing, and going back to MIDI writes nothing. What the notation mode
+  nothing, and going back to MIDI writes nothing. **A hand is asked how
+  first**: the window's dialog holds the meter, the shortest value and the
+  writing the sequence's reading and parts say, and nothing is converted
+  until OK; Cancel leaves the take and the mode as they were. A script that
+  sets the mode converts with what the sequence stores, as a window with no
+  dialog does. What the notation mode
   shows (the system, a part, a staff) and the voice it edits are the
   window's too.
 - **In notation mode a gesture writes what a page writes.** An onset lands on

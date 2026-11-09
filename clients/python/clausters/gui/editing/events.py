@@ -353,14 +353,18 @@ class NotesEditor(Marking, SequenceHandler):
         sounds derived from what is written. The window's, not the
         sequence's: setting it is no edit, but for **entering notation over a
         sequence written as no notation**, which converts it in place first
-        (`to_notation`, one entry of the history). Going to MIDI converts
-        nothing."""
+        with the reading it stores (`to_notation`, one entry of the history)
+        -- where a hand entering notation in the window is asked how first.
+        Going to MIDI converts nothing."""
         return str(self._call("editing").get("mode", "midi"))
 
     @mode.setter
     def mode(self, mode: str) -> None:
         if mode not in ("midi", "notation"):
             raise ValueError(f"a roll's mode is 'midi' or 'notation', not {mode!r}")
+        # the window's verb asks a hand how to convert; a script has said
+        if mode == "notation" and not self._call("editing").get("written", True):
+            self.structure.to_notation()
         self.verb(f"{mode}_mode")
 
     def to_notation(self, *, meter: "str | None" = None, division: "int | None" = None,

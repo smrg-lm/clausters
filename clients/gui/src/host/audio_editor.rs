@@ -3080,6 +3080,54 @@ mod tests {
         ]})
     }
 
+    /// **A roll's dialog is numbered by the host**, as a score's is: the
+    /// notation mode over a take asks how before it converts, and OK
+    /// converts in one entry of the window's history.
+    #[cfg(feature = "notation")]
+    #[test]
+    fn a_roll_asks_how_before_it_writes_a_take_as_notation() {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let mut host = host();
+        let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_991)));
+        let def_id = opened_app(
+            &mut host,
+            client,
+            1,
+            "notes",
+            json!({"sequence": two_notes()}),
+        );
+        let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
+        let widget = |host: &Host, name: &str| host.own_widget_id(structure, AUDIO, name).unwrap();
+        let index = |host: &Host, stack: i32| match host.window_defs[&def_id]
+            .find(stack)
+            .map(|w| &w.kind)
+        {
+            Some(crate::host::widget::WidgetKind::Stack { index, .. }) => *index,
+            other => panic!("a stack: {other:?}"),
+        };
+        let stack = widget(&host, "dialog:stack");
+        assert_eq!(index(&host, stack), 0);
+        let message = host.event_message(def_id, 1, vec![OscType::String("notation_mode".into())]);
+        assert!(host.deliver(def_id, &message));
+        until(&mut host, "the dialog never came up", |h| {
+            index(h, stack) == 1
+        });
+        let history = ask(&mut host, def_id, json!({"query": "history"}));
+        assert_ne!(
+            history["undoLabel"], "write as notation",
+            "nothing converted yet"
+        );
+        let ok = widget(&host, "dialog:notation:ok");
+        let click = host.event_message(ok, 2, vec![OscType::String("click".into())]);
+        assert!(host.deliver(def_id, &click));
+        until(&mut host, "the dialog never went down", |h| {
+            index(h, stack) == 0
+        });
+        let history = ask(&mut host, def_id, json!({"query": "history"}));
+        assert_eq!(history["undoLabel"], "write as notation", "{history}");
+    }
+
     /// **A roll is an application of this host's**: a client hands its
     /// sequence over, a script's change through the handle is an entry of the
     /// window's history, two rolls over it walk one order on a transport each,

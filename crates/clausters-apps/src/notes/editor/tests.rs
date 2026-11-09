@@ -726,6 +726,102 @@ fn entering_notation_writes_the_take_as_its_page_once() {
     assert_eq!(props["voices"], json!([]), "the lists go with the mode");
 }
 
+/// **A window with the dialog asks how before it converts**: entering
+/// notation opens the form holding the stored reading, `Cancel` leaves the
+/// take and the mode alone, and `OK` converts with what was chosen, in one
+/// entry.
+#[cfg(feature = "notation")]
+#[test]
+fn entering_notation_in_a_window_with_the_dialog_asks_how_first() {
+    let sequence = shared();
+    let mut e = new_json(sequence.clone(), r#"{"rate": 100.0, "version": 1}"#);
+    let names: Value = serde_json::from_str(&call_json(&mut e, r#"{"verb": "dialogs"}"#)).unwrap();
+    let ids: serde_json::Map<String, Value> = names["dialogs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.as_str().unwrap().to_string(), json!(100 + i)))
+        .collect();
+    let tree: Value = serde_json::from_str(&call_json(
+        &mut e,
+        &json!({"verb": "window", "widget": 40, "dialogs": ids}).to_string(),
+    ))
+    .unwrap();
+    assert!(tree.to_string().contains("\"Write as notation\""));
+    call_json(&mut e, r#"{"verb": "sync", "window": 39}"#);
+    let said = |e: &mut NotesEditor, name: &str, tag: &str| {
+        let event = Event {
+            addr: "/gui_event".into(),
+            args: vec![ids[name].clone(), json!(1), json!(0), json!(tag)],
+        };
+        e.event(&event, 1)
+    };
+    let stack = ids["stack"].as_i64().unwrap();
+    let out = e.event(&window_verb("notation_mode"), 1);
+    assert!(out.record.is_none(), "nothing is converted yet");
+    let answer = serde_json::to_value(out.answer.unwrap()).unwrap();
+    assert!(answer.to_string().contains(&format!("{stack}")));
+    assert_eq!(e.editing().mode, Mode::Midi);
+    // Cancel: the take is as it was
+    let out = said(&mut e, "notation:cancel", "click");
+    assert!(out.record.is_none());
+    assert!(!sequence.lock().unwrap().written_as_notation());
+    // OK, in 3/4 with ties
+    e.event(&window_verb("notation_mode"), 1);
+    said(&mut e, "notation:meter", "3/4");
+    said(&mut e, "notation:writing", "2");
+    let out = said(&mut e, "notation:ok", "click");
+    assert_eq!(out.record.expect("one entry").label, "write as notation");
+    assert_eq!(e.editing().mode, Mode::Notation);
+    let held = sequence.lock().unwrap();
+    assert!(held.written_as_notation());
+    assert_eq!(
+        held.parts_read()[0].writing.polyphony,
+        clausters_document::events::Polyphony::Ties
+    );
+    let bars = clausters_editing::notes::bars(&held);
+    assert_eq!(bars[1], 3.0, "a bar of three beats");
+}
+
+/// **A meter that is not one keeps the dialog up**, and says why.
+#[cfg(feature = "notation")]
+#[test]
+fn a_meter_that_is_not_one_is_refused_in_the_dialog() {
+    let mut e = new_json(shared(), r#"{"rate": 100.0, "version": 1}"#);
+    let ids: serde_json::Map<String, Value> = super::dialogs::names()
+        .into_iter()
+        .enumerate()
+        .map(|(i, name)| (name, json!(100 + i)))
+        .collect();
+    call_json(
+        &mut e,
+        &json!({"verb": "window", "widget": 40, "dialogs": ids}).to_string(),
+    );
+    call_json(&mut e, r#"{"verb": "sync", "window": 39}"#);
+    e.event(&window_verb("notation_mode"), 1);
+    let event = |name: &str, tag: &str| Event {
+        addr: "/gui_event".into(),
+        args: vec![ids[name].clone(), json!(1), json!(0), json!(tag)],
+    };
+    e.event(&event("notation:meter", "three"), 1);
+    let out = e.event(&event("notation:ok", "click"), 1);
+    assert!(out.record.is_none());
+    let answer = serde_json::to_value(out.answer.unwrap()).unwrap();
+    assert!(answer.to_string().contains("a meter is written as 3/4"));
+    assert_eq!(e.editing().mode, Mode::Midi);
+}
+
+/// **A bare window has no dialog**, and converts as it did.
+#[test]
+fn a_bare_roll_names_no_dialog() {
+    let mut e = new_json(shared(), r#"{"rate": 100.0, "chrome": false}"#);
+    assert_eq!(
+        call_json(&mut e, r#"{"verb": "dialogs"}"#),
+        r#"{"dialogs":[]}"#
+    );
+}
+
 /// **In notation mode a note lands on a written value, in the voice edited,
 /// and sounds as written**; a slur over a selection is a page's mark, heard
 /// at once; and the writing of the polyphony is an edit of the parts.

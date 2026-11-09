@@ -2297,8 +2297,8 @@ opened it.
 
 - ✅ **X35 - The roll in notation mode.** *(Opened 2026-11-08 by the user,
   while settling how a roll and a page relate. Done 2026-11-09: the steps'
-  notes below; the conversion's dialog in the window is left in Found by use,
-  "The roll's conversion asks nothing in its window".)* A roll edits a sequence in
+  notes below; the conversion's dialog in the window followed the same day,
+  from Found by use, "The roll's conversion asks nothing in its window".)* A roll edits a sequence in
   one of two modes, which are the roll's and not the sequence's
   (`crates/clausters-document/PLAN.md`, "The notation mode: a sequence that is
   written, not only played"). In **MIDI** it is the roll it is today: the
@@ -2354,7 +2354,7 @@ opened it.
     operations (`clausters_core::notation::edit`, `ops`), and are heard at
     once through `O37`'s derived performance. A slur is drawn joined or
     attacked as `X36` says.
-  - ✅ **X35.7 - The conversion, one intent.** *(Done 2026-11-09: the document's `ToNotation` and the sequence's `notated` door, `clausters_document::events::conversion`; the window converts with the sequence's stored reading.)* Going to MIDI converts
+  - ✅ **X35.7 - The conversion, one intent.** *(Done 2026-11-09: the document's `ToNotation` and the sequence's `notated` door, `clausters_document::events::conversion`; the window asks the meter, the shortest value and the writing in its dialog, `notes::dialogs`.)* Going to MIDI converts
     nothing: the events already hold what sounds (`O37`). Going to notation
     over a sequence written as no notation runs the module of
     `crates/clausters-notate/PLAN.md`, first as its trivial pipeline (today's
@@ -6638,7 +6638,7 @@ wrong.
   window's version, the file and the Save as form all come out right, so what the
   hand did differently is open, and the symptom is what to write down next time.
 
-- ⬜ **The roll's conversion asks nothing in its window** (2026-11-09, closing
+- ✅ **The roll's conversion asks nothing in its window** (2026-11-09, closing
   `X35`). Entering notation over a sequence written as no notation converts
   it with the reading the sequence stores (`notation.reading`) and the
   writing its parts say; a client gives a meter, a division and a writing to
@@ -6646,4 +6646,11 @@ wrong.
   gives them before the conversion, through `crate::forms`, which numbers its
   widgets by the caller -- and the notes editor's window is numbered by its
   one roll today. Until then a hand in the window converts with what the
-  sequence says, and sets another reading from a script.
+  sequence says, and sets another reading from a script. *(Fixed
+  2026-11-09: the roll's window names its dialog's widgets for its caller
+  to number, as the score's does; `notation_mode` over a sequence written as
+  no notation opens "Write as notation", holding the meter, the shortest
+  value and the writing the sequence says, and converts at OK. The shared
+  forms gained a field chosen among options, the host's `choice`. A
+  script's `mode` converts with the stored reading before the verb, so it
+  is never left waiting on a dialog.)*

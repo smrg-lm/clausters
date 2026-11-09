@@ -275,12 +275,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **The roll's conversion asks in its window**
-  *(`crates/clausters-apps/PLAN.md`, Found by use, "The roll's conversion asks
-  nothing in its window")*. The roll's notation mode shipped; what is left of
-  it is the dialog a hand converts a performance through, with a meter, a
-  division and a writing, which a script already gives.
-
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,
   quantization, meter, voices and spelling as separate operations, today's
