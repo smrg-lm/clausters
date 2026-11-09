@@ -109,6 +109,9 @@ struct Reader {
     /// The measure each `<measure>` starts at, in the order they are
     /// written: a numbered rest is one of them and several measures.
     elements: Vec<usize>,
+    /// A document's own ids, by staff, voice, the item's place in the voice
+    /// and a chord's pitch: put back as this layer's once items have ids.
+    names: Vec<(usize, usize, usize, Option<usize>, String)>,
 }
 
 /// Something that hangs off a measure, by the element it starts at -- or,
@@ -211,6 +214,12 @@ impl Reader {
                         .extend(facts.beams.into_iter().map(|(a, b)| (si, vi, a, b)));
                     self.ftrems
                         .extend(facts.ftrems.into_iter().map(|a| (si, vi, a)));
+                    self.names.extend(
+                        facts
+                            .names
+                            .into_iter()
+                            .map(|(at, k, id)| (si, vi, at, k, id)),
+                    );
                     if vi == 0 {
                         self.clefs
                             .extend(facts.clefs.into_iter().map(|(at, clef)| (si, at, clef)));
@@ -346,6 +355,34 @@ impl Reader {
         // the split parts moves them.
         drop_padding(&mut sheet);
         sheet.assign_ids();
+        // **what a tie or a line names by a document's own ids is named as
+        // this layer names it**: the item, or a chord's pitch of it
+        let named: HashMap<String, String> = self
+            .names
+            .iter()
+            .filter_map(|(si, vi, at, k, id)| {
+                let item = sheet.staves.get(*si)?.voices.get(*vi)?.items.get(*at)?;
+                let ours = match k {
+                    None => format!("n{}", item.id()),
+                    Some(k) => format!("n{}-p{}", item.id(), k + 1),
+                };
+                Some((id.clone(), ours))
+            })
+            .collect();
+        let ours = |reference: &mut String| {
+            if let Some(name) = named.get(reference.as_str()) {
+                reference.clone_from(name);
+            }
+        };
+        for (start, end) in &mut self.ties {
+            ours(start);
+            ours(end);
+        }
+        for a in &mut self.attached {
+            for end in [&mut a.start, &mut a.end].into_iter().flatten() {
+                ours(end);
+            }
+        }
         apply_beams(&mut sheet, &self.beams);
         let ftrem_ids: Vec<(u64, u64)> = self
             .ftrems
@@ -708,6 +745,20 @@ struct LayerFacts {
     ftrems: Vec<usize>,
     clefs: Vec<(usize, String)>,
     multirest: Option<i64>,
+    /// The ids a document of somebody else's gives its elements, by the item
+    /// each one is and, for a note of a chord, its place among the chord's
+    /// pitches: what a tie or a line names its ends by.
+    names: Vec<(usize, Option<usize>, String)>,
+}
+
+/// An element's own `xml:id`, where it is not one this layer writes (which
+/// names its item already): a document from elsewhere names its notes its own
+/// way, and its ties and lines name them so.
+fn foreign_id(node: Node) -> Option<String> {
+    (id_of(node) == 0)
+        .then(|| node.attribute(("http://www.w3.org/XML/1998/namespace", "id")))
+        .flatten()
+        .map(str::to_string)
 }
 
 /// One layer's items, descending through the containers that are not items.
@@ -798,6 +849,21 @@ fn read_items(
                     .collect();
                 let pitches: Vec<Pitch> = read.iter().map(|(p, _)| *p).collect();
                 let tied: Vec<Pitch> = read.iter().filter(|(_, o)| *o).map(|(p, _)| *p).collect();
+                // the chord, and each of its pitched notes by its place
+                let at = out.len();
+                facts
+                    .names
+                    .extend(foreign_id(child).map(|id| (at, None, id)));
+                let mut k = 0;
+                for n in child.children().filter(|n| n.has_tag_name("note")) {
+                    if n.attribute("pname").is_none() {
+                        continue;
+                    }
+                    facts
+                        .names
+                        .extend(foreign_id(n).map(|id| (at, Some(k), id)));
+                    k += 1;
+                }
                 let mut marks = marks_of(child);
                 // which of them the tie holds, where it is not all of them
                 // (settled once the next item is known)
@@ -868,6 +934,9 @@ fn read_items(
                 let Some(pitch) = pitch_of(child, key, in_force) else {
                     continue;
                 };
+                facts
+                    .names
+                    .extend(foreign_id(child).map(|id| (out.len(), None, id)));
                 out.push(Item::Note {
                     id: id_of(child),
                     pitches: vec![pitch],
@@ -876,10 +945,15 @@ fn read_items(
                     marks: marks_of(child),
                 });
             }
-            "rest" | "space" => out.push(Item::Rest {
-                id: id_of(child),
-                dur: duration(child, scale).unwrap_or(Ratio::new(1, 4)),
-            }),
+            "rest" | "space" => {
+                facts
+                    .names
+                    .extend(foreign_id(child).map(|id| (out.len(), None, id)));
+                out.push(Item::Rest {
+                    id: id_of(child),
+                    dur: duration(child, scale).unwrap_or(Ratio::new(1, 4)),
+                });
+            }
             // A measure rest is as long as its measure, which the layer does not
             // know; `fill_measure_rests` sizes it once the grid is built.
             "mRest" => out.push(Item::Rest {
@@ -2210,5 +2284,46 @@ mod tests {
         assert!(mei.contains("right=\"rptstart\""));
         let sheet = mei_to_sheet(&mei).unwrap();
         assert_eq!(sheet.grid.barlines, vec![(1, "rptstart".to_string())]);
+    }
+
+    /// **A document names its notes its own way**, and its ties and lines
+    /// name them so: a tie between two notes, one from a note of a chord,
+    /// and a slur, all by ids this layer did not write -- each read onto the
+    /// items they name.
+    #[test]
+    fn ties_and_lines_by_a_document_s_own_ids_are_read() {
+        let mei = "<mei xmlns=\"http://www.music-encoding.org/ns/mei\"><music><body><mdiv><score>\
+            <scoreDef meter.count=\"3\" meter.unit=\"4\"><staffGrp>\
+            <staffDef n=\"1\" lines=\"5\" clef.shape=\"G\" clef.line=\"2\"/></staffGrp></scoreDef>\
+            <section><measure n=\"1\"><staff n=\"1\"><layer n=\"1\">\
+            <note xml:id=\"abc\" dur=\"4\" pname=\"c\" oct=\"5\"/>\
+            <note xml:id=\"def\" dur=\"4\" pname=\"c\" oct=\"5\"/>\
+            <chord xml:id=\"ghi\" dur=\"4\"><note xml:id=\"g1\" pname=\"e\" oct=\"4\"/>\
+            <note xml:id=\"g2\" pname=\"g\" oct=\"4\"/></chord>\
+            </layer></staff>\
+            <tie startid=\"#abc\" endid=\"#def\"/>\
+            <slur startid=\"#abc\" endid=\"#ghi\"/>\
+            </measure><measure n=\"2\"><staff n=\"1\"><layer n=\"1\">\
+            <chord xml:id=\"jkl\" dur=\"2\" dots=\"1\"><note xml:id=\"j1\" pname=\"e\" oct=\"4\"/>\
+            <note xml:id=\"j2\" pname=\"g\" oct=\"4\"/></chord>\
+            </layer></staff><tie startid=\"#g2\" endid=\"#j2\"/></measure>\
+            </section></score></mdiv></body></music></mei>";
+        let sheet = mei_to_sheet(mei).unwrap();
+        let items = &sheet.staves[0].voices[0].items;
+        assert!(
+            matches!(items[0], Item::Note { tie: true, .. }),
+            "{items:?}"
+        );
+        // the chord's tie holds its upper note alone
+        let Item::Note { tie, marks, .. } = &items[2] else {
+            panic!("a chord: {items:?}");
+        };
+        assert!(*tie);
+        assert_eq!(marks.tied.iter().map(Pitch::midi).collect::<Vec<_>>(), [67]);
+        let slur = &sheet.spanners[0];
+        assert_eq!(
+            (slur.kind.as_str(), slur.from, slur.to),
+            ("slur", items[0].id(), items[2].id())
+        );
     }
 }
