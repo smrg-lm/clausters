@@ -61,7 +61,7 @@ Inside a `pbind` each key's pattern receives the event being built: `seq.pkey("d
 
 **Articulation and inflection** are two different things. An articulation is how distinct notes relate — legato, detached, a tie, a slur; an inflection is a variation inside one note — its bend, its pressure — and belongs to the note as its `expression`. A change of note is an articulation even in MPE, where a note keeps its note-on and is inflected by its bend.
 
-`seq.pvoice(instrument, bindings, { artic })` is the pattern of articulation: notes of one voice, each note's `legato` saying how it goes on to the next (with `artic`, it joins while `legato >= 1`; without, always; a rest breaks the line). The join is one datum that each destination realizes: on the server one node held across the joined notes and set by each, on a node (a `Voices` node or a plugin's) each joined note-on joining the note before it (a `Voices` node moving its voice to the new pitch, a plugin getting the new note overlapping the old one), on MIDI overlapping notes, and rendered into an `EventSequence` a `tie` where a joined note keeps its pitch and a slur over each run that moves — the sequence keeps the `legato`, the page's marks and each joined note's `joins`, so played on the server it is the same held line.
+`seq.pvoice(instrument, bindings, { artic })` is the pattern of articulation: notes of one voice, each note's `legato` saying how it goes on to the next (with `artic`, it joins while `legato >= 1`; without, always; a rest breaks the line). The join is one datum that each destination realizes: on the server one node held across the joined notes and set by each, on a node (a `Voices` node or a plugin's) each joined note-on joining the note before it (a `Voices` node moving its voice to the new pitch, a plugin getting the new note overlapping the old one), on MIDI overlapping notes, and rendered into an `EventSequence` each joined note's `joins`, naming the note it goes on from — what the voice played, and nothing of a page, so played on the server it is the same held line. A join is MIDI data, and it is not a tie — two joined notes of one pitch are two notes — nor a slur: a slur that joins its notes (one drawn with `join`) is what writes joins where a sequence is written as notation. `EventSequence.join` and `unjoin` edit the joins of the notes given, in both shapes where the line is written as notation.
 
 ```js
 const line = seq.pvoice(
@@ -69,7 +69,7 @@ const line = seq.pvoice(
   { midinote: seq.pseq([60, 62, 64, 64, 67]), dur: 0.5, legato: seq.pseq([1, 1, 1, 0.6, 0.8]) },
   { artic: true },
 );
-const data = (await line.renderEvents()).data(); // a tie on the first 64, a slur from 1 to 4
+const data = (await line.renderEvents()).data(); // joins [undefined, 1, 2, 3, undefined]
 ```
 
 ## An instrument that is a node
@@ -124,4 +124,4 @@ An argument may itself be a pattern, read one value per step: `seq.pwhite(seq.ps
 
 The random patterns draw from the random context — see [Routines and clocks](routines-and-clocks.md#reproducible-randomness).
 
-`examples/basics/patterns.html` puts this page together: a `pyramid` fed to a `pseq`, an operator over it, a `pvoice` whose joins glide on the server and come back as ties and slurs, and a counter-line beside it under `ppar`, rendered offline.
+`examples/basics/patterns.html` puts this page together: a `pyramid` fed to a `pseq`, an operator over it, a `pvoice` whose joins glide on the server and come back as the joins its sequence holds, and a counter-line beside it under `ppar`, rendered offline.

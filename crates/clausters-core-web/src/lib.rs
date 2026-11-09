@@ -1457,26 +1457,6 @@ pub fn node_editor(request: &str) -> String {
     plugin_door(request, clausters_core::node_editor::editor_request)
 }
 
-/// JS face: what a voice's joins write on a page -- `pitches` (MIDI note
-/// numbers) and `joins` (flat `[from, to, from, to, ...]`) in, `{"ties": [..],
-/// "slurs": [[from, to], ..]}` out as JSON.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub fn articulation(pitches: &[f64], joins: &[u32]) -> String {
-    let pairs: Vec<(usize, usize)> = joins
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|[from, to]| (*from as usize, *to as usize))
-        .collect();
-    let a = clausters_core::event::notation::articulation(pitches, &pairs);
-    serde_json::json!({
-        "ties": a.ties,
-        "slurs": a.slurs.iter().map(|&(x, y)| [x, y]).collect::<Vec<_>>(),
-    })
-    .to_string()
-}
-
 /// JS face: an event as its MIDI messages, `{"messages": [[at, [bytes]]]}` or
 /// `{"error"}`.
 #[cfg(target_arch = "wasm32")]

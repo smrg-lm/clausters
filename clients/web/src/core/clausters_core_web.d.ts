@@ -986,13 +986,6 @@ export class WidgetIds {
 export function amp_of_velocity(velocity: number): number;
 
 /**
- * JS face: what a voice's joins write on a page -- `pitches` (MIDI note
- * numbers) and `joins` (flat `[from, to, from, to, ...]`) in, `{"ties": [..],
- * "slurs": [[from, to], ..]}` out as JSON.
- */
-export function articulation(pitches: Float64Array, joins: Uint32Array): string;
-
-/**
  * The 0-based bar index `beats` falls in on a grid of `quant` beats per bar.
  */
 export function bar(beats: number, quant: number): number;
@@ -1858,7 +1851,6 @@ export interface InitOutput {
     readonly __wbg_steprunner_free: (a: number, b: number) => void;
     readonly __wbg_tempomap_free: (a: number, b: number) => void;
     readonly __wbg_widgetids_free: (a: number, b: number) => void;
-    readonly articulation: (a: number, b: number, c: number, d: number) => [number, number];
     readonly bar: (a: number, b: number) => number;
     readonly bark_to_hz: (a: number) => number;
     readonly beat_in_bar: (a: number, b: number) => number;
@@ -2108,8 +2100,8 @@ export interface InitOutput {
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __externref_table_dealloc: (a: number) => void;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

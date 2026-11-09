@@ -1487,7 +1487,16 @@ fn attachments(
         let plain = format!(" staff=\"{}\"", si + 1);
         // the element's name with what it says before its ends, and after
         let (name, tail) = match spanner.kind.as_str() {
-            "slur" => ("slur".to_string(), String::new()),
+            // whether it joins its notes is the slur's type: no MEI attribute
+            // says it, and `@type` is every element's own classification
+            "slur" => (
+                "slur".to_string(),
+                match spanner.join {
+                    Some(true) => " type=\"join\"".to_string(),
+                    Some(false) => " type=\"attack\"".to_string(),
+                    None => String::new(),
+                },
+            ),
             "crescendo" => ("hairpin form=\"cres\"".to_string(), String::new()),
             "diminuendo" => ("hairpin form=\"dim\"".to_string(), String::new()),
             "phrase" => ("phrase".to_string(), String::new()),
@@ -2736,6 +2745,7 @@ mod emission {
             kind: kind.into(),
             from,
             to,
+            join: None,
         };
         mine.spanners = vec![line("slur", 2, 11), line("crescendo", 2, 6)];
         // one document: the two ends are the two notes
@@ -2863,6 +2873,7 @@ mod emission {
             kind: kind.into(),
             from,
             to,
+            join: None,
         };
         mine.spanners = vec![line("slur", 1, 4), line("8va", 2, 3), line("pedal", 1, 2)];
         mine.controls = vec![Control {
@@ -2970,6 +2981,7 @@ mod emission {
             kind: "slur".into(),
             from: 3,
             to: 7,
+            join: None,
         }];
         let runs = sheet_to_mei_pages(&mine).unwrap();
         assert!(runs[0].contains("<multiRest num=\"3\"/>"), "{}", runs[0]);
@@ -3093,11 +3105,13 @@ mod emission {
                 kind: "slur".into(),
                 from: 1,
                 to: 2,
+                join: None,
             },
             Spanner {
                 kind: "crescendo".into(),
                 from: 1,
                 to: 2,
+                join: None,
             },
         ];
         let mei = sheet_to_mei(&mine).expect("writes them");
@@ -3115,6 +3129,7 @@ mod emission {
             kind: "slur".into(),
             from: 1,
             to: 99,
+            join: None,
         }];
         let err = sheet_to_mei(&mine).expect_err("refuses a dangling end");
         assert!(
@@ -3127,6 +3142,7 @@ mod emission {
             kind: "zigzag".into(),
             from: 1,
             to: 2,
+            join: None,
         }];
         let err = sheet_to_mei(&mine).expect_err("refuses an unknown kind");
         assert!(err.contains("slur, crescendo"), "{err}");

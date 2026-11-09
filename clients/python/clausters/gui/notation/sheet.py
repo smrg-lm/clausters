@@ -612,17 +612,22 @@ def set_marks(sheet: dict, id: int, marks: dict) -> dict:
     return apply(sheet, {"op": "set_marks", "id": id, "marks": marks})
 
 
-def add_spanner(sheet: dict, kind: str, from_id: int, to_id: int) -> dict:
+def add_spanner(sheet: dict, kind: str, from_id: int, to_id: int,
+                join: "bool | None" = None) -> dict:
     """Write something between two notes: ``"slur"``, ``"crescendo"`` or
     ``"diminuendo"``.
 
     It cannot go on an item because it has two ends, so it goes on the sheet
     beside the staves. Adding the same one twice changes nothing; naming an item
     that is not there is refused, because a hairpin that never appears with no
-    reason given is worse than an error.
+    reason given is worse than an error. A slur's ``join`` says whether its
+    notes sound as one line with no new attack (``True``) or each attacked
+    (``False``); given again, it changes the slur already there.
     """
-    return apply(sheet, {"op": "add_spanner", "kind": kind,
-                         "from": from_id, "to": to_id})
+    op = {"op": "add_spanner", "kind": kind, "from": from_id, "to": to_id}
+    if join is not None:
+        op["join"] = bool(join)
+    return apply(sheet, op)
 
 
 def remove_spanner(sheet: dict, kind: str, from_id: int, to_id: int) -> dict:

@@ -136,7 +136,6 @@ In wasm neither applies: a call returns the bytes or the string.
 | `clausters_core_velocity_of_amp` | `velocity_of_amp` | |
 | `clausters_core_event_delta` | `event_delta` | |
 | `clausters_core_event_sustain` | `event_sustain` | |
-| `clausters_core_articulation` | `articulation` | `idiom` — what a voice's joins write on a page (ties and slurs): C reads `{"pitches", "joins"}` as one JSON request and fills a buffer; wasm takes the pitches and the joins flat, as typed arrays, and returns the JSON |
 | `clausters_core_event_synth` | `event_synth` | `idiom` — C reads `{"event", "node"}` as one JSON request and fills a buffer; wasm takes the event's JSON and the node as two arguments and returns the string |
 | `clausters_core_event_node_note` | `event_node_note` | `idiom` — C reads `{"event", "note"}` as one JSON request and fills a buffer; wasm takes the event's JSON and the note id as two arguments and returns the string |
 | `clausters_core_event_midi` | `event_midi` | `idiom` — the same request/argument split, with the channel |
@@ -1222,6 +1221,14 @@ over a client's handle and bound it a sequence or an engraver,
 `clausters_apps_editing_open_multitrack`, `_bind_sequence` and
 `_bind_engraver` (wasm `openMultitrack`, `bindSequence`, `bindEngraver`).
 Breaking: thirty-one symbols gone.
+
+**v97 a voice's joins stop being read as a page.** A pattern's render
+writes its joins and nothing of a page, and a join of one pitch is two
+notes, not a tie; what keeps the joins and a page's slurs in agreement is
+the document's (`events::articulation`, the sequence's `join` and
+`unjoin` edits). So the rule that made ties and slurs of a voice's joins
+has no caller: `clausters_core_articulation` (wasm `articulation`) is
+removed. Breaking: one symbol gone.
 
 
 ## The client surface: one capability, two shapes

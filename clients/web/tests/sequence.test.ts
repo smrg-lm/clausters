@@ -300,6 +300,34 @@ test("a sequence keeps the reading it is read with", () => {
     assert.ok(!("notation" in seq.data()));
 });
 
+test("notes are joined and unjoined as one line", () => {
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60 })],
+        [1.0, new Event({ midinote: 64 })],
+        [2.0, new Event({ midinote: 64 })],
+        [3.0, new Event({ midinote: 67 })],
+    ]);
+    const [first, second, third, fourth] = [...seq.events];
+    seq.join([first!, second!, third!]);
+    assert.deepEqual([...seq.events].map((e) => e.get("joins") ?? null), [null, first!.id, second!.id, null]);
+    assert.ok(!("notation" in seq.data()), "a played line gains no slur");
+    seq.unjoin([second!]);
+    assert.deepEqual([...seq.events].map((e) => e.get("joins") ?? null), [null, null, null, null]);
+    assert.throws(() => seq.join([fourth!]), /two notes/);
+    // a line written as notation is slurred where it is joined
+    const written = new EventSequence(
+        [60, 62, 64].map((m, i) => [i, new Event({ midinote: m, staff: 0, voice: 0, value: [1, 4] })] as [number, Event]),
+    );
+    written.join([...written.events]);
+    const ends = [...written.events].map((e) => e.id);
+    assert.deepEqual((written.data().notation as { spanners: unknown[] }).spanners, [
+        { kind: "slur", from: ends[0], to: ends[2], join: true },
+    ]);
+    // and a note taken away leaves no join naming it
+    written.events.item(1).remove();
+    assert.deepEqual([...written.events].map((e) => e.get("joins") ?? null), [null, null]);
+});
+
 test("a sequence's curves go to a MIDI file and back", () => {
     const seq = new EventSequence([
         [0.0, new Event({ midinote: 60, velocity: 100, sustain: 1.0 })],

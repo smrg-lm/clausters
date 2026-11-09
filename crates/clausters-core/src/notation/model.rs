@@ -663,6 +663,13 @@ pub struct Spanner {
     pub from: u64,
     /// The item it ends on.
     pub to: u64,
+    /// **Whether a slur joins its notes**: `true` when they sound as one line
+    /// with no new attack, `false` when each is attacked and phrased legato.
+    /// `None` is a slur written before this was said, which reads as joined
+    /// where its notes carry joins, and as attacked otherwise. Nothing but a
+    /// slur says it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub join: Option<bool>,
 }
 
 /// What is written on the page around the music, and what a score editor

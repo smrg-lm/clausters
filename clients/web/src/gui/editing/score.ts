@@ -570,9 +570,16 @@ export class ScoreEditor extends SequenceHandler {
         return this.#act({ action: "meter", count: Math.trunc(count), unit: Math.trunc(unit) });
     }
 
-    /** A `slur`, a `crescendo` or a `diminuendo` from the first selected item to the last, in time. */
-    spanner(kind: string): Promise<boolean> {
-        return this.#act({ action: "spanner", kind: String(kind) });
+    /**
+     * A `slur`, a `crescendo` or a `diminuendo` from the first selected item to
+     * the last, in time. A slur says whether it `join`s its notes into one line
+     * with no new attack: attacked unless it says so, and drawing it again with
+     * the other answer changes it.
+     */
+    spanner(kind: string, join?: boolean): Promise<boolean> {
+        const call: Record<string, unknown> = { action: "spanner", kind: String(kind) };
+        if (join !== undefined) call.join = Boolean(join);
+        return this.#act(call);
     }
 
     /**

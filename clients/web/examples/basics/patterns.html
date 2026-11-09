@@ -36,7 +36,8 @@ function reads a whole list, an operator one value at a time).
 next. Where it is 1 the note is joined to the next -- the server keeps one
 synth and sets its <code>freq</code>, which has a lag, so the line glides --
 and where it is less the next note re-attacks. Rendered into an event
-sequence, the same joins are a page's ties and slurs, printed below.
+sequence, the same joins are what each joined note names, printed below: the
+data the server played, and nothing of a page.
 
 <b>Patterns play together.</b> A counter-line from a <code>pbind</code> --
 <code>pxrand</code> never repeating a note, <code>pstutter</code> doubling its
@@ -125,12 +126,12 @@ the last event so the last note's release is not cut.</div>
       let take = null;
 
       async function renderPhrase() {
-        // ---- the page: the voice's joins written as ties and slurs, the
-        // same data the server played ----
+        // ---- the voice's joins as the sequence holds them: each joined
+        // note names the one it goes on from, the same data the server
+        // played ----
         const written = (await melody.renderEvents()).data();
-        const ties = written.events.filter((e) => e.data.tie).map((e) => e.id);
-        log(`ties on notes ${JSON.stringify(ties)}`);
-        log(`slurs ${JSON.stringify(written.notation?.spanners ?? [])}`);
+        const joins = written.events.filter((e) => "joins" in e.data).map((e) => [e.data.joins, e.id]);
+        log(`joins (from, into) ${JSON.stringify(joins)}`);
 
         // ---- the score: both lines together, rendered offline. The render
         // goes on half a second after the last event, so the last note's

@@ -1078,6 +1078,7 @@ mod tests {
             kind: kind.into(),
             from,
             to,
+            join: None,
         }
     }
 
@@ -1332,6 +1333,7 @@ mod tests {
             kind: "crescendo".into(),
             from: 1,
             to: 5,
+            join: None,
         }];
         let notes = perform(sheet, &Interpretation::default()).unwrap();
         let amps: Vec<f64> = notes.iter().map(|n| n.amp).collect();
@@ -1361,6 +1363,7 @@ mod tests {
             kind: "crescendo".into(),
             from: 1,
             to: 5,
+            join: None,
         }];
         let notes = perform(sheet, &Interpretation::default()).unwrap();
         // The written `ff` is where it was going, not the default factor -- and
@@ -1383,6 +1386,7 @@ mod tests {
             kind: "crescendo".into(),
             from: 1,
             to: 3,
+            join: None,
         }];
         let mut interp = Interpretation::default();
         interp.accents.clear();
@@ -1409,6 +1413,7 @@ mod tests {
             kind: "crescendo".into(),
             from: 1,
             to: 3,
+            join: None,
         }];
         let interp = Interpretation::default();
         let notes = perform(sheet.clone(), &interp).unwrap();
@@ -1446,6 +1451,7 @@ mod tests {
             kind: "gliss".into(),
             from: 3,
             to: 4,
+            join: None,
         }];
         let notes = perform(sheet, &Interpretation::default()).unwrap();
         let held = &notes[0];
@@ -1538,6 +1544,7 @@ mod tests {
             kind: "slur".into(),
             from: 1,
             to: 3,
+            join: None,
         }];
         let plain = perform(sheet.clone(), &Interpretation::default()).unwrap();
         assert!(plain.iter().all(|n| n.sustain == n.dur));
@@ -1574,6 +1581,7 @@ mod tests {
             kind: "crescendo".into(),
             from: 1,
             to: 99,
+            join: None,
         }];
         let err = perform(sheet, &Interpretation::default()).unwrap_err();
         assert!(err.contains("crescendo") && err.contains("99"), "{err}");

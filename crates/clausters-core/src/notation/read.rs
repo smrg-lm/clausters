@@ -340,6 +340,7 @@ impl Reader {
                 kind: "ftrem".to_string(),
                 from,
                 to,
+                join: None,
             });
         }
         for (si, id, clef) in clef_ids {
@@ -973,6 +974,7 @@ fn apply_beams(sheet: &mut Sheet, beams: &[(usize, usize, usize, usize)]) {
             kind: "beam".to_string(),
             from: from.id(),
             to: to.id(),
+            join: None,
         });
     }
 }
@@ -1155,7 +1157,17 @@ fn apply_attachments(sheet: &mut Sheet, attached: &[Attached], elements: &[usize
             }
         };
         if let (Some(kind), Some(to)) = (spanner, to) {
-            sheet.spanners.push(Spanner { kind, from, to });
+            let join = match (kind.as_str(), attr("type")) {
+                ("slur", Some("join")) => Some(true),
+                ("slur", Some("attack")) => Some(false),
+                _ => None,
+            };
+            sheet.spanners.push(Spanner {
+                kind,
+                from,
+                to,
+                join,
+            });
         }
     }
     // the pedal is pressed at one note and let go at a later one: paired in
@@ -1182,6 +1194,7 @@ fn apply_attachments(sheet: &mut Sheet, attached: &[Attached], elements: &[usize
                     kind: "pedal".to_string(),
                     from,
                     to: id,
+                    join: None,
                 });
                 down = None;
             }
@@ -1660,6 +1673,40 @@ mod tests {
         let voices = stack(quarters(4), &quarters(4), false).unwrap();
         let back = mei_to_sheet(&sheet_to_mei(&voices).unwrap()).unwrap();
         assert_eq!(back.staves[0].voices.len(), 2);
+    }
+
+    #[test]
+    fn a_slur_says_whether_it_joins_its_notes_through_mei() {
+        let sheet = quarters(4);
+        let ids: Vec<u64> = sheet.staves[0].voices[0]
+            .items
+            .iter()
+            .map(Item::id)
+            .collect();
+        for join in [Some(true), Some(false), None] {
+            let mut slurred = add_spanner(sheet.clone(), "slur", ids[0], ids[2]).unwrap();
+            if join.is_some() {
+                slurred = super::super::edit::join_slur(slurred, ids[0], ids[2], join).unwrap();
+            }
+            let mei = sheet_to_mei(&slurred).unwrap();
+            assert_eq!(mei.contains("type=\"join\""), join == Some(true));
+            assert_eq!(mei.contains("type=\"attack\""), join == Some(false));
+            let back = mei_to_sheet(&mei).unwrap();
+            assert_eq!(back.spanners[0].join, join);
+        }
+        // a slur drawn again with the other answer is the same slur, changed
+        let twice = super::super::ops::apply(
+            add_spanner(sheet, "slur", ids[0], ids[2]).unwrap(),
+            &super::super::ops::Op::AddSpanner {
+                kind: "slur".into(),
+                from: ids[0],
+                to: ids[2],
+                join: Some(true),
+            },
+        )
+        .unwrap();
+        assert_eq!(twice.spanners.len(), 1);
+        assert_eq!(twice.spanners[0].join, Some(true));
     }
 
     #[test]

@@ -538,10 +538,37 @@ pub fn add_spanner(mut sheet: Sheet, kind: &str, from: u64, to: u64) -> Result<S
         kind: kind.to_string(),
         from,
         to,
+        join: None,
     };
-    if !sheet.spanners.contains(&spanner) {
+    // the same line again, whatever it says of its join
+    let held = sheet
+        .spanners
+        .iter()
+        .any(|s| s.kind == spanner.kind && s.from == from && s.to == to);
+    if !held {
         sheet.spanners.push(spanner);
     }
+    Ok(sheet)
+}
+
+/// **Say whether the slur from `from` to `to` joins its notes**: `Some(true)`
+/// one line with no new attack, `Some(false)` each note attacked, `None` as a
+/// slur written before it was said.
+///
+/// # Errors
+/// When the sheet has no such slur.
+pub fn join_slur(
+    mut sheet: Sheet,
+    from: u64,
+    to: u64,
+    join: Option<bool>,
+) -> Result<Sheet, String> {
+    let slur = sheet
+        .spanners
+        .iter_mut()
+        .find(|s| s.kind == "slur" && s.from == from && s.to == to)
+        .ok_or_else(|| format!("there is no slur from item {from} to item {to}"))?;
+    slur.join = join;
     Ok(sheet)
 }
 

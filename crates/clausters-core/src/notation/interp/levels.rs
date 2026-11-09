@@ -141,6 +141,7 @@ mod tests {
             kind: kind.into(),
             from,
             to,
+            join: None,
         }
     }
 

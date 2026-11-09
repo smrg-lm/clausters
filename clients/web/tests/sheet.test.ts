@@ -283,6 +283,12 @@ test("polyphony, tuplets and marks reach the page", () => {
     assert.ok(mei.includes('dur="4"') && !mei.includes("dur.ges"));
     // and a spanner naming a note that is not there is refused, not dropped
     assert.throws(() => addSpanner(s, "slur", ids[0], 999), /999/);
+    // a slur says whether it joins its notes, and saying it again changes it
+    s = addSpanner(s, "slur", ids[0], ids[2], true);
+    assert.ok(toMei(s).includes('type="join"'));
+    s = addSpanner(s, "slur", ids[0], ids[2], false);
+    const slurs = (s.spanners as { kind: string; join?: boolean }[]).filter((sp) => sp.kind === "slur");
+    assert.ok(slurs.length === 1 && slurs[0]!.join === false);
 });
 
 test("an accidental is printed only where it is needed", () => {

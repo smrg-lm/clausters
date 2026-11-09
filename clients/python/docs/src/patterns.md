@@ -119,15 +119,14 @@ With `artic`, a note joins the next while `legato >= 1` and the next one re-atta
 - **on the server**, the voice holds one node: the first note starts a synth, each joined note sets that synth's controls instead of starting another, and only the last releases it — so a control with a lag glides, and nothing re-attacks;
 - **on a node** — an `instrument` that is a `Voices` node or a plugin's (below) — each joined note-on joins the note before it: a `Voices` node moves the voice it holds to the new pitch, and a plugin gets the new note before the old one ends, which it plays as it plays overlapping notes;
 - **on MIDI**, joined notes overlap, which a synthesizer in mono mode plays legato;
-- **on a page**, rendered into an `EventSequence`, a joined note that keeps its pitch is a **tie** and a run of joined notes that moves is a **slur**, from its first note to the one that articulates.
+- **in an `EventSequence`**, rendered from it, each joined note's `joins` names the note it goes on from.
 
 ```python
 data = line.render_events().data()
-[e["data"].get("tie", False) for e in data["events"]]   # [False, False, True, False, False]
-data["notation"]["spanners"]                            # [{"kind": "slur", "from": 1, "to": 4}]
+[e["data"].get("joins") for e in data["events"]]   # [None, 1, 2, 3, None]
 ```
 
-The rendered sequence keeps **both shapes**: each note's `legato`, and the tie and slur — the slur in the sequence's notation, where a score reads it. And it keeps what it plays as: each joined note's `joins` names the note it goes on from, so the sequence played on the server is the same held line the pattern played. Nothing is lost on the way.
+The rendered sequence is **what the voice played**, and nothing of a page: the sequence played on the server is the same held line the pattern played. A join is MIDI data, and it is not a tie — two joined notes of one pitch are two notes — nor a slur: a page reads a sequence as notation where it is written as notation, and a slur that joins its notes (one drawn with `join`) is what writes joins there. `EventSequence.join` and `unjoin` edit the joins of the notes given, in both shapes where the line is written as notation.
 
 What varies inside one of those notes is not the voice's business: give the note an `expression` and it is inflected however it is articulated. `voice=` writes which voice of the staff the line is, so two voices played together (`ppar([upper, lower])`) stay apart on the page.
 
@@ -197,4 +196,4 @@ The patterns live in `clausters.seq.patterns`, one module per family, and are al
 
 The random patterns draw from the **random context**, so one seed reproduces them with everything else in a script — see [Routines and clocks](routines-and-clocks.md#the-random-context-one-seed-per-session).
 
-`basics/patterns` in the client's examples puts this page together: a `pyramid` fed to a `pseq`, an operator over it, a `pvoice` whose joins glide on the server and come back as ties and slurs, and a counter-line beside it under `ppar`, rendered offline.
+`basics/patterns` in the client's examples puts this page together: a `pyramid` fed to a `pseq`, an operator over it, a `pvoice` whose joins glide on the server and come back as the joins its sequence holds, and a counter-line beside it under `ppar`, rendered offline.

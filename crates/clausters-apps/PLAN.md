@@ -2388,7 +2388,7 @@ opened it.
   hold it. The roll is independent of what wrote its events: a voice rendered
   from a pattern keeps the event logic it was written with, because the roll
   edits keys and never asks where they came from. **Needs** `O36` (joins,
-  the slur's `join`, the intents `Join` and `Separate`).
+  the slur's `join`, the intents `Join` and `Unjoin`).
   - ⬜ **X36.1 - Monophonic or polyphonic, as an option.** A toggle of the
     roll's window (`monophonic`, beside `snap` in `clausters_editing::verbs`,
     `docs/verbs.md`), the window's state like snap, polyphonic when off. It
@@ -2402,9 +2402,9 @@ opened it.
     way. Every note it changes or removes goes in the gesture's intent, so one
     undo gives them all back. A length that reaches the next note does not
     join them. Edited polyphonically, notes overlap and nothing is shortened.
-  - ⬜ **X36.3 - Join and separate.** The window's `join` verb (`J`) joins the
-    selected notes of one line, each into the next, and a new `separate` verb
-    takes the joins away (`O36`'s `Join` and `Separate`); where the line is
+  - ⬜ **X36.3 - Join and unjoin.** The window's `join` verb (`J`) joins the
+    selected notes of one line, each into the next, and a new `unjoin` verb
+    takes the joins away (`O36`'s `Join` and `Unjoin`); where the line is
     written as notation its slurs follow. A join is drawn on the roll as a link between the two notes.
   - ⬜ **X36.4 - The slur's join is a choice of whoever draws it.** In
     notation mode a slur is drawn joined (one line, no new attack) or attacked
@@ -2412,7 +2412,7 @@ opened it.
     option (joined when monophonic, attacked when polyphonic) and the slur's
     `join` toggles it after.
   - ⬜ **X36.5 - Both clients and tests.** The notes editor's monophonic
-    option and its `join` and `separate`, in Python and on the web; the
+    option and its `join` and `unjoin`, in Python and on the web; the
     intake's rules per option in `clausters-editing`; a guard that editing
     polyphonically is exactly as before, and that a voice rendered from a
     pattern plays the same after it is opened and saved and gains no tie or

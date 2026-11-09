@@ -274,6 +274,30 @@ def test_a_sequence_keeps_the_reading_it_is_read_with():
     assert "notation" not in seq.data()
 
 
+def test_notes_are_joined_and_unjoined_as_one_line():
+    seq = EventSequence([(0.0, Event(midinote=60)), (1.0, Event(midinote=64)),
+                         (2.0, Event(midinote=64)), (3.0, Event(midinote=67))])
+    first, second, third, fourth = seq.events
+    seq.join([first, second, third])
+    joins = [e.get("joins") for e in seq.events]
+    assert joins == [None, first._id, second._id, None]
+    assert "notation" not in seq.data(), "a played line gains no slur"
+    seq.unjoin([second])
+    assert [e.get("joins") for e in seq.events] == [None, None, None, None]
+    with pytest.raises(ValueError, match="two notes"):
+        seq.join([fourth])
+    # a line written as notation is slurred where it is joined
+    written = EventSequence([(float(i), Event(midinote=m, staff=0, voice=0, value=[1, 4]))
+                             for i, m in enumerate([60, 62, 64])])
+    written.join(list(written.events))
+    ends = [e._id for e in written.events]
+    assert written.data()["notation"]["spanners"] == [
+        {"kind": "slur", "from": ends[0], "to": ends[2], "join": True}]
+    # and a note taken away leaves no join naming it
+    written.events[1].remove()
+    assert [e.get("joins") for e in written.events] == [None, None]
+
+
 def test_a_sequences_curves_go_to_a_midi_file_and_back():
     seq = EventSequence([(0.0, Event(midinote=60, velocity=100, sustain=1.0)),
                          (0.0, Event(midinote=64, velocity=100, sustain=1.0))])

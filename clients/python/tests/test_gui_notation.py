@@ -535,6 +535,12 @@ def test_polyphony_tuplets_and_marks_reach_the_page():
     # and a spanner naming a note that is not there is refused, not dropped
     with pytest.raises(ValueError, match="999"):
         notation.add_spanner(s, "slur", ids[0], 999)
+    # a slur says whether it joins its notes, and saying it again changes it
+    s = notation.add_spanner(s, "slur", ids[0], ids[2], join=True)
+    assert 'type="join"' in notation.to_mei(s)
+    s = notation.add_spanner(s, "slur", ids[0], ids[2], join=False)
+    slurs = [sp for sp in s["spanners"] if sp["kind"] == "slur"]
+    assert len(slurs) == 1 and slurs[0]["join"] is False
 
 
 def test_an_accidental_is_printed_only_where_it_is_needed():

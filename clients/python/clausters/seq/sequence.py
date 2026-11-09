@@ -226,6 +226,24 @@ class EventSequence:
         written = None if value is None else dict(value)
         self._edit({"intent": "setreading", "reading": written}, "change the reading")
 
+    def join(self, events) -> None:
+        """**Join these notes**: in each line (a staff and voice, else a
+        channel) each goes on into the next of them without a new attack --
+        ``joins``, MIDI data -- a chord into a chord of as many notes, low to
+        high. Where the line is written as notation, its slurs are written
+        again from the joins: a run of them is one slur that joins. One edit.
+        ``events`` are `SeqEvent`s; `ValueError` when one is not a note, or no
+        line holds two of them one after the other."""
+        ids = [int(e._id) for e in events]
+        self._edit({"intent": "join", "ids": ids}, "join")
+
+    def unjoin(self, events) -> None:
+        """**Take the joins among these notes away** -- for one note alone,
+        the join into it and the one out of it -- and, where its line is
+        written as notation, the slurs that joined them. One edit."""
+        ids = [int(e._id) for e in events]
+        self._edit({"intent": "unjoin", "ids": ids}, "unjoin")
+
     # ---- editing ----
 
     def _apply(self, intent: dict, *, inverse: bool = True) -> dict:
@@ -864,26 +882,15 @@ def _rendered(start, until, tempo_map) -> EventSequence:
 
 
 def _articulate(data: dict, joins) -> None:
-    """**A voice's legato, written on the page.** The notes that went on into
-    the next are joins; the core says which are ties (one pitch held) and
-    which runs are slurs (legato that moves), and both are written: ``tie`` on
-    the tied note, a slur spanner over each run's event ids. And what it plays
-    as: ``joins`` on each joined note, the id of the note it goes on from. The
-    events get their ids here, in order, so the spanners and the joins can
-    name them."""
+    """**A voice's legato, as what it plays.** Each note that went on into the
+    next names the one it goes on from (``joins``), and that is all: it is
+    MIDI data, a line played legato, and a page reads it as it likes. The
+    events get their ids here, in order, so the joins can name them."""
     events = data["events"]
-    pitches = [float(e["data"].get("midinote", float("nan"))) for e in events]
-    ties, slurs = _native.articulation(pitches, joins)
     for i, entry in enumerate(events):
         entry["id"] = i + 1
-    for i in ties:
-        events[i]["data"]["tie"] = True
-    # What it plays as: each joined note names the one it goes on from.
     for a, b in joins:
         events[b]["data"]["joins"] = a + 1
-    if slurs:
-        data["notation"] = {"spanners": [{"kind": "slur", "from": a + 1, "to": b + 1}
-                                         for a, b in slurs]}
 
 
 def render_timeline(timeline, until=None) -> EventSequence:

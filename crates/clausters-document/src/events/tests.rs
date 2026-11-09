@@ -1043,6 +1043,20 @@ fn every_verb_fixture() -> (EventSequence, NodeId, NodeId) {
         .added
         .unwrap();
     let held = s.events[0].automation[0].id;
+    // a line that goes on: 100 joins the chord's top note, 101 does not yet
+    for (id, at, joins) in [(100, 3.0, Some(4)), (101, 5.0, None)] {
+        let mut keys = json!({"midinote": 74, "sustain": 1.0, "channel": 1});
+        if let Some(from) = joins {
+            keys["joins"] = json!(from);
+        }
+        s.edit(EventsIntent::Add {
+            event: Event {
+                id,
+                ..Event::new(at, keys)
+            },
+        })
+        .unwrap();
+    }
     (s, NodeId(cc), held)
 }
 
@@ -1105,6 +1119,10 @@ fn every_verb(cc: NodeId, held: NodeId) -> Vec<EventsIntent> {
         EventsIntent::SetReading {
             reading: Some(json!({"meter": "6/8"})),
         },
+        EventsIntent::Join {
+            ids: vec![100, 101],
+        },
+        EventsIntent::Unjoin { ids: vec![4, 100] },
     ];
     let slot = |intent: &EventsIntent| match intent {
         EventsIntent::SetEvents { .. } => 0,
@@ -1124,8 +1142,10 @@ fn every_verb(cc: NodeId, held: NodeId) -> Vec<EventsIntent> {
         EventsIntent::Restore { .. } => 14,
         EventsIntent::SetParts { .. } => 15,
         EventsIntent::SetReading { .. } => 16,
+        EventsIntent::Join { .. } => 17,
+        EventsIntent::Unjoin { .. } => 18,
     };
-    let mut seen = [false; 17];
+    let mut seen = [false; 19];
     for intent in &all {
         assert!(!seen[slot(intent)], "{intent:?} is listed twice");
         seen[slot(intent)] = true;

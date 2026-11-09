@@ -311,7 +311,8 @@ pub enum Op {
         /// `system`, `page`, or `none` to take the break back.
         kind: String,
     },
-    /// Write a slur, a hairpin or a beam between two notes.
+    /// Write a slur, a hairpin or a beam between two notes -- or, for a slur
+    /// already there, say again whether it joins its notes.
     AddSpanner {
         /// `slur`, `crescendo`, `diminuendo` or `beam`.
         kind: String,
@@ -319,6 +320,9 @@ pub enum Op {
         from: u64,
         /// The item it ends on.
         to: u64,
+        /// A slur's: whether its notes sound as one line with no new attack.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        join: Option<bool>,
     },
     /// Take one back.
     RemoveSpanner {
@@ -575,7 +579,15 @@ fn applied(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
         Op::SetPage { page } => edit::set_page(sheet, *page),
         Op::SetBarline { measure, kind } => edit::set_barline(sheet, *measure, kind),
         Op::SetBreak { measure, kind } => edit::set_break(sheet, *measure, kind),
-        Op::AddSpanner { kind, from, to } => edit::add_spanner(sheet, kind, *from, *to),
+        Op::AddSpanner {
+            kind,
+            from,
+            to,
+            join,
+        } => edit::add_spanner(sheet, kind, *from, *to).and_then(|sheet| match join {
+            Some(join) => edit::join_slur(sheet, *from, *to, Some(*join)),
+            None => Ok(sheet),
+        }),
         Op::RemoveSpanner { kind, from, to } => edit::remove_spanner(sheet, kind, *from, *to),
         Op::ToVoice { ids, voice } => edit::to_voice(sheet, ids, *voice),
         Op::SetKey { measure, key } => operators::set_key(sheet, *measure, key),
@@ -775,7 +787,7 @@ pub fn catalog() -> &'static [OpSpec] {
         OpSpec {
             op: "add_spanner",
             required: &["kind", "from", "to"],
-            optional: &[],
+            optional: &["join"],
         },
         OpSpec {
             op: "remove_spanner",

@@ -275,19 +275,16 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **The roll's notation mode: `O36`, `O37`, then `X35` and `X36`**
+- ⬜ **The roll's notation mode: `O37`, then `X35` and `X36`**
   *(`crates/clausters-document/PLAN.md`, "The notation mode: a sequence that
   is written, not only played"; `crates/clausters-apps/PLAN.md`, `X35`,
   `X36`)*. The
   roll edits a sequence in its MIDI mode (as played) or its notation mode
   (staves, voices, written values, and a performance derived from them); the
-  modes are the roll's and the parts the document's. `O36` next, which folds
-  in the open entry of `clients/python/PLAN.md`, "An edit to a voice's legato
-  or slur does not rewrite the other", then `O37`;
-  `X35.1` (barlines on the roll's ruler) needs none of them. `X36` (the
-  roll's monophonic option, joins and slurs, in both modes) follows
-  `O36`. Each carries open choices, with a recommendation, for the user to
-  confirm.
+  modes are the roll's and the parts the document's. `O37` next; `X35.1`
+  (barlines on the roll's ruler) needs none of it, and `X36` (the roll's
+  monophonic option, joins and slurs, in both modes) can start now. Each
+  carries open choices, with a recommendation, for the user to confirm.
 
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,

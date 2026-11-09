@@ -420,7 +420,7 @@ test("a voice joins its notes by legato", () => {
     assert.deepEqual(always.map((e) => e.get("held") ?? false), [true, true, false]);
 });
 
-test("a rendered voice writes its ties, slurs and joins", async () => {
+test("a rendered voice writes its joins and nothing of a page", async () => {
     const voice = pvoice(
         "lead",
         { midinote: pseq([60, 62, 64, 64, 67]), dur: 0.5, legato: pseq([1, 1, 1, 0.6, 0.8]) },
@@ -430,8 +430,9 @@ test("a rendered voice writes its ties, slurs and joins", async () => {
         events: { data: Record<string, unknown> }[];
         notation?: { spanners: unknown[] };
     };
-    assert.deepEqual(data.events.map((e) => e.data.tie ?? false), [false, false, true, false, false]);
-    assert.deepEqual(data.notation!.spanners, [{ kind: "slur", from: 1, to: 4 }]);
+    // two joined notes of one pitch are two notes: no tie, and no slur
+    assert.ok(data.events.every((e) => !("tie" in e.data)));
+    assert.ok(!("notation" in data));
     assert.ok(data.events.every((e) => !("held" in e.data) && !("continues" in e.data)));
     // What it plays as: each joined note names the one it goes on from.
     assert.deepEqual(data.events.map((e) => e.data.joins ?? null), [null, 1, 2, 3, null]);

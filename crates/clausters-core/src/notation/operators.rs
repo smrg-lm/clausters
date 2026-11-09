@@ -909,6 +909,7 @@ mod tests {
             kind: "slur".into(),
             from: ids[0],
             to: ids[1],
+            join: None,
         }];
         let joined = concat(quarters(4), &b).unwrap();
         assert_eq!(joined.spanners.len(), 1, "the slur came along");
@@ -943,6 +944,7 @@ mod tests {
             kind: "slur".into(),
             from: ids[4],
             to: ids[7],
+            join: None,
         }];
         let cut = remove_measures(sheet, 2, 2).unwrap();
         assert!(cut.spanners.is_empty());

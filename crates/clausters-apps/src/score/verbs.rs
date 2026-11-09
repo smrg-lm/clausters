@@ -76,8 +76,14 @@ pub enum Action {
     /// key says.
     Accidental { alter: i32 },
     /// A slur, a crescendo or a diminuendo from the first selected item to the
-    /// last, in time.
-    Spanner { kind: String },
+    /// last, in time. A slur says whether it joins its notes (`join`): drawn
+    /// on the page it is attacked unless it says so, and drawing it again with
+    /// the other answer changes it.
+    Spanner {
+        kind: String,
+        #[serde(default)]
+        join: Option<bool>,
+    },
     /// A model operation, whole -- the escape hatch for what has no verb here.
     Op { op: Box<Op> },
     /// **Lay the score out on another page**: a `paper` by name (turned with
@@ -240,7 +246,7 @@ impl Action {
             Action::Accidental { .. } => "accidental".into(),
             Action::Grace { .. } => "grace note".into(),
             Action::Open { .. } => "open".into(),
-            Action::Spanner { kind } => kind.clone(),
+            Action::Spanner { kind, .. } => kind.clone(),
             Action::Transform { name, .. } => name.clone(),
             Action::Page { .. } => "page setup".into(),
             Action::Measures { edit, .. } if edit == "remove" => "remove measures".into(),
@@ -725,7 +731,7 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
                 })
                 .collect()
         }
-        Action::Spanner { kind } => {
+        Action::Spanner { kind, join } => {
             let (Some(&from), Some(&to)) = (ids.first(), ids.last()) else {
                 return Err("select where it starts and where it ends".into());
             };
@@ -734,10 +740,13 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
                     "a {kind} runs between two notes: select where it starts and where it ends"
                 ));
             }
+            // a slur on the page is attacked unless it says it joins
+            let join = (kind == "slur").then(|| join.unwrap_or(false));
             vec![Op::AddSpanner {
                 kind: kind.clone(),
                 from,
                 to,
+                join,
             }]
         }
         Action::Mark { mark, value } => {
@@ -980,6 +989,7 @@ mod tests {
             &[4, 2],
             &Action::Spanner {
                 kind: "slur".into(),
+                join: None,
             },
         )
         .unwrap();
@@ -988,7 +998,8 @@ mod tests {
             vec![Op::AddSpanner {
                 kind: "slur".into(),
                 from: 2,
-                to: 4
+                to: 4,
+                join: Some(false),
             }]
         );
         assert!(
@@ -996,7 +1007,8 @@ mod tests {
                 &sheet(),
                 &[2],
                 &Action::Spanner {
-                    kind: "slur".into()
+                    kind: "slur".into(),
+                    join: None,
                 }
             )
             .is_err(),

@@ -18,8 +18,9 @@ a pattern (a list function reads a whole list, an operator one value at a time).
 note's ``legato`` says how it goes on to the next. Where it is 1 the note is
 joined to the next -- the server keeps one synth and sets its ``freq``, which
 has a lag, so the line glides -- and where it is less the next note
-re-attacks. Rendered into an event sequence, the same joins are a page's ties
-and slurs, printed below.
+re-attacks. Rendered into an event sequence, the same joins are what each
+joined note names, printed below: the data the server played, and nothing of
+a page.
 
 **Patterns play together.** A counter-line from a ``pbind`` -- ``pxrand``
 never repeating a note, ``pstutter`` doubling its durations, ``pmeanrand``
@@ -93,13 +94,13 @@ counter = pbind(instrument="glider",
 
 # %% [markdown]
 # ## The page
-# The voice's joins written as ties and slurs: the same data the server played.
+# The voice's joins as the sequence holds them: each joined note names the one
+# it goes on from, the same data the server played.
 
 # %%
 written = melody.render_events().data()
-ties = [e["id"] for e in written["events"] if e["data"].get("tie")]
-print("ties on notes", ties)
-print("slurs", written.get("notation", {}).get("spanners", []))
+joins = [(e["data"]["joins"], e["id"]) for e in written["events"] if "joins" in e["data"]]
+print("joins (from, into)", joins)
 
 
 # %% [markdown]

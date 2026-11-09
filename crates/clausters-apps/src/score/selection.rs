@@ -209,6 +209,7 @@ mod tests {
                 kind: "slur".into(),
                 from: 1,
                 to: 4,
+                join: None,
             }],
             controls: vec![Control {
                 kind: "tempo".into(),

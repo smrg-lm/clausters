@@ -166,6 +166,9 @@ pub fn write_back(
     let mut added: Vec<(u64, Event)> = Vec::new();
     let fresh = |event: &Event, instrument: &Option<Value>| {
         let mut keys = event.keys();
+        // a render's joins name the render's events: the sequence's are
+        // derived from its slurs below
+        keys.remove("joins");
         if let Some(instrument) = instrument {
             keys.entry("instrument")
                 .or_insert_with(|| instrument.clone());
@@ -302,11 +305,27 @@ pub fn write_back(
         now.sort();
         said.insert("items".into(), json!(now));
     }
+    let slurs_before = sequence
+        .notation
+        .as_ref()
+        .and_then(|n| n.get("spanners"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let slurs_after = said
+        .get("spanners")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     if !said.is_empty() {
         out.notation = Some(Value::Object(said));
     }
 
     out.hold();
+    // **the slurs the edit changed write the joins over their spans**, and a
+    // join naming a note the edit took away goes
+    super::articulation::joins_from_page(&mut out, &slurs_before, &slurs_after);
+    super::articulation::prune(&mut out);
     // a note's curve the page wrote may be more than the sequence's
     // specification says
     if out.midi.is_some() {
@@ -366,13 +385,17 @@ fn translated(
 fn change(event: &mut Event, before: &Event, after: &Event) {
     let (was, is) = (before.keys(), after.keys());
     let mut keys = event.keys();
-    for key in was.keys() {
+    // a render's joins name the render's events, not the sequence's: they are
+    // written from the slurs, after
+    let ours = |key: &&String| key.as_str() != "joins";
+    for key in was.keys().filter(ours) {
         if !is.contains_key(key) {
             keys.remove(key);
         }
     }
     let mut differing: Vec<&String> = is
         .keys()
+        .filter(ours)
         .filter(|key| was.get(*key) != is.get(*key))
         .collect();
     differing.sort_by_key(|key| key.as_str() == "pitches");
@@ -524,6 +547,7 @@ mod tests {
                 kind: "slur".into(),
                 from: first,
                 to: second,
+                join: None,
             });
         });
         assert_eq!(got.sequence.events.len(), 3);
@@ -537,6 +561,68 @@ mod tests {
         let (again, _) = page(&got.sequence);
         assert_eq!(again.spanners.len(), 1);
         assert_eq!(again.staves[0].voices[0].items.len(), 3);
+    }
+
+    /// What each event of `seq` goes on from.
+    fn joins_of(seq: &EventSequence) -> Vec<Option<u64>> {
+        seq.events
+            .iter()
+            .map(|e| e.keys().get("joins").and_then(Value::as_u64))
+            .collect()
+    }
+
+    #[test]
+    fn a_slur_that_joins_writes_the_joins_and_one_that_attacks_takes_them() {
+        let seq = take();
+        let slur = |join: Option<bool>| {
+            move |sheet: &mut Sheet| {
+                let items = &sheet.staves[0].voices[0].items;
+                let (first, third) = (items[0].id(), items[2].id());
+                sheet.spanners.push(Spanner {
+                    kind: "slur".into(),
+                    from: first,
+                    to: third,
+                    join,
+                });
+            }
+        };
+        let joined = written(&seq, slur(Some(true))).sequence;
+        let ids: Vec<u64> = joined.events.iter().map(|e| e.id).collect();
+        assert_eq!(
+            joins_of(&joined),
+            vec![None, Some(ids[0]), Some(ids[1]), None],
+            "one line, as the sequence's own events name it"
+        );
+        assert_eq!(
+            joined.notation.as_ref().unwrap()["spanners"][0]["join"],
+            json!(true)
+        );
+        // what played is kept: the times and the levels it was played with
+        for (a, b) in joined.events.iter().zip(&seq.events) {
+            assert_eq!(a.at, b.at);
+        }
+        // the same slur said attacked on the page takes the joins away
+        let attacked = written(&joined, |sheet| {
+            for spanner in &mut sheet.spanners {
+                spanner.join = Some(false);
+            }
+        })
+        .sequence;
+        assert!(joins_of(&attacked).iter().all(Option::is_none));
+        // and one that says nothing, drawn fresh, joins nothing
+        let plain = written(&seq, slur(None)).sequence;
+        assert!(joins_of(&plain).iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn a_note_lengthened_on_the_page_is_longer_and_not_joined() {
+        let seq = take();
+        let got = written(&seq, |sheet| {
+            if let Item::Note { dur, .. } = &mut sheet.staves[0].voices[0].items[0] {
+                *dur = Ratio::new(1, 2);
+            }
+        });
+        assert!(joins_of(&got.sequence).iter().all(Option::is_none));
     }
 
     #[test]

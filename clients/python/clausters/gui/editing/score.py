@@ -467,10 +467,15 @@ class ScoreEditor(SequenceHandler):
         of ``unit`` (``set_meter(3, 4)`` is three quarters)."""
         return self._act({"action": "meter", "count": int(count), "unit": int(unit)})
 
-    def spanner(self, kind: str) -> bool:
+    def spanner(self, kind: str, join: "bool | None" = None) -> bool:
         """A ``slur``, a ``crescendo`` or a ``diminuendo`` from the first
-        selected item to the last, in time."""
-        return self._act({"action": "spanner", "kind": str(kind)})
+        selected item to the last, in time. A slur says whether it joins its
+        notes into one line with no new attack (``join``): attacked unless it
+        says so, and drawing it again with the other answer changes it."""
+        call = {"action": "spanner", "kind": str(kind)}
+        if join is not None:
+            call["join"] = bool(join)
+        return self._act(call)
 
     def mark(self, name: str, value=True) -> bool:
         """A mark on the selected notes, by its name: ``tremolo`` (strokes, 1

@@ -47,6 +47,11 @@
 //!   the score is one line and MIDI 2.0 where it is several
 //!   (`EventSequence::midi_fit`).
 //!
+//! - **A slur that joins its notes** (`join` true) is heard as one line: each
+//!   note of it after the first `joins` the one before, which is what the
+//!   playback continues without a new attack. One that does not is phrased
+//!   legato and every note of it is attacked.
+//!
 //! A tie is one sound, as the interpreter reads it: the chain is one event,
 //! whose `value` is the chain's whole written length -- two tied quarters
 //! render as a half, which is what they sound and what a page written back
@@ -208,11 +213,15 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
         .spanners
         .iter()
         .filter_map(|spanner| {
-            Some(json!({
+            let mut said = json!({
                 "kind": spanner.kind,
                 "from": first_event.get(&spanner.from)?,
                 "to": first_event.get(&spanner.to)?,
-            }))
+            });
+            if let Some(join) = spanner.join {
+                said["join"] = json!(join);
+            }
+            Some(said)
         })
         .collect();
     let mut notation = Map::new();
@@ -293,6 +302,16 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
         ..EventSequence::default()
     };
     sequence.hold();
+    // A slur that joins its notes is heard as one line: each note of its span
+    // goes on from the one before.
+    for slur in &sheet.spanners {
+        if slur.kind == "slur"
+            && slur.join == Some(true)
+            && let (Some(from), Some(to)) = (first_event.get(&slur.from), first_event.get(&slur.to))
+        {
+            super::articulation::joins_from_slur(&mut sequence, *from, *to, true);
+        }
+    }
     // What its curves need said: a channel's alone is MIDI 1.0, as long as
     // there are channels for the voices; a note bending on its own is MPE
     // where the score is one line and MIDI 2.0 where it is several.
@@ -458,11 +477,13 @@ mod tests {
                 kind: "pedal".into(),
                 from: 5,
                 to: 6,
+                join: None,
             },
             Spanner {
                 kind: "gliss".into(),
                 from: 7,
                 to: 8,
+                join: None,
             },
         ];
         if let Item::Note { pitches, .. } = &mut score.staves[0].voices[0].items[7] {
@@ -520,6 +541,7 @@ mod tests {
             kind: "gliss".into(),
             from: 2,
             to: 3,
+            join: None,
         }];
         let sequence = render(&score, &Interpretation::default()).unwrap();
         let gliss = &sequence.events[0].automation[0];
@@ -541,6 +563,7 @@ mod tests {
             kind: "crescendo".into(),
             from: 1,
             to: 3,
+            join: None,
         }];
         let sequence = render(&score, &Interpretation::default()).unwrap();
         let held = &sequence.events[0];
@@ -610,6 +633,47 @@ mod tests {
     }
 
     #[test]
+    fn a_slur_that_joins_is_heard_as_one_line_and_one_that_attacks_is_not() {
+        let slurred = |join: Option<bool>| {
+            let score = sheet(
+                vec![vec![plain(1), plain(2), plain(3)]],
+                vec![Spanner {
+                    kind: "slur".into(),
+                    from: 1,
+                    to: 3,
+                    join,
+                }],
+            );
+            render(&score, &Interpretation::default()).unwrap()
+        };
+        let joins = |sequence: &EventSequence| -> Vec<Option<u64>> {
+            sequence
+                .events
+                .iter()
+                .map(|e| e.keys().get("joins").and_then(Value::as_u64))
+                .collect()
+        };
+        let joined = slurred(Some(true));
+        assert_eq!(joins(&joined), vec![None, Some(1), Some(2)]);
+        assert_eq!(
+            joined.notation.as_ref().unwrap()["spanners"][0]["join"],
+            json!(true)
+        );
+        for join in [Some(false), None] {
+            let attacked = slurred(join);
+            assert_eq!(joins(&attacked), vec![None, None, None], "{join:?}");
+        }
+        // and the page read back says it again
+        let read = crate::events::transcription::read(
+            &joined,
+            &crate::events::transcription::Transcription::default(),
+            &Interpretation::default(),
+        )
+        .unwrap();
+        assert_eq!(read.sheet.spanners[0].join, Some(true));
+    }
+
+    #[test]
     fn a_tie_is_one_event_of_the_whole_written_length() {
         let tied = Item::Note {
             id: 1,
@@ -651,6 +715,7 @@ mod tests {
                 kind: "crescendo".into(),
                 from: 1,
                 to: 3,
+                join: None,
             }],
         );
         let sequence = render(&score, &Interpretation::default()).unwrap();

@@ -334,6 +334,20 @@ pub enum EventsIntent {
         #[serde(default)]
         reading: Option<Value>,
     },
+    /// **The selected notes joined**: in each line, each into the next
+    /// without a new attack (`joins`), and the slurs of the lines written as
+    /// notation written again from them. See `articulation`.
+    Join {
+        /// The notes.
+        ids: Vec<u64>,
+    },
+    /// **The joins among the selected notes taken away** -- for one note
+    /// alone, the join into it and the one out of it -- and the slurs of the
+    /// lines written as notation written again.
+    Unjoin {
+        /// The notes.
+        ids: Vec<u64>,
+    },
     /// The sequence as it was: what every edit's inverse is.
     Restore {
         /// All of it.
@@ -653,6 +667,7 @@ impl EventSequence {
             EventsIntent::SetEvents { events } => {
                 self.events = self.identify(events);
                 self.sort();
+                articulation::prune(self);
             }
             EventsIntent::Add { mut event } => {
                 if event.id == 0 || self.index(event.id).is_some() {
@@ -669,6 +684,7 @@ impl EventSequence {
             EventsIntent::Remove { id } => {
                 let i = self.index(id).ok_or_else(|| no_event(id))?;
                 self.events.remove(i);
+                articulation::prune(self);
             }
             EventsIntent::Move { id, at } => {
                 let i = self.index(id).ok_or_else(|| no_event(id))?;
@@ -767,6 +783,16 @@ impl EventSequence {
                 self.parts = parts;
             }
             EventsIntent::SetReading { reading } => self.set_reading(reading)?,
+            EventsIntent::Join { ids } => {
+                let mut after = self.clone();
+                articulation::join(&mut after, &ids)?;
+                *self = after;
+            }
+            EventsIntent::Unjoin { ids } => {
+                let mut after = self.clone();
+                articulation::unjoin(&mut after, &ids)?;
+                *self = after;
+            }
             EventsIntent::AutomationToEvents { curve } => {
                 let mut after = self.clone();
                 after.automation_to_events(curve)?;
@@ -1029,6 +1055,8 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
         | EventsIntent::Midi { .. }
         | EventsIntent::SetParts { .. }
         | EventsIntent::SetReading { .. }
+        | EventsIntent::Join { .. }
+        | EventsIntent::Unjoin { .. }
         | EventsIntent::AutomationToEvents { .. }
         | EventsIntent::EventsToAutomation { .. } => return None,
     })
@@ -1279,6 +1307,7 @@ pub fn mutates(request: &str) -> bool {
         .is_some_and(|verb| matches!(verb.as_str(), "apply" | "loadmidi" | "loadump" | "loadrows"))
 }
 
+pub mod articulation;
 mod midi;
 pub mod part;
 pub use part::{Part, Polyphony, Writing, Zone};

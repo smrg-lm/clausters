@@ -844,10 +844,14 @@ export function setMarks(sheet: Sheet, id: number, m: unknown): Sheet {
  * It cannot go on an item because it has two ends, so it goes on the sheet
  * beside the staves. Adding the same one twice changes nothing; naming an item
  * that is not there throws, because a hairpin that never appears with no reason
- * given is worse than an error.
+ * given is worse than an error. A slur's `join` says whether its notes sound as
+ * one line with no new attack (`true`) or each attacked (`false`); given again,
+ * it changes the slur already there.
  */
-export function addSpanner(sheet: Sheet, kind: string, from: number, to: number): Sheet {
-    return apply(sheet, { op: "add_spanner", kind, from, to });
+export function addSpanner(sheet: Sheet, kind: string, from: number, to: number, join?: boolean): Sheet {
+    const op: Op = { op: "add_spanner", kind, from, to };
+    if (join !== undefined) op.join = Boolean(join);
+    return apply(sheet, op);
 }
 
 /**

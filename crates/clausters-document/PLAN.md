@@ -1727,7 +1727,20 @@ follows the parts, and a performance derived from what is written.
     read and write `parts` and `notation.reading`; a multitrack box drawn as a
     page follows its sequence's reading.
 
-- ⬜ **O36 - Joins and slurs kept in agreement.** *(Folds in
+- ✅ **O36 - Joins and slurs kept in agreement.** *(Done 2026-11-08: a
+  pattern's render writes `joins` alone in both clients; the core's
+  `event::notation::articulation` and its bindings are gone (core ABI v97);
+  `Spanner.join` in the core model, written in MEI as the slur's `@type`
+  (`join`, `attack`) and set by the page's `add_spanner` (a slur drawn on the
+  page is attacked unless it says so); `events::articulation` (lines,
+  `slurs_from_joins`, `joins_from_slur`, `joins_from_page`, `join`, `unjoin`,
+  `prune`); the intents `Join` and `Unjoin` (named so beside the sequence's
+  `separate`, which splits it into parts); a render hears a joining slur as
+  one line; `write_back` derives the joins from the slurs an edit changed
+  and never writes a render's own; `SetEvents` and `Remove` drop a join
+  naming a note that is gone, which covers the roll's intake; `join` and
+  `unjoin` on both clients' `EventSequence`, and `join` on both editors'
+  `spanner`.)* *(Folds in
   `clients/python/PLAN.md`, Found by use, "An edit to a voice's legato or slur
   does not rewrite the other".)* "This note goes on into that one" has two
   shapes: `joins` on a note (the id of the note it goes on from), which the
@@ -1760,13 +1773,13 @@ follows the parts, and a performance derived from what is written.
     slurs with `join` true are the joins; a slur with `join` false writes
     none). The core's `event::notation::articulation`, whose rule makes a
     join of one pitch a tie, goes with its bindings.
-  - **Intents** `Join` and `Separate`, over the selected notes of one line,
+  - **Intents** `Join` and `Unjoin`, over the selected notes of one line,
     each one undo step that writes the joins and, where the line is written as
     notation, the slurs; and the slur's `join` set through the page's spanner
     edit, which writes the joins.
   - **The rule: the shape a gesture edited wins**, and the other is derived
     again for the lines the gesture touched, in the same intent and so in the
-    same undo step: a join edited (the roll in MIDI mode, `Join`, `Separate`)
+    same undo step: a join edited (the roll in MIDI mode, `Join`, `Unjoin`)
     derives the slurs of the lines written as notation, and a slur edited (the
     page, the roll in notation mode) derives the joins. Where a sequence
     arrives with the two in disagreement nothing is rewritten: the joins are

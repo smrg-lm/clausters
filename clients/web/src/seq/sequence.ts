@@ -15,7 +15,6 @@
 
 import {
     JsEventSequence,
-    articulation as coreArticulation,
     event_of_midi as coreEventOfMidi,
 } from "../core/clausters_core_web.js";
 import { midiReadClip, midiReadSmf, midiWriteClipUmp, midiWriteSmfTempo, requireCore } from "../base/core.ts";
@@ -309,6 +308,29 @@ export class EventSequence {
     set reading(value: Record<string, unknown> | null) {
         const written = value === null ? null : { ...value };
         this.edit({ intent: "setreading", reading: written }, "change the reading");
+    }
+
+    /**
+     * **Join these notes**: in each line (a staff and voice, else a channel)
+     * each goes on into the next of them without a new attack -- `joins`, MIDI
+     * data -- a chord into a chord of as many notes, low to high. Where the
+     * line is written as notation, its slurs are written again from the joins:
+     * a run of them is one slur that joins. One edit. Throws when one is not a
+     * note, or no line holds two of them one after the other.
+     */
+    join(events: Iterable<SeqEvent>): void {
+        const ids = [...events].map((e) => e.id);
+        this.edit({ intent: "join", ids }, "join");
+    }
+
+    /**
+     * **Take the joins among these notes away** -- for one note alone, the
+     * join into it and the one out of it -- and, where its line is written as
+     * notation, the slurs that joined them. One edit.
+     */
+    unjoin(events: Iterable<SeqEvent>): void {
+        const ids = [...events].map((e) => e.id);
+        this.edit({ intent: "unjoin", ids }, "unjoin");
     }
 
     // ---- editing ----
@@ -1091,29 +1113,17 @@ async function rendered(
 }
 
 /**
- * **A voice's legato, written on the page.** The notes that went on into the
- * next are joins; the core says which are ties (one pitch held) and which runs
- * are slurs (legato that moves), and both are written: `tie` on the tied note,
- * a slur spanner over each run's event ids. And what it plays as: `joins` on
- * each joined note, the id of the note it goes on from. The events get their
- * ids here, in order, so the spanners and the joins can name them.
+ * **A voice's legato, as what it plays.** Each note that went on into the next
+ * names the one it goes on from (`joins`), and that is all: it is MIDI data, a
+ * line played legato, and a page reads it as it likes. The events get their
+ * ids here, in order, so the joins can name them.
  */
 function articulate(data: Record<string, unknown>, joins: readonly [number, number][]): void {
     const events = data.events as { id?: number; data: Record<string, unknown> }[];
-    const pitches = Float64Array.from(events, (e) => Number(e.data.midinote ?? Number.NaN));
-    const { ties, slurs } = JSON.parse(coreArticulation(pitches, Uint32Array.from(joins.flat()))) as {
-        ties: number[];
-        slurs: [number, number][];
-    };
     events.forEach((entry, i) => {
         entry.id = i + 1;
     });
-    for (const i of ties) events[i]!.data.tie = true;
-    // What it plays as: each joined note names the one it goes on from.
     for (const [a, b] of joins) events[b]!.data.joins = a + 1;
-    if (slurs.length > 0) {
-        data.notation = { spanners: slurs.map(([a, b]) => ({ kind: "slur", from: a + 1, to: b + 1 })) };
-    }
 }
 
 /** What `renderTimeline` needs of a `Timeline`. @internal */

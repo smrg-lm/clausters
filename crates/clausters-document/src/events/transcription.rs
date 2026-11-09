@@ -717,6 +717,7 @@ pub fn read(
                 kind: kind.to_string(),
                 from: *from,
                 to: *to,
+                join: spanner.get("join").and_then(Value::as_bool),
             });
         }
     }
@@ -965,6 +966,7 @@ fn levels_read(
                             },
                             from,
                             to,
+                            join: None,
                         });
                     }
                 }
@@ -1242,7 +1244,8 @@ mod tests {
             vec![Spanner {
                 kind: "crescendo".into(),
                 from: first,
-                to: third
+                to: third,
+                join: None
             }]
         );
         assert_eq!(
@@ -1314,6 +1317,7 @@ mod tests {
             kind: "slur".into(),
             from: 3,
             to: 5,
+            join: None,
         }];
         score.controls = vec![Control {
             kind: "tempo".into(),

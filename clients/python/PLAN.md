@@ -2558,7 +2558,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 - ✅ **The root lacked `Node`, already exported by the web client.** The base resource handle now imports from `clausters` as well as `clausters.defs`, matching both clients while adding persistent plugin event verbs.
 
-- ⬜ **An edit to a voice's legato or slur does not rewrite the other**
+- ✅ **An edit to a voice's legato or slur does not rewrite the other**
   *(found 2026-10-10, closing `C73e`)*. A rendered `pvoice` writes both
   shapes of its articulation -- each note's `legato`, and the `tie` keys and
   slur spanners derived from it -- as the user asked. They agree when they are
@@ -2575,7 +2575,9 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   MIDI data, so it stops writing the ties and slurs, and that a tie is the
   page's and never an event's shape; what is left is keeping the joins and
   the slurs in agreement. The work is `crates/clausters-document/PLAN.md`,
-  `O36`; this entry closes with it.)*
+  `O36`; this entry closes with it.)* *Fixed 2026-11-08 by `O36`: a
+  pattern's render writes its joins alone, and a join edited and a slur
+  edited each derive the other.*
 - ✅ **The API reference leaves out 26 public-named modules, and nothing says
   which of them are meant to be out** *(found 2026-09-21, splitting the
   reference into one page per package; fixed the same day)*. The module list in

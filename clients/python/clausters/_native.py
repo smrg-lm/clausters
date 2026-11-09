@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 96
+CORE_ABI_VERSION = 97
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -471,7 +471,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_event_sustain.restype = ctypes.c_double
     lib.clausters_core_event_sustain.argtypes = [ctypes.c_double] * 4
     # Rendering an event (ABI v72): JSON in, size-then-fill out.
-    for name in ("event_synth", "event_node_note", "event_midi", "event_of_midi", "articulation",
+    for name in ("event_synth", "event_node_note", "event_midi", "event_of_midi",
                  "plugin_catalog", "plugin_search", "plugin_reference", "node_editor"):
         fn = getattr(lib, f"clausters_core_{name}")
         fn.restype = ctypes.c_size_t
@@ -3081,18 +3081,6 @@ def shape_value(shape: int, curve: float, a: float, b: float, t: float) -> float
     """One envelope segment's level at ``t`` in ``[0, 1)``, from ``a`` to ``b``
     by SuperCollider's ``shape`` number and ``curve`` (what ``EnvGen`` plays)."""
     return lib().clausters_core_shape_value(int(shape), float(curve), float(a), float(b), float(t))
-
-
-def articulation(pitches, joins) -> tuple:
-    """What a voice's joins write on a page: ``(ties, slurs)``, the indices of
-    the notes tied into the next and each slur's ``(first, last)``, for notes
-    sounding ``pitches`` (MIDI note numbers) and ``joins`` of ``(from, to)``
-    indices (``clausters_core::event::notation::articulation``)."""
-    answer = _json_call(lib().clausters_core_articulation,
-                        {"pitches": [float(p) for p in pitches],
-                         "joins": [[int(a), int(b)] for a, b in joins]},
-                        "articulation")
-    return list(answer["ties"]), [tuple(s) for s in answer["slurs"]]
 
 
 def plugin_catalog(rows: list) -> dict:
