@@ -9199,8 +9199,9 @@ module of its own.
     *Closed 2026-11-09 without the change*: engraving by parts was measured
     and left (`N10`, "Not taken"), since the project follows verovio rather
     than replacing part of its layout (`docs/decisions.md`, "Verovio is
-    followed, not adapted"); whether the multitrack keeps its score boxes is
-    the user's to decide;
+    followed, not adapted"); the user then took the boxes out of the
+    multitrack, for now (`crates/clausters-apps/PLAN.md`, Future
+    directions, "Whether the multitrack keeps its score boxes");
   - ✅ a rest has no id on the page, so it stands where the stretch between
     its neighbours puts it rather than at its own time;
     *fixed 2026-11-07*: it had an id (`n<id>`, as a note's) and no anchor;

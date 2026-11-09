@@ -111,24 +111,13 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once, after saving the
   session before it; not reproduced.
 
-- ⬜ **Quantize on a page** *(`crates/clausters-apps/PLAN.md`, Future
-  directions)*. Raised by the user reading the score editor's key sheet.
-
 - ⬜ **A wrap on a block's edge can play a block of silence nobody counts**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
   load closing the playback tests' entry; rare.
 
-- ⬜ **A def a client sent does not sound in an application's engine**
-  *(`crates/clausters-apps/PLAN.md`, "Found by use")*: found moving the roll to
-  the host; it waits on how data passes between clients and applications.
-
 - ⬜ **`a_loop_moved_while_it_plays_is_crossfaded` fails now and then**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Under load only; what is
   open is whether the test's pacing or the crossfade is at fault.
-
-- ⬜ **A MIDI file and an OSC score are sources, as a sound file is, and a
-  session holds neither inside** *(`crates/clausters-document/PLAN.md`, Found
-  by use)*. **Related:** `T10` writes the file this one points at.
 
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** *(`clients/gui/PLAN.md`, Found by use)*. Not
@@ -138,10 +127,9 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
-- ⬜ **A control's size does not follow what it says, in a row or across one**
-  *(`clients/gui/PLAN.md`, Found by use)*. Found on the curve window; the
-  examples show it in several forms, and the decision changes a written
-  layout rule.
+- ⬜ **The multitrack's score boxes come out** *(`crates/clausters-apps/PLAN.md`,
+  Found by use)*. The user's decision, for now and not as a rule: a box of
+  notes is drawn as a roll, and the page is the score editor's.
 
 ## 2. Tests and reviews pending
 
@@ -270,6 +258,28 @@ its plan; the plan is where its acceptance is read.
   and it is to defer:** live OS MIDI output stays best-effort, and the
   UMP-over-our-own-transport direction has no date. It is listed so that
   "unscheduled" reads as a decision rather than an oversight.
+
+- ⬜ **A control's size does not follow what it says, in a row or across one**
+  *(`clients/gui/PLAN.md`, Found by use)*. Found on the curve window; the
+  examples show it in several forms. **The decision:** whether a control with
+  content keeps its content's size on both axes unless a `weight` stretches
+  it, and whether a container's `h` may stay under its children's floors; it
+  changes a written layout rule (`a_natural_size_only_binds_its_own_axis`).
+
+- ⬜ **A def a client sent does not sound in an application's engine**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*: found moving the roll to
+  the host. **The decision**, the user's: how data passes between clients and
+  applications -- the client's defs sent to the engine, or named in the
+  document.
+
+- ⬜ **A MIDI file and an OSC score are sources, as a sound file is, and a
+  session holds neither inside** *(`crates/clausters-document/PLAN.md`, Found
+  by use)*, **with `T10` — the server records MIDI** *(root `PLAN.md`, T
+  track)*, which writes the file this one points at. **The design:** how the
+  document keeps ids and the edit log over a file that carries none, what
+  `to_midi`/`from_midi` become, how a session written with `Location::Events`
+  opens; and for `T10` its commands and the tempo of the file's ticks. The
+  notes editor's recording (`X3.10`) waits on both and is skipped for now.
 
 ### The near work
 

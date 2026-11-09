@@ -4733,12 +4733,43 @@ Every entry carries a checkbox.
   hold different parts, which the parts list does not yet: that is the
   design question this entry carries.
 
-- ⬜ **Quantize on a page** *(raised by the user, 2026-11-01, reading the score
+- ✅ **Quantize on a page** *(raised by the user, 2026-11-01, reading the score
   editor's key sheet)*. A page has no grid, so its window offers no quantize; a
   page's written values could still be quantized as a verb of its own, which is
   a design of its own rather than the grid's.
+  *Settled 2026-11-09 by the user*: the score editor gets no quantize of its
+  own. A played rhythm becomes written values by the roll's quantize to its
+  grid, or by the quantization step of `crates/clausters-notate/PLAN.md`
+  (`Q5`), which is where reading a performance as a page is designed.
+
+- ✅ **Whether the multitrack keeps its score boxes** *(left to the user
+  2026-11-09, when engraving a box by parts was measured and not taken:
+  `clients/gui/PLAN.md`, Found by use, "What a score box of the multitrack
+  left open")*. A box of notes drawn as its page is engraved whole after
+  every edit of its sequence (about 190 ms at a thousand notes and 2.3 s at
+  five thousand, on the application's thread), and the project follows the
+  engraver rather than replacing part of its layout.
+  *Settled 2026-11-09 by the user, for now*: the multitrack does not keep
+  its score boxes; a box of notes is drawn as a roll, and the page is the
+  score editor's. This is where the project stands, not a rule against
+  them: the question may be opened again, and the measurements above are
+  what it would start from. The removal is "The multitrack's score boxes
+  come out" in Found by use.
 
 ## Found by use: the running list of fixes
+
+- ⬜ **The multitrack's score boxes come out** *(2026-11-09, from the
+  user's decision in Future directions, "Whether the multitrack keeps its
+  score boxes")*. The View menu's *Notes as scores*
+  (`clausters_editing::verbs`, `notes_score`), the multitrack editor's
+  pages, its engraver and `refuse_pages`
+  (`clausters_apps::multitrack::editor`), the host's binding of an engraver
+  to a multitrack window (`clients/gui/src/host/audio_app.rs`), the page a
+  box opens in, their tests, and the step of `editors/edit_multitrack` that
+  shows it, in both clients wherever they name it. A box of notes is drawn
+  as a roll and opens in the notes editor. Taken out so that it can come
+  back: the engraving stays the score editor's, and what the box used
+  (`Transcription::of`, the anchors) stays where the score editor uses it.
 
 - ✅ **A failed endpoint walk leaves unissued steps queued** (2026-10-30,
   reading the document-store adapters). `clausters_editing::run::Runner`
