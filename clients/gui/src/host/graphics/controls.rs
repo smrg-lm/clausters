@@ -428,6 +428,55 @@ pub fn button_text(label: Option<&str>, icon: Option<char>) -> String {
     }
 }
 
+/// **The lone symbol a caption is**, when it is one character a window
+/// brought the outline of: a shape that scales to any size, unlike the
+/// bitmap face's whole steps.
+fn lone_symbol(caption: &str) -> Option<char> {
+    let mut chars = caption.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) => font::outline::advance(c, 1.0).map(|_| c),
+        _ => None,
+    }
+}
+
+/// **The smallest size a lone symbol is drawn at**: the host's text size, or
+/// the caption's own where that is smaller -- a symbol shrunk to fit its
+/// box never goes under the text beside it.
+fn symbol_floor_size(size: f32, m: &Metrics) -> f32 {
+    size.min(m.text_scale)
+}
+
+/// **The size a lone symbol is drawn at**: its own `size` times `fit`, the
+/// factor its container found for every lone symbol it holds
+/// ([`Ctx::text_fit`](crate::host::widget::element::Ctx::text_fit)), never
+/// under [`symbol_floor_size`] -- and any other caption at its own size. So
+/// the symbols of a palette shrink together, keeping their sizes against each
+/// other, where a word is cut to an ellipsis instead.
+pub fn symbol_size(caption: &str, size: f32, fit: f32, m: &Metrics) -> f32 {
+    if lone_symbol(caption).is_none() || fit >= 1.0 {
+        return size;
+    }
+    (size * fit).max(symbol_floor_size(size, m)).min(size)
+}
+
+/// **The caption an element draws, when it is a lone symbol**, and the size
+/// it is drawn at: what a container shares one fit among
+/// ([`crate::host::widget::Element::lone_symbol`]).
+pub fn as_lone_symbol(caption: String, size: f32) -> Option<(String, f32)> {
+    lone_symbol(&caption).map(|_| (caption, size))
+}
+
+/// **The narrowest a button's caption is given**: a lone symbol at its
+/// smallest size ([`symbol_floor_size`]), any other caption cut to an
+/// ellipsis (`size::caption_floor`). No padding: a squeezed control gives
+/// that up first.
+pub fn caption_floor(caption: &str, size: f32, m: &Metrics) -> f32 {
+    match lone_symbol(caption) {
+        Some(_) => font::width(caption, symbol_floor_size(size, m)),
+        None => size::caption_floor(caption, size),
+    }
+}
+
 pub fn button(
     d: &mut Draw,
     label: Option<&str>,

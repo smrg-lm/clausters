@@ -133,7 +133,16 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   places it in a cell larger than it is: `center` (the default), `top`,
   `bottom`, `left`, `right`, `top_left`, `top_right`, `bottom_left`,
   `bottom_right`. `min_w`/`min_h` raise its floor. The floor wins over all of
-  them: a `max_w` under the floor is no maximum. All live via `/gui_set`. A container additionally takes `margin` (inset
+  them: a `max_w` under the floor is no maximum. All live via `/gui_set`.
+- **A word is cut, a symbol shrinks -- and the symbols of a container shrink
+  together.** A caption that does not fit its box ends in an ellipsis. A
+  caption that is one character a window brought the outline of (a `glyphs`
+  symbol: a note value, an ornament) has no shorter form, so a button or a
+  toggle drawn as one shrinks it instead -- by **one factor for every such
+  symbol in the same container**, the one at which the widest of them fits its
+  box, so a fixed grid of symbols keeps their sizes against each other however
+  many are added. A symbol is never drawn under the host's text size, and
+  that is its floor. A container additionally takes `margin` (inset
   before its children, default 6), `gap` (between children, default 6) and
   `cols` (a fixed `grid` column count; default near-square) — except a
   `layout` whose `flow` is `stack`, which arranges nothing and so takes only

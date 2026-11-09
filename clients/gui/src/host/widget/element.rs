@@ -165,6 +165,11 @@ pub struct Ctx<'a> {
     /// named on it or on its nearest ancestor, else its window's, already read
     /// ([`HeadClocks::at`](crate::host::world::HeadClocks::at)).
     pub clock: f64,
+    /// **The fit its container found for its lone symbols**, `1.0` for any
+    /// other element ([`Element::lone_symbol`], `layout::Placed::text_fit`):
+    /// what such an element multiplies its text size by, and never goes
+    /// under the host's text size for.
+    pub text_fit: f32,
 }
 
 /// **How a body that draws through a texture slot samples it**: the dB window
@@ -1662,6 +1667,16 @@ pub trait Element: fmt::Debug {
 
     /// This element's current value, for `/gui_event` and `/gui_query`.
     fn value(&self) -> Option<OscType> {
+        None
+    }
+
+    /// **The caption this element draws when it is a lone symbol**, and its
+    /// `text_size`: a character a window brought the outline of, alone. A
+    /// container gives every lone symbol it holds **one** fit -- the factor
+    /// at which the widest of them fits its box -- so a fixed grid of symbols
+    /// shrinks them together and keeps their sizes against each other
+    /// ([`Ctx::text_fit`]). `None` for everything else, the default.
+    fn lone_symbol(&self) -> Option<(String, f32)> {
         None
     }
 

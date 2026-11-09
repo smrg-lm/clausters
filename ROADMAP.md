@@ -127,10 +127,6 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
-- ⬜ **A scroll's plane is no wider than its pane, whatever its children's
-  floors** *(`clients/gui/PLAN.md`, Found by use)*. The score editor's
-  ornaments palette is cut a few pixels at the column's edge.
-
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and

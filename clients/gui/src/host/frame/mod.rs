@@ -1534,6 +1534,8 @@ fn draw_live_places(
             focused: widget.id.is_some() && widget.id == inputs.focused,
             hovered: widget.id.is_some() && widget.id == inputs.popups.and_then(|o| o.hover),
             clock: inputs.world.clocks.at(widget.id),
+            // the live layer draws what moves, never a caption
+            text_fit: 1.0,
         };
         el.draw_live(&mut Draw::new(mesh, m, th), &ctx);
         // **The focus ring stays over what moves.** It is drawn with the

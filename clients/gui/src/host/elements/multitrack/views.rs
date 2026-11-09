@@ -172,6 +172,7 @@ impl Multitrack {
                     focused: false,
                     hovered: false,
                     clock: ctx.clock,
+                    text_fit: 1.0,
                 };
                 for (_, frame) in view.body.slots(&inside) {
                     if let SlotFrame::Signal {

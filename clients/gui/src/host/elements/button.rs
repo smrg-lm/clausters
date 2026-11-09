@@ -33,7 +33,7 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
 use crate::host::widget::parse;
-use crate::host::widget::size::{Natural, caption_floor, control_box, text_box};
+use crate::host::widget::size::{Natural, control_box, text_box};
 
 use super::switch_value;
 
@@ -168,6 +168,12 @@ impl Element for Button {
     /// force, is drawn held, and an action that cannot be taken does not
     /// light under the pointer (the frame greys its words).
     fn draw_action(&self, d: &mut Draw, ctx: &Ctx, state: Option<&ActionState>) {
+        let size = controls::symbol_size(
+            &controls::button_text(self.label.as_deref(), self.icon),
+            self.text_size * ctx.scale,
+            ctx.text_fit,
+            ctx.metrics,
+        );
         controls::button(
             d,
             self.label.as_deref(),
@@ -178,7 +184,7 @@ impl Element for Button {
                 hovered: ctx.hovered && state.is_none_or(|s| s.enabled),
                 flat: self.flat,
             },
-            self.text_size * ctx.scale,
+            size,
         );
     }
 
@@ -197,10 +203,11 @@ impl Element for Button {
         let caption = controls::button_text(self.label.as_deref(), None);
         let cut = match self.icon {
             Some(icon) if self.label.is_some() => {
-                crate::host::font::width(&format!("{icon} "), size) + caption_floor(&caption, size)
+                crate::host::font::width(&format!("{icon} "), size)
+                    + controls::caption_floor(&caption, size, m)
             }
             Some(icon) => crate::host::font::width(&icon.to_string(), size),
-            None => caption_floor(&caption, size),
+            None => controls::caption_floor(&caption, size, m),
         };
         (Some(cut), Some(control_box(size, m)))
     }
@@ -222,6 +229,13 @@ impl Element for Button {
     /// A button is momentary either way: the press *is* the event, so what it
     /// reports between presses is the `on` it last sent rather than a state it
     /// keeps.
+    fn lone_symbol(&self) -> Option<(String, f32)> {
+        controls::as_lone_symbol(
+            controls::button_text(self.label.as_deref(), self.icon),
+            self.text_size,
+        )
+    }
+
     fn value(&self) -> Option<OscType> {
         Some(switch_value(self.on))
     }

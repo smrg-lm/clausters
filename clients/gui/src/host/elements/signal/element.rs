@@ -827,6 +827,7 @@ mod tests {
             focused: false,
             hovered: false,
             clock: 0.0,
+            text_fit: 1.0,
         };
         let draw = |time| {
             let mut mesh = Mesh::default();

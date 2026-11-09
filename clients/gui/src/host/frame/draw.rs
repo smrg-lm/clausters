@@ -1033,6 +1033,7 @@ pub(super) fn draw_element_overlays(
             focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
             hovered: p.widget.id.is_some() && p.widget.id == inputs.popups.and_then(|o| o.hover),
             clock: inputs.world.clocks.at(p.widget.id),
+            text_fit: p.text_fit,
         };
         if p.pane(placed).is_some() && el.slotted().is_none() {
             el.draw(&mut Draw::new(over, &p.metrics, th), &ctx);

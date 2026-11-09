@@ -9376,7 +9376,7 @@ module of its own.
   editor draw as before; the score editor's toolbar now fits its window at
   960 (its transport used to fall off the right edge).
 
-- ⬜ **A scroll's plane is no wider than its pane, whatever its children's
+- ✅ **A scroll's plane is no wider than its pane, whatever its children's
   floors** *(found 2026-11-09, closing the entry above, on the score editor's
   palette column)*. A `scroll` that flows its children in a column takes its
   pane's width as its content's, so a child whose floor is wider -- the
@@ -9385,6 +9385,15 @@ module of its own.
   never cuts a floor. The plane's extent across its flow should be at least
   its children's floors, which makes such a column scroll sideways; whether
   that is the fix, or the palette's cells are, is to decide.
+  *Decided and done 2026-11-09, by the user: the grid is fixed, so the
+  symbol shrinks to fit it.* As a rule rather than for one symbol: a caption
+  that is one outline character shrinks where a word is cut, and the lone
+  symbols of a container share **one** fit, the one at which the widest fits
+  its box (`layout::symbol_fit`, `Ctx::text_fit`), never under the host's text
+  size, which is also their floor. So the palette's symbols keep their sizes
+  against each other however many are added, and the score editor's toolbar
+  shrinks its symbols together rather than running past the window. The
+  scroll's plane is unchanged.
 
 - ✅ **A pass can play with no play cursor until a frame happens to come**
   *(found 2026-11-01 by the user, by ear and eye on `notation/score_editor`)*.

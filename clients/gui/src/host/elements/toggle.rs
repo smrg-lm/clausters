@@ -19,7 +19,7 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input};
 use crate::host::widget::parse;
-use crate::host::widget::size::{Natural, caption_floor, control_box, text_box};
+use crate::host::widget::size::{Natural, control_box, text_box};
 
 use super::switch_value;
 
@@ -108,8 +108,26 @@ impl Element for Toggle {
             ctx.rect,
             self.view,
             ctx.hovered,
-            self.text_size * ctx.scale,
+            match self.lone_symbol() {
+                Some((caption, _)) => controls::symbol_size(
+                    &caption,
+                    self.text_size * ctx.scale,
+                    ctx.text_fit,
+                    ctx.metrics,
+                ),
+                None => self.text_size * ctx.scale,
+            },
         );
+    }
+
+    /// Drawn as a button, its caption may be a lone symbol, which shares its
+    /// container's fit ([`Element::lone_symbol`]).
+    fn lone_symbol(&self) -> Option<(String, f32)> {
+        if self.view != ToggleView::Button {
+            return None;
+        }
+        let caption = controls::button_text(self.label.as_deref().or(Some("")), self.icon);
+        controls::as_lone_symbol(caption.trim_end().to_string(), self.text_size)
     }
 
     /// A toggle owns its cell: the box and its label sit on one row, so the
@@ -128,9 +146,10 @@ impl Element for Toggle {
         let h = control_box(size, m).max(m.box_side);
         let side = m.box_side.min(h);
         let w = match self.view {
-            ToggleView::Button => caption_floor(
+            ToggleView::Button => controls::caption_floor(
                 controls::button_text(self.label.as_deref().or(Some("")), self.icon).trim_end(),
                 size,
+                m,
             ),
             ToggleView::Switch => side * 1.8 + 2.0 * m.pad,
             _ => side + 2.0 * m.pad,

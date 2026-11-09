@@ -122,6 +122,7 @@ fn a_metered_track_declares_its_buses_and_reads_them() {
         focused: false,
         hovered: false,
         clock: 0.0,
+        text_fit: 1.0,
     };
     let live = mt.live_header(&mt.tracks[0], &ctx);
     assert_eq!(live.meters, vec![(1.0, 1.0), (0.0, 0.0)]);
@@ -237,6 +238,7 @@ fn a_spectral_box_is_its_views_spectrogram() {
         focused: false,
         hovered: false,
         clock: 0.0,
+        text_fit: 1.0,
     };
     assert!(
         mt.slots(&ctx).is_empty(),
@@ -2483,6 +2485,7 @@ fn each_box_is_its_own_view_of_its_take_drawn_at_its_window() {
         focused: false,
         hovered: false,
         clock: 0.0,
+        text_fit: 1.0,
     };
     let placed: Vec<(SlotKey, f32, View)> = mt
         .slots(&ctx)
@@ -2717,6 +2720,7 @@ fn a_scrolled_stack_paints_inside_its_own_rect() {
         focused: false,
         hovered: false,
         clock: 0.0,
+        text_fit: 1.0,
     };
     let mut mesh = Mesh::new();
     let theme = Theme::default();
@@ -2783,6 +2787,7 @@ fn a_box_paints_its_fades_and_none_under_a_pixel() {
             focused: false,
             hovered: false,
             clock: 0.0,
+            text_fit: 1.0,
         };
         let mut mesh = Mesh::new();
         let theme = Theme::default();
@@ -2879,6 +2884,7 @@ fn a_scrolled_stacks_meters_paint_inside_its_own_rect() {
         focused: false,
         hovered: false,
         clock: 0.0,
+        text_fit: 1.0,
     };
     let mut mesh = Mesh::new();
     let theme = Theme::default();
@@ -3007,6 +3013,7 @@ fn a_moved_box_is_the_one_box_drawn_again() {
         focused: false,
         hovered: false,
         clock: 0.0,
+        text_fit: 1.0,
     };
     let clips = |second: i64| {
         format!(

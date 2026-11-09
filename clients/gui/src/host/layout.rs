@@ -207,6 +207,10 @@ pub struct Placed<'a> {
     /// back from any placement without searching the tree for it: it is the
     /// containment the layout already knows, kept instead of thrown away.
     pub parent: Option<usize>,
+    /// **The fit its container found for the lone symbols it holds**, `1.0`
+    /// for every other placement ([`symbol_fit`]): what a lone symbol's text
+    /// size is multiplied by, so a fixed grid of them shrinks together.
+    pub text_fit: f32,
     pub widget: &'a Widget,
 }
 
@@ -389,6 +393,7 @@ fn place<'a>(
         metrics: space.metrics,
         indent: indent.unwrap_or_else(|| ctx.indent(widget)),
         parent,
+        text_fit: 1.0,
         widget,
     });
     let (layout, flow, strip) = match &widget.kind {
@@ -444,12 +449,42 @@ fn place<'a>(
     let under = Rect::new(area.x, area.y + strip, area.w, (area.h - strip).max(0.0));
     let inner = under.inset(margin(flow, space));
     let kids = flow_children(widget, me, modals);
-    for (child, rect) in kids
-        .iter()
-        .zip(child_rects(inner, &kids, layout, flow, space))
-    {
+    let rects = child_rects(inner, &kids, layout, flow, space);
+    let fit = symbol_fit(&kids, &rects, space);
+    for (child, rect) in kids.iter().zip(rects) {
+        let at = out.len();
         place(rect, child, clip, space, ctx, Some(me), out, None, modals);
+        out[at].text_fit = fit(child);
     }
+}
+
+/// **One fit for the lone symbols a container holds**: the factor at which
+/// the widest of them, at its own text size, fits its box inside the box's
+/// padding -- the same for all of them, so they keep their sizes against each
+/// other when a fixed grid is narrower than they are -- and `1.0` for every
+/// child that is no lone symbol ([`Element::lone_symbol`](super::widget::Element::lone_symbol)).
+/// A symbol is never drawn under the host's text size whatever the fit
+/// (`graphics::controls::symbol_size`).
+fn symbol_fit<'w>(
+    kids: &[&'w Widget],
+    rects: &[Rect],
+    space: Space,
+) -> impl Fn(&Widget) -> f32 + use<'w> {
+    let symbol = |c: &Widget| match &c.kind {
+        WidgetKind::Custom(el) => el.lone_symbol(),
+        _ => None,
+    };
+    let mut fit = 1.0f32;
+    for (c, r) in kids.iter().zip(rects) {
+        if let Some((caption, text_size)) = symbol(c) {
+            let need = super::font::width(&caption, text_size * space.unit);
+            let room = (r.w - 2.0 * space.metrics.pad).max(0.0);
+            if need > room && need > 0.0 {
+                fit = fit.min(room / need);
+            }
+        }
+    }
+    move |c: &Widget| if symbol(c).is_some() { fit } else { 1.0 }
 }
 
 /// A container's inner margin in its space's coordinates: its own declared
@@ -500,17 +535,18 @@ fn place_scrolled<'a>(
     let inside = space.scrolled(zoom as f32);
     let clip = Some(clip.map_or(area, |c| c.intersect(area)));
     let kids = flow_children(widget, me, modals);
-    for (child, r) in kids
-        .iter()
-        .zip(child_rects(inner, &kids, layout, flow, plane))
-    {
+    let rects = child_rects(inner, &kids, layout, flow, plane);
+    let fit = symbol_fit(&kids, &rects, plane);
+    for (child, r) in kids.iter().zip(rects) {
         let rect = Rect::new(
             area.x + ((r.x as f64 - vx) * zoom) as f32,
             area.y + ((r.y as f64 - vy) * zoom) as f32,
             (r.w as f64 * zoom) as f32,
             (r.h as f64 * zoom) as f32,
         );
+        let at = out.len();
         place(rect, child, clip, inside, ctx, Some(me), out, None, modals);
+        out[at].text_fit = fit(child);
     }
 }
 
@@ -1588,6 +1624,42 @@ mod tests {
         assert_eq!(w, floor.0.ceil() as u32);
         assert!(h >= floor.1.ceil() as u32, "and the window's bars over it");
         assert!(w as f32 >= m.knob_d && h as f32 >= m.knob_d, "{w}x{h}");
+    }
+
+    /// **The lone symbols of a fixed grid shrink together**: one fit for all
+    /// of them, the one at which the widest fits its cell, so a narrow symbol
+    /// beside a wide one keeps its size against it; a word beside them keeps
+    /// its own size, and the floor keeps a symbol at the host's text size.
+    #[test]
+    fn the_symbols_of_a_grid_share_one_fit() {
+        let glyphs: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(r#"{"F4C0":"M0 0h500v500h-500z","F4C1":"M0 0h1600v500h-1600z"}"#)
+                .unwrap();
+        crate::host::font::outline::set(&glyphs);
+        let m = Metrics::default();
+        let w = tree(
+            r#"{"type":"window","flow":"grid","cols":3,"margin":0,"gap":0,"children":[
+            {"id":2,"type":"button","label":"\uf4c0","text_size":3},
+            {"id":3,"type":"button","label":"\uf4c1","text_size":3},
+            {"id":4,"type":"button","label":"word","text_size":3}]}"#,
+        );
+        let placed = layout(Rect::new(0.0, 0.0, 120.0, 40.0), &w, &m);
+        let fit = |id: i32| {
+            placed
+                .iter()
+                .find(|p| p.widget.id == Some(id))
+                .unwrap()
+                .text_fit
+        };
+        assert!(fit(3) < 1.0, "the wide symbol does not fit at its size");
+        assert_eq!(fit(2), fit(3), "the narrow one shrinks with it");
+        assert_eq!(fit(4), 1.0, "a word is cut, never shrunk");
+        let cell = rect_of(&placed, 3);
+        let wide = crate::host::font::width("\u{F4C1}", 3.0 * fit(3));
+        assert!(wide <= cell.w - 2.0 * m.pad + 0.01, "{wide} in {cell:?}");
+        // and drawn, the fit never takes a symbol under the host's text size
+        let drawn = crate::host::graphics::controls::symbol_size("\u{F4C1}", 3.0, 0.01, &m);
+        assert_eq!(drawn, m.text_scale.min(3.0));
     }
 
     #[test]

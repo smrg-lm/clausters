@@ -494,6 +494,7 @@ mod tests {
             focused: false,
             hovered: false,
             clock: 0.0,
+            text_fit: 1.0,
         };
         score.draw(&mut Draw::new(&mut mesh, &m, &theme), &ctx);
         mesh
