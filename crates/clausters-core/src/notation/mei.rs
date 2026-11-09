@@ -1677,8 +1677,8 @@ fn attachments(
 /// is written from each notehead of the item's last written part to a beat
 /// of that part's measure, with no item at its end: a beat on, or half the
 /// way to the next note or to the barline where either is nearer -- so it
-/// reaches neither. A chord split across a barline keeps its pitches' ids
-/// in every part, so its ties hang from the first.
+/// reaches neither. A chord's ties hang from each notehead of that part,
+/// each named by the part it is in.
 fn ring_xml(
     grid: &Grid,
     voice: &Voice,
@@ -1688,10 +1688,7 @@ fn ring_xml(
 ) -> Vec<(usize, String)> {
     let item = &voice.items[index];
     let pitches = item.pitches().len();
-    let (measure, part, from) = match last_part(grid, onset, item.dur()) {
-        (_, part, _) if part > 1 && pitches > 1 => (grid.position(onset).0, 1, onset),
-        last => last,
-    };
+    let (measure, part, from) = last_part(grid, onset, item.dur());
     let (opens, closes) = grid.span(measure, measure);
     let unit = grid.meter_at(measure).unit;
     // where the next note of the voice sounds, if one does
@@ -1716,7 +1713,10 @@ fn ring_xml(
     let end = beat_of(end - opens, unit);
     let id = item.id();
     let heads: Vec<String> = match (pitches, part) {
-        (2.., _) => (1..=pitches).map(|p| format!("n{id}-p{p}")).collect(),
+        (2.., 1) => (1..=pitches).map(|p| format!("n{id}-p{p}")).collect(),
+        (2.., part) => (1..=pitches)
+            .map(|p| format!("n{id}-{part}-p{p}"))
+            .collect(),
         (_, 1) => vec![format!("n{id}")],
         (_, part) => vec![format!("n{id}-{part}")],
     };
@@ -2151,11 +2151,14 @@ fn element(
                 .enumerate()
                 .map(|(i, p)| {
                     // the pitches of a chord are named apart, so one of them can
-                    // still be selected and moved on its own
-                    let pid = if item.id() == 0 {
-                        String::new()
-                    } else {
-                        format!(" xml:id=\"n{}-p{}\"", item.id(), i + 1)
+                    // still be selected and moved on its own -- and by the part
+                    // they are in, since a chord split across a barline writes
+                    // each pitch once a part, and an id named twice ties a note
+                    // to itself
+                    let pid = match (item.id(), suffix) {
+                        (0, _) => String::new(),
+                        (id, None) => format!(" xml:id=\"n{id}-p{}\"", i + 1),
+                        (id, Some(n)) => format!(" xml:id=\"n{id}-{n}-p{}\"", i + 1),
                     };
                     note_xml(
                         p,

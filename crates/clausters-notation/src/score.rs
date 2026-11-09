@@ -795,6 +795,27 @@ mod tests {
         assert_eq!(said.expect("engraves"), Vec::<String>::new());
     }
 
+    /// **A chord tied over a barline is drawn tied**: each part writes its
+    /// pitches under ids of its own, so every tie has two ends to join, the
+    /// engraver draws one per pitch and has nothing to say.
+    #[test]
+    fn a_chord_tied_over_a_barline_is_drawn_tied() {
+        use clausters_core::notation::{sheet_to_mei, voice_to_sheet};
+
+        // three quarters, then a chord of a half note over the barline
+        let mut voice: Vec<Slot> = (0..3).map(|i| Slot::note(vec![60 + i], 8)).collect();
+        voice.push(Slot::note(vec![60, 64, 67], 16));
+        voice.push(Slot::note(vec![72], 24));
+        let mei = sheet_to_mei(&voice_to_sheet(&voice, "4/4", "G2", "C")).unwrap();
+        assert!(mei.contains("xml:id=\"n4-p1\"") && mei.contains("xml:id=\"n4-2-p1\""));
+        let said = crate::complaints(&mei, &EngraveOptions::default()).expect("engraves");
+        assert_eq!(said, Vec::<String>::new());
+        let page = open(&mei, &EngraveOptions::default())
+            .expect("opens")
+            .display_list(1);
+        assert_eq!(drawn(&page, "tie"), 3, "one tie a pitch");
+    }
+
     /// Let it ring is drawn wherever it is written: the engraver draws one
     /// only when it ends inside its own measure, which is how it is written
     /// -- on the last note of a measure, on the last of the score, on each
