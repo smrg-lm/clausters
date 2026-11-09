@@ -4217,105 +4217,60 @@ Whatever symbols the model itself needs owe their rows either way
   - **Left open**, each for when it is met: "What a score box of the
     multitrack left open" (Found by use).
 
-- ⬜ **N10 — A page is a selection of the one document.** *(Added
-  2026-11-09 by the user: engrave only what changed, for the score editor
-  first; whether the multitrack keeps its score boxes is decided after.)*
+- ⬜ **N10 — A written page break is a selection of the one document.**
+  *(Added 2026-11-09. It began as engraving only what changed, for the score
+  editor; measuring and reading upstream turned it into this, under "Verovio is
+  followed, not adapted" in `docs/decisions.md`.)*
 
-  **What is there, measured** (2026-11-09, release, one staff of quarter
-  notes with a slur every four bars, a page view laid out with the default
-  page). After an edit, `Score::pages` costs 119 ms at a thousand notes and
-  **1.78 s at five thousand**, and the engraving is the small part of it:
+  **What is there.** A written page break lays the score out in runs, each a
+  document of its own (`sheet_to_mei_pages`; `docs/decisions.md`, "A page
+  break is honoured by laying the score out in runs"), and across two
+  documents the engraver has no other end to work from. Drawn and checked:
+  a tie across the break is dropped on both pages (the engraver logs "unable
+  to match @tie"), a glissando is not drawn, a slur or a hairpin is written
+  to the run's barline and drawn **closed** there, an octave line ends in a
+  hook and restarts as `8` without parentheses, a bracket gets hooks on both
+  sides of the turn, and a phrase mark can flip below the staff.
 
-  | at 5000 notes | ms |
-  |---|---|
-  | the notes read back from the engraver, one query per element | 1250 |
-  | the engraver's timemap and the model's performance | 285 |
-  | loading the document (parse, prepare, lay out every page) | 230 |
-  | every page drawn and walked into a display list | ~180 |
-  | the edit's own writing, the MEI read back and re-read as a model | ~70 |
+  **What the engraver does instead, checked by drawing it.** Inside one
+  document it draws every line across a system or a page turn by the
+  convention (a slur or a phrase mark as two curves, each whole and open at
+  the edge; a tie as two halves; a hairpin left open and coming back partly
+  open; an octave line without its hook, restated as `(8)`; a bracket without
+  hooks; a glissando at half its slope). It can lay out **a selection** of a
+  document (`select` with a first and a last measure, then a layout, both in
+  the C wrapper and in the wasm exports), and draws a line that leaves the
+  selection the same way, since the measures outside it stay in the
+  document.
 
-  Each note is asked of the engraver by id, and each answer is a search of
-  the whole document, so the first line grows with the square of the score.
-
-  **What the engraver already does, checked by drawing it.** Inside one
-  document it draws every line that crosses a system or a page turn by the
-  convention the user stated: a line runs to the end of the system and comes
-  back from the start of the next, with no note at the open end. A slur or a
-  phrase mark is two curves, each one whole and open at the edge, and a
-  tie is two halves. A hairpin is left open at the break and comes back
-  partly open, at the engraver's fractions (two thirds and one third of its
-  opening). An octave line loses its hook and is restated as `(8)`. A
-  bracket loses its hooks at the break. A glissando runs to the edge and
-  back at half its slope. And it can lay out **a selection** of a
-  document (`select` with a first and a last measure, then a layout), and
-  draws every line that leaves the selection the same way, open at its
-  edge, because the measures outside it stay in the document. Selecting
-  sixteen measures of a five-thousand-note score before loading it costs
-  110 ms instead of 230, and drawing that page costs 2 ms.
-
-  **What breaks it today is ours.** A written page break lays the score out
-  in runs, each a document of its own (`sheet_to_mei_pages`; `docs/
-  decisions.md`, "A page break is honoured by laying the score out in
-  runs"), and across two documents the engraver has no other end to work
-  from: a tie across the break is dropped on both pages (the engraver logs
-  "unable to match @tie"), a glissando is not drawn, a slur or a hairpin is
-  written to the run's barline and drawn **closed** there, an octave line
-  ends in a hook and restarts as `8` without parentheses, a bracket gets
-  hooks on both sides of the turn, and a phrase mark can flip below the
-  staff. Any engraving split into separate documents would draw every
-  crossing that way, so the runs are the wrong unit for incremental
-  engraving too.
-
-  **The design.** One document stays loaded, and a page is a selection of it:
-  1. **The notes come from the model.** A document this layer wrote is played
-     from its model (`performance`, which the cursors already read), so the
-     score's sounding events are read from that model with the ids the page
-     draws (`n7`, `n7-2`, `n7-p1`). The engraver's per-element MIDI values
-     and its timemap are asked only of a document from elsewhere. That
-     removes most of the cost before anything is engraved incrementally.
-  2. **A page break is a selection, not a document.** The page view lays out
-     each run of pages as a selection of the one document. The lines across
-     a written page break are then drawn by the engraver, by the convention
-     above, and the cutting that writes them once per run (`attachments`,
-     the `run_of` parts) is removed together with the separate documents.
-     The decision record of the runs is rewritten to say so.
-  3. **An edit lays out only the pages it reached.** The page view keeps
-     each page's display list together with the measures it holds. An edit
-     lays out again from the first page holding a measure the edit changed,
-     one page's measures at a time, by selection, with the selection set
-     before the load so the load lays out only that selection. Pages after
-     the edit are laid out again only while their first measure has moved,
-     which is the ripple of a page that grew or shrank. A page that starts on
-     the same measure as before, with nothing changed from there on, is kept
-     as it was: the engraver casts off greedily, so such a page is the same
-     page. Only the pages that moved are stated to the host. The rest are
-     already kept by `G46`'s parts on the host side.
-
-  **To verify while building it**, since each one decides whether a
-  selected page is the page: the score's first page carries the title and a
-  selection does not; how a selection's last system is justified when it is
-  not the score's last; the page numbers, which the page view already
-  writes; and the vertical justification of a page.
+  **The work.** The page view lays out each run of pages as a selection of
+  the one loaded document instead of a document of its own, and the cutting
+  that writes a line once per run (`attachments`, the `run_of` parts) is
+  removed together with the separate documents and `sheet_to_mei_pages`, in
+  every client that binds it. What a run's first page carries today (the
+  meter in force, what is written on every page, the score's page number)
+  is checked against what a selection draws, and taken from the engraver
+  where it already says it. The decision record of the runs is rewritten.
 
   **Acceptance:**
-  - **The whole layout is the reference.** A page laid out by selection is
-    the page of the whole document, primitive for primitive, on a score of
-    several pages with a title, a page break and lines across both kinds of
-    turn.
-  - **Every line kind across a system turn, a page turn and a written page
-    break is drawn as the engraver draws it inside one document**, and the
-    engraver says nothing about any of them: slur, phrase mark, tie, both
-    hairpins, the four octave lines, bracket, pedal and glissando.
-  - **Measured before and after**, at a thousand and five thousand notes: an
-    edit of one note on one page lays out that page, and the pages after it
-    only while the ripple runs. An edit that adds a page lays out to the end.
-  - The score editor's examples that open a multi-page score are run by
-    hand, with an edit on a late page.
+  - Every line kind across a written page break is drawn as the engraver
+    draws it across a system turn, and the engraver says nothing: slur,
+    phrase mark, tie, both hairpins, the four octave lines, bracket, pedal
+    and glissando.
+  - The pages of a score with page breaks keep their numbers, their running
+    heads and the title on the first page alone, as the runs do today.
+  - The score editor's example with a written page break is run by hand.
 
-  **After it:** whether a score box of the multitrack is a selection of its
-  sequence (a fragment, with its lines open at the box's edges) or goes
-  away. That is the user's decision, taken after this lands ("What a score
-  box of the multitrack left open", Found by use).
+  **Not taken: engraving only what changed.** Measured at five thousand notes
+  (release, one staff, a slur every four bars), `Score::pages` costs 1.78 s
+  after an edit: 1.25 s reading the notes back from the engraver one element
+  at a time, 0.28 s its timemap and the model's performance, 0.23 s loading,
+  about 0.18 s drawing and walking every page. A system laid out by parts is
+  primitive for primitive the whole layout's at about 8 ms, but it rests on
+  behaviour verovio does not promise, and verovio's own editor already lays
+  out again only the pages an edit reaches. So the project follows verovio
+  rather than engraving by parts of its own (`docs/decisions.md`, "Verovio is
+  followed, not adapted").
 
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still
@@ -9187,7 +9142,7 @@ module of its own.
   engine's `TransportPass::rolling`); a server's still go by what the
   server reported.
 
-- ⬜ **What a score box of the multitrack left open** *(moved here
+- ✅ **What a score box of the multitrack left open** *(moved here
   2026-10-28 when `N9` closed; each for when it is met)*.
   - ✅ the standalone host binds no engraver to its multitrack, so there a
     box of notes is a roll whatever the menu says;
@@ -9201,7 +9156,7 @@ module of its own.
     *fixed 2026-11-08* (`crates/clausters-document/PLAN.md`, `O35`): a box
     is read with the reading its sequence stores (`notation.reading`,
     `Transcription::of`), as a score editor over the sequence is;
-  - a page is engraved whole when its sequence changes, and what that
+  - ✅ a page is engraved whole when its sequence changes, and what that
     costs for a sequence of thousands of notes is not measured;
     *measured 2026-11-07* (`what_a_box_page_costs`, release, one box):
     a thousand notes engrave in about 190 ms and five thousand in about
@@ -9214,10 +9169,12 @@ module of its own.
     the page. **What is open**: a page engraved and stated only where a
     sequence changed -- by system or by a span of bars, which is the score
     editor's kept parts in `G46` seen from the engraving side -- and the
-    `scores` prop restated only when a page moved. *Taken up as `N10`
-    (2026-11-09) for the score editor first*: the measurement there found
-    the cost mostly outside the engraving, and the box's own way follows
-    once that lands;
+    `scores` prop restated only when a page moved.
+    *Closed 2026-11-09 without the change*: engraving by parts was measured
+    and left (`N10`, "Not taken"), since the project follows verovio rather
+    than replacing part of its layout (`docs/decisions.md`, "Verovio is
+    followed, not adapted"); whether the multitrack keeps its score boxes is
+    the user's to decide;
   - ✅ a rest has no id on the page, so it stands where the stretch between
     its neighbours puts it rather than at its own time;
     *fixed 2026-11-07*: it had an id (`n<id>`, as a note's) and no anchor;

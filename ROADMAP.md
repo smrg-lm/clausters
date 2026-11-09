@@ -208,15 +208,13 @@ its plan; the plan is where its acceptance is read.
   does not scale to a second process, and several effects per file need
   identity; a design first.
 
-- ⬜ **The `N` track's last one — a foreign score's layout**, `N7`
+- ⬜ **The `N` track's other open one — a foreign score's layout**, `N7`
   *(`clients/gui/PLAN.md`, "N track — notation: the score model, and what
   is written on it")*. A **decision** before it is work: what opening
   somebody else's score should preserve, since the reader stores an
   engraver's beams and page breaks as though a writer had chosen them; no
   longer invisible, since the score editor opens a foreign file, lays it
-  out in runs at its page breaks and changes its rhythms. What `N9` left
-  open is the same plan's "What a score box of the multitrack left open"
-  (Found by use).
+  out in runs at its page breaks and changes its rhythms.
 
 - ⬜ **The applications after the multitrack, `X2`-`X6`, the score editor
   continued, `X11`, and the multitrack continued, `X9`**
@@ -275,14 +273,14 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`N10` — a page is a selection of the one document**
-  *(`clients/gui/PLAN.md`, N track)*. First, because it is the score
-  editor's cost per edit at a few thousand notes, and most of that cost is
-  reading the notes back from the engraver rather than engraving. Then the
-  written page breaks become selections, which draws the lines across them
-  as the engraver draws them across a system. Then an edit lays out only
-  the pages it reached. Whether the multitrack keeps its score boxes is
-  decided after.
+- ⬜ **`N10` — a written page break is a selection of the one document**
+  *(`clients/gui/PLAN.md`, N track)*. First, because the runs a written
+  page break is laid out in are documents of their own, and across them a
+  tie and a glissando are dropped and every other line is drawn closed;
+  laid out as a selection of the one document, verovio draws them as it
+  draws them across a system. Engraving only what changed was measured and
+  not taken: the project follows verovio (`docs/decisions.md`, "Verovio is
+  followed, not adapted").
 
 - ⬜ **The roll's two modes are not yet an editor a hand can trust**
   *(`crates/clausters-apps/PLAN.md`, Found by use, the entry of that title)*.

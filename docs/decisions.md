@@ -11635,3 +11635,39 @@ taken because a pitch is a value compared and copied everywhere a spelling is
 (more than sixty places build one), and a pitch that differs by whether it is
 tied stops being the same note to every comparison that does not care, which
 is all of them but this one.
+
+## Verovio is followed, not adapted (2026-11-09)
+
+*Decided by the user, after measuring what an edit costs the score editor and
+reading where upstream is going.* This project **uses verovio as it is and
+draws what it engraves on the GPU**: the engraver lays the page out, the walk
+turns its SVG into a display list, and the host renders that list with WebGL
+or its native GPU backend. Nothing here optimizes verovio's work or replaces a
+part of its logic with one of our own, and its development is followed: the
+pin moves to each release (`third_party/verovio.pin`), native and browser
+together, and what a release changes in its output is adapted to in the walk
+(6.4 added a hidden placeholder per scoreDef inside a system, which its own
+style sheet hides and the walk now skips).
+
+**What was weighed and left.** Engraving a score by parts was measured and it
+works: a system laid out from a document holding only its measures and their
+neighbours, selected with one system on either side, is primitive for
+primitive the system of the whole layout, at about 8 ms against 120 ms. It was
+not taken, because it rests on behaviour verovio does not promise (that a
+system depends only on its first measure, that a selected system lays out as
+the whole one does, that a slur's curve depends only on the measures it
+spans), it would rewrite the score's document as a set of fragments of our
+making, and upstream is building the same thing its own way: its editor lays
+out again only the range of pages an edit reaches (`Doc::SetFocus`,
+`PageRange`), and its edit vocabulary grows release by release. If incremental
+engraving comes, it comes through verovio.
+
+**What it means for a line across a turn.** Verovio draws every line that
+crosses a system or a page turn by the engraving convention (a slur as two
+whole curves open at the edge, a tie as halves, a hairpin left partly open, an
+octave line restated as `(8)`, a bracket without hooks, a glissando at half its
+slope), and it does the same at the edge of a selection of measures. So where
+this project cuts a score into documents of its own, as the page view does at
+a written page break ("A page break is honoured by laying the score out in
+runs"), the cut is ours to remove in favour of verovio's selection, not ours
+to patch.
