@@ -111,7 +111,7 @@ if (!existsSync(engraver)) {
         );
         try {
             // `third_party/verovio.pin` is the tag; the build appends its commit.
-            assert.match(score.engraverVersion(), /^6\.3\.0/);
+            assert.match(score.engraverVersion(), /^6\.4\.1/);
         } finally {
             score.free();
         }

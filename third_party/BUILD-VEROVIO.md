@@ -48,10 +48,11 @@ existed), and the editor symbols *are* present in the shipped `.so`, so it is
 not a `NO_EDIT_SUPPORT` build — it is the guard.
 
 Upstream inverted it in [`8100cb396`][fix] ("Invert #define fix", 2026-05-27),
-after 6.2.1. The pin is a `develop` commit past that fix — the source tree
-versions itself 6.3.0-dev — which is why the pin is a commit and not a release
-tag. **Repin to the 6.3.0 tag once it is released** — the pin moves, the recipe
-does not: we build the library either way, because that is what gets bundled.
+and every release since carries the fix. The pin is a **release tag** and moves
+with upstream's releases (6.4.1 today): the project follows verovio's
+development and uses the library as it is (`docs/decisions.md`, "Verovio is
+followed, not adapted"). We build the library either way, because that is what
+gets bundled.
 
 The rationale for choosing this route over the alternatives (waiting for 6.3, or
 mutating the MEI in Python and re-engraving) is in

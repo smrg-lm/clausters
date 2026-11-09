@@ -292,6 +292,16 @@ fn walk(
     elements: &mut Vec<String>,
     kinds: &mut BTreeMap<String, String>,
 ) {
+    // A placeholder marks where an element with nothing to draw sits in a
+    // system (a change of meter or key between measures, a milestone). The
+    // engraver's own style sheet hides it (`g.placeholder`), and the walk
+    // reads no style sheet, so it skips what that rule hides.
+    if node
+        .attribute("class")
+        .is_some_and(|class| class.split_whitespace().any(|c| c == "placeholder"))
+    {
+        return;
+    }
     let xf = compose(parent_xf, parse_transform(node.attribute("transform")));
     // Which element a primitive belongs to. verovio gives a note's *parts* ids
     // of their own (notehead, a `stem` group holding the stem and its `flag`),
@@ -954,6 +964,22 @@ mod tests {
         let dl = svg_to_display_list(svg);
         assert!(matches!(&dl.prims[0], Prim::Line { pts, .. } if pts.len() == 5));
         assert!(matches!(&dl.prims[1], Prim::Fill { .. }));
+    }
+
+    /// A placeholder is what the engraver's style sheet hides (a circle where
+    /// a change of meter sits between two measures), so nothing of it is
+    /// drawn and its id names nothing on the page.
+    #[test]
+    fn a_placeholder_draws_nothing() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg">
+          <svg class="definition-scale" viewBox="0 0 1000 400">
+            <g id="sd-1" class="scoreDef placeholder"><ellipse cx="10" cy="20" rx="5" ry="5"/></g>
+            <g id="reh-1"><rect x="10" y="20" width="100" height="50"/></g>
+          </svg></svg>"##;
+        let dl = svg_to_display_list(svg);
+        assert_eq!(dl.prims.len(), 1);
+        assert_eq!(dl.prims[0].id(), Some("reh-1"));
+        assert!(!dl.kinds.contains_key("sd-1"));
     }
 
     #[test]

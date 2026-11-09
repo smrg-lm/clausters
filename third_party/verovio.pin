@@ -8,16 +8,17 @@
 # carries no patch of our own -- everything we need is already in the tree.
 VEROVIO_ORIGIN=https://github.com/rism-digital/verovio
 
-# The commit verovio is built from: the **6.3.0 release** (tag `version-6.3.0`,
-# 2026-08-19). A tag rather than a branch tip, which is what the previous pin
-# had to be and no longer does -- see the note below.
+# The commit verovio is built from: the **6.4.1 release** (tag `version-6.4.1`,
+# 2026-11-03). A release tag, moved forward as upstream releases: this project
+# follows verovio's development and uses the library as it is, so a new release
+# is taken rather than worked around (docs/decisions.md, "Verovio is followed,
+# not adapted").
 #
-# The reason to be exactly here, and not merely somewhere recent: **6.3.0 is
-# also what the npm package publishes**, and that package is the engraver a
-# page reaches (an Emscripten build of these same sources, exporting the same C
-# wrapper this repository links). Native and browser therefore engrave with one
-# verovio, which is what lets the two clients' display lists be compared to each
-# other rather than to two different engines. A repin moves both ends or
+# Why one pin serves both ends: the page engraves with an Emscripten build of
+# these same sources (`build-verovio-wasm.sh`, exporting the same C wrapper
+# this repository links). Native and browser therefore engrave with one
+# verovio, which is what lets the two clients' display lists be compared to
+# each other rather than to two different engines. A repin moves both ends or
 # neither.
 #
 # Why the previous pin was a commit, kept because it is the history of this
@@ -38,4 +39,4 @@ VEROVIO_ORIGIN=https://github.com/rism-digital/verovio
 #
 # Full 40-char SHA: fetching an arbitrary commit by SHA only resolves
 # unabbreviated.
-VEROVIO_SHA=425dd7b6ba26edcecbe345c10b15586d095743d9
+VEROVIO_SHA=fbe8f4695ab0a123cb096e0cf92354b44f7a2fb8
