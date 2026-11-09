@@ -66,12 +66,45 @@ pub(crate) enum TimeUnit<'a> {
     /// the marks crowd where it is fast and spread where it is slow, over an
     /// axis that never stopped measuring samples. The map also supplies its
     /// own anchoring, so `beat_at` says nothing where it is present.
+    ///
+    /// **`bars` are the page's**, where the axis has them: runs of bars of
+    /// one length (`beat length number`, [`bars_in`]), so a meter that
+    /// changes, an anacrusis and a bar of another length are counted as a
+    /// page counts them. Empty, `quant` is the length of every bar.
     Beats {
         tempo: f64,
         beat_at: f64,
         quant: f64,
         map: Option<&'a TempoMap>,
+        bars: &'a [[f64; 3]],
     },
+}
+
+/// **The bars a run list puts on `[b0, b1]`**, in beats: `(beat, length,
+/// number)` of each bar that starts there, and of the one `b0` is inside.
+/// A run is `[beat, length, number]`: bars of `length` beats from `beat`,
+/// the first numbered `number`, until the next run begins; the last goes on.
+pub(crate) fn bars_in(runs: &[[f64; 3]], b0: f64, b1: f64) -> Vec<(f64, f64, i64)> {
+    let mut out = Vec::new();
+    for (k, &[from, len, number]) in runs.iter().enumerate() {
+        if len <= 0.0 {
+            continue;
+        }
+        let until = runs.get(k + 1).map_or(f64::INFINITY, |next| next[0]);
+        if until <= b0 || from > b1 {
+            continue;
+        }
+        let mut i = ((b0 - from) / len).floor().max(0.0) as i64;
+        loop {
+            let at = from + i as f64 * len;
+            if at >= until - 1e-9 || at > b1 || out.len() > 20_000 {
+                break;
+            }
+            out.push((at, len, number as i64 + i));
+            i += 1;
+        }
+    }
+    out
 }
 
 /// The ruler's own reading of the host's size roles: the `caption_scale` its
@@ -222,10 +255,24 @@ pub(crate) fn time_ticks(
         beat_at,
         quant,
         map,
+        bars,
     } = unit
         && sample_rate > 0.0
         && (tempo > 0.0 || map.is_some())
     {
+        if !bars.is_empty() {
+            return bar_ticks(
+                start,
+                len,
+                width_px,
+                sample_rate,
+                tempo,
+                beat_at,
+                map,
+                bars,
+                g,
+            );
+        }
         return beat_ticks(
             start,
             len,
@@ -310,6 +357,127 @@ fn beat_ticks(
     let candidates = beat_steps(blen, width_px, quant, g);
     let step = fit_step(&candidates, b0, blen, width_px, pos, &fmt, g);
     emit_time_ticks(b0, blen, width_px, step, step / 2.0, pos, &fmt, g)
+}
+
+/// **The `beats` ruler over the page's bars**: the ticks are the bars' own --
+/// at every bar, every second, fourth... bar where they are close, or at the
+/// beats inside each bar (and their halves, quarters...) where there is room --
+/// labelled `bar:beat` as the page numbers its bars. The finest of those whose
+/// labels fit is the one drawn, its next finer level the minor ticks.
+#[allow(clippy::too_many_arguments)]
+fn bar_ticks(
+    start: f64,
+    len: f64,
+    width_px: f64,
+    rate: f64,
+    tempo: f64,
+    beat_at: f64,
+    map: Option<&TempoMap>,
+    runs: &[[f64; 3]],
+    g: Gaps,
+) -> Vec<Tick> {
+    let beat_of = |s: f64| match map {
+        Some(m) => m.beats_at(s / rate),
+        None => beat_at + s / rate * tempo,
+    };
+    let (b0, b1) = (beat_of(start), beat_of(start + len));
+    if b1 <= b0 {
+        return Vec::new();
+    }
+    let pos = |b: f64| match map {
+        Some(m) => (m.secs_at(b) * rate - start) / len,
+        None => (b - b0) / (b1 - b0),
+    };
+    let bars = bars_in(runs, b0, b1);
+    // the levels from the finest: a beat divided, the beat, then bars by twos
+    let mut levels: Vec<Level> = [0.125, 0.25, 0.5, 1.0]
+        .into_iter()
+        .map(Level::Beats)
+        .collect();
+    let mut every = 1;
+    while every <= 4096 {
+        levels.push(Level::Bars(every));
+        every *= 2;
+    }
+    let ticks_of = |level: Level| -> Vec<(f64, String)> {
+        let mut out = Vec::new();
+        for &(at, bar_len, number) in &bars {
+            match level {
+                Level::Beats(step) => {
+                    let decimals = (0..=3)
+                        .find(|d| (step * 10f64.powi(*d)).fract().abs() < 1e-9)
+                        .unwrap_or(3) as usize;
+                    let mut j = 0.0;
+                    while j < bar_len - 1e-9 {
+                        out.push((at + j, format!("{number}:{:.decimals$}", j + 1.0)));
+                        j += step;
+                    }
+                }
+                Level::Bars(k) => {
+                    if (number - 1).rem_euclid(k) == 0 {
+                        out.push((at, number.to_string()));
+                    }
+                }
+            }
+        }
+        out.retain(|(b, _)| *b >= b0 - 1e-9 && *b <= b1 + 1e-9);
+        out
+    };
+    let fits = |ticks: &[(f64, String)]| {
+        let mut prev_end = f64::NEG_INFINITY;
+        ticks.iter().all(|(b, label)| {
+            let x = pos(*b) * width_px;
+            let w = font::width(label, g.scale) as f64;
+            let lx = (x - w * 0.5).clamp(0.0, (width_px - w).max(0.0));
+            let clear = lx >= prev_end + g.label;
+            prev_end = lx + w;
+            clear
+        })
+    };
+    let Some(at) = levels.iter().position(|level| fits(&ticks_of(*level))) else {
+        return Vec::new();
+    };
+    let majors = ticks_of(levels[at]);
+    // the minors: the next finer level, where its ticks are far enough apart
+    let minors: Vec<f64> = at
+        .checked_sub(1)
+        .map(|finer| ticks_of(levels[finer]))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(b, _)| b)
+        .collect();
+    let spread = minors
+        .windows(2)
+        .map(|pair| (pos(pair[1]) - pos(pair[0])) * width_px)
+        .fold(f64::INFINITY, f64::min);
+    let mut out: Vec<Tick> = majors
+        .iter()
+        .map(|(b, label)| Tick {
+            frac: pos(*b).clamp(0.0, 1.0),
+            label: Some(label.clone()),
+        })
+        .collect();
+    if spread >= g.tick {
+        out.extend(
+            minors
+                .into_iter()
+                .filter(|b| majors.iter().all(|(m, _)| (m - b).abs() > 1e-9))
+                .map(|b| Tick {
+                    frac: pos(b).clamp(0.0, 1.0),
+                    label: None,
+                }),
+        );
+    }
+    out.sort_by(|a, b| a.frac.total_cmp(&b.frac));
+    out
+}
+
+/// One level of the bars' ruler: a step in beats inside every bar, or every
+/// so many bars.
+#[derive(Debug, Clone, Copy)]
+enum Level {
+    Beats(f64),
+    Bars(i64),
 }
 
 /// The second a beat falls on, per the map (0 without one -- a caller that has
@@ -1852,6 +2020,7 @@ mod tests {
             beat_at: 0.0,
             quant: 4.0,
             map: Some(&map),
+            bars: &[],
         };
         let ticks = time_ticks(
             0.0,
@@ -1900,6 +2069,7 @@ mod tests {
             beat_at: 0.0,
             quant: 4.0,
             map: Some(&map),
+            bars: &[],
         };
         let ticks = time_ticks(0.0, len, 900.0, 48_000.0, unit, &Metrics::default());
         // Bar 3 beat 1 is beat 8: half way across a ten-second window.
@@ -1919,6 +2089,7 @@ mod tests {
             beat_at: 0.0,
             quant: 4.0,
             map: None,
+            bars: &[],
         };
         let was = time_ticks(0.0, len, 900.0, 48_000.0, frozen, &Metrics::default());
         let then = was
@@ -1941,6 +2112,7 @@ mod tests {
             beat_at: 0.0,
             quant: 4.0,
             map: Some(&map),
+            bars: &[],
         };
         let len = map.secs_at(4.0) * 48_000.0;
         let ticks = time_ticks(0.0, len, 1400.0, 48_000.0, unit, &Metrics::default());
@@ -1965,6 +2137,7 @@ mod tests {
             beat_at: 0.0,
             quant: 4.0,
             map: None,
+            bars: &[],
         };
         let ticks = time_ticks(0.0, 192_000.0, 800.0, 48_000.0, unit, &Metrics::default());
         let l = labels(&ticks);
@@ -1978,6 +2151,63 @@ mod tests {
         assert_no_h_collisions(&ticks, 800.0, "8 beats/800px");
     }
 
+    /// **The page's bars count as the page does**: a pickup is bar 0, a
+    /// meter that changes changes the bar's length, and a strip too narrow
+    /// for beats labels bars.
+    #[test]
+    fn the_pages_bars_number_the_ruler_as_the_page_does() {
+        // a quarter's pickup, 4/4 from bar 1, 3/4 from bar 3 (beat 9)
+        let bars = [[0.0, 1.0, 0.0], [1.0, 4.0, 1.0], [9.0, 3.0, 3.0]];
+        assert_eq!(
+            bars_in(&bars, 0.0, 13.0),
+            vec![
+                (0.0, 1.0, 0),
+                (1.0, 4.0, 1),
+                (5.0, 4.0, 2),
+                (9.0, 3.0, 3),
+                (12.0, 3.0, 4)
+            ]
+        );
+        // 16 beats a second at 48 kHz over 1600 px: beats fit
+        let unit = TimeUnit::Beats {
+            tempo: 1.0,
+            beat_at: 0.0,
+            quant: 4.0,
+            map: None,
+            bars: &bars,
+        };
+        let ticks = time_ticks(
+            0.0,
+            16.0 * 48_000.0,
+            1600.0,
+            48_000.0,
+            unit,
+            &Metrics::default(),
+        );
+        let l = labels(&ticks);
+        assert_eq!(l[0], "0:1");
+        assert!(
+            l.contains(&"1:4") && l.contains(&"3:3") && !l.contains(&"3:4"),
+            "{l:?}"
+        );
+        assert_no_h_collisions(&ticks, 1600.0, "page bars/1600px");
+        // narrow: bars only, by their numbers
+        let narrow = time_ticks(
+            0.0,
+            16.0 * 48_000.0,
+            90.0,
+            48_000.0,
+            unit,
+            &Metrics::default(),
+        );
+        let l = labels(&narrow);
+        assert!(
+            !l.is_empty() && l.iter().all(|label| !label.contains(':')),
+            "{l:?}"
+        );
+        assert_no_h_collisions(&narrow, 90.0, "page bars/90px");
+    }
+
     #[test]
     fn beat_ladder_narrow_strip_climbs_to_bars() {
         // The same 8 beats on a strip too narrow for per-beat labels: the
@@ -1987,6 +2217,7 @@ mod tests {
             beat_at: 0.0,
             quant: 4.0,
             map: None,
+            bars: &[],
         };
         let ticks = time_ticks(0.0, 192_000.0, 120.0, 48_000.0, unit, &Metrics::default());
         let l = labels(&ticks);
@@ -2022,6 +2253,7 @@ mod tests {
             beat_at: 0.0,
             quant: 4.0,
             map: None,
+            bars: &[],
         };
         let ticks = time_ticks(0.0, 100_000.0, 500.0, 48_000.0, unit, &Metrics::default());
         assert_eq!(labels(&ticks)[0], "0");
@@ -2036,6 +2268,7 @@ mod tests {
             beat_at: 2.0,
             quant: 4.0,
             map: None,
+            bars: &[],
         };
         let ticks = time_ticks(0.0, 192_000.0, 800.0, 48_000.0, unit, &Metrics::default());
         let l = labels(&ticks);
@@ -2421,6 +2654,7 @@ mod tests {
                     TimeUnit::Samples,
                     TimeUnit::Beats {
                         map: None,
+                        bars: &[],
                         tempo: 2.5,
                         beat_at: 1.0,
                         quant: 3.0,

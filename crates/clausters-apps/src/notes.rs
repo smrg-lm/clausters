@@ -72,6 +72,8 @@ pub fn props(
     // line on the sample the lane is playing, stopped or rolling.
     if let Some(Value::Object(x)) = out.get_mut("axes").and_then(|axes| axes.get_mut("x")) {
         x.insert("playhead_at".into(), json!(0.0));
+        // the bars are the axis' own, as its tempo map is
+        x.insert("bars".into(), json!(drawn.bars));
     }
     out
 }
@@ -138,6 +140,7 @@ pub fn correction(sequence: &EventSequence, domain: &YDomain, rate: f64) -> Map<
     out.insert("layers".into(), json!(drawn.layers));
     out.insert("points".into(), json!(drawn.points));
     out.insert("midi".into(), json!(drawn.midi));
+    out.insert("bars".into(), json!(drawn.bars));
     if let Ok(map) = serde_json::to_string(&axis.map) {
         out.insert("tempo_map".into(), json!(map));
     }

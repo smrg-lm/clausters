@@ -387,3 +387,12 @@ pub(crate) fn span(props: &serde_json::Map<String, Value>) -> Option<(f64, f64)>
     let dur = number_f64(props, "dur", f64::INFINITY);
     (dur > 0.0).then_some((at, dur))
 }
+
+/// The `bars` prop: flat `beat length number` triples, a run of bars each.
+pub(crate) fn parse_bars(v: &Value) -> Vec<[f64; 3]> {
+    let flat: Vec<f64> = v
+        .as_array()
+        .map(|a| a.iter().filter_map(Value::as_f64).collect())
+        .unwrap_or_default();
+    flat.as_chunks::<3>().0.to_vec()
+}

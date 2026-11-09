@@ -1194,6 +1194,7 @@ pub(crate) fn time_unit(editor: &EditorProps) -> TimeUnit<'_> {
             beat_at: editor.beat_at,
             quant: editor.quant,
             map: editor.tempo_map.as_deref(),
+            bars: &editor.bars,
         },
         _ => TimeUnit::Seconds,
     }
@@ -3869,6 +3870,7 @@ mod tests {
             tempo_map: None,
             beat_at: 0.0,
             quant: 4.0,
+            bars: Default::default(),
             grid: 0.0,
             grid_snap: true,
             autofit: true,

@@ -2310,7 +2310,12 @@ opened it.
   **Needs** `O35` from the third step on, `O37` from the fourth and `O36`
   for the sixth, all three shipped; the conversion of a performance into notation runs the
   module planned in `crates/clausters-notate/PLAN.md`.
-  - ⬜ **X35.1 - Barlines on the ruler, in both modes.** The projection
+  - ✅ **X35.1 - Barlines on the ruler, in both modes.** *(Done
+    2026-11-09: `notes::bars` answers the page's bars as runs, `beat length
+    number`, from `notation.grid` or the reading's meter, none where the
+    sequence states neither; the x axis' `bars` prop, which the beats ruler
+    counts and numbers as a page does (an anacrusis is bar 0) and the
+    `notes` element bars its plane with.)* The projection
     (`clausters_editing::notes::Projection`) gains the bars of the sequence's
     grid (its meters by measure, an irregular bar, an anacrusis) and the host's
     `notes` element draws them on the ruler and the plane. This is the meter
@@ -2353,11 +2358,13 @@ opened it.
     `crates/clausters-notate/PLAN.md`, first as its trivial pipeline (today's
     grid reading, with a meter, a division and a writing given in a dialog).
     The events and the section change in one undo step.
-    Open, recommended: an edit in MIDI mode to a note that has notation keys
-    drops the ones it contradicts (a new length drops the written `value`),
-    so the page reads the performance there and keeps the rest as written.
-    Open, recommended: the conversion changes the sequence in place, with
-    undo, and "into a copy" is offered beside it.
+    **An edit in MIDI mode to a note that has notation keys drops the ones it
+    contradicts** (a new length drops the written `value`), so the page reads
+    the performance there and keeps the rest as written: the two modes edit
+    different structures, and the notation mode is the roll of a page
+    *(decided by the user, 2026-11-09)*. **The conversion changes the
+    sequence in place, with undo, and "into a copy" is offered beside it**
+    *(decided by the user, 2026-11-09)*.
   - ⬜ **X35.8 - How a polyphony is written, from the roll and the page.** One
     verb sets the part's writing (`SetParts`); the roll recolours its voices
     and the page is written again, and nothing sounds different.

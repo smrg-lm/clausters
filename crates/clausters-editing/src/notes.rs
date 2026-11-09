@@ -42,6 +42,10 @@
 //! - `midi`: the MIDI spec the sequence is written for, as a reader names it
 //!   (`MIDI 1.0`, `MPE`, `MIDI 2.0`), empty for a sequence for the server --
 //!   the roll shows it beside its ruler.
+//! - `bars`: where the sequence's bars fall, flat `beat length number`
+//!   triples in beats ([`bars`]), each a run of bars of one length from its
+//!   beat until the next run; empty where the sequence states no meter, and
+//!   the ruler then counts bars of its own.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -219,6 +223,8 @@ pub struct Projection {
     /// The MIDI spec the sequence is written for, as a reader names it
     /// (`MIDI 1.0`, `MPE`, `MIDI 2.0`), or empty for a sequence for the server.
     pub midi: String,
+    /// Where its bars fall: `beat length number` triples ([`bars`]).
+    pub bars: Vec<f64>,
 }
 
 /// How tall a sequence curve's row under the plane is drawn.
@@ -285,6 +291,7 @@ pub fn project(sequence: &EventSequence, domain: &YDomain, axis: &Axis) -> Proje
             .midi
             .map(|spec| spec.label().to_string())
             .unwrap_or_default(),
+        bars: bars(sequence),
         ..Projection::default()
     };
     for event in &sequence.events {
@@ -339,6 +346,107 @@ pub fn project(sequence: &EventSequence, domain: &YDomain, axis: &Axis) -> Proje
         for point in &curve.points {
             out.points
                 .extend(point_values(&name, axis.units(point.at.0), point));
+        }
+    }
+    out
+}
+
+/// **Where a sequence's bars fall**, in its beats: flat `beat length number`
+/// triples, each a run of bars `length` beats long from `beat` until the next
+/// run, the last one going on -- the first of them numbered `number`, as a
+/// page numbers it (an anacrusis is bar 0, the first whole bar 1).
+///
+/// The bars are the page's: the meters by measure and the bars of another
+/// length of the sequence's `notation.grid`, or the meter its reading names
+/// (`notation.reading.meter`), counted in the reading's beat unit. A sequence
+/// that states neither has none, and the roll's ruler counts bars of its own.
+pub fn bars(sequence: &EventSequence) -> Vec<f64> {
+    let section = sequence.notation.as_ref();
+    let reading = clausters_document::events::reading::Transcription::of(sequence);
+    let beats = reading.beat_unit.max(1) as f64;
+    // (measure, count, unit) of each meter, and (measure, length in whole
+    // notes) of each bar of another length
+    let ratio = |value: &Value| -> Option<f64> {
+        let pair = value.as_array()?;
+        let (n, d) = (pair.first()?.as_f64()?, pair.get(1)?.as_f64()?);
+        (d != 0.0).then(|| n / d)
+    };
+    let grid = section.and_then(|n| n.get("grid"));
+    let mut meters: Vec<(usize, f64)> = grid
+        .and_then(|g| g.get("meters"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|m| {
+            let count = m.get("count")?.as_f64()?;
+            let unit = m.get("unit")?.as_f64()?;
+            let measure = m.get("measure").and_then(Value::as_u64).unwrap_or(0) as usize;
+            (count > 0.0 && unit > 0.0).then(|| (measure, count / unit))
+        })
+        .collect();
+    if meters.is_empty() {
+        let stated = reading.meter.as_deref().and_then(|meter| {
+            let (n, d) = meter.split_once('/')?;
+            let (n, d): (f64, f64) = (n.trim().parse().ok()?, d.trim().parse().ok()?);
+            (n > 0.0 && d > 0.0).then(|| n / d)
+        });
+        match stated {
+            Some(bar) => meters.push((0, bar)),
+            None => return Vec::new(),
+        }
+    }
+    meters.sort_by_key(|(measure, _)| *measure);
+    let irregular: Vec<(usize, f64)> = grid
+        .and_then(|g| g.get("irregular"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|pair| {
+            let pair = pair.as_array()?;
+            let len = ratio(pair.get(1)?)?;
+            let measure = pair.first()?.as_u64()? as usize;
+            (len > 0.0).then_some((measure, len))
+        })
+        .collect();
+    let meter_at = |measure: usize| {
+        meters
+            .iter()
+            .rev()
+            .find(|(m, _)| *m <= measure)
+            .map_or(meters[0].1, |(_, bar)| *bar)
+    };
+    let length = |measure: usize| {
+        irregular
+            .iter()
+            .find(|(m, _)| *m == measure)
+            .map_or_else(|| meter_at(measure), |(_, len)| *len)
+    };
+    // a bar 0 shorter than its meter is an anacrusis, and the first whole bar
+    // is bar 1
+    let pickup = irregular
+        .iter()
+        .any(|(m, len)| *m == 0 && *len < meter_at(0));
+    let mut changes: Vec<usize> = std::iter::once(0)
+        .chain(meters.iter().map(|(m, _)| *m))
+        .chain(irregular.iter().flat_map(|(m, _)| [*m, m + 1]))
+        .collect();
+    changes.sort_unstable();
+    changes.dedup();
+    let mut out = Vec::new();
+    let mut at = 0.0;
+    let mut measure = 0;
+    for (k, change) in changes.iter().enumerate() {
+        // the beats from where the last run started to this one
+        while measure < *change {
+            at += length(measure) * beats;
+            measure += 1;
+        }
+        let number = if pickup { measure } else { measure + 1 };
+        let bar = length(measure) * beats;
+        // a run that changes nothing of the one before it is that run
+        let same = out.len() >= 3 && out[out.len() - 2] == bar;
+        if !same || k == 0 {
+            out.extend([at, bar, number as f64]);
         }
     }
     out

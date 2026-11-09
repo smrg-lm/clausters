@@ -443,6 +443,10 @@ pub struct EditorProps {
     pub tempo_map: Option<Arc<TempoMap>>,
     pub beat_at: f64,
     pub quant: f64,
+    /// **The page's bars**, where the axis has them: runs of bars of one
+    /// length, `[beat, length, number]` each ([`crate::host::ruler::bars_in`]).
+    /// Empty, every bar is `quant` beats.
+    pub bars: Arc<Vec<[f64; 3]>>,
     /// **The grid a placement lands on, in beats** -- a quarter for a
     /// sixteenth -- read through `tempo_map` (else `tempo` and `beat_at`), so
     /// a line is a beat wherever the tempo puts it. `0` for none, where a
@@ -580,6 +584,7 @@ impl EditorProps {
             tempo_map: props.get("tempo_map").and_then(parse_tempo_map),
             beat_at: number_f64(props, "beat_at", 0.0),
             quant: number_f64(props, "quant", 4.0),
+            bars: Arc::new(props.get("bars").map(parse_bars).unwrap_or_default()),
             grid: number_f64(props, "grid", 0.0).max(0.0),
             grid_snap: props.get("grid_snap").and_then(truthy).unwrap_or(true),
             sel_start: number_f64(props, "sel_start", 0.0),
@@ -777,6 +782,10 @@ impl EditorProps {
             }
             "beat_at" => set_f64(&mut self.beat_at, v),
             "quant" => set_f64(&mut self.quant, v),
+            "bars" => {
+                self.bars = Arc::new(parse_bars(v));
+                true
+            }
             "grid" => v.as_f64().map(|g| self.grid = g.max(0.0)).is_some(),
             "grid_snap" => truthy(v).map(|on| self.grid_snap = on).is_some(),
             "autofit" => truthy(v).map(|b| self.autofit = b).is_some(),

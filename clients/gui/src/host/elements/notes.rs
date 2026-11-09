@@ -608,6 +608,7 @@ impl Element for Notes {
         } else {
             pianoroll::draw_grid_background(d, r.grid, lo, hi);
         }
+        self.draw_bars(d, r.grid, &nav, self.rate(ctx.world.sample_rate));
         pianoroll::draw_notes(
             d,
             r.grid,
@@ -1314,6 +1315,42 @@ impl Notes {
 
     /// The axis' chrome over the grid: the shared selection band, the playhead,
     /// and the cursor readout naming the pitch and the time under the pointer.
+    /// **The page's barlines down the plane**, where the axis has the page's
+    /// bars: a line at each bar's start, through the tempo map as the ruler
+    /// places them, so the plane is barred where its ruler is.
+    fn draw_bars(&self, d: &mut Draw, grid: Rect, nav: &View, rate: f64) {
+        if self.editor.bars.is_empty() || rate <= 0.0 || nav.len <= 0.0 {
+            return;
+        }
+        let editor = &self.editor;
+        let units = |beat: f64| match editor.tempo_map.as_deref() {
+            Some(map) => map.secs_at(beat) * rate,
+            None => (beat - editor.beat_at) / editor.tempo.max(1e-9) * rate,
+        };
+        let beat = |units: f64| match editor.tempo_map.as_deref() {
+            Some(map) => map.beats_at(units / rate),
+            None => editor.beat_at + units / rate * editor.tempo,
+        };
+        let (b0, b1) = (beat(nav.start), beat(nav.start + nav.len));
+        let (mesh, m, theme) = d.parts();
+        let bars = crate::host::ruler::bars_in(&editor.bars, b0, b1);
+        // a line where they stand far enough apart to read as bars
+        let x_of = |b: f64| grid.x as f64 + (units(b) - nav.start) / nav.len * grid.w as f64;
+        let narrowest = bars
+            .windows(2)
+            .map(|pair| x_of(pair[1].0) - x_of(pair[0].0))
+            .fold(f64::INFINITY, f64::min);
+        if narrowest < f64::from(m.tick_gap) {
+            return;
+        }
+        for (at, _, _) in bars {
+            let x = x_of(at) as f32;
+            if x >= grid.x && x <= grid.x + grid.w {
+                mesh.rect(Rect::new(x, grid.y, m.divider_w, grid.h), theme.frame);
+            }
+        }
+    }
+
     fn draw_axis_chrome(&self, d: &mut Draw, ctx: &Ctx, grid: Rect, nav: &View, rate: f64) {
         let Some(time) = ctx.time else {
             return;

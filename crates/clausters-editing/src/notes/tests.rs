@@ -344,3 +344,30 @@ fn a_points_report_is_the_edit_of_the_curve_it_changed() {
 fn intake_of(s: &EventSequence, values: &[Value], axis: &Axis) -> Intake {
     intake(s, "points", values, axis, &YDomain::midi())
 }
+
+/// **The bars are the page's**: a sequence with no meter has none, one with a
+/// reading's meter has its bars, and a grid's meters by measure, an
+/// anacrusis and an irregular bar each start a run of their own.
+#[test]
+fn the_bars_are_the_pages_meters_by_measure() {
+    let mut s = sequence();
+    assert!(bars(&s).is_empty(), "no meter, no bars of the sequence's");
+    s.notation = Some(json!({"reading": {"meter": "3/4"}}));
+    assert_eq!(bars(&s), vec![0.0, 3.0, 1.0]);
+    s.notation = Some(json!({"grid": {
+        "meters": [{"measure": 0, "count": 4, "unit": 4}, {"measure": 3, "count": 6, "unit": 8}],
+        "irregular": [[0, [1, 4]], [5, [1, 8]]],
+    }}));
+    assert_eq!(
+        bars(&s),
+        vec![
+            0.0, 1.0, 0.0, // the pickup, bar 0
+            1.0, 4.0, 1.0, // 4/4 from bar 1
+            9.0, 3.0, 3.0, // 6/8 from measure 3
+            15.0, 0.5, 5.0, // an eighth's bar
+            15.5, 3.0, 6.0, // and 6/8 again
+        ]
+    );
+    let p = project(&s, &YDomain::midi(), &Axis::constant(1.0));
+    assert_eq!(p.bars, bars(&s));
+}
