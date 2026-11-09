@@ -51,6 +51,20 @@ and no other. The rolls and the page are one history, so Ctrl+Z in any of the
 three takes back the last edit wherever it was made, and a note dragged in a
 roll is redrawn on the page.
 
+**``notation()`` opens the same notes as notation** -- a copy of the
+sequence written as its page (``to_notation(copy=True)``), on a roll in its
+**notation mode**. There a note is on a staff and a voice, drawn as long as it
+is written with what it sounds inside it, and lands on the eighths and the
+written values a drag passes; the velocity is a dynamic, written in the note,
+and what each note sounds is derived from the page at once. **Select notes and
+press S** for a slur, **.** for a staccato -- the bar inside the note shortens
+-- **T** to tie two of one pitch that touch into one note, **P** for the pedal;
+**Ctrl+Alt+2** edits a second voice, its notes tinted, and the first is drawn
+faint and is not taken. **M** edits monophonically: a note lengthened over the
+next shortens it, and a slur drawn then joins its notes into one line. The
+Notation menu has the rest -- the staff or the system shown, the polyphony
+written in voices or with ties -- and MIDI mode converts nothing back.
+
 **The first window paints what is played** (``midi_in=True``). The host opens
 a MIDI input of its own, a port named ``clausters-gui``: route a keyboard into
 it. While the transport is stopped a key lands on the step cursor, a chord on
@@ -164,6 +178,24 @@ def page():
 
 
 # %% [markdown]
+# ## The same notes, as notation
+#
+# A roll has two modes, and they are the roll's: MIDI, the events as MIDI says
+# them, and notation, a view of the page they are written as. A copy of the
+# sequence is written as its page -- read on eighths in 4/4, every note moved
+# to where it is written -- and a roll opens over it in notation mode. The
+# copy is a sequence of its own, so the windows above keep the performance.
+
+# %%
+def notation():
+    """A copy of the notes written as notation, on a roll in notation mode."""
+    written = editor.to_notation(meter="4/4", division=8, copy=True)
+    roll = edit(written, title="notes as notation")
+    roll.mode = "notation"
+    return roll
+
+
+# %% [markdown]
 # ## Play what was drawn
 #
 # The editor plays the sequence it edits, on its own transport -- the space bar
@@ -238,4 +270,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     run()
 else:
     print("up -- play() to hear it, page() for the notes on a page, "
-          "read_back() to see what survived the edit")
+          "notation() for them as notation, read_back() to see what survived the edit")

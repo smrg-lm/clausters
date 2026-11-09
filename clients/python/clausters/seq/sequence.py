@@ -244,6 +244,37 @@ class EventSequence:
         ids = [int(e._id) for e in events]
         self._edit({"intent": "unjoin", "ids": ids}, "unjoin")
 
+    def to_notation(self, reading: "dict | None" = None, writing: "str | dict | None" = None) -> None:
+        """**Write the sequence as the page it reads as**: it is read into a
+        page with ``reading`` over its own (`reading`'s options: ``meter``,
+        ``division``...), every part written as ``writing`` where it is given
+        (``"voices"`` or ``"ties"``, or the part's ``writing`` dict), and the
+        page rendered back into it -- its notes where they are written, each
+        with its ``staff``, ``voice`` and written ``value``, and its
+        ``notation`` section the page's. What plays each note (its
+        ``instrument`` and every key that is not time, pitch, level or
+        notation), the tempo map, the parts and the curves the page does not
+        write are kept. The times as played become the written ones: one
+        edit, undone as one, and `notated` converts a copy instead.
+        `ValueError` when an option does not read."""
+        intent: dict = {"intent": "tonotation"}
+        if reading is not None:
+            intent["reading"] = dict(reading)
+        if writing is not None:
+            intent["writing"] = _writing(writing)
+        self._edit(intent, "write as notation")
+
+    def notated(self, reading: "dict | None" = None,
+                writing: "str | dict | None" = None) -> "EventSequence":
+        """**A copy of the sequence written as the page it reads as**, as
+        `to_notation` would write it; this sequence is not changed."""
+        args: dict = {}
+        if reading is not None:
+            args["reading"] = dict(reading)
+        if writing is not None:
+            args["writing"] = _writing(writing)
+        return type(self).from_data(self._seq.call("notated", **args)["sequence"])
+
     def realize(self, interpretation: "dict | None" = None) -> None:
         """**Derive the performance from what is written**: each note's held
         length (``sustain``), level and ``joins``, and the curves of its lines
@@ -894,6 +925,16 @@ def _rendered(start, until, tempo_map) -> EventSequence:
     if tempo_map is not None:
         data["tempo_map"] = json.loads(tempo_map.dump())
     return EventSequence.from_data(data)
+
+
+def _writing(writing) -> dict:
+    """A part's ``writing`` as the document reads it: ``"voices"`` (two a
+    staff) or ``"ties"``, or the dict itself."""
+    if isinstance(writing, dict):
+        return dict(writing)
+    if writing not in ("voices", "ties"):
+        raise ValueError(f"a writing is 'voices' or 'ties', not {writing!r}")
+    return {"polyphony": writing, "voices_per_staff": 2 if writing == "voices" else 1}
 
 
 def _articulate(data: dict, joins) -> None:

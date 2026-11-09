@@ -334,6 +334,38 @@ export class EventSequence {
     }
 
     /**
+     * **Write the sequence as the page it reads as**: it is read into a page
+     * with `reading` over its own (its options: `meter`, `division`...), every
+     * part written as `writing` where it is given (`"voices"` or `"ties"`, or
+     * the part's `writing` object), and the page rendered back into it -- its
+     * notes where they are written, each with its `staff`, `voice` and
+     * written `value`, and its `notation` section the page's. What plays each
+     * note (its `instrument` and every key that is not time, pitch, level or
+     * notation), the tempo map, the parts and the curves the page does not
+     * write are kept. The times as played become the written ones: one edit,
+     * undone as one, and {@link EventSequence.notated} converts a copy
+     * instead. Throws when an option does not read.
+     */
+    toNotation(reading?: Record<string, unknown>, writing?: Writing): void {
+        const intent: Record<string, unknown> = { intent: "tonotation" };
+        if (reading !== undefined) intent.reading = { ...reading };
+        if (writing !== undefined) intent.writing = writingOf(writing);
+        this.edit(intent, "write as notation");
+    }
+
+    /**
+     * **A copy of the sequence written as the page it reads as**, as
+     * {@link EventSequence.toNotation} would write it; this sequence is not
+     * changed.
+     */
+    notated(reading?: Record<string, unknown>, writing?: Writing): EventSequence {
+        const args: Record<string, unknown> = {};
+        if (reading !== undefined) args.reading = { ...reading };
+        if (writing !== undefined) args.writing = writingOf(writing);
+        return EventSequence.fromData(this.call("notated", args).sequence);
+    }
+
+    /**
      * **Derive the performance from what is written**: each note's held length
      * (`sustain`), level and `joins`, and the curves of its lines (the
      * dynamics' controller, the pedal), written again from the page the
@@ -1189,4 +1221,19 @@ export function renderPattern(
 /** An event's keys as the document stores them. */
 function keysOf(event: Event | EventProps): Record<string, unknown> {
     return (event instanceof Event ? event : new Event(event)).keysData();
+}
+
+/**
+ * How a part writes its polyphony: `"voices"` (two a staff) or `"ties"`, or
+ * the part's `writing` object itself.
+ */
+export type Writing = "voices" | "ties" | { polyphony: "voices" | "ties"; voices_per_staff: number };
+
+/** A part's `writing` as the document reads it. */
+function writingOf(writing: Writing): Record<string, unknown> {
+    if (typeof writing === "object") return { ...writing };
+    if (writing !== "voices" && writing !== "ties") {
+        throw new Error(`a writing is "voices" or "ties", not ${JSON.stringify(writing)}`);
+    }
+    return { polyphony: writing, voices_per_staff: writing === "voices" ? 2 : 1 };
 }

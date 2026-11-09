@@ -13,6 +13,7 @@ import { JsEventSequence } from "../src/core/clausters_core_web.js";
 import { HostedTransport, NotesEditor, edit } from "../src/gui/editing/index.ts";
 import type { GuiHost } from "../src/gui/host.ts";
 import { Event } from "../src/seq/event.ts";
+import { pseq, pvoice } from "../src/seq/index.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 
 await loadCore();
@@ -29,6 +30,7 @@ class FakeHost {
     listeners: ((msg: { addr: string; args: unknown[] }) => void)[] = [];
     next = 8;
     selected: number[] = [];
+    monophonic = false;
     open = new Set<number>();
 
     async openApp(app: string, options: Call = {}): Promise<number> {
@@ -46,6 +48,9 @@ class FakeHost {
         if (call.query === "history") return { canUndo: true, canRedo: false, undoLabel: this.recorded.at(-1)?.[0] ?? null, redoLabel: null };
         if (call.query !== undefined) return {};
         if (call.member !== undefined) {
+            if (call.member.verb === "editing") {
+                return { monophonic: this.monophonic, mode: "notation", scope: { show: "staff", index: 1 }, voice: [1, 0] };
+            }
             return call.member.verb === "grid" ? { grid: 0.25, snap: true } : {};
         }
         const doing = call.do as Call;
@@ -213,9 +218,51 @@ test("the transport, the grid and the verbs are calls to the application", async
     assert.ok(editor.transport instanceof HostedTransport);
     await editor.transport.setSpan([0.5, 1.5]);
     assert.ok(host.calls.some((c) => c.do?.call?.verb === "span"));
+    assert.equal(await editor.monophonic(), false);
+    await editor.setMonophonic(true);
+    assert.ok(host.calls.some((c) => c.do?.verb === "set" && c.do.call.monophonic === true));
     assert.equal(editor.split(), true);
-    assert.deepEqual(host.verbs, ["split"]);
+    assert.equal(editor.unjoin(), true);
+    assert.deepEqual(host.verbs, ["split", "unjoin"]);
     await editor.close();
     assert.equal(editor.split(), false, "no window, no verb");
     assert.equal(await editor.playing(), false);
+});
+
+test("a voice from a pattern is left as it was written", async () => {
+    const voice = await pvoice(
+        "default",
+        { midinote: pseq([60, 62, 64, 64, 67]), dur: 0.5, legato: pseq([1, 1, 1, 0.6, 0.8]) },
+        { artic: true },
+    ).renderEvents();
+    const before = JSON.stringify(voice.data());
+    const host = new FakeHost();
+    const editor = new NotesEditor(voice);
+    await editor.open(host.asHost());
+    await editor.setMonophonic(true);
+    await editor.close();
+    const after = voice.data() as { events: { data: Record<string, unknown> }[] };
+    assert.equal(JSON.stringify(after), before, "opened and closed, the roll wrote nothing");
+    assert.ok(after.events.every((e) => !("tie" in e.data)) && !("notation" in after));
+});
+
+test("the roll's modes, what it shows and the voice it edits are calls to the application", async () => {
+    const host = new FakeHost();
+    const sequence = take();
+    const editor = new NotesEditor(sequence);
+    await editor.open(host.asHost());
+    assert.equal(await editor.mode(), "notation");
+    assert.deepEqual(await editor.scope(), ["staff", 1]);
+    assert.deepEqual(await editor.voice(), [1, 0]);
+    await editor.setMode("notation");
+    await editor.setScope("system");
+    await editor.setVoice([0, 1]);
+    assert.ok(host.calls.some((c) => c.do?.verb === "set" && c.do.call.scope?.show === "system"));
+    assert.ok(host.calls.some((c) => c.do?.verb === "set" && c.do.call.voice?.[1] === 1));
+    assert.equal(editor.writing(), "voices");
+    editor.setWriting("ties");
+    assert.equal(editor.slur() && editor.slurJoin() && editor.tie() && editor.staccato() && editor.pedal(), true);
+    assert.deepEqual(host.verbs, ["notation_mode", "write_ties", "slur", "slur_join", "tie", "staccato", "pedal"]);
+    await assert.rejects(() => editor.setMode("score" as "midi"), /midi/);
+    await editor.close();
 });

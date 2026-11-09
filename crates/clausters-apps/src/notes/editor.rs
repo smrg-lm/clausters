@@ -10,7 +10,7 @@ use clausters_document::events::{self, EventsIntent};
 use clausters_document::history::Editable;
 use clausters_document::{EventSequence, Opaque};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
-use clausters_editing::notes::{self as roll, Axis, YDomain};
+use clausters_editing::notes::{self as roll, Axis, Editing, Mode, Scope, YDomain};
 
 use super::{Shared, correction, props, window};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record};
@@ -69,6 +69,50 @@ turn::turned!(Outcome);
 /// View menu's entry, or a client's `verb("snap")`.
 pub const SNAP_VERB: &str = "snap";
 
+/// **The monophonic switch**, as the window asks for it: a key (M), the Edit
+/// menu's entry, or a client's `monophonic`.
+pub const MONOPHONIC_VERB: &str = "monophonic";
+
+/// **The verbs of the roll's modes, its view and its writing**: the mode
+/// itself, then what only the notation mode answers -- which part, staff or
+/// system it shows, the voice it edits, how a part writes its polyphony.
+pub const MODE_VERBS: &[&str] = &[
+    "midi_mode",
+    "notation_mode",
+    "show_system",
+    "show_part",
+    "show_staff",
+    "staff_up",
+    "staff_down",
+    "voice_1",
+    "voice_2",
+    "voice_3",
+    "voice_4",
+    "write_voices",
+    "write_ties",
+];
+
+/// The verbs only the notation mode answers: [`MODE_VERBS`] past the mode,
+/// and the marks a page writes over the selected notes.
+pub const NOTATION_VERBS: &[&str] = &[
+    "show_system",
+    "show_part",
+    "show_staff",
+    "staff_up",
+    "staff_down",
+    "voice_1",
+    "voice_2",
+    "voice_3",
+    "voice_4",
+    "write_voices",
+    "write_ties",
+    "slur",
+    "slur_join",
+    "tie",
+    "staccato",
+    "pedal",
+];
+
 /// **A notes editor**: a shared sequence, the domain its roll is drawn in,
 /// and its end of the conversation.
 #[derive(Clone, Debug)]
@@ -104,6 +148,9 @@ pub struct NotesEditor {
     /// **The loop switch**, as the host last said it: the host keeps it, and the
     /// window's tool and menu entry read it here.
     looping: bool,
+    /// **How the roll edits** -- monophonically or not: the window's own, as
+    /// snap is, and never the sequence's.
+    editing: Editing,
 }
 
 /// What a notes editor is opened with, as the context's door reads it.
@@ -189,7 +236,13 @@ impl NotesEditor {
             grid: crate::DEFAULT_GRID,
             snap: true,
             looping: false,
+            editing: Editing::default(),
         }
+    }
+
+    /// How the roll edits.
+    pub fn editing(&self) -> &Editing {
+        &self.editing
     }
 
     /// The grid a note lands on, in beats; `0` for none.
@@ -217,10 +270,155 @@ impl NotesEditor {
             redo,
             &|verb| match verb {
                 SNAP_VERB => Some(self.snap),
+                MONOPHONIC_VERB => Some(self.editing.monophonic),
                 "loop" => Some(self.looping),
+                "midi_mode" => Some(self.editing.mode == Mode::Midi),
+                "notation_mode" => Some(self.editing.mode == Mode::Notation),
+                "show_system" => Some(self.editing.scope == Scope::System),
+                "show_part" => Some(matches!(self.editing.scope, Scope::Part(_))),
+                "show_staff" => Some(matches!(self.editing.scope, Scope::Staff(_))),
+                "voice_1" | "voice_2" | "voice_3" | "voice_4" => {
+                    Some(verb.ends_with(&(self.editing.voice[1] + 1).to_string()))
+                }
+                "write_voices" | "write_ties" => {
+                    let ties = self.writes_with_ties();
+                    Some((verb == "write_ties") == ties)
+                }
                 _ => None,
             },
         )
+        .into_iter()
+        .map(|(verb, mut state)| {
+            // what is a page's is the notation mode's
+            if NOTATION_VERBS.contains(&verb) && self.editing.mode != Mode::Notation {
+                state.refuse("switch the roll to notation first");
+            }
+            (verb, state)
+        })
+        .collect()
+    }
+
+    /// Whether the sequence's first part writes its polyphony with ties.
+    fn writes_with_ties(&self) -> bool {
+        self.held()
+            .parts_read()
+            .first()
+            .is_some_and(|p| p.writing.polyphony == clausters_document::events::Polyphony::Ties)
+    }
+
+    /// **One edit of the sequence a verb of the window makes**: applied,
+    /// recorded under `label`, and the roll corrected. The refusal, if any.
+    fn record(&mut self, intent: EventsIntent, label: &str, out: &mut Outcome) -> Option<String> {
+        let payload = serde_json::to_value(&intent).unwrap_or(Value::Null);
+        let mut sequence = self.held();
+        let backward = events::payload(&sequence.state());
+        match sequence.edit(intent) {
+            Ok(change) if change.applied => {
+                out.record = Some(Record {
+                    label: label.into(),
+                    legs: vec![Leg {
+                        forward: json!({ "edit": payload }),
+                        backward: backward.0,
+                        key: events::coalesce_key(&Opaque(payload.clone())).unwrap_or_default(),
+                        ..Leg::default()
+                    }],
+                });
+                out.changed = true;
+                out.version += 1;
+                None
+            }
+            Ok(_) => None,
+            Err(why) => Some(why),
+        }
+    }
+
+    /// **A verb of the roll's modes, its view and its writing** (see
+    /// [`NOTATION_VERBS`]): the window's state changed, or the one edit it
+    /// makes -- a conversion entering notation over a sequence written as
+    /// none, a writing of every part. The refusal, if any.
+    fn mode_verb(&mut self, verb: &str, out: &mut Outcome) -> Option<String> {
+        let staves = || {
+            self.held()
+                .parts_read()
+                .iter()
+                .map(|p| p.staves.max(1))
+                .sum::<usize>()
+                .max(1)
+        };
+        match verb {
+            "midi_mode" => self.editing.mode = Mode::Midi,
+            "notation_mode" => {
+                let written = self.held().written_as_notation();
+                if !written
+                    && let Some(why) = self.record(
+                        EventsIntent::ToNotation {
+                            reading: None,
+                            writing: None,
+                            interpretation: None,
+                        },
+                        "write as notation",
+                        out,
+                    )
+                {
+                    return Some(why);
+                }
+                self.editing.mode = Mode::Notation;
+            }
+            _ if self.editing.mode != Mode::Notation => {
+                return Some("switch the roll to notation first".into());
+            }
+            "show_system" => self.editing.scope = Scope::System,
+            "show_staff" => self.editing.scope = Scope::Staff(self.editing.voice[0]),
+            "show_part" => {
+                let staff = self.editing.voice[0];
+                let parts = self.held().parts_read();
+                let mut first = 0;
+                let part = parts
+                    .iter()
+                    .position(|p| {
+                        let here = (first..first + p.staves.max(1)).contains(&staff);
+                        first += p.staves.max(1);
+                        here
+                    })
+                    .unwrap_or(0);
+                self.editing.scope = Scope::Part(part);
+            }
+            "staff_up" | "staff_down" => {
+                let staff = self.editing.voice[0];
+                let next = if verb == "staff_up" {
+                    staff.saturating_sub(1)
+                } else {
+                    (staff + 1).min(staves() - 1)
+                };
+                self.editing.voice = [next, self.editing.voice[1]];
+                if let Scope::Staff(_) = self.editing.scope {
+                    self.editing.scope = Scope::Staff(next);
+                }
+            }
+            "voice_1" | "voice_2" | "voice_3" | "voice_4" => {
+                let voice = verb[6..].parse::<usize>().unwrap_or(1) - 1;
+                self.editing.voice = [self.editing.voice[0], voice];
+            }
+            "write_voices" | "write_ties" => {
+                let ties = verb == "write_ties";
+                let mut parts = self.held().parts_read();
+                for part in &mut parts {
+                    part.writing.polyphony = if ties {
+                        clausters_document::events::Polyphony::Ties
+                    } else {
+                        clausters_document::events::Polyphony::Voices
+                    };
+                }
+                let label = if ties {
+                    "write the polyphony with ties"
+                } else {
+                    "write the polyphony in voices"
+                };
+                return self.record(EventsIntent::SetParts { parts }, label, out);
+            }
+            _ => {}
+        }
+        None
     }
 
     /// The sequence it edits.
@@ -238,7 +436,13 @@ impl NotesEditor {
     /// the editor answers for.
     pub fn window(&mut self, widget: i32) -> Value {
         self.widget = Some(widget);
-        let mut drawn = props(&self.held(), &self.domain, self.rate, self.editable);
+        let mut drawn = props(
+            &self.held(),
+            &self.domain,
+            self.rate,
+            self.editable,
+            &self.editing,
+        );
         // the grid is an axis' own, as its tempo map is
         if let Some(Value::Object(x)) = drawn.get_mut("axes").and_then(|a| a.get_mut("x")) {
             x.insert("grid".into(), json!(self.grid));
@@ -267,7 +471,7 @@ impl NotesEditor {
             return Vec::new();
         }
         let held = self.held();
-        let mut props = correction(&held, &self.domain, self.rate);
+        let mut props = correction(&held, &self.domain, self.rate, &self.editing);
         // The time range is drawn where the hand sweeps one, so a span set
         // from the client shows as the band a sweep leaves.
         let axis = Axis::of(&held, self.rate);
@@ -355,7 +559,19 @@ impl NotesEditor {
             }
             return (None, Vec::new());
         }
-        if !matches!(tag, "notes" | "osc" | "points") {
+        if !matches!(
+            tag,
+            "notes"
+                | "osc"
+                | "points"
+                | "join"
+                | "unjoin"
+                | "slur"
+                | "slur_join"
+                | "tie"
+                | "staccato"
+                | "pedal"
+        ) {
             return (None, Vec::new());
         }
         if !self.editable {
@@ -367,7 +583,7 @@ impl NotesEditor {
         let recorded = {
             let mut sequence = self.held();
             let axis = Axis::of(&sequence, self.rate);
-            let intake = roll::intake(&sequence, tag, values, &axis, &self.domain);
+            let intake = roll::intake(&sequence, tag, values, &axis, &self.domain, &self.editing);
             if let Some(why) = intake.refusal {
                 drop(sequence);
                 return (Some(why), self.resync_widget(widget));
@@ -454,8 +670,25 @@ impl Converse for NotesEditor {
         }
         // **The snap-to-grid switch** (G, the View menu): the window's own
         // state, so nothing is recorded and the roll is told
-        if message.tag == SNAP_VERB {
-            self.snap = !self.snap;
+        if MODE_VERBS.contains(&message.tag.as_str()) {
+            let tag = message.tag.clone();
+            out.turn = Kind::Route;
+            let why = self.mode_verb(&tag, out);
+            let roll = self.widget.map_or(0, i64::from);
+            out.answer = Some(conversation::answer(
+                message.seq,
+                out.version,
+                why,
+                self.resync_widget(roll),
+            ));
+            return true;
+        }
+        if message.tag == SNAP_VERB || message.tag == MONOPHONIC_VERB {
+            if message.tag == SNAP_VERB {
+                self.snap = !self.snap;
+            } else {
+                self.editing.monophonic = !self.editing.monophonic;
+            }
             out.turn = Kind::Route;
             let roll = self.widget.map_or(0, i64::from);
             out.answer = Some(conversation::answer(
@@ -528,9 +761,15 @@ pub fn shared_of(request: &str) -> Shared {
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `rate`, `editable`,
 ///   `midi_in`, `grid` (in beats, `0` for none), `snap` (the snap-to-grid
-///   switch), `domain`, `title`, `w`, `h`: `{}`.
+///   switch), `monophonic`, `scope` (`{"show": "system"}`, or `"part"` or
+///   `"staff"` with its `index`), `voice` (`[staff, voice]`), `domain`,
+///   `title`, `w`, `h`: `{}`.
 /// - `grid` -- `{"grid": beats, "snap": bool}`: the grid a note lands on, and
 ///   whether a hand snaps to it.
+/// - `editing` -- how the roll edits ([`Editing`]): `{"monophonic", "mode",
+///   "scope", "voice"}`. The mode is changed by its verbs (`midi_mode`,
+///   `notation_mode`), since entering notation may convert the sequence,
+///   which is an edit.
 /// - `state` -- the sequence, whole.
 /// - `span` -- `span`: `[start, end]` in beats, or `null`: the time range the
 ///   space bar plays and the roll draws, as a sweep leaves it. `{}`.
@@ -570,6 +809,21 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             if let Some(snap) = request.get("snap").and_then(Value::as_bool) {
                 editor.snap = snap;
             }
+            if let Some(on) = request.get("monophonic").and_then(Value::as_bool) {
+                editor.editing.monophonic = on;
+            }
+            if let Some(scope) = request
+                .get("scope")
+                .and_then(|s| serde_json::from_value::<Scope>(s.clone()).ok())
+            {
+                editor.editing.scope = scope;
+            }
+            if let Some(voice) = request
+                .get("voice")
+                .and_then(|v| serde_json::from_value::<[usize; 2]>(v.clone()).ok())
+            {
+                editor.editing.voice = voice;
+            }
             if let Some(domain) = request
                 .get("domain")
                 .and_then(|d| serde_json::from_value::<Domain>(d.clone()).ok())
@@ -591,6 +845,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
         "state" => serde_json::to_string(&*editor.held()).unwrap_or_else(|_| "{}".into()),
         "range" => json!({ "range": editor.range }).to_string(),
         "grid" => json!({ "grid": editor.grid, "snap": editor.snap }).to_string(),
+        "editing" => json!(editor.editing).to_string(),
         "span" => {
             editor.range = request
                 .get("span")

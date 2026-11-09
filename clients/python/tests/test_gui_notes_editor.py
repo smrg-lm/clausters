@@ -107,6 +107,9 @@ def test_the_grid_and_the_span_are_the_windows(gui_host):
     assert editor.snap_to_grid is True
     editor.snap_to_grid = False
     assert editor.snap_to_grid is False and editor.grid == 1.0
+    assert editor.monophonic is False
+    editor.monophonic = True
+    assert editor.monophonic is True and editor.snap_to_grid is False
     transport = editor.transport
     assert isinstance(transport, HostedTransport)
     assert transport.span is None
@@ -126,5 +129,52 @@ def test_a_verb_is_asked_of_the_window_and_its_actions_read(gui_host):
     editor = opened(gui_host, NotesEditor(take))
     assert editor.select_all() and editor.verb("view_all")
     assert editor.actions["undo"]["enabled"] is False
+    assert editor.select_all() and editor.join(), "a line of two pitches is joined"
+    assert take.events[1].get("joins") == take.events[0]._id
+    assert editor.actions["undo"]["enabled"] is True, "and the join is an entry"
+    assert editor.select_all() and editor.unjoin()
+    assert take.events[1].get("joins") is None
     editor.close()
     assert editor.verb("view_all") is False, "no window, no verb"
+
+
+def test_a_voice_from_a_pattern_is_left_as_it_was_written(gui_host):
+    from clausters.seq import pseq, pvoice
+
+    voice = pvoice("default", midinote=pseq([60, 62, 64, 64, 67]), dur=0.5,
+                   legato=pseq([1.0, 1.0, 1.0, 0.6, 0.8]), artic=True).render_events()
+    before = voice.data()
+    editor = opened(gui_host, NotesEditor(voice))
+    editor.monophonic = True
+    editor.close()
+    after = voice.data()
+    assert after == before, "opened and closed, the roll wrote nothing"
+    assert not any("tie" in e["data"] for e in after["events"]) and "notation" not in after
+
+
+def test_the_roll_in_notation_mode_writes_the_take_and_edits_its_page(gui_host):
+    take = EventSequence([(0.03, Event(midinote=60, dur=0.97, instrument="default")),
+                          (1.01, Event(midinote=64, dur=1.0, instrument="default"))])
+    editor = opened(gui_host, NotesEditor(take))
+    assert editor.mode == "midi"
+    editor.mode = "notation"
+    assert editor.mode == "notation"
+    assert [e.at for e in take.events] == [0.0, 1.0], "written as its page, in place"
+    assert take.events[0]["value"] == [1, 4]
+    assert editor.actions["undo"]["enabled"] is True, "the conversion is an entry"
+    editor.voice = (0, 1)
+    assert editor.voice == (0, 1)
+    editor.scope = ("staff", 0)
+    assert editor.scope == ("staff", 0)
+    editor.scope = "system"
+    editor.voice = (0, 0)
+    assert editor.select_all() and editor.staccato()
+    assert all(e.get("articulations") == ["stacc"] for e in take.events)
+    assert take.events[0]["sustain"] < 1.0, "heard short at once"
+    editor.writing = "ties"
+    assert editor.writing == "ties" and take.parts[0]["writing"]["polyphony"] == "ties"
+    copy = editor.to_notation(meter="3/4", copy=True)
+    assert copy is not take and len(copy.events) == 2
+    editor.to_midi()
+    assert editor.mode == "midi" and take.events[0]["value"] == [1, 4], "nothing converted back"
+    editor.close()

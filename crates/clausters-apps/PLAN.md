@@ -2295,8 +2295,10 @@ opened it.
 
 - ✅ **X14 - Gain envelope over an audio take.** The take holds the region's existing `Automation<Second>` alongside its parts. Project a curve body through the shared points intake and SetAutomation intent; edit and apply share the existing Editing undo order. View -> Gain envelope selects the body; Edit -> Apply gain envelope copies the take and chains existing `/buffer_gain` shaped segments, resetting the curve to unity in the same history entry. Both clients expose the same verbs through existing JSON doors. Acceptance: model/history, gesture/verb, client and server-render signal tests; paired example captures and docs. No protocol or ABI addition. Preview remains separate work. The user runs the full feature matrix.
 
-- ⬜ **X35 - The roll in notation mode.** *(Opened 2026-11-08 by the user,
-  while settling how a roll and a page relate.)* A roll edits a sequence in
+- ✅ **X35 - The roll in notation mode.** *(Opened 2026-11-08 by the user,
+  while settling how a roll and a page relate. Done 2026-11-09: the steps'
+  notes below; the conversion's dialog in the window is left in Found by use,
+  "The roll's conversion asks nothing in its window".)* A roll edits a sequence in
   one of two modes, which are the roll's and not the sequence's
   (`crates/clausters-document/PLAN.md`, "The notation mode: a sequence that is
   written, not only played"). In **MIDI** it is the roll it is today: the
@@ -2321,19 +2323,19 @@ opened it.
     `notes` element draws them on the ruler and the plane. This is the meter
     half of the Future direction "A roll may need its tempo and its barlines as
     parameters"; the tempo half stays there.
-  - ⬜ **X35.2 - The mode as state and as verbs.** The mode is the window's
+  - ✅ **X35.2 - The mode as state and as verbs.** *(Done 2026-11-09: `notes::Editing.mode`, the `notes` scope's `midi_mode` and `notation_mode`; entering notation over a sequence `written_as_notation` says is not converts it in one entry.)* The mode is the window's
     state, as snap is: the sequence holds none and switching writes nothing.
     `notation_mode` and `midi_mode` are verbs of the window
     (`clausters_editing::verbs`, `docs/verbs.md`); entering notation over a
     sequence written as no notation runs the conversion of `X35.7`. The rule
     goes in `docs/app-behavior.md`.
-  - ⬜ **X35.3 - A staff or a system.** The view holds what it shows (a part, a
+  - ✅ **X35.3 - A staff or a system.** *(Done 2026-11-09: `Editing.scope` and `Editing.voice`, `show_system`, `show_part`, `show_staff`, `staff_up`, `staff_down`, `voice_1` to `voice_4`; the projection's `voices`, `dimmed` and `labels`; the host tints a voice past a staff's first, veils one not edited and takes no note of it, and its hover names the staff and voice.)* The view holds what it shows (a part, a
     staff, or the whole system) and the voice being edited (a staff and a
     voice); both are the window's state, not the document's. The notes are
     coloured by voice (the projection gains each note's voice beside its id),
     a note of another voice is dimmed and not taken by a press, and the hover
     names the staff and the voice. The vertical axis stays the pitch.
-  - ⬜ **X35.4 - Editing by the rules of notation.** Behind the `notation`
+  - ✅ **X35.4 - Editing by the rules of notation.** *(Done 2026-11-09: `notes::notation`, behind the editing crate's new `notation` feature: onsets on the division or a tuplet, lengths on written values, the editing voice's staff and voice, pitches spelled by the key, a velocity written as the dynamic it is nearest, overlaps refused in a voice but as a chord and kept with ties, and the performance derived in the same `Restore`.)* Behind the `notation`
     feature: an onset lands on the reading's division and its tuplets, a
     length on a written value (plain, dotted, a tuplet's), and a value across a
     barline stays whole, one event, which the page writes with ties. An edit writes `at`,
@@ -2344,15 +2346,15 @@ opened it.
     otherwise; in a part written with ties they are kept. Nothing is refused
     for what the instrument cannot play: that is the model of instruments'
     (`crates/clausters-document/PLAN.md`, Future directions), not planned.
-  - ⬜ **X35.5 - The written length and the sounding one, together.** A note
+  - ✅ **X35.5 - The written length and the sounding one, together.** *(Done 2026-11-09: a note drawn as its `dur`, the projection's `held` drawn inside it.)* A note
     is drawn as long as it is written, with what it sounds inside it, so a
     staccato or a slurred note is seen as it is heard.
-  - ⬜ **X35.6 - Articulations on a selection.** Slur, tie, staccato and
+  - ✅ **X35.6 - Articulations on a selection.** *(Done 2026-11-09: `slur`, `slur_join`, `tie`, `staccato`, `pedal`, element commands of the roll over its selection, written into the event keys and the section's spanners and heard through `realize`; a tie makes two notes of one pitch that touch one event.)* Slur, tie, staccato and
     pedal over the selected notes are page edits, the score editor's own
     operations (`clausters_core::notation::edit`, `ops`), and are heard at
     once through `O37`'s derived performance. A slur is drawn joined or
     attacked as `X36` says.
-  - ⬜ **X35.7 - The conversion, one intent.** Going to MIDI converts
+  - ✅ **X35.7 - The conversion, one intent.** *(Done 2026-11-09: the document's `ToNotation` and the sequence's `notated` door, `clausters_document::events::conversion`; the window converts with the sequence's stored reading.)* Going to MIDI converts
     nothing: the events already hold what sounds (`O37`). Going to notation
     over a sequence written as no notation runs the module of
     `crates/clausters-notate/PLAN.md`, first as its trivial pipeline (today's
@@ -2365,14 +2367,14 @@ opened it.
     *(decided by the user, 2026-11-09)*. **The conversion changes the
     sequence in place, with undo, and "into a copy" is offered beside it**
     *(decided by the user, 2026-11-09)*.
-  - ⬜ **X35.8 - How a polyphony is written, from the roll and the page.** One
+  - ✅ **X35.8 - How a polyphony is written, from the roll and the page.** *(Done 2026-11-09: `write_voices` and `write_ties`, one `SetParts`.)* One
     verb sets the part's writing (`SetParts`); the roll recolours its voices
     and the page is written again, and nothing sounds different.
-  - ⬜ **X35.9 - Both clients.** The notes editor's mode, the part, staff and
+  - ✅ **X35.9 - Both clients.** *(Done 2026-11-09: `NotesEditor.mode`, `scope`, `voice`, `writing`, `to_notation`, `to_midi` and the five marks, `EventSequence.to_notation` and `notated`; `editors/edit_notes` and `edit-notes.html` gain `notation`.)* The notes editor's mode, the part, staff and
     voice it shows, and the conversions, in Python and on the web, with the
     sequence's `mode` and `parts`; the example of the notes editor in both
     languages gains a sequence in notation mode.
-  - ⬜ **X35.10 - Tests.** The intake's rules per mode in
+  - ✅ **X35.10 - Tests.** *(Done 2026-11-09: the editing crate's rules per mode and the two-staff piano read back as its page, the notes editor's verbs, both clients' editor and sequence tests, and every earlier roll test unchanged as the guard of MIDI mode.)* The intake's rules per mode in
     `clausters-editing`, the window's verbs, both clients' notes editor tests,
     and a guard that the roll in MIDI mode edits, draws and plays a sequence
     exactly as before.
@@ -2386,8 +2388,13 @@ opened it.
     sequence written as notation, edited in MIDI mode only where it is not
     contradicted, gives the same page back in notation mode.
 
-- ⬜ **X36 - The roll's editing options and operations: monophonic or
-  polyphonic, joins and slurs.** *(Opened 2026-11-08 by the user.)* They are
+- ✅ **X36 - The roll's editing options and operations: monophonic or
+  polyphonic, joins and slurs.** *(Opened 2026-11-08 by the user. Done
+  2026-11-09: the `monophonic` switch (M), `notes::monophonic`, `join` over a
+  line and `unjoin` (Shift+J) through the roll's selection, a join drawn as
+  a link, a slur joined where the roll edits monophonically and `slur_join`
+  to turn it; both clients' `monophonic` and `unjoin`, and a voice from a
+  pattern opened and closed unchanged.)* They are
   defined once for the roll and work in both modes, whose own rule is that the
   roll's logic agrees with the page and with the MIDI standards. Monophonic or
   polyphonic is an **option of editing**, like snap: it decides what a gesture
@@ -2396,11 +2403,11 @@ opened it.
   from a pattern keeps the event logic it was written with, because the roll
   edits keys and never asks where they came from. **Needs** `O36` (joins,
   the slur's `join`, the intents `Join` and `Unjoin`).
-  - ⬜ **X36.1 - Monophonic or polyphonic, as an option.** A toggle of the
+  - ✅ **X36.1 - Monophonic or polyphonic, as an option.** A toggle of the
     roll's window (`monophonic`, beside `snap` in `clausters_editing::verbs`,
     `docs/verbs.md`), the window's state like snap, polyphonic when off. It
     writes nothing and has no undo.
-  - ⬜ **X36.2 - The gesture wins over the note it covers, when editing
+  - ✅ **X36.2 - The gesture wins over the note it covers, when editing
     monophonically.** The option keeps one note at a time in the line edited,
     so a gesture never leaves two overlapping: a note lengthened over the next one shortens it from its
     start (its onset moves to the new end, its end stays), and removes it
@@ -2409,16 +2416,16 @@ opened it.
     way. Every note it changes or removes goes in the gesture's intent, so one
     undo gives them all back. A length that reaches the next note does not
     join them. Edited polyphonically, notes overlap and nothing is shortened.
-  - ⬜ **X36.3 - Join and unjoin.** The window's `join` verb (`J`) joins the
+  - ✅ **X36.3 - Join and unjoin.** The window's `join` verb (`J`) joins the
     selected notes of one line, each into the next, and a new `unjoin` verb
     takes the joins away (`O36`'s `Join` and `Unjoin`); where the line is
     written as notation its slurs follow. A join is drawn on the roll as a link between the two notes.
-  - ⬜ **X36.4 - The slur's join is a choice of whoever draws it.** In
+  - ✅ **X36.4 - The slur's join is a choice of whoever draws it.** In
     notation mode a slur is drawn joined (one line, no new attack) or attacked
     (each note attacked, phrased legato); the default follows the editing
     option (joined when monophonic, attacked when polyphonic) and the slur's
     `join` toggles it after.
-  - ⬜ **X36.5 - Both clients and tests.** The notes editor's monophonic
+  - ✅ **X36.5 - Both clients and tests.** The notes editor's monophonic
     option and its `join` and `unjoin`, in Python and on the web; the
     intake's rules per option in `clausters-editing`; a guard that editing
     polyphonically is exactly as before, and that a voice rendered from a
@@ -6630,3 +6637,13 @@ wrong.
   Save did not do what they do; it did not happen again. Walked by script, the
   window's version, the file and the Save as form all come out right, so what the
   hand did differently is open, and the symptom is what to write down next time.
+
+- ⬜ **The roll's conversion asks nothing in its window** (2026-11-09, closing
+  `X35`). Entering notation over a sequence written as no notation converts
+  it with the reading the sequence stores (`notation.reading`) and the
+  writing its parts say; a client gives a meter, a division and a writing to
+  `NotesEditor.to_notation`. `X35.7` asked for a dialog in the window that
+  gives them before the conversion, through `crate::forms`, which numbers its
+  widgets by the caller -- and the notes editor's window is numbered by its
+  one roll today. Until then a hand in the window converts with what the
+  sequence says, and sets another reading from a script.

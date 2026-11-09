@@ -81,8 +81,9 @@ font-atlas = ["dep:fontdue", "dep:rustybuzz", "dep:unicode-bidi"]
 # second time, with these compiled in, over shared memory, with the nightly
 # pinned in `wasm-apps-toolchain` (`clients/web/build.sh`). A page that is
 # cross-origin isolated loads that build. Natively the applications are
-# always in, and the feature changes nothing there.
-apps = ["dep:clausters-app-engine"]
+# always in. The notation layer comes with them, so a roll in a page has its
+# notation mode as a window's has it.
+apps = ["dep:clausters-app-engine", "clausters-apps/notation"]
 
 [dependencies]
 # `Instant` that works on both targets. std's panics outright in wasm ("time not

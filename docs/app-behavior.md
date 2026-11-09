@@ -638,6 +638,40 @@ code that keeps it lives.
 - **Content confirmation preserves current presentation.** Showing or hiding an envelope while an edit or history restore waits for I/O remains in effect after confirmation and redraw. Curve visibility is matched by identity against the current file, not restored from the prepared content snapshot.
 - **An applied curve is put away.** Apply renders the gain curve into the take and leaves it at unity, which shows nothing: once the render lands the curve is hidden and the hand is back on the take. An undo brings the points back and leaves the curve hidden, since which body is shown is the view's. What a confirmation tells the window is the whole pane as the editor holds it (its label, the body in hand, whether the curve is shown), never part of it.
 
+- **A roll edits monophonically or not, and the switch is the window's.**
+  Monophonic is an option of whoever edits, like snap: the sequence holds
+  none of it and flipping it records nothing. On, a gesture never leaves two
+  notes of one line (a staff and voice, else a channel) overlapping: a note
+  lengthened or moved over the next shortens it from its start (its onset
+  moves to where the edited note ends, its end stays), removes it where it
+  covers it whole, and shortens the note it starts inside to end there, all
+  in the gesture's one entry, so one undo gives every note back. A length
+  that reaches the next note does not join them. Off, notes overlap as the
+  hand leaves them, exactly as before the switch existed.
+- **A join on a roll is a link, and `J` over notes of one pitch that touch
+  still makes them one note.** Over any other selection of a line, `J` joins
+  each note into the next without a new attack and Shift+J takes the joins
+  away; each is one entry of the sequence's history, and a join is drawn as a
+  line from where a note ends to where the next starts.
+- **A roll's mode is the window's, and only entering notation writes.** MIDI
+  or notation is how the roll reads and edits the events; the sequence holds
+  no mode, and two rolls over one sequence may be in different modes.
+  Entering notation over a sequence written as no notation converts it in
+  place, one entry of the history; over one already written it writes
+  nothing, and going back to MIDI writes nothing. What the notation mode
+  shows (the system, a part, a staff) and the voice it edits are the
+  window's too.
+- **In notation mode a gesture writes what a page writes.** An onset lands on
+  the reading's grid and a length on a written value; a note drawn is in the
+  voice edited; a velocity moved is written as the dynamic it is nearest; and
+  what each note sounds is derived from the page in the same entry, so it is
+  heard at once. Where a part writes its polyphony in voices, two notes of one
+  voice overlap only as a chord, and a gesture that leaves any other overlap
+  is refused with why. A note of a voice other than the one edited is drawn
+  faint and is not taken by a press or a marquee.
+- **An edit in MIDI mode drops what it contradicts of the page**: a new length
+  drops the written value, a new velocity the dynamic, a new channel the staff
+  and voice, so the page reads the performance there and keeps the rest.
 - **A freed list leaves no pending picture request.** Closing or rebinding
   the last view of a file list retires its summaries and reads. A new window's
   clip waveforms can load immediately; requests to lists that no longer exist

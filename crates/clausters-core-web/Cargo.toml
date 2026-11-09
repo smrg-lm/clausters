@@ -21,7 +21,7 @@ clausters-core = { path = "../clausters-core", features = ["notation"] }
 clausters-document = { path = "../clausters-document", features = ["notation"] }
 # The projections, bound here as they are bound over the C ABI: a page draws a
 # structure with the props the crate hands it, never with props of its own.
-clausters-editing = { path = "../clausters-editing" }
+clausters-editing = { path = "../clausters-editing", features = ["notation"] }
 # The applications, bound here as they are bound over the C ABI: a page opens
 # the same editor window a script opens and a standalone host opens.
 clausters-apps = { path = "../clausters-apps", features = ["notation"] }

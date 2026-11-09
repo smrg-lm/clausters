@@ -600,3 +600,249 @@ fn a_marker_added_in_the_roll_is_refused_and_says_why() {
     assert!(told.contains("a marker is the message it sends"), "{told}");
     assert!(told.contains("\"osc\""), "the lane is put back: {told}");
 }
+
+/// **The monophonic switch is the window's**, as snap is: M flips it, nothing
+/// is recorded, the menu reads it; and a gesture then shortens what it
+/// covers in one entry.
+#[test]
+fn the_monophonic_switch_is_the_window_s_and_a_gesture_obeys_it() {
+    let sequence = shared();
+    let mut e = editor(sequence.clone());
+    let tree = e.window(40);
+    assert_eq!(tree["keys"], json!(["notes"]));
+    assert_eq!(tree["verbs"]["notes"]["monophonic"]["keys"], json!(["M"]));
+    let out = e.event(
+        &Event {
+            addr: "/gui_event".into(),
+            args: vec![json!(39), json!(1), json!(0), json!("monophonic")],
+        },
+        1,
+    );
+    assert!(out.record.is_none() && e.editing().monophonic);
+    assert_eq!(e.actions(false, false)["monophonic"].checked, Some(true));
+    let editing: Value =
+        serde_json::from_str(&call_json(&mut e, r#"{"verb": "editing"}"#)).unwrap();
+    assert_eq!(editing["monophonic"], json!(true));
+    assert_eq!(editing["mode"], json!("midi"));
+    // the first note lengthened over the second: the second starts where
+    // the first now ends
+    let values = vec![
+        json!(1),
+        json!(0.0),
+        json!(150.0),
+        json!(60.0),
+        json!(13.0),
+        json!(0.0),
+        json!(2),
+        json!(100.0),
+        json!(100.0),
+        json!(64.0),
+        json!(51.0),
+        json!(0.0),
+    ];
+    let out = e.event(&gesture("notes", values), 1);
+    assert!(out.record.is_some());
+    assert_eq!(sequence.lock().unwrap().get(2).unwrap().at.0, 1.5);
+}
+
+/// **`join` and `unjoin` from the roll are the sequence's edits**, recorded.
+#[test]
+fn a_join_from_the_roll_is_an_edit_of_the_sequence() {
+    let sequence = shared();
+    let mut e = editor(sequence.clone());
+    let out = e.event(&gesture("join", vec![json!(1), json!(2)]), 1);
+    assert_eq!(out.record.expect("an entry").label, "join");
+    assert_eq!(
+        sequence.lock().unwrap().get(2).unwrap().data.0["joins"],
+        json!(1)
+    );
+    let out = e.event(&gesture("unjoin", vec![json!(2)]), 2);
+    assert!(out.record.is_some());
+    assert!(
+        sequence
+            .lock()
+            .unwrap()
+            .get(2)
+            .unwrap()
+            .data
+            .0
+            .get("joins")
+            .is_none()
+    );
+}
+
+fn window_verb(verb: &str) -> Event {
+    Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(39), json!(1), json!(0), json!(verb)],
+    }
+}
+
+/// **Entering notation over a take converts it, in one entry**, and the roll
+/// then draws what is written: each note's voice, how long it sounds inside
+/// how long it is written. MIDI mode converts nothing back.
+#[cfg(feature = "notation")]
+#[test]
+fn entering_notation_writes_the_take_as_its_page_once() {
+    let sequence = Arc::new(Mutex::new(EventSequence::new(vec![
+        SeqEvent::new(
+            0.03,
+            json!({"midinote": 60, "dur": 0.97, "instrument": "bell"}),
+        ),
+        SeqEvent::new(
+            1.0,
+            json!({"midinote": 64, "dur": 1.0, "articulations": ["stacc"]}),
+        ),
+    ])));
+    let mut e = editor(sequence.clone());
+    let out = e.event(&window_verb("notation_mode"), 1);
+    assert_eq!(
+        out.record.expect("the conversion is an entry").label,
+        "write as notation"
+    );
+    assert_eq!(e.editing().mode, Mode::Notation);
+    {
+        let held = sequence.lock().unwrap();
+        assert!(held.written_as_notation());
+        assert_eq!(held.events[0].at.0, 0.0, "where it is written");
+        assert_eq!(held.events[0].data.0["instrument"], json!("bell"));
+    }
+    let props: Value =
+        serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
+    assert_eq!(props["voices"], json!([0, 0, 0, 0]));
+    let held: Vec<f64> = serde_json::from_value(props["held"].clone()).unwrap();
+    let notes: Vec<f64> = serde_json::from_value(props["notes"].clone()).unwrap();
+    assert!(
+        held[1] < notes[6],
+        "the staccato sounds shorter than it is written"
+    );
+    // entering again converts nothing more
+    assert!(e.event(&window_verb("notation_mode"), 2).record.is_none());
+    // and MIDI mode converts nothing back
+    assert!(e.event(&window_verb("midi_mode"), 2).record.is_none());
+    assert_eq!(e.editing().mode, Mode::Midi);
+    let props: Value =
+        serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
+    assert_eq!(props["voices"], json!([]), "the lists go with the mode");
+}
+
+/// **In notation mode a note lands on a written value, in the voice edited,
+/// and sounds as written**; a slur over a selection is a page's mark, heard
+/// at once; and the writing of the polyphony is an edit of the parts.
+#[cfg(feature = "notation")]
+#[test]
+fn a_note_in_notation_mode_is_written_and_its_sound_derived() {
+    let sequence = shared();
+    let mut e = editor(sequence.clone());
+    e.event(&window_verb("notation_mode"), 1);
+    e.event(&window_verb("voice_2"), 2);
+    assert_eq!(e.editing().voice, [0, 1]);
+    // a new note, a little off the grid and a little short of a half
+    let props: Value =
+        serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
+    let mut values = Vec::new();
+    let notes: Vec<f64> = serde_json::from_value(props["notes"].clone()).unwrap();
+    let ids: Vec<u64> = serde_json::from_value(props["note_ids"].clone()).unwrap();
+    for (i, id) in ids.iter().enumerate() {
+        values.push(json!(id));
+        values.extend(notes[i * 5..i * 5 + 5].iter().map(|v| json!(v)));
+    }
+    values.extend([
+        json!(0),
+        json!(203.0),
+        json!(190.0),
+        json!(67.0),
+        json!(64.0),
+        json!(0.0),
+    ]);
+    let out = e.event(&gesture("notes", values), 2);
+    assert!(out.record.is_some(), "{:?}", out.answer);
+    let held = sequence.lock().unwrap().clone();
+    let new = held
+        .events
+        .iter()
+        .find(|ev| ev.data.0["midinote"] == json!(67.0))
+        .unwrap();
+    assert_eq!(new.at.0, 2.0, "on the grid");
+    assert_eq!(new.data.0["value"], json!([1, 2]), "a half");
+    assert_eq!(
+        (new.data.0["staff"].clone(), new.data.0["voice"].clone()),
+        (json!(0), json!(1))
+    );
+    assert!(
+        new.data.0.get("sustain").is_some(),
+        "what it sounds is derived"
+    );
+    // a slur over the first two
+    let first: Vec<u64> = held.events.iter().take(2).map(|ev| ev.id).collect();
+    let out = e.event(&gesture("slur", vec![json!(first[0]), json!(first[1])]), 3);
+    assert_eq!(out.record.expect("an entry").label, "write a slur");
+    let spanners = sequence.lock().unwrap().notation.clone().unwrap()["spanners"].clone();
+    assert!(
+        spanners
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["kind"] == "slur")
+    );
+    // the writing
+    let out = e.event(&window_verb("write_ties"), 4);
+    assert_eq!(
+        out.record.expect("an entry").label,
+        "write the polyphony with ties"
+    );
+    assert_eq!(e.actions(true, false)["write_ties"].checked, Some(true));
+}
+
+/// **A mark of a page is the notation mode's**: in MIDI mode it is refused
+/// with why, and the menu reads it unavailable.
+#[test]
+fn a_page_s_mark_waits_for_the_notation_mode() {
+    let mut e = editor(shared());
+    let out = e.event(&gesture("slur", vec![json!(1), json!(2)]), 1);
+    assert!(out.record.is_none());
+    assert!(!e.actions(false, false)["slur"].enabled);
+}
+
+/// **An edit in MIDI mode drops what it contradicts of the page**: a new
+/// length drops the written value, so the page reads what is played.
+#[cfg(feature = "notation")]
+#[test]
+fn a_length_edited_in_midi_mode_drops_the_written_value() {
+    let sequence = shared();
+    let mut e = editor(sequence.clone());
+    e.event(&window_verb("notation_mode"), 1);
+    e.event(&window_verb("midi_mode"), 2);
+    let held = sequence.lock().unwrap().clone();
+    let (a, b) = (held.events[0].id, held.events[1].id);
+    let values = vec![
+        json!(a),
+        json!(0.0),
+        json!(50.0),
+        json!(60.0),
+        json!(64.0),
+        json!(0.0),
+        json!(b),
+        json!(100.0),
+        json!(100.0),
+        json!(64.0),
+        json!(64.0),
+        json!(0.0),
+    ];
+    e.event(&gesture("notes", values), 2);
+    let held = sequence.lock().unwrap().clone();
+    let first = held.get(a).unwrap();
+    assert!(first.data.0.get("value").is_none());
+    assert_eq!(first.data.0["dur"], json!(0.5));
+}
+
+/// **Without the notation layer the notation mode says why it is not there**,
+/// and the roll stays as it was.
+#[cfg(not(feature = "notation"))]
+#[test]
+fn without_the_notation_layer_the_notation_mode_says_why() {
+    let mut e = editor(shared());
+    let out = e.event(&window_verb("notation_mode"), 1);
+    assert!(out.record.is_none());
+    assert_eq!(e.editing().mode, Mode::Midi);
+}

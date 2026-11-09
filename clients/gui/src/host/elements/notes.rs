@@ -115,7 +115,82 @@ pub struct Notes {
     layer: Option<String>,
     /// The curve a gesture holds, and its points before it.
     holding: Option<(String, Value)>,
+    /// **Which note goes on into which** (`joins`, index pairs), drawn as a
+    /// link between the two -- and, where the owner sent it at all, the sign
+    /// that the roll's owner speaks the joins of a line, so `join` over notes
+    /// that are not one pitch touching asks the owner to join them.
+    joins: Option<Vec<(usize, usize)>>,
+    /// **What a roll in notation mode draws beside its notes**, index by
+    /// index: how long each sounds (`held`, in the axis' units -- a note is
+    /// drawn as long as it is written, with this inside it), its `voices`
+    /// (`staff voice` pairs, which colour it), whether it is `dimmed` (a voice
+    /// other than the one edited, drawn faint and not taken by a press) and
+    /// the dynamic it states (`labels`). Empty in MIDI mode.
+    written: Written,
 }
+
+/// The lists a roll in notation mode draws beside its notes.
+#[derive(Debug, Clone, Default)]
+struct Written {
+    held: Vec<f64>,
+    voices: Vec<usize>,
+    dimmed: Vec<bool>,
+    labels: Vec<String>,
+}
+
+impl Written {
+    fn read(props: &Map<String, Value>) -> Self {
+        let mut out = Self::default();
+        for key in ["held", "voices", "dimmed", "labels"] {
+            if let Some(v) = props.get(key) {
+                out.set(key, v);
+            }
+        }
+        out
+    }
+
+    /// One of the four lists, set; `false` for a key that is none of them.
+    fn set(&mut self, key: &str, v: &Value) -> bool {
+        let list = parse::as_array_props(key, v);
+        let list = list
+            .get(key)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let numbers = || list.iter().filter_map(Value::as_f64);
+        match key {
+            "held" => self.held = numbers().collect(),
+            "voices" => self.voices = numbers().map(|n| n.max(0.0) as usize).collect(),
+            "dimmed" => self.dimmed = numbers().map(|n| n != 0.0).collect(),
+            "labels" => {
+                self.labels = list
+                    .iter()
+                    .map(|l| l.as_str().unwrap_or_default().to_string())
+                    .collect();
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Whether note `i` is of a voice other than the one edited.
+    fn dimmed(&self, i: usize) -> bool {
+        self.dimmed.get(i).copied().unwrap_or(false)
+    }
+
+    /// The `[staff, voice]` of note `i`, in notation mode.
+    fn voice(&self, i: usize) -> Option<[usize; 2]> {
+        Some([*self.voices.get(2 * i)?, *self.voices.get(2 * i + 1)?])
+    }
+}
+
+/// **A voice's colour**, by its number in its staff: the first is the roll's
+/// own, the others tinted over it, so two voices on one staff read apart.
+const VOICE_TINTS: [[f32; 4]; 3] = [
+    [0.95, 0.55, 0.15, 0.55],
+    [0.25, 0.75, 0.35, 0.55],
+    [0.65, 0.40, 0.90, 0.55],
+];
 
 mod curves;
 
@@ -204,6 +279,8 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
         bodies: std::collections::HashMap::new(),
         layer: None,
         holding: None,
+        joins: props.get("joins").map(parse_joins),
+        written: Written::read(props),
     };
     roll.rebuild_bodies();
     // What arrived is in the domain's unit, and the rows are pitches: a roll in
@@ -429,6 +506,21 @@ impl Notes {
         Events::message(args)
     }
 
+    /// **`tag` with the ids of the selected notes**: what an owner's edit over
+    /// the selection is asked with.
+    fn selection_event(&self, tag: &str) -> Events {
+        let mut args = vec![OscType::String(tag.into())];
+        let mut ids: Vec<u64> = self
+            .selected
+            .iter()
+            .filter_map(|i| self.notes.get(*i))
+            .map(|n| n.id)
+            .collect();
+        ids.sort_unstable();
+        args.extend(ids.into_iter().map(|id| OscType::Double(id as f64)));
+        Events::message(args)
+    }
+
     /// The axis position a cursor x maps back to, through the grid.
     fn time_at(&self, grid: Rect, nav: &View, x: f64) -> f64 {
         pianoroll::time_at(grid, nav, 0.0, x as f32)
@@ -463,7 +555,9 @@ impl Notes {
             axis,
             note: (region == Region::Grid)
                 .then(|| pianoroll::note_hit(r.grid, &nav, 0.0, &self.notes, axis, fx, fy))
-                .flatten(),
+                .flatten()
+                // a note of a voice other than the one edited is not taken
+                .filter(|hit| !self.written.dimmed(hit.index)),
         }
     }
 
@@ -542,6 +636,12 @@ impl Element for Notes {
             }
             "osc" => {
                 self.osc = parse_osc(&parse::as_array_props("osc", v));
+                true
+            }
+            "held" | "voices" | "dimmed" | "labels" => self.written.set(key, v),
+            "joins" => {
+                let list = parse::as_array_props("joins", v);
+                self.joins = Some(parse_joins(list.get("joins").unwrap_or(&Value::Null)));
                 true
             }
             "selected" => {
@@ -629,6 +729,8 @@ impl Element for Notes {
             let compass = (self.min, self.max);
             pianoroll::draw_out_of_range(d, r.grid, &nav, 0.0, &self.notes, axis, compass);
         }
+        self.draw_written(d, r.grid, &nav, axis);
+        self.draw_joins(d, r.grid, &nav, axis);
         if self.osc_markers {
             pianoroll::draw_osc_markers(d, r.osc, &nav, 0.0, &self.osc);
         }
@@ -834,6 +936,7 @@ impl Element for Notes {
         let p0 = h.axis.pitch(from.1 as f32, h.grid);
         let p1 = h.axis.pitch(to.1 as f32, h.grid);
         self.selected = notes::notes_in_rect(&self.notes, t0, t1, p0, p1);
+        self.selected.retain(|i| !self.written.dimmed(*i));
         // Whole rows on the keys; on a line, the pitches the sweep crossed.
         let (a, b) = if h.axis.is_line() {
             (p0.min(p1), p0.max(p1))
@@ -1062,7 +1165,15 @@ impl Element for Notes {
             }
             Verb::Join if !self.selected.is_empty() => {
                 let before = self.notes.len();
+                let held = self.selected.clone();
                 self.selected = notes::join_notes(&mut self.notes, &self.selected);
+                // **Not one pitch touching: the joins of a line**, where the
+                // owner speaks them -- each selected note into the next,
+                // without a new attack, which is the owner's edit to make.
+                if self.notes.len() == before && self.joins.is_some() && self.ids {
+                    self.selected = held;
+                    return Some(self.selection_event("join"));
+                }
                 Some(if self.notes.len() == before {
                     // The roll's own four conditions, said as one sentence: a
                     // join is a **pitch's**, and what joins is what touches.
@@ -1118,6 +1229,24 @@ impl Element for Notes {
     /// A live note: painted at the running playhead (recording), or on the step
     /// cursor when the transport is stopped (step entry -- a chord shares one
     /// step, and the last key up advances it).
+    /// **The roll's own commands over its selection**, for an owner that
+    /// speaks the joins of a line: `unjoin`, and the marks a page writes over
+    /// notes (`slur`, `slur_join`, `tie`, `staccato`, `pedal`) -- the selected
+    /// notes' ids to the owner, whose edit it is.
+    fn command(&mut self, name: &str, _input: &mut KeyInput) -> Option<Events> {
+        let ours = matches!(
+            name,
+            "unjoin" | "slur" | "slur_join" | "tie" | "staccato" | "pedal"
+        );
+        if !ours || self.joins.is_none() || !self.ids || !self.editable {
+            return None;
+        }
+        if self.selected.is_empty() {
+            return Some(Events::refused(name, "nothing is selected"));
+        }
+        Some(self.selection_event(name))
+    }
+
     fn midi(&mut self, note: MidiNote, playhead: Option<f64>) -> Option<Events> {
         let key = (note.channel, note.pitch);
         if note.retune {
@@ -1315,6 +1444,84 @@ impl Notes {
 
     /// The axis' chrome over the grid: the shared selection band, the playhead,
     /// and the cursor readout naming the pitch and the time under the pointer.
+    /// **A roll in notation mode, over its notes**: each voice past a staff's
+    /// first tinted, what a note sounds drawn inside what it is written as (a
+    /// staccato is a short bar in a long note), the dynamic a note states
+    /// written in it where it fits, and a voice other than the one edited
+    /// veiled.
+    fn draw_written(&self, d: &mut Draw, grid: Rect, nav: &View, axis: pianoroll::Pitches) {
+        if self.written.voices.len() != 2 * self.notes.len() {
+            return;
+        }
+        let (mesh, m, theme) = d.parts();
+        for (i, n) in self.notes.iter().enumerate() {
+            let Some(r) = pianoroll::note_rect(grid, nav, 0.0, n, axis) else {
+                continue;
+            };
+            if let Some([_, voice]) = self.written.voice(i)
+                && voice > 0
+            {
+                mesh.rect(r, VOICE_TINTS[(voice - 1) % VOICE_TINTS.len()]);
+            }
+            if let Some(held) = self.written.held.get(i)
+                && *held < n.dur - 1e-9
+                && r.w > 2.0
+            {
+                let inner = Note {
+                    dur: held.max(0.0),
+                    ..*n
+                };
+                if let Some(h) = pianoroll::note_rect(grid, nav, 0.0, &inner, axis) {
+                    let band = (r.h * 0.3).max(1.0);
+                    mesh.rect(
+                        Rect::new(h.x, r.y + (r.h - band) * 0.5, h.w.max(1.0), band),
+                        theme.note_edge,
+                    );
+                }
+            }
+            if let Some(label) = self.written.labels.get(i).filter(|l| !l.is_empty()) {
+                let w = font::width(label, m.micro_scale);
+                if w + 2.0 * m.pad <= r.w && font::height(m.micro_scale) <= r.h {
+                    font::text(
+                        mesh,
+                        label,
+                        r.x + m.pad,
+                        r.y,
+                        m.micro_scale,
+                        theme.ruler_text,
+                    );
+                }
+            }
+            if self.written.dimmed(i) {
+                let veil = [theme.lane[0], theme.lane[1], theme.lane[2], 0.65];
+                mesh.rect(r, veil);
+            }
+        }
+    }
+
+    /// **The joins, a link each**: from where a note ends to where the note
+    /// it goes on into starts, across the gap or the overlap between them, so
+    /// a line played without a new attack reads as one.
+    fn draw_joins(&self, d: &mut Draw, grid: Rect, nav: &View, axis: pianoroll::Pitches) {
+        let Some(joins) = &self.joins else {
+            return;
+        };
+        let (mesh, m, theme) = d.parts();
+        let rect = |i: usize| {
+            self.notes
+                .get(i)
+                .and_then(|n| pianoroll::note_rect(grid, nav, 0.0, n, axis))
+        };
+        for &(from, into) in joins {
+            let (Some(a), Some(b)) = (rect(from), rect(into)) else {
+                continue;
+            };
+            let start = [a.x + a.w, a.y + a.h * 0.5];
+            let end = [b.x, b.y + b.h * 0.5];
+            mesh.line(start, end, m.trace_w.max(1.0), theme.cursor);
+        }
+    }
+
     /// **The page's barlines down the plane**, where the axis has the page's
     /// bars: a line at each bar's start, through the tempo map as the ruler
     /// places them, so the plane is barred where its ruler is.
@@ -1430,12 +1637,24 @@ impl Notes {
         let value = match (curve, note) {
             (Some(curve), _) => curve,
             // A note's channel is counted from 1, the way MIDI shows one.
-            (None, Some(n)) => format!(
-                "{}  vel {}  ch {}",
-                pitch_name(n.pitch),
-                n.velocity,
-                n.channel + 1
-            ),
+            (None, Some(n)) => {
+                let index = self.notes.iter().position(|m| std::ptr::eq(m, n));
+                match index.and_then(|i| self.written.voice(i)) {
+                    // in notation mode, where it is written
+                    Some([staff, voice]) => format!(
+                        "{}  staff {}  voice {}",
+                        pitch_name(n.pitch),
+                        staff + 1,
+                        voice + 1
+                    ),
+                    None => format!(
+                        "{}  vel {}  ch {}",
+                        pitch_name(n.pitch),
+                        n.velocity,
+                        n.channel + 1
+                    ),
+                }
+            }
             (None, None) => pitch_name(row),
         };
         let text = format!("{value}  {time}");
@@ -1671,6 +1890,24 @@ fn set_ids(notes: &mut [Note], ids: Option<&Value>) -> bool {
 /// Parse a `pianoroll`'s `osc` prop -- a flat `[time, label, time, label, ...]`
 /// list of OSC markers (the label a short address/tag, an empty string
 /// meaning none). A trailing partial pair is dropped.
+/// The `joins` prop: flat `from into` pairs of note indices.
+fn parse_joins(v: &Value) -> Vec<(usize, usize)> {
+    let flat: Vec<usize> = v
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_u64)
+                .map(|n| n as usize)
+                .collect()
+        })
+        .unwrap_or_default();
+    flat.as_chunks::<2>()
+        .0
+        .iter()
+        .map(|[a, b]| (*a, *b))
+        .collect()
+}
+
 fn parse_osc(props: &serde_json::Map<String, Value>) -> Vec<OscMarker> {
     let Some(Value::Array(items)) = props.get("osc") else {
         return Vec::new();
@@ -2708,6 +2945,83 @@ mod tests {
             press(&mut r, Verb::Join),
             Some("a join is one pitch's, and these notes do not touch on one".to_string())
         );
+    }
+
+    /// **A roll in notation mode does not take another voice's note**: the
+    /// lists it is drawn with ride beside the notes, a dimmed note is no hit
+    /// and no marquee takes it, and MIDI mode's empty lists take them away.
+    #[test]
+    fn a_note_of_another_voice_is_drawn_faint_and_not_taken() {
+        let m = Metrics::default();
+        let mut r = roll(
+            r#"{"notes":[0.0,100.0,60.0,90,0, 0.0,100.0,64.0,90,1],"note_ids":[1,2],
+                "voices":[0,0,0,1],"dimmed":[0,1],"held":[100.0,40.0],"labels":["p",""]}"#,
+        );
+        assert_eq!(r.written.voice(1), Some([0, 1]));
+        assert!(r.written.dimmed(1) && !r.written.dimmed(0));
+        let len = 400.0;
+        let input = input(&m, rect(), axis(len));
+        let (x, x0, x1) = (
+            x_of(&r, &m, 50.0, len),
+            x_of(&r, &m, 0.0, len),
+            x_of(&r, &m, 200.0, len),
+        );
+        let (low, high) = (y_of(&r, &m, 60.0), y_of(&r, &m, 64.0));
+        assert!(r.hit((x, low), &input).note.is_some(), "the voice edited");
+        assert!(r.hit((x, high), &input).note.is_none(), "another voice");
+        let swept = r.select_in((x0, 0.0), (x1, 399.0), &input);
+        assert!(swept.changed);
+        assert_eq!(r.selected, vec![0]);
+        assert!(r.set("voices", &serde_json::json!([])) && r.set("dimmed", &serde_json::json!([])));
+        assert!(
+            r.hit((x, high), &input).note.is_some(),
+            "in MIDI mode every note is taken"
+        );
+    }
+
+    /// **A roll whose owner speaks joins asks it to join a line**: `join`
+    /// over notes that are not one pitch touching names them to the owner
+    /// rather than refusing, `unjoin` names them too, and both refuse with no
+    /// selection. The joins are drawn from the `joins` prop.
+    #[test]
+    fn a_roll_that_speaks_joins_asks_its_owner_to_join_the_selection() {
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let mut r = roll(
+            r#"{"notes":[0.0,50.0,60.0,100.0,0.0, 100.0,50.0,62.0,100.0,0.0],
+                "note_ids":[7,9],"joins":[0,1]}"#,
+        );
+        assert_eq!(r.joins, Some(vec![(0, 1)]));
+        let mut input = KeyInput {
+            mods: Mods::default(),
+            clipboard: &mut clipboard,
+            cursor: Some(100.0),
+        };
+        assert!(
+            refusal(r.command("unjoin", &mut input)).is_some(),
+            "nothing selected"
+        );
+        r.selected = vec![1, 0];
+        let said = |events: Option<Events>| -> Vec<OscType> {
+            events.unwrap().into_messages().into_iter().next().unwrap()
+        };
+        assert_eq!(
+            said(r.verb(Verb::Join, &mut input)),
+            vec![
+                OscType::String("join".into()),
+                OscType::Double(7.0),
+                OscType::Double(9.0)
+            ]
+        );
+        assert_eq!(r.notes.len(), 2, "the roll joined nothing itself");
+        assert_eq!(
+            said(r.command("unjoin", &mut input))[0],
+            OscType::String("unjoin".into())
+        );
+        // a roll that was sent no joins keeps the refusal it had
+        let mut plain = roll(r#"{"notes":[0.0,50.0,60.0,100.0,0.0, 100.0,50.0,62.0,100.0,0.0]}"#);
+        plain.selected = vec![0, 1];
+        assert!(refusal(plain.verb(Verb::Join, &mut input)).is_some());
+        assert!(plain.command("unjoin", &mut input).is_none());
     }
 
     /// **The cut is the box arithmetic's, and the identity is the roll's.**

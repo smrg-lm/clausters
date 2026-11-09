@@ -281,8 +281,17 @@ class NotesEditor(Marking, SequenceHandler):
         return self.verb("split")
 
     def join(self) -> bool:
-        """Join a touching run of what is held -- the window's ``join`` (`verb`)."""
+        """Join what is selected -- the window's ``join`` (`verb`): notes of
+        one pitch that touch become one note, as a split's two halves do, and
+        any other selection of a line is joined, each note going on into the
+        next without a new attack (`clausters.seq.EventSequence.join`)."""
         return self.verb("join")
+
+    def unjoin(self) -> bool:
+        """Take the joins among what is selected away -- the window's
+        ``unjoin`` (`verb`, Shift+J), `clausters.seq.EventSequence.unjoin`
+        over the roll's selection."""
+        return self.verb("unjoin")
 
     def quantize(self) -> bool:
         """Quantize what is selected to the grid -- the window's ``quantize`` (`verb`)."""
@@ -314,6 +323,145 @@ class NotesEditor(Marking, SequenceHandler):
     @snap_to_grid.setter
     def snap_to_grid(self, on: bool) -> None:
         self._set(snap=bool(on))
+
+    @property
+    def monophonic(self) -> bool:
+        """**Whether the roll edits one note at a time in a line** -- off
+        until it is turned on. On, a gesture never leaves two notes of one
+        line (a staff and voice, else a channel) overlapping: a note lengthened
+        or moved over the next shortens it from its start, removes it where it
+        covers it whole, and shortens the one before it to its onset, all in
+        the gesture's one edit. A length that reaches the next note does not
+        join them. The window's own, like its grid: M in the window and the
+        Edit menu flip it, and setting it is no edit:
+        ``editor.monophonic = True``."""
+        return bool(self._call("editing").get("monophonic", False))
+
+    @monophonic.setter
+    def monophonic(self, on: bool) -> None:
+        self._set(monophonic=bool(on))
+
+    # ---- the roll's two modes ----
+
+    @property
+    def mode(self) -> str:
+        """**The roll's mode**: ``"midi"``, the events as MIDI says them --
+        notes on and off, velocities, channels, curves, joins -- or
+        ``"notation"``, a view of the page they are written as: each note on a
+        staff and a voice, as long as it is written with what it sounds
+        inside it, a velocity shown and edited as a dynamic, and what it
+        sounds derived from what is written. The window's, not the
+        sequence's: setting it is no edit, but for **entering notation over a
+        sequence written as no notation**, which converts it in place first
+        (`to_notation`, one entry of the history). Going to MIDI converts
+        nothing."""
+        return str(self._call("editing").get("mode", "midi"))
+
+    @mode.setter
+    def mode(self, mode: str) -> None:
+        if mode not in ("midi", "notation"):
+            raise ValueError(f"a roll's mode is 'midi' or 'notation', not {mode!r}")
+        self.verb(f"{mode}_mode")
+
+    def to_notation(self, *, meter: "str | None" = None, division: "int | None" = None,
+                    writing: "str | None" = None, copy: bool = False):
+        """**Write the sequence as notation and edit it so**: read with
+        ``meter`` (``"3/4"``) and ``division`` (``16`` for a sixteenth) over
+        its stored reading, each part written in ``"voices"`` or with
+        ``"ties"`` -- `clausters.seq.EventSequence.to_notation` -- and the roll
+        put in notation mode. Returns the sequence. With ``copy=True`` the
+        sequence is left as it is and a converted copy is returned
+        (`clausters.seq.EventSequence.notated`), which an editor of its own
+        opens."""
+        reading = {k: v for k, v in (("meter", meter), ("division", division)) if v is not None}
+        if copy:
+            return self.structure.notated(reading or None, writing)
+        self.structure.to_notation(reading or None, writing)
+        self.mode = "notation"
+        return self.structure
+
+    def to_midi(self) -> None:
+        """The roll in MIDI mode: nothing is converted, since the events
+        already hold what they sound."""
+        self.mode = "midi"
+
+    @property
+    def scope(self):
+        """**What the roll shows in notation mode**: ``"system"``, every
+        staff; ``("part", n)``, the staves of part ``n``; or ``("staff",
+        n)``. The window's, like its zoom: setting it is no edit. The View's
+        Notation menu has it as Show the system, the part or the staff."""
+        said = self._call("editing").get("scope") or {"show": "system"}
+        if said.get("show", "system") == "system":
+            return "system"
+        return (said["show"], int(said.get("index", 0)))
+
+    @scope.setter
+    def scope(self, scope) -> None:
+        if scope == "system":
+            said = {"show": "system"}
+        else:
+            kind, index = scope
+            if kind not in ("part", "staff"):
+                raise ValueError(f"a roll shows the 'system', a 'part' or a 'staff', not {kind!r}")
+            said = {"show": kind, "index": int(index)}
+        self._set(scope=said)
+
+    @property
+    def voice(self) -> tuple:
+        """**The voice the roll edits in notation mode**, ``(staff,
+        voice)`` counted from 0: what a note drawn is written in, and the one
+        voice a press takes -- the others are drawn faint. Ctrl+Alt+1 to 4
+        choose the voice, and the Notation menu the staff. No edit."""
+        staff, voice = self._call("editing").get("voice", [0, 0])
+        return (int(staff), int(voice))
+
+    @voice.setter
+    def voice(self, voice) -> None:
+        self._set(voice=[int(voice[0]), int(voice[1])])
+
+    @property
+    def writing(self) -> str:
+        """**How the sequence's parts write their polyphony**: ``"voices"``
+        or ``"ties"`` -- the same music, written two ways. Setting it writes
+        every part so, one edit of the parts that changes no event and nothing
+        heard."""
+        parts = self.structure.parts
+        return str(parts[0].get("writing", {}).get("polyphony", "voices")) if parts else "voices"
+
+    @writing.setter
+    def writing(self, writing: str) -> None:
+        if writing not in ("voices", "ties"):
+            raise ValueError(f"a writing is 'voices' or 'ties', not {writing!r}")
+        self.verb(f"write_{writing}")
+
+    def slur(self) -> bool:
+        """A slur over what is selected, from its first note to its last --
+        the window's ``slur`` (S), in notation mode; joined where the roll
+        edits monophonically, attacked otherwise. Again over the same notes,
+        it is taken away."""
+        return self.verb("slur")
+
+    def slur_join(self) -> bool:
+        """Turn the slurs on what is selected from joined to attacked, or
+        back -- the window's ``slur_join`` (Shift+S)."""
+        return self.verb("slur_join")
+
+    def tie(self) -> bool:
+        """Tie the selected notes of one pitch that touch into one -- the
+        window's ``tie`` (T): a tied note is one event, which the page writes
+        with ties."""
+        return self.verb("tie")
+
+    def staccato(self) -> bool:
+        """A staccato on each selected note, or none where all have one --
+        the window's ``staccato`` (.)."""
+        return self.verb("staccato")
+
+    def pedal(self) -> bool:
+        """The pedal down from the first selected note to the last -- the
+        window's ``pedal`` (P)."""
+        return self.verb("pedal")
 
     # ---- the roll's two selections ----
 

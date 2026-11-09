@@ -32,4 +32,5 @@ export type { PatternGenerator, PatternOptions } from "./pattern.ts";
 export * from "./patterns/index.ts";
 export { Entry, Timeline, itemData, itemFromData } from "./timeline.ts";
 export { EventSequence, SeqAutomation, SeqEvent, SeqEvents } from "./sequence.ts";
+export type { Writing } from "./sequence.ts";
 export type { PlayDestination, TimelineItem } from "./timeline.ts";

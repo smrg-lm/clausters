@@ -411,3 +411,17 @@ def test_a_sequence_is_separated_into_its_lines():
     assert bass.separate("channel")[0].midi == "mpe"
     with pytest.raises(ValueError, match="separated by"):
         seq.separate("track")
+
+
+def test_a_performance_is_written_as_its_page_in_place_or_in_a_copy():
+    take = EventSequence([(0.03, Event(midinote=60, dur=0.97, instrument="bell")),
+                          (1.01, Event(midinote=64, dur=0.5, instrument="bell"))])
+    copy = take.notated({"meter": "3/4", "division": 8}, "ties")
+    assert [e.get("value") for e in take.events] == [None, None], "the copy changes nothing"
+    assert [e.at for e in copy.events] == [0.0, 1.0]
+    assert copy.parts[0]["writing"]["polyphony"] == "ties"
+    take.to_notation({"meter": "3/4"})
+    assert take.events[0]["value"] == [1, 4] and take.events[0]["instrument"] == "bell"
+    assert take.reading["meter"] == "3/4"
+    with pytest.raises(ValueError, match="voices"):
+        take.to_notation(writing="chords")

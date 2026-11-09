@@ -5,6 +5,13 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 description = "The projections an editable structure owes its three endpoints: the props a host draws it with, the payloads an edit becomes, and the operations that make a server sound it. One implementation, bound by every client and linked by the host."
 
+[features]
+# **The roll's notation mode** (`notes::notation`): a gesture read by the
+# rules of notation and its performance derived from the page, which is the
+# document's notation layer. Off by default, as the document's is; the
+# applications turn it on wherever a score is edited.
+notation = ["clausters-core/notation", "clausters-document/notation"]
+
 [dependencies]
 # The drawing and numeric rules a projection is built out of -- a curve's axis,
 # the mixer's defs, the tempo map.

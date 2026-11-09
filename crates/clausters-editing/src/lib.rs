@@ -75,10 +75,11 @@ use crate::intake::Intake;
 /// - `state` -- the structure as its vocabulary holds it. The multitrack for
 ///   `multitrack`, the sequence for `events`; the other two read the gesture
 ///   alone.
-/// - `rate`, `domain`, `editable` -- for `events`, the roll's axis (the
-///   sequence's beats through its tempo map, `rate` units a second), its Y
-///   domain (MIDI notes when absent), and whether what it draws can be written
-///   onto at all ([`notes::intake`]).
+/// - `rate`, `domain`, `editable`, `editing` -- for `events`, the roll's
+///   axis (the sequence's beats through its tempo map, `rate` units a
+///   second), its Y domain (MIDI notes when absent), whether what it draws
+///   can be written onto at all, and how it edits ([`notes::Editing`],
+///   [`notes::intake`]).
 /// - `rate`, `defaultBpm`, `sources` -- a multitrack's axis and its buffer table, the
 ///   same three [`multitrack::props_json`] takes.
 ///
@@ -113,12 +114,17 @@ pub fn intake_json(domain: &str, tag: &str, request: &str) -> String {
             if request.get("editable").and_then(Value::as_bool) == Some(false) {
                 Intake::nothing()
             } else {
+                let editing: notes::Editing = request
+                    .get("editing")
+                    .and_then(|e| serde_json::from_value(e.clone()).ok())
+                    .unwrap_or_default();
                 notes::intake(
                     &sequence,
                     tag,
                     values,
                     &notes::Axis::of(&sequence, number("rate", 1.0)),
                     &domain,
+                    &editing,
                 )
             }
         }

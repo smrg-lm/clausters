@@ -72,6 +72,21 @@ rolls too, and no other. The rolls and the page are one history, so Ctrl+Z in
 any of the three takes back the last edit wherever it was made, and a note
 dragged in a roll is redrawn on the page.
 
+<b>notation opens the same notes as notation</b> -- a copy of the sequence
+written as its page (<code>toNotation({ copy: true })</code>), on a roll in its
+<b>notation mode</b>. There a note is on a staff and a voice, drawn as long as
+it is written with what it sounds inside it, and lands on the eighths and the
+written values a drag passes; the velocity is a dynamic, written in the note,
+and what each note sounds is derived from the page at once. <b>Select notes and
+press S</b> for a slur, <b>.</b> for a staccato -- the bar inside the note
+shortens -- <b>T</b> to tie two of one pitch that touch into one note,
+<b>P</b> for the pedal; <b>Ctrl+Alt+2</b> edits a second voice, its notes
+tinted, and the first is drawn faint and is not taken. <b>M</b> edits
+monophonically: a note lengthened over the next shortens it, and a slur drawn
+then joins its notes into one line. The Notation menu has the rest -- the staff
+or the system shown, the polyphony written in voices or with ties -- and MIDI
+mode converts nothing back.
+
 <b>The first roll is asked to paint what is played</b>
 (<code>midiIn: true</code>). The host opens its MIDI input and writes each key
 into the roll: while the transport is stopped a key lands on the step cursor, a
@@ -111,6 +126,8 @@ leaves every other note its own.</div>
       <div id="hertz"></div>
       <button id="page" disabled>page</button>
       <div id="score"></div>
+      <button id="notation" disabled>notation</button>
+      <div id="written"></div>
       <button id="play" disabled>play the notes</button>
       <button id="own" disabled>give the level to the notes</button>
       <button id="gather" disabled>gather it back</button>
@@ -226,6 +243,19 @@ leaves every other note its own.</div>
           gui.edit(notes, {
             view: "score", division: 8, title: "notes on a page", stage: $("score"),
           });
+
+        // The same notes, as notation. A roll has two modes, and they are the
+        // roll's: MIDI, the events as MIDI says them, and notation, a view of
+        // the page they are written as. A copy of the sequence is written as
+        // its page -- read on eighths in 4/4, every note moved to where it is
+        // written -- and a roll opens over it in notation mode. The copy is a
+        // sequence of its own, so the rolls above keep the performance.
+        $("notation").disabled = false;
+        $("notation").onclick = async () => {
+          const written = await editor.toNotation({ meter: "4/4", division: 8, copy: true });
+          const roll = await gui.edit(written, { title: "notes as notation", stage: $("written") });
+          await roll.setMode("notation");
+        };
 
         $("play").disabled = false;
         // The editor plays the sequence it edits, on its own transport -- the

@@ -480,3 +480,19 @@ test("a sequence is separated into its lines", () => {
     assert.equal(bass.separate("channel")[0].midi, "mpe");
     assert.throws(() => seq.separate("track" as "voice"), /separated by/);
 });
+
+test("a performance is written as its page in place or in a copy", () => {
+    const take = new EventSequence([
+        [0.03, new Event({ midinote: 60, dur: 0.97, instrument: "bell" })],
+        [1.01, new Event({ midinote: 64, dur: 0.5, instrument: "bell" })],
+    ]);
+    const copy = take.notated({ meter: "3/4", division: 8 }, "ties");
+    assert.deepEqual([...take.events].map((e) => e.get("value") ?? null), [null, null], "the copy changes nothing");
+    assert.deepEqual([...copy.events].map((e) => e.at), [0, 1]);
+    assert.equal((copy.parts[0]!.writing as { polyphony: string }).polyphony, "ties");
+    take.toNotation({ meter: "3/4" });
+    assert.deepEqual(take.events.item(0).get("value"), [1, 4]);
+    assert.equal(take.events.item(0).get("instrument"), "bell");
+    assert.equal((take.reading as { meter: string }).meter, "3/4");
+    assert.throws(() => take.toNotation(undefined, "chords" as "ties"), /voices/);
+});

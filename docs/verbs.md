@@ -92,6 +92,26 @@ The verdict is one of three:
 | `multitrack` | `view_spectrogram` | `MultitrackEditor.view_spectrogram` | `MultitrackEditor.viewSpectrogram` | **api** |
 | `multitrack` | `notes_roll` | `MultitrackEditor.notes_view` | `MultitrackEditor.notesView` | **api** — `notes_view = "roll"` |
 | `multitrack` | `notes_score` | `MultitrackEditor.notes_view` | `MultitrackEditor.notesView` | **api** — `notes_view = "score"` |
+| `notes` | `monophonic` | `NotesEditor.monophonic` | `NotesEditor.monophonic` | **api** — a switch: `monophonic = True`; on the web `setMonophonic(true)` |
+| `notes` | `unjoin` | `NotesEditor.unjoin` | `NotesEditor.unjoin` | **api** |
+| `notes` | `midi_mode` | `NotesEditor.mode` `NotesEditor.to_midi` | `NotesEditor.mode` `NotesEditor.toMidi` | **api** — `mode = "midi"`; on the web `setMode("midi")` |
+| `notes` | `notation_mode` | `NotesEditor.mode` `NotesEditor.to_notation` | `NotesEditor.mode` `NotesEditor.toNotation` | **api** — `mode = "notation"`, which converts a sequence written as no notation first; `to_notation(meter=, division=, writing=, copy=)` says how |
+| `notes` | `show_system` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = "system"`; on the web `setScope("system")` |
+| `notes` | `show_part` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = ("part", n)` |
+| `notes` | `show_staff` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = ("staff", n)` |
+| `notes` | `staff_up` | `NotesEditor.voice` | `NotesEditor.voice` | **api** — `voice = (staff - 1, v)` |
+| `notes` | `staff_down` | `NotesEditor.voice` | `NotesEditor.voice` | **api** — `voice = (staff + 1, v)` |
+| `notes` | `voice_1` | `NotesEditor.voice` | `NotesEditor.voice` | **api** — `voice = (staff, 0)` |
+| `notes` | `voice_2` | `NotesEditor.voice` | `NotesEditor.voice` | **api** — `voice = (staff, 1)` |
+| `notes` | `voice_3` | `NotesEditor.voice` | `NotesEditor.voice` | **api** — `voice = (staff, 2)` |
+| `notes` | `voice_4` | `NotesEditor.voice` | `NotesEditor.voice` | **api** — `voice = (staff, 3)` |
+| `notes` | `write_voices` | `NotesEditor.writing` | `NotesEditor.writing` | **api** — `writing = "voices"`; on the web `setWriting("voices")` |
+| `notes` | `write_ties` | `NotesEditor.writing` | `NotesEditor.writing` | **api** — `writing = "ties"` |
+| `notes` | `slur` | `NotesEditor.slur` | `NotesEditor.slur` | **api** |
+| `notes` | `slur_join` | `NotesEditor.slur_join` | `NotesEditor.slurJoin` | **api** |
+| `notes` | `tie` | `NotesEditor.tie` | `NotesEditor.tie` | **api** |
+| `notes` | `staccato` | `NotesEditor.staccato` | `NotesEditor.staccato` | **api** |
+| `notes` | `pedal` | `NotesEditor.pedal` | `NotesEditor.pedal` | **api** |
 | `score` | `new_file` | `ScoreEditor.new_file` | `ScoreEditor.newFile` | **api** — a new score in the window's place; the one let go is handed back to the handler |
 | `score` | `close_file` | `ScoreEditor.close_file` | `ScoreEditor.closeFile` | **api** — no document: the window goes on empty, and the score is handed back to the handler |
 | `score` | `entry` | `ScoreEditor.entry` | `ScoreEditor.entry` | **api** |

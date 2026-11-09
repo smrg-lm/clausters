@@ -107,7 +107,8 @@ fn scope(app: App) -> &'static [Verb] {
     match app {
         App::Multitrack => verbs::MULTITRACK,
         App::Audio => verbs::AUDIO,
-        App::Notes | App::Points => &[],
+        App::Notes => verbs::NOTES,
+        App::Points => &[],
     }
 }
 
@@ -168,12 +169,15 @@ pub fn menu(app: App, saves: bool) -> Value {
     }
     edit.extend([entry(app, "delete"), sep(), entry(app, "select_all")]);
     if app != App::Audio {
-        edit.extend([
-            sep(),
-            entry(app, "split"),
-            entry(app, "join"),
-            entry(app, "quantize"),
-        ]);
+        edit.extend([sep(), entry(app, "split"), entry(app, "join")]);
+        if app == App::Notes {
+            edit.push(entry(app, "unjoin"));
+        }
+        edit.push(entry(app, "quantize"));
+    }
+    if app == App::Notes {
+        // how a gesture edits a line: the window's, like the snap switch
+        edit.extend([sep(), entry(app, "monophonic")]);
     }
     if app == App::Multitrack {
         // the automatic crossfade over an overlap: the multitrack's default,
@@ -251,6 +255,34 @@ pub fn menu(app: App, saves: bool) -> Value {
     }
     if app == App::Multitrack {
         bar.push(sub("Track", vec![entry(app, "add_track")]));
+    }
+    if app == App::Notes {
+        // the roll's two modes, and what its notation mode shows, edits and
+        // writes
+        let mut notation = vec![
+            entry(app, "midi_mode"),
+            entry(app, "notation_mode"),
+            sep(),
+            entry(app, "show_system"),
+            entry(app, "show_part"),
+            entry(app, "show_staff"),
+            entry(app, "staff_up"),
+            entry(app, "staff_down"),
+            sep(),
+        ];
+        notation.extend(["voice_1", "voice_2", "voice_3", "voice_4"].map(|v| entry(app, v)));
+        notation.extend([
+            sep(),
+            entry(app, "write_voices"),
+            entry(app, "write_ties"),
+            sep(),
+            entry(app, "slur"),
+            entry(app, "slur_join"),
+            entry(app, "tie"),
+            entry(app, "staccato"),
+            entry(app, "pedal"),
+        ]);
+        bar.push(sub("Notation", notation));
     }
     bar.push(sub("Help", vec![entry(app, "keys")]));
     Value::Array(bar)

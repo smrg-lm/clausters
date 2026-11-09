@@ -259,9 +259,22 @@ export class NotesEditor extends SequenceHandler {
         return this.verb("split");
     }
 
-    /** Join a touching run of what is held: the window's `join`. */
+    /**
+     * Join what is selected: the window's `join`. Notes of one pitch that
+     * touch become one note, as a split's two halves do, and any other
+     * selection of a line is joined, each note going on into the next without
+     * a new attack ({@link EventSequence.join}).
+     */
     join(): boolean {
         return this.verb("join");
+    }
+
+    /**
+     * Take the joins among what is selected away -- the window's `unjoin`
+     * (Shift+J), {@link EventSequence.unjoin} over the roll's selection.
+     */
+    unjoin(): boolean {
+        return this.verb("unjoin");
     }
 
     /** Quantize what is selected to the grid: the window's `quantize`. */
@@ -296,6 +309,168 @@ export class NotesEditor extends SequenceHandler {
     /** Sets whether a hand snaps to the grid: no edit. */
     async setSnapToGrid(on: boolean): Promise<void> {
         await this.setting({ snap: Boolean(on) });
+    }
+
+    /**
+     * **Whether the roll edits one note at a time in a line** -- off until it
+     * is turned on. On, a gesture never leaves two notes of one line (a staff
+     * and voice, else a channel) overlapping: a note lengthened or moved over
+     * the next shortens it from its start, removes it where it covers it
+     * whole, and shortens the one before it to its onset, all in the gesture's
+     * one edit. A length that reaches the next note does not join them. The
+     * window's own, like its grid: M in the window and the Edit menu flip it.
+     */
+    async monophonic(): Promise<boolean> {
+        return Boolean((await this.coreCall("editing")).monophonic ?? false);
+    }
+
+    /** Sets whether the roll edits monophonically: no edit. */
+    async setMonophonic(on: boolean): Promise<void> {
+        await this.setting({ monophonic: Boolean(on) });
+    }
+
+    // ---- the roll's two modes ----
+
+    /**
+     * **The roll's mode**: `"midi"`, the events as MIDI says them -- notes on
+     * and off, velocities, channels, curves, joins -- or `"notation"`, a view
+     * of the page they are written as: each note on a staff and a voice, as
+     * long as it is written with what it sounds inside it, a velocity shown
+     * and edited as a dynamic, and what it sounds derived from what is
+     * written. The window's, not the sequence's.
+     */
+    async mode(): Promise<"midi" | "notation"> {
+        return ((await this.coreCall("editing")).mode ?? "midi") as "midi" | "notation";
+    }
+
+    /**
+     * Sets the roll's mode: no edit, but for **entering notation over a
+     * sequence written as no notation**, which converts it in place first
+     * ({@link NotesEditor.toNotation}, one entry of the history). Going to
+     * MIDI converts nothing.
+     */
+    async setMode(mode: "midi" | "notation"): Promise<void> {
+        if (mode !== "midi" && mode !== "notation") {
+            throw new Error(`a roll's mode is "midi" or "notation", not ${JSON.stringify(mode)}`);
+        }
+        this.verb(`${mode}_mode`);
+    }
+
+    /**
+     * **Write the sequence as notation and edit it so**: read with `meter`
+     * (`"3/4"`) and `division` (`16` for a sixteenth) over its stored reading,
+     * each part written in `"voices"` or with `"ties"` --
+     * {@link EventSequence.toNotation} -- and the roll put in notation mode.
+     * Answers the sequence. With `copy: true` the sequence is left as it is
+     * and a converted copy is answered ({@link EventSequence.notated}), which
+     * an editor of its own opens.
+     */
+    async toNotation(
+        options: { meter?: string; division?: number; writing?: "voices" | "ties"; copy?: boolean } = {},
+    ): Promise<EventSequence> {
+        const reading: Record<string, unknown> = {};
+        if (options.meter !== undefined) reading.meter = options.meter;
+        if (options.division !== undefined) reading.division = options.division;
+        const given = Object.keys(reading).length > 0 ? reading : undefined;
+        if (options.copy) return this.structure.notated(given, options.writing);
+        this.structure.toNotation(given, options.writing);
+        await this.setMode("notation");
+        return this.structure;
+    }
+
+    /** The roll in MIDI mode: nothing is converted, since the events already hold what they sound. */
+    async toMidi(): Promise<void> {
+        await this.setMode("midi");
+    }
+
+    /**
+     * **What the roll shows in notation mode**: `"system"`, every staff;
+     * `["part", n]`, the staves of part `n`; or `["staff", n]`. The window's,
+     * like its zoom: no edit.
+     */
+    async scope(): Promise<"system" | ["part" | "staff", number]> {
+        const said = ((await this.coreCall("editing")).scope ?? { show: "system" }) as { show: string; index?: number };
+        if (said.show === "system") return "system";
+        return [said.show as "part" | "staff", Number(said.index ?? 0)];
+    }
+
+    /** Sets what the roll shows in notation mode: no edit. */
+    async setScope(scope: "system" | ["part" | "staff", number]): Promise<void> {
+        if (scope === "system") {
+            await this.setting({ scope: { show: "system" } });
+            return;
+        }
+        const [kind, index] = scope;
+        if (kind !== "part" && kind !== "staff") {
+            throw new Error(`a roll shows the "system", a "part" or a "staff", not ${JSON.stringify(kind)}`);
+        }
+        await this.setting({ scope: { show: kind, index } });
+    }
+
+    /**
+     * **The voice the roll edits in notation mode**, `[staff, voice]` counted
+     * from 0: what a note drawn is written in, and the one voice a press takes
+     * -- the others are drawn faint. No edit.
+     */
+    async voice(): Promise<[number, number]> {
+        const [staff, voice] = ((await this.coreCall("editing")).voice ?? [0, 0]) as [number, number];
+        return [Number(staff), Number(voice)];
+    }
+
+    /** Sets the voice the roll edits: no edit. */
+    async setVoice(voice: [number, number]): Promise<void> {
+        await this.setting({ voice: [Math.trunc(voice[0]), Math.trunc(voice[1])] });
+    }
+
+    /**
+     * **How the sequence's parts write their polyphony**: `"voices"` or
+     * `"ties"` -- the same music, written two ways.
+     */
+    writing(): "voices" | "ties" {
+        const parts = this.structure.parts;
+        const writing = (parts[0]?.writing ?? {}) as { polyphony?: string };
+        return writing.polyphony === "ties" ? "ties" : "voices";
+    }
+
+    /** Writes every part so: one edit of the parts that changes no event and nothing heard. */
+    setWriting(writing: "voices" | "ties"): boolean {
+        if (writing !== "voices" && writing !== "ties") {
+            throw new Error(`a writing is "voices" or "ties", not ${JSON.stringify(writing)}`);
+        }
+        return this.verb(`write_${writing}`);
+    }
+
+    /**
+     * A slur over what is selected, from its first note to its last -- the
+     * window's `slur` (S), in notation mode; joined where the roll edits
+     * monophonically, attacked otherwise. Again over the same notes, it is
+     * taken away.
+     */
+    slur(): boolean {
+        return this.verb("slur");
+    }
+
+    /** Turn the slurs on what is selected from joined to attacked, or back -- `slur_join` (Shift+S). */
+    slurJoin(): boolean {
+        return this.verb("slur_join");
+    }
+
+    /**
+     * Tie the selected notes of one pitch that touch into one -- the window's
+     * `tie` (T): a tied note is one event, which the page writes with ties.
+     */
+    tie(): boolean {
+        return this.verb("tie");
+    }
+
+    /** A staccato on each selected note, or none where all have one -- `staccato` (.). */
+    staccato(): boolean {
+        return this.verb("staccato");
+    }
+
+    /** The pedal down from the first selected note to the last -- `pedal` (P). */
+    pedal(): boolean {
+        return this.verb("pedal");
     }
 
     // ---- the roll's two selections ----

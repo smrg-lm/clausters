@@ -23,7 +23,7 @@
 //! The rows are grouped by **scope**, the host key table's own unit: the
 //! window's verbs ([`WINDOW`]), which every window answers and the host lays
 //! down as its table's own rows, and one scope per application mode that adds
-//! verbs of its own ([`MULTITRACK`], [`SCORE`], [`NOTE_ENTRY`]), which the
+//! verbs of its own ([`MULTITRACK`], [`NOTES`], [`SCORE`], [`NOTE_ENTRY`]), which the
 //! window declares through its `verbs` prop ([`declaration`]). The same name
 //! in two scopes is two rows: `delete` over a score's selection says what it
 //! deletes there.
@@ -321,6 +321,50 @@ pub const MULTITRACK: &[Verb] = &[
     choice("notes", "notes_score", &[], "Notes as scores"),
 ];
 
+/// The notes window's scope: the roll's own verbs.
+pub const NOTES_SCOPE: &str = "notes";
+
+/// **What the notes editor adds**: how its roll edits, and the joins of a
+/// line. They are the roll's in both of its modes.
+pub const NOTES: &[Verb] = &[
+    // one note at a time in a line: a gesture shortens what it covers
+    toggle("monophonic", &["M"], "Edit monophonically, on or off"),
+    verb("unjoin", &["Shift+J"], "Unjoin"),
+    // the roll's two modes: the events as MIDI says them, or a view of the
+    // page they are written as
+    choice("mode", "midi_mode", &[], "MIDI mode"),
+    choice("mode", "notation_mode", &[], "Notation mode"),
+    // what the notation mode shows, and the voice it edits
+    choice("show", "show_system", &[], "Show the system"),
+    choice("show", "show_part", &[], "Show the part"),
+    choice("show", "show_staff", &[], "Show the staff"),
+    verb("staff_up", &[], "Edit the staff above"),
+    verb("staff_down", &[], "Edit the staff below"),
+    choice("voice", "voice_1", &["Ctrl+Alt+1"], "Voice 1"),
+    choice("voice", "voice_2", &["Ctrl+Alt+2"], "Voice 2"),
+    choice("voice", "voice_3", &["Ctrl+Alt+3"], "Voice 3"),
+    choice("voice", "voice_4", &["Ctrl+Alt+4"], "Voice 4"),
+    // how a part writes its polyphony: the same music, written two ways
+    choice(
+        "writing",
+        "write_voices",
+        &[],
+        "Write the polyphony in voices",
+    ),
+    choice(
+        "writing",
+        "write_ties",
+        &[],
+        "Write the polyphony with ties",
+    ),
+    // the marks a page writes over the selected notes
+    verb("slur", &["S"], "Slur"),
+    verb("slur_join", &["Shift+S"], "Slur joined or attacked"),
+    verb("tie", &["T"], "Tie"),
+    verb("staccato", &["."], "Staccato"),
+    verb("pedal", &["P"], "Pedal"),
+];
+
 /// The score window's own scope, in force whenever it is open.
 pub const SCORE_SCOPE: &str = "score";
 
@@ -451,7 +495,7 @@ mod tests {
     /// A scope names each verb once, with words of its own.
     #[test]
     fn every_scope_names_each_verb_once_with_its_words() {
-        for rows in [WINDOW, AUDIO, MULTITRACK, SCORE, NOTE_ENTRY] {
+        for rows in [WINDOW, AUDIO, MULTITRACK, NOTES, SCORE, NOTE_ENTRY] {
             for (i, v) in rows.iter().enumerate() {
                 assert!(!v.label.is_empty(), "{} has no words", v.name);
                 assert!(
@@ -468,7 +512,7 @@ mod tests {
     /// words never end in one.
     #[test]
     fn a_switch_or_a_choice_never_ends_in_an_ellipsis() {
-        for rows in [WINDOW, AUDIO, MULTITRACK, SCORE, NOTE_ENTRY] {
+        for rows in [WINDOW, AUDIO, MULTITRACK, NOTES, SCORE, NOTE_ENTRY] {
             for v in rows.iter().filter(|v| v.kind != ActionKind::Command) {
                 assert!(!v.label.ends_with("..."), "{} acts at once", v.name);
             }

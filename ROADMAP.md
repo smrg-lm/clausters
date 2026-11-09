@@ -275,16 +275,11 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **The roll's notation mode: `X35` and `X36`**
-  *(`crates/clausters-apps/PLAN.md`, `X35`, `X36`; the document's half is
-  `crates/clausters-document/PLAN.md`, "The notation mode: a sequence that is
-  written, not only played")*. The
-  roll edits a sequence in its MIDI mode (as played) or its notation mode
-  (staves, voices, written values, and a performance derived from them); the
-  modes are the roll's and the parts the document's, and everything the
-  document gives them is there. `X35` in its order, and `X36` (the roll's
-  monophonic option, joins and slurs, in both modes) beside it. Each carries
-  open choices, with a recommendation, for the user to confirm.
+- ⬜ **The roll's conversion asks in its window**
+  *(`crates/clausters-apps/PLAN.md`, Found by use, "The roll's conversion asks
+  nothing in its window")*. The roll's notation mode shipped; what is left of
+  it is the dialog a hand converts a performance through, with a meter, a
+  division and a writing, which a script already gives.
 
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,

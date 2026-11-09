@@ -1130,6 +1130,12 @@ fn every_verb(cc: NodeId, held: NodeId) -> Vec<EventsIntent> {
     all.push(EventsIntent::Realize {
         interpretation: None,
     });
+    #[cfg(feature = "notation")]
+    all.push(EventsIntent::ToNotation {
+        reading: Some(json!({"meter": "3/4"})),
+        writing: None,
+        interpretation: None,
+    });
     let slot = |intent: &EventsIntent| match intent {
         EventsIntent::SetEvents { .. } => 0,
         EventsIntent::Add { .. } => 1,
@@ -1151,9 +1157,11 @@ fn every_verb(cc: NodeId, held: NodeId) -> Vec<EventsIntent> {
         EventsIntent::Join { .. } => 17,
         EventsIntent::Unjoin { .. } => 18,
         EventsIntent::Realize { .. } => 19,
+        EventsIntent::ToNotation { .. } => 20,
     };
-    let mut seen = [false; 20];
+    let mut seen = [false; 21];
     seen[19] = cfg!(not(feature = "notation"));
+    seen[20] = cfg!(not(feature = "notation"));
     for intent in &all {
         assert!(!seen[slot(intent)], "{intent:?} is listed twice");
         seen[slot(intent)] = true;

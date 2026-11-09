@@ -358,6 +358,24 @@ pub enum EventsIntent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         interpretation: Option<Value>,
     },
+    /// **The sequence written as the page it reads as**: read with `reading`
+    /// over its own (`Transcription::over`), every part written as `writing`
+    /// where one is given, and the page rendered back into it -- its notes
+    /// where they are written, each with its staff, voice and written value,
+    /// and its `notation` section the page's. What plays each note, the tempo
+    /// map, the parts and the curves the page does not write are kept. Needs
+    /// the `notation` feature, and is refused without it. See `conversion`.
+    ToNotation {
+        /// The reading's options, over the sequence's own.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reading: Option<Value>,
+        /// How every part writes its polyphony.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        writing: Option<Writing>,
+        /// How a page is played, as its fields are written.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        interpretation: Option<Value>,
+    },
     /// The sequence as it was: what every edit's inverse is.
     Restore {
         /// All of it.
@@ -652,6 +670,58 @@ impl EventSequence {
         )
     }
 
+    /// **The sequence written as the page it reads as** ([`EventsIntent::ToNotation`]).
+    ///
+    /// # Errors
+    /// When an option does not read, or the page cannot be read or rendered;
+    /// always, in a build without the notation layer.
+    #[cfg(feature = "notation")]
+    pub fn notated(
+        &self,
+        reading: Option<Value>,
+        writing: Option<Writing>,
+        interpretation: Option<Value>,
+    ) -> Result<Self, String> {
+        let how = reading::Transcription::over(self, &reading.unwrap_or(Value::Null))?;
+        let interp = match interpretation.filter(|i| !i.is_null()) {
+            Some(given) => serde_json::from_value(given)
+                .map_err(|e| format!("the interpretation could not be read: {e}"))?,
+            None => clausters_core::notation::default_interpretation(),
+        };
+        conversion::to_notation(self, &how, writing, &interp)
+    }
+
+    /// Without the notation layer there is no page to write it as.
+    ///
+    /// # Errors
+    /// Always.
+    #[cfg(not(feature = "notation"))]
+    pub fn notated(
+        &self,
+        _reading: Option<Value>,
+        _writing: Option<Writing>,
+        _interpretation: Option<Value>,
+    ) -> Result<Self, String> {
+        Err("writing a sequence as notation needs the notation layer, \
+             which this build leaves out"
+            .into())
+    }
+
+    /// **Whether the sequence is written as notation**: its notes say their
+    /// written values (`value`) or its `notation` section says its grid. A
+    /// take, a MIDI file or a voice rendered from a pattern is not, until it
+    /// is converted ([`EventsIntent::ToNotation`]).
+    #[must_use]
+    pub fn written_as_notation(&self) -> bool {
+        self.notation
+            .as_ref()
+            .is_some_and(|section| section.get("grid").is_some())
+            || self
+                .events
+                .iter()
+                .any(|event| event.keys().get("value").is_some())
+    }
+
     /// The edit that puts the sequence back as it is now.
     pub fn state(&self) -> EventsIntent {
         EventsIntent::Restore {
@@ -826,6 +896,11 @@ impl EventSequence {
                 *self = after;
             }
             EventsIntent::Realize { interpretation } => *self = self.realized(interpretation)?,
+            EventsIntent::ToNotation {
+                reading,
+                writing,
+                interpretation,
+            } => *self = self.notated(reading, writing, interpretation)?,
             EventsIntent::AutomationToEvents { curve } => {
                 let mut after = self.clone();
                 after.automation_to_events(curve)?;
@@ -1091,6 +1166,7 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
         | EventsIntent::Join { .. }
         | EventsIntent::Unjoin { .. }
         | EventsIntent::Realize { .. }
+        | EventsIntent::ToNotation { .. }
         | EventsIntent::AutomationToEvents { .. }
         | EventsIntent::EventsToAutomation { .. } => return None,
     })
@@ -1129,6 +1205,10 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
 ///   them or they are derived.
 /// - `"automation"`: `{"automation": [curve]}`, the sequence's curves -- or,
 ///   with `id`, that event's, and `null` when it holds no such event.
+/// - `"notated"` with `reading`, `writing` and `interpretation`, each
+///   optional: `{"sequence"}`, the sequence written as the page it reads as
+///   ([`EventSequence::notated`]), changing nothing -- what a conversion
+///   into a copy takes -- or `{"error"}`.
 /// - `"apply"` with `intent`: the edit applied, answering `{"applied",
 ///   "current"}` -- `current` the payload that puts it back, read before the
 ///   edit -- plus `"id"` for an add, or `{"error"}` when refused. With
@@ -1283,6 +1363,21 @@ pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
             "parts": sequence.parts_read(),
             "stated": !sequence.parts.is_empty(),
         }),
+        Some("notated") => {
+            let field = |key: &str| request.get(key).cloned().filter(|v| !v.is_null());
+            let writing = match field("writing").map(serde_json::from_value::<Writing>) {
+                Some(Ok(writing)) => Some(writing),
+                Some(Err(why)) => {
+                    return json!({"error": format!("the writing could not be read: {why}")})
+                        .to_string();
+                }
+                None => None,
+            };
+            match sequence.notated(field("reading"), writing, field("interpretation")) {
+                Ok(notated) => json!({ "sequence": notated }),
+                Err(error) => json!({ "error": error }),
+            }
+        }
         Some("automation") => match request.get("id").and_then(Value::as_u64) {
             Some(id) => sequence
                 .get(id)
@@ -1345,6 +1440,8 @@ pub mod articulation;
 mod midi;
 pub mod part;
 pub use part::{Part, Polyphony, Writing, Zone};
+#[cfg(feature = "notation")]
+pub mod conversion;
 pub mod reading;
 #[cfg(feature = "notation")]
 pub mod realize;

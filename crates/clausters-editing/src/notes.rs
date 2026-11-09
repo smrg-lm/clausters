@@ -42,6 +42,14 @@
 //! - `midi`: the MIDI spec the sequence is written for, as a reader names it
 //!   (`MIDI 1.0`, `MPE`, `MIDI 2.0`), empty for a sequence for the server --
 //!   the roll shows it beside its ruler.
+//! - In the roll's **notation mode** ([`Mode::Notation`]) a note is drawn as
+//!   long as it is written (its `dur`), and four lists ride beside `notes`:
+//!   `held`, how long each sounds, in view units; `voices`, flat `staff
+//!   voice` pairs; `dimmed`, `1` for a note of a voice other than the one
+//!   edited, which a press does not take; and `labels`, the dynamic each
+//!   states, or `""`. Only the notes of the staves shown are drawn.
+//! - `joins`: which note goes on into which, flat `from into` pairs of
+//!   indices into `notes` -- a note's `joins`, drawn as a link between the two.
 //! - `bars`: where the sequence's bars fall, flat `beat length number`
 //!   triples in beats ([`bars`]), each a run of bars of one length from its
 //!   beat until the next run; empty where the sequence states no meter, and
@@ -225,6 +233,99 @@ pub struct Projection {
     pub midi: String,
     /// Where its bars fall: `beat length number` triples ([`bars`]).
     pub bars: Vec<f64>,
+    /// Which note goes on into which: `from into` pairs of indices into
+    /// `notes`.
+    pub joins: Vec<usize>,
+    /// In notation mode, how long each note sounds, in view units.
+    pub held: Vec<f64>,
+    /// In notation mode, each note's `staff voice`.
+    pub voices: Vec<usize>,
+    /// In notation mode, `1` for a note of a voice other than the one edited.
+    pub dimmed: Vec<u8>,
+    /// In notation mode, the dynamic each note states, or `""`.
+    pub labels: Vec<String>,
+}
+
+/// **How a roll edits**: the options of whoever edits, which are the
+/// window's and never the sequence's -- the sequence holds none of them, and
+/// changing one writes nothing.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Editing {
+    /// **One note at a time in a line**: a gesture never leaves two notes of
+    /// one line overlapping, and shortens or removes what it covers
+    /// ([`monophonic`]). Off, notes overlap as the hand leaves them.
+    pub monophonic: bool,
+    /// The roll's mode: MIDI, or notation.
+    pub mode: Mode,
+    /// What the roll shows in notation mode: the whole system, a part or a
+    /// staff.
+    pub scope: Scope,
+    /// The voice edited in notation mode, `[staff, voice]`: what a note
+    /// drawn is written in, and the one voice a press takes.
+    pub voice: [usize; 2],
+}
+
+/// **The roll's two modes** (`crates/clausters-document/PLAN.md`, "The
+/// notation mode"), the roll's and never the sequence's.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    /// The events as MIDI says them: notes on and off, velocities, channels,
+    /// curves, joins. Nothing of how a page writes them.
+    #[default]
+    Midi,
+    /// A view of the notation: staves and voices, written values, and a
+    /// performance derived from what is written.
+    Notation,
+}
+
+/// What a roll in notation mode shows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase", tag = "show", content = "index")]
+pub enum Scope {
+    /// Every staff: the system.
+    #[default]
+    System,
+    /// The staves of one part, by its index.
+    Part(usize),
+    /// One staff, by its index.
+    Staff(usize),
+}
+
+impl Editing {
+    /// **Whether the roll draws and takes a note with these keys**: every
+    /// note in MIDI mode; in notation mode, one on a staff the scope shows.
+    #[must_use]
+    pub fn shows(&self, sequence: &EventSequence, keys: &Map<String, Value>) -> bool {
+        if self.mode == Mode::Midi {
+            return true;
+        }
+        let staff = staff_voice(keys)[0];
+        match self.scope {
+            Scope::System => true,
+            Scope::Staff(shown) => staff == shown,
+            Scope::Part(part) => {
+                let parts = sequence.parts_read();
+                let first: usize = parts.iter().take(part).map(|p| p.staves.max(1)).sum();
+                let staves = parts.get(part).map_or(0, |p| p.staves.max(1));
+                (first..first + staves).contains(&staff)
+            }
+        }
+    }
+}
+
+/// The `[staff, voice]` a note says it is written in, `[0, 0]` where it says
+/// neither.
+#[must_use]
+pub fn staff_voice(keys: &Map<String, Value>) -> [usize; 2] {
+    let read = |key: &str| {
+        keys.get(key)
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0)
+            .max(0.0) as usize
+    };
+    [read("staff"), read("voice")]
 }
 
 /// How tall a sequence curve's row under the plane is drawn.
@@ -285,7 +386,13 @@ fn point_values<T: TimeAxis>(
 
 /// **What a roll draws of a sequence**: every event the domain places, as a
 /// note, and every raw message as a marker.
-pub fn project(sequence: &EventSequence, domain: &YDomain, axis: &Axis) -> Projection {
+pub fn project(
+    sequence: &EventSequence,
+    domain: &YDomain,
+    axis: &Axis,
+    editing: &Editing,
+) -> Projection {
+    let notation = editing.mode == Mode::Notation;
     let mut out = Projection {
         midi: sequence
             .midi
@@ -304,9 +411,36 @@ pub fn project(sequence: &EventSequence, domain: &YDomain, axis: &Axis) -> Proje
         let Some(y) = domain.value(&keys) else {
             continue;
         };
+        if !editing.shows(sequence, &keys) {
+            continue;
+        }
         let level = render::level_of(&keys);
         let start = axis.units(event.at.0);
-        let end = axis.units(event.at.0 + render::sustain_of(&keys).max(0.0));
+        let sounding = render::sustain_of(&keys).max(0.0);
+        // in notation mode a note is as long as it is written, with what it
+        // sounds inside it
+        let length = if notation {
+            keys.get("dur")
+                .and_then(Value::as_f64)
+                .unwrap_or(sounding)
+                .max(0.0)
+        } else {
+            sounding
+        };
+        let end = axis.units(event.at.0 + length);
+        if notation {
+            out.held
+                .push(axis.units(event.at.0 + sounding.min(length)) - start);
+            let [staff, voice] = staff_voice(&keys);
+            out.voices.extend([staff, voice]);
+            out.dimmed.push(u8::from([staff, voice] != editing.voice));
+            out.labels.push(
+                keys.get("dynamic")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+            );
+        }
         out.notes.extend([
             start,
             end - start,
@@ -331,6 +465,22 @@ pub fn project(sequence: &EventSequence, domain: &YDomain, axis: &Axis) -> Proje
                 let at = axis.units(event.at.0 + point.at.0) - from;
                 out.points.extend(point_values(&name, at, point));
             }
+        }
+    }
+    // what goes on into what, by where each is drawn
+    let at: std::collections::BTreeMap<u64, usize> = out
+        .note_ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (*id, i))
+        .collect();
+    for (into, id) in out.note_ids.iter().enumerate() {
+        let from = sequence
+            .get(*id)
+            .and_then(|event| event.keys().get("joins").and_then(Value::as_u64))
+            .and_then(|from| at.get(&from));
+        if let Some(from) = from {
+            out.joins.extend([*from, into]);
         }
     }
     for curve in &sequence.automation {
@@ -462,20 +612,50 @@ fn same(a: f64, b: f64) -> bool {
 /// `setevents` naming every event by id, under the gesture's label.
 ///
 /// `tag` is the strip the hand touched (`notes` or `osc`), `values` its report,
-/// `axis` where the roll drew the beats. The strip the hand did not touch is
-/// carried through untouched.
+/// `axis` where the roll drew the beats, `editing` how the roll edits. The
+/// strip the hand did not touch is carried through untouched.
+///
+/// `join` and `unjoin` with the ids of the selected notes are the roll's own
+/// two verbs over a line (`Join`, `Unjoin`).
 pub fn intake(
     sequence: &EventSequence,
     tag: &str,
     values: &[Value],
     axis: &Axis,
     domain: &YDomain,
+    editing: &Editing,
 ) -> Intake {
     if tag == "points" {
         return curves(sequence, values, axis);
     }
+    if matches!(tag, "join" | "unjoin") {
+        let ids: Vec<u64> = values.iter().map(|v| number(v).max(0.0) as u64).collect();
+        if ids.is_empty() {
+            return Intake::refused("nothing is selected");
+        }
+        let (intent, label) = if tag == "join" {
+            (EventsIntent::Join { ids }, "join")
+        } else {
+            (EventsIntent::Unjoin { ids }, "unjoin")
+        };
+        return Intake::edit(serde_json::to_value(&intent).unwrap_or(Value::Null), label);
+    }
+    if editing.mode == Mode::Notation {
+        return notation_intake(sequence, tag, values, axis, domain, editing);
+    }
+    if notation::ARTICULATIONS.contains(&tag) {
+        return Intake::refused(
+            "an articulation is written on a page: switch the roll to notation to write one",
+        );
+    }
     let events = match tag {
-        "notes" => notes(sequence, values, axis, domain),
+        "notes" => {
+            let mut events = notes(sequence, values, axis, domain, editing);
+            if editing.monophonic {
+                monophonic(sequence, &mut events, false);
+            }
+            events
+        }
         "osc" => match markers(sequence, values, axis) {
             Some(events) => events,
             None => {
@@ -496,13 +676,51 @@ pub fn intake(
     Intake::edit(serde_json::to_value(&intent).unwrap_or(Value::Null), label)
 }
 
+/// **A gesture of the roll in notation mode**, read by the rules of notation
+/// (`notation`), or refused where the build has no notation layer.
+fn notation_intake(
+    sequence: &EventSequence,
+    tag: &str,
+    values: &[Value],
+    axis: &Axis,
+    domain: &YDomain,
+    editing: &Editing,
+) -> Intake {
+    #[cfg(feature = "notation")]
+    {
+        notation::intake(sequence, tag, values, axis, domain, editing)
+    }
+    #[cfg(not(feature = "notation"))]
+    {
+        let _ = (sequence, tag, values, axis, domain, editing);
+        Intake::refused(
+            "the roll's notation mode needs the notation layer, which this build leaves out",
+        )
+    }
+}
+
 /// The sequence after a `notes` gesture: each reported note written onto the
 /// event its id names -- only the keys the roll changed, each with its family's
 /// coherence -- a note with no id as a new event, a note that is no longer
-/// reported removed, and everything that is not a note of this domain kept.
-fn notes(sequence: &EventSequence, values: &[Value], axis: &Axis, domain: &YDomain) -> Vec<Event> {
-    let drawn =
-        |event: &Event| domain.value(&event.keys()).is_some() && label_of(&event.data.0).is_none();
+/// reported removed, and everything that is not a note the roll draws kept.
+///
+/// **An edit in MIDI mode drops the notation keys it contradicts**: a new
+/// length drops the written `value`, a new velocity the `dynamic`, a new
+/// channel the `staff` and `voice`, so the page reads the performance there
+/// and keeps the rest as written.
+fn notes(
+    sequence: &EventSequence,
+    values: &[Value],
+    axis: &Axis,
+    domain: &YDomain,
+    editing: &Editing,
+) -> Vec<Event> {
+    let drawn = |event: &Event| {
+        let keys = event.keys();
+        domain.value(&keys).is_some()
+            && label_of(&event.data.0).is_none()
+            && editing.shows(sequence, &keys)
+    };
     let mut out: Vec<Event> = sequence
         .events
         .iter()
@@ -529,12 +747,18 @@ fn notes(sequence: &EventSequence, values: &[Value], axis: &Axis, domain: &YDoma
                 }
                 if !same(render::sustain_of(&keys), length) {
                     render::set_key(&mut keys, "sustain", json!(length));
+                    // the written value says another length: the page reads
+                    // the one played
+                    if keys.remove("value").is_some() {
+                        keys.insert("dur".into(), json!(length));
+                    }
                 }
                 if render::level_of(&keys).velocity() != velocity {
                     // The velocity joins the keys the event holds, so the
                     // level family keeps the amplitude in step with it.
                     keys.entry("velocity").or_insert(json!(velocity));
                     render::set_key(&mut keys, "velocity", json!(velocity));
+                    keys.remove("dynamic");
                 }
                 let held_channel = keys.get("channel").and_then(Value::as_f64).unwrap_or(0.0);
                 if held_channel != channel {
@@ -543,6 +767,8 @@ fn notes(sequence: &EventSequence, values: &[Value], axis: &Axis, domain: &YDoma
                     } else {
                         keys.insert("channel".into(), json!(channel));
                     }
+                    keys.remove("staff");
+                    keys.remove("voice");
                 }
                 Event {
                     at: Beat(at),
@@ -566,6 +792,94 @@ fn notes(sequence: &EventSequence, values: &[Value], axis: &Axis, domain: &YDoma
         out.push(event);
     }
     out
+}
+
+/// **One note at a time in each line**, after a gesture: every note the
+/// gesture changed or made wins over the notes of its line it covers. One it
+/// starts inside is shortened to end where it starts; one that starts inside
+/// it is shortened from its start, its onset moved to where it ends and its
+/// end kept, and removed where it is covered whole. A note's line is its staff
+/// and voice, else its channel (`clausters_document::events::articulation`).
+/// A length that reaches the next note joins nothing: it is a length.
+///
+/// `written` measures and shortens a note by its written length (`dur`, with
+/// its `value`), as the roll in notation mode draws it; else by how long it
+/// sounds (`sustain`).
+pub fn monophonic(sequence: &EventSequence, events: &mut Vec<Event>, written: bool) {
+    use clausters_document::events::articulation::line_of;
+
+    let length = |event: &Event| {
+        let keys = event.keys();
+        let sounding = render::sustain_of(&keys).max(0.0);
+        if written {
+            keys.get("dur")
+                .and_then(Value::as_f64)
+                .unwrap_or(sounding)
+                .max(0.0)
+        } else {
+            sounding
+        }
+    };
+    let beat_unit = clausters_document::events::reading::Transcription::of(sequence).beat_unit;
+    let shorten = |keys: &mut Map<String, Value>, to: f64| {
+        if written {
+            keys.insert("dur".into(), json!(to));
+            if let Some(value) = notation::value_of(to, beat_unit) {
+                keys.insert("value".into(), value);
+            }
+        } else {
+            render::set_key(keys, "sustain", json!(to));
+            keys.remove("value");
+        }
+    };
+    let edited: Vec<bool> = events
+        .iter()
+        .map(
+            |event| match sequence.get(event.id).filter(|_| event.id != 0) {
+                Some(was) => was.at != event.at || was.data != event.data,
+                None => true,
+            },
+        )
+        .collect();
+    let lines: Vec<_> = events.iter().map(|event| line_of(&event.keys())).collect();
+    let notes: Vec<bool> = events
+        .iter()
+        .map(|event| Type::of(&event.keys()) == Type::Note)
+        .collect();
+    let mut gone = vec![false; events.len()];
+    for e in (0..events.len()).filter(|e| edited[*e] && notes[*e]) {
+        let (s, end) = (events[e].at.0, events[e].at.0 + length(&events[e]));
+        for o in 0..events.len() {
+            if o == e || edited[o] || gone[o] || !notes[o] || lines[o] != lines[e] {
+                continue;
+            }
+            let (os, oe) = (events[o].at.0, events[o].at.0 + length(&events[o]));
+            let mut keys = events[o].keys();
+            if os < s && oe > s {
+                // it was sounding where the edited one starts: it ends there
+                shorten(&mut keys, s - os);
+            } else if os >= s && os < end {
+                if oe <= end {
+                    gone[o] = true;
+                    continue;
+                }
+                // it starts inside the edited one: it starts where that ends
+                if !written && let Some(dur) = keys.get("dur").and_then(Value::as_f64) {
+                    keys.insert("dur".into(), json!((dur - (end - os)).max(oe - end)));
+                }
+                shorten(&mut keys, oe - end);
+                events[o].at = Beat(end);
+            } else {
+                continue;
+            }
+            events[o].data = Opaque(Value::Object(keys));
+        }
+    }
+    let mut k = 0;
+    events.retain(|_| {
+        k += 1;
+        !gone[k - 1]
+    });
 }
 
 /// **A `points` gesture**: each curve the report names, with its points as
@@ -672,6 +986,8 @@ fn markers(sequence: &EventSequence, values: &[Value], axis: &Axis) -> Option<Ve
     }
     Some(out)
 }
+
+pub mod notation;
 
 #[cfg(test)]
 mod tests;
