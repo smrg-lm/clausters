@@ -717,9 +717,9 @@ def set_barline(sheet: dict, measure: int, kind: str) -> dict:
     ``"single"``, which takes the overrides back rather than storing one
     saying "ordinary".
 
-    A repeat barline is **notation**: it is drawn, and it is not what makes a
-    passage play twice. Repetition is written out (`repeat`), which is why the
-    interpreter has nothing to expand.
+    A repeat barline is **played** as it is drawn: the interpreter goes back
+    to where the repeat opens, once, and takes the endings by their pass.
+    Writing the passage out twice is `repeat`.
     """
     return apply(sheet, {"op": "set_barline", "measure": measure, "kind": kind})
 

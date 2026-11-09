@@ -938,9 +938,9 @@ export function setPage(sheet: Sheet, page: Record<string, unknown> | null): She
  * left barline, so a repeat can open the score); or `"single"`, which takes
  * the overrides back rather than storing one saying "ordinary".
  *
- * A repeat barline is **notation**: it is drawn, and it is not what makes a
- * passage play twice. Repetition is written out ({@link repeat}), which is why
- * the interpreter has nothing to expand.
+ * A repeat barline is **played** as it is drawn: the interpreter goes back to
+ * where the repeat opens, once, and takes the endings by their pass. Writing
+ * the passage out twice is {@link repeat}.
  */
 export function setBarline(sheet: Sheet, measure: number, kind: string): Sheet {
     return apply(sheet, { op: "set_barline", measure, kind });
