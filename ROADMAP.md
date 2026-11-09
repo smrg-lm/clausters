@@ -127,6 +127,14 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
+- ⬜ **A control's size does not follow what it says, in a row or across one**
+  *(`clients/gui/PLAN.md`, Found by use)*. Decided 2026-11-09: a floor per
+  element that every container propagates and no declared size goes under,
+  the root's floor as the window's minimum, a maximum and an alignment as
+  new capacity, an ellipsis for text and a minimum width for controls with
+  geometry, and a default per standard type. What is left is the work,
+  checked on `panels/palette`.
+
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and
@@ -255,13 +263,7 @@ its plan; the plan is where its acceptance is read.
   UMP-over-our-own-transport direction has no date. It is listed so that
   "unscheduled" reads as a decision rather than an oversight.
 
-- ⬜ **A control's size does not follow what it says, in a row or across one**
-  *(`clients/gui/PLAN.md`, Found by use)*. The principles are decided: a
-  control keeps its content's size unless asked to change it, and a
-  container's `h` never goes under its children's floors. **The decision
-  left:** the default rule of each standard element type on each axis,
-  chosen by looking at `panels/palette`, which shows every standard element
-  at its defaults in a row, a tall row, a short row, a grid and a column.
+
 
 - ⬜ **A def a client sent does not sound in an application's engine**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*: found moving the roll to

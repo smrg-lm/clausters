@@ -9302,6 +9302,64 @@ module of its own.
   declares for each of its widgets. The rules are chosen by looking at
   every standard element at its defaults in every layout (`row`, `col`,
   `grid`, a tall cell, a short one), which no example shows today.
+  `panels/palette` shows them now (2026-11-09).
+  **The rules, decided with the user on 2026-11-09** after looking at the
+  palette and at what a browser does with unstyled form controls (measured
+  in headless Chrome: a flex item keeps its `min-content` width along the
+  main axis, so a range input does not go under 129 px and overflows a
+  narrower box; every control stretches across the cross axis and fills a
+  grid cell; and an explicit `height` wins over the content, so a row of
+  8 px squeezes its controls to 8 px and their text spills out -- the one
+  thing this host must not do, which a toolkit whose layouts honour each
+  widget's minimum does not do either). Three layers are kept apart: the
+  **defaults** must be correct (nothing overflows, everything reads), not
+  pleasing; the **capacity** is the props an author has to change them;
+  the **design** is what an author chooses with those props.
+  - **A floor is a size every container keeps.** Each element declares the
+    smallest size it still reads at (its `floor`, which a knob already has:
+    it gives up its label strip and keeps its disc and read-out). A
+    container's floor is derived from its children: across its axis the
+    largest child floor, along it the sum of the child floors and the gaps,
+    plus its margin on both sides and its title strip. No container places a
+    child under its floor, and a declared `h` or `w` resolves to the larger
+    of itself and the floor: a row declared 28 high is as high as its
+    tallest child's floor. A declared size is the outer size (title strip
+    and margin included), so a row of 40 inside a row no longer leaves a
+    cell of 16.
+  - **The root's floor is the window's minimum size**, natively and in a
+    page, which also ends a window made one pixel wide.
+  - **Filling a cell is a right default.** A button that takes all the
+    room its row or its grid cell gives it is the step sequencer's grid of
+    push buttons; that it looks too large in a panel is a design question,
+    answered by the capacity below and never by a default that hugs.
+  - **The capacity grows by a maximum and an alignment.** `max_w`/`max_h`
+    beside `w`/`h`/`weight` (and `min_w`/`min_h` if a floor larger than the
+    element's own is wanted), and an alignment inside the cell for an
+    element its maximum keeps smaller than the cell.
+  - **Text sets no minimum width.** A line that does not fit is cut with an
+    ellipsis, as the host's single lines already are, and its whole text is
+    shown on hover. The convention is a tooltip (a page's `title`, a
+    toolkit's tooltip); a marquee is the other option and is a design
+    choice still to make.
+  - **A control with geometry does set one**: a knob the larger of its disc
+    and its read-out, a slider its grip and a least useful travel, a number
+    the width of its widest value (an ellipsis on a number would show a
+    wrong number). A text field may be narrow, since it scrolls its
+    contents.
+  - **The defaults per standard type**, as a starting table to check on the
+    palette: label (one line high; ellipsis wide; fills), button (a line and
+    its padding high; padding and an ellipsis wide; fills), toggle (its box;
+    its label in ellipsis), choice (its body, and its label strip when it
+    has one; its arrow and an ellipsis wide; fills), number (its field; its
+    widest value), knob (disc and read-out, the label strip given up first;
+    the larger of disc and read-out; the disc centred in what it is given),
+    slider (its thickness, fixed; its grip and least travel; along its
+    axis it fills), text (its field; a few characters), progress and
+    separator (their thickness; along their axis they fill).
+
+  `a_natural_size_only_binds_its_own_axis` pins the old rule and goes with
+  it; the palette is the manual test, and each container shown there is
+  checked against the rules above.
 
 - ✅ **A pass can play with no play cursor until a frame happens to come**
   *(found 2026-11-01 by the user, by ear and eye on `notation/score_editor`)*.
