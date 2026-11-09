@@ -275,6 +275,15 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
+- ⬜ **`N10` — a page is a selection of the one document**
+  *(`clients/gui/PLAN.md`, N track)*. First, because it is the score
+  editor's cost per edit at a few thousand notes, and most of that cost is
+  reading the notes back from the engraver rather than engraving. Then the
+  written page breaks become selections, which draws the lines across them
+  as the engraver draws them across a system. Then an edit lays out only
+  the pages it reached. Whether the multitrack keeps its score boxes is
+  decided after.
+
 - ⬜ **The roll's two modes are not yet an editor a hand can trust**
   *(`crates/clausters-apps/PLAN.md`, Found by use, the entry of that title)*.
   The first eye pass over the notation mode and the editing options found
