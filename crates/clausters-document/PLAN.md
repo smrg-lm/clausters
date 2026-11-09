@@ -1622,71 +1622,84 @@ The order is leaves before trunk: a projection is a function of a structure and 
 ## The notation mode: a sequence that is written, not only played
 
 *Opened 2026-11-08 by the user, while settling how a roll and a page relate.
-The roll's half is `crates/clausters-apps/PLAN.md`, `X35`; turning a
-performance into notation is a module of its own, planned in
+The roll's half is `crates/clausters-apps/PLAN.md`, `X35` and `X36`; turning
+a performance into notation is a module of its own, planned in
 `crates/clausters-notate/PLAN.md`.*
 
-**What the user settled.** A sequence is edited in one of two modes.
+**What the user settled.** The roll has two modes, and they are the roll's:
+a mode is how the roll reads and edits the events, the sequence holds none,
+and the document says nothing of it *(decided by the user, 2026-11-08)*.
 
-- **Interpretation**: the events as they were played, in MIDI 1.0, 2.0 or
-  MPE, with their per-note and per-channel curves. It is the roll as it
-  stands, and it has no tie to a page: it becomes notation only when the
-  module above converts it.
-- **Notation**: the sequence *is* notation. Its notes belong to a staff and a
-  voice, their lengths are written values (a duration is a symbol, not a
-  stretch of the time axis), and what they sound is derived from what is
-  written: articulations, ties, slurs, the pedal.
+- **MIDI**: the events as MIDI says them, in MIDI 1.0, 2.0 or MPE: a note
+  is its note on and its note off, its velocity and its channel, with the
+  per-note and per-channel curves, and a line played legato is its joins. It
+  is the roll as it stands, and it knows nothing of how a page writes what it
+  holds.
+- **Notation**: the roll is a view of the notation. Its notes belong to a
+  staff and a voice, their lengths are written values (a duration is a
+  symbol, not a stretch of the time axis), and what they sound is derived
+  from what is written: articulations, slurs, dynamics, the pedal. The
+  velocity is shown and edited as the dynamic it is.
 
-Two things that look like kinds of editing are not:
+Three things follow from keeping the two apart:
 
+- **A tie is the page's, never an event's shape.** A note written with ties
+  is one event in both modes, as MIDI has one note on and one note off for
+  it; the page writes the ties where it has to cut a value (at a barline, or
+  where no single figure writes it), as the render of a page already does.
+- **A pattern writes MIDI data.** A voice rendered from a pattern writes its
+  joins and nothing of a page: deducing ties and slurs from them is reading
+  notation into a performance, which is the notation mode's and the
+  conversion's, not the render's *(decided by the user, 2026-11-08)*. Two
+  notes of one pitch joined are two notes.
 - **A polyphony written in one voice** (every note cut and tied wherever
   another note starts or ends) **and a polyphony written in N voices** (one
   voice per staff, or two per staff, voice 1 with its stems up and voice 2
   with its stems down) are the same music notated two ways. Which one a part
   uses is a choice of how it is written, never an edit of what sounds.
-- **Monophony** is a limit of the instrument (one note at a time), not a mode
-  of its own.
 
-**The part follows a model, so it is the document's.** The staves an
-instrument is written on, the most notes it sounds at once, its strings, its
-sustain pedal: the views show them and never hold them, and a page and a roll
-over one sequence read the same part.
+**Monophonic or polyphonic** editing is an option of whoever edits
+(`crates/clausters-apps/PLAN.md`, `X36`), not a mode and not a property of
+the data.
+
+**The part follows a model, so it is the document's.** The staves a part is
+written on, the channels it is played on, how its polyphony is written, its
+transposition: the views show them and never hold them, and a page and a roll
+over one sequence, in either mode, read the same part. **What an instrument
+can physically play is not the part's**: the most notes it sounds at once,
+its strings, its range, its pedal, which double stops a violin can play and
+with what fingering belong to a model of instruments, a module of its own
+that is not planned (Future directions, "A model of instruments") *(decided
+by the user, 2026-11-08)*.
 
 **What exists under it.** The notation keys an event carries (`staff`,
-`voice`, `value`, `pitches`, `tie`, `articulations`, ...;
+`voice`, `value`, `pitches`, `articulations`, ...;
 `clausters_core::event::notation`), the sequence's `notation` section
 (`grid`, `key`, `staves`, `spanners`, `controls`, `marks`, `items`), the
 reading of a sequence as a page (`events::transcription::read`), the render
 of a page as a sequence (`events::score::render`, through
 `clausters_core::notation::Interpretation`) and the write-back of a page's
-edit (`events::writeback::write_back`). **What it lacks**: a mode, the parts,
-reading options stored with the sequence, agreement between the three shapes
-of "this note goes on into that one" (`joins`, `tie`, slur spanners), a
-reading that follows the parts, and a performance derived from what is
-written.
+edit (`events::writeback::write_back`). **What it lacks**: the parts, reading
+options stored with the sequence, agreement between the two shapes of "this
+note goes on into that one" (`joins`, which MIDI plays, and a slur, which a
+page writes), a pattern's render that writes MIDI data alone, a reading that
+follows the parts, and a performance derived from what is written.
 
 ### The milestones
 
-- ⬜ **O35 - The sequence's mode, its parts and its reading.**
-  - **The mode is a field of its own**: `EventSequence.mode`, `interpretation`
-    or `notation`, `interpretation` when absent and not written when it is the
-    default, so every sequence saved so far opens unchanged. It is not
-    inferred from the `notation` section, which a voice rendered from a
-    pattern and a MIDI file read also write for what is a performance.
+- ⬜ **O35 - The sequence's parts and its reading.**
   - **The parts are a field of the sequence, not of its `notation` section,
-    and not behind the `notation` feature**: interpretation reads them too
-    (a part's channels, its limit, its pedal), and a change of mode must not
-    lose them. A `Part` holds its `name` and `abbr`; how many consecutive
-    staves it is written on (each staff's clef, lines and clef changes stay in
-    `notation.staves`); its `channels` or its MPE zone, which replaces the
-    reading's "a staff is a channel's rank"; its `limit`, the most notes it
-    sounds at once (`1` is a monophonic instrument); its `writing`,
-    `{polyphony: voices | ties, voices_per_staff: 1 | 2}`; whether it has a
-    sustain `pedal`; its open `strings`, as notes, empty for none; its
-    `transpose`; and an optional `range`. The part is where a staff's label,
-    abbreviation and transposition come from when a page is rendered. A
-    sequence that states no parts reads as one part per staff, derived and not
-    written back until an edit names them.
+    and not behind the `notation` feature**: the roll's MIDI mode reads them
+    too (a part's channels), so both modes read the same part. A `Part`
+    holds its `name` and `abbr`; how many consecutive staves it is written on
+    (each staff's clef, lines and clef changes stay in `notation.staves`);
+    its `channels` or its MPE zone, which replaces the reading's "a staff is
+    a channel's rank"; its `writing`, `{polyphony: voices | ties,
+    voices_per_staff: 1 | 2}`; and its `transpose`. It holds nothing of the
+    instrument's physics. The part is where a staff's label, abbreviation and
+    transposition come from when a page is read. A sequence that states no
+    parts reads as one part per staff, derived and not written back until an
+    edit names them.
   - **The reading is stored with the sequence**: `notation.reading` holds the
     options a page is read with (today's `Transcription`: meter, key, clef,
     beat unit, division, tuplets, voices, dynamics), so every opener reads it
@@ -1694,61 +1707,78 @@ written.
     `Transcription::default()`, which closes the half of `clients/gui/PLAN.md`,
     "What a score box of the multitrack left open", that says nothing on the
     multitrack states another meter, key or smallest value for a box.
-  - **Intents** `SetMode`, `SetParts` and `SetReading`, each one undo step,
-    and the same fields and intents in both clients' `EventSequence`.
-  - Open, recommended: the score editor over a sequence in interpretation
-    mode keeps today's live reading, so nothing that works changes; the first
-    page edit does not convert it.
-  - Open: the mode's name sits beside `clausters_core::notation::Interpretation`,
-    which says how a page is played. Keep both names, or call the mode
-    `performance`.
-  - Open: whether a part's `limit` is also enforced in interpretation mode, per
-    channel.
+  - **Intents** `SetParts` and `SetReading`, each one undo step, and the same
+    fields and intents in both clients' `EventSequence`.
+  - **The document holds no mode and no editing option**: MIDI or notation,
+    monophonic or polyphonic, are the roll's (`crates/clausters-apps/PLAN.md`,
+    `X35`, `X36`) *(decided by the user, 2026-11-08)*.
   - **Acceptance:** sequences and sessions saved before it round-trip byte for
     byte; serde tests for each field and for the derived parts; both clients
-    read and write `mode`, `parts` and `notation.reading`; a multitrack box
-    drawn as a page follows its sequence's reading.
+    read and write `parts` and `notation.reading`; a multitrack box drawn as a
+    page follows its sequence's reading.
 
-- ⬜ **O36 - Joins, ties and slurs kept in agreement.** *(Folds in
+- ⬜ **O36 - Joins and slurs kept in agreement.** *(Folds in
   `clients/python/PLAN.md`, Found by use, "An edit to a voice's legato or slur
-  does not rewrite the other".)* A voice rendered from a pattern writes the
-  same fact three times: `joins` on each joined note (the id of the note it
-  goes on from, which the playback reads), `tie` on a note held into the next
-  of the same pitch, and a slur spanner over each joined run that moves. They
-  agree when they are written and nothing keeps them so.
+  does not rewrite the other".)* "This note goes on into that one" has two
+  shapes: `joins` on a note (the id of the note it goes on from), which the
+  playback reads and which is MIDI data, and a slur spanner, which a page
+  writes. A voice rendered from a pattern writes today the joins, a `tie` on
+  each join of one pitch and a slur over each run that moves, and nothing
+  keeps them in agreement.
+  - **A pattern's render writes the joins alone**: what `_articulate` does
+    in the clients (`clausters/seq/sequence.py`, `src/seq/sequence.ts`) drops
+    the ties and the slurs, so a voice rendered from a pattern is MIDI data.
+    A sequence saved before keeps the ties and slurs it holds and sounds the
+    same, since what sounds is its joins.
+  - **A join is an edit of its own** *(decided by the user, 2026-11-08)*: it
+    says the next note goes on without a new attack, and only a join gesture
+    or a joining slur writes it. A length never does: a note lengthened until
+    it reaches the next one is longer, not joined, in either mode.
+  - **Whether a slur joins its notes is the editor's choice**, kept on the
+    slur: the spanner gains `join`, true when its notes sound as one line
+    with no new attack, false when they are phrased legato and each one is
+    attacked (its sound is then the slur's `sustain`, as
+    `clausters_core::notation::Interpretation` plays it today). The default
+    is the editing option it is drawn with: joined where the roll edits
+    monophonically, attacked otherwise and on the page; the editor changes
+    it. A slur written before `join` existed reads as joined where its notes
+    carry `joins`, and as attacked otherwise, so nothing saved sounds
+    different.
   - `events::articulation`: the lines of a sequence (its notes grouped by
-    `(staff, voice)`, else by channel), and `page_from_joins` and
-    `joins_from_page` between the two shapes, over the core's
-    `event::notation::articulation`.
-  - **The writing moves into Rust**: what `_articulate` does in the Python
-    client (`clausters/seq/sequence.py`) becomes this module, bound by both
-    clients through the C ABI and wasm, so the rule is written once.
+    `(staff, voice)`, else by channel), `slurs_from_joins` (a run of joins is
+    a slur with `join` true, whatever its pitches) and `joins_from_slurs` (the
+    slurs with `join` true are the joins; a slur with `join` false writes
+    none). The core's `event::notation::articulation`, whose rule makes a
+    join of one pitch a tie, goes with its bindings.
+  - **Intents** `Join` and `Separate`, over the selected notes of one line,
+    each one undo step that writes the joins and, where the line is written as
+    notation, the slurs; and the slur's `join` set through the page's spanner
+    edit, which writes the joins.
   - **The rule: the shape a gesture edited wins**, and the other is derived
     again for the lines the gesture touched, in the same intent and so in the
-    same undo step. Where a sequence arrives with the two in disagreement, the
-    mode decides: in notation the page, in interpretation the joins.
-  - **Callers**: the roll's intake in interpretation mode
-    (`clausters_editing::notes`), which also drops a join naming a deleted
-    note; and `write_back`, which stops leaving `joins` untouched and derives
-    them for the lines whose slurs or ties the edit changed. In notation mode
-    every roll gesture is a page edit (`X35`), so only the page-to-joins
-    direction runs there.
-  - **One tie shape per mode**: notation writes a tied chain as one event,
-    as the render does; the two events a pattern writes belong to
-    interpretation and are merged when a sequence is converted.
-  - Open: whether the notes under a slur are joined in every voice, or only in
-    a part whose `limit` is 1, where a join is the legato of one line.
-  - **Acceptance:** a slur drawn on a page joins its notes and the playback
-    hears one line; a join removed in the roll removes the tie or the slur it
-    made; deleting a note leaves no join naming it; a voice rendered from a
-    pattern holds the same data from Python and from the web client.
+    same undo step: a join edited (the roll in MIDI mode, `Join`, `Separate`)
+    derives the slurs of the lines written as notation, and a slur edited (the
+    page, the roll in notation mode) derives the joins. Where a sequence
+    arrives with the two in disagreement nothing is rewritten: the joins are
+    what sounds until an edit touches that line.
+  - **Callers**: the roll's intake (`clausters_editing::notes`), which also
+    drops a join naming a deleted note; and `write_back`, which stops leaving
+    `joins` untouched and derives them for the lines whose slurs the edit
+    changed.
+  - **Acceptance:** a slur drawn with `join` on a page joins its notes and the
+    playback hears one line, and one drawn without it is heard attacked;
+    lengthening a note to the next writes no join; a join removed in the roll
+    removes the slur it made; deleting a note leaves no join naming it; a
+    voice rendered from a pattern writes joins and no tie or slur, the same
+    data from Python and from the web client; sequences saved before sound
+    the same.
 
-- ⬜ **O37 - Notation mode: how a part is written, and the performance
-  derived from it.**
+- ⬜ **O37 - How a part is written, and the performance derived from it.**
   - **The reading follows the parts**: a staff comes from the part's channels,
     `voices_per_staff` replaces `voices` for that part, and a part written
-    with `ties` is read as one voice of chords, each note cut and tied where
-    another starts or ends. Without parts the reading is today's, unchanged.
+    with `ties` is read as one voice of chords, each note cut and tied on the
+    page where another starts or ends. Without parts the reading is today's,
+    unchanged.
   - **Voices or ties is a choice of writing**: changing it changes the part's
     `writing` and the `voice` keys the reading assigns, never `at`, `dur` or
     `sustain`.
@@ -1756,9 +1786,10 @@ written.
     the sequence, renders the page and writes the difference through
     `write_back`, so the keys that sound (`sustain` from the articulations and
     the slurs, `joins`, the levels from the dynamics, CC64 from a pedal
-    spanner where the part has a pedal) follow from what is written. In
-    notation mode they are derived and never edited by hand.
-  - **Acceptance:** for a sequence in notation mode, reading what a page
+    spanner) follow from what is written. The roll in notation mode never
+    edits them by hand: a velocity edited there is written as a dynamic, and
+    the level is derived from it.
+  - **Acceptance:** for a sequence written as notation, reading what a page
     renders gives that page back (a property test); writing a part with ties
     and back with voices gives the same events; the two writings sound the
     same.
@@ -1942,6 +1973,16 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
   channels the master has read the track's of the same number, and those past
   them land on the master's first ones again. A track saying where its
   channels go is not written yet; the folded routing is what it says today.
+
+- ⬜ **A model of instruments** *(named by the user, 2026-11-08, while the
+  parts of `O35` were planned)*. The rules that follow from an instrument's
+  physics: how many notes it sounds at once, its range, its strings and which
+  double stops it can play, between which strings and with what fingering,
+  whether it has a sustain pedal. It is a module of its own, not the event's
+  and not the part's, and nothing is planned for it. Where it exists, an edit
+  could be checked against it and a reading could use it (which staff, which
+  string); until then nothing refuses a note for what an instrument cannot
+  play.
 
 ## Found by use: the running list of fixes
 

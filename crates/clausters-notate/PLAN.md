@@ -9,7 +9,7 @@ plan.*
 
 ## What the module is
 
-A sequence in interpretation mode is a performance: notes at the times they
+A sequence as MIDI holds it is a performance: notes at the times they
 were played, in seconds or in beats nobody counted. A sequence in notation
 mode is written: its notes have written values, a meter bars them, each
 belongs to a staff and a voice, and each pitch is spelled. Going from the
@@ -85,7 +85,7 @@ becomes the module's **assembler**.
 
 | Step | From | To | Baseline (today's, extracted) |
 |---|---|---|---|
-| Performance | a sequence in interpretation mode (through its tempo map), or a MIDI file | notes `{id, on, off, pitch, velocity, channel}` in seconds, and the pedal's down and up times | |
+| Performance | a sequence as played (through its tempo map), or a MIDI file | notes `{id, on, off, pitch, velocity, channel}` in seconds, and the pedal's down and up times | |
 | Beats | the performance | beat times, and a tempo map | the tempo map the sequence has |
 | Quantization | the performance and the beats, a division and the tuplets admitted | each note's written onset and value, exact | the nearest point of the grid, with a tuplet only where it fits clearly better |
 | Meter | the quantized notes (and the beats) | the beat unit, the meters by measure, an anacrusis: the section's `grid` | given |

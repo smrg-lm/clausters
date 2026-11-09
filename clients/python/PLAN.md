@@ -2571,9 +2571,11 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   `staff`, which the score editor separates by) and a decision on which shape
   wins when both changed.
   *(2026-11-08: the joins are stored since `J11` (`joins` on each joined note,
-  read by the playback), so the shapes are three, `joins`, `tie` and the slur
-  spanners, and what is missing is only what keeps them in agreement. The work
-  is `crates/clausters-document/PLAN.md`, `O36`; this entry closes with it.)*
+  read by the playback). The user settled that a pattern's render writes
+  MIDI data, so it stops writing the ties and slurs, and that a tie is the
+  page's and never an event's shape; what is left is keeping the joins and
+  the slurs in agreement. The work is `crates/clausters-document/PLAN.md`,
+  `O36`; this entry closes with it.)*
 - ✅ **The API reference leaves out 26 public-named modules, and nothing says
   which of them are meant to be out** *(found 2026-09-21, splitting the
   reference into one page per package; fixed the same day)*. The module list in
