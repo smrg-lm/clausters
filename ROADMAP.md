@@ -273,14 +273,13 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`N10` — a written page break is a selection of the one document**
-  *(`clients/gui/PLAN.md`, N track)*. First, because the runs a written
-  page break is laid out in are documents of their own, and across them a
-  tie and a glissando are dropped and every other line is drawn closed;
-  laid out as a selection of the one document, verovio draws them as it
-  draws them across a system. Engraving only what changed was measured and
-  not taken: the project follows verovio (`docs/decisions.md`, "Verovio is
-  followed, not adapted").
+- ⬜ **`N10` — the written page breaks** *(`clients/gui/PLAN.md`, N track)*.
+  Its first part, a page's notes read from the model, shipped. The second
+  waits on a **decision**: laid out as a selection of the one document,
+  verovio draws the lines across a page break right but draws no running
+  elements (title, heads, page numbers), and its automatic cast-off
+  ignores `<pb>`. The plan lists the ways left; the runs of separate
+  documents, and their broken lines, stay until one is chosen.
 
 - ⬜ **The roll's two modes are not yet an editor a hand can trust**
   *(`crates/clausters-apps/PLAN.md`, Found by use, the entry of that title)*.

@@ -315,11 +315,14 @@ def test_from_notes_writes_a_monophonic_melody():
 def test_a_note_crossing_a_barline_splits_and_ties():
     requires_engraver()
     # 2 beats, then 3 beats starting on beat 2 of 4/4 -> the 3-beat note spans
-    # the barline and is written as two tied notes at the same pitch.
+    # the barline and is written as two tied notes at the same pitch, which
+    # sound as one: the tie holds the attack for the two values together.
     notes = [Event(midinote=60, dur=2.0), Event(midinote=67, dur=3.0)]
     mei = notation.from_notes(notes, meter="4/4")
     assert 'tie="i"' in mei and 'tie="t"' in mei
-    assert [n["pitch"] for n in notation.engrave(mei)["notes"]] == [60, 67, 67]
+    sounding = notation.engrave(mei)["notes"]
+    assert [n["pitch"] for n in sounding] == [60, 67]
+    assert sounding[1]["dur"] == 3 * sounding[0]["dur"] / 2
 
 
 def test_from_timeline_puts_a_downbeat_onset_on_the_bar_start():

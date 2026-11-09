@@ -121,6 +121,95 @@ mod tests {
         page.notes.iter().map(|n| n.id.clone()).collect()
     }
 
+    /// **A page's notes are the model's reading**, and on what the two
+    /// readings share they are what the engraver plays: the same notes under
+    /// the same ids, at the same onsets -- a chord's pitches each under its
+    /// own id. Where they differ the model's stands, and each difference is
+    /// one the page says: a staccato is held for less than it is written, a
+    /// note tied over a barline is one sound where the engraver attacks its
+    /// continuation again, and an octave line is heard an octave up where the
+    /// engraver plays it as written.
+    #[test]
+    fn a_page_s_notes_are_the_model_s_and_agree_with_the_engraver_s() {
+        use crate::verovio::Toolkit;
+        use clausters_core::notation::{TimemapEntry, add_spanner, sheet_to_mei, voice_to_sheet};
+        use std::collections::BTreeMap;
+
+        let mut voice: Vec<Slot> = (0..7).map(|i| Slot::note(vec![60 + i], 8)).collect();
+        voice[1].articulations = vec!["stacc".into()];
+        voice[2] = Slot::note(vec![60, 64, 67], 8);
+        // a half note from the last beat of the second bar, tied over the
+        // barline
+        voice.push(Slot::note(vec![72], 16));
+        voice.extend((0..3).map(|i| Slot::note(vec![67 - i], 8)));
+        let mut sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
+        sheet = add_spanner(sheet, "8va", 9, 11).unwrap();
+        let mei = sheet_to_mei(&sheet).unwrap();
+
+        let page = open(&mei, &EngraveOptions::default())
+            .expect("opens")
+            .display_list(1);
+        let ours: BTreeMap<String, (f64, f64, i32)> = page
+            .notes
+            .iter()
+            .map(|n| (n.id.clone(), (n.t, n.dur, n.pitch)))
+            .collect();
+
+        let theirs: BTreeMap<String, (f64, f64, i32)> = {
+            let _guard = ffi_lock();
+            let tk = Toolkit::new(default_resource_path().as_deref()).unwrap();
+            assert!(tk.load_data(&mei).unwrap());
+            tk.render_svg(1);
+            let map: Vec<TimemapEntry> =
+                serde_json::from_str(&tk.render_timemap("{}").unwrap()).unwrap();
+            let mut out = BTreeMap::new();
+            for id in map.iter().flat_map(|e| e.on.iter()) {
+                let json = tk.midi_values(id).unwrap();
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) else {
+                    continue;
+                };
+                let pitch = v["pitch"].as_i64().unwrap_or(0) as i32;
+                if pitch > 0 {
+                    let t = v["time"].as_f64().unwrap();
+                    let dur = v["duration"].as_f64().unwrap();
+                    out.insert(id.clone(), (t, dur, pitch));
+                }
+            }
+            out
+        };
+
+        // the tie's continuation is the one note the engraver has and the
+        // model does not: it is the attack's sound, held
+        let mut shared: Vec<&String> = theirs.keys().filter(|id| *id != "n8-2").collect();
+        shared.sort();
+        assert_eq!(
+            ours.keys().collect::<Vec<_>>(),
+            shared,
+            "{ours:?} {theirs:?}"
+        );
+        assert_eq!(ours["n8"].1, 2.0 * theirs["n8"].1, "the tie is one sound");
+        for (id, (t, dur, pitch)) in &ours {
+            let (their_t, their_dur, their_pitch) = theirs[id];
+            assert!((t - their_t).abs() < 1.0, "{id}: {t} against {their_t}");
+            // under the octave line, from the ninth note to the eleventh
+            let up = if ["n9", "n10", "n11"].contains(&id.as_str()) {
+                12
+            } else {
+                0
+            };
+            assert_eq!(*pitch, their_pitch + up, "{id}: the pitch");
+            if id == "n2" {
+                assert!(*dur < their_dur, "a staccato is held short");
+            } else if id != "n8" {
+                assert!(
+                    (dur - their_dur).abs() < 1.0,
+                    "{id}: {dur} against {their_dur}"
+                );
+            }
+        }
+        assert!(ours.contains_key("n3-p2"), "a chord's pitch by its own id");
+    }
+
     #[test]
     fn a_page_carries_the_drawing_the_cursors_and_the_notes() {
         let page = score().display_list(1);

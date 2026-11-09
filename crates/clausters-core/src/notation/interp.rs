@@ -156,6 +156,13 @@ pub struct Note {
     /// the attack alone, as a struck or plucked sound does.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hairpin: Vec<(f64, f64)>,
+    /// **Which of its item's written pitches it is**, 0-based in the item's
+    /// order -- what names a chord's pitch on the page (`n7-p2` is the
+    /// second). Not serialized: a client reads the page's id, and `pitch` is
+    /// the sounding one, an octave line or a transposing staff away from what
+    /// is written.
+    #[serde(skip)]
+    pub written: usize,
 }
 
 fn is_zero_f64(v: &f64) -> bool {
@@ -733,6 +740,24 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
         let by = shifted(p.staff, p.t);
         let note = |t: f64, dur: f64, sustain: f64, pitch: &Pitch, last: usize| {
             let (gliss, gliss_from) = gliss_of(last);
+            // the pitch is one of the item's own, or of the note it alternates
+            // with: either way its place is its place in that item's list
+            let written = all
+                .iter()
+                .position(|q| std::ptr::eq(q, pitch))
+                .or_else(|| {
+                    alternating
+                        .get(&p.item.id())
+                        .and_then(|id| at.get(id))
+                        .and_then(|&j| {
+                            placed[j]
+                                .item
+                                .pitches()
+                                .iter()
+                                .position(|q| std::ptr::eq(q, pitch))
+                        })
+                })
+                .unwrap_or(0);
             Note {
                 t,
                 dur,
@@ -752,6 +777,7 @@ pub fn performance(mut sheet: Sheet, interp: &Interpretation) -> Result<Performa
                 gliss,
                 gliss_from,
                 hairpin: Vec::new(),
+                written,
             }
         };
         // what a tremolo and an alternation repeat: the item's attacked

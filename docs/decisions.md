@@ -11671,3 +11671,21 @@ this project cuts a score into documents of its own, as the page view does at
 a written page break ("A page break is honoured by laying the score out in
 runs"), the cut is ours to remove in favour of verovio's selection, not ours
 to patch.
+
+## A page's notes are the model's reading (2026-11-09)
+
+*Taken in `N10` (`clients/gui/PLAN.md`).* Every page a score produces
+carries the notes that sound, and they were asked of the engraver one
+element at a time, each answer a search of the whole document: 1.25 s of
+the 1.78 s an edit cost at five thousand notes. The cursors were already
+read from the model's performance, so the page and its sound came from two
+readings. Where the document was written from the model, the notes are now
+read from the same performance as the cursors, and named as the page draws
+them (a chord's pitches by `Note.written`). A document from elsewhere has
+no model and is still played as the engraver plays it.
+
+Comparing the two readings found the engraver's was not what the page
+writes in three places: it attacks the continuation of a tie again, plays
+the notes under an octave line as written, and holds a staccato for its
+whole value. The model's reading holds the tie, hears the octave and
+shortens the staccato, which is what the score plays everywhere else.

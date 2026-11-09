@@ -4217,10 +4217,42 @@ Whatever symbols the model itself needs owe their rows either way
   - **Left open**, each for when it is met: "What a score box of the
     multitrack left open" (Found by use).
 
-- ⬜ **N10 — A written page break is a selection of the one document.**
-  *(Added 2026-11-09. It began as engraving only what changed, for the score
-  editor; measuring and reading upstream turned it into this, under "Verovio is
-  followed, not adapted" in `docs/decisions.md`.)*
+- ⬜ **N10 — A page's notes are the model's, and a written page break is a
+  selection of the one document.** *(Added 2026-11-09. It began as engraving
+  only what changed, for the score editor; measuring and reading upstream
+  turned it into these two parts, under "Verovio is followed, not adapted" in
+  `docs/decisions.md`: what is verovio's to do is left to verovio, and what is
+  ours is made right.)*
+
+  **Part one: the notes from the model.** Every page a score produces
+  (`Score::pages`, `Score::display_list`) carries the notes that sound, each
+  with its onset and length in milliseconds, its pitch and the id it is drawn
+  under. Today they are asked of the engraver: its timemap, then
+  `getMIDIValuesForElement` once per element, and each call searches the
+  whole document, so the cost grows with the square of the score (41 ms at a
+  thousand notes, 1.25 s at five thousand). The cursors are already read from
+  the model's performance, so the page and its sound come from two readings
+  that can disagree (a staccato's length, a repeat played out, a tempo mark).
+  Where the document was written from the model, the notes are read from that
+  same performance: its beats taken to milliseconds by the tempo map the
+  cursors use, the length the one held, and the item named as the page names
+  it (`n7`, a chord's pitch `n7-p2`). The performance is computed once for
+  both. A document from elsewhere, which has no model, is still read from the
+  engraver. Acceptance: on the fixtures the model's notes are the engraver's
+  in pitch, onset and id, and where they differ on purpose (a staccato, a
+  repeat) the model's stand and a test says so; the cost measured before and
+  after at a thousand and five thousand notes; both clients, since the reading
+  is in the core.
+  *Done 2026-11-09* (`Score::timing_locked`; the model's `Note.written` names
+  a chord's pitch). The test that compares the two readings
+  (`a_page_s_notes_are_the_model_s_and_agree_with_the_engraver_s`) found
+  three places where the engraver's notes were not what the page writes: it
+  attacks a tie's continuation again, plays an octave line as written, and
+  holds a staccato for its whole value. `Score::pages` after an edit went
+  from 119 ms to 46 ms at a thousand notes and from 1.78 s to 0.37 s at five
+  thousand.
+
+  **Part two: the page breaks.**
 
   **What is there.** A written page break lays the score out in runs, each a
   document of its own (`sheet_to_mei_pages`; `docs/decisions.md`, "A page
@@ -4243,11 +4275,28 @@ Whatever symbols the model itself needs owe their rows either way
   selection the same way, since the measures outside it stay in the
   document.
 
-  **The work.** The page view lays out each run of pages as a selection of
-  the one loaded document instead of a document of its own, and the cutting
-  that writes a line once per run (`attachments`, the `run_of` parts) is
-  removed together with the separate documents and `sheet_to_mei_pages`, in
-  every client that binds it. What a run's first page carries today (the
+  **Found while building it (2026-11-09): a selection has no running
+  elements.** A page laid out under a selection takes a copy of the system's
+  score definition without its `pgHead`/`pgFoot` (`Page::GetHeader` reads
+  the page's own score), so the title, the running heads and the page
+  numbers are gone from every page of a score laid out by selection; and the
+  engraver's automatic cast-off has no visit for `<pb>` (only its `encoded`
+  mode honours one). The selection was built and taken out again; it is kept
+  as a patch outside the tree. **Open, and the user's to decide**, among:
+  keep the runs of separate documents and their broken lines; lay each run
+  out as today only to read where verovio breaks its systems and pages, then
+  write those breaks and the page breaks into the one document and lay it
+  out in `encoded` mode, which draws every line across a turn and every
+  running element (two layouts, every decision still verovio's; a short last
+  system before a page break would be justified to the full width); or ask
+  upstream for running elements under a selection, or for `<pb>` in the
+  automatic cast-off, and wait.
+
+  **The work, as first written.** The page view lays out each run of pages
+  as a selection of the one loaded document instead of a document of its
+  own, and the cutting that writes a line once per run (`attachments`, the
+  `run_of` parts) is removed together with the separate documents and
+  `sheet_to_mei_pages`, in every client that binds it. What a run's first page carries today (the
   meter in force, what is written on every page, the score's page number)
   is checked against what a selection draws, and taken from the engraver
   where it already says it. The decision record of the runs is rewritten.
