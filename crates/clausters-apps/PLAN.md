@@ -6654,3 +6654,50 @@ wrong.
   forms gained a field chosen among options, the host's `choice`. A
   script's `mode` converts with the stored reading before the verb, so it
   is never left waiting on a dialog.)*
+- ⬜ **The roll's two modes are not yet an editor a hand can trust**
+  (2026-11-09, the user's first eye pass over `X35` and `X36`, on the score
+  of `examples/notation/score_editor.py` rendered, and the same score read
+  back from a Standard MIDI File). The user reordered notes, joined them and
+  tried the new verbs by hand; what that showed, and what is still to do:
+  1. **The gestures of editing are not defined per mode.** What a press, a
+     drag, a resize, a join, a delete and each mark verb do has to be
+     written down for every combination: MIDI or notation, monophonic or
+     polyphonic. Today each rule was added where it was needed, and the four
+     cases were never set side by side. The table goes in
+     `docs/app-behavior.md`, and every rule in it gets a test.
+  2. **The new verbs have to be reviewed one by one**: join and unjoin,
+     monophonic, slur, slur joined, tie, staccato, pedal, the voice and
+     staff verbs, the writing of the polyphony, and the conversion with its
+     dialog. Which notes each takes, what it refuses and why, and what the
+     roll shows afterwards.
+  3. **A join is drawn between notes out of order.** After notes were
+     reordered by hand, the join lines cross in an X between notes of one
+     line (bars 2 and 3 of the rendered score). Whether the joins name the
+     wrong notes or are only drawn wrong is to be found out.
+  4. **What a note sounds inside what it is written reads as something
+     else.** The sounding length is a thin light bar at the foot of the
+     written box, so a staccato looks like a selection or a stray mark
+     rather than the note itself, shorter.
+  5. **The voices are not told apart**: every note of the rendered score is
+     drawn in one colour, where the voice tints were meant to show them.
+  6. **The roll's labels collide and one is wrong.** The axis' corner
+     label (`MIDI 1.0`) is drawn over the ruler's first bar number in both
+     modes, and it says `MIDI 1.0` while the roll is in notation mode.
+  7. **The status line shows a raw sample number** (`locate 132641`) after
+     a click on the ruler, which is a diagnostic and not a reading.
+  8. **A note at the bottom of the pitch window is cut** by the lane under
+     the plane (the last note of the rendered score, bar 4).
+  9. **The MIDI roll numbers bars it does not draw.** Over a sequence that
+     states no meter the ruler counts `bar:beat`, while the plane draws no
+     barline; the two have to agree.
+  10. **The data of the events being edited cannot be seen.** The picture
+      alone does not say what a note holds: its velocity, its channel, its
+      keys past pitch and time, and in notation mode almost everything a
+      page writes (the written value, the spelling, the staff and voice,
+      the articulations, the dynamic, ties, slurs, pedal, the tuplet). A
+      roll needs an inspector of the selected events, read from the
+      sequence and edited through the same intents, in both modes.
+  11. **The rest of the application has to be gone over again**: more
+      faults are expected beyond these, and the two windows over one
+      sequence, the box's roll in the multitrack and the page beside the
+      roll are the first places to look.

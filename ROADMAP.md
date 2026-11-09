@@ -275,6 +275,12 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
+- ⬜ **The roll's two modes are not yet an editor a hand can trust**
+  *(`crates/clausters-apps/PLAN.md`, Found by use, the entry of that title)*.
+  The first eye pass over the notation mode and the editing options found
+  gestures never defined per mode, verbs to review, drawing faults and no
+  way to inspect what a note holds; the entry lists them.
+
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,
   quantization, meter, voices and spelling as separate operations, today's
