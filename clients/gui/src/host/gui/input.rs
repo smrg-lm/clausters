@@ -168,6 +168,32 @@ impl App {
         }
     }
 
+    /// **A client pressed keys on window `def_id`** (`/gui_keypress`, `/gui_text`):
+    /// `mods` held while each key is handed, in turn, to the one dispatch this
+    /// front's own keyboard reaches ([`Self::press_key`]), a tip taken down
+    /// first as a key takes it. The keyboard's modifiers come back afterwards.
+    /// Escape with nothing open is not the window's close here: that is a
+    /// desktop window's and no page has it, and a script's keys do the same on
+    /// both fronts.
+    pub(super) fn keys(&mut self, def_id: i32, keys: Vec<HostKey>, mods: PointerMods) {
+        if !self.windows.contains_key(&def_id) && self.pending.iter().any(|(id, _)| *id == def_id) {
+            self.pending_asks.push((def_id, Asked::Keys { keys, mods }));
+            return;
+        }
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return tracing::warn!("/gui_keypress {def_id}: no window is open for it");
+        };
+        let held = (ws.shift, ws.ctrl, ws.alt);
+        (ws.shift, ws.ctrl, ws.alt) = (mods.shift, mods.ctrl, mods.alt);
+        for key in keys {
+            self.key_began(def_id);
+            self.press_key(def_id, key);
+        }
+        if let Some(ws) = self.windows.get_mut(&def_id) {
+            (ws.shift, ws.ctrl, ws.alt) = held;
+        }
+    }
+
     /// Press on a widget: the machine acts by kind and possibly starts a drag.
     pub(super) fn on_press(&mut self, def_id: i32) {
         let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {

@@ -1,5 +1,6 @@
 """What a window answers from a script, whoever holds what it edits: the verbs
-of the one verb table, a hand played to it, and what it costs.
+of the one verb table, a hand and a keyboard played to it, and what it
+costs.
 
 `clausters.gui.editing.Editor` and the handlers of an application the GUI host
 holds (`clausters.gui.editing.HostedEditor`) both reach a window so; each only
@@ -64,6 +65,31 @@ class WindowVerbs:
             t = i / n
             self.pointer("move", x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, mods)
         return self.pointer("release", x1, y1, mods)
+
+    def press_key(self, key: str, mods: str = "") -> bool:
+        """**A key pressed on the window**, with ``mods`` held --
+        `clausters.gui.host.GuiHost.press_key` on this editor's window: the
+        focused element's key, or the verb the key table binds to it. What it
+        edits arrives as a key's edit does, through the event loop.
+
+        Answers whether it was sent: ``False`` with no window open.
+        """
+        if not self._has_window():
+            return False
+        self._host.press_key(self._window, key, mods)
+        return True
+
+    def type_text(self, text: str) -> bool:
+        """**Text typed into the window**, a key per character --
+        `clausters.gui.host.GuiHost.type_text` on this editor's window: what
+        a focused field types.
+
+        Answers whether it was sent: ``False`` with no window open.
+        """
+        if not self._has_window():
+            return False
+        self._host.type_text(self._window, text)
+        return True
 
     def capture(self, path, timeout: float = 5.0) -> str:
         """**Write the window's picture to ``path``** as a PNG, and answer the

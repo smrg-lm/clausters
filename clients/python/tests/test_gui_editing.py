@@ -91,9 +91,18 @@ class FakeHost:
         self.verbs: list = []
         #: What `/gui_pointer` played: `(window, kind, x, y, mods)`.
         self.pointers: list = []
+        #: What `/gui_keypress` pressed, `(window, key, mods)`, and what
+        #: `/gui_text` typed, `(window, text)`.
+        self.keys: list = []
 
     def pointer(self, window, kind, x, y, mods=""):
         self.pointers.append((window, kind, x, y, mods))
+
+    def press_key(self, window, key, mods=""):
+        self.keys.append((window, key, mods))
+
+    def type_text(self, window, text):
+        self.keys.append((window, text))
 
     def alloc_id(self) -> int:
         return self.ids.alloc()
@@ -284,6 +293,18 @@ def test_a_drag_is_a_press_the_moves_between_and_a_release():
     host.pointers.clear()
     assert ed.click(3, 4) is True
     assert host.pointers == [(999, "press", 3, 4, ""), (999, "release", 3, 4, "")]
+
+
+def test_a_key_and_a_text_go_to_the_editors_window():
+    """A key pressed and a text typed reach the editor's window, and with no
+    window there is nothing to type into."""
+    ed = an_editor()
+    assert ed.press_key("q") is False and ed.type_text("ab") is False
+    host = FakeHost()
+    ed.open(host)
+    assert ed.press_key("z", mods="ctrl") is True
+    assert ed.type_text("ab") is True
+    assert host.keys == [(999, "z", "ctrl"), (999, "ab")]
 
 
 def test_a_note_entry_verb_is_spelled_from_its_argument():

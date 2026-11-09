@@ -81,7 +81,9 @@ number of seconds to wait. The example runs its interactive branch, the one a
 notebook takes, so the functions its cells offer are the steps. What drives it
 is the protocol any script can use: `/gui_capture` writes a window's picture
 (`editor.capture(path)`), `/gui_pointer` plays a press, a move or a release to
-it (`editor.drag(start, end)`), and a host started with `--headless` draws its
+it (`editor.drag(start, end)`), `/gui_keypress` and `/gui_text` press a key or
+type a text into it (`editor.press_key("z", "ctrl")`,
+`editor.type_text("name")`), and a host started with `--headless` draws its
 windows offscreen on any adapter, a software one included.
 
 One picture is also kept and compared: `clients/gui/tests/references/window.png`

@@ -59,6 +59,8 @@ impl Host {
             GUI_VERB => self.on_verb(&msg.args, from, effects),
             GUI_CAPTURE => self.on_capture(&msg.args, from, effects),
             GUI_POINTER => self.on_pointer(&msg.args, from, effects),
+            GUI_KEYPRESS => self.on_key(&msg.args, from, effects),
+            GUI_TEXT => self.on_text(&msg.args, from, effects),
             GUI_CLIPBOARD => self.on_clipboard(&msg.args, from),
             GUI_APP_OPEN => self.on_app_open(&msg.args, from, effects),
             GUI_APP_CALL => self.on_app_call(&msg.args, from, effects),
@@ -342,6 +344,65 @@ impl Host {
             x,
             y,
             mods,
+        });
+    }
+
+    /// `/gui_keypress <window> <key> [mods]`: a key pressed on the window rooted
+    /// at `window` ([`GUI_KEYPRESS`]). The host reads the key and hands it to the
+    /// front, which holds the window's keyboard dispatch.
+    pub(super) fn on_key(
+        &mut self,
+        args: &[OscType],
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let (Some(window), Some(name)) = (int_arg(args, 0), string_arg(args, 1)) else {
+            return diag::warn!("{from}: {GUI_KEYPRESS} needs a window id and a key");
+        };
+        let key = match keymap::key_named(name) {
+            Ok(key) => key,
+            Err(why) => return diag::warn!("{from}: {GUI_KEYPRESS} {window}: {why}"),
+        };
+        let mods = match PointerMods::parse(string_arg(args, 2).unwrap_or("")) {
+            Ok(mods) => mods,
+            Err(name) => {
+                return diag::warn!("{from}: {GUI_KEYPRESS} {window}: {name:?} is no modifier");
+            }
+        };
+        if self.window_def(window).is_none() {
+            return diag::warn!("{from}: {GUI_KEYPRESS} {window}: no such window");
+        }
+        effects.push(HostEffect::Keys {
+            window,
+            keys: vec![pressed_as(key, mods)],
+            mods,
+        });
+    }
+
+    /// `/gui_text <window> <text>`: text typed into the window rooted at
+    /// `window` ([`GUI_TEXT`]): one key per character, with no modifier.
+    pub(super) fn on_text(
+        &mut self,
+        args: &[OscType],
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let (Some(window), Some(text)) = (int_arg(args, 0), string_arg(args, 1)) else {
+            return diag::warn!("{from}: {GUI_TEXT} needs a window id and a text");
+        };
+        let Some(keys) = typed(text) else {
+            return diag::warn!(
+                "{from}: {GUI_TEXT} {window}: a control character other than a newline \
+                 or a tab types nothing"
+            );
+        };
+        if self.window_def(window).is_none() {
+            return diag::warn!("{from}: {GUI_TEXT} {window}: no such window");
+        }
+        effects.push(HostEffect::Keys {
+            window,
+            keys,
+            mods: PointerMods::default(),
         });
     }
 
@@ -639,4 +700,35 @@ pub fn captured(window: i32, path: &str, failed: Option<&str>) -> OscMessage {
         addr: GUI_CAPTURED.to_string(),
         args,
     }
+}
+
+/// **The key a keyboard gives with `mods` held** ([`GUI_KEYPRESS`]): a letter is
+/// upper case under Shift alone (what a field types) and lower case under
+/// Ctrl or Alt, the letter a chord was pressed on, which is how both fronts
+/// read their own keyboards. Everything else is the key as named.
+fn pressed_as(key: widget::element::Key, mods: PointerMods) -> widget::element::Key {
+    use widget::element::Key;
+    match key {
+        Key::Char(c) if c.is_alphabetic() && (mods.ctrl || mods.alt) => {
+            Key::Char(c.to_lowercase().next().unwrap_or(c))
+        }
+        Key::Char(c) if c.is_alphabetic() && mods.shift => {
+            Key::Char(c.to_uppercase().next().unwrap_or(c))
+        }
+        other => other,
+    }
+}
+
+/// The keys `text` types ([`GUI_TEXT`]): a character each, a newline as Enter
+/// and a tab as Tab, or `None` when it holds any other control character.
+fn typed(text: &str) -> Option<Vec<widget::element::Key>> {
+    use widget::element::Key;
+    text.chars()
+        .map(|c| match c {
+            '\n' => Some(Key::Enter),
+            '\t' => Some(Key::Tab),
+            c if c.is_control() => None,
+            c => Some(Key::Char(c)),
+        })
+        .collect()
 }

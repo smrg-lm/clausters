@@ -316,6 +316,18 @@ def test_pointer_names_a_window_a_kind_and_a_point():
                               ("/gui_pointer", 8, "move", 11.5, 21.0, "shift+ctrl")]
 
 
+def test_a_key_and_a_text_name_a_window():
+    """``/gui_keypress`` presses one key, with the modifiers only when some
+    are held, and ``/gui_text`` types a text whole."""
+    host = GuiHost(interface=_Recorder())
+    host.press_key(7, "z", "ctrl")
+    host.press_key(type("Handle", (), {"id": 8})(), "Enter")
+    host.type_text(7, "abc")
+    assert host._osc.sent == [("/gui_keypress", 7, "z", "ctrl"),
+                              ("/gui_keypress", 8, "Enter"),
+                              ("/gui_text", 7, "abc")]
+
+
 def test_capture_waits_for_the_turns_before_it():
     """A capture asks a question first and waits for its answer, delivering
     the events that come before it -- an owner's turns -- and only then asks

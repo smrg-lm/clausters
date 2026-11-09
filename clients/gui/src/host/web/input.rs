@@ -355,16 +355,46 @@ impl WebApp {
         let Some(k) = to_key(key) else {
             return;
         };
-        // With no pointer over the canvas yet the context still holds: the
-        // pointer is unknown, and a verb addressed by it means the window.
-        let Some(ctx) = self.window_ctx(def) else {
-            return;
-        };
         // A chord with the modifier the host has no name for is none of the
         // host's: Control+E on a Mac is not a bare `e`.
         if self.canvases.get(&def).is_some_and(|slot| slot.unnamed()) {
             return;
         }
+        self.press_key(def, k);
+    }
+
+    /// **A client pressed keys on canvas `def`** (`/gui_keypress`, `/gui_text`):
+    /// `mods` held while each key is handed, in turn, to the dispatch this
+    /// front's own keyboard reaches: the native front's `keys`, on this
+    /// front's canvas. The keyboard's modifiers come back afterwards.
+    pub(super) fn keys(
+        &mut self,
+        def: i32,
+        keys: Vec<crate::host::widget::element::Key>,
+        mods: crate::host::PointerMods,
+    ) {
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return log(&format!("/gui_keypress {def}: no canvas holds that window"));
+        };
+        let held = slot.mods.get();
+        slot.mods
+            .set(u8::from(mods.shift) | u8::from(mods.ctrl) << 1 | u8::from(mods.alt) << 2);
+        for key in keys {
+            self.press_key(def, key);
+        }
+        if let Some(slot) = self.canvases.get(&def) {
+            slot.mods.set(held);
+        }
+    }
+
+    /// One key through the one dispatch, wherever it was read: a tip taken
+    /// down, the machine's `press_key`, and the keyboard re-aimed after it.
+    fn press_key(&mut self, def: i32, k: crate::host::widget::element::Key) {
+        // With no pointer over the canvas yet the context still holds: the
+        // pointer is unknown, and a verb addressed by it means the window.
+        let Some(ctx) = self.window_ctx(def) else {
+            return;
+        };
         let pointer = self.canvases.get(&def).and_then(|slot| slot.cursor);
         let Some(slot) = self.canvases.get_mut(&def) else {
             return;

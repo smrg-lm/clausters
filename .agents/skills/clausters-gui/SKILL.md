@@ -1,6 +1,6 @@
 ---
 name: clausters-gui
-description: How to develop the Clausters GUI track — the `clients/gui` crate (the host that owns the windows, the widgets and the GPU) and the Python leg that drives it. Covers the crate/workspace boundary and its Cargo features, the platform seam (agnostic core + native/browser shells behind small traits) and the wasm build gate, the protocol invariants that keep a widget addable by extension, the three transports, the wgpu/WGSL rendering machinery and the "never resolve finer than the screen" rule, the data paths (shm buses and taps, /bus_stream, mmap/fetch bulk), the layout and sizing model (metrics roles, a widget's natural size, the logical/physical seam and its per-window scale), and where a new compute function belongs. Consult before touching anything under clients/gui, before adding a widget, a gesture or a data path, before sizing or positioning anything, and before deciding that some new math is display-only — even when the change looks local.
+description: How to develop the Clausters GUI track: the `clients/gui` crate (the host that owns the windows, the widgets and the GPU) and the Python leg that drives it. Covers the crate/workspace boundary and its Cargo features, the platform seam (agnostic core + native/browser shells behind small traits) and the wasm build gate, the protocol invariants that keep a widget addable by extension, the three transports, the wgpu/WGSL rendering machinery and the "never resolve finer than the screen" rule, the data paths (shm buses and taps, /bus_stream, mmap/fetch bulk), the layout and sizing model (metrics roles, a widget's natural size, the logical/physical seam and its per-window scale), and where a new compute function belongs. Consult before touching anything under clients/gui, before adding a widget, a gesture or a data path, before sizing or positioning anything, and before deciding that some new math is display-only, even when the change looks local. Also carries the procedure for checking the host by script (headless host, captures, scripted pointer and keys) before any eye pass, which an application's views follow too.
 ---
 
 # Developing the Clausters GUI track
@@ -118,7 +118,47 @@ The document is `clausters-document`: sources, regions, take lanes, tracks, auto
 
 An adapter executes I/O effects and reports results; this does not make it the owner of clipboard policy, history or resource retention. Shared application policy belongs in Rust. The application-state migration and its current/target ownership contracts are in the apps plan and `docs/architecture.md`, "Application state and services: implementation contract". Proposed coordinator contracts are not already implemented services.
 
-**E2E sandbox rule (non-negotiable):** the Bash sandbox isolates the network between invocations — run the host and the Python client in the **same** invocation (host in background with `&`, then the client, then kill). GPU-free logic (navigation math, peaks against brute force, FFT/STFT localization, cache round-trips, parse/layout/fetch/node-tree models, gesture dispatch over a JSON-built host) stays in the crate's `cargo test`; the window binaries need a display and a real adapter; `--headless` runs the protocol with no display.
+**An application's views are widgets, so its work goes through [[gui-widgets]] first.** A box of samples in the multitrack, a roll inside a clip, a lane of a stacked editor, a ruler over tracks: each is a view the widget set already draws, and that skill's first rule (adapt the view that exists, never write a second one), its recipe, its sizing rules and its edit-back invariants govern an application's views as they govern a standalone widget's. Before changing what an application shows or how it answers a hand, read that skill, `docs/app-behavior.md` (what a window shares, what bounds a time axis, what is history) and the apps plan; an application keeps only what is its own (where a box sits, its frame, its fades, its grips) and calls the view for the rest. An application is checked the way a widget is, with the procedure below: its windows driven by its verbs, a hand and the keyboard, and a picture after each step, with two of its windows open when the change touches what a window shares.
+
+**E2E sandbox rule (non-negotiable):** the Bash sandbox isolates the network between invocations, so run the host and the Python client in the **same** invocation (the host in the background with `&`, or booted by the client; then the client; then stop it). The window binaries need a display and a real adapter; `--headless` needs neither.
+
+## Checking what the host does, with nobody at the screen
+
+The host is seen and driven by a script: `/gui_capture` writes a window's picture as a PNG, drawn by the one frame the screen is drawn with; `/gui_pointer` plays a press, a move or a release; `/gui_keypress` presses a key with its modifiers and `/gui_text` types a text, through the window's one keyboard dispatch; `/gui_verb` performs a verb as a key or a tool would. A host started with `--headless` draws every window offscreen on any adapter, a software one included, and never puts a window on the screen. So **a change to what the host draws, or to how it answers a hand or a key, is checked by script before anyone looks**, and the eye pass is kept for what only an eye judges (a weight, a colour, whether it reads), done by the user afterwards. The procedure goes cheapest rung first; stop at the first rung that settles the question:
+
+1. **The logic, with no GPU.** `cargo test --lib <filter>` from `clients/gui/`: a model's geometry, a layout's rects, a parse, a press, a drag or a key handed to the gesture machine over a JSON-built host (`Gestures` with a `GestureCtx`), a wire message in `host/tests.rs`. Milliseconds, and most behaviour is settled here: a check that can be a unit test is one.
+2. **The picture, headless, from a scratch script.** When the question is what a window looks like after a step. Build only the host binary in debug (`cargo build --bin clausters-gui` in `clients/gui/`, seconds) and point the client at it with `CLAUSTERS_GUI_BIN`, instead of `scripts/refresh-bin.sh`'s release build of everything; put `clients/python` on `PYTHONPATH` when the venv holds a copy of the client rather than an editable install (`clausters.__file__` says which). The script and its pictures live in the scratchpad, never in the tree:
+
+   ```python
+   from clausters.gui import guidef
+   from clausters.gui.host import GuiHost
+
+   host = GuiHost().boot(extra_args=("--headless",))
+   events = []
+   host.subscribe(lambda addr, args: events.append(args))
+   win = host.open(guidef.window(guidef.text(name="entry"), w=320, h=60))
+   host.press_key(win, "Tab")                  # the focus ring, as the keyboard's Tab
+   host.type_text(win, "hello")                # a key per character
+   host.press_key(win, "Left", "ctrl+shift")   # a chord: mods held for this key only
+   host.pointer(win, "press", 40, 30)          # device pixels: the declared size, headless
+   host.pointer(win, "release", 40, 30)
+   host.capture(win, "<scratchpad>/1-typed.png")   # waits for the turns before it
+   host.poll(0.2)                              # deliver what the steps reported
+   host.stop()
+   ```
+
+   run in one invocation (`CLAUSTERS_GUI_BIN=$PWD/clients/gui/target/debug/clausters-gui PYTHONPATH=clients/python .venv/bin/python <script>`), then **assert on numbers before reading pictures** (the `/gui_event`s the steps produced, `host.query(id)` for what a widget holds now) and read the PNGs (the Read tool shows an image) for what a number cannot say. An editor or an application's handler has the same doors as members: `verb`, `pointer`, `click`, `drag`, `press_key`, `type_text`, `capture`.
+3. **An example's steps.** When an example already offers the steps as functions, `scripts/look.py EXAMPLE [STEP ...]` runs it against a headless host and leaves a picture of every window after every step in the example tree's `out/look/<example>/` (`docs/contributing.md`, "Looking at a window with nobody at the screen"). It launches the binaries the client resolves, so the `CLAUSTERS_GUI_BIN` override or a refreshed bundle.
+4. **Before and after.** "Did this change move anything" is two captures of the same script compared pixel by pixel: the previous commit built in a worktree and the working tree, each driving the same steps. One adapter draws the same bytes run to run, and a card and a software adapter differ by at most two levels a channel (`docs/decisions.md`, "A capture is the same picture on any adapter, within two levels"), so a larger difference is the change. The kept reference `clients/gui/tests/references/window.png` is the one picture a test compares on every run.
+5. **The page.** The same Rust drawn in a tab: the acceptance pages in `clients/web/tests` run headless under `./test.sh` (only when the web package changed), and `host.pointer`, `pressKey`, `typeText` and `capture` (into the page's storage) drive a canvas there as they drive a window.
+6. **The eye.** What is left after the rungs above, through the example that shows it; the user does it afterwards.
+
+What keeps it cheap and right:
+
+- **Declare a small window holding only what is under test.** Headless, a window is drawn at its declared `w`/`h` at a scale of one, so its device pixels are its logical ones: a point is computed from the layout, or found in a first capture and pointed at in the next.
+- **A capture needs no sleep before it.** It waits until the owner has answered every turn the client has outstanding, and a window nobody sees asks for what its picture owes before it writes. Sleep only for what moves on its own, such as a transport or a meter, and say how long in the script.
+- **One host, one script, several windows**, all in one Bash invocation, stopped at the end. Never check by opening a window on the user's screen: the headless host is the one that runs while somebody works.
+- **A scripted hand and keyboard are the real ones.** A drag goes through the gesture machine and snaps as a mouse's does; a key goes through the popup layer, the focus ring, the focused element and the key table. Two differences are deliberate: a scripted modifier holds for its one event, and Escape with nothing open does not close the window (it is a desktop window's own key, not the dispatch's, and a page has none).
 
 ## Layout: a GuiDef is an app shell, not a pile of widgets
 

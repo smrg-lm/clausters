@@ -202,6 +202,10 @@ pub(super) enum Asked {
         y: f64,
         mods: crate::host::PointerMods,
     },
+    Keys {
+        keys: Vec<crate::host::widget::element::Key>,
+        mods: crate::host::PointerMods,
+    },
     Capture {
         path: String,
         from: ClientId,
@@ -529,6 +533,7 @@ impl App {
                     y,
                     mods,
                 } => self.pointer(window, kind, x, y, mods),
+                HostEffect::Keys { window, keys, mods } => self.keys(window, keys, mods),
                 HostEffect::Capture { window, path } => self.capture(window, path, from),
             }
         }
@@ -781,6 +786,7 @@ impl App {
             match asked {
                 Asked::Verb(verb) => self.perform_verb(id, &verb),
                 Asked::Pointer { kind, x, y, mods } => self.pointer(id, kind, x, y, mods),
+                Asked::Keys { keys, mods } => self.keys(id, keys, mods),
                 Asked::Capture { path, from } => self.capture(id, path, from),
             }
         }

@@ -1177,6 +1177,33 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
+     * **A key pressed on the window**, with `mods` held --
+     * {@link GuiHost.pressKey} on this editor's window: the focused element's
+     * key, or the verb the key table binds to it. What it edits arrives as a
+     * key's edit does, through the event loop.
+     *
+     * Answers whether it was sent: `false` with no window open.
+     */
+    pressKey(key: string, mods = ""): boolean {
+        if (this.host === null || this.windowId === null) return false;
+        this.host.pressKey(this.windowId, key, mods);
+        return true;
+    }
+
+    /**
+     * **Text typed into the window**, a key per character --
+     * {@link GuiHost.typeText} on this editor's window: what a focused field
+     * types.
+     *
+     * Answers whether it was sent: `false` with no window open.
+     */
+    typeText(text: string): boolean {
+        if (this.host === null || this.windowId === null) return false;
+        this.host.typeText(this.windowId, text);
+        return true;
+    }
+
+    /**
      * **Write the window's picture to `path`** as a PNG, and resolve to the
      * path -- {@link GuiHost.capture} on this editor's window, which waits for
      * the turns before it: what a verb or a gesture edited is in the picture.

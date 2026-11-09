@@ -161,8 +161,9 @@ usage:
                             per widget; a count this GPU does not offer for the
                             surface format falls back to 1 with a warning.
       --headless            show no window: draw each one offscreen, to be
-                            captured and played to (/gui_capture, /gui_pointer),
-                            on any adapter, a software one included; with none,
+                            captured and played to (/gui_capture, /gui_pointer,
+                            /gui_keypress, /gui_text), on any adapter, a
+                            software one included; with none,
                             run the protocol alone. The default opens windows
                             (winit + wgpu)
   -v, -vv, -vvv             log verbosity: warn (default) -> info -> debug ->

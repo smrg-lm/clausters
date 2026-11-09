@@ -474,6 +474,20 @@ export abstract class HostedEditor {
         return this.pointer("release", x1, y1, mods);
     }
 
+    /** **A key pressed on the window**, with `mods` held; whether it was sent. */
+    pressKey(key: string, mods = ""): boolean {
+        if (this.closed) return false;
+        (this.hostOf as GuiHost).pressKey(this.opened(), key, mods);
+        return true;
+    }
+
+    /** **Text typed into the window**, a key per character; whether it was sent. */
+    typeText(text: string): boolean {
+        if (this.closed) return false;
+        (this.hostOf as GuiHost).typeText(this.opened(), text);
+        return true;
+    }
+
     /** **Write the window's picture to `path`** as a PNG, and answer the path. */
     async capture(path: string, timeout = 5.0): Promise<string> {
         return (this.hostOf as GuiHost).capture(this.opened(), path, timeout);

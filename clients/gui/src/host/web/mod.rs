@@ -509,6 +509,7 @@ impl WebApp {
                     y,
                     mods,
                 } => self.pointer(window, kind, x, y, mods),
+                HostEffect::Keys { window, keys, mods } => self.keys(window, keys, mods),
                 HostEffect::Capture { window, path } => self.capture(window, path),
             }
         }

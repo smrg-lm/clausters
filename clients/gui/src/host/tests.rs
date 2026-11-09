@@ -683,6 +683,108 @@ fn a_pointer_event_is_read_and_handed_to_the_front() {
     }
 }
 
+/// **A scripted key is read as the key table spells it** (`/gui_keypress`) and a
+/// typed text as a key per character (`/gui_text`): a letter is what the
+/// keyboard gives under its modifiers, a newline is Enter, and a key, a
+/// modifier or a character the host cannot type is said and dropped.
+#[test]
+fn a_key_and_a_text_are_read_and_handed_to_the_front() {
+    use crate::host::widget::element::Key;
+    let mut host = Host::new();
+    host.handle_packet(def_msg(1, TREE), from());
+    let send = |host: &mut Host, addr: &str, args: Vec<OscType>| {
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: addr.into(),
+                args,
+            }),
+            from(),
+        )
+    };
+    let s = |v: &str| OscType::String(v.into());
+    let keys = |effects: &[HostEffect]| match effects {
+        [
+            HostEffect::Keys {
+                window: 1,
+                keys,
+                mods,
+            },
+        ] => (keys.clone(), *mods),
+        other => panic!("the front is handed the keys: {other:?}"),
+    };
+    let ctrl = PointerMods {
+        ctrl: true,
+        ..PointerMods::default()
+    };
+    let shift = PointerMods {
+        shift: true,
+        ..PointerMods::default()
+    };
+    for (args, want) in [
+        (
+            vec![OscType::Int(1), s("Z"), s("ctrl")],
+            (Key::Char('z'), ctrl),
+        ),
+        (
+            vec![OscType::Int(1), s("a"), s("shift")],
+            (Key::Char('A'), shift),
+        ),
+        (
+            vec![OscType::Int(1), s("a")],
+            (Key::Char('a'), PointerMods::default()),
+        ),
+        (
+            vec![OscType::Int(1), s(" ")],
+            (Key::Char(' '), PointerMods::default()),
+        ),
+        (
+            vec![OscType::Int(1), s("space")],
+            (Key::Char(' '), PointerMods::default()),
+        ),
+        (
+            vec![OscType::Int(1), s("enter")],
+            (Key::Enter, PointerMods::default()),
+        ),
+        (
+            vec![OscType::Int(1), s("Tab")],
+            (Key::Tab, PointerMods::default()),
+        ),
+        (
+            vec![OscType::Int(1), s("F5")],
+            (Key::F(5), PointerMods::default()),
+        ),
+    ] {
+        let (got, mods) = keys(&send(&mut host, GUI_KEYPRESS, args));
+        assert_eq!((got, mods), (vec![want.0], want.1));
+    }
+    let (typed, mods) = keys(&send(
+        &mut host,
+        GUI_TEXT,
+        vec![OscType::Int(1), s("A\u{e9}\nb")],
+    ));
+    assert_eq!(
+        typed,
+        vec![
+            Key::Char('A'),
+            Key::Char('\u{e9}'),
+            Key::Enter,
+            Key::Char('b')
+        ]
+    );
+    assert_eq!(mods, PointerMods::default());
+    for (addr, args) in [
+        (GUI_KEYPRESS, vec![OscType::Int(1), s("hyper")]),
+        (GUI_KEYPRESS, vec![OscType::Int(1), s("F13")]),
+        (GUI_KEYPRESS, vec![OscType::Int(1), s("a"), s("hyper")]),
+        (GUI_KEYPRESS, vec![OscType::Int(99), s("a")]),
+        (GUI_KEYPRESS, vec![OscType::Int(1)]),
+        (GUI_TEXT, vec![OscType::Int(1), s("a\u{7}b")]),
+        (GUI_TEXT, vec![OscType::Int(99), s("ab")]),
+    ] {
+        assert!(send(&mut host, addr, args).is_empty(), "nothing guessed");
+    }
+}
+
 /// A host antialiases what it draws unless it is told not to.
 #[test]
 fn a_host_draws_with_four_samples_unless_told() {

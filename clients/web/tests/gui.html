@@ -246,6 +246,29 @@
         }
         log(`scripted drag drove the engine: freq ${beforeScripted} -> ${scripted}`);
 
+        // **Keys from the script** (`/gui_keypress`, `/gui_text`): Tab enters
+        // the field as the keyboard's Tab does, the text is typed into it a
+        // key per character, and Backspace takes the last one back: the
+        // window's one keyboard dispatch, reached by the host rather than
+        // through the canvas' events.
+        const form = host.open(gui.view(
+          { title: "typed", w: 320, h: 80 },
+          gui.text({ name: "entry" }),
+        ));
+        const typed = [];
+        form.widget("entry").onEvent((...args) => typed.push(args));
+        await sleep(300);
+        host.pressKey(form, "Tab");
+        host.typeText(form, "hey");
+        host.pressKey(form, "Backspace");
+        const entered = () => typed.at(-1)?.at(-1);
+        for (let i = 0; i < 40 && entered() !== "he"; i++) await sleep(50);
+        if (entered() !== "he") {
+          throw new Error("scripted keys never typed into the field: "
+            + JSON.stringify(typed));
+        }
+        log(`scripted keys typed into the field: ${JSON.stringify(typed.map((a) => a.at(-1)))}`);
+
         // **A roll that listens paints what is played, in a page as on the
         // desktop.** The host reads the bytes of a MIDI message into a note
         // and hands it to every element that declared it reads live MIDI --
@@ -293,7 +316,7 @@
         synth.free();
         verdict(`PASS: page GUI carrier -- event ${JSON.stringify(events[0])}, `
           + `bound freq ${before} -> ${after}, touch ${touched}, scripted ${scripted}, `
-          + `a played key painted, `
+          + `scripted keys typed "${entered()}", a played key painted, `
           + `subtree freed`);
       }
 

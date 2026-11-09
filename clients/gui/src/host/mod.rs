@@ -722,6 +722,23 @@ pub const GUI_CAPTURE: &str = "/gui_capture";
 /// modifiers held for that one event, `+`-separated (`"shift"`,
 /// `"ctrl+alt"`); none are held otherwise, whatever the keyboard holds.
 pub const GUI_POINTER: &str = "/gui_pointer";
+/// `/gui_keypress <window> <key> [mods]`: a key pressed on a window, handed to
+/// its one keyboard dispatch as the front's own keyboard hands it: the
+/// popup layer, the focus ring, the focused element, then the key table and
+/// the verb it names.
+///
+/// `key` is spelled as a key table spells it: one character (`"a"`,
+/// `"?"`), or a named key (`"space"`, `"Enter"`, `"Backspace"`, `"Delete"`,
+/// `"Left"`, `"Home"`, `"Escape"`, `"Tab"`, `"F5"`). `mods` names the
+/// modifiers held for that one press, as [`GUI_POINTER`]'s do. A letter is
+/// what the keyboard would give: upper case under Shift alone, lower case
+/// under Ctrl or Alt, as written otherwise.
+pub const GUI_KEYPRESS: &str = "/gui_keypress";
+/// `/gui_text <window> <text>`: text typed into a window, each character
+/// pressed in turn with no modifier held, as the front types what an input
+/// method or a compose sequence committed. A newline is Enter and a tab is
+/// Tab; any other control character makes the whole text refused.
+pub const GUI_TEXT: &str = "/gui_text";
 /// `/gui_clipboard <json> [blob...]` -- an owner puts a document on the
 /// host-wide clipboard: what a copy over a view it copies for left there (a
 /// span of a take copied on the server, named by the buffer it is in).
@@ -825,6 +842,14 @@ pub enum HostEffect {
         y: f64,
         mods: PointerMods,
     },
+    /// `/gui_keypress` or `/gui_text` pressed keys on the window rooted at
+    /// `window`: the front holds `mods` for them and hands each, in turn, to
+    /// the window's one keyboard dispatch, as its own keyboard would.
+    Keys {
+        window: i32,
+        keys: Vec<widget::element::Key>,
+        mods: PointerMods,
+    },
     /// `/gui_capture` asked for the picture of the window rooted at `window`
     /// at `path`: the front draws a whole frame of it offscreen, writes the
     /// PNG and answers [`GUI_CAPTURED`] to the client that asked.
@@ -854,7 +879,8 @@ impl PointerKind {
     }
 }
 
-/// The modifiers held for one scripted pointer event ([`GUI_POINTER`]):
+/// The modifiers held for one scripted pointer event ([`GUI_POINTER`]) or
+/// key ([`GUI_KEYPRESS`]):
 /// the three the gesture machine reads. `ctrl` is the host's command key,
 /// as a key table's `Ctrl` is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

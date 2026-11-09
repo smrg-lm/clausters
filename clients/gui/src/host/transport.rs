@@ -164,6 +164,9 @@ fn perform(
             HostEffect::Pointer { window, .. } => {
                 diag::info!("gui_pointer {window}: no window to play a hand to (headless)")
             }
+            HostEffect::Keys { window, .. } => {
+                diag::info!("gui_key {window}: no window to type into (headless)")
+            }
             HostEffect::Capture { window, path } => reply(
                 from,
                 super::captured(window, &path, Some("this front draws nothing")),

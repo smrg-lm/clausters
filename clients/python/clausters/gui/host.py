@@ -700,6 +700,36 @@ class GuiHost:
             args.append(str(mods))
         self._send("/gui_pointer", *args)
 
+    def press_key(self, id, key: str, mods: str = ""):
+        """``/gui_keypress <id> <key> [mods]``: a key pressed on window ``id``
+        (an id or a handle), with ``mods`` held for that one press.
+
+        The host hands it to the window's one keyboard dispatch as its own
+        keyboard does: an open list, the focus ring, the focused element, then
+        the key table and the verb it names. ``key`` is spelled as a key table
+        spells it, one character (``"a"``, ``"?"``) or a named key
+        (``"space"``, ``"Enter"``, ``"Backspace"``, ``"Delete"``, ``"Left"``,
+        ``"Home"``, ``"Escape"``, ``"Tab"``, ``"F5"``), and ``mods`` as
+        `pointer`'s (``"shift"``, ``"ctrl+alt"``). A letter is what the
+        keyboard would give: upper case under Shift alone, lower case under
+        Ctrl or Alt. What it edits reaches the owner as the key's
+        ``/gui_event``.
+        """
+        window = int(getattr(id, "id", id))
+        args = [window, str(key)]
+        if mods:
+            args.append(str(mods))
+        self._send("/gui_keypress", *args)
+
+    def type_text(self, id, text: str):
+        """``/gui_text <id> <text>``: ``text`` typed into window ``id`` (an
+        id or a handle): each character pressed in turn with no modifier
+        held, as the window types what an input method committed. A newline
+        is Enter and a tab is Tab; a text holding any other control character
+        is refused whole by the host.
+        """
+        self._send("/gui_text", int(getattr(id, "id", id)), str(text))
+
     def capture(self, id, path, timeout: float = 5.0) -> str:
         """``/gui_capture <id> <path>`` -- write the picture of window ``id``
         (an id or a handle) to ``path`` as a PNG, and answer the path once the

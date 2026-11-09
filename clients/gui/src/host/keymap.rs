@@ -129,6 +129,44 @@ pub struct Section {
     pub rows: Vec<(String, String)>,
 }
 
+/// **The key a name spells**, as the table and a scripted key spell it
+/// (`"a"`, `"space"`, `"Enter"`, `"Left"`, `"F5"`, `"Tab"`), case-insensitive
+/// for a named key and as written for a character. One character names
+/// itself; a name it does not know is `Err`. Tab is read here, since a script
+/// walks the focus ring with it ([`super::GUI_KEYPRESS`]), and refused by
+/// [`Chord::parse`], since the ring's key is never a verb's.
+pub fn key_named(name: &str) -> Result<Key, String> {
+    let lower = name.to_ascii_lowercase();
+    Ok(match lower.as_str() {
+        "space" => Key::Char(' '),
+        "delete" | "del" => Key::Delete,
+        "backspace" => Key::Backspace,
+        "enter" | "return" => Key::Enter,
+        "home" => Key::Home,
+        "end" => Key::End,
+        "left" => Key::Left,
+        "right" => Key::Right,
+        "up" => Key::Up,
+        "down" => Key::Down,
+        "tab" => Key::Tab,
+        "escape" | "esc" => Key::Escape,
+        f if f.len() > 1 && f.starts_with('f') && f[1..].parse::<u8>().is_ok() => {
+            let n: u8 = f[1..].parse().unwrap_or(0);
+            if !(1..=12).contains(&n) {
+                return Err(format!("no key '{name}' (F1 to F12)"));
+            }
+            Key::F(n)
+        }
+        _ => {
+            let mut chars = name.chars();
+            match (chars.next(), chars.next()) {
+                (Some(c), None) => Key::Char(c),
+                _ => return Err(format!("unknown key '{name}'")),
+            }
+        }
+    })
+}
+
 /// A key and the modifiers held with it, **normalized** so the table and a
 /// press compare equal whichever way they were spelled or typed.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -181,39 +219,14 @@ impl Chord {
             }
         }
         let name = last.trim();
-        let lower = name.to_ascii_lowercase();
-        let key = match lower.as_str() {
-            "" => return Err(format!("'{text}' names no key")),
-            "space" => Key::Char(' '),
-            "delete" | "del" => Key::Delete,
-            "backspace" => Key::Backspace,
-            "enter" | "return" => Key::Enter,
-            "home" => Key::Home,
-            "end" => Key::End,
-            "left" => Key::Left,
-            "right" => Key::Right,
-            "up" => Key::Up,
-            "down" => Key::Down,
+        if name.is_empty() {
+            return Err(format!("'{text}' names no key"));
+        }
+        let key = match key_named(name) {
             // The ring's: the platform's, never a verb's.
-            "tab" => {
-                return Err(format!("'{name}' is reserved and cannot be bound"));
-            }
-            // The dismissal's, which only a scope may bind ([`Keymap::bind_in`]).
-            "escape" | "esc" => Key::Escape,
-            f if f.len() > 1 && f.starts_with('f') && f[1..].parse::<u8>().is_ok() => {
-                let n: u8 = f[1..].parse().unwrap_or(0);
-                if !(1..=12).contains(&n) {
-                    return Err(format!("no key '{name}' (F1 to F12)"));
-                }
-                Key::F(n)
-            }
-            _ => {
-                let mut chars = name.chars();
-                match (chars.next(), chars.next()) {
-                    (Some(c), None) => Key::Char(c),
-                    _ => return Err(format!("unknown key '{name}' in '{text}'")),
-                }
-            }
+            Ok(Key::Tab) => return Err(format!("'{name}' is reserved and cannot be bound")),
+            Ok(key) => key,
+            Err(e) => return Err(format!("{e} in '{text}'")),
         };
         Ok(Chord::of(&key, mods))
     }
