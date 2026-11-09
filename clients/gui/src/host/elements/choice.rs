@@ -229,10 +229,13 @@ impl Element for Choice {
 
     /// Squeezed, a chooser gives up its **label strip** and keeps its body --
     /// the caption names the choice, the body *is* it.
+    ///
+    /// Across, its body keeps its arrows and marks and cuts its options to an
+    /// ellipsis ([`choice::body_min_w`]).
     fn floor(&self, m: &Metrics, scale: f32) -> Natural {
         let size = self.text_size * scale;
         (
-            None,
+            Some(choice::body_min_w(self.view, self.options.len(), size, m) + 2.0 * m.pad),
             Some(body_inset(m) + choice::body_h(self.view, self.options.len(), size, m)),
         )
     }

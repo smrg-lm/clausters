@@ -36,7 +36,11 @@ use crate::host::widget::element::{
     Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput, Mods, Verb,
 };
 use crate::host::widget::parse;
-use crate::host::widget::size::{Natural, body_inset, control_box, label_strip};
+use crate::host::widget::size::{Natural, body_inset, control_box, label_strip, text_box};
+
+/// **The room a single-line field keeps at least**: four figures, enough to
+/// see what is typed around the caret while the rest scrolls.
+const FLOOR_TEXT: &str = "0000";
 
 /// An editable text-entry field: the string, how it is presented, and -- while
 /// it is being edited -- the caret and the selection anchor.
@@ -298,11 +302,14 @@ impl Element for Text {
     /// its box: a field shorter than the row it is typed into cannot show the
     /// caret it is being typed with. A multiline field is elastic and floors
     /// at nothing, the same answer its natural size gives.
+    ///
+    /// Across, a field may be narrow: what it holds scrolls in it, so a few
+    /// characters' room is enough to type into. A multiline one keeps a line.
     fn floor(&self, m: &Metrics, scale: f32) -> Natural {
         let size = self.text_size * scale;
         (
-            None,
-            (!self.multiline).then(|| body_inset(m) + control_box(size, m)),
+            Some(text_box(FLOOR_TEXT, size, m)),
+            Some(body_inset(m) + control_box(size, m)),
         )
     }
 

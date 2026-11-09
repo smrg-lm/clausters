@@ -205,6 +205,22 @@ pub fn body_h(view: View, options: usize, size: f32, m: &Metrics) -> f32 {
     }
 }
 
+/// **The narrowest a choice's body is given**: each option it shows at once
+/// cut to an ellipsis, and the arrows and marks whole -- an option's name sets
+/// no width of its own. Tabs that do not fit gather behind one tab, so a row
+/// of tabs floors at that one.
+pub fn body_min_w(view: View, options: usize, size: f32, m: &Metrics) -> f32 {
+    let cut = font::width("\u{2026}", size);
+    match view {
+        View::Combo => cut + 2.0 * m.pad + font::height(size) + m.pad,
+        View::Radio => m.box_side + cut + 2.0 * m.pad,
+        View::List => cut + 2.0 * m.pad,
+        View::Segmented => (cut + 3.0 * m.pad) * options.max(1) as f32,
+        View::Tabs => tab_w("\u{2026}", size, m),
+        View::Pager => 2.0 * arrow_w(size, m) + cut + 2.0 * m.pad,
+    }
+}
+
 /// The width a choice's body wants when its container is fitted to it.
 pub fn body_w(view: View, options: &[String], size: f32, m: &Metrics) -> f32 {
     let widest = options

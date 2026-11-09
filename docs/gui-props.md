@@ -45,8 +45,8 @@ happened.
 
 ## The generic props
 
-`w`, `h`, `x`, `y`, `weight`, `color`, `theme`, `opacity`, `radius` and
-`gestures` belong to no widget: the host parses them off **every** node in
+`w`, `h`, `x`, `y`, `weight`, `min_w`, `min_h`, `max_w`, `max_h`, `anchor`,
+`color`, `theme`, `opacity`, `radius` and `gestures` belong to no widget: the host parses them off **every** node in
 `Widget::build`, before the kind is even considered. (`gestures` is a *container's* table — a leaf carries
 one harmlessly, since nothing ever asks a leaf what a drag on it does.) So they are left out of the per-widget comparison, and the two
 clients name them differently by necessity — the web client declares them once

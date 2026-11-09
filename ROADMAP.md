@@ -127,13 +127,9 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
-- ⬜ **A control's size does not follow what it says, in a row or across one**
-  *(`clients/gui/PLAN.md`, Found by use)*. Decided 2026-11-09: a floor per
-  element that every container propagates and no declared size goes under,
-  the root's floor as the window's minimum, a maximum and an alignment as
-  new capacity, an ellipsis for text and a minimum width for controls with
-  geometry, and a default per standard type. What is left is the work,
-  checked on `panels/palette`.
+- ⬜ **A scroll's plane is no wider than its pane, whatever its children's
+  floors** *(`clients/gui/PLAN.md`, Found by use)*. The score editor's
+  ornaments palette is cut a few pixels at the column's edge.
 
 ## 2. Tests and reviews pending
 

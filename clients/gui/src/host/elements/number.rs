@@ -113,9 +113,15 @@ impl Element for Number {
     /// Squeezed, a field gives up its **label strip** and keeps its box: the
     /// value is the whole widget, and a box shorter than the glyphs inside it
     /// is a drawing that lies.
+    /// And it is never narrower than its widest value: a number cut to an
+    /// ellipsis shows a wrong number.
     fn floor(&self, m: &Metrics, scale: f32) -> Natural {
         (
-            None,
+            Some(controls::readout_w(
+                &self.range,
+                self.range.text_size * scale,
+                m,
+            )),
             Some(field_h(&self.range, m, scale) - controls::label_give(&self.range, m, scale)),
         )
     }

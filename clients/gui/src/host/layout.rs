@@ -47,7 +47,7 @@ use std::collections::HashMap;
 use super::metrics::Metrics;
 use super::scroll;
 use super::timeline::{self, GroupKey, group_key};
-use super::widget::{Flow, Layout, Place, Widget, WidgetKind};
+use super::widget::{Anchor, Flow, Layout, Place, Widget, WidgetKind};
 
 /// A rectangle in physical pixels, top-left origin.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -263,6 +263,12 @@ fn place_all<'a>(
     let mut modals = Vec::new();
     let ctx = Ctx { metrics, indents };
     let space = Space::window(metrics);
+    // **The window is never smaller than its root's floor**: the platform is
+    // told so ([`Host::window_min_px`](super::Host::window_min_px)), and a
+    // window it made smaller anyway is laid out at the floor and cut by its
+    // edge rather than squeezing a control under what it reads at.
+    let (floor_w, floor_h) = root.min_size(&space.metrics, space.unit);
+    let area = Rect::new(area.x, area.y, area.w.max(floor_w), area.h.max(floor_h));
     place(
         area,
         root,
@@ -284,20 +290,23 @@ fn place_all<'a>(
         let (widget, parent): (&Widget, usize) = modals[next];
         next += 1;
         let (want_w, want_h) = widget.hug_size(&space.metrics, space.unit);
+        let (floor_w, floor_h) = widget.min_size(&space.metrics, space.unit);
         let w = widget
             .place
             .w
             .map(|w| space.px(w))
             .or(want_w)
             .unwrap_or(area.w * 0.5)
-            .min(area.w);
+            .min(area.w)
+            .max(floor_w);
         let h = widget
             .place
             .h
             .map(|h| space.px(h))
             .or(want_h)
             .unwrap_or(area.h * 0.5)
-            .min(area.h);
+            .min(area.h)
+            .max(floor_h);
         let rect = Rect::new(
             (area.x + (area.w - w) * 0.5).round(),
             (area.y + (area.h - h) * 0.5).round(),
@@ -604,54 +613,79 @@ fn child_rects(
     match layout {
         Layout::Free => children
             .iter()
-            .map(|c| free_rect(inner, c.place, space))
+            .map(|c| free_rect(inner, c, space))
             .collect(),
         Layout::Row => strip(inner, children, gap, true, flow.pack, space),
         Layout::Col => strip(inner, children, gap, false, flow.pack, space),
-        Layout::Grid => grid(inner, children.len(), gap, flow.cols),
+        Layout::Grid => grid(inner, children, gap, flow.cols, space),
     }
 }
 
 /// A `free` child's rectangle: absolute `x`/`y`/`w`/`h` inside `inner` when
 /// any is given (missing position = the container's origin, missing size = the
-/// rest of the area), the full-area overlay when none is.
-fn free_rect(inner: Rect, p: Place, space: Space) -> Rect {
+/// rest of the area), the full-area overlay when none is -- and either way
+/// fitted to the child's floor and its maximum ([`fit`]).
+fn free_rect(inner: Rect, c: &Widget, space: Space) -> Rect {
+    let p = c.place;
     if p.x.is_none() && p.y.is_none() && p.w.is_none() && p.h.is_none() {
-        return inner;
+        return fit(inner, c, true, true, space);
     }
     let (x, y) = (space.px(p.x.unwrap_or(0.0)), space.px(p.y.unwrap_or(0.0)));
+    let (floor_w, floor_h) = c.min_size(&space.metrics, space.unit);
     Rect::new(
         inner.x + x,
         inner.y + y,
-        p.w.map_or(inner.w - x, |w| space.px(w)).max(0.0),
-        p.h.map_or(inner.h - y, |h| space.px(h)).max(0.0),
+        c.sized(true, (inner.w - x).max(0.0), floor_w, space.unit),
+        c.sized(false, (inner.h - y).max(0.0), floor_h, space.unit),
     )
+}
+
+/// **A child in a cell**: on each axis named (`across_w`, `across_h`) it
+/// takes the cell's extent kept under its maximum and never under its floor,
+/// and stands where its `anchor` puts it when that leaves it smaller than the
+/// cell. An axis not named is the cell's as given.
+fn fit(cell: Rect, c: &Widget, across_w: bool, across_h: bool, space: Space) -> Rect {
+    let (floor_w, floor_h) = c.min_size(&space.metrics, space.unit);
+    let anchor = c.place.anchor;
+    let mut rect = cell;
+    if across_w {
+        let max = c.place.max_w.map(|v| space.px(v));
+        rect.w = max.map_or(cell.w, |max| cell.w.min(max)).max(floor_w);
+        rect.x = Anchor::offset(anchor.x, cell.x, cell.w, rect.w);
+    }
+    if across_h {
+        let max = c.place.max_h.map(|v| space.px(v));
+        rect.h = max.map_or(cell.h, |max| cell.h.min(max)).max(floor_h);
+        rect.y = Anchor::offset(anchor.y, cell.y, cell.h, rect.h);
+    }
+    rect
 }
 
 /// Cells along one axis (`horizontal` = a row, else a column), resolved in the
 /// one order: an explicit main-axis size (`w` in a row, `h` in a column) is
 /// taken as given; an explicit `weight` takes that share of the leftover; a
 /// widget with a natural size on this axis takes exactly that; everything else
-/// shares the leftover at weight 1. The cross axis fills. In a **packed** strip
-/// (`pack`) a child with no natural size on the axis takes what its content
-/// wants instead of a share, so only an explicit `weight` stretches.
+/// shares the leftover at weight 1. In a **packed** strip (`pack`) a child with
+/// no natural size on the axis takes what its content wants instead of a
+/// share, so only an explicit `weight` stretches. Across, a child fills the
+/// strip ([`fit`]: unless a maximum keeps it smaller, and never under its
+/// floor).
 ///
-/// **And when the strip is shorter than what its children asked for**, the
-/// order runs backwards through the naturally-sized ones: each is squeezed
-/// toward its floor ([`Widget::floor_size`]), in proportion to what it offered
-/// to give. That is the difference between a widget being *asked* what it does
-/// with less room and a container deciding for it -- a labelled control gives up
-/// its label strip and keeps its body, a button that has nothing shorter than
-/// itself gives nothing, and what a widget declined to give it keeps even
-/// though the strip still overflows. Overflowing visibly beats silently
-/// truncating a widget nobody asked to shrink.
+/// **Every size is kept between the child's floor and its maximum**
+/// ([`Widget::min_size`], `max_w`/`max_h`), and the floor wins: an explicit
+/// size under it resolves to it, and a share of the leftover is never smaller
+/// than it -- a child whose share would be is given its floor and the rest is
+/// shared again among the others, as a share that would pass a maximum is
+/// held at it.
 ///
-/// Two things are deliberately outside it. An **explicit** `w`/`h` is a number
-/// the script wrote and stays given: squeezing it would make the one way to
-/// pin a size stop pinning it. And an **elastic** child is already the give in
-/// the strip -- it shares whatever is left, down to nothing -- so it needs no
-/// floor to be squeezable and gets none, which is what keeps this one pass and
-/// not a solver.
+/// **When the strip is shorter than what its children asked for**, the
+/// naturally-sized ones are squeezed toward their floors in proportion to what
+/// each offered to give, which is the widget's own answer and never the
+/// container's guess -- a labelled control gives up its label strip and keeps
+/// its body. A container is never shorter than its children's floors, since
+/// its own floor is made of them and no container places a child under its
+/// floor; only a window the platform made smaller than its minimum can be,
+/// and then the strip runs past its end rather than cut into a floor.
 fn strip(
     inner: Rect,
     children: &[&Widget],
@@ -660,112 +694,198 @@ fn strip(
     pack: bool,
     space: Space,
 ) -> Vec<Rect> {
+    let (m, unit) = (&space.metrics, space.unit);
     let gaps = gap * (children.len() as f32 - 1.0);
     let main = if horizontal { inner.w } else { inner.h };
     let axis = |(w, h): (Option<f32>, Option<f32>)| if horizontal { w } else { h };
-    // What a naturally-sized child wants and the most of that it will give
-    // back; `None` for a child that is not sized by its own nature at all.
-    let wanted_of = |c: &Widget| {
-        let p = c.place;
-        // An explicit weight overrides the natural size -- "stretch this
-        // button" stays expressible.
-        if p.weight.is_some() {
-            return None;
-        }
-        // Measured in this space's own coordinates, at the scale its text will
-        // draw at -- one table, one scale.
-        if let Some(want) = axis(c.natural_size(&space.metrics, space.unit)) {
-            let want = want.max(0.0);
-            let floor = axis(c.floor_size(&space.metrics, space.unit))
-                .unwrap_or(want)
-                .clamp(0.0, want);
-            return Some((want, want - floor));
-        }
-        // **A packed strip asks its children what their content wants**, the
-        // question a hugging container asks of them: a button is as wide as
-        // what it says, and gives none of it back. A child with no content to
-        // measure (a surface) still shares the leftover.
-        pack.then(|| axis(c.hug_size(&space.metrics, space.unit)))
-            .flatten()
-            .map(|want| (want.max(0.0), 0.0))
-    };
-    let explicit_of = |c: &Widget| {
-        let p = c.place;
-        if horizontal { p.w } else { p.h }.map(|s| space.px(s).max(0.0))
-    };
-    let fixed_of = |c: &Widget| explicit_of(c).or_else(|| wanted_of(c).map(|(want, _)| want));
-    let fixed: f32 = children.iter().copied().filter_map(fixed_of).sum();
-    let total_weight: f32 = children
+
+    /// How a child claims room along the strip.
+    #[derive(Clone, Copy)]
+    enum Claim {
+        /// A size of its own: explicit, or what its nature or its content
+        /// wants -- and the most of it it gives back when the strip is short.
+        Sized { want: f32, give: f32 },
+        /// A share of the leftover, at this weight.
+        Share(f32),
+    }
+    let floors: Vec<f32> = children
         .iter()
-        .copied()
-        .filter(|c| fixed_of(c).is_none())
-        .map(|c| c.place.weight.unwrap_or(1.0).max(0.0))
+        .map(|c| {
+            let (w, h) = c.min_size(m, unit);
+            if horizontal { w } else { h }
+        })
+        .collect();
+    let maxes: Vec<Option<f32>> = children
+        .iter()
+        .map(|c| axis((c.place.max_w, c.place.max_h)).map(|v| space.px(v)))
+        .collect();
+    let claims: Vec<Claim> = children
+        .iter()
+        .zip(&floors)
+        .map(|(c, &floor)| {
+            let p = c.place;
+            // A size the script wrote stays given -- inside the floor and the
+            // maximum -- and gives nothing back.
+            if axis((p.w, p.h)).is_some() {
+                let size = c.sized(horizontal, 0.0, floor, unit);
+                return Claim::Sized {
+                    want: size,
+                    give: 0.0,
+                };
+            }
+            // An explicit weight overrides the natural size -- "stretch this
+            // button" stays expressible.
+            if let Some(weight) = p.weight {
+                return Claim::Share(weight.max(0.0));
+            }
+            // Measured in this space's own coordinates, at the scale its text
+            // will draw at -- one table, one scale. A **packed** strip asks a
+            // child with no natural size what its content wants, the question
+            // a hugging container asks: a button as wide as what it says.
+            let wanted = axis(c.natural_size(m, unit))
+                .or_else(|| pack.then(|| axis(c.hug_size(m, unit))).flatten());
+            match wanted {
+                Some(want) => {
+                    let want = c.sized(horizontal, want.max(0.0), floor, unit);
+                    Claim::Sized {
+                        want,
+                        give: want - floor,
+                    }
+                }
+                None => Claim::Share(1.0),
+            }
+        })
+        .collect();
+
+    let mut sizes = vec![0.0f32; children.len()];
+    let sized: f32 = claims
+        .iter()
+        .map(|c| match c {
+            Claim::Sized { want, .. } => *want,
+            Claim::Share(_) => 0.0,
+        })
         .sum();
-    let leftover = (main - gaps - fixed).max(0.0);
-    // The room the fixed children are over by, and what they collectively
-    // offered to give: whichever is smaller is what actually comes back, so a
-    // strip short by more than the give still overflows rather than cutting
-    // into floors.
-    let deficit = (gaps + fixed - main).max(0.0);
-    let offered: f32 = children
+    let share_floors: f32 = claims
         .iter()
-        .copied()
-        .filter(|c| explicit_of(c).is_none())
-        .filter_map(wanted_of)
-        .map(|(_, give)| give)
+        .zip(&floors)
+        .filter(|(c, _)| matches!(c, Claim::Share(_)))
+        .map(|(_, f)| *f)
+        .sum();
+    // The room the sized children are over by, once every sharing child has
+    // its floor, and what they offered to give: whichever is smaller is what
+    // comes back.
+    let deficit = (gaps + sized + share_floors - main).max(0.0);
+    let offered: f32 = claims
+        .iter()
+        .map(|c| match c {
+            Claim::Sized { give, .. } => *give,
+            Claim::Share(_) => 0.0,
+        })
         .sum();
     let taken = deficit.min(offered);
-    let squeeze = |c: &Widget| match (explicit_of(c), wanted_of(c)) {
-        (Some(px), _) => px,
-        (None, Some((want, give))) if taken > 0.0 && offered > 0.0 => {
-            (want - taken * give / offered).max(0.0)
+    for (i, claim) in claims.iter().enumerate() {
+        if let Claim::Sized { want, give } = *claim {
+            sizes[i] = if taken > 0.0 && offered > 0.0 {
+                want - taken * give / offered
+            } else {
+                want
+            };
         }
-        (None, Some((want, _))) => want,
-        (None, None) => 0.0,
+    }
+    // **The leftover, shared by weight between floors and maximums**: a child
+    // whose share falls under its floor, or past its maximum, is held there
+    // and the rest is shared again among the others, until no share moves.
+    let mut room = (main - gaps - sizes.iter().sum::<f32>()).max(0.0);
+    let mut open: Vec<usize> = (0..children.len())
+        .filter(|&i| matches!(claims[i], Claim::Share(_)))
+        .collect();
+    let weight = |i: usize| match claims[i] {
+        Claim::Share(w) => w,
+        Claim::Sized { .. } => 0.0,
     };
-    let share = |c: &Widget| match fixed_of(c) {
-        Some(_) => squeeze(c),
-        None if total_weight > 0.0 => {
-            leftover * c.place.weight.unwrap_or(1.0).max(0.0) / total_weight
+    while !open.is_empty() {
+        let total: f32 = open.iter().map(|&i| weight(i)).sum();
+        let share = |i: usize| {
+            if total > 0.0 {
+                room * weight(i) / total
+            } else {
+                0.0
+            }
+        };
+        let held: Vec<(usize, f32)> = open
+            .iter()
+            .filter_map(|&i| {
+                let s = share(i);
+                if s < floors[i] {
+                    Some((i, floors[i]))
+                } else {
+                    maxes[i]
+                        .map(|max| max.max(floors[i]))
+                        .filter(|&max| s > max)
+                        .map(|max| (i, max))
+                }
+            })
+            .collect();
+        if held.is_empty() {
+            for &i in &open {
+                sizes[i] = share(i);
+            }
+            break;
         }
-        None => 0.0,
-    };
+        for (i, size) in held {
+            sizes[i] = size;
+            room = (room - size).max(0.0);
+            open.retain(|&o| o != i);
+        }
+    }
+
     let mut at = if horizontal { inner.x } else { inner.y };
     children
         .iter()
-        .copied()
-        .map(|c| {
-            let size = share(c);
-            let rect = if horizontal {
+        .zip(sizes)
+        .map(|(c, size)| {
+            let cell = if horizontal {
                 Rect::new(at, inner.y, size, inner.h)
             } else {
                 Rect::new(inner.x, at, inner.w, size)
             };
             at += size + gap;
-            rect
+            fit(cell, c, !horizontal, horizontal, space)
         })
         .collect()
 }
 
-/// `n` grid cells (row-major, left-to-right, top-down): `cols` columns when
-/// given, else near-square. Cells are equal; place props do not apply here.
-fn grid(inner: Rect, n: usize, gap: f32, cols: Option<u32>) -> Vec<Rect> {
+/// The grid's cells (row-major, left-to-right, top-down): `cols` columns when
+/// given, else near-square. Cells are equal, and each child is fitted to its
+/// own ([`fit`]): it fills it unless a maximum keeps it smaller, and stands
+/// where its `anchor` puts it. A cell is never narrower or shorter than the
+/// widest or tallest floor among the children, which the grid's own floor
+/// already guarantees inside any container.
+fn grid(inner: Rect, children: &[&Widget], gap: f32, cols: Option<u32>, space: Space) -> Vec<Rect> {
+    let n = children.len();
     let cols = match cols {
         Some(c) => (c as usize).clamp(1, n.max(1)),
         None => (n as f64).sqrt().ceil() as usize,
     };
     let rows = n.div_ceil(cols);
-    let cw = ((inner.w - gap * (cols as f32 - 1.0)) / cols as f32).max(0.0);
-    let ch = ((inner.h - gap * (rows as f32 - 1.0)) / rows as f32).max(0.0);
-    (0..n)
-        .map(|i| {
+    let (floor_w, floor_h) = children
+        .iter()
+        .map(|c| c.min_size(&space.metrics, space.unit))
+        .fold((0.0f32, 0.0f32), |(aw, ah), (w, h)| (aw.max(w), ah.max(h)));
+    let cw = ((inner.w - gap * (cols as f32 - 1.0)) / cols as f32).max(floor_w);
+    let ch = ((inner.h - gap * (rows as f32 - 1.0)) / rows as f32).max(floor_h);
+    children
+        .iter()
+        .enumerate()
+        .map(|(i, child)| {
             let (c, r) = (i % cols, i / cols);
-            Rect::new(
+            let cell = Rect::new(
                 inner.x + c as f32 * (cw + gap),
                 inner.y + r as f32 * (ch + gap),
                 cw,
                 ch,
-            )
+            );
+            fit(cell, child, true, true, space)
         })
         .collect()
 }
@@ -1278,6 +1398,198 @@ mod tests {
         assert!(b.y + b.h < 400.0 * 0.5, "the column is not filled");
     }
 
+    /// The placed rectangle of widget `id`.
+    fn rect_of(placed: &[Placed], id: i32) -> Rect {
+        placed
+            .iter()
+            .find(|p| p.widget.id == Some(id))
+            .unwrap()
+            .rect
+    }
+
+    /// **A row declared shorter than its tallest control is as tall as that
+    /// control's floor**, and the row under it starts after it: nothing is
+    /// drawn into its neighbour (the palette's row of `h: 28`).
+    #[test]
+    fn a_short_row_is_as_tall_as_its_tallest_floor() {
+        let m = Metrics::default();
+        let w = tree(
+            r#"{"type":"window","flow":"col","margin":0,"gap":0,"children":[
+            {"id":2,"type":"layout","flow":"row","h":28,"children":[
+                {"id":3,"type":"button","label":"b"},
+                {"id":4,"type":"knob","label":"k"},
+                {"id":5,"type":"slider","label":"s"}]},
+            {"id":6,"type":"layout","flow":"row","children":[
+                {"id":7,"type":"label","text":"under"}]}]}"#,
+        );
+        let placed = layout(area(), &w, &m);
+        let row = rect_of(&placed, 2);
+        let knob = placed.iter().find(|p| p.widget.id == Some(4)).unwrap();
+        let floor = knob.widget.min_size(&m, 1.0).1;
+        assert!(row.h >= floor + 2.0 * m.margin, "{row:?} against {floor}");
+        for id in [3, 4, 5] {
+            let r = rect_of(&placed, id);
+            let f = placed
+                .iter()
+                .find(|p| p.widget.id == Some(id))
+                .unwrap()
+                .widget
+                .min_size(&m, 1.0);
+            assert!(r.h >= f.1 && r.w >= f.0, "{id}: {r:?} under {f:?}");
+            assert!(r.y + r.h <= row.y + row.h + 1e-3, "{id} stays in its row");
+        }
+        assert!(
+            rect_of(&placed, 6).y >= row.y + row.h,
+            "the next row starts after it"
+        );
+        // and the row's own floor is that: the tallest floor, and its margins
+        assert_eq!(w.children[0].min_size(&m, 1.0).1, floor + 2.0 * m.margin);
+    }
+
+    /// **A declared size is the outer size, and it is never under the floor**:
+    /// a row of 40 inside a row keeps its margins and still gives its control
+    /// the line it reads at.
+    #[test]
+    fn a_declared_size_counts_the_margins_and_keeps_the_floor() {
+        let m = Metrics::default();
+        let w = tree(
+            r#"{"type":"window","flow":"col","margin":0,"gap":0,"children":[
+            {"id":2,"type":"layout","flow":"row","h":40,"children":[
+                {"id":3,"type":"layout","flow":"row","children":[
+                    {"id":4,"type":"number","label":"n"}]}]},
+            {"id":5,"type":"layout"}]}"#,
+        );
+        let placed = layout(area(), &w, &m);
+        let number = placed.iter().find(|p| p.widget.id == Some(4)).unwrap();
+        let floor = number.widget.min_size(&m, 1.0);
+        assert!(
+            number.rect.h >= floor.1,
+            "{:?} under {floor:?}",
+            number.rect
+        );
+        let outer = rect_of(&placed, 2);
+        assert_eq!(outer.h, 40.0f32.max(floor.1 + 4.0 * m.margin));
+    }
+
+    /// **Controls with geometry keep a width**: a knob its disc, a slider its
+    /// grip and travel, a number its widest value -- in a window narrower than
+    /// all three, which is laid out at its floor rather than cutting them.
+    #[test]
+    fn a_narrow_row_keeps_the_widths_of_controls_with_geometry() {
+        let m = Metrics::default();
+        let w = tree(
+            r#"{"type":"window","flow":"row","margin":0,"gap":0,"children":[
+            {"id":2,"type":"knob"},
+            {"id":3,"type":"slider"},
+            {"id":4,"type":"number","min":-1000,"max":1000},
+            {"id":5,"type":"label","text":"a label far too long for the room"}]}"#,
+        );
+        let placed = layout(Rect::new(0.0, 0.0, 60.0, 200.0), &w, &m);
+        assert!(rect_of(&placed, 2).w >= m.knob_d, "the knob keeps its disc");
+        assert!(
+            rect_of(&placed, 3).w >= crate::host::graphics::controls::slider_travel(&m),
+            "the slider keeps a travel"
+        );
+        let number = placed.iter().find(|p| p.widget.id == Some(4)).unwrap();
+        assert_eq!(number.rect.w, number.widget.min_size(&m, 1.0).0);
+        let label = rect_of(&placed, 5);
+        assert!(
+            label.w < 40.0,
+            "a label is cut, and keeps no width: {label:?}"
+        );
+        // the window's floor is what they add up to
+        let floor = w.min_size(&m, 1.0).0;
+        let last = rect_of(&placed, 5);
+        assert!((last.x + last.w - floor).abs() < 1e-3);
+    }
+
+    /// **A share of the leftover is never under a floor**: a slider whose
+    /// even share would be shorter than its travel keeps it, and the others
+    /// share what is left.
+    #[test]
+    fn a_share_under_a_floor_is_held_at_it() {
+        let m = Metrics::default();
+        let w = tree(
+            r#"{"type":"window","flow":"row","margin":0,"gap":0,"children":[
+            {"id":2,"type":"slider"},
+            {"id":3,"type":"layout"},
+            {"id":4,"type":"layout"},
+            {"id":5,"type":"layout"}]}"#,
+        );
+        let wide = w.children[0].min_size(&m, 1.0).0;
+        let placed = layout(Rect::new(0.0, 0.0, wide * 2.0, 100.0), &w, &m);
+        assert_eq!(rect_of(&placed, 2).w, wide);
+        let rest: Vec<f32> = [3, 4, 5].iter().map(|&id| rect_of(&placed, id).w).collect();
+        assert!(
+            rest.iter().all(|r| (r - wide / 3.0).abs() < 1e-3),
+            "{rest:?}"
+        );
+    }
+
+    /// **A maximum keeps a filling control smaller, and its anchor places
+    /// it**; a maximum under the floor is no maximum, and `min_w` raises the
+    /// floor.
+    #[test]
+    fn a_maximum_and_an_anchor_place_a_control_in_its_cell() {
+        let m = Metrics::default();
+        let w = tree(
+            r#"{"type":"window","flow":"grid","cols":3,"margin":0,"gap":0,"children":[
+            {"id":2,"type":"button","label":"a","max_w":60,"max_h":30},
+            {"id":3,"type":"button","label":"b","max_w":60,"max_h":30,"anchor":"bottom_right"},
+            {"id":4,"type":"button","label":"c","max_h":1,"min_w":190}]}"#,
+        );
+        let placed = layout(area(), &w, &m);
+        let cell = (200.0, 400.0);
+        let a = rect_of(&placed, 2);
+        assert_eq!((a.w, a.h), (60.0, 30.0));
+        assert_eq!(
+            (a.x, a.y),
+            (
+                ((cell.0 - 60.0) * 0.5f32).round(),
+                ((cell.1 - 30.0) * 0.5f32).round()
+            )
+        );
+        let b = rect_of(&placed, 3);
+        assert_eq!(
+            (b.x + b.w, b.y + b.h),
+            (2.0 * cell.0, cell.1),
+            "bottom right"
+        );
+        let c = rect_of(&placed, 4);
+        let floor = w.children[2].min_size(&m, 1.0);
+        assert_eq!(c.h, floor.1, "a maximum under the floor is the floor");
+        assert_eq!(floor.0, 190.0, "min_w raises the floor");
+        assert_eq!(c.w, 200.0, "and it still fills a cell wider than that");
+    }
+
+    /// **The root's floor is the window's minimum**, bars included, and a
+    /// window holding one button is still more than a pixel wide.
+    #[test]
+    fn the_window_minimum_is_its_root_floor() {
+        let mut host = crate::host::Host::new();
+        let def = r#"{"type":"window","w":1,"h":1,"children":[
+            {"id":2,"type":"knob","label":"k"},{"id":3,"type":"button","label":"b"}]}"#;
+        host.handle_packet(
+            clausters_core::osc::OscPacket::Message(clausters_core::osc::OscMessage {
+                addr: crate::host::GUI_DEF.into(),
+                args: vec![
+                    clausters_core::osc::OscType::Int(1),
+                    clausters_core::osc::OscType::String(def.into()),
+                ],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        let (w, h) = host.window_min_px(1).expect("a window");
+        let m = *host.metrics_for(1);
+        let floor = host.window_def(1).unwrap().min_size(&m, m.ui_scale);
+        assert_eq!(w, floor.0.ceil() as u32);
+        assert!(h >= floor.1.ceil() as u32, "and the window's bars over it");
+        assert!(w as f32 >= m.knob_d && h as f32 >= m.knob_d, "{w}x{h}");
+    }
+
     #[test]
     fn a_natural_size_only_binds_its_own_axis() {
         // A row of controls: a button knows its height, not its width, so the
@@ -1457,16 +1769,19 @@ mod tests {
             {"id":12,"type":"layout"},
             {"id":13,"type":"label","text":"ready","h":20}]}"#,
         );
-        let placed = layout(area(), &w, &Metrics::default());
+        let m = Metrics::default();
+        let placed = layout(area(), &w, &m);
         let bars: Vec<Rect> = placed
             .iter()
             .filter(|p| matches!(p.widget.id, Some(11) | Some(12) | Some(13)))
             .map(|p| p.rect)
             .collect();
         assert_eq!(bars[0].h, 28.0, "menu bar is fixed");
-        assert_eq!(bars[2].h, 20.0, "status bar is fixed");
+        // a status line declared under the line its text needs is that line
+        let status = 20.0f32.max(w.children[2].min_size(&m, 1.0).1);
+        assert_eq!(bars[2].h, status, "status bar is fixed, at its floor");
         assert!(
-            (bars[1].h - (400.0 - 48.0)).abs() < 1e-3,
+            (bars[1].h - (400.0 - 28.0 - status)).abs() < 1e-3,
             "content takes the rest"
         );
         assert_eq!(bars[2].y + bars[2].h, 400.0, "the shell fills the window");
@@ -1530,11 +1845,14 @@ mod tests {
             {"id":1,"type":"label","text":"a","w":900},
             {"id":2,"type":"label","text":"b"}]}"#,
         );
-        let placed = layout(area(), &w, &Metrics::default());
+        let m = Metrics::default();
+        let placed = layout(area(), &w, &m);
         assert_eq!(
-            placed[2].rect.w, 0.0,
-            "no leftover: the flexible child collapses"
+            placed[2].rect.w,
+            w.children[1].min_size(&m, 1.0).0,
+            "no leftover: the flexible child keeps its floor"
         );
+        assert!(placed[2].rect.w > 0.0);
     }
 
     /// The `scroll` container's own placed entry, and its children's.

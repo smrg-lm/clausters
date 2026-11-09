@@ -109,7 +109,31 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   its data** — a longer string or another thousand samples never move it, so
   a `/gui_set` never relayouts the window. In a `free` container `x`/`y`
   (+ `w`/`h`) position the child absolutely, and a child with none of the four
-  overlays the whole area. A container additionally takes `margin` (inset
+  overlays the whole area.
+- **Every widget has a floor, and nothing goes under it.** The floor is the
+  smallest size a widget still reads at, on both axes: a control one line of
+  its box high (a labelled one gives up its label strip first, and its
+  padding), a caption as narrow as its text cut to an ellipsis (text sets no
+  width of its own), a `knob` its disc and its read-out (the disc never under
+  the host's knob size, grown with the knob's own `text_size`), a `slider` its
+  grip and a least travel, a `number` its widest value. A **container's floor
+  is its children's**: across its axis the largest of them, along it their
+  sum and the gaps, plus its margin and its title strip; a `scroll` floors at
+  nothing, since scrolling is how it shows more than it has room for, and a
+  container that arranges nothing floors at nothing. No container places a
+  child under its floor, a share of the leftover is never under one, and **a
+  declared `w`/`h` under the floor resolves to the floor** -- a `row` declared
+  `h: 28` that holds a knob is as tall as the knob's floor. A declared size is
+  the **outer** size, title strip and margin included. The **window's floor is
+  its minimum size**: the platform is told it (a page's canvas takes it as its
+  `min-width`/`min-height`), and a window declared smaller opens at it.
+- **Filling is the default, and the design props bound it.** A widget fills
+  the room it is given on the cross axis and in a `grid` cell -- a grid of
+  buttons is a step sequencer. `max_w`/`max_h` keep it smaller, and **`anchor`**
+  places it in a cell larger than it is: `center` (the default), `top`,
+  `bottom`, `left`, `right`, `top_left`, `top_right`, `bottom_left`,
+  `bottom_right`. `min_w`/`min_h` raise its floor. The floor wins over all of
+  them: a `max_w` under the floor is no maximum. All live via `/gui_set`. A container additionally takes `margin` (inset
   before its children, default 6), `gap` (between children, default 6) and
   `cols` (a fixed `grid` column count; default near-square) — except a
   `layout` whose `flow` is `stack`, which arranges nothing and so takes only

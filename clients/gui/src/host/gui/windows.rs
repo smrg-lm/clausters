@@ -190,6 +190,7 @@ impl App {
                 occluded: false,
                 asked: std::cell::Cell::new(None),
                 reads,
+                min_px: None,
             },
         );
         if let Some(ws) = self.windows.get(&id) {

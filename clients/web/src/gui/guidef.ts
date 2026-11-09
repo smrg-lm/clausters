@@ -667,6 +667,26 @@ export interface WidgetOptions {
      */
     weight?: number;
     /**
+     * A floor larger than the widget's own. Every widget has a floor -- the
+     * smallest size it still reads at -- and no container places it under
+     * that: a declared `w`/`h` or a maximum under it resolves to it.
+     */
+    min_w?: number;
+    min_h?: number;
+    /**
+     * The most the widget takes of the room it is given: a control that
+     * would fill its cell stays this size and stands where `anchor` puts it.
+     * Never under the widget's floor.
+     */
+    max_w?: number;
+    max_h?: number;
+    /**
+     * Where the widget stands in a cell larger than it is: `"center"` (the
+     * default), `"top"`, `"bottom"`, `"left"`, `"right"`, `"top_left"`,
+     * `"top_right"`, `"bottom_left"` or `"bottom_right"`.
+     */
+    anchor?: string;
+    /**
      * The position inside a `free` container (a child with none of these
      * overlays the whole area).
      */

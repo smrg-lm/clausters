@@ -19,7 +19,7 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input};
 use crate::host::widget::parse;
-use crate::host::widget::size::{Natural, control_box, text_box};
+use crate::host::widget::size::{Natural, caption_floor, control_box, text_box};
 
 use super::switch_value;
 
@@ -119,6 +119,23 @@ impl Element for Toggle {
             None,
             Some(control_box(self.text_size * scale, m).max(m.box_side)),
         )
+    }
+
+    /// Its mark whole -- the box, or the switch, or a button's caption cut to
+    /// an ellipsis -- and its label cut to nothing: the mark is the control.
+    fn floor(&self, m: &Metrics, scale: f32) -> Natural {
+        let size = self.text_size * scale;
+        let h = control_box(size, m).max(m.box_side);
+        let side = m.box_side.min(h);
+        let w = match self.view {
+            ToggleView::Button => caption_floor(
+                controls::button_text(self.label.as_deref().or(Some("")), self.icon).trim_end(),
+                size,
+            ),
+            ToggleView::Switch => side * 1.8 + 2.0 * m.pad,
+            _ => side + 2.0 * m.pad,
+        };
+        (Some(w), Some(h))
     }
 
     /// The box, and the label beside it when there is one -- the row the drawing

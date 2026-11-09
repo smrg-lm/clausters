@@ -66,14 +66,27 @@ layout (all in **logical** pixels, all optional, all live via ``set``):
   and the way to stretch a control past the size it asks for.
 - ``x``/``y`` -- the position inside a ``free`` container; a free child with
   none of these props overlays the whole container area.
+- ``max_w``/``max_h`` -- the most the widget takes of the room it is given,
+  and ``anchor`` -- where it then stands in its cell: ``"center"`` (the
+  default), ``"top"``, ``"bottom"``, ``"left"``, ``"right"``,
+  ``"top_left"``, ``"top_right"``, ``"bottom_left"``, ``"bottom_right"``.
+- ``min_w``/``min_h`` -- a floor larger than the widget's own.
 
 A ``row``/``col`` resolves its main axis in **one order**: a fixed ``w``/``h``,
 else an explicit ``weight``, else the widget's **natural size** -- how big that
 kind of widget wants to be, which the host knows -- else a share of the
-leftover at weight 1. The cross axis always fills. So a control (a ``button``,
+leftover at weight 1. The cross axis fills, as a ``grid`` cell does, unless a
+maximum keeps the widget smaller. So a control (a ``button``,
 a ``knob``, a single-line ``text``, a ``label``) stacked in a ``col`` is one
 control-high row rather than half the window, while views (a ``waveform``, a
 ``pianoroll``) have no natural size and split the rest between them.
+
+**No widget is placed under its floor** -- the smallest size it still reads
+at (a control's box one line high, a caption cut to an ellipsis, a knob's
+disc and number, a slider's grip and some travel, a number's widest value).
+A container's floor is its children's, a declared ``w``/``h`` or a maximum
+under the floor resolves to it, and a window's floor is the smallest the
+window can be made.
 
 A **container** is one of those views -- it takes what it is given -- unless it
 carries ``hug``, and then it wants exactly what it holds: a ``row`` adds its

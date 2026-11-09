@@ -95,6 +95,9 @@ pub(super) struct WindowState {
     /// The server buffer each view reads, by widget: what a redefine keeps
     /// the pictures of (`frame::carry_slots`).
     pub(super) reads: HashMap<i32, i32>,
+    /// The smallest size the platform was last told this window may be made
+    /// ([`crate::gpu::keep_min_size`]).
+    pub(super) min_px: Option<(u32, u32)>,
 }
 
 /// **How long a frame may go unanswered before its window counts as hidden.**
@@ -637,6 +640,13 @@ impl App {
         // frame that draws it.
         if whole {
             self.refresh_slots_for(def_id);
+            // the window is never made smaller than its root's floor
+            let min = self.host.window_min_px(def_id);
+            if let Some(ws) = self.windows.get_mut(&def_id)
+                && let Some(window) = ws.gpu.window().cloned()
+            {
+                crate::gpu::keep_min_size(&window, &mut ws.min_px, min);
+            }
         }
         // a picture of the take before an edit is not drawn on its axis
         if whole && !capture {

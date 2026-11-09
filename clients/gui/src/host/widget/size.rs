@@ -110,6 +110,22 @@ pub(crate) fn body_inset(m: &Metrics) -> f32 {
     2.0 * m.pad
 }
 
+/// **The narrowest a line of text is ever given**: the ellipsis alone. Text
+/// sets no minimum width of its own -- a line that does not fit is cut and
+/// ends in an ellipsis -- and its cell's padding is the first thing a
+/// squeezed control gives up, as a labelled one gives up its label strip.
+/// So this is the floor of every caption, label and field that writes one.
+pub(crate) fn ellipsis_w(size: f32) -> f32 {
+    font::width("\u{2026}", size)
+}
+
+/// **The floor of a caption**: the text itself where it is narrower than the
+/// ellipsis (a tool's one symbol), the ellipsis otherwise -- with no padding,
+/// which a squeezed control gives up first.
+pub(crate) fn caption_floor(text: &str, size: f32) -> f32 {
+    font::width(text, size).min(ellipsis_w(size))
+}
+
 impl WidgetKind {
     /// How big this widget wants to be, per axis -- `None` meaning elastic (the
     /// layout decides). Pure over the metrics, the widget's presentation props
@@ -199,6 +215,119 @@ impl Widget {
             self.kind.floor_size(m, scale)
         };
         (settle(floor.0, wanted.0), settle(floor.1, wanted.1))
+    }
+
+    /// **The smallest size this widget is ever placed at**, per axis, in the
+    /// space it is measured in -- its floor, which no container goes under
+    /// and no declared size overrides.
+    ///
+    /// A leaf answers its own ([`Element::floor`](super::Element::floor),
+    /// settled against its natural size: an axis it said nothing about floors
+    /// at what it wanted there, and a surface at nothing). A **container's
+    /// floor is derived from its children's**, whether it hugs or not: across
+    /// its axis the largest child floor, along it the sum of them and the
+    /// gaps, plus its margin on both sides and its title strip -- so a row
+    /// declared shorter than its tallest control is as tall as that control,
+    /// and the window's root floor is the window's own minimum
+    /// ([`Host::window_min_px`](crate::host::Host::window_min_px)). A child
+    /// adds what it takes along the axis it is strung on: its floor, or its
+    /// declared size there when that is larger. Across the axis it fills, so
+    /// it adds its floor.
+    ///
+    /// A `scroll` floors at nothing: what it holds is on its own plane, and
+    /// scrolling is how a pane shorter than its content shows it. A dialog
+    /// adds nothing to the container it hangs off, since it takes no room in
+    /// its flow.
+    ///
+    /// `min_w`/`min_h` raise it, and nothing lowers it.
+    pub fn min_size(&self, m: &Metrics, scale: f32) -> (f32, f32) {
+        let own = match &self.kind {
+            WidgetKind::Window { layout, flow, .. } => {
+                compose_min(&self.flow_children(), *layout, *flow, m, scale)
+            }
+            WidgetKind::Panel {
+                layout,
+                flow,
+                group,
+                ..
+            } => {
+                let strip = group.strip_h(m);
+                if group.folded() {
+                    (0.0, strip)
+                } else {
+                    let (w, h) = compose_min(&self.flow_children(), *layout, *flow, m, scale);
+                    (w, h + strip)
+                }
+            }
+            WidgetKind::Stack { margin, .. } => {
+                let pad = 2.0 * margin.map_or(m.margin, |v| snap_px(v, scale)).max(0.0);
+                let (w, h) = self
+                    .children
+                    .iter()
+                    .map(|c| c.min_size(m, scale))
+                    .fold((0.0f32, 0.0f32), |(aw, ah), (w, h)| (aw.max(w), ah.max(h)));
+                (w + pad, h + pad)
+            }
+            WidgetKind::Scroll { .. } => (0.0, 0.0),
+            kind => {
+                let wanted = kind.natural_size(m, scale);
+                let floor = kind.floor_size(m, scale);
+                let floor = (
+                    settle(floor.0, wanted.0).unwrap_or(0.0),
+                    settle(floor.1, wanted.1).unwrap_or(0.0),
+                );
+                // **A floor is never more than the content**: a caption
+                // narrower than an ellipsis -- a tool's one symbol, a
+                // segment's mark -- floors at itself.
+                match kind {
+                    WidgetKind::Custom(el) => {
+                        let (w, h) = el.hug(m, scale);
+                        (
+                            w.map_or(floor.0, |w| floor.0.min(w)),
+                            h.map_or(floor.1, |h| floor.1.min(h)),
+                        )
+                    }
+                    _ => floor,
+                }
+            }
+        };
+        let declared = |v: Option<f32>| v.map_or(0.0, |v| snap_px(v, scale).max(0.0));
+        (
+            own.0.max(declared(self.place.min_w)),
+            own.1.max(declared(self.place.min_h)),
+        )
+    }
+
+    /// **The size this widget is given on one axis out of `room`**: its
+    /// declared size there if it has one, else `room`, kept under its
+    /// maximum and never under `floor` (its [`min_size`](Self::min_size) on
+    /// that axis, which the caller already has) -- the floor wins over both,
+    /// so a `max_w` under it is no maximum at all.
+    pub fn sized(&self, horizontal: bool, room: f32, floor: f32, scale: f32) -> f32 {
+        let p = self.place;
+        let (declared, max) = if horizontal {
+            (p.w, p.max_w)
+        } else {
+            (p.h, p.max_h)
+        };
+        let px = |v: f32| snap_px(v, scale).max(0.0);
+        let size = declared.map_or(room, px);
+        max.map_or(size, |max| size.min(px(max))).max(floor)
+    }
+
+    /// What this widget takes at least along an axis it is strung on, given
+    /// its `floor` there: its declared size when it names one (kept under its
+    /// maximum), else the floor -- never under the floor.
+    fn least_along(&self, horizontal: bool, floor: f32, scale: f32) -> f32 {
+        let declared = if horizontal {
+            self.place.w
+        } else {
+            self.place.h
+        };
+        match declared {
+            Some(_) => self.sized(horizontal, 0.0, floor, scale),
+            None => floor,
+        }
     }
 
     /// The children this container's flow arranges -- every one but its
@@ -349,10 +478,13 @@ enum Want {
 
 /// One axis of a floor, settled against what the widget wanted on it: an axis
 /// left unanswered floors at the wanted size (nothing to give), and a floor
-/// above it is clamped down. Elastic stays elastic.
+/// above it is clamped down. An elastic axis keeps the floor it declared --
+/// a slider takes whatever length it is given, but never less than its grip
+/// and a least travel -- and is elastic all the way down where it declared
+/// none.
 fn settle(floor: Option<f32>, wanted: Option<f32>) -> Option<f32> {
     match (floor, wanted) {
-        (_, None) => None,
+        (Some(f), None) => Some(f.max(0.0)),
         (None, w) => w,
         (Some(f), Some(w)) => Some(f.clamp(0.0, w)),
     }
@@ -440,6 +572,76 @@ fn compose(
     (w.map(|w| w + pad), h.map(|h| h + pad))
 }
 
+/// The floor of a container that arranges `children` by `layout`: along the
+/// axis they are strung on, what each takes at least and the gaps between
+/// them; across it, the largest child floor; in a grid, its widest and its
+/// tallest cell times the columns and the rows; in `free`, as far as its
+/// children reach. Plus the margin on both sides -- and nothing at all for a
+/// container that arranges no child.
+fn compose_min(
+    children: &[&Widget],
+    layout: Layout,
+    flow: Flow,
+    m: &Metrics,
+    scale: f32,
+) -> (f32, f32) {
+    // A container that arranges nothing reads nothing, and its margin is
+    // room around children it does not have: a stack of dialog pages held
+    // at `h: 0` takes no room in its flow.
+    if children.is_empty() {
+        return (0.0, 0.0);
+    }
+    let pad = 2.0 * flow.margin.map_or(m.margin, |v| snap_px(v, scale)).max(0.0);
+    let gap = flow.gap.map_or(m.gap, |v| snap_px(v, scale)).max(0.0);
+    let gaps = gap * (children.len() - 1) as f32;
+    let floors: Vec<(f32, f32)> = children.iter().map(|c| c.min_size(m, scale)).collect();
+    let widest = floors.iter().map(|f| f.0).fold(0.0f32, f32::max);
+    let tallest = floors.iter().map(|f| f.1).fold(0.0f32, f32::max);
+    let along = |horizontal: bool| -> f32 {
+        children
+            .iter()
+            .zip(&floors)
+            .map(|(c, f)| c.least_along(horizontal, if horizontal { f.0 } else { f.1 }, scale))
+            .sum::<f32>()
+            + gaps
+    };
+    let (w, h) = match layout {
+        Layout::Row => (along(true), tallest),
+        Layout::Col => (widest, along(false)),
+        Layout::Grid => {
+            let n = children.len();
+            let cols = match flow.cols {
+                Some(c) => (c as usize).clamp(1, n),
+                None => (n as f64).sqrt().ceil() as usize,
+            };
+            let rows = n.div_ceil(cols.max(1));
+            (
+                widest * cols as f32 + gap * (cols - 1) as f32,
+                tallest * rows as f32 + gap * (rows.max(1) - 1) as f32,
+            )
+        }
+        // A positioned child reaches from its position by what it takes; an
+        // overlay (no position, no size) covers the container from its
+        // origin, so it needs its floor there.
+        Layout::Free => {
+            let reach = |horizontal: bool| {
+                children
+                    .iter()
+                    .zip(&floors)
+                    .map(|(c, f)| {
+                        let at = if horizontal { c.place.x } else { c.place.y };
+                        let floor = if horizontal { f.0 } else { f.1 };
+                        at.map_or(0.0, |v| snap_px(v, scale))
+                            + c.least_along(horizontal, floor, scale)
+                    })
+                    .fold(0.0f32, f32::max)
+            };
+            (reach(true), reach(false))
+        }
+    };
+    (w + pad, h + pad)
+}
+
 /// The sum of the children's extents along one axis -- elastic as a whole the
 /// moment one of them is, since a container cannot know what a surface next to
 /// it will take.
@@ -492,11 +694,23 @@ mod tests {
         assert_eq!(settle(Some(10.0), Some(30.0)), Some(10.0));
         assert_eq!(settle(Some(40.0), Some(30.0)), Some(30.0), "clamped down");
         assert_eq!(settle(Some(-5.0), Some(30.0)), Some(0.0), "never negative");
-        assert_eq!(settle(Some(10.0), None), None, "elastic stays elastic");
+        assert_eq!(
+            settle(Some(10.0), None),
+            Some(10.0),
+            "an elastic axis keeps the floor it declared"
+        );
+        assert_eq!(
+            settle(None, None),
+            None,
+            "and is elastic where it declared none"
+        );
     }
 
-    /// A widget that never overrode the door floors where it stands, which is
-    /// what keeps a squeeze from touching anything that did not consent to it.
+    /// A widget with nothing to give floors where it stands on the axis it
+    /// wants a size on, which is what keeps a squeeze from touching anything
+    /// that did not consent to it. On the axis it takes what it is given, a
+    /// control still keeps what it reads at: a caption cut to an ellipsis, a
+    /// knob's disc.
     #[test]
     fn a_widget_with_nothing_to_give_floors_at_its_natural_size() {
         for json in [
@@ -506,8 +720,20 @@ mod tests {
             r#"{"id":1,"type":"timeruler"}"#,
             r#"{"id":1,"type":"panel"}"#,
         ] {
-            assert_eq!(keeps(json), wants(json), "{json}");
+            assert_eq!(keeps(json).1, wants(json).1, "{json}");
         }
+        let m = Metrics::default();
+        let cut = ellipsis_w(m.text_scale);
+        assert_eq!(
+            keeps(r#"{"id":1,"type":"button","label":"go"}"#).0,
+            Some(cut)
+        );
+        assert_eq!(
+            keeps(r#"{"id":1,"type":"label","text":"hello"}"#).0,
+            Some(cut)
+        );
+        assert!(keeps(r#"{"id":1,"type":"knob"}"#).0.unwrap() >= m.knob_d);
+        assert_eq!(keeps(r#"{"id":1,"type":"panel"}"#), (None, None));
     }
 
     /// A labelled control gives up exactly its label strip -- the term the

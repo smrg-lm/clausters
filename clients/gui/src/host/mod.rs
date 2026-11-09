@@ -1601,9 +1601,11 @@ impl Host {
         self.sized_window(id, &self.metrics, 1.0)
     }
 
-    /// The inner size a **hugging** window wants in **physical** pixels, at its
-    /// own resolved size table -- `None` for a window that declares its size, so
-    /// a shell only resizes what asked to be fitted.
+    /// The inner size a **hugging** window wants in **physical** pixels -- or one
+    /// whose floor is larger than the size it declared -- at its
+    /// own resolved size table -- `None` for a window that declares its size
+    /// and fits in it, so a shell only resizes what asked to be fitted or what
+    /// declared less than its floor.
     ///
     /// The second half of one question. A window is created before anything
     /// knows what display it landed on, so the first answer is measured in the
@@ -1616,11 +1618,32 @@ impl Host {
     /// layout will use.
     pub fn window_size_px(&self, id: i32) -> Option<(u32, u32)> {
         let tree = self.window_def(id)?;
-        if !matches!(tree.kind, WidgetKind::Window { hug: true, .. }) {
-            return None;
-        }
         let metrics = self.metrics_for(id);
-        self.sized_window(id, metrics, metrics.ui_scale)
+        let sized = self.sized_window(id, metrics, metrics.ui_scale)?;
+        match &tree.kind {
+            WidgetKind::Window { hug: true, .. } => Some(sized),
+            // **a declared size is kept unless the window's floor is larger**:
+            // then the window is opened at its floor, as the platform would
+            // make it once told its minimum
+            WidgetKind::Window { width, height, .. } => {
+                let declared = |v: u32| ((v as f32) * metrics.ui_scale).ceil().max(1.0) as u32;
+                (sized.0 > declared(*width) || sized.1 > declared(*height)).then_some(sized)
+            }
+            _ => None,
+        }
+    }
+
+    /// **The smallest window `id` may be made**, in physical pixels: its
+    /// root's floor ([`Widget::min_size`](widget::Widget::min_size)) and the
+    /// bars around it, at the window's own scale. The fronts hand it to the
+    /// platform as the window's minimum, so a window is never resized under
+    /// what its controls read at -- nor made a pixel wide.
+    pub fn window_min_px(&self, id: i32) -> Option<(u32, u32)> {
+        let tree = self.window_def(id)?;
+        let metrics = self.metrics_for(id);
+        let (w, h) = tree.min_size(metrics, metrics.ui_scale);
+        let h = h + status::bar_h(tree, metrics) + menubar::bar_h(tree, metrics);
+        Some((w.ceil().max(1.0) as u32, h.ceil().max(1.0) as u32))
     }
 
     /// One window's requested size, measured with `metrics` at `scale`: its
@@ -1635,8 +1658,14 @@ impl Host {
             return None;
         };
         let declared = |v: u32| ((v as f32) * scale).ceil().max(1.0) as u32;
+        // never opened smaller than the window may be made
+        let (min_w, min_h) = {
+            let (w, h) = tree.min_size(metrics, scale);
+            let h = h + status::bar_h(tree, metrics) + menubar::bar_h(tree, metrics);
+            (w.ceil() as u32, h.ceil() as u32)
+        };
         if !*hug {
-            return Some((declared(*width), declared(*height)));
+            return Some((declared(*width).max(min_w), declared(*height).max(min_h)));
         }
         let round = |want: Option<f32>, fallback: u32| {
             want.map_or_else(|| declared(fallback), |v| (v.ceil().max(1.0) as u32).max(1))
@@ -1646,7 +1675,7 @@ impl Host {
         // bar would be taken out of the content it was measured to hold and a
         // hugging window would open one line short of what it asked for.
         let h = h.map(|h| h + status::bar_h(tree, metrics) + menubar::bar_h(tree, metrics));
-        Some((round(w, *width), round(h, *height)))
+        Some((round(w, *width).max(min_w), round(h, *height).max(min_h)))
     }
 
     /// Mutable access to a window document, for the front to write back a value

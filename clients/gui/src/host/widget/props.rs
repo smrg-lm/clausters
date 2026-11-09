@@ -1437,11 +1437,16 @@ impl ScrollView {
 }
 
 /// The generic layout props **any** widget may carry, applied by the layout
-/// engine: a fixed main-axis size in a `row`/`col` (`w`/`h`, device pixels), a
-/// `weight` for the shared remainder (absent = 1), and a `free`-layout
-/// position (`x`/`y`, with `w`/`h` as the size). All optional; a widget with
-/// none of them lays out exactly as before (an even share, or the full free
-/// overlay).
+/// engine: a fixed size (`w`/`h`), a `weight` for the shared remainder
+/// (absent = 1), bounds on the size it is given (`min_w`/`min_h`,
+/// `max_w`/`max_h`), where it stands in a cell its maximum keeps it smaller
+/// than (`anchor`), and a `free`-layout position (`x`/`y`, with `w`/`h` as
+/// the size). All lengths are logical. All optional; a widget with none of
+/// them takes an even share, or the full free overlay.
+///
+/// **A widget's floor wins over all of them**: a declared `w`, `h` or `max_*`
+/// under it resolves to it ([`Widget::min_size`](super::Widget::min_size)), so
+/// no prop can draw a widget smaller than it still reads at.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Place {
     pub w: Option<f32>,
@@ -1449,6 +1454,16 @@ pub struct Place {
     pub weight: Option<f32>,
     pub x: Option<f32>,
     pub y: Option<f32>,
+    /// A floor larger than the widget's own, on either axis.
+    pub min_w: Option<f32>,
+    pub min_h: Option<f32>,
+    /// The most the widget takes of what it is given, on either axis: a
+    /// button that would fill its cell stays this wide and stands where its
+    /// `anchor` puts it.
+    pub max_w: Option<f32>,
+    pub max_h: Option<f32>,
+    /// Where the widget stands in a cell larger than it is.
+    pub anchor: Anchor,
     /// Whether a hand moved a divider beside this widget, rewriting its
     /// `weight` or its fixed size -- what makes a query answer them, since they
     /// are then no longer what the def said.
@@ -1464,6 +1479,11 @@ impl Place {
             weight: f("weight"),
             x: f("x"),
             y: f("y"),
+            min_w: f("min_w"),
+            min_h: f("min_h"),
+            max_w: f("max_w"),
+            max_h: f("max_h"),
+            anchor: Anchor::parse(props.get("anchor").and_then(Value::as_str)),
             split_moved: false,
         }
     }
@@ -1476,6 +1496,14 @@ impl Place {
             "weight" => &mut self.weight,
             "x" => &mut self.x,
             "y" => &mut self.y,
+            "min_w" => &mut self.min_w,
+            "min_h" => &mut self.min_h,
+            "max_w" => &mut self.max_w,
+            "max_h" => &mut self.max_h,
+            "anchor" => {
+                self.anchor = Anchor::parse(v.as_str());
+                return true;
+            }
             _ => return false,
         };
         match v.as_f64() {
@@ -1485,6 +1513,59 @@ impl Place {
         true
     }
 }
+/// **Where a widget stands in a cell larger than it is** -- the `anchor`
+/// prop. A widget fills its cell unless a maximum (`max_w`/`max_h`) keeps it
+/// smaller; then this says where in the cell it goes, on each axis.
+///
+/// The words are the cell's sides and corners: `center` (the default),
+/// `top`, `bottom`, `left`, `right`, `top_left`, `top_right`, `bottom_left`,
+/// `bottom_right`. An unknown word reads as the default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Anchor {
+    /// Across: `0` the left side, `1` the centre, `2` the right side.
+    pub x: u8,
+    /// Down: `0` the top, `1` the centre, `2` the bottom.
+    pub y: u8,
+}
+
+impl Default for Anchor {
+    fn default() -> Self {
+        Anchor::CENTER
+    }
+}
+
+impl Anchor {
+    /// The centre, on both axes.
+    pub const CENTER: Anchor = Anchor { x: 1, y: 1 };
+
+    /// Parses the wire's `anchor` prop.
+    pub fn parse(word: Option<&str>) -> Anchor {
+        let (x, y) = match word.unwrap_or("center") {
+            "top" => (1, 0),
+            "bottom" => (1, 2),
+            "left" => (0, 1),
+            "right" => (2, 1),
+            "top_left" => (0, 0),
+            "top_right" => (2, 0),
+            "bottom_left" => (0, 2),
+            "bottom_right" => (2, 2),
+            _ => (1, 1),
+        };
+        Anchor { x, y }
+    }
+
+    /// Where an extent of `size` starts in a span of `room` from `at`, along
+    /// one axis whose side is `side` (`0`, `1` or `2`).
+    pub fn offset(side: u8, at: f32, room: f32, size: f32) -> f32 {
+        let slack = (room - size).max(0.0);
+        at + match side {
+            0 => 0.0,
+            2 => slack,
+            _ => (slack * 0.5).round(),
+        }
+    }
+}
+
 /// The rate a data view reads its bus at. A bus is a bus -- the rate says how
 /// its values are obtained, not what kind of thing it is: audio-rate buses are
 /// recorded into the segment by the server on demand, control-rate buses live

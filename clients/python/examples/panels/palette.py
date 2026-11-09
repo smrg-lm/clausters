@@ -15,9 +15,15 @@ So what is drawn is what the layout does with an element's defaults:
 - **a grid** of four columns: an element in a cell it did not choose;
 - **a column**, on the right: how the height is shared down it.
 
-It is the surface the per-element sizing rules are read against: an element
-that keeps its content's size reads the same in all five, and one that takes
-what its cell gives changes with each.
+No element is drawn under its **floor**, the smallest size it still reads at:
+the short row grows to its tallest control's floor rather than spilling into
+the grid under it, a knob gives up its caption before its disc, and a window
+is never made smaller than all of it. Filling a cell is the default -- a grid
+of buttons is a step sequencer -- so the buttons are as big as their cells.
+
+A sixth container is the other half: **design**. The same buttons in a grid,
+each told the most it takes (`max_w`, `max_h`) and where it stands in a cell
+larger than that (`anchor`).
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
 **runs out of the box**. Install once, from the repo root::
@@ -65,7 +71,8 @@ def standard():
 # %% [markdown]
 # ## The containers
 # The same set in five containers. The two rows with a height are the only
-# sizes in the file, and they are on the containers, never on an element.
+# sizes on the defaults' side, and they are on the containers, never on an
+# element. The last grid is the design side: buttons bounded and anchored.
 
 # %%
 gui = GuiHost().boot()
@@ -76,6 +83,9 @@ v = view(
         panel(*standard(), layout="row", title="row, h=140", h=140),
         panel(*standard(), layout="row", title="row, h=28", h=28),
         panel(*standard(), layout="grid", cols=4, title="grid, 4 columns"),
+        panel(*(button(label=f"step {i + 1}", max_w=90, max_h=32, anchor=side)
+                for i, side in enumerate(("top_left", "top", "center", "bottom_right"))),
+              layout="grid", cols=4, title="grid, max_w=90 max_h=32, anchored"),
         layout="col",
     ),
     panel(*standard(), layout="col", title="col", w=260),

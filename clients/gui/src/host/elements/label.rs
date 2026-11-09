@@ -12,7 +12,7 @@ use crate::host::graphics::controls;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Ctx, Element, Needs};
-use crate::host::widget::size::{Natural, line_box, text_box};
+use crate::host::widget::size::{Natural, ellipsis_w, line_box, text_box};
 use crate::host::widget::{Align, parse};
 
 /// Static text. `wrap` word-wraps it on the font's advance (off, a single line
@@ -113,6 +113,15 @@ impl Element for Label {
             // it stays elastic and clips what does not fit.
             (!self.wrap).then(|| line_box(self.text_size * scale, m)),
         )
+    }
+
+    /// One line high, wrapped or not -- a wrapped label shorter than its
+    /// text clips the lines that do not fit, never the first -- and as narrow
+    /// as an ellipsis: a line that does not fit is cut, so the text sets no
+    /// width of its own.
+    fn floor(&self, m: &Metrics, scale: f32) -> Natural {
+        let size = self.text_size * scale;
+        (Some(ellipsis_w(size)), Some(line_box(size, m)))
     }
 
     /// A label's `text` is a presentation prop resolved at a mutation point, so

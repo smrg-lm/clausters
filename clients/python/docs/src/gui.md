@@ -392,7 +392,18 @@ axis the size resolves in one order — an explicit size wins, then an explicit
 `weight` takes that share of the leftover, then the widget's **natural size**
 (how big that kind wants to be), then an equal share. So a column of controls
 is a stack of control-high rows, and `weight=1.0` is what stretches something
-past its natural size:
+past its natural size.
+
+**No widget is ever placed smaller than its floor** — the smallest size it
+still reads at: a control's box one line high, a caption cut to an ellipsis,
+a knob's disc and its number, a slider's grip and some travel, a number's
+widest value. A container's floor is its children's, so a row declared
+`h=28` that holds a knob is as tall as the knob needs, and a window's floor is
+the smallest the window can be made. Across a row, and in a grid cell, a
+widget fills the room it is given; `max_w`/`max_h` keep it smaller and
+`anchor` (`"center"`, `"top_left"`, …) says where it stands, while
+`min_w`/`min_h` raise its floor. `panels/palette` shows every standard widget
+at its defaults in each layout:
 
 ```python
 view(

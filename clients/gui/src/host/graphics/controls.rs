@@ -239,9 +239,41 @@ pub fn knob_disc(body: Rect, size: f32, m: &Metrics) -> (f32, f32, f32) {
     )
 }
 
+/// **The diameter a knob's disc keeps at least**: the `knob_d` role, grown
+/// with the knob's own `text_size` where that is larger than the default one
+/// (both logical, so a display's scale moves neither), so a disc is never
+/// small beside its own caption and read-out -- a disc a hand cannot aim at is
+/// not a control. It is what the knob's floor keeps, on both axes.
+pub fn knob_disc_d(r: &Range, m: &Metrics) -> f32 {
+    m.knob_d * (r.text_size / font::DEFAULT_SIZE).max(1.0)
+}
+
+/// **Whether a knob in a cell `rect_h` tall draws its label**: only where the
+/// disc and the read-out still get their whole height under it. The label is
+/// what a knob gives up first ([`label_give`]), so a knob placed at its floor
+/// draws its disc at full size and no caption -- never a caption over a disc
+/// shrunk to make room for it.
+pub fn knob_labelled(r: &Range, rect_h: f32, size: f32, m: &Metrics) -> bool {
+    r.label.is_some()
+        && rect_h + 0.5
+            >= size::label_strip(true, size, m)
+                + size::body_inset(m)
+                + knob_disc_d(r, m)
+                + readout_h(size, m)
+}
+
+/// The body a knob draws its disc and read-out in: the cell under its label
+/// where it draws one ([`knob_labelled`]), the cell whole where it does not.
+pub fn knob_body(r: &Range, rect: Rect, size: f32, m: &Metrics) -> Rect {
+    body_rect_at(rect, knob_labelled(r, rect.h, size, m), size, m)
+}
+
 pub fn knob(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
-    label_strip(d, r.label.as_deref(), rect, size);
-    let body = body_rect_at(rect, r.label.is_some(), size, d.m);
+    let labelled = knob_labelled(r, rect.h, size, d.m);
+    if labelled {
+        label_strip(d, r.label.as_deref(), rect, size);
+    }
+    let body = body_rect_at(rect, labelled, size, d.m);
     let (cx, cy, radius) = knob_disc(body, size, d.m);
     let text_h = readout_h(size, d.m);
     knob_dial(d, cx, cy, radius, r.fraction());
@@ -924,6 +956,17 @@ pub fn slider_thick(r: &Range, readout: bool, m: &Metrics, scale: f32) -> f32 {
         + strip
 }
 
+/// **How many control lines of travel a slider's track keeps at least**:
+/// short enough for a dense panel, long enough that a hand still sets a value
+/// along it rather than only jumping between its ends.
+pub const SLIDER_TRAVEL_LINES: f32 = 3.0;
+
+/// **The least travel a slider's track keeps**, beside its grip
+/// ([`SLIDER_TRAVEL_LINES`] control lines).
+pub fn slider_travel(m: &Metrics) -> f32 {
+    SLIDER_TRAVEL_LINES * m.control_h
+}
+
 /// A vertical slider's width: the grip across the track, inset in the body.
 /// The value read-out shares that width and ellipsizes -- a number's own length
 /// is data, and no size here may follow it.
@@ -937,7 +980,7 @@ pub fn knob_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
     let size = r.text_size * scale;
     size::label_strip(r.label.is_some(), size, m)
         + size::body_inset(m)
-        + m.knob_d
+        + knob_disc_d(r, m)
         + readout_h(size, m)
 }
 
@@ -945,6 +988,39 @@ pub fn knob_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
 mod tests {
     use super::*;
     use crate::host::theme::Theme;
+
+    /// **A knob at its floor gives up its label, not its disc**: placed at the
+    /// height its floor promises, it draws no caption and its disc at full
+    /// size; at its whole height it draws both.
+    #[test]
+    fn a_knob_at_its_floor_keeps_its_disc_whole() {
+        let m = Metrics::default();
+        let r = Range::parse(
+            &serde_json::json!({"label": "cutoff"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        let size = r.text_size;
+        let whole = knob_h(&r, &m, 1.0);
+        let floor = whole - label_give(&r, &m, 1.0);
+        assert!(knob_labelled(&r, whole, size, &m));
+        assert!(!knob_labelled(&r, floor, size, &m));
+        let disc = |h: f32| {
+            let rect = Rect::new(0.0, 0.0, 200.0, h);
+            knob_disc(knob_body(&r, rect, size, &m), size, &m).2
+        };
+        assert_eq!(disc(floor), disc(whole), "the same disc either way");
+        assert!(disc(floor) * 2.0 >= m.knob_d - 4.0, "and a whole one");
+        // **text twice the default's makes a disc twice the default's**
+        let big = Range::parse(
+            serde_json::json!({"label": "cutoff", "text_size": 2.0 * crate::host::font::DEFAULT_SIZE})
+                .as_object()
+                .unwrap(),
+        );
+        assert_eq!(knob_disc_d(&big, &m), 2.0 * m.knob_d);
+        assert_eq!(knob_disc_d(&r, &m), m.knob_d);
+    }
 
     /// A cell too short for the inset keeps its text inside its box; one with
     /// room keeps the inset, and one shorter than the text is all box.

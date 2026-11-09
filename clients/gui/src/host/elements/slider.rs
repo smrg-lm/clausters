@@ -106,12 +106,25 @@ impl Element for Slider {
     /// are the control. A vertical one is sized by its *grip* across the track
     /// and its label rides above the axis rather than across it, so there is
     /// nothing on that axis to give.
+    ///
+    /// Along its track it takes whatever it is given, but never less than
+    /// its grip and a least travel (`controls::slider_travel`), nor than its
+    /// read-out.
     fn floor(&self, m: &Metrics, scale: f32) -> Natural {
+        let size = self.range.text_size * scale;
+        let along = controls::slider_travel(m).max(controls::readout_w(&self.range, size, m))
+            + m.handle_grip.max(m.handle_thick);
         if self.vertical {
-            (Some(slider_across(m)), None)
+            let strip = controls::label_give(&self.range, m, scale)
+                + if self.readout {
+                    controls::readout_h(size, m)
+                } else {
+                    0.0
+                };
+            (Some(slider_across(m)), Some(along + strip))
         } else {
             (
-                None,
+                Some(along),
                 Some(
                     slider_thick(&self.range, self.readout, m, scale)
                         - controls::label_give(&self.range, m, scale),

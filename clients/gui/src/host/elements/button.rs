@@ -33,7 +33,7 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
 use crate::host::widget::parse;
-use crate::host::widget::size::{Natural, control_box, text_box};
+use crate::host::widget::size::{Natural, caption_floor, control_box, text_box};
 
 use super::switch_value;
 
@@ -184,6 +184,25 @@ impl Element for Button {
 
     fn natural(&self, m: &Metrics, scale: f32) -> Natural {
         (None, Some(control_box(self.text_size * scale, m)))
+    }
+
+    /// A button takes all the room it is given -- a grid of them is a step
+    /// sequencer -- and goes no smaller than one line of its box, and as
+    /// narrow as its caption cut to an ellipsis (an icon kept whole beside
+    /// it): a caption sets no width of its own, and a caption narrower than
+    /// the ellipsis -- a tool's one symbol -- floors at itself. Its padding
+    /// is what it gives up first.
+    fn floor(&self, m: &Metrics, scale: f32) -> Natural {
+        let size = self.text_size * scale;
+        let caption = controls::button_text(self.label.as_deref(), None);
+        let cut = match self.icon {
+            Some(icon) if self.label.is_some() => {
+                crate::host::font::width(&format!("{icon} "), size) + caption_floor(&caption, size)
+            }
+            Some(icon) => crate::host::font::width(&icon.to_string(), size),
+            None => caption_floor(&caption, size),
+        };
+        (Some(cut), Some(control_box(size, m)))
     }
 
     /// A button *is* its box, and its caption is a prop: fitted to its content

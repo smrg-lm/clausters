@@ -69,9 +69,20 @@ impl Element for Knob {
     /// read-out: a knob with no caption is terser, a knob with no number is a
     /// control you cannot read, and a disc cut into is a control you cannot
     /// aim. Unlabelled it has nothing to give and floors where it stands.
+    ///
+    /// Across, it keeps the wider of its disc and its read-out: the disc
+    /// sizes itself to its body, so a body narrower than the disc it keeps
+    /// in height would shrink the one part a hand aims at.
     fn floor(&self, m: &Metrics, scale: f32) -> Natural {
+        let size = self.range.text_size * scale;
         (
-            None,
+            Some(
+                (controls::knob_disc_d(&self.range, m) + body_inset(m)).max(controls::readout_w(
+                    &self.range,
+                    size,
+                    m,
+                )),
+            ),
             Some(knob_h(&self.range, m, scale) - controls::label_give(&self.range, m, scale)),
         )
     }
@@ -92,7 +103,7 @@ impl Element for Knob {
             .label
             .as_deref()
             .map_or(0.0, |t| text_box(t, size, m));
-        let w = (m.knob_d + body_inset(m))
+        let w = (controls::knob_disc_d(&self.range, m) + body_inset(m))
             .max(label)
             .max(controls::readout_w(&self.range, size, m));
         (Some(w), Some(knob_h(&self.range, m, scale)))
@@ -113,14 +124,15 @@ impl Element for Knob {
     /// grabbing the value and turning it. The disc is read off the same
     /// `knob_disc` the drawing places it with, so the two cannot disagree.
     fn hit_area(&self, input: &Input) -> HitArea {
-        let body = control::body(&self.range, input);
-        let (cx, cy, r) =
-            controls::knob_disc(body, self.range.text_size * input.scale, input.metrics);
+        let size = self.range.text_size * input.scale;
+        let body = controls::knob_body(&self.range, input.rect, size, input.metrics);
+        let (cx, cy, r) = controls::knob_disc(body, size, input.metrics);
         HitArea::Disc { cx, cy, r }
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
-        let body_h = control::body(&self.range, input).h;
+        let size = self.range.text_size * input.scale;
+        let body_h = controls::knob_body(&self.range, input.rect, size, input.metrics).h;
         self.drag.press(&self.range, body_h, at)
     }
 

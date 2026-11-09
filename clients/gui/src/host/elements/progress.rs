@@ -133,6 +133,12 @@ impl Element for Progress {
         (None, Some(label + body_inset(m) + body))
     }
 
+    /// Its bar and its label as tall as they want, and as narrow as a control
+    /// line: a bar shorter than that reads no proportion.
+    fn floor(&self, m: &Metrics, scale: f32) -> Natural {
+        (Some(m.control_h), self.natural(m, scale).1)
+    }
+
     fn value(&self) -> Option<OscType> {
         self.value.map(OscType::Float)
     }

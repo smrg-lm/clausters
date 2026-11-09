@@ -46,6 +46,9 @@ pub(super) struct CanvasSlot {
     pub(super) reads: HashMap<i32, i32>,
     /// The GPU resources, once the async device resolved.
     pub(super) render: Option<WindowRender>,
+    /// The smallest size the canvas was last told it may be made
+    /// ([`crate::gpu::keep_min_size`]).
+    pub(super) min_px: Option<(u32, u32)>,
     /// A size that arrived before the GPU was ready (so `render` was `None` and
     /// it could not be applied yet); replayed on `GpuReady` so the surface is
     /// configured to the real size for the first frame, not a stale 1x1.
@@ -184,6 +187,7 @@ impl CanvasSlot {
             appended: false,
             reads: HashMap::new(),
             render: None,
+            min_px: None,
             pending_size: None,
             visible: true,
             cursor: None,
@@ -476,6 +480,14 @@ impl WebApp {
         // What this frame was asked for: the canvas' picture, or only what
         // moves over the one it kept.
         let whole = capture || self.canvases.get(&def).is_none_or(CanvasSlot::whole_wanted);
+        // the canvas is never made smaller than its root's floor
+        if whole {
+            let min = self.host.window_min_px(def);
+            if let Some(slot) = self.canvases.get_mut(&def) {
+                let window = slot.window.clone();
+                crate::gpu::keep_min_size(&window, &mut slot.min_px, min);
+            }
+        }
         // Whatever an element has for its slot reaches the card before the
         // frame that draws it -- a canvas with nothing live in it never ticks.
         if whole

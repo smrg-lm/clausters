@@ -34,9 +34,15 @@ shorter than it is;</li>
 <li><b>a grid</b> of four columns: an element in a cell it did not choose;</li>
 <li><b>a column</b>, on the right: how the height is shared down it.</li>
 </ul>
-It is the surface the per-element sizing rules are read against: an element
-that keeps its content's size reads the same in all five, and one that takes
-what its cell gives changes with each.</div>
+No element is drawn under its <b>floor</b>, the smallest size it still reads
+at: the short row grows to its tallest control's floor rather than spilling
+into the grid under it, a knob gives up its caption before its disc, and the
+view is never made smaller than all of it. Filling a cell is the default -- a
+grid of buttons is a step sequencer -- so the buttons are as big as their cells.
+
+A sixth container is the other half: <b>design</b>. The same buttons in a grid,
+each told the most it takes (<code>max_w</code>, <code>max_h</code>) and where it
+stands in a cell larger than that (<code>anchor</code>).</div>
 
       <button id="run">open the palette</button>
       <div id="palette"></div>
@@ -88,8 +94,9 @@ what its cell gives changes with each.</div>
 
         // ---- the containers ----
         // The same set in five containers. The two rows with a height are the
-        // only sizes in the file, and they are on the containers, never on an
-        // element.
+        // only sizes on the defaults' side, and they are on the containers,
+        // never on an element. The last grid is the design side: buttons
+        // bounded and anchored.
         await new GuiHost().boot();
 
         const v = gui.view(
@@ -100,6 +107,11 @@ what its cell gives changes with each.</div>
             gui.panel({ layout: "row", title: "row, h=140", h: 140 }, ...standard()),
             gui.panel({ layout: "row", title: "row, h=28", h: 28 }, ...standard()),
             gui.panel({ layout: "grid", cols: 4, title: "grid, 4 columns" }, ...standard()),
+            gui.panel(
+              { layout: "grid", cols: 4, title: "grid, max_w=90 max_h=32, anchored" },
+              ...["top_left", "top", "center", "bottom_right"].map((side, i) =>
+                gui.button({ label: `step ${i + 1}`, max_w: 90, max_h: 32, anchor: side })),
+            ),
           ),
           gui.panel({ layout: "col", title: "col", w: 260 }, ...standard()),
         );

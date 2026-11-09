@@ -426,3 +426,22 @@ mod threads {
         }
     }
 }
+
+/// **Tells the platform the smallest `window` may be made**, when `min` (in
+/// physical pixels) is not what it was told last (`told`): the root's floor
+/// ([`crate::host::Host::window_min_px`]), so neither a hand nor the window
+/// manager resizes it under what its controls read at. One call for both
+/// fronts -- on a page it is the canvas' `min-width`/`min-height`.
+pub(crate) fn keep_min_size(
+    window: &Window,
+    told: &mut Option<(u32, u32)>,
+    min: Option<(u32, u32)>,
+) {
+    if min.is_none() || *told == min {
+        return;
+    }
+    *told = min;
+    if let Some((w, h)) = min {
+        window.set_min_inner_size(Some(winit::dpi::PhysicalSize::new(w, h)));
+    }
+}

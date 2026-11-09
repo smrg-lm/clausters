@@ -9274,7 +9274,7 @@ module of its own.
   drops 48 devices on eight threads: 8 runs in 10 crashed without the kept
   instance, none in 20 with it.
 
-- ⬜ **A control's size does not follow what it says, in a row or across one**
+- ✅ **A control's size does not follow what it says, in a row or across one**
   *(found 2026-11-01 by the user, by eye on the curve window, as something the
   examples keep showing)*. The layout has no rule for the two cases left once
   a box covers its text. **Along a row**, a button or a chooser with no `w`
@@ -9360,6 +9360,31 @@ module of its own.
   `a_natural_size_only_binds_its_own_axis` pins the old rule and goes with
   it; the palette is the manual test, and each container shown there is
   checked against the rules above.
+  *Done 2026-11-09.* `Widget::min_size` is every widget's floor on both
+  axes, composed for containers; the strip, the grid and `free` never place
+  a child under it, a share is held at it, and a declared size or a maximum
+  under it resolves to it. The root's floor is the window's minimum, told to
+  the platform by both fronts, and a window declared smaller opens at it.
+  `max_w`/`max_h`, `min_w`/`min_h` and `anchor` are the new place props. Two
+  things the eye pass over the applications corrected on the way: a caption's
+  floor is its text without its padding (with it, the score editor's symbol
+  palettes and its toolbar were wider than the window they had always fit in),
+  and a knob gives up its caption before its disc, whose floor grows with the
+  knob's own text. `a_natural_size_only_binds_its_own_axis` still holds --
+  filling a cell is the default -- and the palette shows the floors and, in
+  its sixth container, a maximum and an anchor. The multitrack and the audio
+  editor draw as before; the score editor's toolbar now fits its window at
+  960 (its transport used to fall off the right edge).
+
+- ⬜ **A scroll's plane is no wider than its pane, whatever its children's
+  floors** *(found 2026-11-09, closing the entry above, on the score editor's
+  palette column)*. A `scroll` that flows its children in a column takes its
+  pane's width as its content's, so a child whose floor is wider -- the
+  ornaments grid, whose widest symbol floors a few pixels past the column --
+  is drawn past the pane and cut by it, where the rest of the layout now
+  never cuts a floor. The plane's extent across its flow should be at least
+  its children's floors, which makes such a column scroll sideways; whether
+  that is the fix, or the palette's cells are, is to decide.
 
 - ✅ **A pass can play with no play cursor until a frame happens to come**
   *(found 2026-11-01 by the user, by ear and eye on `notation/score_editor`)*.
