@@ -90,8 +90,6 @@ The verdict is one of three:
 | `multitrack` | `compact_tracks` | `MultitrackEditor.compact_tracks` | `MultitrackEditor.compactTracks` | **api** |
 | `multitrack` | `view_wave` | `MultitrackEditor.view_wave` | `MultitrackEditor.viewWave` | **api** |
 | `multitrack` | `view_spectrogram` | `MultitrackEditor.view_spectrogram` | `MultitrackEditor.viewSpectrogram` | **api** |
-| `multitrack` | `notes_roll` | `MultitrackEditor.notes_view` | `MultitrackEditor.notesView` | **api** — `notes_view = "roll"` |
-| `multitrack` | `notes_score` | `MultitrackEditor.notes_view` | `MultitrackEditor.notesView` | **api** — `notes_view = "score"` |
 | `notes` | `monophonic` | `NotesEditor.monophonic` | `NotesEditor.monophonic` | **api** — a switch: `monophonic = True`; on the web `setMonophonic(true)` |
 | `notes` | `unjoin` | `NotesEditor.unjoin` | `NotesEditor.unjoin` | **api** |
 | `notes` | `midi_mode` | `NotesEditor.mode` `NotesEditor.to_midi` | `NotesEditor.mode` `NotesEditor.toMidi` | **api** — `mode = "midi"`; on the web `setMode("midi")` |

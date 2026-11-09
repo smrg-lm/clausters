@@ -50,7 +50,7 @@ CLASSES = {
 
 
 def camel(name: str) -> str:
-    """``notes_view`` -> ``notesView``."""
+    """``snap_to_grid`` -> ``snapToGrid``."""
     return re.sub(r"_([a-z])", lambda m: m.group(1).upper(), name)
 
 

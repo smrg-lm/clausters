@@ -3425,8 +3425,8 @@ mod tests {
     /// pages whose own state changed (the selection set, which lets every
     /// kept triangle of the page go today), against the same frame with
     /// nothing changed; and a multitrack of many tracks, each with boxes of
-    /// notes, drawn whole as a drag of one box draws it on every move, as
-    /// rolls and as pages; and a roll of many notes, which keeps no parts.
+    /// notes, drawn whole as a drag of one box draws it on every move; and a
+    /// roll of many notes, which keeps no parts.
     ///
     /// Run with `cargo test --release --features score --lib
     /// what_a_change_costs -- --ignored --nocapture`.
@@ -3577,31 +3577,6 @@ mod tests {
                 }
             }
         }
-        // every box's page: a staff and the box's notes on it, anchored
-        let mut prims = Vec::new();
-        for line in 0..5 {
-            let y = 200 + 180 * line;
-            prims.push(json!({"k": "line", "pts": [[0, y], [4000, y]], "w": 13, "id": "staff"}));
-        }
-        let mut anchors = Vec::new();
-        for n in 0..8 {
-            let id = format!("n{n}");
-            prims.push(json!({"k": "glyph", "cp": "E0A4",
-                "xf": [400 + 400 * n, 380 + 90 * (n % 5), 0.72, -0.72], "id": id}));
-            prims.push(
-                json!({"k": "line", "pts": [[600 + 400 * n, 380], [600 + 400 * n, 0]],
-                "w": 13, "id": id}),
-            );
-            anchors.extend([json!(id), json!(n * 2_500)]);
-        }
-        let ids: Vec<String> = (0..8).map(|n| format!("n{n}")).collect();
-        let page = json!({"vb": [4000, 1400], "step": 90,
-            "glyphs": {"E0A4": "M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z"},
-            "prims": prims, "elements": ids, "anchors": anchors});
-        let mut scores = serde_json::Map::new();
-        for clip in clips.chunks(7) {
-            scores.insert(clip[0].as_str().unwrap().to_string(), page.clone());
-        }
         let tree = json!({"type": "window", "w": 1280, "h": 900, "children": [
             {"id": 3, "type": "multitrack", "tracks": track_list, "clips": clips,
              "notes": placed, "sample_rate": 48_000}]});
@@ -3651,47 +3626,6 @@ mod tests {
             "multitrack, {tracks} tracks x {boxes} boxes of notes: {whole:.3} ms a whole \
              frame, as every move of a drag draws it; {vertices} vertices"
         );
-        let mut fx = Vec::new();
-        host.set_props(
-            3,
-            vec![
-                ("scores".into(), serde_json::Value::Object(scores)),
-                ("notes_view".into(), json!("score")),
-            ],
-            &mut fx,
-        );
-        let inputs = FrameInputs {
-            metrics: host.metrics_for(1),
-            world: World {
-                timelines: host.timelines(),
-                ..World::default()
-            },
-            ..FrameInputs::default()
-        };
-        let draw = || {
-            picture(
-                host.window_def(1).unwrap(),
-                &inputs,
-                &host.theme,
-                &none.0,
-                &none.1,
-                (1280, 900),
-            )
-        };
-        let vertices = draw().base.vertex_count();
-        let whole = median(
-            (0..30)
-                .map(|_| {
-                    let start = std::time::Instant::now();
-                    std::hint::black_box(draw());
-                    start.elapsed().as_secs_f64() * 1e3
-                })
-                .collect(),
-        );
-        println!(
-            "the same, its boxes drawn as pages: {whole:.3} ms a whole frame; {vertices} vertices"
-        );
-
         // ---- a roll of many notes ----
         let mut notes = Vec::new();
         for n in 0..4_000 {

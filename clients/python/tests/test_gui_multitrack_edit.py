@@ -228,17 +228,13 @@ def test_the_transport_and_the_save_are_calls_to_the_application():
 
 
 def test_the_grid_is_the_windows():
-    host = FakeHost({"verb": {"grid": 0.5, "snap": True, "view": "roll", "set": True}})
+    host = FakeHost({"verb": {"grid": 0.5, "snap": True}})
     editor = edit(a_session(), host=host)
     assert editor.grid == 0.5 and editor.snap_to_grid
     editor.grid = 0.25
     assert host.calls[-1][2] == {"do": {"verb": "verb", "call": {"verb": "sync", "grid": 0.25}}}
     editor.snap_to_grid = False
     assert host.calls[-1][2] == {"do": {"verb": "verb", "call": {"verb": "sync", "snap": False}}}
-    assert editor.notes_view == "roll"
-    editor.notes_view = "score"
-    assert host.calls[-1][2] == {"do": {"verb": "verb",
-                                        "call": {"verb": "notesView", "view": "score"}}}
 
 
 def test_what_the_hand_holds_is_the_windows():

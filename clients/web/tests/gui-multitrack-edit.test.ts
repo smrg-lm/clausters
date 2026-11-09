@@ -264,7 +264,7 @@ test("the transport and the save are calls to the application", async () => {
 });
 
 test("the grid is the window's", async () => {
-    const host = new FakeHost({ verb: { grid: 0.5, snap: true, view: "roll", set: true } });
+    const host = new FakeHost({ verb: { grid: 0.5, snap: true } });
     const editor = await edit(aSession(), { host: host as unknown as GuiHost });
     assert.equal(await editor.grid(), 0.5);
     assert.equal(await editor.snapToGrid(), true);
@@ -272,9 +272,6 @@ test("the grid is the window's", async () => {
     assert.deepEqual(host.last(), { do: { verb: "verb", call: { verb: "sync", grid: 0.25 } } });
     await editor.setSnapToGrid(false);
     assert.deepEqual(host.last(), { do: { verb: "verb", call: { verb: "sync", snap: false } } });
-    assert.equal(await editor.notesView(), "roll");
-    await editor.setNotesView("score");
-    assert.deepEqual(host.last(), { do: { verb: "verb", call: { verb: "notesView", view: "score" } } });
 });
 
 test("what the hand holds is the window's", async () => {

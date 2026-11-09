@@ -519,23 +519,6 @@ impl Editing {
             _ => "{}".into(),
         }
     }
-
-    /// **Hands a multitrack member the engraver its boxes' pages are
-    /// engraved with**: a score the caller made for that and reads no more,
-    /// which the editor loads with each sequence in turn. The answer is the
-    /// member's picture corrected with it, or `{}` when `member` is not a
-    /// multitrack.
-    #[cfg(feature = "notation")]
-    pub fn bind_engraver(&mut self, member: MemberId, score: crate::score::Shared) -> String {
-        let version = self.version;
-        match self.member_mut(member) {
-            Some(Member::Multitrack(editor)) => {
-                editor.bind_engraver(score);
-                to_json(&editor.resync_all(version))
-            }
-            _ => "{}".into(),
-        }
-    }
 }
 
 /// A member taken in, as the door answers it: its number and the structure it

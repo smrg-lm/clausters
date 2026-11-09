@@ -4758,7 +4758,7 @@ Every entry carries a checkbox.
 
 ## Found by use: the running list of fixes
 
-- ⬜ **The multitrack's score boxes come out** *(2026-11-09, from the
+- ✅ **The multitrack's score boxes come out** *(2026-11-09, from the
   user's decision in Future directions, "Whether the multitrack keeps its
   score boxes")*. The View menu's *Notes as scores*
   (`clausters_editing::verbs`, `notes_score`), the multitrack editor's
@@ -4770,6 +4770,13 @@ Every entry carries a checkbox.
   as a roll and opens in the notes editor. Taken out so that it can come
   back: the engraving stays the score editor's, and what the box used
   (`Transcription::of`, the anchors) stays where the score editor uses it.
+  *Done 2026-11-09*: the View menu's two notes entries, the editor's
+  `notes_view` and its pages, the engraver it was handed, the host's page
+  window over a box and its proportional drawing, the clients'
+  `notes_view`/`notesView`, and the widget's `notes_view` and `scores`
+  props are gone; a double click on a box of notes opens its roll. The
+  reading a box used (`Transcription::of`) stays with the score editor,
+  and the proportional drawing is in the history if the boxes come back.
 
 - ✅ **A failed endpoint walk leaves unissued steps queued** (2026-10-30,
   reading the document-store adapters). `clausters_editing::run::Runner`

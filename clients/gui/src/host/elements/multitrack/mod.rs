@@ -80,43 +80,10 @@ pub(super) struct BoxKey {
     pub(super) metrics: crate::host::metrics::Metrics,
     pub(super) selected: bool,
     pub(super) space: TimeSpace,
-    pub(super) view: NotesView,
     pub(super) contents: u64,
     pub(super) text: u64,
 }
 
-/// **How a box of notes is drawn**: the presentation its contents take.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum NotesView {
-    /// As a piano roll fitted to the box.
-    #[default]
-    Roll,
-    /// As its page: the notes engraved, each at its time on the axis.
-    Score,
-}
-
-impl NotesView {
-    /// The presentation a word names (`"roll"`, `"score"`).
-    pub fn parse(word: &str) -> Option<NotesView> {
-        match word {
-            "roll" => Some(NotesView::Roll),
-            "score" => Some(NotesView::Score),
-            _ => None,
-        }
-    }
-}
-
-/// **A box's page**: the engraving of what it holds, and where each element
-/// of it that has a time stands on the box's own axis.
-#[cfg(feature = "notation")]
-#[derive(Clone, Debug)]
-pub(crate) struct ScoreBody {
-    /// The page, as a `score` element takes one.
-    page: crate::host::graphics::score::ScoreData,
-    /// `(element id, where it starts)`, in the units a note's start is in:
-    /// frames of the sequence, read through the box's window.
-    anchors: Vec<(String, f64)>,
-}
 pub(crate) use props::build;
 use props::{TrackMeter, curve_bodies, json_arg, parse_clips, take_body};
 
@@ -343,23 +310,12 @@ pub struct Multitrack {
     /// element is the roll that stands on its own elsewhere, drawn through its
     /// body door with no keyboard, no strips and no chrome.
     rolls: HashMap<String, Notes>,
-    /// **How a box of notes is drawn**: as a roll, or as its page
-    /// ([`NotesView`]). The widget's and not the box's, as `view` is for a box
-    /// of samples.
-    pub(crate) notes_view: NotesView,
-    /// **The pages of the boxes of notes, by box name** -- each the
-    /// engraving of what the box holds and the time of every element of it
-    /// that has one ([`ScoreBody`]). Their owner engraves them and states
-    /// them whole; a box with none, or a row too low for a staff to be read,
-    /// is drawn as its roll.
-    #[cfg(feature = "notation")]
-    scores: HashMap<String, ScoreBody>,
-    /// **What the boxes hold, as a count**: moved on every `notes` and
-    /// `scores` set, which replace every box's contents, so a kept box's key
+    /// **What the boxes hold, as a count**: moved on every `notes` set,
+    /// which replaces every box's contents, so a kept box's key
     /// says which contents it was drawn from.
     contents: u64,
-    /// **Each box as it was last drawn** -- its frame and its body, a roll or
-    /// a page -- by its place in `clips`: a drag of one box draws that box
+    /// **Each box as it was last drawn** -- its frame and its body -- by its
+    /// place in `clips`: a drag of one box draws that box
     /// again and copies the rest.
     kept: crate::host::paint::KeptParts<BoxKey>,
     /// The drag in flight. **The state lives in the element**; the machine
@@ -408,9 +364,6 @@ impl Default for Multitrack {
             listed: HashMap::new(),
             asked: HashSet::new(),
             rolls: HashMap::new(),
-            notes_view: NotesView::default(),
-            #[cfg(feature = "notation")]
-            scores: HashMap::new(),
             contents: 0,
             kept: Default::default(),
             grab: None,

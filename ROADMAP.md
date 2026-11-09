@@ -127,10 +127,6 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
-- ⬜ **The multitrack's score boxes come out** *(`crates/clausters-apps/PLAN.md`,
-  Found by use)*. The user's decision, for now and not as a rule: a box of
-  notes is drawn as a roll, and the page is the score editor's.
-
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and

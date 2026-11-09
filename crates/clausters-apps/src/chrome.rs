@@ -29,8 +29,8 @@
 //! the hand edits), under a Process menu of its own;
 //! the multitrack and the roll `split`, `join` and `quantize`; the multitrack
 //! the rows' own commands (`add_track`, `reset_heights`, `compact_tracks`), a
-//! transport that pauses (`pause`, `stop`), how its boxes of notes are drawn
-//! (`notes_roll`, `notes_score`), and `save` where the window is the work's
+//! transport that pauses (`pause`, `stop`), how its boxes of samples are
+//! drawn (`view_wave`, `view_spectrogram`), and `save` where the window is the work's
 //! only holder. The points editor adds nothing and has no tools: its bar holds
 //! the window's own verbs and the history, and what a curve does not do is
 //! refused with why.
@@ -207,13 +207,12 @@ pub fn menu(app: App, saves: bool) -> Value {
             entry(app, "compact_tracks"),
         ]);
         // how a box of samples is drawn, the audio editor's two pictures of
-        // a take, and how a box of notes is: the window's own, like its zoom
+        // a take: the window's own, like its zoom
         view.extend([
             sep(),
             entry(app, "view_wave"),
             entry(app, "view_spectrogram"),
         ]);
-        view.extend([sep(), entry(app, "notes_roll"), entry(app, "notes_score")]);
     }
 
     let mut transport = vec![entry(app, "play")];
@@ -537,8 +536,6 @@ mod tests {
             "stop",
             "reset_heights",
             "compact_tracks",
-            "notes_roll",
-            "notes_score",
             "view_wave",
             "view_spectrogram",
         ] {

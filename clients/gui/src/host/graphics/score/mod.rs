@@ -33,8 +33,6 @@ mod cursor;
 mod glyphs;
 mod hit;
 mod list;
-mod proportional;
-pub use proportional::{TimeColors, TimeFrame, Warp};
 mod tess;
 
 #[cfg(test)]

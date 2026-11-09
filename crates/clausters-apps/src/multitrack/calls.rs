@@ -25,7 +25,6 @@ pub enum Call {
     SetWindow(Option<i32>),
     Props(i32),
     Notes,
-    NotesView(Option<String>),
     Event(Event),
     Apply(Value),
     Resync,
@@ -106,7 +105,6 @@ impl Call {
             "setWindow" => Self::SetWindow(get("window").as_i64().map(|w| w as i32)),
             "props" => Self::Props(int(&get("widget")) as i32),
             "notes" => Self::Notes,
-            "notesView" => Self::NotesView(get("view").as_str().map(str::to_string)),
             "event" => Self::Event(Event {
                 addr: get("addr").as_str().unwrap_or_default().into(),
                 args: get("args").as_array().cloned().unwrap_or_default(),
@@ -138,7 +136,6 @@ impl Call {
             | Self::Window(_, _)
             | Self::SetWindow(_)
             | Self::Props(_)
-            | Self::NotesView(_)
             | Self::Resync
             | Self::Settle
             | Self::Announce
@@ -150,7 +147,7 @@ impl Call {
 
     /// Whether this call changes what the window draws.
     pub fn resyncs(&self) -> bool {
-        matches!(self, Self::Sync(_) | Self::NotesView(_))
+        matches!(self, Self::Sync(_))
     }
 
     /// Execute using the owner's current history version.
@@ -209,10 +206,6 @@ impl Call {
             }
             Self::Props(widget) => Value::Object(editor.props(*widget)),
             Self::Notes => json!({"placed": editor.placed_notes()}),
-            Self::NotesView(view) => {
-                let set = view.as_ref().is_none_or(|view| editor.set_notes_view(view));
-                json!({"view": editor.notes_view(), "set": set})
-            }
             Self::Event(event) => {
                 serde_json::to_value(editor.event(event, version)).unwrap_or(Value::Null)
             }

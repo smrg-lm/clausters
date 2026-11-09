@@ -83,9 +83,6 @@ fn a_notes_editor_edits_the_shared_sequence_and_undoes_through_the_context() {
     );
 }
 
-/// **A region over a bound sequence draws what a notes editor edits**: the
-/// binding answers the multitrack's picture with the note in box 12, and an
-/// edit in the roll opened on the same handle corrects that picture.
 /// An engraver that keeps the document it is handed and draws nothing.
 #[cfg(feature = "notation")]
 pub(super) struct Kept(pub(super) std::sync::Mutex<String>);
@@ -118,92 +115,9 @@ impl clausters_core::notation::Engraver for Kept {
     }
 }
 
-/// A box of notes is drawn as its page where the window says so and an
-/// engraver was handed over: the page, and the time of each of its notes
-/// in the box's own frames.
-#[cfg(feature = "notation")]
-#[test]
-fn a_box_of_notes_is_stated_as_its_page_once_an_engraver_is_bound() {
-    use clausters_core::notation::{AnyEngraver, Score, sheet_to_mei, voice_to_sheet};
-    use clausters_document::EventSequence;
-    use clausters_document::events::Event as SeqEvent;
-    use std::sync::{Arc, Mutex};
-
-    let sequence = Arc::new(Mutex::new(EventSequence::new(vec![
-        SeqEvent::new(0.0, json!({"midinote": 60, "dur": 1.0})),
-        SeqEvent::new(1.0, json!({"midinote": 64, "dur": 1.0})),
-    ])));
-    let mut editing = Editing::new();
-    let multitrack = editing.join("multitrack", a_multitrack());
-    editing.bind_sequence(multitrack, SourceId(1), sequence.clone());
-    let picture = |editing: &mut Editing| match editing.member_mut(multitrack) {
-        Some(Member::Multitrack(editor)) => editor.picture(40),
-        _ => panic!("a multitrack editor"),
-    };
-    // as rolls, and with nothing to engrave with, there is no page
-    assert_eq!(picture(&mut editing)["notes_view"], "roll");
-    assert!(!picture(&mut editing).contains_key("scores"));
-
-    let blank = sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C")).unwrap();
-    let engraver = AnyEngraver::new(Kept(Mutex::new(String::new())));
-    let score = Arc::new(Mutex::new(Score::open(engraver, &blank).expect("opens")));
-    editing.bind_engraver(multitrack, score.clone());
-    assert!(
-        !picture(&mut editing).contains_key("scores"),
-        "still as rolls"
-    );
-    match editing.member_mut(multitrack) {
-        Some(Member::Multitrack(editor)) => assert!(editor.set_notes_view("score")),
-        _ => panic!("a multitrack editor"),
-    }
-    let props = picture(&mut editing);
-    assert_eq!(props["notes_view"], "score");
-    let pages = props["scores"].as_object().expect("the pages");
-    let (_, page) = pages.iter().next().expect("the box's page");
-    // the second note stands a beat in: a second, in the axis's frames
-    let anchors = page["anchors"].as_array().unwrap();
-    assert_eq!(anchors[0], "n1");
-    assert_eq!(anchors[1], 0.0);
-    assert_eq!(anchors[4], "n2");
-    assert_eq!(anchors[5], SR);
-    // what was engraved is the sequence, read
-    assert!(score.lock().unwrap().mei().contains("pname=\"e\""));
-    // and a note moved is the page engraved again
-    sequence.lock().unwrap().events[1].at.0 = 2.0;
-    let again = picture(&mut editing);
-    let (_, page) = again["scores"].as_object().unwrap().iter().next().unwrap();
-    let anchors: Vec<(String, f64)> = page["anchors"]
-        .as_array()
-        .unwrap()
-        .chunks(2)
-        .map(|pair| {
-            (
-                pair[0].as_str().unwrap().to_string(),
-                pair[1].as_f64().unwrap(),
-            )
-        })
-        .collect();
-    // a note is anchored with its pitch beside it, a rest alone
-    let note = |id: &str| {
-        anchors
-            .iter()
-            .any(|(named, _)| *named == format!("{id}-p1"))
-    };
-    let heads: Vec<(bool, f64)> = anchors
-        .iter()
-        .filter(|(id, _)| !id.ends_with("-p1"))
-        .map(|(id, t)| (note(id), *t))
-        .collect();
-    // **the rest the move opened stands at its own time**, a beat in, and
-    // nothing after the last note is anchored: the rest that fills its bar
-    // is nobody's
-    assert_eq!(
-        heads,
-        vec![(true, 0.0), (false, SR), (true, 2.0 * SR)],
-        "{anchors:?}"
-    );
-}
-
+/// **A region over a bound sequence draws what a notes editor edits**: the
+/// binding answers the multitrack's picture with the note in box 12, and an
+/// edit in the roll opened on the same handle corrects that picture.
 #[test]
 fn a_region_over_a_bound_sequence_follows_the_roll() {
     use clausters_document::EventSequence;

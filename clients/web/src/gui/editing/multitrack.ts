@@ -258,9 +258,9 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
         return this.verb("view_spectrogram");
     }
 
-    // ---- the grid, and how a box of notes is drawn ----
+    // ---- the grid ----
 
-    /** One verb of the window's editor (`grid`, `sync`, `notesView`), and its answer. */
+    /** One verb of the window's editor (`grid`, `sync`), and its answer. */
     private async editorVerb(call: Record<string, unknown>): Promise<Record<string, any>> {
         return ((await this.act("verb", { call })) ?? {}) as Record<string, any>;
     }
@@ -283,18 +283,6 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
     /** Sets whether a box the hand moves snaps to the grid. */
     async setSnapToGrid(on: boolean): Promise<void> {
         await this.editorVerb({ verb: "sync", snap: Boolean(on) });
-    }
-
-    /** How a box of notes is drawn: `"roll"` or `"score"`. */
-    async notesView(): Promise<string> {
-        return String((await this.editorVerb({ verb: "notesView" })).view);
-    }
-
-    /** Sets how a box of notes is drawn; a `RangeError` for a view there is not. */
-    async setNotesView(view: string): Promise<void> {
-        if (!(await this.editorVerb({ verb: "notesView", view: String(view) })).set) {
-            throw new RangeError(`no notes view "${view}": a box of notes is drawn as a "roll" or a "score"`);
-        }
     }
 
     // ---- what the hand holds ----

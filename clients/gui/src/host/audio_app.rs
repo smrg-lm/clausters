@@ -78,11 +78,6 @@ pub(super) enum AppKind {
     /// **A roll a client opened** over a sequence it handed over, which the
     /// window holds from then on.
     Notes,
-    /// **The page over a box of notes** of multitrack window `parent`: a
-    /// score member over the box's sequence (`source`), in the same context,
-    /// opened where the boxes are drawn as pages.
-    #[cfg(feature = "notation")]
-    Page { source: u64, parent: i32 },
 }
 
 /// The widget roles a score window is numbered with: the page, the scroll it
@@ -179,10 +174,6 @@ fn engraved(_: &str) -> Result<clausters_apps::score::Shared, String> {
     Err("this host was built without an engraver, so it opens no score".into())
 }
 
-/// Why a multitrack in a build with no engraver draws no box as its page.
-#[cfg(not(any(feature = "score", all(target_arch = "wasm32", feature = "notation"))))]
-const NO_ENGRAVER: &str = "this host was built without an engraver, so it draws no page";
-
 /// What the host asks of the application.
 #[derive(Debug)]
 pub(super) enum ToApp {
@@ -276,14 +267,9 @@ pub(super) enum FromApp {
         end: Option<Result<Value, Raised>>,
         say: bool,
     },
-    /// **A box of notes in multitrack window `parent` asked for the view it
-    /// is drawn in** (`source`, the sequence it reads): its roll, or its
-    /// page (`page`). The host opens a window for it.
-    Roll {
-        parent: i32,
-        source: u64,
-        page: bool,
-    },
+    /// **A box of notes in multitrack window `parent` asked for its roll**
+    /// (`source`, the sequence it reads). The host opens a window for it.
+    Roll { parent: i32, source: u64 },
     /// **Multitrack window `def_id`'s multitrack moved by a hand**, to the
     /// context's `version`: its opener is told ([`super::GUI_APP_CHANGED`]).
     Changed { def_id: i32, version: i64 },
@@ -510,10 +496,6 @@ impl App {
                     }
                     AppKind::Roll { source, parent } => {
                         self.open_roll(def_id, &title, source, parent)
-                    }
-                    #[cfg(feature = "notation")]
-                    AppKind::Page { source, parent } => {
-                        self.open_page(def_id, &title, source, parent)
                     }
                     #[cfg(feature = "notation")]
                     AppKind::Score => self.open_score(def_id, &key, &title, path, data, save_to),
@@ -805,41 +787,6 @@ impl App {
     /// boxes read, in the same context, so an edit in either is one history,
     /// as a roll over the box is.
     #[cfg(feature = "notation")]
-    fn open_page(
-        &mut self,
-        def_id: i32,
-        title: &str,
-        source: u64,
-        parent: i32,
-    ) -> Result<Vec<String>, String> {
-        use clausters_apps::editing::{Member, Place};
-        use clausters_core::notation::{sheet_to_mei, voice_to_sheet};
-        let parent = self
-            .windows
-            .get(&parent)
-            .map(|w| w.member)
-            .ok_or("the multitrack's window is gone")?;
-        let shared = match self.editing.member(parent) {
-            Some(Member::Multitrack(editor)) => editor
-                .sequence(clausters_document::SourceId(source))
-                .cloned()
-                .ok_or("the box reads no sequence")?,
-            _ => return Err("the window is not a multitrack's".into()),
-        };
-        let blank =
-            sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C")).map_err(|e| e.to_string())?;
-        let score = engraved(&blank)?;
-        let opened = ScoreOpen {
-            kind: AppKind::Page { source, parent: 0 },
-            key: format!("sequence:{source}"),
-            place: Place::Beside(parent),
-            title,
-            session: None,
-            save_to: None,
-        };
-        self.score_window(def_id, opened, score, Some(shared), json!({}))
-    }
-
     /// **A score window opened**: the member over `score` -- over `sequence`
     /// when there is one -- where `opened` places it, the window held, and
     /// the tools, dialogs and palettes it numbers, each under its group.
@@ -1131,14 +1078,6 @@ impl App {
         // **It saves unless it was opened read-only**: an untitled one too,
         // whose first Save asks where in the Save as form
         let saves = !matches!(save_to, Some(None));
-        // **a build that links no engraver draws no page**, and its View
-        // menu says so rather than offering one
-        #[cfg(not(any(feature = "score", all(target_arch = "wasm32", feature = "notation"))))]
-        if let Some(clausters_apps::editing::Member::Multitrack(editor)) =
-            self.editing.member_mut(member)
-        {
-            editor.refuse_pages(NO_ENGRAVER);
-        }
         self.member_call(
             member,
             json!({"verb": "sync", "window": def_id, "controls": controls,
@@ -1210,23 +1149,16 @@ impl App {
                 return self.said(def_id, first, true);
             }
             #[cfg(feature = "notation")]
-            AppKind::Score | AppKind::Page { .. } => {
-                // **a page over a box** is the multitrack's sequence, saved
-                // with its session: it writes no file and asks nothing before
-                // a close
-                let sync = if matches!(kind, AppKind::Page { .. }) {
-                    json!({"verb": "sync", "window": def_id, "title": title, "asks": false})
-                } else {
-                    let asks = !self
-                        .windows
-                        .get(&def_id)
-                        .is_some_and(|window| window.client_owned);
-                    // where its Save writes: the host's word when it said, or
-                    // the file it read
-                    let file = save_to.unwrap_or(session);
-                    json!({"verb": "sync", "window": def_id, "title": title, "path": file,
-                        "asks": asks})
-                };
+            AppKind::Score => {
+                let asks = !self
+                    .windows
+                    .get(&def_id)
+                    .is_some_and(|window| window.client_owned);
+                // where its Save writes: the host's word when it said, or
+                // the file it read
+                let file = save_to.unwrap_or(session);
+                let sync = json!({"verb": "sync", "window": def_id, "title": title, "path": file,
+                    "asks": asks});
                 self.member_call(member, sync);
                 let ran = self
                     .app
@@ -1401,20 +1333,7 @@ impl App {
     /// **A run said to the host**, with the drawing its effects need: a
     /// `publish` carrying the window's tree and a `resync` every widget's
     /// props, and the actions' readings when they moved.
-    fn said(
-        &mut self,
-        def_id: i32,
-        #[cfg_attr(
-            not(any(feature = "score", all(target_arch = "wasm32", feature = "notation"))),
-            allow(unused_mut)
-        )]
-        mut ran: Ran,
-        say: bool,
-    ) {
-        #[cfg(any(feature = "score", all(target_arch = "wasm32", feature = "notation")))]
-        if self.engrave(def_id) {
-            ran.effects.push(json!({"kind": "resync"}));
-        }
+    fn said(&mut self, def_id: i32, ran: Ran, say: bool) {
         let mut effects = Vec::with_capacity(ran.effects.len());
         let mut notes = false;
         let mut focus = Vec::new();
@@ -1457,8 +1376,8 @@ impl App {
                     }
                 }
                 "resync" => effect["props"] = self.props(def_id),
-                // a box of notes asked for its roll or its page: the host
-                // makes its window
+                // a box of notes asked for its roll: the host makes its
+                // window
                 "open" => {
                     if let Some(source) = effect["source"].as_u64() {
                         self.out.send(
@@ -1466,7 +1385,6 @@ impl App {
                             FromApp::Roll {
                                 parent: def_id,
                                 source,
-                                page: effect["page"] == true,
                             },
                         );
                     }
@@ -1531,43 +1449,6 @@ impl App {
         );
         for (window, member, file) in focus {
             self.focus_file(window, member, file);
-        }
-    }
-
-    /// **A multitrack window that draws its boxes of notes as pages is
-    /// handed an engraver**, the first time it does: a score of its own,
-    /// made here since the engraver is a library this build links. Answers
-    /// whether it was, and the window is drawn again.
-    #[cfg(any(feature = "score", all(target_arch = "wasm32", feature = "notation")))]
-    fn engrave(&mut self, def_id: i32) -> bool {
-        use clausters_apps::editing::Member;
-        use clausters_core::notation::{sheet_to_mei, voice_to_sheet};
-        let Some(member) = self
-            .windows
-            .get(&def_id)
-            .filter(|w| w.kind == AppKind::Multitrack)
-            .map(|w| w.member)
-        else {
-            return false;
-        };
-        let Some(Member::Multitrack(editor)) = self.editing.member_mut(member) else {
-            return false;
-        };
-        if editor.notes_view() != "score" || editor.engraves() {
-            return false;
-        }
-        let opened = sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C"))
-            .map_err(|e| e.to_string())
-            .and_then(|blank| engraved(&blank));
-        match opened {
-            Ok(score) => {
-                editor.bind_engraver(score);
-                true
-            }
-            Err(why) => {
-                super::diag::warn!("multitrack: no engraver for its pages: {why}");
-                false
-            }
         }
     }
 
@@ -1681,12 +1562,10 @@ impl App {
             // **the last view a client opened over a structure**: nothing
             // walks its order again, and it was handed back with the close
             let last = !self.windows.values().any(|w| w.key == window.key);
-            let hosted = match window.kind {
-                AppKind::Audio | AppKind::Multitrack | AppKind::Roll { .. } => false,
-                #[cfg(feature = "notation")]
-                AppKind::Page { .. } => false,
-                _ => true,
-            };
+            let hosted = !matches!(
+                window.kind,
+                AppKind::Audio | AppKind::Multitrack | AppKind::Roll { .. }
+            );
             if last && hosted {
                 self.editing.close_order_of(window.member);
             }

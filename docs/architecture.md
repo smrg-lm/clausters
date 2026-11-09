@@ -1344,19 +1344,6 @@ sequence sounds can also be written again whole from what it says
 rendered, and each note's held length, level and joins, and the curves of its
 lines, taken from its render, with what is written left as it is.
 
-**And a box of the multitrack is drawn as that page.** The multitrack editor
-(`clausters_apps::multitrack::editor`) reads the sequence of each box of
-notes, engraves it with a score its holder hands it (`bind_engraver`: the
-engraver is a port a client has and the crate does not) and states the page
-to the `multitrack` widget with the time of every note of it, in the box's
-own frames. The host draws it as proportional notation
-(`host::graphics::score::proportional`): the page's `x` goes through a
-`Warp` with a zone around each note that is drawn as engraved and moved
-whole to the note's time, so a notehead is never stretched and what joins
-two notes reaches both. Which of the two presentations a box of notes takes
-is the window's (`notes_view`), like its zoom, and a row too low for a staff
-to be read falls back to the roll, which is stated either way.
-
 **The chrome is optional, and it is absent rather than hidden.** A standalone
 host opens the window whole, since with no holder beside it the window is the
 only way to reach what the editor does. A client has the handle, and may open

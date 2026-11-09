@@ -258,29 +258,20 @@ impl Multitrack {
                 metrics: *d.m,
                 selected,
                 space,
-                view: self.notes_view,
                 contents: self.contents,
                 text: crate::host::font::generation(),
             };
             let (m, theme) = (d.m, d.theme);
             self.kept.draw(d.mesh, n, key, |mesh| {
                 let d = &mut Draw::new(mesh, m, theme);
-                self.paint_box(d, ctx, n, cr, &space, selected);
+                self.paint_box(d, n, cr, &space, selected);
             });
         }
     }
 
     /// **One box, its frame and its body**: what [`paint`](Self::paint)
     /// keeps of it.
-    fn paint_box(
-        &self,
-        d: &mut Draw,
-        ctx: &Ctx,
-        n: usize,
-        cr: Rect,
-        space: &TimeSpace,
-        selected: bool,
-    ) {
+    fn paint_box(&self, d: &mut Draw, n: usize, cr: Rect, space: &TimeSpace, selected: bool) {
         let clip = &self.clips[n];
         track::draw_clip(d, cr, selected);
         // **The base view is what its contents are.** Samples are the
@@ -293,21 +284,7 @@ impl Multitrack {
         let Some(roll) = self.rolls.get(&clip.name) else {
             return;
         };
-        // **A box of notes has two presentations**: its roll, and its
-        // page -- drawn on the box's own axis, each note at its time. A
-        // box with no page, or a row too low for a staff to be read, is
-        // drawn as its roll.
-        #[cfg(feature = "notation")]
-        let paged = self.notes_view == NotesView::Score
-            && self.draw_page(d, cr, ctx.rect, ctx.indent, space, n);
-        #[cfg(not(feature = "notation"))]
-        let paged = {
-            let _ = ctx;
-            false
-        };
-        if !paged {
-            roll.draw_body(d, cr, space);
-        }
+        roll.draw_body(d, cr, space);
     }
 
     /// **What is drawn over the boxes' pictures**: each box's fades, label
@@ -452,66 +429,5 @@ impl Multitrack {
             });
         }
         None
-    }
-}
-
-#[cfg(feature = "notation")]
-impl Multitrack {
-    /// **A box's page, on the box's axis**: the engraving of what it holds
-    /// with each note at its time, cut to the box -- and its clef to the row,
-    /// since it stands before the first note. Answers whether it drew one.
-    fn draw_page(
-        &self,
-        d: &mut Draw,
-        cr: Rect,
-        body: Rect,
-        indent: f32,
-        space: &TimeSpace,
-        n: usize,
-    ) -> bool {
-        use crate::host::graphics::pianoroll::to_x;
-        use crate::host::graphics::score::{TimeColors, TimeFrame};
-
-        let selected = self.selected.contains(&n);
-        let Some(score) = self
-            .clips
-            .get(n)
-            .and_then(|clip| self.scores.get(&clip.name))
-        else {
-            return false;
-        };
-        // **the page starts under the box's name**: the meter is written
-        // over the staff, at the box's first note, which is where the name's
-        // plate is
-        let reach = self
-            .clips
-            .get(n)
-            .map_or(0.0, |clip| track::clip_label_reach(d.m, clip.shown()))
-            .min(cr.h);
-        let cr = Rect::new(cr.x, cr.y + reach, cr.w, cr.h - reach);
-        let (mesh, _, theme) = d.parts();
-        // the row the box is on, as far across as the tracks are drawn
-        let row = Rect::new(body.x + indent, cr.y, (body.w - indent).max(0.0), cr.h);
-        let view = space.view;
-        // a note's time is a frame of the sequence, read through the box's
-        // window as its roll is
-        let window = space.window;
-        let rate = if window.rate > 0.0 { window.rate } else { 1.0 };
-        score.page.render_on_time(
-            mesh,
-            TimeFrame { body: cr, row },
-            &score.anchors,
-            &|start| to_x((start - window.start) / rate, &view, cr) as f32,
-            // inked as a take is in a box, so a page reads as a picture of its
-            // contents and a selection is drawn over it as over a take
-            TimeColors {
-                ink: theme.selection,
-                backdrop: if selected {
-                    theme.selected_fill
-                } else {
-                    theme.object_fill
-                },
-            },
-        )
     }
 }

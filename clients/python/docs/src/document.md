@@ -91,7 +91,7 @@ it: no file behind it until the first `save(path)` names one. What comes back,
 `stop_at_end`, `reset_heights`, `compact_tracks` and any window verb by name
 (`verb`); `selected`, the boxes the hand holds as the multitrack's `Region`
 objects, `select(regions)` and `unselect()`, which are the window's and enter
-no history; `grid`, `snap_to_grid` and `notes_view`; `output`, each track's meter
+no history; `grid` and `snap_to_grid`; `output`, each track's meter
 and the samples played as silence (`starved`); and `save(path=None)`, which
 writes the session as the edits have left it, every file inside its folder
 named relative to it. The window saves too: its Save writes
@@ -1334,22 +1334,6 @@ over its notes as they are over a take (below, "What a multitrack is as
 nodes"). And **a double click on it opens its roll** — a notes editor over the
 same sequence, in the multitrack's undo order, which edits what the box draws:
 both hold one sequence, and nothing is copied.
-
-**A box of notes has a second presentation, its page.** `notes_view="score"`
-— an option of the editor, its `notes_view` attribute, and *Notes as scores*
-in the View menu — draws every box of notes as notation: the box's sequence
-read into a score (`Score.from_events`, with its defaults) and drawn **on the
-box's own axis**, every note at its time, in line with what is on the other
-tracks. It is proportional notation: a notehead with its stem, its accidental
-and its dot is drawn as engraved and moved whole to the note's time, and what
-joins notes — a beam, a slur, the staff's lines — stretches between them.
-What has no time takes no room on the axis: a meter is written over the
-staff, and the first clef and key signature stand before the box's first note
-and stay in view when the box's start scrolls off, as a roll's keyboard does.
-The staff is fitted to the track's height, and a track too low for one to be
-read draws its boxes as rolls. It is the window's view and no edit: the
-sequence is what it was, and a double click on a box drawn this way opens the
-score editor over the sequence (`edit(sequence, view="score")`, above).
 
 Three questions a save asks the table, and each has an answer rather than an
 exception: `session.volatile()` is what is not written down anywhere,

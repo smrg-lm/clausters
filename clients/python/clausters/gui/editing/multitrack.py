@@ -244,11 +244,11 @@ class MultitrackEditor(Marking, HostedEditor):
         editor draws a take: the window's ``view_spectrogram`` (`verb`)."""
         return self.verb("view_spectrogram")
 
-    # ---- the grid, and how a box of notes is drawn ----
+    # ---- the grid ----
 
     def _editor(self, call: dict):
-        """One verb of the window's editor (``grid``, ``sync``,
-        ``notesView``), and its answer."""
+        """One verb of the window's editor (``grid``, ``sync``), and its
+        answer."""
         return self._do("verb", call=call) or {}
 
     @property
@@ -268,17 +268,6 @@ class MultitrackEditor(Marking, HostedEditor):
     @snap_to_grid.setter
     def snap_to_grid(self, on: bool) -> None:
         self._editor({"verb": "sync", "snap": bool(on)})
-
-    @property
-    def notes_view(self) -> str:
-        """How a box of notes is drawn: ``"roll"`` or ``"score"``."""
-        return str(self._editor({"verb": "notesView"}).get("view"))
-
-    @notes_view.setter
-    def notes_view(self, view: str) -> None:
-        if not self._editor({"verb": "notesView", "view": str(view)}).get("set"):
-            raise ValueError(f"no notes view {view!r}: a box of notes is drawn "
-                             "as a 'roll' or a 'score'")
 
     # ---- what the hand holds ----
 
