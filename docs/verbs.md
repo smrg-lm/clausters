@@ -91,6 +91,7 @@ The verdict is one of three:
 | `multitrack` | `view_wave` | `MultitrackEditor.view_wave` | `MultitrackEditor.viewWave` | **api** |
 | `multitrack` | `view_spectrogram` | `MultitrackEditor.view_spectrogram` | `MultitrackEditor.viewSpectrogram` | **api** |
 | `notes` | `monophonic` | `NotesEditor.monophonic` | `NotesEditor.monophonic` | **api** — a switch: `monophonic = True`; on the web `setMonophonic(true)` |
+| `notes` | `events_panel` | `NotesEditor.events_panel` | `NotesEditor.eventsPanel` | **api** — a switch: `events_panel = True`; on the web `setEventsPanel(true)` |
 | `notes` | `unjoin` | `NotesEditor.unjoin` | `NotesEditor.unjoin` | **api** |
 | `notes` | `step_up` | `NotesEditor.step_up` | `NotesEditor.stepUp` | **api** |
 | `notes` | `step_down` | `NotesEditor.step_down` | `NotesEditor.stepDown` | **api** |

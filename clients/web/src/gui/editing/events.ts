@@ -389,6 +389,23 @@ export class NotesEditor extends SequenceHandler {
         await this.setting({ monophonic: Boolean(on) });
     }
 
+    /**
+     * **Whether the panel beside the roll is shown**: the inspector of the
+     * selected notes and the list of the sequence's events, which follow the
+     * roll's selection both ways. A value typed in the inspector is written on
+     * every selected note as the roll writes it, one entry of the history; a
+     * row chosen in the list selects its note. The View menu's entry shows and
+     * hides it.
+     */
+    async eventsPanel(): Promise<boolean> {
+        return Boolean((await this.coreCall("editing")).panel ?? false);
+    }
+
+    /** Shows or hides the panel beside the roll: no edit. */
+    async setEventsPanel(on: boolean): Promise<void> {
+        if (Boolean(on) !== (await this.eventsPanel())) this.verb("events_panel");
+    }
+
     // ---- the roll's two modes ----
 
     /**

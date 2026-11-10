@@ -221,12 +221,14 @@ test("the transport, the grid and the verbs are calls to the application", async
     assert.equal(await editor.monophonic(), false);
     await editor.setMonophonic(true);
     assert.ok(host.calls.some((c) => c.do?.verb === "set" && c.do.call.monophonic === true));
+    assert.equal(await editor.eventsPanel(), false);
+    await editor.setEventsPanel(true);
     assert.equal(editor.split(), true);
     assert.equal(editor.unjoin(), true);
     assert.equal(editor.stepUp() && editor.stepDown() && editor.octaveUp() && editor.octaveDown(), true);
     assert.equal(editor.selectPitch() && editor.selectChannel() && editor.selectVoice() && editor.selectStaff(), true);
     assert.deepEqual(host.verbs, [
-        "split", "unjoin", "step_up", "step_down", "octave_up", "octave_down",
+        "events_panel", "split", "unjoin", "step_up", "step_down", "octave_up", "octave_down",
         "select_pitch", "select_channel", "select_voice", "select_staff",
     ]);
     await editor.close();

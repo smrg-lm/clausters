@@ -215,6 +215,9 @@ pub fn menu(app: App, saves: bool) -> Value {
         // the snap-to-grid switch: a take has no grid
         view.push(entry(app, "snap"));
     }
+    if app == App::Notes {
+        view.push(entry(app, "events_panel"));
+    }
     if app == App::Multitrack {
         view.extend([
             sep(),

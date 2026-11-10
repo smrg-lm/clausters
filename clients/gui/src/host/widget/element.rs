@@ -2035,6 +2035,16 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// **What the hand marked, when it changed since the element last said
+    /// so** -- for an element whose owner follows its selection (a roll asked
+    /// to tell its marks): the report to send, or `None`. The machine asks at
+    /// the end of every gesture and every key, so a click, a marquee, a key
+    /// and a verb are told alike; a mark set from outside (`/gui_set
+    /// selected`) is the owner's own and is not told back.
+    fn take_marks(&mut self) -> Option<Vec<OscType>> {
+        None
+    }
+
     /// **A command of this element's own**, by name: what an entry of its
     /// [`context_menu`](Element::context_menu) or a menu entry naming a word
     /// the host's table does not hold asks of it. `Some` is consumed and

@@ -176,9 +176,11 @@ impl Gestures {
         key: Key,
         pointer: Option<(f64, f64)>,
     ) -> Option<Vec<GestureEffect>> {
-        with_clipboard(host, |host, clip| {
+        let mut out = with_clipboard(host, |host, clip| {
             self.press_key_with(host, ctx, key, pointer, clip)
-        })
+        })?;
+        super::effects::tell_marks(host, &mut out, ctx.def_id);
+        Some(out)
     }
 
     fn press_key_with(
@@ -231,7 +233,9 @@ impl Gestures {
         ctx: &GestureCtx,
         name: &str,
     ) -> Vec<GestureEffect> {
-        with_clipboard(host, |host, clip| self.perform(host, ctx, name, None, clip))
+        let mut out = with_clipboard(host, |host, clip| self.perform(host, ctx, name, None, clip));
+        super::effects::tell_marks(host, &mut out, ctx.def_id);
+        out
     }
 
     /// **An entry of element `id`'s own context menu**: its command, or the

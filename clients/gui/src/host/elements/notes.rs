@@ -120,6 +120,11 @@ pub struct Notes {
     /// that the roll's owner speaks the joins of a line, so `join` over notes
     /// that are not one pitch touching asks the owner to join them.
     joins: Option<Vec<(usize, usize)>>,
+    /// Whether the owner follows the selection: the marks are told
+    /// ([`Element::take_marks`]) whenever the hand changes them.
+    tell_marks: bool,
+    /// The marks last told, or set by the owner.
+    told: Option<Vec<u64>>,
     /// **What a roll in notation mode draws beside its notes**, index by
     /// index: how long each sounds (`held`, in the axis' units -- a note is
     /// drawn as long as it is written, with this inside it), its `voices`
@@ -289,6 +294,8 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
         layer: None,
         holding: None,
         joins: props.get("joins").map(parse_joins),
+        tell_marks: props.get("tell_marks").and_then(truthy).unwrap_or(false),
+        told: None,
         written: Written::read(props),
     };
     roll.rebuild_bodies();
@@ -537,6 +544,18 @@ impl Notes {
         self.selection_ids(vec![OscType::String(tag.into()), OscType::Double(at)])
     }
 
+    /// The ids of the selected notes, low to high.
+    fn marked_ids(&self) -> Vec<u64> {
+        let mut ids: Vec<u64> = self
+            .selected
+            .iter()
+            .filter_map(|i| self.notes.get(*i))
+            .map(|n| n.id)
+            .collect();
+        ids.sort_unstable();
+        ids
+    }
+
     fn selection_ids(&self, mut args: Vec<OscType>) -> Events {
         let mut ids: Vec<u64> = self
             .selected
@@ -672,6 +691,10 @@ impl Element for Notes {
                 self.joins = Some(parse_joins(list.get("joins").unwrap_or(&Value::Null)));
                 true
             }
+            "tell_marks" => {
+                self.tell_marks = truthy(v).unwrap_or(false);
+                true
+            }
             "selected" => {
                 // The notes to mark, by the ids they carry -- or by index, on
                 // a roll that was handed none.
@@ -686,6 +709,8 @@ impl Element for Notes {
                         named.contains(&key)
                     })
                     .collect();
+                // the owner's own marks: nothing to tell it back
+                self.told = Some(self.marked_ids());
                 true
             }
             "curves" => {
@@ -1292,6 +1317,20 @@ impl Element for Notes {
     /// transpositions (`step_up`, `step_down`, `octave_up`, `octave_down`,
     /// which with nothing selected are of every note) -- the selected notes'
     /// ids to the owner, whose edit it is.
+    fn take_marks(&mut self) -> Option<Vec<OscType>> {
+        if !self.tell_marks || !self.ids {
+            return None;
+        }
+        let ids = self.marked_ids();
+        if self.told.as_ref() == Some(&ids) {
+            return None;
+        }
+        self.told = Some(ids.clone());
+        let mut args = vec![OscType::String("marked".into())];
+        args.extend(ids.into_iter().map(|id| OscType::Double(id as f64)));
+        Some(args)
+    }
+
     fn command(&mut self, name: &str, _input: &mut KeyInput) -> Option<Events> {
         let moves = matches!(name, "step_up" | "step_down" | "octave_up" | "octave_down");
         let ours = moves
@@ -3298,6 +3337,36 @@ mod tests {
         // the answer is a correction of the roll's `selected`
         assert!(r.set("selected", &serde_json::json!([7, 9])));
         assert_eq!(r.selected, vec![0, 1]);
+    }
+
+    /// **A roll asked to tell its marks says what the hand marked**, once per
+    /// change, and never what its owner set.
+    #[test]
+    fn a_roll_that_tells_its_marks_says_each_change_once() {
+        let mut r = roll(
+            r#"{"notes":[0.0,100.0,60.0,100.0,0.0, 200.0,50.0,62.0,100.0,0.0],
+                "note_ids":[7,9],"tell_marks":1}"#,
+        );
+        assert_eq!(
+            r.take_marks(),
+            Some(vec![OscType::String("marked".into())]),
+            "nothing marked is said once"
+        );
+        assert_eq!(r.take_marks(), None);
+        r.selected = vec![1, 0];
+        assert_eq!(
+            r.take_marks(),
+            Some(vec![
+                OscType::String("marked".into()),
+                OscType::Double(7.0),
+                OscType::Double(9.0)
+            ])
+        );
+        assert!(r.set("selected", &serde_json::json!([9])));
+        assert_eq!(r.take_marks(), None, "the owner's own marks");
+        let mut quiet = roll(r#"{"notes":[0.0,100.0,60.0,100.0,0.0],"note_ids":[7]}"#);
+        quiet.selected = vec![0];
+        assert_eq!(quiet.take_marks(), None, "a roll not asked tells nothing");
     }
 
     /// **The cut is the box arithmetic's, and the identity is the roll's.**

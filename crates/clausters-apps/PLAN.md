@@ -2473,7 +2473,7 @@ opened it.
     a chord written in notation mode is respelled where the key says; every
     row of the table has its test.
 
-- ⬜ **X38 - The roll's panels.** The event list and the inspector, sections
+- ✅ **X38 - The roll's panels.** *(Done 2026-11-10: `notes::panel`, shown by the `events_panel` switch (the window drawn again); the roll tells its marks (`tell_marks`, `"marked"`) and a client's `select` is told to the owner too; a value typed is the roll's own `notes` report with that value; both clients' `events_panel`. The choice of what a lane and a note draw is `X39`'s, where the lanes are.)* The event list and the inspector, sections
   of `crate::panels` beside the plane, shown or hidden as the audio editor's
   spectrogram settings are, and the choice of what a lane and a note draw
   made there, never in a dialog. The list is a `table` of the events (the
@@ -6964,6 +6964,7 @@ wrong.
       roll are the first places to look.
 
   *Taken into milestones 2026-11-10*: items 1 and 2 are `X37`, item 10 is
-  `X38`. *Items 1 and 2 done 2026-11-10 with `X37`*: the table of
+  `X38`. *Item 10 done 2026-11-10 with `X38`*: the inspector and the list
+  of events. *Items 1 and 2 done 2026-11-10 with `X37`*: the table of
   `docs/app-behavior.md`, "The roll's verbs, case by case", and its review. Item 11 stays open here, and is a pass over the application once
   `X37` to `X42` have changed it.

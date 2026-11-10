@@ -384,6 +384,22 @@ class NotesEditor(Marking, SequenceHandler):
     def monophonic(self, on: bool) -> None:
         self._set(monophonic=bool(on))
 
+    @property
+    def events_panel(self) -> bool:
+        """**Whether the panel beside the roll is shown**: the inspector of the
+        selected notes and the list of the sequence's events, which follow the
+        roll's selection both ways. A value typed in the inspector is written
+        on every selected note as the roll writes it, one entry of the
+        history; a row chosen in the list selects its note. The View menu's
+        entry shows and hides it, and setting it is no edit:
+        ``editor.events_panel = True``."""
+        return bool(self._call("editing").get("panel", False))
+
+    @events_panel.setter
+    def events_panel(self, on: bool) -> None:
+        if bool(on) != self.events_panel:
+            self.verb("events_panel")
+
     # ---- the roll's two modes ----
 
     @property

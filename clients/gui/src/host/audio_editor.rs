@@ -926,6 +926,22 @@ impl Host {
                 Value::from(json!(names).to_string())
             };
             self.set_props(widget, vec![("selected".into(), held)], effects);
+            // **a roll's owner hears what a client marked**, as it hears what
+            // a hand marked, so a panel that follows the selection follows it
+            if kind == AppKind::Notes {
+                let mut args = vec![OscType::String("marked".into())];
+                args.extend(
+                    call["do"]["regions"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_f64)
+                        .map(OscType::Double),
+                );
+                let seq = self.outbox.borrow_mut().stamp(def_id, widget);
+                let message = self.event_message(widget, seq, args);
+                self.answer_audio(def_id, &message);
+            }
             effects.push(HostEffect::Redraw(def_id));
             return Some(Value::Null);
         }

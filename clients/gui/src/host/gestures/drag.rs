@@ -341,10 +341,11 @@ impl Gestures {
         cx: f64,
         cy: f64,
     ) -> Vec<GestureEffect> {
-        let out = self.release_inner(host, ctx, cx, cy);
+        let mut out = self.release_inner(host, ctx, cx, cy);
         // **What a hand selected in a field is the primary selection** -- a
         // drag, a double or a triple click -- which a middle click pastes.
         super::press::note_primary(host, ctx);
+        super::effects::tell_marks(host, &mut out, ctx.def_id);
         out
     }
 

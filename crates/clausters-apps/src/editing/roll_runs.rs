@@ -137,6 +137,10 @@ impl Editing {
                 }
                 ran.effects
                     .push(effect("echo", json!({"answer": outcome.answer})));
+                // the panel shown or hidden: the window drawn again
+                if outcome.restructure {
+                    ran.effects.push(effect("publish", json!({})));
+                }
                 if outcome.changed || stepped {
                     ran.effects.push(effect("notes", json!({})));
                     self.roll_update(member, roll, ids);

@@ -752,6 +752,68 @@ fn the_notation_mode_shows_a_staff_and_edits_a_voice_of_it() {
     assert!(out.record.is_none());
 }
 
+/// **The panel follows the roll and edits through it**: shown by its verb
+/// (the window drawn again), the roll's marks shown in the inspector and the
+/// list, a velocity typed written on the marked note as one entry, and a row
+/// chosen in the list marked on the roll.
+#[test]
+fn the_panel_follows_the_roll_and_edits_through_it() {
+    let sequence = shared();
+    let mut e = new_json(sequence.clone(), r#"{"rate": 100.0, "version": 1}"#);
+    let names: Value = serde_json::from_str(&call_json(&mut e, r#"{"verb": "dialogs"}"#)).unwrap();
+    let numbered: serde_json::Map<String, Value> = names["dialogs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.as_str().unwrap().to_string(), json!(200 + i as i64)))
+        .collect();
+    let ids = |name: &str| numbered[name].as_i64().unwrap();
+    let request = json!({"verb": "window", "widget": 40, "dialogs": numbered}).to_string();
+    let tree = call_json(&mut e, &request);
+    assert!(!tree.contains("\"table\""), "hidden at first");
+    call_json(&mut e, r#"{"verb": "sync", "window": 39}"#);
+    let out = e.event(&window_verb("events_panel"), 1);
+    assert!(out.restructure && out.record.is_none());
+    let tree = e.window(40).to_string();
+    assert!(
+        tree.contains("\"table\"") && tree.contains("tell_marks"),
+        "{tree}"
+    );
+    // the roll says what the hand marked
+    let out = e.event(&gesture("marked", vec![json!(1)]), 1);
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("\"Velocity\""), "{told}");
+    // a velocity typed in the inspector
+    let field = Event {
+        addr: "/gui_event".into(),
+        args: vec![
+            json!(ids("inspect:velocity")),
+            json!(2),
+            json!(1),
+            json!(110.0),
+        ],
+    };
+    let out = e.event(&field, 1);
+    assert!(out.record.is_some(), "one entry");
+    let keys = sequence.lock().unwrap().get(1).unwrap().keys();
+    assert_eq!(keys["velocity"], json!(110.0));
+    // a row chosen in the list marks its note
+    let list = Event {
+        addr: "/gui_event".into(),
+        args: vec![
+            json!(ids("events:list")),
+            json!(3),
+            json!(2),
+            json!("select"),
+            json!(1),
+        ],
+    };
+    let out = e.event(&list, 2);
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("\"selected\":[2]"), "{told}");
+}
+
 fn window_verb(verb: &str) -> Event {
     Event {
         addr: "/gui_event".into(),

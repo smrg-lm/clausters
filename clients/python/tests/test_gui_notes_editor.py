@@ -141,6 +141,13 @@ def test_a_verb_is_asked_of_the_window_and_its_actions_read(gui_host):
     assert [e["midinote"] for e in take.events] == [49.0, 53.0]
     assert editor.undo() and editor.undo()
     assert [e["midinote"] for e in take.events] == [60.0, 64.0]
+    # the panel beside the roll: shown by its switch, no edit
+    assert not editor.events_panel
+    label = editor.undo_label
+    editor.events_panel = True
+    assert editor.events_panel and editor.undo_label == label
+    editor.events_panel = False
+    assert not editor.events_panel
     # a selection by pitch marks what shares it, and edits nothing
     editor.select([take.events[0]])
     assert editor.select_pitch() and editor.selected == [take.events[0]]

@@ -215,3 +215,26 @@ pub(super) fn emit_view(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, 
         );
     }
 }
+
+/// **The marks the hand changed, told**: every element of window `def_id`
+/// that follows its selection for its owner ([`Element::take_marks`]) and has
+/// something new to say reports it, as navigation is reported -- no status
+/// line, since a selection is no edit.
+///
+/// [`Element::take_marks`]: crate::host::widget::Element::take_marks
+pub(super) fn tell_marks(host: &mut Host, out: &mut Vec<GestureEffect>, def_id: i32) {
+    let mut said = Vec::new();
+    if let Some(tree) = host.window_def_mut(def_id) {
+        tree.walk_mut(&mut |widget| {
+            if let (Some(id), crate::host::widget::WidgetKind::Custom(element)) =
+                (widget.id, &mut widget.kind)
+                && let Some(args) = element.take_marks()
+            {
+                said.push((id, args));
+            }
+        });
+    }
+    for (id, args) in said {
+        report(host, out, def_id, id, args);
+    }
+}

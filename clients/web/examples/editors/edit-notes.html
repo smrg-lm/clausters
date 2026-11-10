@@ -126,6 +126,10 @@ note that shares a pitch, a channel, a voice or a staff with the selection.
 <b>Ctrl on a note, and a drag on</b>, erases every note it crosses, in one entry;
 <b>an edge of a selected note</b> resizes the whole selection by as much.
 <b>rework</b> splits and transposes from the script.
+The View menu's <b>Events and inspector</b> opens a panel beside the roll
+(<code>editor.setEventsPanel(true)</code>): the selected notes' time, length, pitch,
+velocity and channel, which a value typed changes on all of them at once, and
+the list of every event, whose rows select their notes.
 
 <b>A note keeps what the roll cannot draw.</b> Every note on the roll carries the
 id of its event, so an edit names the note it touched: its instrument, its

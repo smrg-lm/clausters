@@ -327,6 +327,9 @@ pub const NOTES_SCOPE: &str = "notes";
 pub const NOTES: &[Verb] = &[
     // one note at a time in a line: a gesture shortens what it covers
     toggle("monophonic", &["M"], "Edit monophonically, on or off"),
+    // the inspector of the selected notes and the list of the events,
+    // beside the roll
+    toggle("events_panel", &[], "Events and inspector, shown or hidden"),
     verb("unjoin", &["Shift+J"], "Unjoin"),
     // the selection, or every note taken, moved: a semitone in MIDI mode, a
     // step of the key in notation mode, an octave in both

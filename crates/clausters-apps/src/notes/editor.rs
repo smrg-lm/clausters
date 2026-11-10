@@ -12,7 +12,7 @@ use clausters_document::{EventSequence, Opaque};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 use clausters_editing::notes::{self as roll, Axis, Editing, Mode, Scope, YDomain};
 
-use super::{Shared, correction, dialogs, props, window};
+use super::{Shared, correction, dialogs, panel, props, window};
 use crate::forms::{self, Said};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record};
 
@@ -62,6 +62,10 @@ pub struct Outcome {
     /// it, with nothing to lose or nothing to ask in.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub close: bool,
+    /// **Whether the window is drawn again** (the panel shown or hidden): the
+    /// caller asks for its tree anew, and the host keeps what is its own.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub restructure: bool,
 }
 
 turn::turned!(Outcome);
@@ -154,7 +158,16 @@ pub struct NotesEditor {
     editing: Editing,
     /// The dialog: its widgets by name, and the form that is up.
     dialogs: dialogs::Dialogs,
+    /// **Whether the panel is shown**: the inspector and the list of events
+    /// beside the roll ([`panel`]), the window's own.
+    panel: bool,
+    /// The notes the roll last said the hand marked, by id.
+    marked: Vec<u64>,
 }
+
+/// **The panel's switch**, as the window asks for it: the View menu's
+/// entry, or a client's `verb("events_panel")`.
+pub const PANEL_VERB: &str = "events_panel";
 
 /// What a notes editor is opened with, as the context's door reads it.
 #[derive(Deserialize)]
@@ -241,6 +254,8 @@ impl NotesEditor {
             looping: false,
             editing: Editing::default(),
             dialogs: dialogs::Dialogs::default(),
+            panel: false,
+            marked: Vec::new(),
         }
     }
 
@@ -275,6 +290,7 @@ impl NotesEditor {
             &|verb| match verb {
                 SNAP_VERB => Some(self.snap),
                 MONOPHONIC_VERB => Some(self.editing.monophonic),
+                PANEL_VERB => Some(self.panel),
                 "loop" => Some(self.looping),
                 "midi_mode" => Some(self.editing.mode == Mode::Midi),
                 "notation_mode" => Some(self.editing.mode == Mode::Notation),
@@ -542,6 +558,7 @@ impl NotesEditor {
                 chrome::toolbar(App::Notes, None),
                 widget,
             );
+            self.compose_panel(&mut window);
             // **the dialog stands over the window**, on a page of its stack
             if let (Some(stack), Some(children)) = (
                 self.dialogs.stack(dialogs::forms()),
@@ -551,6 +568,114 @@ impl NotesEditor {
             }
         }
         window
+    }
+
+    /// **The panel beside the roll**, when it is shown and the window
+    /// numbered its widgets; the roll then tells what the hand marks.
+    fn compose_panel(&self, window: &mut Value) {
+        if !self.panel {
+            return;
+        }
+        let held = self.held();
+        let axis = Axis::of(&held, self.rate);
+        let ids = &self.dialogs.ids;
+        let Some(column) =
+            panel::panel(&held, &self.domain, &axis, &self.editing, &self.marked, ids)
+        else {
+            return;
+        };
+        drop(held);
+        let Some(children) = window.get_mut("children").and_then(Value::as_array_mut) else {
+            return;
+        };
+        // the roll, wherever the chrome put it
+        let roll = self.widget.map(|w| json!(w));
+        if let Some(index) = children
+            .iter()
+            .position(|c| roll.as_ref().is_some_and(|r| &c["id"] == r))
+        {
+            let mut work = children.remove(index);
+            work["tell_marks"] = json!(1);
+            children.insert(
+                index,
+                crate::panels::beside(work, column, crate::panels::Side::Right),
+            );
+        }
+    }
+
+    /// What the panel's widgets are corrected with: none while it is hidden.
+    fn panel_corrections(&self) -> Vec<Correction> {
+        if !self.panel {
+            return Vec::new();
+        }
+        let held = self.held();
+        let axis = Axis::of(&held, self.rate);
+        panel::corrections(
+            &held,
+            &self.domain,
+            &axis,
+            &self.editing,
+            &self.marked,
+            &self.dialogs.ids,
+        )
+    }
+
+    /// **A report from the panel**: a value typed in the inspector, written
+    /// on every marked note as the roll would write it, or rows chosen in the
+    /// list, marked on the roll.
+    fn panel_said(
+        &mut self,
+        name: &str,
+        tag: &str,
+        values: &[Value],
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        let roll = self.widget.map_or(0, i64::from);
+        if name == panel::LIST {
+            if tag != "select" {
+                return (None, Vec::new());
+            }
+            let rows: Vec<usize> = values
+                .iter()
+                .filter_map(Value::as_f64)
+                .map(|v| v.max(0.0) as usize)
+                .collect();
+            let marked = panel::ids_of_rows(&self.held(), &rows);
+            self.marked = marked;
+            let mut corrections = vec![Correction {
+                widget: roll,
+                props: json!({ "selected": self.marked }),
+            }];
+            corrections.extend(self.panel_corrections());
+            return (None, corrections);
+        }
+        if tag == "focus" {
+            return (None, Vec::new());
+        }
+        let value = values
+            .first()
+            .and_then(Value::as_f64)
+            .or_else(|| tag.parse::<f64>().ok());
+        let Some(value) = value else {
+            return (None, Vec::new());
+        };
+        let report = {
+            let held = self.held();
+            let axis = Axis::of(&held, self.rate);
+            panel::report(
+                &held,
+                &self.domain,
+                &axis,
+                &self.editing,
+                &self.marked,
+                name,
+                value,
+            )
+        };
+        let Some(report) = report else {
+            return (Some("no note is selected".into()), self.panel_corrections());
+        };
+        self.gesture(roll, "notes", &report, out)
     }
 
     /// What `widget` is corrected with, or nothing for one that is not the
@@ -574,10 +699,14 @@ impl NotesEditor {
         props.insert("midi_in".into(), json!(i32::from(self.midi_in)));
         props.insert("grid".into(), json!(self.grid));
         props.insert("grid_snap".into(), json!(self.snap));
-        vec![Correction {
+        // the panel reads the sequence again
+        drop(held);
+        let mut corrections = vec![Correction {
             widget,
             props: Value::Object(props),
-        }]
+        }];
+        corrections.extend(self.panel_corrections());
+        corrections
     }
 
     /// **Every widget of the window, corrected** -- what a history step leaves
@@ -648,6 +777,15 @@ impl NotesEditor {
             }
             return (None, Vec::new());
         }
+        if tag == "marked" {
+            // what the hand marked on the roll: the panel follows it
+            self.marked = values
+                .iter()
+                .filter_map(Value::as_f64)
+                .map(|v| v.max(0.0) as u64)
+                .collect();
+            return (None, self.panel_corrections());
+        }
         if roll::SELECTIONS.contains(&tag) {
             // what the hand marks is the window's: no edit, the roll's
             // selection corrected
@@ -662,13 +800,13 @@ impl NotesEditor {
             if chosen.is_empty() {
                 return (Some("nothing is selected".into()), Vec::new());
             }
-            return (
-                None,
-                vec![Correction {
-                    widget,
-                    props: json!({ "selected": chosen }),
-                }],
-            );
+            let mut corrections = vec![Correction {
+                widget,
+                props: json!({ "selected": chosen }),
+            }];
+            self.marked = chosen;
+            corrections.extend(self.panel_corrections());
+            return (None, corrections);
         }
         if !matches!(
             tag,
@@ -770,6 +908,9 @@ impl Converse for NotesEditor {
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         if let Some(name) = self.dialogs.name(widget).map(str::to_string) {
+            if panel::names().contains(&name) {
+                return self.panel_said(&name, tag, values, out);
+            }
             return self.form_said(&name, tag, values, out);
         }
         self.gesture(widget, tag, values, out)
@@ -798,6 +939,20 @@ impl Converse for NotesEditor {
             let roll = self.widget.map_or(0, i64::from);
             shown.extend(self.resync_widget(roll));
             out.answer = Some(conversation::answer(message.seq, out.version, why, shown));
+            return true;
+        }
+        // **The panel shown or hidden**: the window is drawn again, with it
+        // or without it
+        if message.tag == PANEL_VERB {
+            self.panel = !self.panel;
+            out.turn = Kind::Route;
+            out.restructure = true;
+            out.answer = Some(conversation::answer(
+                message.seq,
+                out.version,
+                None,
+                Vec::new(),
+            ));
             return true;
         }
         if message.tag == SNAP_VERB || message.tag == MONOPHONIC_VERB {
@@ -888,7 +1043,7 @@ pub fn shared_of(request: &str) -> Shared {
 /// - `grid` -- `{"grid": beats, "snap": bool}`: the grid a note lands on, and
 ///   whether a hand snaps to it.
 /// - `editing` -- how the roll edits ([`Editing`]): `{"monophonic", "mode",
-///   "scope", "voice"}`, and `written`, whether the sequence is written as
+///   "scope", "voice"}`, `panel`, whether the panel is shown, and `written`, whether the sequence is written as
 ///   notation already -- entering notation over one that is not converts
 ///   it, or asks how in a window with the dialog. The mode is changed by its verbs (`midi_mode`,
 ///   `notation_mode`), since entering notation may convert the sequence,
@@ -911,7 +1066,8 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
         "window" => {
             // what the caller numbered, by the names the crate gave: a name
             // that is none of them numbers nothing
-            let names = dialogs::names();
+            let mut names = dialogs::names();
+            names.extend(panel::names());
             editor.dialogs.ids = request
                 .get("dialogs")
                 .and_then(Value::as_object)
@@ -926,7 +1082,11 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             editor.window(widget).to_string()
         }
         "dialogs" if editor.bare => json!({"dialogs": []}).to_string(),
-        "dialogs" => json!({"dialogs": dialogs::names()}).to_string(),
+        "dialogs" => {
+            let mut names = dialogs::names();
+            names.extend(panel::names());
+            json!({ "dialogs": names }).to_string()
+        }
         "props" => match editor.resync_widget(i64::from(widget)).into_iter().next() {
             Some(c) => c.props.to_string(),
             None => "{}".into(),
@@ -989,6 +1149,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
         "editing" => {
             let mut said = json!(editor.editing);
             said["written"] = json!(editor.held().written_as_notation());
+            said["panel"] = json!(editor.panel);
             said.to_string()
         }
         "span" => {
