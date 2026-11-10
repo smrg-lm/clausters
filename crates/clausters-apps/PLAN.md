@@ -2528,6 +2528,54 @@ opened it.
   editor's page at once, and a breath is heard as the shortened note.
 
 
+- ⬜ **X43 - The roll's display panel.** *(Opened 2026-11-10 by the user,
+  after the drawing of slurs was shown as four sketches over a roll: all
+  four are kept, and the choice is the reader's.)* How the roll draws what
+  a sequence holds beyond its boxes is chosen in a panel of
+  `crate::panels` beside the plane, as the audio editor's spectrogram
+  settings are: the principle is the same, so the settings are view state
+  held by the window (outside the history), a verb shows and hides the
+  panel, and both clients read and set them. Giving each graphical element
+  a reference drawing and a switch is what later work on them starts from.
+  - ⬜ **X43.1 - The settings and the panel.** `notes::display`: a
+    `Display` of five sections, its panel (a section each, folded and
+    unfolded whole) and the report of each widget read as a request:
+    1. **Slurs**: not drawn, or one of four drawings -- an arc over the
+       notes from the first box to the last, as a page writes it; the same
+       arc dashed where the slur is attacked; a phrasing bracket over the
+       highest box; a faint band behind the slur's notes, over its time and
+       its register. An arc by default.
+    2. **Articulation glyphs**: not drawn, or drawn stacked at a note's
+       start or in a row along its length, inside its box or just above it.
+       In a row above the box by default, which is the drawing of `X42`. A
+       breath stays at the note's end and a dynamic under it.
+    3. **The pitch line between boxes** (`X41`): shown or not.
+    4. **The notes' own curves**, drawn against their boxes: shown or not.
+    5. **The lanes offered as tabs** under the roll: each of the channel's
+       curves and the velocity, shown or not; a lane taken off the tabs is
+       not drawn.
+    The first two are marks of a page and draw in notation mode alone; in
+    MIDI mode their widgets are there and disabled. The others hold in both
+    modes.
+  - ⬜ **X43.2 - The slurs on the roll.** The section's slurs projected as
+    pairs of the roll's notes with whether each is joined (`slurs`), and
+    the host drawing them as the setting says (`slur_style`), over the
+    boxes, cut at the grid.
+  - ⬜ **X43.3 - The marks' layouts.** A note's marks reach the host one by
+    one, and the host lays them out as the setting says (`mark_layout`,
+    `mark_place`), at the size `X42` draws them.
+  - ⬜ **X43.4 - The verb and both clients.** `display_settings` in the
+    notes scope and the View menu; `NotesEditor.display`, `set_display`,
+    `show_display_settings` and `hide_display_settings` in Python, and
+    `display()`, `setDisplay()`, `showDisplaySettings()` and
+    `hideDisplaySettings()` on the web; the notes editor example pair's
+    `display` step; the books.
+  - **Acceptance:** a roll in notation mode over a phrase with a joined and
+    an attacked slur draws each of the four drawings, and none; marks drawn
+    stacked, in a row, inside and above; the pitch line, the notes' curves
+    and a lane hidden from the panel and from a client alike, a box's roll
+    included, with nothing entered in the history.
+
 ## Application state and services
 
 *Opened 2026-10-18 by the user after recurring audio-editor defects exposed
@@ -4833,7 +4881,7 @@ Every entry carries a checkbox.
   of "The roll's two modes are not yet an editor a hand can trust", in Found
   by use. *Folded into `X37`-`X42` on 2026-11-10, which keep these
   principles; what stays open here is the drawing of slurs, which `X42`
-  waits on.*
+  waits on.* *(The drawing of slurs is taken by `X43`, 2026-11-10.)*
 
   The principles:
   1. **Verbs first.** Every action below is a verb of the one table,

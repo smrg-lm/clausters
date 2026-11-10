@@ -274,6 +274,11 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
+- ⬜ **`X43` - the roll's display panel** *(`crates/clausters-apps/PLAN.md`,
+  X track)*: the slurs drawn at last, in the four drawings the user kept,
+  and how the roll draws its marks, its pitch line, its notes' curves and
+  its lanes, chosen in a panel as the spectrogram's settings are.
+
 - ⬜ **A performance's joins are lost when the roll writes it as notation**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*: the conversion renders
   the page afresh and reads no join into it. **The decision:** whether a join
