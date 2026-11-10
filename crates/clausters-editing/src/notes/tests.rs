@@ -750,6 +750,34 @@ fn notes_of_one_voice_overlap_only_as_a_chord_unless_written_with_ties() {
     );
 }
 
+/// **A roll in notation mode draws the section's slurs** by the notes it
+/// draws, with whether each joins them; in MIDI mode it draws none.
+#[cfg(feature = "notation")]
+#[test]
+fn the_slurs_are_projected_by_the_notes_drawn() {
+    let mut s = written_line();
+    let ids: Vec<u64> = s.events.iter().map(|e| e.id).collect();
+    s.notation = Some(json!({"spanners": [
+        {"kind": "slur", "from": ids[0], "to": ids[1], "join": true},
+        {"kind": "slur", "from": ids[1], "to": ids[2], "join": false},
+        {"kind": "slur", "from": ids[0], "to": 999, "join": true},
+    ]}));
+    let drawn = project(
+        &s,
+        &YDomain::midi(),
+        &Axis::constant(1.0),
+        &notation_editing(),
+    );
+    assert_eq!(drawn.slurs, vec![0, 1, 1, 1, 2, 0]);
+    let midi = project(
+        &s,
+        &YDomain::midi(),
+        &Axis::constant(1.0),
+        &Editing::default(),
+    );
+    assert!(midi.slurs.is_empty());
+}
+
 /// **The page's marks over a selection**: a staccato toggles, a tie makes
 /// two notes of one pitch that touch one note, a slur is drawn joined where
 /// the roll edits monophonically, and each is heard at once.

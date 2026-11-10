@@ -304,6 +304,12 @@ impl Editing {
             "set" => {
                 let answer = self.member_text(member, &action["call"]);
                 ran.effects.push(effect("resync", json!({})));
+                // **every widget the setting moves**, not the roll's alone:
+                // the lanes' tabs and the panels beside it
+                if let Some(Member::Notes(editor)) = self.member(member) {
+                    let told = editor.resync_all(self.version);
+                    ran.effects.push(effect("echo", json!({ "answer": told })));
+                }
                 Ok(answer)
             }
             "handle" => self.sequence_handle(member, roll, action, ids, ran),

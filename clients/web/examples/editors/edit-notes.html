@@ -91,7 +91,11 @@ breath, and the Notation menu's Dynamic a dynamic: each is drawn as the page
 draws it -- the articulations over the note, the breath at its end, the
 dynamic under it -- and heard at once, a breath as the note let go early. A
 note's tint tells apart its voice, or its staff or part (Color by, in the same
-menu). <b>phrase</b> marks a phrase from the script.
+menu). <b>phrase</b> marks a phrase from the script, and <b>drawn</b> slurs it
+and draws it otherwise, in the roll's display panel (the View menu's <b>Display
+settings</b>): its slurs as an arc, an arc dashed where the slur is attacked, a
+bracket or a band, its marks stacked or in a row, above the notes or inside
+them, and the pitch line, the notes' curves and the lanes shown or not.
 
 <b>The first roll is asked to paint what is played</b>
 (<code>midiIn: true</code>). The host opens its MIDI input and writes each key
@@ -163,6 +167,7 @@ leaves every other note its own.</div>
       <button id="notation" disabled>notation</button>
       <div id="written"></div>
       <button id="phrase" disabled>phrase</button>
+      <button id="drawn" disabled>drawn</button>
       <div id="phrased"></div>
       <div id="phrasepage"></div>
       <button id="play" disabled>play the notes</button>
@@ -305,8 +310,8 @@ leaves every other note its own.</div>
         // writes them at once, and the second note is heard let go before the
         // third. Each mark is one entry of the history the roll and the page
         // share.
-        $("phrase").disabled = false;
-        $("phrase").onclick = async () => {
+        let phrased = null;
+        const phrase = async () => {
           const written = await editor.toNotation({ meter: "4/4", division: 8, copy: true });
           const roll = await gui.edit(written, { title: "a phrase", stage: $("phrased") });
           await roll.setMode("notation");
@@ -320,6 +325,24 @@ leaves every other note its own.</div>
           roll.breath();
           await roll.select([first]);
           roll.dynamic("mf");
+          phrased = roll;
+          return roll;
+        };
+        $("phrase").disabled = false;
+        $("phrase").onclick = () => phrase();
+
+        // How the roll draws it: the phrase's first three notes slurred, and
+        // the roll's display panel open (the View menu's Display settings) --
+        // the slur drawn as a band behind the notes, the marks stacked inside
+        // them. How the roll draws what is beyond its boxes is the window's,
+        // and no edit.
+        $("drawn").disabled = false;
+        $("drawn").onclick = async () => {
+          const roll = phrased ?? (await phrase());
+          await roll.select([...roll.sequence.events].slice(0, 3));
+          roll.slur();
+          await roll.setDisplayPanel(true);
+          await roll.setDisplay({ slurs: "band", marks: "stacked", marks_place: "inside" });
         };
 
         $("play").disabled = false;

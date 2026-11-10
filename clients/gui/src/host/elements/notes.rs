@@ -159,13 +159,35 @@ struct Written {
     /// **Each note's tint** (`tints`): its voice, staff or part as the owner
     /// says, the first untinted. Without it a note is tinted by its voice.
     tints: Vec<usize>,
+    /// **The section's slurs** (`slurs`): `[from, to, joined]` by the notes'
+    /// indices, drawn as `slur_style` says.
+    slurs: Vec<[usize; 3]>,
+    /// How a slur is drawn (`slur_style`).
+    slur_style: crate::host::graphics::slurs::Style,
+    /// **How a note's marks are laid out** (`mark_layout`): stacked at its
+    /// start, or in a row along it.
+    stacked: bool,
+    /// Whether they are drawn inside the box rather than above it
+    /// (`mark_place`).
+    inside: bool,
 }
 
 impl Written {
     fn read(props: &Map<String, Value>) -> Self {
         let mut out = Self::default();
         for key in [
-            "held", "voices", "dimmed", "labels", "spelled", "marks", "breaths", "tints",
+            "held",
+            "voices",
+            "dimmed",
+            "labels",
+            "spelled",
+            "marks",
+            "breaths",
+            "tints",
+            "slurs",
+            "slur_style",
+            "mark_layout",
+            "mark_place",
         ] {
             if let Some(v) = props.get(key) {
                 out.set(key, v);
@@ -176,6 +198,23 @@ impl Written {
 
     /// One of the four lists, set; `false` for a key that is none of them.
     fn set(&mut self, key: &str, v: &Value) -> bool {
+        // how the marks and the slurs are drawn, each a word
+        match key {
+            "slur_style" => {
+                self.slur_style =
+                    crate::host::graphics::slurs::Style::named(v.as_str().unwrap_or(""));
+                return true;
+            }
+            "mark_layout" => {
+                self.stacked = v.as_str() == Some("stacked");
+                return true;
+            }
+            "mark_place" => {
+                self.inside = v.as_str() == Some("inside");
+                return true;
+            }
+            _ => {}
+        }
         let list = parse::as_array_props(key, v);
         let list = list
             .get(key)
@@ -188,6 +227,10 @@ impl Written {
             "voices" => self.voices = numbers().map(|n| n.max(0.0) as usize).collect(),
             "dimmed" => self.dimmed = numbers().map(|n| n != 0.0).collect(),
             "tints" => self.tints = numbers().map(|n| n.max(0.0) as usize).collect(),
+            "slurs" => {
+                let n: Vec<usize> = numbers().map(|n| n.max(0.0) as usize).collect();
+                self.slurs = n.as_chunks::<3>().0.to_vec();
+            }
             "labels" | "spelled" | "marks" | "breaths" => {
                 let texts = list
                     .iter()
@@ -697,6 +740,47 @@ struct Hit {
     note: Option<pianoroll::NoteHit>,
 }
 
+/// **Where a note's marks are drawn**, each its `x`, `y` and scale: one by
+/// one stacked at the box's start or in a row along it, just above the box
+/// or inside it. `sized` is the scale a mark is drawn at above the box; one
+/// drawn inside is fitted to the box's height.
+fn mark_places(
+    r: Rect,
+    marks: &[&str],
+    sized: &dyn Fn(&str) -> f32,
+    stacked: bool,
+    inside: bool,
+) -> Vec<(f32, f32, f32)> {
+    let n = marks.len().max(1) as f32;
+    marks
+        .iter()
+        .enumerate()
+        .map(|(k, mark)| {
+            let mut scale = sized(mark);
+            if inside {
+                let advance = font::line_advance(scale).max(1.0);
+                let room = if stacked { r.h / n } else { r.h };
+                scale *= (room / advance).min(1.0);
+            }
+            let (w, advance) = (font::width(mark, scale), font::line_advance(scale));
+            let k = k as f32;
+            let x = if stacked {
+                r.x + 1.0
+            } else {
+                // a row along the note: each mark centred in its share of it
+                r.x + (k + 0.5) * r.w / n - w * 0.5
+            };
+            let y = match (stacked, inside) {
+                (true, false) => r.y - (k + 1.0) * advance,
+                (true, true) => r.y + k * advance,
+                (false, false) => r.y - advance,
+                (false, true) => r.y + (r.h - advance).max(0.0) * 0.5,
+            };
+            (x, y, scale)
+        })
+        .collect()
+}
+
 impl Element for Notes {
     fn set(&mut self, key: &str, v: &Value) -> bool {
         match key {
@@ -735,9 +819,8 @@ impl Element for Notes {
                 self.osc = parse_osc(&parse::as_array_props("osc", v));
                 true
             }
-            "held" | "voices" | "dimmed" | "labels" | "spelled" | "marks" | "breaths" | "tints" => {
-                self.written.set(key, v)
-            }
+            "held" | "voices" | "dimmed" | "labels" | "spelled" | "marks" | "breaths" | "tints"
+            | "slurs" | "slur_style" | "mark_layout" | "mark_place" => self.written.set(key, v),
             // **the outlines its marks are drawn with**, as a window's
             // `glyphs`: the host's one table, which every text reads
             "glyphs" => v.as_object().map(crate::host::font::outline::set).is_some(),
@@ -825,6 +908,7 @@ impl Element for Notes {
             pianoroll::draw_grid_background(d, r.grid, lo, hi);
         }
         self.draw_bars(d, r.grid, &nav, self.rate(ctx.world.sample_rate));
+        self.draw_slurs(d, r.grid, &nav, axis, true);
         pianoroll::draw_notes(
             d,
             r.grid,
@@ -847,6 +931,7 @@ impl Element for Notes {
         }
         self.draw_written(d, r.grid, &nav, axis);
         self.draw_lines(d, r.grid, &nav, axis);
+        self.draw_slurs(d, r.grid, &nav, axis, false);
         if self.osc_markers {
             pianoroll::draw_osc_markers(d, r.osc, &nav, 0.0, &self.osc);
         }
@@ -1717,17 +1802,15 @@ impl Notes {
                     m.text_scale
                 }
             };
-            if let Some(marks) = self.written.marks.get(i).filter(|t| !t.is_empty()) {
-                let scale = sized(marks);
-                let w = font::width(marks, scale);
-                font::text(
-                    mesh,
-                    marks,
-                    r.x + (r.w - w).max(0.0) * 0.5,
-                    r.y - font::line_advance(scale),
-                    scale,
-                    theme.ruler_text,
-                );
+            if let Some(marks) = self.written.marks.get(i).filter(|t| !t.trim().is_empty()) {
+                let marks: Vec<&str> = marks.split_whitespace().collect();
+                for (k, (x, y, scale)) in
+                    mark_places(r, &marks, &sized, self.written.stacked, self.written.inside)
+                        .into_iter()
+                        .enumerate()
+                {
+                    font::text(mesh, marks[k], x, y, scale, theme.ruler_text);
+                }
             }
             if let Some(breath) = self.written.breaths.get(i).filter(|t| !t.is_empty()) {
                 let scale = sized(breath);
@@ -1748,6 +1831,66 @@ impl Notes {
                 mesh.rect(r, veil);
             }
         }
+    }
+
+    /// **The section's slurs** (`slurs`), drawn as `slur_style` says: a band
+    /// behind the boxes (`behind`), any other drawing over them. Cut at the
+    /// grid; a slur whose ends are both off it is not drawn.
+    fn draw_slurs(
+        &self,
+        d: &mut Draw,
+        grid: Rect,
+        nav: &View,
+        axis: pianoroll::Pitches,
+        behind: bool,
+    ) {
+        let style = self.written.slur_style;
+        if self.written.slurs.is_empty() || style.behind() != behind {
+            return;
+        }
+        let (mesh, m, theme) = d.parts();
+        let kept = mesh.clip();
+        mesh.set_clip(Some(kept.map_or(grid, |k| k.intersect(grid))));
+        let rect = |i: usize| {
+            self.notes
+                .get(i)
+                .and_then(|n| pianoroll::note_rect(grid, nav, 0.0, n, axis))
+        };
+        let width = m.trace_w.max(1.0) * 1.5;
+        for &[from, to, joined] in &self.written.slurs {
+            let (lo, hi) = (from.min(to), from.max(to));
+            let (Some(first), Some(last)) = (rect(from), rect(to)) else {
+                continue;
+            };
+            // the boxes between its ends in time, of the first note's voice
+            let voice = self.written.voice(from);
+            let (start, end) = (
+                self.notes[lo].start,
+                self.notes[hi].start + self.notes[hi].dur,
+            );
+            let between: Vec<Rect> = self
+                .notes
+                .iter()
+                .enumerate()
+                .filter(|(j, n)| {
+                    n.start >= start
+                        && n.start < end
+                        && (voice.is_none() || self.written.voice(*j) == voice)
+                })
+                .filter_map(|(j, _)| rect(j))
+                .collect();
+            if let Some(span) = crate::host::graphics::slurs::Span::over(first, last, &between) {
+                crate::host::graphics::slurs::draw(
+                    mesh,
+                    style,
+                    &span,
+                    joined != 0,
+                    width,
+                    theme.text,
+                );
+            }
+        }
+        mesh.set_clip(kept);
     }
 
     /// **The pitch lines over the boxes** (`lines`): each run a line through

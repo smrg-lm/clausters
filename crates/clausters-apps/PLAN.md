@@ -2528,16 +2528,25 @@ opened it.
   editor's page at once, and a breath is heard as the shortened note.
 
 
-- ⬜ **X43 - The roll's display panel.** *(Opened 2026-11-10 by the user,
+- ✅ **X43 - The roll's display panel.** *(Opened 2026-11-10 by the user,
   after the drawing of slurs was shown as four sketches over a roll: all
-  four are kept, and the choice is the reader's.)* How the roll draws what
+  four are kept, and the choice is the reader's. Done the same day:
+  `notes::display`, the `display_settings` switch in the View menu, the
+  document's `articulation::slurs` projected as the roll's `slurs` and
+  drawn by `host::graphics::slurs`, a note's marks sent one by one and laid
+  out by the host (`mark_layout`, `mark_place`); in both clients a switch
+  like the events panel's -- `display_panel`, `displayPanel()` and
+  `setDisplayPanel()` -- beside `display` and `set_display`; the notes
+  editor example pair's `drawn`. A lane's switch is one of sixteen slots
+  composed when the panel is shown, so a curve added while it is up gets
+  its switch when the panel is shown again.)* How the roll draws what
   a sequence holds beyond its boxes is chosen in a panel of
   `crate::panels` beside the plane, as the audio editor's spectrogram
   settings are: the principle is the same, so the settings are view state
   held by the window (outside the history), a verb shows and hides the
   panel, and both clients read and set them. Giving each graphical element
   a reference drawing and a switch is what later work on them starts from.
-  - ⬜ **X43.1 - The settings and the panel.** `notes::display`: a
+  - ✅ **X43.1 - The settings and the panel.** `notes::display`: a
     `Display` of five sections, its panel (a section each, folded and
     unfolded whole) and the report of each widget read as a request:
     1. **Slurs**: not drawn, or one of four drawings -- an arc over the
@@ -2557,14 +2566,14 @@ opened it.
     The first two are marks of a page and draw in notation mode alone; in
     MIDI mode their widgets are there and disabled. The others hold in both
     modes.
-  - ⬜ **X43.2 - The slurs on the roll.** The section's slurs projected as
+  - ✅ **X43.2 - The slurs on the roll.** The section's slurs projected as
     pairs of the roll's notes with whether each is joined (`slurs`), and
     the host drawing them as the setting says (`slur_style`), over the
     boxes, cut at the grid.
-  - ⬜ **X43.3 - The marks' layouts.** A note's marks reach the host one by
+  - ✅ **X43.3 - The marks' layouts.** A note's marks reach the host one by
     one, and the host lays them out as the setting says (`mark_layout`,
     `mark_place`), at the size `X42` draws them.
-  - ⬜ **X43.4 - The verb and both clients.** `display_settings` in the
+  - ✅ **X43.4 - The verb and both clients.** `display_settings` in the
     notes scope and the View menu; `NotesEditor.display`, `set_display`,
     `show_display_settings` and `hide_display_settings` in Python, and
     `display()`, `setDisplay()`, `showDisplaySettings()` and
@@ -4871,7 +4880,7 @@ Every entry carries a checkbox.
   hold different parts, which the parts list does not yet: that is the
   design question this entry carries.
 
-- ⬜ **The roll as an editor of everything a sequence holds** *(designed
+- ✅ **The roll as an editor of everything a sequence holds** *(designed
   with the user, 2026-11-10, after studying three rolls: one that writes
   articulations and a continuous pitch over its notes, and two conventional
   MIDI editors)*. What the roll lacks is not new structures but the editing
@@ -4881,7 +4890,8 @@ Every entry carries a checkbox.
   of "The roll's two modes are not yet an editor a hand can trust", in Found
   by use. *Folded into `X37`-`X42` on 2026-11-10, which keep these
   principles; what stays open here is the drawing of slurs, which `X42`
-  waits on.* *(The drawing of slurs is taken by `X43`, 2026-11-10.)*
+  waits on.* *(The drawing of slurs is taken by `X43`, and done with it
+  2026-11-10: nothing of this entry is open.)*
 
   The principles:
   1. **Verbs first.** Every action below is a verb of the one table,

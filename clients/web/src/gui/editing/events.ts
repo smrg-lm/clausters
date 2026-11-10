@@ -406,6 +406,47 @@ export class NotesEditor extends SequenceHandler {
         if (Boolean(on) !== (await this.eventsPanel())) this.verb("events_panel");
     }
 
+    /**
+     * **Whether the display panel beside the roll is shown**: how the roll
+     * draws what the sequence holds beyond its boxes ({@link display}). The
+     * View menu's entry shows and hides it, and setting it is no edit.
+     */
+    async displayPanel(): Promise<boolean> {
+        return Boolean((await this.coreCall("editing")).display_panel ?? false);
+    }
+
+    /** Shows or hides the display panel beside the roll: no edit. */
+    async setDisplayPanel(on: boolean): Promise<void> {
+        if (Boolean(on) !== (await this.displayPanel())) this.verb("display_settings");
+    }
+
+    /**
+     * **How the roll draws what the sequence holds beyond its boxes**, the
+     * window's own and no edit: `slurs` (`"none"`, `"arc"`, `"dashed"` -- an
+     * arc dashed where the slur attacks its notes -- `"bracket"` or `"band"`),
+     * `marks` (a note's articulations: `"none"`, `"stacked"` at its start or
+     * in a `"row"` along it) and `marks_place` (`"above"` the box or
+     * `"inside"` it) -- the two a page's, drawn in notation mode alone --
+     * `pitch_line` (the line between the boxes), `note_curves` (the notes'
+     * own curves) and `hidden_lanes` (the lanes not offered as tabs, by name).
+     */
+    async display(): Promise<Record<string, unknown>> {
+        return { ...(((await this.coreCall("editing")).display ?? {}) as Record<string, unknown>) };
+    }
+
+    /**
+     * Changes the display settings named ({@link display}), the others kept;
+     * `lanes: { velocity: false }` takes a lane off the tabs and `true` puts
+     * it back. Rejects with a `RangeError` for a value none of them takes,
+     * which changes nothing.
+     */
+    async setDisplay(settings: Record<string, unknown>): Promise<void> {
+        const answer = (await this.act("set", { call: { verb: "sync", display: settings } })) as
+            | { refused?: string }
+            | null;
+        if (answer?.refused) throw new RangeError(answer.refused);
+    }
+
     // ---- the roll's two modes ----
 
     /**

@@ -330,6 +330,9 @@ pub const NOTES: &[Verb] = &[
     // the inspector of the selected notes and the list of the events,
     // beside the roll
     toggle("events_panel", &[], "Events and inspector, shown or hidden"),
+    // how the roll draws what a sequence holds beyond its boxes: slurs,
+    // marks, the pitch line, the notes' curves and the lanes offered
+    toggle("display_settings", &[], "Display settings"),
     verb("unjoin", &["Shift+J"], "Unjoin"),
     // the selection, or every note taken, moved: a semitone in MIDI mode, a
     // step of the key in notation mode, an octave in both

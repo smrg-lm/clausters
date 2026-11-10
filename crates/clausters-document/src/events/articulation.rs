@@ -210,6 +210,23 @@ fn joins_its_notes(
             .all(|id| joined_from(sequence, *id).is_some())
 }
 
+/// **The section's slurs**, each from its first note to its last with
+/// whether it joins them (what it says, and for one that says nothing,
+/// whether its notes carry joins): what a roll draws of them.
+#[must_use]
+pub fn slurs(sequence: &EventSequence) -> Vec<(u64, u64, bool)> {
+    let lines = lines(sequence);
+    spanners(sequence)
+        .iter()
+        .filter(|s| s.get("kind").and_then(Value::as_str) == Some("slur"))
+        .filter_map(|s| {
+            let from = s.get("from")?.as_u64()?;
+            let to = s.get("to")?.as_u64()?;
+            Some((from, to, joins_its_notes(sequence, &lines, s)))
+        })
+        .collect()
+}
+
 /// Whether a line is written as notation: a note of it carries a `value`.
 fn written(sequence: &EventSequence, notes: &[u64]) -> bool {
     notes
@@ -573,6 +590,21 @@ mod tests {
                 json!({"kind": "slur", "from": 2, "to": 4, "join": true}),
             ]
         );
+    }
+
+    /// **A slur is read with whether it joins**: what it says, and for one
+    /// that says nothing, whether the notes after its first carry joins.
+    #[test]
+    fn the_slurs_are_read_with_whether_they_join() {
+        let mut sequence = written_line();
+        sequence.notation = Some(json!({"spanners": [
+            {"kind": "slur", "from": 1, "to": 2, "join": false},
+            {"kind": "slur", "from": 3, "to": 4},
+            {"kind": "hairpin", "from": 1, "to": 4},
+        ]}));
+        assert_eq!(slurs(&sequence), vec![(1, 2, false), (3, 4, false)]);
+        set_joins(&mut sequence, 4, Some(3));
+        assert_eq!(slurs(&sequence), vec![(1, 2, false), (3, 4, true)]);
     }
 
     #[test]

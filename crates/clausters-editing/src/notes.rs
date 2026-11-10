@@ -272,6 +272,11 @@ pub struct Projection {
     /// its articulations (MEI's), then its breath (`breath`, `caesura`),
     /// space-separated -- what the roll draws over the box ([`marks_of`]).
     pub marks: Vec<String>,
+    /// In notation mode, **the section's slurs** whose ends the roll draws:
+    /// flat `from to joined` triples, `from` and `to` indices into `notes`
+    /// and `joined` `1` for a slur that joins its notes, `0` for one that
+    /// attacks them.
+    pub slurs: Vec<usize>,
 }
 
 /// **How a roll edits**: the options of whoever edits, which are the
@@ -570,6 +575,13 @@ pub fn project(
         }
     }
     out.lines = pitch_lines(sequence, domain, axis, &out.note_ids);
+    if notation {
+        for (from, to, joined) in clausters_document::events::articulation::slurs(sequence) {
+            if let (Some(from), Some(to)) = (at.get(&from), at.get(&to)) {
+                out.slurs.extend([*from, *to, usize::from(joined)]);
+            }
+        }
+    }
     for curve in &sequence.automation {
         let name = curve.id.0.to_string();
         let (label, min, max, _) = curve_look(curve);

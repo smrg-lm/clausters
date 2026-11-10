@@ -400,6 +400,41 @@ class NotesEditor(Marking, SequenceHandler):
         if bool(on) != self.events_panel:
             self.verb("events_panel")
 
+    @property
+    def display_panel(self) -> bool:
+        """**Whether the display panel beside the roll is shown**: how the
+        roll draws what the sequence holds beyond its boxes (`display`). The
+        View menu's entry shows and hides it, and setting it is no edit:
+        ``editor.display_panel = True``."""
+        return bool(self._call("editing").get("display_panel", False))
+
+    @display_panel.setter
+    def display_panel(self, on: bool) -> None:
+        if bool(on) != self.display_panel:
+            self.verb("display_settings")
+
+    @property
+    def display(self) -> dict:
+        """**How the roll draws what the sequence holds beyond its boxes**,
+        the window's own and no edit: ``slurs`` (``"none"``, ``"arc"``,
+        ``"dashed"`` -- an arc dashed where the slur attacks its notes --
+        ``"bracket"`` or ``"band"``), ``marks`` (a note's articulations:
+        ``"none"``, ``"stacked"`` at its start or in a ``"row"`` along it) and
+        ``marks_place`` (``"above"`` the box or ``"inside"`` it) -- the two a
+        page's, drawn in notation mode alone -- ``pitch_line`` (the line
+        between the boxes), ``note_curves`` (the notes' own curves) and
+        ``hidden_lanes`` (the lanes not offered as tabs, by name)."""
+        return dict(self._call("editing").get("display") or {})
+
+    def set_display(self, **settings) -> None:
+        """Change the display settings named (`display`), the others kept;
+        ``lanes={"velocity": False}`` takes a lane off the tabs and ``True``
+        puts it back. `ValueError` for a value none of them takes, which
+        changes nothing."""
+        answer = self._do("set", call={"verb": "sync", "display": settings}) or {}
+        if isinstance(answer, dict) and answer.get("refused"):
+            raise ValueError(answer["refused"])
+
     # ---- the roll's two modes ----
 
     @property

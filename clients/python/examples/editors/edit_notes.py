@@ -116,7 +116,12 @@ draws it, from its attack across the box; notes **joined** (J over a
 selection of a line) are one line, the second going on from the first with no
 new attack, and the next note attacked starts another. It is a reading of the
 sequence, ``notes.pitch_line()``: each run's notes and its pitch over time.
-``rework()`` splits and transposes from the script.
+``rework()`` splits and transposes from the script, and ``drawn()`` slurs the
+phrase and draws it otherwise, in the roll's display panel (the View menu's
+**Display settings**): its slurs as an arc, an arc dashed where the slur is
+attacked, a bracket or a band, its marks stacked or in a row, above the notes
+or inside them, and the pitch line, the notes' curves and the lanes shown or
+not.
 The View menu's **Events and inspector** opens a panel beside the roll
 (``editor.events_panel = True``): the selected notes' time, length, pitch,
 velocity and channel, which a value typed changes on all of them at once, and
@@ -238,8 +243,13 @@ def notation():
 # Each mark is one entry of the history the roll and the page share.
 
 # %%
+#: The phrase's roll, once `phrase` has opened it.
+phrased = None
+
+
 def phrase():
     """Accent the first two notes, a breath after the second, mf on the first."""
+    global phrased
     written = editor.to_notation(meter="4/4", division=8, copy=True)
     roll = edit(written, title="a phrase")
     roll.mode = "notation"
@@ -251,6 +261,27 @@ def phrase():
     roll.breath()
     roll.select([first])
     roll.dynamic("mf")
+    phrased = roll
+    return roll
+
+
+# %% [markdown]
+# ## How the roll draws it
+#
+# The phrase's first three notes slurred, and the roll's display panel open
+# (the View menu's Display settings): the slur drawn as a band behind the
+# notes, the marks stacked inside them. How the roll draws what is beyond its
+# boxes -- the slurs, the marks, the pitch line, the notes' curves, the lanes
+# offered as tabs -- is the window's, and no edit.
+
+# %%
+def drawn():
+    """The phrase slurred, drawn as a band, its marks stacked inside."""
+    roll = phrased if phrased is not None else phrase()
+    roll.select(roll.sequence.events[:3])
+    roll.slur()
+    roll.display_panel = True
+    roll.set_display(slurs="band", marks="stacked", marks_place="inside")
     return roll
 
 
@@ -394,5 +425,6 @@ else:
     print("up -- play() to hear it, page() for the notes on a page, "
           "notation() for them as notation, rework() to split and transpose, "
           "legato() to join two notes and line() to read the pitch they sound, "
-          "phrase() to mark a phrase as a page does, curves() to add two curves, "
+          "phrase() to mark a phrase as a page does, drawn() to slur it and draw it otherwise, "
+          "curves() to add two curves, "
           "read_back() to see what survived the edit")

@@ -31,6 +31,7 @@
 //! sequence stores.
 
 pub mod dialogs;
+pub mod display;
 pub mod editor;
 pub mod panel;
 
@@ -63,7 +64,7 @@ pub const MARK_NAMES: &[&str] = &[
 /// **The symbols a roll draws a note's marks with**: the engraver's outlines,
 /// asked for once and only when the roll first shows a page's marks, since
 /// asking loads the engraver -- the score editor's own symbols, so a roll and
-/// a page write one accent ([`crate::score::palettes::symbol`]). Without
+/// a page write one accent (`score::palettes::symbol`). Without
 /// them a mark is written as the text the palette labels it with.
 #[derive(Clone, Default)]
 pub struct Symbols {
@@ -303,12 +304,14 @@ fn written(out: &mut Map<String, Value>, drawn: &notes::Projection, symbols: &Sy
     let (mut marks, mut breaths) = (Vec::new(), Vec::new());
     for names in &drawn.marks {
         let names: Vec<&str> = names.split_whitespace().collect();
+        // one by one, a space between, for the roll to lay them out
         marks.push(
             names
                 .iter()
                 .filter(|n| !breath(n))
                 .map(|n| symbols.drawn(n))
-                .collect::<String>(),
+                .collect::<Vec<String>>()
+                .join(" "),
         );
         breaths.push(
             names
@@ -319,6 +322,7 @@ fn written(out: &mut Map<String, Value>, drawn: &notes::Projection, symbols: &Sy
         );
     }
     out.insert("tints".into(), json!(drawn.tints));
+    out.insert("slurs".into(), json!(drawn.slurs));
     out.insert("marks".into(), json!(marks));
     out.insert("breaths".into(), json!(breaths));
 }

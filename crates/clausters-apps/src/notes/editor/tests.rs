@@ -1179,3 +1179,63 @@ fn the_lanes_are_chosen_by_their_tabs_and_a_curve_added_is_one_entry() {
     let told = serde_json::to_string(&out.answer).unwrap();
     assert!(told.contains(&format!("\"lane\":\"{curve}\"")), "{told}");
 }
+
+/// **The display panel says how the roll draws what is beyond its boxes**:
+/// shown by its switch (the window drawn again), a report of it is a setting
+/// of the window's and no entry, the roll drawn as it says -- the pitch line
+/// taken off, the slurs drawn as chosen -- and a lane taken off the tabs.
+#[test]
+fn the_display_panel_sets_how_the_roll_draws_and_records_nothing() {
+    let sequence = shared();
+    let mut e = new_json(sequence.clone(), r#"{"rate": 100.0, "version": 1}"#);
+    let names: Value = serde_json::from_str(&call_json(&mut e, r#"{"verb": "dialogs"}"#)).unwrap();
+    let numbered: serde_json::Map<String, Value> = names["dialogs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.as_str().unwrap().to_string(), json!(200 + i as i64)))
+        .collect();
+    let ids = |name: &str| numbered[name].as_i64().unwrap();
+    let request = json!({"verb": "window", "widget": 40, "dialogs": numbered}).to_string();
+    let tree = call_json(&mut e, &request);
+    assert!(
+        tree.contains("\"slur_style\":\"arc\""),
+        "drawn as the default"
+    );
+    assert!(
+        !tree.contains("Pitch line between notes"),
+        "hidden at first"
+    );
+    call_json(&mut e, r#"{"verb": "sync", "window": 39}"#);
+    let out = e.event(&window_verb("display_settings"), 1);
+    assert!(out.restructure && out.record.is_none());
+    let tree = e.window(40).to_string();
+    assert!(tree.contains("Pitch line between notes"), "{tree}");
+    let report = |id: i64, value: Value| Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(id), json!(2), json!(1), value],
+    };
+    let out = e.event(&report(ids("display:pitch_line"), json!(0)), 1);
+    assert!(out.record.is_none(), "a setting, no entry");
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("\"lines\":[]"), "{told}");
+    let out = e.event(&report(ids("display:slurs"), json!(4)), 1);
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("\"slur_style\":\"band\""), "{told}");
+    // the velocity taken off the tabs leaves no lane drawn
+    e.event(&gesture("curve_cc1", vec![]), 1);
+    let out = e.event(&report(ids("display:lane:0"), json!(0)), 2);
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("\"options\":[\"CC 1 ch 1\"]"), "{told}");
+    let said: Value = serde_json::from_str(&call_json(&mut e, r#"{"verb": "editing"}"#)).unwrap();
+    assert_eq!(said["display"]["slurs"], "band");
+    assert_eq!(said["display"]["hidden_lanes"], json!(["velocity"]));
+    assert_eq!(said["display_panel"], true);
+    // a client's setting is checked, and a refused one changes nothing
+    let refused = call_json(
+        &mut e,
+        r#"{"verb": "sync", "display": {"marks": "spiral"}}"#,
+    );
+    assert!(refused.contains("refused"), "{refused}");
+}

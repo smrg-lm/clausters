@@ -12,7 +12,7 @@ use clausters_document::{EventSequence, Opaque};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 use clausters_editing::notes::{self as roll, Axis, ColorBy, Editing, Mode, Scope, YDomain};
 
-use super::{Shared, correction, dialogs, panel, props, window};
+use super::{Shared, correction, dialogs, display, panel, props, window};
 use crate::forms::{self, Said};
 use crate::turn::{self, Converse, Event, Kind, Leg, Record};
 
@@ -103,7 +103,7 @@ pub const MODE_VERBS: &[&str] = &[
 /// The verbs only the notation mode answers: [`MODE_VERBS`] past the mode;
 /// the marks a page writes over the selected notes are the editing crate's
 /// ([`clausters_editing::notes::notation::ARTICULATIONS`]), and only the
-/// notation mode answers them too ([`only_in_notation`]).
+/// notation mode answers them too (`only_in_notation`).
 pub const NOTATION_VERBS: &[&str] = &[
     "show_system",
     "show_part",
@@ -180,6 +180,11 @@ pub struct NotesEditor {
     /// engraver the application handed in when the roll first enters
     /// notation ([`super::Symbols`]).
     symbols: super::Symbols,
+    /// **How the roll draws what the sequence holds beyond its boxes**
+    /// ([`display`]): the window's own, outside the history.
+    display: display::Display,
+    /// Whether the display panel is shown beside the roll.
+    display_panel: bool,
 }
 
 /// **The tabs that choose the lane shown under the roll**, by the name the
@@ -189,6 +194,10 @@ pub const LANES: &str = "lanes";
 /// **The panel's switch**, as the window asks for it: the View menu's
 /// entry, or a client's `verb("events_panel")`.
 pub const PANEL_VERB: &str = "events_panel";
+
+/// **The display panel's switch**, as the window asks for it: the View
+/// menu's entry, or a client's `verb("display_settings")`.
+pub const DISPLAY_VERB: &str = "display_settings";
 
 /// What a notes editor is opened with, as the context's door reads it.
 #[derive(Deserialize)]
@@ -279,6 +288,8 @@ impl NotesEditor {
             marked: Vec::new(),
             lane: "velocity".into(),
             symbols: super::Symbols::default(),
+            display: display::Display::default(),
+            display_panel: false,
         }
     }
 
@@ -335,6 +346,7 @@ impl NotesEditor {
                 SNAP_VERB => Some(self.snap),
                 MONOPHONIC_VERB => Some(self.editing.monophonic),
                 PANEL_VERB => Some(self.panel),
+                DISPLAY_VERB => Some(self.display_panel),
                 "loop" => Some(self.looping),
                 "midi_mode" => Some(self.editing.mode == Mode::Midi),
                 "notation_mode" => Some(self.editing.mode == Mode::Notation),
@@ -597,6 +609,7 @@ impl NotesEditor {
         if let Some(glyphs) = glyphs {
             drawn.insert("glyphs".into(), glyphs.props["glyphs"].clone());
         }
+        self.display.apply(&mut drawn);
         // the grid is an axis' own, as its tempo map is
         if let Some(Value::Object(x)) = drawn.get_mut("axes").and_then(|a| a.get_mut("x")) {
             x.insert("grid".into(), json!(self.grid));
@@ -627,6 +640,7 @@ impl NotesEditor {
                 widget,
             );
             self.compose_panel(&mut window);
+            self.compose_display(&mut window);
             // **the dialog stands over the window**, on a page of its stack
             if let (Some(stack), Some(children)) = (
                 self.dialogs.stack(dialogs::forms()),
@@ -641,12 +655,25 @@ impl NotesEditor {
     /// **The lane shown**: the one chosen, or the velocities where the curve
     /// chosen is gone.
     fn lane_shown(&self) -> String {
-        let lanes = roll::lanes(&self.held());
+        let lanes = self.lanes_offered();
         if lanes.iter().any(|(name, _)| *name == self.lane) {
             self.lane.clone()
         } else {
-            "velocity".into()
+            lanes
+                .into_iter()
+                .next()
+                .map(|(name, _)| name)
+                .unwrap_or_default()
         }
+    }
+
+    /// **The lanes offered as tabs**: the sequence's, but those the display
+    /// takes off.
+    fn lanes_offered(&self) -> Vec<(String, String)> {
+        roll::lanes(&self.held())
+            .into_iter()
+            .filter(|(name, _)| self.display.shows_lane(name))
+            .collect()
     }
 
     /// **The tabs under the roll**, one per lane, the one shown chosen; none
@@ -665,7 +692,7 @@ impl NotesEditor {
 
     /// The tabs' labels, and which is shown.
     fn lane_options(&self) -> (Vec<String>, usize) {
-        let lanes = roll::lanes(&self.held());
+        let lanes = self.lanes_offered();
         let shown = self.lane_shown();
         let index = lanes.iter().position(|(n, _)| *n == shown).unwrap_or(0);
         (lanes.into_iter().map(|(_, label)| label).collect(), index)
@@ -695,12 +722,88 @@ impl NotesEditor {
             return (None, Vec::new());
         };
         let index = index.max(0.0) as usize;
-        let lanes = roll::lanes(&self.held());
+        let lanes = self.lanes_offered();
         if let Some((name, _)) = lanes.into_iter().nth(index) {
             self.lane = name;
         }
         let roll = self.widget.map_or(0, i64::from);
         (None, self.resync_widget(roll))
+    }
+
+    /// **The display panel beside the roll**, when it is shown and the
+    /// window numbered its widgets: how the roll draws what the sequence
+    /// holds beyond its boxes ([`display`]).
+    fn compose_display(&self, window: &mut Value) {
+        if !self.display_panel {
+            return;
+        }
+        let lanes = roll::lanes(&self.held());
+        let notation = self.editing.mode == Mode::Notation;
+        let Some(column) = self.display.panel(&self.dialogs.ids, &lanes, notation) else {
+            return;
+        };
+        let Some(children) = window.get_mut("children").and_then(Value::as_array_mut) else {
+            return;
+        };
+        // the work, wherever the chrome and the other panel put it: the
+        // child that takes the window's room
+        if let Some(index) = children
+            .iter()
+            .position(|c| c["weight"].as_f64().is_some_and(|w| w > 0.0))
+            .or_else(|| {
+                let roll = self.widget.map(|w| json!(w));
+                children
+                    .iter()
+                    .position(|c| roll.as_ref().is_some_and(|r| &c["id"] == r))
+            })
+        {
+            let work = children.remove(index);
+            children.insert(
+                index,
+                crate::panels::beside(work, column, crate::panels::Side::Right),
+            );
+        }
+    }
+
+    /// What the display panel's widgets are corrected with: none while it is
+    /// hidden.
+    fn display_corrections(&self) -> Vec<Correction> {
+        if !self.display_panel {
+            return Vec::new();
+        }
+        let lanes = roll::lanes(&self.held());
+        let notation = self.editing.mode == Mode::Notation;
+        self.display
+            .corrections(&self.dialogs.ids, &lanes, notation)
+    }
+
+    /// **The display changed as `request` says**: the roll drawn again as it
+    /// now says, and the lanes' tabs and the panel with it, recorded nowhere.
+    /// The refusal, if any.
+    fn set_display(&mut self, request: &Value) -> (Option<String>, Vec<Correction>) {
+        if let Err(why) = self.display.set(request) {
+            return (Some(why), self.display_corrections());
+        }
+        let roll = self.widget.map_or(0, i64::from);
+        (None, self.resync_widget(roll))
+    }
+
+    /// **A report from the display panel**, read as the change it asks.
+    fn display_said(
+        &mut self,
+        name: &str,
+        tag: &str,
+        values: &[Value],
+    ) -> (Option<String>, Vec<Correction>) {
+        let value = values
+            .first()
+            .cloned()
+            .or_else(|| tag.parse::<f64>().ok().map(Value::from));
+        let lanes = roll::lanes(&self.held());
+        let Some(request) = value.and_then(|v| display::Display::read(name, &v, &lanes)) else {
+            return (None, Vec::new());
+        };
+        self.set_display(&request)
     }
 
     /// **The panel beside the roll**, when it is shown and the window
@@ -819,6 +922,7 @@ impl NotesEditor {
         }
         let held = self.held();
         let mut props = correction(&held, &self.domain, self.rate, &self.editing, &self.symbols);
+        self.display.apply(&mut props);
         // The time range is drawn where the hand sweeps one, so a span set
         // from the client shows as the band a sweep leaves.
         let axis = Axis::of(&held, self.rate);
@@ -843,6 +947,7 @@ impl NotesEditor {
         }];
         corrections.extend(self.lane_corrections());
         corrections.extend(self.panel_corrections());
+        corrections.extend(self.display_corrections());
         corrections
     }
 
@@ -1048,6 +1153,9 @@ impl Converse for NotesEditor {
             if panel::names().contains(&name) {
                 return self.panel_said(&name, tag, values, out);
             }
+            if display::names().contains(&name) {
+                return self.display_said(&name, tag, values);
+            }
             return self.form_said(&name, tag, values, out);
         }
         self.gesture(widget, tag, values, out)
@@ -1081,8 +1189,12 @@ impl Converse for NotesEditor {
         }
         // **The panel shown or hidden**: the window is drawn again, with it
         // or without it
-        if message.tag == PANEL_VERB {
-            self.panel = !self.panel;
+        if message.tag == PANEL_VERB || message.tag == DISPLAY_VERB {
+            if message.tag == PANEL_VERB {
+                self.panel = !self.panel;
+            } else {
+                self.display_panel = !self.display_panel;
+            }
             out.turn = Kind::Route;
             out.restructure = true;
             out.answer = Some(conversation::answer(
@@ -1177,12 +1289,16 @@ pub fn shared_of(request: &str) -> Shared {
 ///   `midi_in`, `grid` (in beats, `0` for none), `snap` (the snap-to-grid
 ///   switch), `monophonic`, `scope` (`{"show": "system"}`, or `"part"` or
 ///   `"staff"` with its `index`), `voice` (`[staff, voice]`), `color_by`
-///   (`"voice"`, `"staff"` or `"part"`), `domain`,
+///   (`"voice"`, `"staff"` or `"part"`), `display` (a change of how the roll
+///   draws, [`display::Display::set`]: answered `{"refused": why}` for a
+///   value none of the settings takes, changing nothing), `domain`,
 ///   `title`, `w`, `h`: `{}`.
 /// - `grid` -- `{"grid": beats, "snap": bool}`: the grid a note lands on, and
 ///   whether a hand snaps to it.
 /// - `editing` -- how the roll edits ([`Editing`]): `{"monophonic", "mode",
-///   "scope", "voice", "color_by"}`, `panel`, whether the panel is shown, and `written`, whether the sequence is written as
+///   "scope", "voice", "color_by"}`, `panel`, whether the panel is shown,
+///   `display` and `display_panel`, how the roll draws what is beyond its boxes
+///   ([`display`]) and whether its panel is shown, and `written`, whether the sequence is written as
 ///   notation already -- entering notation over one that is not converts
 ///   it, or asks how in a window with the dialog. The mode is changed by its verbs (`midi_mode`,
 ///   `notation_mode`), since entering notation may convert the sequence,
@@ -1207,6 +1323,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             // that is none of them numbers nothing
             let mut names = dialogs::names();
             names.extend(panel::names());
+            names.extend(display::names());
             names.push(LANES.into());
             editor.dialogs.ids = request
                 .get("dialogs")
@@ -1225,6 +1342,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
         "dialogs" => {
             let mut names = dialogs::names();
             names.extend(panel::names());
+            names.extend(display::names());
             names.push(LANES.into());
             json!({ "dialogs": names }).to_string()
         }
@@ -1269,6 +1387,11 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             if let Some(lane) = request.get("lane").and_then(Value::as_str) {
                 editor.lane = lane.into();
             }
+            if let Some(display) = request.get("display")
+                && let Err(why) = editor.display.set(display)
+            {
+                return json!({ "refused": why }).to_string();
+            }
             if let Some(color_by) = request
                 .get("color_by")
                 .and_then(|c| serde_json::from_value::<ColorBy>(c.clone()).ok())
@@ -1301,6 +1424,8 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             said["written"] = json!(editor.held().written_as_notation());
             said["panel"] = json!(editor.panel);
             said["lane"] = json!(editor.lane_shown());
+            said["display"] = json!(editor.display);
+            said["display_panel"] = json!(editor.display_panel);
             said.to_string()
         }
         "span" => {

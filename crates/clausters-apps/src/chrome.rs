@@ -234,6 +234,7 @@ pub fn menu(app: App, saves: bool) -> Value {
     }
     if app == App::Notes {
         view.push(entry(app, "events_panel"));
+        view.push(entry(app, "display_settings"));
     }
     if app == App::Multitrack {
         view.extend([

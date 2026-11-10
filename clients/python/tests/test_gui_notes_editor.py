@@ -5,6 +5,8 @@ tested in its crate (``crates/clausters-apps/src/notes``), and the door in the
 host's (``clients/gui/src/host/audio_editor.rs``).
 """
 
+import pytest
+
 from clausters.base import TempoMap
 from clausters.gui.editing import HostedTransport, NotesEditor, edit
 from clausters.seq import EventSequence, Timeline
@@ -148,6 +150,17 @@ def test_a_verb_is_asked_of_the_window_and_its_actions_read(gui_host):
     assert editor.events_panel and editor.undo_label == label
     editor.events_panel = False
     assert not editor.events_panel
+    # the display beside the roll: its switch and its settings, no edit
+    assert not editor.display_panel and editor.display["slurs"] == "arc"
+    editor.display_panel = True
+    editor.set_display(slurs="band", pitch_line=False, lanes={"velocity": False})
+    shown = editor.display
+    assert editor.display_panel and editor.undo_label == label
+    assert (shown["slurs"], shown["pitch_line"], shown["hidden_lanes"]) == ("band", False, ["velocity"])
+    with pytest.raises(ValueError):
+        editor.set_display(marks="spiral")
+    assert editor.display["marks"] == "row", "a refused setting changes nothing"
+    editor.display_panel = False
     # a selection by pitch marks what shares it, and edits nothing
     editor.select([take.events[0]])
     assert editor.select_pitch() and editor.selected == [take.events[0]]
