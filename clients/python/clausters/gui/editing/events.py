@@ -484,6 +484,45 @@ class NotesEditor(Marking, SequenceHandler):
         self._set(voice=[int(voice[0]), int(voice[1])])
 
     @property
+    def lane(self) -> str:
+        """**The lane shown under the roll**, chosen by the tabs there:
+        ``"velocity"`` for the notes' velocities, or a curve of the sequence by
+        its id. The window's, like its zoom: setting it is no edit."""
+        return str(self._call("editing").get("lane", "velocity"))
+
+    @lane.setter
+    def lane(self, lane) -> None:
+        self._set(lane=str(lane))
+
+    def add_curve(self, name: str) -> bool:
+        """**A curve of the channel of the first selected note** (the first
+        channel with none selected): ``"cc1"`` the modulation wheel, ``"cc11"``
+        the expression, ``"bend"`` or ``"pressure"`` -- the window's
+        ``curve_cc1``, ``curve_cc11``, ``curve_bend`` and ``curve_pressure``,
+        the Edit menu's Curves. One point at the parameter's resting value;
+        refused, with why, where the sequence's format cannot say it (under
+        MPE a channel says its controllers alone). `ValueError` for another
+        name."""
+        if name not in ("cc1", "cc11", "bend", "pressure"):
+            raise ValueError(f"no channel curve {name!r}: cc1, cc11, bend or pressure")
+        return self.verb(f"curve_{name}")
+
+    def add_note_curve(self, name: str) -> bool:
+        """**A curve of each selected note** that has none of its kind:
+        ``"bend"``, ``"pressure"`` or ``"timbre"`` -- the window's
+        ``note_bend``, ``note_pressure`` and ``note_timbre``. Refused, with
+        why, where the sequence's format cannot say it of one note.
+        `ValueError` for another name."""
+        if name not in ("bend", "pressure", "timbre"):
+            raise ValueError(f"no note curve {name!r}: bend, pressure or timbre")
+        return self.verb(f"note_{name}")
+
+    def remove_curve(self) -> bool:
+        """**The curve of the lane shown taken away** -- the window's
+        ``curve_remove``; refused with the velocities shown."""
+        return self.verb("curve_remove")
+
+    @property
     def color_by(self) -> str:
         """**What a note's tint tells apart in notation mode**: ``"voice"``,
         ``"staff"`` or ``"part"`` -- the first of each untinted. The window's,

@@ -381,6 +381,20 @@ pub const CURVE_H: f64 = 40.0;
 /// `{"bend": ...}`, `{"pressure": ...}`, `{"timbre": ...}`, `{"control":
 /// name}` -- and a name on the curve wins over the label it gives. A sequence curve's `channel` (the notes' own count,
 /// from 0) is the channel it acts on, and none is every channel.
+/// **The lanes a roll can show, one at a time**: the notes' velocities, then
+/// each of the sequence's curves -- `(name, label)`, a curve's name its id.
+#[must_use]
+pub fn lanes(sequence: &EventSequence) -> Vec<(String, String)> {
+    std::iter::once(("velocity".to_string(), "velocity".to_string()))
+        .chain(
+            sequence
+                .automation
+                .iter()
+                .map(|curve| (curve.id.0.to_string(), curve_look(curve).0)),
+        )
+        .collect()
+}
+
 fn curve_look<T: TimeAxis>(curve: &Automation<T>) -> (String, f64, f64, bool) {
     let target = curve.target.0.as_object();
     let has = |key: &str| target.is_some_and(|t| t.contains_key(key));
@@ -731,6 +745,9 @@ pub fn intake(
     }
     if TRANSPOSITIONS.contains(&tag) {
         return transpose(sequence, tag, values, domain, editing);
+    }
+    if lanes::CURVE_VERBS.contains(&tag) {
+        return lanes::intake(sequence, tag, values);
     }
     if editing.mode == Mode::Notation {
         return notation_intake(sequence, tag, values, axis, domain, editing);
@@ -1333,6 +1350,7 @@ fn markers(sequence: &EventSequence, values: &[Value], axis: &Axis) -> Option<Ve
     Some(out)
 }
 
+pub mod lanes;
 pub mod notation;
 
 #[cfg(test)]

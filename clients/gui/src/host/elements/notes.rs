@@ -105,6 +105,10 @@ pub struct Notes {
     editable: bool,
     /// The rows under the plane: the sequence's curves.
     rows: Vec<curves::Row>,
+    /// **The lane shown, where the owner shows one at a time** (`lane`): a
+    /// row's name, `velocity` for the notes' velocities, or `""` for none.
+    /// Without it every row is drawn, one under another.
+    lane: Option<String>,
     /// The notes' own curves, each over the note it names.
     layers: Vec<curves::Layer>,
     /// The points the owner last sent, by curve.
@@ -257,6 +261,20 @@ enum Drag {
         press_y: f64,
         orig: Vec<(usize, i32)>,
     },
+    /// **A velocity bar in its lane**: the grabbed note's, or every selected
+    /// one's when it is selected, moved by the height the pointer travels --
+    /// the lane's height is the whole range.
+    Bars {
+        press_y: f64,
+        orig: Vec<(usize, i32)>,
+    },
+    /// **A ramp across the velocity lane**: from the press, at the velocity
+    /// it was at, to the pointer; every note shown that starts between the
+    /// two takes the line's velocity, and the rest keep theirs.
+    Ramp {
+        from: (f64, f64),
+        orig: Vec<(usize, i32)>,
+    },
 }
 
 /// Which region of a roll a press landed on.
@@ -315,6 +333,10 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
         step: 0.0,
         editable: props.get("editable").and_then(truthy).unwrap_or(true),
         rows: curves::parse_rows(props),
+        lane: props
+            .get("lane")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         layers: curves::parse_layers(props),
         curve_points: curves::parse_points(props),
         bodies: std::collections::HashMap::new(),
@@ -728,6 +750,10 @@ impl Element for Notes {
                 self.lines = parse_lines(v);
                 true
             }
+            "lane" => {
+                self.lane = v.as_str().map(str::to_string);
+                true
+            }
             "tell_marks" => {
                 self.tell_marks = truthy(v).unwrap_or(false);
                 true
@@ -1066,6 +1092,9 @@ impl Element for Notes {
         if let Some(claim) = self.press_curve(at, input) {
             return claim;
         }
+        if let Some(claim) = self.press_velocity(at, input) {
+            return claim;
+        }
         let h = self.hit(at, input);
         // **Read-only is answered before the drag, not after it.** The press is
         // consumed so nothing behind it turns a refused edit into a selection,
@@ -1190,6 +1219,14 @@ impl Element for Notes {
             Some(Drag::Level { press_y, orig }) => {
                 let dv = ((press_y - at.1) / f64::from(input.scale.max(0.1))).round() as i32;
                 notes::nudge_velocities_from(&mut self.notes, &orig, dv);
+                Events::none()
+            }
+            Some(Drag::Bars { press_y, orig }) => {
+                self.drag_bars(press_y, &orig, at, input);
+                Events::none()
+            }
+            Some(Drag::Ramp { from, orig }) => {
+                self.drag_ramp(from, &orig, at, input);
                 Events::none()
             }
             None => Events::none(),
@@ -1374,7 +1411,9 @@ impl Element for Notes {
 
     fn command(&mut self, name: &str, _input: &mut KeyInput) -> Option<Events> {
         let moves = matches!(name, "step_up" | "step_down" | "octave_up" | "octave_down");
+        let curves = clausters_editing::notes::lanes::CURVE_VERBS.contains(&name);
         let ours = moves
+            || curves
             || clausters_editing::notes::notation::ARTICULATIONS.contains(&name)
             || matches!(
                 name,
@@ -1383,8 +1422,24 @@ impl Element for Notes {
         if !ours || self.joins.is_none() || !self.ids || !self.editable {
             return None;
         }
-        // a transposition with nothing selected is of every note taken
-        if self.selected.is_empty() && !moves {
+        // **the curve shown is the one a removal names**
+        if name == "curve_remove" {
+            let shown = self
+                .lane
+                .as_ref()
+                .filter(|lane| self.rows.iter().any(|r| &r.name == *lane));
+            return Some(match shown {
+                Some(lane) => Events::message(vec![
+                    OscType::String(name.into()),
+                    OscType::String(lane.clone()),
+                ]),
+                None => Events::refused(name, "no curve of the sequence is shown"),
+            });
+        }
+        // a transposition with nothing selected is of every note taken, and a
+        // channel's curve is the first channel's
+        let channel_curve = name.starts_with("curve_");
+        if self.selected.is_empty() && !moves && !channel_curve {
             return Some(Events::refused(name, "nothing is selected"));
         }
         Some(self.selection_event(name))
@@ -2431,6 +2486,68 @@ mod tests {
         assert_eq!(msgs[0][0], OscType::String("notes".into()));
         assert_eq!(msgs[0].len(), 1 + 5, "the tag plus a quintuple per note");
         assert!(r.drag.is_none());
+    }
+
+    /// **The velocity lane, one lane at a time**: a bar dragged up raises its
+    /// note's velocity, and a drag across the empty lane is a ramp over the
+    /// notes it crosses; each is one `notes` report at the release. A curve
+    /// removed names the lane shown.
+    #[test]
+    fn a_velocity_bar_is_dragged_and_a_ramp_drawn_across_the_lane() {
+        let m = Metrics::default();
+        let mut r = roll(
+            r#"{"notes":[0.0,100.0,60.0,64,0, 300.0,100.0,62.0,64,0, 600.0,100.0,64.0,64,0],
+                "min":48,"max":72,"lane":"velocity","note_ids":[1,2,3],"joins":[],
+                "curves":["9","CC 1",0,127,40]}"#,
+        );
+        let input = input(&m, rect(), axis(1000.0));
+        let (_, body) = r.velocity_rects(rect(), pianoroll::KEYBOARD_W, &m).unwrap();
+        assert!(r.shown_rows().is_empty(), "the lane is the velocities");
+        let xs = [0.0, 250.0, 650.0].map(|t| x_of(&r, &m, t, 1000.0));
+        let x = |t: f64| xs[[0.0, 250.0, 650.0].iter().position(|w| *w == t).unwrap()];
+        let y_of_velocity = |v: f64| f64::from(body.y) + (1.0 - v / 127.0) * f64::from(body.h);
+        // a bar: pressed where it is and dragged to the top
+        let press = (x(0.0), y_of_velocity(64.0));
+        assert!(matches!(r.press(press, &input), Claim::Take(_)));
+        assert!(matches!(r.drag, Some(Drag::Bars { .. })));
+        r.drag((press.0, f64::from(body.y)), &input);
+        assert_eq!(r.notes[0].velocity, 127);
+        assert_eq!(r.notes[1].velocity, 64, "another bar stays");
+        let msgs = r
+            .release((press.0, f64::from(body.y)), true, &input)
+            .into_messages();
+        assert_eq!(msgs[0][0], OscType::String("notes".into()));
+        // a ramp from the empty lane before the second note to past the third
+        let from = (x(250.0), y_of_velocity(20.0));
+        assert!(matches!(r.press(from, &input), Claim::Take(_)));
+        assert!(matches!(r.drag, Some(Drag::Ramp { .. })));
+        let to = (x(650.0), y_of_velocity(120.0));
+        r.drag(to, &input);
+        let (second, third) = (r.notes[1].velocity, r.notes[2].velocity);
+        assert!(
+            second > 20 && second < third && third <= 120,
+            "{second} {third}"
+        );
+        assert_eq!(r.notes[0].velocity, 127, "outside the ramp");
+        assert_eq!(r.release(to, true, &input).into_messages().len(), 1);
+        // no curve is shown, so none is removed
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let mut keys = KeyInput {
+            mods: Mods::default(),
+            clipboard: &mut clipboard,
+            cursor: None,
+        };
+        let refused = r
+            .command("curve_remove", &mut keys)
+            .unwrap()
+            .into_messages();
+        assert_eq!(refused[0][0], OscType::String("refused".into()));
+        assert!(r.set("lane", &Value::from("9")));
+        let named = r
+            .command("curve_remove", &mut keys)
+            .unwrap()
+            .into_messages();
+        assert_eq!(named[0][1], OscType::String("9".into()));
     }
 
     /// **The ids name the new list whichever came first**: a sender whose map

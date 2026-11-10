@@ -1025,9 +1025,16 @@ impl CurveKind {
 }
 
 impl MidiSpec {
-    /// Whether a curve over a channel with this target can be said.
+    /// **Whether a curve over a channel with this target can be said.** Under
+    /// MPE a note's bend, pressure and timbre are said on the note's own
+    /// channel, so what is left to a channel is the master channel's
+    /// controllers.
     pub fn says_channel(&self, target: &Value) -> bool {
-        CurveKind::of(target) != CurveKind::Control
+        match (self, CurveKind::of(target)) {
+            (_, CurveKind::Control) => false,
+            (MidiSpec::Mpe { .. }, kind) => matches!(kind, CurveKind::Cc(_)),
+            _ => true,
+        }
     }
 
     /// Whether a curve over one note with this target can be said.

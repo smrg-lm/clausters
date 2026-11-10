@@ -490,6 +490,54 @@ export class NotesEditor extends SequenceHandler {
     }
 
     /**
+     * **The lane shown under the roll**, chosen by the tabs there:
+     * `"velocity"` for the notes' velocities, or a curve of the sequence by
+     * its id. The window's, like its zoom: setting it is no edit.
+     */
+    async lane(): Promise<string> {
+        return String((await this.coreCall("editing")).lane ?? "velocity");
+    }
+
+    /** Shows the lane `lane` under the roll: no edit. */
+    async setLane(lane: string): Promise<void> {
+        await this.setting({ lane: String(lane) });
+    }
+
+    /**
+     * **A curve of the channel of the first selected note** (the first
+     * channel with none selected): `"cc1"` the modulation wheel, `"cc11"` the
+     * expression, `"bend"` or `"pressure"` -- the window's `curve_cc1`,
+     * `curve_cc11`, `curve_bend` and `curve_pressure`, the Edit menu's
+     * Curves. One point at the parameter's resting value; refused, with why,
+     * where the sequence's format cannot say it (under MPE a channel says its
+     * controllers alone). Throws for another name.
+     */
+    addCurve(name: "cc1" | "cc11" | "bend" | "pressure"): boolean {
+        if (!["cc1", "cc11", "bend", "pressure"].includes(name)) {
+            throw new Error(`no channel curve ${JSON.stringify(name)}: cc1, cc11, bend or pressure`);
+        }
+        return this.verb(`curve_${name}`);
+    }
+
+    /**
+     * **A curve of each selected note** that has none of its kind: `"bend"`,
+     * `"pressure"` or `"timbre"` -- the window's `note_bend`, `note_pressure`
+     * and `note_timbre`. Refused, with why, where the sequence's format
+     * cannot say it of one note. Throws for another name.
+     */
+    addNoteCurve(name: "bend" | "pressure" | "timbre"): boolean {
+        if (!["bend", "pressure", "timbre"].includes(name)) {
+            throw new Error(`no note curve ${JSON.stringify(name)}: bend, pressure or timbre`);
+        }
+        return this.verb(`note_${name}`);
+    }
+
+    /** **The curve of the lane shown taken away** -- `curve_remove`; refused with the velocities shown. */
+    removeCurve(): boolean {
+        return this.verb("curve_remove");
+    }
+
+    /**
      * **What a note's tint tells apart in notation mode**: `"voice"`,
      * `"staff"` or `"part"` -- the first of each untinted. The window's, like
      * its zoom: setting it is no edit. The Notation menu has it as Color by

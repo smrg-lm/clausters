@@ -101,6 +101,14 @@ The verdict is one of three:
 | `notes` | `select_channel` | `NotesEditor.select_channel` | `NotesEditor.selectChannel` | **api** |
 | `notes` | `select_voice` | `NotesEditor.select_voice` | `NotesEditor.selectVoice` | **api** |
 | `notes` | `select_staff` | `NotesEditor.select_staff` | `NotesEditor.selectStaff` | **api** |
+| `notes` | `curve_cc1` | `NotesEditor.add_curve` | `NotesEditor.addCurve` | **api** — `add_curve("cc1")` |
+| `notes` | `curve_cc11` | `NotesEditor.add_curve` | `NotesEditor.addCurve` | **api** — `add_curve("cc11")` |
+| `notes` | `curve_bend` | `NotesEditor.add_curve` | `NotesEditor.addCurve` | **api** — `add_curve("bend")` |
+| `notes` | `curve_pressure` | `NotesEditor.add_curve` | `NotesEditor.addCurve` | **api** — `add_curve("pressure")` |
+| `notes` | `note_bend` | `NotesEditor.add_note_curve` | `NotesEditor.addNoteCurve` | **api** — `add_note_curve("bend")` |
+| `notes` | `note_pressure` | `NotesEditor.add_note_curve` | `NotesEditor.addNoteCurve` | **api** — `add_note_curve("pressure")` |
+| `notes` | `note_timbre` | `NotesEditor.add_note_curve` | `NotesEditor.addNoteCurve` | **api** — `add_note_curve("timbre")` |
+| `notes` | `curve_remove` | `NotesEditor.remove_curve` | `NotesEditor.removeCurve` | **api** |
 | `notes` | `midi_mode` | `NotesEditor.mode` `NotesEditor.to_midi` | `NotesEditor.mode` `NotesEditor.toMidi` | **api** — `mode = "midi"`; on the web `setMode("midi")` |
 | `notes` | `notation_mode` | `NotesEditor.mode` `NotesEditor.to_notation` | `NotesEditor.mode` `NotesEditor.toNotation` | **api** — `mode = "notation"`, which converts a sequence written as no notation first (the key and the menu ask how in the window's dialog); `to_notation(meter=, division=, writing=, copy=)` says how |
 | `notes` | `show_system` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = "system"`; on the web `setScope("system")` |

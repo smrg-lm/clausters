@@ -1128,3 +1128,43 @@ fn a_page_s_marks_are_drawn_with_the_engraver_s_symbols() {
     e.event(&window_verb("notation_mode"), 4);
     assert_eq!(*asked.lock().unwrap(), 1, "asked once");
 }
+
+/// **The lanes are chosen by the tabs under the roll**: the velocities
+/// first, then each curve of the sequence; a curve added from the roll is
+/// one entry and a tab more, and a tab chosen shows its lane in the roll,
+/// recording nothing.
+#[test]
+fn the_lanes_are_chosen_by_their_tabs_and_a_curve_added_is_one_entry() {
+    let sequence = shared();
+    let mut e = new_json(sequence.clone(), r#"{"rate": 100.0, "version": 1}"#);
+    let window: Value = serde_json::from_str(&call_json(
+        &mut e,
+        r#"{"verb": "window", "widget": 40, "dialogs": {"lanes": 41}}"#,
+    ))
+    .unwrap();
+    call_json(&mut e, r#"{"verb": "sync", "window": 39}"#);
+    let tabs = window["children"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == 41)
+        .expect("the tabs");
+    assert_eq!(tabs["view"], "tabs");
+    assert_eq!(tabs["options"], json!(["velocity"]));
+    let out = e.event(&gesture("curve_cc1", vec![]), 1);
+    assert!(out.record.is_some(), "one entry");
+    let curve = sequence.lock().unwrap().automation[0].id.0;
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(
+        told.contains("\"options\":[\"velocity\",\"CC 1 ch 1\"]"),
+        "{told}"
+    );
+    let chosen = Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(41), json!(1), json!(0), json!(1)],
+    };
+    let out = e.event(&chosen, 2);
+    assert!(out.record.is_none());
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains(&format!("\"lane\":\"{curve}\"")), "{told}");
+}

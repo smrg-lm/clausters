@@ -84,6 +84,12 @@ same way: drag one to move it, Ctrl+click one to remove it. A marker is matched
 by its **label**, the address it sends, so the message survives the drag. Adding
 one *there* is refused and says why: the lane has no way to type an address.
 
+**The lanes under the roll are shown one at a time**, chosen by the tabs
+there: the notes' velocities -- a bar at each note's start, dragged alone or
+with the selection, and a drag across the lane a ramp, one Ctrl+Z -- or a curve
+of the sequence with its value ruler. The Edit menu's Curves adds a channel's
+curve or a note's, among those the sequence's MIDI format allows.
+
 **Curves are drawn and edited like a multitrack's automation, and heard.** The
 row under the grid, *level*, is the sequence's automation -- a curve over the
 first channel driving every note's `amp`, a crescendo -- and the first note
@@ -307,6 +313,23 @@ def line():
 
 
 # %% [markdown]
+# ## Curves added from the script
+#
+# A pressure of the first note's own, and an expression curve on its channel:
+# each one entry, with one point at the parameter's resting value for a hand to
+# draw on. The expression is a lane of its own -- its tab under the roll shows
+# it. An edit leaves nothing selected, so the channel's curve, asked for second,
+# is the first channel's, which is the note's.
+
+# %%
+def curves():
+    """A pressure on the first note, and an expression curve on its channel."""
+    editor.select([first])
+    editor.add_note_curve("pressure")
+    editor.add_curve("cc11")
+
+
+# %% [markdown]
 # ## A curve given to its notes
 #
 # The level curve is the channel's: each note hears it from its on to its off.
@@ -371,5 +394,5 @@ else:
     print("up -- play() to hear it, page() for the notes on a page, "
           "notation() for them as notation, rework() to split and transpose, "
           "legato() to join two notes and line() to read the pitch they sound, "
-          "phrase() to mark a phrase as a page does, "
+          "phrase() to mark a phrase as a page does, curves() to add two curves, "
           "read_back() to see what survived the edit")

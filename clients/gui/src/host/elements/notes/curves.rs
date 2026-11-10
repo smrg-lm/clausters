@@ -56,6 +56,23 @@ pub(super) struct Layer {
 /// with many rows still has a plane.
 const MAX_ROWS_SHARE: f32 = 0.5;
 
+/// **The share of a roll one lane takes** when its owner shows one at a time
+/// (`lane`): room for a value ruler beside it and a hand to draw in it.
+const LANE_SHARE: f32 = 0.28;
+
+/// The lane of the notes' velocities, by its name.
+pub(super) const VELOCITY: &str = "velocity";
+
+/// How wide a velocity bar is drawn, in pixels.
+const BAR_W: f32 = 3.0;
+
+/// The velocity the height `y` is in the lane `body`: its bottom 1, its top
+/// 127.
+fn velocity_at(y: f64, body: Rect) -> i32 {
+    let frac = 1.0 - (y - f64::from(body.y)) / f64::from(body.h.max(1.0));
+    (frac * 127.0).round().clamp(1.0, 127.0) as i32
+}
+
 pub(super) fn parse_rows(props: &Map<String, Value>) -> Vec<Row> {
     let Some(Value::Array(items)) = props.get("curves") else {
         return Vec::new();
@@ -145,9 +162,56 @@ impl Notes {
     ///
     /// A row's height is logical, as the wire states it, and `height` is in
     /// device pixels, so the rows are resolved at the window's scale first.
+    ///
+    /// **A roll whose owner shows one lane at a time** (`lane`) gives the lane
+    /// shown a share of its height, a row's or the velocities', and none
+    /// when nothing is shown.
     pub(super) fn rows_h(&self, height: f32, m: &Metrics) -> f32 {
+        if let Some(lane) = &self.lane {
+            let shown = lane == VELOCITY || self.rows.iter().any(|r| &r.name == lane);
+            return if shown {
+                (height * LANE_SHARE).max(0.0)
+            } else {
+                0.0
+            };
+        }
         let want: f32 = self.rows.iter().map(|r| r.height).sum::<f32>() * m.ui_scale;
         want.min(height * MAX_ROWS_SHARE).max(0.0)
+    }
+
+    /// **The rows drawn**: every one, or the lane shown where the owner shows
+    /// one at a time.
+    pub(super) fn shown_rows(&self) -> Vec<&Row> {
+        match &self.lane {
+            None => self.rows.iter().collect(),
+            Some(lane) => self.rows.iter().filter(|r| &r.name == lane).collect(),
+        }
+    }
+
+    /// **The velocities' lane**, label cell and body, when it is the lane
+    /// shown.
+    pub(super) fn velocity_rects(
+        &self,
+        rect: Rect,
+        indent: f32,
+        m: &Metrics,
+    ) -> Option<(Rect, Rect)> {
+        if self.lane.as_deref() != Some(VELOCITY) {
+            return None;
+        }
+        let full = pianoroll::regions(
+            rect,
+            self.editor.ruler != Ruler::Off,
+            self.osc_markers,
+            indent,
+            m,
+        );
+        let room = self.rows_h(full.grid.h, m);
+        let y = full.grid.y + full.grid.h - room;
+        Some((
+            Rect::new(full.keyboard.x, y, full.keyboard.w, room),
+            Rect::new(full.grid.x, y, full.grid.w, room),
+        ))
     }
 
     /// Each row's label cell (in the keyboard's column) and body, top to
@@ -161,11 +225,12 @@ impl Notes {
             m,
         );
         let room = self.rows_h(full.grid.h, m);
-        let total: f32 = self.rows.iter().map(|r| r.height).sum();
+        let shown = self.shown_rows();
+        let total: f32 = shown.iter().map(|r| r.height).sum();
         let scale = if total > 0.0 { room / total } else { 0.0 };
         let mut y = full.grid.y + full.grid.h - room;
-        self.rows
-            .iter()
+        shown
+            .into_iter()
             .map(|row| {
                 let h = row.height * scale;
                 let label = Rect::new(full.keyboard.x, y, full.keyboard.w, h);
@@ -191,7 +256,11 @@ impl Notes {
         let span = self.span().max(nav.start + nav.len);
         let active = |name: &str| self.layer.as_deref() == Some(name);
         let mut out = Vec::new();
-        for (row, (_, body)) in self.rows.iter().zip(self.row_rects(rect, indent, m)) {
+        for (row, (_, body)) in self
+            .shown_rows()
+            .into_iter()
+            .zip(self.row_rects(rect, indent, m))
+        {
             if body.w > 0.0 && body.h > 0.0 {
                 let mut space = TimeSpace::of(nav, span);
                 space.active = active(&row.name);
@@ -245,23 +314,31 @@ impl Notes {
     /// drawn last of the contents, being the one thing a hand edits on top of
     /// what it shapes.
     pub(super) fn draw_curves(&self, d: &mut Draw, ctx: &Ctx) {
+        let one = self.lane.is_some();
         for (row, (label, body)) in
-            self.rows
-                .iter()
+            self.shown_rows()
+                .into_iter()
                 .zip(self.row_rects(ctx.rect, ctx.indent, ctx.metrics))
         {
             let (mesh, m, theme) = d.parts();
             mesh.rect(body, theme.osc_markers);
             mesh.rect(Rect::new(body.x, body.y, body.w, 1.0), theme.frame);
-            font::text(
-                mesh,
-                &row.label,
-                label.x + m.pad,
-                label.y + 2.0,
-                m.caption_scale,
-                theme.ruler_text,
-            );
+            if one {
+                // **one lane at a time is named by its tab**: its cell holds
+                // its value ruler
+                value_ruler(mesh, m, theme, label, row.min, row.max);
+            } else {
+                font::text(
+                    mesh,
+                    &row.label,
+                    label.x + m.pad,
+                    label.y + 2.0,
+                    m.caption_scale,
+                    theme.ruler_text,
+                );
+            }
         }
+        self.draw_velocities(d, ctx);
         for (name, rect, space) in
             self.curves_on_screen(ctx.rect, ctx.indent, ctx.metrics, ctx.time)
         {
@@ -286,10 +363,17 @@ impl Notes {
     ) -> Option<String> {
         // A row's label cell is too narrow for its label: over it, the whole
         // one is read.
-        for (row, (label, _)) in self.rows.iter().zip(self.row_rects(rect, indent, m)) {
+        for (row, (label, _)) in self
+            .shown_rows()
+            .into_iter()
+            .zip(self.row_rects(rect, indent, m))
+        {
             if label.contains(at.0, at.1) {
                 return Some(row.label.clone());
             }
+        }
+        if let Some(reading) = self.velocity_readout(at, rect, indent, m, time) {
+            return Some(reading);
         }
         let drawn = self.curves_on_screen(rect, indent, m, time);
         let active = drawn
@@ -325,6 +409,185 @@ impl Notes {
         None
     }
 
+    /// The notes the velocity lane shows: every one, but in notation mode
+    /// only the voice edited.
+    fn velocity_shown(&self) -> Vec<usize> {
+        (0..self.notes.len())
+            .filter(|i| !self.written.dimmed(*i))
+            .collect()
+    }
+
+    /// Where note `i`'s bar stands in the lane `body`, and how tall it is.
+    fn bar_of(&self, i: usize, body: Rect, nav: &View) -> Option<Rect> {
+        let note = self.notes.get(i)?;
+        let x = pianoroll::to_x(note.start, nav, body) as f32;
+        if x < body.x - 1.0 || x > body.x + body.w + 1.0 {
+            return None;
+        }
+        let h = body.h * (note.velocity.clamp(0, 127) as f32 / 127.0);
+        Some(Rect::new(x - BAR_W * 0.5, body.y + body.h - h, BAR_W, h))
+    }
+
+    /// **The velocity lane**: a bar at each note's start, as tall as its
+    /// velocity, the selected ones in the selection's ink, and its value
+    /// ruler in the cell beside it.
+    pub(super) fn draw_velocities(&self, d: &mut Draw, ctx: &Ctx) {
+        let Some((cell, body)) = self.velocity_rects(ctx.rect, ctx.indent, ctx.metrics) else {
+            return;
+        };
+        let nav = self.view(ctx.time);
+        let (mesh, m, theme) = d.parts();
+        mesh.rect(body, theme.osc_markers);
+        mesh.rect(Rect::new(body.x, body.y, body.w, 1.0), theme.frame);
+        value_ruler(mesh, m, theme, cell, 0.0, 127.0);
+        for i in self.velocity_shown() {
+            let Some(bar) = self.bar_of(i, body, &nav) else {
+                continue;
+            };
+            let ink = if self.selected.contains(&i) {
+                theme.cursor
+            } else {
+                theme.note_edge
+            };
+            mesh.rect(bar, ink);
+            mesh.rect(Rect::new(bar.x - 1.0, bar.y, BAR_W + 2.0, 1.0), ink);
+        }
+    }
+
+    /// What the hover reads over the velocity lane: the velocity of the bar
+    /// under the pointer, or the value the pointer is at.
+    pub(super) fn velocity_readout(
+        &self,
+        at: (f64, f64),
+        rect: Rect,
+        indent: f32,
+        m: &Metrics,
+        time: Option<TimeSpace>,
+    ) -> Option<String> {
+        let (_, body) = self.velocity_rects(rect, indent, m)?;
+        if !body.contains(at.0, at.1) {
+            return None;
+        }
+        let nav = self.view(time);
+        if let Some(i) = self.bar_under(at, body, &nav, m) {
+            return Some(format!("velocity  {}", self.notes[i].velocity));
+        }
+        Some(format!("velocity  {}", velocity_at(at.1, body)))
+    }
+
+    /// The note whose bar is under `at`, the nearest one.
+    fn bar_under(&self, at: (f64, f64), body: Rect, nav: &View, m: &Metrics) -> Option<usize> {
+        let reach = f64::from(BAR_W * 0.5 + m.hit_slop);
+        self.velocity_shown()
+            .into_iter()
+            .filter_map(|i| {
+                let x = pianoroll::to_x(self.notes[i].start, nav, body);
+                let off = (x - at.0).abs();
+                (off <= reach).then_some((i, off))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i)
+    }
+
+    /// **A press in the velocity lane**: on a bar it takes that note's
+    /// velocity, or the selection's when the note is selected; anywhere else
+    /// it starts a ramp.
+    pub(super) fn press_velocity(&mut self, at: (f64, f64), input: &Input) -> Option<Claim> {
+        let (_, body) = self.velocity_rects(input.rect, input.indent, input.metrics)?;
+        if !body.contains(at.0, at.1) {
+            return None;
+        }
+        if !self.editable {
+            return Some(Claim::take());
+        }
+        let nav = self.view(input.time);
+        let orig_of = |notes: &[Note], which: &[usize]| -> Vec<(usize, i32)> {
+            which
+                .iter()
+                .filter_map(|&i| notes.get(i).map(|n| (i, n.velocity)))
+                .collect()
+        };
+        self.drag = Some(match self.bar_under(at, body, &nav, input.metrics) {
+            Some(i) => {
+                let which = if self.selected.contains(&i) {
+                    self.selected.clone()
+                } else {
+                    vec![i]
+                };
+                // the bar goes to where it was pressed, and the rest with it
+                let to = velocity_at(at.1, body);
+                let orig = orig_of(&self.notes, &which);
+                let lead = self.notes[i].velocity;
+                for (j, v) in &orig {
+                    self.notes[*j].velocity = (v + to - lead).clamp(1, 127);
+                }
+                Drag::Bars {
+                    press_y: at.1,
+                    orig: orig
+                        .into_iter()
+                        .map(|(j, v)| (j, (v + to - lead).clamp(1, 127)))
+                        .collect(),
+                }
+            }
+            None => Drag::Ramp {
+                from: at,
+                orig: orig_of(&self.notes, &self.velocity_shown()),
+            },
+        });
+        Some(Claim::take())
+    }
+
+    /// The bars in hand, moved by the height the pointer travelled.
+    pub(super) fn drag_bars(
+        &mut self,
+        press_y: f64,
+        orig: &[(usize, i32)],
+        at: (f64, f64),
+        input: &Input,
+    ) {
+        let Some((_, body)) = self.velocity_rects(input.rect, input.indent, input.metrics) else {
+            return;
+        };
+        let dv = ((press_y - at.1) / f64::from(body.h.max(1.0)) * 127.0).round() as i32;
+        for (i, v) in orig {
+            if let Some(n) = self.notes.get_mut(*i) {
+                n.velocity = (v + dv).clamp(1, 127);
+            }
+        }
+    }
+
+    /// The ramp drawn so far: the notes that start between the press and the
+    /// pointer on its line, every other note at what it had.
+    pub(super) fn drag_ramp(
+        &mut self,
+        from: (f64, f64),
+        orig: &[(usize, i32)],
+        at: (f64, f64),
+        input: &Input,
+    ) {
+        let Some((_, body)) = self.velocity_rects(input.rect, input.indent, input.metrics) else {
+            return;
+        };
+        let nav = self.view(input.time);
+        let (x0, x1) = (from.0.min(at.0), from.0.max(at.0));
+        let (v0, v1) = (velocity_at(from.1, body), velocity_at(at.1, body));
+        for (i, v) in orig {
+            let x = pianoroll::to_x(self.notes[*i].start, &nav, body);
+            let along = if (at.0 - from.0).abs() < 1e-9 {
+                0.0
+            } else {
+                (x - from.0) / (at.0 - from.0)
+            };
+            self.notes[*i].velocity = if x >= x0 && x <= x1 {
+                (f64::from(v0) + (f64::from(v1) - f64::from(v0)) * along)
+                    .round()
+                    .clamp(1.0, 127.0) as i32
+            } else {
+                *v
+            };
+        }
+    }
+
     fn on_curve<'a>(input: &Input<'a>, rect: Rect, space: TimeSpace) -> Input<'a> {
         Input {
             rect,
@@ -343,7 +606,7 @@ impl Notes {
             return None;
         }
         let drawn = self.curves_on_screen(input.rect, input.indent, input.metrics, input.time);
-        let rows = self.rows.len();
+        let rows = self.shown_rows().len();
         let wants = |i: usize, name: &str, rect: Rect, space: TimeSpace| {
             if !rect.contains(at.0, at.1) {
                 return false;
@@ -470,5 +733,38 @@ impl Notes {
             }
         }
         args
+    }
+}
+
+/// **A lane's value ruler**, in its label cell: the top of its range at the
+/// top and the bottom at the bottom.
+pub(super) fn value_ruler(
+    mesh: &mut crate::host::paint::Mesh,
+    m: &Metrics,
+    theme: &crate::host::theme::Theme,
+    cell: Rect,
+    min: f64,
+    max: f64,
+) {
+    let scale = m.caption_scale;
+    let say = |v: f64| crate::host::graphics::bpf::readout_value(v, min, max);
+    font::text(
+        mesh,
+        &say(max),
+        cell.x + m.pad,
+        cell.y + 2.0,
+        scale,
+        theme.ruler_text,
+    );
+    let low = cell.y + cell.h - font::line_advance(scale) - 2.0;
+    if low > cell.y + font::line_advance(scale) {
+        font::text(
+            mesh,
+            &say(min),
+            cell.x + m.pad,
+            low,
+            scale,
+            theme.ruler_text,
+        );
     }
 }

@@ -111,6 +111,13 @@ its <b>label</b>, the address it sends, so the message survives the drag. Adding
 one <i>there</i> is refused and says why: the lane has no way to type an
 address.
 
+<b>The lanes under the roll are shown one at a time</b>, chosen by the tabs
+there: the notes' velocities -- a bar at each note's start, dragged alone or
+with the selection, and a drag across the lane a ramp, one Ctrl+Z -- or a curve
+of the sequence with its value ruler. The Edit menu's Curves adds a channel's
+curve or a note's, among those the sequence's MIDI format allows;
+<b>curves</b> adds two from the script.
+
 <b>Curves are drawn and edited like a multitrack's automation, and heard.</b>
 The row under the grid, <i>level</i>, is the sequence's automation -- a curve over
 the first channel driving every note's <code>amp</code>, a crescendo -- and
@@ -162,6 +169,7 @@ leaves every other note its own.</div>
       <button id="rework" disabled>rework</button>
       <button id="legato" disabled>legato</button>
       <button id="line" disabled>line</button>
+      <button id="curves" disabled>curves</button>
       <button id="own" disabled>give the level to the notes</button>
       <button id="gather" disabled>gather it back</button>
       <button id="read" disabled>what the roll never drew</button>
@@ -355,6 +363,19 @@ leaves every other note its own.</div>
             const [from, to] = [run.points[0][1], run.points[run.points.length - 1][1]];
             log(`notes at [${beats.join(", ")}]: ${run.points.length} points, from ${from.toFixed(2)} to ${to.toFixed(2)}`);
           }
+        };
+
+        // Curves added from the script: a pressure of the first note's own,
+        // and an expression curve on its channel -- each one entry, with one
+        // point at the parameter's resting value for a hand to draw on. The
+        // expression is a lane of its own -- its tab under the roll shows it.
+        // An edit leaves nothing selected, so the channel's curve, asked for
+        // second, is the first channel's, which is the note's.
+        $("curves").disabled = false;
+        $("curves").onclick = async () => {
+          await editor.select([first]);
+          editor.addNoteCurve("pressure");
+          editor.addCurve("cc11");
         };
 
         // A curve given to its notes: the level curve is the channel's, and each

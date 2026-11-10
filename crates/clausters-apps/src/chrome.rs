@@ -191,6 +191,23 @@ pub fn menu(app: App, saves: bool) -> Value {
         );
     }
     if app == App::Notes {
+        // the curves the sequence's format allows, a channel's and a note's
+        edit.push(sep());
+        edit.push(sub(
+            "Curves",
+            [
+                "curve_cc1",
+                "curve_cc11",
+                "curve_bend",
+                "curve_pressure",
+                "note_bend",
+                "note_pressure",
+                "note_timbre",
+                "curve_remove",
+            ]
+            .map(|v| entry(app, v))
+            .to_vec(),
+        ));
         // how a gesture edits a line: the window's, like the snap switch
         edit.extend([sep(), entry(app, "monophonic")]);
     }

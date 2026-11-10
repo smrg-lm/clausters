@@ -2487,7 +2487,7 @@ opened it.
   notes is one undo; a row chosen in the list selects its note in the roll
   and the roll's selection chooses its rows.
 
-- ⬜ **X39 - The roll's lanes.** The curves that stand apart from the notes
+- ✅ **X39 - The roll's lanes.** *(Done 2026-11-10: the roll's `lane`, one lane shown at a time with its value ruler, chosen by a `choice` in its `tabs` view the notes editor composes under the roll (`LANES`); the velocities a lane of bars again, dragged alone or as the selection and drawn as a ramp, the voice edited alone in notation mode; `clausters_editing::notes::lanes`, the curve verbs (`curve_cc1`, `curve_cc11`, `curve_bend`, `curve_pressure`, `note_bend`, `note_pressure`, `note_timbre`, `curve_remove`), the document refusing what the format cannot say -- under MPE a channel now says its controllers alone; both clients' `lane`, `add_curve`, `add_note_curve`, `remove_curve`. Showing one channel's velocities in MIDI mode is not done: the roll chooses no channel yet.)* The curves that stand apart from the notes
   (a channel's, the spanners) as the stack of a tab view whose tabs are
   their labels, one lane shown at a time with its value ruler, the height a
   lane needs in place of the fixed `CURVE_H`. Velocity in a lane of bars

@@ -274,12 +274,9 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`X39` -- the roll's lanes** *(`crates/clausters-apps/PLAN.md`)*,
-  which edit and show through the verbs `X37` defined and beside the panel
-  `X38` made.
-  What is left of the Found by use entry "The roll's two modes are not yet
-  an editor a hand can trust" is its item 11, a pass over the rest of the
-  application, which comes after them.
+- ⬜ **Item 11 of "The roll's two modes are not yet an editor a hand can
+  trust"** *(`crates/clausters-apps/PLAN.md`, Found by use)*: a pass over
+  the rest of the application, now that `X37`-`X42` are done.
 
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,

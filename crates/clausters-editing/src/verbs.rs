@@ -343,6 +343,15 @@ pub const NOTES: &[Verb] = &[
     verb("select_channel", &[], "Select by channel"),
     verb("select_voice", &[], "Select by voice"),
     verb("select_staff", &[], "Select by staff"),
+    // the curves the sequence's format allows, added and taken away
+    verb("curve_cc1", &[], "Add a modulation curve"),
+    verb("curve_cc11", &[], "Add an expression curve"),
+    verb("curve_bend", &[], "Add a channel's bend"),
+    verb("curve_pressure", &[], "Add a channel's pressure"),
+    verb("note_bend", &[], "Add a bend to the notes"),
+    verb("note_pressure", &[], "Add a pressure to the notes"),
+    verb("note_timbre", &[], "Add a timbre to the notes"),
+    verb("curve_remove", &[], "Remove the curve shown"),
     // the roll's two modes: the events as MIDI says them, or a view of the
     // page they are written as
     choice("mode", "midi_mode", &[], "MIDI mode"),

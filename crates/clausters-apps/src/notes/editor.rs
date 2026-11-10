@@ -172,11 +172,19 @@ pub struct NotesEditor {
     panel: bool,
     /// The notes the roll last said the hand marked, by id.
     marked: Vec<u64>,
+    /// **The lane shown under the roll**, by name -- the velocities, or a
+    /// curve of the sequence by its id: chosen in the tabs under the roll,
+    /// the window's own.
+    lane: String,
     /// **The symbols the roll draws a page's marks with**, asked of the
     /// engraver the application handed in when the roll first enters
     /// notation ([`super::Symbols`]).
     symbols: super::Symbols,
 }
+
+/// **The tabs that choose the lane shown under the roll**, by the name the
+/// caller numbers them with.
+pub const LANES: &str = "lanes";
 
 /// **The panel's switch**, as the window asks for it: the View menu's
 /// entry, or a client's `verb("events_panel")`.
@@ -269,6 +277,7 @@ impl NotesEditor {
             dialogs: dialogs::Dialogs::default(),
             panel: false,
             marked: Vec::new(),
+            lane: "velocity".into(),
             symbols: super::Symbols::default(),
         }
     }
@@ -596,7 +605,19 @@ impl NotesEditor {
         if self.midi_in {
             drawn.insert("midi_in".into(), json!(1));
         }
+        let tabs = self.lane_tabs();
+        if tabs.is_some() {
+            drawn.insert("lane".into(), json!(self.lane_shown()));
+        }
         let mut window = window(drawn, widget, &self.title, self.size);
+        if let (Some(tabs), Some(children)) = (
+            tabs,
+            window.get_mut("children").and_then(Value::as_array_mut),
+        ) {
+            // **the lane's tabs are under the roll**, and the roll shows the
+            // one they choose
+            children.push(tabs);
+        }
         if !self.bare {
             use crate::chrome::{self, App};
             chrome::dress(
@@ -615,6 +636,71 @@ impl NotesEditor {
             }
         }
         window
+    }
+
+    /// **The lane shown**: the one chosen, or the velocities where the curve
+    /// chosen is gone.
+    fn lane_shown(&self) -> String {
+        let lanes = roll::lanes(&self.held());
+        if lanes.iter().any(|(name, _)| *name == self.lane) {
+            self.lane.clone()
+        } else {
+            "velocity".into()
+        }
+    }
+
+    /// **The tabs under the roll**, one per lane, the one shown chosen; none
+    /// where the window did not number them.
+    fn lane_tabs(&self) -> Option<Value> {
+        let id = *self.dialogs.ids.get(LANES)?;
+        Some(json!({
+            "type": "choice",
+            "id": id,
+            "view": "tabs",
+            "h": 24,
+            "options": self.lane_options().0,
+            "index": self.lane_options().1,
+        }))
+    }
+
+    /// The tabs' labels, and which is shown.
+    fn lane_options(&self) -> (Vec<String>, usize) {
+        let lanes = roll::lanes(&self.held());
+        let shown = self.lane_shown();
+        let index = lanes.iter().position(|(n, _)| *n == shown).unwrap_or(0);
+        (lanes.into_iter().map(|(_, label)| label).collect(), index)
+    }
+
+    /// What the tabs are corrected with: their labels and the one shown.
+    fn lane_corrections(&self) -> Vec<Correction> {
+        let Some(id) = self.dialogs.ids.get(LANES) else {
+            return Vec::new();
+        };
+        let (options, index) = self.lane_options();
+        vec![Correction {
+            widget: i64::from(*id),
+            props: json!({ "options": options, "index": index }),
+        }]
+    }
+
+    /// **A tab chosen** (the choice says its index): the lane it names
+    /// shown, recorded nowhere.
+    fn lane_said(&mut self, tag: &str, values: &[Value]) -> (Option<String>, Vec<Correction>) {
+        // a choice says the index it was set to, alone
+        let Some(index) = tag
+            .parse::<f64>()
+            .ok()
+            .or_else(|| values.first().and_then(Value::as_f64))
+        else {
+            return (None, Vec::new());
+        };
+        let index = index.max(0.0) as usize;
+        let lanes = roll::lanes(&self.held());
+        if let Some((name, _)) = lanes.into_iter().nth(index) {
+            self.lane = name;
+        }
+        let roll = self.widget.map_or(0, i64::from);
+        (None, self.resync_widget(roll))
     }
 
     /// **The panel beside the roll**, when it is shown and the window
@@ -748,10 +834,14 @@ impl NotesEditor {
         props.insert("grid_snap".into(), json!(self.snap));
         // the panel reads the sequence again
         drop(held);
+        if self.dialogs.ids.contains_key(LANES) {
+            props.insert("lane".into(), json!(self.lane_shown()));
+        }
         let mut corrections = vec![Correction {
             widget,
             props: Value::Object(props),
         }];
+        corrections.extend(self.lane_corrections());
         corrections.extend(self.panel_corrections());
         corrections
     }
@@ -868,6 +958,7 @@ impl NotesEditor {
                 | "octave_up"
                 | "octave_down"
         ) && !clausters_editing::notes::notation::ARTICULATIONS.contains(&tag)
+            && !clausters_editing::notes::lanes::CURVE_VERBS.contains(&tag)
         {
             return (None, Vec::new());
         }
@@ -951,6 +1042,9 @@ impl Converse for NotesEditor {
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         if let Some(name) = self.dialogs.name(widget).map(str::to_string) {
+            if name == LANES {
+                return self.lane_said(tag, values);
+            }
             if panel::names().contains(&name) {
                 return self.panel_said(&name, tag, values, out);
             }
@@ -1113,6 +1207,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             // that is none of them numbers nothing
             let mut names = dialogs::names();
             names.extend(panel::names());
+            names.push(LANES.into());
             editor.dialogs.ids = request
                 .get("dialogs")
                 .and_then(Value::as_object)
@@ -1130,6 +1225,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
         "dialogs" => {
             let mut names = dialogs::names();
             names.extend(panel::names());
+            names.push(LANES.into());
             json!({ "dialogs": names }).to_string()
         }
         "props" => match editor.resync_widget(i64::from(widget)).into_iter().next() {
@@ -1170,6 +1266,9 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             {
                 editor.editing.voice = voice;
             }
+            if let Some(lane) = request.get("lane").and_then(Value::as_str) {
+                editor.lane = lane.into();
+            }
             if let Some(color_by) = request
                 .get("color_by")
                 .and_then(|c| serde_json::from_value::<ColorBy>(c.clone()).ok())
@@ -1201,6 +1300,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             let mut said = json!(editor.editing);
             said["written"] = json!(editor.held().written_as_notation());
             said["panel"] = json!(editor.panel);
+            said["lane"] = json!(editor.lane_shown());
             said.to_string()
         }
         "span" => {
