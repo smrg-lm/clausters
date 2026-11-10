@@ -663,6 +663,9 @@ pub fn intake(
             "split",
         );
     }
+    if TRANSPOSITIONS.contains(&tag) {
+        return transpose(sequence, tag, values, domain, editing);
+    }
     if editing.mode == Mode::Notation {
         return notation_intake(sequence, tag, values, axis, domain, editing);
     }
@@ -697,6 +700,93 @@ pub fn intake(
     };
     let intent = EventsIntent::SetEvents { events };
     Intake::edit(serde_json::to_value(&intent).unwrap_or(Value::Null), label)
+}
+
+/// **The roll's transpositions**, over the selected notes or, with none
+/// selected, every note the roll would take: up or down a semitone in MIDI
+/// mode and a step of the key in notation mode, and an octave in both.
+pub const TRANSPOSITIONS: &[&str] = &["step_up", "step_down", "octave_up", "octave_down"];
+
+/// **A transposition** (see [`TRANSPOSITIONS`]): `values` are the ids of the
+/// notes, none for every note drawn -- in notation mode, of the voice
+/// edited. A semitone or an octave moves what a note sounds, and its written
+/// `pitches` follow by its family's coherence; a step of the key moves what
+/// it is written as, to the next letter with the sign the key writes on it
+/// (`clausters_core::event::notation::stepped_in`), and what it sounds
+/// follows. One edit.
+fn transpose(
+    sequence: &EventSequence,
+    tag: &str,
+    values: &[Value],
+    domain: &YDomain,
+    editing: &Editing,
+) -> Intake {
+    use clausters_core::event::notation::{fifths_of, spell_in, stepped_in};
+
+    let ids: Vec<u64> = values.iter().map(|v| number(v).max(0.0) as u64).collect();
+    let sign = if tag.ends_with("_up") { 1 } else { -1 };
+    let octave = tag.starts_with("octave");
+    let written = editing.mode == Mode::Notation;
+    let key = clausters_document::events::reading::Transcription::of(sequence)
+        .key
+        .or_else(|| {
+            sequence
+                .notation
+                .as_ref()
+                .and_then(|n| n.get("key"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| "C".into());
+    let fifths = fifths_of(&key);
+    let mut moved = false;
+    let events: Vec<Event> = sequence
+        .events
+        .iter()
+        .map(|event| {
+            let mut keys = event.keys();
+            let taken = if ids.is_empty() {
+                domain.value(&keys).is_some()
+                    && label_of(&event.data.0).is_none()
+                    && editing.shows(sequence, &keys)
+                    && (!written || staff_voice(&keys) == editing.voice)
+            } else {
+                ids.contains(&event.id) && Type::of(&keys) == Type::Note
+            };
+            if !taken {
+                return event.clone();
+            }
+            let midi = render::pitch_of(&keys).midinote(&render::scale_of(&keys));
+            if octave || !written {
+                let by = if octave { 12.0 } else { 1.0 };
+                render::set_key(
+                    &mut keys,
+                    "midinote",
+                    json!(midi.round() + sign as f64 * by),
+                );
+            } else {
+                let pitches = keys.get("pitches").cloned().unwrap_or_else(|| {
+                    let (step, alter, octave) = spell_in(midi.round() as i32, fifths);
+                    let letter = ["c", "d", "e", "f", "g", "a", "b"][step];
+                    json!([{"step": letter, "alter": alter, "octave": octave}])
+                });
+                render::set_key(&mut keys, "pitches", stepped_in(&pitches, sign, fifths));
+            }
+            moved = true;
+            Event {
+                data: Opaque(Value::Object(keys)),
+                ..event.clone()
+            }
+        })
+        .collect();
+    if !moved {
+        return Intake::refused("there is no note to transpose");
+    }
+    let intent = EventsIntent::SetEvents { events };
+    Intake::edit(
+        serde_json::to_value(&intent).unwrap_or(Value::Null),
+        "transpose",
+    )
 }
 
 /// **A gesture of the roll in notation mode**, read by the rules of notation

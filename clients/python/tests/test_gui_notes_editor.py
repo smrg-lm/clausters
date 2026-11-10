@@ -134,6 +134,13 @@ def test_a_verb_is_asked_of_the_window_and_its_actions_read(gui_host):
     assert editor.actions["undo"]["enabled"] is True, "and the join is an entry"
     assert editor.select_all() and editor.unjoin()
     assert take.events[1].get("joins") is None
+    # a transposition with the selection kept: both notes, one entry each
+    assert editor.select_all() and editor.step_up()
+    assert [e["midinote"] for e in take.events] == [61.0, 65.0]
+    assert editor.octave_down()
+    assert [e["midinote"] for e in take.events] == [49.0, 53.0]
+    assert editor.undo() and editor.undo()
+    assert [e["midinote"] for e in take.events] == [60.0, 64.0]
     editor.close()
     assert editor.verb("view_all") is False, "no window, no verb"
 

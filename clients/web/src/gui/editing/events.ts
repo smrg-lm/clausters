@@ -277,6 +277,34 @@ export class NotesEditor extends SequenceHandler {
         return this.verb("unjoin");
     }
 
+    /**
+     * Move what is selected up -- every note the roll takes when nothing is:
+     * a semitone in MIDI mode, a step of the key in notation mode, the letter
+     * after with the sign the key writes on it. The window's `step_up` (Up);
+     * one entry of the history.
+     */
+    stepUp(): boolean {
+        return this.verb("step_up");
+    }
+
+    /** Move what is selected down, as {@link stepUp} moves it up: the window's `step_down` (Down). */
+    stepDown(): boolean {
+        return this.verb("step_down");
+    }
+
+    /**
+     * Move what is selected up an octave, every note the roll takes when
+     * nothing is, its letters kept: the window's `octave_up` (Ctrl+Up).
+     */
+    octaveUp(): boolean {
+        return this.verb("octave_up");
+    }
+
+    /** Move what is selected down an octave: the window's `octave_down` (Ctrl+Down). */
+    octaveDown(): boolean {
+        return this.verb("octave_down");
+    }
+
     /** Quantize what is selected to the grid: the window's `quantize`. */
     quantize(): boolean {
         return this.verb("quantize");

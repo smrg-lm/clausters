@@ -59,9 +59,10 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use clausters_core::envshape::{SHAPE_HOLD, SHAPE_LINEAR, SHAPE_STEP};
+use clausters_core::event::notation::{fifths_of, key_of, spell_in};
 use clausters_core::event::render::{self, Type};
 use clausters_core::notation::{
-    Control, Grid, Interpretation, Item, KEYS, Marks, Pitch, Sheet, Spanner, Staff, Step, Voice,
+    Control, Grid, Interpretation, Item, Marks, Pitch, Sheet, Spanner, Staff, Step, Voice,
 };
 use clausters_core::ratio::Ratio;
 
@@ -125,24 +126,6 @@ fn dynamic_near(interp: &Interpretation, amp: f64) -> Option<&str> {
         .map(|(name, _)| name.as_str())
 }
 
-/// The key signature of a tonic name, in fifths: sharps positive.
-fn fifths_of(key: &str) -> i32 {
-    match KEYS.iter().position(|k| *k == key) {
-        Some(at) if at <= 7 => at as i32,
-        Some(at) => 7 - at as i32,
-        None => 0,
-    }
-}
-
-/// The tonic name of a signature.
-fn key_of(fifths: i32) -> &'static str {
-    if fifths >= 0 {
-        KEYS[fifths.min(7) as usize]
-    } else {
-        KEYS[(7 - fifths.max(-7)) as usize]
-    }
-}
-
 /// **The signature most of the notes are in**: the one whose scale holds the
 /// most of what sounds, each note weighed by its length; of two that hold as
 /// much, the one with fewer signs.
@@ -165,28 +148,22 @@ fn key_found(notes: &[Heard]) -> &'static str {
     key_of(best)
 }
 
-/// **A MIDI number spelled in a key**: of the notes it could be, the one
-/// nearest the tonic on the line of fifths -- from four fifths under it to
-/// seven over, which writes the flat third, sixth and seventh and the sharp
-/// first and fourth of a major key.
+/// A MIDI number spelled in a key, as the core spells it
+/// (`clausters_core::event::notation::spell_in`).
 fn spell(midi: i32, fifths: i32) -> Pitch {
-    let low = fifths - 4;
-    let place = (midi * 7 - low).rem_euclid(12) + low;
-    // the line of fifths, F C G D A E B at -1..5
-    let step = [
-        Step::F,
-        Step::C,
-        Step::G,
-        Step::D,
-        Step::A,
-        Step::E,
-        Step::B,
-    ][(place + 1).rem_euclid(7) as usize];
-    let alter = (place + 1).div_euclid(7);
+    let (step, alter, octave) = spell_in(midi, fifths);
     Pitch {
-        step,
+        step: [
+            Step::C,
+            Step::D,
+            Step::E,
+            Step::F,
+            Step::G,
+            Step::A,
+            Step::B,
+        ][step],
         alter,
-        octave: (midi - alter).div_euclid(12) - 1,
+        octave,
         forced: false,
     }
 }

@@ -328,6 +328,12 @@ pub const NOTES: &[Verb] = &[
     // one note at a time in a line: a gesture shortens what it covers
     toggle("monophonic", &["M"], "Edit monophonically, on or off"),
     verb("unjoin", &["Shift+J"], "Unjoin"),
+    // the selection, or every note taken, moved: a semitone in MIDI mode, a
+    // step of the key in notation mode, an octave in both
+    verb("step_up", &["Up"], "Up a step"),
+    verb("step_down", &["Down"], "Down a step"),
+    verb("octave_up", &["Ctrl+Up"], "Up an octave"),
+    verb("octave_down", &["Ctrl+Down"], "Down an octave"),
     // the roll's two modes: the events as MIDI says them, or a view of the
     // page they are written as
     choice("mode", "midi_mode", &[], "MIDI mode"),

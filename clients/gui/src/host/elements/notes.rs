@@ -1266,18 +1266,23 @@ impl Element for Notes {
     /// cursor when the transport is stopped (step entry -- a chord shares one
     /// step, and the last key up advances it).
     /// **The roll's own commands over its selection**, for an owner that
-    /// speaks the joins of a line: `unjoin`, and the marks a page writes over
-    /// notes (`slur`, `slur_join`, `tie`, `staccato`, `pedal`) -- the selected
-    /// notes' ids to the owner, whose edit it is.
+    /// speaks the joins of a line: `unjoin`, the marks a page writes over
+    /// notes (`slur`, `slur_join`, `tie`, `staccato`, `pedal`) and the
+    /// transpositions (`step_up`, `step_down`, `octave_up`, `octave_down`,
+    /// which with nothing selected are of every note) -- the selected notes'
+    /// ids to the owner, whose edit it is.
     fn command(&mut self, name: &str, _input: &mut KeyInput) -> Option<Events> {
-        let ours = matches!(
-            name,
-            "unjoin" | "slur" | "slur_join" | "tie" | "staccato" | "pedal"
-        );
+        let moves = matches!(name, "step_up" | "step_down" | "octave_up" | "octave_down");
+        let ours = moves
+            || matches!(
+                name,
+                "unjoin" | "slur" | "slur_join" | "tie" | "staccato" | "pedal"
+            );
         if !ours || self.joins.is_none() || !self.ids || !self.editable {
             return None;
         }
-        if self.selected.is_empty() {
+        // a transposition with nothing selected is of every note taken
+        if self.selected.is_empty() && !moves {
             return Some(Events::refused(name, "nothing is selected"));
         }
         Some(self.selection_event(name))
@@ -3132,6 +3137,33 @@ mod tests {
             refusal(at(150.0, &mut r)),
             Some("the cursor is not inside a held note".to_string())
         );
+    }
+
+    /// **A transposition is the owner's**, of the selection's ids or, with
+    /// nothing selected, of no ids: every note the roll takes.
+    #[test]
+    fn a_roll_asks_its_owner_to_transpose_the_selection_or_every_note() {
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let mut r = roll(
+            r#"{"notes":[0.0,100.0,60.0,100.0,0.0, 200.0,50.0,62.0,100.0,0.0],
+                "note_ids":[7,9],"joins":[]}"#,
+        );
+        let mut input = KeyInput {
+            mods: Mods::default(),
+            clipboard: &mut clipboard,
+            cursor: None,
+        };
+        let said = |events: Option<Events>| events.unwrap().into_messages().remove(0);
+        assert_eq!(
+            said(r.command("step_up", &mut input)),
+            vec![OscType::String("step_up".into())]
+        );
+        r.selected = vec![1];
+        assert_eq!(
+            said(r.command("octave_down", &mut input)),
+            vec![OscType::String("octave_down".into()), OscType::Double(9.0)]
+        );
+        assert_eq!(r.notes[1].pitch, 62.0, "the roll moved nothing itself");
     }
 
     /// **The cut is the box arithmetic's, and the identity is the roll's.**

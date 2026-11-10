@@ -279,9 +279,8 @@ its plan; the plan is where its acceptance is read.
   case first (`X37`, with the document's split), since the panels (`X38`),
   the lanes (`X39`) and the reading under the pointer (`X40`) edit and show
   through them; then the pitch line (`X41`), which the page's glyphs
-  (`X42`) are drawn beside. `X37.2` waits on the root plan's Future
-  directions entry "A pitch spelled by a key, and moved by a step of it",
-  and `X41` on the document plan's "The pitch a sequence sounds over time".
+  (`X42`) are drawn beside. `X41` waits on the document plan's Future
+  directions entry "The pitch a sequence sounds over time".
   They take items 1, 2 and 10 of the Found by use entry "The roll's two
   modes are not yet an editor a hand can trust"; its item 11, a pass over
   the rest of the application, stays open there and comes after them.

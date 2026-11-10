@@ -250,6 +250,122 @@ pub fn transposed(pitches: &Value, semitones: i32, flats: bool) -> Value {
     Value::Array(moved.collect())
 }
 
+/// **The keys a signature names**, by their tonic: C, then the sharp keys,
+/// then the flat ones, as far as seven signs.
+pub const TONICS: [&str; 15] = [
+    "C", "G", "D", "A", "E", "B", "F#", "C#", "F", "Bb", "Eb", "Ab", "Db", "Gb", "Cb",
+];
+
+/// The key signature of a tonic name, in fifths: sharps positive, `0` for a
+/// name that is none.
+#[must_use]
+pub fn fifths_of(key: &str) -> i32 {
+    match TONICS.iter().position(|k| *k == key) {
+        Some(at) if at <= 7 => at as i32,
+        Some(at) => 7 - at as i32,
+        None => 0,
+    }
+}
+
+/// The tonic name of a signature of `fifths`, held to seven signs.
+#[must_use]
+pub fn key_of(fifths: i32) -> &'static str {
+    if fifths >= 0 {
+        TONICS[fifths.min(7) as usize]
+    } else {
+        TONICS[(7 - fifths.max(-7)) as usize]
+    }
+}
+
+const LETTERS: [&str; 7] = ["c", "d", "e", "f", "g", "a", "b"];
+
+/// **A MIDI number spelled in a key** of `fifths`, as [`spell`] answers: of
+/// the names it could have, the one nearest the tonic on the line of fifths
+/// -- from four fifths under it to seven over, which writes a pitch of the
+/// scale as the scale writes it, the flat third, sixth and seventh, and the
+/// sharp first and fourth of a major key.
+#[must_use]
+pub fn spell_in(midi: i32, fifths: i32) -> (usize, i32, i32) {
+    let low = fifths - 4;
+    let place = (midi * 7 - low).rem_euclid(12) + low;
+    // the line of fifths, F C G D A E B at -1..5, as indices from C
+    let step = [3, 0, 4, 1, 5, 2, 6][(place + 1).rem_euclid(7) as usize];
+    let alter = (place + 1).div_euclid(7);
+    (step, alter, (midi - alter).div_euclid(12) - 1)
+}
+
+/// The sign a key of `fifths` writes on the letter `step` (an index from C).
+fn signed(step: usize, fifths: i32) -> i32 {
+    // the order sharps are added in, F C G D A E B, as indices from C; flats
+    // go the other way
+    const ORDER: [usize; 7] = [3, 0, 4, 1, 5, 2, 6];
+    let rank = ORDER.iter().position(|s| *s == step).unwrap_or(0) as i32;
+    if fifths > rank {
+        1 + (fifths - rank - 1) / 7
+    } else if fifths < rank - 6 {
+        -(1 + (rank - 6 - fifths - 1) / 7)
+    } else {
+        0
+    }
+}
+
+fn pitch_json(step: usize, alter: i32, octave: i32) -> Value {
+    serde_json::json!({"step": LETTERS[step], "alter": alter, "octave": octave})
+}
+
+/// **`pitches` moved by `semitones`, spelled by a key** of `fifths`: as
+/// [`transposed`], but a pitch spelled again is written as the key writes it
+/// ([`spell_in`]) rather than by an accidental world alone.
+#[must_use]
+pub fn transposed_in(pitches: &Value, semitones: i32, fifths: i32) -> Value {
+    if semitones % 12 == 0 {
+        return transposed(pitches, semitones, false);
+    }
+    let Some(list) = pitches.as_array() else {
+        return pitches.clone();
+    };
+    let moved = list.iter().map(|pitch| match midinote_of(pitch) {
+        Some(midi) => {
+            let (step, alter, octave) = spell_in(midi.round() as i32 + semitones, fifths);
+            pitch_json(step, alter, octave)
+        }
+        None => pitch.clone(),
+    });
+    Value::Array(moved.collect())
+}
+
+/// **`pitches` moved by `steps` of a key** of `fifths`: each to the letter
+/// `steps` away, with the sign the key writes on it, and a pitch the key
+/// does not hold keeps how far it was from the key's own (a raised fourth
+/// moved a step is a raised fifth). Negative steps go down.
+#[must_use]
+pub fn stepped_in(pitches: &Value, steps: i32, fifths: i32) -> Value {
+    let Some(list) = pitches.as_array() else {
+        return pitches.clone();
+    };
+    let moved = list.iter().map(|pitch| {
+        let letter = pitch
+            .get("step")
+            .and_then(Value::as_str)
+            .and_then(|s| LETTERS.iter().position(|l| l.eq_ignore_ascii_case(s)));
+        let octave = pitch.get("octave").and_then(Value::as_i64);
+        let (Some(letter), Some(octave)) = (letter, octave) else {
+            return pitch.clone();
+        };
+        let alter = pitch
+            .get("alter")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0)
+            .round() as i32;
+        let off = alter - signed(letter, fifths);
+        let to = letter as i32 + steps;
+        let step = to.rem_euclid(7) as usize;
+        let octave = octave as i32 + to.div_euclid(7);
+        pitch_json(step, signed(step, fifths) + off, octave)
+    });
+    Value::Array(moved.collect())
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -301,5 +417,60 @@ mod tests {
         assert_eq!(written_midinote(&json!([])), None);
         assert_eq!(written_midinote(&json!(60)), None);
         assert_eq!(written_midinote(&json!([{"step": "h", "octave": 4}])), None);
+    }
+
+    #[test]
+    fn a_pitch_is_spelled_as_its_key_writes_it() {
+        let name = |midi: i32, key: &str| {
+            let (step, alter, octave) = spell_in(midi, fifths_of(key));
+            (LETTERS[step], alter, octave)
+        };
+        assert_eq!(name(70, "F"), ("b", -1, 4), "B flat in F");
+        assert_eq!(name(66, "D"), ("f", 1, 4), "F sharp in D");
+        assert_eq!(name(63, "C"), ("e", -1, 4), "the flat third");
+        assert_eq!(name(66, "C"), ("f", 1, 4), "the sharp fourth");
+        assert_eq!(
+            name(71, "Gb"),
+            ("c", -1, 5),
+            "C flat in G flat, an octave up"
+        );
+        assert_eq!(fifths_of("Eb"), -3);
+        assert_eq!(key_of(-3), "Eb");
+        assert_eq!(key_of(9), "C#");
+    }
+
+    #[test]
+    fn a_pitch_moved_in_a_key_is_written_as_the_key_writes_it() {
+        let c = json!([{"step": "c", "alter": 0, "octave": 4}]);
+        // a whole tone up in B flat is D; a semitone up in F is D flat
+        assert_eq!(
+            transposed_in(&c, 2, -2),
+            json!([{"step": "d", "alter": 0, "octave": 4}])
+        );
+        assert_eq!(
+            transposed_in(&c, 1, -1),
+            json!([{"step": "d", "alter": -1, "octave": 4}])
+        );
+        // a step of D major from E is F sharp, and from B is C sharp above
+        let e = json!([{"step": "e", "alter": 0, "octave": 4}]);
+        assert_eq!(
+            stepped_in(&e, 1, 2),
+            json!([{"step": "f", "alter": 1, "octave": 4}])
+        );
+        let b = json!([{"step": "b", "alter": 0, "octave": 4}]);
+        assert_eq!(
+            stepped_in(&b, 1, 2),
+            json!([{"step": "c", "alter": 1, "octave": 5}])
+        );
+        // a raised fourth of C moved a step is a raised fifth; down wraps the octave
+        let fs = json!([{"step": "f", "alter": 1, "octave": 4}]);
+        assert_eq!(
+            stepped_in(&fs, 1, 0),
+            json!([{"step": "g", "alter": 1, "octave": 4}])
+        );
+        assert_eq!(
+            stepped_in(&c, -1, -1),
+            json!([{"step": "b", "alter": -1, "octave": 3}])
+        );
     }
 }

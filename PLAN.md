@@ -3077,7 +3077,7 @@ where it came from).
   note beside the `TransportPos` record in `docs/decisions.md` is updated).
   Option 1 is recorded so it is not proposed again without its cost.
 
-- ⬜ **A pitch spelled by a key, and moved by a step of it** *(2026-11-10,
+- ✅ **A pitch spelled by a key, and moved by a step of it** *(2026-11-10,
   with the user, from `crates/clausters-apps/PLAN.md`, `X37.2`)*. What the
   core has spells by an accidental world alone:
   `clausters_core::event::notation::transposed` moves written `pitches` by
@@ -3091,6 +3091,12 @@ where it came from).
   the roll's transposition calls them, the Spelling step of
   `crates/clausters-notate/PLAN.md` uses them as its baseline, and both
   clients reach them through the core's doors.
+  *Done 2026-11-10*: `spell_in`, `transposed_in` and `stepped_in`, with
+  `fifths_of`, `key_of` and the table of tonics, in
+  `clausters_core::event::notation`; the document's reading spells with
+  `spell_in` instead of a copy of its own, and the score's MEI writer names
+  the same table. No FFI export yet: the clients reach them through the
+  roll's verbs, and an export waits for a client that calls one.
 
 ## Found by use: the running list of fixes
 

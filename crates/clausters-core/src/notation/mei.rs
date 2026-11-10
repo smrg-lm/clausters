@@ -46,9 +46,7 @@ const VALUES: [(i32, i32); 6] = [
 ];
 
 /// The keys a signature names, by their tonic.
-pub const KEYS: [&str; 15] = [
-    "C", "G", "D", "A", "E", "B", "F#", "C#", "F", "Bb", "Eb", "Ab", "Db", "Gb", "Cb",
-];
+pub use crate::event::notation::TONICS as KEYS;
 
 /// A key name -> (MEI `key.sig`, prefer flats when spelling chromatic notes).
 /// Anything unrecognized falls back to C major (`"0"`, sharps).

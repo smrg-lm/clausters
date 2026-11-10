@@ -293,6 +293,29 @@ class NotesEditor(Marking, SequenceHandler):
         over the roll's selection."""
         return self.verb("unjoin")
 
+    def step_up(self) -> bool:
+        """Move what is selected up -- every note the roll takes when nothing
+        is: a semitone in MIDI mode, a step of the key in notation mode, the
+        letter after with the sign the key writes on it. The window's
+        ``step_up`` (`verb`, Up); one entry of the history."""
+        return self.verb("step_up")
+
+    def step_down(self) -> bool:
+        """Move what is selected down, as `step_up` moves it up -- the
+        window's ``step_down`` (`verb`, Down)."""
+        return self.verb("step_down")
+
+    def octave_up(self) -> bool:
+        """Move what is selected up an octave, every note the roll takes when
+        nothing is, its letters kept -- the window's ``octave_up`` (`verb`,
+        Ctrl+Up)."""
+        return self.verb("octave_up")
+
+    def octave_down(self) -> bool:
+        """Move what is selected down an octave -- the window's
+        ``octave_down`` (`verb`, Ctrl+Down)."""
+        return self.verb("octave_down")
+
     def quantize(self) -> bool:
         """Quantize what is selected to the grid -- the window's ``quantize`` (`verb`)."""
         return self.verb("quantize")

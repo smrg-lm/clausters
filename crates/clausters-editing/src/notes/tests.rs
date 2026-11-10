@@ -857,3 +857,75 @@ fn a_piano_part_edited_in_notation_mode_is_its_page() {
         Item::Note { .. }
     ));
 }
+
+/// The sequence a roll's report leaves, or why it was refused -- in any mode.
+fn answered(
+    s: &EventSequence,
+    tag: &str,
+    values: &[Value],
+    editing: &Editing,
+) -> Result<EventSequence, String> {
+    let intake = intake(
+        s,
+        tag,
+        values,
+        &Axis::constant(1.0),
+        &YDomain::midi(),
+        editing,
+    );
+    if let Some(why) = intake.refusal {
+        return Err(why);
+    }
+    let mut after = s.clone();
+    after
+        .edit(serde_json::from_value(intake.payloads[0].clone()).unwrap())
+        .unwrap();
+    Ok(after)
+}
+
+/// **A transposition in MIDI mode is by semitones and octaves**, of the
+/// selection or of every note, what it sounds moved with its family.
+#[test]
+fn a_transposition_in_midi_mode_moves_the_selection_or_every_note() {
+    let s = sequence();
+    let midi = |s: &EventSequence, i: usize| {
+        let keys = s.events[i].keys();
+        render::pitch_of(&keys).midinote(&render::scale_of(&keys))
+    };
+    let first = s.events[0].id;
+    let after = answered(&s, "step_up", &[json!(first)], &Editing::default()).unwrap();
+    assert_eq!(midi(&after, 0), 61.0);
+    assert_eq!(midi(&after, 1), 69.0, "a note not selected stays");
+    assert_eq!(after.events[0].keys()["instrument"], json!("bell"));
+    let after = answered(&s, "octave_down", &[], &Editing::default()).unwrap();
+    assert_eq!(midi(&after, 0), 48.0);
+    assert_eq!(midi(&after, 1), 57.0);
+    assert!((after.events[1].keys()["freq"].as_f64().unwrap() - 220.0).abs() < 1e-6);
+    assert_eq!(after.events[2], s.events[2], "a marker is no note");
+    let empty = EventSequence::new(vec![]);
+    assert!(answered(&empty, "step_up", &[], &Editing::default()).is_err());
+}
+
+/// **A step in notation mode is a step of the key**: the next letter, with
+/// the sign the key writes on it, and what it sounds follows.
+#[test]
+fn a_step_in_notation_mode_is_a_step_of_the_key() {
+    let mut s = EventSequence::new(vec![Event::new(
+        0.0,
+        json!({"midinote": 64, "dur": 1.0, "value": [1, 4], "staff": 0, "voice": 0,
+               "pitches": [{"step": "e", "alter": 0, "octave": 4}]}),
+    )]);
+    s.notation = Some(json!({"key": "D"}));
+    let editing = notation_editing();
+    let after = answered(&s, "step_up", &[], &editing).unwrap();
+    let keys = after.events[0].keys();
+    assert_eq!(
+        keys["pitches"],
+        json!([{"step": "f", "alter": 1, "octave": 4}])
+    );
+    assert_eq!(keys["midinote"].as_f64(), Some(66.0));
+    let after = answered(&s, "octave_up", &[], &editing).unwrap();
+    let keys = after.events[0].keys();
+    assert_eq!(keys["pitches"][0]["step"], json!("e"));
+    assert_eq!(keys["midinote"].as_f64(), Some(76.0));
+}

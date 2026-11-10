@@ -2453,7 +2453,7 @@ opened it.
     again. The roll sends the selection and the cursor to its owner, which
     asks the document, as `join` already does; a roll with no owner that
     speaks the joins keeps cutting its own notes.
-  - ⬜ **X37.2 - Transposition.** A semitone and an octave up and down over
+  - ✅ **X37.2 - Transposition.** *(Done 2026-11-10: `step_up`, `step_down`, `octave_up` and `octave_down` in the notes scope, `notes::TRANSPOSITIONS`, and the four named members in both clients.)* A semitone and an octave up and down over
     the selection, the whole roll when nothing is selected; in notation mode
     a step of the key, respelled by the core (root `PLAN.md`, Future
     directions, "A pitch spelled by a key, and moved by a step of it"). One
