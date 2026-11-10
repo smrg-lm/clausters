@@ -967,3 +967,26 @@ fn a_selection_by_data_marks_every_note_that_shares_it() {
         vec![id(0)]
     );
 }
+
+/// **A split is the document's in either mode**: the cut in the view's
+/// units and the notes, one intent; in notation mode the halves' written
+/// values are read again.
+#[test]
+fn a_split_is_the_documents_in_either_mode() {
+    let s = EventSequence::new(vec![Event::new(
+        0.0,
+        json!({"midinote": 60, "dur": 2.0, "value": [1, 2], "staff": 0, "voice": 0}),
+    )]);
+    let id = s.events[0].id;
+    for editing in [Editing::default(), notation_editing()] {
+        let after = answered(&s, "split", &[json!(1.0), json!(id)], &editing).unwrap();
+        assert_eq!(after.events.len(), 2);
+        assert!(
+            after
+                .events
+                .iter()
+                .all(|e| e.keys()["value"] == json!([1, 4]))
+        );
+    }
+    assert!(answered(&s, "split", &[json!(1.0)], &Editing::default()).is_err());
+}

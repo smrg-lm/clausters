@@ -484,6 +484,24 @@ impl Host {
         let Some(id) = int_arg(args, 0) else {
             return diag::warn!("{from}: {GUI_QUERY} needs an integer id");
         };
+        // **A question about a window an application holds is answered after
+        // the turns before it**: a verb the script asked was performed when it
+        // came, and what it asked of the application comes back from the
+        // application's thread as corrections, so the question goes round
+        // that thread and is answered when it is back -- which is what makes
+        // a capture after a verb show what the verb did.
+        #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+        if let Some(window) = self.registry.root_of(id).filter(|w| self.owns_audio(*w))
+            && self.after_query(window, id, from)
+        {
+            return;
+        }
+        effects.push(HostEffect::Reply(self.info_of(id, from)));
+    }
+
+    /// **The `/gui_info` answer for widget `id`**: what it is now, or an empty
+    /// type for no such widget.
+    pub(super) fn info_of(&self, id: i32, from: ClientId) -> OscMessage {
         let mut out = vec![OscType::Int(id)];
         // What the widget *is now*, before the document is read: a gesture
         // edits the render tree and never the document, so a widget that was
@@ -512,10 +530,10 @@ impl Host {
                 diag::debug!("{from}: {GUI_QUERY} {id}: no such widget");
             }
         }
-        effects.push(HostEffect::Reply(OscMessage {
+        OscMessage {
             addr: GUI_INFO.into(),
             args: out,
-        }));
+        }
     }
 
     /// The props widget `id` currently holds that its **document does not** --

@@ -116,6 +116,17 @@ what is drawn. The <b>menu bar</b> names every verb of the roll with its key,
 and the <b>toolbar</b> holds the transport and Split, Join and Quantize, acting
 on the notes as the keys do.
 
+<b>Split, transpose, and pick notes by what they hold.</b> <b>E</b> cuts the
+selected notes in two at the position cursor, each half with the note's keys
+and curves -- split the first note and its bend goes on in the second half,
+from where it had reached. <b>Up</b> and <b>Down</b> move the selection a semitone
+(a step of the key in notation mode), <b>Ctrl+Up</b> and <b>Ctrl+Down</b> an
+octave, and every note when nothing is selected. The Edit menu selects every
+note that shares a pitch, a channel, a voice or a staff with the selection.
+<b>Ctrl on a note, and a drag on</b>, erases every note it crosses, in one entry;
+<b>an edge of a selected note</b> resizes the whole selection by as much.
+<b>rework</b> splits and transposes from the script.
+
 <b>A note keeps what the roll cannot draw.</b> Every note on the roll carries the
 id of its event, so an edit names the note it touched: its instrument, its
 amplitude and anything else the author put on it stay, and removing one note
@@ -129,6 +140,7 @@ leaves every other note its own.</div>
       <button id="notation" disabled>notation</button>
       <div id="written"></div>
       <button id="play" disabled>play the notes</button>
+      <button id="rework" disabled>rework</button>
       <button id="own" disabled>give the level to the notes</button>
       <button id="gather" disabled>gather it back</button>
       <button id="read" disabled>what the roll never drew</button>
@@ -261,6 +273,23 @@ leaves every other note its own.</div>
         // The editor plays the sequence it edits, on its own transport -- the
         // space bar in the window is the same verb.
         $("play").onclick = () => editor.play();
+
+        // Cut and move from the script. The window's verbs are the editor's
+        // members. The first note is cut at the position cursor, half a beat
+        // in: both halves keep its keys, and its bend is cut where it had
+        // reached. Then every note at the first note's pitch -- the two halves
+        // -- is selected, and goes up an octave. One entry each, so Ctrl+Z
+        // takes them back one at a time.
+        $("rework").disabled = false;
+        $("rework").onclick = async () => {
+          await editor.locate(0.5);
+          await editor.select([first]);
+          editor.split();
+          await editor.select([first]);
+          editor.selectPitch();
+          log(`${(await editor.selected()).length} notes at the first one's pitch`);
+          editor.octaveUp();
+        };
 
         // A curve given to its notes: the level curve is the channel's, and each
         // note hears it from its on to its off. `automation.toEvents` gives it

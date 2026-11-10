@@ -577,6 +577,11 @@ impl Host {
                     to,
                     seq,
                 } => {
+                    if let Some(id) = call["info"].as_i64() {
+                        let msg = self.info_of(id as i32, to);
+                        self.pending_effects.push(HostEffect::Send { to, msg });
+                        continue;
+                    }
                     let mut fx = Vec::new();
                     let answer = self
                         .multitrack_marks(def_id, &call, &mut fx)
@@ -852,12 +857,20 @@ impl Host {
         self.pending_effects.extend(fx);
     }
 
-    /// **What the hand holds in multitrack window `def_id`**, for a client:
-    /// the query `selected` answers the boxes held, by their regions' ids,
-    /// in the order they are drawn; the action `select` holds the boxes of
-    /// `regions` in place of what was held, `[]` holding none. The window
-    /// keeps them, as a click or a marquee leaves them, and they enter no
-    /// history. `None` for any other call, or another window.
+    /// **The answer to `/gui_query <id>` given once the application has taken
+    /// in every turn before it** (`ToApp::After`); whether it was asked, so a
+    /// host whose application is gone answers at once.
+    pub(super) fn after_query(&mut self, def_id: i32, id: i32, from: ClientId) -> bool {
+        self.audio_host()
+            .ask(ToApp::After {
+                def_id,
+                call: json!({ "info": id }),
+                to: from,
+                seq: 0,
+            })
+            .is_ok()
+    }
+
     /// Whether window `def_id` holds marks [`multitrack_marks`](Self::multitrack_marks) reads.
     fn multitrack_marks_held(&self, def_id: i32) -> bool {
         self.audio
@@ -866,6 +879,12 @@ impl Host {
             .is_some_and(|window| window.marks.is_some())
     }
 
+    /// **What the hand holds in multitrack window `def_id`**, for a client:
+    /// the query `selected` answers the boxes held, by their regions' ids,
+    /// in the order they are drawn; the action `select` holds the boxes of
+    /// `regions` in place of what was held, `[]` holding none. The window
+    /// keeps them, as a click or a marquee leaves them, and they enter no
+    /// history. `None` for any other call, or another window.
     pub(super) fn multitrack_marks(
         &mut self,
         def_id: i32,

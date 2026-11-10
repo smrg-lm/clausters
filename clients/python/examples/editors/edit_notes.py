@@ -89,6 +89,17 @@ one edit, Ctrl+Z takes it back, and the space bar plays what is drawn. The
 holds the transport and Split, Join and Quantize, acting on the notes as the
 keys do.
 
+**Split, transpose, and pick notes by what they hold.** **E** cuts the
+selected notes in two at the position cursor, each half with the note's keys
+and curves -- split the first note and its bend goes on in the second half,
+from where it had reached. **Up** and **Down** move the selection a semitone
+(a step of the key in notation mode), **Ctrl+Up** and **Ctrl+Down** an
+octave, and every note when nothing is selected. The Edit menu selects every
+note that shares a pitch, a channel, a voice or a staff with the selection.
+**Ctrl on a note, and a drag on**, erases every note it crosses, in one entry;
+**an edge of a selected note** resizes the whole selection by as much.
+``rework()`` splits and transposes from the script.
+
 **A note keeps what the roll cannot draw.** Every note on the roll carries the
 id of its event, so an edit names the note it touched: its instrument, its
 amplitude and anything else the author put on it stay, and removing one note
@@ -208,6 +219,27 @@ def play():
 
 
 # %% [markdown]
+# ## Cut and move from the script
+#
+# The window's verbs are the editor's members. The first note is cut at the
+# position cursor, half a beat in: both halves keep its keys, and its bend is
+# cut where it had reached. Then every note at the first note's pitch -- the
+# two halves -- is selected, and goes up an octave. One entry each, so Ctrl+Z
+# takes them back one at a time.
+
+# %%
+def rework():
+    """Split the first note half a beat in, and move its pitch up an octave."""
+    editor.locate(0.5)
+    editor.select([first])
+    editor.split()
+    editor.select([first])
+    editor.select_pitch()
+    print(f"{len(editor.selected)} notes at the first one's pitch")
+    editor.octave_up()
+
+
+# %% [markdown]
 # ## A curve given to its notes
 #
 # The level curve is the channel's: each note hears it from its on to its off.
@@ -270,4 +302,5 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     run()
 else:
     print("up -- play() to hear it, page() for the notes on a page, "
-          "notation() for them as notation, read_back() to see what survived the edit")
+          "notation() for them as notation, rework() to split and transpose, "
+          "read_back() to see what survived the edit")

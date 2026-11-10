@@ -706,6 +706,52 @@ fn a_selection_by_pitch_is_the_window_s_and_records_nothing() {
     assert!(told.contains("\"selected\":[1,3]"), "{told}");
 }
 
+/// **What the notation mode shows and the voice it edits are the
+/// window's**: a staff, a part or the system shown, the staff edited moved
+/// up and down and refused past the edge, the voice chosen; none of it is
+/// recorded, and in MIDI mode each is refused with why.
+#[cfg(feature = "notation")]
+#[test]
+fn the_notation_mode_shows_a_staff_and_edits_a_voice_of_it() {
+    let sequence = Arc::new(Mutex::new(EventSequence::new(vec![
+        SeqEvent::new(
+            0.0,
+            json!({"midinote": 72, "dur": 1.0, "value": [1, 4], "staff": 0, "voice": 0}),
+        ),
+        SeqEvent::new(
+            0.0,
+            json!({"midinote": 48, "dur": 1.0, "value": [1, 4], "staff": 1, "voice": 0}),
+        ),
+    ])));
+    let mut e = editor(sequence);
+    let out = e.event(&window_verb("show_staff"), 1);
+    assert!(
+        out.record.is_none() && e.editing().scope == Scope::System,
+        "MIDI mode refuses"
+    );
+    e.event(&window_verb("notation_mode"), 1);
+    assert_eq!(e.editing().mode, Mode::Notation);
+    let out = e.event(&window_verb("staff_up"), 2);
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("top staff"), "{told}");
+    e.event(&window_verb("show_staff"), 2);
+    e.event(&window_verb("staff_down"), 2);
+    assert_eq!(e.editing().voice, [1, 0]);
+    assert_eq!(
+        e.editing().scope,
+        Scope::Staff(1),
+        "the staff shown follows"
+    );
+    let out = e.event(&window_verb("staff_down"), 2);
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("bottom staff"), "{told}");
+    e.event(&window_verb("voice_2"), 2);
+    assert_eq!(e.editing().voice, [1, 1]);
+    e.event(&window_verb("show_system"), 2);
+    assert_eq!(e.editing().scope, Scope::System);
+    assert!(out.record.is_none());
+}
+
 fn window_verb(verb: &str) -> Event {
     Event {
         addr: "/gui_event".into(),

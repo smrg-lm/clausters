@@ -5212,6 +5212,25 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A script's verb that reads what the verb before it asked an
+  application for runs before the answer lands** *(found 2026-11-10,
+  writing the notes editor example's selection by pitch)*. A `/gui_verb` is
+  performed when it comes; a verb whose answer is the application's (a
+  roll's `select_pitch`, answered as a correction of its `selected`) leaves
+  the host's state as it was until that correction comes back from the
+  application's thread, so a second verb sent at once (`octave_up` over
+  what was selected) reads the selection from before. A question is ordered
+  already: a `/gui_query` of a window an application holds, and the
+  `selected` of the application door, go round the application's thread
+  (`ToApp::After`) and are answered after the turns before them, which is
+  also what makes a capture after a verb show the verb done. A verb cannot
+  simply take the same road, since it is performed by the front after the
+  answer is back and the next question would overtake it; what is open is a
+  per-window queue of a script's verbs and questions, each released when the
+  application has answered the one before. Until then a script reads the
+  window (`selected`, a capture) between two such verbs, as the example
+  does.
+
 - ✅ **A focused multitrack's meters at rest cover its focus ring** *(found 2026-10-08 by the user in `editors/edit_multitrack` with tall tracks scrolled: the meters drew over the blue line round the multitrack, above and below, only while they showed no signal; fixed the same day)*. The ring is drawn with the picture and the live layer over it, since a window keeps its picture and a tick draws what moves; a meter column at rest is the height of its track, so where a track met the multitrack's top or bottom edge the column covered the ring. The live layer of a focused element now ends with the ring (`frame::draw_live_places`), so it is the last thing of the element in a tick as it is in a whole frame. Pinned by `the_focus_ring_is_drawn_over_the_live_layer`; `a_scrolled_stacks_meters_paint_inside_its_own_rect` and `a_tall_multitracks_meters_stay_inside_it` were written while looking for it and pin that the meters stay inside the multitrack.
 
 - ✅ **A press in a multitrack lands off its mark again at a density of 0.8 — seen only in the automated browser** *(found 2026-10-08, driving a multitrack in a page from the automated browser, whose `devicePixelRatio` is 0.8)*. The same numbers as the entry below, which is closed: a 900x240 CSS canvas with a 960x256 backing store (1.0667) at a ratio of 0.8. A press on a fade envelope's corner trimmed the box's left edge instead, and the wheel zoomed about a time that was not under the pointer — while a host test pressing the same corner through the element (`a_fade_corner_is_taken_and_the_flat_top_is_the_boxs`) takes it. **Probably that browser and not the host**: the user saw, the same day, that the automated browser's window restricts the page's area, does not scroll and does not pass the mouse's coordinates right. To confirm or drop: the same gestures in an ordinary browser zoomed out to 80 %. The native window is not affected. *Closed 2026-11-07 as the automated browser's, measured with real input:* headless Chrome at `--force-device-scale-factor=0.8` (a 900x400 CSS canvas over a 720x320 backing store) and at 1.0, driven over CDP with `Input.dispatchMouseEvent`, a short drag at every point of a 15 x 12 CSS-pixel grid over a multitrack with one box and its two fades, each classified by the undo label it left. At 0.8 every class falls where the box is drawn in the same frame's screenshot -- the left edge's grip trims, the fade's slope edits the fade, the body moves -- so the pointer is read at the density the canvas is drawn at. What the two grids differ by is the drawing, not the pointer (the next entry).

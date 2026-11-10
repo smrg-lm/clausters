@@ -404,9 +404,17 @@ impl NotesEditor {
             "staff_up" | "staff_down" => {
                 let staff = self.editing.voice[0];
                 let next = if verb == "staff_up" {
-                    staff.saturating_sub(1)
+                    staff.checked_sub(1)
                 } else {
-                    (staff + 1).min(staves() - 1)
+                    Some(staff + 1).filter(|n| *n < staves())
+                };
+                // the edge says so rather than doing nothing
+                let Some(next) = next else {
+                    return Some(if verb == "staff_up" {
+                        "this is the top staff".into()
+                    } else {
+                        "this is the bottom staff".into()
+                    });
                 };
                 self.editing.voice = [next, self.editing.voice[1]];
                 if let Scope::Staff(_) = self.editing.scope {

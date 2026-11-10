@@ -2437,7 +2437,7 @@ opened it.
     attack and a lengthened one is not joined; a slur drawn attacked is heard
     with every note attacked.
 
-- ⬜ **X37 - The roll's verbs, per case.** *(Opened 2026-11-10 by the user,
+- ✅ **X37 - The roll's verbs, per case.** *(Opened 2026-11-10 by the user, and done the same day;
   from the Future directions entry "The roll as an editor of everything a
   sequence holds", whose principles hold for this milestone and the five
   after it.)* Every action of the roll is a verb of the one table, defined
@@ -2463,9 +2463,9 @@ opened it.
     the selection.
   - ✅ **X37.4 - Erase and resize by the hand.** *(Done 2026-11-10: a Ctrl drag from a note, `Drag::Erase`; an edge of a selected note, `boxes::resize_block`.)* A drag that erases what it
     crosses, and the whole selection resized by one note's edge.
-  - ⬜ **X37.5 - The table.** The verbs per case in `docs/app-behavior.md`,
+  - ✅ **X37.5 - The table.** *(Done 2026-11-10: "The roll's verbs, case by case" in `docs/app-behavior.md`, every test it names checked to exist; the review made `staff_up` and `staff_down` refuse past the edge, and added the tests the notation verbs and the split in either mode lacked.)* The verbs per case in `docs/app-behavior.md`,
     a test per rule, and the review of the verbs `X35` and `X36` added.
-  - ⬜ **X37.6 - Both clients and tests.** The notes editor's new verbs in
+  - ✅ **X37.6 - Both clients and tests.** *(Done 2026-11-10, with each step; the notes editor example's `rework` splits and transposes from the script.)* The notes editor's new verbs in
     Python and on the web, and the document's split in both clients'
     `EventSequence`.
   - **Acceptance:** a note with a bend and a staccato split in two keeps
@@ -6964,5 +6964,6 @@ wrong.
       roll are the first places to look.
 
   *Taken into milestones 2026-11-10*: items 1 and 2 are `X37`, item 10 is
-  `X38`. Item 11 stays open here, and is a pass over the application once
+  `X38`. *Items 1 and 2 done 2026-11-10 with `X37`*: the table of
+  `docs/app-behavior.md`, "The roll's verbs, case by case", and its review. Item 11 stays open here, and is a pass over the application once
   `X37` to `X42` have changed it.
