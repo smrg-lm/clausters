@@ -618,7 +618,6 @@ fn written_line() -> EventSequence {
     s
 }
 
-#[cfg(feature = "notation")]
 fn notation_editing() -> Editing {
     Editing {
         mode: Mode::Notation,
