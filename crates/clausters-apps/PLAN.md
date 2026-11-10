@@ -4733,6 +4733,110 @@ Every entry carries a checkbox.
   hold different parts, which the parts list does not yet: that is the
   design question this entry carries.
 
+- ⬜ **The roll as an editor of everything a sequence holds** *(designed
+  with the user, 2026-11-10, after studying three rolls: one that writes
+  articulations and a continuous pitch over its notes, and two conventional
+  MIDI editors)*. What the roll lacks is not new structures but the editing
+  and the seeing of the ones a sequence already has: its notes, their
+  written data, the curves of its channels and those of each note. The
+  principles first, then the work, in two groups. It carries items 1 and 10
+  of "The roll's two modes are not yet an editor a hand can trust", in Found
+  by use.
+
+  The principles:
+  1. **Verbs first.** Every action below is a verb of the one table,
+     defined for each of the roll's cases: MIDI or notation, monophonic or
+     polyphonic. Its keys and modifiers are the key table's, which a user
+     changes, and their defaults are chosen last.
+  2. **One format at a time.** MIDI 1.0, MPE, MIDI 2.0 and the written page
+     each decide which keys are shown and edited and which curves exist at
+     which level. Going from one to another is a conversion, already an
+     undoable edit; the roll never edits two formats at once.
+  3. **Colour is the voices', the staves' and the parts'**, never a note's
+     parameter.
+  4. **Every curve but one is an automation**: a channel's in a lane under
+     the plane, a note's drawn against its box, as the bend already is.
+     Showing another is choosing which parameter is shown. The two new
+     pictures are the continuous pitch line and the page's glyphs in
+     notation mode.
+  5. **What is general is the library's.** Respelling and scales are
+     `clausters_core::notation`'s and quantization is
+     `crates/clausters-notate/PLAN.md`'s; the roll calls them.
+  6. **Choosing what is shown is a panel, never a dialog.** Which curve a
+     lane shows, which note parameter is drawn, the event list and the
+     inspector are sections of `crate::panels` beside the plane, shown or
+     hidden, as the audio editor's spectrogram settings are. A modal dialog
+     asks before an act (unsaved work, a conversion's options) or reports
+     work in progress, and nothing else.
+
+  Basic editing:
+  - **The verbs per case**: create, move, resize, select, delete, split,
+    join and transpose, in one table in `docs/app-behavior.md` with a test
+    per rule.
+  - **A split is the document's.** Today the host cuts the drawn note and
+    the second half comes back as a new note holding only what the roll
+    draws: its curves, its marks and its written value are lost. As a
+    region is split in the multitrack, an event split at a time becomes
+    two, the second a new event carrying the first's keys, each of its
+    curves cut at the point, and in notation mode the written values of
+    both halves read again.
+  - **Selection by data**: by pitch, channel, voice or staff, as filters of
+    the editing crate that both clients call; a drag that erases what it
+    crosses; the whole selection resized by one note's edge.
+  - **Transposition** by a semitone and by an octave; in notation mode by a
+    step of the key, respelled by the core.
+  - **Velocity in a lane of bars** again, one bar per note at its start: a
+    bar or the selection dragged, and a drag across the lane setting a
+    ramp. It shows only the voice or the channel chosen, when one is. This
+    reverses the decision of 2026-09-27 that moved velocity into the note
+    (`docs/decisions.md`), which is corrected with it.
+  - **The page's marks on a note**: staccato, tenuto, accent, marcato and
+    the breath, which takes length from a note before the next attack; and
+    the dynamics. Not a trill, which a page writes as notes, nor a fermata,
+    which belongs to the tempo map.
+  - **Curves by format**: a channel's or a note's curve added or cleared
+    among the targets the format allows. Under MIDI 1.0 a channel's
+    controllers, bend and pressure, and a note's poly pressure; under MPE
+    the master channel's controllers and each note's bend, pressure and
+    CC74; under MIDI 2.0 each note's own controllers and pitch as well.
+  - **Tools that change the pointer** (draw, erase, stretch): the host
+    cannot set the pointer's shape. An element would say which pointer the
+    point under it means and each front would set it; the multitrack's
+    grips stand where that capability was missing.
+
+  Visualization:
+  - **Colour by voice, staff or part.**
+  - **What is under the pointer**: the name, the MIDI number, the velocity
+    and the channel, and in notation mode the written value, the spelling,
+    the dynamic and the marks. On the status band now, as a reading of the
+    host's beside its history (as `progress` is beside it), and as a hover
+    tooltip once the host has one.
+  - **The continuous pitch line**: the pitch that sounds over time (the
+    note's, its own bend and, under MIDI 1.0, the channel's bend over the
+    note that sounds), drawn over the boxes, joining the boxes of a line
+    where they are joined and cut where they are not. It replaces the
+    straight links joins are drawn with today. A function of the library
+    computes it, so the score editor can read it too. A channel's bend
+    stays a lane, and the two can be seen at once.
+  - **The page's glyphs in notation mode**, from the SMuFL outlines the page
+    already sends: the marks over a box, the breath at its end, a dynamic as
+    its glyph. No ties: a box is continuous across a barline, where a
+    page's notehead is not. Slurs are open: a monophonic legato is already
+    the pitch line and a piano's is the overlap of its notes, so a drawing
+    is shown to the user before anything is decided.
+  - **Lanes that read.** The keyboard's column is too narrow for a label,
+    so the lanes' labels are the tabs of a tab view (a `choice` in its
+    `tabs` view bound to a `stack`) over the curves that stand apart from
+    the notes, a channel's and the spanners, one shown at a time with its
+    value ruler. The fixed `CURVE_H` gives way to the height a lane needs.
+  - **The event list and the inspector**, as panels. The events as text in
+    a `table` (the time in bar:beat, the kind, the pitch, the length, the
+    velocity, the channel, and the written keys in notation mode; a curve
+    as a tree of its points); the selection's data, a value that differs
+    between the selected notes shown as such. Both follow the roll's
+    selection both ways, and an edit there is an intent of the document,
+    with its history.
+
 - ✅ **Quantize on a page** *(raised by the user, 2026-11-01, reading the score
   editor's key sheet)*. A page has no grid, so its window offers no quantize; a
   page's written values could still be quantized as a verb of its own, which is

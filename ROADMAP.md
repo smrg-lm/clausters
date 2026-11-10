@@ -279,6 +279,8 @@ its plan; the plan is where its acceptance is read.
   The first eye pass over the notation mode and the editing options found
   gestures never defined per mode, verbs to review and no way to inspect
   what a note holds; the entry lists them. Its drawing faults are fixed.
+  The design for the gestures and the inspector is the Future directions
+  entry "The roll as an editor of everything a sequence holds".
 
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,
