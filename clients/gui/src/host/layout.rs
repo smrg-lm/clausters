@@ -1630,6 +1630,8 @@ mod tests {
     /// of them, the one at which the widest fits its cell, so a narrow symbol
     /// beside a wide one keeps its size against it; a word beside them keeps
     /// its own size, and the floor keeps a symbol at the host's text size.
+    /// A symbol is an outline only where a build fills one (`notation`).
+    #[cfg(feature = "notation")]
     #[test]
     fn the_symbols_of_a_grid_share_one_fit() {
         let glyphs: serde_json::Map<String, serde_json::Value> =
