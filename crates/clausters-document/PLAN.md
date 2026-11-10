@@ -2625,3 +2625,39 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   overlap no edit touched is left as it is; and a script's edits state the
   fades they want -- the switch is the hand's facility.
 
+
+- ⬜ **An id can still be written by hand, so nothing keeps it unique**
+  *(found 2026-11-10 by the user: editing a pedal curve in a roll over an
+  MPE file read back, a click on a point added another at the same time, the
+  points could not be dragged, and the host panicked asking for a 384 MiB
+  vertex buffer)*. A sequence's events, its curves and its notes' curves draw
+  on one counter (`EventSequence::hold`, `mint`), and the roll names a curve
+  by that id, so two curves sharing one are drawn as one and every edit
+  writes each one's points into both. `realize` gave the curves it derives
+  from a page an id counted from the sequence's own curves alone; that one
+  is fixed (`events::realize`, it now keeps the replaced lane's id or
+  mints). What is open is that the counter is only a convention:
+  `Automation::id` and `Event::id` are public fields, and
+  `events::conversion` still numbers the curves it carries over the same way
+  (`next` from the page's curves, `conversion.rs`). **To do:**
+  - **One allocator per document, and the only door.** An id is obtained
+    from the structure that owns the counter, never computed; the fields stop
+    being assignable from outside the crate, and the places that build a
+    curve or an event (conversion, realize, scopes, split, the file readers)
+    ask for one. No check runs when an id is added, because none can be
+    written that the counter did not give.
+  - **The host mints none.** It is a view: it draws with the ids its owner
+    sends and reports a new curve or note without one, for the owner to
+    mint. Two allocators would need a split space, as `--id-share` gives the
+    host against the audio server; one makes that unnecessary. Checked
+    2026-11-10: both clients already delegate (the sequence writes `id: 0`
+    and the core mints; the multitrack's objects call its `mint`), and the
+    host mints no document id; the curve emitter's ids are playback's own.
+  - **Validation only where a document comes in, and it repairs.** A repeated
+    id can only arrive from outside: a file saved before the fix, a MIDI
+    file, a sequence a client assembles. `hold` already runs there; it
+    renumbers a repeated id, keeping the first and minting for the rest. For
+    a curve that is safe, since only a view names it. For an event it is
+    not silent: `joins`, a layer's note and a selection name events by id,
+    and with two sharing one the repair picks one reading, so it repairs and
+    says so.

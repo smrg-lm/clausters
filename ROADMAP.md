@@ -127,6 +127,11 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
+- ⬜ **An id can still be written by hand, so nothing keeps it unique**
+  *(`crates/clausters-document/PLAN.md`, Found by use)*. One allocator per
+  document as the only door, the host minting none, and a repair where a
+  document comes in.
+
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and
