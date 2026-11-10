@@ -425,3 +425,18 @@ def test_a_performance_is_written_as_its_page_in_place_or_in_a_copy():
     assert take.reading["meter"] == "3/4"
     with pytest.raises(ValueError, match="voices"):
         take.to_notation(writing="chords")
+
+
+def test_a_note_is_split_in_two_with_its_keys_on_both_halves():
+    seq = EventSequence([(0.0, Event(midinote=60, sustain=2.0, staccato=True)),
+                         (2.0, Event(midinote=62, sustain=1.0))])
+    first, after = seq.events
+    seq.join([first, after])
+    seq.split([first], 0.5)
+    a, b, c = seq.events
+    assert (a.at, b.at, c.at) == (0.0, 0.5, 2.0)
+    assert a.get("sustain") == 0.5 and b.get("sustain") == 1.5
+    assert a.get("staccato") and b.get("staccato")
+    assert b.get("joins") is None and c.get("joins") == b._id
+    with pytest.raises(ValueError, match="inside none"):
+        seq.split([c], 5.0)

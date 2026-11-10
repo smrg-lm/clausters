@@ -91,3 +91,35 @@ impl Transcription {
             .map_err(|e| format!("the transcription could not be read: {e}"))
     }
 }
+
+/// **The written value of `beats`**, in whole notes, as `[n, d]`, counted in
+/// `beat_unit` beats a whole note -- `None` where no written value is that
+/// long (a plain or dotted value, or a tuplet's of 3, 5, 6 or 7).
+#[must_use]
+pub fn written_value(beats: f64, beat_unit: i64) -> Option<Value> {
+    let whole = beats / beat_unit.max(1) as f64;
+    if whole <= 0.0 {
+        return None;
+    }
+    for base in [1_i64, 3, 5, 7] {
+        let mut d = base;
+        while d <= 1024 * base {
+            let n = (whole * d as f64).round();
+            if n >= 1.0 && (n / d as f64 - whole).abs() < 1e-9 {
+                let n = n as i64;
+                let g = gcd(n, d);
+                return Some(serde_json::json!([n / g, d / g]));
+            }
+            d *= 2;
+        }
+    }
+    None
+}
+
+fn gcd(a: i64, b: i64) -> i64 {
+    if b == 0 {
+        a.abs().max(1)
+    } else {
+        gcd(b, a % b)
+    }
+}

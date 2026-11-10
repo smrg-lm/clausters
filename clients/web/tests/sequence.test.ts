@@ -496,3 +496,21 @@ test("a performance is written as its page in place or in a copy", () => {
     assert.equal((take.reading as { meter: string }).meter, "3/4");
     assert.throws(() => take.toNotation(undefined, "chords" as "ties"), /voices/);
 });
+
+test("a note is split in two with its keys on both halves", () => {
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60, sustain: 2.0, staccato: true })],
+        [2.0, new Event({ midinote: 62, sustain: 1.0 })],
+    ]);
+    const [first, after] = [...seq.events];
+    seq.join([first!, after!]);
+    seq.split([first!], 0.5);
+    const [a, b, c] = [...seq.events];
+    assert.deepEqual([a!.at, b!.at, c!.at], [0.0, 0.5, 2.0]);
+    assert.equal(a!.get("sustain"), 0.5);
+    assert.equal(b!.get("sustain"), 1.5);
+    assert.ok(a!.get("staccato") && b!.get("staccato"));
+    assert.equal(b!.get("joins") ?? null, null);
+    assert.equal(c!.get("joins"), b!.id);
+    assert.throws(() => seq.split([c!], 5.0), /inside none/);
+});

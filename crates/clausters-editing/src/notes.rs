@@ -51,6 +51,9 @@
 //!   states, or `""`. Only the notes of the staves shown are drawn.
 //! - `joins`: which note goes on into which, flat `from into` pairs of
 //!   indices into `notes` -- a note's `joins`, drawn as a link between the two.
+//! - A `split` report is `at id...`: the cursor, in view units, and the
+//!   selected notes, which the document cuts there (`EventsIntent::Split`) --
+//!   their keys and curves on both halves, as a region is split.
 //! - `bars`: where the sequence's bars fall, flat `beat length number`
 //!   triples in beats ([`bars`]), each a run of bars of one length from its
 //!   beat until the next run; empty where the sequence states no meter, and
@@ -643,6 +646,22 @@ pub fn intake(
             (EventsIntent::Unjoin { ids }, "unjoin")
         };
         return Intake::edit(serde_json::to_value(&intent).unwrap_or(Value::Null), label);
+    }
+    if tag == "split" {
+        // the cut, on the view's axis, and the notes it is asked of
+        let Some((at, ids)) = values.split_first() else {
+            return Intake::refused("nothing is selected");
+        };
+        let ids: Vec<u64> = ids.iter().map(|v| number(v).max(0.0) as u64).collect();
+        if ids.is_empty() {
+            return Intake::refused("nothing is selected");
+        }
+        let at = Beat(axis.beat(number(at).max(0.0)));
+        let intent = EventsIntent::Split { ids, at };
+        return Intake::edit(
+            serde_json::to_value(&intent).unwrap_or(Value::Null),
+            "split",
+        );
     }
     if editing.mode == Mode::Notation {
         return notation_intake(sequence, tag, values, axis, domain, editing);

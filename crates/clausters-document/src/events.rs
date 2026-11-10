@@ -341,6 +341,18 @@ pub enum EventsIntent {
         /// The notes.
         ids: Vec<u64>,
     },
+    /// **The notes cut in two at a beat**: each of `ids` that sounds across
+    /// `at` becomes two, the second a new event with the first's keys, its
+    /// curves cut at the point and its joins out of the note going out of the
+    /// second half; a note written as notation is cut on its written length
+    /// and both halves' values written again. Refused when `at` falls inside
+    /// none of them. See `split`.
+    Split {
+        /// The notes.
+        ids: Vec<u64>,
+        /// Where they are cut, in the sequence's beats.
+        at: Beat,
+    },
     /// **The joins among the selected notes taken away** -- for one note
     /// alone, the join into it and the one out of it -- and the slurs of the
     /// lines written as notation written again.
@@ -896,6 +908,12 @@ impl EventSequence {
                 articulation::unjoin(&mut after, &ids)?;
                 *self = after;
             }
+            EventsIntent::Split { ids, at } => {
+                let mut after = self.clone();
+                let made = split::split(&mut after, &ids, at.0)?;
+                *self = after;
+                added = made.first().copied();
+            }
             EventsIntent::Realize { interpretation } => *self = self.realized(interpretation)?,
             EventsIntent::ToNotation {
                 reading,
@@ -1166,6 +1184,7 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
         | EventsIntent::SetReading { .. }
         | EventsIntent::Join { .. }
         | EventsIntent::Unjoin { .. }
+        | EventsIntent::Split { .. }
         | EventsIntent::Realize { .. }
         | EventsIntent::ToNotation { .. }
         | EventsIntent::AutomationToEvents { .. }
@@ -1450,6 +1469,7 @@ pub mod rows;
 mod scopes;
 #[cfg(feature = "notation")]
 pub mod score;
+pub mod split;
 #[cfg(feature = "notation")]
 pub mod transcription;
 #[cfg(feature = "notation")]

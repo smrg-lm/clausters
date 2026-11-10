@@ -671,6 +671,26 @@ fn a_join_from_the_roll_is_an_edit_of_the_sequence() {
     );
 }
 
+/// **A split from the roll is the document's**: the cut, in the axis's
+/// units, and the notes; one entry, and the second half a new event with the
+/// first's keys.
+#[test]
+fn a_split_from_the_roll_is_an_edit_of_the_sequence() {
+    let sequence = shared();
+    let mut e = editor(sequence.clone());
+    // 100 units a beat: the first note cut halfway
+    let out = e.event(&gesture("split", vec![json!(50.0), json!(1)]), 1);
+    assert_eq!(out.record.expect("an entry").label, "split");
+    let held = sequence.lock().unwrap();
+    assert_eq!(held.events.len(), 3);
+    let second = held.events.iter().find(|n| n.at.0 == 0.5).expect("a half");
+    assert_eq!(second.data.0["amp"], json!(0.1));
+    assert!((held.get(1).unwrap().sustain() - 0.5).abs() < 1e-9);
+    drop(held);
+    let out = e.event(&gesture("split", vec![json!(500.0), json!(1)]), 2);
+    assert!(out.record.is_none(), "a cut outside the note edits nothing");
+}
+
 fn window_verb(verb: &str) -> Event {
     Event {
         addr: "/gui_event".into(),

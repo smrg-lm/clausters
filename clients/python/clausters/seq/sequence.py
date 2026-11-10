@@ -237,6 +237,19 @@ class EventSequence:
         ids = [int(e._id) for e in events]
         self._edit({"intent": "join", "ids": ids}, "join")
 
+    def split(self, events, at: float) -> None:
+        """**Cut these notes in two at beat ``at``**, as a region is split:
+        each that sounds across it keeps its event up to the cut, and the
+        rest is a new event with its keys (its marks, its channel, its
+        written keys), each of its curves cut at the point on both sides. The
+        second half is a new attack: a note that went on from the cut one
+        goes on from it. A note written as notation is cut on its written
+        length and both halves' ``value`` written again. One edit.
+        ``events`` are `SeqEvent`s; `ValueError` when ``at`` falls inside
+        none of them."""
+        ids = [int(e._id) for e in events]
+        self._edit({"intent": "split", "ids": ids, "at": float(at)}, "split")
+
     def unjoin(self, events) -> None:
         """**Take the joins among these notes away** -- for one note alone,
         the join into it and the one out of it -- and, where its line is

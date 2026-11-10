@@ -1124,6 +1124,10 @@ fn every_verb(cc: NodeId, held: NodeId) -> Vec<EventsIntent> {
             ids: vec![100, 101],
         },
         EventsIntent::Unjoin { ids: vec![4, 100] },
+        EventsIntent::Split {
+            ids: vec![100],
+            at: Beat(3.5),
+        },
     ];
     // a performance derived from a page needs the notation layer
     #[cfg(feature = "notation")]
@@ -1158,8 +1162,9 @@ fn every_verb(cc: NodeId, held: NodeId) -> Vec<EventsIntent> {
         EventsIntent::Unjoin { .. } => 18,
         EventsIntent::Realize { .. } => 19,
         EventsIntent::ToNotation { .. } => 20,
+        EventsIntent::Split { .. } => 21,
     };
-    let mut seen = [false; 21];
+    let mut seen = [false; 22];
     seen[19] = cfg!(not(feature = "notation"));
     seen[20] = cfg!(not(feature = "notation"));
     for intent in &all {
@@ -1444,4 +1449,131 @@ fn a_line_separated_keeps_the_part_it_is_of() {
     let channels = rows::separate(&sequence, rows::By::Channel);
     assert_eq!(channels[2].parts[0].transpose, -7);
     assert_eq!(channels[0].parts[0].staves, 2);
+}
+
+#[test]
+fn a_split_note_keeps_its_keys_and_its_curves_on_both_halves() {
+    // a note with a bend from 0 to 2 over its two beats, a staccato, and a
+    // note after it that goes on from it
+    let mut s = EventSequence::new(vec![
+        Event {
+            id: 1,
+            ..Event::new(
+                0.0,
+                json!({"midinote": 60, "dur": 2.0, "sustain": 2.0, "staccato": true}),
+            )
+        },
+        Event {
+            id: 2,
+            ..Event::new(2.0, json!({"midinote": 62, "sustain": 1.0, "joins": 1}))
+        },
+    ]);
+    s.edit(EventsIntent::EventAutomation {
+        id: 1,
+        automation: ramp(json!({"bend": true}), &[(0.0, 0.0), (2.0, 2.0)]),
+    })
+    .unwrap();
+    let before = s.clone();
+    let change = s
+        .edit(EventsIntent::Split {
+            ids: vec![1],
+            at: Beat(0.5),
+        })
+        .unwrap();
+    let new = change.added.unwrap();
+    let (a, b) = (s.get(1).unwrap(), s.get(new).unwrap());
+    assert_eq!(b.at, Beat(0.5));
+    assert!((a.sustain() - 0.5).abs() < 1e-9 && (b.sustain() - 1.5).abs() < 1e-9);
+    assert_eq!(a.keys()["staccato"], json!(true));
+    assert_eq!(b.keys()["staccato"], json!(true));
+    // the bend is cut where it had reached 0.5, on both sides
+    let (ha, hb) = (&a.automation[0].points, &b.automation[0].points);
+    assert_eq!(ha.last().unwrap().at, Beat(0.5));
+    assert!((ha.last().unwrap().value - 0.5).abs() < 1e-9);
+    assert_eq!(hb[0].at, Beat(0.0));
+    assert!((hb[0].value - 0.5).abs() < 1e-9);
+    assert_eq!(hb.last().unwrap().at, Beat(1.5));
+    assert_ne!(a.automation[0].id, b.automation[0].id);
+    // the note after goes on from the second half, which is attacked
+    assert_eq!(s.get(2).unwrap().keys()["joins"], json!(new));
+    assert!(!b.keys().contains_key("joins"));
+    // one undo gives it back whole
+    use crate::history::Editable;
+    let inverse = before
+        .clone()
+        .current(&payload(&EventsIntent::Split {
+            ids: vec![1],
+            at: Beat(0.5),
+        }))
+        .unwrap();
+    assert!(s.apply(&inverse).applied);
+    s.next_id = before.next_id;
+    assert_eq!(s, before);
+}
+
+#[test]
+fn a_written_note_is_split_on_its_value_and_both_halves_are_written_again() {
+    // a half note, written so, that sounds 80% of it
+    let mut s = EventSequence::new(vec![Event {
+        id: 1,
+        ..Event::new(
+            0.0,
+            json!({"midinote": 60, "dur": 2.0, "sustain": 1.6, "value": [1, 2]}),
+        )
+    }]);
+    let new = s
+        .edit(EventsIntent::Split {
+            ids: vec![1],
+            at: Beat(1.0),
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    for id in [1, new] {
+        let keys = s.get(id).unwrap().keys();
+        assert_eq!(keys["value"], json!([1, 4]), "{id}");
+        assert_eq!(keys["dur"], json!(1.0));
+        assert!((keys["sustain"].as_f64().unwrap() - 0.8).abs() < 1e-9);
+    }
+}
+
+#[test]
+fn a_split_outside_every_note_is_refused() {
+    let mut s = EventSequence::new(vec![Event {
+        id: 1,
+        ..Event::new(0.0, json!({"midinote": 60, "sustain": 1.0}))
+    }]);
+    let why = s
+        .edit(EventsIntent::Split {
+            ids: vec![1],
+            at: Beat(1.0),
+        })
+        .unwrap_err();
+    assert!(why.contains("inside none"), "{why}");
+}
+
+#[test]
+fn a_slur_that_ended_on_a_split_note_ends_on_its_second_half() {
+    let mut s = EventSequence::new(vec![
+        Event {
+            id: 1,
+            ..Event::new(0.0, json!({"midinote": 60, "dur": 1.0, "value": [1, 4]}))
+        },
+        Event {
+            id: 2,
+            ..Event::new(1.0, json!({"midinote": 62, "dur": 2.0, "value": [1, 2]}))
+        },
+    ]);
+    s.notation = Some(json!({"spanners": [{"kind": "slur", "from": 1, "to": 2}]}));
+    let new = s
+        .edit(EventsIntent::Split {
+            ids: vec![2],
+            at: Beat(2.0),
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    let slur = &s.notation.as_ref().unwrap()["spanners"][0];
+    assert_eq!(slur["from"], json!(1));
+    assert_eq!(slur["to"], json!(new));
 }

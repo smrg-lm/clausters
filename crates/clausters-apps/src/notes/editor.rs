@@ -647,6 +647,7 @@ impl NotesEditor {
                 | "points"
                 | "join"
                 | "unjoin"
+                | "split"
                 | "slur"
                 | "slur_join"
                 | "tie"

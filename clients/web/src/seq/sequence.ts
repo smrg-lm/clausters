@@ -324,6 +324,21 @@ export class EventSequence {
     }
 
     /**
+     * **Cut these notes in two at beat `at`**, as a region is split: each that
+     * sounds across it keeps its event up to the cut, and the rest is a new
+     * event with its keys (its marks, its channel, its written keys), each of
+     * its curves cut at the point on both sides. The second half is a new
+     * attack: a note that went on from the cut one goes on from it. A note
+     * written as notation is cut on its written length and both halves'
+     * `value` written again. One edit. Throws when `at` falls inside none of
+     * them.
+     */
+    split(events: Iterable<SeqEvent>, at: number): void {
+        const ids = [...events].map((e) => e.id);
+        this.edit({ intent: "split", ids, at }, "split");
+    }
+
+    /**
      * **Take the joins among these notes away** -- for one note alone, the
      * join into it and the one out of it -- and, where its line is written as
      * notation, the slurs that joined them. One edit.

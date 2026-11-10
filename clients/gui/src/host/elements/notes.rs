@@ -519,7 +519,16 @@ impl Notes {
     /// **`tag` with the ids of the selected notes**: what an owner's edit over
     /// the selection is asked with.
     fn selection_event(&self, tag: &str) -> Events {
-        let mut args = vec![OscType::String(tag.into())];
+        self.selection_ids(vec![OscType::String(tag.into())])
+    }
+
+    /// [`selection_event`](Self::selection_event) with a position first: the
+    /// `split`'s cut, in the view's units.
+    fn selection_event_at(&self, tag: &str, at: f64) -> Events {
+        self.selection_ids(vec![OscType::String(tag.into()), OscType::Double(at)])
+    }
+
+    fn selection_ids(&self, mut args: Vec<OscType>) -> Events {
         let mut ids: Vec<u64> = self
             .selected
             .iter()
@@ -1163,6 +1172,23 @@ impl Element for Notes {
             // the roll is not something anyone asks for by leaning on a key.
             Verb::Split if !self.selected.is_empty() => {
                 let at = self.grid().snap(self.anchor(input)).max(0.0);
+                // **An owner that holds events cuts them**, keys and curves
+                // with them: the roll names the cut and the notes, and draws
+                // what comes back. Only a bare roll cuts what it draws.
+                if self.joins.is_some() && self.ids {
+                    let inside = self
+                        .selected
+                        .iter()
+                        .filter_map(|i| self.notes.get(*i))
+                        .any(|n| at > n.start + 1e-9 && at < n.start + n.dur - 1e-9);
+                    if !inside {
+                        return Some(Events::refused(
+                            "split",
+                            "the cursor is not inside a held note",
+                        ));
+                    }
+                    return Some(self.selection_event_at("split", at));
+                }
                 let cut = notes::split_notes(&mut self.notes, &self.selected, at);
                 if cut.is_empty() {
                     return Some(Events::refused(
@@ -3069,6 +3095,43 @@ mod tests {
         plain.selected = vec![0, 1];
         assert!(refusal(plain.verb(Verb::Join, &mut input)).is_some());
         assert!(plain.command("unjoin", &mut input).is_none());
+    }
+
+    /// **A roll whose owner holds events asks it to split them**: the cursor
+    /// and the selected ids, the roll's own notes left as they are; a cursor
+    /// outside every selected note is refused here as before.
+    #[test]
+    fn a_roll_that_speaks_joins_asks_its_owner_to_split_the_selection() {
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let mut r = roll(
+            r#"{"notes":[0.0,100.0,60.0,100.0,0.0, 200.0,50.0,62.0,100.0,0.0],
+                "note_ids":[7,9],"joins":[]}"#,
+        );
+        r.selected = vec![0];
+        let mut at = |cursor: f64, r: &mut Notes| {
+            r.verb(
+                Verb::Split,
+                &mut KeyInput {
+                    mods: Mods::default(),
+                    clipboard: &mut clipboard,
+                    cursor: Some(cursor),
+                },
+            )
+        };
+        let said = at(40.0, &mut r).unwrap().into_messages();
+        assert_eq!(
+            said[0],
+            vec![
+                OscType::String("split".into()),
+                OscType::Double(40.0),
+                OscType::Double(7.0)
+            ]
+        );
+        assert_eq!(r.notes.len(), 2, "the roll cut nothing itself");
+        assert_eq!(
+            refusal(at(150.0, &mut r)),
+            Some("the cursor is not inside a held note".to_string())
+        );
     }
 
     /// **The cut is the box arithmetic's, and the identity is the roll's.**

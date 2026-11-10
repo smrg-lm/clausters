@@ -2445,7 +2445,7 @@ opened it.
   and what a verb does to an event is the document's or the editing
   crate's, never the drawn note's. Carries items 1 and 2 of "The roll's two
   modes are not yet an editor a hand can trust", in Found by use.
-  - ⬜ **X37.1 - A split is the document's.** `EventsIntent::Split`: each
+  - ✅ **X37.1 - A split is the document's.** *(Done 2026-11-10: `clausters_document::events::split`, the roll's `split` report `at id...`, `EventSequence.split` in both clients.)* `EventsIntent::Split`: each
     named event that sounds across the beat becomes two, the second a new
     event with the first's keys, each of its curves cut at the point (the
     value there written on both sides), its joins out of it going out of the
