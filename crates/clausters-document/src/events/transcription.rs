@@ -1060,6 +1060,7 @@ fn marks_of(group: &Group, notes: &[Heard], grids: &Grids, whole: bool) -> Marks
         ornament: word("ornament"),
         grace: word("grace"),
         stem: word("stem"),
+        breath: word("breath"),
         ..Marks::default()
     };
     let stated = group
@@ -1091,6 +1092,7 @@ fn carry(marks: &mut Marks, more: &Marks) {
     marks.ornament = kept.ornament;
     marks.grace = kept.grace;
     marks.stem = kept.stem;
+    marks.breath = kept.breath;
     marks.sounding = kept.sounding;
 }
 

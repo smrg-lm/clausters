@@ -484,6 +484,20 @@ class NotesEditor(Marking, SequenceHandler):
         self._set(voice=[int(voice[0]), int(voice[1])])
 
     @property
+    def color_by(self) -> str:
+        """**What a note's tint tells apart in notation mode**: ``"voice"``,
+        ``"staff"`` or ``"part"`` -- the first of each untinted. The window's,
+        like its zoom: setting it is no edit. The Notation menu has it as
+        Color by voice, staff or part."""
+        return str(self._call("editing").get("color_by", "voice"))
+
+    @color_by.setter
+    def color_by(self, color_by: str) -> None:
+        if color_by not in ("voice", "staff", "part"):
+            raise ValueError(f"a roll colors by 'voice', 'staff' or 'part', not {color_by!r}")
+        self._set(color_by=color_by)
+
+    @property
     def writing(self) -> str:
         """**How the sequence's parts write their polyphony**: ``"voices"``
         or ``"ties"`` -- the same music, written two ways. Setting it writes
@@ -520,6 +534,37 @@ class NotesEditor(Marking, SequenceHandler):
         """A staccato on each selected note, or none where all have one --
         the window's ``staccato`` (.)."""
         return self.verb("staccato")
+
+    def tenuto(self) -> bool:
+        """A tenuto on each selected note, or none where all have one -- the
+        window's ``tenuto`` (-)."""
+        return self.verb("tenuto")
+
+    def accent(self) -> bool:
+        """An accent on each selected note, or none where all have one -- the
+        window's ``accent`` (>)."""
+        return self.verb("accent")
+
+    def marcato(self) -> bool:
+        """A marcato on each selected note, or none where all have one -- the
+        window's ``marcato`` (^)."""
+        return self.verb("marcato")
+
+    def breath(self) -> bool:
+        """A breath after each selected note, or none where all have one --
+        the window's ``breath`` (,): the note is let go a little before the
+        next attack, and heard so."""
+        return self.verb("breath")
+
+    def dynamic(self, name: "str | None") -> bool:
+        """**The dynamic ``name`` written on each selected note** -- ``"pp"``,
+        ``"p"``, ``"mp"``, ``"mf"``, ``"f"`` or ``"ff"`` -- or taken away with
+        ``None``: the window's ``dynamic_pp`` to ``dynamic_ff`` and
+        ``dynamic_none``, the Notation menu's. The level the notes are heard
+        at is derived from it. `ValueError` for another name."""
+        if name is not None and name not in ("pp", "p", "mp", "mf", "f", "ff"):
+            raise ValueError(f"no dynamic {name!r}: pp, p, mp, mf, f or ff")
+        return self.verb(f"dynamic_{name or 'none'}")
 
     def pedal(self) -> bool:
         """The pedal down from the first selected note to the last -- the

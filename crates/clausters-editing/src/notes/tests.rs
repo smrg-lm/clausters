@@ -767,6 +767,34 @@ fn the_pages_marks_are_written_over_the_selection() {
     );
     let back = in_notation(&short, "staccato", &ids[..1], &editing).unwrap();
     assert!(back.events[0].keys().get("articulations").is_none());
+    // an accent and a tenuto beside it, by their MEI names, drawn by name
+    let accented = in_notation(&s, "accent", &ids[..2], &editing).unwrap();
+    let both = in_notation(&accented, "tenuto", &ids[..1], &editing).unwrap();
+    assert_eq!(
+        both.events[0].keys()["articulations"],
+        json!(["acc", "ten"])
+    );
+    assert_eq!(both.events[1].keys()["articulations"], json!(["acc"]));
+    let drawn = project(&both, &YDomain::midi(), &Axis::constant(1.0), &editing);
+    assert_eq!(drawn.marks[..2], ["acc ten".to_string(), "acc".to_string()]);
+    // a breath takes length from the note before the next attack
+    let breathed = in_notation(&s, "breath", &ids[..1], &editing).unwrap();
+    assert_eq!(breathed.events[0].keys()["breath"], json!("breath"));
+    assert!(
+        render::sustain_of(&breathed.events[0].keys())
+            < render::sustain_of(&breathed.events[1].keys()),
+        "and heard as the shortened note"
+    );
+    assert_eq!(
+        project(&breathed, &YDomain::midi(), &Axis::constant(1.0), &editing).marks[0],
+        "breath"
+    );
+    // a dynamic written on each selected note, and taken away
+    let loud = in_notation(&s, "dynamic_ff", &ids[1..], &editing).unwrap();
+    assert_eq!(loud.events[1].keys()["dynamic"], json!("ff"));
+    assert_eq!(loud.events[2].keys()["dynamic"], json!("ff"));
+    let quiet = in_notation(&loud, "dynamic_none", &ids[1..2], &editing).unwrap();
+    assert!(quiet.events[1].keys().get("dynamic").is_none());
     // a tie: the two Cs are one note, a half
     let tied = in_notation(&s, "tie", &ids[..2], &editing).unwrap();
     assert_eq!(tied.events.len(), 2);
@@ -1021,5 +1049,32 @@ fn a_roll_in_notation_mode_says_how_each_note_is_written() {
     assert!(
         midi.spelled.is_empty(),
         "MIDI mode writes nothing of a page"
+    );
+}
+
+/// **A note's tint tells apart what the editing says**: in notation mode its
+/// voice by default, its staff or its part when asked; the first is
+/// untinted, and MIDI mode tints nothing.
+#[cfg(feature = "notation")]
+#[test]
+fn a_notes_tint_is_its_voice_its_staff_or_its_part() {
+    let mut s = written_line();
+    let mut second = s.events[2].keys();
+    second.insert("staff".into(), json!(1));
+    s.events[2].data = clausters_document::Opaque(Value::Object(second));
+    let axis = Axis::constant(1.0);
+    let tinted = |color_by| {
+        let editing = Editing {
+            color_by,
+            ..notation_editing()
+        };
+        project(&s, &YDomain::midi(), &axis, &editing).tints
+    };
+    assert_eq!(tinted(ColorBy::Voice), vec![0, 0, 0]);
+    assert_eq!(tinted(ColorBy::Staff), vec![0, 0, 1]);
+    assert!(
+        project(&s, &YDomain::midi(), &axis, &Editing::default())
+            .tints
+            .is_empty()
     );
 }

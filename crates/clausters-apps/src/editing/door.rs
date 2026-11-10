@@ -125,7 +125,8 @@ pub(crate) fn call_value(editing: &mut Editing, mut request: Value) -> Value {
         },
         "openNotes" => {
             let request = request.to_string();
-            let editor = notes::new_json(notes::shared_of(&request), &request);
+            let mut editor = notes::new_json(notes::shared_of(&request), &request);
+            editor.set_outlines(editing.mark_outlines());
             joined(editing, &key, Member::Notes(Box::new(editor)))
         }
         "openPoints" => {
@@ -383,7 +384,8 @@ impl Editing {
         if let Some(map) = request.as_object_mut() {
             map.insert("version".into(), json!(self.version));
         }
-        let editor = notes::new_json(sequence.clone(), &request.to_string());
+        let mut editor = notes::new_json(sequence.clone(), &request.to_string());
+        editor.set_outlines(self.mark_outlines());
         let again = self.unwindowed.iter().copied().find(|member| {
             matches!(self.member(*member),
                 Some(Member::Notes(held)) if std::sync::Arc::ptr_eq(held.sequence(), &sequence))

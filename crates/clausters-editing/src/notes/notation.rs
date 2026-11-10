@@ -17,8 +17,12 @@
 //!   of one voice that overlap are a chord when they start and end together
 //!   and are refused with the reason otherwise; where it writes it with ties
 //!   they are kept, since one voice holds them all.
-//! - **The articulations** (`slur`, `slur_join`, `tie`, `staccato`, `pedal`)
-//!   are the page's own marks over the selected notes, heard at once.
+//! - **The articulations** (`slur`, `slur_join`, `tie`, `staccato`,
+//!   `tenuto`, `accent`, `marcato`, `breath`, `pedal`) and **the dynamics**
+//!   (`dynamic_pp` to `dynamic_ff`, `dynamic_none`) are the page's own marks
+//!   over the selected notes, heard at once: a mark on each note toggles,
+//!   on where any lacks it and off where all have it, and a dynamic is
+//!   written on each, or taken away.
 //!
 //! Nothing is refused for what an instrument cannot play: that is a model of
 //! instruments', which this is not.
@@ -26,7 +30,33 @@
 use serde_json::{Map, Value};
 
 /// The roll's verbs over a selection that only notation answers.
-pub const ARTICULATIONS: &[&str] = &["slur", "slur_join", "tie", "staccato", "pedal"];
+pub const ARTICULATIONS: &[&str] = &[
+    "slur",
+    "slur_join",
+    "tie",
+    "staccato",
+    "tenuto",
+    "accent",
+    "marcato",
+    "breath",
+    "pedal",
+    "dynamic_pp",
+    "dynamic_p",
+    "dynamic_mp",
+    "dynamic_mf",
+    "dynamic_f",
+    "dynamic_ff",
+    "dynamic_none",
+];
+
+/// **A mark on a note, by its verb**: the MEI name of the articulation it
+/// writes in the note's `articulations`.
+pub const ARTICULATION_NAMES: &[(&str, &str)] = &[
+    ("staccato", "stacc"),
+    ("tenuto", "ten"),
+    ("accent", "acc"),
+    ("marcato", "marc"),
+];
 
 /// **The written value of `beats`** -- the document's reading of it, which a
 /// split writes with too.
@@ -82,8 +112,13 @@ mod gated {
                 "join or attack a slur",
             ),
             "tie" => (articulate(sequence, tag, values, editing), "tie"),
-            "staccato" => (articulate(sequence, tag, values, editing), "staccato"),
-            "pedal" => (articulate(sequence, tag, values, editing), "pedal"),
+            "staccato" | "tenuto" | "accent" | "marcato" | "breath" | "pedal" => {
+                (articulate(sequence, tag, values, editing), tag)
+            }
+            dynamic if dynamic.starts_with("dynamic_") => (
+                articulate(sequence, tag, values, editing),
+                "write a dynamic",
+            ),
             _ => return Intake::nothing(),
         };
         let mut after = match after {
@@ -385,24 +420,61 @@ mod gated {
         chosen.sort_by(|a, b| a.at.0.total_cmp(&b.at.0));
         let mut after = sequence.clone();
         match tag {
-            "staccato" => {
+            mark if super::ARTICULATION_NAMES
+                .iter()
+                .any(|(verb, _)| *verb == mark) =>
+            {
+                let name = super::ARTICULATION_NAMES
+                    .iter()
+                    .find(|(verb, _)| *verb == mark)
+                    .map_or(mark, |(_, name)| name);
                 let all = chosen
                     .iter()
-                    .all(|e| articulations(&e.keys()).contains(&"stacc".to_string()));
+                    .all(|e| articulations(&e.keys()).iter().any(|m| m == name));
                 for id in chosen.iter().map(|e| e.id).collect::<Vec<_>>() {
                     let Some(event) = after.events.iter_mut().find(|e| e.id == id) else {
                         continue;
                     };
                     let mut keys = event.keys();
                     let mut marks = articulations(&keys);
-                    marks.retain(|m| m != "stacc");
+                    marks.retain(|m| m != name);
                     if !all {
-                        marks.push("stacc".into());
+                        marks.push(name.to_string());
                     }
                     if marks.is_empty() {
                         keys.remove("articulations");
                     } else {
                         keys.insert("articulations".into(), json!(marks));
+                    }
+                    event.data = Opaque(Value::Object(keys));
+                }
+            }
+            "breath" => {
+                let all = chosen.iter().all(|e| e.keys().contains_key("breath"));
+                for id in chosen.iter().map(|e| e.id).collect::<Vec<_>>() {
+                    let Some(event) = after.events.iter_mut().find(|e| e.id == id) else {
+                        continue;
+                    };
+                    let mut keys = event.keys();
+                    if all {
+                        keys.remove("breath");
+                    } else {
+                        keys.insert("breath".into(), json!("breath"));
+                    }
+                    event.data = Opaque(Value::Object(keys));
+                }
+            }
+            dynamic if dynamic.starts_with("dynamic_") => {
+                let name = &dynamic["dynamic_".len()..];
+                for id in chosen.iter().map(|e| e.id).collect::<Vec<_>>() {
+                    let Some(event) = after.events.iter_mut().find(|e| e.id == id) else {
+                        continue;
+                    };
+                    let mut keys = event.keys();
+                    if name == "none" {
+                        keys.remove("dynamic");
+                    } else {
+                        keys.insert("dynamic".into(), json!(name));
                     }
                     event.data = Opaque(Value::Object(keys));
                 }

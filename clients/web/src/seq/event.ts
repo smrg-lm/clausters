@@ -50,6 +50,7 @@ export const NOTATION_KEYS = [
     "articulations",
     "dynamic",
     "ornament",
+    "breath",
     "grace",
     "stem",
     "tie",

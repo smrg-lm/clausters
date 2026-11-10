@@ -490,6 +490,25 @@ export class NotesEditor extends SequenceHandler {
     }
 
     /**
+     * **What a note's tint tells apart in notation mode**: `"voice"`,
+     * `"staff"` or `"part"` -- the first of each untinted. The window's, like
+     * its zoom: setting it is no edit. The Notation menu has it as Color by
+     * voice, staff or part.
+     */
+    async colorBy(): Promise<"voice" | "staff" | "part"> {
+        const said = (await this.coreCall("editing")).color_by;
+        return said === "staff" || said === "part" ? said : "voice";
+    }
+
+    /** Sets what a note's tint tells apart in notation mode: no edit. */
+    async setColorBy(colorBy: "voice" | "staff" | "part"): Promise<void> {
+        if (colorBy !== "voice" && colorBy !== "staff" && colorBy !== "part") {
+            throw new Error(`a roll colors by "voice", "staff" or "part", not ${JSON.stringify(colorBy)}`);
+        }
+        await this.setting({ color_by: colorBy });
+    }
+
+    /**
      * **The voice the roll edits in notation mode**, `[staff, voice]` counted
      * from 0: what a note drawn is written in, and the one voice a press takes
      * -- the others are drawn faint. No edit.
@@ -548,6 +567,44 @@ export class NotesEditor extends SequenceHandler {
     /** A staccato on each selected note, or none where all have one -- `staccato` (.). */
     staccato(): boolean {
         return this.verb("staccato");
+    }
+
+    /** A tenuto on each selected note, or none where all have one -- `tenuto` (-). */
+    tenuto(): boolean {
+        return this.verb("tenuto");
+    }
+
+    /** An accent on each selected note, or none where all have one -- `accent` (>). */
+    accent(): boolean {
+        return this.verb("accent");
+    }
+
+    /** A marcato on each selected note, or none where all have one -- `marcato` (^). */
+    marcato(): boolean {
+        return this.verb("marcato");
+    }
+
+    /**
+     * A breath after each selected note, or none where all have one -- the
+     * window's `breath` (,): the note is let go a little before the next
+     * attack, and heard so.
+     */
+    breath(): boolean {
+        return this.verb("breath");
+    }
+
+    /**
+     * **The dynamic `name` written on each selected note** -- `"pp"`, `"p"`,
+     * `"mp"`, `"mf"`, `"f"` or `"ff"` -- or taken away with `null`: the
+     * window's `dynamic_pp` to `dynamic_ff` and `dynamic_none`, the Notation
+     * menu's. The level the notes are heard at is derived from it. Throws for
+     * another name.
+     */
+    dynamic(name: "pp" | "p" | "mp" | "mf" | "f" | "ff" | null): boolean {
+        if (name !== null && !["pp", "p", "mp", "mf", "f", "ff"].includes(name)) {
+            throw new Error(`no dynamic ${JSON.stringify(name)}: pp, p, mp, mf, f or ff`);
+        }
+        return this.verb(`dynamic_${name ?? "none"}`);
     }
 
     /** The pedal down from the first selected note to the last -- `pedal` (P). */

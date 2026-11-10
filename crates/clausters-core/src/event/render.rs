@@ -58,6 +58,7 @@ pub const RESERVED: &[&str] = &[
     "ornament",
     "grace",
     "stem",
+    "breath",
     "spelling",
     "accidental",
     "tie",

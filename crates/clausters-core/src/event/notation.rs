@@ -101,6 +101,13 @@ pub const KEYS: &[Key] = &[
         reads: "the mark is the fact; the notes it is played as are the interpretation's",
     },
     Key {
+        name: "breath",
+        holds: "a breath after this note, or a full stop of the line",
+        unit: "breath, or caesura",
+        reads: "the mark is the fact; the length it takes from the note before the next \
+                attack is the interpretation's",
+    },
+    Key {
         name: "grace",
         holds: "that this is a grace note, and of which kind",
         unit: "acc, an appoggiatura, or unacc, an acciaccatura",

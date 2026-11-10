@@ -64,6 +64,12 @@ faint and is not taken. **M** edits monophonically: a note lengthened over the
 next shortens it, and a slur drawn then joins its notes into one line. The
 Notation menu has the rest -- the staff or the system shown, the polyphony
 written in voices or with ties -- and MIDI mode converts nothing back.
+**-**, **>**, **^** and **,** write a tenuto, an accent, a marcato and a
+breath, and the Notation menu's Dynamic a dynamic: each is drawn as the page
+draws it -- the articulations over the note, the breath at its end, the
+dynamic under it -- and heard at once, a breath as the note let go early. A
+note's tint tells apart its voice, or its staff or part (Color by, in the same
+menu).
 
 **The first window paints what is played** (``midi_in=True``). The host opens
 a MIDI input of its own, a port named ``clausters-gui``: route a keyboard into
@@ -217,6 +223,32 @@ def notation():
 
 
 # %% [markdown]
+# ## A phrase marked as a page marks it
+#
+# A copy written as notation again, on a roll in notation mode beside its page.
+# The first two notes get an accent, the second a breath after it, and the
+# first a dynamic: the roll draws each with the engraver's symbol, the page
+# writes them at once, and the second note is heard let go before the third.
+# Each mark is one entry of the history the roll and the page share.
+
+# %%
+def phrase():
+    """Accent the first two notes, a breath after the second, mf on the first."""
+    written = editor.to_notation(meter="4/4", division=8, copy=True)
+    roll = edit(written, title="a phrase")
+    roll.mode = "notation"
+    edit(written, view="score", division=8, title="the phrase on a page")
+    first, second = written.events[0], written.events[1]
+    roll.select([first, second])
+    roll.accent()
+    roll.select([second])
+    roll.breath()
+    roll.select([first])
+    roll.dynamic("mf")
+    return roll
+
+
+# %% [markdown]
 # ## Play what was drawn
 #
 # The editor plays the sequence it edits, on its own transport -- the space bar
@@ -339,4 +371,5 @@ else:
     print("up -- play() to hear it, page() for the notes on a page, "
           "notation() for them as notation, rework() to split and transpose, "
           "legato() to join two notes and line() to read the pitch they sound, "
+          "phrase() to mark a phrase as a page does, "
           "read_back() to see what survived the edit")

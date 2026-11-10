@@ -147,12 +147,22 @@ struct Written {
     labels: Vec<String>,
     /// How each note is written, as a reader says it (`spelled`).
     spelled: Vec<String>,
+    /// **The marks a page writes on each note** (`marks`): its articulations,
+    /// drawn over the box -- a symbol's character, or the text it reads as.
+    marks: Vec<String>,
+    /// The breath after each note (`breaths`), drawn at its end, or `""`.
+    breaths: Vec<String>,
+    /// **Each note's tint** (`tints`): its voice, staff or part as the owner
+    /// says, the first untinted. Without it a note is tinted by its voice.
+    tints: Vec<usize>,
 }
 
 impl Written {
     fn read(props: &Map<String, Value>) -> Self {
         let mut out = Self::default();
-        for key in ["held", "voices", "dimmed", "labels", "spelled"] {
+        for key in [
+            "held", "voices", "dimmed", "labels", "spelled", "marks", "breaths", "tints",
+        ] {
             if let Some(v) = props.get(key) {
                 out.set(key, v);
             }
@@ -173,15 +183,17 @@ impl Written {
             "held" => self.held = numbers().collect(),
             "voices" => self.voices = numbers().map(|n| n.max(0.0) as usize).collect(),
             "dimmed" => self.dimmed = numbers().map(|n| n != 0.0).collect(),
-            "labels" | "spelled" => {
+            "tints" => self.tints = numbers().map(|n| n.max(0.0) as usize).collect(),
+            "labels" | "spelled" | "marks" | "breaths" => {
                 let texts = list
                     .iter()
                     .map(|l| l.as_str().unwrap_or_default().to_string())
                     .collect();
-                if key == "labels" {
-                    self.labels = texts;
-                } else {
-                    self.spelled = texts;
+                match key {
+                    "labels" => self.labels = texts,
+                    "spelled" => self.spelled = texts,
+                    "marks" => self.marks = texts,
+                    _ => self.breaths = texts,
                 }
             }
             _ => return false,
@@ -268,6 +280,10 @@ pub(super) fn build(
 /// the tests beside it, and by a container that draws a roll as a **body** and
 /// builds one through the same door rather than by naming fields.
 pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
+    // the outlines its marks are drawn with, into the host's one table
+    if let Some(glyphs) = props.get("glyphs").and_then(Value::as_object) {
+        crate::host::font::outline::set(glyphs);
+    }
     let osc = parse_osc(props);
     let mut notes = parse_notes(props);
     let ids = set_ids(&mut notes, props.get("note_ids"));
@@ -697,7 +713,12 @@ impl Element for Notes {
                 self.osc = parse_osc(&parse::as_array_props("osc", v));
                 true
             }
-            "held" | "voices" | "dimmed" | "labels" | "spelled" => self.written.set(key, v),
+            "held" | "voices" | "dimmed" | "labels" | "spelled" | "marks" | "breaths" | "tints" => {
+                self.written.set(key, v)
+            }
+            // **the outlines its marks are drawn with**, as a window's
+            // `glyphs`: the host's one table, which every text reads
+            "glyphs" => v.as_object().map(crate::host::font::outline::set).is_some(),
             "joins" => {
                 let list = parse::as_array_props("joins", v);
                 self.joins = Some(parse_joins(list.get("joins").unwrap_or(&Value::Null)));
@@ -1354,18 +1375,10 @@ impl Element for Notes {
     fn command(&mut self, name: &str, _input: &mut KeyInput) -> Option<Events> {
         let moves = matches!(name, "step_up" | "step_down" | "octave_up" | "octave_down");
         let ours = moves
+            || clausters_editing::notes::notation::ARTICULATIONS.contains(&name)
             || matches!(
                 name,
-                "unjoin"
-                    | "slur"
-                    | "slur_join"
-                    | "tie"
-                    | "staccato"
-                    | "pedal"
-                    | "select_pitch"
-                    | "select_channel"
-                    | "select_voice"
-                    | "select_staff"
+                "unjoin" | "select_pitch" | "select_channel" | "select_voice" | "select_staff"
             );
         if !ours || self.joins.is_none() || !self.ids || !self.editable {
             return None;
@@ -1589,10 +1602,14 @@ impl Notes {
             let Some(r) = pianoroll::note_rect(grid, nav, 0.0, n, axis) else {
                 continue;
             };
-            if let Some([_, voice]) = self.written.voice(i)
-                && voice > 0
-            {
-                mesh.rect(r, VOICE_TINTS[(voice - 1) % VOICE_TINTS.len()]);
+            let tint = self
+                .written
+                .tints
+                .get(i)
+                .copied()
+                .or_else(|| self.written.voice(i).map(|[_, voice]| voice));
+            if let Some(tint) = tint.filter(|t| *t > 0) {
+                mesh.rect(r, VOICE_TINTS[(tint - 1) % VOICE_TINTS.len()]);
             }
             // **What sounds is the note; the rest of what is written is its
             // outline, dotted.** The sounding stretch is closed by a solid
@@ -1633,18 +1650,43 @@ impl Notes {
                     }
                 }
             }
-            if let Some(label) = self.written.labels.get(i).filter(|l| !l.is_empty()) {
-                let w = font::width(label, m.micro_scale);
-                if w + 2.0 * m.pad <= r.w && font::height(m.micro_scale) <= r.h {
-                    font::text(
-                        mesh,
-                        label,
-                        r.x + m.pad,
-                        r.y,
-                        m.micro_scale,
-                        theme.ruler_text,
-                    );
+            // **The page's marks on the note**, as a page writes them: its
+            // articulations over the box, its breath at its end, its dynamic
+            // under it. A symbol is drawn at twice the text, where a music
+            // font's mark is a fraction of its em; a mark written as text at
+            // the text's own size.
+            let sized = |t: &str| {
+                if t.chars().any(crate::host::font::outline::has) {
+                    m.text_scale * 2.0
+                } else {
+                    m.text_scale
                 }
+            };
+            if let Some(marks) = self.written.marks.get(i).filter(|t| !t.is_empty()) {
+                let scale = sized(marks);
+                let w = font::width(marks, scale);
+                font::text(
+                    mesh,
+                    marks,
+                    r.x + (r.w - w).max(0.0) * 0.5,
+                    r.y - font::line_advance(scale),
+                    scale,
+                    theme.ruler_text,
+                );
+            }
+            if let Some(breath) = self.written.breaths.get(i).filter(|t| !t.is_empty()) {
+                let scale = sized(breath);
+                font::text(
+                    mesh,
+                    breath,
+                    r.x + r.w - font::width(breath, scale) * 0.5,
+                    r.y - font::line_advance(scale),
+                    scale,
+                    theme.ruler_text,
+                );
+            }
+            if let Some(label) = self.written.labels.get(i).filter(|l| !l.is_empty()) {
+                font::text(mesh, label, r.x, r.y + r.h, sized(label), theme.ruler_text);
             }
             if self.written.dimmed(i) {
                 let veil = [theme.lane[0], theme.lane[1], theme.lane[2], 0.65];
@@ -3250,6 +3292,24 @@ mod tests {
             r.hit((x, high), &input).note.is_some(),
             "in MIDI mode every note is taken"
         );
+    }
+
+    /// **A page's marks are read as the owner draws them**: the
+    /// articulations over each box, the breath at its end and the tint each
+    /// note is drawn with, set again by a `/gui_set`; without `tints` a note
+    /// is tinted by its voice.
+    #[test]
+    fn a_roll_reads_the_marks_the_breaths_and_the_tints() {
+        let mut r = roll(
+            r#"{"notes": [0, 100, 60, 100, 0, 100, 100, 64, 100, 0],
+                "voices": [0, 0, 0, 1],
+                "marks": [">-", ""], "breaths": ["", ","]}"#,
+        );
+        assert_eq!(r.written.marks, vec![">-".to_string(), String::new()]);
+        assert_eq!(r.written.breaths[1], ",");
+        assert!(r.written.tints.is_empty());
+        assert!(r.set("tints", &serde_json::json!([0, 2])));
+        assert_eq!(r.written.tints, vec![0, 2]);
     }
 
     /// **A pitch line is drawn through the pitch it sounds, cut at the

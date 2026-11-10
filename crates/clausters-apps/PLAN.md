@@ -2517,7 +2517,7 @@ opened it.
   **Acceptance:** two joined notes with a bend draw one continuous line
   that follows the bend, and an unjoined third starts a new one.
 
-- ⬜ **X42 - The page in the roll.** The marks a page writes on a note
+- ✅ **X42 - The page in the roll.** *(Done 2026-11-10: `tenuto`, `accent`, `marcato`, `breath` and `dynamic_pp` to `dynamic_none` in the notes scope, a breath read and written as the event's `breath` key; the roll draws a note's marks with the engraver's outlines, which the application asks of the engraver it holds only once a roll first shows a page (`Editing::engrave_marks_with`), and as the palette's text without one; `color_voice`, `color_staff`, `color_part`; both clients' members and the notes editor example's `phrase`. Slurs still wait on the drawing.)* The marks a page writes on a note
   (tenuto, accent, marcato and the breath, which takes length from a note
   before the next attack, beside staccato) and the dynamics, as verbs; drawn
   in notation mode with the SMuFL outlines the page already sends, over a

@@ -197,6 +197,7 @@ pub fn render(sheet: &Sheet, interp: &Interpretation) -> Result<EventSequence, S
             ("ornament", &marks.ornament),
             ("grace", &marks.grace),
             ("stem", &marks.stem),
+            ("breath", &marks.breath),
         ] {
             if let Some(mark) = mark {
                 keys.insert(key.into(), json!(mark));

@@ -286,6 +286,7 @@ the core's (`clausters._native.event_notation_keys()` hands it out), and
 | `articulations` | a list of articulations | MEI names: `stacc`, `stacciss`, `spicc`, `acc`, `marc`, `ten`, `stress`, `upbow`, `dnbow`, `harm`, `snap`, `open`, `stop` | the mark is the fact; a shortened `sustain` or a raised level beside it is what an interpretation made of it |
 | `dynamic` | a dynamic written at this note | its name: `pp`, `p`, `mp`, `mf`, `f`, `ff`, `sf`, `fp` | the mark is the source of the level, and `amp`, `velocity` or `db` its performance |
 | `ornament` | an ornament on this note | `trill`, `mordent`, `turn`, `fermata` | the mark is the fact; the notes it is played as are the interpretation's |
+| `breath` | a breath after this note, or a full stop of the line | `breath`, or `caesura` | the mark is the fact; the length it takes from the note before the next attack is the interpretation's |
 | `grace` | that this is a grace note, and of which kind | `acc`, an appoggiatura, or `unacc`, an acciaccatura | on a page it takes no time of the bar and stands before the next note of its voice; its `dur` is how it was played and its `value` what it is written as |
 | `stem` | a stem direction the writer forced | `up` or `down` | the page's alone |
 | `tie` | that this note ties into the next of its pitch | true or false | the two are one sound on a page; each event keeps its own length |

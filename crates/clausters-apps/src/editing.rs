@@ -511,6 +511,9 @@ pub struct Editing {
     /// What its audio members hand on by reference: the lists a window draws,
     /// the copies, the takes the histories name.
     shared: crate::audio::shared::Shared,
+    /// **The engraver's outlines, where the application holds one**: what
+    /// a roll draws a page's marks with ([`crate::notes::OutlineSource`]).
+    outlines: crate::notes::Symbols,
 }
 
 impl Default for Editing {
@@ -547,7 +550,20 @@ impl Editing {
             audio_playing: Default::default(),
             engine: None,
             shared: Default::default(),
+            outlines: Default::default(),
         }
+    }
+
+    /// **Draws its rolls' marks with the outlines `source` answers**: the
+    /// engraver the application holds, asked once a roll first shows a page.
+    /// Set before the first roll opens; without it a mark is written as text.
+    pub fn engrave_marks_with(&mut self, source: crate::notes::OutlineSource) {
+        self.outlines = crate::notes::Symbols::with(Some(source));
+    }
+
+    /// The outlines a roll opened now draws its marks with.
+    pub(crate) fn mark_outlines(&self) -> Option<crate::notes::OutlineSource> {
+        self.outlines.source()
     }
 
     /// **Plays its audio members on `engine`**, an engine the application

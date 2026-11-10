@@ -112,13 +112,27 @@ The verdict is one of three:
 | `notes` | `voice_2` | `NotesEditor.voice` | `NotesEditor.voice` | **api** — `voice = (staff, 1)` |
 | `notes` | `voice_3` | `NotesEditor.voice` | `NotesEditor.voice` | **api** — `voice = (staff, 2)` |
 | `notes` | `voice_4` | `NotesEditor.voice` | `NotesEditor.voice` | **api** — `voice = (staff, 3)` |
+| `notes` | `color_voice` | `NotesEditor.color_by` | `NotesEditor.colorBy` | **api** — `color_by = "voice"`; on the web `setColorBy("voice")` |
+| `notes` | `color_staff` | `NotesEditor.color_by` | `NotesEditor.colorBy` | **api** — `color_by = "staff"` |
+| `notes` | `color_part` | `NotesEditor.color_by` | `NotesEditor.colorBy` | **api** — `color_by = "part"` |
 | `notes` | `write_voices` | `NotesEditor.writing` | `NotesEditor.writing` | **api** — `writing = "voices"`; on the web `setWriting("voices")` |
 | `notes` | `write_ties` | `NotesEditor.writing` | `NotesEditor.writing` | **api** — `writing = "ties"` |
 | `notes` | `slur` | `NotesEditor.slur` | `NotesEditor.slur` | **api** |
 | `notes` | `slur_join` | `NotesEditor.slur_join` | `NotesEditor.slurJoin` | **api** |
 | `notes` | `tie` | `NotesEditor.tie` | `NotesEditor.tie` | **api** |
 | `notes` | `staccato` | `NotesEditor.staccato` | `NotesEditor.staccato` | **api** |
+| `notes` | `tenuto` | `NotesEditor.tenuto` | `NotesEditor.tenuto` | **api** |
+| `notes` | `accent` | `NotesEditor.accent` | `NotesEditor.accent` | **api** |
+| `notes` | `marcato` | `NotesEditor.marcato` | `NotesEditor.marcato` | **api** |
+| `notes` | `breath` | `NotesEditor.breath` | `NotesEditor.breath` | **api** |
 | `notes` | `pedal` | `NotesEditor.pedal` | `NotesEditor.pedal` | **api** |
+| `notes` | `dynamic_pp` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic("pp")` |
+| `notes` | `dynamic_p` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic("p")` |
+| `notes` | `dynamic_mp` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic("mp")` |
+| `notes` | `dynamic_mf` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic("mf")` |
+| `notes` | `dynamic_f` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic("f")` |
+| `notes` | `dynamic_ff` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic("ff")` |
+| `notes` | `dynamic_none` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic(None)`; on the web `dynamic(null)` |
 | `score` | `new_file` | `ScoreEditor.new_file` | `ScoreEditor.newFile` | **api** — a new score in the window's place; the one let go is handed back to the handler |
 | `score` | `close_file` | `ScoreEditor.close_file` | `ScoreEditor.closeFile` | **api** — no document: the window goes on empty, and the score is handed back to the handler |
 | `score` | `entry` | `ScoreEditor.entry` | `ScoreEditor.entry` | **api** |

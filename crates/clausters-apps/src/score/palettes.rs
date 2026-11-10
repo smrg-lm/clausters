@@ -872,6 +872,20 @@ pub fn codes() -> Vec<&'static str> {
         .collect()
 }
 
+/// **The symbol a mark is written with, by its name** -- an articulation's
+/// MEI name, a breath's or a dynamic's -- as the palettes offer it: its SMuFL
+/// codepoint and the text it reads as where no outline is held. A roll draws
+/// a note's marks with these, so the page and the roll write one symbol.
+#[must_use]
+pub fn symbol(name: &str) -> Option<(&'static str, &'static str)> {
+    groups()
+        .into_iter()
+        .filter(|group| matches!(group.name, "articulations" | "ornaments" | "dynamics"))
+        .flat_map(|group| group.entries)
+        .find(|entry| entry.name == name && entry.name != "none")
+        .and_then(|entry| Some((entry.code?, entry.text)))
+}
+
 /// How wide the column of palettes is.
 pub const WIDTH: f64 = 204.0;
 

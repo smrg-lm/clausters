@@ -86,6 +86,12 @@ monophonically: a note lengthened over the next shortens it, and a slur drawn
 then joins its notes into one line. The Notation menu has the rest -- the staff
 or the system shown, the polyphony written in voices or with ties -- and MIDI
 mode converts nothing back.
+<b>-</b>, <b>&gt;</b>, <b>^</b> and <b>,</b> write a tenuto, an accent, a marcato and a
+breath, and the Notation menu's Dynamic a dynamic: each is drawn as the page
+draws it -- the articulations over the note, the breath at its end, the
+dynamic under it -- and heard at once, a breath as the note let go early. A
+note's tint tells apart its voice, or its staff or part (Color by, in the same
+menu). <b>phrase</b> marks a phrase from the script.
 
 <b>The first roll is asked to paint what is played</b>
 (<code>midiIn: true</code>). The host opens its MIDI input and writes each key
@@ -149,6 +155,9 @@ leaves every other note its own.</div>
       <div id="score"></div>
       <button id="notation" disabled>notation</button>
       <div id="written"></div>
+      <button id="phrase" disabled>phrase</button>
+      <div id="phrased"></div>
+      <div id="phrasepage"></div>
       <button id="play" disabled>play the notes</button>
       <button id="rework" disabled>rework</button>
       <button id="legato" disabled>legato</button>
@@ -279,6 +288,30 @@ leaves every other note its own.</div>
           const written = await editor.toNotation({ meter: "4/4", division: 8, copy: true });
           const roll = await gui.edit(written, { title: "notes as notation", stage: $("written") });
           await roll.setMode("notation");
+        };
+
+        // A phrase marked as a page marks it: a copy written as notation
+        // again, on a roll in notation mode beside its page. The first two
+        // notes get an accent, the second a breath after it, and the first a
+        // dynamic: the roll draws each with the engraver's symbol, the page
+        // writes them at once, and the second note is heard let go before the
+        // third. Each mark is one entry of the history the roll and the page
+        // share.
+        $("phrase").disabled = false;
+        $("phrase").onclick = async () => {
+          const written = await editor.toNotation({ meter: "4/4", division: 8, copy: true });
+          const roll = await gui.edit(written, { title: "a phrase", stage: $("phrased") });
+          await roll.setMode("notation");
+          await gui.edit(written, {
+            view: "score", division: 8, title: "the phrase on a page", stage: $("phrasepage"),
+          });
+          const [first, second] = [written.events.item(0), written.events.item(1)];
+          await roll.select([first, second]);
+          roll.accent();
+          await roll.select([second]);
+          roll.breath();
+          await roll.select([first]);
+          roll.dynamic("mf");
         };
 
         $("play").disabled = false;

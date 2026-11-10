@@ -288,6 +288,8 @@ pub fn menu(app: App, saves: bool) -> Value {
             sep(),
         ];
         notation.extend(["voice_1", "voice_2", "voice_3", "voice_4"].map(|v| entry(app, v)));
+        notation.push(sep());
+        notation.extend(["color_voice", "color_staff", "color_part"].map(|v| entry(app, v)));
         notation.extend([
             sep(),
             entry(app, "write_voices"),
@@ -297,7 +299,25 @@ pub fn menu(app: App, saves: bool) -> Value {
             entry(app, "slur_join"),
             entry(app, "tie"),
             entry(app, "staccato"),
+            entry(app, "tenuto"),
+            entry(app, "accent"),
+            entry(app, "marcato"),
+            entry(app, "breath"),
             entry(app, "pedal"),
+            sub(
+                "Dynamic",
+                [
+                    "dynamic_pp",
+                    "dynamic_p",
+                    "dynamic_mp",
+                    "dynamic_mf",
+                    "dynamic_f",
+                    "dynamic_ff",
+                    "dynamic_none",
+                ]
+                .map(|v| entry(app, v))
+                .to_vec(),
+            ),
         ]);
         bar.push(sub("Notation", notation));
     }

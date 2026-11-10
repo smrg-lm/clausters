@@ -274,10 +274,9 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`X39` and `X42` -- the roll as an editor of everything a sequence
-  holds** *(`crates/clausters-apps/PLAN.md`)*: the lanes (`X39`), which
-  edit and show through the verbs `X37` defined and beside the panel `X38`
-  made, and the page's glyphs (`X42`), drawn beside the pitch line.
+- ⬜ **`X39` -- the roll's lanes** *(`crates/clausters-apps/PLAN.md`)*,
+  which edit and show through the verbs `X37` defined and beside the panel
+  `X38` made.
   What is left of the Found by use entry "The roll's two modes are not yet
   an editor a hand can trust" is its item 11, a pass over the rest of the
   application, which comes after them.

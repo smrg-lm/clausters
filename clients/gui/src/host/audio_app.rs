@@ -174,6 +174,25 @@ fn engraved(_: &str) -> Result<clausters_apps::score::Shared, String> {
     Err("this host was built without an engraver, so it opens no score".into())
 }
 
+/// **The outlines of the symbols `codes` names**, asked of the engraver this
+/// build holds over a blank page: what a roll draws a page's marks with.
+/// Nothing where the build holds no engraver, and a roll then writes them as
+/// text.
+#[cfg(feature = "notation")]
+fn mark_outlines(codes: &[&str]) -> std::collections::BTreeMap<String, String> {
+    use clausters_core::notation::{sheet_to_mei, voice_to_sheet};
+    sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C"))
+        .map_err(|e| e.to_string())
+        .and_then(|mei| engraved(&mei))
+        .map(|score| {
+            score
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .outlines(codes)
+        })
+        .unwrap_or_default()
+}
+
 /// What the host asks of the application.
 #[derive(Debug)]
 pub(super) enum ToApp {
@@ -415,6 +434,10 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
     let app = Application::new(engine);
     let mut editing = Editing::new();
     app.hold(&mut editing);
+    // **a roll's marks are the engraver's symbols**, asked of it only when a
+    // roll first shows a page
+    #[cfg(feature = "notation")]
+    editing.engrave_marks_with(Arc::new(|codes: &[&str]| mark_outlines(codes)));
     let mut state = App {
         app,
         editing,

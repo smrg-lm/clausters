@@ -357,6 +357,10 @@ pub const NOTES: &[Verb] = &[
     choice("voice", "voice_2", &["Ctrl+Alt+2"], "Voice 2"),
     choice("voice", "voice_3", &["Ctrl+Alt+3"], "Voice 3"),
     choice("voice", "voice_4", &["Ctrl+Alt+4"], "Voice 4"),
+    // what a note's tint tells apart
+    choice("color", "color_voice", &[], "Color by voice"),
+    choice("color", "color_staff", &[], "Color by staff"),
+    choice("color", "color_part", &[], "Color by part"),
     // how a part writes its polyphony: the same music, written two ways
     choice(
         "writing",
@@ -375,7 +379,19 @@ pub const NOTES: &[Verb] = &[
     verb("slur_join", &["Shift+S"], "Slur joined or attacked"),
     verb("tie", &["T"], "Tie"),
     verb("staccato", &["."], "Staccato"),
+    verb("tenuto", &["-"], "Tenuto"),
+    verb("accent", &[">"], "Accent"),
+    verb("marcato", &["^"], "Marcato"),
+    verb("breath", &[","], "Breath"),
     verb("pedal", &["P"], "Pedal"),
+    // the dynamic written on each selected note
+    verb("dynamic_pp", &[], "Pianissimo"),
+    verb("dynamic_p", &[], "Piano"),
+    verb("dynamic_mp", &[], "Mezzo piano"),
+    verb("dynamic_mf", &[], "Mezzo forte"),
+    verb("dynamic_f", &[], "Forte"),
+    verb("dynamic_ff", &[], "Fortissimo"),
+    verb("dynamic_none", &[], "No dynamic"),
 ];
 
 /// The score window's own scope, in force whenever it is open.

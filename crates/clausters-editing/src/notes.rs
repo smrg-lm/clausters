@@ -48,8 +48,11 @@
 //!   `held`, how long each sounds, in view units; `voices`, flat `staff
 //!   voice` pairs; `dimmed`, `1` for a note of a voice other than the one
 //!   edited, which a press does not take; `labels`, the dynamic each
-//!   states, or `""`; and `spelled`, how each is written as a reader says it
-//!   (its written value, its spelling and its marks). Only the notes of the staves shown are drawn.
+//!   states, or `""`; `spelled`, how each is written as a reader says it
+//!   (its written value, its spelling and its marks); and `marks`, the marks
+//!   a page writes on each by name (its articulations, then its breath);
+//!   and `tints`, each note's voice, staff or part as the editing says
+//!   ([`ColorBy`]). Only the notes of the staves shown are drawn.
 //! - `joins`: which note goes on into which, flat `from into` pairs of
 //!   indices into `notes` -- a note's `joins`, which tells the roll its owner
 //!   speaks the joins of a line.
@@ -261,6 +264,14 @@ pub struct Projection {
     /// In notation mode, how each note is written, as a reader says it: its
     /// written value, its spelling and its marks (`1/8  F#4  stacc`).
     pub spelled: Vec<String>,
+    /// In notation mode, **each note's tint**: its voice, its staff or its
+    /// part as [`Editing::color_by`] says, counted from 0 -- the first
+    /// untinted.
+    pub tints: Vec<usize>,
+    /// In notation mode, **the marks a page writes on each note**, by name:
+    /// its articulations (MEI's), then its breath (`breath`, `caesura`),
+    /// space-separated -- what the roll draws over the box ([`marks_of`]).
+    pub marks: Vec<String>,
 }
 
 /// **How a roll edits**: the options of whoever edits, which are the
@@ -281,6 +292,22 @@ pub struct Editing {
     /// The voice edited in notation mode, `[staff, voice]`: what a note
     /// drawn is written in, and the one voice a press takes.
     pub voice: [usize; 2],
+    /// **What a note's tint tells apart in notation mode**: its voice, its
+    /// staff or its part.
+    pub color_by: ColorBy,
+}
+
+/// What a note's tint tells apart, in notation mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ColorBy {
+    /// The voices of a staff: the first untinted, each other its own.
+    #[default]
+    Voice,
+    /// The staves.
+    Staff,
+    /// The parts.
+    Part,
 }
 
 /// **The roll's two modes** (`crates/clausters-document/PLAN.md`, "The
@@ -410,6 +437,21 @@ pub fn project(
     editing: &Editing,
 ) -> Projection {
     let notation = editing.mode == Mode::Notation;
+    // the staves of each part, for a tint by part
+    let mut first = 0;
+    let part_of: Vec<std::ops::Range<usize>> = if notation {
+        sequence
+            .parts_read()
+            .iter()
+            .map(|part| {
+                let staves = first..first + part.staves.max(1);
+                first = staves.end;
+                staves
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let mut out = Projection {
         // which MIDI the notes are written for says nothing of a page: in
         // notation mode the roll shows what is written, and no spec
@@ -461,6 +503,15 @@ pub fn project(
                     .to_string(),
             );
             out.spelled.push(spelled(&keys));
+            out.marks.push(marks_of(&keys));
+            out.tints.push(match editing.color_by {
+                ColorBy::Voice => voice,
+                ColorBy::Staff => staff,
+                ColorBy::Part => part_of
+                    .iter()
+                    .position(|staves| staves.contains(&staff))
+                    .unwrap_or(0),
+            });
         }
         out.notes.extend([
             start,
@@ -720,6 +771,24 @@ pub fn intake(
 /// **How a note is written, as a reader says it**: its written value as a
 /// fraction of a whole note, its pitches spelled (a letter, its sign, its
 /// octave) and its marks, each where it has one.
+/// **The marks a page writes on a note, by name**: its articulations, in
+/// the order it states them, then its breath -- space-separated, empty for
+/// none.
+#[must_use]
+pub fn marks_of(keys: &Map<String, Value>) -> String {
+    let mut names: Vec<&str> = keys
+        .get("articulations")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if let Some(breath) = keys.get("breath").and_then(Value::as_str) {
+        names.push(breath);
+    }
+    names.join(" ")
+}
+
 fn spelled(keys: &Map<String, Value>) -> String {
     let mut parts = Vec::new();
     if let Some([n, d]) = keys

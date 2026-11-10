@@ -29,7 +29,7 @@ from ..defs.node import Node
 #: table's order; a test pins the two together.
 NOTATION_KEYS = (
     "pitches", "value", "staff", "voice",
-    "articulations", "dynamic", "ornament", "grace", "stem", "tie",
+    "articulations", "dynamic", "ornament", "breath", "grace", "stem", "tie",
     "spelling", "accidental",
 )
 

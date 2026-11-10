@@ -10,7 +10,7 @@ use clausters_document::events::{self, EventsIntent};
 use clausters_document::history::Editable;
 use clausters_document::{EventSequence, Opaque};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
-use clausters_editing::notes::{self as roll, Axis, Editing, Mode, Scope, YDomain};
+use clausters_editing::notes::{self as roll, Axis, ColorBy, Editing, Mode, Scope, YDomain};
 
 use super::{Shared, correction, dialogs, panel, props, window};
 use crate::forms::{self, Said};
@@ -93,12 +93,17 @@ pub const MODE_VERBS: &[&str] = &[
     "voice_2",
     "voice_3",
     "voice_4",
+    "color_voice",
+    "color_staff",
+    "color_part",
     "write_voices",
     "write_ties",
 ];
 
-/// The verbs only the notation mode answers: [`MODE_VERBS`] past the mode,
-/// and the marks a page writes over the selected notes.
+/// The verbs only the notation mode answers: [`MODE_VERBS`] past the mode;
+/// the marks a page writes over the selected notes are the editing crate's
+/// ([`clausters_editing::notes::notation::ARTICULATIONS`]), and only the
+/// notation mode answers them too ([`only_in_notation`]).
 pub const NOTATION_VERBS: &[&str] = &[
     "show_system",
     "show_part",
@@ -109,14 +114,18 @@ pub const NOTATION_VERBS: &[&str] = &[
     "voice_2",
     "voice_3",
     "voice_4",
+    "color_voice",
+    "color_staff",
+    "color_part",
     "write_voices",
     "write_ties",
-    "slur",
-    "slur_join",
-    "tie",
-    "staccato",
-    "pedal",
 ];
+
+/// Whether `verb` is one only the notation mode answers.
+fn only_in_notation(verb: &str) -> bool {
+    NOTATION_VERBS.contains(&verb)
+        || clausters_editing::notes::notation::ARTICULATIONS.contains(&verb)
+}
 
 /// **A notes editor**: a shared sequence, the domain its roll is drawn in,
 /// and its end of the conversation.
@@ -163,6 +172,10 @@ pub struct NotesEditor {
     panel: bool,
     /// The notes the roll last said the hand marked, by id.
     marked: Vec<u64>,
+    /// **The symbols the roll draws a page's marks with**, asked of the
+    /// engraver the application handed in when the roll first enters
+    /// notation ([`super::Symbols`]).
+    symbols: super::Symbols,
 }
 
 /// **The panel's switch**, as the window asks for it: the View menu's
@@ -256,7 +269,29 @@ impl NotesEditor {
             dialogs: dialogs::Dialogs::default(),
             panel: false,
             marked: Vec::new(),
+            symbols: super::Symbols::default(),
         }
+    }
+
+    /// **Where the roll's marks get their outlines**: the engraver the
+    /// application holds, asked only once the roll shows a page.
+    pub fn set_outlines(&mut self, source: Option<super::OutlineSource>) {
+        self.symbols = super::Symbols::with(source);
+    }
+
+    /// **The outlines the roll's marks are drawn with, owed to it**: asked
+    /// of the engraver the first time the roll is in notation mode, and handed
+    /// to the roll once, as its `glyphs`.
+    fn glyphs_owed(&mut self) -> Option<Correction> {
+        if self.editing.mode != Mode::Notation {
+            return None;
+        }
+        let widget = i64::from(self.widget?);
+        let found = self.symbols.ask()?;
+        (!found.is_empty()).then(|| Correction {
+            widget,
+            props: json!({ "glyphs": found }),
+        })
     }
 
     /// How the roll edits.
@@ -304,13 +339,16 @@ impl NotesEditor {
                     let ties = self.writes_with_ties();
                     Some((verb == "write_ties") == ties)
                 }
+                "color_voice" => Some(self.editing.color_by == ColorBy::Voice),
+                "color_staff" => Some(self.editing.color_by == ColorBy::Staff),
+                "color_part" => Some(self.editing.color_by == ColorBy::Part),
                 _ => None,
             },
         )
         .into_iter()
         .map(|(verb, mut state)| {
             // what is a page's is the notation mode's
-            if NOTATION_VERBS.contains(&verb) && self.editing.mode != Mode::Notation {
+            if only_in_notation(verb) && self.editing.mode != Mode::Notation {
                 state.refuse("switch the roll to notation first");
             }
             (verb, state)
@@ -441,6 +479,9 @@ impl NotesEditor {
                 let voice = verb[6..].parse::<usize>().unwrap_or(1) - 1;
                 self.editing.voice = [self.editing.voice[0], voice];
             }
+            "color_voice" => self.editing.color_by = ColorBy::Voice,
+            "color_staff" => self.editing.color_by = ColorBy::Staff,
+            "color_part" => self.editing.color_by = ColorBy::Part,
             "write_voices" | "write_ties" => {
                 let ties = verb == "write_ties";
                 let mut parts = self.held().parts_read();
@@ -511,6 +552,7 @@ impl NotesEditor {
                     return (Some(why), Vec::new());
                 }
                 let mut corrections = forms::corrections(self.dialogs.hide());
+                corrections.extend(self.glyphs_owed());
                 corrections.extend(self.resync_widget(roll));
                 (None, corrections)
             }
@@ -534,13 +576,18 @@ impl NotesEditor {
     /// the editor answers for.
     pub fn window(&mut self, widget: i32) -> Value {
         self.widget = Some(widget);
+        let glyphs = self.glyphs_owed();
         let mut drawn = props(
             &self.held(),
             &self.domain,
             self.rate,
             self.editable,
             &self.editing,
+            &self.symbols,
         );
+        if let Some(glyphs) = glyphs {
+            drawn.insert("glyphs".into(), glyphs.props["glyphs"].clone());
+        }
         // the grid is an axis' own, as its tempo map is
         if let Some(Value::Object(x)) = drawn.get_mut("axes").and_then(|a| a.get_mut("x")) {
             x.insert("grid".into(), json!(self.grid));
@@ -685,7 +732,7 @@ impl NotesEditor {
             return Vec::new();
         }
         let held = self.held();
-        let mut props = correction(&held, &self.domain, self.rate, &self.editing);
+        let mut props = correction(&held, &self.domain, self.rate, &self.editing, &self.symbols);
         // The time range is drawn where the hand sweeps one, so a span set
         // from the client shows as the band a sweep leaves.
         let axis = Axis::of(&held, self.rate);
@@ -820,12 +867,8 @@ impl NotesEditor {
                 | "step_down"
                 | "octave_up"
                 | "octave_down"
-                | "slur"
-                | "slur_join"
-                | "tie"
-                | "staccato"
-                | "pedal"
-        ) {
+        ) && !clausters_editing::notes::notation::ARTICULATIONS.contains(&tag)
+        {
             return (None, Vec::new());
         }
         if !self.editable {
@@ -936,6 +979,7 @@ impl Converse for NotesEditor {
             out.turn = Kind::Route;
             let mut shown = Vec::new();
             let why = self.mode_verb(&tag, out, &mut shown);
+            shown.extend(self.glyphs_owed());
             let roll = self.widget.map_or(0, i64::from);
             shown.extend(self.resync_widget(roll));
             out.answer = Some(conversation::answer(message.seq, out.version, why, shown));
@@ -1038,12 +1082,13 @@ pub fn shared_of(request: &str) -> Shared {
 /// - `sync` -- `window` (the id it is open in, or `null`), `rate`, `editable`,
 ///   `midi_in`, `grid` (in beats, `0` for none), `snap` (the snap-to-grid
 ///   switch), `monophonic`, `scope` (`{"show": "system"}`, or `"part"` or
-///   `"staff"` with its `index`), `voice` (`[staff, voice]`), `domain`,
+///   `"staff"` with its `index`), `voice` (`[staff, voice]`), `color_by`
+///   (`"voice"`, `"staff"` or `"part"`), `domain`,
 ///   `title`, `w`, `h`: `{}`.
 /// - `grid` -- `{"grid": beats, "snap": bool}`: the grid a note lands on, and
 ///   whether a hand snaps to it.
 /// - `editing` -- how the roll edits ([`Editing`]): `{"monophonic", "mode",
-///   "scope", "voice"}`, `panel`, whether the panel is shown, and `written`, whether the sequence is written as
+///   "scope", "voice", "color_by"}`, `panel`, whether the panel is shown, and `written`, whether the sequence is written as
 ///   notation already -- entering notation over one that is not converts
 ///   it, or asks how in a window with the dialog. The mode is changed by its verbs (`midi_mode`,
 ///   `notation_mode`), since entering notation may convert the sequence,
@@ -1124,6 +1169,12 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
                 .and_then(|v| serde_json::from_value::<[usize; 2]>(v.clone()).ok())
             {
                 editor.editing.voice = voice;
+            }
+            if let Some(color_by) = request
+                .get("color_by")
+                .and_then(|c| serde_json::from_value::<ColorBy>(c.clone()).ok())
+            {
+                editor.editing.color_by = color_by;
             }
             if let Some(domain) = request
                 .get("domain")

@@ -1085,3 +1085,46 @@ fn without_the_notation_layer_the_notation_mode_says_why() {
     assert!(out.record.is_none());
     assert_eq!(e.editing().mode, Mode::Midi);
 }
+
+/// **A page's marks are drawn with the engraver's symbols**, asked once and
+/// only when the roll first shows a page: an accent the engraver has an
+/// outline for is its character, and a tenuto it has none for the text the
+/// palette labels it with. The outlines reach the roll as its `glyphs`.
+#[cfg(feature = "notation")]
+#[test]
+fn a_page_s_marks_are_drawn_with_the_engraver_s_symbols() {
+    let sequence = shared();
+    let mut e = editor(sequence.clone());
+    let asked = Arc::new(Mutex::new(0));
+    let count = Arc::clone(&asked);
+    e.set_outlines(Some(Arc::new(move |codes: &[&str]| {
+        *count.lock().unwrap() += 1;
+        codes
+            .iter()
+            .filter(|c| **c == "E4A0")
+            .map(|c| (c.to_string(), "M0 0 L100 0 L100 100 Z".to_string()))
+            .collect()
+    })));
+    e.event(&gesture("accent", vec![json!(1)]), 1);
+    assert_eq!(
+        *asked.lock().unwrap(),
+        0,
+        "a roll in MIDI mode asks nothing"
+    );
+    let told = serde_json::to_string(&e.event(&window_verb("notation_mode"), 1).answer).unwrap();
+    assert!(told.contains("\"glyphs\":{\"E4A0\""), "{told}");
+    let first = sequence.lock().unwrap().events[0].id;
+    e.event(&gesture("accent", vec![json!(first)]), 2);
+    let out = e.event(&gesture("tenuto", vec![json!(first)]), 3);
+    let Some(Answer::Push { corrections, .. }) = out.answer else {
+        panic!("a correction");
+    };
+    let marks = corrections
+        .iter()
+        .find_map(|c| c.props.get("marks"))
+        .expect("the marks");
+    assert_eq!(marks[0], json!("\u{E4A0}-"));
+    e.event(&window_verb("midi_mode"), 4);
+    e.event(&window_verb("notation_mode"), 4);
+    assert_eq!(*asked.lock().unwrap(), 1, "asked once");
+}

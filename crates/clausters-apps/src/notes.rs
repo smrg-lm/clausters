@@ -46,6 +46,105 @@ use clausters_editing::verbs;
 /// A sequence the editor and its holder edit together.
 pub type Shared = Arc<Mutex<EventSequence>>;
 
+/// **Where a roll's marks get their outlines**: the engraver the application
+/// holds, asked for the SMuFL codepoints a page writes marks with, answering
+/// the outline of each it has. The application hands one in where it holds an
+/// engraver; a roll without one writes its marks as text.
+pub type OutlineSource =
+    Arc<dyn Fn(&[&str]) -> std::collections::BTreeMap<String, String> + Send + Sync>;
+
+/// **The marks a roll can write a symbol for, by name**: the articulations,
+/// the breaths and the dynamics a page writes.
+pub const MARK_NAMES: &[&str] = &[
+    "stacc", "stacciss", "spicc", "acc", "marc", "ten", "stress", "breath", "caesura", "pp", "p",
+    "mp", "mf", "f", "ff", "sf", "fp",
+];
+
+/// **The symbols a roll draws a note's marks with**: the engraver's outlines,
+/// asked for once and only when the roll first shows a page's marks, since
+/// asking loads the engraver -- the score editor's own symbols, so a roll and
+/// a page write one accent ([`crate::score::palettes::symbol`]). Without
+/// them a mark is written as the text the palette labels it with.
+#[derive(Clone, Default)]
+pub struct Symbols {
+    source: Option<OutlineSource>,
+    held: Option<std::collections::BTreeMap<String, String>>,
+}
+
+impl std::fmt::Debug for Symbols {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Symbols")
+            .field("source", &self.source.is_some())
+            .field("held", &self.held.as_ref().map(|h| h.len()))
+            .finish()
+    }
+}
+
+impl Symbols {
+    /// Symbols asked of `source`.
+    pub fn with(source: Option<OutlineSource>) -> Self {
+        Self { source, held: None }
+    }
+
+    /// Where it asks.
+    pub fn source(&self) -> Option<OutlineSource> {
+        self.source.clone()
+    }
+
+    /// **The outlines, asked for the first time**: `Some` once, with what the
+    /// engraver had (nothing where there is no engraver or no mark has a
+    /// symbol), and `None` every time after.
+    pub fn ask(&mut self) -> Option<&std::collections::BTreeMap<String, String>> {
+        if self.held.is_some() {
+            return None;
+        }
+        let codes: Vec<&str> = MARK_NAMES.iter().filter_map(|name| code_of(name)).collect();
+        let found = self
+            .source
+            .as_ref()
+            .map(|source| source(&codes))
+            .unwrap_or_default();
+        self.held = Some(found);
+        self.held.as_ref()
+    }
+
+    /// **How the mark `name` is drawn**: its symbol's character where the
+    /// engraver gave its outline, else the text a palette labels it with,
+    /// else its name.
+    pub fn drawn(&self, name: &str) -> String {
+        let held = self.held.as_ref();
+        if let Some(code) = code_of(name)
+            && held.is_some_and(|h| h.contains_key(code))
+            && let Some(c) = u32::from_str_radix(code, 16).ok().and_then(char::from_u32)
+        {
+            return c.to_string();
+        }
+        text_of(name).unwrap_or(name).to_string()
+    }
+}
+
+/// The SMuFL codepoint the mark `name` is written with.
+#[cfg(feature = "notation")]
+fn code_of(name: &str) -> Option<&'static str> {
+    crate::score::palettes::symbol(name).map(|(code, _)| code)
+}
+
+/// The text the mark `name` reads as without its symbol.
+#[cfg(feature = "notation")]
+fn text_of(name: &str) -> Option<&'static str> {
+    crate::score::palettes::symbol(name).map(|(_, text)| text)
+}
+
+#[cfg(not(feature = "notation"))]
+fn code_of(_: &str) -> Option<&'static str> {
+    None
+}
+
+#[cfg(not(feature = "notation"))]
+fn text_of(_: &str) -> Option<&'static str> {
+    None
+}
+
 /// **The props the roll is drawn with**: the notes, their ids and the markers,
 /// on the sequence's beats through its tempo map at `rate` samples a second,
 /// as `editing` draws them; read-only when `editable` is `false`.
@@ -55,11 +154,12 @@ pub fn props(
     rate: f64,
     editable: bool,
     editing: &Editing,
+    symbols: &Symbols,
 ) -> Map<String, Value> {
     let axis = Axis::of(sequence, rate);
     let drawn = notes::project(sequence, domain, &axis, editing);
     let mut beside = Map::new();
-    written(&mut beside, &drawn);
+    written(&mut beside, &drawn, symbols);
     let mut out = catalogue::pianoroll(&Roll {
         notes: drawn.notes,
         osc: drawn.osc,
@@ -151,6 +251,7 @@ pub fn correction(
     domain: &YDomain,
     rate: f64,
     editing: &Editing,
+    symbols: &Symbols,
 ) -> Map<String, Value> {
     let axis = Axis::of(sequence, rate);
     let drawn = notes::project(sequence, domain, &axis, editing);
@@ -164,7 +265,7 @@ pub fn correction(
     out.insert("midi".into(), json!(drawn.midi));
     out.insert("joins".into(), json!(drawn.joins));
     out.insert("lines".into(), json!(drawn.lines));
-    written(&mut out, &drawn);
+    written(&mut out, &drawn, symbols);
     out.insert("bars".into(), json!(drawn.bars));
     if let Ok(map) = serde_json::to_string(&axis.map) {
         out.insert("tempo_map".into(), json!(map));
@@ -173,13 +274,48 @@ pub fn correction(
 }
 
 /// **What the notation mode draws beside the notes**, each list stated --
-/// empty in MIDI mode, which takes them away.
-fn written(out: &mut Map<String, Value>, drawn: &notes::Projection) {
+/// empty in MIDI mode, which takes them away. A note's marks are drawn with
+/// `symbols`: its articulations over the box (`marks`), its breath at its
+/// end (`breaths`) and its dynamic in it (`labels`).
+fn written(out: &mut Map<String, Value>, drawn: &notes::Projection, symbols: &Symbols) {
     out.insert("held".into(), json!(drawn.held));
     out.insert("voices".into(), json!(drawn.voices));
     out.insert("dimmed".into(), json!(drawn.dimmed));
-    out.insert("labels".into(), json!(drawn.labels));
+    let labels: Vec<String> = drawn
+        .labels
+        .iter()
+        .map(|dynamic| {
+            if dynamic.is_empty() {
+                String::new()
+            } else {
+                symbols.drawn(dynamic)
+            }
+        })
+        .collect();
+    out.insert("labels".into(), json!(labels));
     out.insert("spelled".into(), json!(drawn.spelled));
+    let breath = |name: &&str| matches!(*name, "breath" | "caesura");
+    let (mut marks, mut breaths) = (Vec::new(), Vec::new());
+    for names in &drawn.marks {
+        let names: Vec<&str> = names.split_whitespace().collect();
+        marks.push(
+            names
+                .iter()
+                .filter(|n| !breath(n))
+                .map(|n| symbols.drawn(n))
+                .collect::<String>(),
+        );
+        breaths.push(
+            names
+                .iter()
+                .find(|n| breath(n))
+                .map(|n| symbols.drawn(n))
+                .unwrap_or_default(),
+        );
+    }
+    out.insert("tints".into(), json!(drawn.tints));
+    out.insert("marks".into(), json!(marks));
+    out.insert("breaths".into(), json!(breaths));
 }
 
 /// **The window**, as a GuiDef rooted at a `window` node: the roll under
