@@ -5212,6 +5212,19 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A capture of the multitrack example's window never answers, headless**
+  *(found 2026-11-10, in a pass over the notes editor beside the
+  multitrack)*. `editor.capture(path)` on the window
+  `examples/editors/edit_multitrack.py` opens, run under a headless host,
+  gets its `/gui_info` and then no `/gui_captured` within 60 seconds, and
+  `scripts/look.py` on that example times out at its first picture. The host
+  logs nothing. The same happens with the host built at the start of that
+  day and with the release bundled on 2026-11-09, so it is older than the
+  day's work; a notes or score window captures at once on the same host.
+  What the multitrack's window waits for before it writes the picture is
+  to be found out, and until then a scripted pass over the box's roll in the
+  multitrack cannot be made.
+
 - ✅ **A script's verb that reads what the verb before it asked an
   application for runs before the answer lands** *(found 2026-11-10,
   writing the notes editor example's selection by pitch)*. A `/gui_verb` is

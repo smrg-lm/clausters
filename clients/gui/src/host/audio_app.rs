@@ -1505,6 +1505,18 @@ impl App {
         for (window, member, file) in focus {
             self.focus_file(window, member, file);
         }
+        // **what one window did moves what the others offer**: two windows
+        // over one structure walk one history, so an edit in one is what an
+        // undo in the other takes back, and its menu and key must say so
+        let others: Vec<i32> = self
+            .windows
+            .keys()
+            .copied()
+            .filter(|w| *w != def_id)
+            .collect();
+        for other in others {
+            self.say_actions(other);
+        }
     }
 
     /// The window's tree, drawn with the ids it was numbered with.

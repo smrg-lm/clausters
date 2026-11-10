@@ -6967,4 +6967,12 @@ wrong.
   `X38`. *Item 10 done 2026-11-10 with `X38`*: the inspector and the list
   of events. *Items 1 and 2 done 2026-11-10 with `X37`*: the table of
   `docs/app-behavior.md`, "The roll's verbs, case by case", and its review. Item 11 stays open here, and is a pass over the application once
-  `X37` to `X42` have changed it.
+  `X37` to `X42` have changed it. *Item 11 begun 2026-11-10*: two rolls over one sequence (MIDI and
+  hertz) checked by script -- the pitch line, the lanes and their tabs, a
+  ramp, a curve added from the other window -- found Ctrl+Z in the second
+  doing nothing after an edit in the first (its actions were not read again;
+  fixed the same day, `docs/app-behavior.md`, "What one window does moves
+  what every window offers"); the page beside a roll was checked with `X42`'s
+  `phrase`. The box's roll in the multitrack is left: its window cannot be
+  captured headless (`clients/gui/PLAN.md`, Found by use, "A capture of the
+  multitrack example's window never answers, headless").

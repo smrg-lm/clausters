@@ -275,8 +275,10 @@ its plan; the plan is where its acceptance is read.
 ### The near work
 
 - ⬜ **Item 11 of "The roll's two modes are not yet an editor a hand can
-  trust"** *(`crates/clausters-apps/PLAN.md`, Found by use)*: a pass over
-  the rest of the application, now that `X37`-`X42` are done.
+  trust"** *(`crates/clausters-apps/PLAN.md`, Found by use)*: what is left
+  of the pass over the application is the box's roll in the multitrack,
+  which waits on `clients/gui/PLAN.md`'s Found by use entry "A capture of the
+  multitrack example's window never answers, headless".
 
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,

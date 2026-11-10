@@ -352,6 +352,11 @@ code that keeps it lives.
   work off (`"call_off"`): a render stops before its next piece, the edit it
   was for does not happen, and its pieces are deleted. Closing the window
   calls it off the same way.
+- **What one window does moves what every window offers.** Two windows over
+  one structure walk one history, so after an edit in one, the other's menu
+  and its keys offer the undo that takes it back: every window's actions are
+  read again after a run, and the ones that moved are said (found 2026-11-10,
+  when Ctrl+Z in a second roll did nothing after an edit in the first).
 - **Each open audio file keeps its own state and history.** Switching files
   restores its cursor, selection, gain curve and view settings. Undo/redo
   steps only the focused file. The independent file list is on the left and
