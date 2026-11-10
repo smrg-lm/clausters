@@ -339,6 +339,25 @@ export class EventSequence {
     }
 
     /**
+     * **The pitch the sequence sounds over time**, line by line: a run from
+     * each attack, carried on across every note a join goes on into, each
+     * its `notes` ({@link SeqEvent}s, in the order they sound) and its
+     * `points`, `[beat, midinote]` pairs in beat order. Over a note the pitch
+     * is its own plus its bend curve and its channel's bend, in semitones,
+     * added as the playback adds them; a note sounds to its end or to where
+     * the note it goes on into starts. A reading only: what the notes editor
+     * draws over its boxes, and nothing is written.
+     */
+    pitchLine(): { notes: SeqEvent[]; points: [number, number][] }[] {
+        const runs: { notes: number[]; points: [number, number][] }[] =
+            this.call("pitchline").runs;
+        return runs.map((run) => ({
+            notes: run.notes.map((id) => this.eventOf(Number(id))),
+            points: run.points.map(([b, p]) => [Number(b), Number(p)] as [number, number]),
+        }));
+    }
+
+    /**
      * **Take the joins among these notes away** -- for one note alone, the
      * join into it and the one out of it -- and, where its line is written as
      * notation, the slurs that joined them. One edit.

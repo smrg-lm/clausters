@@ -51,7 +51,11 @@
 //!   states, or `""`; and `spelled`, how each is written as a reader says it
 //!   (its written value, its spelling and its marks). Only the notes of the staves shown are drawn.
 //! - `joins`: which note goes on into which, flat `from into` pairs of
-//!   indices into `notes` -- a note's `joins`, drawn as a link between the two.
+//!   indices into `notes` -- a note's `joins`, which tells the roll its owner
+//!   speaks the joins of a line.
+//! - `lines`: the pitch a line sounds over time where it says more than its
+//!   boxes (a run of joined notes, a note a bend moves), a list of flat `at
+//!   value` runs drawn over the boxes ([`Projection::lines`]).
 //! - A `split` report is `at id...`: the cursor, in view units, and the
 //!   selected notes, which the document cuts there (`EventsIntent::Split`) --
 //!   their keys and curves on both halves, as a region is split.
@@ -241,6 +245,11 @@ pub struct Projection {
     /// Which note goes on into which: `from into` pairs of indices into
     /// `notes`.
     pub joins: Vec<usize>,
+    /// **The pitch each line sounds over time** where it says more than its
+    /// boxes do -- a run of joined notes, or a note a bend moves: flat `at
+    /// value` pairs per run, `at` in view units and `value` on the Y axis
+    /// ([`pitch_lines`]).
+    pub lines: Vec<Vec<f64>>,
     /// In notation mode, how long each note sounds, in view units.
     pub held: Vec<f64>,
     /// In notation mode, each note's `staff voice`.
@@ -495,6 +504,7 @@ pub fn project(
             out.joins.extend([*from, into]);
         }
     }
+    out.lines = pitch_lines(sequence, domain, axis, &out.note_ids);
     for curve in &sequence.automation {
         let name = curve.id.0.to_string();
         let (label, min, max, _) = curve_look(curve);
@@ -1029,6 +1039,44 @@ fn notes(
 /// it is shortened from its start, its onset moved to where it ends and its
 /// end kept, and removed where it is covered whole. A note's line is its staff
 /// and voice, else its channel (`clausters_document::events::articulation`).
+/// **The pitch lines a roll draws over its boxes**: the document's runs
+/// ([`clausters_document::events::sounding::pitch_runs`]) of the notes drawn,
+/// those that join two notes or bend, as flat `at value` pairs -- `at` in view
+/// units, `value` on the domain's axis, hertz on a roll in hertz. A domain
+/// that is not a pitch draws none.
+fn pitch_lines(
+    sequence: &EventSequence,
+    domain: &YDomain,
+    axis: &Axis,
+    drawn: &[u64],
+) -> Vec<Vec<f64>> {
+    let value = |midi: f64| match domain.key.as_str() {
+        "midinote" => Some(midi),
+        "freq" => Some(clausters_core::scale::midi_to_hz(midi)),
+        _ => None,
+    };
+    if value(0.0).is_none() {
+        return Vec::new();
+    }
+    clausters_document::events::sounding::pitch_runs(sequence)
+        .into_iter()
+        .filter(|run| run.notes.iter().all(|id| drawn.contains(id)))
+        .filter(|run| {
+            run.notes.len() > 1
+                || run
+                    .points
+                    .windows(2)
+                    .any(|pair| (pair[0][1] - pair[1][1]).abs() > 1e-9)
+        })
+        .map(|run| {
+            run.points
+                .iter()
+                .flat_map(|&[beat, midi]| [axis.units(beat), value(midi).unwrap_or(midi)])
+                .collect()
+        })
+        .collect()
+}
+
 /// A length that reaches the next note joins nothing: it is a length.
 ///
 /// `written` measures and shortens a note by its written length (`dur`, with

@@ -2026,8 +2026,9 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
   string); until then nothing refuses a note for what an instrument cannot
   play.
 
-- ⬜ **The pitch a sequence sounds over time** *(2026-11-10, with the
-  user, from `crates/clausters-apps/PLAN.md`, `X41`)*. A function of the
+- ✅ **The pitch a sequence sounds over time** *(2026-11-10, with the
+  user, from `crates/clausters-apps/PLAN.md`, `X41`; done the same day as
+  `events::sounding::pitch_runs`, the `pitchline` door)*. A function of the
   sequence, beside `articulation`'s lines: for each line, the pitch that
   sounds as a run of points in beats and fractional MIDI numbers -- each
   note's pitch, its own bend curve over it and, under MIDI 1.0, its

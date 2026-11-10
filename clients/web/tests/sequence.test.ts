@@ -514,3 +514,20 @@ test("a note is split in two with its keys on both halves", () => {
     assert.equal(c!.get("joins"), b!.id);
     assert.throws(() => seq.split([c!], 5.0), /inside none/);
 });
+
+test("the pitch line is a run from each attack", () => {
+    const seq = new EventSequence([
+        [0.0, new Event({ midinote: 60, sustain: 1.0 })],
+        [1.0, new Event({ midinote: 62, sustain: 1.0 })],
+        [3.0, new Event({ midinote: 64, sustain: 1.0 })],
+    ]);
+    const [first, second, third] = [...seq.events];
+    seq.join([first!, second!]);
+    const runs = seq.pitchLine();
+    assert.deepEqual(runs.map((run) => run.notes.map((e) => e.id)), [
+        [first!.id, second!.id],
+        [third!.id],
+    ]);
+    assert.deepEqual(runs[0]!.points, [[0, 60], [1, 60], [1, 62], [2, 62]]);
+    assert.deepEqual(runs[1]!.points, [[3, 64], [4, 64]]);
+});

@@ -115,11 +115,15 @@ pub struct Notes {
     layer: Option<String>,
     /// The curve a gesture holds, and its points before it.
     holding: Option<(String, Value)>,
-    /// **Which note goes on into which** (`joins`, index pairs), drawn as a
-    /// link between the two -- and, where the owner sent it at all, the sign
-    /// that the roll's owner speaks the joins of a line, so `join` over notes
-    /// that are not one pitch touching asks the owner to join them.
+    /// **Which note goes on into which** (`joins`, index pairs) -- and,
+    /// where the owner sent it at all, the sign that the roll's owner speaks
+    /// the joins of a line, so `join` over notes that are not one pitch
+    /// touching asks the owner to join them.
     joins: Option<Vec<(usize, usize)>>,
+    /// **The pitch each line sounds over time** (`lines`): a run of `[at,
+    /// value]` points each, in view units and the domain's values, drawn over
+    /// the boxes -- what joins a line's boxes and follows its bends.
+    lines: Vec<Vec<[f64; 2]>>,
     /// Whether the owner follows the selection: the marks are told
     /// ([`Element::take_marks`]) whenever the hand changes them.
     tell_marks: bool,
@@ -301,6 +305,7 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
         layer: None,
         holding: None,
         joins: props.get("joins").map(parse_joins),
+        lines: props.get("lines").map(parse_lines).unwrap_or_default(),
         tell_marks: props.get("tell_marks").and_then(truthy).unwrap_or(false),
         told: None,
         written: Written::read(props),
@@ -698,6 +703,10 @@ impl Element for Notes {
                 self.joins = Some(parse_joins(list.get("joins").unwrap_or(&Value::Null)));
                 true
             }
+            "lines" => {
+                self.lines = parse_lines(v);
+                true
+            }
             "tell_marks" => {
                 self.tell_marks = truthy(v).unwrap_or(false);
                 true
@@ -790,7 +799,7 @@ impl Element for Notes {
             pianoroll::draw_out_of_range(d, r.grid, &nav, 0.0, &self.notes, axis, compass);
         }
         self.draw_written(d, r.grid, &nav, axis);
-        self.draw_joins(d, r.grid, &nav, axis);
+        self.draw_lines(d, r.grid, &nav, axis);
         if self.osc_markers {
             pianoroll::draw_osc_markers(d, r.osc, &nav, 0.0, &self.osc);
         }
@@ -1644,31 +1653,30 @@ impl Notes {
         }
     }
 
-    /// **The joins, a link each**: from where a note ends to where the note
-    /// it goes on into starts, across the gap or the overlap between them, so
-    /// a line played without a new attack reads as one.
-    fn draw_joins(&self, d: &mut Draw, grid: Rect, nav: &View, axis: pianoroll::Pitches) {
-        let Some(joins) = &self.joins else {
+    /// **The pitch lines over the boxes** (`lines`): each run a line through
+    /// the pitch it sounds, from the attack that starts it across every note
+    /// it goes on into, so a line played without a new attack reads as one
+    /// and a bend is seen where it moves the pitch. Cut at the grid.
+    fn draw_lines(&self, d: &mut Draw, grid: Rect, nav: &View, axis: pianoroll::Pitches) {
+        if self.lines.is_empty() {
             return;
-        };
-        let (mesh, m, theme) = d.parts();
-        let rect = |i: usize| {
-            self.notes
-                .get(i)
-                .and_then(|n| pianoroll::note_rect(grid, nav, 0.0, n, axis))
-        };
-        for &(from, into) in joins {
-            let (Some(a), Some(b)) = (rect(from), rect(into)) else {
-                continue;
-            };
-            // Where the second begins: across the gap from the first's end,
-            // or -- where the two overlap, a legato played long -- straight
-            // down from the first at that moment, so a link never runs
-            // backwards over the notes it joins.
-            let start = [(a.x + a.w).min(b.x), a.y + a.h * 0.5];
-            let end = [b.x, b.y + b.h * 0.5];
-            mesh.line(start, end, m.trace_w.max(1.0), theme.cursor);
         }
+        let (mesh, m, theme) = d.parts();
+        let kept = mesh.clip();
+        mesh.set_clip(Some(kept.map_or(grid, |k| k.intersect(grid))));
+        let width = m.trace_w.max(1.0) * 1.5;
+        for run in &self.lines {
+            let at = |p: &[f64; 2]| {
+                [
+                    pianoroll::to_x(p[0], nav, grid) as f32,
+                    axis.y(self.row_of(p[1]), grid),
+                ]
+            };
+            for pair in run.windows(2) {
+                mesh.line(at(&pair[0]), at(&pair[1]), width, theme.cursor);
+            }
+        }
+        mesh.set_clip(kept);
     }
 
     /// **The barlines down the plane, wherever the ruler counts bars**: the
@@ -2081,6 +2089,29 @@ fn set_ids(notes: &mut [Note], ids: Option<&Value>) -> bool {
 /// Parse a `pianoroll`'s `osc` prop -- a flat `[time, label, time, label, ...]`
 /// list of OSC markers (the label a short address/tag, an empty string
 /// meaning none). A trailing partial pair is dropped.
+/// The `lines` prop: a list of runs, each flat `at value` pairs.
+fn parse_lines(v: &Value) -> Vec<Vec<[f64; 2]>> {
+    let v = match v {
+        // a `/gui_set` carries a list as a JSON string
+        Value::String(text) => serde_json::from_str(text).unwrap_or(Value::Null),
+        v => v.clone(),
+    };
+    v.as_array()
+        .map(|runs| {
+            runs.iter()
+                .map(|run| {
+                    let flat: Vec<f64> = run
+                        .as_array()
+                        .map(|a| a.iter().filter_map(Value::as_f64).collect())
+                        .unwrap_or_default();
+                    flat.as_chunks::<2>().0.to_vec()
+                })
+                .filter(|run| run.len() > 1)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// The `joins` prop: flat `from into` pairs of note indices.
 fn parse_joins(v: &Value) -> Vec<(usize, usize)> {
     let flat: Vec<usize> = v
@@ -3219,6 +3250,51 @@ mod tests {
             r.hit((x, high), &input).note.is_some(),
             "in MIDI mode every note is taken"
         );
+    }
+
+    /// **A pitch line is drawn through the pitch it sounds, cut at the
+    /// grid**: a run from 60 bending to 62 and on into 64 starts on the row of
+    /// 60, and a run reaching past the grid draws nothing outside it. A
+    /// `/gui_set` replaces the runs, an empty list taking them away.
+    #[test]
+    fn a_pitch_line_follows_its_run_inside_the_grid() {
+        use crate::host::metrics::Metrics;
+        use crate::host::paint::{Draw, Mesh};
+        use crate::host::theme::Theme;
+
+        let mut r = roll(
+            r#"{"notes": [0, 100, 60, 100, 0, 100, 100, 64, 100, 0],
+                "min": 48, "max": 72,
+                "lines": [[0, 60, 100, 62, 100, 64, 200, 64], [150, 70, 400, 90]]}"#,
+        );
+        assert_eq!(r.lines.len(), 2);
+        assert_eq!(r.lines[0][1], [100.0, 62.0]);
+        let grid = Rect::new(0.0, 0.0, 300.0, 240.0);
+        let nav = View {
+            start: 0.0,
+            len: 300.0,
+        };
+        let axis = pianoroll::Pitches::rows(48.0, 72.0);
+        let (m, theme) = (Metrics::default(), Theme::default());
+        let mut mesh = Mesh::new();
+        r.draw_lines(&mut Draw::new(&mut mesh, &m, &theme), grid, &nav, axis);
+        let points: Vec<(f32, f32)> = mesh.positions().collect();
+        assert!(!points.is_empty());
+        assert!(
+            points.iter().all(|(x, y)| *x >= grid.x - 0.01
+                && *x <= grid.x + grid.w + 0.01
+                && *y >= grid.y - 0.01
+                && *y <= grid.y + grid.h + 0.01),
+            "every vertex inside the grid"
+        );
+        let first = axis.y(60.0, grid);
+        assert!(
+            points
+                .iter()
+                .any(|(x, y)| x.abs() < 2.0 && (y - first).abs() < 2.0)
+        );
+        assert!(r.set("lines", &serde_json::json!("[]")));
+        assert!(r.lines.is_empty());
     }
 
     /// **A roll whose owner speaks joins asks it to join a line**: `join`

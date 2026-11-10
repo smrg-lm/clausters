@@ -2507,7 +2507,7 @@ opened it.
   **Acceptance:** hovering a note names it on the band and moving off it
   clears it, with nothing added to the history.
 
-- ⬜ **X41 - The continuous pitch line.** The pitch that sounds over time (a
+- ✅ **X41 - The continuous pitch line.** *(Done 2026-11-10: `clausters_document::events::sounding::pitch_runs`, the sequence's `pitchline` door and `EventSequence.pitch_line` in both clients; the roll's `lines` prop, drawn over the boxes in place of the joins' links; the notes editor example's `legato` and `line`. Two joined notes with a gap between them are joined straight across it, as the links were.)* The pitch that sounds over time (a
   note's, its own bend and, under MIDI 1.0, the channel's bend over the
   note that sounds), a function of the document the score editor can read
   too (`crates/clausters-document/PLAN.md`, Future directions, "The pitch a

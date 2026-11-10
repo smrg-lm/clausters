@@ -1220,6 +1220,9 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
 ///   rows say ([`rows::from_rows`]), answering `{"len": n}`.
 /// - `"separate"` with `by` (`"voice"`, `"staff"` or `"channel"`):
 ///   `{"parts": [sequence]}`, a sequence for each ([`rows::separate`]).
+/// - `"pitchline"`: `{"runs": [{"notes": [id], "points": [[beat, midinote]]}]}`,
+///   the pitch each line sounds over time, a run from each attack
+///   ([`sounding::pitch_runs`]).
 /// - `"parts"`: `{"parts": [part], "stated": bool}`, the parts as they are
 ///   read ([`EventSequence::parts_read`]) and whether the sequence states
 ///   them or they are derived.
@@ -1379,6 +1382,12 @@ pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
                 )}),
             }
         }
+        Some("pitchline") => json!({
+            "runs": sounding::pitch_runs(sequence)
+                .into_iter()
+                .map(|run| json!({"notes": run.notes, "points": run.points}))
+                .collect::<Vec<_>>(),
+        }),
         Some("parts") => json!({
             "parts": sequence.parts_read(),
             "stated": !sequence.parts.is_empty(),
@@ -1469,6 +1478,7 @@ pub mod rows;
 mod scopes;
 #[cfg(feature = "notation")]
 pub mod score;
+pub mod sounding;
 pub mod split;
 #[cfg(feature = "notation")]
 pub mod transcription;

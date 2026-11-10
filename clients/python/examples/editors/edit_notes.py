@@ -98,6 +98,12 @@ octave, and every note when nothing is selected. The Edit menu selects every
 note that shares a pitch, a channel, a voice or a staff with the selection.
 **Ctrl on a note, and a drag on**, erases every note it crosses, in one entry;
 **an edge of a selected note** resizes the whole selection by as much.
+
+**The line over the boxes is the pitch that sounds.** A note a bend moves
+draws it, from its attack across the box; notes **joined** (J over a
+selection of a line) are one line, the second going on from the first with no
+new attack, and the next note attacked starts another. It is a reading of the
+sequence, ``notes.pitch_line()``: each run's notes and its pitch over time.
 ``rework()`` splits and transposes from the script.
 The View menu's **Events and inspector** opens a panel beside the roll
 (``editor.events_panel = True``): the selected notes' time, length, pitch,
@@ -244,6 +250,31 @@ def rework():
 
 
 # %% [markdown]
+# ## One line, played without a new attack
+#
+# `join` over the first two notes makes the second go on from the first: the
+# line drawn over the boxes runs from the first note's attack, through its
+# bend, into the second, and the third is attacked and starts its own. The
+# sequence says the same thing as data -- `pitch_line` reads the pitch each
+# run sounds, a point where it changes. The join comes back from the window
+# as an edit does, so the line is read in a step of its own.
+
+# %%
+def legato():
+    """Join the first two notes into one line."""
+    editor.select(notes.events[:2])
+    editor.join()
+
+
+def line():
+    """The pitch each run sounds, from its attack."""
+    for run in notes.pitch_line():
+        beats = [event.at for event in run["notes"]]
+        print(f"  notes at {beats}: {len(run['points'])} points, "
+              f"from {run['points'][0][1]:.2f} to {run['points'][-1][1]:.2f}")
+
+
+# %% [markdown]
 # ## A curve given to its notes
 #
 # The level curve is the channel's: each note hears it from its on to its off.
@@ -307,4 +338,5 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
 else:
     print("up -- play() to hear it, page() for the notes on a page, "
           "notation() for them as notation, rework() to split and transpose, "
+          "legato() to join two notes and line() to read the pitch they sound, "
           "read_back() to see what survived the edit")

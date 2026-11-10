@@ -440,3 +440,16 @@ def test_a_note_is_split_in_two_with_its_keys_on_both_halves():
     assert b.get("joins") is None and c.get("joins") == b._id
     with pytest.raises(ValueError, match="inside none"):
         seq.split([c], 5.0)
+
+
+def test_the_pitch_line_is_a_run_from_each_attack():
+    seq = EventSequence([(0.0, Event(midinote=60, sustain=1.0)),
+                         (1.0, Event(midinote=62, sustain=1.0)),
+                         (3.0, Event(midinote=64, sustain=1.0))])
+    first, second, third = seq.events
+    seq.join([first, second])
+    runs = seq.pitch_line()
+    assert [[e._id for e in run["notes"]] for run in runs] == [
+        [first._id, second._id], [third._id]]
+    assert runs[0]["points"] == [(0.0, 60.0), (1.0, 60.0), (1.0, 62.0), (2.0, 62.0)]
+    assert runs[1]["points"] == [(3.0, 64.0), (4.0, 64.0)]

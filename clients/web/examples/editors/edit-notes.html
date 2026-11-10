@@ -126,6 +126,12 @@ note that shares a pitch, a channel, a voice or a staff with the selection.
 <b>Ctrl on a note, and a drag on</b>, erases every note it crosses, in one entry;
 <b>an edge of a selected note</b> resizes the whole selection by as much.
 <b>rework</b> splits and transposes from the script.
+<b>The line over the boxes is the pitch that sounds.</b> A note a bend moves
+draws it, from its attack across the box; notes <b>joined</b> (J over a
+selection of a line) are one line, the second going on from the first with no
+new attack, and the next note attacked starts another. It is a reading of the
+sequence, <code>notes.pitchLine()</code>: each run's notes and its pitch over time.
+<b>legato</b> joins the first two notes, and <b>line</b> reads it.
 The View menu's <b>Events and inspector</b> opens a panel beside the roll
 (<code>editor.setEventsPanel(true)</code>): the selected notes' time, length, pitch,
 velocity and channel, which a value typed changes on all of them at once, and
@@ -145,6 +151,8 @@ leaves every other note its own.</div>
       <div id="written"></div>
       <button id="play" disabled>play the notes</button>
       <button id="rework" disabled>rework</button>
+      <button id="legato" disabled>legato</button>
+      <button id="line" disabled>line</button>
       <button id="own" disabled>give the level to the notes</button>
       <button id="gather" disabled>gather it back</button>
       <button id="read" disabled>what the roll never drew</button>
@@ -293,6 +301,27 @@ leaves every other note its own.</div>
           editor.selectPitch();
           log(`${(await editor.selected()).length} notes at the first one's pitch`);
           editor.octaveUp();
+        };
+
+        // One line, played without a new attack: `join` over the first two
+        // notes makes the second go on from the first, so the line drawn over
+        // the boxes runs from the first note's attack, through its bend, into
+        // the second, and the third is attacked and starts its own. The
+        // sequence says the same thing as data -- `pitchLine` reads the pitch
+        // each run sounds, a point where it changes. The join comes back from
+        // the window as an edit does, so the line is read in a step of its own.
+        $("legato").disabled = false;
+        $("legato").onclick = async () => {
+          await editor.select([...notes.events].slice(0, 2));
+          editor.join();
+        };
+        $("line").disabled = false;
+        $("line").onclick = () => {
+          for (const run of notes.pitchLine()) {
+            const beats = run.notes.map((event) => event.at);
+            const [from, to] = [run.points[0][1], run.points[run.points.length - 1][1]];
+            log(`notes at [${beats.join(", ")}]: ${run.points.length} points, from ${from.toFixed(2)} to ${to.toFixed(2)}`);
+          }
         };
 
         // A curve given to its notes: the level curve is the channel's, and each

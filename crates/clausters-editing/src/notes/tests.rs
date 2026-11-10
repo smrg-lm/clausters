@@ -570,6 +570,12 @@ fn joins_are_drawn_and_edited_by_the_notes_named() {
     let p = project(&joined, &YDomain::midi(), &axis, &Editing::default());
     let at = |id: u64| p.note_ids.iter().position(|n| *n == id).unwrap();
     assert_eq!(p.joins, vec![at(ids[0]), at(ids[1])]);
+    // the two joined draw one pitch line, across both, and nothing else
+    // does: the third and the other channel are attacked, and bend nothing
+    assert_eq!(
+        p.lines,
+        vec![vec![0.0, 60.0, 1.0, 60.0, 1.0, 62.0, 2.0, 62.0]]
+    );
     let unjoin = intake(
         &joined,
         "unjoin",
@@ -581,11 +587,9 @@ fn joins_are_drawn_and_edited_by_the_notes_named() {
     joined
         .edit(serde_json::from_value(unjoin.payloads[0].clone()).unwrap())
         .unwrap();
-    assert!(
-        project(&joined, &YDomain::midi(), &axis, &Editing::default())
-            .joins
-            .is_empty()
-    );
+    let apart = project(&joined, &YDomain::midi(), &axis, &Editing::default());
+    assert!(apart.joins.is_empty());
+    assert!(apart.lines.is_empty(), "an attack cuts the line");
     let none = intake(
         &s,
         "join",

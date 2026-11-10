@@ -250,6 +250,20 @@ class EventSequence:
         ids = [int(e._id) for e in events]
         self._edit({"intent": "split", "ids": ids, "at": float(at)}, "split")
 
+    def pitch_line(self) -> list:
+        """**The pitch the sequence sounds over time**, line by line: a run
+        from each attack, carried on across every note a join goes on into,
+        each a dict of its ``notes`` (`SeqEvent`s, in the order they sound)
+        and its ``points``, ``(beat, midinote)`` pairs in beat order. Over a
+        note the pitch is its own plus its bend curve and its channel's bend,
+        in semitones, added as the playback adds them; a note sounds to its
+        end or to where the note it goes on into starts. A reading only: what
+        the notes editor draws over its boxes, and nothing is written."""
+        runs = self._seq.call("pitchline")["runs"]
+        return [{"notes": [self._event(int(id)) for id in run["notes"]],
+                 "points": [(float(b), float(p)) for b, p in run["points"]]}
+                for run in runs]
+
     def unjoin(self, events) -> None:
         """**Take the joins among these notes away** -- for one note alone,
         the join into it and the one out of it -- and, where its line is
