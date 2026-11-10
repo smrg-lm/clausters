@@ -35,7 +35,8 @@ impl WebApp {
         }
         let now = canvas::now_ms();
         for (def, path, until) in std::mem::take(&mut self.capturing) {
-            if now < until && self.awaits_picture(def) {
+            // a window owed what it has not asked yet is drawn, which asks
+            if now < until && self.awaits_reads(def) {
                 self.capturing.push((def, path, until));
                 continue;
             }

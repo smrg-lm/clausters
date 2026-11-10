@@ -940,6 +940,23 @@ pub(crate) trait Front {
     /// are ticked here too, for the same reason and against the same clock: a
     /// summary that never came back is asked for again rather than leaving a
     /// hole in the picture.
+    /// **Whether window `def_id` waits on a read already asked for**: a
+    /// view's summary asked at a level, or a download in flight. What is
+    /// owed and not asked yet waits on a draw instead, since the draw notes
+    /// the width it is asked at -- a box of the multitrack is owed its
+    /// take's summary once the multitrack has been drawn -- so a capture
+    /// draws its window unless this holds.
+    fn awaits_reads(&mut self, def_id: i32) -> bool {
+        let mut asked = false;
+        if let Some(tree) = self.host_mut().window_def_mut(def_id) {
+            crate::host::takes::samples_views(tree, &mut |el| {
+                asked |= el.owed_summary().is_some_and(|o| o.asked.is_some());
+                false
+            });
+        }
+        asked || self.fetches().pending()
+    }
+
     /// **Whether window `def_id` still waits on a read for its picture**: a
     /// view owed its take's summary, a plural asker owed one, or a download
     /// in flight. What a capture waits on before it is written, since a

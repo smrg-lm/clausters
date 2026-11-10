@@ -730,6 +730,12 @@ class GuiHost:
         """
         self._send("/gui_text", int(getattr(id, "id", id)), str(text))
 
+    def _hold_open(self, window: int) -> None:
+        """``window``, which the host opened for this client without a
+        ``/gui_app_open`` of its own (a box's roll), held open until its
+        ``/gui_closed``."""
+        self._open.add(int(window))
+
     def capture(self, id, path, timeout: float = 5.0) -> str:
         """``/gui_capture <id> <path>`` -- write the picture of window ``id``
         (an id or a handle) to ``path`` as a PNG, and answer the path once the

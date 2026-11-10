@@ -109,15 +109,20 @@ writes -- so a point dragged while the multitrack plays is heard where it is dra
 <b>The comp box is a join</b>: a source whose samples are spans of two takes,
 crossfaded at the seam, which is what a comping pass cut by hand is. The session
 states it as its parts, and the application reads it from the two files.
-<b>The page's multitrack is the window's while it is open</b>: the last step
+<b>The page's multitrack is the window's while it is open</b>: a step
 moves the bass track's fader from here, and the window's knob moves with it --
 one edit of the window's, which its Ctrl+Z takes back. What the hand does in the
 window reaches the page's multitrack after the page's next change, or when the
 window closes: a call to the host is a promise here, where the script reads the
-window's at every read.</div>
+window's at every read.
+
+<b>roll</b> opens from the page what a double click on the keys box opens
+(<code>editor.openRoll(keysBox)</code>), the box's roll as its notes editor, and
+moves its first note an octave up: Ctrl+Z in either window takes it back.</div>
 
       <button id="run">open the multitrack</button>
       <div id="stage"></div>
+      <button id="roll" disabled>roll</button>
       <pre id="log"></pre>
     </main>
 
@@ -236,7 +241,7 @@ window's at every read.</div>
         bass.activeTakeLane.regions.add(4.0, TAKE_DUR, window(3), { name: "saw" });
         // **A box of notes** is a box like any other: a window onto source 7,
         // which is the sequence above rather than a take.
-        keysTrack.activeTakeLane.regions.add(12.0, TAKE_DUR, window(7), { name: "keys" });
+        const keysBox = keysTrack.activeTakeLane.regions.add(12.0, TAKE_DUR, window(7), { name: "keys" });
 
         // **A track automation**: a row of its own under the track, as long as
         // the timeline, because a track's gain does not begin and end with a box.
@@ -297,6 +302,18 @@ window's at every read.</div>
         // A change made here is an edit of the window's: the bass fader moves in
         // the window, and Ctrl+Z there takes it back.
         bass.level = 0.5;
+
+        // ---- the box's roll, from the page ----
+        // What a double click on the keys box opens, `openRoll` opens from
+        // here: the same window, answered as the roll's notes editor, over the
+        // session's sequence. Its verbs are the roll's, in the multitrack's
+        // history, so Ctrl+Z in either window takes back what `roll` did.
+        $("roll").disabled = false;
+        $("roll").onclick = async () => {
+          const notes = await editor.openRoll(keysBox);
+          await notes.select([...notes.sequence.events].slice(0, 1));
+          notes.octaveUp();
+        };
 
         log("drag the boxes, click the ruler to place the cursor, play/pause to hear it");
         // The script's ending: there `wait()` blocks so the process stays alive

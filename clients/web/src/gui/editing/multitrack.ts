@@ -38,6 +38,8 @@ import { Multitrack, Region, Session } from "../../multitrack.ts";
 import type { Extra, WindowHistory, WindowOver } from "../../multitrack.ts";
 import type { GuiHost, Stage } from "../host.ts";
 import type { WindowHandle } from "../handle.ts";
+import type { EventSequence } from "../../seq/sequence.ts";
+import { NotesEditor } from "./events.ts";
 import { Held, HostedEditor, MultitrackTransport } from "./hosted.ts";
 import { Marking, marking } from "./marking.ts";
 
@@ -49,6 +51,8 @@ export interface SavedSession {
     path: string | null;
     /** Its multitrack. */
     multitrack: Multitrack;
+    /** What its regions are windows onto, by source id: a box of notes reads its `sequence`. */
+    sources?: Map<number, { sequence?: EventSequence | null }>;
 }
 
 /** How a {@link MultitrackEditor} opens. */
@@ -300,6 +304,44 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
         if (this.closed) return;
         await this.act("select", { regions: [...(regions ?? [])].map((region) => region.ident) });
     }
+
+    // ---- a box's roll ----
+
+    /**
+     * **The roll of a box of notes**, as a double click on the box opens it:
+     * `region`, a {@link Region} whose box reads a sequence of events, edited
+     * in a window of its own, opened if none is open over it, in the
+     * multitrack's history -- an edit in either window is undone from both, and
+     * the roll goes when the multitrack does.
+     *
+     * Answers the roll's {@link NotesEditor}, the one this handler answered
+     * before while that window is open. Its `structure` is the session's
+     * `EventSequence` for the box, the window's while it is open as a notes
+     * editor's is.
+     *
+     * Rejects with a `RangeError` for a box that holds no notes.
+     */
+    async openRoll(region: Region): Promise<NotesEditor> {
+        const named = (region.content.window ?? {}).source as Extra | undefined;
+        const id = typeof named?.source === "number" ? named.source : null;
+        const sequence = this.session === null || id === null ? undefined : this.session.sources?.get(id)?.sequence;
+        if (sequence == null) throw new RangeError("the box holds no notes");
+        const answer = (await this.call({ roll: region.ident })) as { window: number };
+        const window = Number(answer.window);
+        this.#rolls = this.#rolls.filter((roll) => !roll.closed);
+        const open = this.#rolls.find((roll) => roll.id === window);
+        if (open !== undefined) return open;
+        const roll = new NotesEditor(sequence, { title: `notes ${id}` });
+        // the host opened it for this page without a `/gui_app_open`
+        const host = this.host as GuiHost;
+        host.holdOpen(window);
+        await roll.hold(host, window);
+        this.#rolls.push(roll);
+        return roll;
+    }
+
+    /** The rolls this handler answered. */
+    #rolls: NotesEditor[] = [];
 
     // ---- the transport, and what is heard ----
 

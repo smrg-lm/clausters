@@ -298,8 +298,14 @@ pub(super) enum FromApp {
         say: bool,
     },
     /// **A box of notes in multitrack window `parent` asked for its roll**
-    /// (`source`, the sequence it reads). The host opens a window for it.
-    Roll { parent: i32, source: u64 },
+    /// (`source`, the sequence it reads). The host opens a window for it, or
+    /// finds the one open, and answers `reply` -- a client's `roll` -- with
+    /// it.
+    Roll {
+        parent: i32,
+        source: u64,
+        reply: Option<Reply>,
+    },
     /// **Multitrack window `def_id`'s multitrack moved by a hand**, to the
     /// context's `version`: its opener is told ([`super::GUI_APP_CHANGED`]).
     Changed { def_id: i32, version: i64 },
@@ -1309,6 +1315,31 @@ impl App {
             let answer = self.member_call(member, request.clone());
             self.say_actions(def_id);
             self.answer(reply, Ok(answer));
+        } else if let Some(region) = call.get("roll") {
+            // **a box's roll, asked by a client**: the window it is in,
+            // opened if none is, answered by the host once it is there
+            use clausters_apps::editing::Member;
+            let source = match self.editing.member(member) {
+                Some(Member::Multitrack(editor)) => editor.roll_source(&match region {
+                    Value::String(named) => named.clone(),
+                    other => other.to_string(),
+                }),
+                _ => None,
+            };
+            match source {
+                Some(source) => self.out.send(
+                    self.editing.said(),
+                    FromApp::Roll {
+                        parent: def_id,
+                        source,
+                        reply: Some(reply),
+                    },
+                ),
+                None => self.answer(
+                    reply,
+                    Err(("value".into(), "the box holds no notes".into())),
+                ),
+            }
         } else if let Some(query) = call["query"].as_str() {
             // what the window reads of the editor: its transport, its
             // actions, the history of the file in focus
@@ -1440,6 +1471,7 @@ impl App {
                             FromApp::Roll {
                                 parent: def_id,
                                 source,
+                                reply: None,
                             },
                         );
                     }

@@ -413,19 +413,47 @@ impl Host {
 
     /// **The roll over box of notes `source` of multitrack window
     /// `parent`**, in a window of its own that goes when the multitrack's
-    /// does; one already open is left as it is.
-    fn open_roll_of(&mut self, parent: i32, source: u64) {
+    /// does; one already open is left as it is. A client that asked for it
+    /// (`reply`) is answered with the window, as an opener is, and hears it
+    /// close when nobody else opened it.
+    fn open_roll_of(&mut self, parent: i32, source: u64, reply: Option<Reply>) {
         let (kind, title) = (AppKind::Roll { source, parent }, format!("notes {source}"));
-        let open = self
-            .audio
-            .as_ref()
-            .is_some_and(|audio| audio.windows.values().any(|w| w.kind == kind));
-        if open || !self.owns_audio(parent) {
-            return;
-        }
-        match self.open_app_for(kind, None, &title, None) {
-            Ok(def_id) => self.depend(def_id, parent),
-            Err(why) => diag::warn!("roll: {why}"),
+        let owned = self.owns_audio(parent);
+        let open = self.audio.as_mut().and_then(|audio| {
+            audio
+                .windows
+                .iter_mut()
+                .find(|(_, w)| w.kind == kind)
+                .map(|(id, w)| (*id, w))
+        });
+        let answered = match open {
+            Some((def_id, window)) => {
+                if let Some(Reply::Client(to, _)) = &reply {
+                    window.opener.get_or_insert(*to);
+                }
+                Ok(json!({ "window": def_id }))
+            }
+            None if !owned => Err((
+                "runtime".to_string(),
+                "the multitrack's window is gone".to_string(),
+            )),
+            None => {
+                return match self.open_app_for(kind, None, &title, reply) {
+                    Ok(def_id) => self.depend(def_id, parent),
+                    Err(why) => diag::warn!("roll: {why}"),
+                };
+            }
+        };
+        match reply {
+            Some(Reply::Client(to, seq)) => {
+                let msg = super::apps::app_reply(seq, answered);
+                self.pending_effects.push(HostEffect::Send { to, msg });
+            }
+            #[cfg(test)]
+            Some(Reply::Local(tx)) => {
+                let _ = tx.send(answered);
+            }
+            None => {}
         }
     }
 
@@ -615,7 +643,11 @@ impl Host {
                     adopt,
                     reply,
                 } => self.held_audio(def_id, window, &path, adopt, reply),
-                FromApp::Roll { parent, source } => self.open_roll_of(parent, source),
+                FromApp::Roll {
+                    parent,
+                    source,
+                    reply,
+                } => self.open_roll_of(parent, source, reply),
                 FromApp::Changed { def_id, version } => self.changed_audio(def_id, version),
             }
         }
@@ -724,9 +756,12 @@ impl Host {
         };
         if let Some(window) = audio.windows.get_mut(&def_id) {
             window.takes = takes;
-            window.marks = matches!(kind, AppKind::Multitrack | AppKind::Notes)
-                .then(|| ids["widget"].as_i64().map(|id| id as i32))
-                .flatten();
+            window.marks = matches!(
+                kind,
+                AppKind::Multitrack | AppKind::Notes | AppKind::Roll { .. }
+            )
+            .then(|| ids["widget"].as_i64().map(|id| id as i32))
+            .flatten();
         }
         let source = audio.source.clone();
         let _ = audio.ask(ToApp::Bind {
@@ -1003,7 +1038,8 @@ impl Host {
     ) -> Option<Value> {
         let window = self.audio.as_ref()?.windows.get(&def_id)?;
         let widget = window.marks?;
-        let kind = window.kind;
+        // a box's roll marks what a roll marks
+        let roll = matches!(window.kind, AppKind::Notes | AppKind::Roll { .. });
         if call["query"] == "selected" {
             let held: Vec<Value> = self
                 .live_props(widget)
@@ -1030,7 +1066,7 @@ impl Host {
                 })
                 .collect();
             // a roll marks its notes by their ids, as numbers
-            let held = if kind == AppKind::Notes {
+            let held = if roll {
                 Value::from(call["do"]["regions"].to_string())
             } else {
                 Value::from(json!(names).to_string())
@@ -1038,7 +1074,7 @@ impl Host {
             self.set_props(widget, vec![("selected".into(), held)], effects);
             // **a roll's owner hears what a client marked**, as it hears what
             // a hand marked, so a panel that follows the selection follows it
-            if kind == AppKind::Notes {
+            if roll {
                 let mut args = vec![OscType::String("marked".into())];
                 args.extend(
                     call["do"]["regions"]
@@ -1100,7 +1136,7 @@ impl Host {
     /// nothing was left to lose: the window freed here, and what sounded it
     /// freed, its renders called off and its working folder removed by its
     /// application.
-    fn close_audio(&mut self, def_id: i32) {
+    pub(super) fn close_audio(&mut self, def_id: i32) {
         self.free_own_window(def_id);
         self.forget_audio(def_id);
         if let Some(audio) = self.audio.as_mut() {
@@ -1875,6 +1911,55 @@ mod tests {
         });
         assert!(host.owns_audio(def_id), "the multitrack stays");
         host.close_audio(def_id);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// **A client asks the multitrack for a box's roll**, as a double click
+    /// opens it: the window answered, the same one while it is open, a box
+    /// of no notes refused with why; the roll marks what a client marks, and
+    /// it goes when the multitrack does, its application told.
+    #[test]
+    fn a_client_asks_a_box_for_its_roll() {
+        let folder = std::env::temp_dir().join(format!("host-roll-ask-{}", std::process::id()));
+        let path = a_session_with_a_box_of_notes(&folder);
+        let mut host = host();
+        let def_id = host
+            .open_multitrack(Some(path.to_str().unwrap()), "notes")
+            .expect("opened");
+        until(&mut host, "the window was never drawn", |h| {
+            h.window_def(def_id).is_some()
+        });
+        let refused = ask(&mut host, def_id, json!({"roll": "9"}));
+        assert_eq!(refused["raised"], "value", "{refused}");
+        let opened = ask(&mut host, def_id, json!({"roll": 3}));
+        let roll = opened["window"].as_i64().expect("a window") as i32;
+        until(&mut host, "the roll was never drawn", |h| {
+            h.window_def(roll).is_some()
+        });
+        assert!(
+            matches!(
+                host.audio.as_ref().unwrap().windows[&roll].kind,
+                AppKind::Roll { source: 5, .. }
+            ),
+            "the roll is over the box's sequence"
+        );
+        let again = ask(&mut host, def_id, json!({"roll": "3"}));
+        assert_eq!(again["window"], json!(roll), "the one open is answered");
+        // what a client marks on it, by the notes' ids
+        let mut fx = Vec::new();
+        let marked = host.multitrack_marks(
+            roll,
+            &json!({"do": {"verb": "select", "regions": [1]}}),
+            &mut fx,
+        );
+        assert!(marked.is_some(), "a box's roll keeps its marks");
+        let held = host.multitrack_marks(roll, &json!({"query": "selected"}), &mut fx);
+        assert_eq!(held, Some(json!({"selected": [1]})));
+        // **it goes with the multitrack**, as its application closes it
+        host.close_audio(def_id);
+        until(&mut host, "the roll outlived its multitrack", |h| {
+            !h.owns_audio(roll) && h.window_def(roll).is_none()
+        });
         let _ = std::fs::remove_dir_all(&folder);
     }
 

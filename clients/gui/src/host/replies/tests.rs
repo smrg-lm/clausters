@@ -198,6 +198,30 @@ fn a_picture_is_awaited_until_its_samples_are_whole() {
     assert!(!probe.awaits_picture(1), "whole, nothing more is owed");
 }
 
+/// **A summary owed and not asked yet waits on a draw, not on a read**: a
+/// plural asker (the multitrack, for its boxes) is asked its summaries at
+/// the width it was drawn, so a capture of a window nobody draws draws it
+/// rather than waiting for a read nothing asked -- which is how a
+/// multitrack's capture never answered.
+#[test]
+fn a_summary_owed_before_a_draw_does_not_hold_a_capture() {
+    use crate::host::widget::element::OwedSummary;
+
+    let mut probe = Probe::open();
+    let shape = OwedSummary {
+        frames: TAKE,
+        channels: 1,
+        sample_rate: 48_000.0,
+        asked: None,
+    };
+    probe.fetches().owe(1, 40, -3, shape);
+    assert!(probe.awaits_picture(1), "the picture owes the summary");
+    assert!(
+        !probe.awaits_reads(1),
+        "and nothing has been asked of a read"
+    );
+}
+
 /// **A server buffer is read back and summarized here**: the server keeps
 /// no summary, so nothing asks it for one, and the picture is placed once
 /// every chunk has come.

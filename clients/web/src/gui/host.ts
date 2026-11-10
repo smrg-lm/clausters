@@ -1334,6 +1334,16 @@ export class GuiHost {
         this.made.delete(id);
     }
 
+    /**
+     * `window`, which the host opened for this client without a `/gui_app_open`
+     * of its own (a box's roll), held open until its `/gui_closed`.
+     *
+     * @internal
+     */
+    holdOpen(window: number): void {
+        this.opened.add(window);
+    }
+
     /** Whether `id` is a window this host opened and has not seen close. */
     isOpen(id: number): boolean {
         return this.opened.has(id);

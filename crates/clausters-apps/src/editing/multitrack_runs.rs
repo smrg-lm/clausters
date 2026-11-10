@@ -771,11 +771,12 @@ impl Editing {
             }
             Kind::Step => {
                 if let Some(step) = turned.stepped.take() {
+                    // **every window the step moved is corrected**, as an
+                    // undo asked by a client corrects them: a box's roll
+                    // walks the multitrack's history
                     for corrected in &step.corrections {
-                        if corrected.member == member {
-                            ran.effects
-                                .push(effect("echo", json!({"answer":corrected.answer})));
-                        }
+                        ran.effects
+                            .push(effect("echo", json!({"answer":corrected.answer})));
                     }
                     for freed in self.carry_step(step, caller, ids, ran) {
                         caller.delete(&freed.files);

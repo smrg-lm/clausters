@@ -115,8 +115,14 @@ impl Host {
 
         // **The windows that depend on it go first**: a roll opened from the
         // multitrack is the multitrack's, and does not outlive it
+        // ...and one an application holds is closed as its application
+        // closes it, so the application forgets it and its opener hears it
         for dependent in self.take_dependents(def_id) {
-            self.free_own_window(dependent);
+            if self.owns_audio(dependent) {
+                self.close_audio(dependent);
+            } else {
+                self.free_own_window(dependent);
+            }
         }
         let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
         let effects = self.handle_packet(

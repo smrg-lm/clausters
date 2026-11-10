@@ -169,7 +169,8 @@ folder, beside nothing of yours, and measured once when they are missing -- and
 their samples as the transport reads each track's regions, summed where they
 overlap. A box of notes plays the sequence the session holds, and a double
 click on one opens its roll in the same application, one history with the
-multitrack. A `Multitrack` opens the same way, as an **untitled session** over
+multitrack; `editor.openRoll(region)` opens it from the script and answers the
+roll's notes editor. A `Multitrack` opens the same way, as an **untitled session** over
 it: no file behind it until the first `save(path)` names one. What comes back,
 `MultitrackEditor`, is its handler: `transport.play(start, end, { looping: true })`,
 `pause`, `stop(mark)`, `locate(at)`, `playing()`; `undo`, `redo`, `split`,
@@ -1178,7 +1179,9 @@ lane, into its track: the track's fader, its curves, its mute and its meter are
 over its notes as they are over a take (below, "What a multitrack is as
 nodes"). And **a double click on it opens its roll** — a notes editor over the
 same sequence, in the multitrack's undo order, which edits what the box draws:
-both hold one sequence, and nothing is copied.
+both hold one sequence, and nothing is copied. `editor.openRoll(region)` opens the same window
+from the script, or finds it open, and answers its notes editor, whose
+`structure` is the session's sequence for the box.
 
 ## Reopening: structures, not a description
 

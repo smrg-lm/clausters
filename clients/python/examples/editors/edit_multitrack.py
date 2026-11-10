@@ -93,9 +93,13 @@ dragged while the multitrack plays is heard where it is drawn.
 crossfaded at the seam, which is what a comping pass cut by hand is. The session
 states it as its parts, and the application reads it from the two files.
 
-**The script's multitrack is the window's while it is open**: the last cell
+**The script's multitrack is the window's while it is open**: a cell
 moves the bass track's fader from here, and the window's knob moves with it --
 one edit of the window's, which its Ctrl+Z takes back.
+
+``roll()`` opens from the script what a double click on the keys box opens
+(``editor.open_roll(keys_box)``), the box's roll as its notes editor, and moves
+its first note an octave up: Ctrl+Z in either window takes it back.
 
 The session is written to ``clients/python/examples/out/``, so
 ``clausters-gui --session clients/python/examples/out/edit_multitrack.json``
@@ -205,7 +209,7 @@ tone.active_take_lane.regions.add(10.0, TAKE_DUR, window(6), name="loud")
 bass.active_take_lane.regions.add(4.0, TAKE_DUR, window(3), name="saw")
 #: **A box of notes** is a box like any other: a window onto source 7, which
 #: is the sequence above rather than a take.
-keys.active_take_lane.regions.add(12.0, TAKE_DUR, window(7), name="keys")
+keys_box = keys.active_take_lane.regions.add(12.0, TAKE_DUR, window(7), name="keys")
 
 #: **A track automation**: a row of its own under the track, as long as the
 #: timeline, because a track's gain does not begin and end with a box. The
@@ -275,6 +279,21 @@ editor = edit(saved, title="multitrack")
 
 # %%
 bass.level = 0.5
+
+# %% [markdown]
+# ## The box's roll, from the script
+# What a double click on the keys box opens, `open_roll` opens from here: the
+# same window, answered as the roll's notes editor, over the session's
+# sequence. Its verbs are the roll's, in the multitrack's history, so Ctrl+Z
+# in either window takes back what `roll` did.
+
+# %%
+def roll():
+    """The keys box's roll, its first note an octave up."""
+    notes = editor.open_roll(keys_box)
+    notes.select(notes.sequence.events[:1])
+    notes.octave_up()
+    return notes
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):

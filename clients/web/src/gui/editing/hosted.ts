@@ -193,6 +193,21 @@ export abstract class HostedEditor {
         if (!this.chrome) options.chrome = false;
         if (beside !== null) options.over = beside.id;
         const window = await resolved.openApp(this.app, options, 5.0, { element: stage });
+        return this.hold(resolved, window);
+    }
+
+    /**
+     * **The handler of `window`** from now on, a window of `host`'s this
+     * editor's application holds, opened by {@link open} or found by another
+     * editor (a box's roll). The structure is the window's unless another
+     * window of the page's has it already.
+     *
+     * @internal
+     */
+    async hold(host: GuiHost, window: number): Promise<WindowHandle> {
+        const resolved = host;
+        const held = this.heldBy();
+        const take = held.live() === null;
         const { WindowHandle } = await import("../handle.ts");
         this.hostOf = resolved;
         this.handle = new WindowHandle(resolved, window, new Map());
@@ -218,7 +233,7 @@ export abstract class HostedEditor {
             }
         });
         held.editors.push(this);
-        if (beside === null) this.taken();
+        if (take) this.taken();
         this.pending += 1;
         this.queue = this.queue.then(() => this.followed());
         await this.queue;

@@ -45,7 +45,8 @@ impl App {
                 self.send(from, captured(def_id, &path, Some("the window closed")));
                 continue;
             }
-            if now < until && self.awaits_picture(def_id) {
+            // a window owed what it has not asked yet is drawn, which asks
+            if now < until && self.awaits_reads(def_id) {
                 self.capturing.push((def_id, path, from, until));
                 continue;
             }

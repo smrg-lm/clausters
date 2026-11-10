@@ -6895,7 +6895,7 @@ wrong.
   forms gained a field chosen among options, the host's `choice`. A
   script's `mode` converts with the stored reading before the verb, so it
   is never left waiting on a dialog.)*
-- ⬜ **The roll's two modes are not yet an editor a hand can trust**
+- ✅ **The roll's two modes are not yet an editor a hand can trust**
   (2026-11-09, the user's first eye pass over `X35` and `X36`, on the score
   of `examples/notation/score_editor.py` rendered, and the same score read
   back from a Standard MIDI File). The user reordered notes, joined them and
@@ -6973,6 +6973,38 @@ wrong.
   doing nothing after an edit in the first (its actions were not read again;
   fixed the same day, `docs/app-behavior.md`, "What one window does moves
   what every window offers"); the page beside a roll was checked with `X42`'s
-  `phrase`. The box's roll in the multitrack is left: its window cannot be
-  captured headless (`clients/gui/PLAN.md`, Found by use, "A capture of the
-  multitrack example's window never answers, headless").
+  `phrase`. *Item 11 done 2026-11-10*: the box's roll in the multitrack,
+  once its window could be captured headless (`clients/gui/PLAN.md`, Found by
+  use, "A capture of the multitrack example's window never answers,
+  headless"). The pass found that a client could not reach the roll a double
+  click opens, which the decision of 2026-09-28 had given both clients
+  (`open_roll` / `openRoll`, lost when the multitrack moved into the host;
+  restored, answering the roll's notes editor); that the roll kept no
+  selection for a client; that Ctrl+Z in the multitrack put the box's notes
+  back and left the roll drawing the edit; and that a multitrack closed left
+  its roll's member open -- all fixed the same day, the last two as rules of
+  `docs/app-behavior.md`. What it found in the conversion is the entry
+  below, "A performance's joins are lost when the roll writes it as
+  notation"; the slurs' drawing stays with `X42`.
+
+- ⬜ **Entering notation mode moves a roll's view to its last note**
+  (2026-11-10, the pass over the box's roll; the host of the day before does
+  the same, so it is older than that day's work). A roll opened over a
+  sequence written as notation shows every note in MIDI mode; switched to
+  notation mode (`mode = "notation"`, the View menu's entry), the time view
+  jumps so that it starts at the last note, and every note before it is off
+  the screen -- a roll over a box's sequence does the same. What moves the
+  window is to be found out: the mode changes no prop of the time view, so
+  it is the host's group of the roll's time axis, rebuilt or refitted when
+  the window's tree changes for the notation chrome.
+
+- ⬜ **A performance's joins are lost when the roll writes it as notation**
+  (2026-11-10, the pass over the box's roll; a roll over a client's sequence
+  does the same). Two notes joined in MIDI mode are one line, and entering
+  notation mode converts the sequence (`EventsIntent::ToNotation`): the page
+  is rendered afresh, its events have new ids, and the performance's joins
+  are not read into it, so the line is two attacks after the conversion and
+  `pitch_line` answers one run more. In notation mode a join is what a
+  joined slur writes, so what is open is whether the reading turns a join
+  into a joined slur, or the conversion carries the joins over to the events
+  that are the same notes.

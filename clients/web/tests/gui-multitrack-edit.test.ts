@@ -13,7 +13,9 @@ import test from "node:test";
 
 import { MultitrackEditor, edit } from "../src/gui/editing/index.ts";
 import type { GuiHost } from "../src/gui/host.ts";
-import { Multitrack, Region, Session as SavedSession } from "../src/multitrack.ts";
+import { Content, Multitrack, Region, Session as SavedSession, Source } from "../src/multitrack.ts";
+import { Event } from "../src/seq/event.ts";
+import { EventSequence } from "../src/seq/sequence.ts";
 import { loadCore } from "../src/base/core.ts";
 
 await loadCore();
@@ -60,7 +62,10 @@ class FakeHost {
         const id = typeof window === "number" ? window : window.id;
         this.calls.push(["call", id, call]);
         if (call.query !== undefined) return this.answers[call.query];
+        // **a box's roll**: the window the host opened for it
+        if (call.roll !== undefined) return { window: 12 };
         const doing = call.do as Call;
+        if (id === 12) return doing.verb === "handle" ? this.rollState : null;
         if (doing.verb === "handle") {
             const { verb, ...args } = doing.call as Call;
             if (verb === "record") {
@@ -129,6 +134,13 @@ class FakeHost {
 
     isOpen(id: number): boolean {
         return this.open.has(id);
+    }
+
+    /** What a box's roll holds, as its window answers it. */
+    rollState: unknown = null;
+
+    holdOpen(window: number): void {
+        this.open.add(window);
     }
 
     async waitWhile(pred: () => boolean): Promise<boolean> {
@@ -358,4 +370,38 @@ test("the window's file verbs hand the session back", async () => {
     assert.deepEqual(host.last(), { do: { verb: "close_file" } });
     assert.ok(editor.closed);
     assert.equal(host.held, null);
+});
+
+
+test("a box of notes opens its roll for the page", async () => {
+    const host = new FakeHost();
+    const onto = (source: number) =>
+        Content.onto({ source: { source, lifetime: "session", generation: 0 }, start: 0, duration: 2 });
+    const notes = new EventSequence([
+        [0, new Event({ midinote: 60, sustain: 0.4 })],
+        [0.5, new Event({ midinote: 64, sustain: 0.4 })],
+    ]);
+    host.rollState = notes.data();
+    const session = aSession();
+    const keys = session.multitrack.tracks.add("keys");
+    const box = keys.activeTakeLane!.regions.add(0, 2, onto(7), { name: "keys" });
+    const other = keys.activeTakeLane!.regions.add(4, 2, onto(3), { name: "take" });
+    session.sources.set(7, Source.events(notes));
+    const written = session.multitrack.write() as Call;
+    const editor = (await edit(session, { host: host as unknown as GuiHost })) as MultitrackEditor;
+    // the window holds the session's multitrack, as the application reads it
+    // from its file, and the page's copy follows it
+    host.bind(written, session.path);
+    host.handChanged();
+    await editor.output();
+    await assert.rejects(editor.openRoll(other), RangeError, "a box of no notes opens nothing");
+    const roll = await editor.openRoll(box);
+    assert.ok(
+        host.calls.some(([kind, window, call]) => kind === "call" && window === 9 && (call as Call).roll === box.ident),
+        "the multitrack is asked for the box's roll",
+    );
+    assert.equal(roll.structure, notes);
+    assert.equal(roll.id, 12);
+    assert.ok(!roll.closed, "the page holds the window open until its close");
+    assert.equal(await editor.openRoll(box), roll, "the window open is answered");
 });

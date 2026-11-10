@@ -243,7 +243,6 @@ class HostedEditor(WindowVerbs):
         module's docstring)."""
         if self._window is not None and not self.closed:
             return self._window
-        from ..handle import WindowHandle
         from .application import _resolve_host
 
         if self._window is not None:
@@ -266,18 +265,28 @@ class HostedEditor(WindowVerbs):
         if beside is not None:
             options["over"] = int(beside.window)
         window = host.open_app(self._app, options)
+        return self._hold(host, int(window))
+
+    def _hold(self, host, window: int):
+        """**The handler of ``window``** from now on, a window of ``host``'s
+        this editor's application holds, opened by `open` or found by another
+        editor (a box's roll). The structure is the window's unless another
+        window of the script's has it already."""
+        from ..handle import WindowHandle
+
+        take = self._held().live() is None
         self._host = host
-        self._window = WindowHandle(host, int(window), {})
+        self._window = WindowHandle(host, window, {})
         self._settled = False
         self._released = False
         self._window.on_closed(self._closed)
-        host._set_changed_handler(int(window), self._changed)
-        host._set_released_handler(int(window), self._gave_up)
-        held.editors.append(self)
+        host._set_changed_handler(window, self._changed)
+        host._set_released_handler(window, self._gave_up)
+        self._held().editors.append(self)
         # the host's loop delivers the window's close from now on, and the
         # answers of what follows
         host.loop
-        if beside is None:
+        if take:
             self._take()
         return self._window
 

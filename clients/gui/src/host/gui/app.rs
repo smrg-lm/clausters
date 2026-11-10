@@ -1141,6 +1141,13 @@ impl App {
             }
         }
 
+        // **A capture that waits is written by its deadline at the latest**:
+        // a read that never lands wakes nothing, and a headless window has
+        // no frame of its own to wake the loop with.
+        if let Some(t) = self.capturing.iter().map(|c| c.3).min() {
+            next_wake = Some(next_wake.map_or(t, |w| w.min(t)));
+        }
+
         next_wake
     }
 }

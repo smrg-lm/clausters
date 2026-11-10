@@ -5212,7 +5212,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A capture of the multitrack example's window never answers, headless**
+- ✅ **A capture of the multitrack example's window never answers, headless**
   *(found 2026-11-10, in a pass over the notes editor beside the
   multitrack)*. `editor.capture(path)` on the window
   `examples/editors/edit_multitrack.py` opens, run under a headless host,
@@ -5223,7 +5223,13 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   day's work; a notes or score window captures at once on the same host.
   What the multitrack's window waits for before it writes the picture is
   to be found out, and until then a scripted pass over the box's roll in the
-  multitrack cannot be made.
+  multitrack cannot be made. *(Fixed 2026-11-10: the multitrack is a plural
+  asker, owed its boxes' summaries until it has been drawn and its width is
+  known, and a capture waited for what was owed before drawing the window
+  that would ask for it -- so it waited forever; and its ten-second limit
+  never came, since a headless window has no frame to wake the loop with. A
+  capture now waits only on reads already asked, draws otherwise, and wakes
+  the loop by its deadline.)*
 
 - ✅ **A script's verb that reads what the verb before it asked an
   application for runs before the answer lands** *(found 2026-11-10,

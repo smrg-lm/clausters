@@ -1077,6 +1077,18 @@ impl MultitrackEditor {
         self.session.sequences.insert(source, sequence);
     }
 
+    /// **The sequence the box of `region` reads**, by its source, when the
+    /// box is one of notes: what its roll opens over, from a double click or
+    /// from a client's `roll`.
+    pub fn roll_source(&self, region: &str) -> Option<u64> {
+        clausters_document::multitrack::picture::boxes(&self.multitrack())
+            .into_iter()
+            .find(|b| b.region.0.to_string() == region)
+            .and_then(|b| b.source)
+            .filter(|source| self.session.sequences.contains_key(source))
+            .map(|source| source.0)
+    }
+
     /// The sequence bound to `source`, when one is.
     pub fn sequence(&self, source: SourceId) -> Option<&crate::notes::Shared> {
         self.session.sequences.get(&source)
@@ -1852,12 +1864,7 @@ impl MultitrackEditor {
         // a history.
         if tag == "open" {
             let named = values.first().map(crate::turn::text).unwrap_or_default();
-            out.open = clausters_document::multitrack::picture::boxes(&self.multitrack())
-                .into_iter()
-                .find(|b| b.region.0.to_string() == named)
-                .and_then(|b| b.source)
-                .filter(|source| self.session.sequences.contains_key(source))
-                .map(|source| source.0);
+            out.open = self.roll_source(&named);
             return (None, Vec::new());
         }
         if NOT_AN_EDIT.contains(&tag) {

@@ -1216,6 +1216,82 @@ fn a_roll(f: &mut Fixture, parent: MemberId, key: &str) -> MemberId {
     member
 }
 
+/// **An undo the multitrack's key takes corrects the roll it moved**, as
+/// one a client asks for does: the roll walks the multitrack's history, so
+/// its window is answered with the step too, not only the multitrack's.
+#[test]
+fn a_keyed_undo_in_the_multitrack_corrects_its_roll() {
+    use clausters_document::EventSequence;
+    use clausters_document::events::Event as SeqEvent;
+
+    let mut f = Fixture::new();
+    let first = f.member;
+    let Some(Member::Multitrack(editor)) = f.editing.member_mut(first) else {
+        panic!()
+    };
+    editor.window(40, 41);
+    editor.set_window(Some(39));
+    let sequence: crate::notes::Shared =
+        std::sync::Arc::new(std::sync::Mutex::new(EventSequence::new(vec![
+            SeqEvent::new(0.0, json!({"midinote": 60, "sustain": 1.0, "amp": 0.1})),
+        ])));
+    let opened: Value = serde_json::from_str(&f.editing.open_notes_in(
+        first,
+        "sequence:5",
+        sequence.clone(),
+        r#"{"rate": 100.0}"#,
+    ))
+    .unwrap();
+    let roll = opened["member"].as_u64().unwrap() as MemberId;
+    for call in [
+        json!({"verb": "window", "widget": 80}),
+        json!({"verb": "sync", "window": 79}),
+    ] {
+        call_json(
+            &mut f.editing,
+            &json!({"verb": "member", "member": roll, "call": call}).to_string(),
+        );
+    }
+    let moved = json!([
+        80,
+        1,
+        f.editing.version,
+        "notes",
+        1,
+        50.0,
+        100.0,
+        67.0,
+        13.0,
+        0.0
+    ]);
+    let edited = f.editing.start(
+        roll,
+        &json!({"verb": "event", "addr": "/gui_event", "args": moved}),
+        None,
+        &mut f.disk,
+        &mut f.ids,
+    );
+    assert!(
+        edited.end.is_none() || matches!(edited.end, Some(Ok(_))),
+        "{edited:?}"
+    );
+    assert_eq!(
+        sequence.lock().unwrap().events[0].data.0["midinote"],
+        json!(67.0)
+    );
+    f.editing.select(Some(first));
+    let undone = f.gesture(39, 2, "undo", json!([]));
+    assert_eq!(
+        sequence.lock().unwrap().events[0].data.0["midinote"],
+        json!(60)
+    );
+    assert!(
+        undone.effects.iter().any(|effect| effect["kind"] == "echo"
+            && effect["answer"].to_string().contains(r#""widget":80"#)),
+        "the roll is corrected: {undone:?}"
+    );
+}
+
 #[test]
 fn a_session_let_go_takes_the_order_its_rolls_are_in() {
     let mut f = Fixture::new();

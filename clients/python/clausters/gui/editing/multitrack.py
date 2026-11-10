@@ -27,9 +27,13 @@ multitrack.
 
 import os
 import weakref
+from typing import TYPE_CHECKING
 
 from .hosted import HostedEditor, MultitrackTransport, _Block, _Held, _RemoteHandle, _RemoteHistory
 from .marking import Marking
+
+if TYPE_CHECKING:
+    from .events import NotesEditor
 
 # **What a window left each multitrack as**, by the multitrack: its session,
 # its file and its last save (a `/gui_app_open` snapshot), so that opening it
@@ -169,6 +173,40 @@ class MultitrackEditor(Marking, HostedEditor):
         """The session file it opened or last saved, or ``None`` for an
         untitled one."""
         return self._path
+
+    def open_roll(self, region) -> "NotesEditor":
+        """**The roll of a box of notes**, as a double click on the box opens
+        it: ``region``, a `clausters.multitrack.Region` whose box reads a
+        sequence of events, edited in a window of its own, opened if none is
+        open over it, in the multitrack's history -- an edit in either window
+        is undone from both, and the roll goes when the multitrack does.
+
+        Answers the roll's `clausters.gui.editing.NotesEditor`, the one this
+        handler answered before while that window is open. Its ``structure``
+        is the session's `clausters.seq.EventSequence` for the box, the
+        window's while it is open as a notes editor's is.
+
+        Raises `ValueError` for a box that holds no notes.
+        """
+        from .events import NotesEditor
+
+        named = (region.content.window or {}).get("source")
+        named = named.get("source") if isinstance(named, dict) else None
+        held = None if self._session is None or named is None else self._session.source(named)
+        if held is None or held.sequence is None:
+            raise ValueError("the box holds no notes")
+        window = int((self._app_call({"roll": int(region._id)}) or {})["window"])
+        rolls = self.__dict__.setdefault("_rolls", [])
+        rolls[:] = [roll for roll in rolls if not roll.closed]
+        for roll in rolls:
+            if roll.id == window:
+                return roll
+        roll = NotesEditor(held.sequence, title=f"notes {named}")
+        # the host opened it for this client without a `/gui_app_open`
+        self._host._hold_open(window)
+        roll._hold(self._host, window)
+        rolls.append(roll)
+        return roll
 
     # ---- the door ----
 

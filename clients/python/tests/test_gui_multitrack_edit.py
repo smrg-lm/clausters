@@ -351,3 +351,47 @@ def test_every_application_with_no_file_answers_its_window_verbs(gui_host, app):
     while window in gui_host.windows and time.monotonic() < deadline:
         gui_host.pump(0.05)
     assert window not in gui_host.windows
+
+
+def test_a_box_of_notes_opens_its_roll_for_the_script(gui_host, tmp_path):
+    """**A box's roll, asked by the script**, on a real host: `open_roll`
+    answers the roll's notes editor -- the same one while its window is open --
+    over the session's sequence, which reads the window's; an edit there is
+    undone from the multitrack, a box of no notes is refused before anything
+    opens, and the roll goes with the multitrack."""
+    from clausters.multitrack import Content, Source
+    from clausters.seq import EventSequence
+    from clausters.seq.event import Event
+
+    def window(source):
+        return Content.onto({"source": {"source": source, "lifetime": "session",
+                                        "generation": 0},
+                             "start": 0.0, "duration": 2.0})
+
+    notes = EventSequence([(beat, Event(midinote=pitch, sustain=0.4))
+                           for beat, pitch in [(0.0, 60), (0.5, 64)]])
+    multitrack = Multitrack()
+    keys = multitrack.tracks.add("keys")
+    box = keys.active_take_lane.regions.add(0.0, 2.0, window(7), name="keys")
+    other = keys.active_take_lane.regions.add(4.0, 2.0, window(3), name="take")
+    session = SavedSession()
+    session.multitrack = multitrack
+    session.sources[7] = Source.events(notes)
+    session.save(str(tmp_path / "notes.json"))
+    editor = MultitrackEditor(session, title="notes")
+    editor.open(gui_host)
+    with pytest.raises(ValueError):
+        editor.open_roll(other)
+    roll = editor.open_roll(box)
+    assert roll.structure is notes and not roll.closed
+    assert editor.open_roll(box) is roll, "the window open is answered"
+    roll.select([notes.events[0]])
+    roll.octave_up()
+    assert notes.events[0]["midinote"] == 72, "the script's sequence is the window's"
+    editor.undo()
+    assert notes.events[0]["midinote"] == 60, "undone from the multitrack"
+    editor.close()
+    deadline = time.monotonic() + 5.0
+    while not roll.closed and time.monotonic() < deadline:
+        gui_host.pump(0.05)
+    assert roll.closed, "the roll goes with the multitrack"
