@@ -274,13 +274,17 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **The roll's two modes are not yet an editor a hand can trust**
-  *(`crates/clausters-apps/PLAN.md`, Found by use, the entry of that title)*.
-  The first eye pass over the notation mode and the editing options found
-  gestures never defined per mode, verbs to review and no way to inspect
-  what a note holds; the entry lists them. Its drawing faults are fixed.
-  The design for the gestures and the inspector is the Future directions
-  entry "The roll as an editor of everything a sequence holds".
+- ⬜ **`X37`-`X42` -- the roll as an editor of everything a sequence
+  holds** *(`crates/clausters-apps/PLAN.md`)*, in that order: the verbs per
+  case first (`X37`, with the document's split), since the panels (`X38`),
+  the lanes (`X39`) and the reading under the pointer (`X40`) edit and show
+  through them; then the pitch line (`X41`), which the page's glyphs
+  (`X42`) are drawn beside. `X37.2` waits on the root plan's Future
+  directions entry "A pitch spelled by a key, and moved by a step of it",
+  and `X41` on the document plan's "The pitch a sequence sounds over time".
+  They take items 1, 2 and 10 of the Found by use entry "The roll's two
+  modes are not yet an editor a hand can trust"; its item 11, a pass over
+  the rest of the application, stays open there and comes after them.
 
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,

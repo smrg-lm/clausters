@@ -2026,6 +2026,17 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
   string); until then nothing refuses a note for what an instrument cannot
   play.
 
+- ⬜ **The pitch a sequence sounds over time** *(2026-11-10, with the
+  user, from `crates/clausters-apps/PLAN.md`, `X41`)*. A function of the
+  sequence, beside `articulation`'s lines: for each line, the pitch that
+  sounds as a run of points in beats and fractional MIDI numbers -- each
+  note's pitch, its own bend curve over it and, under MIDI 1.0, its
+  channel's bend over the time it sounds -- one run across notes a join
+  carries on into, and a new run where the next is attacked. The roll draws
+  it over its boxes, the score editor can read it, and both clients reach
+  it through the sequence's JSON door. A channel's bend stays its own
+  curve; this is only a reading of what sounds.
+
 ## Found by use: the running list of fixes
 
 Every entry is a checkbox, and a fixed one stays with the record of what was wrong.

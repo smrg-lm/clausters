@@ -5198,6 +5198,18 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   `window` prop naming that key, read and written by the host in its own
   settings beside the key table, is the shape to weigh first.
 
+- ⬜ **An element says which pointer and which tip the point under it
+  means** *(2026-11-10, from `crates/clausters-apps/PLAN.md`, `X37` and
+  `X40`: the roll's tools and what is under its pointer)*. The host cannot
+  set the pointer's shape: a tool that draws, erases or stretches is told
+  apart only by what it does, and the multitrack's grips stand where that
+  capability was missing. And a `tip` (`G38.2`) is a widget's, one text for
+  all of it, where a roll would name the note under the pointer. Both are
+  one answer of an element about a point, read where the hover is already
+  resolved: a pointer's kind (a standard set the native and the browser
+  fronts both name) and an optional text the tip layer shows with the
+  timer it already has. Each front sets the pointer from it.
+
 ## Found by use: the running list of fixes
 
 - ✅ **A focused multitrack's meters at rest cover its focus ring** *(found 2026-10-08 by the user in `editors/edit_multitrack` with tall tracks scrolled: the meters drew over the blue line round the multitrack, above and below, only while they showed no signal; fixed the same day)*. The ring is drawn with the picture and the live layer over it, since a window keeps its picture and a tick draws what moves; a meter column at rest is the height of its track, so where a track met the multitrack's top or bottom edge the column covered the ring. The live layer of a focused element now ends with the ring (`frame::draw_live_places`), so it is the last thing of the element in a tick as it is in a whole frame. Pinned by `the_focus_ring_is_drawn_over_the_live_layer`; `a_scrolled_stacks_meters_paint_inside_its_own_rect` and `a_tall_multitracks_meters_stay_inside_it` were written while looking for it and pin that the meters stay inside the multitrack.

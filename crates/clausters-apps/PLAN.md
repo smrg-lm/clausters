@@ -2437,6 +2437,96 @@ opened it.
     attack and a lengthened one is not joined; a slur drawn attacked is heard
     with every note attacked.
 
+- ⬜ **X37 - The roll's verbs, per case.** *(Opened 2026-11-10 by the user,
+  from the Future directions entry "The roll as an editor of everything a
+  sequence holds", whose principles hold for this milestone and the five
+  after it.)* Every action of the roll is a verb of the one table, defined
+  for each of its four cases (MIDI or notation, monophonic or polyphonic),
+  and what a verb does to an event is the document's or the editing
+  crate's, never the drawn note's. Carries items 1 and 2 of "The roll's two
+  modes are not yet an editor a hand can trust", in Found by use.
+  - ⬜ **X37.1 - A split is the document's.** `EventsIntent::Split`: each
+    named event that sounds across the beat becomes two, the second a new
+    event with the first's keys, each of its curves cut at the point (the
+    value there written on both sides), its joins out of it going out of the
+    second half; in notation mode the written values of both halves read
+    again. The roll sends the selection and the cursor to its owner, which
+    asks the document, as `join` already does; a roll with no owner that
+    speaks the joins keeps cutting its own notes.
+  - ⬜ **X37.2 - Transposition.** A semitone and an octave up and down over
+    the selection, the whole roll when nothing is selected; in notation mode
+    a step of the key, respelled by the core (root `PLAN.md`, Future
+    directions, "A pitch spelled by a key, and moved by a step of it"). One
+    intent, one undo.
+  - ⬜ **X37.3 - Selection by data.** By pitch, by channel, by voice or by
+    staff, filters of the editing crate both clients call, as verbs over the
+    note under the cursor or the selection.
+  - ⬜ **X37.4 - Erase and resize by the hand.** A drag that erases what it
+    crosses, and the whole selection resized by one note's edge.
+  - ⬜ **X37.5 - The table.** The verbs per case in `docs/app-behavior.md`,
+    a test per rule, and the review of the verbs `X35` and `X36` added.
+  - ⬜ **X37.6 - Both clients and tests.** The notes editor's new verbs in
+    Python and on the web, and the document's split in both clients'
+    `EventSequence`.
+  - **Acceptance:** a note with a bend and a staccato split in two keeps
+    both on both halves and one undo gives it back whole; an octave up over
+    a chord written in notation mode is respelled where the key says; every
+    row of the table has its test.
+
+- ⬜ **X38 - The roll's panels.** The event list and the inspector, sections
+  of `crate::panels` beside the plane, shown or hidden as the audio editor's
+  spectrogram settings are, and the choice of what a lane and a note draw
+  made there, never in a dialog. The list is a `table` of the events (the
+  time in bar:beat, the kind, the pitch, the length, the velocity, the
+  channel, and the written keys in notation mode; a curve as a tree of its
+  points); the inspector, the selection's data, a value that differs
+  between the selected notes shown as such. Both follow the roll's
+  selection both ways, and an edit in either is an intent of the document,
+  with its history. Carries item 10 of the Found by use entry above.
+  **Acceptance:** a velocity typed in the inspector over three selected
+  notes is one undo; a row chosen in the list selects its note in the roll
+  and the roll's selection chooses its rows.
+
+- ⬜ **X39 - The roll's lanes.** The curves that stand apart from the notes
+  (a channel's, the spanners) as the stack of a tab view whose tabs are
+  their labels, one lane shown at a time with its value ruler, the height a
+  lane needs in place of the fixed `CURVE_H`. Velocity in a lane of bars
+  again, one per note at its start, dragged one by one or as the selection,
+  a drag across the lane a ramp, showing only the voice or channel chosen;
+  the decision of 2026-09-27 in `docs/decisions.md` is corrected with it. A
+  curve is added or cleared among the targets the sequence's format allows,
+  as the Future directions entry lists them.
+  **Acceptance:** under MPE a note's CC74 is added and drawn and a channel
+  pitch bend refused; a ramp across the velocity lane is one undo.
+
+- ⬜ **X40 - What is under the pointer.** The note's name, MIDI number,
+  velocity and channel, and in notation mode its written value, spelling,
+  dynamic and marks, on the status band as a reading of the host's beside
+  its history; a tooltip later, once the host has one
+  (`clients/gui/PLAN.md`).
+  **Acceptance:** hovering a note names it on the band and moving off it
+  clears it, with nothing added to the history.
+
+- ⬜ **X41 - The continuous pitch line.** The pitch that sounds over time (a
+  note's, its own bend and, under MIDI 1.0, the channel's bend over the
+  note that sounds), a function of the document the score editor can read
+  too (`crates/clausters-document/PLAN.md`, Future directions, "The pitch a
+  sequence sounds over time"), drawn over the boxes, joining a line's boxes where they are joined
+  and cut where they are not. It replaces the straight links joins are
+  drawn with; a channel's bend stays its lane, and both can be seen.
+  **Acceptance:** two joined notes with a bend draw one continuous line
+  that follows the bend, and an unjoined third starts a new one.
+
+- ⬜ **X42 - The page in the roll.** The marks a page writes on a note
+  (tenuto, accent, marcato and the breath, which takes length from a note
+  before the next attack, beside staccato) and the dynamics, as verbs; drawn
+  in notation mode with the SMuFL outlines the page already sends, over a
+  box, the breath at its end and a dynamic as its glyph; colour by voice,
+  staff or part. No ties, since a box runs across a barline. Slurs wait on
+  a drawing shown to the user before anything is decided.
+  **Acceptance:** an accent and a breath written in the roll are the score
+  editor's page at once, and a breath is heard as the shortened note.
+
 
 ## Application state and services
 
@@ -4741,7 +4831,9 @@ Every entry carries a checkbox.
   written data, the curves of its channels and those of each note. The
   principles first, then the work, in two groups. It carries items 1 and 10
   of "The roll's two modes are not yet an editor a hand can trust", in Found
-  by use.
+  by use. *Folded into `X37`-`X42` on 2026-11-10, which keep these
+  principles; what stays open here is the drawing of slurs, which `X42`
+  waits on.*
 
   The principles:
   1. **Verbs first.** Every action below is a verb of the one table,
@@ -4759,15 +4851,22 @@ Every entry carries a checkbox.
      Showing another is choosing which parameter is shown. The two new
      pictures are the continuous pitch line and the page's glyphs in
      notation mode.
-  5. **What is general is the library's.** Respelling and scales are
-     `clausters_core::notation`'s and quantization is
-     `crates/clausters-notate/PLAN.md`'s; the roll calls them.
+  5. **What is general is the library's.** Respelling, scales and harmony
+     are the core's, used by the roll, by `crates/clausters-notate` and by
+     both clients alike; quantization is `crates/clausters-notate/PLAN.md`'s;
+     the roll calls them.
   6. **Choosing what is shown is a panel, never a dialog.** Which curve a
      lane shows, which note parameter is drawn, the event list and the
      inspector are sections of `crate::panels` beside the plane, shown or
      hidden, as the audio editor's spectrogram settings are. A modal dialog
      asks before an act (unsaved work, a conversion's options) or reports
      work in progress, and nothing else.
+  7. **No new widget, and no floating bar.** The roll composes what exists:
+     the menus (as the score editor's page options and the audio editor's
+     spectrogram settings are reached), `panels`, the `table`, a `choice`
+     in its `tabs` view over a `stack`, the `curve`. What a roll's engine
+     does that is its own (a phrase's variations, a rendered waveform) is
+     not the roll's; reading MIDI and MEI or MusicXML files exists already.
 
   Basic editing:
   - **The verbs per case**: create, move, resize, select, delete, split,
@@ -6863,3 +6962,7 @@ wrong.
       faults are expected beyond these, and the two windows over one
       sequence, the box's roll in the multitrack and the page beside the
       roll are the first places to look.
+
+  *Taken into milestones 2026-11-10*: items 1 and 2 are `X37`, item 10 is
+  `X38`. Item 11 stays open here, and is a pass over the application once
+  `X37` to `X42` have changed it.

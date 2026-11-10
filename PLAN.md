@@ -3077,6 +3077,21 @@ where it came from).
   note beside the `TransportPos` record in `docs/decisions.md` is updated).
   Option 1 is recorded so it is not proposed again without its cost.
 
+- ⬜ **A pitch spelled by a key, and moved by a step of it** *(2026-11-10,
+  with the user, from `crates/clausters-apps/PLAN.md`, `X37.2`)*. What the
+  core has spells by an accidental world alone:
+  `clausters_core::event::notation::transposed` moves written `pitches` by
+  semitones and spells them again in sharps or in flats, and
+  `clausters_core::notation::ops::transpose_pitch` moves one by steps and
+  semitones as the score editor does. What is missing is the spelling a
+  key gives (a pitch of the scale written as the scale writes it, one out
+  of it by the nearest name on the line of fifths) and a transposition by a
+  step of the key, which moves each pitch to the next degree of its scale.
+  Both are general and belong beside the spelling the core already has:
+  the roll's transposition calls them, the Spelling step of
+  `crates/clausters-notate/PLAN.md` uses them as its baseline, and both
+  clients reach them through the core's doors.
+
 ## Found by use: the running list of fixes
 
 - ✅ **The embedded engine runs without the SIGXCPU guard** *(found
