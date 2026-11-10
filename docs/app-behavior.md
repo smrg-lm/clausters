@@ -357,6 +357,11 @@ code that keeps it lives.
   and its keys offer the undo that takes it back: every window's actions are
   read again after a run, and the ones that moved are said (found 2026-11-10,
   when Ctrl+Z in a second roll did nothing after an edit in the first).
+- **An editor's time window is the reader's.** A roll, like a multitrack,
+  does not re-frame or page its view when what it holds changes, since a
+  change there is mostly the reader's own edit (found 2026-11-10, when
+  entering notation mode drew the last note at its written value and the
+  view jumped to it, the notes before it off the screen).
 - **A step redraws every window it moved, whichever window took it.** An
   undo or a redo walks one history, so every window over what it changed is
   corrected with it, whether the step came from a key, an entry or a

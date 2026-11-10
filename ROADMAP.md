@@ -274,10 +274,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **Entering notation mode moves a roll's view to its last note**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*: a fix, first, since the
-  notation mode cannot be looked at until it is done.
-
 - ⬜ **A performance's joins are lost when the roll writes it as notation**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*: the conversion renders
   the page afresh and reads no join into it. **The decision:** whether a join

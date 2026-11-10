@@ -6987,7 +6987,7 @@ wrong.
   below, "A performance's joins are lost when the roll writes it as
   notation"; the slurs' drawing stays with `X42`.
 
-- ⬜ **Entering notation mode moves a roll's view to its last note**
+- ✅ **Entering notation mode moves a roll's view to its last note**
   (2026-11-10, the pass over the box's roll; the host of the day before does
   the same, so it is older than that day's work). A roll opened over a
   sequence written as notation shows every note in MIDI mode; switched to
@@ -6996,7 +6996,13 @@ wrong.
   the screen -- a roll over a box's sequence does the same. What moves the
   window is to be found out: the mode changes no prop of the time view, so
   it is the host's group of the roll's time axis, rebuilt or refitted when
-  the window's tree changes for the notation chrome.
+  the window's tree changes for the notation chrome. *(Fixed 2026-11-10: the
+  notation mode draws the last note at its written value, which moved where
+  the notes end just past the window's right edge, and the host pages a
+  roll's axis forward when its content runs past that edge -- the rule for a
+  roll written into live. An application's roll now says its window is the
+  reader's (`autofit` off), as the multitrack's does, and the rule is in
+  `docs/app-behavior.md`.)*
 
 - ⬜ **A performance's joins are lost when the roll writes it as notation**
   (2026-11-10, the pass over the box's roll; a roll over a client's sequence

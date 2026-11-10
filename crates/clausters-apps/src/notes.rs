@@ -178,6 +178,11 @@ pub fn props(
     out.insert("lines".into(), json!(drawn.lines));
     out.extend(beside);
     out.remove("type");
+    // **The window is the reader's**, as the multitrack's is: a content change
+    // in an editor is mostly the reader's own edit, or a mode drawing the same
+    // notes at their written values, so the axis neither re-frames nor pages
+    // forward on one.
+    out.insert("autofit".into(), json!(false));
     let notes: Vec<f64> = out
         .get("notes")
         .and_then(Value::as_array)

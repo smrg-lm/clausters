@@ -338,6 +338,17 @@ fn a_roll_navigates_its_whole_domain_and_opens_on_its_notes() {
     assert!(low <= 60.0 && high >= 64.0 && len < 1.0, "{low} {high}");
 }
 
+/// **The roll's window is the reader's**, as the multitrack's is: its axis
+/// does not follow a change of what it holds, so entering notation mode,
+/// which draws the last note at its written value and moves where the
+/// notes end, does not page the view forward onto that end.
+#[test]
+fn the_rolls_window_does_not_follow_its_content() {
+    let mut e = editor(shared());
+    let roll = &e.window(40)["children"][1];
+    assert_eq!(roll["autofit"], json!(false));
+}
+
 /// **A curve drawn on the roll is one edit of the sequence**: the window draws
 /// the curve, a `points` gesture lands on it, and the entry puts it back.
 #[test]
