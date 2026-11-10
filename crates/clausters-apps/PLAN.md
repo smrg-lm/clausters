@@ -2499,7 +2499,7 @@ opened it.
   **Acceptance:** under MPE a note's CC74 is added and drawn and a channel
   pitch bend refused; a ramp across the velocity lane is one undo.
 
-- ⬜ **X40 - What is under the pointer.** The note's name, MIDI number,
+- ✅ **X40 - What is under the pointer.** *(Done 2026-11-10, before `X39`, which it does not need: `Element::reading`, drawn at the status band's right end; the roll's corner readout moved there, and the notation mode's `spelled` list says how each note is written. The tooltip waits on `clients/gui/PLAN.md`.)* The note's name, MIDI number,
   velocity and channel, and in notation mode its written value, spelling,
   dynamic and marks, on the status band as a reading of the host's beside
   its history; a tooltip later, once the host has one

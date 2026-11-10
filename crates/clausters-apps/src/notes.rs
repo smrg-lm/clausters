@@ -177,6 +177,7 @@ fn written(out: &mut Map<String, Value>, drawn: &notes::Projection) {
     out.insert("voices".into(), json!(drawn.voices));
     out.insert("dimmed".into(), json!(drawn.dimmed));
     out.insert("labels".into(), json!(drawn.labels));
+    out.insert("spelled".into(), json!(drawn.spelled));
 }
 
 /// **The window**, as a GuiDef rooted at a `window` node: the roll under

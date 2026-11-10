@@ -948,12 +948,16 @@ pub(super) fn draw_static_meshes(
 ///
 /// What used to share this walk -- an element's own open list -- is the popup
 /// layer's now ([`draw_popups`]).
+/// Answers what the element under the pointer says of the point it is over
+/// ([`Element::reading`](super::super::widget::Element::reading)), for the
+/// status band.
 pub(super) fn draw_element_overlays(
     over: &mut Mesh,
     placed: &[layout::Placed],
     inputs: &FrameInputs,
     theme: &Theme,
-) {
+) -> Option<String> {
+    let mut reading = None;
     let m = inputs.metrics;
     // **The marquee a hand is sweeping over a plane**, through the routine every
     // swept selection in this window is drawn with -- the same wash, the same
@@ -1039,8 +1043,16 @@ pub(super) fn draw_element_overlays(
             el.draw(&mut Draw::new(over, &p.metrics, th), &ctx);
         }
         el.draw_over(&mut Draw::new(over, &p.metrics, th), &ctx);
+        // the topmost element under the pointer is the one that says it
+        let under = inputs.world.cursor.is_some_and(|(x, y)| {
+            p.rect.contains(x, y) && p.clip.is_none_or(|clip| clip.contains(x, y))
+        });
+        if under && let Some(said) = el.reading(&ctx) {
+            reading = Some(said);
+        }
     }
     over.set_clip(None);
+    reading
 }
 
 /// Draws the **dividers** of every split strip whose container is one of the
@@ -1337,7 +1349,9 @@ fn draw_list(
 }
 
 /// Draws the **status bar** into `band`: the window's newest line, or -- open --
-/// as many of its recent lines as the band holds, newest at the bottom.
+/// as many of its recent lines as the band holds, newest at the bottom --
+/// and, at its right end beside the owner's progress, `reading`: what the
+/// element under the pointer says of the point it is over.
 ///
 /// It is drawn into the *overlay* mesh and last, so it reads over a heavy view
 /// that runs to the window's edge. What colors a line is the only thing a line
@@ -1351,6 +1365,7 @@ pub(crate) fn draw_status(
     band: Rect,
     inputs: &FrameInputs,
     progress: Option<&(f32, String)>,
+    reading: Option<&str>,
     theme: &Theme,
 ) {
     let m = inputs.metrics;
@@ -1381,6 +1396,18 @@ pub(crate) fn draw_status(
             font::text_ellipsis(over, label, right - w, ty, w, size, theme.text_dim);
             right -= w + m.pad;
         }
+    }
+    // **What is under the pointer**, beside the history and left of the
+    // owner's progress: a reading of the host's, said while the pointer is
+    // there and gone when it leaves, so nothing of it enters the log.
+    if let Some(said) = reading.filter(|r| !r.is_empty()) {
+        let line_h = m.status_h.max(1.0);
+        let y = band.y + band.h - line_h;
+        let room = ((right - band.x) * 0.6).max(0.0);
+        let w = font::width(said, size).min(room);
+        let ty = (y + (line_h - font::height(size)) * 0.5).max(band.y);
+        font::text_ellipsis(over, said, right - w, ty, w, size, theme.text);
+        right -= w + 2.0 * m.pad;
     }
     let Some(status) = inputs.status else {
         over.set_clip(None);

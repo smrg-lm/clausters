@@ -990,3 +990,32 @@ fn a_split_is_the_documents_in_either_mode() {
     }
     assert!(answered(&s, "split", &[json!(1.0)], &Editing::default()).is_err());
 }
+
+/// **In notation mode a roll is told how each note is written**: its written
+/// value, its spelling and its marks, as a reader says them.
+#[test]
+fn a_roll_in_notation_mode_says_how_each_note_is_written() {
+    let s = EventSequence::new(vec![Event::new(
+        0.0,
+        json!({"midinote": 66, "dur": 1.0, "value": [1, 4], "staff": 0, "voice": 0,
+               "pitches": [{"step": "f", "alter": 1, "octave": 4}],
+               "articulations": ["stacc"]}),
+    )]);
+    let p = project(
+        &s,
+        &YDomain::midi(),
+        &Axis::constant(1.0),
+        &notation_editing(),
+    );
+    assert_eq!(p.spelled, vec!["1/4  F#4  stacc".to_string()]);
+    let midi = project(
+        &s,
+        &YDomain::midi(),
+        &Axis::constant(1.0),
+        &Editing::default(),
+    );
+    assert!(
+        midi.spelled.is_empty(),
+        "MIDI mode writes nothing of a page"
+    );
+}

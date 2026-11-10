@@ -47,8 +47,9 @@
 //!   long as it is written (its `dur`), and four lists ride beside `notes`:
 //!   `held`, how long each sounds, in view units; `voices`, flat `staff
 //!   voice` pairs; `dimmed`, `1` for a note of a voice other than the one
-//!   edited, which a press does not take; and `labels`, the dynamic each
-//!   states, or `""`. Only the notes of the staves shown are drawn.
+//!   edited, which a press does not take; `labels`, the dynamic each
+//!   states, or `""`; and `spelled`, how each is written as a reader says it
+//!   (its written value, its spelling and its marks). Only the notes of the staves shown are drawn.
 //! - `joins`: which note goes on into which, flat `from into` pairs of
 //!   indices into `notes` -- a note's `joins`, drawn as a link between the two.
 //! - A `split` report is `at id...`: the cursor, in view units, and the
@@ -248,6 +249,9 @@ pub struct Projection {
     pub dimmed: Vec<u8>,
     /// In notation mode, the dynamic each note states, or `""`.
     pub labels: Vec<String>,
+    /// In notation mode, how each note is written, as a reader says it: its
+    /// written value, its spelling and its marks (`1/8  F#4  stacc`).
+    pub spelled: Vec<String>,
 }
 
 /// **How a roll edits**: the options of whoever edits, which are the
@@ -447,6 +451,7 @@ pub fn project(
                     .unwrap_or_default()
                     .to_string(),
             );
+            out.spelled.push(spelled(&keys));
         }
         out.notes.extend([
             start,
@@ -700,6 +705,52 @@ pub fn intake(
     };
     let intent = EventsIntent::SetEvents { events };
     Intake::edit(serde_json::to_value(&intent).unwrap_or(Value::Null), label)
+}
+
+/// **How a note is written, as a reader says it**: its written value as a
+/// fraction of a whole note, its pitches spelled (a letter, its sign, its
+/// octave) and its marks, each where it has one.
+fn spelled(keys: &Map<String, Value>) -> String {
+    let mut parts = Vec::new();
+    if let Some([n, d]) = keys
+        .get("value")
+        .and_then(Value::as_array)
+        .and_then(|v| Some([v.first()?.as_i64()?, v.get(1)?.as_i64()?]))
+    {
+        parts.push(format!("{n}/{d}"));
+    }
+    let pitches: Vec<String> = keys
+        .get("pitches")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|p| {
+            let step = p.get("step")?.as_str()?.to_uppercase();
+            let alter = p.get("alter").and_then(Value::as_f64).unwrap_or(0.0) as i64;
+            let sign = match alter {
+                2 => "##",
+                1 => "#",
+                -1 => "b",
+                -2 => "bb",
+                _ => "",
+            };
+            Some(format!("{step}{sign}{}", p.get("octave")?.as_i64()?))
+        })
+        .collect();
+    if !pitches.is_empty() {
+        parts.push(pitches.join(" "));
+    }
+    let marks: Vec<&str> = keys
+        .get("articulations")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if !marks.is_empty() {
+        parts.push(marks.join(" "));
+    }
+    parts.join("  ")
 }
 
 /// **The roll's selections by data**: every note the roll takes that shares

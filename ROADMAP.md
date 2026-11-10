@@ -274,12 +274,11 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`X39`-`X42` -- the roll as an editor of everything a sequence
+- ⬜ **`X39`, `X41` and `X42` -- the roll as an editor of everything a sequence
   holds** *(`crates/clausters-apps/PLAN.md`)*, in that order: the lanes
-  (`X39`) and the reading under the pointer (`X40`), which edit and show
-  through the verbs `X37` defined and beside the panel `X38` made; then
-  the pitch line (`X41`), which the page's glyphs (`X42`) are drawn
-  beside. `X41` waits on the document plan's Future
+  (`X39`), which edit and show through the verbs `X37` defined and beside
+  the panel `X38` made; then the pitch line (`X41`), which the page's
+  glyphs (`X42`) are drawn beside. (`X40` is done.) `X41` waits on the document plan's Future
   directions entry "The pitch a sequence sounds over time".
   What is left of the Found by use entry "The roll's two modes are not yet
   an editor a hand can trust" is its item 11, a pass over the rest of the

@@ -2035,6 +2035,14 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// **What the point under the pointer is, said**: a short line the
+    /// status band shows beside its history while the pointer is over the
+    /// element (a roll's note, its pitch, velocity and channel), or `None`.
+    /// Asked of the element the pointer is over each frame the band is drawn.
+    fn reading(&self, _ctx: &Ctx) -> Option<String> {
+        None
+    }
+
     /// **What the hand marked, when it changed since the element last said
     /// so** -- for an element whose owner follows its selection (a roll asked
     /// to tell its marks): the report to send, or `None`. The machine asks at

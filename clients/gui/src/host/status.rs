@@ -56,6 +56,14 @@
 //! the owner has got, so that fact crosses as the prop it is; the log stays
 //! the host's own.
 //!
+//! # What the element under the pointer says
+//!
+//! Beside them, and not as a line either: what the element the pointer is
+//! over says of the point under it (`Element::reading`, a roll's note with its
+//! pitch, velocity and channel), drawn at the band's right end while the
+//! pointer is there. It is read each frame the band is drawn and enters no
+//! history, since a hover is no act.
+//!
 //! It is per window and it does not travel. A status line is what this window
 //! just did, in the same sense a selection is what this window is holding, and
 //! the document is explicit that neither is part of what is edited.

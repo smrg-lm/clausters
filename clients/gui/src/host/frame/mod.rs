@@ -2167,7 +2167,7 @@ fn picture(
         theme,
     );
     draw_static_meshes(&mut mesh, &mut over, &collected, inputs, theme, tree);
-    draw_element_overlays(&mut over, base, inputs, theme);
+    let reading = draw_element_overlays(&mut over, base, inputs, theme);
     draw_bars(&mut over, base, inputs, theme);
     // **What moves, apart**: the window's live layers, kept by the placements
     // they were drawn in so the next tick can draw them alone.
@@ -2262,7 +2262,7 @@ fn picture(
             WidgetKind::Window { progress, .. } => progress.as_ref(),
             _ => None,
         };
-        draw_status(&mut top, band, inputs, progress, theme);
+        draw_status(&mut top, band, inputs, progress, reading.as_deref(), theme);
     }
     // **Work in progress over the window**, while the owner says it runs.
     if let WidgetKind::Window {

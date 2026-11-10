@@ -141,12 +141,14 @@ struct Written {
     voices: Vec<usize>,
     dimmed: Vec<bool>,
     labels: Vec<String>,
+    /// How each note is written, as a reader says it (`spelled`).
+    spelled: Vec<String>,
 }
 
 impl Written {
     fn read(props: &Map<String, Value>) -> Self {
         let mut out = Self::default();
-        for key in ["held", "voices", "dimmed", "labels"] {
+        for key in ["held", "voices", "dimmed", "labels", "spelled"] {
             if let Some(v) = props.get(key) {
                 out.set(key, v);
             }
@@ -167,11 +169,16 @@ impl Written {
             "held" => self.held = numbers().collect(),
             "voices" => self.voices = numbers().map(|n| n.max(0.0) as usize).collect(),
             "dimmed" => self.dimmed = numbers().map(|n| n != 0.0).collect(),
-            "labels" => {
-                self.labels = list
+            "labels" | "spelled" => {
+                let texts = list
                     .iter()
                     .map(|l| l.as_str().unwrap_or_default().to_string())
                     .collect();
+                if key == "labels" {
+                    self.labels = texts;
+                } else {
+                    self.spelled = texts;
+                }
             }
             _ => return false,
         }
@@ -685,7 +692,7 @@ impl Element for Notes {
                 self.osc = parse_osc(&parse::as_array_props("osc", v));
                 true
             }
-            "held" | "voices" | "dimmed" | "labels" => self.written.set(key, v),
+            "held" | "voices" | "dimmed" | "labels" | "spelled" => self.written.set(key, v),
             "joins" => {
                 let list = parse::as_array_props("joins", v);
                 self.joins = Some(parse_joins(list.get("joins").unwrap_or(&Value::Null)));
@@ -807,7 +814,7 @@ impl Element for Notes {
             let body = Rect::new(r.grid.x, ctx.rect.y, r.grid.w, r.ruler.y - ctx.rect.y);
             crate::host::frame::draw_time_ruler(d, ctx.rect, body, &nav, rate, &self.editor);
         }
-        self.draw_axis_chrome(d, ctx, r.grid, &nav, rate);
+        self.draw_axis_chrome(d, ctx, r.grid, &nav);
     }
 
     /// **The playhead**: the one line of a roll a clock moves, down the grid
@@ -1317,6 +1324,10 @@ impl Element for Notes {
     /// transpositions (`step_up`, `step_down`, `octave_up`, `octave_down`,
     /// which with nothing selected are of every note) -- the selected notes'
     /// ids to the owner, whose edit it is.
+    fn reading(&self, ctx: &Ctx) -> Option<String> {
+        self.reading_at(ctx)
+    }
+
     fn take_marks(&mut self) -> Option<Vec<OscType>> {
         if !self.tell_marks || !self.ids {
             return None;
@@ -1552,8 +1563,9 @@ impl Notes {
         }
     }
 
-    /// The axis' chrome over the grid: the shared selection band, the playhead,
-    /// and the cursor readout naming the pitch and the time under the pointer.
+    /// The axis' chrome over the grid: the shared selection band and the
+    /// position cursor. What is under the pointer is said on the status band
+    /// ([`Element::reading`]).
     /// **A roll in notation mode, over its notes**: each voice past a staff's
     /// first tinted, what a note sounds drawn inside what it is written as (a
     /// staccato is a short bar in a long note), the dynamic a note states
@@ -1705,7 +1717,7 @@ impl Notes {
         }
     }
 
-    fn draw_axis_chrome(&self, d: &mut Draw, ctx: &Ctx, grid: Rect, nav: &View, rate: f64) {
+    fn draw_axis_chrome(&self, d: &mut Draw, ctx: &Ctx, grid: Rect, nav: &View) {
         let Some(time) = ctx.time else {
             return;
         };
@@ -1739,15 +1751,26 @@ impl Notes {
                 theme.cursor,
             );
         }
-        // The readout, in the grid's bottom-right corner: what is under the
-        // pointer -- a curve's label and value, a note's pitch, velocity and
-        // channel, or the pitch the row is -- and the time.
-        let Some((cx, cy)) = ctx.world.cursor else {
-            return;
-        };
+    }
+
+    /// **What is under the pointer, said**: a curve's label and value, a
+    /// note's pitch, velocity and channel -- in notation mode its staff and
+    /// voice, how it is written and its dynamic -- or the pitch the row is,
+    /// and the time. `None` off the grid and the curves.
+    fn reading_at(&self, ctx: &Ctx) -> Option<String> {
+        ctx.time?;
+        let m = ctx.metrics;
+        let r = self.regions(ctx.rect, ctx.indent, m);
+        let grid = r.grid;
+        let nav = self.view(ctx.time);
+        let rate = self.rate(ctx.world.sample_rate);
+        let (cx, cy) = ctx.world.cursor?;
+        if !ctx.rect.contains(cx, cy) {
+            return None;
+        }
         let curve = self.curve_readout((cx, cy), ctx.rect, ctx.indent, m, ctx.time);
         if curve.is_none() && !grid.contains(cx, cy) {
-            return;
+            return None;
         }
         let row = self.axis(m).pitch(cy as f32, grid);
         let s = nav.start + nav.len * ((cx - grid.x as f64) / grid.w.max(1.0) as f64);
@@ -1768,57 +1791,54 @@ impl Notes {
             if self.hz() {
                 format!("{:.1} Hz", self.value_of(pitch))
             } else {
-                clausters_core::scale::note_name(pitch.round() as i32)
+                format!(
+                    "{} ({})",
+                    clausters_core::scale::note_name(pitch.round() as i32),
+                    pitch.round() as i32
+                )
             }
         };
         let note = pianoroll::note_hit(
             grid,
-            nav,
+            &nav,
             0.0,
             &self.notes,
             self.axis(m),
             cx as f32,
             cy as f32,
         )
-        .and_then(|hit| self.notes.get(hit.index));
+        .map(|hit| hit.index);
         let value = match (curve, note) {
             (Some(curve), _) => curve,
             // A note's channel is counted from 1, the way MIDI shows one.
-            (None, Some(n)) => {
-                let index = self.notes.iter().position(|m| std::ptr::eq(m, n));
-                match index.and_then(|i| self.written.voice(i)) {
-                    // in notation mode, where it is written
-                    Some([staff, voice]) => format!(
-                        "{}  staff {}  voice {}",
-                        pitch_name(n.pitch),
-                        staff + 1,
-                        voice + 1
-                    ),
-                    None => format!(
-                        "{}  vel {}  ch {}",
-                        pitch_name(n.pitch),
-                        n.velocity,
-                        n.channel + 1
-                    ),
+            (None, Some(i)) => {
+                let n = &self.notes[i];
+                let level = format!("vel {}  ch {}", n.velocity, n.channel + 1);
+                match self.written.voice(i) {
+                    // in notation mode, where and how it is written
+                    Some([staff, voice]) => {
+                        let mut said = format!(
+                            "{}  {level}  staff {}  voice {}",
+                            pitch_name(n.pitch),
+                            staff + 1,
+                            voice + 1
+                        );
+                        for more in [self.written.spelled.get(i), self.written.labels.get(i)]
+                            .into_iter()
+                            .flatten()
+                            .filter(|t| !t.is_empty())
+                        {
+                            said.push_str("  ");
+                            said.push_str(more);
+                        }
+                        said
+                    }
+                    None => format!("{}  {level}", pitch_name(n.pitch)),
                 }
             }
             (None, None) => pitch_name(row),
         };
-        let text = format!("{value}  {time}");
-        // Right-aligned **inside the grid**: a roll drawn as a clip's body is
-        // as wide as the clip, so a read-out placed at its own width alone
-        // starts left of the box and is read over whatever is drawn there. It
-        // drops its tail first -- the time -- and keeps the note name, which is
-        // the half a pointer on a pitch is asking for; a grid with no room for
-        // the ellipsis draws nothing.
-        let room = grid.w - 2.0 * m.pad;
-        let w = font::width(&text, m.caption_scale).min(room);
-        let (x, y) = (
-            grid.x + grid.w - w - m.pad,
-            grid.y + grid.h - font::height(m.caption_scale) - 2.0,
-        );
-        let (scale, color) = (m.caption_scale, theme.ruler_text);
-        crate::host::graphics::plate_text(d, &text, x, y, room, scale, color);
+        Some(format!("{value}  {time}"))
     }
 
     /// A press on the note grid: Alt toggles a note in or out of the selection,
