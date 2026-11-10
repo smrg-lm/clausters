@@ -316,6 +316,26 @@ class NotesEditor(Marking, SequenceHandler):
         ``octave_down`` (`verb`, Ctrl+Down)."""
         return self.verb("octave_down")
 
+    def select_pitch(self) -> bool:
+        """Select every note the roll takes that shares its pitch with a
+        selected one -- the window's ``select_pitch`` (`verb`); it edits nothing."""
+        return self.verb("select_pitch")
+
+    def select_channel(self) -> bool:
+        """Select every note the roll takes that shares its channel with a
+        selected one -- the window's ``select_channel`` (`verb`); it edits nothing."""
+        return self.verb("select_channel")
+
+    def select_voice(self) -> bool:
+        """Select every note the roll takes that shares its staff and voice with a
+        selected one -- the window's ``select_voice`` (`verb`); it edits nothing."""
+        return self.verb("select_voice")
+
+    def select_staff(self) -> bool:
+        """Select every note the roll takes that shares its staff with a
+        selected one -- the window's ``select_staff`` (`verb`); it edits nothing."""
+        return self.verb("select_staff")
+
     def quantize(self) -> bool:
         """Quantize what is selected to the grid -- the window's ``quantize`` (`verb`)."""
         return self.verb("quantize")

@@ -176,6 +176,21 @@ pub fn menu(app: App, saves: bool) -> Value {
         edit.push(entry(app, "quantize"));
     }
     if app == App::Notes {
+        // the selection moved, and the selection by what it holds
+        edit.push(sep());
+        edit.extend(["step_up", "step_down", "octave_up", "octave_down"].map(|v| entry(app, v)));
+        edit.push(sep());
+        edit.extend(
+            [
+                "select_pitch",
+                "select_channel",
+                "select_voice",
+                "select_staff",
+            ]
+            .map(|v| entry(app, v)),
+        );
+    }
+    if app == App::Notes {
         // how a gesture edits a line: the window's, like the snap switch
         edit.extend([sep(), entry(app, "monophonic")]);
     }

@@ -640,6 +640,28 @@ impl NotesEditor {
             }
             return (None, Vec::new());
         }
+        if roll::SELECTIONS.contains(&tag) {
+            // what the hand marks is the window's: no edit, the roll's
+            // selection corrected
+            let ids: Vec<u64> = values
+                .iter()
+                .filter_map(Value::as_f64)
+                .map(|v| v.max(0.0) as u64)
+                .collect();
+            let held = self.held();
+            let chosen = roll::select_like(&held, tag, &ids, &self.domain, &self.editing);
+            drop(held);
+            if chosen.is_empty() {
+                return (Some("nothing is selected".into()), Vec::new());
+            }
+            return (
+                None,
+                vec![Correction {
+                    widget,
+                    props: json!({ "selected": chosen }),
+                }],
+            );
+        }
         if !matches!(
             tag,
             "notes"

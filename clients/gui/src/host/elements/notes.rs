@@ -1276,7 +1276,16 @@ impl Element for Notes {
         let ours = moves
             || matches!(
                 name,
-                "unjoin" | "slur" | "slur_join" | "tie" | "staccato" | "pedal"
+                "unjoin"
+                    | "slur"
+                    | "slur_join"
+                    | "tie"
+                    | "staccato"
+                    | "pedal"
+                    | "select_pitch"
+                    | "select_channel"
+                    | "select_voice"
+                    | "select_staff"
             );
         if !ours || self.joins.is_none() || !self.ids || !self.editable {
             return None;
@@ -3164,6 +3173,35 @@ mod tests {
             vec![OscType::String("octave_down".into()), OscType::Double(9.0)]
         );
         assert_eq!(r.notes[1].pitch, 62.0, "the roll moved nothing itself");
+    }
+
+    /// **A selection by data is the owner's to answer**: the selected ids
+    /// go out, and with nothing selected the roll says why.
+    #[test]
+    fn a_roll_asks_its_owner_to_select_by_what_the_selection_holds() {
+        let mut clipboard = crate::host::clipboard::Clip::default();
+        let mut r = roll(
+            r#"{"notes":[0.0,100.0,60.0,100.0,0.0, 200.0,50.0,60.0,100.0,0.0],
+                "note_ids":[7,9],"joins":[]}"#,
+        );
+        let mut input = KeyInput {
+            mods: Mods::default(),
+            clipboard: &mut clipboard,
+            cursor: None,
+        };
+        assert!(refusal(r.command("select_pitch", &mut input)).is_some());
+        r.selected = vec![0];
+        let said = r
+            .command("select_pitch", &mut input)
+            .unwrap()
+            .into_messages();
+        assert_eq!(
+            said[0],
+            vec![OscType::String("select_pitch".into()), OscType::Double(7.0)]
+        );
+        // the answer is a correction of the roll's `selected`
+        assert!(r.set("selected", &serde_json::json!([7, 9])));
+        assert_eq!(r.selected, vec![0, 1]);
     }
 
     /// **The cut is the box arithmetic's, and the identity is the roll's.**

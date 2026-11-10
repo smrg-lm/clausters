@@ -691,6 +691,21 @@ fn a_split_from_the_roll_is_an_edit_of_the_sequence() {
     assert!(out.record.is_none(), "a cut outside the note edits nothing");
 }
 
+/// **A selection by data corrects the roll's selection** and edits nothing.
+#[test]
+fn a_selection_by_pitch_is_the_window_s_and_records_nothing() {
+    let sequence = Arc::new(Mutex::new(EventSequence::new(vec![
+        SeqEvent::new(0.0, json!({"midinote": 60, "sustain": 1.0})),
+        SeqEvent::new(1.0, json!({"midinote": 64, "sustain": 1.0})),
+        SeqEvent::new(2.0, json!({"midinote": 60, "sustain": 1.0})),
+    ])));
+    let mut e = editor(sequence);
+    let out = e.event(&gesture("select_pitch", vec![json!(1)]), 1);
+    assert!(out.record.is_none());
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("\"selected\":[1,3]"), "{told}");
+}
+
 fn window_verb(verb: &str) -> Event {
     Event {
         addr: "/gui_event".into(),

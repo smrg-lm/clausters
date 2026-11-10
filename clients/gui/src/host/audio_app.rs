@@ -214,6 +214,17 @@ pub(super) enum ToApp {
         call: Value,
         reply: Reply,
     },
+    /// **A question the host answers once the window's turns before it are
+    /// in**: the application has nothing to say to it and sends it back in
+    /// its order, after every correction its earlier turns sent, so what the
+    /// host then reads of the window is what those turns left (a selection
+    /// a verb asked the application for).
+    After {
+        def_id: i32,
+        call: Value,
+        to: ClientId,
+        seq: i32,
+    },
     /// The window asked to close and goes: what sounded it stops, then it is
     /// forgotten.
     Close { def_id: i32 },
@@ -273,6 +284,13 @@ pub(super) enum FromApp {
     /// **Multitrack window `def_id`'s multitrack moved by a hand**, to the
     /// context's `version`: its opener is told ([`super::GUI_APP_CHANGED`]).
     Changed { def_id: i32, version: i64 },
+    /// [`ToApp::After`], back in its order: the host answers it now.
+    After {
+        def_id: i32,
+        call: Value,
+        to: ClientId,
+        seq: i32,
+    },
     /// An answer for a client of the door.
     Reply {
         to: ClientId,
@@ -525,6 +543,20 @@ impl App {
                 call,
                 reply,
             } => self.call(def_id, &call, reply),
+            ToApp::After {
+                def_id,
+                call,
+                to,
+                seq,
+            } => self.out.send(
+                self.editing.said(),
+                FromApp::After {
+                    def_id,
+                    call,
+                    to,
+                    seq,
+                },
+            ),
             ToApp::Close { def_id } => {
                 if let Some(member) = self.windows.get(&def_id).map(|w| w.member) {
                     let _ = self.app.act(

@@ -96,6 +96,10 @@ The verdict is one of three:
 | `notes` | `step_down` | `NotesEditor.step_down` | `NotesEditor.stepDown` | **api** |
 | `notes` | `octave_up` | `NotesEditor.octave_up` | `NotesEditor.octaveUp` | **api** |
 | `notes` | `octave_down` | `NotesEditor.octave_down` | `NotesEditor.octaveDown` | **api** |
+| `notes` | `select_pitch` | `NotesEditor.select_pitch` | `NotesEditor.selectPitch` | **api** |
+| `notes` | `select_channel` | `NotesEditor.select_channel` | `NotesEditor.selectChannel` | **api** |
+| `notes` | `select_voice` | `NotesEditor.select_voice` | `NotesEditor.selectVoice` | **api** |
+| `notes` | `select_staff` | `NotesEditor.select_staff` | `NotesEditor.selectStaff` | **api** |
 | `notes` | `midi_mode` | `NotesEditor.mode` `NotesEditor.to_midi` | `NotesEditor.mode` `NotesEditor.toMidi` | **api** — `mode = "midi"`; on the web `setMode("midi")` |
 | `notes` | `notation_mode` | `NotesEditor.mode` `NotesEditor.to_notation` | `NotesEditor.mode` `NotesEditor.toNotation` | **api** — `mode = "notation"`, which converts a sequence written as no notation first (the key and the menu ask how in the window's dialog); `to_notation(meter=, division=, writing=, copy=)` says how |
 | `notes` | `show_system` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = "system"`; on the web `setScope("system")` |

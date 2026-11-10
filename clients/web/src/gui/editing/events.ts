@@ -305,6 +305,38 @@ export class NotesEditor extends SequenceHandler {
         return this.verb("octave_down");
     }
 
+    /**
+     * Select every note the roll takes that shares its pitch with a
+     * selected one: the window's `select_pitch`; it edits nothing.
+     */
+    selectPitch(): boolean {
+        return this.verb("select_pitch");
+    }
+
+    /**
+     * Select every note the roll takes that shares its channel with a
+     * selected one: the window's `select_channel`; it edits nothing.
+     */
+    selectChannel(): boolean {
+        return this.verb("select_channel");
+    }
+
+    /**
+     * Select every note the roll takes that shares its staff and voice with a
+     * selected one: the window's `select_voice`; it edits nothing.
+     */
+    selectVoice(): boolean {
+        return this.verb("select_voice");
+    }
+
+    /**
+     * Select every note the roll takes that shares its staff with a
+     * selected one: the window's `select_staff`; it edits nothing.
+     */
+    selectStaff(): boolean {
+        return this.verb("select_staff");
+    }
+
     /** Quantize what is selected to the grid: the window's `quantize`. */
     quantize(): boolean {
         return this.verb("quantize");

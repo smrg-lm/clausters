@@ -141,6 +141,10 @@ def test_a_verb_is_asked_of_the_window_and_its_actions_read(gui_host):
     assert [e["midinote"] for e in take.events] == [49.0, 53.0]
     assert editor.undo() and editor.undo()
     assert [e["midinote"] for e in take.events] == [60.0, 64.0]
+    # a selection by pitch marks what shares it, and edits nothing
+    editor.select([take.events[0]])
+    assert editor.select_pitch() and editor.selected == [take.events[0]]
+    assert editor.select_channel() and len(editor.selected) == 2
     editor.close()
     assert editor.verb("view_all") is False, "no window, no verb"
 

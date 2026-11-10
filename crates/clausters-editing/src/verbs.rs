@@ -334,6 +334,12 @@ pub const NOTES: &[Verb] = &[
     verb("step_down", &["Down"], "Down a step"),
     verb("octave_up", &["Ctrl+Up"], "Up an octave"),
     verb("octave_down", &["Ctrl+Down"], "Down an octave"),
+    // every note sharing a pitch, a channel, a voice or a staff with the
+    // selection, selected
+    verb("select_pitch", &[], "Select by pitch"),
+    verb("select_channel", &[], "Select by channel"),
+    verb("select_voice", &[], "Select by voice"),
+    verb("select_staff", &[], "Select by staff"),
     // the roll's two modes: the events as MIDI says them, or a view of the
     // page they are written as
     choice("mode", "midi_mode", &[], "MIDI mode"),

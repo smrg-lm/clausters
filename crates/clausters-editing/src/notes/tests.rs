@@ -929,3 +929,41 @@ fn a_step_in_notation_mode_is_a_step_of_the_key() {
     assert_eq!(keys["pitches"][0]["step"], json!("e"));
     assert_eq!(keys["midinote"].as_f64(), Some(76.0));
 }
+
+/// **A selection by data marks every note sharing it**: a pitch, a
+/// channel, a voice, among the notes the roll takes.
+#[test]
+fn a_selection_by_data_marks_every_note_that_shares_it() {
+    let s = EventSequence::new(vec![
+        Event::new(
+            0.0,
+            json!({"midinote": 60, "channel": 1, "staff": 0, "voice": 0}),
+        ),
+        Event::new(
+            1.0,
+            json!({"midinote": 64, "channel": 2, "staff": 0, "voice": 1}),
+        ),
+        Event::new(
+            2.0,
+            json!({"midinote": 60, "channel": 2, "staff": 1, "voice": 0}),
+        ),
+        Event::new(3.0, json!({"type": "osc", "addr": "/cue"})),
+    ]);
+    let id = |i: usize| s.events[i].id;
+    let like =
+        |tag: &str, ids: &[u64]| select_like(&s, tag, ids, &YDomain::midi(), &Editing::default());
+    assert_eq!(like("select_pitch", &[id(0)]), vec![id(0), id(2)]);
+    assert_eq!(like("select_channel", &[id(1)]), vec![id(1), id(2)]);
+    assert_eq!(like("select_voice", &[id(0)]), vec![id(0)]);
+    assert_eq!(like("select_staff", &[id(1)]), vec![id(0), id(1)]);
+    assert!(
+        like("select_pitch", &[id(3)]).is_empty(),
+        "a marker is no note"
+    );
+    // in notation mode, only the voice edited is taken
+    let notation = notation_editing();
+    assert_eq!(
+        select_like(&s, "select_pitch", &[id(0)], &YDomain::midi(), &notation),
+        vec![id(0)]
+    );
+}

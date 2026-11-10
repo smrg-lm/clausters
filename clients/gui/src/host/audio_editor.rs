@@ -502,6 +502,21 @@ impl Host {
         from: ClientId,
         effects: &mut Vec<HostEffect>,
     ) {
+        // **What the hand holds is read after the turns before it**: a verb
+        // the application answers with a selection (a roll's selection by
+        // pitch) corrects it from the application's thread, so the question
+        // goes round that thread and is answered when it is back.
+        if call["query"] == "selected" && self.multitrack_marks_held(def_id) {
+            let asked = self.audio_host().ask(ToApp::After {
+                def_id,
+                call: call.clone(),
+                to: from,
+                seq,
+            });
+            if asked.is_ok() {
+                return;
+            }
+        }
         if let Some(answer) = self.multitrack_marks(def_id, call, effects) {
             return effects.push(HostEffect::Reply(super::apps::app_reply(seq, Ok(answer))));
         }
@@ -555,6 +570,25 @@ impl Host {
                         self.say(def_id, status::Line::of_reason(None, &raised.message));
                     }
                     self.perform_audio(def_id, effects, actions);
+                }
+                FromApp::After {
+                    def_id,
+                    call,
+                    to,
+                    seq,
+                } => {
+                    let mut fx = Vec::new();
+                    let answer = self
+                        .multitrack_marks(def_id, &call, &mut fx)
+                        .ok_or_else(|| {
+                            (
+                                "runtime".to_string(),
+                                format!("window {def_id} holds nothing to mark"),
+                            )
+                        });
+                    self.pending_effects.extend(fx);
+                    let msg = super::apps::app_reply(seq, answer);
+                    self.pending_effects.push(HostEffect::Send { to, msg });
                 }
                 FromApp::Reply { to, seq, answer } => {
                     let msg = super::apps::app_reply(seq, answer);
@@ -824,6 +858,14 @@ impl Host {
     /// `regions` in place of what was held, `[]` holding none. The window
     /// keeps them, as a click or a marquee leaves them, and they enter no
     /// history. `None` for any other call, or another window.
+    /// Whether window `def_id` holds marks [`multitrack_marks`](Self::multitrack_marks) reads.
+    fn multitrack_marks_held(&self, def_id: i32) -> bool {
+        self.audio
+            .as_ref()
+            .and_then(|audio| audio.windows.get(&def_id))
+            .is_some_and(|window| window.marks.is_some())
+    }
+
     pub(super) fn multitrack_marks(
         &mut self,
         def_id: i32,

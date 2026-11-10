@@ -702,6 +702,71 @@ pub fn intake(
     Intake::edit(serde_json::to_value(&intent).unwrap_or(Value::Null), label)
 }
 
+/// **The roll's selections by data**: every note the roll takes that shares
+/// a pitch, a channel, a voice or a staff with one of the selected notes.
+pub const SELECTIONS: &[&str] = &[
+    "select_pitch",
+    "select_channel",
+    "select_voice",
+    "select_staff",
+];
+
+/// **The notes a selection by data marks** (see [`SELECTIONS`]): of every
+/// note the roll takes -- drawn, and in notation mode of the voice edited --
+/// those that share with a note of `ids` its pitch (as a MIDI number), its
+/// channel, its staff and voice, or its staff, by `tag`. Empty for a tag
+/// that is none of them or no note of `ids`.
+#[must_use]
+pub fn select_like(
+    sequence: &EventSequence,
+    tag: &str,
+    ids: &[u64],
+    domain: &YDomain,
+    editing: &Editing,
+) -> Vec<u64> {
+    let what = |keys: &Map<String, Value>| -> Option<Vec<i64>> {
+        let [staff, voice] = staff_voice(keys);
+        Some(match tag {
+            "select_pitch" => {
+                vec![
+                    render::pitch_of(keys)
+                        .midinote(&render::scale_of(keys))
+                        .round() as i64,
+                ]
+            }
+            "select_channel" => {
+                vec![keys.get("channel").and_then(Value::as_f64).unwrap_or(0.0) as i64]
+            }
+            "select_voice" => vec![staff as i64, voice as i64],
+            "select_staff" => vec![staff as i64],
+            _ => return None,
+        })
+    };
+    let taken = |event: &Event| {
+        let keys = event.keys();
+        domain.value(&keys).is_some()
+            && label_of(&event.data.0).is_none()
+            && editing.shows(sequence, &keys)
+            && (editing.mode == Mode::Midi || staff_voice(&keys) == editing.voice)
+    };
+    let wanted: Vec<Vec<i64>> = ids
+        .iter()
+        .filter_map(|id| sequence.get(*id))
+        .filter(|event| taken(event))
+        .filter_map(|event| what(&event.keys()))
+        .collect();
+    if wanted.is_empty() {
+        return Vec::new();
+    }
+    sequence
+        .events
+        .iter()
+        .filter(|event| taken(event))
+        .filter(|event| what(&event.keys()).is_some_and(|w| wanted.contains(&w)))
+        .map(|event| event.id)
+        .collect()
+}
+
 /// **The roll's transpositions**, over the selected notes or, with none
 /// selected, every note the roll would take: up or down a semitone in MIDI
 /// mode and a step of the key in notation mode, and an octave in both.
