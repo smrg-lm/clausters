@@ -112,19 +112,25 @@ pub fn realize(sequence: &EventSequence, interp: &Interpretation) -> Result<Even
             curve
         })
         .collect();
+    // A derived lane keeps the id of the lane it replaces, so deriving again
+    // changes nothing; a new one takes the sequence's next id, from the one
+    // counter events and curves share: a roll names a curve by its id, so
+    // two curves with one id are drawn as one and edited into each other.
+    let mut replaced: BTreeMap<String, crate::NodeId> = BTreeMap::new();
     out.automation.retain(|curve| {
         let lane = lane_of(curve);
-        !lanes.iter().any(|derived| lane_of(derived) == lane)
+        let derived = lanes.iter().any(|derived| lane_of(derived) == lane);
+        if derived {
+            replaced.entry(lane).or_insert(curve.id);
+        }
+        !derived
     });
-    let mut next = out
-        .automation
-        .iter()
-        .map(|curve| curve.id.0)
-        .max()
-        .unwrap_or(0);
+    out.hold();
     for mut curve in lanes {
-        next += 1;
-        curve.id = crate::NodeId(next);
+        curve.id = match replaced.remove(&lane_of(&curve)) {
+            Some(id) => id,
+            None => crate::NodeId(out.mint()),
+        };
         out.automation.push(curve);
     }
 
@@ -255,6 +261,46 @@ mod tests {
         }
         // what is already derived is derived again the same
         assert_eq!(realize(&derived, &interp).unwrap(), derived);
+    }
+
+    /// **A derived curve takes an id nothing else has**: events and curves
+    /// draw on one counter, so the pedal is never given the id of a note or
+    /// of a note's own curve -- a roll names a curve by its id, and two
+    /// curves under one name are drawn as one and edited into each other.
+    #[test]
+    fn a_derived_curve_takes_an_id_nothing_else_has() {
+        let interp = Interpretation::default();
+        let mut sequence = render(&page(), &interp).unwrap();
+        sequence.automation.clear();
+        let bend = json!({"id": 0, "target": {"bend": true}, "points": [
+            {"at": 0.0, "value": 0.0}, {"at": 1.0, "value": 1.0}]});
+        sequence.events[0]
+            .automation
+            .push(serde_json::from_value(bend).unwrap());
+        sequence.hold();
+        let ids = |s: &EventSequence| {
+            let mut ids: Vec<u64> = s
+                .events
+                .iter()
+                .map(|e| e.id)
+                .chain(s.automation.iter().map(|a| a.id.0))
+                .chain(
+                    s.events
+                        .iter()
+                        .flat_map(|e| e.automation.iter().map(|a| a.id.0)),
+                )
+                .collect();
+            ids.sort_unstable();
+            ids
+        };
+        let derived = realize(&sequence, &interp).unwrap();
+        assert!(!derived.automation.is_empty(), "the pedal is derived");
+        let all = ids(&derived);
+        let mut unique = all.clone();
+        unique.dedup();
+        assert_eq!(all, unique, "no id is two things");
+        // deriving again keeps each derived curve's id
+        assert_eq!(ids(&realize(&derived, &interp).unwrap()), all);
     }
 
     /// **A slur that does not join takes the joins over its span away**.
