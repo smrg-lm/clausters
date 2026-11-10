@@ -1100,7 +1100,8 @@ fn without_the_notation_layer_the_notation_mode_says_why() {
 /// **A page's marks are drawn with the engraver's symbols**, asked once and
 /// only when the roll first shows a page: an accent the engraver has an
 /// outline for is its character, and a tenuto it has none for the text the
-/// palette labels it with. The outlines reach the roll as its `glyphs`.
+/// palette labels it with, one mark after another with a space between, for
+/// the roll to lay each out. The outlines reach the roll as its `glyphs`.
 #[cfg(feature = "notation")]
 #[test]
 fn a_page_s_marks_are_drawn_with_the_engraver_s_symbols() {
@@ -1134,7 +1135,7 @@ fn a_page_s_marks_are_drawn_with_the_engraver_s_symbols() {
         .iter()
         .find_map(|c| c.props.get("marks"))
         .expect("the marks");
-    assert_eq!(marks[0], json!("\u{E4A0}-"));
+    assert_eq!(marks[0], json!("\u{E4A0} -"));
     e.event(&window_verb("midi_mode"), 4);
     e.event(&window_verb("notation_mode"), 4);
     assert_eq!(*asked.lock().unwrap(), 1, "asked once");

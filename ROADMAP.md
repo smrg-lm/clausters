@@ -135,10 +135,6 @@ already carry it.
   *(`crates/clausters-document/PLAN.md`, Found by use)*. The note's cut,
   made generic over the axis.
 
-- ⬜ **`a_page_s_marks_are_drawn_with_the_engraver_s_symbols` fails with the
-  notation features on** *(`crates/clausters-apps/PLAN.md`, Found by use)*.
-  Predates the id work.
-
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and

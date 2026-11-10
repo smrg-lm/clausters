@@ -3563,9 +3563,9 @@ mod tests {
         let mut r = roll(
             r#"{"notes": [0, 100, 60, 100, 0, 100, 100, 64, 100, 0],
                 "voices": [0, 0, 0, 1],
-                "marks": [">-", ""], "breaths": ["", ","]}"#,
+                "marks": ["> -", ""], "breaths": ["", ","]}"#,
         );
-        assert_eq!(r.written.marks, vec![">-".to_string(), String::new()]);
+        assert_eq!(r.written.marks, vec!["> -".to_string(), String::new()]);
         assert_eq!(r.written.breaths[1], ",");
         assert!(r.written.tints.is_empty());
         assert!(r.set("tints", &serde_json::json!([0, 2])));
