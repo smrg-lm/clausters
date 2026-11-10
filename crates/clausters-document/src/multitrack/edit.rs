@@ -455,6 +455,11 @@ pub fn apply(
             return Outcome::superseded(current, reason);
         }
     }
+    // **The ids an intent brings are checked before it applies** (see
+    // `ids`): one that names something else is refused, never renamed.
+    if let Err(reason) = super::ids::check(multitrack, intent) {
+        return Outcome::refused(intent.clone(), reason);
+    }
     let before = multitrack.version;
     let outcome = edit(multitrack, intent, rules);
     if outcome.applied && multitrack.version == before {
@@ -882,6 +887,14 @@ fn split_region(
     }
     let mut second = source.clone();
     second.id = right;
+    // **The second half's curves are curves of their own**: a clone would
+    // leave two curves under each id, and an id names one thing. Minted past
+    // everything, the halves included, so a redo of this same intent over the
+    // same multitrack names them the same.
+    let next = super::ids::fresh(multitrack).max(left.0.max(right.0) + 1);
+    for (id, curve) in (next..).zip(second.automation.iter_mut()) {
+        curve.id = NodeId(id);
+    }
     second.position = at;
     second.length = source.end() - at;
     second.fade_in = Some(Fade::of(Second(0.0)));

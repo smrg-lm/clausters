@@ -12,8 +12,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use super::Multitrack;
 use super::edit::{self, MultitrackIntent};
-use super::{Multitrack, picture};
 use crate::NodeId;
 use crate::intent::{Against, Rules};
 
@@ -183,11 +183,9 @@ pub fn mutates_value(request: &Value) -> bool {
     request.get("verb").and_then(Value::as_str) == Some("apply")
 }
 
-/// An id past everything the multitrack names -- [`picture::fresh_id`], and
-/// past its markers too, since a marker is looked up by its id as well.
+/// An id past everything the multitrack names ([`super::ids::fresh`]).
 fn fresh(multitrack: &Multitrack) -> u64 {
-    let markers = multitrack.markers.iter().map(|m| m.id.0 + 1).max();
-    picture::fresh_id(multitrack).max(markers.unwrap_or(0))
+    super::ids::fresh(multitrack)
 }
 
 /// The ids a container holds, in the order shown, or `None` when it is not

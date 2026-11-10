@@ -50,6 +50,7 @@ use crate::{NodeId, Opaque, Seconds, SourceId, SourceRef};
 
 pub mod edit;
 pub mod handle;
+pub mod ids;
 pub mod nodes;
 pub mod picture;
 pub mod read;
@@ -942,6 +943,7 @@ impl Span {
 /// and never disagrees with another track about them, which is the whole
 /// argument for where they live.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "WrittenMultitrack")]
 pub struct Multitrack {
     /// What this multitrack is *at*, and the whole of what a stale edit is stale
     /// against.
@@ -991,6 +993,54 @@ pub struct Multitrack {
     /// Fields a newer writer wrote. See [`Extra`].
     #[serde(flatten, default, skip_serializing_if = "Map::is_empty")]
     pub extra: Extra,
+}
+
+/// **What a multitrack is read from**: its fields as they are written, before
+/// the ids are taken in. Every reading of a multitrack -- a session file, a
+/// client's JSON, a state a history restores -- goes through
+/// [`ids::repair`], so a file that names one id twice opens with each thing
+/// under an id of its own rather than as two things edited into each other.
+#[derive(Deserialize)]
+struct WrittenMultitrack {
+    #[serde(default = "first_version")]
+    version: u64,
+    #[serde(default)]
+    tracks: Vec<Track>,
+    #[serde(default = "stereo")]
+    channels: usize,
+    #[serde(default)]
+    tempo: Vec<Tempo>,
+    #[serde(default)]
+    meter: Vec<Meter>,
+    #[serde(default)]
+    markers: Vec<Marker>,
+    #[serde(default)]
+    loop_span: Option<Span>,
+    #[serde(default)]
+    punch: Option<Span>,
+    #[serde(default)]
+    defaults: Defaults,
+    #[serde(flatten, default)]
+    extra: Extra,
+}
+
+impl From<WrittenMultitrack> for Multitrack {
+    fn from(written: WrittenMultitrack) -> Self {
+        let mut multitrack = Self {
+            version: written.version,
+            tracks: written.tracks,
+            channels: written.channels,
+            tempo: written.tempo,
+            meter: written.meter,
+            markers: written.markers,
+            loop_span: written.loop_span,
+            punch: written.punch,
+            defaults: written.defaults,
+            extra: written.extra,
+        };
+        ids::repair(&mut multitrack);
+        multitrack
+    }
 }
 
 /// **The session's defaults for the properties of a region**: what one is when

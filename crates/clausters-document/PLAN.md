@@ -2626,7 +2626,7 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   fades they want -- the switch is the hand's facility.
 
 
-- ⬜ **An id can still be written by hand, so nothing keeps it unique**
+- ✅ **An id can still be written by hand, so nothing keeps it unique**
   *(found 2026-11-10 by the user: editing a pedal curve in a roll over an
   MPE file read back, a click on a point added another at the same time, the
   points could not be dragged, and the host panicked asking for a 384 MiB
@@ -2661,3 +2661,39 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
     not silent: `joins`, a layer's note and a selection name events by id,
     and with two sharing one the repair picks one reading, so it repairs and
     says so.
+
+  **Closed 2026-11-10.** Reviewed every door ids come in by, and every
+  minting. The rule taken is the one `docs/decisions.md` records, "An id from
+  outside is taken in, never trusted": a sequence repairs what it is given
+  whole and checks one event or curve alone (`events::ids`), the events
+  choosing before the curves; a multitrack is repaired when read and refuses
+  an intent whose ids name something else (`multitrack::ids`); a symbolic
+  score repairs repeated item ids before each operation and after reading a
+  document; the general tree refuses a members list that would repeat an id.
+  The fields stay public, since `Automation` is shared by four holders and
+  privacy would not cover a whole sequence restored or read anyway: the doors
+  are what guarantee it. Found on the way and fixed: `events::conversion`
+  numbered by hand; `writeback` incremented the counter by hand; the host's
+  cut of a note copied its id, so the owner read two notes under one; a
+  multitrack split cloned the region's curves into the second half under the
+  same ids; one of the multitrack's two minting functions left the markers
+  out; and a tree `SetMembers` was not checked at all.
+
+- ⬜ **Writing a sequence as notation renumbers its events from the page**
+  *(found 2026-11-10 reviewing the ids)*. `ToNotation` replaces the sequence
+  with the page's render, whose events are numbered from 1 again
+  (`events::score`), so an event id a client holds from before the
+  conversion may name a different event after it. Nothing repeats (the
+  result is checked as a whole), but a stale reference is not stale on its
+  face. **To do:** number the render's events from the sequence's counter, or
+  carry each event's id where the page still has it, with the notation
+  section's references (`spanners`, `controls`, `marks`, `items`, `joins`)
+  moved with them.
+
+- ⬜ **A multitrack split leaves the second half's curves where they were**
+  *(found 2026-11-10 reviewing the ids)*. A region's curve is measured from
+  the region's start, and `SplitRegion` gives the second half a copy of the
+  region's curves unshifted, so they read `at - position` late; a note's
+  split cuts its curves at the point (`events::split::cut`). **To do:** cut
+  a region's curves at the split the way a note's are, through the same
+  function made generic over the axis, rather than a second one.

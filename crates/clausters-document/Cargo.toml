@@ -30,3 +30,7 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 # (`clausters_core::mixer`). Both are the shared rule rather than a second one,
 # which is the whole reason to depend on it instead of restating them here.
 clausters-core = { path = "../clausters-core" }
+# A sequence taken in with ids that repeat is repaired, and the repair is
+# logged: renumbering an event is a reading of the data the data did not make,
+# so it is said where whoever runs the program reads (`events::ids`).
+tracing = "0.1"

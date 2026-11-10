@@ -848,3 +848,37 @@ fn edits_applied_as_one_land_whole_or_not_at_all() {
     assert_eq!(landed.iter().filter(|o| o.applied).count(), 1);
     assert_ne!(d.root, start.root);
 }
+
+/// **Members that name an id the document holds as something else are
+/// refused**: kept, they would make a document no reader opens again. A
+/// member stated again under its own id is the ordinary edit.
+#[test]
+fn members_naming_another_node_s_id_are_refused() {
+    let mut d = doc();
+    let before = d.clone();
+    let clashing = Intent::SetMembers {
+        node: NodeId(1),
+        members: vec![
+            placed(0.0, clang(2)),
+            placed(
+                1.0,
+                Node::new(
+                    NodeId(1),
+                    Body::Clang {
+                        config: Opaque::none(),
+                        fires: None,
+                    },
+                ),
+            ),
+        ],
+    };
+    let outcome = apply(&mut d, &clashing, &Against::unstated(), &Rules::none());
+    assert!(!outcome.applied);
+    assert!(outcome.reason.is_some());
+    assert_eq!(d, before, "nothing was kept");
+    let moved = Intent::SetMembers {
+        node: NodeId(1),
+        members: vec![placed(1.0, clang(2)), placed(4.0, clang(3))],
+    };
+    assert!(apply(&mut d, &moved, &Against::unstated(), &Rules::none()).applied);
+}

@@ -231,8 +231,7 @@ pub fn write_back(
     }
     out.events.retain(|event| !gone.contains(&event.id));
     for (item, mut event) in added {
-        out.next_id += 1;
-        event.id = out.next_id;
+        event.id = out.mint();
         now.push((event.id, item));
         out.events.push(event);
     }

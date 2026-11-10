@@ -155,9 +155,16 @@ impl Placements for Vec<Note> {
     }
 }
 
+/// A note's identity is its owner's, as a clip's name is the multitrack's:
+/// the copy a cut leaves is a new note, so it goes with **no id** and its
+/// owner gives it one. Carrying the first half's id would report two notes
+/// under one, which the owner can only read as the same note twice.
 impl boxes::Holder for Vec<Note> {
     fn duplicate(&mut self, i: usize) -> Option<usize> {
-        let note = *self.get(i)?;
+        let note = Note {
+            id: 0,
+            ..*self.get(i)?
+        };
         Some(insert_note(self, note))
     }
 

@@ -386,7 +386,8 @@ impl NotesEditor {
     }
 
     /// **One edit of the sequence a verb of the window makes**: applied,
-    /// recorded under `label`, and the roll corrected. The refusal, if any.
+    /// recorded under `label`, and the roll corrected. The refusal, if any,
+    /// or what the edit renumbered of what it brought in.
     fn record(&mut self, intent: EventsIntent, label: &str, out: &mut Outcome) -> Option<String> {
         let payload = serde_json::to_value(&intent).unwrap_or(Value::Null);
         let mut sequence = self.held();
@@ -404,7 +405,7 @@ impl NotesEditor {
                 });
                 out.changed = true;
                 out.version += 1;
-                None
+                events::ids::describe(&change.renumbered)
             }
             Ok(_) => None,
             Err(why) => Some(why),
@@ -1089,15 +1090,18 @@ impl NotesEditor {
             };
             let backward = events::payload(&sequence.state());
             match sequence.edit(intent) {
-                Ok(change) if change.applied => Some(Record {
-                    label: intake.label,
-                    legs: vec![Leg {
-                        forward: json!({ "edit": payload }),
-                        backward: backward.0,
-                        key: events::coalesce_key(&Opaque(payload.clone())).unwrap_or_default(),
-                        ..Leg::default()
-                    }],
-                }),
+                Ok(change) if change.applied => Some((
+                    events::ids::describe(&change.renumbered),
+                    Record {
+                        label: intake.label,
+                        legs: vec![Leg {
+                            forward: json!({ "edit": payload }),
+                            backward: backward.0,
+                            key: events::coalesce_key(&Opaque(payload.clone())).unwrap_or_default(),
+                            ..Leg::default()
+                        }],
+                    },
+                )),
                 Ok(_) => None,
                 Err(why) => {
                     drop(sequence);
@@ -1105,13 +1109,15 @@ impl NotesEditor {
                 }
             }
         };
-        if let Some(record) = recorded {
+        let mut said = None;
+        if let Some((renumbered, record)) = recorded {
+            said = renumbered;
             out.record = Some(record);
             out.changed = true;
             out.version += 1;
         }
         // The roll learns the ids the sequence gave the notes the hand made.
-        (None, self.resync_widget(widget))
+        (said, self.resync_widget(widget))
     }
 }
 

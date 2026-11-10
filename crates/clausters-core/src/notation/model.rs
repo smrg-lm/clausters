@@ -928,14 +928,29 @@ impl Sheet {
         id
     }
 
-    /// Give every unidentified item an id, and put the counter past every id
-    /// already in use.
+    /// Give every unidentified item an id, **and every item that repeats an
+    /// id one of its own**, and put the counter past every id in use.
     ///
     /// Called before any operation, so a sheet written by hand, parsed from an
     /// older payload, or built by a caller who never thought about identity
     /// behaves exactly like one this layer minted -- an edit can name any note
-    /// in it, and nothing collides.
+    /// in it, and nothing collides. Where two items share an id the first in
+    /// reading order keeps it, and a spanner naming it names that one: the
+    /// data said one id for two things, and the reading that keeps every
+    /// other reference meaning what it meant is the first.
     pub fn assign_ids(&mut self) {
+        self.number(true);
+    }
+
+    /// [`Sheet::assign_ids`] for what is **only unidentified**: the reader of
+    /// a document numbers the parts of one item split across a barline under
+    /// the item's one id until it joins them again, so there a repeated id is
+    /// the item's and not a clash.
+    pub(crate) fn assign_missing_ids(&mut self) {
+        self.number(false);
+    }
+
+    fn number(&mut self, repeats: bool) {
         let used = self
             .voices()
             .flat_map(|v| v.items.iter())
@@ -944,10 +959,12 @@ impl Sheet {
             .unwrap_or(0);
         self.next_id = self.next_id.max(used + 1);
         let mut next = self.next_id;
+        let mut seen = std::collections::HashSet::new();
         for voice in self.staves.iter_mut().flat_map(|s| s.voices.iter_mut()) {
             for item in &mut voice.items {
-                if item.id() == 0 {
+                if item.id() == 0 || (!seen.insert(item.id()) && repeats) {
                     *item = item.with_id(next);
+                    seen.insert(next);
                     next += 1;
                 }
             }
@@ -971,6 +988,33 @@ impl Sheet {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A sheet that says one id twice is given one per item**: the first in
+    /// reading order keeps it, the second takes a new one past everything,
+    /// and the counter goes past them all.
+    #[test]
+    fn a_repeated_item_id_is_given_one_of_its_own() {
+        let rest = |id| Item::Rest {
+            id,
+            dur: Ratio::new(1, 4),
+        };
+        let mut sheet = Sheet::default();
+        sheet.staves.push(Staff::default());
+        sheet.staves[0].voices.push(Voice {
+            items: vec![rest(3), rest(3), rest(0), rest(1)],
+        });
+        sheet.assign_ids();
+        let ids: Vec<u64> = sheet
+            .voices()
+            .flat_map(|v| v.items.iter().map(Item::id))
+            .collect();
+        assert_eq!(ids[0], 3, "the first keeps it");
+        let mut once = ids.clone();
+        once.sort_unstable();
+        once.dedup();
+        assert_eq!(once.len(), ids.len(), "{ids:?}");
+        assert!(ids.iter().all(|id| *id < sheet.next_id));
+    }
 
     #[test]
     fn a_pitch_keeps_its_spelling_and_still_sounds() {

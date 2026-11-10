@@ -127,10 +127,17 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
-- ⬜ **An id can still be written by hand, so nothing keeps it unique**
-  *(`crates/clausters-document/PLAN.md`, Found by use)*. One allocator per
-  document as the only door, the host minting none, and a repair where a
-  document comes in.
+- ⬜ **Writing a sequence as notation renumbers its events from the page**
+  *(`crates/clausters-document/PLAN.md`, Found by use)*. A stale id may name
+  another event after the conversion; nothing repeats.
+
+- ⬜ **A multitrack split leaves the second half's curves where they were**
+  *(`crates/clausters-document/PLAN.md`, Found by use)*. The note's cut,
+  made generic over the axis.
+
+- ⬜ **`a_page_s_marks_are_drawn_with_the_engraver_s_symbols` fails with the
+  notation features on** *(`crates/clausters-apps/PLAN.md`, Found by use)*.
+  Predates the id work.
 
 ## 2. Tests and reviews pending
 

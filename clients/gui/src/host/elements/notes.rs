@@ -3804,6 +3804,14 @@ mod tests {
             (64.0, 90, 3),
             "the tail is the same note, cut"
         );
+        let mut held = roll(r#"{"notes":[0.0,200.0,64.0,90,3],"note_ids":[7]}"#);
+        held.selected = vec![0];
+        notes::split_notes(&mut held.notes, &held.selected, 50.0);
+        assert_eq!(
+            (held.notes[0].id, held.notes[1].id),
+            (7, 0),
+            "the tail is a new note, for its owner to name"
+        );
     }
 
     /// **A grid in beats is read through the tempo map**: a note quantizes to

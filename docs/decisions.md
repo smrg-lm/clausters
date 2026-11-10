@@ -11705,3 +11705,46 @@ the measure's right one, and a measure may hold both. A document that writes
 the start repeat on the right of the measure before is read as opening the
 next one, which is what it draws. Found opening a score exported by a notation
 program, whose opening repeat was missing.
+
+## An id from outside is taken in, never trusted (2026-11-10)
+
+A sequence's events and curves, and a multitrack's tracks, take lanes,
+regions, markers and curves, each share one id space, and the views name what
+they draw by those ids. Two things under one id are drawn as one and edited
+into each other: a roll that met a pedal curve under the id of a note's bend
+wrote each one's points into both on every edit, until the host asked for a
+384 MiB vertex buffer. The ids were minted by a counter, but some code
+computed them by hand and every door that brings ids in (a file, a client's
+list, a whole sequence restored, a pasted block) trusted them.
+
+The rule is now **generation by construction and reconciliation at the
+door**, not a check of every id on every edit. What the document makes it
+mints. What comes in is taken in once, where it comes in:
+
+- **A sequence** repairs whatever it is given whole (`events::ids`): a file
+  read, a MIDI file, a client's JSON, a `Restore`, a derived page, a
+  `SetEvents` list. **The events choose first**, because an event is named by
+  other events (a join, a slur's ends, a selection) and a curve only by the
+  views that draw it; a curve that loses its id is renumbered and nothing
+  else notices. One event or one curve coming in is checked alone. A curve
+  naming an id the sequence holds as another kind of thing is refused, since
+  the caller meant something this sequence has as something else. What a
+  repair renumbered is in the edit's answer and in the log.
+- **A multitrack** is repaired when it is read (`multitrack::ids`), but an
+  intent that names ids (a track list, a take lane stated whole, a split's
+  halves, a join, a new marker) is **refused** when one already names
+  something else. Its ids are the caller's, minted through the handle, and an
+  intent is absolute: renaming what it brought would apply something other
+  than what was sent, and the client would hold objects under ids that no
+  longer name them. The multitrack keeps no counter, so its next id is one
+  past everything it names, markers included (they were left out of one of
+  the two minting functions).
+- **A symbolic score** repairs repeated item ids before every operation and
+  at the end of reading a document. The reader itself numbers the parts of a
+  note split across a barline under the note's one id until it joins them, so
+  inside the reader a repeated id is the item's and not a clash.
+- **The general tree** keeps refusing a document whose ids name two different
+  nodes, as before; a members list that would make one is now refused too,
+  since it would leave a document no reader opens.
+- **The host mints no document id.** A note it copies (the tail of a cut)
+  goes with none, for its owner to name.

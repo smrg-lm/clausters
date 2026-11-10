@@ -162,13 +162,15 @@ pub fn to_notation(
     // them: a performance with none is played at a beat a second, as before
     out.tempo_map.clone_from(&sequence.tempo_map);
     out.parts = parts;
+    // the page's numbering is the render's, and the counter climbs past
+    // the sequence's as well, so nothing minted here is an id it gave out
     let written: BTreeSet<String> = out.automation.iter().map(lane_of).collect();
-    let mut next = out.automation.iter().map(|c| c.id.0).max().unwrap_or(0);
+    out.next_id = out.next_id.max(sequence.next_id);
+    out.hold();
     for curve in &sequence.automation {
         if !written.contains(&lane_of(curve)) {
-            next += 1;
             let mut kept = curve.clone();
-            kept.id = crate::NodeId(next);
+            kept.id = crate::NodeId(out.mint());
             out.automation.push(kept);
         }
     }

@@ -590,7 +590,24 @@ fn set_members(document: &mut Document, id: NodeId, members: &[Member]) -> Outco
             members: members.to_vec(),
         });
     }
-    *slot = members.to_vec();
+    let was = std::mem::replace(slot, members.to_vec());
+    // **The members are checked as a document is read**: a list that names
+    // an id something else in the document already holds would leave a
+    // document no reader opens, so it is refused here, before it is kept.
+    if let Some(clash) = document.duplicate_id() {
+        if let Some(node) = find_in_document(document, id)
+            && let Some(slot) = members_mut(&mut node.body)
+        {
+            *slot = was;
+        }
+        return Outcome::refused(
+            Intent::SetMembers {
+                node: id,
+                members: members.to_vec(),
+            },
+            clash,
+        );
+    }
     document.version += 1;
     Outcome::changed(Intent::SetMembers {
         node: id,

@@ -7072,3 +7072,9 @@ wrong.
   joined slur writes, so what is open is whether the reading turns a join
   into a joined slur, or the conversion carries the joins over to the events
   that are the same notes.
+
+- ⬜ **`a_page_s_marks_are_drawn_with_the_engraver_s_symbols` fails with the
+  notation features on** *(found 2026-11-10 running `clausters-apps` with
+  `--features notation`)*. It expects `"\u{e4a0}-"` and gets
+  `"\u{e4a0} -"`; it fails the same before the id work, and passes in the
+  default feature set, which does not build it.

@@ -789,28 +789,15 @@ fn butt_cuts(regions: &mut [Region], before: &[Region]) {
 }
 
 /// An id past everything the multitrack already names -- its tracks, its take lanes, its
-/// regions **and its automations**, which share one id space.
+/// regions, its markers **and its automations**, which share one id space
+/// ([`super::ids`]).
 ///
 /// The curves are in the count because they are in the space: a multitrack looks an
 /// id up by number ([`Multitrack::automation`]) and does not ask what kind of
 /// thing it expected, so handing out an id a curve already holds is how two
 /// things come to answer to one name.
 pub fn fresh_id(multitrack: &Multitrack) -> u64 {
-    multitrack
-        .tracks
-        .iter()
-        .flat_map(|track| {
-            std::iter::once(track.id.0)
-                .chain(track.automation.iter().map(|a| a.id.0))
-                .chain(track.take_lanes.iter().flat_map(|lane| {
-                    std::iter::once(lane.id.0).chain(lane.regions.iter().flat_map(|r| {
-                        std::iter::once(r.id.0).chain(r.automation.iter().map(|a| a.id.0))
-                    }))
-                }))
-        })
-        .max()
-        .unwrap_or(0)
-        + 1
+    super::ids::fresh(multitrack)
 }
 
 /// A source id nothing is using -- neither this multitrack **nor whoever holds the

@@ -388,6 +388,7 @@ dependencies = [
  "clausters-core",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

@@ -20,7 +20,8 @@
 //! every edit, the way a multitrack's region keeps its own. An event that
 //! arrives with none ([`EventsIntent::SetEvents`] from a caller that only has a
 //! list) takes the id of the unchanged event it matches, else a new one, so a
-//! resend is still not an edit.
+//! resend is still not an edit. Events and curves share one counter, and an id
+//! that comes from outside is taken in rather than trusted: [`ids`] says how.
 //!
 //! # What else it holds
 //!
@@ -406,50 +407,18 @@ impl EventSequence {
         sequence
     }
 
-    /// Gives every event that has no id one, and keeps the events in beat
-    /// order.
-    fn hold(&mut self) {
-        // Events and curves draw on one counter, so no id is ever two things.
-        let highest = self
-            .events
-            .iter()
-            .map(|e| e.id)
-            .chain(self.automation.iter().map(|a| a.id.0))
-            .chain(
-                self.events
-                    .iter()
-                    .flat_map(|e| e.automation.iter().map(|a| a.id.0)),
-            )
-            .max()
-            .unwrap_or(0);
-        self.next_id = self.next_id.max(highest);
-        for event in &mut self.events {
-            if event.id == 0 {
-                self.next_id += 1;
-                event.id = self.next_id;
-            }
-        }
-        // A curve read with no id (a file's stream) takes one the same way.
-        let curves = self
-            .automation
-            .iter_mut()
-            .chain(self.events.iter_mut().flat_map(|e| e.automation.iter_mut()));
-        for curve in curves {
-            if curve.id.0 == 0 {
-                self.next_id += 1;
-                curve.id = NodeId(self.next_id);
-            }
-        }
+    /// **Takes in a whole sequence**: every id unique and none zero, the
+    /// counter past them all (see `ids`), and the events in beat order. What
+    /// every sequence read from outside passes through -- a file, a client's
+    /// JSON, a MIDI file -- and what a sequence built here ends with.
+    fn hold(&mut self) -> Vec<Renumbered> {
+        let renumbered = self.repair(None);
         self.sort();
+        renumbered
     }
 
     fn sort(&mut self) {
         self.events.sort_by(|a, b| a.at.0.total_cmp(&b.at.0));
-    }
-
-    fn mint(&mut self) -> u64 {
-        self.next_id += 1;
-        self.next_id
     }
 
     /// The event with this id.
@@ -774,21 +743,33 @@ impl EventSequence {
 
     /// Applies one edit, and says what changed. Also what [`Editable::apply`]
     /// answers through.
+    ///
+    /// **What an edit brings in is taken in** (see `ids`): a whole list of
+    /// events or a whole sequence is reconciled against what held each id
+    /// before it, one event or one curve is checked alone, and what was
+    /// renumbered is in the answer.
     pub fn edit(&mut self, intent: EventsIntent) -> Result<Change, String> {
         let before = self.clone();
         let mut added = None;
+        let mut renumbered = Vec::new();
         match intent {
             EventsIntent::SetEvents { events } => {
+                let prior = self.holders();
+                // past every id the list states, so what is minted for it
+                // is no id it already says
+                let stated = events
+                    .iter()
+                    .flat_map(|e| std::iter::once(e.id).chain(e.automation.iter().map(|a| a.id.0)))
+                    .max()
+                    .unwrap_or(0);
+                self.next_id = self.next_id.max(stated);
                 self.events = self.identify(events);
+                renumbered = self.repair(Some(&prior));
                 self.sort();
                 articulation::prune(self);
             }
             EventsIntent::Add { mut event } => {
-                if event.id == 0 || self.index(event.id).is_some() {
-                    event.id = self.mint();
-                } else {
-                    self.next_id = self.next_id.max(event.id);
-                }
+                self.take_in_event(&mut event);
                 added = Some(event.id);
                 // After every event at the same beat, so an add at a shared
                 // onset keeps the order it was made in.
@@ -833,11 +814,7 @@ impl EventSequence {
                 {
                     return Err(spec.refusal("a curve of the sequence", &automation.target.0));
                 }
-                if automation.id.0 == 0 {
-                    automation.id = NodeId(self.mint());
-                } else {
-                    self.next_id = self.next_id.max(automation.id.0);
-                }
+                automation.id = self.take_in_curve(automation.id, Holder::Curve)?;
                 added = Some(automation.id.0);
                 // **A channel group is edited as one**: the same lane on the
                 // group's other channels takes the points this one was given.
@@ -870,11 +847,7 @@ impl EventSequence {
                 {
                     return Err(spec.refusal("a note's curve", &automation.target.0));
                 }
-                if automation.id.0 == 0 {
-                    automation.id = NodeId(self.mint());
-                } else {
-                    self.next_id = self.next_id.max(automation.id.0);
-                }
+                automation.id = self.take_in_curve(automation.id, Holder::NoteCurve(id))?;
                 added = Some(automation.id.0);
                 let curves = &mut self.events[i].automation;
                 match curves.iter_mut().find(|a| a.id == automation.id) {
@@ -914,12 +887,25 @@ impl EventSequence {
                 *self = after;
                 added = made.first().copied();
             }
-            EventsIntent::Realize { interpretation } => *self = self.realized(interpretation)?,
+            // A sequence derived here is numbered here, and what is checked
+            // is only that it says each id once; the counter keeps climbing
+            // past what this one handed out.
+            EventsIntent::Realize { interpretation } => {
+                let next_id = self.next_id;
+                *self = self.realized(interpretation)?;
+                self.next_id = self.next_id.max(next_id);
+                renumbered = self.repair(None);
+            }
             EventsIntent::ToNotation {
                 reading,
                 writing,
                 interpretation,
-            } => *self = self.notated(reading, writing, interpretation)?,
+            } => {
+                let next_id = self.next_id;
+                *self = self.notated(reading, writing, interpretation)?;
+                self.next_id = self.next_id.max(next_id);
+                renumbered = self.repair(None);
+            }
             EventsIntent::AutomationToEvents { curve } => {
                 let mut after = self.clone();
                 after.automation_to_events(curve)?;
@@ -933,14 +919,21 @@ impl EventSequence {
             EventsIntent::Restore { sequence } => {
                 // Everything as it was but the counter, which only climbs: an
                 // id a later edit could still name is never handed out again.
+                // It replaces everything, so what is checked is only that it
+                // says each id once: a sequence a history restores is one it
+                // held and comes back as it was, and one a caller hands over
+                // whole is repaired.
                 let next_id = self.next_id.max(sequence.next_id);
                 *self = *sequence;
                 self.next_id = next_id;
+                renumbered = self.repair(None);
+                self.sort();
             }
         }
         Ok(Change {
             applied: *self != before,
             added,
+            renumbered,
         })
     }
 }
@@ -1122,13 +1115,16 @@ fn no_event(id: u64) -> String {
 }
 
 /// What an edit did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Change {
     /// Whether the sequence changed.
     pub applied: bool,
     /// The id an [`EventsIntent::Add`] gave its event, or a
     /// [`EventsIntent::Automation`] or [`EventsIntent::EventAutomation`] its curve.
     pub added: Option<u64>,
+    /// The ids of what the edit brought in that named something else, and
+    /// the ones they were given (see `ids`).
+    pub renumbered: Vec<Renumbered>,
 }
 
 /// A sequence's edit as a history carries it.
@@ -1148,7 +1144,7 @@ impl Editable for EventSequence {
             Ok(change) => Applied {
                 effective: crate::events::payload(&self.state()),
                 applied: change.applied,
-                reason: None,
+                reason: ids::describe(&change.renumbered),
                 stale: false,
             },
             Err(reason) => Applied::refused(crate::events::payload(&self.state()), reason),
@@ -1473,6 +1469,8 @@ pub fn mutates(request: &str) -> bool {
 }
 
 pub mod articulation;
+pub mod ids;
+pub use ids::{Holder, Renumbered};
 mod midi;
 pub mod part;
 pub use part::{Part, Polyphony, Writing, Zone};

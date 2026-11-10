@@ -354,7 +354,7 @@ impl Reader {
         // beam read as a run of *positions* can name its ends before rejoining
         // the split parts moves them.
         drop_padding(&mut sheet);
-        sheet.assign_ids();
+        sheet.assign_missing_ids();
         // **what a tie or a line names by a document's own ids is named as
         // this layer names it**: the item, or a chord's pitch of it
         let named: HashMap<String, String> = self
@@ -424,6 +424,9 @@ impl Reader {
         }
         apply_attachments(&mut sheet, &self.attached, &self.elements);
         apply_ties(&mut sheet, &self.ties);
+        // the split parts are one item again: an id said twice now is the
+        // document's own clash, and each item takes one of its own
+        sheet.assign_ids();
         sheet
     }
 }
