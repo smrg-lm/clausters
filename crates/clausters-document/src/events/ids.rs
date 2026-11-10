@@ -8,7 +8,7 @@
 //!
 //! **What the sequence makes, it mints.** Every id the sequence gives out comes
 //! from its counter (`EventSequence::mint`), which only climbs and is saved
-//! with it, so an id is never handed out twice -- not even to something that
+//! with it, so an id is never handed out twice, not even to something that
 //! comes back after its first holder went. Nothing in this crate computes an
 //! id from what is there.
 //!
@@ -17,11 +17,11 @@
 //! window or another application: each may carry ids that mean something
 //! somewhere else, or nothing, or that repeat. They come in through two doors:
 //!
-//! - **A whole sequence** -- read from a file or a client, restored, derived
-//!   from a page -- is reconciled once, as it comes in ([`EventSequence::repair`]):
+//! - **A whole sequence** (read from a file or a client, restored, derived
+//!   from a page) is reconciled once, as it comes in ([`EventSequence::repair`]):
 //!   an id that names what it named before keeps it, a free one is kept, and
 //!   every other is minted again.
-//! - **One thing more** -- an event added, a curve given -- is checked alone
+//! - **One thing more** (an event added, a curve given) is checked alone
 //!   against the space ([`EventSequence::holder_of`]): kept when its id is
 //!   free or already its own, minted when it is not, and a curve that names
 //!   something of another kind is refused rather than guessed at.
@@ -31,7 +31,7 @@
 //!
 //! **A repeated event id is repaired out loud.** A curve is named only by the
 //! views that draw it, so renumbering one changes nothing a reader holds. An
-//! event is named by other events -- a join, a slur's ends, a selection -- and
+//! event is named by other events (a join, a slur's ends, a selection), and
 //! when two share an id a reference to it reads as the first, which is the
 //! one that keeps it. The repair says what it renumbered ([`Renumbered`]),
 //! and logs it, because that reading is a choice the data did not make.
@@ -103,7 +103,7 @@ impl EventSequence {
         self.next_id
     }
 
-    /// Every id the sequence holds and what holds it -- the first holder,
+    /// Every id the sequence holds and what holds it: the first holder,
     /// where a sequence not yet repaired has two.
     pub fn holders(&self) -> HashMap<u64, Holder> {
         let mut out = HashMap::new();
@@ -165,8 +165,8 @@ impl EventSequence {
     ///
     /// **The events choose first**, because an event is named by other events
     /// (a join, a slur's ends) and a curve only by the views that draw it: an
-    /// event keeps its id unless an event before it took it -- one that held
-    /// it in `prior` first, then in order -- and a curve keeps its id only
+    /// event keeps its id unless an event before it took it (one that held
+    /// it in `prior` first, then in order), and a curve keeps its id only
     /// where no event took it and `prior` held it as nothing else, else it is
     /// minted.
     ///
@@ -236,6 +236,56 @@ impl EventSequence {
         renumbered
     }
 
+    /// **The events renamed as `renamed` says, and every reference to one
+    /// with them**: a join (`joins`), and what the `notation` section names by
+    /// event: an item's event (`items`), a spanner's ends (`spanners`), a
+    /// control's note (`controls`), a mark's note (`marks`). An id the map
+    /// does not name is left as it is. Every name changes at once, so a map
+    /// that swaps two ids swaps them.
+    #[cfg(feature = "notation")]
+    pub(super) fn rename_events(&mut self, renamed: &HashMap<u64, u64>) {
+        let to = |id: u64| renamed.get(&id).copied().unwrap_or(id);
+        for event in &mut self.events {
+            event.id = to(event.id);
+            if let serde_json::Value::Object(keys) = &mut event.data.0
+                && let Some(joins) = keys.get("joins").and_then(serde_json::Value::as_u64)
+            {
+                keys.insert("joins".into(), serde_json::json!(to(joins)));
+            }
+        }
+        let Some(serde_json::Value::Object(section)) = self.notation.as_mut() else {
+            return;
+        };
+        let name = |value: &mut serde_json::Value| {
+            if let Some(id) = value.as_u64() {
+                *value = serde_json::json!(to(id));
+            }
+        };
+        for (part, ends) in [
+            ("items", &[][..]),
+            ("marks", &[][..]),
+            ("spanners", &["from", "to"][..]),
+            ("controls", &["on"][..]),
+        ] {
+            let Some(serde_json::Value::Array(list)) = section.get_mut(part) else {
+                continue;
+            };
+            for entry in list {
+                if ends.is_empty() {
+                    if let Some(first) = entry.get_mut(0) {
+                        name(first);
+                    }
+                } else {
+                    for end in ends {
+                        if let Some(value) = entry.get_mut(*end) {
+                            name(value);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// **One event coming in**: its id kept when nothing else holds it, else
     /// minted, and each of its curves the same against the space and against
     /// each other. What [`super::EventsIntent::Add`] takes an event in by.
@@ -259,7 +309,7 @@ impl EventSequence {
 
     /// **One curve coming in**, to be held by `holder`: its id when that is
     /// free or already this holder's, a new one when it has none, and a
-    /// refusal when the id names something of another kind -- the caller
+    /// refusal when the id names something of another kind: the caller
     /// meant a thing this sequence holds as something else, and guessing
     /// which would edit the wrong one.
     pub(super) fn take_in_curve(&mut self, id: NodeId, holder: Holder) -> Result<NodeId, String> {
@@ -289,7 +339,7 @@ mod tests {
     use super::*;
     use crate::events::{Event, EventsIntent};
 
-    /// Every id the sequence holds, sorted -- with its repeats.
+    /// Every id the sequence holds, sorted, with its repeats.
     fn ids(s: &EventSequence) -> Vec<u64> {
         let mut out: Vec<u64> = s.slots().into_iter().map(|(_, id, _)| id).collect();
         out.sort_unstable();
@@ -331,8 +381,8 @@ mod tests {
         assert!(sequence.next_id >= *ids(&sequence).last().unwrap());
     }
 
-    /// **A list that says one event twice** -- what a view that copied a note
-    /// with its id would send -- leaves two events with two ids, the second's
+    /// **A list that says one event twice** (what a view that copied a note
+    /// with its id would send) leaves two events with two ids, the second's
     /// curves renumbered with it, and the answer says so.
     #[test]
     fn a_list_that_says_an_id_twice_leaves_two_ids() {
@@ -368,7 +418,7 @@ mod tests {
             })
             .unwrap();
         let before = ids(&sequence);
-        // from another sequence: its event is 1, its curve is 2 -- both here
+        // from another sequence: its event is 1, its curve is 2, both here
         let mut pasted: Event = serde_json::from_value(json!({
             "id": held, "at": 4.0, "data": {"midinote": 67},
             "automation": [curve(before[1], json!({"bend": true})),

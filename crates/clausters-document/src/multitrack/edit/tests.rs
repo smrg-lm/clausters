@@ -1118,3 +1118,57 @@ fn the_defaults_are_set_whole_and_undone() {
     assert!(edit(&mut multitrack, back).applied);
     assert!(multitrack.defaults.crossfade);
 }
+
+/// **A split region's curves say what the whole said**: at every instant the
+/// half that holds it reads the value the region's curve read there, each half
+/// measured from its own start, so a split is not heard in its automation.
+#[test]
+fn a_split_region_s_curves_are_cut_where_it_is() {
+    use crate::multitrack::nodes::value_at;
+    let point = |at: f64, value: f64| crate::Point {
+        at: Second(at),
+        value,
+        data: Opaque(serde_json::json!({"shape": 1})),
+    };
+    let mut multitrack = multitrack();
+    let mut gain = Automation::new(NodeId(30), Opaque(serde_json::json!({"port": "gain"})));
+    gain.points = vec![point(0.0, 0.0), point(1.0, 1.0), point(3.0, 0.5)];
+    // and one whose points are all before the cut, holding its last value
+    let mut early = Automation::new(NodeId(31), Opaque(serde_json::json!({"port": "pan"})));
+    early.points = vec![point(0.0, -1.0), point(0.5, 0.25)];
+    let whole = vec![gain.clone(), early.clone()];
+    multitrack.tracks[0].take_lanes[0].regions[0].automation = whole.clone();
+    let outcome = edit(
+        &mut multitrack,
+        MultitrackIntent::SplitRegion {
+            region: NodeId(100),
+            at: Second(2.0),
+            left: NodeId(100),
+            right: NodeId(102),
+            left_content: None,
+            right_content: None,
+        },
+    );
+    assert!(outcome.applied);
+    let lane = &multitrack.tracks[0].take_lanes[0];
+    let (a, b) = (
+        lane.region(NodeId(100)).unwrap(),
+        lane.region(NodeId(102)).unwrap(),
+    );
+    for (k, curve) in whole.iter().enumerate() {
+        for step in 0..=40 {
+            let t = f64::from(step) * 0.1;
+            let heard = if t < 2.0 {
+                value_at(&a.automation[k].points, Second(t))
+            } else {
+                value_at(&b.automation[k].points, Second(t - 2.0))
+            };
+            let said = value_at(&curve.points, Second(t));
+            assert!(
+                (heard - said).abs() < 1e-9,
+                "curve {k} at {t}: {heard} != {said}"
+            );
+        }
+    }
+    assert_ne!(a.automation[0].id, b.automation[0].id);
+}

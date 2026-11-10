@@ -209,3 +209,35 @@ def test_the_roll_in_notation_mode_writes_the_take_and_edits_its_page(gui_host):
     editor.to_midi()
     assert editor.mode == "midi" and take.events[0]["value"] == [1, 4], "nothing converted back"
     editor.close()
+
+
+def test_a_pedal_written_on_a_file_s_notes_takes_ids_nothing_else_has(gui_host):
+    """**What the page derives is numbered by the sequence**: an MPE file read
+    back holds notes with curves of their own, and the pedal written over them
+    is a curve of the sequence under an id no note and no note's curve has --
+    the roll names a curve by its id, so a pedal sharing one with a bend was
+    drawn as one curve with both and edited into both."""
+    chord = EventSequence([(0.0, Event(midinote=60, dur=4.0)),
+                           (0.0, Event(midinote=64, dur=4.0)),
+                           (0.0, Event(midinote=67, dur=4.0))])
+    chord.set_midi("mpe")
+    low, middle, _ = chord.events
+    low.automation.add({"bend": True}, [(0.0, 0.0), (2.0, 1.0)])
+    middle.automation.add({"pressure": True}, [(0.0, 0.2), (3.0, 1.0)])
+    chord.automation.add({"cc": 7}, [(0.0, 90.0), (4.0, 120.0)], name="volume")
+    take = EventSequence.from_smf(chord.to_smf())
+    editor = opened(gui_host, NotesEditor(take))
+    editor.mode = "notation"
+    assert editor.select_all() and editor.pedal()
+
+    def pedalled():
+        return any(curve["target"].get("cc") == 64 for curve in take.data()["automation"])
+
+    # the verb is the window's, performed through the host's loop
+    assert gui_host._wait_while(lambda: not pedalled(), 5.0), "the pedal"
+    data = take.data()
+    ids = [event["id"] for event in data["events"]]
+    ids += [curve["id"] for curve in data["automation"]]
+    ids += [curve["id"] for event in data["events"] for curve in event.get("automation", [])]
+    assert len(ids) == len(set(ids)), f"an id named two things: {sorted(ids)}"
+    editor.close()

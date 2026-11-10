@@ -282,6 +282,63 @@ pub fn value_at<T: Axis>(points: &[crate::Point<T>], at: T) -> f64 {
     points[points.len() - 1].value
 }
 
+/// **A curve's points cut at `at`**, a number on the curve's own axis: the
+/// points before the cut, and the points after it measured from the cut.
+///
+/// **Neither half jumps.** Each side ends or starts on the value the curve has
+/// at the cut ([`value_at`]), so what either half says next to the cut is what
+/// the whole said there, a curve entirely on one side included, which still
+/// reaches the other half as the value it holds. The segment the cut falls in
+/// goes on in the second half with the shape it had: the point it started
+/// from lends its data. A curve with no points has nothing to cut, and both
+/// halves are empty.
+///
+/// What a note's split cuts its curves with (`events::split`) and what a
+/// region's split cuts its automation with (`multitrack::edit`): one cut, on
+/// either axis.
+pub fn cut_points<T: Axis>(
+    points: &[crate::Point<T>],
+    at: f64,
+) -> (Vec<crate::Point<T>>, Vec<crate::Point<T>>) {
+    if points.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    let there = value_at(points, T::at(at));
+    let mut head: Vec<crate::Point<T>> = points
+        .iter()
+        .filter(|p| p.at.number() < at)
+        .cloned()
+        .collect();
+    let mut tail: Vec<crate::Point<T>> = points
+        .iter()
+        .filter(|p| p.at.number() > at)
+        .map(|p| crate::Point {
+            at: T::at(p.at.number() - at),
+            ..p.clone()
+        })
+        .collect();
+    let shaping = points
+        .iter()
+        .rev()
+        .find(|p| p.at.number() <= at)
+        .map(|p| p.data.clone())
+        .unwrap_or_default();
+    head.push(crate::Point {
+        at: T::at(at),
+        value: there,
+        data: crate::Opaque::default(),
+    });
+    tail.insert(
+        0,
+        crate::Point {
+            at: T::at(0.0),
+            value: there,
+            data: shaping,
+        },
+    );
+    (head, tail)
+}
+
 /// **A curve as a table on the frame axis**: `value` asked at every `step`
 /// frames from `first` through `last`, the last sample at or past it -- or
 /// the one value at `first` when the span is empty.

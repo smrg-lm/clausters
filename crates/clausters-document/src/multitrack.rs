@@ -996,8 +996,8 @@ pub struct Multitrack {
 }
 
 /// **What a multitrack is read from**: its fields as they are written, before
-/// the ids are taken in. Every reading of a multitrack -- a session file, a
-/// client's JSON, a state a history restores -- goes through
+/// the ids are taken in. Every reading of a multitrack (a session file, a
+/// client's JSON, a state a history restores) goes through
 /// [`ids::repair`], so a file that names one id twice opens with each thing
 /// under an id of its own rather than as two things edited into each other.
 #[derive(Deserialize)]

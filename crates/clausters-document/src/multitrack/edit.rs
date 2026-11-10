@@ -875,9 +875,23 @@ fn split_region(
     }
     let lane = lane.id;
     let source = held.clone();
+    // **A region's curves are cut where it is**, measured from its start, as
+    // a note's are: each half keeps its side of each curve, measured from
+    // its own start, and neither jumps at the seam.
+    let into = (at - source.position).0;
+    let cuts: Vec<_> = source
+        .automation
+        .iter()
+        .map(|curve| super::nodes::cut_points(&curve.points, into))
+        .collect();
     let mut first = source.clone();
     first.id = left;
     first.length = at - source.position;
+    for (curve, (head, _)) in first.automation.iter_mut().zip(&cuts) {
+        if !curve.points.is_empty() {
+            curve.points.clone_from(head);
+        }
+    }
     // **A cut where nothing moved is not heard**: the two edges it makes meet
     // each other, so they are butt edges -- stated as a fade of length 0, since
     // an edge that states none takes the multitrack's default.
@@ -892,8 +906,11 @@ fn split_region(
     // everything, the halves included, so a redo of this same intent over the
     // same multitrack names them the same.
     let next = super::ids::fresh(multitrack).max(left.0.max(right.0) + 1);
-    for (id, curve) in (next..).zip(second.automation.iter_mut()) {
+    for ((id, curve), (_, tail)) in (next..).zip(second.automation.iter_mut()).zip(&cuts) {
         curve.id = NodeId(id);
+        if !curve.points.is_empty() {
+            curve.points.clone_from(tail);
+        }
     }
     second.position = at;
     second.length = source.end() - at;

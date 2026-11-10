@@ -2679,7 +2679,7 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   same ids; one of the multitrack's two minting functions left the markers
   out; and a tree `SetMembers` was not checked at all.
 
-- ⬜ **Writing a sequence as notation renumbers its events from the page**
+- ✅ **Writing a sequence as notation renumbers its events from the page**
   *(found 2026-11-10 reviewing the ids)*. `ToNotation` replaces the sequence
   with the page's render, whose events are numbered from 1 again
   (`events::score`), so an event id a client holds from before the
@@ -2690,10 +2690,33 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   section's references (`spanners`, `controls`, `marks`, `items`, `joins`)
   moved with them.
 
-- ⬜ **A multitrack split leaves the second half's curves where they were**
+  **Fixed 2026-11-10, the same day.** A note of the page that is a note of
+  the performance keeps that note's id, a curve the id of the curve it is
+  (the note's curve on the same target, the sequence's lane on the same
+  channel), a curve the page does not write keeps its own, and what the page
+  adds is minted from the sequence's counter, with every reference to an event
+  (`joins`, and the notation section's `items`, `spanners`, `controls` and
+  `marks`) renamed with it (`conversion::number_as_the_sequence`,
+  `EventSequence::rename_events`). Found with it and fixed: the conversion
+  dropped the performance's own note curves, a bend among them, which a page
+  does not write; they are kept on the note where the page writes nothing on
+  their target.
+
+- ✅ **A multitrack split leaves the second half's curves where they were**
   *(found 2026-11-10 reviewing the ids)*. A region's curve is measured from
   the region's start, and `SplitRegion` gives the second half a copy of the
   region's curves unshifted, so they read `at - position` late; a note's
   split cuts its curves at the point (`events::split::cut`). **To do:** cut
   a region's curves at the split the way a note's are, through the same
   function made generic over the axis, rather than a second one.
+
+  **Fixed 2026-11-10, the same day.** One cut for both
+  (`multitrack::nodes::cut_points`, generic over the axis): a note's split
+  and `SplitRegion` cut each curve at the seam, each half measured from its
+  own start, and neither jumps, a curve entirely on one side included (a
+  note's split used to drop it from the other half, which then jumped). A cut
+  made in a window was the larger half of this: it arrives as a report of
+  boxes, and the second half was made as a bare window onto the source,
+  losing the region's curves, fade out, layer and mute. It is now read as the
+  region it was cut from (`picture::cut_half`), and the first half keeps its
+  side of each curve.

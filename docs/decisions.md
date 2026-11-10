@@ -11748,3 +11748,9 @@ mints. What comes in is taken in once, where it comes in:
   since it would leave a document no reader opens.
 - **The host mints no document id.** A note it copies (the tail of a cut)
   goes with none, for its owner to name.
+- **A transformation keeps identity where the thing is the same thing.**
+  Writing a sequence as notation renders a page numbered from one; its notes
+  that are the performance's notes take back their ids, its curves the ids of
+  the curves they are, and only what the page adds is minted, with every
+  reference renamed at once. A cut made in a window is read as the region it
+  was cut from, not as a new box.

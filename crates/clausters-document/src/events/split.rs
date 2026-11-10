@@ -8,10 +8,12 @@
 //!   page reads the one played; a `sustain` it states is shared out in
 //!   proportion. Any other note is cut on what it sounds: each half sounds to
 //!   its end, and its `dur` follows.
-//! - **Its curves.** Each curve of the note is cut at the point: the first
-//!   half keeps the points before it, the second the points after it, and both
-//!   take the value the curve had there, so neither half jumps. The second
-//!   half's curves are new curves, with ids of their own.
+//! - **Its curves.** Each curve of the note is cut at the point
+//!   (`multitrack::nodes::cut_points`, the cut a region's split makes too):
+//!   the first half keeps the points before it, the second the points after
+//!   it, and both take the value the curve had there, so neither half jumps:
+//!   a curve entirely on one side reaches the other as the value it holds. The
+//!   second half's curves are new curves, with ids of their own.
 //! - **Its joins.** The second half is a new attack, so it goes on from
 //!   nothing; a note that went on from the cut note goes on from the second
 //!   half, and a spanner that ended on the note ends on it too.
@@ -22,9 +24,9 @@ use clausters_core::event::render::{self, Type};
 
 use super::EventSequence;
 use super::reading::{Transcription, written_value};
-use crate::multitrack::nodes::value_at;
+use crate::multitrack::nodes::cut_points;
 use crate::timebase::Beat;
-use crate::{NodeId, Opaque, Point};
+use crate::{NodeId, Opaque};
 
 /// Within this of a note's start or end, a beat cuts nothing.
 const EPSILON: f64 = 1e-9;
@@ -88,21 +90,17 @@ pub fn split(sequence: &mut EventSequence, ids: &[u64], at: f64) -> Result<Vec<u
                 before.push(curve);
                 continue;
             }
-            let (head, tail) = cut(&curve.points, first);
-            if !head.is_empty() {
-                before.push(crate::multitrack::Automation {
-                    points: head,
-                    ..curve.clone()
-                });
-            }
-            if !tail.is_empty() {
-                let fresh = NodeId(sequence.mint());
-                after.push(crate::multitrack::Automation {
-                    id: fresh,
-                    points: tail,
-                    ..curve
-                });
-            }
+            let (head, tail) = cut_points(&curve.points, first);
+            before.push(crate::multitrack::Automation {
+                points: head,
+                ..curve.clone()
+            });
+            let fresh = NodeId(sequence.mint());
+            after.push(crate::multitrack::Automation {
+                id: fresh,
+                points: tail,
+                ..curve
+            });
         }
         let new = sequence.mint();
         let event = &mut sequence.events[i];
@@ -130,60 +128,6 @@ pub fn split(sequence: &mut EventSequence, ids: &[u64], at: f64) -> Result<Vec<u
         return Err("the beat is inside none of these notes".into());
     }
     Ok(made)
-}
-
-/// A curve's points cut at `at`, beats from the note's start: those before,
-/// and those after measured from the cut, each side ending or starting on the
-/// value the curve has there.
-fn cut(points: &[Point<Beat>], at: f64) -> (Vec<Point<Beat>>, Vec<Point<Beat>>) {
-    let shifted = || {
-        points
-            .iter()
-            .map(|p| Point {
-                at: Beat(p.at.0 - at),
-                ..p.clone()
-            })
-            .collect()
-    };
-    // A curve on one side of the cut goes whole with that side.
-    if points.iter().all(|p| p.at.0 >= at) {
-        return (Vec::new(), shifted());
-    }
-    if points.iter().all(|p| p.at.0 <= at) {
-        return (points.to_vec(), Vec::new());
-    }
-    let there = value_at(points, Beat(at));
-    let mut head: Vec<Point<Beat>> = points.iter().filter(|p| p.at.0 < at).cloned().collect();
-    let mut tail: Vec<Point<Beat>> = points
-        .iter()
-        .filter(|p| p.at.0 > at)
-        .map(|p| Point {
-            at: Beat(p.at.0 - at),
-            ..p.clone()
-        })
-        .collect();
-    // The segment the cut falls in goes on in the second half with the shape
-    // it had: the point it started from lends its data.
-    let shaping = points
-        .iter()
-        .rev()
-        .find(|p| p.at.0 <= at)
-        .map(|p| p.data.clone())
-        .unwrap_or_default();
-    head.push(Point {
-        at: Beat(at),
-        value: there,
-        data: Opaque::default(),
-    });
-    tail.insert(
-        0,
-        Point {
-            at: Beat(0.0),
-            value: there,
-            data: shaping,
-        },
-    );
-    (head, tail)
 }
 
 /// A spanner of the section that ended on `from` ends on `to`.

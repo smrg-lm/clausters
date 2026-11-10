@@ -127,14 +127,6 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
-- ⬜ **Writing a sequence as notation renumbers its events from the page**
-  *(`crates/clausters-document/PLAN.md`, Found by use)*. A stale id may name
-  another event after the conversion; nothing repeats.
-
-- ⬜ **A multitrack split leaves the second half's curves where they were**
-  *(`crates/clausters-document/PLAN.md`, Found by use)*. The note's cut,
-  made generic over the axis.
-
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and

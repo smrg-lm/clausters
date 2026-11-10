@@ -1175,6 +1175,10 @@ fn lane_lists(
             .collect();
         for box_ in added {
             let Some(source) = box_.source else { continue };
+            if let Some(tail) = cut_half(lane, &mut regions, box_, &mut next) {
+                regions.push(tail);
+                continue;
+            }
             regions.push(Region::new(
                 NodeId(next),
                 box_.position,
@@ -1211,6 +1215,68 @@ fn lane_lists(
         });
     }
     out
+}
+
+/// **The other half of a cut a hand made**, as the region it was cut from:
+/// `None` unless `box_` is one.
+///
+/// A window cuts a box by duplicating it and naming the copy after it
+/// (`"12 2"` for a cut of region 12), and the report says the two halves as a
+/// shortened box and a new one. Read as a box a hand made, the second half
+/// would be a bare window onto the source and lose everything the region it
+/// came from carried: its curves, its fade out, its layer, whether it is
+/// muted. So a new box whose name starts with the id of a region of this take
+/// lane, and that begins where that region's reported box now ends, reading on
+/// from it in the same source, is that region's second half: the region,
+/// placed where the box is, with each curve cut at the seam
+/// ([`super::nodes::cut_points`], the cut a note's split and
+/// [`MultitrackIntent::SplitRegion`] make) and its second half under an id of
+/// its own; and the first half keeps its side of each curve. The fades at the
+/// seam are [`butt_cuts`]'s, as for any cut.
+fn cut_half(
+    lane: &TakeLane,
+    regions: &mut [Region],
+    box_: &Placed,
+    next: &mut u64,
+) -> Option<Region> {
+    let origin = NodeId(box_.name.split_whitespace().next()?.parse::<u64>().ok()?);
+    let was = lane.regions.iter().find(|r| r.id == origin)?;
+    let head = regions.iter_mut().find(|r| r.id == origin)?;
+    let (Some(source), start, _, false, rate) = window_of(head) else {
+        return None;
+    };
+    let reads_on = box_.source == Some(source)
+        && (head.end().0 - box_.position.0).abs() < 1e-9
+        && (start + head.length.get() * rate - box_.start).abs() < 1e-6
+        && head.position == was.position;
+    if !reads_on {
+        return None;
+    }
+    let seam = (box_.position - was.position).0;
+    let mut tail = was.clone();
+    tail.id = NodeId(*next);
+    *next += 1;
+    tail.position = box_.position;
+    tail.length = box_.length;
+    tail.fade_in = None;
+    if let Content::Window { window, .. } = &mut tail.content {
+        window.start = box_.start;
+    }
+    for (kept, (curve, original)) in head
+        .automation
+        .iter_mut()
+        .zip(tail.automation.iter_mut().zip(&was.automation))
+    {
+        curve.id = NodeId(*next);
+        *next += 1;
+        if original.points.is_empty() {
+            continue;
+        }
+        let (before, after) = super::nodes::cut_points(&original.points, seam);
+        kept.points = before;
+        curve.points = after;
+    }
+    Some(tail)
 }
 
 /// The take lane a track plays, which is the one a row draws.
@@ -1456,6 +1522,96 @@ mod tests {
 
         let unknown = read(&multitrack, &[made], fresh_id(&multitrack), &|_| None);
         assert_eq!(window_of_new(&unknown).duration, 2.0);
+    }
+
+    /// **A cut made in a window keeps what the region carried, on both
+    /// halves**: the second half is the region it was cut from, with its fade
+    /// out, its layer and its curves, each curve cut at the seam so that every
+    /// instant reads what the whole read there; and each curve of the second
+    /// half has an id of its own.
+    #[test]
+    fn a_cut_made_in_a_window_keeps_the_region_s_curves_on_both_halves() {
+        use crate::multitrack::nodes::value_at;
+        let mut multitrack = multitrack();
+        let region = &mut multitrack.tracks[0].take_lanes[0].regions[0];
+        region.content = Content::window(crate::multitrack::Window {
+            source: crate::SourceRef {
+                source: crate::SourceId(1),
+                lifetime: crate::Lifetime::Session,
+                generation: 0,
+                range: None,
+            },
+            start: 0.0,
+            duration: 8.0,
+        });
+        region.layer = 2;
+        region.fade_out = Some(Fade::of(Second(0.5)));
+        let mut gain = Automation::new(NodeId(40), Opaque(json!({"port": "gain"})));
+        gain.points = [(0.0, 0.0), (1.0, 1.0), (3.0, 0.5)]
+            .into_iter()
+            .map(|(at, value)| Point {
+                at: Second(at),
+                value,
+                data: Opaque(json!({"shape": 1})),
+            })
+            .collect();
+        region.automation = vec![gain.clone()];
+        let id = region.id;
+        let held = boxes(&multitrack)[0].clone();
+        let same = |name: String, at: f64, len: f64, start: f64| Placed {
+            name,
+            row: held.row,
+            position: Second(at),
+            length: Second(len),
+            start,
+            content: len,
+            source: held.source,
+        };
+        let out = read(
+            &multitrack,
+            &[
+                same(id.0.to_string(), 0.0, 2.0, 0.0),
+                same(format!("{} 2", id.0), 2.0, 2.0, 2.0),
+            ],
+            fresh_id(&multitrack),
+            &|_| None,
+        );
+        for intent in &out {
+            let done = crate::multitrack::edit::apply(
+                &mut multitrack,
+                intent,
+                &Default::default(),
+                &Default::default(),
+            );
+            assert!(done.reason.is_none(), "{intent:?}: {:?}", done.reason);
+        }
+        let lane = &multitrack.tracks[0].take_lanes[0];
+        let head = lane.region(id).expect("the half that stayed");
+        let tail = lane
+            .regions
+            .iter()
+            .find(|r| r.id != id)
+            .expect("the half that was made");
+        assert_eq!(tail.layer, 2);
+        assert_eq!(tail.fade_out, Some(Fade::of(Second(0.5))));
+        assert_eq!(tail.automation.len(), 1);
+        assert_ne!(tail.automation[0].id, head.automation[0].id);
+        for step in 0..=40 {
+            let t = f64::from(step) * 0.1;
+            let heard = if t < 2.0 {
+                value_at(&head.automation[0].points, Second(t))
+            } else {
+                value_at(&tail.automation[0].points, Second(t - 2.0))
+            };
+            assert!(
+                (heard - value_at(&gain.points, Second(t))).abs() < 1e-9,
+                "at {t}"
+            );
+        }
+        assert!(
+            super::super::ids::repair(&mut multitrack.clone()).is_empty(),
+            "every id names one thing"
+        );
     }
 
     /// **A take lane stated whole is stated as the report left it**, not as the

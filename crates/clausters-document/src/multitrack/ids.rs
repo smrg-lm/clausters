@@ -10,15 +10,15 @@
 //! no counter, so the next id is one past the highest anything holds, markers
 //! and curves included.
 //!
-//! **What comes from outside is not trusted.** A session read from a file --
-//! one saved by an older writer, or written by hand -- is repaired as it is
+//! **What comes from outside is not trusted.** A session read from a file (one
+//! saved by an older writer, or written by hand) is repaired as it is
 //! read ([`repair`]): the first holder of an id keeps it, in the order tracks,
 //! take lanes, regions, markers, curves, and every later one is given a new
 //! id. An intent that names ids it brings (a track list, a take lane stated
 //! whole, a split's halves, a join's result, a new marker) is checked before
 //! it applies ([`check`]) and refused when one of them already names something
 //! else: those ids are the caller's own, minted through the handle's `mint`,
-//! and an intent is absolute -- renaming what it brought would apply something
+//! and an intent is absolute: renaming what it brought would apply something
 //! other than what was sent, and the caller would hold objects under ids that
 //! no longer name them.
 
@@ -106,7 +106,7 @@ fn visit(multitrack: &mut Multitrack, kind: Holder, f: &mut dyn FnMut(&mut NodeI
 }
 
 /// The ids of some tracks and of what they hold, and of the markers beside
-/// them, repeats included, in [`PRIORITY`] order -- `except` leaving out what
+/// them, repeats included, in [`PRIORITY`] order, `except` leaving out what
 /// one take lane holds.
 fn ids_of(
     tracks: &[super::Track],
@@ -139,7 +139,7 @@ fn every(multitrack: &Multitrack) -> Vec<(u64, Holder)> {
     ids_of(&multitrack.tracks, &multitrack.markers, None)
 }
 
-/// Every id the multitrack holds and what holds it -- the first holder, where
+/// Every id the multitrack holds and what holds it: the first holder, where
 /// one not yet repaired has two.
 pub fn holders(multitrack: &Multitrack) -> HashMap<u64, Holder> {
     let mut out = HashMap::new();
@@ -160,7 +160,7 @@ pub fn fresh(multitrack: &Multitrack) -> u64 {
         + 1
 }
 
-/// **A multitrack read from outside, repaired**: every id names one thing --
+/// **A multitrack read from outside, repaired**: every id names one thing;
 /// the first holder keeps it, in the order tracks, take lanes, regions,
 /// markers, curves, and every later one is given an id past everything.
 /// Says what it renumbered, and logs it.

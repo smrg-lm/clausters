@@ -1577,3 +1577,40 @@ fn a_slur_that_ended_on_a_split_note_ends_on_its_second_half() {
     assert_eq!(slur["from"], json!(1));
     assert_eq!(slur["to"], json!(new));
 }
+
+/// **A note's curve entirely on one side of its cut still reaches the other
+/// half as the value it holds**, so neither half jumps: a bend that rose and
+/// held before the cut is held through the second half.
+#[test]
+fn a_curve_on_one_side_of_a_cut_holds_its_value_on_the_other() {
+    use crate::multitrack::nodes::value_at;
+    let mut s = EventSequence::new(vec![Event {
+        id: 1,
+        ..Event::new(0.0, json!({"midinote": 60, "sustain": 2.0}))
+    }]);
+    s.edit(EventsIntent::EventAutomation {
+        id: 1,
+        automation: ramp(json!({"bend": true}), &[(0.0, 0.0), (0.5, 2.0)]),
+    })
+    .unwrap();
+    let whole = s.get(1).unwrap().automation[0].points.clone();
+    let new = s
+        .edit(EventsIntent::Split {
+            ids: vec![1],
+            at: Beat(1.0),
+        })
+        .unwrap()
+        .added
+        .unwrap();
+    let (a, b) = (s.get(1).unwrap(), s.get(new).unwrap());
+    assert_eq!(b.automation.len(), 1, "the second half holds the bend");
+    for step in 0..=20 {
+        let t = f64::from(step) * 0.1;
+        let heard = if t < 1.0 {
+            value_at(&a.automation[0].points, Beat(t))
+        } else {
+            value_at(&b.automation[0].points, Beat(t - 1.0))
+        };
+        assert!((heard - value_at(&whole, Beat(t))).abs() < 1e-9, "at {t}");
+    }
+}

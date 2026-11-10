@@ -409,8 +409,8 @@ impl EventSequence {
 
     /// **Takes in a whole sequence**: every id unique and none zero, the
     /// counter past them all (see `ids`), and the events in beat order. What
-    /// every sequence read from outside passes through -- a file, a client's
-    /// JSON, a MIDI file -- and what a sequence built here ends with.
+    /// every sequence read from outside passes through (a file, a client's
+    /// JSON, a MIDI file) and what a sequence built here ends with.
     fn hold(&mut self) -> Vec<Renumbered> {
         let renumbered = self.repair(None);
         self.sort();

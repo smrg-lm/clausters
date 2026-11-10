@@ -265,7 +265,7 @@ mod tests {
 
     /// **A derived curve takes an id nothing else has**: events and curves
     /// draw on one counter, so the pedal is never given the id of a note or
-    /// of a note's own curve -- a roll names a curve by its id, and two
+    /// of a note's own curve: a roll names a curve by its id, and two
     /// curves under one name are drawn as one and edited into each other.
     #[test]
     fn a_derived_curve_takes_an_id_nothing_else_has() {
