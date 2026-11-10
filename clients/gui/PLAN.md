@@ -5212,7 +5212,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A script's verb that reads what the verb before it asked an
+- ✅ **A script's verb that reads what the verb before it asked an
   application for runs before the answer lands** *(found 2026-11-10,
   writing the notes editor example's selection by pitch)*. A `/gui_verb` is
   performed when it comes; a verb whose answer is the application's (a
@@ -5230,6 +5230,13 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   application has answered the one before. Until then a script reads the
   window (`selected`, a capture) between two such verbs, as the example
   does.
+  **Fixed 2026-11-10** (`host::scripted`): on a window an application holds,
+  a script's verbs, hands, keys, sets and questions wait in the window's
+  queue and each is released once the application has sent word back
+  behind what the one before asked of it. The same pass found the opener of
+  an application's window answered before the window was published, so a
+  capture right after `open` met no window; the answer now goes round the
+  application's thread behind the publishing.
 
 - ✅ **A focused multitrack's meters at rest cover its focus ring** *(found 2026-10-08 by the user in `editors/edit_multitrack` with tall tracks scrolled: the meters drew over the blue line round the multitrack, above and below, only while they showed no signal; fixed the same day)*. The ring is drawn with the picture and the live layer over it, since a window keeps its picture and a tick draws what moves; a meter column at rest is the height of its track, so where a track met the multitrack's top or bottom edge the column covered the ring. The live layer of a focused element now ends with the ring (`frame::draw_live_places`), so it is the last thing of the element in a tick as it is in a whole frame. Pinned by `the_focus_ring_is_drawn_over_the_live_layer`; `a_scrolled_stacks_meters_paint_inside_its_own_rect` and `a_tall_multitracks_meters_stay_inside_it` were written while looking for it and pin that the meters stay inside the multitrack.
 

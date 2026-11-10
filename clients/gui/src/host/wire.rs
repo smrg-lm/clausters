@@ -253,10 +253,21 @@ impl Host {
         if self.window_def(window).is_none() {
             return diag::warn!("{from}: {GUI_VERB} {window} {verb}: no such window");
         }
-        effects.push(HostEffect::Perform {
+        let effect = HostEffect::Perform {
             window,
             verb: verb.to_string(),
-        });
+        };
+        self.hand(window, effect, effects);
+    }
+
+    /// **A verb, a hand or keys a script played on `window`**: queued
+    /// behind the script's steps before it where an application holds the
+    /// window ([`scripted`]), handed to the front now otherwise.
+    fn hand(&mut self, window: i32, effect: HostEffect, effects: &mut Vec<HostEffect>) {
+        if self.scripts(window) {
+            return self.script(window, scripted::Step::Effect(effect), effects);
+        }
+        effects.push(effect);
     }
 
     /// `/gui_clipboard <json> [blob...]` -- the clipboard an owner made
@@ -338,13 +349,14 @@ impl Host {
         if self.window_def(window).is_none() {
             return diag::warn!("{from}: {GUI_POINTER} {window}: no such window");
         }
-        effects.push(HostEffect::Pointer {
+        let effect = HostEffect::Pointer {
             window,
             kind,
             x,
             y,
             mods,
-        });
+        };
+        self.hand(window, effect, effects);
     }
 
     /// `/gui_keypress <window> <key> [mods]`: a key pressed on the window rooted
@@ -372,11 +384,12 @@ impl Host {
         if self.window_def(window).is_none() {
             return diag::warn!("{from}: {GUI_KEYPRESS} {window}: no such window");
         }
-        effects.push(HostEffect::Keys {
+        let effect = HostEffect::Keys {
             window,
             keys: vec![pressed_as(key, mods)],
             mods,
-        });
+        };
+        self.hand(window, effect, effects);
     }
 
     /// `/gui_text <window> <text>`: text typed into the window rooted at
@@ -399,11 +412,12 @@ impl Host {
         if self.window_def(window).is_none() {
             return diag::warn!("{from}: {GUI_TEXT} {window}: no such window");
         }
-        effects.push(HostEffect::Keys {
+        let effect = HostEffect::Keys {
             window,
             keys,
             mods: PointerMods::default(),
-        });
+        };
+        self.hand(window, effect, effects);
     }
 
     /// `/gui_set <id> <k> <v> ...` -- update one live widget's properties, in the
@@ -417,6 +431,28 @@ impl Host {
     ) {
         let Some(id) = int_arg(args, 0) else {
             return diag::warn!("{from}: {GUI_SET} needs an integer id");
+        };
+        // **a set of a window an application holds waits its turn** behind
+        // the script's steps before it (`scripted`)
+        if let Some(window) = self.registry.root_of(id).filter(|w| self.scripts(*w)) {
+            let step = scripted::Step::Set {
+                args: args.to_vec(),
+                from,
+            };
+            return self.script(window, step, effects);
+        }
+        self.set_now(args, from, effects);
+    }
+
+    /// `/gui_set`, carried out now.
+    pub(super) fn set_now(
+        &mut self,
+        args: &[OscType],
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let Some(id) = int_arg(args, 0) else {
+            return;
         };
         let props = key_value_pairs(&args[1..]);
         if props.is_empty() {
@@ -490,11 +526,8 @@ impl Host {
         // application's thread as corrections, so the question goes round
         // that thread and is answered when it is back -- which is what makes
         // a capture after a verb show what the verb did.
-        #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
-        if let Some(window) = self.registry.root_of(id).filter(|w| self.owns_audio(*w))
-            && self.after_query(window, id, from)
-        {
-            return;
+        if let Some(window) = self.registry.root_of(id).filter(|w| self.scripts(*w)) {
+            return self.script(window, scripted::Step::Query { id, from }, effects);
         }
         effects.push(HostEffect::Reply(self.info_of(id, from)));
     }

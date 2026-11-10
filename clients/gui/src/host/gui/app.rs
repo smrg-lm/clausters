@@ -525,15 +525,26 @@ impl App {
                         ws.repaint_live();
                     }
                 }
-                HostEffect::Perform { window, verb } => self.perform_verb(window, &verb),
+                // a script's step, said done once it is performed, so the
+                // next waits for what it asked of an application
+                HostEffect::Perform { window, verb } => {
+                    self.perform_verb(window, &verb);
+                    self.host.performed(window);
+                }
                 HostEffect::Pointer {
                     window,
                     kind,
                     x,
                     y,
                     mods,
-                } => self.pointer(window, kind, x, y, mods),
-                HostEffect::Keys { window, keys, mods } => self.keys(window, keys, mods),
+                } => {
+                    self.pointer(window, kind, x, y, mods);
+                    self.host.performed(window);
+                }
+                HostEffect::Keys { window, keys, mods } => {
+                    self.keys(window, keys, mods);
+                    self.host.performed(window);
+                }
                 HostEffect::Capture { window, path } => self.capture(window, path, from),
             }
         }

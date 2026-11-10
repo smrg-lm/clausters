@@ -162,10 +162,12 @@ fn perform(
             // nothing to repaint headless
             HostEffect::Redraw(_) | HostEffect::RedrawLive(_) => {}
             HostEffect::Pointer { window, .. } => {
-                diag::info!("gui_pointer {window}: no window to play a hand to (headless)")
+                diag::info!("gui_pointer {window}: no window to play a hand to (headless)");
+                host.performed(window);
             }
             HostEffect::Keys { window, .. } => {
-                diag::info!("gui_key {window}: no window to type into (headless)")
+                diag::info!("gui_key {window}: no window to type into (headless)");
+                host.performed(window);
             }
             HostEffect::Capture { window, path } => reply(
                 from,
@@ -190,6 +192,7 @@ fn perform(
                         }
                     }
                 }
+                host.performed(window);
             }
         }
     }

@@ -160,6 +160,7 @@ mod define;
 mod monitor_tests;
 #[cfg(feature = "notation")]
 mod score_editor;
+mod scripted;
 mod set;
 mod takes;
 #[cfg(test)]
@@ -1161,6 +1162,9 @@ pub struct Host {
     /// a box of notes asks for. Drained by the front ([`Host::take_effects`]),
     /// which is the side that can make a window.
     pending_effects: Vec<HostEffect>,
+    /// **A script's steps on each window an application holds**, released
+    /// one at a time as the application answers ([`scripted`]).
+    scripted: scripted::Scripted,
     /// What each window costs and why, and the transports as the server
     /// last pushed them ([`activity`]).
     activity: activity::Activities,
@@ -1243,6 +1247,7 @@ impl Host {
             resolved_metrics: HashMap::new(),
             focused: None,
             pending_effects: Vec::new(),
+            scripted: Default::default(),
             activity: Default::default(),
         }
     }

@@ -507,15 +507,12 @@ impl Host {
         // pitch) corrects it from the application's thread, so the question
         // goes round that thread and is answered when it is back.
         if call["query"] == "selected" && self.multitrack_marks_held(def_id) {
-            let asked = self.audio_host().ask(ToApp::After {
-                def_id,
+            let step = super::scripted::Step::Ask {
                 call: call.clone(),
-                to: from,
+                from,
                 seq,
-            });
-            if asked.is_ok() {
-                return;
-            }
+            };
+            return self.script(def_id, step, effects);
         }
         if let Some(answer) = self.multitrack_marks(def_id, call, effects) {
             return effects.push(HostEffect::Reply(super::apps::app_reply(seq, Ok(answer))));
@@ -577,9 +574,20 @@ impl Host {
                     to,
                     seq,
                 } => {
+                    // a step of a script, performed and taken in
+                    if call["settled"] == true {
+                        self.script_answered(def_id);
+                        continue;
+                    }
+                    if call["opened"].is_i64() {
+                        let msg = super::apps::app_reply(seq, Ok(json!({ "window": def_id })));
+                        self.pending_effects.push(HostEffect::Send { to, msg });
+                        continue;
+                    }
                     if let Some(id) = call["info"].as_i64() {
                         let msg = self.info_of(id as i32, to);
                         self.pending_effects.push(HostEffect::Send { to, msg });
+                        self.script_answered(def_id);
                         continue;
                     }
                     let mut fx = Vec::new();
@@ -594,6 +602,7 @@ impl Host {
                     self.pending_effects.extend(fx);
                     let msg = super::apps::app_reply(seq, answer);
                     self.pending_effects.push(HostEffect::Send { to, msg });
+                    self.script_answered(def_id);
                 }
                 FromApp::Reply { to, seq, answer } => {
                     let msg = super::apps::app_reply(seq, answer);
@@ -621,6 +630,11 @@ impl Host {
         outcome: Result<Vec<String>, String>,
         reply: Option<Reply>,
     ) {
+        // whoever opened it, answered once the window is there (below)
+        let opener = match &reply {
+            Some(Reply::Client(to, seq)) => Some((*to, *seq)),
+            _ => None,
+        };
         let answer = |host: &mut Host, answer: Result<Value, (String, String)>| match reply {
             Some(Reply::Client(to, seq)) => {
                 let msg = super::apps::app_reply(seq, answer);
@@ -725,6 +739,23 @@ impl Host {
             self.window_sources.insert(def_id, source);
         }
         diag::info!("audio: opened window {def_id}");
+        // **the opener is answered once the window is there**: the
+        // application publishes it in answer to the binding, so the answer
+        // goes round its thread behind that, and a script's next step finds
+        // the window
+        if let Some((to, seq)) = opener
+            && let Some(audio) = self.audio.as_mut()
+            && audio
+                .ask(ToApp::After {
+                    def_id,
+                    call: json!({ "opened": def_id }),
+                    to,
+                    seq,
+                })
+                .is_ok()
+        {
+            return;
+        }
         answer(self, Ok(json!({"window": def_id})));
     }
 
@@ -854,6 +885,85 @@ impl Host {
         {
             self.set_props(def_id, vec![("actions".into(), actions)], &mut fx);
         }
+        self.pending_effects.extend(fx);
+    }
+
+    /// **Whether a script's step on `window` waits its turn**: on a window an
+    /// application holds ([`super::scripted`]).
+    pub(super) fn scripts(&self, window: i32) -> bool {
+        self.owns_audio(window)
+    }
+
+    /// **A step of a script on window `window`**, which an application
+    /// holds: queued behind the window's others and released when the
+    /// application has answered the one before ([`super::scripted`]).
+    pub(super) fn script(
+        &mut self,
+        window: i32,
+        step: super::scripted::Step,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        self.scripted.push(window, step);
+        self.release_script(window, effects);
+    }
+
+    /// The next step of `window`'s script, released if none is out.
+    fn release_script(&mut self, window: i32, effects: &mut Vec<HostEffect>) {
+        use super::scripted::Step;
+        while let Some(step) = self.scripted.next(window) {
+            match step {
+                // the front performs it, and says so (`performed`)
+                Step::Effect(effect) => return effects.push(effect),
+                Step::Query { id, from } => {
+                    if self.after_query(window, id, from) {
+                        return;
+                    }
+                    effects.push(HostEffect::Reply(self.info_of(id, from)));
+                }
+                Step::Set { args, from } => self.set_now(&args, from, effects),
+                Step::Ask { call, from, seq } => {
+                    let asked = self.audio_host().ask(ToApp::After {
+                        def_id: window,
+                        call,
+                        to: from,
+                        seq,
+                    });
+                    if asked.is_ok() {
+                        return;
+                    }
+                    effects.push(HostEffect::Reply(super::apps::app_reply(
+                        seq,
+                        Err(("runtime".into(), "the application is gone".into())),
+                    )));
+                }
+            }
+            self.scripted.done(window);
+        }
+    }
+
+    /// **The front performed the step of `window`'s script that was out**:
+    /// what it asked of the application is on its way there, and the host
+    /// asks to hear back behind it; the next step waits for that word.
+    pub fn performed(&mut self, window: i32) {
+        if !self.scripted.busy(window) {
+            return;
+        }
+        let asked = self.audio_host().ask(ToApp::After {
+            def_id: window,
+            call: json!({ "settled": true }),
+            to: ClientId::Web,
+            seq: 0,
+        });
+        if asked.is_err() {
+            self.script_answered(window);
+        }
+    }
+
+    /// The step out on `window` is answered: the next is released.
+    fn script_answered(&mut self, window: i32) {
+        self.scripted.done(window);
+        let mut fx = Vec::new();
+        self.release_script(window, &mut fx);
         self.pending_effects.extend(fx);
     }
 
@@ -1125,6 +1235,7 @@ impl Host {
     /// said (the multitrack's, as the document's JSON).
     fn forget_audio(&mut self, def_id: i32) {
         self.window_sources.remove(&def_id);
+        self.scripted.forget(def_id);
         let Some(window) = self
             .audio
             .as_mut()
