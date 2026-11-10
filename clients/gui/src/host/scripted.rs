@@ -11,7 +11,7 @@
 //!
 //! - **a verb, a hand or keys** is handed to the front, which performs it --
 //!   what it asks of the application goes there as the window's turns -- and
-//!   then says so ([`Host::performed`]), and the host asks the application to
+//!   then says so ([`Host::performed`](super::Host::performed)), and the host asks the application to
 //!   send word back behind those turns (`ToApp::After`);
 //! - **a question** (`/gui_query`, the editor's `selected`) goes round the
 //!   application's thread the same way and is answered when it is back;
@@ -19,6 +19,13 @@
 //! and the next step is released when that word comes back. A window no
 //! application holds is a client's, whose owner answers on the wire, and its
 //! steps are performed when they arrive, as always.
+
+// A host with no applications (a page's build without them) performs every
+// step when it comes, so its queue is there and never used.
+#![cfg_attr(
+    not(any(not(target_arch = "wasm32"), feature = "apps")),
+    allow(dead_code)
+)]
 
 use std::collections::{HashMap, VecDeque};
 

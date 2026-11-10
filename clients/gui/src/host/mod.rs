@@ -1164,6 +1164,11 @@ pub struct Host {
     pending_effects: Vec<HostEffect>,
     /// **A script's steps on each window an application holds**, released
     /// one at a time as the application answers ([`scripted`]).
+    // never read in a build with no applications, which queues nothing
+    #[cfg_attr(
+        not(any(not(target_arch = "wasm32"), feature = "apps")),
+        allow(dead_code)
+    )]
     scripted: scripted::Scripted,
     /// What each window costs and why, and the transports as the server
     /// last pushed them ([`activity`]).

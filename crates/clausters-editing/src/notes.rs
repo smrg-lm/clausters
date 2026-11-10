@@ -251,7 +251,7 @@ pub struct Projection {
     /// **The pitch each line sounds over time** where it says more than its
     /// boxes do -- a run of joined notes, or a note a bend moves: flat `at
     /// value` pairs per run, `at` in view units and `value` on the Y axis
-    /// ([`pitch_lines`]).
+    /// (`pitch_lines`).
     pub lines: Vec<Vec<f64>>,
     /// In notation mode, how long each note sounds, in view units.
     pub held: Vec<f64>,
