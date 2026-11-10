@@ -32,7 +32,7 @@ use crate::host::graphics::pianoroll::{self, Pitches};
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::structures::boxes::{self, Bounds};
+use crate::host::structures::boxes::{self, Bounds, Placements};
 use crate::host::structures::notes::OscMarker;
 use crate::host::structures::notes::{self, Note};
 use crate::host::widget::element::{
@@ -214,6 +214,15 @@ enum Drag {
         press_pitch: f32,
         orig: Vec<(usize, f64, f32)>,
     },
+    /// The selection resized by one selected note's edge: `orig` is each
+    /// note's placement at the press, the grabbed one first.
+    Resize {
+        part: boxes::Part,
+        orig: Vec<(usize, boxes::Placement)>,
+    },
+    /// **An erase**: Ctrl held from a press on a note, every note the
+    /// pointer crosses taken away, one edit at the release.
+    Erase,
     /// Velocities nudged by the vertical distance from the press, one step a
     /// pixel: the grabbed note's, or every selected one's when it is selected.
     Level {
@@ -1104,6 +1113,18 @@ impl Element for Notes {
                 notes::move_notes_from(&mut self.notes, &orig, dt, dp, lo, hi, step, limit);
                 Events::none()
             }
+            Some(Drag::Resize { part, orig }) => {
+                let bounds = self.edit_bounds(input);
+                boxes::resize_block(&mut self.notes, &orig, part, time, bounds);
+                Events::none()
+            }
+            Some(Drag::Erase) => {
+                if let Some(nh) = self.hit(at, input).note {
+                    notes::remove_note(&mut self.notes, nh.index);
+                    self.selected = notes::selection_after_removal(&self.selected, nh.index);
+                }
+                Events::none()
+            }
             Some(Drag::Level { press_y, orig }) => {
                 let dv = ((press_y - at.1) / f64::from(input.scale.max(0.1))).round() as i32;
                 notes::nudge_velocities_from(&mut self.notes, &orig, dv);
@@ -1798,9 +1819,13 @@ impl Notes {
             match h.note {
                 // Ctrl on a note removes it; the selection's indices shift down
                 // past it.
+                // Ctrl on a note removes it, and the drag goes on erasing what
+                // it crosses: one edit, at the release.
                 Some(nh) => {
                     notes::remove_note(&mut self.notes, nh.index);
                     self.selected = notes::selection_after_removal(&self.selected, nh.index);
+                    self.drag = Some(Drag::Erase);
+                    return Claim::take().edge_scrolling();
                 }
                 // Ctrl on empty grid adds one there, then drags its end to set
                 // the length until release.
@@ -1857,6 +1882,26 @@ impl Notes {
                 }
             }
             self.selected.clear();
+        }
+        // An edge of a **selected** note resizes the whole selection by as
+        // much, as its body moves it.
+        if nh.part != boxes::Part::Body
+            && self.selected.len() > 1
+            && self.selected.contains(&nh.index)
+        {
+            let mut idx = self.selected.clone();
+            idx.retain(|&i| i != nh.index);
+            idx.insert(0, nh.index);
+            let orig = idx
+                .into_iter()
+                .filter(|&i| i < self.notes.len())
+                .map(|i| (i, self.notes.placement(i)))
+                .collect();
+            self.drag = Some(Drag::Resize {
+                part: nh.part,
+                orig,
+            });
+            return Claim::take().edge_scrolling();
         }
         let (orig_start, orig_dur) = self
             .notes
@@ -2589,7 +2634,7 @@ mod tests {
     }
 
     /// Ctrl adds a note where there is none and removes the one under the
-    /// cursor; both report the list, and the add drags its end.
+    /// cursor; the add drags its end, and the removal erases on.
     #[test]
     fn ctrl_adds_and_removes_a_note() {
         let m = Metrics::default();
@@ -2616,6 +2661,57 @@ mod tests {
         let on_note = (x_of(&r, &m, 350.0, 1000.0), y_of(&r, &m, 60.0));
         assert!(matches!(r.press(on_note, &ctrl), Claim::Take(_)));
         assert!(r.notes.is_empty());
+    }
+
+    /// **A Ctrl drag from a note erases what it crosses**, and the list is
+    /// reported once, at the release.
+    #[test]
+    fn a_ctrl_drag_from_a_note_erases_what_it_crosses() {
+        let m = Metrics::default();
+        let mut r = roll(
+            r#"{"notes":[0.0,100.0,60.0,100,0, 200.0,100.0,60.0,100,0, 400.0,100.0,64.0,100,0],
+                "min":48,"max":72}"#,
+        );
+        let mut ctrl = input(&m, rect(), axis(1000.0));
+        ctrl.mods = Mods {
+            ctrl: true,
+            ..Mods::default()
+        };
+        let at = |t: f64, p: f32, r: &Notes| (x_of(r, &m, t, 1000.0), y_of(r, &m, p));
+        assert!(matches!(r.press(at(50.0, 60.0, &r), &ctrl), Claim::Take(_)));
+        assert!(matches!(r.drag, Some(Drag::Erase)));
+        let crossed = at(250.0, 60.0, &r);
+        assert!(
+            r.drag(crossed, &ctrl).into_messages().is_empty(),
+            "nothing yet"
+        );
+        assert_eq!(r.notes.len(), 1);
+        let off = at(450.0, 60.0, &r);
+        r.drag(off, &ctrl);
+        assert_eq!(r.notes.len(), 1, "the third is on another row");
+        let told = r.release(off, true, &ctrl).into_messages();
+        assert_eq!(told.len(), 1, "one edit");
+    }
+
+    /// **An edge of a selected note resizes the selection**: each note's
+    /// same edge travels as far, and a note too short to follow stops alone.
+    #[test]
+    fn an_edge_of_a_selected_note_resizes_the_selection() {
+        let m = Metrics::default();
+        let mut r =
+            roll(r#"{"notes":[0.0,200.0,60.0,100,0, 300.0,100.0,64.0,100,0],"min":48,"max":72}"#);
+        r.selected = vec![0, 1];
+        let plain = input(&m, rect(), axis(1000.0));
+        // the first note's end edge, grabbed
+        let edge = (x_of(&r, &m, 199.0, 1000.0), y_of(&r, &m, 60.0));
+        r.press(edge, &plain);
+        assert!(matches!(r.drag, Some(Drag::Resize { .. })));
+        let to = (x_of(&r, &m, 249.0, 1000.0), y_of(&r, &m, 60.0));
+        r.drag(to, &plain);
+        let grew = r.notes[0].dur - 200.0;
+        assert!(grew > 30.0, "{grew}");
+        assert!((r.notes[1].dur - (100.0 + grew)).abs() < 1.0, "as far");
+        assert_eq!(r.notes[1].start, 300.0, "an end edge keeps the start");
     }
 
     /// The block keys: `q` quantizes the selection, Delete removes it, and

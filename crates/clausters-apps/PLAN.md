@@ -2461,7 +2461,7 @@ opened it.
   - ✅ **X37.3 - Selection by data.** *(Done 2026-11-10: `select_pitch`, `select_channel`, `select_voice`, `select_staff`, answered by `notes::select_like` as a correction of the roll's `selected`; the host reads a window's marks after the application's turns before the question, `ToApp::After`.)* By pitch, by channel, by voice or by
     staff, filters of the editing crate both clients call, as verbs over
     the selection.
-  - ⬜ **X37.4 - Erase and resize by the hand.** A drag that erases what it
+  - ✅ **X37.4 - Erase and resize by the hand.** *(Done 2026-11-10: a Ctrl drag from a note, `Drag::Erase`; an edge of a selected note, `boxes::resize_block`.)* A drag that erases what it
     crosses, and the whole selection resized by one note's edge.
   - ⬜ **X37.5 - The table.** The verbs per case in `docs/app-behavior.md`,
     a test per rule, and the review of the verbs `X35` and `X36` added.

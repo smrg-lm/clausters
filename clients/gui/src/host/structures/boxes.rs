@@ -602,6 +602,54 @@ pub fn move_block<P: Placements + ?Sized>(
     }
 }
 
+/// **Resize a block of boxes by one box's edge**, from a press-time
+/// snapshot: `orig` is `(index, placement)` per box, the grabbed one first.
+/// The grabbed box's `part` is pulled to `target` as [`drag`] pulls it, on
+/// the grid, and every other box's same edge travels as far, off the grid --
+/// each held by its own floor and by the domain, so one box stopping does not
+/// stop the rest. A body is no edge, and moves nothing here.
+pub fn resize_block<P: Placements + ?Sized>(
+    p: &mut P,
+    orig: &[(usize, Placement)],
+    part: Part,
+    target: f64,
+    bounds: Bounds,
+) {
+    let Some(&(lead, held)) = orig.first() else {
+        return;
+    };
+    if part == Part::Body || lead >= p.len() {
+        return;
+    }
+    let edge = |b: Placement| match part {
+        Part::Start => b.offset,
+        _ => b.offset + b.dur,
+    };
+    let placed = drag(part, target, held, Contents::default(), bounds.clone());
+    let travel = edge(placed) - edge(held);
+    let free = Bounds {
+        grid: Grid::None,
+        ..bounds
+    };
+    for &(i, was) in orig {
+        if i >= p.len() {
+            continue;
+        }
+        let now = if i == lead {
+            placed
+        } else {
+            drag(
+                part,
+                edge(was) + travel,
+                was,
+                Contents::default(),
+                free.clone(),
+            )
+        };
+        p.set_placement(i, now);
+    }
+}
+
 /// Quantize box onsets to the `grid`: each offset snaps to the nearest grid
 /// line, durations untouched. `indices` picks the boxes (the selection); empty
 /// quantizes them all. No grid is a no-op. Returns whether anything moved.
@@ -870,5 +918,42 @@ mod tests {
         );
         assert_eq!(rebased(&[100.0], 0.0), Some(vec![0.0]));
         assert_eq!(rebased(&[], 10.0), None, "an empty block is not a paste");
+    }
+
+    #[test]
+    fn a_block_resized_by_one_edge_moves_every_edge_as_far() {
+        let mut stack = Stack {
+            boxes: vec![
+                (
+                    Placement {
+                        offset: 0.0,
+                        dur: 100.0,
+                        start: 0.0,
+                    },
+                    0.0,
+                    'a',
+                ),
+                (
+                    Placement {
+                        offset: 200.0,
+                        dur: 10.0,
+                        start: 0.0,
+                    },
+                    1.0,
+                    'b',
+                ),
+            ],
+        };
+        let orig: Vec<(usize, Placement)> = (0..2).map(|i| (i, stack.placement(i))).collect();
+        let bounds = Bounds {
+            min_dur: 5.0,
+            ..Bounds::default()
+        };
+        // the first's start pulled 50 later: the second can only lose 5
+        resize_block(&mut stack, &orig, Part::Start, 50.0, bounds);
+        assert_eq!(stack.placement(0).offset, 50.0);
+        assert_eq!(stack.placement(0).dur, 50.0);
+        assert_eq!(stack.placement(1).dur, 5.0, "held at its floor");
+        assert_eq!(stack.placement(1).offset + stack.placement(1).dur, 210.0);
     }
 }
