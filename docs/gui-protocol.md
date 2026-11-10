@@ -471,7 +471,11 @@ host something the host said first. What goes in it is every `/gui_event` the
 host emits, at the one place an event is stamped, every value that leaves by a
 **binding** instead — the one road that never passes through an event, so the
 most direct control in a window used to be the one with no history — plus every
-`reason` an acknowledgement carries. Consecutive lines from one widget with one
+`reason` an acknowledgement carries. **Navigation is left out**: a `"locate"`,
+a `"selection"`, a `"view"`, `"view_x"` or `"view_y"` goes to the owner and
+says nothing on the bar, since the picture shows each as it happens, none is an
+edit, and a line of one could only repeat a raw sample count or a fraction of
+an axis. Consecutive lines from one widget with one
 verb replace rather than stack, because a drag emits per motion and a log of
 four hundred `"clip"` lines is a log of one.
 

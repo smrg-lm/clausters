@@ -25,6 +25,12 @@
 //! acknowledgement is retired ([`super::Host::settle`]). So the line is the
 //! **hand's own history**: what the last gesture asked for, and what came back.
 //!
+//! **Navigation is not in it** (`gestures::effects::report`): where the
+//! cursor was put, a selection swept, what a view shows. The picture says
+//! each of those as it happens, none of them is an edit, and a line of one
+//! could only repeat the payload -- a raw sample count, a fraction of an
+//! axis -- which reads as a diagnostic rather than as what the hand did.
+//!
 //! And, in a debug build only, the host's notes about its own working
 //! ([`super::diag::note!`]) -- a third [`Kind`], colored apart, because a bar
 //! that shows what the hand did is where somebody debugging is already looking.

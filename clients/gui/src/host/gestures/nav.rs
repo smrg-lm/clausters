@@ -14,7 +14,7 @@ use super::super::layout::Rect;
 use super::super::widget::element::{FreqAxis, ValueAxis};
 use super::super::widget::{ScrollView, Widget, WidgetKind};
 use super::super::wire::frames_arg;
-use super::effects::{emit, emit_view, redraw_all};
+use super::effects::{emit, emit_view, redraw_all, report};
 use super::{GestureCtx, GestureEffect};
 
 /// The rectangle spanned by two corner points, whatever their order -- the
@@ -56,7 +56,7 @@ pub(super) fn set_scroll_view(
     next: (f64, f64, f64),
 ) -> bool {
     if let Some((x, y, zoom)) = interact::scroll_set_view(host, def_id, id, area, next) {
-        emit(
+        report(
             host,
             out,
             def_id,
@@ -263,7 +263,7 @@ pub(super) fn set_selection(
         args.push(OscType::Float(min as f32));
         args.push(OscType::Float(max as f32));
     }
-    emit(host, out, def_id, id, args);
+    report(host, out, def_id, id, args);
 }
 
 /// **The time range over view `id` goes, if there is one**, told as a selection
@@ -288,7 +288,7 @@ pub(super) fn let_go_range(host: &mut Host, out: &mut Vec<GestureEffect>, def_id
     }
     redraw_all(out, &roots);
     transport_follows_selection(host, def_id, id, start, 0.0, false);
-    emit(
+    report(
         host,
         out,
         def_id,
@@ -338,7 +338,7 @@ pub(super) fn let_go_selection(
         args.extend([OscType::Double(axis.sel_min), OscType::Double(axis.sel_max)]);
     }
     args.push(OscType::Bool(true));
-    emit(host, out, def_id, id, args);
+    report(host, out, def_id, id, args);
 }
 
 /// **Puts the monitor's transport where the hand put the cursor**, and makes
@@ -482,7 +482,7 @@ pub(super) fn locate_at(
         .timeline_key(id)
         .and_then(|key| host.timelines().state(key))
         .map_or(pos, |state| state.cursor);
-    emit(
+    report(
         host,
         out,
         ctx.def_id,
@@ -579,7 +579,7 @@ pub(super) fn set_y_view(
     if !moved {
         return;
     }
-    emit(
+    report(
         host,
         out,
         def_id,
@@ -751,7 +751,7 @@ pub(super) fn set_x_view(
     {
         (editor.x_start, editor.x_len) = (start, len);
     }
-    emit(
+    report(
         host,
         out,
         def_id,

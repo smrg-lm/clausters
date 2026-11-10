@@ -45,14 +45,30 @@ pub(super) fn emit(
     });
 }
 
-/// [`emit`] without the status line: for a report the window already said in
-/// its own words (the loop's "loop on"), or one that is not an edit at all
-/// (the transport's play, which the multitrack's playhead shows).
+/// [`emit`] without the status line, from the window itself: for a report the
+/// window already said in its own words (the loop's "loop on"), or one that is
+/// not an edit at all (the transport's play, which the multitrack's playhead
+/// shows).
 pub(super) fn tell(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, args: Vec<OscType>) {
-    let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
+    report(host, out, def_id, def_id, args);
+}
+
+/// [`emit`] without the status line, from widget `widget_id`: **navigation**,
+/// which the picture shows as it happens -- where the cursor was put
+/// (`"locate"`), what a view shows (`"view"`, `"view_y"`). None of it is an
+/// edit, and a line of it said only a raw sample count or a fraction of an
+/// axis, which reads as a diagnostic rather than as what the hand did.
+pub(super) fn report(
+    host: &Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    widget_id: i32,
+    args: Vec<OscType>,
+) {
+    let seq = host.outbox.borrow_mut().stamp(def_id, widget_id);
     out.push(GestureEffect::Emit {
         def_id,
-        widget_id: def_id,
+        widget_id,
         seq,
         args,
     });
@@ -183,7 +199,7 @@ pub(super) fn redraw_all(out: &mut Vec<GestureEffect>, roots: &[i32]) {
 /// members repaint but do not re-emit).
 pub(super) fn emit_view(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, id: i32) {
     if let Some((start, len, _)) = group_view(host, id) {
-        emit(
+        report(
             host,
             out,
             def_id,

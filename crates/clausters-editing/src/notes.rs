@@ -40,8 +40,9 @@
 //!   `points` report comes back in the same shape, every curve's points as the
 //!   hand left them.
 //! - `midi`: the MIDI spec the sequence is written for, as a reader names it
-//!   (`MIDI 1.0`, `MPE`, `MIDI 2.0`), empty for a sequence for the server --
-//!   the roll shows it beside its ruler.
+//!   (`MIDI 1.0`, `MPE`, `MIDI 2.0`), empty for a sequence for the server
+//!   and in the notation mode, which shows what a page writes -- the roll
+//!   shows it beside its ruler.
 //! - In the roll's **notation mode** ([`Mode::Notation`]) a note is drawn as
 //!   long as it is written (its `dur`), and four lists ride beside `notes`:
 //!   `held`, how long each sounds, in view units; `voices`, flat `staff
@@ -53,7 +54,7 @@
 //! - `bars`: where the sequence's bars fall, flat `beat length number`
 //!   triples in beats ([`bars`]), each a run of bars of one length from its
 //!   beat until the next run; empty where the sequence states no meter, and
-//!   the ruler then counts bars of its own.
+//!   the ruler then counts bars of its own, which the plane bars as well.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -394,8 +395,11 @@ pub fn project(
 ) -> Projection {
     let notation = editing.mode == Mode::Notation;
     let mut out = Projection {
+        // which MIDI the notes are written for says nothing of a page: in
+        // notation mode the roll shows what is written, and no spec
         midi: sequence
             .midi
+            .filter(|_| !notation)
             .map(|spec| spec.label().to_string())
             .unwrap_or_default(),
         bars: bars(sequence),

@@ -455,15 +455,25 @@ impl Notes {
             ctx.rect.y + ctx.rect.h - top,
         );
         let (mesh, m, theme) = d.parts();
-        if cell.w <= m.pad * 2.0 || cell.h < font::height(m.caption_scale) {
+        // **Inside its cell, whatever the cell's width**: the keyboard's
+        // column is narrower than the words, and the ruler's first label
+        // starts where it ends -- the caption's size where it fits, the
+        // smallest text where that does, and cut short past that.
+        let room = cell.w - 2.0 * m.pad;
+        let scale = [m.caption_scale, m.micro_scale]
+            .into_iter()
+            .find(|scale| font::width(&self.midi, *scale) <= room)
+            .unwrap_or(m.micro_scale);
+        if room <= 0.0 || cell.h < font::height(scale) {
             return;
         }
-        font::text(
+        font::text_ellipsis(
             mesh,
             &self.midi,
             cell.x + m.pad,
-            cell.y + (cell.h - font::height(m.caption_scale)) * 0.5,
-            m.caption_scale,
+            cell.y + (cell.h - font::height(scale)) * 0.5,
+            room,
+            scale,
             theme.ruler_text,
         );
     }
@@ -1463,20 +1473,43 @@ impl Notes {
             {
                 mesh.rect(r, VOICE_TINTS[(voice - 1) % VOICE_TINTS.len()]);
             }
+            // **What sounds is the note; the rest of what is written is its
+            // outline, dotted.** The sounding stretch is closed by a solid
+            // edge where the sound stops, and past it the written value is
+            // emptied and drawn as a dotted frame -- legible whatever the
+            // velocity fill is, since a quiet note's fill is close to the
+            // ground. So a staccato reads as the note itself, shorter, in the
+            // box of its value; a bar of its own laid inside the box read as
+            // a mark on the note.
             if let Some(held) = self.written.held.get(i)
                 && *held < n.dur - 1e-9
-                && r.w > 2.0
             {
-                let inner = Note {
-                    dur: held.max(0.0),
-                    ..*n
-                };
-                if let Some(h) = pianoroll::note_rect(grid, nav, 0.0, &inner, axis) {
-                    let band = (r.h * 0.3).max(1.0);
-                    mesh.rect(
-                        Rect::new(h.x, r.y + (r.h - band) * 0.5, h.w.max(1.0), band),
-                        theme.note_edge,
-                    );
+                let x = pianoroll::to_x(n.start + held.max(0.0), nav, grid) as f32;
+                let edge = m.divider_w;
+                let (from, to) = (x.max(r.x + edge), r.x + r.w);
+                if to - from > edge && r.h > 2.0 * edge {
+                    mesh.rect(Rect::new(from, r.y, to - from, r.h), theme.lane);
+                    mesh.rect(Rect::new(from - edge, r.y, edge, r.h), theme.note_edge);
+                    let dotted = [
+                        theme.note_edge[0],
+                        theme.note_edge[1],
+                        theme.note_edge[2],
+                        0.7,
+                    ];
+                    let dash = (2.0 * edge).max(2.0);
+                    let mut at = from + dash;
+                    while at < to {
+                        let w = dash.min(to - at);
+                        mesh.rect(Rect::new(at, r.y, w, edge), dotted);
+                        mesh.rect(Rect::new(at, r.y + r.h - edge, w, edge), dotted);
+                        at += 2.0 * dash;
+                    }
+                    let mut y = r.y;
+                    while y < r.y + r.h {
+                        let h = dash.min(r.y + r.h - y);
+                        mesh.rect(Rect::new(to - edge, y, edge, h), dotted);
+                        y += 2.0 * dash;
+                    }
                 }
             }
             if let Some(label) = self.written.labels.get(i).filter(|l| !l.is_empty()) {
@@ -1516,20 +1549,34 @@ impl Notes {
             let (Some(a), Some(b)) = (rect(from), rect(into)) else {
                 continue;
             };
-            let start = [a.x + a.w, a.y + a.h * 0.5];
+            // Where the second begins: across the gap from the first's end,
+            // or -- where the two overlap, a legato played long -- straight
+            // down from the first at that moment, so a link never runs
+            // backwards over the notes it joins.
+            let start = [(a.x + a.w).min(b.x), a.y + a.h * 0.5];
             let end = [b.x, b.y + b.h * 0.5];
             mesh.line(start, end, m.trace_w.max(1.0), theme.cursor);
         }
     }
 
-    /// **The page's barlines down the plane**, where the axis has the page's
-    /// bars: a line at each bar's start, through the tempo map as the ruler
-    /// places them, so the plane is barred where its ruler is.
+    /// **The barlines down the plane, wherever the ruler counts bars**: the
+    /// page's, where the axis has them, else one every `quant` beats on a
+    /// ruler in beats -- the bar a `bar:beat` label counts. A line at each
+    /// bar's start, through the tempo map as the ruler places them, so the
+    /// plane is barred where its ruler is and nowhere else.
     fn draw_bars(&self, d: &mut Draw, grid: Rect, nav: &View, rate: f64) {
-        if self.editor.bars.is_empty() || rate <= 0.0 || nav.len <= 0.0 {
+        let editor = &self.editor;
+        let every = [[0.0, editor.quant, 1.0]];
+        let runs: &[[f64; 3]] = if !editor.bars.is_empty() {
+            &editor.bars
+        } else if editor.ruler == Ruler::Beats && editor.quant > 0.0 {
+            &every
+        } else {
+            return;
+        };
+        if rate <= 0.0 || nav.len <= 0.0 {
             return;
         }
-        let editor = &self.editor;
         let units = |beat: f64| match editor.tempo_map.as_deref() {
             Some(map) => map.secs_at(beat) * rate,
             None => (beat - editor.beat_at) / editor.tempo.max(1e-9) * rate,
@@ -1540,7 +1587,7 @@ impl Notes {
         };
         let (b0, b1) = (beat(nav.start), beat(nav.start + nav.len));
         let (mesh, m, theme) = d.parts();
-        let bars = crate::host::ruler::bars_in(&editor.bars, b0, b1);
+        let bars = crate::host::ruler::bars_in(runs, b0, b1);
         // a line where they stand far enough apart to read as bars
         let x_of = |b: f64| grid.x as f64 + (units(b) - nav.start) / nav.len * grid.w as f64;
         let narrowest = bars

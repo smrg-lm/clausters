@@ -1682,6 +1682,29 @@ fn a_gui_set_of_the_table_keeps_the_modifiers_it_does_not_name() {
     assert!(g.dragging(), "the default shift plan survived the set");
 }
 
+/// **Navigation leaves no line on the status bar**: a locate is reported to
+/// the owner, and the cursor the picture moves is all a reader needs -- the
+/// line it used to leave said only the raw sample count.
+#[test]
+fn a_locate_is_reported_and_not_said() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":96,"type":"signal","view":"trace","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+    );
+    host.set_timeline_total(96, 10000);
+    set_prop(&mut host, 96, "gestures", r#"{"drag":"locate"}"#);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    let effects = g.press(&mut host, &ctx, 400.0, 150.0);
+    assert!(has_emit_tag(&effects, 96, "locate"));
+    let said: Vec<String> = host
+        .statuses()
+        .get(&1)
+        .map(|s| s.lines().map(|l| l.text.clone()).collect())
+        .unwrap_or_default();
+    assert!(said.is_empty(), "{said:?}");
+}
+
 /// **Every pointer question reads the shape the element draws**, not just the
 /// press: an element drawn rounder or smaller than its cell answers the wheel
 /// only where it is drawn, and the air around it belongs to whatever the

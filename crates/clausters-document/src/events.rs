@@ -794,6 +794,7 @@ impl EventSequence {
                 event.at = at;
                 let at = self.events.partition_point(|e| e.at.0 <= event.at.0);
                 self.events.insert(at, event);
+                articulation::prune(self);
             }
             EventsIntent::Set { id, key, value } => {
                 let i = self.index(id).ok_or_else(|| no_event(id))?;

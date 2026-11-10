@@ -6711,23 +6711,43 @@ wrong.
   3. **A join is drawn between notes out of order.** After notes were
      reordered by hand, the join lines cross in an X between notes of one
      line (bars 2 and 3 of the rendered score). Whether the joins name the
-     wrong notes or are only drawn wrong is to be found out.
+     wrong notes or are only drawn wrong is to be found out. *(Fixed
+     2026-11-09: both. A note moved to start at or before the note it went
+     on from kept the join, so the link ran backwards; the document now
+     takes such a join away on any edit, and the slurs of a written line
+     follow. And a join between notes that overlap was drawn from the
+     first's end back to the second's start; it is drawn down at the
+     second's start.)*
   4. **What a note sounds inside what it is written reads as something
      else.** The sounding length is a thin light bar at the foot of the
      written box, so a staccato looks like a selection or a stray mark
-     rather than the note itself, shorter.
+     rather than the note itself, shorter. *(Fixed 2026-11-09: what sounds
+     is the note, closed by a solid edge, and the rest of the written value
+     is emptied and framed dotted -- legible whatever the velocity fill.)*
   5. **The voices are not told apart**: every note of the rendered score is
      drawn in one colour, where the voice tints were meant to show them.
+     *(Not a drawing fault, 2026-11-09: a second voice is tinted; the notes
+     the hand made overlap in the one voice the score has, which is item 1's
+     question of what a polyphonic edit in notation mode writes.)*
   6. **The roll's labels collide and one is wrong.** The axis' corner
      label (`MIDI 1.0`) is drawn over the ruler's first bar number in both
      modes, and it says `MIDI 1.0` while the roll is in notation mode.
+     *(Fixed 2026-11-09: the label is kept inside its cell, smaller and then
+     cut short, and the notation mode sends none.)*
   7. **The status line shows a raw sample number** (`locate 132641`) after
      a click on the ruler, which is a diagnostic and not a reading.
+     *(Fixed 2026-11-09: navigation -- a locate, a selection, a view --
+     leaves no line, in every window; the picture shows it.)*
   8. **A note at the bottom of the pitch window is cut** by the lane under
-     the plane (the last note of the rendered score, bar 4).
+     the plane (the last note of the rendered score, bar 4). *(Not a fault,
+     2026-11-09: the window had been zoomed and panned by hand, and a note
+     on its way out of the pitch window is cut where it leaves rather than
+     pushed onto a row that is not its own; the window a roll opens on holds
+     every note with air around it.)*
   9. **The MIDI roll numbers bars it does not draw.** Over a sequence that
      states no meter the ruler counts `bar:beat`, while the plane draws no
-     barline; the two have to agree.
+     barline; the two have to agree. *(Fixed 2026-11-09: the plane bars
+     every bar the ruler counts.)*
   10. **The data of the events being edited cannot be seen.** The picture
       alone does not say what a note holds: its velocity, its channel, its
       keys past pitch and time, and in notation mode almost everything a

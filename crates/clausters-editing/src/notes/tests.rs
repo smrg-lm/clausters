@@ -312,7 +312,8 @@ fn a_roll_draws_the_sequence_curves_and_each_notes_curves() {
 }
 
 /// **A roll shows the MIDI spec its sequence is written for**, by the name a
-/// reader knows it by, and nothing for a sequence for the server.
+/// reader knows it by, and nothing for a sequence for the server or in the
+/// notation mode.
 #[test]
 fn a_roll_shows_the_midi_spec() {
     use clausters_document::events::MidiSpec;
@@ -343,6 +344,17 @@ fn a_roll_shows_the_midi_spec() {
         )
         .midi,
         "MPE"
+    );
+    // a roll in notation mode shows what a page writes, and no spec
+    assert_eq!(
+        project(
+            &s,
+            &YDomain::midi(),
+            &Axis::constant(100.0),
+            &notation_editing()
+        )
+        .midi,
+        ""
     );
 }
 

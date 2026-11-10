@@ -426,23 +426,35 @@ pub fn unjoin(sequence: &mut EventSequence, ids: &[u64]) -> Result<(), String> {
     Ok(())
 }
 
-/// **A join naming a note the sequence no longer holds goes**: what an edit
-/// that removes notes leaves, whoever made it.
+/// **A join that no longer says "goes on into the next" goes**: one naming a
+/// note the sequence no longer holds -- what an edit that removes notes
+/// leaves, whoever made it -- and one into a note that does not start after
+/// the note it goes on from, which is what a note moved before it leaves. A
+/// join is made in onset order ([`join`]), so a pair the hand has reordered
+/// joins nothing, and its line's slurs follow.
 pub fn prune(sequence: &mut EventSequence) {
-    let held: BTreeSet<u64> = sequence.events.iter().map(|e| e.id).collect();
-    let dangling: Vec<u64> = sequence
-        .events
-        .iter()
-        .filter(|e| {
-            e.keys()
-                .get("joins")
-                .and_then(Value::as_u64)
-                .is_some_and(|from| !held.contains(&from))
-        })
-        .map(|e| e.id)
-        .collect();
-    for id in dangling {
+    let at: BTreeMap<u64, f64> = sequence.events.iter().map(|e| (e.id, e.at.0)).collect();
+    let mut stale = Vec::new();
+    let mut touched = BTreeSet::new();
+    for event in &sequence.events {
+        let keys = event.keys();
+        let Some(from) = keys.get("joins").and_then(Value::as_u64) else {
+            continue;
+        };
+        match at.get(&from) {
+            None => stale.push(event.id),
+            Some(&begins) if event.at.0 <= begins => {
+                stale.push(event.id);
+                touched.insert(line_of(&keys));
+            }
+            Some(_) => {}
+        }
+    }
+    for id in stale {
         set_joins(sequence, id, None);
+    }
+    if !touched.is_empty() {
+        slurs_from_joins(sequence, &touched);
     }
 }
 
@@ -450,6 +462,7 @@ pub fn prune(sequence: &mut EventSequence) {
 mod tests {
     use super::*;
     use crate::events::{Event, EventsIntent};
+    use crate::timebase::Beat;
 
     /// A line played: four notes on channel 0, the middle two of one pitch.
     fn played() -> EventSequence {
@@ -636,6 +649,60 @@ mod tests {
             .edit(EventsIntent::SetEvents { events: kept })
             .unwrap();
         assert_eq!(joins(&sequence), vec![None, None]);
+    }
+
+    /// **A note moved before the one it went on from joins it no more**: a
+    /// join is made in onset order, so the pair a hand reordered is two
+    /// notes, and the slur of a written line follows. A move that keeps the
+    /// order keeps the join, a legato that overlaps included.
+    #[test]
+    fn a_note_moved_before_the_one_it_went_on_from_is_joined_no_more() {
+        let joined = |s: &EventSequence, id: u64| {
+            s.get(id)
+                .and_then(|e| e.keys().get("joins").and_then(Value::as_u64))
+        };
+        let mut sequence = written_line();
+        sequence
+            .edit(EventsIntent::Join {
+                ids: vec![1, 2, 3, 4],
+            })
+            .unwrap();
+        // 3 moved into 2's span still starts after it: still joined
+        sequence
+            .edit(EventsIntent::Move {
+                id: 3,
+                at: Beat(1.5),
+            })
+            .unwrap();
+        assert_eq!(joined(&sequence, 3), Some(2));
+        // 3 moved before 2: neither the join into it nor its slur stays
+        sequence
+            .edit(EventsIntent::Move {
+                id: 3,
+                at: Beat(0.5),
+            })
+            .unwrap();
+        assert_eq!(joined(&sequence, 3), None);
+        assert_eq!(joined(&sequence, 2), Some(1));
+        assert_eq!(joined(&sequence, 4), Some(3), "4 still follows 3");
+        assert_eq!(
+            spanners(&sequence),
+            vec![
+                json!({"kind": "slur", "from": 1, "to": 2, "join": true}),
+                json!({"kind": "slur", "from": 3, "to": 4, "join": true}),
+            ]
+        );
+        // and the whole list, as a roll sends it after a drag
+        let mut swapped = sequence.events.clone();
+        for event in &mut swapped {
+            if event.id == 4 {
+                event.at = Beat(0.25);
+            }
+        }
+        sequence
+            .edit(EventsIntent::SetEvents { events: swapped })
+            .unwrap();
+        assert_eq!(joined(&sequence, 4), None);
     }
 
     #[test]
