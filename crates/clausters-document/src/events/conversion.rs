@@ -14,6 +14,11 @@
 //! level nor notation, and its own curves on a target the page writes none
 //! on), the tempo map, the parts, the curves the page does not write.
 //!
+//! **And what goes on without an attack.** A note held on into its own
+//! pitch is one note on the page, whose ties the page writes where its metre
+//! cuts it; a join between different notes is a slur that joins
+//! (`super::articulation::held_on`, `carry_joins`).
+//!
 //! **And the ids it had.** A note of the page that is a note of the
 //! performance keeps that note's id, a curve keeps the id of the curve it is,
 //! and what the page adds is numbered from the sequence's counter, so an id a
@@ -30,6 +35,7 @@ use serde_json::Value;
 use clausters_core::notation::Interpretation;
 
 use super::EventSequence;
+use super::articulation::{carry_joins, held_on};
 use super::part::Writing;
 use super::reading::Transcription;
 use super::score::render;
@@ -88,6 +94,9 @@ pub fn to_notation(
     interp: &Interpretation,
 ) -> Result<EventSequence, String> {
     let mut source = sequence.clone();
+    // a note held on into its own pitch is one note on the page, its ties
+    // the page's own
+    held_on(&mut source);
     if let Some(writing) = writing {
         let mut parts = source.parts_read();
         for part in &mut parts {
@@ -187,6 +196,8 @@ pub fn to_notation(
             out.automation.push(curve.clone());
         }
     }
+    // a join between different notes is a slur that joins
+    carry_joins(&mut out, &source);
     out.midi = sequence.midi.or(out.midi);
     // the reading it was read with is the one it is read with from now on
     out.set_reading(Some(
@@ -428,6 +439,40 @@ mod tests {
         assert_eq!(page.automation[0].id, crate::NodeId(20), "the same lane");
         assert!(page.automation[1].id.0 > 20, "a lane of the page's own");
         assert!(page.automation[1].id.0 != added);
+    }
+
+    /// **What goes on without an attack is written as a page writes it**: a
+    /// note held on into its own pitch is one note of the summed value, and
+    /// a join between different notes is a slur that joins them.
+    #[test]
+    fn a_take_s_joins_are_one_note_or_a_slur_that_joins() {
+        let mut seq: EventSequence = serde_json::from_value(json!({
+            "events": [
+                {"id": 1, "at": 0.0, "data": {"midinote": 60, "dur": 1.0, "sustain": 1.0}},
+                {"id": 2, "at": 1.0, "data": {"midinote": 64, "dur": 1.0, "sustain": 1.0,
+                                              "joins": 1}},
+                {"id": 3, "at": 2.0, "data": {"midinote": 64, "dur": 1.0, "sustain": 1.0,
+                                              "joins": 2}},
+                {"id": 4, "at": 3.0, "data": {"midinote": 67, "dur": 1.0, "sustain": 1.0}}
+            ],
+            "next_id": 4
+        }))
+        .unwrap();
+        seq.edit(EventsIntent::ToNotation {
+            reading: Some(json!({"meter": "4/4", "division": 4})),
+            writing: None,
+            interpretation: None,
+        })
+        .unwrap();
+        let ids: Vec<u64> = seq.events.iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![1, 2, 4], "64 held on is one note");
+        assert_eq!(seq.get(2).unwrap().keys()["value"], json!([1, 2]));
+        assert_eq!(seq.get(2).unwrap().keys()["joins"], json!(1));
+        let spanners = seq.notation.as_ref().unwrap()["spanners"].clone();
+        assert_eq!(
+            spanners,
+            json!([{"kind": "slur", "from": 1, "to": 2, "join": true}])
+        );
     }
 
     /// **A writing given writes every part with it**, stating the parts.

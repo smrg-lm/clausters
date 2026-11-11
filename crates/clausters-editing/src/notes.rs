@@ -325,7 +325,9 @@ pub enum ColorBy {
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     /// The events as MIDI says them: notes on and off, velocities, channels,
-    /// curves, joins. Nothing of how a page writes them.
+    /// curves, and joins in a sequence for the server (MIDI has none,
+    /// `clausters_document::events::articulation`). Nothing of how a page
+    /// writes them.
     #[default]
     Midi,
     /// A view of the notation: staves and voices, written values, and a

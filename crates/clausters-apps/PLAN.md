@@ -7195,7 +7195,7 @@ wrong.
   reader's (`autofit` off), as the multitrack's does, and the rule is in
   `docs/app-behavior.md`.)*
 
-- ⬜ **A performance's joins are lost when the roll writes it as notation**
+- ✅ **A performance's joins are lost when the roll writes it as notation**
   (2026-11-10, the pass over the box's roll; a roll over a client's sequence
   does the same). Two notes joined in MIDI mode are one line, and entering
   notation mode converts the sequence (`EventsIntent::ToNotation`): the page
@@ -7235,6 +7235,19 @@ wrong.
   5. **An event sequence keeps its joins**, as the server plays them.
   The Standard MIDI File and Clip File writers drop `joins` today; once a
   MIDI sequence holds none, that drops nothing.
+
+  **Done 2026-11-11.** The document says it once
+  (`clausters_document::events::articulation`): `held_on` makes a join into
+  the same pitch one note (the inverse of a split: the length, the curves
+  after the first note's, what went on from the second), `said_in_midi`
+  does that and attacks every other join, and `carry_joins` writes a
+  performance's joins between different notes onto the page it is written
+  as, as slurs that join. A sequence in a MIDI format holds no join after
+  any edit, a spec given included; `join` there holds one pitch on, whether
+  the notes touch or not, and refuses two; `as_midi` and the conversion to
+  notation say joins as their format does. Where the ties of the long note
+  go is the reader's today, and `crates/clausters-notate`'s once it is
+  built.
 
 - ✅ **`a_page_s_marks_are_drawn_with_the_engraver_s_symbols` fails with the
   notation features on** *(found 2026-11-10 running `clausters-apps` with

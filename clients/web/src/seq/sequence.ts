@@ -256,7 +256,9 @@ export class EventSequence {
     /**
      * Writes the sequence for `spec` -- `"1.0"`, `"mpe"`, `"2.0"` or `null` --
      * an edit. An MPE zone is the lower one (master channel 1) unless
-     * `upper`, with `members` member channels. Throws when a curve the
+     * `upper`, with `members` member channels. MIDI has no join, so a sequence
+     * not written as a page holds its joins as MIDI does: a join into the same
+     * pitch is one note and any other an attack. Throws when a curve the
      * sequence holds has no spelling in that spec.
      */
     setMidi(spec: string | null, { upper = false, members = 15 }: { upper?: boolean; members?: number } = {}): void {
@@ -312,11 +314,13 @@ export class EventSequence {
 
     /**
      * **Join these notes**: in each line (a staff and voice, else a channel)
-     * each goes on into the next of them without a new attack -- `joins`, MIDI
-     * data -- a chord into a chord of as many notes, low to high. Where the
-     * line is written as notation, its slurs are written again from the joins:
-     * a run of them is one slur that joins. One edit. Throws when one is not a
-     * note, or no line holds two of them one after the other.
+     * each goes on into the next of them without a new attack -- `joins` -- a
+     * chord into a chord of as many notes, low to high. Where the line is
+     * written as notation, its slurs are written again from the joins: a run
+     * of them is one slur that joins. MIDI has no join, so in a MIDI format
+     * notes of one pitch become one note. One edit. Throws when one is not a
+     * note, when no line holds two of them one after the other, or, in a MIDI
+     * format, when two it would join sound different pitches.
      */
     join(events: Iterable<SeqEvent>): void {
         const ids = [...events].map((e) => e.id);
@@ -376,9 +380,11 @@ export class EventSequence {
      * written `value`, and its `notation` section the page's. What plays each
      * note (its `instrument` and every key that is not time, pitch, level or
      * notation), the tempo map, the parts and the curves the page does not
-     * write are kept. The times as played become the written ones: one edit,
-     * undone as one, and {@link EventSequence.notated} converts a copy
-     * instead. Throws when an option does not read.
+     * write are kept. A note held on into its own pitch (`joins`) is one note
+     * of the page, and a join between different notes a slur that joins. The
+     * times as played become the written ones: one edit, undone as one, and
+     * {@link EventSequence.notated} converts a copy instead. Throws when an
+     * option does not read.
      */
     toNotation(reading?: Record<string, unknown>, writing?: Writing): void {
         const intent: Record<string, unknown> = { intent: "tonotation" };
@@ -416,8 +422,10 @@ export class EventSequence {
      * **A copy of the sequence as its performance, written for `spec`** --
      * `"1.0"`, `"mpe"` or `"2.0"`, an MPE zone the lower one unless `upper`,
      * with `members` member channels: every notation key of its events and
-     * its `notation` section left out, and what sounds kept. This sequence is
-     * not changed. Throws when a curve it holds has no spelling in that spec.
+     * its `notation` section left out, and what sounds kept. MIDI has no join:
+     * a join into the same pitch is one note and any other an attack. This
+     * sequence is not changed. Throws when a curve it holds has no spelling in
+     * that spec.
      */
     asMidi(spec = "1.0", { upper = false, members = 15 }: { upper?: boolean; members?: number } = {}): EventSequence {
         const written = spec === "mpe" ? { mpe: { upper, members: Math.trunc(members) } } : spec;

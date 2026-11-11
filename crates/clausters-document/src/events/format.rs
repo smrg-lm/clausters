@@ -61,8 +61,10 @@ impl EventSequence {
     /// **A copy of the sequence as its performance, written for `spec`**:
     /// every notation key of its events (`clausters_core::event::notation`)
     /// and its `notation` section left out, and what sounds kept -- a note
-    /// that sounded its written pitch states it as a `midinote`. This sequence
-    /// is not changed.
+    /// that sounded its written pitch states it as a `midinote`. MIDI has no
+    /// join, so a join into the same pitch is one note and every other join
+    /// is an attack (`super::articulation::said_in_midi`). This sequence is
+    /// not changed.
     ///
     /// # Errors
     /// When a curve the sequence holds has no spelling in `spec`, as
@@ -84,6 +86,7 @@ impl EventSequence {
             keys.retain(|key, _| !notation.contains(&key.as_str()));
         }
         copy.notation = None;
+        super::articulation::said_in_midi(&mut copy);
         if let Some(why) = copy.unsayable(spec) {
             return Err(why);
         }
@@ -141,6 +144,23 @@ mod tests {
         }
         assert_eq!(midi.events[1].keys().get("midinote"), Some(&json!(67)));
         assert_eq!(page.format(), Format::Notation, "the page is not changed");
+    }
+
+    /// **MIDI has no join**: in the copy a join into the same pitch is one
+    /// note and a join between different notes an attack.
+    #[test]
+    fn a_copy_as_midi_holds_no_join() {
+        let played: EventSequence = serde_json::from_value(json!({"events": [
+            {"id": 1, "at": 0.0, "data": {"midinote": 60, "sustain": 1.0}},
+            {"id": 2, "at": 1.0, "data": {"midinote": 64, "sustain": 1.0, "joins": 1}},
+            {"id": 3, "at": 2.0, "data": {"midinote": 64, "sustain": 1.0, "joins": 2}}
+        ]}))
+        .unwrap();
+        let midi = played.as_midi(MidiSpec::Midi1).unwrap();
+        let ids: Vec<u64> = midi.events.iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![1, 2]);
+        assert!(midi.events.iter().all(|e| !e.keys().contains_key("joins")));
+        assert_eq!(played.events.len(), 3, "the sequence is not changed");
     }
 
     /// **A spec that cannot say a curve the sequence holds is refused**, as

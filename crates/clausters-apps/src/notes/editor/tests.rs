@@ -689,6 +689,31 @@ fn a_join_from_the_roll_is_an_edit_of_the_sequence() {
     );
 }
 
+/// **In MIDI a join from the roll holds one pitch on**: MIDI has no join,
+/// so two notes of one pitch become one, and notes of different pitches are
+/// refused, the sequence left as it was.
+#[test]
+fn a_join_from_the_roll_in_midi_holds_one_pitch_on() {
+    let mut midi = EventSequence::new(vec![
+        SeqEvent::new(0.0, json!({"midinote": 60, "sustain": 1.0})),
+        SeqEvent::new(1.0, json!({"midinote": 64, "sustain": 1.0})),
+        SeqEvent::new(2.0, json!({"midinote": 60, "sustain": 1.0})),
+    ]);
+    midi.midi = Some(clausters_document::events::MidiSpec::Midi1);
+    let sequence = Arc::new(Mutex::new(midi));
+    let mut e = editor(sequence.clone());
+    let before = sequence.lock().unwrap().clone();
+    let out = e.event(&gesture("join", vec![json!(1), json!(2)]), 1);
+    assert!(out.record.is_none(), "two pitches are not joined");
+    assert_eq!(*sequence.lock().unwrap(), before);
+    let out = e.event(&gesture("join", vec![json!(1), json!(3)]), 2);
+    assert_eq!(out.record.expect("an entry").label, "join");
+    let held = sequence.lock().unwrap();
+    let ids: Vec<u64> = held.events.iter().map(|n| n.id).collect();
+    assert_eq!(ids, vec![1, 2], "the second 60 is part of the first");
+    assert!((held.get(1).unwrap().sustain() - 3.0).abs() < 1e-9);
+}
+
 /// **A split from the roll is the document's**: the cut, in the axis's
 /// units, and the notes; one entry, and the second half a new event with the
 /// first's keys.

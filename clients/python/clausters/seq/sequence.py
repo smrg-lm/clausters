@@ -176,8 +176,11 @@ class EventSequence:
     def set_midi(self, spec: "str | None", *, upper: bool = False, members: int = 15) -> None:
         """Write the sequence for ``spec`` -- ``"1.0"``, ``"mpe"``, ``"2.0"`` or
         ``None`` -- an edit. An MPE zone is the lower one (master channel 1)
-        unless ``upper``, with ``members`` member channels. `ValueError` when a
-        curve the sequence holds has no spelling in that spec."""
+        unless ``upper``, with ``members`` member channels. MIDI has no join,
+        so a sequence not written as a page holds its joins as MIDI does: a
+        join into the same pitch is one note and any other an attack.
+        `ValueError` when a curve the sequence holds has no spelling in that
+        spec."""
         if spec == "mpe":
             written = {"mpe": {"upper": bool(upper), "members": int(members)}}
         else:
@@ -229,11 +232,13 @@ class EventSequence:
     def join(self, events) -> None:
         """**Join these notes**: in each line (a staff and voice, else a
         channel) each goes on into the next of them without a new attack --
-        ``joins``, MIDI data -- a chord into a chord of as many notes, low to
-        high. Where the line is written as notation, its slurs are written
-        again from the joins: a run of them is one slur that joins. One edit.
-        ``events`` are `SeqEvent`s; `ValueError` when one is not a note, or no
-        line holds two of them one after the other."""
+        ``joins`` -- a chord into a chord of as many notes, low to high. Where
+        the line is written as notation, its slurs are written again from the
+        joins: a run of them is one slur that joins. MIDI has no join, so in a
+        MIDI format notes of one pitch become one note. One edit. ``events``
+        are `SeqEvent`s; `ValueError` when one is not a note, when no line
+        holds two of them one after the other, or, in a MIDI format, when two
+        it would join sound different pitches."""
         ids = [int(e._id) for e in events]
         self._edit({"intent": "join", "ids": ids}, "join")
 
@@ -281,8 +286,10 @@ class EventSequence:
         ``notation`` section the page's. What plays each note (its
         ``instrument`` and every key that is not time, pitch, level or
         notation), the tempo map, the parts and the curves the page does not
-        write are kept. The times as played become the written ones: one
-        edit, undone as one, and `notated` converts a copy instead.
+        write are kept. A note held on into its own pitch (``joins``) is one
+        note of the page, and a join between different notes a slur that
+        joins. The times as played become the written ones: one edit, undone
+        as one, and `notated` converts a copy instead.
         `ValueError` when an option does not read."""
         intent: dict = {"intent": "tonotation"}
         if reading is not None:
@@ -319,8 +326,9 @@ class EventSequence:
         ``spec``** -- ``"1.0"``, ``"mpe"`` or ``"2.0"``, an MPE zone the lower
         one unless ``upper``, with ``members`` member channels: every notation
         key of its events and its ``notation`` section left out, and what
-        sounds kept. This sequence is not changed. `ValueError` when a curve
-        it holds has no spelling in that spec."""
+        sounds kept. MIDI has no join: a join into the same pitch is one note
+        and any other an attack. This sequence is not changed. `ValueError`
+        when a curve it holds has no spelling in that spec."""
         written = {"mpe": {"upper": bool(upper), "members": int(members)}} if spec == "mpe" else spec
         return type(self).from_data(self._seq.call("asmidi", midi=written)["sequence"])
 

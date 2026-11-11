@@ -16,6 +16,11 @@
 //! - a slur edited on the page writes the joins over its span
 //!   ([`joins_from_slur`]): joined, or taken away where it is attacked.
 //!
+//! **MIDI has no join**: a note-on there is always an attack. So a sequence
+//! written in a MIDI format holds none -- a join into the same pitch is one
+//! note held on, and any other is an attack ([`said_in_midi`]) -- and only a
+//! page and an event sequence for the server hold them.
+//!
 //! A slur written before `join` existed reads as joined where its notes carry
 //! joins, and as attacked otherwise. A line is the notes of one `(staff,
 //! voice)` where they say either, else of one channel; a line is **written as
@@ -357,9 +362,15 @@ fn selected(sequence: &EventSequence, ids: &[u64]) -> Result<BTreeMap<Line, Vec<
 /// notation follow. A note goes on into one next only, so a join that named
 /// one of them before from elsewhere goes.
 ///
+/// **In a MIDI format a join holds one pitch on**: MIDI has no join, so the
+/// notes are made one note each ([`said_in_midi`]), and notes of different
+/// pitches are refused.
+///
 /// # Errors
-/// When an id is not a note, or no line holds two onsets of the selection.
+/// When an id is not a note, or no line holds two onsets of the selection;
+/// in a MIDI format, when two notes it would join sound different pitches.
 pub fn join(sequence: &mut EventSequence, ids: &[u64]) -> Result<(), String> {
+    let midi = matches!(sequence.format(), super::Format::Midi(_));
     let chosen = selected(sequence, ids)?;
     let mut touched = BTreeSet::new();
     for (line, notes) in &chosen {
@@ -377,6 +388,11 @@ pub fn join(sequence: &mut EventSequence, ids: &[u64]) -> Result<(), String> {
                 ));
             }
             for (from, into) in pairs(a, b) {
+                if midi && !holds_one_pitch(sequence, from, into) {
+                    return Err("in MIDI a join holds one pitch on: \
+                         notes of different pitches are not joined"
+                        .into());
+                }
                 // what went on from `from` before goes on from it no more
                 let others: Vec<u64> = sequence
                     .events
@@ -396,6 +412,10 @@ pub fn join(sequence: &mut EventSequence, ids: &[u64]) -> Result<(), String> {
     }
     if touched.is_empty() {
         return Err("select two notes or more of one line, one after the other, to join".into());
+    }
+    if midi {
+        said_in_midi(sequence);
+        return Ok(());
     }
     slurs_from_joins(sequence, &touched);
     Ok(())
@@ -443,13 +463,153 @@ pub fn unjoin(sequence: &mut EventSequence, ids: &[u64]) -> Result<(), String> {
     Ok(())
 }
 
+/// Within this of each other, two notes sound one pitch.
+const SAME_PITCH: f64 = 1e-6;
+
+/// Whether `into` starts after `from` and sounds its pitch: what a join holds
+/// on as one note.
+fn holds_one_pitch(sequence: &EventSequence, from: u64, into: u64) -> bool {
+    let (Some(a), Some(b)) = (sequence.get(from), sequence.get(into)) else {
+        return false;
+    };
+    let pitch = |keys: &Map<String, Value>| {
+        (Type::of(keys) == Type::Note)
+            .then(|| render::pitch_of(keys).midinote(&render::scale_of(keys)))
+    };
+    let (Some(x), Some(y)) = (pitch(&a.keys()), pitch(&b.keys())) else {
+        return false;
+    };
+    b.at.0 > a.at.0 && (x - y).abs() < SAME_PITCH
+}
+
+/// **`into` made part of `from`**, the note it goes on from at its own pitch
+/// (the inverse of a note's split, `super::split`): `from` sounds on to where
+/// `into` ended, and its `dur` reaches as far as `into`'s did; each curve of
+/// `into` follows on from `from`'s on the same target, or is added; and what
+/// went on from `into` goes on from `from`. `into` goes.
+fn hold_on(sequence: &mut EventSequence, from: u64, into: u64) {
+    let Some(b) = sequence.index(into) else {
+        return;
+    };
+    let gone = sequence.events.remove(b);
+    let Some(a) = sequence.index(from) else {
+        return;
+    };
+    let offset = gone.at.0 - sequence.events[a].at.0;
+    let theirs = gone.keys();
+    let sounds = render::sustain_of(&theirs).max(0.0);
+    let mut keys = sequence.events[a].keys();
+    if keys.contains_key("dur") {
+        let dur = theirs.get("dur").and_then(Value::as_f64).unwrap_or(sounds);
+        keys.insert("dur".into(), json!(offset + dur));
+    }
+    render::set_key(&mut keys, "sustain", json!(offset + sounds));
+    sequence.events[a].data = crate::Opaque(Value::Object(keys));
+    let curves = &mut sequence.events[a].automation;
+    for mut curve in gone.automation {
+        for point in &mut curve.points {
+            point.at.0 += offset;
+        }
+        match curves.iter_mut().find(|c| c.target == curve.target) {
+            Some(mine) => {
+                mine.points.retain(|p| p.at.0 < offset);
+                mine.points.extend(curve.points);
+            }
+            None => curves.push(curve),
+        }
+    }
+    let after: Vec<u64> = sequence
+        .events
+        .iter()
+        .filter(|e| e.keys().get("joins").and_then(Value::as_u64) == Some(into))
+        .map(|e| e.id)
+        .collect();
+    for id in after {
+        set_joins(sequence, id, Some(from));
+    }
+}
+
+/// **Every join into a note of the same pitch made one note** ([`hold_on`]),
+/// in onset order, so a run of them is one note. A note held on into its own
+/// pitch is one note in every format -- on a page one value, tied where the
+/// metre cuts it -- so a conversion makes it one before anything else. A
+/// join between different notes is left as it is.
+pub fn held_on(sequence: &mut EventSequence) {
+    let mut joined: Vec<(f64, u64, u64)> = sequence
+        .events
+        .iter()
+        .filter_map(|e| Some((e.at.0, e.keys().get("joins")?.as_u64()?, e.id)))
+        .collect();
+    joined.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.2.cmp(&b.2)));
+    // a note made part of another answers for it from then on
+    let mut became: BTreeMap<u64, u64> = BTreeMap::new();
+    for (_, from, into) in joined {
+        let from = became.get(&from).copied().unwrap_or(from);
+        if holds_one_pitch(sequence, from, into) {
+            hold_on(sequence, from, into);
+            became.insert(into, from);
+        }
+    }
+}
+
+/// **A sequence as MIDI says it**, which has no join (a note-on there is
+/// always an attack): a join into the same pitch is one note held on
+/// ([`held_on`]), and every other join goes, the note it went into attacked.
+/// What a sequence written in a MIDI format holds, whether it was converted
+/// into one or edited in one.
+pub fn said_in_midi(sequence: &mut EventSequence) {
+    held_on(sequence);
+    let joined: Vec<u64> = sequence
+        .events
+        .iter()
+        .filter(|e| e.keys().contains_key("joins"))
+        .map(|e| e.id)
+        .collect();
+    for id in joined {
+        set_joins(sequence, id, None);
+    }
+}
+
+/// **The joins of `performance` carried onto `page`**, the page it was
+/// written as, and each written as a slur that joins: one between two notes
+/// the page holds under the performance's ids, on one of its lines and in
+/// order. A join into the same pitch is no longer there to carry: it was
+/// made one note before the page was read ([`held_on`]).
+pub fn carry_joins(page: &mut EventSequence, performance: &EventSequence) {
+    let at: BTreeMap<u64, (f64, Line)> = page
+        .events
+        .iter()
+        .map(|e| (e.id, (e.at.0, line_of(&e.keys()))))
+        .collect();
+    let mut touched = BTreeSet::new();
+    for event in &performance.events {
+        let Some(from) = event.keys().get("joins").and_then(Value::as_u64) else {
+            continue;
+        };
+        let (Some((begins, line)), Some((starts, into_line))) = (at.get(&from), at.get(&event.id))
+        else {
+            continue;
+        };
+        if line == into_line && starts > begins {
+            set_joins(page, event.id, Some(from));
+            touched.insert(*line);
+        }
+    }
+    slurs_from_joins(page, &touched);
+}
+
 /// **A join that no longer says "goes on into the next" goes**: one naming a
 /// note the sequence no longer holds -- what an edit that removes notes
 /// leaves, whoever made it -- and one into a note that does not start after
 /// the note it goes on from, which is what a note moved before it leaves. A
 /// join is made in onset order ([`join`]), so a pair the hand has reordered
-/// joins nothing, and its line's slurs follow.
+/// joins nothing, and its line's slurs follow. A sequence written in a MIDI
+/// format holds none at all ([`said_in_midi`]).
 pub fn prune(sequence: &mut EventSequence) {
+    if matches!(sequence.format(), super::Format::Midi(_)) {
+        said_in_midi(sequence);
+        return;
+    }
     let at: BTreeMap<u64, f64> = sequence.events.iter().map(|e| (e.id, e.at.0)).collect();
     let mut stale = Vec::new();
     let mut touched = BTreeSet::new();
@@ -751,5 +911,90 @@ mod tests {
         joins_from_page(&mut sequence, &[], std::slice::from_ref(&slur));
         joins_from_page(&mut sequence, &[slur], &[]);
         assert_eq!(joins(&sequence), vec![None, None, None, None]);
+    }
+
+    /// The line played, written for MIDI 1.0.
+    fn midi_line() -> EventSequence {
+        let mut sequence = played();
+        sequence.midi = Some(crate::events::MidiSpec::Midi1);
+        sequence
+    }
+
+    /// **In MIDI a join holds one pitch on**: two notes of one pitch become
+    /// one note that sounds to where the second ended, and what went on from
+    /// the second goes on from it; notes of different pitches are refused.
+    #[test]
+    fn a_join_in_midi_holds_one_pitch_on_and_refuses_two() {
+        let mut sequence = midi_line();
+        let refused = sequence.edit(EventsIntent::Join { ids: vec![1, 2] });
+        assert!(refused.unwrap_err().contains("one pitch"));
+        assert_eq!(sequence, midi_line(), "a refusal changes nothing");
+        sequence
+            .edit(EventsIntent::Join { ids: vec![2, 3] })
+            .unwrap();
+        let ids: Vec<u64> = sequence.events.iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![1, 2, 4], "the second note is part of the first");
+        let held = sequence.get(2).unwrap().keys();
+        assert_eq!(render::sustain_of(&held), 2.0);
+        assert_eq!(joins(&sequence), vec![None, None, None]);
+    }
+
+    /// **A MIDI sequence holds no join**, whoever states one: an edit that
+    /// brings one says it as MIDI does, and so does a spec given to a
+    /// sequence that held some.
+    #[test]
+    fn a_midi_sequence_holds_no_join() {
+        let mut joined = played();
+        joined
+            .edit(EventsIntent::Join {
+                ids: vec![1, 2, 3, 4],
+            })
+            .unwrap();
+        let mut sequence = midi_line();
+        sequence
+            .edit(EventsIntent::SetEvents {
+                events: joined.events.clone(),
+            })
+            .unwrap();
+        assert_eq!(sequence.events.len(), 3, "64 held on into 64");
+        assert_eq!(joins(&sequence), vec![None, None, None]);
+        joined
+            .edit(EventsIntent::Midi {
+                midi: Some(crate::events::MidiSpec::Midi2),
+            })
+            .unwrap();
+        assert_eq!(joined.events, sequence.events);
+    }
+
+    /// **A run of joins into one pitch is one note**, with the curves of the
+    /// notes it took after its own, and a join between different notes is
+    /// left for the caller.
+    #[test]
+    fn a_run_held_on_is_one_note_with_its_curves() {
+        let mut sequence = played();
+        sequence.events.push(Event {
+            id: 5,
+            ..Event::new(4.0, json!({"midinote": 64, "sustain": 1.0}))
+        });
+        for id in [3, 4] {
+            let i = sequence.index(id).unwrap();
+            sequence.events[i].automation = vec![
+                serde_json::from_value(json!({"id": 10 + id, "target": {"bend": true},
+                    "points": [{"at": 0.0, "value": 0.0}, {"at": 0.5, "value": 1.0}]}))
+                .unwrap(),
+            ];
+        }
+        set_joins(&mut sequence, 3, Some(2));
+        set_joins(&mut sequence, 4, Some(3));
+        set_joins(&mut sequence, 5, Some(4));
+        held_on(&mut sequence);
+        let ids: Vec<u64> = sequence.events.iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![1, 2, 4, 5]);
+        let held = sequence.get(2).unwrap();
+        assert_eq!(render::sustain_of(&held.keys()), 2.0);
+        let points: Vec<f64> = held.automation[0].points.iter().map(|p| p.at.0).collect();
+        assert_eq!(points, vec![1.0, 1.5], "the curve moved with its note");
+        assert_eq!(joined_from(&sequence, 4), Some(2), "what went on from 3");
+        assert_eq!(joined_from(&sequence, 5), Some(4), "between two pitches");
     }
 }

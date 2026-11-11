@@ -296,7 +296,9 @@ pub enum EventsIntent {
         curve: NodeId,
     },
     /// The MIDI specification the sequence is written for, or none. Refused
-    /// when a curve it holds has no spelling in that spec.
+    /// when a curve it holds has no spelling in that spec. MIDI has no join,
+    /// so a sequence it leaves in a MIDI format holds its joins as MIDI does
+    /// (`articulation::said_in_midi`).
     Midi {
         /// The spec.
         #[serde(default)]
@@ -337,7 +339,9 @@ pub enum EventsIntent {
     },
     /// **The selected notes joined**: in each line, each into the next
     /// without a new attack (`joins`), and the slurs of the lines written as
-    /// notation written again from them. See `articulation`.
+    /// notation written again from them. MIDI has no join: in a MIDI format
+    /// notes of one pitch are made one note, and notes of different pitches
+    /// refused. See `articulation`.
     Join {
         /// The notes.
         ids: Vec<u64>,
@@ -807,6 +811,11 @@ impl EventSequence {
                     return Err(why);
                 }
                 self.midi = midi;
+                // MIDI has no join: a sequence that is now written in it
+                // says its joins as MIDI does
+                if matches!(self.format(), Format::Midi(_)) {
+                    articulation::said_in_midi(self);
+                }
             }
             EventsIntent::Automation { mut automation } => {
                 if let Some(spec) = self.midi

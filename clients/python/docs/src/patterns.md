@@ -126,7 +126,7 @@ data = line.render_events().data()
 [e["data"].get("joins") for e in data["events"]]   # [None, 1, 2, 3, None]
 ```
 
-The rendered sequence is **what the voice played**, and nothing of a page: the sequence played on the server is the same held line the pattern played. A join is MIDI data, and it is not a tie — two joined notes of one pitch are two notes — nor a slur: a page reads a sequence as notation where it is written as notation, and a slur that joins its notes (one drawn with `join`) is what writes joins there. `EventSequence.join` and `unjoin` edit the joins of the notes given, in both shapes where the line is written as notation.
+The rendered sequence is **what the voice played**, and nothing of a page: the sequence played on the server is the same held line the pattern played. A join is the performance's, and a MIDI file has none: a sequence written in a MIDI format holds a join into one pitch as one note and plays any other as an attack. Nor is a join a tie — two joined notes of one pitch in a sequence for the server are two notes — nor a slur: a page reads a sequence as notation where it is written as notation, and a slur that joins its notes (one drawn with `join`) is what writes joins there. `EventSequence.join` and `unjoin` edit the joins of the notes given, in both shapes where the line is written as notation; in a MIDI format `join` makes notes of one pitch one note and refuses notes of different pitches.
 
 What varies inside one of those notes is not the voice's business: give the note an `expression` and it is inflected however it is articulated. `voice=` writes which voice of the staff the line is, so two voices played together (`ppar([upper, lower])`) stay apart on the page.
 

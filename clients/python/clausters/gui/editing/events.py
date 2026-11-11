@@ -444,7 +444,8 @@ class NotesEditor(Marking, SequenceHandler):
         with what it sounds inside it, a velocity shown and edited as a
         dynamic, and what it sounds derived from what is written -- and
         ``"midi"`` over every other: the events as MIDI says them, notes on
-        and off, velocities, channels, curves, joins. It is the sequence's
+        and off, velocities, channels, curves, and joins in a sequence for
+        the server (MIDI has none). It is the sequence's
         format's (`clausters.seq.EventSequence.format`), and nothing the roll
         does changes it: going to another format is a conversion into a copy
         (`to_notation`, `to_midi`)."""

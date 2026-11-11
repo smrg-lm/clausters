@@ -668,6 +668,14 @@ code that keeps it lives.
   each note into the next without a new attack and Shift+J takes the joins
   away; each is one entry of the sequence's history, and a join is drawn as a
   line from where a note ends to where the next starts.
+- **MIDI has no join.** A note-on there is always an attack, so a sequence
+  written in a MIDI format holds no join: `J` over its notes holds one pitch
+  on, making the notes of one pitch one note whether they touch or not, and
+  refuses notes of different pitches. Only a page (a slur that joins) and a
+  sequence for the server hold joins. A conversion says them in the format
+  it writes: to MIDI, a join into the same pitch is one note and any other an
+  attack; to notation, a join into the same pitch is one note, tied where
+  the metre cuts it, and one between different notes a slur that joins.
 - **A roll's mode is its sequence's format's, and nothing the roll does
   changes the format.** A sequence is written as a page (notation) or as a
   performance (MIDI 1.0, MPE, MIDI 2.0, or none stated, for the server), and
@@ -721,7 +729,7 @@ code that keeps it lives.
   | Delete, cut (Delete, Ctrl+X); erase (Ctrl on a note, and the drag on) | the notes go, and the joins naming them | the same, and the slurs of their lines follow | | | `removing_a_note_leaves_its_neighbours_theirs`, `a_ctrl_drag_from_a_note_erases_what_it_crosses`, `a_note_moved_before_the_one_it_went_on_from_is_joined_no_more` |
   | Paste (Ctrl+V) | at the cursor, as new notes | as new notes in the voice edited | as Draw | as Draw | `the_block_keys_quantize_delete_and_travel_through_the_clipboard` |
   | Split (E) | each selected note across the cursor cut in two, with its keys and curves on both halves | the same, cut on its written length, both values written again | | the cursor inside no selected note | `a_split_note_keeps_its_keys_and_its_curves_on_both_halves`, `a_written_note_is_split_on_its_value_and_both_halves_are_written_again`, `a_split_is_the_documents_in_either_mode`, `a_roll_that_speaks_joins_asks_its_owner_to_split_the_selection` |
-  | Join (J) | notes of one pitch that touch become one; any other selection of a line goes on, each note into the next, with no new attack | the same, the line's slurs written again from its joins | | no line holds two of them one after the other | `joins_are_drawn_and_edited_by_the_notes_named`, `a_roll_that_speaks_joins_asks_its_owner_to_join_the_selection` |
+  | Join (J) | notes of one pitch that touch become one; any other selection of a line goes on, each note into the next, with no new attack; in a MIDI format, notes of one pitch become one | the same, the line's slurs written again from its joins | | no line holds two of them one after the other; in a MIDI format, notes of different pitches | `joins_are_drawn_and_edited_by_the_notes_named`, `a_roll_that_speaks_joins_asks_its_owner_to_join_the_selection`, `a_join_from_the_roll_in_midi_holds_one_pitch_on` |
   | Unjoin (Shift+J) | the joins among the selected notes go | the same, and the slurs that joined them | | nothing selected | `a_join_from_the_roll_is_an_edit_of_the_sequence` |
   | Transpose: Up, Down; Ctrl+Up, Ctrl+Down | a semitone; an octave | a step of the key; an octave | | no note to move | `a_transposition_in_midi_mode_moves_the_selection_or_every_note`, `a_step_in_notation_mode_is_a_step_of_the_key` |
   | Quantize (Q) | the selected onsets, or every one, onto the grid | | | no grid, or nothing off it | `a_verb_that_acts_on_nothing_says_why_rather_than_nothing` |
