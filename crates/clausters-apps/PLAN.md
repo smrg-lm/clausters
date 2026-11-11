@@ -7326,10 +7326,15 @@ wrong.
   (`lane_tabs`, the `choice` element's tabs picture reused), and a press
   asks its owner for the lane by name; the window composes no tabs widget.
 
-- ⬜ **A curve added while the display panel is up has no switch until the
+- ✅ **A curve added while the display panel is up has no switch until the
   panel is shown again** *(left by `X43`, 2026-11-10)*. A lane's switch is
   one of sixteen slots composed when the panel is shown, so a curve added
   with it open gets its switch at the next showing.
+
+  Done 2026-11-11: the notes editor keeps the lanes the panel was composed
+  for, and whenever they move while it is up (a hand, a step of the
+  history, a script) the window is drawn again, so the switch comes with
+  the curve (`NotesEditor::panel_stale`).
 
 - ✅ **The roll shows the velocities of one channel only in notation mode**
   *(left by `X39`, 2026-11-10)*. In MIDI mode the velocity lane shows every

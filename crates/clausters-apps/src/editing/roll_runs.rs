@@ -87,6 +87,12 @@ impl Editing {
         };
         let mut ran = Ran::default();
         let open = self.roll_run(member, &mut roll, action, ids, &mut ran);
+        // **a display panel whose lanes moved is drawn again**, whatever
+        // moved them: a switch is a widget, which no correction adds
+        let stale = matches!(self.member(member), Some(Member::Notes(e)) if e.panel_stale());
+        if open && stale && !ran.effects.iter().any(|e| e["kind"] == "publish") {
+            ran.effects.push(effect("publish", json!({})));
+        }
         if open {
             self.rolls.insert(member, roll);
         } else {

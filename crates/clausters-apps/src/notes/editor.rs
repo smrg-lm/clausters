@@ -254,6 +254,11 @@ pub struct NotesEditor {
     /// **The engraver's reading**, which a score opened in the roll is read
     /// with ([`super::file::read`]).
     scores: super::file::Scores,
+    /// **The lanes the display panel was composed with** (their names, up to
+    /// its slots), or none while it is hidden: a lane added or taken away
+    /// since leaves a switch missing or over, so the window is drawn again
+    /// ([`NotesEditor::panel_stale`]).
+    display_lanes: Option<Vec<String>>,
 }
 
 /// **The panel's switch**, as the window asks for it: the View menu's
@@ -364,6 +369,7 @@ impl NotesEditor {
             binding: 1,
             leaving: None,
             scores: super::file::Scores::default(),
+            display_lanes: None,
             sequence,
         }
     }
@@ -922,6 +928,7 @@ impl NotesEditor {
             );
             self.compose_panel(&mut window);
             self.compose_display(&mut window);
+            self.display_lanes = self.display_panel.then(|| self.display_lane_names());
             // **the dialog stands over the window**, on a page of its stack
             if let (Some(stack), Some(children)) = (
                 self.dialogs.stack(dialogs::forms()),
@@ -987,6 +994,28 @@ impl NotesEditor {
     /// **The display panel beside the roll**, when it is shown and the
     /// window numbered its widgets: how the roll draws what the sequence
     /// holds beyond its boxes ([`display`]).
+    /// The names of the lanes the display panel has a switch for.
+    fn display_lane_names(&self) -> Vec<String> {
+        roll::lanes(&self.held())
+            .into_iter()
+            .take(display::LANE_SLOTS)
+            .map(|(name, _)| name)
+            .collect()
+    }
+
+    /// **Whether the window is to be drawn again for its display panel**: it
+    /// is shown, and the sequence's lanes are no longer the ones its switches
+    /// were composed for -- a curve added or taken away while it was up, by a
+    /// hand, a step of the history or a script. A switch is a widget of its
+    /// own, so a correction cannot add one.
+    #[must_use]
+    pub fn panel_stale(&self) -> bool {
+        self.display_panel
+            && !self.bare
+            && !self.dialogs.ids.is_empty()
+            && self.display_lanes.as_ref() != Some(&self.display_lane_names())
+    }
+
     fn compose_display(&self, window: &mut Value) {
         if !self.display_panel {
             return;

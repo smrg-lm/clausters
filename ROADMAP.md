@@ -127,10 +127,6 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
-- ⬜ **A curve added while the display panel is up has no switch until the
-  panel is shown again** *(`crates/clausters-apps/PLAN.md`, Found by use)*.
-  The panel's sixteen slots are composed when it is shown.
-
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and
@@ -280,9 +276,8 @@ its plan; the plan is where its acceptance is read.
 
 - ⬜ **The roll after the eye pass of 2026-11-10**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*: "The roll's default
-  gestures are not defined, and its tools are not shown", "The roll's lane
-  tabs are not seen under the lane" and "The roll's examples do not
-  explain the application". The gestures and the tools are the larger part,
+  gestures are not defined, and its tools are not shown" and "The roll's
+  examples do not explain the application". The gestures and the tools are the larger part,
   and the examples are gone over last, once they have something settled to
   show.
 

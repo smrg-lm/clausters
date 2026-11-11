@@ -1391,3 +1391,32 @@ fn the_midi_mode_edits_the_channel_chosen() {
     let said = call_json(&mut zone, r#"{"verb": "sync", "channel": 1}"#);
     assert!(said.contains("refused"), "{said}");
 }
+
+/// **A curve added while the display panel is up gets its switch**: the
+/// panel's lanes no longer being the ones it was composed for, the window is
+/// drawn again, and then it has the new lane's switch.
+#[test]
+fn a_curve_added_with_the_display_panel_up_draws_the_window_again() {
+    let sequence = shared();
+    let mut e = new_json(sequence.clone(), r#"{"rate": 100.0, "version": 1}"#);
+    let names: Value = serde_json::from_str(&call_json(&mut e, r#"{"verb": "dialogs"}"#)).unwrap();
+    let numbered: serde_json::Map<String, Value> = names["dialogs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.as_str().unwrap().to_string(), json!(200 + i as i64)))
+        .collect();
+    let request = json!({"verb": "window", "widget": 40, "dialogs": numbered}).to_string();
+    call_json(&mut e, &request);
+    call_json(&mut e, r#"{"verb": "sync", "window": 39}"#);
+    assert!(!e.panel_stale(), "hidden, nothing to compose");
+    e.event(&window_verb("display_settings"), 1);
+    let tree = e.window(40).to_string();
+    assert!(!tree.contains("CC 1 ch 1") && !e.panel_stale());
+    e.event(&gesture("curve_cc1", vec![]), 1);
+    assert!(e.panel_stale(), "a lane with no switch");
+    let tree = e.window(40).to_string();
+    assert!(tree.contains("\"label\":\"CC 1 ch 1\""), "{tree}");
+    assert!(!e.panel_stale());
+}
