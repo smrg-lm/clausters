@@ -5017,6 +5017,33 @@ Every entry carries a checkbox.
   what it would start from. The removal is "The multitrack's score boxes
   come out" in Found by use.
 
+- ⬜ **What a sequence is, as a thing that is edited, and what a change of
+  representation keeps** *(the user, 2026-11-10, reading the open question
+  of "A performance's joins are lost when the roll writes it as
+  notation")*. The user changed their mind on principle 2 of "The roll as
+  an editor of everything a sequence holds" ("one format at a time, and
+  going from one to another is a conversion"): **going between
+  representations and editing modes must not lose the keys of the other
+  formats**. Today a conversion renders the page afresh, and what the
+  performance held that the page does not write (the joins first, but any
+  key outside the target's set) is gone. The user's point is that this is
+  not clear conceptually, and the reason is that the **file as an editable
+  object** was never defined: a MIDI 1.0 file, a MIDI 2.0 file, an MPE file,
+  an MEI or MusicXML score each hold a different set of data, and the roll
+  treats a sequence as though it were all of them at once. Two ways out,
+  both open, to be decided before any fix of the joins:
+  1. **Define the compatibility of the data sets**: which keys each format
+     holds, which a conversion carries over to the same notes, which it
+     keeps aside untouched for the way back, and which it cannot carry;
+     a switch that would lose something says so, or is not offered.
+  2. **Make the format the file's**: a sequence is opened *as* one of those
+     files, a change of format is an explicit conversion of the file into
+     another (a new document, or a Save as), and the roll offers only the
+     editing mode the file's format supports.
+  Whichever is taken, the joins' question below is answered by it, and
+  the roll's modes, the conversion dialog and `docs/app-behavior.md` ("The
+  roll's verbs, case by case") are read again against it.
+
 ## Found by use: the running list of fixes
 
 - ✅ **The multitrack's score boxes come out** *(2026-11-09, from the
@@ -7071,7 +7098,9 @@ wrong.
   `pitch_line` answers one run more. In notation mode a join is what a
   joined slur writes, so what is open is whether the reading turns a join
   into a joined slur, or the conversion carries the joins over to the events
-  that are the same notes.
+  that are the same notes. *2026-11-10, the user*: neither is taken yet; it
+  waits on Future directions, "What a sequence is, as a thing that is
+  edited, and what a change of representation keeps".
 
 - ✅ **`a_page_s_marks_are_drawn_with_the_engraver_s_symbols` fails with the
   notation features on** *(found 2026-11-10 running `clausters-apps` with
@@ -7085,3 +7114,58 @@ wrong.
   host's own reading test did too. Both state the wire as it is now.
   `check-features.sh`, which CI runs, builds that set, so the next push
   would have caught it.
+
+- ⬜ **The host opens no file in the roll** *(the user, 2026-11-10, the eye
+  pass after `X43`)*. `clausters-gui` has a flag for each application but
+  the notes editor: `--session`, `--score`, `--audio`. So a MIDI file or a
+  score cannot be opened in the roll from the host, and the roll's window
+  has no File menu that opens one either. It should open a Standard MIDI
+  File, an MEI file and the other formats the engraver reads (MusicXML,
+  ABC), as `--score` does. The flag's name is the next entry's.
+
+- ⬜ **The host's flags name the applications by an old word** *(the user,
+  2026-11-10, the same pass)*. `--session` opens the multitrack because it
+  was once the only application with a session, which no longer holds:
+  every application has one now. The user proposes `--roll` for the notes
+  editor (short and clear), and a name for the multitrack's flag that says
+  what it opens; and asks whether its file could have an extension of its
+  own (`.tks` was suggested) rather than `.json`
+  (`clausters_apps::multitrack::dialogs::SESSIONS`). To decide: the flag's
+  name (`--multitrack`, `--tracks`), the extension, whether `--session`
+  stays as an alias for a release, and the two books' and the host's
+  `--help` with them.
+
+- ⬜ **The roll's examples do not explain the application** *(the user,
+  2026-11-10, the same pass)*. Reading the Python client's examples of the
+  notes editor, it is not clear how the roll works as an application, nor
+  how the panels of its graphical elements (the events panel, the display
+  panel, the lane tabs) relate to the menu that shows them. The examples
+  are gone over, in both clients, so that each says what it shows and how
+  a hand reaches it.
+
+- ⬜ **The roll's default gestures are not defined, and its tools are not
+  shown** *(the user, 2026-11-10, the same pass)*. How to create a note is
+  not clear, and the most common ways of doing it are not there; a click on
+  a note does not select it. The table of `docs/app-behavior.md` ("The
+  roll's verbs, case by case") says what each verb does in each case, but
+  not what a press, a drag or a double click does by default. Wanted: the
+  default action of each gesture, the common ways of entering notes, a
+  click that selects, and **an icon per editing mode** -- pencil, eraser,
+  selection, stretch, split -- as the score editor's tools already are
+  (`clausters_apps::score::tools`), with how the field's editors lay these
+  out looked up before choosing.
+
+- ⬜ **The roll's lane tabs are not seen under the lane** *(the user,
+  2026-11-10, the same pass)*. The tabs that choose which curve the lane
+  shows (`X39`) sit at the foot of the window, where they are missed. They
+  go above the lane.
+
+- ⬜ **A curve added while the display panel is up has no switch until the
+  panel is shown again** *(left by `X43`, 2026-11-10)*. A lane's switch is
+  one of sixteen slots composed when the panel is shown, so a curve added
+  with it open gets its switch at the next showing.
+
+- ⬜ **The roll shows the velocities of one channel only in notation mode**
+  *(left by `X39`, 2026-11-10)*. In MIDI mode the velocity lane shows every
+  channel's notes, since the roll chooses no MIDI channel yet: what is open
+  is how the roll chooses one, and the lane follows it.

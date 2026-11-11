@@ -127,6 +127,14 @@ already carry it.
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
+- ⬜ **A curve added while the display panel is up has no switch until the
+  panel is shown again** *(`crates/clausters-apps/PLAN.md`, Found by use)*.
+  The panel's sixteen slots are composed when it is shown.
+
+- ⬜ **The roll shows the velocities of one channel only in notation mode**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. The roll chooses no
+  MIDI channel yet.
+
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and
@@ -179,6 +187,17 @@ Numbered milestones whose track is otherwise closed. Each is owned and written i
 its plan; the plan is where its acceptance is read.
 
 ### Waiting on a decision
+
+- ⬜ **What a sequence is, as a thing that is edited, and what a change of
+  representation keeps** *(`crates/clausters-apps/PLAN.md`, Future
+  directions)*. The user reopened the roll's "one format at a time": a
+  change of representation or of editing mode must not lose the keys of the
+  other formats. **The decision:** define which data each format holds and
+  what a conversion carries, keeps aside or refuses; or make the format the
+  file's (MIDI 1.0, MIDI 2.0, MPE, MEI/MusicXML), with only its editing mode
+  offered and a change of format an explicit conversion. "A performance's
+  joins are lost when the roll writes it as notation" (same plan, Found by
+  use) waits on it.
 
 - ⬜ **`S24` — a buffer's summary is read like its samples** *(root
   `PLAN.md`, S track)*. A stateless `/buffer_summary` read beside
@@ -274,10 +293,15 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **A performance's joins are lost when the roll writes it as notation**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*: the conversion renders
-  the page afresh and reads no join into it. **The decision:** whether a join
-  is read as a joined slur, or carried over to the same notes.
+- ⬜ **The roll after the eye pass of 2026-11-10**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*: "The host opens no file
+  in the roll", "The host's flags name the applications by an old word",
+  "The roll's default gestures are not defined, and its tools are not
+  shown", "The roll's lane tabs are not seen under the lane" and "The
+  roll's examples do not explain the application". The flags' names and
+  the multitrack's extension are a small decision first; the gestures and
+  the tools are the larger part, and the examples are gone over last, once
+  they have something settled to show.
 
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,
