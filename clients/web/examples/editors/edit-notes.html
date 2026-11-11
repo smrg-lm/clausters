@@ -29,24 +29,63 @@ A <code>Timeline</code> is code -- events, patterns, routines, other timelines
 event with an id of its own. The editor edits that sequence in place, and the
 timeline is left as it was.
 
-<b>Drag a note</b> to move it, <b>drag its edge</b> to resize, <b>Shift and
-drag it up or down</b> to change its velocity (drawn as the note's fill),
-<b>Ctrl+click</b> to add or remove one, <b>Ctrl+Z</b> to step back. <b>The
-space bar plays and stops</b> -- the editor's own playback, on a transport of
-its own -- and a stop goes back to the position cursor. An edit while it plays
-is heard at once: a note moved ahead of the line sounds where it lands, and a
-note already sounding ends as it would have. The pass does not stop at the last
-note: it rolls on, as a multitrack's does, until the space bar stops it --
-<code>editor.end = "contents"</code> stops it where the last note ends, and a
-beat is an end marker.
+<b>The window, part by part.</b> It is an application, and every part of it
+is reached from its menu bar or its toolbar:
+<ul>
+<li>the <b>menu bar</b> names every verb of the roll with its key: File (the
+conversions into a copy), Edit (the selection, split and join, the
+transpositions, the selections by data, <b>Tool</b>, <b>Channel</b>,
+<b>Curves</b> and the monophonic switch), View (zoom to fit, the snap switch,
+and the two panels below), Transport and Notation (a page's verbs, which a
+roll in MIDI mode refuses with why);</li>
+<li>the <b>toolbar</b> holds the transport, then the five <b>tools</b> as
+icons -- pointer, pencil, eraser, scissors, stretch -- and the snap switch's
+magnet; the tool lit is the one a plain press uses;</li>
+<li>the <b>roll</b> itself: the keyboard on the left, the grid of notes, under
+it <b>one lane</b> -- the velocities, or a curve -- with the <b>tabs that
+choose it right over it</b>, the strip of OSC markers, and the time ruler
+along the bottom;</li>
+<li>the <b>events panel</b> beside the roll (View &gt; <i>Events and
+inspector</i>, <code>editor.setEventsPanel(true)</code>): the selected notes'
+time, length, pitch, velocity and channel, which a value typed changes on all
+of them at once, and the list of every event, whose rows select their
+notes;</li>
+<li>the <b>display panel</b> beside it (View &gt; <i>Display settings</i>,
+<code>editor.setDisplayPanel(true)</code>): how the roll draws what is beyond
+its boxes -- slurs, marks, the pitch line, the notes' curves -- and which lanes
+the tabs offer;</li>
+<li>the <b>status band</b> at the bottom: what a verb said, and what is under
+the pointer.</li>
+</ul>
+<b>What a press does is the tool's</b> (keys <b>1</b> to <b>5</b>, the
+toolbar, Edit &gt; Tool; <code>editor.setTool</code>). With the
+<b>pointer</b>, the default, a click selects the note it is on, a drag moves
+it or, by an edge, resizes it, a drag over empty grid sweeps a time range and
+the notes in it, and a <b>double click on empty grid makes a note</b>. The
+<b>pencil</b> makes a note where it is pressed, the drag its length; the
+<b>eraser</b> takes away every note it presses or crosses; the
+<b>scissors</b> cut the note clicked where it is clicked; the <b>stretch</b>
+scales the selection in time from its first onset. Whatever the tool,
+<b>Ctrl</b> on empty grid makes a note and on a note erases, <b>Alt</b> or
+<b>Shift</b> with a click adds a note to the selection or takes it out,
+<b>Shift and a vertical drag</b> is the velocity (drawn as the note's fill),
+and <b>Ctrl+Z</b> steps back. Edit &gt; Channel edits one MIDI channel, the
+others drawn faint and not taken (<code>editor.setChannel</code>).
 
-<b>Click the ruler under the grid</b> to place the position cursor: the play
+<b>The space bar plays and stops</b> -- the editor's own playback, on a
+transport of its own -- and a stop goes back to the position cursor. An edit
+while it plays is heard at once: a note moved ahead of the line sounds where it
+lands, and a note already sounding ends as it would have. The pass does not
+stop at the last note: it rolls on, as a multitrack's does, until the space bar
+stops it -- <code>editor.end = "contents"</code> stops it where the last note
+ends, and a beat is an end marker.
+
+<b>Click the ruler at the bottom</b> to place the position cursor: the play
 line goes there, and the next play starts from it. While it plays, the line is
 where the transport is. <b>Home</b> puts the cursor at the start and <b>End</b>
-where the last note ends. <b>Alt and a drag</b> anywhere on the roll marks a <b>time range</b>, as a drag
-does in the audio editor: the space bar then plays it, from its start to its
-end, and <b>L</b> loops it (with no range, L loops every note); an Alt click
-still toggles the note it lands on. <b>The wheel over the keyboard scrolls through the
+where the last note ends. A time range swept over empty grid is what the space
+bar then plays, from its start to its end, and <b>L</b> loops it (with no
+range, L loops every note). <b>The wheel over the keyboard scrolls through the
 octaves</b> -- every MIDI note, and in the hertz roll up to 20 kHz -- and
 <b>Ctrl</b> with it zooms; the roll opens on the notes. In hertz a note is a
 bar of one height whatever the zoom, centred on the line of its frequency, and
@@ -109,29 +148,25 @@ difference from the script</b>: a native host opens a port of its own, named
 port, so here the host listens to every MIDI input the browser has -- which the
 browser asks your permission for when the roll opens.
 
-<b>The lane under the grid is the sequence's OSC markers</b>, edited the same
-way: drag one to move it, Ctrl+click one to remove it. A marker is matched by
-its <b>label</b>, the address it sends, so the message survives the drag. Adding
-one <i>there</i> is refused and says why: the lane has no way to type an
-address.
+<b>The strip over the ruler is the sequence's OSC markers</b>, shown and not
+written: a marker is the message it sends, and the strip has no way to type an
+address, so a Ctrl+click there is refused and says why.
 
-<b>The lanes under the roll are shown one at a time</b>, chosen by the tabs
-there: the notes' velocities -- a bar at each note's start, dragged alone or
-with the selection, and a drag across the lane a ramp, one Ctrl+Z -- or a curve
-of the sequence with its value ruler. The Edit menu's Curves adds a channel's
-curve or a note's, among those the sequence's MIDI format allows;
-<b>curves</b> adds two from the script.
+<b>The lane at the roll's foot is shown one at a time</b>, chosen by the tabs
+right over it: the notes' velocities -- a bar at each note's start, dragged
+alone or with the selection, and a drag across the lane a ramp, one Ctrl+Z --
+or a curve of the sequence with its value ruler. Edit &gt; Curves adds a
+channel's curve or a note's, among those the sequence's MIDI format allows, and
+its tab comes with it; <b>curves</b> adds two from the script.
 
 <b>Curves are drawn and edited like a multitrack's automation, and heard.</b>
-The row under the grid, <i>level</i>, is the sequence's automation -- a curve over
+The lane's <i>level</i> tab is the sequence's automation -- a curve over
 the first channel driving every note's <code>amp</code>, a crescendo -- and
 the first note carries a curve of its own, a <b>bend</b>, drawn in the plane
 as the pitch it glides to and running on into its release. <b>Drag a
 point</b> to move it, <b>Ctrl+click</b> to add one or remove the one under the
 cursor; one gesture is one edit, Ctrl+Z takes it back, and the space bar plays
-what is drawn. The <b>menu bar</b> names every verb of the roll with its key,
-and the <b>toolbar</b> holds the transport and Split, Join and Quantize, acting
-on the notes as the keys do.
+what is drawn.
 
 <b>Split, transpose, and pick notes by what they hold.</b> <b>E</b> cuts the
 selected notes in two at the position cursor, each half with the note's keys
@@ -140,19 +175,16 @@ from where it had reached. <b>Up</b> and <b>Down</b> move the selection a semito
 (a step of the key in notation mode), <b>Ctrl+Up</b> and <b>Ctrl+Down</b> an
 octave, and every note when nothing is selected. The Edit menu selects every
 note that shares a pitch, a channel, a voice or a staff with the selection.
-<b>Ctrl on a note, and a drag on</b>, erases every note it crosses, in one entry;
-<b>an edge of a selected note</b> resizes the whole selection by as much.
-<b>rework</b> splits and transposes from the script.
+The eraser, or <b>Ctrl on a note and a drag on</b>, erases every note it
+crosses, in one entry; <b>an edge of a selected note</b> resizes the whole
+selection by as much. <b>rework</b> splits and transposes from the script, and
+<b>pencil</b> takes the pencil.
 <b>The line over the boxes is the pitch that sounds.</b> A note a bend moves
 draws it, from its attack across the box; notes <b>joined</b> (J over a
 selection of a line) are one line, the second going on from the first with no
 new attack, and the next note attacked starts another. It is a reading of the
 sequence, <code>notes.pitchLine()</code>: each run's notes and its pitch over time.
 <b>legato</b> joins the first two notes, and <b>line</b> reads it.
-The View menu's <b>Events and inspector</b> opens a panel beside the roll
-(<code>editor.setEventsPanel(true)</code>): the selected notes' time, length, pitch,
-velocity and channel, which a value typed changes on all of them at once, and
-the list of every event, whose rows select their notes.
 
 <b>A note keeps what the roll cannot draw.</b> Every note on the roll carries the
 id of its event, so an edit names the note it touched: its instrument, its
@@ -172,6 +204,7 @@ leaves every other note its own.</div>
       <div id="phrasepage"></div>
       <button id="play" disabled>play the notes</button>
       <button id="rework" disabled>rework</button>
+      <button id="pencil" disabled>pencil</button>
       <button id="legato" disabled>legato</button>
       <button id="line" disabled>line</button>
       <button id="curves" disabled>curves</button>
@@ -366,6 +399,17 @@ leaves every other note its own.</div>
           editor.octaveUp();
         };
 
+        // A tool taken from the script. What a plain press does is the
+        // window's tool: the toolbar's icons and the keys 1 to 5 choose it,
+        // and so does the editor's `setTool`. With the pencil a press on
+        // empty grid makes a note there, the drag its length; with the
+        // pointer it takes a double click.
+        $("pencil").disabled = false;
+        $("pencil").onclick = async () => {
+          await editor.setTool("draw");
+          log(`the tool is "${await editor.tool()}": press on empty grid to make a note`);
+        };
+
         // One line, played without a new attack: `join` over the first two
         // notes makes the second go on from the first, so the line drawn over
         // the boxes runs from the first note's attack, through its bend, into
@@ -390,7 +434,7 @@ leaves every other note its own.</div>
         // Curves added from the script: a pressure of the first note's own,
         // and an expression curve on its channel -- each one entry, with one
         // point at the parameter's resting value for a hand to draw on. The
-        // expression is a lane of its own -- its tab under the roll shows it.
+        // expression is a lane of its own -- its tab over the lane shows it.
         // An edit leaves nothing selected, so the channel's curve, asked for
         // second, is the first channel's, which is the note's.
         $("curves").disabled = false;

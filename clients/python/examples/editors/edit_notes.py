@@ -8,31 +8,68 @@ timelines -- and a roll edits data. So ``edit`` renders the timeline first
 event with an id of its own. The editor edits that sequence in place, and the
 timeline is left as it was.
 
-What to do in the window: **drag a note** to move it, **drag its edge** to
-resize, **Shift and drag it up or down** to change its velocity (drawn as the
-note's fill), **Ctrl+click** to add or remove one, and **Ctrl+Z** to step back.
-**The space bar plays and stops** -- the application's playback, on a transport
-of the window's own -- and a stop goes back to the position cursor. An edit while it
-plays is heard at once: a note moved ahead of the line sounds where it lands,
-and a note already sounding ends as it would have. The pass does not stop at
-the last note: it rolls on, as a multitrack's does, until the space bar stops
-it -- ``editor.end = "contents"`` stops it where the last note ends, and a
-beat is an end marker.
+**The window, part by part.** It is an application, and every part of it is
+reached from its menu bar or its toolbar:
 
-**Click the ruler under the grid** to place the position cursor: the play line
+- the **menu bar** names every verb of the roll with its key: File (the
+  conversions into a copy), Edit (the selection, split and join, the
+  transpositions, the selections by data, **Tool**, **Channel**, **Curves**
+  and the monophonic switch), View (zoom to fit, the snap switch, and the
+  two panels below), Transport and Notation (a page's verbs, which a roll
+  in MIDI mode refuses with why);
+- the **toolbar** holds the transport, then the five **tools** as icons --
+  pointer, pencil, eraser, scissors, stretch -- and the snap switch's
+  magnet; the tool lit is the one a plain press uses;
+- the **roll** itself: the keyboard on the left, the grid of notes, under
+  it **one lane** -- the velocities, or a curve -- with the **tabs that
+  choose it right over it**, the strip of OSC markers, and the time ruler
+  along the bottom;
+- the **events panel** beside the roll (View > *Events and inspector*,
+  ``editor.events_panel = True``): the selected notes' time, length, pitch,
+  velocity and channel, which a value typed changes on all of them at once,
+  and the list of every event, whose rows select their notes;
+- the **display panel** beside it (View > *Display settings*,
+  ``editor.display_panel = True``): how the roll draws what is beyond its
+  boxes -- slurs, marks, the pitch line, the notes' curves -- and which
+  lanes the tabs offer;
+- the **status band** at the bottom: what a verb said, and what is under
+  the pointer.
+
+**What a press does is the tool's** (keys **1** to **5**, the toolbar,
+Edit > Tool; ``editor.tool``). With the **pointer**, the default, a click
+selects the note it is on, a drag moves it or, by an edge, resizes it, a
+drag over empty grid sweeps a time range and the notes in it, and a **double
+click on empty grid makes a note**. The **pencil** makes a note where it is
+pressed, the drag its length; the **eraser** takes away every note it
+presses or crosses; the **scissors** cut the note clicked where it is
+clicked; the **stretch** scales the selection in time from its first onset.
+Whatever the tool, **Ctrl** on empty grid makes a note and on a note erases,
+**Alt** or **Shift** with a click adds a note to the selection or takes it
+out, **Shift and a vertical drag** is the velocity (drawn as the note's
+fill), and **Ctrl+Z** steps back. Edit > Channel edits one MIDI channel, the
+others drawn faint and not taken (``editor.channel``).
+
+**The space bar plays and stops** -- the application's playback, on a
+transport of the window's own -- and a stop goes back to the position
+cursor. An edit while it plays is heard at once: a note moved ahead of the
+line sounds where it lands, and a note already sounding ends as it would
+have. The pass does not stop at the last note: it rolls on, as a
+multitrack's does, until the space bar stops it -- ``editor.end =
+"contents"`` stops it where the last note ends, and a beat is an end marker.
+
+**Click the ruler at the bottom** to place the position cursor: the play line
 goes there, and the next play starts from it. While it plays, the line is
 where the transport is. **Home** puts the cursor at the start and **End** where
-the last note ends. **Alt and a drag** anywhere on the roll marks a **time range**, as a drag does
-in the audio editor: the space bar then plays it, from its start to its end,
-and **L** loops it (with no range, L loops every note); an Alt click still
-toggles the note it lands on. **The wheel over the keyboard scrolls through the octaves**
--- every MIDI note, and in the hertz window up to 20 kHz -- and **Ctrl** with
-it zooms; the roll opens on the notes. In hertz a note is a bar of one height
-whatever the zoom, centred on the line of its frequency, and a drag lands on a
-round frequency -- finer as you zoom in. On the keys a note moved in hertz sits
-on its nearest key, the line inside the box its bend off that key; dragging it
-there transposes by semitones and keeps the bend, and a note past MIDI 127 is
-a strip at the top edge.
+the last note ends. A time range swept over empty grid is what the space bar
+then plays, from its start to its end, and **L** loops it (with no range, L
+loops every note). **The wheel over the keyboard scrolls through the octaves**
+-- every MIDI note, and in the hertz window up to 20 kHz -- and **Ctrl**
+with it zooms; the roll opens on the notes. In hertz a note is a bar of one
+height whatever the zoom, centred on the line of its frequency, and a drag
+lands on a round frequency -- finer as you zoom in. On the keys a note moved
+in hertz sits on its nearest key, the line inside the box its bend off that
+key; dragging it there transposes by semitones and keeps the bend, and a
+note past MIDI 127 is a strip at the top edge.
 
 **A second window shows the same notes in hertz** -- the same sequence, the
 roll's vertical axis a frequency on a log scale, ruled in round frequencies. A
@@ -79,27 +116,24 @@ at the play line and lasts as long as it is held. Each one is an edit of the
 sequence like a note a hand drew, so it appears in the other windows and
 **Ctrl+Z** takes it back.
 
-**The lane under the grid is the sequence's OSC markers**, and it is edited the
-same way: drag one to move it, Ctrl+click one to remove it. A marker is matched
-by its **label**, the address it sends, so the message survives the drag. Adding
-one *there* is refused and says why: the lane has no way to type an address.
+**The strip over the ruler is the sequence's OSC markers**, shown and not
+written: a marker is the message it sends, and the strip has no way to type
+an address, so a Ctrl+click there is refused and says why.
 
-**The lanes under the roll are shown one at a time**, chosen by the tabs
-there: the notes' velocities -- a bar at each note's start, dragged alone or
-with the selection, and a drag across the lane a ramp, one Ctrl+Z -- or a curve
-of the sequence with its value ruler. The Edit menu's Curves adds a channel's
-curve or a note's, among those the sequence's MIDI format allows.
+**The lane at the roll's foot is shown one at a time**, chosen by the tabs
+right over it: the notes' velocities -- a bar at each note's start, dragged
+alone or with the selection, and a drag across the lane a ramp, one Ctrl+Z --
+or a curve of the sequence with its value ruler. Edit > Curves adds a
+channel's curve or a note's, among those the sequence's MIDI format allows,
+and its tab comes with it.
 
 **Curves are drawn and edited like a multitrack's automation, and heard.** The
-row under the grid, *level*, is the sequence's automation -- a curve over the
+lane's *level* tab is the sequence's automation -- a curve over the
 first channel driving every note's `amp`, a crescendo -- and the first note
 carries a curve of its own, a **bend**, drawn in the plane as the pitch it
 glides to and running on into its release. **Drag a point** to move it,
 **Ctrl+click** to add one or remove the one under the cursor; one gesture is
-one edit, Ctrl+Z takes it back, and the space bar plays what is drawn. The
-**menu bar** names every verb of the roll with its key, and the **toolbar**
-holds the transport and Split, Join and Quantize, acting on the notes as the
-keys do.
+one edit, Ctrl+Z takes it back, and the space bar plays what is drawn.
 
 **Split, transpose, and pick notes by what they hold.** **E** cuts the
 selected notes in two at the position cursor, each half with the note's keys
@@ -108,24 +142,21 @@ from where it had reached. **Up** and **Down** move the selection a semitone
 (a step of the key in notation mode), **Ctrl+Up** and **Ctrl+Down** an
 octave, and every note when nothing is selected. The Edit menu selects every
 note that shares a pitch, a channel, a voice or a staff with the selection.
-**Ctrl on a note, and a drag on**, erases every note it crosses, in one entry;
-**an edge of a selected note** resizes the whole selection by as much.
+The eraser, or **Ctrl on a note and a drag on**, erases every note it
+crosses, in one entry; **an edge of a selected note** resizes the whole
+selection by as much.
 
 **The line over the boxes is the pitch that sounds.** A note a bend moves
 draws it, from its attack across the box; notes **joined** (J over a
 selection of a line) are one line, the second going on from the first with no
 new attack, and the next note attacked starts another. It is a reading of the
 sequence, ``notes.pitch_line()``: each run's notes and its pitch over time.
-``rework()`` splits and transposes from the script, and ``drawn()`` slurs the
-phrase and draws it otherwise, in the roll's display panel (the View menu's
-**Display settings**): its slurs as an arc, an arc dashed where the slur is
-attacked, a bracket or a band, its marks stacked or in a row, above the notes
-or inside them, and the pitch line, the notes' curves and the lanes shown or
-not.
-The View menu's **Events and inspector** opens a panel beside the roll
-(``editor.events_panel = True``): the selected notes' time, length, pitch,
-velocity and channel, which a value typed changes on all of them at once, and
-the list of every event, whose rows select their notes.
+``rework()`` splits and transposes from the script, ``pencil()`` takes the
+pencil, and ``drawn()`` slurs the phrase and draws it otherwise, in the
+roll's display panel: its slurs as an arc, an arc dashed where the slur is
+attacked, a bracket or a band, its marks stacked or in a row, above the
+notes or inside them, and the pitch line, the notes' curves and the lanes
+offered or not.
 
 **A note keeps what the roll cannot draw.** Every note on the roll carries the
 id of its event, so an edit names the note it touched: its instrument, its
@@ -318,6 +349,21 @@ def rework():
 
 
 # %% [markdown]
+# ## A tool taken from the script
+#
+# What a plain press does is the window's tool: the toolbar's icons and the
+# keys 1 to 5 choose it, and so does the editor's `tool`. With the pencil a
+# press on empty grid makes a note there, the drag its length; with the
+# pointer it takes a double click.
+
+# %%
+def pencil():
+    """Take the pencil: a press on empty grid makes a note."""
+    editor.tool = "draw"
+    print(f"the tool is {editor.tool!r}: press on empty grid to make a note")
+
+
+# %% [markdown]
 # ## One line, played without a new attack
 #
 # `join` over the first two notes makes the second go on from the first: the
@@ -347,7 +393,7 @@ def line():
 #
 # A pressure of the first note's own, and an expression curve on its channel:
 # each one entry, with one point at the parameter's resting value for a hand to
-# draw on. The expression is a lane of its own -- its tab under the roll shows
+# draw on. The expression is a lane of its own -- its tab over the lane shows
 # it. An edit leaves nothing selected, so the channel's curve, asked for second,
 # is the first channel's, which is the note's.
 
@@ -423,6 +469,7 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
 else:
     print("up -- play() to hear it, page() for the notes on a page, "
           "notation() for them as notation, rework() to split and transpose, "
+          "pencil() to take the pencil, "
           "legato() to join two notes and line() to read the pitch they sound, "
           "phrase() to mark a phrase as a page does, drawn() to slur it and draw it otherwise, "
           "curves() to add two curves, "

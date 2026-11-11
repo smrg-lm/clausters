@@ -7297,13 +7297,22 @@ wrong.
   written by the crate and both clients, defaulted when absent and refused
   when it names another.
 
-- ⬜ **The roll's examples do not explain the application** *(the user,
+- ✅ **The roll's examples do not explain the application** *(the user,
   2026-11-10, the same pass)*. Reading the Python client's examples of the
   notes editor, it is not clear how the roll works as an application, nor
   how the panels of its graphical elements (the events panel, the display
   panel, the lane tabs) relate to the menu that shows them. The examples
   are gone over, in both clients, so that each says what it shows and how
   a hand reaches it.
+
+  Done 2026-11-11: the notes editor's example, in both clients, opens with
+  the window part by part -- the menu bar and what each menu holds, the
+  toolbar and its tools, the roll with its lane and the tabs over it, the
+  events and display panels and the View entries that show them, the
+  status band -- then what a press does under each tool, and `pencil`
+  takes a tool from the script. What had gone stale went with it: the OSC
+  markers are shown and not written, the toolbar holds the tools rather
+  than Split, Join and Quantize.
 
 - ✅ **The roll's default gestures are not defined, and its tools are not
   shown** *(the user, 2026-11-10, the same pass)*. How to create a note is
@@ -7392,3 +7401,12 @@ wrong.
   `clausters-editing`, the `channel_all`, `channel_1` ... `channel_16`
   choices under the Edit menu's Channel, `NotesEditor.channel` in both
   clients, and the host's veil drawn in either mode.
+
+- ⬜ **A script's verb does not wait for the window's edit** *(found
+  2026-11-11, running the notes editor's example)*. `editor.split()` asks
+  the window and returns before the edit lands, so the example's `rework()`
+  -- split, then select by pitch -- selects one note where the split left
+  two, unless something waits between them; stepped through cell by cell
+  it works. Open: whether a verb that edits answers once its edit is in
+  (as `select` does), or the client offers a wait for the window's
+  answers.
