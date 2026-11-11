@@ -132,8 +132,9 @@ already carry it.
   The panel's sixteen slots are composed when it is shown.
 
 - ⬜ **The roll shows the velocities of one channel only in notation mode**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. The roll chooses no
-  MIDI channel yet.
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Decided: the MIDI
+  mode edits one channel or all, as the notation mode edits one voice;
+  what is left is building it.
 
 ## 2. Tests and reviews pending
 

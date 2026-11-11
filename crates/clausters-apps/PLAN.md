@@ -7331,3 +7331,33 @@ wrong.
   *(left by `X39`, 2026-11-10)*. In MIDI mode the velocity lane shows every
   channel's notes, since the roll chooses no MIDI channel yet: what is open
   is how the roll chooses one, and the lane follows it.
+
+  The velocity lane is not a controller: it is each note-on's own velocity,
+  a bar per note, so it is per note in MIDI 1.0 as in every format. What
+  it lacks is the notation mode's filter, where a voice is edited and the
+  others are drawn under a veil and not taken.
+
+  **Decided 2026-11-11: the MIDI mode edits one channel or all of them, as
+  the notation mode edits one voice.**
+  - The choice is the window's, like the voice edited: recorded nowhere,
+    flipping it is no entry of the history, and two rolls over one
+    sequence may edit different channels. *All channels* is the default
+    and is today's roll.
+  - It is chosen from the Edit menu's channel entries (*All channels*,
+    *Channel 1* to *Channel 16*), one verb each, refused with why where it
+    does not apply.
+  - With one channel edited, a note of another channel is drawn under the
+    same veil as another voice's and a press does not take it; a
+    selection, a selection by data and the velocity lane are among that
+    channel's notes; a note drawn or pasted lands on it; a channel's curve
+    added (CC 1, CC 11, bend, pressure) goes on it; and the lane tabs list
+    that channel's curves and those of every channel.
+  - With all channels, a channel's curve keeps going on the first selected
+    note's channel (the first channel with none selected), and a note drawn
+    lands on channel 1.
+  - Under MPE a member channel is one note's, so a channel is not chosen:
+    the choice is refused with why and the roll edits the zone whole. In
+    the notation mode it is refused too, since there the voice is chosen.
+  - The rule lives in `clausters-editing` beside `Editing::voice` (the
+    same `dimmed` list the host already reads), so the host and both
+    clients gain no new drawing, only the verbs.
