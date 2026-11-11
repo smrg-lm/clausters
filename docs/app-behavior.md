@@ -360,7 +360,7 @@ code that keeps it lives.
 - **An editor's time window is the reader's.** A roll, like a multitrack,
   does not re-frame or page its view when what it holds changes, since a
   change there is mostly the reader's own edit (found 2026-11-10, when
-  entering notation mode drew the last note at its written value and the
+  writing a take as notation drew the last note at its written value and the
   view jumped to it, the notes before it off the screen).
 - **A step redraws every window it moved, whichever window took it.** An
   undo or a redo walks one history, so every window over what it changed is
@@ -668,19 +668,23 @@ code that keeps it lives.
   each note into the next without a new attack and Shift+J takes the joins
   away; each is one entry of the sequence's history, and a join is drawn as a
   line from where a note ends to where the next starts.
-- **A roll's mode is the window's, and only entering notation writes.** MIDI
-  or notation is how the roll reads and edits the events; the sequence holds
-  no mode, and two rolls over one sequence may be in different modes.
-  Entering notation over a sequence written as no notation converts it in
-  place, one entry of the history; over one already written it writes
-  nothing, and going back to MIDI writes nothing. **A hand is asked how
-  first**: the window's dialog holds the meter, the shortest value and the
-  writing the sequence's reading and parts say, and nothing is converted
-  until OK; Cancel leaves the take and the mode as they were. A script that
-  sets the mode converts with what the sequence stores, as a window with no
-  dialog does. What the notation mode
-  shows (the system, a part, a staff) and the voice it edits are the
-  window's too.
+- **A roll's mode is its sequence's format's, and nothing the roll does
+  changes the format.** A sequence is written as a page (notation) or as a
+  performance (MIDI 1.0, MPE, MIDI 2.0, or none stated, for the server), and
+  the roll edits a page in notation mode and every other in MIDI mode, so
+  two rolls over one sequence are always in one mode. Going to another
+  format is a **conversion into a copy**, opened in a roll of its own and
+  untitled, the sequence the roll edits left as it was, since each format
+  holds what the others do not and a switch in place would lose it (a
+  performance's joins, a page's written values). The File menu's *Convert
+  to notation...* asks how first: the dialog holds the meter, the shortest
+  value and the writing the sequence's reading and parts say, nothing is
+  made until OK, and Cancel makes nothing; a script's `to_notation` says
+  how itself. *Convert to MIDI 1.0*, *to MPE* and *to MIDI 2.0* leave a
+  page's notation out and keep what sounds, refused with why where a curve
+  has no spelling in the spec. A conversion to the format the sequence has
+  is refused. What the notation mode shows (the system, a part, a staff) and
+  the voice it edits are the window's.
 - **In notation mode a gesture writes what a page writes.** An onset lands on
   the reading's grid and a length on a written value; a note drawn is in the
   voice edited; a velocity moved is written as the dynamic it is nearest; and
@@ -689,9 +693,6 @@ code that keeps it lives.
   voice overlap only as a chord, and a gesture that leaves any other overlap
   is refused with why. A note of a voice other than the one edited is drawn
   faint and is not taken by a press or a marquee.
-- **An edit in MIDI mode drops what it contradicts of the page**: a new length
-  drops the written value, a new velocity the dynamic, a new channel the staff
-  and voice, so the page reads the performance there and keeps the rest.
 - **The roll's verbs, case by case.** A verb means one thing in each of the
   roll's four cases: MIDI or notation mode, and monophonic or polyphonic
   editing. The option only decides what a gesture that places a note does to
@@ -703,8 +704,8 @@ code that keeps it lives.
   |---|---|---|---|---|---|
   | Draw: Ctrl on empty grid, then the drag sets the length | a note as long as drawn, its `dur` and `sustain` | onset on the reading's grid, length a written value, in the voice edited, its pitch spelled by the key, its sound derived | the notes it covers in its line are shortened or taken away | in notation, an overlap in a voice of a part that writes voices, but as a chord | `ctrl_adds_and_removes_a_note`, `a_new_note_and_a_new_velocity`, `a_note_in_notation_mode_lands_on_the_grid_and_a_written_value`, `notes_of_one_voice_overlap_only_as_a_chord_unless_written_with_ties`, `a_monophonic_gesture_shortens_what_it_covers_in_its_line` |
   | Move: drag a body, a selected one moving the selection | its time and its pitch, the pitch family kept coherent | onset on the grid, the pitch spelled again | as Draw | as Draw | `a_moved_note_writes_its_key_with_coherence`, `a_block_moves_together_and_an_unselected_note_alone`, `a_note_in_notation_mode_is_written_and_its_sound_derived` |
-  | Resize: drag an edge, a selected one's resizing the selection | what it sounds; the written value goes | the written value | as Draw | as Draw | `a_length_edited_in_midi_mode_drops_the_written_value`, `a_length_is_written_as_its_value`, `an_edge_of_a_selected_note_resizes_the_selection` |
-  | Level: Shift and a vertical drag | the velocity; the dynamic goes | the dynamic nearest it | | | `a_new_note_and_a_new_velocity`, `a_note_in_notation_mode_lands_on_the_grid_and_a_written_value` |
+  | Resize: drag an edge, a selected one's resizing the selection | what it sounds | the written value | as Draw | as Draw | `a_length_is_written_as_its_value`, `an_edge_of_a_selected_note_resizes_the_selection` |
+  | Level: Shift and a vertical drag | the velocity | the dynamic nearest it | | | `a_new_note_and_a_new_velocity`, `a_note_in_notation_mode_lands_on_the_grid_and_a_written_value` |
   | Select: a click, Alt+click, a marquee, Ctrl+A | every note | the voice edited; another voice is drawn faint and not taken | | | `a_note_of_another_voice_is_drawn_faint_and_not_taken` |
   | Select by pitch, channel, voice or staff | every note sharing it with a selected one | among the voice edited | | nothing selected | `a_selection_by_data_marks_every_note_that_shares_it`, `a_selection_by_pitch_is_the_window_s_and_records_nothing` |
   | Delete, cut (Delete, Ctrl+X); erase (Ctrl on a note, and the drag on) | the notes go, and the joins naming them | the same, and the slurs of their lines follow | | | `removing_a_note_leaves_its_neighbours_theirs`, `a_ctrl_drag_from_a_note_erases_what_it_crosses`, `a_note_moved_before_the_one_it_went_on_from_is_joined_no_more` |
@@ -722,10 +723,10 @@ code that keeps it lives.
   | The lanes: the tabs under the roll | the velocities, a bar per note, or a curve of the sequence, one at a time with its value ruler; the window's, recorded nowhere | the same, the velocities of the voice edited | | | `the_lanes_are_chosen_by_their_tabs_and_a_curve_added_is_one_entry` |
   | Velocity bars: a bar dragged, or a drag across the lane | that note's velocity, or the selection's together when it is selected; across the lane a ramp over the notes it crosses; one entry | the same, over the voice edited | | | `a_velocity_bar_is_dragged_and_a_ramp_drawn_across_the_lane` |
   | Add a curve: a channel's (CC 1, CC 11, bend, pressure) or the selected notes' (bend, pressure, timbre); remove the curve shown | one entry, one point at the parameter's resting value | the same | | what the format cannot say, with why (under MPE a channel's bend); a note that has one of the kind; no curve shown | `under_mpe_a_notes_timbre_is_added_and_a_channel_bend_refused`, `a_curve_is_removed_by_its_name_and_not_added_twice` |
-  | Show the system, a part, a staff; the staff above or below; voices 1 to 4 | refused: switch to notation first | what is shown and the voice edited, the window's, recorded nowhere | | past the top or the bottom staff | `the_notation_mode_shows_a_staff_and_edits_a_voice_of_it` |
+  | Show the system, a part, a staff; the staff above or below; voices 1 to 4 | refused: the sequence is not a page | what is shown and the voice edited, the window's, recorded nowhere | | past the top or the bottom staff | `the_notation_mode_shows_a_staff_and_edits_a_voice_of_it` |
   | Write the polyphony in voices or with ties | refused | every part written so, one entry; nothing heard changes | | | `a_note_in_notation_mode_is_written_and_its_sound_derived` |
   | The panel: the inspector and the list of events (View menu) | the selected notes' time, length, pitch, velocity and channel; every event, its time as bar and beat | the same, a row with its written value, staff and voice; a value typed lands as the mode writes it | as Draw, for a value typed | no note selected, for a value typed | `the_panel_follows_the_roll_and_edits_through_it`, `the_inspector_shows_what_the_selection_shares_and_says_what_varies`, `a_value_typed_is_reported_on_every_selected_note`, `a_roll_that_tells_its_marks_says_each_change_once` |
-  | MIDI mode, notation mode | going to MIDI writes nothing | entering it over a sequence written as no notation converts it, asked first in a window | | a meter that is not one | `entering_notation_writes_the_take_as_its_page_once`, `entering_notation_in_a_window_with_the_dialog_asks_how_first`, `a_meter_that_is_not_one_is_refused_in_the_dialog` |
+  | Convert to notation..., to MIDI 1.0, to MPE, to MIDI 2.0 (the File menu) | a copy in the format, in a roll of its own; the sequence unchanged | the same | | the format the sequence has; a meter that is not one; a curve the spec cannot say | `converting_a_take_to_notation_opens_a_copy_and_leaves_the_take`, `converting_a_page_to_midi_opens_a_copy_and_leaves_the_page`, `entering_notation_in_a_window_with_the_dialog_asks_how_first`, `a_meter_that_is_not_one_is_refused_in_the_dialog` |
 - **A freed list leaves no pending picture request.** Closing or rebinding
   the last view of a file list retires its summaries and reads. A new window's
   clip waveforms can load immediately; requests to lists that no longer exist

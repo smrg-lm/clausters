@@ -435,53 +435,40 @@ class NotesEditor(Marking, SequenceHandler):
         if isinstance(answer, dict) and answer.get("refused"):
             raise ValueError(answer["refused"])
 
-    # ---- the roll's two modes ----
+    # ---- the roll's mode, which is its format's ----
 
     @property
     def mode(self) -> str:
-        """**The roll's mode**: ``"midi"``, the events as MIDI says them --
-        notes on and off, velocities, channels, curves, joins -- or
-        ``"notation"``, a view of the page they are written as: each note on a
-        staff and a voice, as long as it is written with what it sounds
-        inside it, a velocity shown and edited as a dynamic, and what it
-        sounds derived from what is written. The window's, not the
-        sequence's: setting it is no edit, but for **entering notation over a
-        sequence written as no notation**, which converts it in place first
-        with the reading it stores (`to_notation`, one entry of the history)
-        -- where a hand entering notation in the window is asked how first.
-        Going to MIDI converts nothing."""
+        """**The roll's mode**: ``"notation"`` over a sequence written as a
+        page -- each note on a staff and a voice, as long as it is written
+        with what it sounds inside it, a velocity shown and edited as a
+        dynamic, and what it sounds derived from what is written -- and
+        ``"midi"`` over every other: the events as MIDI says them, notes on
+        and off, velocities, channels, curves, joins. It is the sequence's
+        format's (`clausters.seq.EventSequence.format`), and nothing the roll
+        does changes it: going to another format is a conversion into a copy
+        (`to_notation`, `to_midi`)."""
         return str(self._call("editing").get("mode", "midi"))
 
-    @mode.setter
-    def mode(self, mode: str) -> None:
-        if mode not in ("midi", "notation"):
-            raise ValueError(f"a roll's mode is 'midi' or 'notation', not {mode!r}")
-        # the window's verb asks a hand how to convert; a script has said
-        if mode == "notation" and not self._call("editing").get("written", True):
-            self.structure.to_notation()
-        self.verb(f"{mode}_mode")
-
     def to_notation(self, *, meter: "str | None" = None, division: "int | None" = None,
-                    writing: "str | None" = None, copy: bool = False):
-        """**Write the sequence as notation and edit it so**: read with
-        ``meter`` (``"3/4"``) and ``division`` (``16`` for a sixteenth) over
-        its stored reading, each part written in ``"voices"`` or with
-        ``"ties"`` -- `clausters.seq.EventSequence.to_notation` -- and the roll
-        put in notation mode. Returns the sequence. With ``copy=True`` the
-        sequence is left as it is and a converted copy is returned
-        (`clausters.seq.EventSequence.notated`), which an editor of its own
-        opens."""
+                    writing: "str | None" = None):
+        """**A copy of the sequence written as notation**: read with ``meter``
+        (``"3/4"``) and ``division`` (``16`` for a sixteenth) over its stored
+        reading, each part written in ``"voices"`` or with ``"ties"``
+        (`clausters.seq.EventSequence.notated`). The sequence the roll edits
+        is not changed; the copy is opened in a roll of its own with
+        `clausters.gui.edit`. The window's *Convert to notation...* is the
+        same conversion, and opens the copy itself."""
         reading = {k: v for k, v in (("meter", meter), ("division", division)) if v is not None}
-        if copy:
-            return self.structure.notated(reading or None, writing)
-        self.structure.to_notation(reading or None, writing)
-        self.mode = "notation"
-        return self.structure
+        return self.structure.notated(reading or None, writing)
 
-    def to_midi(self) -> None:
-        """The roll in MIDI mode: nothing is converted, since the events
-        already hold what they sound."""
-        self.mode = "midi"
+    def to_midi(self, spec: str = "1.0", *, upper: bool = False, members: int = 15):
+        """**A copy of the sequence as its performance, written for ``spec``**
+        (`clausters.seq.EventSequence.as_midi`): ``"1.0"``, ``"mpe"`` or
+        ``"2.0"``. The sequence the roll edits is not changed. The window's
+        *Convert to MIDI 1.0*, *to MPE* and *to MIDI 2.0* are the same
+        conversions, and open the copy themselves."""
+        return self.structure.as_midi(spec, upper=upper, members=members)
 
     @property
     def scope(self):

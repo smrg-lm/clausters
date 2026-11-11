@@ -141,6 +141,11 @@ impl Editing {
                 if outcome.restructure {
                     ran.effects.push(effect("publish", json!({})));
                 }
+                // **a conversion's copy**, for the host to open in a roll of
+                // its own: the sequence here is unchanged
+                if let Some(converted) = outcome.converted.clone() {
+                    ran.effects.push(effect("converted", converted));
+                }
                 if outcome.changed || stepped {
                     ran.effects.push(effect("notes", json!({})));
                     self.roll_update(member, roll, ids);

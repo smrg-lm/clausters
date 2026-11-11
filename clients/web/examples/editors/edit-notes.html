@@ -73,8 +73,8 @@ any of the three takes back the last edit wherever it was made, and a note
 dragged in a roll is redrawn on the page.
 
 <b>notation opens the same notes as notation</b> -- a copy of the sequence
-written as its page (<code>toNotation({ copy: true })</code>), on a roll in its
-<b>notation mode</b>. There a note is on a staff and a voice, drawn as long as
+written as its page (<code>toNotation()</code>), on a roll in its
+<b>notation mode</b>, the mode a page is edited in. There a note is on a staff and a voice, drawn as long as
 it is written with what it sounds inside it, and lands on the eighths and the
 written values a drag passes; the velocity is a dynamic, written in the note,
 and what each note sounds is derived from the page at once. <b>Select notes and
@@ -291,16 +291,16 @@ leaves every other note its own.</div>
           });
 
         // The same notes, as notation. A roll has two modes, and they are the
-        // roll's: MIDI, the events as MIDI says them, and notation, a view of
-        // the page they are written as. A copy of the sequence is written as
-        // its page -- read on eighths in 4/4, every note moved to where it is
-        // written -- and a roll opens over it in notation mode. The copy is a
+        // sequence's: MIDI, the events as MIDI says them, and notation, a view
+        // of the page they are written as; a page is edited in notation mode.
+        // A copy of the sequence is written as its page -- read on eighths in
+        // 4/4, every note moved to where it is written -- and a roll opens
+        // over it, in notation mode since the copy is a page. The copy is a
         // sequence of its own, so the rolls above keep the performance.
         $("notation").disabled = false;
         $("notation").onclick = async () => {
-          const written = await editor.toNotation({ meter: "4/4", division: 8, copy: true });
-          const roll = await gui.edit(written, { title: "notes as notation", stage: $("written") });
-          await roll.setMode("notation");
+          const written = editor.toNotation({ meter: "4/4", division: 8 });
+          await gui.edit(written, { title: "notes as notation", stage: $("written") });
         };
 
         // A phrase marked as a page marks it: a copy written as notation
@@ -312,9 +312,8 @@ leaves every other note its own.</div>
         // share.
         let phrased = null;
         const phrase = async () => {
-          const written = await editor.toNotation({ meter: "4/4", division: 8, copy: true });
+          const written = editor.toNotation({ meter: "4/4", division: 8 });
           const roll = await gui.edit(written, { title: "a phrase", stage: $("phrased") });
-          await roll.setMode("notation");
           await gui.edit(written, {
             view: "score", division: 8, title: "the phrase on a page", stage: $("phrasepage"),
           });

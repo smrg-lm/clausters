@@ -110,8 +110,10 @@ The verdict is one of three:
 | `notes` | `note_pressure` | `NotesEditor.add_note_curve` | `NotesEditor.addNoteCurve` | **api** — `add_note_curve("pressure")` |
 | `notes` | `note_timbre` | `NotesEditor.add_note_curve` | `NotesEditor.addNoteCurve` | **api** — `add_note_curve("timbre")` |
 | `notes` | `curve_remove` | `NotesEditor.remove_curve` | `NotesEditor.removeCurve` | **api** |
-| `notes` | `midi_mode` | `NotesEditor.mode` `NotesEditor.to_midi` | `NotesEditor.mode` `NotesEditor.toMidi` | **api** — `mode = "midi"`; on the web `setMode("midi")` |
-| `notes` | `notation_mode` | `NotesEditor.mode` `NotesEditor.to_notation` | `NotesEditor.mode` `NotesEditor.toNotation` | **api** — `mode = "notation"`, which converts a sequence written as no notation first (the key and the menu ask how in the window's dialog); `to_notation(meter=, division=, writing=, copy=)` says how |
+| `notes` | `convert_notation` | `NotesEditor.to_notation` | `NotesEditor.toNotation` | **api** — answers the copy, which a script opens with `edit`; the window's entry asks how in its dialog and opens the copy itself |
+| `notes` | `convert_midi1` | `NotesEditor.to_midi` | `NotesEditor.toMidi` | **api** — `to_midi("1.0")` answers the copy |
+| `notes` | `convert_mpe` | `NotesEditor.to_midi` | `NotesEditor.toMidi` | **api** — `to_midi("mpe")` |
+| `notes` | `convert_midi2` | `NotesEditor.to_midi` | `NotesEditor.toMidi` | **api** — `to_midi("2.0")` |
 | `notes` | `show_system` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = "system"`; on the web `setScope("system")` |
 | `notes` | `show_part` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = ("part", n)` |
 | `notes` | `show_staff` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = ("staff", n)` |

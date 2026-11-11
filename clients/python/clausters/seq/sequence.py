@@ -302,6 +302,28 @@ class EventSequence:
             args["writing"] = _writing(writing)
         return type(self).from_data(self._seq.call("notated", **args)["sequence"])
 
+    @property
+    def format(self) -> str:
+        """**What the sequence is written as**: ``"notation"`` when it is
+        written as a page (its notes say their written values, or its
+        ``notation`` section its grid), else the MIDI spec it is written for
+        -- ``"1.0"``, ``"mpe"`` or ``"2.0"`` -- or ``"events"`` for a sequence
+        for the server, which states none. A roll edits a sequence in the mode
+        its format allows; going to another format is a conversion into a
+        copy (`notated`, `as_midi`)."""
+        return str(self._seq.call("format")["format"])
+
+    def as_midi(self, spec: str = "1.0", *, upper: bool = False,
+                members: int = 15) -> "EventSequence":
+        """**A copy of the sequence as its performance, written for
+        ``spec``** -- ``"1.0"``, ``"mpe"`` or ``"2.0"``, an MPE zone the lower
+        one unless ``upper``, with ``members`` member channels: every notation
+        key of its events and its ``notation`` section left out, and what
+        sounds kept. This sequence is not changed. `ValueError` when a curve
+        it holds has no spelling in that spec."""
+        written = {"mpe": {"upper": bool(upper), "members": int(members)}} if spec == "mpe" else spec
+        return type(self).from_data(self._seq.call("asmidi", midi=written)["sequence"])
+
     def realize(self, interpretation: "dict | None" = None) -> None:
         """**Derive the performance from what is written**: each note's held
         length (``sustain``), level and ``joins``, and the curves of its lines

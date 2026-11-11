@@ -662,6 +662,12 @@ impl Host {
                     source,
                     reply,
                 } => self.open_roll_of(parent, source, reply),
+                FromApp::Converted { sequence, title } => {
+                    let request = json!({ "sequence": sequence });
+                    if let Err(why) = self.open_app_notes_for(None, request, &title, None) {
+                        diag::warn!("the conversion's roll did not open: {why}");
+                    }
+                }
                 FromApp::Changed { def_id, version } => self.changed_audio(def_id, version),
             }
         }
@@ -3211,12 +3217,13 @@ mod tests {
         ]})
     }
 
-    /// **A roll's dialog is numbered by the host**, as a score's is: the
-    /// notation mode over a take asks how before it converts, and OK
-    /// converts in one entry of the window's history.
+    /// **A roll's dialog is numbered by the host**, as a score's is: a
+    /// conversion of a take into notation asks how first, and OK opens the
+    /// copy in a roll of its own, written as a page, the take's history
+    /// untouched.
     #[cfg(feature = "notation")]
     #[test]
-    fn a_roll_asks_how_before_it_writes_a_take_as_notation() {
+    fn a_roll_asks_how_before_it_converts_a_take_into_a_page_of_its_own() {
         use std::net::{Ipv4Addr, SocketAddr};
 
         let mut host = host();
@@ -3239,24 +3246,49 @@ mod tests {
         };
         let stack = widget(&host, "dialog:stack");
         assert_eq!(index(&host, stack), 0);
-        let message = host.event_message(def_id, 1, vec![OscType::String("notation_mode".into())]);
+        let message =
+            host.event_message(def_id, 1, vec![OscType::String("convert_notation".into())]);
         assert!(host.deliver(def_id, &message));
         until(&mut host, "the dialog never came up", |h| {
             index(h, stack) == 1
         });
-        let history = ask(&mut host, def_id, json!({"query": "history"}));
-        assert_ne!(
-            history["undoLabel"], "write as notation",
-            "nothing converted yet"
-        );
+        let before: Vec<i32> = host
+            .audio
+            .as_ref()
+            .unwrap()
+            .windows
+            .keys()
+            .copied()
+            .collect();
         let ok = widget(&host, "dialog:notation:ok");
         let click = host.event_message(ok, 2, vec![OscType::String("click".into())]);
         assert!(host.deliver(def_id, &click));
-        until(&mut host, "the dialog never went down", |h| {
-            index(h, stack) == 0
+        until(&mut host, "the copy's roll never opened", |h| {
+            h.audio.as_ref().unwrap().windows.len() > before.len()
         });
+        let copy = *host
+            .audio
+            .as_ref()
+            .unwrap()
+            .windows
+            .keys()
+            .find(|id| !before.contains(id))
+            .unwrap();
+        until(&mut host, "the copy's roll was never drawn", |h| {
+            h.window_def(copy).is_some()
+        });
+        let format = |host: &mut Host, window: i32| {
+            ask(
+                host,
+                window,
+                json!({"do": {"verb": "handle", "call": {"verb": "format"}}}),
+            )["format"]
+                .clone()
+        };
+        assert_eq!(format(&mut host, copy), "notation");
+        assert_eq!(format(&mut host, def_id), "events", "the take is as it was");
         let history = ask(&mut host, def_id, json!({"query": "history"}));
-        assert_eq!(history["undoLabel"], "write as notation", "{history}");
+        assert_eq!(history["canUndo"], false, "{history}");
     }
 
     /// **A roll is an application of this host's**: a client hands its

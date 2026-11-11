@@ -400,6 +400,31 @@ export class EventSequence {
     }
 
     /**
+     * **What the sequence is written as**: `"notation"` when it is written as
+     * a page (its notes say their written values, or its `notation` section
+     * its grid), else the MIDI spec it is written for -- `"1.0"`, `"mpe"` or
+     * `"2.0"` -- or `"events"` for a sequence for the server, which states
+     * none. A roll edits a sequence in the mode its format allows; going to
+     * another format is a conversion into a copy ({@link EventSequence.notated},
+     * {@link EventSequence.asMidi}).
+     */
+    get format(): string {
+        return String(this.call("format").format);
+    }
+
+    /**
+     * **A copy of the sequence as its performance, written for `spec`** --
+     * `"1.0"`, `"mpe"` or `"2.0"`, an MPE zone the lower one unless `upper`,
+     * with `members` member channels: every notation key of its events and
+     * its `notation` section left out, and what sounds kept. This sequence is
+     * not changed. Throws when a curve it holds has no spelling in that spec.
+     */
+    asMidi(spec = "1.0", { upper = false, members = 15 }: { upper?: boolean; members?: number } = {}): EventSequence {
+        const written = spec === "mpe" ? { mpe: { upper, members: Math.trunc(members) } } : spec;
+        return EventSequence.fromData(this.call("asmidi", { midi: written }).sequence);
+    }
+
+    /**
      * **Derive the performance from what is written**: each note's held length
      * (`sustain`), level and `joins`, and the curves of its lines (the
      * dynamics' controller, the pedal), written again from the page the

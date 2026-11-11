@@ -119,8 +119,7 @@ to.
 | — | `span` | `idiom` — an audio editor's transport's span: a read of the application the GUI host holds. A script reads the property, which asks the application and blocks for the answer; a page awaits it, so the same read is a method (`bindings.md`, the client surface's two shapes) |
 | — | `parts` | `idiom` — the parts an audio editor's take is made of: a read of the application the GUI host holds. A script reads the property, which asks the application and blocks for the answer; a page awaits it, so the same read is a method (`bindings.md`, the client surface's two shapes) |
 | — | `setLayer` | `idiom` — the layer an audio editor's hand edits. A script assigns the property (`editor.layer = "take"`), which is no call; in a page the setter reaches the application and has to be awaited, so the same act is a method, as `setSpan` is |
-| — | `setMode` | `idiom` — the mode a roll edits in. A script assigns the property (`roll.mode = "notation"`), which is no call; in a page the setter reaches the application and has to be awaited, so the same act is a method, as `setLayer` is |
-| — | `setDisplayPanel` | `idiom` — the roll's display panel shown or hidden. A script assigns the property (`roll.display_panel = True`), which is no call; in a page the setter reaches the application and has to be awaited, so the same act is a method, as `setMode` is |
+| — | `setDisplayPanel` | `idiom` — the roll's display panel shown or hidden. A script assigns the property (`roll.display_panel = True`), which is no call; in a page the setter reaches the application and has to be awaited, so the same act is a method, as `setLayer` is |
 
 ## What one side of a pair says alone
 

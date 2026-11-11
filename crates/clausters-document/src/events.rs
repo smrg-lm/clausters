@@ -1235,6 +1235,12 @@ pub fn coalesce_key(payload: &Opaque) -> Option<String> {
 ///   optional: `{"sequence"}`, the sequence written as the page it reads as
 ///   ([`EventSequence::notated`]), changing nothing -- what a conversion
 ///   into a copy takes -- or `{"error"}`.
+/// - `"format"`: `{"format": name}`, what the sequence is written as
+///   ([`EventSequence::format`], [`Format::name`]).
+/// - `"asmidi"` with `midi`, a spec as the sequence writes one (`"1.0"`,
+///   `"2.0"`, `{"mpe": {...}}`): `{"sequence"}`, a copy of the sequence as its
+///   performance written for that spec ([`EventSequence::as_midi`]), changing
+///   nothing -- or `{"error"}`.
 /// - `"apply"` with `intent`: the edit applied, answering `{"applied",
 ///   "current"}` -- `current` the payload that puts it back, read before the
 ///   edit -- plus `"id"` for an add, or `{"error"}` when refused. With
@@ -1410,6 +1416,18 @@ pub fn call_json(sequence: &mut EventSequence, request: &str) -> String {
                 Err(error) => json!({ "error": error }),
             }
         }
+        Some("format") => json!({"format": sequence.format().name()}),
+        Some("asmidi") => {
+            match serde_json::from_value::<MidiSpec>(
+                request.get("midi").cloned().unwrap_or(Value::Null),
+            ) {
+                Ok(spec) => match sequence.as_midi(spec) {
+                    Ok(copy) => json!({ "sequence": copy }),
+                    Err(error) => json!({ "error": error }),
+                },
+                Err(why) => json!({"error": format!("not a MIDI spec: {why}")}),
+            }
+        }
         Some("automation") => match request.get("id").and_then(Value::as_u64) {
             Some(id) => sequence
                 .get(id)
@@ -1469,6 +1487,8 @@ pub fn mutates(request: &str) -> bool {
 }
 
 pub mod articulation;
+pub mod format;
+pub use format::Format;
 pub mod ids;
 pub use ids::{Holder, Renumbered};
 mod midi;

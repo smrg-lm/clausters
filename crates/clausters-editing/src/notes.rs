@@ -289,7 +289,8 @@ pub struct Editing {
     /// one line overlapping, and shortens or removes what it covers
     /// ([`monophonic`]). Off, notes overlap as the hand leaves them.
     pub monophonic: bool,
-    /// The roll's mode: MIDI, or notation.
+    /// The roll's mode: MIDI, or notation -- the sequence's format's
+    /// ([`Mode::of`]), which whoever holds the roll states here.
     pub mode: Mode,
     /// What the roll shows in notation mode: the whole system, a part or a
     /// staff.
@@ -316,7 +317,10 @@ pub enum ColorBy {
 }
 
 /// **The roll's two modes** (`crates/clausters-document/PLAN.md`, "The
-/// notation mode"), the roll's and never the sequence's.
+/// notation mode"): the one a sequence's format allows ([`Mode::of`]). A roll
+/// never switches a sequence from one to the other; going to another format
+/// is a conversion into a new sequence
+/// (`clausters_document::events::format`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
@@ -327,6 +331,19 @@ pub enum Mode {
     /// A view of the notation: staves and voices, written values, and a
     /// performance derived from what is written.
     Notation,
+}
+
+impl Mode {
+    /// **The mode `sequence` is edited in**: notation when its format is
+    /// notation, MIDI for every other.
+    #[must_use]
+    pub fn of(sequence: &EventSequence) -> Mode {
+        if sequence.format() == clausters_document::events::Format::Notation {
+            Mode::Notation
+        } else {
+            Mode::Midi
+        }
+    }
 }
 
 /// What a roll in notation mode shows.
@@ -766,7 +783,7 @@ pub fn intake(
     }
     if notation::ARTICULATIONS.contains(&tag) {
         return Intake::refused(
-            "an articulation is written on a page: switch the roll to notation to write one",
+            "an articulation is written on a page: convert a copy to notation to write one",
         );
     }
     let events = match tag {

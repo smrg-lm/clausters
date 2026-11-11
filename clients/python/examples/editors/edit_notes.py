@@ -52,8 +52,8 @@ three takes back the last edit wherever it was made, and a note dragged in a
 roll is redrawn on the page.
 
 **``notation()`` opens the same notes as notation** -- a copy of the
-sequence written as its page (``to_notation(copy=True)``), on a roll in its
-**notation mode**. There a note is on a staff and a voice, drawn as long as it
+sequence written as its page (``to_notation()``), on a roll in its
+**notation mode**, the mode a page is edited in. There a note is on a staff and a voice, drawn as long as it
 is written with what it sounds inside it, and lands on the eighths and the
 written values a drag passes; the velocity is a dynamic, written in the note,
 and what each note sounds is derived from the page at once. **Select notes and
@@ -218,19 +218,19 @@ def page():
 # %% [markdown]
 # ## The same notes, as notation
 #
-# A roll has two modes, and they are the roll's: MIDI, the events as MIDI says
-# them, and notation, a view of the page they are written as. A copy of the
-# sequence is written as its page -- read on eighths in 4/4, every note moved
-# to where it is written -- and a roll opens over it in notation mode. The
-# copy is a sequence of its own, so the windows above keep the performance.
+# A roll has two modes, and which one is the sequence's: MIDI, the events as
+# MIDI says them, and notation, a view of the page they are written as. A page
+# is edited in notation mode and a performance in MIDI mode.
+# A copy of the sequence is written as its page -- read on eighths in 4/4,
+# every note moved to where it is written -- and a roll opens over it, in
+# notation mode since the copy is a page. The copy is a sequence of its own,
+# so the windows above keep the performance.
 
 # %%
 def notation():
     """A copy of the notes written as notation, on a roll in notation mode."""
-    written = editor.to_notation(meter="4/4", division=8, copy=True)
-    roll = edit(written, title="notes as notation")
-    roll.mode = "notation"
-    return roll
+    written = editor.to_notation(meter="4/4", division=8)
+    return edit(written, title="notes as notation")
 
 
 # %% [markdown]
@@ -250,9 +250,8 @@ phrased = None
 def phrase():
     """Accent the first two notes, a breath after the second, mf on the first."""
     global phrased
-    written = editor.to_notation(meter="4/4", division=8, copy=True)
+    written = editor.to_notation(meter="4/4", division=8)
     roll = edit(written, title="a phrase")
-    roll.mode = "notation"
     edit(written, view="score", division=8, title="the phrase on a page")
     first, second = written.events[0], written.events[1]
     roll.select([first, second])

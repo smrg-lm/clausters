@@ -282,13 +282,13 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **What a sequence is, as a thing that is edited, and what a change of
-  representation keeps** *(`crates/clausters-apps/PLAN.md`, Future
-  directions)*. Decided by the user 2026-11-10: the format is the file's
-  (MIDI 1.0, MIDI 2.0, MPE, MEI/MusicXML), the roll offers the editing mode
-  its format allows, and a change of format is an explicit conversion. Its
-  design is a milestone to write. It carries the rest of "The host opens
-  no file in the roll" (the roll's File menu and saving) and "A
+- ⬜ **`X44` — the roll's file: the format is the file's**
+  *(`crates/clausters-apps/PLAN.md`)*. Taken from the Future direction "What a
+  sequence is, as a thing that is edited, and what a change of representation
+  keeps", decided by the user 2026-11-10. The format, the conversions into
+  copies and the roll's mode as its format's are done; what is left is the
+  roll's file (`X44.4`, `X44.5`) and its tests and documents (`X44.7`). It
+  carries the rest of "The host opens no file in the roll" and "A
   performance's joins are lost when the roll writes it as notation" (same
   plan, Found by use).
 

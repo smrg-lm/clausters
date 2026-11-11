@@ -66,6 +66,11 @@ pub struct Outcome {
     /// caller asks for its tree anew, and the host keeps what is its own.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub restructure: bool,
+    /// **A conversion's copy**, `{"sequence", "title"}`: the sequence written
+    /// in another format, which the caller opens in a roll of its own. The
+    /// sequence this editor edits is not changed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub converted: Option<Value>,
 }
 
 turn::turned!(Outcome);
@@ -78,12 +83,24 @@ pub const SNAP_VERB: &str = "snap";
 /// menu's entry, or a client's `monophonic`.
 pub const MONOPHONIC_VERB: &str = "monophonic";
 
-/// **The verbs of the roll's modes, its view and its writing**: the mode
-/// itself, then what only the notation mode answers -- which part, staff or
-/// system it shows, the voice it edits, how a part writes its polyphony.
+/// **The conversions**, each into a copy in another format, which opens in a
+/// roll of its own: the page (asked how in a window with the dialog) and the
+/// three MIDI specs.
+pub const CONVERSIONS: &[&str] = &[
+    "convert_notation",
+    "convert_midi1",
+    "convert_mpe",
+    "convert_midi2",
+];
+
+/// **The verbs of the roll's view and its writing**: the conversions, then
+/// what only the notation mode answers -- which part, staff or system it
+/// shows, the voice it edits, how a part writes its polyphony.
 pub const MODE_VERBS: &[&str] = &[
-    "midi_mode",
-    "notation_mode",
+    "convert_notation",
+    "convert_midi1",
+    "convert_mpe",
+    "convert_midi2",
     "show_system",
     "show_part",
     "show_staff",
@@ -100,7 +117,8 @@ pub const MODE_VERBS: &[&str] = &[
     "write_ties",
 ];
 
-/// The verbs only the notation mode answers: [`MODE_VERBS`] past the mode;
+/// The verbs only the notation mode answers: [`MODE_VERBS`] past the
+/// conversions;
 /// the marks a page writes over the selected notes are the editing crate's
 /// ([`clausters_editing::notes::notation::ARTICULATIONS`]), and only the
 /// notation mode answers them too (`only_in_notation`).
@@ -303,7 +321,7 @@ impl NotesEditor {
     /// of the engraver the first time the roll is in notation mode, and handed
     /// to the roll once, as its `glyphs`.
     fn glyphs_owed(&mut self) -> Option<Correction> {
-        if self.editing.mode != Mode::Notation {
+        if !self.notation() {
             return None;
         }
         let widget = i64::from(self.widget?);
@@ -314,9 +332,23 @@ impl NotesEditor {
         })
     }
 
-    /// How the roll edits.
-    pub fn editing(&self) -> &Editing {
-        &self.editing
+    /// **How the roll edits**, its mode the one the sequence's format allows.
+    pub fn editing(&self) -> Editing {
+        self.editing_over(&self.held())
+    }
+
+    /// How the roll edits `held`, the sequence it holds: the window's state,
+    /// in the mode its format allows ([`Mode::of`]).
+    fn editing_over(&self, held: &EventSequence) -> Editing {
+        Editing {
+            mode: Mode::of(held),
+            ..self.editing.clone()
+        }
+    }
+
+    /// Whether the roll is in notation mode: its sequence is written as a page.
+    fn notation(&self) -> bool {
+        Mode::of(&self.held()) == Mode::Notation
     }
 
     /// The grid a note lands on, in beats; `0` for none.
@@ -337,6 +369,8 @@ impl NotesEditor {
         undo: bool,
         redo: bool,
     ) -> std::collections::BTreeMap<&'static str, clausters_editing::verbs::ActionState> {
+        let format = self.held().format();
+        let notation = format == events::Format::Notation;
         crate::chrome::grid_actions(
             crate::chrome::App::Notes,
             false,
@@ -348,8 +382,6 @@ impl NotesEditor {
                 PANEL_VERB => Some(self.panel),
                 DISPLAY_VERB => Some(self.display_panel),
                 "loop" => Some(self.looping),
-                "midi_mode" => Some(self.editing.mode == Mode::Midi),
-                "notation_mode" => Some(self.editing.mode == Mode::Notation),
                 "show_system" => Some(self.editing.scope == Scope::System),
                 "show_part" => Some(matches!(self.editing.scope, Scope::Part(_))),
                 "show_staff" => Some(matches!(self.editing.scope, Scope::Staff(_))),
@@ -369,8 +401,13 @@ impl NotesEditor {
         .into_iter()
         .map(|(verb, mut state)| {
             // what is a page's is the notation mode's
-            if only_in_notation(verb) && self.editing.mode != Mode::Notation {
-                state.refuse("switch the roll to notation first");
+            if only_in_notation(verb) && !notation {
+                state.refuse(
+                    "the sequence is not written as notation: convert a copy to edit a page",
+                );
+            }
+            if let Some(why) = conversion_refused(verb, format) {
+                state.refuse(&why);
             }
             (verb, state)
         })
@@ -412,10 +449,9 @@ impl NotesEditor {
         }
     }
 
-    /// **A verb of the roll's modes, its view and its writing** (see
-    /// [`NOTATION_VERBS`]): the window's state changed, or the one edit it
-    /// makes -- a conversion entering notation over a sequence written as
-    /// none, a writing of every part. The refusal, if any.
+    /// **A verb of the roll's view and its writing** (see [`MODE_VERBS`]):
+    /// a conversion into a copy, the window's state changed, or the one edit
+    /// it makes, a writing of every part. The refusal, if any.
     fn mode_verb(
         &mut self,
         verb: &str,
@@ -431,35 +467,11 @@ impl NotesEditor {
                 .max(1)
         };
         match verb {
-            "midi_mode" => self.editing.mode = Mode::Midi,
-            "notation_mode" => {
-                let written = self.held().written_as_notation();
-                // **a window with the dialog asks how first**, and converts
-                // at its OK
-                if !written && self.dialogs.numbered(dialogs::forms()) {
-                    let held = dialogs::notation_of(&self.held());
-                    shown.extend(forms::corrections(
-                        self.dialogs.open(dialogs::Form::Notation, held),
-                    ));
-                    return None;
-                }
-                if !written
-                    && let Some(why) = self.record(
-                        EventsIntent::ToNotation {
-                            reading: None,
-                            writing: None,
-                            interpretation: None,
-                        },
-                        "write as notation",
-                        out,
-                    )
-                {
-                    return Some(why);
-                }
-                self.editing.mode = Mode::Notation;
-            }
-            _ if self.editing.mode != Mode::Notation => {
-                return Some("switch the roll to notation first".into());
+            _ if CONVERSIONS.contains(&verb) => return self.convert_by(verb, out, shown),
+            _ if !self.notation() => {
+                return Some(
+                    "the sequence is not written as notation: convert a copy to edit a page".into(),
+                );
             }
             "show_system" => self.editing.scope = Scope::System,
             "show_staff" => self.editing.scope = Scope::Staff(self.editing.voice[0]),
@@ -526,30 +538,72 @@ impl NotesEditor {
         None
     }
 
-    /// **The conversion `reading` and `writing` say**, made as one entry, and
-    /// the roll put in notation mode. The refusal, if any.
+    /// **A conversion asked by its verb**: into notation, asked how first in
+    /// a window with the dialog and read with what the sequence stores
+    /// otherwise; into a MIDI spec, at once. The refusal, if any.
+    fn convert_by(
+        &mut self,
+        verb: &str,
+        out: &mut Outcome,
+        shown: &mut Vec<Correction>,
+    ) -> Option<String> {
+        let format = self.held().format();
+        if let Some(why) = conversion_refused(verb, format) {
+            return Some(why);
+        }
+        if verb == "convert_notation" {
+            if self.dialogs.numbered(dialogs::forms()) {
+                let held = dialogs::notation_of(&self.held());
+                shown.extend(forms::corrections(
+                    self.dialogs.open(dialogs::Form::Notation, held),
+                ));
+                return None;
+            }
+            let copy = self.held().notated(None, None, None);
+            return self.converted(copy, "notation", out);
+        }
+        let (spec, name) = spec_of(verb)?;
+        let copy = self.held().as_midi(spec);
+        self.converted(copy, name, out)
+    }
+
+    /// **The conversion into notation `reading` and `writing` say**, made
+    /// into a copy. The refusal, if any.
     fn convert(
         &mut self,
         reading: Value,
         writing: clausters_document::events::Writing,
         out: &mut Outcome,
     ) -> Option<String> {
-        let intent = EventsIntent::ToNotation {
-            reading: Some(reading),
-            writing: Some(writing),
-            interpretation: None,
-        };
-        if let Some(why) = self.record(intent, "write as notation", out) {
-            return Some(why);
+        let copy = self.held().notated(Some(reading), Some(writing), None);
+        self.converted(copy, "notation", out)
+    }
+
+    /// **A conversion's copy handed to the caller** to open in a roll of its
+    /// own, titled after this one and the format it is written in; the
+    /// sequence here is left as it was. The refusal, if any.
+    fn converted(
+        &self,
+        copy: Result<EventSequence, String>,
+        name: &str,
+        out: &mut Outcome,
+    ) -> Option<String> {
+        match copy {
+            Ok(sequence) => {
+                out.converted = Some(json!({
+                    "sequence": sequence,
+                    "title": format!("{} ({name})", self.title),
+                }));
+                None
+            }
+            Err(why) => Some(why),
         }
-        self.editing.mode = Mode::Notation;
-        None
     }
 
     /// **What a widget of the dialog said**: a field kept as it is typed or
-    /// chosen, `OK` the conversion it holds -- the dialog left up with the
-    /// reason when it is refused -- and `Cancel` the dialog taken down, the
-    /// roll left in its mode.
+    /// chosen, `OK` the conversion it holds, into a copy -- the dialog left up
+    /// with the reason when it is refused -- and `Cancel` the dialog taken
+    /// down.
     fn form_said(
         &mut self,
         name: &str,
@@ -574,7 +628,6 @@ impl NotesEditor {
                     return (Some(why), Vec::new());
                 }
                 let mut corrections = forms::corrections(self.dialogs.hide());
-                corrections.extend(self.glyphs_owed());
                 corrections.extend(self.resync_widget(roll));
                 (None, corrections)
             }
@@ -599,14 +652,17 @@ impl NotesEditor {
     pub fn window(&mut self, widget: i32) -> Value {
         self.widget = Some(widget);
         let glyphs = self.glyphs_owed();
-        let mut drawn = props(
-            &self.held(),
-            &self.domain,
-            self.rate,
-            self.editable,
-            &self.editing,
-            &self.symbols,
-        );
+        let mut drawn = {
+            let held = self.held();
+            props(
+                &held,
+                &self.domain,
+                self.rate,
+                self.editable,
+                &self.editing_over(&held),
+                &self.symbols,
+            )
+        };
         if let Some(glyphs) = glyphs {
             drawn.insert("glyphs".into(), glyphs.props["glyphs"].clone());
         }
@@ -739,7 +795,7 @@ impl NotesEditor {
             return;
         }
         let lanes = roll::lanes(&self.held());
-        let notation = self.editing.mode == Mode::Notation;
+        let notation = self.notation();
         let Some(column) = self.display.panel(&self.dialogs.ids, &lanes, notation) else {
             return;
         };
@@ -773,7 +829,7 @@ impl NotesEditor {
             return Vec::new();
         }
         let lanes = roll::lanes(&self.held());
-        let notation = self.editing.mode == Mode::Notation;
+        let notation = self.notation();
         self.display
             .corrections(&self.dialogs.ids, &lanes, notation)
     }
@@ -816,9 +872,14 @@ impl NotesEditor {
         let held = self.held();
         let axis = Axis::of(&held, self.rate);
         let ids = &self.dialogs.ids;
-        let Some(column) =
-            panel::panel(&held, &self.domain, &axis, &self.editing, &self.marked, ids)
-        else {
+        let Some(column) = panel::panel(
+            &held,
+            &self.domain,
+            &axis,
+            &self.editing_over(&held),
+            &self.marked,
+            ids,
+        ) else {
             return;
         };
         drop(held);
@@ -851,7 +912,7 @@ impl NotesEditor {
             &held,
             &self.domain,
             &axis,
-            &self.editing,
+            &self.editing_over(&held),
             &self.marked,
             &self.dialogs.ids,
         )
@@ -903,7 +964,7 @@ impl NotesEditor {
                 &held,
                 &self.domain,
                 &axis,
-                &self.editing,
+                &self.editing_over(&held),
                 &self.marked,
                 name,
                 value,
@@ -922,7 +983,8 @@ impl NotesEditor {
             return Vec::new();
         }
         let held = self.held();
-        let mut props = correction(&held, &self.domain, self.rate, &self.editing, &self.symbols);
+        let editing = self.editing_over(&held);
+        let mut props = correction(&held, &self.domain, self.rate, &editing, &self.symbols);
         self.display.apply(&mut props);
         // The time range is drawn where the hand sweeps one, so a span set
         // from the client shows as the band a sweep leaves.
@@ -1038,7 +1100,8 @@ impl NotesEditor {
                 .map(|v| v.max(0.0) as u64)
                 .collect();
             let held = self.held();
-            let chosen = roll::select_like(&held, tag, &ids, &self.domain, &self.editing);
+            let chosen =
+                roll::select_like(&held, tag, &ids, &self.domain, &self.editing_over(&held));
             drop(held);
             if chosen.is_empty() {
                 return (Some("nothing is selected".into()), Vec::new());
@@ -1077,7 +1140,8 @@ impl NotesEditor {
         let recorded = {
             let mut sequence = self.held();
             let axis = Axis::of(&sequence, self.rate);
-            let intake = roll::intake(&sequence, tag, values, &axis, &self.domain, &self.editing);
+            let editing = self.editing_over(&sequence);
+            let intake = roll::intake(&sequence, tag, values, &axis, &self.domain, &editing);
             if let Some(why) = intake.refusal {
                 drop(sequence);
                 return (Some(why), self.resync_widget(widget));
@@ -1304,11 +1368,10 @@ pub fn shared_of(request: &str) -> Shared {
 /// - `editing` -- how the roll edits ([`Editing`]): `{"monophonic", "mode",
 ///   "scope", "voice", "color_by"}`, `panel`, whether the panel is shown,
 ///   `display` and `display_panel`, how the roll draws what is beyond its boxes
-///   ([`display`]) and whether its panel is shown, and `written`, whether the sequence is written as
-///   notation already -- entering notation over one that is not converts
-///   it, or asks how in a window with the dialog. The mode is changed by its verbs (`midi_mode`,
-///   `notation_mode`), since entering notation may convert the sequence,
-///   which is an edit.
+///   ([`display`]) and whether its panel is shown, and `format`, what the
+///   sequence is written as ([`events::Format::name`]). The mode is the
+///   format's: no verb changes it, and a conversion makes a copy
+///   ([`CONVERSIONS`]).
 /// - `state` -- the sequence, whole.
 /// - `span` -- `span`: `[start, end]` in beats, or `null`: the time range the
 ///   space bar plays and the roll draws, as a sweep leaves it. `{}`.
@@ -1426,8 +1489,8 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
         "range" => json!({ "range": editor.range }).to_string(),
         "grid" => json!({ "grid": editor.grid, "snap": editor.snap }).to_string(),
         "editing" => {
-            let mut said = json!(editor.editing);
-            said["written"] = json!(editor.held().written_as_notation());
+            let mut said = json!(editor.editing());
+            said["format"] = json!(editor.held().format().name());
             said["panel"] = json!(editor.panel);
             said["lane"] = json!(editor.lane_shown());
             said["display"] = json!(editor.display);
@@ -1444,6 +1507,51 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
         }
         _ => "{}".into(),
     }
+}
+
+/// **What a conversion `verb` writes**, the MIDI spec and its name; `None`
+/// for the conversion into notation, or a verb that is no conversion.
+fn spec_of(verb: &str) -> Option<(events::MidiSpec, &'static str)> {
+    Some(match verb {
+        "convert_midi1" => (events::MidiSpec::Midi1, "MIDI 1.0"),
+        "convert_mpe" => (
+            events::MidiSpec::Mpe {
+                upper: false,
+                members: 15,
+            },
+            "MPE",
+        ),
+        "convert_midi2" => (events::MidiSpec::Midi2, "MIDI 2.0"),
+        _ => return None,
+    })
+}
+
+/// **Why conversion `verb` is refused over a sequence in `format`**: it is
+/// written so already. `None` for a conversion that makes a copy in another
+/// format, or a verb that is no conversion.
+fn conversion_refused(verb: &str, format: events::Format) -> Option<String> {
+    let same = match verb {
+        "convert_notation" => format == events::Format::Notation,
+        _ => spec_of(verb).is_some_and(|(spec, _)| {
+            matches!(
+                (format, spec),
+                (
+                    events::Format::Midi(events::MidiSpec::Midi1),
+                    events::MidiSpec::Midi1
+                ) | (
+                    events::Format::Midi(events::MidiSpec::Mpe { .. }),
+                    events::MidiSpec::Mpe { .. }
+                ) | (
+                    events::Format::Midi(events::MidiSpec::Midi2),
+                    events::MidiSpec::Midi2
+                )
+            )
+        }),
+    };
+    same.then(|| {
+        let name = spec_of(verb).map_or("notation", |(_, name)| name);
+        format!("the sequence is written as {name} already")
+    })
 }
 
 #[cfg(test)]

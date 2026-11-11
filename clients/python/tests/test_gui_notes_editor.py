@@ -183,32 +183,34 @@ def test_a_voice_from_a_pattern_is_left_as_it_was_written(gui_host):
     assert not any("tie" in e["data"] for e in after["events"]) and "notation" not in after
 
 
-def test_the_roll_in_notation_mode_writes_the_take_and_edits_its_page(gui_host):
+def test_the_roll_edits_in_its_format_s_mode_and_converts_into_copies(gui_host):
     take = EventSequence([(0.03, Event(midinote=60, dur=0.97, instrument="default")),
                           (1.01, Event(midinote=64, dur=1.0, instrument="default"))])
     editor = opened(gui_host, NotesEditor(take))
-    assert editor.mode == "midi"
-    editor.mode = "notation"
-    assert editor.mode == "notation"
-    assert [e.at for e in take.events] == [0.0, 1.0], "written as its page, in place"
-    assert take.events[0]["value"] == [1, 4]
-    assert editor.actions["undo"]["enabled"] is True, "the conversion is an entry"
-    editor.voice = (0, 1)
-    assert editor.voice == (0, 1)
-    editor.scope = ("staff", 0)
-    assert editor.scope == ("staff", 0)
-    editor.scope = "system"
-    editor.voice = (0, 0)
-    assert editor.select_all() and editor.staccato()
-    assert all(e.get("articulations") == ["stacc"] for e in take.events)
-    assert take.events[0]["sustain"] < 1.0, "heard short at once"
-    editor.writing = "ties"
-    assert editor.writing == "ties" and take.parts[0]["writing"]["polyphony"] == "ties"
-    copy = editor.to_notation(meter="3/4", copy=True)
-    assert copy is not take and len(copy.events) == 2
-    editor.to_midi()
-    assert editor.mode == "midi" and take.events[0]["value"] == [1, 4], "nothing converted back"
+    assert editor.mode == "midi" and take.format == "events"
+    page = editor.to_notation()
+    assert [e.at for e in take.events] == [0.03, 1.01], "the take is as it was"
+    assert page.format == "notation" and [e.at for e in page.events] == [0.0, 1.0]
+    assert page.events[0]["value"] == [1, 4]
+    assert editor.actions["undo"]["enabled"] is False, "a copy is no edit"
     editor.close()
+    written = opened(gui_host, NotesEditor(page))
+    assert written.mode == "notation", "a page is edited as one"
+    written.voice = (0, 1)
+    assert written.voice == (0, 1)
+    written.scope = ("staff", 0)
+    assert written.scope == ("staff", 0)
+    written.scope = "system"
+    written.voice = (0, 0)
+    assert written.select_all() and written.staccato()
+    assert all(e.get("articulations") == ["stacc"] for e in page.events)
+    assert page.events[0]["sustain"] < 1.0, "heard short at once"
+    written.writing = "ties"
+    assert written.writing == "ties" and page.parts[0]["writing"]["polyphony"] == "ties"
+    midi = written.to_midi("2.0")
+    assert midi.format == "2.0" and midi.events[0].get("value") is None
+    assert page.format == "notation" and page.events[0]["value"] == [1, 4], "the page stays"
+    written.close()
 
 
 def test_a_pedal_written_on_a_file_s_notes_takes_ids_nothing_else_has(gui_host):
@@ -225,9 +227,9 @@ def test_a_pedal_written_on_a_file_s_notes_takes_ids_nothing_else_has(gui_host):
     low.automation.add({"bend": True}, [(0.0, 0.0), (2.0, 1.0)])
     middle.automation.add({"pressure": True}, [(0.0, 0.2), (3.0, 1.0)])
     chord.automation.add({"cc": 7}, [(0.0, 90.0), (4.0, 120.0)], name="volume")
-    take = EventSequence.from_smf(chord.to_smf())
+    take = EventSequence.from_smf(chord.to_smf()).notated()
     editor = opened(gui_host, NotesEditor(take))
-    editor.mode = "notation"
+    assert editor.mode == "notation"
     assert editor.select_all() and editor.pedal()
 
     def pedalled():

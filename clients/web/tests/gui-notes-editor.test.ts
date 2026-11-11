@@ -257,7 +257,7 @@ test("a voice from a pattern is left as it was written", async () => {
     assert.ok(after.events.every((e) => !("tie" in e.data)) && !("notation" in after));
 });
 
-test("the roll's modes, what it shows and the voice it edits are calls to the application", async () => {
+test("the roll's mode, what it shows and the voice it edits are calls to the application", async () => {
     const host = new FakeHost();
     const sequence = take();
     const editor = new NotesEditor(sequence);
@@ -265,7 +265,6 @@ test("the roll's modes, what it shows and the voice it edits are calls to the ap
     assert.equal(await editor.mode(), "notation");
     assert.deepEqual(await editor.scope(), ["staff", 1]);
     assert.deepEqual(await editor.voice(), [1, 0]);
-    await editor.setMode("notation");
     await editor.setScope("system");
     await editor.setVoice([0, 1]);
     assert.ok(host.calls.some((c) => c.do?.verb === "set" && c.do.call.scope?.show === "system"));
@@ -273,7 +272,19 @@ test("the roll's modes, what it shows and the voice it edits are calls to the ap
     assert.equal(editor.writing(), "voices");
     editor.setWriting("ties");
     assert.equal(editor.slur() && editor.slurJoin() && editor.tie() && editor.staccato() && editor.pedal(), true);
-    assert.deepEqual(host.verbs, ["notation_mode", "write_ties", "slur", "slur_join", "tie", "staccato", "pedal"]);
-    await assert.rejects(() => editor.setMode("score" as "midi"), /midi/);
+    assert.deepEqual(host.verbs, ["write_ties", "slur", "slur_join", "tie", "staccato", "pedal"]);
     await editor.close();
+});
+
+test("a roll's conversions are copies, and the sequence it edits stays", () => {
+    const sequence = take();
+    const editor = new NotesEditor(sequence);
+    assert.equal(sequence.format, "events");
+    const page = editor.toNotation({ meter: "3/4" });
+    assert.equal(page.format, "notation");
+    assert.equal(sequence.format, "events", "the take is as it was");
+    const midi = page.asMidi("2.0");
+    assert.equal(midi.format, "2.0");
+    assert.equal(page.format, "notation", "the page is as it was");
+    assert.equal(editor.toMidi("mpe").format, "mpe");
 });

@@ -306,6 +306,10 @@ pub(super) enum FromApp {
         source: u64,
         reply: Option<Reply>,
     },
+    /// **A roll's conversion made a copy** (`sequence`, written in another
+    /// format): the host opens it in a roll of its own, titled `title`, apart
+    /// from every other window's order.
+    Converted { sequence: Value, title: String },
     /// **Multitrack window `def_id`'s multitrack moved by a hand**, to the
     /// context's `version`: its opener is told ([`super::GUI_APP_CHANGED`]).
     Changed { def_id: i32, version: i64 },
@@ -1475,6 +1479,17 @@ impl App {
                             },
                         );
                     }
+                    continue;
+                }
+                // a conversion's copy: the host makes its window
+                "converted" => {
+                    self.out.send(
+                        Vec::new(),
+                        FromApp::Converted {
+                            sequence: effect["sequence"].take(),
+                            title: effect["title"].as_str().unwrap_or("Notes").to_string(),
+                        },
+                    );
                     continue;
                 }
                 // the writer of a MIDI file is this build's to link

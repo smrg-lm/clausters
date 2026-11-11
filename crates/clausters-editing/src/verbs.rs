@@ -355,10 +355,12 @@ pub const NOTES: &[Verb] = &[
     verb("note_pressure", &[], "Add a pressure to the notes"),
     verb("note_timbre", &[], "Add a timbre to the notes"),
     verb("curve_remove", &[], "Remove the curve shown"),
-    // the roll's two modes: the events as MIDI says them, or a view of the
-    // page they are written as
-    choice("mode", "midi_mode", &[], "MIDI mode"),
-    choice("mode", "notation_mode", &[], "Notation mode"),
+    // the conversions: the mode is the sequence's format's, and going to
+    // another format makes a copy, opened in a roll of its own
+    verb("convert_notation", &[], "Convert to notation..."),
+    verb("convert_midi1", &[], "Convert to MIDI 1.0"),
+    verb("convert_mpe", &[], "Convert to MPE"),
+    verb("convert_midi2", &[], "Convert to MIDI 2.0"),
     // what the notation mode shows, and the voice it edits
     choice("show", "show_system", &[], "Show the system"),
     choice("show", "show_part", &[], "Show the part"),

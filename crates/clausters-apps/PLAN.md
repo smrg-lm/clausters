@@ -2585,6 +2585,92 @@ opened it.
     and a lane hidden from the panel and from a client alike, a box's roll
     included, with nothing entered in the history.
 
+- ⬜ **X44 - The roll's file: the format is the file's.** *(Opened
+  2026-11-10 by the user's decision on Future directions, "What a sequence
+  is, as a thing that is edited, and what a change of representation
+  keeps", the second way; `docs/decisions.md`, "A file says which
+  application it belongs to, and the format is the file's".)* A sequence is
+  edited **as a file of one format**: MIDI 1.0, MPE, MIDI 2.0, or notation
+  (an MEI file, or a MusicXML or ABC one read into it). The roll edits it in
+  the one mode that format allows, and nothing the roll does changes the
+  format: going to another is a **conversion into a new document**, opened
+  in a window of its own, with the original untouched. That replaces `X35`'s
+  two modes as a window's switch and `X35.7`'s conversion in place
+  (decided 2026-11-09 and reversed by this decision), and it is why no
+  switch can lose what one format holds and the other does not. The steps:
+  - ✅ **X44.1 - The format, the sequence's.** *(Done 2026-11-11:
+    `clausters_document::events::format`, `EventSequence::format`, the
+    sequence door's `format`.)* `EventSequence::format`
+    answers `Format`: `Notation` when the sequence is written as notation
+    (`written_as_notation`), else the MIDI spec it is written for, or
+    `Events` for a sequence that states none (a client's, for the server,
+    where every curve is legal). It is read from what the sequence holds, so
+    there is one source of it; both clients' `EventSequence.format` answers
+    `"notation"`, `"1.0"`, `"mpe"`, `"2.0"` or `"events"`.
+  - ✅ **X44.2 - The conversions, each a copy.** *(Done 2026-11-11:
+    `EventSequence::as_midi`, the door's `asmidi`, both clients' `as_midi` /
+    `asMidi`.)* `notated` (the page,
+    which exists) and `as_midi(spec)`, new: the sequence as its performance
+    -- every notation key of its events (`clausters_core::event::notation`)
+    and its `notation` section left out, what sounds kept -- written for
+    `spec` and refused with the reason when a curve it holds has no
+    spelling there, as `set_midi` refuses. Neither changes the sequence;
+    both clients bind both.
+  - ✅ **X44.3 - The roll's mode is its format's.** *(Done 2026-11-11:
+    `clausters_editing::notes::Mode::of`, the editor's `editing_over`; the
+    notes scope's `convert_notation`, `convert_midi1`, `convert_mpe`,
+    `convert_midi2` in the File menu; the editor's `converted` outcome, the
+    coordinator's `converted` effect and the host's `FromApp::Converted`,
+    which opens the copy apart.)* The roll is in notation
+    mode exactly when its sequence's format is notation, read again after
+    every change of what it holds; `midi_mode` and `notation_mode` leave the
+    notes scope, and so does entering notation by converting in place. In
+    their place the window's conversions: *Convert to notation...* (the
+    dialog `X35.7` added, its OK now making the copy), *Convert to MIDI
+    1.0*, *to MPE* and *to MIDI 2.0*, each opening a new roll over the copy,
+    untitled, whose first save asks where. A conversion to the format the
+    sequence already has is refused with the reason. `EventsIntent::ToNotation`
+    stays the document's, for a client that converts its own sequence in
+    place on purpose (`EventSequence.to_notation`), and no window uses it.
+  - ⬜ **X44.4 - The roll's file.** A roll the host owns has a file: a path
+    or none, what its sequence was when it was saved, the unsaved mark on
+    its title and the question before a close or a change of file, through
+    `crate::closing` as every application does. Its File menu is New (an
+    empty MIDI 1.0 sequence), Open..., Save, Save as..., Close file and
+    Close; Open reads a Standard MIDI File or a MIDI 2.0 Clip File by its
+    header and any other file as a score, through the engraver the
+    application holds (handed in as the marks' outlines are, since the
+    applications crate links no engraver), and a file another window holds
+    brings that window forward. Save writes what the format is: MEI for
+    notation, a Standard MIDI File for MIDI 1.0 and MPE, a Clip File for
+    MIDI 2.0 -- the score editor's writers, moved here so that both
+    applications call one (the host's `midi_file`, the reader `--roll` used).
+    A store carries bytes, since a MIDI file is not text. A roll over a
+    client's sequence or a box's has no file of its own: its File menu is
+    Close, as now, and its conversions still open new windows.
+  - ⬜ **X44.5 - `--roll` opens the application's file.** The flag opens the
+    window over its file through the same Open, and Save writes to
+    `--save-to`, asking where without it, as `--score` does.
+  - ✅ **X44.6 - Both clients.** *(Done 2026-11-11, with `X44.3`: the
+    example pair `editors/edit_notes` and `edit-notes.html` open the copy
+    with no mode set.)* `NotesEditor.mode` is read only;
+    `to_notation(...)` and `to_midi(spec)` answer the converted copy and
+    change nothing (the `copy` argument goes); `EventSequence.format` and
+    `as_midi`. The examples that set a roll's mode open a sequence written
+    as notation instead.
+  - ⬜ **X44.7 - Tests and documents.** The format and the copies in the
+    document crate; the roll's mode after an open, an undo and a
+    conversion, the conversions' windows, the file's save, open and close
+    in the applications crate and the host; both clients. The rule goes in
+    `docs/app-behavior.md`, the verbs in `docs/verbs.md`, the flag in
+    `docs/cli.md`, the roll's chapter in both books.
+  - **Acceptance:** a MIDI file opened with `--roll` is edited in MIDI mode
+    and saved as a MIDI file; *Convert to notation...* opens a second
+    window in notation mode over the copy while the first still holds the
+    performance unchanged, joins included; the copy saved is an MEI file
+    that `--roll` and `--score` open again; no verb of the roll changes the
+    format of the sequence it edits.
+
 ## Application state and services
 
 *Opened 2026-10-18 by the user after recurring audio-editor defects exposed
@@ -5049,7 +5135,8 @@ Every entry carries a checkbox.
   file as the roll's object (what it holds per format, how it is opened,
   saved and saved as), the editing mode each format allows, the conversion
   as a file into another (and what it carries to the same notes), the
-  roll's File menu, and the clients' surface for all of it.
+  roll's File menu, and the clients' surface for all of it. *Taken into
+  `X44` the same day.*
 
 ## Found by use: the running list of fixes
 

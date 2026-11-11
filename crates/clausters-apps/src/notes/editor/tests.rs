@@ -10,6 +10,13 @@ fn shared() -> Shared {
     ])))
 }
 
+/// [`shared`]'s two notes written as a page, read as they were played.
+#[cfg(feature = "notation")]
+fn page() -> Shared {
+    let written = shared().lock().unwrap().notated(None, None, None).unwrap();
+    Arc::new(Mutex::new(written))
+}
+
 fn editor(sequence: Shared) -> NotesEditor {
     let mut editor = new_json(sequence, r#"{"rate": 100.0, "version": 1}"#);
     editor.window(40);
@@ -720,7 +727,7 @@ fn a_selection_by_pitch_is_the_window_s_and_records_nothing() {
 /// **What the notation mode shows and the voice it edits are the
 /// window's**: a staff, a part or the system shown, the staff edited moved
 /// up and down and refused past the edge, the voice chosen; none of it is
-/// recorded, and in MIDI mode each is refused with why.
+/// recorded, and over a performance each is refused with why.
 #[cfg(feature = "notation")]
 #[test]
 fn the_notation_mode_shows_a_staff_and_edits_a_voice_of_it() {
@@ -734,14 +741,14 @@ fn the_notation_mode_shows_a_staff_and_edits_a_voice_of_it() {
             json!({"midinote": 48, "dur": 1.0, "value": [1, 4], "staff": 1, "voice": 0}),
         ),
     ])));
-    let mut e = editor(sequence);
-    let out = e.event(&window_verb("show_staff"), 1);
+    let mut midi = editor(shared());
+    let out = midi.event(&window_verb("show_staff"), 1);
     assert!(
-        out.record.is_none() && e.editing().scope == Scope::System,
+        out.record.is_none() && midi.editing().scope == Scope::System,
         "MIDI mode refuses"
     );
-    e.event(&window_verb("notation_mode"), 1);
-    assert_eq!(e.editing().mode, Mode::Notation);
+    let mut e = editor(sequence);
+    assert_eq!(e.editing().mode, Mode::Notation, "the format's mode");
     let out = e.event(&window_verb("staff_up"), 2);
     let told = serde_json::to_string(&out.answer).unwrap();
     assert!(told.contains("top staff"), "{told}");
@@ -832,12 +839,14 @@ fn window_verb(verb: &str) -> Event {
     }
 }
 
-/// **Entering notation over a take converts it, in one entry**, and the roll
-/// then draws what is written: each note's voice, how long it sounds inside
-/// how long it is written. MIDI mode converts nothing back.
+/// **Converting a take to notation makes a copy**, which a roll of its own
+/// opens: the take and its roll are as they were, and nothing is recorded.
+/// The copy is in notation mode, and draws what is written: each note's
+/// voice, how long it sounds inside how long it is written. Converting it
+/// to notation again is refused.
 #[cfg(feature = "notation")]
 #[test]
-fn entering_notation_writes_the_take_as_its_page_once() {
+fn converting_a_take_to_notation_opens_a_copy_and_leaves_the_take() {
     let sequence = Arc::new(Mutex::new(EventSequence::new(vec![
         SeqEvent::new(
             0.03,
@@ -848,21 +857,22 @@ fn entering_notation_writes_the_take_as_its_page_once() {
             json!({"midinote": 64, "dur": 1.0, "articulations": ["stacc"]}),
         ),
     ])));
+    let before = sequence.lock().unwrap().clone();
     let mut e = editor(sequence.clone());
-    let out = e.event(&window_verb("notation_mode"), 1);
-    assert_eq!(
-        out.record.expect("the conversion is an entry").label,
-        "write as notation"
-    );
-    assert_eq!(e.editing().mode, Mode::Notation);
-    {
-        let held = sequence.lock().unwrap();
-        assert!(held.written_as_notation());
-        assert_eq!(held.events[0].at.0, 0.0, "where it is written");
-        assert_eq!(held.events[0].data.0["instrument"], json!("bell"));
-    }
+    let out = e.event(&window_verb("convert_notation"), 1);
+    assert!(out.record.is_none(), "a copy is no edit");
+    assert_eq!(*sequence.lock().unwrap(), before, "the take is unchanged");
+    assert_eq!(e.editing().mode, Mode::Midi);
+    let converted = out.converted.expect("the copy");
+    assert_eq!(converted["title"], json!("Notes (notation)"));
+    let copy: EventSequence = serde_json::from_value(converted["sequence"].clone()).unwrap();
+    assert!(copy.written_as_notation());
+    assert_eq!(copy.events[0].at.0, 0.0, "where it is written");
+    assert_eq!(copy.events[0].data.0["instrument"], json!("bell"));
+    let mut page = editor(Arc::new(Mutex::new(copy)));
+    assert_eq!(page.editing().mode, Mode::Notation);
     let props: Value =
-        serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
+        serde_json::from_str(&call_json(&mut page, r#"{"verb": "props", "widget": 40}"#)).unwrap();
     assert_eq!(props["voices"], json!([0, 0, 0, 0]));
     let held: Vec<f64> = serde_json::from_value(props["held"].clone()).unwrap();
     let notes: Vec<f64> = serde_json::from_value(props["notes"].clone()).unwrap();
@@ -870,20 +880,39 @@ fn entering_notation_writes_the_take_as_its_page_once() {
         held[1] < notes[6],
         "the staccato sounds shorter than it is written"
     );
-    // entering again converts nothing more
-    assert!(e.event(&window_verb("notation_mode"), 2).record.is_none());
-    // and MIDI mode converts nothing back
-    assert!(e.event(&window_verb("midi_mode"), 2).record.is_none());
-    assert_eq!(e.editing().mode, Mode::Midi);
-    let props: Value =
-        serde_json::from_str(&call_json(&mut e, r#"{"verb": "props", "widget": 40}"#)).unwrap();
-    assert_eq!(props["voices"], json!([]), "the lists go with the mode");
+    let out = page.event(&window_verb("convert_notation"), 2);
+    assert!(out.converted.is_none());
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("already"), "{told}");
+    assert!(!page.actions(false, false)["convert_notation"].enabled);
 }
 
-/// **A window with the dialog asks how before it converts**: entering
-/// notation opens the form holding the stored reading, `Cancel` leaves the
-/// take and the mode alone, and `OK` converts with what was chosen, in one
-/// entry.
+/// **A page converted to MIDI is a copy that sounds as the page did**, its
+/// notation left out, and the page is as it was.
+#[cfg(feature = "notation")]
+#[test]
+fn converting_a_page_to_midi_opens_a_copy_and_leaves_the_page() {
+    let sequence = page();
+    let before = sequence.lock().unwrap().clone();
+    let mut e = editor(sequence.clone());
+    let out = e.event(&window_verb("convert_midi2"), 1);
+    assert!(out.record.is_none());
+    assert_eq!(*sequence.lock().unwrap(), before);
+    let converted = out.converted.expect("the copy");
+    assert_eq!(converted["title"], json!("Notes (MIDI 2.0)"));
+    let copy: EventSequence = serde_json::from_value(converted["sequence"].clone()).unwrap();
+    assert_eq!(copy.format().name(), "2.0");
+    assert!(
+        copy.events
+            .iter()
+            .all(|ev| ev.data.0.get("value").is_none())
+    );
+}
+
+/// **A window with the dialog asks how before it converts**: the
+/// conversion opens the form holding the stored reading, `Cancel` makes
+/// nothing, and `OK` makes the copy with what was chosen; the take is never
+/// changed.
 #[cfg(feature = "notation")]
 #[test]
 fn entering_notation_in_a_window_with_the_dialog_asks_how_first() {
@@ -912,29 +941,29 @@ fn entering_notation_in_a_window_with_the_dialog_asks_how_first() {
         e.event(&event, 1)
     };
     let stack = ids["stack"].as_i64().unwrap();
-    let out = e.event(&window_verb("notation_mode"), 1);
-    assert!(out.record.is_none(), "nothing is converted yet");
+    let out = e.event(&window_verb("convert_notation"), 1);
+    assert!(out.converted.is_none(), "nothing is converted yet");
     let answer = serde_json::to_value(out.answer.unwrap()).unwrap();
     assert!(answer.to_string().contains(&format!("{stack}")));
-    assert_eq!(e.editing().mode, Mode::Midi);
-    // Cancel: the take is as it was
+    // Cancel: nothing is made
     let out = said(&mut e, "notation:cancel", "click");
-    assert!(out.record.is_none());
-    assert!(!sequence.lock().unwrap().written_as_notation());
+    assert!(out.converted.is_none() && out.record.is_none());
     // OK, in 3/4 with ties
-    e.event(&window_verb("notation_mode"), 1);
+    e.event(&window_verb("convert_notation"), 1);
     said(&mut e, "notation:meter", "3/4");
     said(&mut e, "notation:writing", "2");
     let out = said(&mut e, "notation:ok", "click");
-    assert_eq!(out.record.expect("one entry").label, "write as notation");
-    assert_eq!(e.editing().mode, Mode::Notation);
-    let held = sequence.lock().unwrap();
-    assert!(held.written_as_notation());
+    assert!(out.record.is_none(), "a copy is no edit");
+    assert!(!sequence.lock().unwrap().written_as_notation());
+    assert_eq!(e.editing().mode, Mode::Midi);
+    let copy: EventSequence =
+        serde_json::from_value(out.converted.expect("the copy")["sequence"].clone()).unwrap();
+    assert!(copy.written_as_notation());
     assert_eq!(
-        held.parts_read()[0].writing.polyphony,
+        copy.parts_read()[0].writing.polyphony,
         clausters_document::events::Polyphony::Ties
     );
-    let bars = clausters_editing::notes::bars(&held);
+    let bars = clausters_editing::notes::bars(&copy);
     assert_eq!(bars[1], 3.0, "a bar of three beats");
 }
 
@@ -953,7 +982,7 @@ fn a_meter_that_is_not_one_is_refused_in_the_dialog() {
         &json!({"verb": "window", "widget": 40, "dialogs": ids}).to_string(),
     );
     call_json(&mut e, r#"{"verb": "sync", "window": 39}"#);
-    e.event(&window_verb("notation_mode"), 1);
+    e.event(&window_verb("convert_notation"), 1);
     let event = |name: &str, tag: &str| Event {
         addr: "/gui_event".into(),
         args: vec![ids[name].clone(), json!(1), json!(0), json!(tag)],
@@ -963,7 +992,7 @@ fn a_meter_that_is_not_one_is_refused_in_the_dialog() {
     assert!(out.record.is_none());
     let answer = serde_json::to_value(out.answer.unwrap()).unwrap();
     assert!(answer.to_string().contains("a meter is written as 3/4"));
-    assert_eq!(e.editing().mode, Mode::Midi);
+    assert!(out.converted.is_none());
 }
 
 /// **A bare window has no dialog**, and converts as it did.
@@ -982,9 +1011,8 @@ fn a_bare_roll_names_no_dialog() {
 #[cfg(feature = "notation")]
 #[test]
 fn a_note_in_notation_mode_is_written_and_its_sound_derived() {
-    let sequence = shared();
+    let sequence = page();
     let mut e = editor(sequence.clone());
-    e.event(&window_verb("notation_mode"), 1);
     e.event(&window_verb("voice_2"), 2);
     assert_eq!(e.editing().voice, [0, 1]);
     // a new note, a little off the grid and a little short of a half
@@ -1054,46 +1082,14 @@ fn a_page_s_mark_waits_for_the_notation_mode() {
     assert!(!e.actions(false, false)["slur"].enabled);
 }
 
-/// **An edit in MIDI mode drops what it contradicts of the page**: a new
-/// length drops the written value, so the page reads what is played.
-#[cfg(feature = "notation")]
-#[test]
-fn a_length_edited_in_midi_mode_drops_the_written_value() {
-    let sequence = shared();
-    let mut e = editor(sequence.clone());
-    e.event(&window_verb("notation_mode"), 1);
-    e.event(&window_verb("midi_mode"), 2);
-    let held = sequence.lock().unwrap().clone();
-    let (a, b) = (held.events[0].id, held.events[1].id);
-    let values = vec![
-        json!(a),
-        json!(0.0),
-        json!(50.0),
-        json!(60.0),
-        json!(64.0),
-        json!(0.0),
-        json!(b),
-        json!(100.0),
-        json!(100.0),
-        json!(64.0),
-        json!(64.0),
-        json!(0.0),
-    ];
-    e.event(&gesture("notes", values), 2);
-    let held = sequence.lock().unwrap().clone();
-    let first = held.get(a).unwrap();
-    assert!(first.data.0.get("value").is_none());
-    assert_eq!(first.data.0["dur"], json!(0.5));
-}
-
-/// **Without the notation layer the notation mode says why it is not there**,
-/// and the roll stays as it was.
+/// **Without the notation layer a conversion into notation says why it is
+/// not there**, and makes nothing.
 #[cfg(not(feature = "notation"))]
 #[test]
-fn without_the_notation_layer_the_notation_mode_says_why() {
+fn without_the_notation_layer_the_conversion_says_why() {
     let mut e = editor(shared());
-    let out = e.event(&window_verb("notation_mode"), 1);
-    assert!(out.record.is_none());
+    let out = e.event(&window_verb("convert_notation"), 1);
+    assert!(out.record.is_none() && out.converted.is_none());
     assert_eq!(e.editing().mode, Mode::Midi);
 }
 
@@ -1105,25 +1101,29 @@ fn without_the_notation_layer_the_notation_mode_says_why() {
 #[cfg(feature = "notation")]
 #[test]
 fn a_page_s_marks_are_drawn_with_the_engraver_s_symbols() {
-    let sequence = shared();
-    let mut e = editor(sequence.clone());
+    let mut midi = editor(shared());
     let asked = Arc::new(Mutex::new(0));
     let count = Arc::clone(&asked);
-    e.set_outlines(Some(Arc::new(move |codes: &[&str]| {
+    let outlines: crate::notes::OutlineSource = Arc::new(move |codes: &[&str]| {
         *count.lock().unwrap() += 1;
         codes
             .iter()
             .filter(|c| **c == "E4A0")
             .map(|c| (c.to_string(), "M0 0 L100 0 L100 100 Z".to_string()))
             .collect()
-    })));
-    e.event(&gesture("accent", vec![json!(1)]), 1);
+    });
+    midi.set_outlines(Some(outlines.clone()));
+    midi.event(&gesture("accent", vec![json!(1)]), 1);
     assert_eq!(
         *asked.lock().unwrap(),
         0,
         "a roll in MIDI mode asks nothing"
     );
-    let told = serde_json::to_string(&e.event(&window_verb("notation_mode"), 1).answer).unwrap();
+    let sequence = page();
+    let mut e = new_json(sequence.clone(), r#"{"rate": 100.0, "version": 1}"#);
+    e.set_outlines(Some(outlines));
+    let told = e.window(40).to_string();
+    call_json(&mut e, r#"{"verb": "sync", "window": 39}"#);
     assert!(told.contains("\"glyphs\":{\"E4A0\""), "{told}");
     let first = sequence.lock().unwrap().events[0].id;
     e.event(&gesture("accent", vec![json!(first)]), 2);
@@ -1136,8 +1136,7 @@ fn a_page_s_marks_are_drawn_with_the_engraver_s_symbols() {
         .find_map(|c| c.props.get("marks"))
         .expect("the marks");
     assert_eq!(marks[0], json!("\u{E4A0} -"));
-    e.event(&window_verb("midi_mode"), 4);
-    e.event(&window_verb("notation_mode"), 4);
+    e.window(40);
     assert_eq!(*asked.lock().unwrap(), 1, "asked once");
 }
 

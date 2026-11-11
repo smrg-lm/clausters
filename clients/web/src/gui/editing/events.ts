@@ -447,63 +447,51 @@ export class NotesEditor extends SequenceHandler {
         if (answer?.refused) throw new RangeError(answer.refused);
     }
 
-    // ---- the roll's two modes ----
+    // ---- the roll's mode, which is its format's ----
 
     /**
-     * **The roll's mode**: `"midi"`, the events as MIDI says them -- notes on
-     * and off, velocities, channels, curves, joins -- or `"notation"`, a view
-     * of the page they are written as: each note on a staff and a voice, as
-     * long as it is written with what it sounds inside it, a velocity shown
-     * and edited as a dynamic, and what it sounds derived from what is
-     * written. The window's, not the sequence's.
+     * **The roll's mode**: `"notation"` over a sequence written as a page --
+     * each note on a staff and a voice, as long as it is written with what it
+     * sounds inside it, a velocity shown and edited as a dynamic, and what it
+     * sounds derived from what is written -- and `"midi"` over every other:
+     * the events as MIDI says them, notes on and off, velocities, channels,
+     * curves, joins. It is the sequence's format's ({@link EventSequence.format}),
+     * and nothing the roll does changes it: going to another format is a
+     * conversion into a copy ({@link NotesEditor.toNotation},
+     * {@link NotesEditor.toMidi}).
      */
     async mode(): Promise<"midi" | "notation"> {
         return ((await this.coreCall("editing")).mode ?? "midi") as "midi" | "notation";
     }
 
     /**
-     * Sets the roll's mode: no edit, but for **entering notation over a
-     * sequence written as no notation**, which converts it in place first
-     * with the reading it stores ({@link NotesEditor.toNotation}, one entry
-     * of the history) -- where a hand entering notation in the window is
-     * asked how first. Going to MIDI converts nothing.
-     */
-    async setMode(mode: "midi" | "notation"): Promise<void> {
-        if (mode !== "midi" && mode !== "notation") {
-            throw new Error(`a roll's mode is "midi" or "notation", not ${JSON.stringify(mode)}`);
-        }
-        // the window's verb asks a hand how to convert; a script has said
-        if (mode === "notation" && (await this.coreCall("editing")).written === false) {
-            this.structure.toNotation();
-        }
-        this.verb(`${mode}_mode`);
-    }
-
-    /**
-     * **Write the sequence as notation and edit it so**: read with `meter`
+     * **A copy of the sequence written as notation**: read with `meter`
      * (`"3/4"`) and `division` (`16` for a sixteenth) over its stored reading,
-     * each part written in `"voices"` or with `"ties"` --
-     * {@link EventSequence.toNotation} -- and the roll put in notation mode.
-     * Answers the sequence. With `copy: true` the sequence is left as it is
-     * and a converted copy is answered ({@link EventSequence.notated}), which
-     * an editor of its own opens.
+     * each part written in `"voices"` or with `"ties"`
+     * ({@link EventSequence.notated}). The sequence the roll edits is not
+     * changed; the copy is opened in a roll of its own with `edit`. The
+     * window's *Convert to notation...* is the same conversion, and opens the
+     * copy itself.
      */
-    async toNotation(
-        options: { meter?: string; division?: number; writing?: "voices" | "ties"; copy?: boolean } = {},
-    ): Promise<EventSequence> {
+    toNotation(
+        options: { meter?: string; division?: number; writing?: "voices" | "ties" } = {},
+    ): EventSequence {
         const reading: Record<string, unknown> = {};
         if (options.meter !== undefined) reading.meter = options.meter;
         if (options.division !== undefined) reading.division = options.division;
         const given = Object.keys(reading).length > 0 ? reading : undefined;
-        if (options.copy) return this.structure.notated(given, options.writing);
-        this.structure.toNotation(given, options.writing);
-        await this.setMode("notation");
-        return this.structure;
+        return this.structure.notated(given, options.writing);
     }
 
-    /** The roll in MIDI mode: nothing is converted, since the events already hold what they sound. */
-    async toMidi(): Promise<void> {
-        await this.setMode("midi");
+    /**
+     * **A copy of the sequence as its performance, written for `spec`**
+     * ({@link EventSequence.asMidi}): `"1.0"`, `"mpe"` or `"2.0"`. The sequence
+     * the roll edits is not changed. The window's *Convert to MIDI 1.0*, *to
+     * MPE* and *to MIDI 2.0* are the same conversions, and open the copy
+     * themselves.
+     */
+    toMidi(spec = "1.0", options: { upper?: boolean; members?: number } = {}): EventSequence {
+        return this.structure.asMidi(spec, options);
     }
 
     /**

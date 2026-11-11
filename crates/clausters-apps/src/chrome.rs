@@ -154,6 +154,19 @@ pub fn menu(app: App, saves: bool) -> Value {
         }
         file.push(sep());
     }
+    if app == App::Notes {
+        // a conversion opens a copy in another format in a roll of its own
+        file.extend(
+            [
+                "convert_notation",
+                "convert_midi1",
+                "convert_mpe",
+                "convert_midi2",
+            ]
+            .map(|v| entry(app, v)),
+        );
+        file.push(sep());
+    }
     file.push(entry(app, "close"));
 
     let mut edit = vec![
@@ -292,12 +305,9 @@ pub fn menu(app: App, saves: bool) -> Value {
         bar.push(sub("Track", vec![entry(app, "add_track")]));
     }
     if app == App::Notes {
-        // the roll's two modes, and what its notation mode shows, edits and
-        // writes
+        // what the notation mode shows, edits and writes: the mode is the
+        // sequence's format's, and a conversion is the File menu's
         let mut notation = vec![
-            entry(app, "midi_mode"),
-            entry(app, "notation_mode"),
-            sep(),
             entry(app, "show_system"),
             entry(app, "show_part"),
             entry(app, "show_staff"),
