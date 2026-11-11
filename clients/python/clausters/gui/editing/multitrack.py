@@ -307,6 +307,18 @@ class MultitrackEditor(Marking, HostedEditor):
     def snap_to_grid(self, on: bool) -> None:
         self._editor({"verb": "sync", "snap": bool(on)})
 
+    @property
+    def ruler(self) -> str:
+        """**What the window's time ruler counts in**: ``"beats"`` (bars and
+        beats, through the tempo map), ``"time"`` (minutes and seconds) or
+        ``"samples"`` -- the View menu's Ruler, the window's own and no edit. The multitrack's ruler is over its tracks, bars
+        and beats until another is chosen."""
+        return self._ruler()
+
+    @ruler.setter
+    def ruler(self, unit: str) -> None:
+        self._set_ruler(unit)
+
     # ---- what the hand holds ----
 
     def _marked(self) -> list:

@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use clausters_document::events::{self, EventsIntent};
 use clausters_document::history::Editable;
@@ -263,7 +263,14 @@ pub struct NotesEditor {
     /// since leaves a switch missing or over, so the window is drawn again
     /// ([`NotesEditor::panel_stale`]).
     display_lanes: Option<Vec<String>>,
+    /// **What the window's time ruler counts in** ([`crate::ruler`]): the
+    /// window's own, bars and beats until another is chosen.
+    ruler_unit: crate::ruler::Unit,
 }
+
+/// **The window's time ruler** ([`crate::ruler`]), by the name the caller
+/// numbers it with: a window composed whole has it over the roll.
+pub const RULER: &str = "ruler";
 
 /// **The panel's switch**, as the window asks for it: the View menu's
 /// entry, or a client's `verb("events_panel")`.
@@ -375,6 +382,7 @@ impl NotesEditor {
             leaving: None,
             scores: super::file::Scores::default(),
             display_lanes: None,
+            ruler_unit: crate::ruler::Unit::Beats,
             sequence,
         }
     }
@@ -596,7 +604,7 @@ impl NotesEditor {
                 "color_voice" => Some(self.editing.color_by == ColorBy::Voice),
                 "color_staff" => Some(self.editing.color_by == ColorBy::Staff),
                 "color_part" => Some(self.editing.color_by == ColorBy::Part),
-                _ => None,
+                _ => self.ruler_unit.chosen_by(verb),
             }
         })
         .into_iter()
@@ -922,11 +930,22 @@ impl NotesEditor {
             drawn.insert("midi_in".into(), json!(1));
         }
         drawn.insert("tool".into(), json!(self.tool));
+        let ruler = self.time_ruler(&drawn);
+        if let Some(ruler) = &ruler {
+            ruler.rule(&mut drawn);
+        }
         if self.tabbed() {
             drawn.insert("lane".into(), json!(self.lane_shown()));
             drawn.insert("lane_tabs".into(), self.lane_tabs());
         }
         let mut window = window(drawn, widget, &self.title, self.size);
+        // **the window's time ruler, over the roll**
+        if let (Some(ruler), Some(children)) = (
+            ruler,
+            window.get_mut("children").and_then(Value::as_array_mut),
+        ) {
+            children.insert(0, ruler.widget());
+        }
         if !self.bare {
             use crate::chrome::{self, App};
             chrome::dress(
@@ -978,6 +997,30 @@ impl NotesEditor {
     /// its rows one under another.
     fn tabbed(&self) -> bool {
         !self.dialogs.ids.is_empty()
+    }
+
+    /// **The window's time ruler**, over the roll, where the caller numbered
+    /// it: the sequence's tempo map and bars, and the play cursor anchored as
+    /// the roll's is. The roll and the ruler are one navigation group, named
+    /// by the roll's widget.
+    fn time_ruler(&self, roll: &Map<String, Value>) -> Option<crate::ruler::TimeRuler> {
+        let id = *self.dialogs.ids.get(RULER)?;
+        let widget = self.widget?;
+        let x = roll.get("axes").and_then(|a| a.get("x"));
+        let mut axis = Map::new();
+        for key in ["tempo_map", "bars", "playhead_at"] {
+            if let Some(value) = x.and_then(|x| x.get(key)) {
+                axis.insert(key.into(), value.clone());
+            }
+        }
+        Some(crate::ruler::TimeRuler {
+            id,
+            unit: self.ruler_unit,
+            link: i64::from(widget),
+            rate: self.rate,
+            side: crate::ruler::Side::Top,
+            axis,
+        })
     }
 
     /// **The tabs the roll draws over its lane**, one per lane offered: flat
@@ -1235,6 +1278,10 @@ impl NotesEditor {
         props.insert("grid".into(), json!(self.grid));
         props.insert("grid_snap".into(), json!(self.snap));
         props.insert("tool".into(), json!(self.tool));
+        let ruler = self.time_ruler(&props);
+        if let Some(ruler) = &ruler {
+            ruler.rule(&mut props);
+        }
         // the panel reads the sequence again
         drop(held);
         if self.tabbed() {
@@ -1245,6 +1292,21 @@ impl NotesEditor {
             widget,
             props: Value::Object(props),
         }];
+        // the ruler counts in the window's unit, on the sequence's tempo
+        if let Some(ruler) = ruler {
+            let strip = ruler.widget();
+            let mut flat = serde_json::Map::new();
+            flat.insert("ruler".into(), json!(ruler.unit.prop()));
+            for key in ["tempo_map", "bars"] {
+                if let Some(value) = strip["axes"]["x"].get(key) {
+                    flat.insert(key.into(), value.clone());
+                }
+            }
+            corrections.push(Correction {
+                widget: i64::from(ruler.id),
+                props: Value::Object(flat),
+            });
+        }
         corrections.extend(self.panel_corrections());
         corrections.extend(self.display_corrections());
         corrections
@@ -1493,6 +1555,10 @@ impl Converse for NotesEditor {
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         if let Some(name) = self.dialogs.name(widget).map(str::to_string) {
+            // the ruler's press and sweep are the roll's: a locate, a range
+            if name == RULER {
+                return self.gesture(widget, tag, values, out);
+            }
             if panel::names().contains(&name) {
                 return self.panel_said(&name, tag, values, out);
             }
@@ -1557,8 +1623,15 @@ impl Converse for NotesEditor {
             return true;
         }
         let tool = roll::tool_of_verb(&message.tag);
-        if message.tag == SNAP_VERB || message.tag == MONOPHONIC_VERB || tool.is_some() {
-            if let Some(tool) = tool {
+        let unit = crate::ruler::Unit::of_verb(&message.tag);
+        if message.tag == SNAP_VERB
+            || message.tag == MONOPHONIC_VERB
+            || tool.is_some()
+            || unit.is_some()
+        {
+            if let Some(unit) = unit {
+                self.ruler_unit = unit;
+            } else if let Some(tool) = tool {
                 self.tool = tool;
             } else if message.tag == SNAP_VERB {
                 self.snap = !self.snap;
@@ -1682,6 +1755,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             let mut names = dialogs::names();
             names.extend(panel::names());
             names.extend(display::names());
+            names.push(RULER.into());
             editor.dialogs.ids = request
                 .get("dialogs")
                 .and_then(Value::as_object)
@@ -1700,6 +1774,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             let mut names = dialogs::names();
             names.extend(panel::names());
             names.extend(display::names());
+            names.push(RULER.into());
             json!({ "dialogs": names }).to_string()
         }
         "props" => match editor.resync_widget(i64::from(widget)).into_iter().next() {

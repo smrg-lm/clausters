@@ -187,7 +187,7 @@ fn on_ruler(host: &Host, def_id: i32, p: &layout::Placed, y: f64) -> bool {
     let Some(editor) = p.widget.kind.editor() else {
         return false;
     };
-    if editor.ruler == super::super::widget::Ruler::Off {
+    if !editor.strip() {
         return false;
     }
     let rh = host.metrics_for(def_id).ruler_h.min(p.rect.h);

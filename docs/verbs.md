@@ -61,6 +61,9 @@ The verdict is one of three:
 | `window` | `snap` | `MultitrackEditor.snap_to_grid` `NotesEditor.snap_to_grid` | `MultitrackEditor.snapToGrid` `NotesEditor.snapToGrid` | **api** — a switch: `snap_to_grid = False` |
 | `window` | `delete` | `Editor.delete` | `Editor.delete` | **api** |
 | `window` | `select_all` | `Editor.select_all` | `Editor.selectAll` | **api** |
+| `window` | `ruler_beats` | `AudioEditor.ruler` `MultitrackEditor.ruler` `NotesEditor.ruler` | `AudioEditor.ruler` `MultitrackEditor.ruler` `NotesEditor.ruler` | **api** — `ruler = "beats"`; on the web `setRuler("beats")` |
+| `window` | `ruler_time` | `AudioEditor.ruler` `MultitrackEditor.ruler` `NotesEditor.ruler` | `AudioEditor.ruler` `MultitrackEditor.ruler` `NotesEditor.ruler` | **api** — `ruler = "time"`; on the web `setRuler("time")` |
+| `window` | `ruler_samples` | `AudioEditor.ruler` `MultitrackEditor.ruler` `NotesEditor.ruler` | `AudioEditor.ruler` `MultitrackEditor.ruler` `NotesEditor.ruler` | **api** — `ruler = "samples"`; on the web `setRuler("samples")` |
 | `window` | `keys` | — | — | **n/a** — the window's key sheet, a page of the window itself rather than an act on what it holds; `verb("keys")` shows it |
 | `audio` | `new_file` | `AudioEditor.new_file` | `AudioEditor.newFile` | **api** — the form's shape, added to this editor as a file in focus |
 | `audio` | `open_file` | `AudioEditor.open_file` | `AudioEditor.openFile` | **api** — a path or a list of them, chosen in the host's chooser from the window, each added to this editor |

@@ -448,6 +448,18 @@ class AudioEditor(HostedEditor):
         self._view("view_both")
 
     @property
+    def ruler(self) -> str:
+        """**What the window's time ruler counts in**: ``"beats"`` (bars and
+        beats, through the tempo map), ``"time"`` (minutes and seconds) or
+        ``"samples"`` -- the View menu's Ruler, the window's own and no edit. A take's ruler is under it, seconds until another
+        is chosen; a take has no tempo, so ``"beats"`` is refused with why."""
+        return self._ruler()
+
+    @ruler.setter
+    def ruler(self, unit: str) -> None:
+        self._set_ruler(unit)
+
+    @property
     def folded(self) -> list:
         """The channels drawn folded, in order. A view state, outside the
         history."""

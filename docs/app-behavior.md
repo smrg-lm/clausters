@@ -719,6 +719,18 @@ code that keeps it lives.
   voice overlap only as a chord, and a gesture that leaves any other overlap
   is refused with why. A note of a voice other than the one edited is drawn
   faint and is not taken by a press or a marquee.
+- **A window with a time axis has one time ruler, and its unit is the
+  window's.** The multitrack, the roll and the audio editor compose the same
+  strip (`clausters_apps::ruler`): over the tracks and over the roll, under
+  the take in the audio editor, drawn as its mirror there so its marks face
+  the views. The views under it draw no strip of their own and count their
+  readouts in its unit. View > Ruler (a client's `ruler`) chooses bars and
+  beats, minutes and seconds or samples, recorded nowhere; bars and beats
+  are the multitrack's and the roll's default, seconds the audio editor's,
+  where bars and beats are refused since a take has no tempo. A press on the
+  strip is the window's: a click places the position cursor and Alt and a
+  drag sweeps a time range.
+
 - **A plain press on the roll is its tool's, and the modifiers are every
   tool's.** The window's tool (the keys 1 to 5, the toolbar's icons, the
   Edit menu's Tool; a client's `tool`) says what a press with no modifier

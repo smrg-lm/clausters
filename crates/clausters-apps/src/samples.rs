@@ -100,6 +100,11 @@ pub struct Window<'a> {
     /// **The spectrogram's props**: how it analyzes and draws the take,
     /// given to every picture of it.
     pub spectrogram: Option<&'a Value>,
+    /// **The window's time ruler** ([`crate::ruler`]), under the take, when
+    /// the caller numbered it: the views over it draw no strip of their own.
+    pub ruler: Option<i32>,
+    /// What the time ruler counts in, the window's choice.
+    pub unit: crate::ruler::Unit,
 }
 
 /// What a window with no file open says where the take would be.
@@ -134,7 +139,7 @@ pub fn window(w: &Window<'_>) -> Value {
     let mut picture = catalogue::waveform(&Waveform {
         channels: Some(w.channels.max(1)),
         measure: w.layers.to_wire(),
-        ruler: "time".into(),
+        ruler: w.unit.prop().into(),
         sample_rate: w.rate,
         label: label(w.name),
         // The application decides whether this file reads the transport.
@@ -166,7 +171,7 @@ pub fn window(w: &Window<'_>) -> Value {
         let mut lane = catalogue::waveform(&Waveform {
             channels: Some(w.channels.max(1)),
             measure: "spectrogram".into(),
-            ruler: "time".into(),
+            ruler: w.unit.prop().into(),
             sample_rate: w.rate,
             ..Waveform::default()
         });
@@ -182,6 +187,28 @@ pub fn window(w: &Window<'_>) -> Value {
         spectrogram(&mut lane);
         Value::Object(lane)
     });
+    // **The window's time ruler, under the take** and drawn as the mirror of
+    // the multitrack's: the views over it on its axis, in its unit, with no
+    // strip of their own. Without one, the bottom view carries its strip.
+    let ruler = w.ruler.map(|id| {
+        let mut axis = Map::new();
+        axis.insert("playhead_at".into(), json!(w.playhead_at));
+        crate::ruler::TimeRuler {
+            id,
+            unit: w.unit,
+            link: i64::from(w.pane.unwrap_or(w.widget)),
+            rate: w.rate,
+            side: crate::ruler::Side::Bottom,
+            axis,
+        }
+    });
+    let lane = match (lane, &ruler) {
+        (Some(Value::Object(mut lane)), Some(ruler)) => {
+            ruler.rule(&mut lane);
+            Some(Value::Object(lane))
+        }
+        (lane, _) => lane,
+    };
     let ruled = lane.is_none();
     let picture = if let Some(pane) = w.pane {
         let axes = picture.remove("axes").unwrap_or(Value::Null);
@@ -191,22 +218,31 @@ pub fn window(w: &Window<'_>) -> Value {
         if let Some(y) = axes.get("y") {
             picture.insert("axes".into(), json!({"y": y}));
         }
-        let mut x = axes.get("x").cloned().unwrap_or_else(|| json!({}));
-        if !ruled {
-            x["ruler"] = json!(false);
+        let x = axes.get("x").cloned().unwrap_or_else(|| json!({}));
+        let mut pane = json!({"type": "pane", "id": pane, "weight": 1, "layer": w.layer,
+            "label": label, "axes": {"x": x}, "children": [picture]});
+        match (&ruler, pane.as_object_mut()) {
+            (Some(ruler), Some(pane)) => ruler.rule(pane),
+            (None, _) if !ruled => pane["axes"]["x"]["ruler"] = json!(false),
+            _ => {}
         }
-        json!({"type": "pane", "id": pane, "weight": 1, "layer": w.layer, "label": label,
-            "axes": {"x": x}, "children": [picture]})
+        pane
     } else {
-        if !ruled {
-            picture.insert("ruler".into(), json!(false));
+        match &ruler {
+            Some(ruler) => ruler.rule(&mut picture),
+            None if !ruled => {
+                picture.insert("ruler".into(), json!(false));
+            }
+            None => {}
         }
         Value::Object(picture)
     };
-    let picture = match lane {
-        Some(lane) => json!({"type": "layout", "flow": "col", "margin": 0, "weight": 1,
-            "children": [picture, lane]}),
-        None => picture,
+    let mut stack: Vec<Value> = [Some(picture), lane].into_iter().flatten().collect();
+    stack.extend(ruler.map(|ruler| ruler.widget()));
+    let picture = if stack.len() == 1 {
+        stack.remove(0)
+    } else {
+        json!({"type": "layout", "flow": "col", "margin": 0, "weight": 1, "children": stack})
     };
     let mut children = vec![picture];
     // **The level, beside the take**: the editor's output measured before its
@@ -329,6 +365,8 @@ mod tests {
             empty: false,
             segments: &json!({"shared": 1}),
             spectrogram: None,
+            ruler: None,
+            unit: crate::ruler::Unit::Time,
         })
     }
 

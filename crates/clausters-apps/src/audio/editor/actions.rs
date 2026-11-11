@@ -60,6 +60,9 @@ impl AudioEditor {
                     "loop" => Some(view.looping),
                     "toggle_files" => Some(self.window_state.files_visible),
                     "spectrogram_settings" => Some(self.window_state.settings_visible),
+                    _ if crate::ruler::Unit::of_verb(name).is_some() => {
+                        self.window_state.ruler_unit.chosen_by(name)
+                    }
                     _ => state.value.as_deref().map(|on| on == name),
                 };
                 if !window && !self.open_files.open {
@@ -71,6 +74,7 @@ impl AudioEditor {
                     "show_envelope" if self.window_state.envelope_widget.is_none() => {
                         state.refuse("this window has no envelope body");
                     }
+                    "ruler_beats" => state.refuse(super::NO_BEATS),
                     _ => {}
                 }
                 // Work on the file in focus holds back what would edit, save or

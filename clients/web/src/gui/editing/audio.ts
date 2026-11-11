@@ -531,6 +531,21 @@ export class AudioEditor extends HostedEditor {
     async viewSpectrogram(): Promise<void> { await this.view("view_spectrogram"); }
 
     /**
+     * **What the window's time ruler counts in**: `"beats"` (bars and beats,
+     * through the tempo map), `"time"` (minutes and seconds) or `"samples"` --
+     * the View menu's Ruler, the window's own and no edit. A take's ruler is under it, seconds until another is
+     * chosen; a take has no tempo, so `"beats"` is refused with why.
+     */
+    async ruler(): Promise<string> {
+        return this.rulerUnit();
+    }
+
+    /** Sets what the window's time ruler counts in: no edit. */
+    setRuler(unit: "beats" | "time" | "samples"): void {
+        this.chooseRuler(unit);
+    }
+
+    /**
      * Show both, stacked: the waveform in the take's lane and the spectrogram
      * in a lane under it, on one time axis.
      */

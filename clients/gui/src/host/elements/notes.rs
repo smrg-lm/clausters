@@ -577,13 +577,7 @@ impl Notes {
     /// The lanes, when there are any, take the bottom of the plane (and of the
     /// keyboard beside it, where their labels go).
     fn regions(&self, rect: Rect, indent: f32, m: &Metrics) -> pianoroll::Regions {
-        let mut r = pianoroll::regions(
-            rect,
-            self.editor.ruler != Ruler::Off,
-            self.osc_markers,
-            indent,
-            m,
-        );
+        let mut r = pianoroll::regions(rect, self.editor.strip(), self.osc_markers, indent, m);
         // the lane's tabs sit right over it
         let rows = self.rows_h(r.grid.h, m) + self.tabs_h(m);
         r.grid.h = (r.grid.h - rows).max(0.0);
@@ -621,7 +615,7 @@ impl Notes {
         }
         let full = pianoroll::regions(
             ctx.rect,
-            self.editor.ruler != Ruler::Off,
+            self.editor.strip(),
             self.osc_markers,
             ctx.indent,
             ctx.metrics,
@@ -1052,7 +1046,7 @@ impl Element for Notes {
         }
         self.draw_midi_spec(d, ctx);
         let rate = self.rate(ctx.world.sample_rate);
-        if self.editor.ruler != Ruler::Off {
+        if self.editor.strip() {
             // The strip sits under the grid, aligned to the grid's x range --
             // the "body" the tick math derives it from.
             let body = Rect::new(r.grid.x, ctx.rect.y, r.grid.w, r.ruler.y - ctx.rect.y);
@@ -2982,6 +2976,27 @@ mod tests {
                 .into_messages()
                 .len(),
             1
+        );
+    }
+
+    /// **A roll under the window's ruler draws no strip of its own** and
+    /// still counts in the unit: the plane takes the room, and a `/gui_set`
+    /// gives the strip back.
+    #[test]
+    fn a_roll_under_the_window_s_ruler_reserves_no_strip() {
+        let m = Metrics::default();
+        let mut r = roll(
+            r#"{"notes":[0.0,100.0,60.0,64,0],"min":48,"max":72,
+                "ruler":"samples","ruler_strip":false}"#,
+        );
+        assert_eq!(r.editor.ruler, Ruler::Samples, "the unit stays");
+        assert!(!r.editor.strip());
+        let bare = r.regions(rect(), pianoroll::KEYBOARD_W, &m);
+        assert!(r.set("ruler_strip", &Value::from(true)));
+        let ruled = r.regions(rect(), pianoroll::KEYBOARD_W, &m);
+        assert!(
+            bare.grid.h > ruled.grid.h,
+            "the strip's room is the plane's"
         );
     }
 

@@ -289,6 +289,21 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
         await this.editorVerb({ verb: "sync", snap: Boolean(on) });
     }
 
+    /**
+     * **What the window's time ruler counts in**: `"beats"` (bars and beats,
+     * through the tempo map), `"time"` (minutes and seconds) or `"samples"` --
+     * the View menu's Ruler, the window's own and no edit. The multitrack's ruler is over its tracks, bars and beats
+     * until another is chosen.
+     */
+    async ruler(): Promise<string> {
+        return this.rulerUnit();
+    }
+
+    /** Sets what the window's time ruler counts in: no edit. */
+    setRuler(unit: "beats" | "time" | "samples"): void {
+        this.chooseRuler(unit);
+    }
+
     // ---- what the hand holds ----
 
     /** The regions of the boxes the window holds. @internal */

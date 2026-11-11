@@ -278,7 +278,7 @@ impl Curve {
     /// a ruler stacked with it starts its ticks at the same pixel.
     fn regions(&self, rect: Rect, indent: f32, m: &Metrics) -> Regions {
         let outer = controls::body_rect(rect, self.label.is_some(), m);
-        let ruled = self.editor.ruler != Ruler::Off && outer.h > m.ruler_h * 2.0;
+        let ruled = self.editor.strip() && outer.h > m.ruler_h * 2.0;
         let strip_h = if ruled { m.ruler_h } else { 0.0 };
         let gutter = if self.editor.ruler_y == RulerY::Off {
             0.0

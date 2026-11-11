@@ -37,7 +37,7 @@ pub(crate) fn draw_time_ruler(
     rate: f64,
     editor: &EditorProps,
 ) {
-    if editor.ruler == Ruler::Off {
+    if !editor.strip() {
         return;
     }
     let metrics = d.m;

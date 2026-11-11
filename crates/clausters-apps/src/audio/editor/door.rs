@@ -240,9 +240,10 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 /// - `envelope` -- seconds-based gain quads. `show_envelope` shows the body.
 /// - `setautomation` -- `points`, gain quads; `apply_envelope` renders them.
 ///   Scripted edits go through `Editing::act` so their history is recorded.
-/// - `window` -- `widget`, optional `pane`, `envelope`, `lane` and `meter`, the
-///   ids of the axis container, the gain curve, the spectrogram's lane and
-///   the level meter: the window, as a GuiDef.
+/// - `window` -- `widget`, optional `pane`, `envelope`, `lane`, `ruler` and
+///   `meter`, the ids of the axis container, the gain curve, the
+///   spectrogram's lane, the time ruler and the level meter: the window, as
+///   a GuiDef.
 /// - `props` -- `widget`: the correction.
 /// - `event` -- `addr`, `args`, `version`: an [`Outcome`].
 /// - `parts` -- `{"parts", "frames"}`: the list, and how long it is.
@@ -347,6 +348,10 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
                 .map(|n| n as i32);
             editor.window_state.lane = request
                 .get("lane")
+                .and_then(Value::as_i64)
+                .map(|n| n as i32);
+            editor.window_state.ruler = request
+                .get("ruler")
                 .and_then(Value::as_i64)
                 .map(|n| n as i32);
             editor.window(

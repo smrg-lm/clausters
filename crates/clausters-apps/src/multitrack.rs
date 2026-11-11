@@ -59,9 +59,6 @@ pub const STOP: &str = "transport_stop";
 /// The name of the label that reads where the multitrack is.
 pub const CLOCK: &str = "transport_clock";
 
-/// The strip that rules the multitrack, in logical pixels.
-const RULER_H: f64 = 20.0;
-
 /// The ids of the transport row, for a caller that numbers them itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct TransportIds {
@@ -118,6 +115,8 @@ pub struct Window<'a> {
     pub widget: i32,
     /// The id of the strip that rules it.
     pub ruler: i32,
+    /// What that strip counts in, the window's choice.
+    pub unit: crate::ruler::Unit,
     /// The navigation group the multitrack and its ruler share, when the caller names
     /// one.
     pub link: Option<i64>,
@@ -256,6 +255,7 @@ pub fn props(w: &Window<'_>, widget: i32) -> Map<String, Value> {
     if widget == w.ruler {
         let mut out = Map::new();
         out.insert("cursor".into(), json!(w.cursor_units()));
+        out.insert("ruler".into(), json!(w.unit.prop()));
         return out;
     }
     if widget != w.widget {
@@ -287,8 +287,9 @@ fn multitrack_props(w: &Window<'_>) -> Map<String, Value> {
         .collect();
     props.insert("meters".into(), Value::Array(meters));
     props.insert("weight".into(), json!(1.0));
-    props.insert("ruler".into(), json!("beats"));
     props.insert("sample_rate".into(), json!(w.look.rate));
+    // ruled by the window's strip, in its unit
+    time_ruler(w).rule(&mut props);
     // **The window is the reader's.** In an editor a content change is mostly
     // the reader's own edit, so the axis does not re-frame itself on one.
     props.insert("autofit".into(), json!(false));
@@ -307,26 +308,30 @@ fn multitrack_props(w: &Window<'_>) -> Map<String, Value> {
     props
 }
 
-/// The free-standing strip that rules the multitrack from above: its marks hug its
-/// bottom edge, which is a ruler's default there.
+/// **The window's time ruler** ([`crate::ruler`]), over the multitrack: its
+/// beats and bars the multitrack's tempo map, and its position cursor.
+fn time_ruler(w: &Window<'_>) -> crate::ruler::TimeRuler {
+    let mut axis = Map::new();
+    axis.insert("tempo_map".into(), json!(w.tempo_map()));
+    // **The same anchor as the multitrack's**, because the ruler comes first:
+    // a linked group is seeded by its first member, so a ruler with no
+    // anchor left the whole window's head parked and only a client's later
+    // `/gui_set` ever swept it.
+    axis.insert("playhead_at".into(), json!(0.0));
+    axis.insert("cursor".into(), json!(w.cursor_units()));
+    crate::ruler::TimeRuler {
+        id: w.ruler,
+        unit: w.unit,
+        link: w.group(),
+        rate: w.look.rate,
+        side: crate::ruler::Side::Top,
+        axis,
+    }
+}
+
+/// The free-standing strip that rules the multitrack from above.
 fn ruler(w: &Window<'_>) -> Value {
-    json!({
-        "type": "field",
-        "id": w.ruler,
-        "h": RULER_H,
-        "axes": {"x": {
-            "unit": "beats",
-            "tempo_map": w.tempo_map(),
-            "sample_rate": w.look.rate,
-            "link": w.group(),
-            // **The same anchor as the multitrack's**, because the ruler comes
-            // first: a linked group is seeded by its first member, so a ruler
-            // with no anchor left the whole window's head parked and only a
-            // client's later `/gui_set` ever swept it.
-            "playhead_at": 0.0,
-            "cursor": w.cursor_units(),
-        }},
-    })
+    time_ruler(w).widget()
 }
 
 /// **The transport, as tools**: rewind, play/pause and stop by name, the loop
@@ -463,6 +468,7 @@ mod tests {
             tempo: &tempo,
             widget: 7,
             ruler: 8,
+            unit: crate::ruler::Unit::Beats,
             link: None,
             cursor,
             meters: &meters,
@@ -605,8 +611,8 @@ mod tests {
         let ruler = compose(Transport::Absent, None, |w| super::props(w, w.ruler));
         assert_eq!(
             Value::Object(ruler),
-            json!({"cursor": 0.0}),
-            "the ruler's state is its cursor, and the top until one is placed"
+            json!({"cursor": 0.0, "ruler": "beats"}),
+            "the ruler's state is its cursor, the top until one is placed, and its unit"
         );
     }
 }

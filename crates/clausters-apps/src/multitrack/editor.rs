@@ -383,6 +383,9 @@ pub struct MultitrackEditor {
     /// `"spectrogram"` -- the audio editor's view of its take, which draws
     /// either. The window's own, like its zoom.
     samples_view: &'static str,
+    /// **What the window's time ruler counts in** ([`crate::ruler`]): the
+    /// window's own, bars and beats until another is chosen.
+    ruler_unit: crate::ruler::Unit,
 }
 
 /// The file facts of one session, retained with its contents and history.
@@ -558,6 +561,7 @@ impl MultitrackEditor {
             grid: crate::DEFAULT_GRID,
             snap: true,
             samples_view: WAVE,
+            ruler_unit: crate::ruler::Unit::Beats,
         }
     }
 
@@ -588,7 +592,7 @@ impl MultitrackEditor {
                 LOOP_KEY => Some(self.looping),
                 VIEW_WAVE_VERB => Some(self.samples_view == WAVE),
                 VIEW_SPECTROGRAM_VERB => Some(self.samples_view == SPECTROGRAM),
-                _ => None,
+                _ => self.ruler_unit.chosen_by(verb),
             },
         );
         if !self.has_session() {
@@ -1429,7 +1433,8 @@ impl MultitrackEditor {
                         | crate::notes::editor::SNAP_VERB
                         | VIEW_WAVE_VERB
                         | VIEW_SPECTROGRAM_VERB
-                ))
+                )
+                || crate::ruler::Unit::of_verb(tag).is_some())
     }
 
     /// **Rewind**: the position cursor back at the top, and a stopped
@@ -1685,6 +1690,7 @@ impl MultitrackEditor {
             tempo: &tempo,
             widget,
             ruler,
+            unit: self.ruler_unit,
             link: self.link,
             cursor: self.cursor,
             meters: &self.meters,
@@ -1841,6 +1847,22 @@ impl MultitrackEditor {
                     }]
                 })
                 .unwrap_or_default();
+            return (None, corrections);
+        }
+        // **What the window's time ruler counts in**: the window's own, so
+        // nothing is recorded, and the strip and the multitrack are corrected
+        if self.window.map(i64::from) == Some(widget)
+            && let Some(unit) = crate::ruler::Unit::of_verb(tag)
+        {
+            self.ruler_unit = unit;
+            let corrections = [self.widget, self.ruler]
+                .into_iter()
+                .flatten()
+                .map(|id| Correction {
+                    widget: i64::from(id),
+                    props: Value::Object(self.picture(id)),
+                })
+                .collect();
             return (None, corrections);
         }
         if tag == "click"
@@ -2806,6 +2828,37 @@ mod tests {
     }
 
     /// **The position cursor is kept in seconds, told, and is not an edit.**
+    /// **The multitrack's time ruler counts in the window's unit**: bars and
+    /// beats at first, over the multitrack and facing it; a ruler verb is the
+    /// window's, corrects the strip and the multitrack, and records nothing.
+    #[test]
+    fn the_ruler_counts_in_the_unit_the_window_chooses() {
+        let mut ed = editor();
+        let window = ed.window(40, 41);
+        let ruler = &window["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == 41)
+            .cloned()
+            .unwrap_or_else(|| window.to_string().into());
+        assert_eq!(ruler["axes"]["x"]["unit"], "beats", "{window}");
+        assert_eq!(ruler["axes"]["x"]["dir"], "down", "facing the multitrack");
+        assert_eq!(
+            ed.actions(false, false, None)["ruler_beats"].checked,
+            Some(true)
+        );
+        let out = ed.event(&event(39, 2, 1, "ruler_samples", vec![]), 1);
+        assert!(!out.changed, "the window's, no edit");
+        let told = serde_json::to_string(&out.answer).unwrap();
+        assert!(told.contains("\"ruler\":\"samples\""), "{told}");
+        assert!(told.contains("\"ruler_strip\":false"), "{told}");
+        assert_eq!(
+            ed.actions(false, false, None)["ruler_samples"].checked,
+            Some(true)
+        );
+    }
+
     #[test]
     fn a_locate_places_the_cursor_and_edits_nothing() {
         let mut ed = editor();
@@ -2815,7 +2868,7 @@ mod tests {
         assert!(!out.changed);
         assert_eq!(
             Value::Object(ed.props(41)),
-            json!({ "cursor": 4.0 * SR }),
+            json!({ "cursor": 4.0 * SR, "ruler": "beats" }),
             "the ruler reports the editor's own copy"
         );
     }

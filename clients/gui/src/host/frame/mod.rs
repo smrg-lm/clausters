@@ -642,7 +642,7 @@ pub(crate) fn timeline_body(
     let strip = strip.min(h);
     y += strip;
     h -= strip;
-    if editor.ruler != Ruler::Off {
+    if editor.strip() {
         h = (h - metrics.ruler_h).max(0.0);
     }
     let indent = indent.min(w);
@@ -3798,6 +3798,7 @@ mod tests {
             y_measure: crate::host::widget::YMeasure::Value,
             y_parked: None,
             ruler,
+            ruler_strip: true,
             dir: crate::host::widget::RulerDir::Up,
             ruler_y,
             sample_rate: 0.0,

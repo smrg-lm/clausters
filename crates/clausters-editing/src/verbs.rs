@@ -271,6 +271,10 @@ pub const WINDOW: &[Verb] = &[
     verb("delete", &["Delete", "Backspace"], "Delete"),
     verb("select_all", &["Ctrl+A"], "Select all"),
     verb("keys", &["F1"], "Keyboard shortcuts"),
+    // what the window's time ruler counts in, the window's own
+    choice("ruler", "ruler_beats", &[], "Bars and beats"),
+    choice("ruler", "ruler_time", &[], "Minutes and seconds"),
+    choice("ruler", "ruler_samples", &[], "Samples"),
 ];
 
 /// The audio window's key scope.

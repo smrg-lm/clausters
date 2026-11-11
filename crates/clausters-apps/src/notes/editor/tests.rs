@@ -1441,3 +1441,41 @@ fn the_roll_s_tool_is_the_window_s_and_reaches_the_roll() {
     let refused = call_json(&mut e, r#"{"verb": "sync", "tool": "brush"}"#);
     assert!(refused.contains("refused"), "{refused}");
 }
+
+/// **The roll's time ruler is the window's, over the roll**: composed where
+/// the caller numbered it, on the roll's group and facing it, the roll
+/// drawing no strip of its own; a ruler verb is the window's and corrects
+/// both, recording nothing.
+#[test]
+fn the_roll_s_ruler_is_the_window_s_and_counts_in_its_unit() {
+    let mut e = new_json(shared(), r#"{"rate": 100.0, "version": 1}"#);
+    let window: Value = serde_json::from_str(&call_json(
+        &mut e,
+        r#"{"verb": "window", "widget": 40, "dialogs": {"ruler": 41}}"#,
+    ))
+    .unwrap();
+    call_json(&mut e, r#"{"verb": "sync", "window": 39}"#);
+    let children = window["children"].as_array().unwrap();
+    let at = |id: i64| children.iter().position(|c| c["id"] == id).unwrap();
+    assert!(at(41) < at(40), "the ruler is over the roll");
+    let (ruler, roll) = (&children[at(41)], &children[at(40)]);
+    assert_eq!(ruler["type"], "field");
+    assert_eq!(ruler["axes"]["x"]["dir"], "down");
+    assert_eq!(ruler["axes"]["x"]["link"], 40);
+    assert_eq!(roll["axes"]["x"]["strip"], false);
+    assert_eq!(roll["axes"]["x"]["link"], 40);
+    assert_eq!(roll["axes"]["x"]["unit"], "beats");
+    let out = e.event(&window_verb("ruler_time"), 1);
+    assert!(out.record.is_none(), "the window's, no edit");
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("\"widget\":41"), "{told}");
+    assert!(told.contains("\"ruler\":\"time\""), "{told}");
+    assert_eq!(e.actions(false, false)["ruler_time"].checked, Some(true));
+    // a click on the ruler places the roll's position cursor
+    let click = Event {
+        addr: "/gui_event".into(),
+        args: vec![json!(41), json!(3), json!(0), json!("locate"), json!(200.0)],
+    };
+    let out = e.event(&click, 1);
+    assert_eq!(out.locate, Some(2.0), "the beat it fell on");
+}

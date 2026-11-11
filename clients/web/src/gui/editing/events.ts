@@ -390,6 +390,21 @@ export class NotesEditor extends SequenceHandler {
     }
 
     /**
+     * **What the window's time ruler counts in**: `"beats"` (bars and beats,
+     * through the tempo map), `"time"` (minutes and seconds) or `"samples"` --
+     * the View menu's Ruler, the window's own and no edit. The roll's ruler is over it, bars and beats until another
+     * is chosen.
+     */
+    async ruler(): Promise<string> {
+        return this.rulerUnit();
+    }
+
+    /** Sets what the window's time ruler counts in: no edit. */
+    setRuler(unit: "beats" | "time" | "samples"): void {
+        this.chooseRuler(unit);
+    }
+
+    /**
      * **What a plain press on the roll's grid does**, the `"select"` pointer
      * until another is chosen: with it a click selects a note, a drag moves
      * it or, by an edge, resizes it, a drag over empty grid sweeps a

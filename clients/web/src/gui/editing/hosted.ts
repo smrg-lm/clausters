@@ -448,6 +448,23 @@ export abstract class HostedEditor {
         return this.query("actions");
     }
 
+    /** The unit the window's time ruler counts in, read off its actions. @internal */
+    protected async rulerUnit(): Promise<string> {
+        const actions = await this.actions();
+        for (const unit of ["beats", "time", "samples"]) {
+            if (actions[`ruler_${unit}`]?.checked) return unit;
+        }
+        return "";
+    }
+
+    /** Asks the window's ruler verb for `unit`; a `RangeError` for no unit. @internal */
+    protected chooseRuler(unit: "beats" | "time" | "samples"): void {
+        if (unit !== "beats" && unit !== "time" && unit !== "samples") {
+            throw new RangeError(`a ruler counts in "beats", "time" or "samples", not ${JSON.stringify(unit)}`);
+        }
+        this.verb(`ruler_${unit}`);
+    }
+
     /** Nothing to bring in step: what a page changes is the window's already, and every window over it is redrawn when it does. */
     adopt(): void {}
 

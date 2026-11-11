@@ -417,6 +417,7 @@ impl Converse for AudioEditor {
             .chain(self.window_state.pane)
             .chain(self.window_state.envelope_widget)
             .chain(self.window_state.lane)
+            .chain(self.window_state.ruler)
             .any(|w| i64::from(w) == widget)
             || self.dialog_name(widget).is_some()
     }
@@ -560,6 +561,26 @@ impl Converse for AudioEditor {
             ));
             return true;
         }
+        // **What the window's time ruler counts in**: the window's own, so
+        // nothing is recorded and the window is drawn again; a take has no
+        // tempo, so no bars and beats
+        if let Some(unit) = crate::ruler::Unit::of_verb(&message.tag) {
+            out.turn = Kind::Route;
+            let reason = if unit == crate::ruler::Unit::Beats {
+                Some(NO_BEATS.to_string())
+            } else {
+                self.window_state.ruler_unit = unit;
+                out.restructure = true;
+                None
+            };
+            out.answer = Some(conversation::answer(
+                message.seq,
+                out.version,
+                reason,
+                Vec::new(),
+            ));
+            return true;
+        }
         if matches!(
             message.tag.as_str(),
             "view_wave"
@@ -660,6 +681,9 @@ pub struct Follow {
 /// no file open still answers -- adding a file, its keys, its file list and
 /// closing it.
 const WINDOW_LEVEL: &[&str] = &[
+    "ruler_beats",
+    "ruler_time",
+    "ruler_samples",
     "new_file",
     "open_file",
     "keys",
@@ -668,6 +692,9 @@ const WINDOW_LEVEL: &[&str] = &[
     "close",
     "activated",
 ];
+
+/// Why a take's ruler counts no bars and beats.
+const NO_BEATS: &str = "a take has no tempo: its ruler counts seconds or samples";
 
 /// The JSON verbs an editor with no file open answers.
 const EMPTY_VERBS: &[&str] = &[
@@ -789,6 +816,11 @@ struct AudioWindowState {
     server: crate::application::resources::ServerInstance,
     chunk: usize,
     lane: Option<i32>,
+    /// **The window's time ruler** ([`crate::ruler`]), under the take, when
+    /// the caller numbered it, and what it counts in: the window's own,
+    /// seconds until another is chosen.
+    ruler: Option<i32>,
+    ruler_unit: crate::ruler::Unit,
     title: String,
     size: (i64, i64),
     bare: bool,
@@ -899,6 +931,8 @@ impl AudioEditor {
                 server: Default::default(),
                 chunk: DEFAULT_CHUNK,
                 lane: None,
+                ruler: None,
+                ruler_unit: crate::ruler::Unit::Time,
                 title: "Audio".into(),
                 size: (1000, 520),
                 bare: false,
@@ -1501,6 +1535,8 @@ impl AudioEditor {
             empty: !self.open_files.open,
             segments: &segments,
             spectrogram: Some(&spectrogram),
+            ruler: self.window_state.ruler,
+            unit: self.window_state.ruler_unit,
         });
         self.compose_envelope(&mut tree);
         self.compose_settings(&mut tree);
@@ -1942,6 +1978,65 @@ mod layer_tests {
         assert_eq!(editor.layers()[1]["solo"], true);
         call(&mut editor, json!({"verb":"solo_layer","name":"peak"}));
         assert_eq!(editor.layers(), before);
+    }
+
+    /// **A take's time ruler is under it**, the mirror of the multitrack's:
+    /// the last of the take's column, its marks facing up, the views over it
+    /// drawing no strip of their own; it counts seconds or samples, and bars
+    /// and beats are refused with why, since a take has no tempo.
+    #[test]
+    fn a_take_s_ruler_is_under_it_and_counts_seconds_or_samples() {
+        let mut editor =
+            new_json(r#"{"path":"/in/take1.wav","workspace":"/work","frames":1000,"window":90}"#)
+                .unwrap();
+        let tree = call(
+            &mut editor,
+            json!({"verb":"window","widget":17,"pane":18,"ruler":21}),
+        );
+        let text = tree.to_string();
+        assert!(text.contains("\"type\":\"field\""), "{text}");
+        let column = &tree["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["children"].to_string().contains("\"field\""))
+            .unwrap()["children"];
+        let last = column.as_array().unwrap().last().unwrap();
+        assert_eq!(last["id"], 21, "{tree}");
+        assert_eq!(
+            last["axes"]["x"]["dir"], "up",
+            "the mirror, facing the take"
+        );
+        assert_eq!(last["axes"]["x"]["unit"], "time");
+        assert_eq!(
+            column[0]["axes"]["x"]["strip"], false,
+            "no strip of its own"
+        );
+        // the window's verb, on the window (90)
+        let verb = |tag: &str| Event {
+            addr: "/gui_event".into(),
+            args: vec![json!(90), json!(7), json!(0), json!(tag)],
+        };
+        let out = editor.event(&verb("ruler_beats"), 3);
+        let told = serde_json::to_string(&out.answer).unwrap();
+        assert!(told.contains("no tempo"), "{told}");
+        let out = editor.event(&verb("ruler_samples"), 3);
+        assert!(out.restructure, "the window is drawn again");
+        let tree = call(
+            &mut editor,
+            json!({"verb":"window","widget":17,"pane":18,"ruler":21}),
+        );
+        let column = &tree["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["children"].to_string().contains("\"field\""))
+            .unwrap()["children"];
+        assert_eq!(
+            column.as_array().unwrap().last().unwrap()["axes"]["x"]["unit"],
+            "samples"
+        );
+        assert_eq!(column[0]["axes"]["x"]["unit"], "samples");
     }
 
     #[test]

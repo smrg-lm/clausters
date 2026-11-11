@@ -430,6 +430,23 @@ class HostedEditor(WindowVerbs):
         """What a redo would be called, for a menu item."""
         return self._query("history").get("redoLabel")
 
+    #: What a window's time ruler counts in, by the verb that chooses it.
+    _RULER_UNITS = ("beats", "time", "samples")
+
+    def _ruler(self) -> str:
+        """The unit the window's time ruler counts in, read off its actions."""
+        actions = self.actions
+        for unit in self._RULER_UNITS:
+            if (actions.get(f"ruler_{unit}") or {}).get("checked"):
+                return unit
+        return ""
+
+    def _set_ruler(self, unit: str) -> None:
+        """Ask the window's ruler verb for ``unit``; `ValueError` for no unit."""
+        if unit not in self._RULER_UNITS:
+            raise ValueError(f"a ruler counts in 'beats', 'time' or 'samples', not {unit!r}")
+        self.verb(f"ruler_{unit}")
+
     @property
     def actions(self) -> dict:
         """**The window's actions as they read now**, by verb: what each

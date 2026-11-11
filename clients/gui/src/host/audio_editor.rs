@@ -28,7 +28,15 @@ const AUDIO: &str = "audio";
 
 /// The widgets of an audio editor's window, by the role the editor's
 /// `window` verb names them with.
-const ROLES: &[&str] = &["widget", "meter", "pane", "envelope", "lane", "filesWidget"];
+const ROLES: &[&str] = &[
+    "widget",
+    "meter",
+    "pane",
+    "envelope",
+    "lane",
+    "ruler",
+    "filesWidget",
+];
 
 /// **The audio editor's application in this host**, as the host holds it:
 /// the line to its thread, and its windows.

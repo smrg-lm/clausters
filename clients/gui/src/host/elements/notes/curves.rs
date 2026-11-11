@@ -220,13 +220,7 @@ impl Notes {
         if h <= 0.0 {
             return None;
         }
-        let full = pianoroll::regions(
-            rect,
-            self.editor.ruler != Ruler::Off,
-            self.osc_markers,
-            indent,
-            m,
-        );
+        let full = pianoroll::regions(rect, self.editor.strip(), self.osc_markers, indent, m);
         let room = self.rows_h(full.grid.h, m);
         let y = full.grid.y + full.grid.h - room - h;
         Some(Rect::new(full.grid.x, y, full.grid.w, h))
@@ -324,13 +318,7 @@ impl Notes {
         if self.lane.as_deref() != Some(VELOCITY) {
             return None;
         }
-        let full = pianoroll::regions(
-            rect,
-            self.editor.ruler != Ruler::Off,
-            self.osc_markers,
-            indent,
-            m,
-        );
+        let full = pianoroll::regions(rect, self.editor.strip(), self.osc_markers, indent, m);
         let room = self.rows_h(full.grid.h, m);
         let y = full.grid.y + full.grid.h - room;
         Some((
@@ -342,13 +330,7 @@ impl Notes {
     /// Each row's label cell (in the keyboard's column) and body, top to
     /// bottom under the plane, scaled into the share the rows get.
     pub(super) fn row_rects(&self, rect: Rect, indent: f32, m: &Metrics) -> Vec<(Rect, Rect)> {
-        let full = pianoroll::regions(
-            rect,
-            self.editor.ruler != Ruler::Off,
-            self.osc_markers,
-            indent,
-            m,
-        );
+        let full = pianoroll::regions(rect, self.editor.strip(), self.osc_markers, indent, m);
         let room = self.rows_h(full.grid.h, m);
         let shown = self.shown_rows();
         let total: f32 = shown.iter().map(|r| r.height).sum();

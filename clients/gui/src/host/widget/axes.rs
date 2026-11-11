@@ -66,6 +66,7 @@ const X_AXIS: &[(&str, &str)] = &[
     ("len", "view_len"),
     ("ruler", "ruler"),
     ("unit", "ruler"),
+    ("strip", "ruler_strip"),
     ("dir", "dir"),
     ("tempo", "tempo"),
     ("tempo_map", "tempo_map"),

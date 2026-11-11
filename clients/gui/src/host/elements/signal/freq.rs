@@ -17,8 +17,8 @@
 use super::SignalElement;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
+use crate::host::widget::RulerY;
 use crate::host::widget::element::FreqAxis;
-use crate::host::widget::{Ruler, RulerY};
 
 impl SignalElement {
     /// The axis inside `rect`, resolved through the **renderer's own** region
@@ -33,7 +33,7 @@ impl SignalElement {
         let r = crate::host::graphics::signal::spectrum::regions(
             rect,
             self.display.label.is_some(),
-            self.editor.ruler != Ruler::Off,
+            self.editor.strip(),
             self.editor.ruler_y != RulerY::Off,
             (self.spectral.db_floor, self.spectral.db_ceil),
             m,

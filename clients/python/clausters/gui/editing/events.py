@@ -385,6 +385,18 @@ class NotesEditor(Marking, SequenceHandler):
         self._set(monophonic=bool(on))
 
     @property
+    def ruler(self) -> str:
+        """**What the window's time ruler counts in**: ``"beats"`` (bars and
+        beats, through the tempo map), ``"time"`` (minutes and seconds) or
+        ``"samples"`` -- the View menu's Ruler, the window's own and no edit. The roll's ruler is over it, bars and beats until
+        another is chosen."""
+        return self._ruler()
+
+    @ruler.setter
+    def ruler(self, unit: str) -> None:
+        self._set_ruler(unit)
+
+    @property
     def tool(self) -> str:
         """**What a plain press on the roll's grid does**, the ``"select"``
         pointer until another is chosen: with it a click selects a note, a

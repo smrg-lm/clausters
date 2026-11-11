@@ -417,7 +417,14 @@ pub fn markers_json(markers: &[Marker]) -> Value {
 /// All members are at `offset = 0` until a multitrack layout places them.
 #[derive(Debug, Clone)]
 pub struct EditorProps {
+    /// **The time unit**: what the readouts, the grid and the strip (where
+    /// there is one) count in -- or `Off`, no strip and clock time read.
     pub ruler: Ruler,
+    /// **Whether the view reserves its own strip** for that ruler (the
+    /// `ruler_strip` prop, `axes.x.strip`), true unless told: an application
+    /// that composes the one time ruler of its window over the view turns it
+    /// off, and the view still reads its time in the unit.
+    pub ruler_strip: bool,
     /// The `dir` prop: which edge of the ruler strip its ticks and labels hug
     /// ([`RulerDir`]). `Up` for every strip reserved *under* a view's body,
     /// which is where the host puts its own; a free-standing `timeruler` is
@@ -572,6 +579,7 @@ impl EditorProps {
     pub(crate) fn parse(props: &serde_json::Map<String, Value>, default_y: RulerY) -> EditorProps {
         EditorProps {
             ruler: Ruler::parse(props),
+            ruler_strip: props.get("ruler_strip").and_then(truthy).unwrap_or(true),
             dir: RulerDir::parse(props, RulerDir::Up),
             ruler_y: RulerY::parse(props, default_y),
             sample_rate: number_f64(props, "sample_rate", 0.0),
@@ -754,6 +762,13 @@ impl EditorProps {
     /// same way [`Self::y_view`] reads the vertical one -- validated here rather
     /// than in `apply`, for the same reason: one `/gui_set` carrying both keys
     /// must not depend on their order.
+    /// **Whether the view draws its own time-ruler strip**: a unit, and no
+    /// window ruler composed over it.
+    #[must_use]
+    pub fn strip(&self) -> bool {
+        self.ruler != Ruler::Off && self.ruler_strip
+    }
+
     pub fn x_view(&self) -> (f64, f64) {
         normalized_window(self.x_start, self.x_len, 1.0)
     }
@@ -761,6 +776,7 @@ impl EditorProps {
     pub(crate) fn apply(&mut self, key: &str, v: &Value) -> bool {
         match key {
             "ruler" => self.ruler.set(v),
+            "ruler_strip" => truthy(v).map(|on| self.ruler_strip = on).is_some(),
             "dir" => v
                 .as_str()
                 .and_then(RulerDir::from_str)

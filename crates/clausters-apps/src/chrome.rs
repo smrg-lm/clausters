@@ -269,6 +269,16 @@ pub fn menu(app: App, saves: bool) -> Value {
     }
 
     let mut view = vec![entry(app, "view_all")];
+    if app != App::Points {
+        // what the window's time ruler counts in
+        view.push(sub(
+            "Ruler",
+            crate::ruler::VERBS
+                .iter()
+                .map(|(v, _)| entry(app, v))
+                .collect(),
+        ));
+    }
     if app == App::Audio {
         view.extend([
             sep(),
@@ -420,6 +430,10 @@ pub(crate) fn grid_actions(
                     state.refuse_absent("this window writes no file");
                 }
                 "save" | "save_as" if !saves => state.refuse("this window writes no file"),
+                // a curve's window has an axis and no time ruler
+                _ if app == App::Points && crate::ruler::Unit::of_verb(verb.name).is_some() => {
+                    state.refuse_absent("this window has no time ruler");
+                }
                 _ => {}
             }
             (verb.name, state)
