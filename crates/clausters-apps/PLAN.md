@@ -7212,6 +7212,29 @@ wrong.
   *2026-11-11, with `X44`*: the conversion makes a copy, so the performance
   keeps its joins; what is still open is whether the page the copy is
   writes them as joined slurs.
+  *Decided 2026-11-11, the user*: **a join has no place in MIDI**; it is a
+  thing of a page and of an event sequence for the server. No MIDI file
+  brings one (a note-on there is always an attack), so every join a
+  sequence holds was made in the document: by the roll's `join`, by a
+  page's slur played, or by a pattern's voice that `continues` a node. What
+  that asks:
+  1. **A page writes a held note in two ways, and only one is a join.** A
+     tie is metric writing: one note, one event. A slur over different
+     notes is articulation, the one join a performance plays. Both are as
+     the document already has them.
+  2. **The roll's `join` over MIDI notes holds one pitch on**: two notes of
+     the same `midinote` become one note, and notes of different pitches
+     are refused. It writes no `joins` in a MIDI format.
+  3. **Converting to notation**: a join into the same pitch is one long
+     note, and where its ties go is the page's metric writing, which is
+     `crates/clausters-notate`'s and is not built; a join between
+     different notes is a slur that joins.
+  4. **Converting to MIDI** leaves no `joins` in the copy: a join into the
+     same pitch is one note, as in 3, and a join between different notes
+     is a new attack.
+  5. **An event sequence keeps its joins**, as the server plays them.
+  The Standard MIDI File and Clip File writers drop `joins` today; once a
+  MIDI sequence holds none, that drops nothing.
 
 - ✅ **`a_page_s_marks_are_drawn_with_the_engraver_s_symbols` fails with the
   notation features on** *(found 2026-11-10 running `clausters-apps` with

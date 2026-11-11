@@ -284,8 +284,10 @@ its plan; the plan is where its acceptance is read.
 
 - ⬜ **A performance's joins are lost when the roll writes it as notation**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Narrowed by `X44`: the
-  conversion makes a copy, so the performance keeps its joins. **The
-  decision:** whether the page the copy is writes them as joined slurs.
+  conversion makes a copy, so the performance keeps its joins. Decided
+  2026-11-11: a join has no place in MIDI, so what is left is the work the
+  entry lists (the roll's `join` over one pitch, and what each conversion
+  writes of a join).
 
 - ⬜ **The roll after the eye pass of 2026-11-10**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*: "The roll's default
