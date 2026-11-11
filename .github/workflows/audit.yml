@@ -13,6 +13,14 @@
 # yanked crates as warnings and passes; read them in the log. npm audit skips
 # devDependencies (--omit=dev): the gate is what a user installs, and a build
 # tool's advisory is not one of those.
+#
+# The `stable` job is here for the same schedule and the same reason: a new
+# rustc is published against a tree nobody touched. The toolchain is pinned
+# (rust-toolchain.toml), so a release can no longer turn the tree red on its
+# own, and this job is how the tree hears of one: weekly and on demand it runs
+# fmt, clippy and the libfaust-free tests against the newest stable. When it
+# goes red, raise the pin and fix what the new compiler reports, in one commit.
+# It never runs on a push, so it cannot fail a change that did nothing wrong.
 
 name: audit
 
@@ -59,3 +67,34 @@ jobs:
           node-version: "22"
       - run: npm audit --omit=dev
         working-directory: clients/web
+
+  stable:
+    name: the newest stable toolchain (fmt + clippy + tests)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-26.04
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/rust
+        with:
+          toolchain: stable
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: stable-canary
+          workspaces: |
+            .
+            clients/gui
+      - run: bash third_party/prepare-clap.sh
+      - run: cargo fmt --check
+      - run: cargo fmt --check --manifest-path clients/gui/Cargo.toml
+      # Without libfaust: the server with the SynthDef family, and every crate
+      # but the two wasm ones, which link the Faust family (see ci.yml's `test`
+      # job for why they sit out a libfaust-free run).
+      - run: cargo clippy --workspace --all-targets --no-default-features --features synth --exclude clausters-web --exclude clausters-nrt-web -- -D warnings
+      - run: cargo clippy --all-targets --manifest-path clients/gui/Cargo.toml -- -D warnings
+      - run: cargo test --workspace --no-default-features --features synth --exclude clausters-web --exclude clausters-nrt-web

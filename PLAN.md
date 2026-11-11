@@ -2435,6 +2435,19 @@ and so waits for `T3`, the milestone that already owes the bench.
   rewritten with it. **Acceptance:** the weekly job exists and is seen to run;
   the full feature matrix is clean under the pin.
 
+  *Written 2026-11-11, and open on what only a push can show.* The pin is
+  `rust-toolchain.toml` (1.99.0, the version the audit harness already
+  pinned), every workflow installs it through the `.github/actions/rust`
+  composite, and the weekly job is `stable` in `audit.yml`. The dev profile
+  takes line tables only (the tests of two crates: 605 MB to 370 MB). The
+  release profile stays cargo's own: thin link-time optimization with one
+  codegen unit moved the median throughput by +0.8% and 0.0% over two pairs
+  of runs, inside the +2.9% two builds of the unchanged profile differed by,
+  and made the build a third slower (`docs/decisions.md`, "The toolchain is
+  pinned, and a new compiler arrives as a commit"). **What is left:** the
+  workflows have not run since the change, so the composite, the weekly job
+  and the matrix under the pin are unobserved until the branch is pushed.
+
 - ⬜ **R15: The GUI host is a member of the workspace.** It was kept apart so
   that it could never entangle the server's build, and that stopped being
   true: `clausters-app-engine` is an unconditional native dependency of the

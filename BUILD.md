@@ -7,8 +7,10 @@ project internals and contribution conventions see
 
 ## System build dependencies
 
-A stable Rust toolchain (`rustup` or a distro package) plus, on Ubuntu
-(24.04/26.04 — package names are similar on other distros):
+The Rust toolchain `rust-toolchain.toml` pins (`rustup` installs it on the
+first `cargo` call in the repository; a distro's own Rust has to match the
+pinned version) plus, on Ubuntu (24.04/26.04 — package names are similar on
+other distros):
 
 ```sh
 # default build (PipeWire audio + ALSA-seq MIDI + RT scheduling) — also enough for `cargo test`

@@ -60,7 +60,7 @@ jobs:
             cache: clap-vst3-rtprio
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust
       - run: sudo apt-get update && sudo apt-get install -y libx11-dev libdbus-1-dev
       - uses: Swatinem/rust-cache@v2
         with:
@@ -93,9 +93,7 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - uses: ./.github/actions/rust
       # clippy --workspace lints the default build, which links libfaust.
       - uses: ./.github/actions/libfaust
         with:
@@ -146,7 +144,7 @@ jobs:
             flags: --no-default-features --features synth --exclude clausters-web --exclude clausters-nrt-web
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust
       - name: System deps
         run: |
           sudo apt-get update
@@ -162,9 +160,7 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
+      - uses: ./.github/actions/rust
       # clients/gui links ALSA through midir (clausters-midi); the native
       # `cargo test` below needs libasound2-dev. The wasm gates need nothing.
       - name: System deps
@@ -208,9 +204,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
+      - uses: ./.github/actions/rust
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -272,7 +266,7 @@ jobs:
       CLAUSTERS_REQUIRE_COMPLETE: "1"
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -389,7 +383,7 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust
       - uses: ./.github/actions/libfaust
         with:
           prefix: ${{ env.FAUST_PREFIX }}
@@ -444,7 +438,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust
       - name: System deps
         run: |
           sudo apt-get update

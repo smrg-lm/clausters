@@ -127,7 +127,13 @@ the OSC path.
 
 GitHub Actions runs the same checks this page asks for by hand
 (`.github/workflows/ci.yml`); every job maps to a local command, so a red job
-is reproducible with the same line:
+is reproducible with the same line. Every job builds with the toolchain
+`rust-toolchain.toml` pins, the same one `cargo` uses on a developer's
+machine: the `.github/actions/rust` composite installs what the file says, so
+no workflow names a version, a component or a target. The newest stable is
+tried weekly by the `stable` job of `.github/workflows/audit.yml`; when it
+goes red, the pin is raised and whatever the new compiler reports is fixed in
+that same commit:
 
 - **lint** — `cargo fmt --check` and `cargo clippy --workspace --all-targets
   -- -D warnings`, for the root workspace and for `clients/gui` (its own

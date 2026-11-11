@@ -21,10 +21,14 @@ on:
     paths:
       - "clausters-editor/**"
       - ".github/workflows/clausters-editor.yml"
+      - "rust-toolchain.toml"
+      - ".github/actions/rust/**"
   pull_request:
     paths:
       - "clausters-editor/**"
       - ".github/workflows/clausters-editor.yml"
+      - "rust-toolchain.toml"
+      - ".github/actions/rust/**"
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:
@@ -42,9 +46,7 @@ jobs:
         working-directory: clausters-editor
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - uses: ./.github/actions/rust
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -85,7 +87,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust
       - uses: actions/setup-node@v6
         with:
           node-version: "22"

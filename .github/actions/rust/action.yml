@@ -1,0 +1,46 @@
+# Install the Rust toolchain a job builds with.
+#
+# With no input that is the one rust-toolchain.toml pins, with the components
+# and targets the file lists, so a workflow never names a version, a component
+# or a target of its own: the file is the one place they are written.
+#
+# It is also made rustup's default. The cost gate builds the merge base in the
+# same job, and a base that predates the pin has no rust-toolchain.toml; without
+# a matching default the two sides of the comparison would be compiled by
+# different compilers.
+#
+# `toolchain: stable` is for the weekly job that tries the newest release
+# against the tree (audit.yml). It exports RUSTUP_TOOLCHAIN, which rustup
+# reads before the file, for the rest of the job.
+#
+# Runs after actions/checkout: rustup finds the file in the working directory.
+name: Set up Rust
+description: Install the toolchain rust-toolchain.toml pins, or a named one over it.
+
+inputs:
+  toolchain:
+    description: A toolchain to use instead of the pinned one (the weekly job passes "stable").
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install the toolchain
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -n "${{ inputs.toolchain }}" ]; then
+          rustup toolchain install "${{ inputs.toolchain }}" --profile minimal \
+            --component rustfmt --component clippy \
+            --target wasm32-unknown-unknown
+          echo "RUSTUP_TOOLCHAIN=${{ inputs.toolchain }}" >> "$GITHUB_ENV"
+          export RUSTUP_TOOLCHAIN="${{ inputs.toolchain }}"
+        else
+          # No argument: the active toolchain, which is the file's.
+          rustup toolchain install
+        fi
+        active="$(rustup show active-toolchain | cut -d' ' -f1)"
+        rustup default "$active"
+        rustc --version
+        cargo --version

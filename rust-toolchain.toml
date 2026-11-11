@@ -1,0 +1,23 @@
+# The toolchain every build of this repository uses: the workspace, the GUI
+# host, the editor application and the fuzzer (rustup reads this file from any
+# directory under it), on a developer's machine and in CI alike.
+#
+# Pinned so that a new rustc release cannot turn a green tree red with no code
+# change. A new lint, or an existing one widened, used to land on code nobody
+# touched; now it arrives as the commit that raises this number. The weekly
+# `stable` job of .github/workflows/audit.yml runs fmt, clippy and the tests
+# against the newest stable, so the tree learns of a release within a week:
+# when that job goes red, raise the channel here, fix what the new compiler
+# reports, and commit the two together.
+#
+# The one build this does not govern is the web package's host with the
+# applications in it, which needs a nightly and names its own
+# (clients/gui/wasm-apps-toolchain, passed as `cargo +<toolchain>`).
+#
+# The components and the target are the ones the checks need (fmt, clippy, and
+# the wasm gates of the GUI host, the engine and the shared core), listed here
+# so no workflow has to ask for them.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

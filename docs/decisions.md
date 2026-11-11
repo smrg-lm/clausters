@@ -11795,3 +11795,45 @@ switch of mode.
   links the MIDI file reader and writer (pure Rust) so the roll's file and the
   score's export are written by one function, and the engraver stays a port
   the host hands in (`Editing::read_scores_with`), as its outlines are.
+
+## The toolchain is pinned, and a new compiler arrives as a commit (2026-11-11)
+
+**Context.** CI installed whatever `stable` was that day and the repository
+had no `rust-toolchain.toml`. Every rustc release could therefore turn a green
+tree red with no code change: a new lint, or an existing one widened, landed
+on code nobody had touched, in whichever push happened to come next. The rule
+that answered it was a discipline (expect warnings you did not cause, clear
+them in a commit of their own), and it put the cost of a release on whoever
+pushed first after it.
+
+**Decision** (the user's, 2026-11-11).
+
+- **One file names the toolchain**, `rust-toolchain.toml` at the root: the
+  channel, the components the checks need and the wasm target. rustup reads
+  it from any directory under the root, so the workspace, the GUI host, the
+  editor application and the fuzzer build with the same compiler, on a
+  developer's machine and in CI. The audit harness already pinned the same
+  version for the same reason.
+- **No workflow names a version, a component or a target.** A composite
+  action installs what the file says and makes it rustup's default, which
+  matters to the cost gate: it builds the merge base in the same job, and a
+  base that predates the pin has no file to read.
+- **The newest stable is tried weekly**, by a job that runs fmt, clippy and
+  the libfaust-free tests with the pin overridden. It runs on a schedule and
+  on demand, never on a push, so it cannot fail a change that did nothing
+  wrong. When it goes red the pin is raised and what the new compiler reports
+  is fixed in that commit.
+
+**What it does not cover.** The web package's host with the applications in
+it needs a nightly and keeps naming its own. A distribution's own Rust has
+to match the pinned version, which `BUILD.md` says.
+
+**The release profile was measured and left alone.** Thin link-time
+optimization with one codegen unit, over the 88 gated rows of
+`examples/bench.rs` on one machine, two runs each way: the median throughput
+moved by +0.8% and 0.0% against a run-to-run median of +2.9% between two
+builds of the unchanged profile, with the same spread at both ends (about 8%
+either way). It also made the release build a third slower. The dev profile
+does change: line tables only, which made the tests of two crates 39%
+smaller on disk and keeps file and line in a backtrace.
+

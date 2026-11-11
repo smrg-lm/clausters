@@ -23,9 +23,9 @@ the doc build was added here.
 Two standing rules from AGENTS.md apply to whatever this reports:
 
 - **Zero warnings, not "no new ones."** Fix warnings the change did not
-  introduce too. CI pins no toolchain (`dtolnay/rust-toolchain@stable`, no
-  `rust-toolchain.toml`), so every rustc release can turn a green tree red with
-  no code change — finding warnings you did not cause is normal.
+  introduce too. The toolchain is pinned (`rust-toolchain.toml`), so a new
+  rustc release reaches the tree as the commit that raises the pin; that
+  commit clears whatever the new compiler reports on code nobody touched.
 - **Pre-existing warnings get their own commit**, separate from the feature, so
   the feature's diff stays readable.
 

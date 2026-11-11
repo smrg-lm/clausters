@@ -462,14 +462,20 @@ reports, **including warnings the commit did not introduce**. A warning that is
 genuinely wrong gets a scoped `#[allow(...)]` **with a comment saying why** —
 never a silent pass.
 
-Why this is a standing rule rather than a one-off cleanup: CI pins nothing
-(`dtolnay/rust-toolchain@stable`, no `rust-toolchain.toml`), so **every rustc
-release can turn a green tree red with no code change** — a new lint, or an
-existing one widened, lands on code nobody touched. So a clean tree is not a
-state you reach once; expect to find warnings you did not cause, and treat that
-as normal rather than as a sign something is wrong. Left alone they compound:
-one stale warning becomes background noise, the next hides behind it, and the
-output stops being read.
+Why this is a standing rule rather than a one-off cleanup: left alone,
+warnings compound. One stale warning becomes background noise, the next hides
+behind it, and the output stops being read.
+
+**The toolchain is pinned** in `rust-toolchain.toml`, for every build under
+the repository root and for CI, which installs what the file says. A new rustc
+release therefore cannot turn a green tree red with no code change: a new
+lint, or an existing one widened, arrives as the commit that raises the pin.
+The weekly `stable` job of `.github/workflows/audit.yml` runs fmt, clippy and
+the tests against the newest stable, and **when it goes red the pin is
+raised**: edit the channel, fix what the new compiler reports (warnings on code
+nobody touched are normal there, and are that commit's to clear), and commit
+the two together. Never leave the job red, and never raise the pin inside a
+feature's commit.
 
 Clearing warnings that predate the work at hand goes in its **own commit**,
 separate from the feature, so the feature's diff stays readable.

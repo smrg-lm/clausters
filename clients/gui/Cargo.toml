@@ -238,3 +238,8 @@ web-sys = { version = "0.3", features = [
     "MidiInput",
     "MidiMessageEvent",
 ] }
+
+# The same debug information as the workspace's crates (see the root manifest):
+# this crate is a workspace of its own, so a profile is not inherited.
+[profile.dev]
+debug = "line-tables-only"

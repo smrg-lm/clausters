@@ -193,3 +193,15 @@ assert_no_alloc = "1"
 clausters-editing = { path = "crates/clausters-editing" }
 clausters-document = { path = "crates/clausters-document" }
 serde_json = "1"
+
+# Line tables only in debug builds: a backtrace still names the file and the
+# line, and the build directory is about two fifths smaller for it (the tests
+# of two crates went from 605 MB to 370 MB). What is given up is reading a
+# local variable in a debugger; a session that needs that sets
+# `CARGO_PROFILE_DEV_DEBUG=full` for itself.
+#
+# The release profile is cargo's own. Thin link-time optimization with one
+# codegen unit was measured with `examples/bench.rs` and left out: the change
+# in throughput stayed inside the run-to-run noise of the same build.
+[profile.dev]
+debug = "line-tables-only"
