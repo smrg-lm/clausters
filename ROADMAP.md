@@ -282,15 +282,10 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`X44` — the roll's file: the format is the file's**
-  *(`crates/clausters-apps/PLAN.md`)*. Taken from the Future direction "What a
-  sequence is, as a thing that is edited, and what a change of representation
-  keeps", decided by the user 2026-11-10. The format, the conversions into
-  copies and the roll's mode as its format's are done; what is left is the
-  roll's file (`X44.4`, `X44.5`) and its tests and documents (`X44.7`). It
-  carries the rest of "The host opens no file in the roll" and "A
-  performance's joins are lost when the roll writes it as notation" (same
-  plan, Found by use).
+- ⬜ **A performance's joins are lost when the roll writes it as notation**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Narrowed by `X44`: the
+  conversion makes a copy, so the performance keeps its joins. **The
+  decision:** whether the page the copy is writes them as joined slurs.
 
 - ⬜ **The roll after the eye pass of 2026-11-10**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*: "The roll's default

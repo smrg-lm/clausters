@@ -1,6 +1,8 @@
-//! **The notes editor's dialog**: the one form of the shared mechanism
-//! ([`crate::forms`]) the roll asks in -- how a sequence written as no
-//! notation is read into one, when the roll enters its notation mode.
+//! **The notes editor's dialogs**: forms of the shared mechanism
+//! ([`crate::forms`]) -- how a sequence written as no notation is read into a
+//! page, when a copy of it is converted into one; the file to open and the
+//! path to save as, for a roll that has a file; and the question a window
+//! closed with changes not saved asks.
 //!
 //! The form opens holding the reading the sequence stores
 //! (`notation.reading`) and the writing its first part says, so `OK` with
@@ -24,7 +26,17 @@ pub enum Form {
     /// The meter, the shortest value and the writing a sequence is read
     /// into a page with.
     Notation,
+    /// The file to open in this window, chosen in the host's chooser.
+    Open,
+    /// The path the sequence is written to, from now on.
+    SaveAs,
+    /// **Whether to save before closing**: the sequence has changes its file
+    /// does not hold. `OK` is Save, and a third button closes without.
+    Close,
 }
+
+/// What the close form asks.
+pub const UNSAVED: &str = "The sequence has changes that are not saved.";
 
 /// The shortest values an onset lands on, each with the denominator it is
 /// written with.
@@ -53,36 +65,71 @@ const WRITING_NAMES: [&str; 3] = [WRITINGS[0].0, WRITINGS[1].0, WRITINGS[2].0];
 
 impl Spec for Form {
     fn prefix(self) -> &'static str {
-        "notation"
+        match self {
+            Form::Notation => "notation",
+            Form::Open => "open",
+            Form::SaveAs => "file",
+            Form::Close => "close",
+        }
     }
 
     fn page(self) -> i32 {
-        1
+        match self {
+            Form::Notation => 1,
+            Form::Open => 2,
+            Form::SaveAs => 3,
+            Form::Close => 4,
+        }
     }
 
     fn title(self) -> &'static str {
-        "Write as notation"
+        match self {
+            Form::Notation => "Write as notation",
+            Form::Open => "Open",
+            Form::SaveAs => "Save as",
+            Form::Close => "Close",
+        }
     }
 
     fn fields(self) -> Vec<(&'static str, &'static str)> {
-        vec![
-            ("meter", "Meter"),
-            ("division", "Shortest value"),
-            ("writing", "Polyphony"),
-        ]
+        match self {
+            Form::Notation => vec![
+                ("meter", "Meter"),
+                ("division", "Shortest value"),
+                ("writing", "Polyphony"),
+            ],
+            Form::Open => vec![("path", "File")],
+            Form::SaveAs => vec![("path", "File")],
+            Form::Close => Vec::new(),
+        }
     }
 
     fn options(self, name: &str) -> Option<&'static [&'static str]> {
-        match name {
-            "division" => Some(&DIVISION_NAMES),
-            "writing" => Some(&WRITING_NAMES),
+        match (self, name) {
+            (Form::Notation, "division") => Some(&DIVISION_NAMES),
+            (Form::Notation, "writing") => Some(&WRITING_NAMES),
             _ => None,
         }
+    }
+
+    fn closes(self) -> Option<&'static str> {
+        (self == Form::Close).then_some(UNSAVED)
+    }
+
+    /// The file to open is chosen in the host's own chooser, one file a roll
+    /// reads.
+    fn chooser(self, name: &str) -> Option<forms::Chooser> {
+        (self == Form::Open && name == "path").then_some(forms::Chooser {
+            filter: super::file::OPENS,
+            multiple: false,
+            w: 420.0,
+            h: 300.0,
+        })
     }
 }
 
 /// The forms the window holds, in the order of their pages.
-const FORMS: [Form; 1] = [Form::Notation];
+const FORMS: [Form; 4] = [Form::Notation, Form::Open, Form::SaveAs, Form::Close];
 
 /// **Every widget of the dialog, by name**, for a caller to number.
 #[must_use]

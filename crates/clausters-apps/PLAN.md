@@ -2585,7 +2585,8 @@ opened it.
     and a lane hidden from the panel and from a client alike, a box's roll
     included, with nothing entered in the history.
 
-- ⬜ **X44 - The roll's file: the format is the file's.** *(Opened
+- ✅ **X44 - The roll's file: the format is the file's.** *(Done
+  2026-11-11. Opened
   2026-11-10 by the user's decision on Future directions, "What a sequence
   is, as a thing that is edited, and what a change of representation
   keeps", the second way; `docs/decisions.md`, "A file says which
@@ -2632,7 +2633,12 @@ opened it.
     sequence already has is refused with the reason. `EventsIntent::ToNotation`
     stays the document's, for a client that converts its own sequence in
     place on purpose (`EventSequence.to_notation`), and no window uses it.
-  - ⬜ **X44.4 - The roll's file.** A roll the host owns has a file: a path
+  - ✅ **X44.4 - The roll's file.** *(Done 2026-11-11: the score editor's
+    file runtime made one for both, `crate::file` with `FileWindow` and
+    its runs in `editing::file_runs`, the score's `operations` module gone
+    into it; `notes::file` reads and writes a roll's file by its format and
+    holds the MIDI writer the host had; the application's engraver reading
+    handed in as `Editing::read_scores_with`; `Step::Store` carries bytes.)* A roll the host owns has a file: a path
     or none, what its sequence was when it was saved, the unsaved mark on
     its title and the question before a close or a change of file, through
     `crate::closing` as every application does. Its File menu is New (an
@@ -2648,7 +2654,9 @@ opened it.
     A store carries bytes, since a MIDI file is not text. A roll over a
     client's sequence or a box's has no file of its own: its File menu is
     Close, as now, and its conversions still open new windows.
-  - ⬜ **X44.5 - `--roll` opens the application's file.** The flag opens the
+  - ✅ **X44.5 - `--roll` opens the application's file.** *(Done
+    2026-11-11: `Host::open_roll_file(path, save_to)`, read by
+    `notes::file::read`; the host's own reader is gone.)* The flag opens the
     window over its file through the same Open, and Save writes to
     `--save-to`, asking where without it, as `--score` does.
   - ✅ **X44.6 - Both clients.** *(Done 2026-11-11, with `X44.3`: the
@@ -2658,7 +2666,11 @@ opened it.
     change nothing (the `copy` argument goes); `EventSequence.format` and
     `as_midi`. The examples that set a roll's mode open a sequence written
     as notation instead.
-  - ⬜ **X44.7 - Tests and documents.** The format and the copies in the
+  - ✅ **X44.7 - Tests and documents.** *(Done 2026-11-11: the format and
+    the copies in the document crate, the roll's file and its conversions
+    in the applications crate, a MIDI file and an ABC score opened by the
+    host and saved, the page reopened as MEI; `docs/app-behavior.md`,
+    `docs/verbs.md`, `docs/cli.md`, `docs/architecture.md`, both books.)* The format and the copies in the
     document crate; the roll's mode after an open, an undo and a
     conversion, the conversions' windows, the file's save, open and close
     in the applications crate and the host; both clients. The rule goes in
@@ -5103,7 +5115,7 @@ Every entry carries a checkbox.
   what it would start from. The removal is "The multitrack's score boxes
   come out" in Found by use.
 
-- ⬜ **What a sequence is, as a thing that is edited, and what a change of
+- ✅ **What a sequence is, as a thing that is edited, and what a change of
   representation keeps** *(the user, 2026-11-10, reading the open question
   of "A performance's joins are lost when the roll writes it as
   notation")*. The user changed their mind on principle 2 of "The roll as
@@ -5136,7 +5148,7 @@ Every entry carries a checkbox.
   saved and saved as), the editing mode each format allows, the conversion
   as a file into another (and what it carries to the same notes), the
   roll's File menu, and the clients' surface for all of it. *Taken into
-  `X44` the same day.*
+  `X44` the same day, and done with it 2026-11-11.*
 
 ## Found by use: the running list of fixes
 
@@ -7197,6 +7209,9 @@ wrong.
   edited, and what a change of representation keeps". *Decided there the
   same day*: a change of format is a conversion of the file into another,
   so this becomes what that conversion writes of a performance's joins.
+  *2026-11-11, with `X44`*: the conversion makes a copy, so the performance
+  keeps its joins; what is still open is whether the page the copy is
+  writes them as joined slurs.
 
 - ✅ **`a_page_s_marks_are_drawn_with_the_engraver_s_symbols` fails with the
   notation features on** *(found 2026-11-10 running `clausters-apps` with
@@ -7211,7 +7226,7 @@ wrong.
   `check-features.sh`, which CI runs, builds that set, so the next push
   would have caught it.
 
-- ⬜ **The host opens no file in the roll** *(the user, 2026-11-10, the eye
+- ✅ **The host opens no file in the roll** *(the user, 2026-11-10, the eye
   pass after `X43`)*. `clausters-gui` has a flag for each application but
   the notes editor: `--session`, `--score`, `--audio`. So a MIDI file or a
   score cannot be opened in the roll from the host, and the roll's window
@@ -7225,6 +7240,8 @@ wrong.
   empty sequence. Open: the roll's File menu, and saving -- both are the
   file's, so they come with "What a sequence is, as a thing that is
   edited, and what a change of representation keeps" (Future directions).
+  *Done 2026-11-11 with `X44`*: the roll's File menu opens, saves and
+  closes its file, and `--roll` saves to `--save-to`.
 
 - ✅ **The host's flags name the applications by an old word** *(the user,
   2026-11-10, the same pass)*. `--session` opens the multitrack because it

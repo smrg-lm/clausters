@@ -66,6 +66,21 @@ pub struct Outcome {
     /// caller asks for its tree anew, and the host keeps what is its own.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub restructure: bool,
+    /// **The file to save the sequence to**, for a roll that has a file
+    /// ([`crate::file`]): whoever drives the editor writes it there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub save: Option<String>,
+    /// **The window's document to change** (File > New, Open, Close file),
+    /// with nothing to lose or once the close form was answered. With a file
+    /// to save, the change waits for it to be written.
+    #[serde(skip)]
+    pub file: Option<crate::closing::FileChange>,
+    /// The revision a store confirmed, when the runtime settled one.
+    #[serde(skip)]
+    pub saved: Option<Box<crate::file::Saved>>,
+    /// What the window left its document as, when it let it go.
+    #[serde(skip)]
+    pub left: Option<Value>,
     /// **A conversion's copy**, `{"sequence", "title"}`: the sequence written
     /// in another format, which the caller opens in a roll of its own. The
     /// sequence this editor edits is not changed.
@@ -74,6 +89,7 @@ pub struct Outcome {
 }
 
 turn::turned!(Outcome);
+crate::file::outcome!(Outcome);
 
 /// **The snap-to-grid switch**, as the window asks for it: a key (G), the
 /// View menu's entry, or a client's `verb("snap")`.
@@ -82,6 +98,13 @@ pub const SNAP_VERB: &str = "snap";
 /// **The monophonic switch**, as the window asks for it: a key (M), the Edit
 /// menu's entry, or a client's `monophonic`.
 pub const MONOPHONIC_VERB: &str = "monophonic";
+
+/// **The roll's file verbs**, answered by a roll that has a file
+/// ([`crate::file`]).
+pub const FILE_VERBS: &[&str] = &["new_file", "open_file", "save", "save_as", "close_file"];
+
+/// Why a roll whose sequence another holds has no file.
+const NO_FILE: &str = "this roll edits a sequence its holder keeps: it has no file of its own";
 
 /// **The conversions**, each into a copy in another format, which opens in a
 /// roll of its own: the page (asked how in a window with the dialog) and the
@@ -203,6 +226,34 @@ pub struct NotesEditor {
     display: display::Display,
     /// Whether the display panel is shown beside the roll.
     display_panel: bool,
+    /// **Whether the window is its sequence's only holder** -- a roll the
+    /// host opened over a file or over a conversion's copy -- so it has a
+    /// file, and asks before a close loses what its file does not hold
+    /// ([`crate::closing`]). A client's roll and a box's have none.
+    asks: bool,
+    /// The file the sequence is saved to: the one it was read from, or the
+    /// last one a save named. `None` for one with no file yet.
+    path: Option<String>,
+    /// **The sequence as its file holds it**: what it was when the window
+    /// opened, or was last saved, opened or made new.
+    saved: EventSequence,
+    /// How many times `saved` was written: with the context's version, what
+    /// [`NotesEditor::unsaved_at`] reads again by.
+    saves: u64,
+    /// The last [`NotesEditor::unsaved_at`] answer, by the context's version
+    /// and `saves`.
+    dirty: std::cell::Cell<Option<((i64, u64), bool)>>,
+    /// **Whether the window has a document**: Close file leaves it with none.
+    document: bool,
+    /// **The identity of the document in the window**: one let go of takes
+    /// its order with it, and a store prepared from one is not confirmed
+    /// over another.
+    binding: i64,
+    /// What the close form was asked about, when it is up for something.
+    leaving: Option<crate::closing::Leaving>,
+    /// **The engraver's reading**, which a score opened in the roll is read
+    /// with ([`super::file::read`]).
+    scores: super::file::Scores,
 }
 
 /// **The tabs that choose the lane shown under the roll**, by the name the
@@ -284,8 +335,8 @@ impl Default for Opened {
 impl NotesEditor {
     /// An editor over `sequence`, drawing it at `rate` samples a second.
     pub fn new(sequence: Shared, rate: f64, version: i64) -> Self {
+        let saved = sequence.lock().unwrap_or_else(|e| e.into_inner()).clone();
         Self {
-            sequence,
             domain: YDomain::midi(),
             rate,
             editable: true,
@@ -308,6 +359,16 @@ impl NotesEditor {
             symbols: super::Symbols::default(),
             display: display::Display::default(),
             display_panel: false,
+            asks: false,
+            path: None,
+            saved,
+            saves: 0,
+            dirty: std::cell::Cell::new(None),
+            document: true,
+            binding: 1,
+            leaving: None,
+            scores: super::file::Scores::default(),
+            sequence,
         }
     }
 
@@ -315,6 +376,113 @@ impl NotesEditor {
     /// application holds, asked only once the roll shows a page.
     pub fn set_outlines(&mut self, source: Option<super::OutlineSource>) {
         self.symbols = super::Symbols::with(source);
+    }
+
+    /// **What a score opened in the roll is read with**: the engraver the
+    /// application holds ([`super::file::ScoreReader`]).
+    pub fn set_scores(&mut self, scores: Option<super::file::ScoreReader>) {
+        self.scores = super::file::Scores(scores);
+    }
+
+    /// **The window is its sequence's only holder** ([`NotesEditor::asks`]):
+    /// it has a file, and asks before a close lets unsaved changes go.
+    pub fn set_asks_to_close(&mut self, asks: bool) {
+        self.asks = asks;
+    }
+
+    /// The title its window was opened with.
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// The file the sequence was read from or last saved to, if any.
+    pub fn file_path(&self) -> Option<String> {
+        self.path.clone()
+    }
+
+    /// **Whether the sequence has changes its file does not hold.**
+    #[must_use]
+    pub fn unsaved(&self) -> bool {
+        self.document && *self.held() != self.saved
+    }
+
+    /// **Whether there is unsaved work**, read at the context's `version`:
+    /// [`Self::unsaved`] again only when an edit or a save may have moved
+    /// it, and its last answer otherwise, since the window's title asks after
+    /// every turn and the comparison walks the whole sequence.
+    pub(crate) fn unsaved_at(&self, version: i64) -> bool {
+        let key = (version, self.saves);
+        if let Some((read, dirty)) = self.dirty.get()
+            && read == key
+        {
+            return dirty;
+        }
+        let dirty = self.unsaved();
+        self.dirty.set(Some((key, dirty)));
+        dirty
+    }
+
+    /// The sequence its file holds, from now on.
+    fn set_saved(&mut self, saved: EventSequence) {
+        self.saved = saved;
+        self.saves += 1;
+    }
+
+    /// What the window leaves its document as, for whoever held it; nothing
+    /// when it has none.
+    fn left(&self) -> Option<Value> {
+        self.document
+            .then(|| json!({"sequence": *self.held(), "path": self.path}))
+    }
+
+    /// Nothing of the document that went stays on the window.
+    fn start_over(&mut self) {
+        self.binding += 1;
+        self.leaving = None;
+        self.range = None;
+        self.marked.clear();
+        let saved = self.held().clone();
+        self.set_saved(saved);
+    }
+
+    /// **A file verb of the window** (File > New, Open..., Save, Save as...,
+    /// Close file), for a roll that has a file: what it asks of the turn, or
+    /// the form it opens. `None` for a verb that is no file verb.
+    fn file_verb(
+        &mut self,
+        verb: &str,
+        out: &mut Outcome,
+    ) -> Option<(Option<String>, Vec<Correction>)> {
+        use crate::closing::FileChange;
+        Some(match verb {
+            "save" => crate::file::save(self, out),
+            "save_as" => self.open_file_form(dialogs::Form::SaveAs),
+            "open_file" => self.open_file_form(dialogs::Form::Open),
+            "new_file" => crate::file::change_file(self, FileChange::New, out),
+            "close_file" => crate::file::change_file(self, FileChange::Close, out),
+            _ => return None,
+        })
+    }
+
+    /// **A file form opened**, holding the file the window has: or why it
+    /// cannot be.
+    fn open_file_form(&mut self, form: dialogs::Form) -> (Option<String>, Vec<Correction>) {
+        use crate::file::FileWindow;
+        if let Some(why) = self.no_file() {
+            return (Some(why.into()), Vec::new());
+        }
+        if !self.dialogs.numbered(dialogs::forms()) {
+            return (Some("this window has no dialogs".into()), Vec::new());
+        }
+        let offered = match form {
+            dialogs::Form::SaveAs => self.path.clone().unwrap_or_else(|| {
+                let format = self.held().format();
+                format!("untitled.{}", super::file::extension(format))
+            }),
+            _ => String::new(),
+        };
+        let values = [("path".to_string(), offered)].into();
+        (None, forms::corrections(self.dialogs.open(form, values)))
     }
 
     /// **The outlines the roll's marks are drawn with, owed to it**: asked
@@ -371,12 +539,8 @@ impl NotesEditor {
     ) -> std::collections::BTreeMap<&'static str, clausters_editing::verbs::ActionState> {
         let format = self.held().format();
         let notation = format == events::Format::Notation;
-        crate::chrome::grid_actions(
-            crate::chrome::App::Notes,
-            false,
-            undo,
-            redo,
-            &|verb| match verb {
+        crate::chrome::grid_actions(crate::chrome::App::Notes, self.asks, undo, redo, &|verb| {
+            match verb {
                 SNAP_VERB => Some(self.snap),
                 MONOPHONIC_VERB => Some(self.editing.monophonic),
                 PANEL_VERB => Some(self.panel),
@@ -396,8 +560,8 @@ impl NotesEditor {
                 "color_staff" => Some(self.editing.color_by == ColorBy::Staff),
                 "color_part" => Some(self.editing.color_by == ColorBy::Part),
                 _ => None,
-            },
-        )
+            }
+        })
         .into_iter()
         .map(|(verb, mut state)| {
             // what is a page's is the notation mode's
@@ -408,6 +572,11 @@ impl NotesEditor {
             }
             if let Some(why) = conversion_refused(verb, format) {
                 state.refuse(&why);
+            }
+            if FILE_VERBS.contains(&verb)
+                && let Some(why) = crate::file::FileWindow::no_file(self)
+            {
+                state.refuse(why);
             }
             (verb, state)
         })
@@ -600,10 +769,12 @@ impl NotesEditor {
         }
     }
 
-    /// **What a widget of the dialog said**: a field kept as it is typed or
-    /// chosen, `OK` the conversion it holds, into a copy -- the dialog left up
-    /// with the reason when it is refused -- and `Cancel` the dialog taken
-    /// down.
+    /// **What a widget of the dialogs said**: a field kept as it is typed or
+    /// chosen; `OK` what the form up holds -- the conversion into a copy, the
+    /// file opened, the path saved to, the close form's Save -- the form left
+    /// up with the reason when it is refused; a pick in the Open form's
+    /// chooser as its `OK`; `Cancel` the form taken down; and the close
+    /// form's `Don't save` what it was asked about let go.
     fn form_said(
         &mut self,
         name: &str,
@@ -611,29 +782,59 @@ impl NotesEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        use dialogs::Form;
         let roll = self.widget.map_or(0, i64::from);
-        match self.dialogs.read(name, tag, values) {
-            Some(Said::Accept) => {
-                let Some(open) = self.dialogs.up().cloned() else {
-                    return (None, Vec::new());
-                };
-                let converted =
-                    dialogs::conversion(&open).and_then(|(reading, writing)| {
-                        match self.convert(reading, writing, out) {
-                            Some(why) => Err(why),
-                            None => Ok(()),
-                        }
-                    });
-                if let Err(why) = converted {
-                    return (Some(why), Vec::new());
-                }
-                let mut corrections = forms::corrections(self.dialogs.hide());
-                corrections.extend(self.resync_widget(roll));
-                (None, corrections)
+        let Some(said) = self.dialogs.read(name, tag, values) else {
+            return (None, Vec::new());
+        };
+        let Some(open) = self.dialogs.up().cloned() else {
+            return (None, Vec::new());
+        };
+        let refused = match said {
+            Said::Cancel => {
+                self.leaving = None;
+                return (None, forms::corrections(self.dialogs.hide()));
             }
-            Some(Said::Cancel | Said::Discard) => (None, forms::corrections(self.dialogs.hide())),
-            _ => (None, Vec::new()),
+            // closing without saving: what was not saved is let go
+            Said::Discard => {
+                crate::file::let_what_waits_go(self, out);
+                return (None, forms::corrections(self.dialogs.hide()));
+            }
+            Said::Picked(_, paths) if open.form == Form::Open => self.open_chosen(&paths, out),
+            Said::Accept => match open.form {
+                Form::Notation => match dialogs::conversion(&open) {
+                    Ok((reading, writing)) => self.convert(reading, writing, out),
+                    Err(why) => Some(why),
+                },
+                Form::Open => {
+                    let paths = self.dialogs.chosen("path").to_vec();
+                    self.open_chosen(&paths, out)
+                }
+                Form::SaveAs => crate::file::path_given(self, false, open.value("path"), out),
+                Form::Close => crate::file::save_then_go(self, out),
+            },
+            _ => return (None, Vec::new()),
+        };
+        if let Some(why) = refused {
+            return (Some(why), Vec::new());
         }
+        // a save the close form asked for, with no file yet, asks for one:
+        // the Save as form is now the one up
+        if let Some(up) = self.dialogs.up().filter(|up| up.form != open.form) {
+            return (None, forms::corrections(up.shown(&self.dialogs.ids)));
+        }
+        let mut corrections = forms::corrections(self.dialogs.hide());
+        corrections.extend(self.resync_widget(roll));
+        (None, corrections)
+    }
+
+    /// **The file chosen in the Open form, opened** by the rule a change of
+    /// document follows; with none chosen the form stays up and says so.
+    fn open_chosen(&mut self, paths: &[String], out: &mut Outcome) -> Option<String> {
+        let Some(path) = paths.first() else {
+            return Some("select a file to open".into());
+        };
+        crate::file::path_given(self, true, path, out)
     }
 
     /// The sequence it edits.
@@ -692,7 +893,7 @@ impl NotesEditor {
             use crate::chrome::{self, App};
             chrome::dress(
                 &mut window,
-                chrome::menu(App::Notes, false),
+                chrome::menu(App::Notes, self.asks),
                 chrome::toolbar(App::Notes, None),
                 widget,
             );
@@ -1199,6 +1400,43 @@ impl Converse for NotesEditor {
     fn closed(&mut self) {
         self.window = None;
         self.dialogs.closed();
+        self.leaving = None;
+    }
+
+    fn asks_to_close(&self) -> bool {
+        self.asks
+    }
+
+    fn unsaved(&self) -> bool {
+        NotesEditor::unsaved(self)
+    }
+
+    fn ask_before(
+        &mut self,
+        leaving: crate::closing::Leaving,
+        _out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        if !self.dialogs.numbered(dialogs::forms()) {
+            return (
+                Some(
+                    "this window has changes that are not saved, and no form to ask about them"
+                        .into(),
+                ),
+                Vec::new(),
+            );
+        }
+        self.leaving = Some(leaving);
+        (
+            None,
+            forms::corrections(
+                self.dialogs
+                    .open(dialogs::Form::Close, std::collections::BTreeMap::new()),
+            ),
+        )
+    }
+
+    fn change_now(&mut self, change: crate::closing::FileChange, out: &mut Outcome) {
+        out.file = Some(change);
     }
 
     fn owns(&self, widget: i64, _tag: &str) -> bool {
@@ -1243,6 +1481,12 @@ impl Converse for NotesEditor {
     ) -> bool {
         if message.addr != "/gui_event" || !message.is_window {
             return false;
+        }
+        // **The roll's file**, for a roll that has one
+        if let Some((why, shown)) = self.file_verb(&message.tag.clone(), out) {
+            out.turn = Kind::Route;
+            out.answer = Some(conversation::answer(message.seq, out.version, why, shown));
+            return true;
         }
         // **The snap-to-grid switch** (G, the View menu): the window's own
         // state, so nothing is recorded and the roll is told
@@ -1477,6 +1721,12 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             if let Some(title) = request.get("title").and_then(Value::as_str) {
                 editor.title = title.into();
             }
+            if let Some(asks) = request.get("asks").and_then(Value::as_bool) {
+                editor.asks = asks;
+            }
+            if let Some(path) = request.get("path") {
+                editor.path = path.as_str().map(str::to_string);
+            }
             if let (Some(w), Some(h)) = (
                 request.get("w").and_then(Value::as_i64),
                 request.get("h").and_then(Value::as_i64),
@@ -1506,6 +1756,82 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             "{}".into()
         }
         _ => "{}".into(),
+    }
+}
+
+crate::file::application!(NotesEditor);
+
+impl crate::file::FileWindow for NotesEditor {
+    fn binding(&self) -> i64 {
+        self.binding
+    }
+
+    fn file_path(&self) -> Option<String> {
+        self.path.clone()
+    }
+
+    fn has_document(&self) -> bool {
+        self.document
+    }
+
+    fn no_file(&self) -> Option<&'static str> {
+        (!self.asks).then_some(NO_FILE)
+    }
+
+    fn confirm_saved(&mut self, saved: &crate::file::Saved) {
+        self.path = Some(saved.path.clone());
+        if let Ok(sequence) = serde_json::from_slice(&saved.revision) {
+            self.set_saved(sequence);
+        }
+    }
+
+    fn replace_document(&mut self, contents: &[u8], path: Option<String>) -> Option<Value> {
+        let left = self.left();
+        *self.held() = serde_json::from_slice(contents).unwrap_or_default();
+        self.document = true;
+        self.path = path;
+        self.start_over();
+        left
+    }
+
+    fn let_go(&mut self) -> Option<Value> {
+        let left = self.left();
+        *self.held() = EventSequence::default();
+        self.document = false;
+        self.path = None;
+        self.start_over();
+        left
+    }
+
+    /// The file of the sequence's format ([`super::file::write`]), and the
+    /// sequence itself, which the window compares itself with.
+    fn write_file(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
+        let held = self.held();
+        let contents = super::file::write(&held)?;
+        let revision = serde_json::to_vec(&*held).map_err(|e| e.to_string())?;
+        Ok((contents, revision))
+    }
+
+    fn read_file(&self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        let sequence = super::file::read(bytes, self.scores.0.as_ref())?;
+        serde_json::to_vec(&sequence).map_err(|e| e.to_string())
+    }
+
+    /// An empty sequence written for MIDI 1.0.
+    fn blank(&self) -> Result<Vec<u8>, String> {
+        let blank = EventSequence {
+            midi: Some(events::MidiSpec::Midi1),
+            ..EventSequence::default()
+        };
+        serde_json::to_vec(&blank).map_err(|e| e.to_string())
+    }
+
+    fn leaving(&mut self) -> &mut Option<crate::closing::Leaving> {
+        &mut self.leaving
+    }
+
+    fn ask_where(&mut self) -> (Option<String>, Vec<Correction>) {
+        self.open_file_form(dialogs::Form::SaveAs)
     }
 }
 

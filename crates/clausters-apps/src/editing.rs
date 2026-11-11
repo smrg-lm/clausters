@@ -56,6 +56,7 @@ mod caller;
 mod coordinator;
 mod door;
 mod exchange;
+mod file_runs;
 pub mod held;
 mod multitrack_action;
 mod multitrack_operations;
@@ -483,11 +484,9 @@ pub struct Editing {
         multitrack::Outcome,
     >,
     multitrack_waits: std::collections::BTreeMap<u64, crate::application::operations::Prepared>,
-    #[cfg(feature = "notation")]
-    score_runtime:
-        crate::application::runtime::Runtime<crate::score::operations::Commit, score::Outcome>,
-    #[cfg(feature = "notation")]
-    score_waits: std::collections::BTreeMap<u64, crate::application::operations::Prepared>,
+    /// The windows whose document is a file: their runtimes, and the stores
+    /// they wait on ([`crate::file`]).
+    files: file_runs::FileRuntimes,
     version: i64,
     seats: Vec<Seat>,
     /// The most bytes of takes only the history holds, when there is a limit.
@@ -514,6 +513,9 @@ pub struct Editing {
     /// **The engraver's outlines, where the application holds one**: what
     /// a roll draws a page's marks with ([`crate::notes::OutlineSource`]).
     outlines: crate::notes::Symbols,
+    /// **The engraver's reading, where the application holds one**: what a
+    /// roll reads a score it opens with ([`crate::notes::file::ScoreReader`]).
+    scores: crate::notes::file::Scores,
 }
 
 impl Default for Editing {
@@ -536,10 +538,7 @@ impl Editing {
             audio_runtime: Default::default(),
             multitrack_runtime: Default::default(),
             multitrack_waits: Default::default(),
-            #[cfg(feature = "notation")]
-            score_runtime: Default::default(),
-            #[cfg(feature = "notation")]
-            score_waits: Default::default(),
+            files: Default::default(),
             version: FIRST_VERSION,
             seats: Vec::new(),
             bytes: None,
@@ -551,6 +550,7 @@ impl Editing {
             engine: None,
             shared: Default::default(),
             outlines: Default::default(),
+            scores: Default::default(),
         }
     }
 
@@ -564,6 +564,18 @@ impl Editing {
     /// The outlines a roll opened now draws its marks with.
     pub(crate) fn mark_outlines(&self) -> Option<crate::notes::OutlineSource> {
         self.outlines.source()
+    }
+
+    /// **Reads a score its rolls open with `reader`**: the engraver the
+    /// application holds. Set before the first roll opens; without it a roll
+    /// opens MIDI files alone.
+    pub fn read_scores_with(&mut self, reader: crate::notes::file::ScoreReader) {
+        self.scores = crate::notes::file::Scores(Some(reader));
+    }
+
+    /// The reading a roll opened now reads a score with.
+    pub fn score_reader(&self) -> Option<crate::notes::file::ScoreReader> {
+        self.scores.0.clone()
     }
 
     /// **Plays its audio members on `engine`**, an engine the application
@@ -715,13 +727,7 @@ impl Editing {
             .invalidate(&mut self.services.resources, server);
         self.multitrack_waits
             .retain(|_, work| work.ticket.target.server != server);
-        #[cfg(feature = "notation")]
-        {
-            self.score_runtime
-                .invalidate(&mut self.services.resources, server);
-            self.score_waits
-                .retain(|_, work| work.ticket.target.server != server);
-        }
+        self.files.invalidate(&mut self.services.resources, server);
         self.services.resources.invalidate(server)
     }
 
@@ -948,6 +954,9 @@ impl Editing {
                 editor.asks_to_close(),
                 editor.asks_to_close() && editor.unsaved_at(self.version),
             ),
+            Member::Notes(editor) if editor.asks_to_close() => {
+                (editor.title(), true, editor.unsaved_at(self.version))
+            }
             _ => return None,
         };
         Some(crate::closing::shown_title(title, asks, unsaved))
@@ -979,6 +988,13 @@ impl Editing {
             }
             #[cfg(feature = "notation")]
             Member::Score(editor)
+                if editor
+                    .file_path()
+                    .is_some_and(|held| same_file(&held, path)) =>
+            {
+                crate::turn::Converse::window_id(editor.as_ref())
+            }
+            Member::Notes(editor)
                 if editor
                     .file_path()
                     .is_some_and(|held| same_file(&held, path)) =>

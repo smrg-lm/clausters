@@ -142,7 +142,12 @@ impl Editing {
             Some(Member::Audio(_)) => self.audio_landed(member, run, result, lease, caller, ids),
             Some(Member::Multitrack(_)) => self.multitrack_landed(member, run, result, caller, ids),
             #[cfg(feature = "notation")]
-            Some(Member::Score(_)) => self.score_landed(member, run, result, ids),
+            Some(Member::Score(_)) => {
+                self.file_landed::<crate::score::editor::ScoreEditor>(member, run, result, ids)
+            }
+            Some(Member::Notes(_)) => {
+                self.file_landed::<crate::notes::editor::NotesEditor>(member, run, result, ids)
+            }
             _ => refused(),
         }
     }

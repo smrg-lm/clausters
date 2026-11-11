@@ -8,6 +8,7 @@ use clausters_core::notation::{
 use clausters_core::ratio::Ratio;
 
 use super::*;
+use crate::file::FileWindow;
 
 /// An engraver that keeps the document it was handed and draws nothing: the
 /// editor's turns are about the model and the history, and none of them needs
@@ -1848,7 +1849,7 @@ fn a_new_document_is_one_staff_and_four_empty_bars() {
     let editor = with_dialogs();
     let mei = editor.blank_document().unwrap();
     let mut editor = editor;
-    assert!(editor.replace_document(&mei, None).is_some());
+    assert!(editor.replace_document(mei.as_bytes(), None).is_some());
     assert_eq!(editor.file_path(), None);
     assert!(!editor.unsaved(), "a new score has nothing to lose");
     {
@@ -2132,7 +2133,7 @@ fn an_opened_file_is_the_scores_and_holds_it() {
     let data = sheet_to_mei(&Sheet::default()).unwrap();
     assert!(
         editor
-            .replace_document(&data, Some("/tmp/two.mei".into()))
+            .replace_document(data.as_bytes(), Some("/tmp/two.mei".into()))
             .is_some()
     );
     assert!(!editor.unsaved());

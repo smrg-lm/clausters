@@ -79,7 +79,7 @@ pub struct Outcome {
     pub close: bool,
     /// The revision a store confirmed, when the runtime settled one.
     #[serde(skip)]
-    pub saved: Option<Box<super::operations::Saved>>,
+    pub saved: Option<Box<crate::file::Saved>>,
     /// What the window left its document as, when it let it go.
     #[serde(skip)]
     pub left: Option<Value>,
@@ -1416,13 +1416,6 @@ impl ScoreEditor {
         self.binding
     }
 
-    /// **The revision a store wrote is what the file holds**, and the file is
-    /// the score's from now on.
-    pub(super) fn confirm_saved(&mut self, saved: &super::operations::Saved) {
-        self.path = Some(saved.path.clone());
-        self.set_saved(saved.mei.clone());
-    }
-
     /// The title its window was opened with.
     pub fn title(&self) -> &str {
         &self.title
@@ -1457,43 +1450,15 @@ impl ScoreEditor {
         self.set_saved(saved);
     }
 
-    /// **Another document in the window**, read from `path` or new. Answers
-    /// what it left the one before as.
-    pub(super) fn replace_document(&mut self, mei: &str, path: Option<String>) -> Option<Value> {
-        let left = self.left();
-        self.held().load(mei);
-        self.document = true;
-        self.path = path;
-        self.start_over();
-        left
-    }
-
-    /// **The document let go of**, the window staying with none. Answers what
-    /// it left it as.
-    pub(super) fn let_go(&mut self) -> Option<Value> {
-        let left = self.left();
-        // what it holds now is a blank nobody sees
-        if let Ok(blank) = sheet_to_mei(&Sheet::default()) {
-            self.held().load(&blank);
-        }
-        self.document = false;
-        self.path = None;
-        self.start_over();
-        left
-    }
-
     /// **A change of the window's document**, by the rule every application
-    /// changes one by ([`crate::closing::change_file`]). A page over a sequence
+    /// changes one by ([`crate::file::change_file`]). A page over a sequence
     /// has no file of its own.
     fn change_file(
         &mut self,
         change: crate::closing::FileChange,
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
-        if self.over.is_some() {
-            return (Some(OVER_NO_FILE.into()), Vec::new());
-        }
-        crate::closing::change_file(self, change, out)
+        crate::file::change_file(self, change, out)
     }
 
     /// **Whether event `event` is one a window with no document answers**:
@@ -1617,20 +1582,12 @@ impl ScoreEditor {
         shown
     }
 
-    /// **Save**: the score goes to its file, which the turn's outcome names
-    /// for whoever drives the editor to write; a score with no file yet is
-    /// asked for one.
+    /// **Save** ([`crate::file::save`]): the score goes to its file, which the
+    /// turn's outcome names for whoever drives the editor to write; a score
+    /// with no file yet is asked for one.
     fn save(&mut self, out: &mut Outcome) -> (Option<String>, Option<Vec<Correction>>) {
-        match &self.path {
-            Some(path) => {
-                out.save = Some(path.clone());
-                (None, Some(Vec::new()))
-            }
-            None => {
-                let (reason, shown) = self.open_form(dialogs::Form::File(dialogs::File::SaveAs));
-                (reason, Some(shown))
-            }
-        }
+        let (reason, shown) = crate::file::save(self, out);
+        (reason, Some(shown))
     }
 
     /// **A pick of the menu bar**, answered: a step of the history is the
@@ -2699,5 +2656,77 @@ pub fn call_json(editor: &mut ScoreEditor, request: &str) -> String {
 }
 
 mod forms;
+crate::file::outcome!(Outcome);
+crate::file::application!(ScoreEditor);
+
+impl crate::file::FileWindow for ScoreEditor {
+    fn binding(&self) -> i64 {
+        self.binding
+    }
+
+    fn file_path(&self) -> Option<String> {
+        self.path.clone()
+    }
+
+    fn has_document(&self) -> bool {
+        self.document
+    }
+
+    fn no_file(&self) -> Option<&'static str> {
+        self.over.is_some().then_some(OVER_NO_FILE)
+    }
+
+    /// The revision a store wrote is what the file holds, and the file is
+    /// the score's from now on.
+    fn confirm_saved(&mut self, saved: &crate::file::Saved) {
+        self.path = Some(saved.path.clone());
+        self.set_saved(String::from_utf8_lossy(&saved.revision).into_owned());
+    }
+
+    fn replace_document(&mut self, contents: &[u8], path: Option<String>) -> Option<Value> {
+        let left = self.left();
+        self.held().load(&String::from_utf8_lossy(contents));
+        self.document = true;
+        self.path = path;
+        self.start_over();
+        left
+    }
+
+    fn let_go(&mut self) -> Option<Value> {
+        let left = self.left();
+        // what it holds now is a blank nobody sees
+        if let Ok(blank) = sheet_to_mei(&Sheet::default()) {
+            self.held().load(&blank);
+        }
+        self.document = false;
+        self.path = None;
+        self.start_over();
+        left
+    }
+
+    /// The score as MEI, which is what the window compares itself with too.
+    fn write_file(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
+        let mei = self.held().mei().into_bytes();
+        Ok((mei.clone(), mei))
+    }
+
+    fn read_file(&self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        let data = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
+        self.read_document(data).map(String::into_bytes)
+    }
+
+    fn blank(&self) -> Result<Vec<u8>, String> {
+        self.blank_document().map(String::into_bytes)
+    }
+
+    fn leaving(&mut self) -> &mut Option<Leaving> {
+        &mut self.leaving
+    }
+
+    fn ask_where(&mut self) -> (Option<String>, Vec<Correction>) {
+        self.open_form(dialogs::Form::File(dialogs::File::SaveAs))
+    }
+}
+
 #[cfg(test)]
 mod tests;

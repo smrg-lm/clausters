@@ -94,8 +94,9 @@ pub enum Step {
     Store {
         /// Destination path.
         path: String,
-        /// Immutable UTF-8 document captured at preparation.
-        contents: String,
+        /// The document's bytes, captured at preparation: text for a
+        /// session or a score, binary for a MIDI file.
+        contents: Vec<u8>,
     },
 }
 
@@ -799,9 +800,12 @@ pub fn steps_json(steps: &[Step]) -> Value {
                 }
                 Step::Sync(id) => json!({ "sync": id }),
                 Step::Move { from, to } => json!({"move": {"from": from, "to": to}}),
-                Step::Store { path, contents } => {
-                    json!({"store": {"path": path, "contents": contents}})
-                }
+                // a text document reads as itself, and any other as hex, as
+                // a render's score does
+                Step::Store { path, contents } => match std::str::from_utf8(contents) {
+                    Ok(text) => json!({"store": {"path": path, "contents": text}}),
+                    Err(_) => json!({"store": {"path": path, "hex": hex(contents)}}),
+                },
                 Step::Measure { path, peaks, label } => {
                     json!({"measure": {"path": path, "peaks": peaks, "label": label}})
                 }
@@ -870,7 +874,10 @@ pub fn steps_from_json(steps: &Value) -> Vec<Step> {
             if let Some(stored) = step.get("store") {
                 return Some(Step::Store {
                     path: stored.get("path")?.as_str()?.to_string(),
-                    contents: stored.get("contents")?.as_str()?.to_string(),
+                    contents: match stored.get("contents").and_then(Value::as_str) {
+                        Some(text) => text.as_bytes().to_vec(),
+                        None => unhex(stored.get("hex")?.as_str()?)?,
+                    },
                 });
             }
             if let Some(moved) = step.get("move") {

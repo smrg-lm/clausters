@@ -139,7 +139,8 @@ pub fn menu(app: App, saves: bool) -> Value {
         ]);
     }
     let mut file = Vec::new();
-    if matches!(app, App::Audio | App::Multitrack) {
+    // a roll has a file when its window is its sequence's only holder
+    if matches!(app, App::Audio | App::Multitrack) || (app == App::Notes && saves) {
         file.extend([
             entry(app, "new_file"),
             entry(app, "open_file"),
@@ -149,7 +150,7 @@ pub fn menu(app: App, saves: bool) -> Value {
     }
     if saves {
         file.push(entry(app, "save"));
-        if matches!(app, App::Audio | App::Multitrack) {
+        if matches!(app, App::Audio | App::Multitrack | App::Notes) {
             file.push(entry(app, "save_as"));
         }
         file.push(sep());

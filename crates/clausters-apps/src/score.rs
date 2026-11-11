@@ -35,7 +35,6 @@ pub mod entry;
 pub mod icons;
 pub mod keys;
 pub mod menu;
-pub mod operations;
 pub mod palettes;
 pub mod selection;
 pub mod tools;

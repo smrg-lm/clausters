@@ -158,8 +158,6 @@ mod clocks;
 mod define;
 #[cfg(test)]
 mod monitor_tests;
-#[cfg(feature = "notation")]
-mod score_editor;
 mod scripted;
 mod set;
 mod takes;

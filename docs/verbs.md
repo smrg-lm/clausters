@@ -114,6 +114,10 @@ The verdict is one of three:
 | `notes` | `convert_midi1` | `NotesEditor.to_midi` | `NotesEditor.toMidi` | **api** — `to_midi("1.0")` answers the copy |
 | `notes` | `convert_mpe` | `NotesEditor.to_midi` | `NotesEditor.toMidi` | **api** — `to_midi("mpe")` |
 | `notes` | `convert_midi2` | `NotesEditor.to_midi` | `NotesEditor.toMidi` | **api** — `to_midi("2.0")` |
+| `notes` | `new_file` | — | — | **n/a** — the File menu of a roll the host holds alone (`clausters-gui --roll`, a conversion's copy); a client's roll edits the client's sequence, which has no file of its own |
+| `notes` | `open_file` | — | — | **n/a** — as `new_file`: a client reads a file into a sequence itself (`EventSequence.from_smf`, `from_clip`) |
+| `notes` | `save_as` | — | — | **n/a** — as `new_file`: a client writes its sequence itself (`to_smf`, `to_clip`) |
+| `notes` | `close_file` | — | — | **n/a** — as `new_file` |
 | `notes` | `show_system` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = "system"`; on the web `setScope("system")` |
 | `notes` | `show_part` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = ("part", n)` |
 | `notes` | `show_staff` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = ("staff", n)` |

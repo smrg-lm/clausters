@@ -76,7 +76,7 @@ impl ScoreEditor {
             }
             // closing without saving: what was not saved is let go
             Said::Discard => {
-                self.let_what_waits_go(out);
+                crate::file::let_what_waits_go(self, out);
                 (None, corrections(self.dialogs.hide()))
             }
             Said::Accept => {
@@ -95,16 +95,6 @@ impl ScoreEditor {
                 shown.extend(corrections(self.dialogs.hide()));
                 (None, shown)
             }
-        }
-    }
-
-    /// **What the close form was asked about goes**: the window or its
-    /// document, once whatever the turn saves is written.
-    fn let_what_waits_go(&mut self, out: &mut Outcome) {
-        match self.leaving.take() {
-            Some(crate::closing::Leaving::Window) => out.close = true,
-            Some(crate::closing::Leaving::File(change)) => out.file = Some(change),
-            None => {}
         }
     }
 
@@ -130,37 +120,21 @@ impl ScoreEditor {
             },
             // Save, and close once it is written; a score with no file is
             // asked for one first
-            Form::Close => {
-                let (reason, _) = self.save(out);
-                if out.save.is_some() {
-                    self.let_what_waits_go(out);
-                }
-                reason
-            }
+            Form::Close => crate::file::save_then_go(self, out),
             // A file is its holder's to read and write: the outcome names
             // it, and for a save it is the score's file from now on.
             Form::File(file) => {
                 let path = open.value("path").trim().to_string();
-                if path.is_empty() {
-                    return Some("a file is named by its path".into());
-                }
-                match (file, file.format()) {
-                    (_, Some(format)) => {
+                match file.format() {
+                    Some(_) if path.is_empty() => Some("a file is named by its path".into()),
+                    Some(format) => {
                         out.export = Some(serde_json::json!({"path": path, "format": format}));
+                        None
                     }
-                    (dialogs::File::Open, _) => {
-                        // the form goes down, and the rule says whether
-                        // another comes up in its place
-                        let (reason, _) =
-                            self.change_file(crate::closing::FileChange::Open(path), out);
-                        return reason;
-                    }
-                    (_, None) => {
-                        out.save = Some(path);
-                        self.let_what_waits_go(out);
-                    }
+                    // the form goes down, and the rule says whether another
+                    // comes up in its place
+                    None => crate::file::path_given(self, file == dialogs::File::Open, &path, out),
                 }
-                None
             }
         }
     }

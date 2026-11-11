@@ -304,6 +304,7 @@ dependencies = [
  "clausters-core",
  "clausters-document",
  "clausters-editing",
+ "clausters-midi",
  "serde",
  "serde_json",
 ]

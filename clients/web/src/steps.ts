@@ -35,7 +35,8 @@ export type Step =
     | { sync: number }
     | { render: RenderStep }
     | { move: { from: string; to: string } }
-    | { store: { path: string; contents: string } };
+    // a text document as itself, a binary one (a MIDI file) in hex
+    | { store: { path: string; contents?: string; hex?: string } };
 
 /** **An offline render a step asks for**: the score, in hex, and the file it
  *  is rendered into. */

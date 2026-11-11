@@ -33,6 +33,7 @@
 pub mod dialogs;
 pub mod display;
 pub mod editor;
+pub mod file;
 pub mod panel;
 
 use std::sync::{Arc, Mutex};

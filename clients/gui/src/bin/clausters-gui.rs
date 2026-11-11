@@ -52,7 +52,7 @@ usage:
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
                 [--multitrack [file] [--save-to <file>]]
                 [--score [file] [--save-to <file>]] [--audio [file]]
-                [--roll [file]]
+                [--roll [file] [--save-to <file>]]
                 [--theme <path>] [--keys <path>] [--font <path>] [--msaa <n>]
                 [--follow-block <seconds>] [--id-share <i/of>]
       --port <n>            port for the GUI host's server front
@@ -125,12 +125,17 @@ usage:
                             2.0 Clip File), or a score the engraver reads (MEI,
                             MusicXML, ABC; built with the `score` feature) --
                             or over an empty one, with this host as its owner:
-                            edited and played here, on an engine this host
-                            opens on the machine's output. Nothing is saved yet
-      --save-to <file>      where Ctrl+S writes the session (or the score), and
-                            the close form's Save. Without it nothing is
-                            written: overwriting the file you opened is a
-                            decision, not a default
+                            edited, played and saved here, on an engine this
+                            host opens on the machine's output. A page is
+                            edited in notation mode and saved as MEI, a
+                            performance in MIDI mode and saved as the MIDI file
+                            of its spec; Ctrl+S writes it to --save-to, asking
+                            where without it
+      --save-to <file>      where Ctrl+S writes the session, the score or the
+                            roll's sequence, and the close form's Save. The
+                            file you opened is never written over unasked: a
+                            session without it is read-only, and a score or a
+                            roll asks where
       --standalone [name]   boot the saved GuiDef <name> against an embedded
                             audio server (no separate server or language client):
                             the embedded server loads the data directory's
@@ -590,7 +595,7 @@ fn run(args: &[String]) -> Result<(), String> {
 
     // A sequence: the notes editor, with this host as its owner.
     if let Some(path) = roll_path {
-        return run_roll(path.as_deref(), udp_bind, look);
+        return run_roll(path.as_deref(), save_to.as_deref(), udp_bind, look);
     }
 
     // Standalone: boot a saved GuiDef against an embedded server, no separate
@@ -793,12 +798,22 @@ fn run_audio(path: Option<&str>, udp_bind: SocketAddr, look: Look) -> Result<(),
 
 /// **Opens the notes editor over the sequence a file holds**, with this host
 /// as its owner: a MIDI file or a score read here, edited and played on an
-/// engine this host opens on the machine's output.
-fn run_roll(path: Option<&str>, udp_bind: SocketAddr, look: Look) -> Result<(), String> {
+/// engine this host opens on the machine's output, and saved as the file of
+/// its format where `--save-to` says, asking where without it.
+fn run_roll(
+    path: Option<&str>,
+    save_to: Option<&str>,
+    udp_bind: SocketAddr,
+    look: Look,
+) -> Result<(), String> {
     let mut host = Host::new();
     look.apply(&mut host);
-    let title = path.map_or_else(|| "Roll".to_string(), file_name);
-    host.open_roll_file(path, &title)
+    let title = match (path.map(file_name), save_to) {
+        (Some(name), Some(out)) => format!("{name} -> {out}"),
+        (Some(name), None) => name,
+        (None, _) => "Roll".to_string(),
+    };
+    host.open_roll_file(path, save_to, &title)
         .map_err(|e| format!("--roll: {e}"))?;
     serve(host, udp_bind)
 }

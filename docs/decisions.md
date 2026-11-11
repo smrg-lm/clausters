@@ -11784,3 +11784,14 @@ switch of mode.
   confusion the decision removes. The design is in
   `crates/clausters-apps/PLAN.md`, Future directions, "What a sequence is,
   as a thing that is edited, and what a change of representation keeps".
+
+  *Built 2026-11-11 (`X44`).* The roll's file reuses the score editor's: the
+  file runtime (prepare a revision, store it, confirm it, change the window's
+  document by the closing rule) became `clausters_apps::file`, one module for
+  every window whose document is one file, each editor saying only how its
+  document is written and read (`FileWindow`). A store step now carries bytes,
+  since a MIDI file is not text; its JSON form keeps a text document as text
+  and writes any other in hex, as a render's score is. The applications crate
+  links the MIDI file reader and writer (pure Rust) so the roll's file and the
+  score's export are written by one function, and the engraver stays a port
+  the host hands in (`Editing::read_scores_with`), as its outlines are.

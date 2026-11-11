@@ -15,12 +15,13 @@ use clausters_editing::notes_playback::NotesPlayback;
 use serde_json::{Value, json};
 
 use super::{Editing, Member, MemberId, Raised, Ran};
+use crate::notes::editor::NotesEditor;
 use crate::turn::{Event, Kind};
 
 /// **One roll's playback**, and its position cursor.
 #[derive(Debug)]
 pub(super) struct Roll {
-    playback: NotesPlayback<Box<dyn Medium + Send>>,
+    pub(super) playback: NotesPlayback<Box<dyn Medium + Send>>,
     rate: f64,
     /// The position cursor, a beat of the sequence: where a play starts and
     /// a stop goes back to.
@@ -28,7 +29,7 @@ pub(super) struct Roll {
 }
 
 impl Roll {
-    fn new(editing: &mut Editing) -> Option<Roll> {
+    pub(super) fn new(editing: &mut Editing) -> Option<Roll> {
         let engine = editing.engine.as_mut()?;
         Some(Roll {
             rate: engine.rate(),
@@ -39,7 +40,7 @@ impl Roll {
 }
 
 /// A window's effect.
-fn effect(kind: &str, fields: Value) -> Value {
+pub(super) fn effect(kind: &str, fields: Value) -> Value {
     let mut value = json!({"kind": kind});
     if let (Some(map), Value::Object(more)) = (value.as_object_mut(), fields) {
         map.extend(more);
@@ -151,12 +152,30 @@ impl Editing {
                     self.roll_update(member, roll, ids);
                     self.sound_rolls(ids);
                 }
-                // **File > Close**, by the rule every window closes by: a roll
-                // edits what its multitrack holds, so nothing is asked
-                if outcome.close {
+                // **what waits for a save waits until it is confirmed**, and
+                // stays when it was not written ([`crate::file`])
+                if let Some(path) = &outcome.save {
+                    use crate::closing::Leaving;
+                    let then = if outcome.close {
+                        Some(Leaving::Window)
+                    } else {
+                        outcome.file.clone().map(Leaving::File)
+                    };
+                    if let Err(why) =
+                        self.file_save::<NotesEditor>(member, Some(path.clone()), then, ran)
+                    {
+                        ran.effects.push(effect("say", json!({"reason": why})));
+                    }
+                } else if outcome.close {
+                    // **File > Close**, by the rule every window closes by
                     ran.effects.push(self.roll_closing(member, "closeWindow"));
                     ran.end = Some(Ok(json!(false)));
                     return false;
+                } else if let Some(change) = outcome.file.clone()
+                    && let Err(why) =
+                        self.file_change::<NotesEditor>(member, roll, change, ids, ran)
+                {
+                    ran.effects.push(effect("say", json!({"reason": why})));
                 }
                 self.roll_pass(
                     member,
@@ -178,6 +197,35 @@ impl Editing {
                 ran.effects.push(self.roll_closing(member, "closeWindow"));
                 ran.end = Some(Ok(json!(false)));
                 false
+            }
+            // **the roll's file**, as a script asks it: a save answered once
+            // it is confirmed, a change of document at once
+            "save" => {
+                let path = action["path"].as_str().map(str::to_string);
+                if let Err(message) = self.file_save::<NotesEditor>(member, path, None, ran) {
+                    ran.end = Some(Err(Raised {
+                        kind: "command".into(),
+                        message,
+                    }));
+                }
+                true
+            }
+            "new_file" | "close_file" | "open_file" => {
+                use crate::closing::FileChange;
+                let change = match action["verb"].as_str().unwrap_or_default() {
+                    "new_file" => FileChange::New,
+                    "close_file" => FileChange::Close,
+                    _ => FileChange::Open(action["path"].as_str().unwrap_or_default().into()),
+                };
+                ran.end = Some(
+                    self.file_change::<NotesEditor>(member, roll, change, ids, ran)
+                        .map(|()| Value::Null)
+                        .map_err(|message| Raised {
+                            kind: "command".into(),
+                            message,
+                        }),
+                );
+                true
             }
             // the transport its play cursor reads, taken now
             "open" => {
@@ -216,7 +264,7 @@ impl Editing {
     /// script plays it, the history its window walks, a setting of the
     /// window's, and one verb of the sequence's handle while the window has
     /// it. `None` for a verb that is none of these.
-    fn handler_verb(
+    pub(super) fn handler_verb(
         &mut self,
         member: MemberId,
         roll: &mut Roll,
@@ -409,7 +457,7 @@ impl Editing {
 
     /// **The window's closing effect**, carrying what its member leaves: what
     /// a script that held it goes on holding.
-    fn roll_closing(&mut self, member: MemberId, kind: &str) -> Value {
+    pub(super) fn roll_closing(&mut self, member: MemberId, kind: &str) -> Value {
         #[cfg(feature = "notation")]
         if let Some(Member::Score(editor)) = self.member_mut(member) {
             editor.follow();
@@ -536,7 +584,7 @@ impl Editing {
     }
 
     /// The roll's lane takes its sequence again, as it now is.
-    fn roll_update(&self, member: MemberId, roll: &mut Roll, ids: &mut IdSpaces) {
+    pub(super) fn roll_update(&self, member: MemberId, roll: &mut Roll, ids: &mut IdSpaces) {
         let rate = roll.rate;
         self.roll_with(member, |sequence| roll.playback.update(sequence, rate, ids));
     }
@@ -588,6 +636,9 @@ impl Editing {
         }
     }
 }
+
+#[cfg(feature = "notation")]
+use crate::score::editor::ScoreEditor;
 
 #[cfg(feature = "notation")]
 impl Editing {
@@ -706,7 +757,7 @@ impl Editing {
             "save" => {
                 let path = action["path"].as_str().map(str::to_string);
                 // the answer is the store's, once it is confirmed
-                if let Err(message) = self.score_save(member, path, None, ran) {
+                if let Err(message) = self.file_save::<ScoreEditor>(member, path, None, ran) {
                     ran.end = Some(Err(Raised {
                         kind: "command".into(),
                         message,
@@ -722,7 +773,7 @@ impl Editing {
                     _ => FileChange::Open(action["path"].as_str().unwrap_or_default().into()),
                 };
                 ran.end = Some(
-                    self.score_change_file(member, roll, change, ids, ran)
+                    self.file_change::<ScoreEditor>(member, roll, change, ids, ran)
                         .map(|()| Value::Null)
                         .map_err(|message| Raised {
                             kind: "command".into(),
@@ -787,7 +838,7 @@ impl Editing {
             } else {
                 outcome.file.clone().map(Leaving::File)
             };
-            if let Err(why) = self.score_save(member, Some(path.clone()), then, ran) {
+            if let Err(why) = self.file_save::<ScoreEditor>(member, Some(path.clone()), then, ran) {
                 ran.effects.push(effect("say", json!({"reason": why})));
             }
         } else if outcome.close {
@@ -795,7 +846,7 @@ impl Editing {
             ran.end = Some(Ok(json!(false)));
             return false;
         } else if let Some(change) = outcome.file.clone()
-            && let Err(why) = self.score_change_file(member, roll, change, ids, ran)
+            && let Err(why) = self.file_change::<ScoreEditor>(member, roll, change, ids, ran)
         {
             ran.effects.push(effect("say", json!({"reason": why})));
         }
@@ -968,280 +1019,5 @@ impl Editing {
             };
         }
         self.notes_query(member, query)
-    }
-
-    /// **The score's prepared revision stored**, at `path` or at the file it
-    /// has, and confirmed once it is: only then is the file the score's and
-    /// its changes not what a close asks about, and only then does `then`
-    /// go. A write that fails changes nothing.
-    fn score_save(
-        &mut self,
-        member: MemberId,
-        path: Option<String>,
-        then: Option<crate::closing::Leaving>,
-        ran: &mut Ran,
-    ) -> Result<(), String> {
-        use crate::application::{operations::Target, runtime::Dispatch};
-        use crate::score::operations::{Command, Request, Saved};
-        let server = self
-            .seats
-            .get(member as usize)
-            .ok_or("the member is absent")?
-            .server;
-        let Some(Member::Score(editor)) = self.member(member) else {
-            return Err("the member is not a score".into());
-        };
-        let path = path
-            .or_else(|| editor.file_path())
-            .ok_or("the score has no file yet: save it as")?;
-        let mei = editor
-            .score()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .mei();
-        let request = Request {
-            target: Target {
-                member,
-                object: editor.binding(),
-                server,
-            },
-            command: Command::Save(Box::new(Saved { mei, path, then })),
-        };
-        let Some(Member::Score(editor)) = self.seats.get(member as usize).map(|seat| &seat.member)
-        else {
-            return Err("the member is not a score".into());
-        };
-        let ticket = self
-            .score_runtime
-            .prepare(editor.as_ref(), &mut self.services, request)?;
-        let Dispatch::Response(protocol) = self.score_runtime.next(ticket) else {
-            unreachable!("a save waits on its storage batch");
-        };
-        self.score_wait(protocol.batch.expect("a storage batch"), ran);
-        Ok(())
-    }
-
-    fn score_wait(&mut self, work: crate::application::operations::Prepared, ran: &mut Ran) {
-        // a new dispatch gets a new run id, so a duplicate landing consumes
-        // nothing
-        let run = self.services.resources.new_owner();
-        ran.render = Some(crate::editing::Render {
-            run,
-            steps: work.steps.clone(),
-        });
-        self.score_waits.insert(run, work);
-    }
-
-    /// **A store landed**: the operation it was for settled, and what waited
-    /// for it done over what it wrote.
-    pub(super) fn score_landed(
-        &mut self,
-        member: MemberId,
-        run: u64,
-        result: Result<(), String>,
-        ids: &mut IdSpaces,
-    ) -> Ran {
-        use crate::application::runtime::{Control, Reply};
-        use crate::closing::Leaving;
-        let mut ran = Ran::default();
-        if self
-            .score_waits
-            .get(&run)
-            .is_none_or(|work| work.member != member)
-        {
-            return ran;
-        }
-        let Some(work) = self.score_waits.remove(&run) else {
-            return ran;
-        };
-        let dispatch = self.score_runtime.control(
-            &mut self.services.resources,
-            Control::Complete {
-                ticket: work.ticket,
-                batch: work.batch,
-                result: match result {
-                    Ok(()) => Reply::Success,
-                    Err(reason) => Reply::Failed(reason),
-                },
-            },
-            self.version,
-        );
-        let settled = super::settle_operation(
-            &mut self.score_runtime,
-            &mut self.services,
-            &mut self.version,
-            &mut self.seats,
-            score_of,
-            dispatch,
-        );
-        if let Some(work) = settled.protocol.batch {
-            self.score_wait(work, &mut ran);
-            return ran;
-        }
-        if let Some(error) = settled.protocol.error {
-            ran.end = Some(Err(Raised {
-                kind: "command".into(),
-                message: error,
-            }));
-        }
-        if let Some(reason) = settled.protocol.reason {
-            ran.end = Some(Err(Raised {
-                kind: "command".into(),
-                message: reason.clone(),
-            }));
-            ran.effects.push(effect("say", json!({"reason": reason})));
-        }
-        let committed = settled.protocol.committed == Some(true);
-        let saved = settled.outcome.and_then(|outcome| outcome.saved);
-        if let Some(saved) = saved {
-            ran.end = Some(Ok(json!({"destination": saved.path})));
-            let moved = matches!(self.member(member),
-                Some(Member::Score(editor)) if editor.unsaved());
-            match saved.then {
-                // **what waited for the save is done only over what it
-                // wrote**: an edit made while it was written is work the save
-                // does not hold, and the window keeps it
-                Some(_) if moved => ran.effects.push(effect(
-                    "say",
-                    json!({"reason": "the score changed while it was saved: it stays open"}),
-                )),
-                Some(Leaving::Window) => {
-                    if let Some(mut roll) = self.rolls.remove(&member) {
-                        let _ = roll.playback.close(ids);
-                    }
-                    ran.effects.push(self.roll_closing(member, "closeWindow"));
-                    return ran;
-                }
-                Some(Leaving::File(change)) => {
-                    if let Some(mut roll) = self.rolls.remove(&member).or_else(|| Roll::new(self)) {
-                        if let Err(why) =
-                            self.score_change_file(member, &mut roll, change, ids, &mut ran)
-                        {
-                            ran.effects.push(effect("say", json!({"reason": why})));
-                        }
-                        self.rolls.insert(member, roll);
-                    }
-                    return ran;
-                }
-                None => {}
-            }
-        }
-        if committed {
-            ran.effects.push(effect("resync", json!({})));
-        }
-        ran
-    }
-
-    /// **The window's document changes** (File > New, Open, Close file, or the
-    /// door's verbs): what plays stopped and one transition through the
-    /// runtime, which takes the old document's order with it. A file is read
-    /// whole first, so one that does not read leaves everything as it was, and
-    /// a file another window holds brings that window forward instead. Whoever
-    /// opened the window is handed what it left, and the window is drawn again.
-    fn score_change_file(
-        &mut self,
-        member: MemberId,
-        roll: &mut Roll,
-        change: crate::closing::FileChange,
-        ids: &mut IdSpaces,
-        ran: &mut Ran,
-    ) -> Result<(), String> {
-        use crate::application::operations::Target;
-        use crate::closing::FileChange;
-        use crate::score::operations::{Command, Request};
-        let here = match self.member(member) {
-            Some(Member::Score(editor)) => crate::turn::Converse::window_id(editor.as_ref()),
-            _ => return Err("the member is not a score".into()),
-        };
-        if let FileChange::Open(path) = &change
-            && let Some(window) = self
-                .window_holding_file(path)
-                .filter(|window| Some(*window) != here)
-        {
-            ran.effects.push(effect("front", json!({"window": window})));
-            return Err(format!("{path} is open in another window"));
-        }
-        let seat = self
-            .seats
-            .get(member as usize)
-            .ok_or("the member is absent")?;
-        let server = seat.server;
-        let Member::Score(editor) = &seat.member else {
-            return Err("the member is not a score".into());
-        };
-        if editor.is_over() {
-            return Err("a page over a sequence has no file of its own".into());
-        }
-        let command = match &change {
-            FileChange::New => Command::Replace {
-                mei: editor.blank_document()?,
-                path: None,
-            },
-            FileChange::Open(path) => {
-                let bytes =
-                    clausters_core::files::read(path).map_err(|e| format!("{path}: {e}"))?;
-                let data = String::from_utf8(bytes).map_err(|e| format!("{path}: {e}"))?;
-                Command::Replace {
-                    mei: editor.read_document(&data)?,
-                    path: Some(path.clone()),
-                }
-            }
-            // none already: nothing to let go of
-            FileChange::Close if !editor.has_document() => return Ok(()),
-            FileChange::Close => Command::Unbind,
-        };
-        let request = Request {
-            target: Target {
-                member,
-                object: editor.binding(),
-                server,
-            },
-            command,
-        };
-        let ticket = self
-            .score_runtime
-            .prepare(editor.as_ref(), &mut self.services, request)?;
-        self.handler_verb(member, roll, "stop", &json!({"mark": 0.0}), ids, ran);
-        let finished = self
-            .score_runtime
-            .operations
-            .finish_ready(ticket)
-            .expect("changing a window's document has no pending I/O");
-        let Member::Score(editor) = &mut self.seats[member as usize].member else {
-            return Err("the member is not a score".into());
-        };
-        let settled = self.score_runtime.settle_turn(
-            editor.as_mut(),
-            &mut self.services,
-            finished,
-            &mut self.version,
-        );
-        if settled.protocol.committed != Some(true) {
-            return Err("the document changed before confirmation".into());
-        }
-        if let Some(left) = settled.outcome.and_then(|outcome| outcome.left) {
-            ran.effects
-                .push(effect("released", json!({"snapshot": left})));
-        }
-        self.version += 1;
-        // the next document's order is its own
-        self.select_member(member);
-        self.roll_update(member, roll, ids);
-        self.sound_rolls(ids);
-        ran.effects.push(effect("publish", json!({})));
-        ran.effects.push(effect("resync", json!({})));
-        // a gesture made against the document it let go of is refused, and one
-        // made after is not
-        ran.effects.push(self.told_version());
-        Ok(())
-    }
-}
-
-/// The score editor a member is, for the runtime's walk.
-#[cfg(feature = "notation")]
-fn score_of(member: &mut Member) -> &mut crate::score::editor::ScoreEditor {
-    match member {
-        Member::Score(editor) => editor.as_mut(),
-        _ => unreachable!("the operation belongs to a score member"),
     }
 }

@@ -36,6 +36,7 @@ pub mod audio;
 pub mod chrome;
 pub mod closing;
 pub mod editing;
+pub mod file;
 pub mod forms;
 pub mod multitrack;
 pub mod notes;

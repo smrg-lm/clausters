@@ -158,7 +158,7 @@ fn save_confirms_only_the_snapshot_written_and_failure_keeps_the_previous_destin
     let [Step::Store { path, contents }] = &storage.steps[..] else {
         panic!("a storage step")
     };
-    let captured: Session = serde_json::from_str(contents).unwrap();
+    let captured: Session = serde_json::from_slice(contents).unwrap();
     assert_eq!(
         captured.sources[&SourceId(1)].location,
         clausters_document::session::Location::File {
@@ -1661,7 +1661,7 @@ fn a_score_s_save_is_confirmed_before_what_waits_for_it() {
     let [Step::Store { path: to, contents }] = &render.steps[..] else {
         panic!("a storage step")
     };
-    assert_eq!(contents, &prepared);
+    assert_eq!(contents, prepared.as_bytes());
     std::fs::write(to, contents).unwrap();
     let landed = land(&mut f, member, render.run, Ok(()));
     assert!(matches!(landed.end, Some(Ok(_))), "{landed:?}");
@@ -1992,7 +1992,7 @@ fn a_score_s_store_landing_after_its_window_or_its_server_went() {
         &mut f.ids,
     );
     let run = saving.render.unwrap().run;
-    let target = f.editing.score_waits[&run].ticket.target;
+    let target = f.editing.files.waits[&run].ticket.target;
     // the window's close, as the host's goes, over work the save does not hold
     f.editing
         .start(member, &turned(true), None, &mut f.disk, &mut f.ids);
@@ -2011,8 +2011,8 @@ fn a_score_s_store_landing_after_its_window_or_its_server_went() {
             .any(|e| matches!(e["kind"].as_str(), Some("publish" | "closeWindow"))),
         "{landed:?}"
     );
-    assert!(f.editing.score_waits.is_empty());
-    assert!(!f.editing.score_runtime.operations.busy(target));
+    assert!(f.editing.files.waits.is_empty());
+    assert!(!f.editing.files.score.operations.busy(target));
 
     // a server lost
     let mut f = Fixture::new();
@@ -2025,10 +2025,10 @@ fn a_score_s_store_landing_after_its_window_or_its_server_went() {
         &mut f.ids,
     );
     let run = saving.render.unwrap().run;
-    let target = f.editing.score_waits[&run].ticket.target;
+    let target = f.editing.files.waits[&run].ticket.target;
     f.editing.invalidate_server(target.server);
     let landed = land(&mut f, member, run, Ok(()));
     assert!(landed.effects.is_empty() && landed.end.is_none());
     assert_eq!(score_file(&mut f, member)["path"], Value::Null);
-    assert!(!f.editing.score_runtime.operations.busy(target));
+    assert!(!f.editing.files.score.operations.busy(target));
 }

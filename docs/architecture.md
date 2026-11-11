@@ -1214,13 +1214,19 @@ source resolver and typed open operation; local edits made after closing are
 preserved. Content comparison ignores monotonic revision counters and event-id
 watermarks, while storage preserves those counters.
 
-A score window's file goes through the same runtime (`score::operations`): a
-Save stores one prepared revision and confirms it, so a pending close or Close
-file waits for the store and goes only over what it wrote; a replacement in the
-meantime is not confirmed as that file. New, Open and Close file change which
-document the window holds, by the rule the multitrack's session changes by
-(`closing::change_file`): no entry of a history, the old document's order gone,
-what would be lost asked about first. A script's `Score.load(mei)` is an edit.
+A window whose document is one file -- a score window's MEI, and a roll's
+MIDI or MEI file when the host holds it alone -- goes through the same
+runtime, written once for both (`clausters_apps::file`, its runs in the
+editing context's `file_runs`): a Save stores one prepared revision and
+confirms it, so a pending close or Close file waits for the store and goes
+only over what it wrote; a replacement in the meantime is not confirmed as
+that file. New, Open and Close file change which document the window holds, by
+the rule the multitrack's session changes by (`closing::change_file`): no
+entry of a history, the old document's order gone, what would be lost asked
+about first. What is each editor's is said through `file::FileWindow`: how
+its document is written to its file and read from one (the roll's by its
+format, `notes::file`), and which form asks where. A store carries bytes, so a
+MIDI file is written as one. A script's `Score.load(mei)` is an edit.
 
 The **score editor** (`clausters_apps::score`, behind the crate's `notation`
 feature) opens a symbolic score and edits it **in place**: what it holds is the

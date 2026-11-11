@@ -134,7 +134,7 @@ fn carry_one<'a>(
 
 /// **A document stored whole or not at all**: written beside its file and named
 /// that once it is, so a write that fails leaves the file it would replace.
-fn store(path: &str, contents: &str) -> std::io::Result<()> {
+fn store(path: &str, contents: &[u8]) -> std::io::Result<()> {
     let writing = format!("{path}.writing");
     let written = clausters_core::files::write(&writing, contents)
         .and_then(|()| clausters_core::files::rename(&writing, path));
@@ -354,7 +354,7 @@ mod tests {
         let path = dir.join("session.json");
         std::fs::write(&path, "before").unwrap();
         let name = path.to_string_lossy().into_owned();
-        store(&name, "after").unwrap();
+        store(&name, b"after").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "after");
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
         let nowhere = dir
@@ -362,7 +362,7 @@ mod tests {
             .join("x")
             .to_string_lossy()
             .into_owned();
-        assert!(store(&nowhere, "after").is_err());
+        assert!(store(&nowhere, b"after").is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "after");
         let _ = std::fs::remove_dir_all(&dir);
     }

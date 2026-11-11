@@ -1239,3 +1239,82 @@ fn the_display_panel_sets_how_the_roll_draws_and_records_nothing() {
     );
     assert!(refused.contains("refused"), "{refused}");
 }
+
+/// A roll whose window is its sequence's only holder, every dialog numbered
+/// from 100, its window 39 and its roll 40; and its widgets by name.
+fn holder(sequence: Shared) -> (NotesEditor, serde_json::Map<String, Value>) {
+    let mut e = new_json(sequence, r#"{"rate": 100.0, "version": 1}"#);
+    let names: Value = serde_json::from_str(&call_json(&mut e, r#"{"verb": "dialogs"}"#)).unwrap();
+    let ids: serde_json::Map<String, Value> = names["dialogs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(i, name)| (name.as_str().unwrap().to_string(), json!(100 + i)))
+        .collect();
+    call_json(
+        &mut e,
+        &json!({"verb": "window", "widget": 40, "dialogs": ids}).to_string(),
+    );
+    call_json(&mut e, r#"{"verb": "sync", "window": 39, "asks": true}"#);
+    (e, ids)
+}
+
+/// **A roll that holds its sequence alone has a file**: Save with none yet
+/// asks where, Save with one names it for the holder to write, a close with
+/// changes the file does not hold asks first, and Don't save closes.
+#[test]
+fn a_roll_with_a_file_saves_and_asks_before_a_close_loses_work() {
+    let sequence = shared();
+    let (mut e, ids) = holder(sequence.clone());
+    assert!(e.actions(false, false)["save"].enabled);
+    let file = e.window(40)["menu"][0]["menu"].to_string();
+    assert!(
+        file.contains("open_file") && file.contains("save_as"),
+        "{file}"
+    );
+    // no file yet: the Save as form, offering a file of the format
+    let out = e.event(&window_verb("save"), 1);
+    assert!(out.save.is_none());
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("untitled.mid"), "{told}");
+    let said = |e: &mut NotesEditor, name: &str, tag: &str| {
+        let event = Event {
+            addr: "/gui_event".into(),
+            args: vec![ids[name].clone(), json!(1), json!(0), json!(tag)],
+        };
+        e.event(&event, 1)
+    };
+    said(&mut e, "file:path", "/tmp/a roll.mid");
+    let out = said(&mut e, "file:ok", "click");
+    assert_eq!(out.save.as_deref(), Some("/tmp/a roll.mid"));
+    // a path the host said: Save names it at once
+    call_json(&mut e, r#"{"verb": "sync", "path": "/tmp/b.mid"}"#);
+    let out = e.event(&window_verb("save"), 1);
+    assert_eq!(out.save.as_deref(), Some("/tmp/b.mid"));
+    // a change the file does not hold, and a close
+    assert!(!e.unsaved());
+    sequence.lock().unwrap().events.pop();
+    assert!(e.unsaved());
+    let out = e.event(&window_verb("close"), 2);
+    assert!(!out.close, "asked first");
+    let out = said(&mut e, "close:discard", "click");
+    assert!(out.close, "Don't save closes");
+}
+
+/// **A client's roll has no file**: the sequence is its holder's, so its
+/// file verbs are refused with why, and its menu has none.
+#[test]
+fn a_client_s_roll_has_no_file_of_its_own() {
+    let mut e = editor(shared());
+    let out = e.event(&window_verb("save"), 1);
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("no file of its own"), "{told}");
+    assert!(!e.actions(false, false)["open_file"].enabled);
+    let tree = e.window(40);
+    let file = tree["menu"][0]["menu"].to_string();
+    assert!(
+        !file.contains("open_file") && !file.contains("\"save\""),
+        "{file}"
+    );
+}

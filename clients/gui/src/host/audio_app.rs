@@ -448,6 +448,17 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
     // roll first shows a page
     #[cfg(feature = "notation")]
     editing.engrave_marks_with(Arc::new(|codes: &[&str]| mark_outlines(codes)));
+    // **a score a roll opens is the engraver's reading**, played as the score
+    // editor plays it
+    #[cfg(feature = "notation")]
+    editing.read_scores_with(Arc::new(|text: &str| {
+        let score = engraved(text)?;
+        let score = score.lock().unwrap_or_else(|e| e.into_inner());
+        let sheet = score
+            .sheet()
+            .ok_or("the score has no model to read a sequence from")?;
+        clausters_document::events::score::played(sheet)
+    }));
     let mut state = App {
         app,
         editing,
@@ -550,7 +561,7 @@ impl App {
                     }
                     #[cfg(feature = "notation")]
                     AppKind::Score => self.open_score(def_id, &key, &title, path, data, save_to),
-                    AppKind::Notes => self.open_notes(def_id, &key, &title, data),
+                    AppKind::Notes => self.open_notes(def_id, &key, &title, path, data, save_to),
                 };
                 if let Some(window) = self.windows.get_mut(&def_id) {
                     window.client_owned = matches!(reply, Some(Reply::Client(..)));
@@ -982,12 +993,23 @@ impl App {
         def_id: i32,
         key: &str,
         title: &str,
+        path: Option<String>,
         data: Option<AppData>,
+        save_to: Option<Option<String>>,
     ) -> Result<Vec<String>, String> {
         let (over, mut request) = match data {
             Some(AppData::Notes { over, request }) => (over, request),
             _ => (None, json!({})),
         };
+        // **a file the host opened the roll over**, read as the roll's own
+        // Open reads one
+        if let Some(path) = &path {
+            let bytes = clausters_core::files::read(path).map_err(|e| format!("{path}: {e}"))?;
+            let sequence =
+                clausters_apps::notes::file::read(&bytes, self.editing.score_reader().as_ref())
+                    .map_err(|e| format!("{path}: {e}"))?;
+            request["sequence"] = serde_json::to_value(sequence).map_err(|e| e.to_string())?;
+        }
         let sequence = self
             .sequence_of(&mut request, over)?
             .ok_or("a roll opens over a sequence")?;
@@ -1025,10 +1047,10 @@ impl App {
                 member,
                 kind: AppKind::Notes,
                 key,
-                session: None,
+                session: path,
                 snapshot: None,
                 client_owned: false,
-                save_to: None,
+                save_to,
                 ids: None,
                 widgets: Vec::new(),
                 _workspace: workspace,
@@ -1199,7 +1221,22 @@ impl App {
                 return self.bind_multitrack(def_id, member, &ids, session, save_to);
             }
             AppKind::Roll { .. } | AppKind::Notes => {
-                self.member_call(member, json!({"verb": "sync", "window": def_id}));
+                // **a roll no client holds is its sequence's only holder** --
+                // one over a file, or over a conversion's copy -- so it has
+                // a file and asks before a close loses work; a box's roll is
+                // its multitrack's. Its Save writes where the host said, or
+                // to the file it read.
+                let asks = kind == AppKind::Notes
+                    && !self
+                        .windows
+                        .get(&def_id)
+                        .is_some_and(|window| window.client_owned);
+                let file = save_to.unwrap_or(session);
+                self.member_call(
+                    member,
+                    json!({"verb": "sync", "window": def_id, "asks": asks, "path": file,
+                        "title": title}),
+                );
                 // its own transport, taken now: what its play cursor reads
                 let ran = self
                     .app
@@ -1492,17 +1529,14 @@ impl App {
                     );
                     continue;
                 }
-                // the writer of a MIDI file is this build's to link
+                // a score's render as a MIDI file, with the roll's writer
                 #[cfg(feature = "notation")]
                 "export" => {
                     let path = effect["path"].as_str().unwrap_or_default().to_string();
                     let clip = effect["format"] == "clip";
                     let written = serde_json::from_value(effect["sequence"].take())
                         .map_err(|e| e.to_string())
-                        .and_then(|sequence| {
-                            super::score_editor::midi_file(&sequence, clip)
-                                .ok_or_else(|| "this host has no MIDI file writer".to_string())
-                        })
+                        .map(|sequence| clausters_apps::notes::file::midi_file(&sequence, clip))
                         .and_then(|data| {
                             clausters_core::files::write(&path, data).map_err(|e| e.to_string())
                         });

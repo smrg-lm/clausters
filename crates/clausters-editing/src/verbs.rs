@@ -355,6 +355,11 @@ pub const NOTES: &[Verb] = &[
     verb("note_pressure", &[], "Add a pressure to the notes"),
     verb("note_timbre", &[], "Add a timbre to the notes"),
     verb("curve_remove", &[], "Remove the curve shown"),
+    // the roll's file, when the window is its sequence's only holder
+    verb("new_file", &[], "New"),
+    verb("open_file", &["Ctrl+O"], "Open..."),
+    verb("save_as", &["Ctrl+Shift+S"], "Save as..."),
+    verb("close_file", &[], "Close file"),
     // the conversions: the mode is the sequence's format's, and going to
     // another format makes a copy, opened in a roll of its own
     verb("convert_notation", &[], "Convert to notation..."),

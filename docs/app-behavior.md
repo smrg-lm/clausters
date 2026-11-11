@@ -685,6 +685,16 @@ code that keeps it lives.
   has no spelling in the spec. A conversion to the format the sequence has
   is refused. What the notation mode shows (the system, a part, a staff) and
   the voice it edits are the window's.
+- **A roll the host holds alone has a file; a client's roll and a box's do
+  not.** A roll opened by `clausters-gui --roll` or over a conversion's
+  copy is its sequence's only holder, so its File menu has New, Open...,
+  Save, Save as... and Close file, the title wears the unsaved mark, and a
+  close or a change of file with changes the file does not hold asks first,
+  as every application's window does (`crate::file`, the score editor's
+  rule written once). Save writes the file of the format: MEI for a page, a
+  Standard MIDI File for MIDI 1.0, MPE and a sequence for the server, a Clip
+  File for MIDI 2.0. A roll over a client's sequence or a multitrack box's
+  edits what its holder keeps, and refuses the file verbs with why.
 - **In notation mode a gesture writes what a page writes.** An onset lands on
   the reading's grid and a length on a written value; a note drawn is in the
   voice edited; a velocity moved is written as the dynamic it is nearest; and

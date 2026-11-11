@@ -139,7 +139,7 @@ impl Application for MultitrackEditor {
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 let written = super::sources::written(saved.session.clone(), &folder);
-                let contents = serde_json::to_string_pretty(&written).map_err(|e| e.to_string())?;
+                let contents = serde_json::to_vec_pretty(&written).map_err(|e| e.to_string())?;
                 batches.push(Batch {
                     member: request.target.member,
                     server: request.target.server,
