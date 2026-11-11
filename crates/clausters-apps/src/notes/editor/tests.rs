@@ -1343,3 +1343,43 @@ fn a_client_s_roll_has_no_file_of_its_own() {
         "{file}"
     );
 }
+
+/// **The MIDI mode edits one channel or every one, the window's**: a
+/// channel chosen from the menu is the one in force and the roll veils the
+/// others' notes; nothing is recorded; a script sets it through `sync`; and
+/// under MPE it is refused with why, from the menu and from a script.
+#[test]
+fn the_midi_mode_edits_the_channel_chosen() {
+    let sequence = Arc::new(Mutex::new(EventSequence::new(vec![
+        SeqEvent::new(0.0, json!({"midinote": 60, "sustain": 1.0})),
+        SeqEvent::new(1.0, json!({"midinote": 64, "sustain": 1.0, "channel": 1})),
+    ])));
+    let mut e = editor(sequence);
+    assert_eq!(e.editing().channel, None, "every channel, at first");
+    assert_eq!(e.actions(false, false)["channel_all"].checked, Some(true));
+    let out = e.event(&window_verb("channel_2"), 1);
+    assert!(out.record.is_none(), "the window's, no edit");
+    assert_eq!(e.editing().channel, Some(1));
+    assert_eq!(e.actions(false, false)["channel_2"].checked, Some(true));
+    let props = call_json(&mut e, r#"{"verb": "props", "widget": 40}"#);
+    assert!(props.contains("\"dimmed\":[1,0]"), "{props}");
+    call_json(&mut e, r#"{"verb": "sync", "channel": null}"#);
+    assert_eq!(e.editing().channel, None);
+    // under MPE a channel is one note's
+    let mut mpe = EventSequence::new(vec![SeqEvent::new(
+        0.0,
+        json!({"midinote": 60, "sustain": 1.0, "channel": 1}),
+    )]);
+    mpe.midi = Some(clausters_document::events::MidiSpec::Mpe {
+        upper: false,
+        members: 15,
+    });
+    let mut zone = editor(Arc::new(Mutex::new(mpe)));
+    let out = zone.event(&window_verb("channel_2"), 1);
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("under MPE"), "{told}");
+    assert_eq!(zone.editing().channel, None);
+    assert!(!zone.actions(false, false)["channel_2"].enabled);
+    let said = call_json(&mut zone, r#"{"verb": "sync", "channel": 1}"#);
+    assert!(said.contains("refused"), "{said}");
+}

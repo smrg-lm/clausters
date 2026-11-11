@@ -9,8 +9,8 @@
 //! its own bend, pressure and timbre.
 //!
 //! - `curve_cc1`, `curve_cc11`, `curve_bend`, `curve_pressure`: a curve of
-//!   the sequence on the channel of the first selected note (the first
-//!   channel with none selected): the modulation wheel, the expression, the
+//!   the sequence on the channel edited, else on the channel of the first
+//!   selected note (the first channel with none selected): the modulation wheel, the expression, the
 //!   bend, the channel's pressure.
 //! - `note_bend`, `note_pressure`, `note_timbre`: a curve of each selected
 //!   note that has none of its kind.
@@ -25,6 +25,7 @@ use clausters_document::multitrack::Automation;
 use clausters_document::{Beat, NodeId, Opaque, Point};
 
 use crate::intake::{Intake, number, text};
+use crate::notes::Editing;
 
 /// The roll's verbs over curves.
 pub const CURVE_VERBS: &[&str] = &[
@@ -64,7 +65,7 @@ fn curve(target: Value, value: f64) -> Automation<Beat> {
 
 /// **What a curve verb of the roll means** (see the module): the edit, or
 /// why not; nothing for a tag that is none of them.
-pub fn intake(sequence: &EventSequence, tag: &str, values: &[Value]) -> Intake {
+pub fn intake(sequence: &EventSequence, tag: &str, values: &[Value], editing: &Editing) -> Intake {
     if tag == "curve_remove" {
         let name = values.first().map(text).unwrap_or_default();
         let Ok(id) = name.parse::<u64>() else {
@@ -100,10 +101,15 @@ pub fn intake(sequence: &EventSequence, tag: &str, values: &[Value]) -> Intake {
         .filter(|e| Type::of(&e.keys()) == Type::Note)
         .collect();
     if tag.starts_with("curve_") {
-        let channel = notes
-            .first()
-            .and_then(|e| e.keys().get("channel").and_then(Value::as_f64))
-            .unwrap_or(0.0);
+        let channel = editing.channel.map_or_else(
+            || {
+                notes
+                    .first()
+                    .and_then(|e| e.keys().get("channel").and_then(Value::as_f64))
+                    .unwrap_or(0.0)
+            },
+            f64::from,
+        );
         let mut target = target;
         target["channel"] = json!(channel);
         let kind = CurveKind::of(&target);
@@ -187,15 +193,22 @@ mod tests {
             members: 15,
         }));
         let ids: Vec<Value> = s.events.iter().map(|e| json!(e.id)).collect();
-        let timbre = applied(&s, &intake(&s, "note_timbre", &ids[..1])).unwrap();
+        let timbre = applied(
+            &s,
+            &intake(&s, "note_timbre", &ids[..1], &Editing::default()),
+        )
+        .unwrap();
         assert_eq!(timbre.events[0].automation.len(), 1);
         assert_eq!(
             timbre.events[0].automation[0].target.0,
             json!({"timbre": true})
         );
-        let bend = applied(&s, &intake(&s, "curve_bend", &ids[..1]));
+        let bend = applied(
+            &s,
+            &intake(&s, "curve_bend", &ids[..1], &Editing::default()),
+        );
         assert!(bend.is_err(), "{bend:?}");
-        let cc = applied(&s, &intake(&s, "curve_cc1", &[])).unwrap();
+        let cc = applied(&s, &intake(&s, "curve_cc1", &[], &Editing::default())).unwrap();
         assert_eq!(cc.automation[0].target.0, json!({"cc": 1, "channel": 0.0}));
     }
 
@@ -205,16 +218,48 @@ mod tests {
     fn a_curve_is_removed_by_its_name_and_not_added_twice() {
         let s = sequence(None);
         let ids: Vec<Value> = s.events.iter().map(|e| json!(e.id)).collect();
-        let bent = applied(&s, &intake(&s, "note_bend", &ids)).unwrap();
+        let bent = applied(&s, &intake(&s, "note_bend", &ids, &Editing::default())).unwrap();
         assert!(bent.events.iter().all(|e| e.automation.len() == 1));
-        assert!(intake(&bent, "note_bend", &ids).refusal.is_some());
+        assert!(
+            intake(&bent, "note_bend", &ids, &Editing::default())
+                .refusal
+                .is_some()
+        );
         let name = bent.events[0].automation[0].id.0.to_string();
-        let gone = applied(&bent, &intake(&bent, "curve_remove", &[json!(name)])).unwrap();
+        let gone = applied(
+            &bent,
+            &intake(&bent, "curve_remove", &[json!(name)], &Editing::default()),
+        )
+        .unwrap();
         assert!(gone.events[0].automation.is_empty());
-        let lane = applied(&s, &intake(&s, "curve_cc11", &ids[1..])).unwrap();
+        let lane = applied(
+            &s,
+            &intake(&s, "curve_cc11", &ids[1..], &Editing::default()),
+        )
+        .unwrap();
         assert_eq!(lane.automation[0].target.0["channel"], json!(2.0));
         let name = lane.automation[0].id.0.to_string();
-        let none = applied(&lane, &intake(&lane, "curve_remove", &[json!(name)])).unwrap();
+        let none = applied(
+            &lane,
+            &intake(&lane, "curve_remove", &[json!(name)], &Editing::default()),
+        )
+        .unwrap();
         assert!(none.automation.is_empty());
+    }
+
+    /// **A channel's curve goes on the channel edited**, whatever note is
+    /// selected; with every channel edited, on the first selected note's.
+    #[test]
+    fn a_channel_curve_goes_on_the_channel_edited() {
+        let s = sequence(None);
+        let ids: Vec<Value> = s.events.iter().map(|e| json!(e.id)).collect();
+        let edited = Editing {
+            channel: Some(5),
+            ..Editing::default()
+        };
+        let on = applied(&s, &intake(&s, "curve_cc1", &ids[..1], &edited)).unwrap();
+        assert_eq!(on.automation[0].target.0["channel"], json!(5.0));
+        let first = applied(&s, &intake(&s, "curve_cc1", &ids[..1], &Editing::default())).unwrap();
+        assert_eq!(first.automation[0].target.0["channel"], json!(1.0));
     }
 }

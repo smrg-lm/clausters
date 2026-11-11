@@ -7327,7 +7327,7 @@ wrong.
   one of sixteen slots composed when the panel is shown, so a curve added
   with it open gets its switch at the next showing.
 
-- ⬜ **The roll shows the velocities of one channel only in notation mode**
+- ✅ **The roll shows the velocities of one channel only in notation mode**
   *(left by `X39`, 2026-11-10)*. In MIDI mode the velocity lane shows every
   channel's notes, since the roll chooses no MIDI channel yet: what is open
   is how the roll chooses one, and the lane follows it.
@@ -7361,3 +7361,8 @@ wrong.
   - The rule lives in `clausters-editing` beside `Editing::voice` (the
     same `dimmed` list the host already reads), so the host and both
     clients gain no new drawing, only the verbs.
+
+  Done 2026-11-11: `Editing::channel` and `Editing::takes` in
+  `clausters-editing`, the `channel_all`, `channel_1` ... `channel_16`
+  choices under the Edit menu's Channel, `NotesEditor.channel` in both
+  clients, and the host's veil drawn in either mode.

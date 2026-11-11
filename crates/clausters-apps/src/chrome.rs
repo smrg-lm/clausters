@@ -203,6 +203,14 @@ pub fn menu(app: App, saves: bool) -> Value {
             ]
             .map(|v| entry(app, v)),
         );
+        // the channel the MIDI mode edits, as the notation mode edits a voice
+        edit.push(sub(
+            "Channel",
+            clausters_editing::notes::CHANNEL_VERBS
+                .iter()
+                .map(|v| entry(app, v))
+                .collect(),
+        ));
     }
     if app == App::Notes {
         // the curves the sequence's format allows, a channel's and a note's

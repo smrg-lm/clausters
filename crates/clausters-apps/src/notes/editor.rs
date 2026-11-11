@@ -508,10 +508,30 @@ impl NotesEditor {
     /// How the roll edits `held`, the sequence it holds: the window's state,
     /// in the mode its format allows ([`Mode::of`]).
     fn editing_over(&self, held: &EventSequence) -> Editing {
+        let mode = Mode::of(held);
         Editing {
-            mode: Mode::of(held),
+            mode,
+            // a channel is chosen only where one can be
+            channel: self
+                .editing
+                .channel
+                .filter(|_| roll::channel_refused(held, mode).is_none()),
             ..self.editing.clone()
         }
+    }
+
+    /// **The channel the MIDI mode edits, chosen** (`None` for every one),
+    /// or why it is not: a page is edited by its voice, and under MPE a
+    /// channel is one note's. The window's, like the voice: no edit.
+    fn choose_channel(&mut self, channel: Option<u8>) -> Option<String> {
+        if channel.is_some() {
+            let held = self.held();
+            if let Some(why) = roll::channel_refused(&held, Mode::of(&held)) {
+                return Some(why.into());
+            }
+        }
+        self.editing.channel = channel.map(|c| c.min(15));
+        None
     }
 
     /// Whether the roll is in notation mode: its sequence is written as a page.
@@ -539,6 +559,10 @@ impl NotesEditor {
     ) -> std::collections::BTreeMap<&'static str, clausters_editing::verbs::ActionState> {
         let format = self.held().format();
         let notation = format == events::Format::Notation;
+        let channel_refused = {
+            let held = self.held();
+            roll::channel_refused(&held, Mode::of(&held))
+        };
         crate::chrome::grid_actions(crate::chrome::App::Notes, self.asks, undo, redo, &|verb| {
             match verb {
                 SNAP_VERB => Some(self.snap),
@@ -551,6 +575,9 @@ impl NotesEditor {
                 "show_staff" => Some(matches!(self.editing.scope, Scope::Staff(_))),
                 "voice_1" | "voice_2" | "voice_3" | "voice_4" => {
                     Some(verb.ends_with(&(self.editing.voice[1] + 1).to_string()))
+                }
+                _ if roll::CHANNEL_VERBS.contains(&verb) => {
+                    Some(roll::channel_chosen(verb) == Some(self.editing().channel))
                 }
                 "write_voices" | "write_ties" => {
                     let ties = self.writes_with_ties();
@@ -572,6 +599,11 @@ impl NotesEditor {
             }
             if let Some(why) = conversion_refused(verb, format) {
                 state.refuse(&why);
+            }
+            if roll::CHANNEL_VERBS.contains(&verb)
+                && let Some(why) = channel_refused
+            {
+                state.refuse(why);
             }
             if FILE_VERBS.contains(&verb)
                 && let Some(why) = crate::file::FileWindow::no_file(self)
@@ -635,6 +667,9 @@ impl NotesEditor {
                 .sum::<usize>()
                 .max(1)
         };
+        if let Some(channel) = roll::channel_chosen(verb) {
+            return self.choose_channel(channel);
+        }
         match verb {
             _ if CONVERSIONS.contains(&verb) => return self.convert_by(verb, out, shown),
             _ if !self.notation() => {
@@ -1490,7 +1525,9 @@ impl Converse for NotesEditor {
         }
         // **The snap-to-grid switch** (G, the View menu): the window's own
         // state, so nothing is recorded and the roll is told
-        if MODE_VERBS.contains(&message.tag.as_str()) {
+        if MODE_VERBS.contains(&message.tag.as_str())
+            || roll::CHANNEL_VERBS.contains(&message.tag.as_str())
+        {
             let tag = message.tag.clone();
             out.turn = Kind::Route;
             let mut shown = Vec::new();
@@ -1602,7 +1639,10 @@ pub fn shared_of(request: &str) -> Shared {
 /// - `sync` -- `window` (the id it is open in, or `null`), `rate`, `editable`,
 ///   `midi_in`, `grid` (in beats, `0` for none), `snap` (the snap-to-grid
 ///   switch), `monophonic`, `scope` (`{"show": "system"}`, or `"part"` or
-///   `"staff"` with its `index`), `voice` (`[staff, voice]`), `color_by`
+///   `"staff"` with its `index`), `voice` (`[staff, voice]`), `channel` (the
+///   channel the MIDI mode edits, from 0, or `null` for every one: answered
+///   `{"refused": why}` where none is chosen, in notation mode and under
+///   MPE), `color_by`
 ///   (`"voice"`, `"staff"` or `"part"`), `display` (a change of how the roll
 ///   draws, [`display::Display::set`]: answered `{"refused": why}` for a
 ///   value none of the settings takes, changing nothing), `domain`,
@@ -1610,7 +1650,7 @@ pub fn shared_of(request: &str) -> Shared {
 /// - `grid` -- `{"grid": beats, "snap": bool}`: the grid a note lands on, and
 ///   whether a hand snaps to it.
 /// - `editing` -- how the roll edits ([`Editing`]): `{"monophonic", "mode",
-///   "scope", "voice", "color_by"}`, `panel`, whether the panel is shown,
+///   "scope", "voice", "channel", "color_by"}`, `panel`, whether the panel is shown,
 ///   `display` and `display_panel`, how the roll draws what is beyond its boxes
 ///   ([`display`]) and whether its panel is shown, and `format`, what the
 ///   sequence is written as ([`events::Format::name`]). The mode is the
@@ -1696,6 +1736,12 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
                 .and_then(|v| serde_json::from_value::<[usize; 2]>(v.clone()).ok())
             {
                 editor.editing.voice = voice;
+            }
+            if let Some(channel) = request.get("channel") {
+                let channel = channel.as_f64().map(|c| c.clamp(0.0, 15.0) as u8);
+                if let Some(why) = editor.choose_channel(channel) {
+                    return json!({ "refused": why }).to_string();
+                }
             }
             if let Some(lane) = request.get("lane").and_then(Value::as_str) {
                 editor.lane = lane.into();

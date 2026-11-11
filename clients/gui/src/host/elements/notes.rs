@@ -930,6 +930,7 @@ impl Element for Notes {
             pianoroll::draw_out_of_range(d, r.grid, &nav, 0.0, &self.notes, axis, compass);
         }
         self.draw_written(d, r.grid, &nav, axis);
+        self.draw_veils(d, r.grid, &nav, axis);
         self.draw_lines(d, r.grid, &nav, axis);
         self.draw_slurs(d, r.grid, &nav, axis, false);
         if self.osc_markers {
@@ -1729,9 +1730,8 @@ impl Notes {
     /// ([`Element::reading`]).
     /// **A roll in notation mode, over its notes**: each voice past a staff's
     /// first tinted, what a note sounds drawn inside what it is written as (a
-    /// staccato is a short bar in a long note), the dynamic a note states
-    /// written in it where it fits, and a voice other than the one edited
-    /// veiled.
+    /// staccato is a short bar in a long note), and the dynamic a note states
+    /// written in it where it fits.
     fn draw_written(&self, d: &mut Draw, grid: Rect, nav: &View, axis: pianoroll::Pitches) {
         if self.written.voices.len() != 2 * self.notes.len() {
             return;
@@ -1825,8 +1825,20 @@ impl Notes {
             if let Some(label) = self.written.labels.get(i).filter(|l| !l.is_empty()) {
                 font::text(mesh, label, r.x, r.y + r.h, sized(label), theme.ruler_text);
             }
-            if self.written.dimmed(i) {
-                let veil = [theme.lane[0], theme.lane[1], theme.lane[2], 0.65];
+        }
+    }
+
+    /// **The notes the roll does not take, veiled**: in notation mode a voice
+    /// other than the one edited, in MIDI mode a channel other than the one
+    /// edited (`dimmed`). A veiled note is no hit and has no velocity bar.
+    fn draw_veils(&self, d: &mut Draw, grid: Rect, nav: &View, axis: pianoroll::Pitches) {
+        let (mesh, _, theme) = d.parts();
+        let veil = [theme.lane[0], theme.lane[1], theme.lane[2], 0.65];
+        for (i, n) in self.notes.iter().enumerate() {
+            if !self.written.dimmed(i) {
+                continue;
+            }
+            if let Some(r) = pianoroll::note_rect(grid, nav, 0.0, n, axis) {
                 mesh.rect(r, veil);
             }
         }
@@ -3521,9 +3533,10 @@ mod tests {
         );
     }
 
-    /// **A roll in notation mode does not take another voice's note**: the
-    /// lists it is drawn with ride beside the notes, a dimmed note is no hit
-    /// and no marquee takes it, and MIDI mode's empty lists take them away.
+    /// **A roll does not take a note of a voice or a channel other than the
+    /// one edited**: the lists it is drawn with ride beside the notes, a
+    /// dimmed note is no hit and no marquee takes it, MIDI mode's empty lists
+    /// take them away, and a channel edited veils the others' again.
     #[test]
     fn a_note_of_another_voice_is_drawn_faint_and_not_taken() {
         let m = Metrics::default();
@@ -3551,6 +3564,10 @@ mod tests {
             r.hit((x, high), &input).note.is_some(),
             "in MIDI mode every note is taken"
         );
+        // a channel edited in MIDI mode veils the others' notes the same way
+        assert!(r.set("dimmed", &serde_json::json!([0, 1])));
+        assert!(r.hit((x, high), &input).note.is_none(), "another channel");
+        assert_eq!(r.velocity_shown(), vec![0], "nor has a velocity bar");
     }
 
     /// **A page's marks are read as the owner draws them**: the

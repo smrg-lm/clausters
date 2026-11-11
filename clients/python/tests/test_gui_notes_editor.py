@@ -188,6 +188,9 @@ def test_the_roll_edits_in_its_format_s_mode_and_converts_into_copies(gui_host):
                           (1.01, Event(midinote=64, dur=1.0, instrument="default"))])
     editor = opened(gui_host, NotesEditor(take))
     assert editor.mode == "midi" and take.format == "events"
+    editor.channel = 1
+    assert editor.channel == 1, "the MIDI mode edits a channel"
+    editor.channel = None
     page = editor.to_notation()
     assert [e.at for e in take.events] == [0.03, 1.01], "the take is as it was"
     assert page.format == "notation" and [e.at for e in page.events] == [0.0, 1.0]
@@ -196,6 +199,8 @@ def test_the_roll_edits_in_its_format_s_mode_and_converts_into_copies(gui_host):
     editor.close()
     written = opened(gui_host, NotesEditor(page))
     assert written.mode == "notation", "a page is edited as one"
+    with pytest.raises(ValueError):
+        written.channel = 1  # a page is edited a voice at a time
     written.voice = (0, 1)
     assert written.voice == (0, 1)
     written.scope = ("staff", 0)

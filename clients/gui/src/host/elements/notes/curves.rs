@@ -409,9 +409,9 @@ impl Notes {
         None
     }
 
-    /// The notes the velocity lane shows: every one, but in notation mode
-    /// only the voice edited.
-    fn velocity_shown(&self) -> Vec<usize> {
+    /// The notes the velocity lane shows: the ones the roll takes, so in
+    /// notation mode the voice edited and in MIDI mode the channel edited.
+    pub(super) fn velocity_shown(&self) -> Vec<usize> {
         (0..self.notes.len())
             .filter(|i| !self.written.dimmed(*i))
             .collect()

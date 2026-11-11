@@ -534,8 +534,9 @@ export class NotesEditor extends SequenceHandler {
     }
 
     /**
-     * **A curve of the channel of the first selected note** (the first
-     * channel with none selected): `"cc1"` the modulation wheel, `"cc11"` the
+     * **A curve of the channel edited** ({@link channel}), else of the
+     * channel of the first selected note (the first channel with none
+     * selected): `"cc1"` the modulation wheel, `"cc11"` the
      * expression, `"bend"` or `"pressure"` -- the window's `curve_cc1`,
      * `curve_cc11`, `curve_bend` and `curve_pressure`, the Edit menu's
      * Curves. One point at the parameter's resting value; refused, with why,
@@ -599,6 +600,32 @@ export class NotesEditor extends SequenceHandler {
     /** Sets the voice the roll edits: no edit. */
     async setVoice(voice: [number, number]): Promise<void> {
         await this.setting({ voice: [Math.trunc(voice[0]), Math.trunc(voice[1])] });
+    }
+
+    /**
+     * **The channel the roll edits in MIDI mode**, counted from 0 as a
+     * note's `channel` is, or `null` for every channel (the default): what a
+     * note drawn or pasted and a channel's curve added land on, and the one
+     * channel a press, a selection and the velocity lane take -- the others
+     * are drawn faint. The Edit menu's Channel chooses it. No edit.
+     */
+    async channel(): Promise<number | null> {
+        const said = (await this.coreCall("editing")).channel;
+        return said === null || said === undefined ? null : Number(said);
+    }
+
+    /**
+     * Sets the channel the roll edits, `null` for every one: no edit.
+     * Rejects with a `RangeError`, changing nothing, where none is chosen:
+     * in notation mode (a page is edited a voice at a time) and under MPE (a
+     * channel is one note's).
+     */
+    async setChannel(channel: number | null): Promise<void> {
+        const said = channel === null ? null : Math.trunc(channel);
+        const answer = (await this.act("set", { call: { verb: "sync", channel: said } })) as
+            | { refused?: string }
+            | null;
+        if (answer?.refused) throw new RangeError(answer.refused);
     }
 
     /**

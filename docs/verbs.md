@@ -102,6 +102,23 @@ The verdict is one of three:
 | `notes` | `select_channel` | `NotesEditor.select_channel` | `NotesEditor.selectChannel` | **api** |
 | `notes` | `select_voice` | `NotesEditor.select_voice` | `NotesEditor.selectVoice` | **api** |
 | `notes` | `select_staff` | `NotesEditor.select_staff` | `NotesEditor.selectStaff` | **api** |
+| `notes` | `channel_all` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = None`; on the web `setChannel(null)` |
+| `notes` | `channel_1` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 0` |
+| `notes` | `channel_2` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 1` |
+| `notes` | `channel_3` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 2` |
+| `notes` | `channel_4` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 3` |
+| `notes` | `channel_5` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 4` |
+| `notes` | `channel_6` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 5` |
+| `notes` | `channel_7` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 6` |
+| `notes` | `channel_8` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 7` |
+| `notes` | `channel_9` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 8` |
+| `notes` | `channel_10` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 9` |
+| `notes` | `channel_11` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 10` |
+| `notes` | `channel_12` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 11` |
+| `notes` | `channel_13` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 12` |
+| `notes` | `channel_14` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 13` |
+| `notes` | `channel_15` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 14` |
+| `notes` | `channel_16` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 15` |
 | `notes` | `curve_cc1` | `NotesEditor.add_curve` | `NotesEditor.addCurve` | **api** — `add_curve("cc1")` |
 | `notes` | `curve_cc11` | `NotesEditor.add_curve` | `NotesEditor.addCurve` | **api** — `add_curve("cc11")` |
 | `notes` | `curve_bend` | `NotesEditor.add_curve` | `NotesEditor.addCurve` | **api** — `add_curve("bend")` |

@@ -507,6 +507,26 @@ class NotesEditor(Marking, SequenceHandler):
         self._set(voice=[int(voice[0]), int(voice[1])])
 
     @property
+    def channel(self) -> "int | None":
+        """**The channel the roll edits in MIDI mode**, counted from 0 as a
+        note's ``channel`` is, or ``None`` for every channel (the default):
+        what a note drawn or pasted and a channel's curve added land on, and
+        the one channel a press, a selection and the velocity lane take --
+        the others are drawn faint. The Edit menu's Channel chooses it. No
+        edit. Setting one raises `ValueError`, changing nothing, where none
+        is chosen: in notation mode (a page is edited a voice at a time) and
+        under MPE (a channel is one note's)."""
+        said = self._call("editing").get("channel")
+        return None if said is None else int(said)
+
+    @channel.setter
+    def channel(self, channel: "int | None") -> None:
+        said = None if channel is None else int(channel)
+        answer = self._do("set", call={"verb": "sync", "channel": said}) or {}
+        if isinstance(answer, dict) and answer.get("refused"):
+            raise ValueError(answer["refused"])
+
+    @property
     def lane(self) -> str:
         """**The lane shown under the roll**, chosen by the tabs there:
         ``"velocity"`` for the notes' velocities, or a curve of the sequence by
@@ -518,8 +538,8 @@ class NotesEditor(Marking, SequenceHandler):
         self._set(lane=str(lane))
 
     def add_curve(self, name: str) -> bool:
-        """**A curve of the channel of the first selected note** (the first
-        channel with none selected): ``"cc1"`` the modulation wheel, ``"cc11"``
+        """**A curve of the channel edited** (`channel`), else of the channel
+        of the first selected note (the first channel with none selected): ``"cc1"`` the modulation wheel, ``"cc11"``
         the expression, ``"bend"`` or ``"pressure"`` -- the window's
         ``curve_cc1``, ``curve_cc11``, ``curve_bend`` and ``curve_pressure``,
         the Edit menu's Curves. One point at the parameter's resting value;

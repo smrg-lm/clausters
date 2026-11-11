@@ -53,6 +53,9 @@
 //!   a page writes on each by name (its articulations, then its breath);
 //!   and `tints`, each note's voice, staff or part as the editing says
 //!   ([`ColorBy`]). Only the notes of the staves shown are drawn.
+//! - In MIDI mode with one channel edited ([`Editing::channel`]), `dimmed`
+//!   rides beside `notes` too: `1` for a note of another channel, drawn
+//!   veiled and not taken.
 //! - `joins`: which note goes on into which, flat `from into` pairs of
 //!   indices into `notes` -- a note's `joins`, which tells the roll its owner
 //!   speaks the joins of a line.
@@ -257,7 +260,10 @@ pub struct Projection {
     pub held: Vec<f64>,
     /// In notation mode, each note's `staff voice`.
     pub voices: Vec<usize>,
-    /// In notation mode, `1` for a note of a voice other than the one edited.
+    /// `1` for a note the roll does not take ([`Editing::takes`]): in
+    /// notation mode one of a voice other than the one edited, in MIDI mode
+    /// one of a channel other than the one edited; empty in MIDI mode with
+    /// every channel edited.
     pub dimmed: Vec<u8>,
     /// In notation mode, the dynamic each note states, or `""`.
     pub labels: Vec<String>,
@@ -298,6 +304,12 @@ pub struct Editing {
     /// The voice edited in notation mode, `[staff, voice]`: what a note
     /// drawn is written in, and the one voice a press takes.
     pub voice: [usize; 2],
+    /// **The channel edited in MIDI mode**, counted from 0, or every channel
+    /// (`None`, the default): what a note drawn or pasted and a channel's
+    /// curve added land on, and the one channel a press, a selection and the
+    /// velocity lane take ([`Editing::takes`]). Under MPE a member channel
+    /// is one note's, so the roll edits the zone whole and chooses none.
+    pub channel: Option<u8>,
     /// **What a note's tint tells apart in notation mode**: its voice, its
     /// staff or its part.
     pub color_by: ColorBy,
@@ -362,6 +374,20 @@ pub enum Scope {
 }
 
 impl Editing {
+    /// **Whether the roll takes a note it draws with these keys**: in
+    /// notation mode one of the voice edited, in MIDI mode one of the channel
+    /// edited, or of any with none chosen. A note it does not take is drawn
+    /// veiled and no gesture reaches it.
+    #[must_use]
+    pub fn takes(&self, keys: &Map<String, Value>) -> bool {
+        match self.mode {
+            Mode::Notation => staff_voice(keys) == self.voice,
+            Mode::Midi => self
+                .channel
+                .is_none_or(|channel| channel_of(keys) == channel),
+        }
+    }
+
     /// **Whether the roll draws and takes a note with these keys**: every
     /// note in MIDI mode; in notation mode, one on a staff the scope shows.
     #[must_use]
@@ -381,6 +407,67 @@ impl Editing {
             }
         }
     }
+}
+
+/// **The choice of the channel a roll edits in MIDI mode**
+/// ([`Editing::channel`]): every channel, or one of the sixteen, as MIDI
+/// counts them from 1. The window's, like the voice it edits.
+pub const CHANNEL_VERBS: &[&str] = &[
+    "channel_all",
+    "channel_1",
+    "channel_2",
+    "channel_3",
+    "channel_4",
+    "channel_5",
+    "channel_6",
+    "channel_7",
+    "channel_8",
+    "channel_9",
+    "channel_10",
+    "channel_11",
+    "channel_12",
+    "channel_13",
+    "channel_14",
+    "channel_15",
+    "channel_16",
+];
+
+/// **The channel a verb of [`CHANNEL_VERBS`] chooses**, counted from 0, or
+/// `Some(None)` for every channel; `None` for a verb that is none of them.
+#[must_use]
+pub fn channel_chosen(verb: &str) -> Option<Option<u8>> {
+    if verb == "channel_all" {
+        return Some(None);
+    }
+    let n: u8 = verb.strip_prefix("channel_")?.parse().ok()?;
+    (1..=16).contains(&n).then_some(Some(n - 1))
+}
+
+/// **Why a roll in `mode` over `sequence` chooses no channel**, if it does
+/// not: a page is edited by its voice, and under MPE a member channel is one
+/// note's, so the roll edits the zone whole.
+#[must_use]
+pub fn channel_refused(sequence: &EventSequence, mode: Mode) -> Option<&'static str> {
+    if mode == Mode::Notation {
+        return Some("a page is edited a voice at a time: choose the voice");
+    }
+    if matches!(
+        sequence.midi,
+        Some(clausters_document::events::MidiSpec::Mpe { .. })
+    ) {
+        return Some("under MPE a channel is one note's: the roll edits the zone whole");
+    }
+    None
+}
+
+/// The MIDI channel a note says it plays on, counted from 0, `0` where it
+/// says none.
+#[must_use]
+pub fn channel_of(keys: &Map<String, Value>) -> u8 {
+    keys.get("channel")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0)
+        .clamp(0.0, 15.0) as u8
 }
 
 /// The `[staff, voice]` a note says it is written in, `[0, 0]` where it says
@@ -533,7 +620,6 @@ pub fn project(
                 .push(axis.units(event.at.0 + sounding.min(length)) - start);
             let [staff, voice] = staff_voice(&keys);
             out.voices.extend([staff, voice]);
-            out.dimmed.push(u8::from([staff, voice] != editing.voice));
             out.labels.push(
                 keys.get("dynamic")
                     .and_then(Value::as_str)
@@ -550,6 +636,9 @@ pub fn project(
                     .position(|staves| staves.contains(&staff))
                     .unwrap_or(0),
             });
+        }
+        if notation || editing.channel.is_some() {
+            out.dimmed.push(u8::from(!editing.takes(&keys)));
         }
         out.notes.extend([
             start,
@@ -778,7 +867,7 @@ pub fn intake(
         return transpose(sequence, tag, values, domain, editing);
     }
     if lanes::CURVE_VERBS.contains(&tag) {
-        return lanes::intake(sequence, tag, values);
+        return lanes::intake(sequence, tag, values, editing);
     }
     if editing.mode == Mode::Notation {
         return notation_intake(sequence, tag, values, axis, domain, editing);
@@ -925,7 +1014,7 @@ pub fn select_like(
         domain.value(&keys).is_some()
             && label_of(&event.data.0).is_none()
             && editing.shows(sequence, &keys)
-            && (editing.mode == Mode::Midi || staff_voice(&keys) == editing.voice)
+            && editing.takes(&keys)
     };
     let wanted: Vec<Vec<i64>> = ids
         .iter()
@@ -992,7 +1081,7 @@ fn transpose(
                 domain.value(&keys).is_some()
                     && label_of(&event.data.0).is_none()
                     && editing.shows(sequence, &keys)
-                    && (!written || staff_voice(&keys) == editing.voice)
+                    && editing.takes(&keys)
             } else {
                 ids.contains(&event.id) && Type::of(&keys) == Type::Note
             };
@@ -1090,11 +1179,15 @@ fn notes(
         let length = axis.beat(start + number(&sextuple[2])) - at;
         let y = number(&sextuple[3]);
         let velocity = number(&sextuple[4]).round();
-        let channel = number(&sextuple[5]).round();
         let held = (id != 0)
             .then(|| sequence.get(id))
             .flatten()
             .filter(|e| drawn(e));
+        // a note made lands on the channel edited
+        let channel = match (held, editing.channel) {
+            (None, Some(edited)) => f64::from(edited),
+            _ => number(&sextuple[5]).round(),
+        };
         let event = match held {
             Some(was) => {
                 let mut keys = was.keys();

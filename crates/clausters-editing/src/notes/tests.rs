@@ -657,7 +657,6 @@ fn in_notation(
 
 /// The report of every note of `s` as the roll in `editing` draws it, with
 /// `more` sextuples after.
-#[cfg(feature = "notation")]
 fn drawn_report(s: &EventSequence, editing: &Editing, more: &[f64]) -> Vec<Value> {
     let p = project(s, &YDomain::midi(), &Axis::constant(1.0), editing);
     let mut values = Vec::new();
@@ -1105,4 +1104,51 @@ fn a_notes_tint_is_its_voice_its_staff_or_its_part() {
             .tints
             .is_empty()
     );
+}
+
+/// **In MIDI mode the roll edits one channel or every one**: with one
+/// edited, another channel's note is veiled and not taken by a selection by
+/// data or a transposition of the whole, and a note made lands on the
+/// channel edited; with every one edited nothing is veiled.
+#[test]
+fn a_roll_in_midi_mode_edits_the_channel_chosen() {
+    let s = line();
+    let axis = Axis::constant(1.0);
+    let every = Editing::default();
+    assert!(
+        project(&s, &YDomain::midi(), &axis, &every)
+            .dimmed
+            .is_empty()
+    );
+    let second = Editing {
+        channel: Some(1),
+        ..Editing::default()
+    };
+    let p = project(&s, &YDomain::midi(), &axis, &second);
+    let low = |keys: &Value| keys["midinote"] == json!(40);
+    let taken: Vec<u8> = s.events.iter().map(|e| u8::from(!low(&e.data.0))).collect();
+    assert_eq!(p.dimmed, taken, "only channel 2 is taken");
+    let first = s.events.iter().find(|e| e.at.0 == 0.0).unwrap().id;
+    let like =
+        |editing: &Editing| select_like(&s, "select_pitch", &[first], &YDomain::midi(), editing);
+    assert!(like(&second).is_empty(), "a veiled note selects nothing");
+    assert_eq!(like(&every), vec![first]);
+    let up = applied(
+        &s,
+        &intake(&s, "step_up", &[], &axis, &YDomain::midi(), &second),
+    );
+    let pitch = |s: &EventSequence, low_one: bool| {
+        s.events
+            .iter()
+            .find(|e| e.data.0.get("channel").is_some() == low_one)
+            .map(|e| e.data.0["midinote"].clone())
+            .unwrap()
+    };
+    assert_eq!(pitch(&up, false), json!(60), "not taken");
+    assert_eq!(pitch(&up, true), json!(41.0), "taken");
+    // a note drawn on channel 1 lands on the channel edited
+    let values = drawn_report(&s, &every, &[0.0, 5.0, 1.0, 70.0, 100.0, 0.0]);
+    let made = reported(&s, &values, &second);
+    let new = made.events.iter().find(|e| e.at.0 == 5.0).unwrap();
+    assert_eq!(new.data.0["channel"], json!(1.0));
 }
