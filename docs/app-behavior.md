@@ -719,6 +719,26 @@ code that keeps it lives.
   voice overlap only as a chord, and a gesture that leaves any other overlap
   is refused with why. A note of a voice other than the one edited is drawn
   faint and is not taken by a press or a marquee.
+- **A plain press on the roll is its tool's, and the modifiers are every
+  tool's.** The window's tool (the keys 1 to 5, the toolbar's icons, the
+  Edit menu's Tool; a client's `tool`) says what a press with no modifier
+  does on the grid, the pointer until another is chosen; it is the window's,
+  like the snap switch, and records nothing.
+
+  | Gesture | Pointer (1) | Pencil (2) | Eraser (3) | Scissors (4) | Stretch (5) |
+  |---|---|---|---|---|---|
+  | Click on a note | selects it alone | as the pointer | takes it away | cuts it where clicked, the selection with it when it is in it | as the pointer |
+  | Drag a note | moves it, or the selection it is in; by an edge, resizes them | as the pointer | erases every note crossed | | scales the selection (or the note) in time from its first onset, by how far its end moves |
+  | Click or drag on empty grid | sweeps a time range and the notes in it | makes a note there, the drag its length | erases every note crossed | sweeps, as the pointer | sweeps, as the pointer |
+  | Double click on empty grid | makes a note there, as long as the grid's step | as a click | | | |
+
+  With any tool: **Ctrl** on empty grid makes a note and on a note erases,
+  the drag going on erasing; **Alt** and a click, or **Shift** and a click
+  that moves no velocity, add a note to the selection or take it out;
+  **Shift** and a vertical drag is the velocity. A note made is selected.
+  Over a clip's body in the multitrack, empty grid is the clip's, so no tool
+  makes a note there.
+
 - **The roll's verbs, case by case.** A verb means one thing in each of the
   roll's four cases: MIDI or notation mode, and monophonic or polyphonic
   editing. The option only decides what a gesture that places a note does to
@@ -728,15 +748,15 @@ code that keeps it lives.
 
   | Verb or gesture | MIDI mode | Notation mode | Monophonic | Refused | Tests |
   |---|---|---|---|---|---|
-  | Draw: Ctrl on empty grid, then the drag sets the length | a note as long as drawn, its `dur` and `sustain` | onset on the reading's grid, length a written value, in the voice edited, its pitch spelled by the key, its sound derived | the notes it covers in its line are shortened or taken away | in notation, an overlap in a voice of a part that writes voices, but as a chord | `ctrl_adds_and_removes_a_note`, `a_new_note_and_a_new_velocity`, `a_note_in_notation_mode_lands_on_the_grid_and_a_written_value`, `notes_of_one_voice_overlap_only_as_a_chord_unless_written_with_ties`, `a_monophonic_gesture_shortens_what_it_covers_in_its_line` |
+  | Draw: the pencil's press or the pointer's double click on empty grid, or Ctrl there with any tool; the drag sets the length | a note as long as drawn, its `dur` and `sustain` | onset on the reading's grid, length a written value, in the voice edited, its pitch spelled by the key, its sound derived | the notes it covers in its line are shortened or taken away | in notation, an overlap in a voice of a part that writes voices, but as a chord | `ctrl_adds_and_removes_a_note`, `a_new_note_and_a_new_velocity`, `a_note_in_notation_mode_lands_on_the_grid_and_a_written_value`, `notes_of_one_voice_overlap_only_as_a_chord_unless_written_with_ties`, `a_monophonic_gesture_shortens_what_it_covers_in_its_line` |
   | Move: drag a body, a selected one moving the selection | its time and its pitch, the pitch family kept coherent | onset on the grid, the pitch spelled again | as Draw | as Draw | `a_moved_note_writes_its_key_with_coherence`, `a_block_moves_together_and_an_unselected_note_alone`, `a_note_in_notation_mode_is_written_and_its_sound_derived` |
   | Resize: drag an edge, a selected one's resizing the selection | what it sounds | the written value | as Draw | as Draw | `a_length_is_written_as_its_value`, `an_edge_of_a_selected_note_resizes_the_selection` |
   | Level: Shift and a vertical drag | the velocity | the dynamic nearest it | | | `a_new_note_and_a_new_velocity`, `a_note_in_notation_mode_lands_on_the_grid_and_a_written_value` |
-  | Select: a click, Alt+click, a marquee, Ctrl+A | every note of the channel edited; another channel is drawn faint and not taken | the voice edited; another voice is drawn faint and not taken | | | `a_note_of_another_voice_is_drawn_faint_and_not_taken` |
+  | Select: a click, Alt or Shift and a click, a marquee, Ctrl+A | every note of the channel edited; another channel is drawn faint and not taken | the voice edited; another voice is drawn faint and not taken | | | `a_note_of_another_voice_is_drawn_faint_and_not_taken` |
   | Select by pitch, channel, voice or staff | every note of the channel edited sharing it with a selected one | among the voice edited | | nothing selected | `a_selection_by_data_marks_every_note_that_shares_it`, `a_selection_by_pitch_is_the_window_s_and_records_nothing` |
-  | Delete, cut (Delete, Ctrl+X); erase (Ctrl on a note, and the drag on) | the notes go, and the joins naming them | the same, and the slurs of their lines follow | | | `removing_a_note_leaves_its_neighbours_theirs`, `a_ctrl_drag_from_a_note_erases_what_it_crosses`, `a_note_moved_before_the_one_it_went_on_from_is_joined_no_more` |
+  | Delete, cut (Delete, Ctrl+X); erase (the eraser, or Ctrl on a note, and the drag on) | the notes go, and the joins naming them | the same, and the slurs of their lines follow | | | `removing_a_note_leaves_its_neighbours_theirs`, `a_ctrl_drag_from_a_note_erases_what_it_crosses`, `a_note_moved_before_the_one_it_went_on_from_is_joined_no_more` |
   | Paste (Ctrl+V) | at the cursor, as new notes | as new notes in the voice edited | as Draw | as Draw | `the_block_keys_quantize_delete_and_travel_through_the_clipboard` |
-  | Split (E) | each selected note across the cursor cut in two, with its keys and curves on both halves | the same, cut on its written length, both values written again | | the cursor inside no selected note | `a_split_note_keeps_its_keys_and_its_curves_on_both_halves`, `a_written_note_is_split_on_its_value_and_both_halves_are_written_again`, `a_split_is_the_documents_in_either_mode`, `a_roll_that_speaks_joins_asks_its_owner_to_split_the_selection` |
+  | Split (E, or the scissors at the click) | each selected note across the cursor cut in two, with its keys and curves on both halves | the same, cut on its written length, both values written again | | the cursor inside no selected note | `a_split_note_keeps_its_keys_and_its_curves_on_both_halves`, `a_written_note_is_split_on_its_value_and_both_halves_are_written_again`, `a_split_is_the_documents_in_either_mode`, `a_roll_that_speaks_joins_asks_its_owner_to_split_the_selection` |
   | Join (J) | notes of one pitch that touch become one, with their curves; any other selection of a line goes on, each note into the next, with no new attack; in a MIDI format, notes of one pitch become one | the same, notes of one pitch that touch a tie, the line's slurs written again from its joins | | no line holds two of them one after the other; in a MIDI format, notes of different pitches | `joins_are_drawn_and_edited_by_the_notes_named`, `notes_of_one_pitch_that_touch_join_as_one_note_with_their_curves`, `a_roll_that_speaks_joins_asks_its_owner_to_join_the_selection`, `a_join_from_the_roll_in_midi_holds_one_pitch_on` |
   | Unjoin (Shift+J) | the joins among the selected notes go | the same, and the slurs that joined them | | nothing selected | `a_join_from_the_roll_is_an_edit_of_the_sequence` |
   | Transpose: Up, Down; Ctrl+Up, Ctrl+Down | a semitone; an octave | a step of the key; an octave | | no note to move | `a_transposition_in_midi_mode_moves_the_selection_or_every_note`, `a_step_in_notation_mode_is_a_step_of_the_key` |

@@ -113,6 +113,8 @@ pub struct Notes {
     /// label` pairs): drawn as a row of tabs right over the lane, a press on
     /// one asking the owner to show it. Empty for none.
     lane_tabs: Vec<(String, String)>,
+    /// **What a plain press on the grid does** (`tool`).
+    tool: Tool,
     /// The notes' own curves, each over the note it names.
     layers: Vec<curves::Layer>,
     /// The points the owner last sent, by curve.
@@ -278,6 +280,15 @@ mod curves;
 /// every step, because both may move under the drag.
 #[derive(Debug, Clone)]
 enum Drag {
+    /// **The selection stretched in time**: every note's onset and length
+    /// scaled from the selection's first onset by how far the press moved its
+    /// end -- `orig` is each note's `(index, start, dur)` at the press.
+    Stretch {
+        press_time: f64,
+        anchor: f64,
+        end: f64,
+        orig: Vec<(usize, f64, f64)>,
+    },
     /// One note moving in time and pitch, or one of its edges resizing it.
     Note {
         index: usize,
@@ -307,6 +318,9 @@ enum Drag {
     Level {
         press_y: f64,
         orig: Vec<(usize, i32)>,
+        /// The note pressed: Shift and a click that moves nothing toggles it
+        /// in the selection.
+        grabbed: usize,
     },
     /// **A velocity bar in its lane**: the grabbed note's, or every selected
     /// one's when it is selected, moved by the height the pointer travels --
@@ -322,6 +336,42 @@ enum Drag {
         from: (f64, f64),
         orig: Vec<(usize, i32)>,
     },
+}
+
+/// **What a plain press on the grid does**: the roll's editing tool, the
+/// window's choice (`tool`). Every tool keeps the modifiers' gestures --
+/// Ctrl adds or erases, Alt toggles a note in the selection, Shift and a
+/// vertical drag is the velocity.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Tool {
+    /// The pointer: a click selects a note and a drag moves it or, by an
+    /// edge, resizes it; a drag over empty grid sweeps a selection, and a
+    /// double click there makes a note.
+    #[default]
+    Select,
+    /// The pencil: a press on empty grid makes a note, the drag its length;
+    /// a note is taken as the pointer takes it.
+    Draw,
+    /// The eraser: every note pressed or crossed is taken away.
+    Erase,
+    /// The scissors: a note clicked is cut where it was clicked, the
+    /// selection with it when it is selected.
+    Split,
+    /// The selection stretched in time by a drag from one of its notes.
+    Stretch,
+}
+
+impl Tool {
+    /// The tool a `tool` prop names, the pointer for any other word.
+    fn named(name: &str) -> Tool {
+        match name {
+            "draw" => Tool::Draw,
+            "erase" => Tool::Erase,
+            "split" => Tool::Split,
+            "stretch" => Tool::Stretch,
+            _ => Tool::Select,
+        }
+    }
 }
 
 /// Which region of a roll a press landed on.
@@ -388,6 +438,12 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
             .get("lane_tabs")
             .map(curves::parse_lane_tabs)
             .unwrap_or_default(),
+        tool: Tool::named(
+            props
+                .get("tool")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+        ),
         layers: curves::parse_layers(props),
         curve_points: curves::parse_points(props),
         bodies: std::collections::HashMap::new(),
@@ -634,6 +690,30 @@ impl Notes {
         Events::message(args)
     }
 
+    /// **The selected notes cut at `at`**, by the cursor's key or the
+    /// scissors. An owner that holds events cuts them, keys and curves with
+    /// them: the roll names the cut and the notes, and draws what comes
+    /// back. Only a bare roll cuts what it draws.
+    fn split_at(&mut self, at: f64) -> Events {
+        if self.joins.is_some() && self.ids {
+            let inside = self
+                .selected
+                .iter()
+                .filter_map(|i| self.notes.get(*i))
+                .any(|n| at > n.start + 1e-9 && at < n.start + n.dur - 1e-9);
+            if !inside {
+                return Events::refused("split", "the cursor is not inside a held note");
+            }
+            return self.selection_event_at("split", at);
+        }
+        let cut = notes::split_notes(&mut self.notes, &self.selected, at);
+        if cut.is_empty() {
+            return Events::refused("split", "the cursor is not inside a held note");
+        }
+        self.selected = cut;
+        self.notes_event()
+    }
+
     /// **`tag` with the ids of the selected notes**: what an owner's edit over
     /// the selection is asked with.
     fn selection_event(&self, tag: &str) -> Events {
@@ -848,6 +928,10 @@ impl Element for Notes {
             }
             "lane_tabs" => {
                 self.lane_tabs = curves::parse_lane_tabs(v);
+                true
+            }
+            "tool" => {
+                self.tool = Tool::named(v.as_str().unwrap_or_default());
                 true
             }
             "tell_marks" => {
@@ -1318,7 +1402,26 @@ impl Element for Notes {
                 }
                 Events::none()
             }
-            Some(Drag::Level { press_y, orig }) => {
+            Some(Drag::Stretch {
+                press_time,
+                anchor,
+                end,
+                orig,
+            }) => {
+                let span = end - anchor;
+                if span > 0.0 {
+                    let to = self.grid().snap(end + (time - press_time));
+                    let f = ((to - anchor) / span).max(1e-3);
+                    for (i, start, dur) in orig {
+                        if let Some(n) = self.notes.get_mut(i) {
+                            n.start = anchor + (start - anchor) * f;
+                            n.dur = (dur * f).max(MIN_DUR);
+                        }
+                    }
+                }
+                Events::none()
+            }
+            Some(Drag::Level { press_y, orig, .. }) => {
                 let dv = ((press_y - at.1) / f64::from(input.scale.max(0.1))).round() as i32;
                 notes::nudge_velocities_from(&mut self.notes, &orig, dv);
                 Events::none()
@@ -1344,6 +1447,16 @@ impl Element for Notes {
         // as it went.
         match self.drag.take() {
             None => Events::none(),
+            // **Shift and a click that moved no velocity** adds the note to
+            // the selection, or takes it out
+            Some(Drag::Level { orig, grabbed, .. })
+                if orig
+                    .iter()
+                    .all(|(i, v)| self.notes.get(*i).is_some_and(|n| n.velocity == *v)) =>
+            {
+                notes::toggle_selected(&mut self.selected, grabbed);
+                Events::none()
+            }
             Some(_) => self.notes_event(),
         }
     }
@@ -1394,32 +1507,7 @@ impl Element for Notes {
             // the roll is not something anyone asks for by leaning on a key.
             Verb::Split if !self.selected.is_empty() => {
                 let at = self.grid().snap(self.anchor(input)).max(0.0);
-                // **An owner that holds events cuts them**, keys and curves
-                // with them: the roll names the cut and the notes, and draws
-                // what comes back. Only a bare roll cuts what it draws.
-                if self.joins.is_some() && self.ids {
-                    let inside = self
-                        .selected
-                        .iter()
-                        .filter_map(|i| self.notes.get(*i))
-                        .any(|n| at > n.start + 1e-9 && at < n.start + n.dur - 1e-9);
-                    if !inside {
-                        return Some(Events::refused(
-                            "split",
-                            "the cursor is not inside a held note",
-                        ));
-                    }
-                    return Some(self.selection_event_at("split", at));
-                }
-                let cut = notes::split_notes(&mut self.notes, &self.selected, at);
-                if cut.is_empty() {
-                    return Some(Events::refused(
-                        "split",
-                        "the cursor is not inside a held note",
-                    ));
-                }
-                self.selected = cut;
-                Some(self.notes_event())
+                Some(self.split_at(at))
             }
             Verb::Join if !self.selected.is_empty() => {
                 // **Where the owner speaks joins, a join is its edit**: notes
@@ -2139,6 +2227,7 @@ impl Notes {
             self.drag = Some(Drag::Level {
                 press_y: at.1,
                 orig,
+                grabbed: nh.index,
             });
             return Claim::take();
         }
@@ -2163,25 +2252,61 @@ impl Notes {
                 }
                 // Ctrl on empty grid adds one there, then drags its end to set
                 // the length until release.
-                None if !is_body => {
-                    let time = self
-                        .grid()
-                        .snap(self.time_at(h.grid, &h.nav, at.0))
-                        .max(0.0);
-                    let pitch = self.placed_pitch(h.axis, h.grid, at.1 as f32, 0.0);
-                    let dur = self.default_dur(&h.nav, time);
-                    let index = self.insert(notes::Note::new(time, dur, pitch));
-                    self.drag = Some(Drag::Note {
-                        index,
-                        part: boxes::Part::End,
-                        press_time: time,
-                        orig_start: time,
-                        orig_dur: dur,
-                    });
-                }
+                None if !is_body => return self.press_new_note(h, at),
                 None => return Claim::Decline,
             }
-            return Claim::events(self.notes_event()).edge_scrolling();
+        }
+        // **The tool says what a plain press is**; a note under the pencil
+        // is taken as the pointer takes it
+        match (self.tool, h.note) {
+            (Tool::Draw, None) if !is_body => return self.press_new_note(h, at),
+            (Tool::Erase, Some(nh)) => {
+                notes::remove_note(&mut self.notes, nh.index);
+                self.selected = notes::selection_after_removal(&self.selected, nh.index);
+                self.drag = Some(Drag::Erase);
+                return Claim::take().edge_scrolling();
+            }
+            (Tool::Erase, None) if !is_body => {
+                self.drag = Some(Drag::Erase);
+                return Claim::take().edge_scrolling();
+            }
+            (Tool::Split, Some(nh)) => {
+                let at = self
+                    .grid()
+                    .snap(self.time_at(h.grid, &h.nav, at.0))
+                    .max(0.0);
+                if !self.selected.contains(&nh.index) {
+                    self.selected = vec![nh.index];
+                }
+                return Claim::Take(Take {
+                    events: self.split_at(at),
+                    ..Take::default()
+                });
+            }
+            (Tool::Stretch, Some(nh)) => {
+                if !self.selected.contains(&nh.index) {
+                    self.selected = vec![nh.index];
+                }
+                let orig: Vec<(usize, f64, f64)> = self
+                    .selected
+                    .iter()
+                    .filter_map(|&i| self.notes.get(i).map(|n| (i, n.start, n.dur)))
+                    .collect();
+                let anchor = orig.iter().map(|o| o.1).fold(f64::INFINITY, f64::min);
+                let end = orig.iter().map(|o| o.1 + o.2).fold(0.0, f64::max);
+                self.drag = Some(Drag::Stretch {
+                    press_time: self.time_at(h.grid, &h.nav, at.0),
+                    anchor,
+                    end,
+                    orig,
+                });
+                return Claim::take().edge_scrolling();
+            }
+            // **A double click on empty grid makes a note**, with the pointer
+            (Tool::Select, None) if !is_body && input.clicks >= 2 => {
+                return self.press_new_note(h, at);
+            }
+            _ => {}
         }
         let Some(nh) = h.note else {
             // Nothing of this element's, inside a clip: the press goes back to
@@ -2215,7 +2340,10 @@ impl Notes {
                     return Claim::take().edge_scrolling();
                 }
             }
-            self.selected.clear();
+        }
+        // **A click selects the note it is on**, and the drag moves it alone
+        if !self.selected.contains(&nh.index) {
+            self.selected = vec![nh.index];
         }
         // An edge of a **selected** note resizes the whole selection by as
         // much, as its body moves it.
@@ -2248,6 +2376,32 @@ impl Notes {
             orig_start,
             orig_dur,
         });
+        Claim::take().edge_scrolling()
+    }
+
+    /// **A note made where the hand pressed**, on the grid and the row under
+    /// it, as long as the grid's step; the drag that follows sets its length
+    /// until the release.
+    fn press_new_note(&mut self, h: &Hit, at: (f64, f64)) -> Claim {
+        let time = self
+            .grid()
+            .snap(self.time_at(h.grid, &h.nav, at.0))
+            .max(0.0);
+        let pitch = self.placed_pitch(h.axis, h.grid, at.1 as f32, 0.0);
+        let dur = self.default_dur(&h.nav, time);
+        let index = self.insert(notes::Note::new(time, dur, pitch));
+        self.selected = vec![index];
+        self.drag = Some(Drag::Note {
+            index,
+            part: boxes::Part::End,
+            press_time: time,
+            orig_start: time,
+            orig_dur: dur,
+        });
+        // **The edit leaves at the release**, once: a report at the press
+        // would bring the owner's correction mid-drag, its notes in its own
+        // order, and the drag would go on resizing whatever note now has
+        // this index
         Claim::take().edge_scrolling()
     }
 
@@ -3082,7 +3236,7 @@ mod tests {
     }
 
     /// Grabbing a **selected** note moves the whole selection rigidly; grabbing
-    /// an unselected one drops the selection and moves singly.
+    /// an unselected one selects it alone and moves it.
     #[test]
     fn a_block_moves_together_and_an_unselected_note_alone() {
         let m = Metrics::default();
@@ -3097,13 +3251,14 @@ mod tests {
         assert!((r.notes[0].start - 100.0).abs() < 1.0);
         assert!((r.notes[1].start - 300.0).abs() < 1.0, "rigid");
 
-        // The other half: an unselected note drops the set.
+        // The other half: an unselected note is selected alone, the set let
+        // go of -- a click selects what it is on.
         let mut r =
             roll(r#"{"notes":[0.0,100.0,60.0,100,0,200.0,100.0,64.0,100,0],"min":48,"max":72}"#);
         r.selected = vec![1];
         r.press(at, &input(&m, rect(), axis(1000.0)));
         assert!(matches!(r.drag, Some(Drag::Note { index: 0, .. })));
-        assert!(r.selected.is_empty());
+        assert_eq!(r.selected, vec![0]);
     }
 
     /// Ctrl adds a note where there is none and removes the one under the
@@ -3134,6 +3289,83 @@ mod tests {
         let on_note = (x_of(&r, &m, 350.0, 1000.0), y_of(&r, &m, 60.0));
         assert!(matches!(r.press(on_note, &ctrl), Claim::Take(_)));
         assert!(r.notes.is_empty());
+    }
+
+    /// **What a plain press does is the tool's**: the pointer makes a note
+    /// on a double click alone, the pencil on a press, the eraser takes the
+    /// note away, the scissors cut it where it was clicked, the stretch scales
+    /// the selection from its first onset; and Shift with a click that moves
+    /// no velocity adds a note to the selection.
+    #[test]
+    fn a_plain_press_does_what_the_tool_says() {
+        let m = Metrics::default();
+        let two = r#"{"notes":[0.0,100.0,60.0,100,0, 200.0,100.0,64.0,100,0],
+            "min":48,"max":72,"snap":100.0}"#;
+        let plain = input(&m, rect(), axis(1000.0));
+        let empty = (
+            x_of(&roll(two), &m, 650.0, 1000.0),
+            y_of(&roll(two), &m, 67.0),
+        );
+        // the pointer: a click on empty grid makes nothing, a double click a note
+        let mut r = roll(two);
+        assert!(matches!(r.press(empty, &plain), Claim::Decline));
+        let mut double = input(&m, rect(), axis(1000.0));
+        double.clicks = 2;
+        assert!(matches!(r.press(empty, &double), Claim::Take(_)));
+        assert_eq!(r.notes.len(), 3);
+        assert_eq!(r.selected, vec![2], "the note made is selected");
+        // the pencil makes one on a press
+        let mut r = roll(two);
+        assert!(r.set("tool", &Value::from("draw")));
+        // nothing is reported at the press: an owner's correction mid-drag
+        // would reorder the notes under the index the drag holds
+        let Claim::Take(take) = r.press(empty, &plain) else {
+            panic!("the pencil takes the press");
+        };
+        assert!(take.events.into_messages().is_empty());
+        assert_eq!(r.notes.len(), 3);
+        // the eraser takes the note pressed
+        let mut r = roll(two);
+        r.set("tool", &Value::from("erase"));
+        let first = (x_of(&r, &m, 50.0, 1000.0), y_of(&r, &m, 60.0));
+        r.press(first, &plain);
+        assert_eq!(r.notes.len(), 1);
+        // the scissors cut the note clicked where it was clicked, on the grid
+        let mut r = roll(r#"{"notes":[0.0,400.0,60.0,100,0],"min":48,"max":72,"snap":100.0}"#);
+        r.set("tool", &Value::from("split"));
+        let inside = (x_of(&r, &m, 210.0, 1000.0), y_of(&r, &m, 60.0));
+        assert!(matches!(r.press(inside, &plain), Claim::Take(_)));
+        assert_eq!(r.notes.len(), 2);
+        assert!((r.notes[1].start - 200.0).abs() < 1e-6);
+        // the stretch: the selection's end dragged from 300 to 600 doubles it
+        let mut r = roll(two);
+        r.set("tool", &Value::from("stretch"));
+        r.selected = vec![0, 1];
+        let second = (x_of(&r, &m, 250.0, 1000.0), y_of(&r, &m, 64.0));
+        r.press(second, &plain);
+        r.drag((x_of(&r, &m, 550.0, 1000.0), y_of(&r, &m, 64.0)), &plain);
+        assert!(
+            (r.notes[1].start - 400.0).abs() < 1.0,
+            "{}",
+            r.notes[1].start
+        );
+        assert!((r.notes[1].dur - 200.0).abs() < 1.0 && r.notes[0].start == 0.0);
+        // Shift and a click: the note joins the selection, and leaves it
+        let mut r = roll(two);
+        let mut shift = input(&m, rect(), axis(1000.0));
+        shift.mods = Mods {
+            shift: true,
+            ..Mods::default()
+        };
+        r.press(first, &plain);
+        r.release(first, true, &plain);
+        assert_eq!(r.selected, vec![0], "a click selects");
+        r.press(second, &shift);
+        r.release(second, true, &shift);
+        assert_eq!(r.selected, vec![0, 1]);
+        r.press(first, &shift);
+        r.release(first, true, &shift);
+        assert_eq!(r.selected, vec![1]);
     }
 
     /// **A Ctrl drag from a note erases what it crosses**, and the list is

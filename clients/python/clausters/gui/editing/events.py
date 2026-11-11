@@ -385,6 +385,28 @@ class NotesEditor(Marking, SequenceHandler):
         self._set(monophonic=bool(on))
 
     @property
+    def tool(self) -> str:
+        """**What a plain press on the roll's grid does**, the ``"select"``
+        pointer until another is chosen: with it a click selects a note, a
+        drag moves it or, by an edge, resizes it, a drag over empty grid
+        sweeps a selection and a double click there makes a note. ``"draw"``
+        makes a note where it is pressed, the drag its length; ``"erase"``
+        takes away every note pressed or crossed; ``"split"`` cuts the note
+        clicked where it is clicked; ``"stretch"`` scales the selection in
+        time from its first onset. Every tool keeps the modifiers: Ctrl adds
+        or erases, Alt and Shift with a click add a note to the selection or
+        take it out, Shift and a vertical drag is the velocity. The keys 1 to
+        5, the toolbar and the Edit menu's Tool choose it; setting it is no
+        edit, and a name no tool has raises `ValueError`."""
+        return str(self._call("editing").get("tool", "select"))
+
+    @tool.setter
+    def tool(self, tool: str) -> None:
+        answer = self._do("set", call={"verb": "sync", "tool": str(tool)}) or {}
+        if isinstance(answer, dict) and answer.get("refused"):
+            raise ValueError(answer["refused"])
+
+    @property
     def events_panel(self) -> bool:
         """**Whether the panel beside the roll is shown**: the inspector of the
         selected notes and the list of the sequence's events, which follow the

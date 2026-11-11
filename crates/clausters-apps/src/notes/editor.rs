@@ -200,6 +200,10 @@ pub struct NotesEditor {
     /// until somebody turns it off: off, a drag, a paste and step entry land
     /// where the hand puts them, and a quantize still moves onto the grid.
     snap: bool,
+    /// **What a plain press on the roll's grid does**: the tool chosen, by
+    /// its name ([`roll::TOOLS`]), the pointer until somebody chooses
+    /// another. The window's, like the snap switch.
+    tool: &'static str,
     /// **The loop switch**, as the host last said it: the host keeps it, and the
     /// window's tool and menu entry read it here.
     looping: bool,
@@ -351,6 +355,7 @@ impl NotesEditor {
             midi_in: false,
             grid: crate::DEFAULT_GRID,
             snap: true,
+            tool: "select",
             looping: false,
             editing: Editing::default(),
             dialogs: dialogs::Dialogs::default(),
@@ -577,6 +582,9 @@ impl NotesEditor {
                 "show_staff" => Some(matches!(self.editing.scope, Scope::Staff(_))),
                 "voice_1" | "voice_2" | "voice_3" | "voice_4" => {
                     Some(verb.ends_with(&(self.editing.voice[1] + 1).to_string()))
+                }
+                _ if roll::tool_of_verb(verb).is_some() => {
+                    Some(roll::tool_of_verb(verb) == Some(self.tool))
                 }
                 _ if roll::CHANNEL_VERBS.contains(&verb) => {
                     Some(roll::channel_chosen(verb) == Some(self.editing().channel))
@@ -913,6 +921,7 @@ impl NotesEditor {
         if self.midi_in {
             drawn.insert("midi_in".into(), json!(1));
         }
+        drawn.insert("tool".into(), json!(self.tool));
         if self.tabbed() {
             drawn.insert("lane".into(), json!(self.lane_shown()));
             drawn.insert("lane_tabs".into(), self.lane_tabs());
@@ -1225,6 +1234,7 @@ impl NotesEditor {
         props.insert("midi_in".into(), json!(i32::from(self.midi_in)));
         props.insert("grid".into(), json!(self.grid));
         props.insert("grid_snap".into(), json!(self.snap));
+        props.insert("tool".into(), json!(self.tool));
         // the panel reads the sequence again
         drop(held);
         if self.tabbed() {
@@ -1546,8 +1556,11 @@ impl Converse for NotesEditor {
             ));
             return true;
         }
-        if message.tag == SNAP_VERB || message.tag == MONOPHONIC_VERB {
-            if message.tag == SNAP_VERB {
+        let tool = roll::tool_of_verb(&message.tag);
+        if message.tag == SNAP_VERB || message.tag == MONOPHONIC_VERB || tool.is_some() {
+            if let Some(tool) = tool {
+                self.tool = tool;
+            } else if message.tag == SNAP_VERB {
                 self.snap = !self.snap;
             } else {
                 self.editing.monophonic = !self.editing.monophonic;
@@ -1628,7 +1641,8 @@ pub fn shared_of(request: &str) -> Shared {
 /// - `props` -- `widget`: what it is corrected with (`{}` for another widget).
 /// - `sync` -- `window` (the id it is open in, or `null`), `rate`, `editable`,
 ///   `midi_in`, `grid` (in beats, `0` for none), `snap` (the snap-to-grid
-///   switch), `monophonic`, `scope` (`{"show": "system"}`, or `"part"` or
+///   switch), `tool` (what a plain press does, [`roll::TOOLS`]: answered
+///   `{"refused": why}` for a name none of them has), `monophonic`, `scope` (`{"show": "system"}`, or `"part"` or
 ///   `"staff"` with its `index`), `voice` (`[staff, voice]`), `channel` (the
 ///   channel the MIDI mode edits, from 0, or `null` for every one: answered
 ///   `{"refused": why}` where none is chosen, in notation mode and under
@@ -1641,6 +1655,7 @@ pub fn shared_of(request: &str) -> Shared {
 ///   whether a hand snaps to it.
 /// - `editing` -- how the roll edits ([`Editing`]): `{"monophonic", "mode",
 ///   "scope", "voice", "channel", "color_by"}`, `panel`, whether the panel is shown,
+///   `tool`, what a plain press on the grid does,
 ///   `display` and `display_panel`, how the roll draws what is beyond its boxes
 ///   ([`display`]) and whether its panel is shown, and `format`, what the
 ///   sequence is written as ([`events::Format::name`]). The mode is the
@@ -1713,6 +1728,15 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             if let Some(on) = request.get("monophonic").and_then(Value::as_bool) {
                 editor.editing.monophonic = on;
             }
+            if let Some(tool) = request.get("tool").and_then(Value::as_str) {
+                let Some(tool) = roll::tool_named(tool) else {
+                    return json!({ "refused": format!(
+                        "a roll's tools are select, draw, erase, split and stretch, not {tool:?}"
+                    ) })
+                    .to_string();
+                };
+                editor.tool = tool;
+            }
             if let Some(scope) = request
                 .get("scope")
                 .and_then(|s| serde_json::from_value::<Scope>(s.clone()).ok())
@@ -1779,6 +1803,7 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             said["lane"] = json!(editor.lane_shown());
             said["display"] = json!(editor.display);
             said["display_panel"] = json!(editor.display_panel);
+            said["tool"] = json!(editor.tool);
             said.to_string()
         }
         "span" => {

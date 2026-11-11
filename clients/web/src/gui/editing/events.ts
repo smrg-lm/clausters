@@ -390,6 +390,34 @@ export class NotesEditor extends SequenceHandler {
     }
 
     /**
+     * **What a plain press on the roll's grid does**, the `"select"` pointer
+     * until another is chosen: with it a click selects a note, a drag moves
+     * it or, by an edge, resizes it, a drag over empty grid sweeps a
+     * selection and a double click there makes a note. `"draw"` makes a note
+     * where it is pressed, the drag its length; `"erase"` takes away every
+     * note pressed or crossed; `"split"` cuts the note clicked where it is
+     * clicked; `"stretch"` scales the selection in time from its first
+     * onset. Every tool keeps the modifiers: Ctrl adds or erases, Alt and
+     * Shift with a click add a note to the selection or take it out, Shift
+     * and a vertical drag is the velocity. The keys 1 to 5, the toolbar and
+     * the Edit menu's Tool choose it.
+     */
+    async tool(): Promise<string> {
+        return String((await this.coreCall("editing")).tool ?? "select");
+    }
+
+    /**
+     * Sets what a plain press does: no edit. Rejects with a `RangeError`,
+     * changing nothing, for a name no tool has.
+     */
+    async setTool(tool: "select" | "draw" | "erase" | "split" | "stretch"): Promise<void> {
+        const answer = (await this.act("set", { call: { verb: "sync", tool: String(tool) } })) as
+            | { refused?: string }
+            | null;
+        if (answer?.refused) throw new RangeError(answer.refused);
+    }
+
+    /**
      * **Whether the panel beside the roll is shown**: the inspector of the
      * selected notes and the list of the sequence's events, which follow the
      * roll's selection both ways. A value typed in the inspector is written on

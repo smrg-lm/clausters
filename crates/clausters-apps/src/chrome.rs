@@ -69,6 +69,14 @@ pub const TO_START: &str = "F0100";
 pub const TO_END: &str = "F0101";
 /// **Snap to grid**: a horseshoe magnet, its poles up.
 pub const SNAP: &str = "F0102";
+/// **The roll's tools**, drawn here as the transport's are: the pointer (an
+/// arrow), the pencil, the eraser, the scissors and the stretch (an arrow
+/// both ways between two bars).
+pub const POINTER: &str = "F0103";
+pub const PENCIL: &str = "F0104";
+pub const ERASER: &str = "F0105";
+pub const SCISSORS: &str = "F0106";
+pub const STRETCH: &str = "F0107";
 
 /// The host's own symbols the tools use.
 pub(crate) const PLAY: &str = "\u{25B6}";
@@ -89,6 +97,19 @@ pub fn glyphs() -> Value {
         SNAP: "M0 400L0 280C0 125 125 0 280 0C435 0 560 125 560 280L560 400L400 400\
                L400 280C400 214 346 160 280 160C214 160 160 214 160 280L160 400Z \
                M0 450L160 450L160 560L0 560Z M400 450L560 450L560 560L400 560Z",
+        POINTER: "M0 560L0 100L120 210L220 0L300 40L200 250L380 250Z",
+        PENCIL: "M0 0L170 60L560 450L450 560L60 170Z",
+        ERASER: "M40 220L220 40L360 180L180 360Z M210 390L390 210L560 380L380 560Z",
+        SCISSORS: "M240 120L224 180L180 224L120 240L60 224L16 180L0 120L16 60L60 16L120 0\
+                   L180 16L224 60Z M172 90L150 68L120 60L90 68L68 90L60 120L68 150L90 172\
+                   L120 180L150 172L172 150L180 120Z M560 120L544 180L500 224L440 240\
+                   L380 224L336 180L320 120L336 60L380 16L440 0L500 16L544 60Z M492 90\
+                   L470 68L440 60L410 68L388 90L380 120L388 150L410 172L440 180L470 172\
+                   L492 150L500 120Z M190 200L560 520L520 560L150 240Z\
+                   M370 200L0 520L40 560L410 240Z",
+        STRETCH: "M0 80L60 80L60 480L0 480Z M500 80L560 80L560 480L500 480Z \
+                  M80 280L180 380L180 310L380 310L380 380L480 280L380 180L380 250L180 250\
+                  L180 180Z",
     })
 }
 
@@ -203,6 +224,14 @@ pub fn menu(app: App, saves: bool) -> Value {
             ]
             .map(|v| entry(app, v)),
         );
+        // what a plain press does, as the toolbar's tools say it
+        edit.push(sub(
+            "Tool",
+            clausters_editing::notes::TOOLS
+                .iter()
+                .map(|(v, _)| entry(app, v))
+                .collect(),
+        ));
         // the channel the MIDI mode edits, as the notation mode edits a voice
         edit.push(sub(
             "Channel",
@@ -435,7 +464,19 @@ fn edits(app: App) -> Vec<Value> {
             .iter()
             .map(|verb| tool(app, verb, None))
             .collect(),
-        App::Multitrack | App::Notes => vec![tool(app, "snap", Some(&glyph(SNAP)))],
+        App::Multitrack => vec![tool(app, "snap", Some(&glyph(SNAP)))],
+        // the roll's tools, then its snap switch
+        App::Notes => [
+            ("tool_select", POINTER),
+            ("tool_draw", PENCIL),
+            ("tool_erase", ERASER),
+            ("tool_split", SCISSORS),
+            ("tool_stretch", STRETCH),
+            ("snap", SNAP),
+        ]
+        .iter()
+        .map(|(verb, code)| tool(app, verb, Some(&glyph(code))))
+        .collect(),
         App::Points => Vec::new(),
     }
 }
@@ -510,15 +551,18 @@ pub fn dress(window: &mut Value, menu: Value, toolbar: Value, main: i32) {
 mod tests {
     use super::*;
 
+    /// Every verb a menu names, its submenus' with them.
     fn verbs(menu: &Value) -> Vec<String> {
-        let mut out = Vec::new();
-        for title in menu.as_array().into_iter().flatten() {
-            for e in title["menu"].as_array().into_iter().flatten() {
+        fn walk(entries: &Value, out: &mut Vec<String>) {
+            for e in entries.as_array().into_iter().flatten() {
                 if let Some(v) = e["verb"].as_str() {
                     out.push(v.to_string());
                 }
+                walk(&e["menu"], out);
             }
         }
+        let mut out = Vec::new();
+        walk(menu, &mut out);
         out
     }
 

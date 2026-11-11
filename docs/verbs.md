@@ -102,6 +102,11 @@ The verdict is one of three:
 | `notes` | `select_channel` | `NotesEditor.select_channel` | `NotesEditor.selectChannel` | **api** |
 | `notes` | `select_voice` | `NotesEditor.select_voice` | `NotesEditor.selectVoice` | **api** |
 | `notes` | `select_staff` | `NotesEditor.select_staff` | `NotesEditor.selectStaff` | **api** |
+| `notes` | `tool_select` | `NotesEditor.tool` | `NotesEditor.tool` | **api** — `tool = "select"`; on the web `setTool("select")` |
+| `notes` | `tool_draw` | `NotesEditor.tool` | `NotesEditor.tool` | **api** — `tool = "draw"`; on the web `setTool("draw")` |
+| `notes` | `tool_erase` | `NotesEditor.tool` | `NotesEditor.tool` | **api** — `tool = "erase"`; on the web `setTool("erase")` |
+| `notes` | `tool_split` | `NotesEditor.tool` | `NotesEditor.tool` | **api** — `tool = "split"`; on the web `setTool("split")` |
+| `notes` | `tool_stretch` | `NotesEditor.tool` | `NotesEditor.tool` | **api** — `tool = "stretch"`; on the web `setTool("stretch")` |
 | `notes` | `channel_all` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = None`; on the web `setChannel(null)` |
 | `notes` | `channel_1` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 0` |
 | `notes` | `channel_2` | `NotesEditor.channel` | `NotesEditor.channel` | **api** — `channel = 1` |

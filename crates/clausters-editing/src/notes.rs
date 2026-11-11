@@ -409,6 +409,39 @@ impl Editing {
     }
 }
 
+/// **The roll's editing tools**: what a plain press on its grid does, by
+/// the verb that chooses it and the name the roll's `tool` prop says it
+/// with -- the pointer (a click selects, a drag moves or resizes, a drag
+/// over empty grid sweeps, a double click there makes a note), the pencil
+/// (a press makes a note), the eraser, the scissors (a note cut where it is
+/// clicked) and the stretch (the selection scaled in time). The window's,
+/// like the snap switch; every tool keeps the modifiers' gestures.
+pub const TOOLS: &[(&str, &str)] = &[
+    ("tool_select", "select"),
+    ("tool_draw", "draw"),
+    ("tool_erase", "erase"),
+    ("tool_split", "split"),
+    ("tool_stretch", "stretch"),
+];
+
+/// The tool a verb of [`TOOLS`] chooses, by its name.
+#[must_use]
+pub fn tool_of_verb(verb: &str) -> Option<&'static str> {
+    TOOLS
+        .iter()
+        .find(|(v, _)| *v == verb)
+        .map(|(_, name)| *name)
+}
+
+/// The tool named `name`, as [`TOOLS`] spells it, if it is one.
+#[must_use]
+pub fn tool_named(name: &str) -> Option<&'static str> {
+    TOOLS
+        .iter()
+        .find(|(_, n)| *n == name)
+        .map(|(_, name)| *name)
+}
+
 /// **The choice of the channel a roll edits in MIDI mode**
 /// ([`Editing::channel`]): every channel, or one of the sixteen, as MIDI
 /// counts them from 1. The window's, like the voice it edits.

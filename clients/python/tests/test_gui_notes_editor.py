@@ -191,6 +191,12 @@ def test_the_roll_edits_in_its_format_s_mode_and_converts_into_copies(gui_host):
     editor.channel = 1
     assert editor.channel == 1, "the MIDI mode edits a channel"
     editor.channel = None
+    assert editor.tool == "select", "the pointer, at first"
+    editor.tool = "draw"
+    assert editor.tool == "draw"
+    with pytest.raises(ValueError):
+        editor.tool = "brush"
+    editor.tool = "select"
     page = editor.to_notation()
     assert [e.at for e in take.events] == [0.03, 1.01], "the take is as it was"
     assert page.format == "notation" and [e.at for e in page.events] == [0.0, 1.0]

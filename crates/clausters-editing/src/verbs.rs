@@ -346,6 +346,12 @@ pub const NOTES: &[Verb] = &[
     verb("select_channel", &[], "Select by channel"),
     verb("select_voice", &[], "Select by voice"),
     verb("select_staff", &[], "Select by staff"),
+    // what a plain press on the grid does: the window's tool
+    choice("tool", "tool_select", &["1"], "Pointer"),
+    choice("tool", "tool_draw", &["2"], "Pencil"),
+    choice("tool", "tool_erase", &["3"], "Eraser"),
+    choice("tool", "tool_split", &["4"], "Scissors"),
+    choice("tool", "tool_stretch", &["5"], "Stretch"),
     // the channel the MIDI mode edits, or every one
     choice("channel", "channel_all", &[], "All channels"),
     choice("channel", "channel_1", &[], "Channel 1"),

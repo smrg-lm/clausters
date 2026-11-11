@@ -7305,7 +7305,7 @@ wrong.
   are gone over, in both clients, so that each says what it shows and how
   a hand reaches it.
 
-- ⬜ **The roll's default gestures are not defined, and its tools are not
+- ✅ **The roll's default gestures are not defined, and its tools are not
   shown** *(the user, 2026-11-10, the same pass)*. How to create a note is
   not clear, and the most common ways of doing it are not there; a click on
   a note does not select it. The table of `docs/app-behavior.md` ("The
@@ -7316,6 +7316,23 @@ wrong.
   selection, stretch, split -- as the score editor's tools already are
   (`clausters_apps::score::tools`), with how the field's editors lay these
   out looked up before choosing.
+
+  Done 2026-11-11, after the field's editors: a pointer is the default
+  tool, beside a pencil, an eraser, scissors and a glue or join, each an
+  icon in the editor's own toolbar and a key. Five tools, chosen by the keys
+  1 to 5, the toolbar's icons and the Edit menu's Tool, and by a client's
+  `tool`: the pointer (a click selects the note it is on, a drag moves or
+  resizes it, a drag over empty grid sweeps, a double click there makes a
+  note), the pencil (a press on empty grid makes a note, the drag its
+  length), the eraser, the scissors (the note clicked cut there) and the
+  stretch (the selection scaled in time from its first onset). The
+  modifiers stay every tool's (Ctrl adds or erases, Alt or Shift and a
+  click toggle a note in the selection, Shift and a vertical drag is the
+  velocity), and the join stays `J`. `docs/app-behavior.md` holds the table
+  of each gesture under each tool. Found on the way: a note made by a press
+  was reported at the press, and the owner's correction, its notes in time
+  order, left the drag resizing another note; it is reported at the
+  release now.
 
 - ✅ **The roll's lane tabs are not seen under the lane** *(the user,
   2026-11-10, the same pass)*. The tabs that choose which curve the lane

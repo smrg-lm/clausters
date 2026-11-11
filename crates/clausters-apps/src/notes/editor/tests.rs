@@ -1420,3 +1420,24 @@ fn a_curve_added_with_the_display_panel_up_draws_the_window_again() {
     assert!(tree.contains("\"label\":\"CC 1 ch 1\""), "{tree}");
     assert!(!e.panel_stale());
 }
+
+/// **The roll's tool is the window's**: chosen by its verb (a key, the Edit
+/// menu's Tool, the toolbar), in force in the window's actions and sent to
+/// the roll; nothing is recorded; a script sets it by name, and a name no
+/// tool has is refused.
+#[test]
+fn the_roll_s_tool_is_the_window_s_and_reaches_the_roll() {
+    let mut e = editor(shared());
+    assert_eq!(e.actions(false, false)["tool_select"].checked, Some(true));
+    let out = e.event(&window_verb("tool_draw"), 1);
+    assert!(out.record.is_none(), "no edit");
+    let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("\"tool\":\"draw\""), "{told}");
+    assert_eq!(e.actions(false, false)["tool_draw"].checked, Some(true));
+    assert_eq!(e.window(40)["children"][1]["tool"], "draw");
+    call_json(&mut e, r#"{"verb": "sync", "tool": "erase"}"#);
+    let said: Value = serde_json::from_str(&call_json(&mut e, r#"{"verb": "editing"}"#)).unwrap();
+    assert_eq!(said["tool"], "erase");
+    let refused = call_json(&mut e, r#"{"verb": "sync", "tool": "brush"}"#);
+    assert!(refused.contains("refused"), "{refused}");
+}

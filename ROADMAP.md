@@ -275,11 +275,9 @@ its plan; the plan is where its acceptance is read.
 ### The near work
 
 - ⬜ **The roll after the eye pass of 2026-11-10**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*: "The roll's default
-  gestures are not defined, and its tools are not shown" and "The roll's
-  examples do not explain the application". The gestures and the tools are the larger part,
-  and the examples are gone over last, once they have something settled to
-  show.
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*: "The roll's examples
+  do not explain the application", now that its tools and gestures are
+  settled.
 
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,
