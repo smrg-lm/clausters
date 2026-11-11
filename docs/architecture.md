@@ -89,6 +89,23 @@ Two measured facts to keep in mind when reading the meter (numbers from a deskto
 | `src/faust/` | libfaust embedding: hand-written FFI, compiler thread, JSON→Box interpreter (`boxes.rs`), `FaustDef`/`FaustSynth`; `soundfile("<bufnum>", n)` is filled from a server buffer at instantiation (`SoundfileData` in `synth.rs`) |
 | `src/main.rs` | CLI: realtime server (default) or `--nrt` renderer |
 
+## The crates and their levels
+
+The crates sit in levels, and **a crate depends only on crates of a lower level**. Cargo already refuses a cycle among ordinary dependencies; what it does not refuse is a dev-dependency that points up, which is how a crate's tests come to exercise the layer above it and drag that layer into its build. `tests/levels.rs` reads this table and every manifest, and fails on an edge that points up or sideways (dev- and build-dependencies included), on a crate the table does not name, and on a row that names a crate that is gone.
+
+| Level | Crates | What the level is |
+|---|---|---|
+| 0 | `clausters-core`, `clausters-net` | rules and formats every program shares; no crate of the project under them |
+| 1 | `clausters-document`, `clausters-midi`, `clausters-plugin-host`, `clausters-notation` | one model or one device each, over the core |
+| 2 | `clausters-editing`, `clausters` | the projections over the document; the server |
+| 3 | `clausters-apps` | the applications, each written once |
+| 4 | `clausters-app-engine` | the applications joined to an engine |
+| 5 | `clausters-ffi`, `clausters-core-web`, `clausters-web`, `clausters-nrt-web`, `clausters-gui` | the bindings and the hosts: what a client loads or runs |
+
+A new crate takes the lowest level its dependencies allow, and its row is added here in the same commit. A dependency that would point up is a sign the code is in the wrong crate: a test of two layers together belongs to the crate that joins them (`clausters-app-engine` for the server and the applications), not to the lower of the two.
+
+The test keeps a list of the edges that break the rule today. It may only shrink: an entry that no longer matches a manifest fails the test too, so the list cannot outlive what it excuses.
+
 ## Memory lifecycle
 
 The rule behind everything: **memory is allocated on the network (or NRT / compiler) thread, used on the audio thread, and freed back on the network thread.** The audio thread only moves pointers.

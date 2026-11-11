@@ -2395,7 +2395,7 @@ files past four thousand lines (done with the next visit to each); and moving
 the transport out of `src/server/engine.rs`, which touches the audio thread
 and so waits for `T3`, the milestone that already owes the bench.
 
-- ⬜ **R13: The levels are a rule.** The crates already sit in levels and a
+- ✅ **R13: The levels are a rule** *(done 2026-11-11)*. The crates already sit in levels and a
   dependency only ever points down, which is cargo's doing for ordinary
   dependencies and nobody's for dev-dependencies:
 
@@ -2411,10 +2411,16 @@ and so waits for `T3`, the milestone that already owes the bench.
   A test in the shape of `tests/bindings.rs` reads the manifests as text and
   fails on an edge that points up, dev-dependencies included, and on a crate
   the table does not name. Today's violations go in a list of exceptions that
-  may only shrink: the server's dev-dependencies on `clausters-apps`,
-  `clausters-editing` and `clausters-document`. The table is written once, in
+  may only shrink: the server's dev-dependencies on `clausters-apps` (above
+  it) and `clausters-editing` (beside it). The table is written once, in
   `docs/architecture.md`. **Acceptance:** adding an upward edge to any
   manifest turns the test red.
+
+  Shipped as `tests/levels.rs`, which reads the table out of
+  `docs/architecture.md` ("The crates and their levels") rather than keeping
+  a copy, and takes an edge between two crates of one level as a violation
+  too. Proved by mutation: a dev-dependency of the core on the document
+  turned it red, and so did an exception that matched no manifest.
 
 - ⬜ **R14: Build profiles, and a pinned toolchain.** No manifest carries a
   `[profile]`. The dev profile takes line tables only, which is most of what

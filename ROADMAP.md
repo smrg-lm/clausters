@@ -278,11 +278,11 @@ its plan; the plan is where its acceptance is read.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found running the
   notes editor's example; what is open is where the wait belongs.
 
-- ⬜ **The second review of the workspace's shape, `R13`-`R23`** *(root
+- ⬜ **The second review of the workspace's shape, `R14`-`R23`** *(root
   `PLAN.md`, R track, "The second review: the shape of the workspace")*. Done
-  on the branch `restructure`, in this order of kind: the guards first (`R13`
-  the levels as a test, `R14` profiles and a pinned toolchain), then the two
-  that move files, each in a sitting of its own (`R15` the GUI host into the
+  on the branch `restructure`, in this order of kind: the guard that is left
+  first (`R14` profiles and a pinned toolchain), then the two that move
+  files, each in a sitting of its own (`R15` the GUI host into the
   workspace and under `crates/`, `R16` notation as a crate), then `R17` (tests
   at their level, fewer binaries), `R19` (the host's modules in levels) and
   `R20` (the bindings' shape). `R18` (a panic at a binding's door), `R21` (the
