@@ -27,8 +27,12 @@ Issues = "https://github.com/smrg-lm/clausters/issues"
 [project.scripts]
 clausters-editor = "clausters_editor._cli:main"
 
-[tool.setuptools]
-packages = ["clausters_editor"]
+# Found as namespace packages, so the staged directories (bin/, lib/,
+# Resources/) are packages setuptools knows of rather than importable
+# directories it warns it would ignore; what they hold is package data.
+[tool.setuptools.packages.find]
+include = ["clausters_editor*"]
+namespaces = true
 
 # The staged application: the binary in bin/ and Tauri's resources (the
 # documentation and the third-party licenses) where the binary looks for them,
