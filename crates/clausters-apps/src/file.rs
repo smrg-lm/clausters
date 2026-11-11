@@ -15,7 +15,7 @@
 //!
 //! What is each editor's is said through [`FileWindow`]: how its document is
 //! written to a file and read from one, and which of its forms asks where.
-//! [`application!`] gives such an editor the runtime's [`Application`], and
+//! `application!` gives such an editor the runtime's [`Application`], and
 //! the editing context carries the store out the same way for each
 //! (`crate::editing`'s file runs).
 //!
@@ -82,7 +82,7 @@ pub struct Commit {
 
 /// **What a turn says of the window's file**, beside the rest of an editor's
 /// outcome: the file to save, the document to change, and what the runtime
-/// settled. Implemented by [`outcome!`] over the usual field names.
+/// settled. Implemented by `outcome!` over the usual field names.
 pub trait FileOutcome: Turned {
     /// The file the window's document is to be saved to.
     fn set_save(&mut self, path: String);

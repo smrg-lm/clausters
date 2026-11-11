@@ -399,7 +399,7 @@ impl NotesEditor {
         self.scores = super::file::Scores(scores);
     }
 
-    /// **The window is its sequence's only holder** ([`NotesEditor::asks`]):
+    /// **The window is its sequence's only holder** (its `asks`):
     /// it has a file, and asks before a close lets unsaved changes go.
     pub fn set_asks_to_close(&mut self, asks: bool) {
         self.asks = asks;

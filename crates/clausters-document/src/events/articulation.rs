@@ -584,7 +584,7 @@ fn hold_on(sequence: &mut EventSequence, from: u64, into: u64, beat_unit: i64) {
     }
 }
 
-/// **Each pair `(from, into)` made one note** ([`hold_on`]), in order: a
+/// **Each pair `(from, into)` made one note** (`hold_on`), in order: a
 /// note made part of another answers for it from then on, so a run of them
 /// is one note.
 pub fn hold(sequence: &mut EventSequence, pairs: &[(u64, u64)]) {

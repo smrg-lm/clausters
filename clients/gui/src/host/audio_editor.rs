@@ -1391,6 +1391,7 @@ mod tests {
     /// **`--roll` opens a MIDI file, and its Save writes the file of its
     /// format to `--save-to`**: the Standard MIDI File it read is written
     /// again, and reads back with the same notes.
+    #[cfg(feature = "midi")]
     #[test]
     fn a_roll_opens_a_midi_file_and_saves_it_where_the_host_said() {
         let message = |tick, bytes| clausters_midi::TimedMessage { tick, bytes };
