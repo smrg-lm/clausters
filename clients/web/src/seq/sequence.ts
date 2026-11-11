@@ -317,8 +317,10 @@ export class EventSequence {
      * each goes on into the next of them without a new attack -- `joins` -- a
      * chord into a chord of as many notes, low to high. Where the line is
      * written as notation, its slurs are written again from the joins: a run
-     * of them is one slur that joins. MIDI has no join, so in a MIDI format
-     * notes of one pitch become one note. One edit. Throws when one is not a
+     * of them is one slur that joins. Two notes of one pitch that touch become
+     * one note, their curves one curve (on a page, a tie); MIDI has no join,
+     * so in a MIDI format notes of one pitch become one note whether they
+     * touch or not. One edit. Throws when one is not a
      * note, when no line holds two of them one after the other, or, in a MIDI
      * format, when two it would join sound different pitches.
      */

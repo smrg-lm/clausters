@@ -121,8 +121,8 @@ pub struct Notes {
     holding: Option<(String, Value)>,
     /// **Which note goes on into which** (`joins`, index pairs) -- and,
     /// where the owner sent it at all, the sign that the roll's owner speaks
-    /// the joins of a line, so `join` over notes that are not one pitch
-    /// touching asks the owner to join them.
+    /// the joins of a line, so `join` asks the owner to join the
+    /// selection: a join is its edit.
     joins: Option<Vec<(usize, usize)>>,
     /// **The pitch each line sounds over time** (`lines`): a run of `[at,
     /// value]` points each, in view units and the domain's values, drawn over
@@ -1405,16 +1405,15 @@ impl Element for Notes {
                 Some(self.notes_event())
             }
             Verb::Join if !self.selected.is_empty() => {
-                let before = self.notes.len();
-                let held = self.selected.clone();
-                self.selected = notes::join_notes(&mut self.notes, &self.selected);
-                // **Not one pitch touching: the joins of a line**, where the
-                // owner speaks them -- each selected note into the next,
-                // without a new attack, which is the owner's edit to make.
-                if self.notes.len() == before && self.joins.is_some() && self.ids {
-                    self.selected = held;
+                // **Where the owner speaks joins, a join is its edit**: notes
+                // of one pitch that touch become one there with their curves,
+                // and any other pair goes on into the next without a new
+                // attack -- what the boxes here do not hold.
+                if self.joins.is_some() && self.ids {
                     return Some(self.selection_event("join"));
                 }
+                let before = self.notes.len();
+                self.selected = notes::join_notes(&mut self.notes, &self.selected);
                 Some(if self.notes.len() == before {
                     // The roll's own four conditions, said as one sentence: a
                     // join is a **pitch's**, and what joins is what touches.
@@ -3618,9 +3617,10 @@ mod tests {
     }
 
     /// **A roll whose owner speaks joins asks it to join a line**: `join`
-    /// over notes that are not one pitch touching names them to the owner
-    /// rather than refusing, `unjoin` names them too, and both refuse with no
-    /// selection. The joins are drawn from the `joins` prop.
+    /// names the selection to the owner rather than refusing -- notes of one
+    /// pitch that touch too, which the owner makes one with their curves --
+    /// `unjoin` names them too, and both refuse with no selection. The joins
+    /// are drawn from the `joins` prop.
     #[test]
     fn a_roll_that_speaks_joins_asks_its_owner_to_join_the_selection() {
         let mut clipboard = crate::host::clipboard::Clip::default();
@@ -3655,6 +3655,18 @@ mod tests {
             said(r.command("unjoin", &mut input))[0],
             OscType::String("unjoin".into())
         );
+        // one pitch touching is the owner's join too: the boxes here hold
+        // no curves to keep
+        let mut held = roll(
+            r#"{"notes":[0.0,100.0,60.0,100.0,0.0, 100.0,100.0,60.0,100.0,0.0],
+                "note_ids":[7,9],"joins":[]}"#,
+        );
+        held.selected = vec![0, 1];
+        assert_eq!(
+            said(held.verb(Verb::Join, &mut input))[0],
+            OscType::String("join".into())
+        );
+        assert_eq!(held.notes.len(), 2, "the roll joined nothing itself");
         // a roll that was sent no joins keeps the refusal it had
         let mut plain = roll(r#"{"notes":[0.0,50.0,60.0,100.0,0.0, 100.0,50.0,62.0,100.0,0.0]}"#);
         plain.selected = vec![0, 1];

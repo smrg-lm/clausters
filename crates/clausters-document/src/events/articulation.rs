@@ -34,6 +34,7 @@ use serde_json::{Map, Value, json};
 use clausters_core::event::render::{self, Type};
 
 use super::EventSequence;
+use crate::multitrack::nodes::join_points;
 
 /// The line a note is on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -362,9 +363,10 @@ fn selected(sequence: &EventSequence, ids: &[u64]) -> Result<BTreeMap<Line, Vec<
 /// notation follow. A note goes on into one next only, so a join that named
 /// one of them before from elsewhere goes.
 ///
-/// **In a MIDI format a join holds one pitch on**: MIDI has no join, so the
-/// notes are made one note each ([`said_in_midi`]), and notes of different
-/// pitches are refused.
+/// **Two notes of one pitch that touch are one note** ([`hold`]), in every
+/// format: on a page that is a tie. **In a MIDI format a join holds one
+/// pitch on**, touching or not: MIDI has no join, so notes of one pitch are
+/// made one note, and notes of different pitches are refused.
 ///
 /// # Errors
 /// When an id is not a note, or no line holds two onsets of the selection;
@@ -373,6 +375,7 @@ pub fn join(sequence: &mut EventSequence, ids: &[u64]) -> Result<(), String> {
     let midi = matches!(sequence.format(), super::Format::Midi(_));
     let chosen = selected(sequence, ids)?;
     let mut touched = BTreeSet::new();
+    let mut held = Vec::new();
     for (line, notes) in &chosen {
         let onsets = by_onset(sequence, notes);
         if onsets.len() < 2 {
@@ -388,7 +391,12 @@ pub fn join(sequence: &mut EventSequence, ids: &[u64]) -> Result<(), String> {
                 ));
             }
             for (from, into) in pairs(a, b) {
-                if midi && !holds_one_pitch(sequence, from, into) {
+                let one = holds_one_pitch(sequence, from, into);
+                if one && (midi || touches(sequence, from, into)) {
+                    held.push((from, into));
+                    continue;
+                }
+                if midi {
                     return Err("in MIDI a join holds one pitch on: \
                          notes of different pitches are not joined"
                         .into());
@@ -413,10 +421,7 @@ pub fn join(sequence: &mut EventSequence, ids: &[u64]) -> Result<(), String> {
     if touched.is_empty() {
         return Err("select two notes or more of one line, one after the other, to join".into());
     }
-    if midi {
-        said_in_midi(sequence);
-        return Ok(());
-    }
+    hold(sequence, &held);
     slurs_from_joins(sequence, &touched);
     Ok(())
 }
@@ -482,42 +487,80 @@ fn holds_one_pitch(sequence: &EventSequence, from: u64, into: u64) -> bool {
     b.at.0 > a.at.0 && (x - y).abs() < SAME_PITCH
 }
 
-/// **`into` made part of `from`**, the note it goes on from at its own pitch
-/// (the inverse of a note's split, `super::split`): `from` sounds on to where
-/// `into` ended, and its `dur` reaches as far as `into`'s did; each curve of
-/// `into` follows on from `from`'s on the same target, or is added; and what
-/// went on from `into` goes on from `from`. `into` goes.
-fn hold_on(sequence: &mut EventSequence, from: u64, into: u64) {
+/// How far a note reaches: its written length where it is written, else
+/// what it sounds.
+fn reach(keys: &Map<String, Value>) -> f64 {
+    let sounds = render::sustain_of(keys).max(0.0);
+    if keys.contains_key("value") {
+        keys.get("dur").and_then(Value::as_f64).unwrap_or(sounds)
+    } else {
+        sounds
+    }
+}
+
+/// Whether `into` starts where `from` ends, or before: two notes that touch.
+fn touches(sequence: &EventSequence, from: u64, into: u64) -> bool {
+    let (Some(a), Some(b)) = (sequence.get(from), sequence.get(into)) else {
+        return false;
+    };
+    b.at.0 <= a.at.0 + reach(&a.keys()) + SAME_PITCH
+}
+
+/// **`into` made part of `from`**, the note before it at its own pitch (the
+/// inverse of a note's split, `super::split`): `from` sounds on to where
+/// `into` ended, and its `dur` reaches as far as `into`'s did -- written
+/// again as a value where it is written, taken away where no value is that
+/// long; each curve of the two is one curve, the first's last value held
+/// until the second's first point ([`crate::multitrack::nodes::join_points`]);
+/// and what went on from `into`, and a spanner on it, is on `from`. `into`
+/// goes.
+fn hold_on(sequence: &mut EventSequence, from: u64, into: u64, beat_unit: i64) {
     let Some(b) = sequence.index(into) else {
         return;
     };
     let gone = sequence.events.remove(b);
     let Some(a) = sequence.index(from) else {
+        sequence.events.insert(b, gone);
         return;
     };
     let offset = gone.at.0 - sequence.events[a].at.0;
     let theirs = gone.keys();
     let sounds = render::sustain_of(&theirs).max(0.0);
     let mut keys = sequence.events[a].keys();
+    let ends = render::sustain_of(&keys).max(0.0);
     if keys.contains_key("dur") {
         let dur = theirs.get("dur").and_then(Value::as_f64).unwrap_or(sounds);
         keys.insert("dur".into(), json!(offset + dur));
+        if keys.contains_key("value") {
+            match super::reading::written_value(offset + dur, beat_unit) {
+                Some(value) => keys.insert("value".into(), value),
+                None => keys.remove("value"),
+            };
+        }
     }
     render::set_key(&mut keys, "sustain", json!(offset + sounds));
     sequence.events[a].data = crate::Opaque(Value::Object(keys));
-    let curves = &mut sequence.events[a].automation;
-    for mut curve in gone.automation {
-        for point in &mut curve.points {
-            point.at.0 += offset;
-        }
-        match curves.iter_mut().find(|c| c.target == curve.target) {
-            Some(mine) => {
-                mine.points.retain(|p| p.at.0 < offset);
-                mine.points.extend(curve.points);
-            }
-            None => curves.push(curve),
-        }
+    let mut second = gone.automation;
+    let mine = std::mem::take(&mut sequence.events[a].automation);
+    let mut curves = Vec::with_capacity(mine.len() + second.len());
+    for curve in mine {
+        let other = second
+            .iter()
+            .position(|c| c.target == curve.target)
+            .map(|i| second.remove(i));
+        let points = other.as_ref().map_or(&[][..], |c| &c.points[..]);
+        curves.push(crate::multitrack::Automation {
+            points: join_points(&curve.points, ends, points, offset),
+            ..curve
+        });
     }
+    for curve in second {
+        curves.push(crate::multitrack::Automation {
+            points: join_points(&[], 0.0, &curve.points, offset),
+            ..curve
+        });
+    }
+    sequence.events[a].automation = curves;
     let after: Vec<u64> = sequence
         .events
         .iter()
@@ -527,9 +570,37 @@ fn hold_on(sequence: &mut EventSequence, from: u64, into: u64) {
     for id in after {
         set_joins(sequence, id, Some(from));
     }
+    let mut list = spanners(sequence);
+    if !list.is_empty() {
+        for spanner in &mut list {
+            for end in ["from", "to"] {
+                if spanner.get(end).and_then(Value::as_u64) == Some(into) {
+                    spanner[end] = json!(from);
+                }
+            }
+        }
+        list.retain(|s| s.get("from") != s.get("to"));
+        set_spanners(sequence, list);
+    }
 }
 
-/// **Every join into a note of the same pitch made one note** ([`hold_on`]),
+/// **Each pair `(from, into)` made one note** ([`hold_on`]), in order: a
+/// note made part of another answers for it from then on, so a run of them
+/// is one note.
+pub fn hold(sequence: &mut EventSequence, pairs: &[(u64, u64)]) {
+    if pairs.is_empty() {
+        return;
+    }
+    let beat_unit = super::reading::Transcription::of(sequence).beat_unit;
+    let mut became: BTreeMap<u64, u64> = BTreeMap::new();
+    for (from, into) in pairs {
+        let from = became.get(from).copied().unwrap_or(*from);
+        hold_on(sequence, from, *into, beat_unit);
+        became.insert(*into, from);
+    }
+}
+
+/// **Every join into a note of the same pitch made one note** ([`hold`]),
 /// in onset order, so a run of them is one note. A note held on into its own
 /// pitch is one note in every format -- on a page one value, tied where the
 /// metre cuts it -- so a conversion makes it one before anything else. A
@@ -541,15 +612,16 @@ pub fn held_on(sequence: &mut EventSequence) {
         .filter_map(|e| Some((e.at.0, e.keys().get("joins")?.as_u64()?, e.id)))
         .collect();
     joined.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.2.cmp(&b.2)));
-    // a note made part of another answers for it from then on
     let mut became: BTreeMap<u64, u64> = BTreeMap::new();
+    let mut pairs = Vec::new();
     for (_, from, into) in joined {
         let from = became.get(&from).copied().unwrap_or(from);
         if holds_one_pitch(sequence, from, into) {
-            hold_on(sequence, from, into);
+            pairs.push((from, into));
             became.insert(into, from);
         }
     }
+    hold(sequence, &pairs);
 }
 
 /// **A sequence as MIDI says it**, which has no join (a note-on there is
@@ -641,11 +713,12 @@ mod tests {
     use crate::events::{Event, EventsIntent};
     use crate::timebase::Beat;
 
-    /// A line played: four notes on channel 0, the middle two of one pitch.
+    /// A line played: four notes on channel 0, the middle two of one pitch,
+    /// none touching the next.
     fn played() -> EventSequence {
         let note = |id: u64, at: f64, midinote: i64| Event {
             id,
-            ..Event::new(at, json!({"midinote": midinote, "sustain": 1.0}))
+            ..Event::new(at, json!({"midinote": midinote, "sustain": 0.5}))
         };
         EventSequence::new(vec![
             note(1, 0.0, 60),
@@ -935,7 +1008,7 @@ mod tests {
         let ids: Vec<u64> = sequence.events.iter().map(|e| e.id).collect();
         assert_eq!(ids, vec![1, 2, 4], "the second note is part of the first");
         let held = sequence.get(2).unwrap().keys();
-        assert_eq!(render::sustain_of(&held), 2.0);
+        assert_eq!(render::sustain_of(&held), 1.5);
         assert_eq!(joins(&sequence), vec![None, None, None]);
     }
 
@@ -974,7 +1047,7 @@ mod tests {
         let mut sequence = played();
         sequence.events.push(Event {
             id: 5,
-            ..Event::new(4.0, json!({"midinote": 64, "sustain": 1.0}))
+            ..Event::new(4.0, json!({"midinote": 64, "sustain": 0.5}))
         });
         for id in [3, 4] {
             let i = sequence.index(id).unwrap();
@@ -991,10 +1064,61 @@ mod tests {
         let ids: Vec<u64> = sequence.events.iter().map(|e| e.id).collect();
         assert_eq!(ids, vec![1, 2, 4, 5]);
         let held = sequence.get(2).unwrap();
-        assert_eq!(render::sustain_of(&held.keys()), 2.0);
+        assert_eq!(render::sustain_of(&held.keys()), 1.5);
         let points: Vec<f64> = held.automation[0].points.iter().map(|p| p.at.0).collect();
         assert_eq!(points, vec![1.0, 1.5], "the curve moved with its note");
         assert_eq!(joined_from(&sequence, 4), Some(2), "what went on from 3");
         assert_eq!(joined_from(&sequence, 5), Some(4), "between two pitches");
+    }
+
+    /// **Two notes of one pitch that touch are one note**, in every format:
+    /// the curves of both one curve, the first's last value held until the
+    /// second's first point; on a page that is a tie, one written value.
+    #[test]
+    fn notes_of_one_pitch_that_touch_join_as_one_note_with_their_curves() {
+        let bend = |id: u64,
+                    points: Value|
+         -> crate::multitrack::Automation<crate::timebase::Beat> {
+            serde_json::from_value(json!({"id": id, "target": {"bend": true}, "points": points}))
+                .unwrap()
+        };
+        let mut sequence = EventSequence::new(vec![
+            Event {
+                id: 1,
+                automation: vec![bend(
+                    10,
+                    json!([{"at": 0.0, "value": 0.0}, {"at": 0.5, "value": 1.0}]),
+                )],
+                ..Event::new(0.0, json!({"midinote": 64, "sustain": 1.0}))
+            },
+            Event {
+                id: 2,
+                automation: vec![bend(11, json!([{"at": 0.25, "value": -1.0}]))],
+                ..Event::new(1.0, json!({"midinote": 64, "sustain": 1.0}))
+            },
+        ]);
+        sequence
+            .edit(EventsIntent::Join { ids: vec![1, 2] })
+            .unwrap();
+        assert_eq!(sequence.events.len(), 1);
+        let note = sequence.get(1).unwrap();
+        assert_eq!(render::sustain_of(&note.keys()), 2.0);
+        let curve = &note.automation[0].points;
+        let said = |at: f64| crate::multitrack::nodes::value_at(curve, Beat(at));
+        assert_eq!(said(1.0), 1.0, "the first's last value");
+        assert_eq!(said(1.2), 1.0, "held to the second's first point");
+        assert_eq!(said(1.25), -1.0);
+        // on a page: a tie, one value
+        let mut page = written_line();
+        for event in &mut page.events {
+            let mut keys = event.keys();
+            keys.insert("dur".into(), json!(1.0));
+            event.data = crate::Opaque(Value::Object(keys));
+        }
+        page.edit(EventsIntent::Join { ids: vec![2, 3] }).unwrap();
+        let ids: Vec<u64> = page.events.iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![1, 2, 4]);
+        assert_eq!(page.get(2).unwrap().keys()["value"], json!([1, 2]));
+        assert_eq!(joins(&page), vec![None, None, None]);
     }
 }

@@ -195,7 +195,9 @@ pub enum MultitrackIntent {
     ///
     /// The join spans from the first region's position to the last one's end,
     /// keeps the first's fade in and the last's fade out, and reads what
-    /// `content` says or else what the first one read.
+    /// `content` says or else what the first one read. Each region's curves
+    /// go on in it, the one before's last value held until the next's first
+    /// point (`nodes::join_points`).
     JoinRegions {
         /// The regions being joined, all on one take lane. Gone when this applies.
         regions: Vec<NodeId>,
@@ -967,6 +969,27 @@ fn join_regions(
     });
     let mut joined = held[0].clone();
     joined.id = into;
+    // **Each region's curves go on in the join**, measured from its start, the
+    // one before's last value held until the next's first point: a region's
+    // automation is the inverse of what its split cuts
+    for next in &held[1..] {
+        let end = (joined.end() - joined.position).0;
+        let offset = (next.position - joined.position).0;
+        let mut theirs = next.automation.clone();
+        for curve in &mut joined.automation {
+            let other = theirs
+                .iter()
+                .position(|c| c.target == curve.target)
+                .map(|i| theirs.remove(i));
+            let points = other.as_ref().map_or(&[][..], |c| &c.points[..]);
+            curve.points = super::nodes::join_points(&curve.points, end, points, offset);
+        }
+        for mut curve in theirs {
+            curve.points = super::nodes::join_points(&[], 0.0, &curve.points, offset);
+            joined.automation.push(curve);
+        }
+        joined.length = joined.end().max(next.end()) - joined.position;
+    }
     joined.length = held.iter().map(Region::end).fold(Second::ZERO, Second::max) - joined.position;
     joined.fade_out = held.last().expect("two at least").fade_out.clone();
     if let Some(content) = content {

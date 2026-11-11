@@ -86,7 +86,7 @@ mod gated {
     use clausters_document::{Beat, Opaque};
 
     use super::super::{Axis, Editing, SEXTUPLE, YDomain, monophonic, staff_voice};
-    use super::{stated, value_of};
+    use super::stated;
     use crate::intake::{Intake, groups, number};
 
     /// **What a gesture of the roll in notation mode means** (see the
@@ -539,9 +539,10 @@ mod gated {
                 );
             }
             "tie" => {
-                let mut merged = false;
+                // each note with the ones of its pitch and voice that follow
+                // it touching, made one note by the document's own hold
+                let mut pairs: Vec<(u64, u64)> = Vec::new();
                 let mut gone: BTreeSet<u64> = BTreeSet::new();
-                let beat_unit = Transcription::of(sequence).beat_unit;
                 for (i, a) in chosen.iter().enumerate() {
                     if gone.contains(&a.id) {
                         continue;
@@ -556,30 +557,16 @@ mod gated {
                         {
                             length += written(&kb);
                             gone.insert(b.id);
-                            merged = true;
+                            pairs.push((a.id, b.id));
                         }
-                    }
-                    if let Some(event) = after.events.iter_mut().find(|e| e.id == a.id) {
-                        let mut keys = event.keys();
-                        keys.insert("dur".into(), json!(length));
-                        if let Some(value) = value_of(length, beat_unit) {
-                            keys.insert("value".into(), value);
-                        }
-                        event.data = Opaque(Value::Object(keys));
                     }
                 }
-                if !merged {
+                if pairs.is_empty() {
                     return Err(
                         "a tie holds one pitch across two notes of a voice that touch".into(),
                     );
                 }
-                let events: Vec<Event> = after
-                    .events
-                    .iter()
-                    .filter(|e| !gone.contains(&e.id))
-                    .cloned()
-                    .collect();
-                after.edit(EventsIntent::SetEvents { events })?;
+                clausters_document::events::articulation::hold(&mut after, &pairs);
             }
             _ => {}
         }

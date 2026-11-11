@@ -352,6 +352,61 @@ fn a_join_spans_from_the_first_to_the_last_and_refuses_across_lanes() {
     );
 }
 
+/// **A join keeps every region's curves**, measured from the joined
+/// region's start: a target both have is one curve, the first's last value
+/// held across the gap until the second's first point, and a target only the
+/// second has comes as it was, moved.
+#[test]
+fn a_join_keeps_each_region_s_curves_and_holds_across_the_gap() {
+    let mut multitrack = multitrack();
+    let point = |at: f64, value: f64| crate::Point {
+        at: Second(at),
+        value,
+        data: Opaque::default(),
+    };
+    let level = || Opaque(serde_json::json!({"ctl": "level"}));
+    let lane = multitrack.take_lane_mut(NodeId(11)).unwrap();
+    let first = lane
+        .regions
+        .iter_mut()
+        .find(|r| r.id == NodeId(100))
+        .unwrap();
+    let mut mine = Automation::new(NodeId(42), level());
+    mine.points = vec![point(0.0, 1.0), point(2.0, 0.8)];
+    first.automation.push(mine);
+    let mut late = region(102, 6.0, 2.0);
+    let mut theirs = Automation::new(NodeId(40), level());
+    theirs.points = vec![point(0.5, 0.2), point(1.5, 0.6)];
+    let mut pan = Automation::new(NodeId(41), Opaque(serde_json::json!({"ctl": "pan"})));
+    pan.points = vec![point(0.0, -1.0)];
+    late.automation = vec![theirs, pan];
+    lane.place(late);
+    let outcome = edit(
+        &mut multitrack,
+        MultitrackIntent::JoinRegions {
+            regions: vec![NodeId(100), NodeId(102)],
+            into: NodeId(120),
+            content: None,
+            source: None,
+        },
+    );
+    assert!(outcome.applied);
+    let joined = multitrack.locate(NodeId(120)).unwrap().2;
+    let curve = &joined.automation[0];
+    let said = |at: f64, value: f64, what: &str| {
+        let there = crate::multitrack::nodes::value_at(&curve.points, Second(at));
+        assert!((there - value).abs() < 1e-6, "{what}: {there} at {at}");
+    };
+    said(1.0, 0.9, "the first's own");
+    said(5.0, 0.8, "its last value across the gap");
+    said(6.4, 0.8, "up to the second's first point");
+    said(6.5, 0.2, "the second's from there");
+    said(7.0, 0.4, "the second's own");
+    let moved: Vec<f64> = joined.automation[1].points.iter().map(|p| p.at.0).collect();
+    assert_eq!(moved, vec![6.0], "a curve only the second had");
+    assert_eq!(joined.automation[1].id, NodeId(41));
+}
+
 #[test]
 fn a_join_of_one_region_is_not_a_join() {
     let mut multitrack = multitrack();

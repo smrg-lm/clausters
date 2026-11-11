@@ -339,6 +339,62 @@ pub fn cut_points<T: Axis>(
     (head, tail)
 }
 
+/// **Two curves joined into one**, the inverse of [`cut_points`]: `first`'s
+/// points up to `end`, where the first holder ends, then `second`'s, moved by
+/// `offset`, where the second holder starts -- both numbers on the first's
+/// axis. **The first's last value holds until the second's first point**:
+/// across a gap between the two, and up to a first point the second places
+/// after its start, the curve says what the first said at its end, and it
+/// changes at the second's first point, so neither side says what it did not.
+/// Where the second starts before the first ends, the first is cut there.
+/// Either may be empty: the first alone is cut at `end` when it goes past it,
+/// and the second alone is moved.
+///
+/// What a note held on into the next cuts its curves with (`events`'
+/// articulation) and what a region's join joins its automation with
+/// (`multitrack::edit`): one join, on either axis.
+pub fn join_points<T: Axis>(
+    first: &[crate::Point<T>],
+    end: f64,
+    second: &[crate::Point<T>],
+    offset: f64,
+) -> Vec<crate::Point<T>> {
+    let moved = second.iter().map(|p| crate::Point {
+        at: T::at(p.at.number() + offset),
+        ..p.clone()
+    });
+    if first.is_empty() {
+        return moved.collect();
+    }
+    let starts = second.first().map(|p| p.at.number() + offset);
+    let end = starts.map_or(end, |starts| end.min(starts));
+    let mut out = if first.iter().any(|p| p.at.number() >= end) {
+        cut_points(first, end).0
+    } else {
+        first.to_vec()
+    };
+    let Some(starts) = starts else {
+        return out;
+    };
+    let held = value_at(&out, T::at(end));
+    if starts > out.last().map_or(end, |p| p.at.number()) {
+        out.push(crate::Point {
+            at: T::at(starts),
+            value: held,
+            data: crate::Opaque::default(),
+        });
+    }
+    // a seam a cut made: the two ends meet on one value, said once
+    if let (Some(last), Some(next)) = (out.last(), second.first())
+        && last.at.number() == starts
+        && last.value == next.value
+    {
+        out.pop();
+    }
+    out.extend(moved);
+    out
+}
+
 /// **A curve as a table on the frame axis**: `value` asked at every `step`
 /// frames from `first` through `last`, the last sample at or past it -- or
 /// the one value at `first` when the span is empty.
@@ -668,6 +724,43 @@ mod tests {
     use crate::multitrack::{Region, TakeLane};
     use crate::timebase::{Beat, Second};
     use crate::{Lifetime, SourceRef};
+
+    fn points(list: &[(f64, f64)]) -> Vec<crate::Point<f64>> {
+        list.iter()
+            .map(|&(at, value)| crate::Point {
+                at,
+                value,
+                data: crate::Opaque::default(),
+            })
+            .collect()
+    }
+
+    /// **A join undoes a cut**: the two halves of a curve joined where they
+    /// were cut say what the whole said, at every point.
+    #[test]
+    fn a_join_of_a_cut_is_the_curve_it_was() {
+        let whole = points(&[(0.0, 0.0), (1.0, 1.0), (3.0, 0.0)]);
+        let (head, tail) = cut_points(&whole, 2.0);
+        let joined = join_points(&head, 2.0, &tail, 2.0);
+        for at in [0.0, 0.5, 1.5, 2.0, 2.5, 3.0, 4.0] {
+            assert!((value_at(&joined, at) - value_at(&whole, at)).abs() < 1e-9);
+        }
+    }
+
+    /// **The first's last value holds until the second's first point**, and
+    /// the first is cut where the second starts when they overlap.
+    #[test]
+    fn a_join_holds_the_first_s_last_value_until_the_second_s_first() {
+        let first = points(&[(0.0, 0.0), (1.0, 1.0)]);
+        let second = points(&[(0.5, 0.25), (1.0, 0.5)]);
+        let joined = join_points(&first, 2.0, &second, 3.0);
+        assert_eq!(value_at(&joined, 3.4), 1.0, "held across the gap");
+        assert_eq!(value_at(&joined, 3.5), 0.25, "the second from its first");
+        let overlapped = join_points(&points(&[(0.0, 0.0), (4.0, 1.0)]), 4.0, &second, 1.0);
+        assert_eq!(value_at(&overlapped, 1.25), 0.3125, "the first, cut at 1.5");
+        assert_eq!(value_at(&overlapped, 1.5), 0.25);
+        assert!(overlapped.windows(2).all(|w| w[0].at <= w[1].at));
+    }
 
     fn sources() -> HashMap<SourceId, SourceInfo> {
         HashMap::from([
