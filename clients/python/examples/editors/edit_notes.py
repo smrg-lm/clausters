@@ -122,7 +122,8 @@ an address, so a Ctrl+click there is refused and says why.
 
 **The lane at the roll's foot is shown one at a time**, chosen by the tabs
 right over it: the notes' velocities -- a bar at each note's start, dragged
-alone or with the selection, and a drag across the lane a ramp, one Ctrl+Z --
+alone or with the selection, a drag across the lane a ramp and with the
+pencil a stroke drawn freehand, one Ctrl+Z --
 or a curve of the sequence with its value ruler. Edit > Curves adds a
 channel's curve or a note's, among those the sequence's MIDI format allows,
 and its tab comes with it.

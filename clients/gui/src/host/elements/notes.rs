@@ -329,6 +329,11 @@ enum Drag {
         press_y: f64,
         orig: Vec<(usize, i32)>,
     },
+    /// **The pencil over the velocity lane**: drawn freehand, every note
+    /// shown whose bar the pointer crosses between where it last was and
+    /// where it is takes the height the pointer is at there; the rest keep
+    /// theirs.
+    Paint { last: (f64, f64) },
     /// **A ramp across the velocity lane**: from the press, at the velocity
     /// it was at, to the pointer; every note shown that starts between the
     /// two takes the line's velocity, and the rest keep theirs.
@@ -1432,6 +1437,11 @@ impl Element for Notes {
             }
             Some(Drag::Ramp { from, orig }) => {
                 self.drag_ramp(from, &orig, at, input);
+                Events::none()
+            }
+            Some(Drag::Paint { last }) => {
+                self.paint_velocities(last, at, input);
+                self.drag = Some(Drag::Paint { last: at });
                 Events::none()
             }
             None => Events::none(),
@@ -2926,6 +2936,53 @@ mod tests {
         let mut bare = roll(r_json);
         assert!(bare.set("lane_tabs", &Value::Array(Vec::new())));
         assert!(bare.tabs_rect(rect(), pianoroll::KEYBOARD_W, &m).is_none());
+    }
+
+    /// **The pencil draws the velocities freehand**: a stroke across the
+    /// lane gives every bar it crosses the height it crossed it at, and the
+    /// pointer moving up or down past the last bar changes nothing it has
+    /// left behind -- where the pointer's ramp would have swung them all.
+    #[test]
+    fn the_pencil_draws_velocities_where_it_crosses_them() {
+        let m = Metrics::default();
+        let json = r#"{"notes":[0.0,100.0,60.0,64,0, 300.0,100.0,62.0,64,0, 600.0,100.0,64.0,64,0],
+                "min":48,"max":72,"lane":"velocity","note_ids":[1,2,3],"joins":[],
+                "tool":"draw"}"#;
+        let mut r = roll(json);
+        let probe = roll(json);
+        let input = input(&m, rect(), axis(1000.0));
+        let (_, body) = r.velocity_rects(rect(), pianoroll::KEYBOARD_W, &m).unwrap();
+        let x = |t: f64| x_of(&probe, &m, t, 1000.0);
+        let y = |v: f64| f64::from(body.y) + (1.0 - v / 127.0) * f64::from(body.h);
+        let (start, end) = (x(-0.0) - 2.0, x(700.0));
+        assert!(matches!(
+            r.press((start.max(f64::from(body.x)), y(20.0)), &input),
+            Claim::Take(_)
+        ));
+        assert!(matches!(r.drag, Some(Drag::Paint { .. })));
+        r.drag((x(150.0), y(20.0)), &input);
+        r.drag((end, y(20.0)), &input);
+        let drawn: Vec<i32> = r.notes.iter().map(|n| n.velocity).collect();
+        assert!(drawn.iter().all(|v| (*v - 20).abs() <= 1), "{drawn:?}");
+        // up and down past the last bar: nothing left behind moves
+        r.drag((end, y(120.0)), &input);
+        r.drag((end, y(5.0)), &input);
+        assert_eq!(
+            r.notes.iter().map(|n| n.velocity).collect::<Vec<_>>(),
+            drawn
+        );
+        // and back, rising, over the last two bars: each takes the height
+        // the stroke had over it, the first left as drawn
+        r.drag((x(250.0), y(100.0)), &input);
+        let (second, third) = (r.notes[1].velocity, r.notes[2].velocity);
+        assert!(second > third && third > drawn[2], "{second} {third}");
+        assert_eq!(r.notes[0].velocity, drawn[0]);
+        assert_eq!(
+            r.release((x(250.0), y(100.0)), true, &input)
+                .into_messages()
+                .len(),
+            1
+        );
     }
 
     /// **The ids name the new list whichever came first**: a sender whose map

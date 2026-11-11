@@ -626,6 +626,12 @@ impl Notes {
         if !self.editable {
             return Some(Claim::take());
         }
+        // **the pencil draws the heights freehand**, from the press on
+        if self.tool == Tool::Draw {
+            self.paint_velocities(at, at, input);
+            self.drag = Some(Drag::Paint { last: at });
+            return Some(Claim::take());
+        }
         let nav = self.view(input.time);
         let orig_of = |notes: &[Note], which: &[usize]| -> Vec<(usize, i32)> {
             which
@@ -711,6 +717,31 @@ impl Notes {
             } else {
                 *v
             };
+        }
+    }
+
+    /// **The pencil's stroke from `from` to `to` over the velocity lane**:
+    /// every note shown whose bar stands between the two takes the height the
+    /// stroke is at over it; a press alone takes the bar under it.
+    pub(super) fn paint_velocities(&mut self, from: (f64, f64), to: (f64, f64), input: &Input) {
+        let Some((_, body)) = self.velocity_rects(input.rect, input.indent, input.metrics) else {
+            return;
+        };
+        let nav = self.view(input.time);
+        if (to.0 - from.0).abs() < 1e-9 {
+            if let Some(i) = self.bar_under(to, body, &nav, input.metrics) {
+                self.notes[i].velocity = velocity_at(to.1, body);
+            }
+            return;
+        }
+        let (x0, x1) = (from.0.min(to.0), from.0.max(to.0));
+        for i in self.velocity_shown() {
+            let x = pianoroll::to_x(self.notes[i].start, &nav, body);
+            if x >= x0 && x <= x1 {
+                let along = (x - from.0) / (to.0 - from.0);
+                let y = from.1 + (to.1 - from.1) * along;
+                self.notes[i].velocity = velocity_at(y, body);
+            }
         }
     }
 
