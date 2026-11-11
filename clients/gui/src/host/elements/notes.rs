@@ -109,6 +109,10 @@ pub struct Notes {
     /// row's name, `velocity` for the notes' velocities, or `""` for none.
     /// Without it every row is drawn, one under another.
     lane: Option<String>,
+    /// **The lanes the owner offers as tabs** (`lane_tabs`, flat `name
+    /// label` pairs): drawn as a row of tabs right over the lane, a press on
+    /// one asking the owner to show it. Empty for none.
+    lane_tabs: Vec<(String, String)>,
     /// The notes' own curves, each over the note it names.
     layers: Vec<curves::Layer>,
     /// The points the owner last sent, by curve.
@@ -380,6 +384,10 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
             .get("lane")
             .and_then(Value::as_str)
             .map(str::to_string),
+        lane_tabs: props
+            .get("lane_tabs")
+            .map(curves::parse_lane_tabs)
+            .unwrap_or_default(),
         layers: curves::parse_layers(props),
         curve_points: curves::parse_points(props),
         bodies: std::collections::HashMap::new(),
@@ -515,9 +523,10 @@ impl Notes {
             indent,
             m,
         );
-        let rows = self.rows_h(r.grid.h, m);
-        r.grid.h -= rows;
-        r.keyboard.h -= rows;
+        // the lane's tabs sit right over it
+        let rows = self.rows_h(r.grid.h, m) + self.tabs_h(m);
+        r.grid.h = (r.grid.h - rows).max(0.0);
+        r.keyboard.h = (r.keyboard.h - rows).max(0.0);
         r
     }
 
@@ -835,6 +844,10 @@ impl Element for Notes {
             }
             "lane" => {
                 self.lane = v.as_str().map(str::to_string);
+                true
+            }
+            "lane_tabs" => {
+                self.lane_tabs = curves::parse_lane_tabs(v);
                 true
             }
             "tell_marks" => {
@@ -1174,6 +1187,9 @@ impl Element for Notes {
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
+        if let Some(claim) = self.press_lane_tabs(at, input) {
+            return claim;
+        }
         // A curve's own contents first: it is drawn over what it shapes.
         if let Some(claim) = self.press_curve(at, input) {
             return claim;
@@ -2702,6 +2718,60 @@ mod tests {
             .unwrap()
             .into_messages();
         assert_eq!(named[0][1], OscType::String("9".into()));
+    }
+
+    /// **The lane's tabs sit right over the lane**: the plane gives up their
+    /// row, the velocities start where the tabs end, and a press on a tab
+    /// asks the owner for its lane by name, editing nothing.
+    #[test]
+    fn the_lane_tabs_sit_over_the_lane_and_a_press_asks_for_one() {
+        let m = Metrics::default();
+        let r_json = r#"{"notes":[0.0,100.0,60.0,64,0],"min":48,"max":72,
+            "lane":"velocity","note_ids":[1],"joins":[],
+            "lane_tabs":["velocity","velocity","9","CC 1 ch 1"],
+            "curves":["9","CC 1",0,127,40]}"#;
+        let mut r = roll(r_json);
+        let tabs = r
+            .tabs_rect(rect(), pianoroll::KEYBOARD_W, &m)
+            .expect("tabs over the lane");
+        let (_, body) = r.velocity_rects(rect(), pianoroll::KEYBOARD_W, &m).unwrap();
+        assert!(
+            (tabs.y + tabs.h - body.y).abs() < 0.5,
+            "right over the lane"
+        );
+        let grid = r.regions(rect(), pianoroll::KEYBOARD_W, &m).grid;
+        assert!(
+            grid.y + grid.h <= tabs.y + 0.5,
+            "the plane ends over the tabs"
+        );
+        let (labels, index) = r.tabs_said();
+        assert_eq!((labels.len(), index), (2, 0));
+        let parts = crate::host::graphics::choice::parts(
+            crate::host::graphics::choice::View::Tabs,
+            &labels,
+            tabs,
+            crate::host::font::DEFAULT_SIZE * m.ui_scale,
+            &m,
+        );
+        let second = parts[1].1;
+        let at = (
+            f64::from(second.x + second.w * 0.5),
+            f64::from(second.y + second.h * 0.5),
+        );
+        let input = input(&m, rect(), axis(1000.0));
+        let Claim::Take(take) = r.press(at, &input) else {
+            panic!("the tab takes the press");
+        };
+        let msgs = take.events.into_messages();
+        assert_eq!(
+            msgs[0],
+            vec![OscType::String("lane".into()), OscType::String("9".into())]
+        );
+        assert_eq!(r.lane.as_deref(), Some("velocity"), "the owner shows it");
+        // a roll with no tabs offered keeps its plane
+        let mut bare = roll(r_json);
+        assert!(bare.set("lane_tabs", &Value::Array(Vec::new())));
+        assert!(bare.tabs_rect(rect(), pianoroll::KEYBOARD_W, &m).is_none());
     }
 
     /// **The ids name the new list whichever came first**: a sender whose map

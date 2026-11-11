@@ -27,6 +27,7 @@ use std::collections::HashMap;
 
 use super::*;
 use crate::host::elements::curve;
+use crate::host::graphics::choice::{self, View as ChoiceView};
 use crate::host::graphics::track;
 
 /// A curve of the sequence, as a row under the plane.
@@ -56,6 +57,12 @@ pub(super) struct Layer {
 /// with many rows still has a plane.
 const MAX_ROWS_SHARE: f32 = 0.5;
 
+/// The size the tabs over the lane are written at: a control's, at the
+/// window's scale.
+fn tab_size(m: &Metrics) -> f32 {
+    crate::host::font::DEFAULT_SIZE * m.ui_scale
+}
+
 /// **The share of a roll one lane takes** when its owner shows one at a time
 /// (`lane`): room for a value ruler beside it and a hand to draw in it.
 const LANE_SHARE: f32 = 0.28;
@@ -71,6 +78,23 @@ const BAR_W: f32 = 3.0;
 fn velocity_at(y: f64, body: Rect) -> i32 {
     let frac = 1.0 - (y - f64::from(body.y)) / f64::from(body.h.max(1.0));
     (frac * 127.0).round().clamp(1.0, 127.0) as i32
+}
+
+/// The lanes offered as tabs (`lane_tabs`): flat `name label` pairs.
+pub(super) fn parse_lane_tabs(v: &Value) -> Vec<(String, String)> {
+    let flat: Vec<String> = v
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|x| x.as_str().unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    flat.as_chunks::<2>()
+        .0
+        .iter()
+        .map(|[name, label]| (name.clone(), label.clone()))
+        .collect()
 }
 
 pub(super) fn parse_rows(props: &Map<String, Value>) -> Vec<Row> {
@@ -177,6 +201,107 @@ impl Notes {
         }
         let want: f32 = self.rows.iter().map(|r| r.height).sum::<f32>() * m.ui_scale;
         want.min(height * MAX_ROWS_SHARE).max(0.0)
+    }
+
+    /// **How tall the tabs over the lane are**: one row of tabs where the
+    /// owner shows one lane at a time and names the lanes it offers
+    /// (`lane_tabs`), none otherwise.
+    pub(super) fn tabs_h(&self, m: &Metrics) -> f32 {
+        if self.lane.is_none() || self.lane_tabs.is_empty() {
+            return 0.0;
+        }
+        choice::body_h(ChoiceView::Tabs, self.lane_tabs.len(), tab_size(m), m)
+    }
+
+    /// **The tabs that choose the lane, right over it**, across the plane's
+    /// column: where a hand looking at the lane finds what it shows.
+    pub(super) fn tabs_rect(&self, rect: Rect, indent: f32, m: &Metrics) -> Option<Rect> {
+        let h = self.tabs_h(m);
+        if h <= 0.0 {
+            return None;
+        }
+        let full = pianoroll::regions(
+            rect,
+            self.editor.ruler != Ruler::Off,
+            self.osc_markers,
+            indent,
+            m,
+        );
+        let room = self.rows_h(full.grid.h, m);
+        let y = full.grid.y + full.grid.h - room - h;
+        Some(Rect::new(full.grid.x, y, full.grid.w, h))
+    }
+
+    /// The tabs' labels, and which one is the lane shown.
+    pub(super) fn tabs_said(&self) -> (Vec<String>, usize) {
+        let shown = self.lane.as_deref().unwrap_or_default();
+        let index = self
+            .lane_tabs
+            .iter()
+            .position(|(name, _)| name == shown)
+            .unwrap_or(0);
+        let labels = self.lane_tabs.iter().map(|(_, l)| l.clone()).collect();
+        (labels, index)
+    }
+
+    /// Draws the tabs over the lane, the one under the pointer lit.
+    pub(super) fn draw_lane_tabs(&self, d: &mut Draw, ctx: &Ctx) {
+        let Some(rect) = self.tabs_rect(ctx.rect, ctx.indent, ctx.metrics) else {
+            return;
+        };
+        let size = tab_size(ctx.metrics);
+        let (labels, index) = self.tabs_said();
+        let hover = ctx
+            .hovered
+            .then_some(ctx.world.cursor)
+            .flatten()
+            .and_then(|(x, y)| {
+                let parts = choice::parts(ChoiceView::Tabs, &labels, rect, size, ctx.metrics);
+                choice::part_at(&parts, x, y)
+            });
+        let (mesh, _, theme) = d.parts();
+        mesh.rect(rect, theme.lane);
+        choice::draw(d, ChoiceView::Tabs, &labels, index, None, rect, size, hover);
+    }
+
+    /// **A tab pressed**: the owner asked to show its lane (`lane` and the
+    /// lane's name), which it answers with the lane shown. The tabs that did
+    /// not fit gather behind one, which steps through them.
+    pub(super) fn press_lane_tabs(&mut self, at: (f64, f64), input: &Input) -> Option<Claim> {
+        let rect = self.tabs_rect(input.rect, input.indent, input.metrics)?;
+        if !rect.contains(at.0, at.1) {
+            return None;
+        }
+        let (labels, index) = self.tabs_said();
+        let parts = choice::parts(
+            ChoiceView::Tabs,
+            &labels,
+            rect,
+            tab_size(input.metrics),
+            input.metrics,
+        );
+        let chosen = match choice::part_at(&parts, at.0, at.1) {
+            Some(choice::Part::Option(i)) => Some(i),
+            Some(choice::Part::More(fit)) => Some(if index >= fit && index + 1 < labels.len() {
+                index + 1
+            } else {
+                fit
+            }),
+            _ => None,
+        };
+        let events =
+            chosen
+                .and_then(|i| self.lane_tabs.get(i))
+                .map_or_else(Events::none, |(name, _)| {
+                    Events::message(vec![
+                        OscType::String("lane".into()),
+                        OscType::String(name.clone()),
+                    ])
+                });
+        Some(Claim::Take(Take {
+            events,
+            ..Take::default()
+        }))
     }
 
     /// **The rows drawn**: every one, or the lane shown where the owner shows
@@ -339,6 +464,7 @@ impl Notes {
             }
         }
         self.draw_velocities(d, ctx);
+        self.draw_lane_tabs(d, ctx);
         for (name, rect, space) in
             self.curves_on_screen(ctx.rect, ctx.indent, ctx.metrics, ctx.time)
         {

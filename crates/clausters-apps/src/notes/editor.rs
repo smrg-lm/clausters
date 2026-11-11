@@ -214,7 +214,7 @@ pub struct NotesEditor {
     /// The notes the roll last said the hand marked, by id.
     marked: Vec<u64>,
     /// **The lane shown under the roll**, by name -- the velocities, or a
-    /// curve of the sequence by its id: chosen in the tabs under the roll,
+    /// curve of the sequence by its id: chosen in the tabs the roll draws over it,
     /// the window's own.
     lane: String,
     /// **The symbols the roll draws a page's marks with**, asked of the
@@ -255,10 +255,6 @@ pub struct NotesEditor {
     /// with ([`super::file::read`]).
     scores: super::file::Scores,
 }
-
-/// **The tabs that choose the lane shown under the roll**, by the name the
-/// caller numbers them with.
-pub const LANES: &str = "lanes";
 
 /// **The panel's switch**, as the window asks for it: the View menu's
 /// entry, or a client's `verb("events_panel")`.
@@ -911,19 +907,11 @@ impl NotesEditor {
         if self.midi_in {
             drawn.insert("midi_in".into(), json!(1));
         }
-        let tabs = self.lane_tabs();
-        if tabs.is_some() {
+        if self.tabbed() {
             drawn.insert("lane".into(), json!(self.lane_shown()));
+            drawn.insert("lane_tabs".into(), self.lane_tabs());
         }
         let mut window = window(drawn, widget, &self.title, self.size);
-        if let (Some(tabs), Some(children)) = (
-            tabs,
-            window.get_mut("children").and_then(Value::as_array_mut),
-        ) {
-            // **the lane's tabs are under the roll**, and the roll shows the
-            // one they choose
-            children.push(tabs);
-        }
         if !self.bare {
             use crate::chrome::{self, App};
             chrome::dress(
@@ -969,55 +957,28 @@ impl NotesEditor {
             .collect()
     }
 
-    /// **The tabs under the roll**, one per lane, the one shown chosen; none
-    /// where the window did not number them.
-    fn lane_tabs(&self) -> Option<Value> {
-        let id = *self.dialogs.ids.get(LANES)?;
-        Some(json!({
-            "type": "choice",
-            "id": id,
-            "view": "tabs",
-            "h": 24,
-            "options": self.lane_options().0,
-            "index": self.lane_options().1,
-        }))
+    /// **Whether the roll shows one lane at a time, with its tabs**: a window
+    /// composed whole, whose caller numbered its widgets; a roll alone draws
+    /// its rows one under another.
+    fn tabbed(&self) -> bool {
+        !self.dialogs.ids.is_empty()
     }
 
-    /// The tabs' labels, and which is shown.
-    fn lane_options(&self) -> (Vec<String>, usize) {
-        let lanes = self.lanes_offered();
-        let shown = self.lane_shown();
-        let index = lanes.iter().position(|(n, _)| *n == shown).unwrap_or(0);
-        (lanes.into_iter().map(|(_, label)| label).collect(), index)
+    /// **The tabs the roll draws over its lane**, one per lane offered: flat
+    /// `name label` pairs (the roll's `lane_tabs`).
+    fn lane_tabs(&self) -> Value {
+        self.lanes_offered()
+            .into_iter()
+            .flat_map(|(name, label)| [json!(name), json!(label)])
+            .collect()
     }
 
-    /// What the tabs are corrected with: their labels and the one shown.
-    fn lane_corrections(&self) -> Vec<Correction> {
-        let Some(id) = self.dialogs.ids.get(LANES) else {
-            return Vec::new();
-        };
-        let (options, index) = self.lane_options();
-        vec![Correction {
-            widget: i64::from(*id),
-            props: json!({ "options": options, "index": index }),
-        }]
-    }
-
-    /// **A tab chosen** (the choice says its index): the lane it names
+    /// **A tab pressed on the roll** (`lane` and its name): the lane it names
     /// shown, recorded nowhere.
-    fn lane_said(&mut self, tag: &str, values: &[Value]) -> (Option<String>, Vec<Correction>) {
-        // a choice says the index it was set to, alone
-        let Some(index) = tag
-            .parse::<f64>()
-            .ok()
-            .or_else(|| values.first().and_then(Value::as_f64))
-        else {
-            return (None, Vec::new());
-        };
-        let index = index.max(0.0) as usize;
-        let lanes = self.lanes_offered();
-        if let Some((name, _)) = lanes.into_iter().nth(index) {
-            self.lane = name;
+    fn lane_said(&mut self, values: &[Value]) -> (Option<String>, Vec<Correction>) {
+        let name = values.first().and_then(Value::as_str).unwrap_or_default();
+        if self.lanes_offered().iter().any(|(n, _)| n == name) {
+            self.lane = name.into();
         }
         let roll = self.widget.map_or(0, i64::from);
         (None, self.resync_widget(roll))
@@ -1237,14 +1198,14 @@ impl NotesEditor {
         props.insert("grid_snap".into(), json!(self.snap));
         // the panel reads the sequence again
         drop(held);
-        if self.dialogs.ids.contains_key(LANES) {
+        if self.tabbed() {
             props.insert("lane".into(), json!(self.lane_shown()));
+            props.insert("lane_tabs".into(), self.lane_tabs());
         }
         let mut corrections = vec![Correction {
             widget,
             props: Value::Object(props),
         }];
-        corrections.extend(self.lane_corrections());
         corrections.extend(self.panel_corrections());
         corrections.extend(self.display_corrections());
         corrections
@@ -1293,6 +1254,9 @@ impl NotesEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        if tag == "lane" {
+            return self.lane_said(values);
+        }
         if tag == "selection" {
             // A sweep's time range, on the axis's samples, kept in beats: the
             // span the space bar plays. A range of no length is none.
@@ -1490,9 +1454,6 @@ impl Converse for NotesEditor {
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
         if let Some(name) = self.dialogs.name(widget).map(str::to_string) {
-            if name == LANES {
-                return self.lane_said(tag, values);
-            }
             if panel::names().contains(&name) {
                 return self.panel_said(&name, tag, values, out);
             }
@@ -1677,7 +1638,6 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             let mut names = dialogs::names();
             names.extend(panel::names());
             names.extend(display::names());
-            names.push(LANES.into());
             editor.dialogs.ids = request
                 .get("dialogs")
                 .and_then(Value::as_object)
@@ -1696,7 +1656,6 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             let mut names = dialogs::names();
             names.extend(panel::names());
             names.extend(display::names());
-            names.push(LANES.into());
             json!({ "dialogs": names }).to_string()
         }
         "props" => match editor.resync_widget(i64::from(widget)).into_iter().next() {

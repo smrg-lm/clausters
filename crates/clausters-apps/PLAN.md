@@ -7317,10 +7317,14 @@ wrong.
   (`clausters_apps::score::tools`), with how the field's editors lay these
   out looked up before choosing.
 
-- ⬜ **The roll's lane tabs are not seen under the lane** *(the user,
+- ✅ **The roll's lane tabs are not seen under the lane** *(the user,
   2026-11-10, the same pass)*. The tabs that choose which curve the lane
   shows (`X39`) sit at the foot of the window, where they are missed. They
   go above the lane.
+
+  Done 2026-11-11: the roll draws them itself, a row right over the lane
+  (`lane_tabs`, the `choice` element's tabs picture reused), and a press
+  asks its owner for the lane by name; the window composes no tabs widget.
 
 - ⬜ **A curve added while the display panel is up has no switch until the
   panel is shown again** *(left by `X43`, 2026-11-10)*. A lane's switch is

@@ -993,7 +993,7 @@ folding it; the velocity lane nudges the set relatively, each note saturating
 on its own -- the lane went on 2026-09-27, and Shift with a vertical drag on a
 note nudges the set the same way, the velocity drawn inside the note; *corrected
 2026-11-10*: the lane is back as one of the lanes a roll shows one at a time,
-chosen by tabs under it -- a bar per note at its start, dragged alone or as the
+chosen by tabs drawn right over it -- a bar per note at its start, dragged alone or as the
 selection, and a drag across it a ramp -- because a fill inside a box shows
 one velocity at a time and draws no ramp, while the velocity stays drawn as the
 fill and Shift with a vertical drag still nudges it). The set itself is **native view state**, not a wire prop: it lives
