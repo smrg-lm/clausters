@@ -283,7 +283,7 @@ def _gui_features(with_faust: bool, with_verovio: bool = False) -> str:
     it links the embedded server -- in that mode it *is* `clausters` the
     server, with a window over it, and it is packaged the same way down to the
     rpath its own `build.rs` writes. Without it, `clausters-gui --standalone`
-    refuses out loud and `--session` opens a window whose takes draw empty,
+    refuses out loud and `--multitrack` opens a window whose takes draw empty,
     which is not what `pip install clausters` promises.
 
     `faust` goes with it for the reason the server's does: an installed wheel

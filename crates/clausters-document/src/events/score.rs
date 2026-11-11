@@ -130,6 +130,16 @@ fn tied_value(
     value
 }
 
+/// **The sequence `sheet` plays as**: [`render`] under the default
+/// interpretation, the reading the score editor plays and draws its cursor
+/// over, and the one a score opened in a roll is read with.
+///
+/// # Errors
+/// As [`render`]'s.
+pub fn played(sheet: &Sheet) -> Result<EventSequence, String> {
+    render(sheet, &clausters_core::notation::default_interpretation())
+}
+
 /// **Render `sheet` under `interp` into a sequence** (see the module).
 ///
 /// # Errors

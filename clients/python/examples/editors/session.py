@@ -33,7 +33,7 @@ What it shows, in the order the cells run:
 **Handing it to a host with no language attached** is the other half, and it
 does not need this script: what it writes is the format, so ::
 
-    clausters-gui --session examples/out/session.json
+    clausters-gui --multitrack examples/out/session.json
 
 opens the same multitrack in a window with no Python behind it -- the tracks, the
 boxes and their curves, edited and saved by the host itself. It is worth doing

@@ -68,7 +68,7 @@ import weakref
 from dataclasses import dataclass, field
 
 from . import _native
-from .document import FIRST_VERSION, SESSION_FORMAT
+from .document import FIRST_VERSION, SESSION_APPLICATION, SESSION_FORMAT
 
 __all__ = [
     "Multitrack",
@@ -2209,6 +2209,11 @@ class Session:
     #: format is migrated to this one first (`read`), since its numbers are
     #: read differently: format 2 placed the multitrack in beats.
     format: int = SESSION_FORMAT
+    #: What the file says about itself: ``{"application": "multitrack"}``,
+    #: the application of the host it belongs to. A file written before it
+    #: was named belongs to the multitrack, and one another application's
+    #: metadata names is refused by `read`.
+    metadata: dict = field(default_factory=lambda: {"application": SESSION_APPLICATION})
     #: The multitrack. Always present, possibly empty -- which mirrors the crate,
     #: where an absent arrangement reads as an empty one rather than as nothing.
     multitrack: "Multitrack" = field(default_factory=lambda: Multitrack())
@@ -2326,7 +2331,7 @@ class Session:
 
     def write(self) -> dict:
         """The session as the crate's JSON."""
-        out: dict = {"format": self.format}
+        out: dict = {"format": self.format, "metadata": dict(self.metadata)}
         written = self.multitrack.write()
         if written:
             out["multitrack"] = written
@@ -2351,15 +2356,26 @@ class Session:
 
         The migration is the crate's (`clausters._native.session_migrate`), so
         an old file opens the same here, in the web client and in the GUI host.
+
+        Raises:
+            ValueError: when the file's metadata names another application
+                than the multitrack.
         """
         if int(written.get("format", 1)) < SESSION_FORMAT:
             from ._native import session_migrate
 
             written = session_migrate(written)
-        known = ("format", "multitrack", "views", "end", "document", "sources",
-                 "provenance")
+        metadata = dict(written.get("metadata") or {})
+        metadata.setdefault("application", SESSION_APPLICATION)
+        if metadata["application"] != SESSION_APPLICATION:
+            raise ValueError(
+                f"the file belongs to the {metadata['application']} application, "
+                "not to the multitrack")
+        known = ("format", "metadata", "multitrack", "views", "end", "document",
+                 "sources", "provenance")
         return cls(
             format=int(written.get("format", 1)),
+            metadata=metadata,
             # `arrangement` is what the field was called before 2026-09-08, read
             # so a session written then still opens.
             multitrack=Multitrack.read(

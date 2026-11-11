@@ -5043,6 +5043,13 @@ Every entry carries a checkbox.
   Whichever is taken, the joins' question below is answered by it, and
   the roll's modes, the conversion dialog and `docs/app-behavior.md` ("The
   roll's verbs, case by case") are read again against it.
+  *Decided 2026-11-10 by the user: the second way* (`docs/decisions.md`, "A
+  file says which application it belongs to, and the format is the
+  file's"). What is open is its design, to be taken into a milestone: the
+  file as the roll's object (what it holds per format, how it is opened,
+  saved and saved as), the editing mode each format allows, the conversion
+  as a file into another (and what it carries to the same notes), the
+  roll's File menu, and the clients' surface for all of it.
 
 ## Found by use: the running list of fixes
 
@@ -7100,7 +7107,9 @@ wrong.
   into a joined slur, or the conversion carries the joins over to the events
   that are the same notes. *2026-11-10, the user*: neither is taken yet; it
   waits on Future directions, "What a sequence is, as a thing that is
-  edited, and what a change of representation keeps".
+  edited, and what a change of representation keeps". *Decided there the
+  same day*: a change of format is a conversion of the file into another,
+  so this becomes what that conversion writes of a performance's joins.
 
 - ✅ **`a_page_s_marks_are_drawn_with_the_engraver_s_symbols` fails with the
   notation features on** *(found 2026-11-10 running `clausters-apps` with
@@ -7122,8 +7131,15 @@ wrong.
   has no File menu that opens one either. It should open a Standard MIDI
   File, an MEI file and the other formats the engraver reads (MusicXML,
   ABC), as `--score` does. The flag's name is the next entry's.
+  *Begun 2026-11-10*: `clausters-gui --roll [file]` opens the notes editor
+  over a Standard MIDI File or a MIDI 2.0 Clip File (told apart by the
+  header) or a score the engraver reads, read as the sequence it plays as
+  (`events::score::played`, the score editor's own reading), or over an
+  empty sequence. Open: the roll's File menu, and saving -- both are the
+  file's, so they come with "What a sequence is, as a thing that is
+  edited, and what a change of representation keeps" (Future directions).
 
-- ⬜ **The host's flags name the applications by an old word** *(the user,
+- ✅ **The host's flags name the applications by an old word** *(the user,
   2026-11-10, the same pass)*. `--session` opens the multitrack because it
   was once the only application with a session, which no longer holds:
   every application has one now. The user proposes `--roll` for the notes
@@ -7133,7 +7149,13 @@ wrong.
   (`clausters_apps::multitrack::dialogs::SESSIONS`). To decide: the flag's
   name (`--multitrack`, `--tracks`), the extension, whether `--session`
   stays as an alias for a release, and the two books' and the host's
-  `--help` with them.
+  `--help` with them. *Done 2026-11-10, by the user's decision*
+  (`docs/decisions.md`, "A file says which application it belongs to, and
+  the format is the file's"): `--multitrack` and `--roll`, `--session`
+  gone with no alias; the file stays `.json` and its `metadata` names the
+  application (`session::APPLICATION`, `{"application": "multitrack"}`),
+  written by the crate and both clients, defaulted when absent and refused
+  when it names another.
 
 - ⬜ **The roll's examples do not explain the application** *(the user,
   2026-11-10, the same pass)*. Reading the Python client's examples of the

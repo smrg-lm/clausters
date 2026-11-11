@@ -658,11 +658,49 @@ impl<'de> Deserialize<'de> for End {
     }
 }
 
+/// **The application a session file belongs to**, as its metadata names it:
+/// the multitrack, today the one application of the host whose file is a
+/// session.
+///
+/// A file is opened by the application it belongs to, so the name is written
+/// into it rather than read off its extension, which every application's JSON
+/// shares.
+pub const APPLICATION: &str = "multitrack";
+
+/// **What a session file says about itself**, beside what it holds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Metadata {
+    /// The application of the host the file belongs to ([`APPLICATION`]). A
+    /// file written before it was named belongs to the multitrack.
+    #[serde(default = "multitrack")]
+    pub application: String,
+    /// Fields a newer writer wrote. See [`Extra`].
+    #[serde(flatten, default, skip_serializing_if = "Extra::is_empty")]
+    pub extra: Extra,
+}
+
+fn multitrack() -> String {
+    APPLICATION.to_string()
+}
+
+impl Default for Metadata {
+    fn default() -> Self {
+        Self {
+            application: multitrack(),
+            extra: Extra::new(),
+        }
+    }
+}
+
 /// A session: the multitrack, saved, and where its samples are.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     /// The format this was written in. See [`FORMAT`].
     pub format: u32,
+    /// What the file says about itself: the application it belongs to
+    /// ([`Metadata`]). Absent, it is the multitrack's.
+    #[serde(default)]
+    pub metadata: Metadata,
     /// **The multitrack**: its tracks, and the timeline they are placed on.
     #[serde(
         default,
@@ -729,6 +767,7 @@ impl Session {
     pub fn new(document: Document) -> Self {
         Self {
             format: FORMAT,
+            metadata: Metadata::default(),
             multitrack: Multitrack::new(),
             views: Vec::new(),
             end: End::Open,
@@ -859,13 +898,29 @@ impl Session {
     /// A session read from its JSON, **migrated first** when it was written in
     /// an older format ([`migrate`]). The door every reader of a file goes
     /// through, so an old session opens the same everywhere.
+    ///
+    /// **A file another application's metadata names is refused** -- it is
+    /// not a multitrack's, whatever its JSON happens to hold.
     pub fn read(written: Value) -> Result<Self, serde_json::Error> {
-        serde_json::from_value(migrate(written))
+        use serde::de::Error;
+        let session: Self = serde_json::from_value(migrate(written))?;
+        if session.metadata.application != APPLICATION {
+            return Err(serde_json::Error::custom(format!(
+                "the file belongs to the {} application, not to the multitrack",
+                session.metadata.application
+            )));
+        }
+        Ok(session)
     }
 
     /// [`Session::read`] over the file's text.
     pub fn read_str(text: &str) -> Result<Self, serde_json::Error> {
         Self::read(serde_json::from_str(text)?)
+    }
+
+    /// [`Session::read`] over the file's bytes.
+    pub fn read_slice(bytes: &[u8]) -> Result<Self, serde_json::Error> {
+        Self::read(serde_json::from_slice(bytes)?)
     }
 
     /// Whether this build can read the file at all.

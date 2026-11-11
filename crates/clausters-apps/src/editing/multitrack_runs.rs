@@ -159,7 +159,8 @@ impl Editing {
     ) -> Result<Value, String> {
         let bytes = clausters_core::files::read(path).map_err(|e| format!("{path}: {e}"))?;
         let session: clausters_document::session::Session =
-            serde_json::from_slice(&bytes).map_err(|e| format!("{path}: not a session: {e}"))?;
+            clausters_document::session::Session::read_slice(&bytes)
+                .map_err(|e| format!("{path}: not a session: {e}"))?;
         self.open_session_snapshot(member, session, Some(path.to_string()), None, caller, ran)
     }
 

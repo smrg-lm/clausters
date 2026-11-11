@@ -335,7 +335,7 @@ def test_an_absent_arrangement_reads_as_an_empty_one_rather_than_as_nothing():
     # empty, so nothing downstream has to ask whether there is one.
     session = Session.read({"format": SESSION_FORMAT})
     assert len(session.multitrack.tracks) == 0
-    assert session.write() == {"format": SESSION_FORMAT}
+    assert session.write() == {"format": SESSION_FORMAT, "metadata": {"application": "multitrack"}}
 
 
 def test_a_save_knows_what_it_cannot_promise():
@@ -397,8 +397,18 @@ def test_a_frozen_source_keeps_what_the_table_said():
 
 
 def test_a_session_field_a_newer_writer_added_survives():
-    written = {"format": SESSION_FORMAT, "mixer": {"buses": [{"id": 1, "name": "reverb"}]}}
+    written = {"format": SESSION_FORMAT, "metadata": {"application": "multitrack"},
+               "mixer": {"buses": [{"id": 1, "name": "reverb"}]}}
     assert Session.read(written).write() == written
+
+
+def test_a_session_names_its_application_and_another_s_is_refused():
+    # The file says whose it is, since every application's file is JSON: a
+    # file with no metadata is the multitrack's, another's is refused.
+    assert Session().write()["metadata"] == {"application": "multitrack"}
+    assert Session.read({"format": SESSION_FORMAT}).metadata["application"] == "multitrack"
+    with pytest.raises(ValueError, match="roll"):
+        Session.read({"format": SESSION_FORMAT, "metadata": {"application": "roll"}})
 
 
 def test_a_format_2_session_opens_in_seconds():

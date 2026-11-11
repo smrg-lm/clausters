@@ -494,6 +494,13 @@ export const FIRST_VERSION = 1;
 export const SESSION_FORMAT = 5;
 
 /**
+ * **The application a session file belongs to**, as its `metadata` names it --
+ * the crate's `session::APPLICATION`. Every application's file is JSON, so the
+ * file says whose it is rather than its extension.
+ */
+export const SESSION_APPLICATION = "multitrack";
+
+/**
  * What makes two of a **domain's** edits *the same thing done the same way* --
  * the key a caller recording its own entry passes to {@link History.record},
  * or `""` when the payload is not written in that vocabulary (or the domain is

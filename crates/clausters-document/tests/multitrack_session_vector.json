@@ -1,5 +1,8 @@
 {
  "format": 5,
+ "metadata": {
+  "application": "multitrack"
+ },
  "multitrack": {
   "groove": {
    "name": "mpc60"

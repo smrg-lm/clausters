@@ -433,7 +433,8 @@ test("the multitrack inside the session is the same multitrack", async () => {
 test("an absent multitrack reads as an empty one rather than as nothing", () => {
     const session = Session.read({ format: SESSION_FORMAT });
     assert.equal(session.multitrack.tracks.length, 0);
-    assert.deepEqual(session.write(), { format: SESSION_FORMAT });
+    assert.deepEqual(session.write(),
+        { format: SESSION_FORMAT, metadata: { application: "multitrack" } });
 });
 
 test("a frozen source keeps what the table said", () => {
@@ -462,8 +463,19 @@ test("a session keeps where a pass ends", () => {
 });
 
 test("a session field a newer writer added survives", () => {
-    const written = { format: SESSION_FORMAT, mixer: { buses: [{ id: 1, name: "reverb" }] } };
+    const written = { format: SESSION_FORMAT, metadata: { application: "multitrack" },
+                      mixer: { buses: [{ id: 1, name: "reverb" }] } };
     assert.deepEqual(Session.read(written).write(), written);
+});
+
+test("a session names its application and another's is refused", () => {
+    // The file says whose it is, since every application's file is JSON: a
+    // file with no metadata is the multitrack's, another's is refused.
+    assert.deepEqual(new Session().write().metadata, { application: "multitrack" });
+    assert.equal(Session.read({ format: SESSION_FORMAT }).metadata.application, "multitrack");
+    assert.throws(
+        () => Session.read({ format: SESSION_FORMAT, metadata: { application: "roll" } }),
+        /roll/);
 });
 
 test("a format 2 session opens in seconds", async () => {

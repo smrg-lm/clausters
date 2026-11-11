@@ -87,6 +87,11 @@ FIRST_VERSION = 1
 #: a **test** that asks the crate and compares -- which is the check that did not
 #: exist when this said 1 and the crate had moved to 2.
 SESSION_FORMAT = 5
+
+#: **The application a session file belongs to**, as its ``metadata`` names
+#: it -- the crate's `session::APPLICATION`. Every application's file is
+#: JSON, so the file says whose it is rather than its extension.
+SESSION_APPLICATION = "multitrack"
 from ._native import document_apply as apply_intent
 from ._native import document_resolve as resolve_selection
 
@@ -95,6 +100,7 @@ __all__ = [
     "EVENTS",
     "FIRST_VERSION",
     "SESSION_FORMAT",
+    "SESSION_APPLICATION",
     "POINTS",
     "SAMPLES",
     "TREE",

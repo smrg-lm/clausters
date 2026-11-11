@@ -231,7 +231,7 @@ impl Host {
     }
 
     /// [`Host::open_multitrack`] as a host started over one opens it
-    /// (`--session [file]`, `--save-to`): the session at `path` saves to
+    /// (`--multitrack [file]`, `--save-to`): the session at `path` saves to
     /// `save_to` and nowhere without one, since overwriting the file it
     /// opened is a decision; a window opened over none saves its first
     /// session to `save_to`, or asks where.
@@ -311,6 +311,20 @@ impl Host {
             reply,
             None,
         )
+    }
+
+    /// **The roll over the file at `path`, for this host alone**: what
+    /// `--roll` opens. A MIDI file (a Standard MIDI File or a MIDI 2.0 Clip
+    /// File) is read as the sequence it holds; a score (MEI, MusicXML, ABC --
+    /// what the engraver reads) as the sequence it plays as. With no file the
+    /// roll opens over an empty sequence.
+    pub fn open_roll_file(&mut self, path: Option<&str>, title: &str) -> Result<i32, String> {
+        let sequence = match path {
+            None => clausters_document::EventSequence::default(),
+            Some(path) => roll_file(path).map_err(|e| format!("{path}: {e}"))?,
+        };
+        let sequence = serde_json::to_value(&sequence).map_err(|e| e.to_string())?;
+        self.open_app_notes_for(None, json!({ "sequence": sequence }), title, None)
     }
 
     /// An application of `kind` opened in a window of its own, answered to
@@ -1298,9 +1312,109 @@ impl Host {
     }
 }
 
+/// **The sequence a file holds**, read by what the file is: a Standard MIDI
+/// File (`MThd`) or a MIDI 2.0 Clip File (`SMF2CLIP`) by its header, and any
+/// other file as a score the engraver reads.
+fn roll_file(path: &str) -> Result<clausters_document::EventSequence, String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    if bytes.starts_with(b"MThd") || bytes.starts_with(b"SMF2CLIP") {
+        return midi_sequence(&bytes);
+    }
+    let text = String::from_utf8(bytes).map_err(|_| "neither a MIDI file nor a score")?;
+    score_sequence(&text)
+}
+
+/// A MIDI file's sequence, read as a client's `from_smf` and `from_clip` read it.
+#[cfg(feature = "midi")]
+fn midi_sequence(bytes: &[u8]) -> Result<clausters_document::EventSequence, String> {
+    if bytes.starts_with(b"SMF2CLIP") {
+        let read = clausters_midi::read_clip(bytes)?;
+        return clausters_document::EventSequence::from_ump(read.ppq, &read.events);
+    }
+    let read = clausters_midi::read_smf(bytes)?;
+    let tempo: Vec<(u32, u32)> = read.tempo.iter().map(|m| (m.tick, m.micros)).collect();
+    clausters_document::EventSequence::from_midi(read.ppq, &read.events, &tempo)
+}
+
+/// A host without the MIDI crate reads no MIDI file.
+#[cfg(not(feature = "midi"))]
+fn midi_sequence(_: &[u8]) -> Result<clausters_document::EventSequence, String> {
+    Err("this host was built without MIDI, so it reads no MIDI file".into())
+}
+
+/// A score's sequence: the engraver's reading of the file, as the score
+/// editor plays it (`events::score::played`).
+#[cfg(feature = "score")]
+fn score_sequence(text: &str) -> Result<clausters_document::EventSequence, String> {
+    let score = super::audio_app::engraved(text)?;
+    let score = score.lock().unwrap_or_else(|e| e.into_inner());
+    let sheet = score
+        .sheet()
+        .ok_or("the score has no model to read a sequence from")?;
+    clausters_document::events::score::played(sheet)
+}
+
+/// A host without the engraver reads no score.
+#[cfg(not(feature = "score"))]
+fn score_sequence(_: &str) -> Result<clausters_document::EventSequence, String> {
+    Err(
+        "not a MIDI file, and this host was built without the engraver, \
+         so it reads no score (rebuild with `--features score`)"
+            .into(),
+    )
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **`--roll` reads a score as the sequence it plays as**, through the
+    /// engraver: four quarter notes of ABC are four notes.
+    #[cfg(feature = "score")]
+    #[test]
+    fn a_roll_reads_a_score_the_engraver_reads() {
+        let path = std::env::temp_dir().join(format!("host-roll-{}.abc", std::process::id()));
+        std::fs::write(&path, "X:1\nT:t\nM:4/4\nL:1/4\nK:C\nc d e f|\n").unwrap();
+        let sequence = roll_file(path.to_str().unwrap());
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(sequence.unwrap().events.len(), 4);
+    }
+
+    /// **`--roll` reads a MIDI file as the sequence it holds**, and says
+    /// so when a file is neither MIDI nor text.
+    #[cfg(feature = "midi")]
+    #[test]
+    fn a_roll_reads_a_midi_file_and_refuses_what_is_none() {
+        let message = |tick, bytes| clausters_midi::TimedMessage { tick, bytes };
+        let smf = clausters_midi::write_smf(
+            &[
+                message(0, [0x90, 60, 100]),
+                message(480, [0x80, 60, 0]),
+                message(480, [0x90, 64, 90]),
+                message(960, [0x80, 64, 0]),
+            ],
+            480,
+        );
+        let path = std::env::temp_dir().join(format!("host-roll-{}.mid", std::process::id()));
+        std::fs::write(&path, smf).unwrap();
+        let sequence = roll_file(path.to_str().unwrap()).unwrap();
+        assert_eq!(sequence.events.len(), 2, "{:?}", sequence.events);
+        // the window the host opens over it is the application's roll
+        let mut host = host();
+        let roll = host.open_roll_file(path.to_str(), "roll").expect("opened");
+        until(&mut host, "the roll was never drawn", |h| {
+            h.window_def(roll).is_some()
+        });
+        let len = ask(
+            &mut host,
+            roll,
+            json!({"do": {"verb": "handle", "call": {"verb": "len"}}}),
+        );
+        assert_eq!(len["len"], 2, "{len}");
+        std::fs::write(&path, [0xff, 0xfe, 0x00]).unwrap();
+        let refused = roll_file(path.to_str().unwrap()).unwrap_err();
+        let _ = std::fs::remove_file(&path);
+        assert!(refused.contains("neither"), "{refused}");
+    }
 
     /// A mono float file of `frames` frames, each told apart.
     fn take(name: &str, frames: usize) -> String {

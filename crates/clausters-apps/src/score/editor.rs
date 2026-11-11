@@ -679,7 +679,7 @@ impl ScoreEditor {
         }
     }
 
-    /// **The score as the sequence it plays as** (`events::score::render`):
+    /// **The score as the sequence it plays as** (`events::score::played`):
     /// its repeats played out and its tempo marks its tempo map -- the same
     /// reading a page's cursor is drawn over, so the cursor is where the sound
     /// is.
@@ -691,10 +691,7 @@ impl ScoreEditor {
         let sheet = held
             .sheet()
             .ok_or_else(|| "this document has no model to render".to_string())?;
-        let sequence = clausters_document::events::score::render(
-            sheet,
-            &clausters_core::notation::default_interpretation(),
-        )?;
+        let sequence = clausters_document::events::score::played(sheet)?;
         serde_json::to_value(&sequence).map_err(|why| why.to_string())
     }
 

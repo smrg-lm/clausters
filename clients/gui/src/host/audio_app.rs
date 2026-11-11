@@ -151,7 +151,7 @@ pub(super) enum AppData {
 
 /// **A symbolic score read by the engraver this build holds**, or why not.
 #[cfg(feature = "score")]
-fn engraved(data: &str) -> Result<clausters_apps::score::Shared, String> {
+pub(super) fn engraved(data: &str) -> Result<clausters_apps::score::Shared, String> {
     clausters_notation::open(data, &clausters_notation::EngraveOptions::default())
         .map(|score| Arc::new(Mutex::new(score)))
         .map_err(|e| format!("the engraver could not read the score: {e}"))

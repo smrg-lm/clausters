@@ -73,7 +73,7 @@ import { TempoMap } from "./base/time.ts";
 import { quads } from "./defs/ugens/env.ts";
 import type { Curve as CurveSpec, PointsLike } from "./defs/ugens/env.ts";
 import { resolveServer } from "./defs/wire.ts";
-import { FIRST_VERSION, SESSION_FORMAT } from "./document.ts";
+import { FIRST_VERSION, SESSION_APPLICATION, SESSION_FORMAT } from "./document.ts";
 import { requireCore } from "./base/core.ts";
 import { UndoHistory, contexts, keyOf } from "./history.ts";
 import { readFileAt, writeFileAt } from "./base/files.ts";
@@ -2503,6 +2503,13 @@ export class Session {
      */
     format = SESSION_FORMAT;
     /**
+     * What the file says about itself: `{ application: "multitrack" }`, the
+     * application of the host it belongs to. A file written before it was
+     * named belongs to the multitrack, and one another application's metadata
+     * names is refused by {@link Session.read}.
+     */
+    metadata: Extra = { application: SESSION_APPLICATION };
+    /**
      * The multitrack. Always present, possibly empty -- which mirrors the crate,
      * where an absent arrangement reads as an empty one rather than as nothing.
      */
@@ -2653,7 +2660,7 @@ export class Session {
 
     /** The session as the crate's JSON. */
     write(): Extra {
-        const out: Extra = { format: this.format };
+        const out: Extra = { format: this.format, metadata: { ...this.metadata } };
         const multitrack = this.multitrack.write();
         if (Object.keys(multitrack).length) out.multitrack = multitrack;
         if (this.views.length) out.views = this.views.map((v) => v.write());
@@ -2676,13 +2683,25 @@ export class Session {
      *
      * The migration is the crate's (`sessionMigrate`), so an old file opens the
      * same here, in the Python client and in the GUI host.
+     *
+     * @throws Error when the file's metadata names another application than
+     *   the multitrack.
      */
     static read(written: Extra): Session {
         if (num(written.format, 1) < SESSION_FORMAT) {
             written = JSON.parse(sessionMigrate(JSON.stringify(written))) as Extra;
         }
+        const metadata: Extra = {
+            application: SESSION_APPLICATION,
+            ...((written.metadata as Extra | undefined) ?? {}),
+        };
+        if (metadata.application !== SESSION_APPLICATION) {
+            throw new Error(`the file belongs to the ${String(metadata.application)} `
+                + "application, not to the multitrack");
+        }
         const session = new Session();
         session.format = num(written.format, 1);
+        session.metadata = metadata;
         // `arrangement` is what the field was called before 2026-09-08, read so a
         // session written then still opens.
         session.multitrack = Multitrack.read(
@@ -2694,7 +2713,7 @@ export class Session {
             session.sources.set(Number(id), Source.read(entry as Extra));
         }
         if (written.provenance !== undefined) session.provenance = written.provenance;
-        session.extra = rest(written, "format", "multitrack", "arrangement", "views",
+        session.extra = rest(written, "format", "metadata", "multitrack", "arrangement", "views",
                              "end", "document", "sources", "provenance");
         return session;
     }

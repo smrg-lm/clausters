@@ -102,7 +102,7 @@ one edit of the window's, which its Ctrl+Z takes back.
 its first note an octave up: Ctrl+Z in either window takes it back.
 
 The session is written to ``clients/python/examples/out/``, so
-``clausters-gui --session clients/python/examples/out/edit_multitrack.json``
+``clausters-gui --multitrack clients/python/examples/out/edit_multitrack.json``
 opens the same multitrack with no Python behind it, and ``load_multitrack.py``
 reopens it from a script.
 

@@ -311,7 +311,7 @@ artifacts, each with the features its mode needs:
 | the visual / GUI server, **and the standalone application** | `clausters-gui` binary | its crate defaults **+ `standalone-faust`** |
 
 The host is built as the **standalone application** rather than only as a
-client: `clausters-gui --standalone <name>` and `clausters-gui --session <file>`
+client: `clausters-gui --standalone <name>` and `clausters-gui --multitrack <file>`
 open a window with the embedded server behind them, so a saved session sounds
 from an installed wheel with no script and no server process. In that mode the
 host *is* `clausters` the server with a window over it, which is why it is

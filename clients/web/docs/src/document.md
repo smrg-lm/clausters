@@ -1146,6 +1146,13 @@ the same two steps without the file, for a caller that keeps it elsewhere. The
 file is on the same filesystem `Buffer.read` names: the disk under node, and the
 page's own storage (`opfs`) in a tab.
 
+**A session file says whose it is.** Every application's file is JSON, so the
+extension cannot tell them apart: the file's `metadata` names the application of
+the host it belongs to, `{ application: "multitrack" }`, and a session's
+`metadata` holds it. A file written before the field existed is the multitrack's,
+and `read` refuses one whose metadata names another application rather than
+reading it as an empty multitrack.
+
 A source's **lifetime** is what makes saving honest: `external` is the user's own
 file, which is never written; `session` is persisted beside the document;
 `temporary` is a destructive edit's working copy. A session whose table does not
@@ -1200,7 +1207,7 @@ the folder the session was opened from: two clips over one take are two windows
 onto one take, never two copies that drift apart on the first edit. A **join**
 is read from the takes it is made of, so it plays the spans the file states. What
 is read and how is the shared crate's, so the Python client and `clausters-gui
---session` open the same session the same way.
+--multitrack` open the same session the same way.
 
 A *volatile* source opens unresolved rather than as a lie -- its box drawn,
 placed and silent -- and the rest of the multitrack opens: half a session is worth

@@ -674,3 +674,20 @@ fn a_format_2_session_with_no_tempo_keeps_its_numbers() {
     assert_eq!(new["multitrack"]["markers"][0]["at"], 3.0);
     assert_eq!(new["format"], FORMAT);
 }
+
+/// **A session says which application it belongs to**: the multitrack's
+/// writes its name, a file written before the name reads as the
+/// multitrack's, and one another application's metadata names is refused.
+#[test]
+fn a_session_names_its_application_and_another_s_is_refused() {
+    let written = serde_json::to_value(Session::new(Document::empty())).unwrap();
+    assert_eq!(written["metadata"]["application"], APPLICATION);
+
+    let older = serde_json::json!({"format": FORMAT});
+    let session = Session::read(older).expect("a file with no metadata reads");
+    assert_eq!(session.metadata.application, APPLICATION);
+
+    let other = serde_json::json!({"format": FORMAT, "metadata": {"application": "roll"}});
+    let refused = Session::read(other).unwrap_err().to_string();
+    assert!(refused.contains("roll"), "{refused}");
+}

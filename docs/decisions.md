@@ -11754,3 +11754,33 @@ mints. What comes in is taken in once, where it comes in:
   the curves they are, and only what the page adds is minted, with every
   reference renamed at once. A cut made in a window is read as the region it
   was cut from, not as a new box.
+
+## A file says which application it belongs to, and the format is the file's (2026-11-10)
+
+**Context.** The host's flags named its applications by history: `--session`
+opened the multitrack because it was once the only application with a
+session. And the roll converted a sequence between MIDI and notation in
+place, as though one sequence were every format at once, so what one format
+holds and the other does not (a performance's joins first) was lost by a
+switch of mode.
+
+**Decision** (the user's).
+
+- **The flags name the applications**: `--multitrack`, `--score`, `--audio`
+  and `--roll`. `--session` is gone, with no alias: the project is before
+  1.0 and no client launches the host with it.
+- **A session file stays `.json`, and says whose it is.** Every
+  application's file is JSON, so the extension cannot tell them apart; the
+  file's `metadata` names the application (`{"application": "multitrack"}`).
+  The three writers (the crate, both clients) write it, every reader defaults
+  a file without it to the multitrack and refuses one that names another. It
+  is an added field, so the session format does not move.
+- **The format is the file's.** A sequence is opened *as* a file of one
+  format -- MIDI 1.0, MIDI 2.0, MPE, MEI or MusicXML -- the roll offers only
+  the editing mode that format supports, and a change of format is an
+  explicit conversion of the file into another. The alternative, a table of
+  what each format holds and what a switch carries or keeps aside, was not
+  taken: it keeps one object pretending to be several, which is the
+  confusion the decision removes. The design is in
+  `crates/clausters-apps/PLAN.md`, Future directions, "What a sequence is,
+  as a thing that is edited, and what a change of representation keeps".

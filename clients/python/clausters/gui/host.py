@@ -951,7 +951,7 @@ class GuiHost:
 
         **Per view.** A view draws from the counter named on it or on its
         nearest ancestor, then its window's, then the host's own default (its
-        ``--clock``, and ``--session`` implies ``transport``) -- so one window
+        ``--clock``, and ``--multitrack`` implies ``transport``) -- so one window
         can hold two views that play two timelines, each on its own transport.
         A word the host does not know, or an id no window holds, is logged and
         ignored, so the line keeps drawing what it was drawing. It is

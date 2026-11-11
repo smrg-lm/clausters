@@ -11,7 +11,7 @@ program would.
 - **Editing** is `edit` over the session: the multitrack, the GUI host's
   application, reads each take from the file beside the session, the join from
   the takes it is made of, and the notes from the file -- the same opening
-  ``clausters-gui --session`` does. The join plays the glide's first half and
+  ``clausters-gui --multitrack`` does. The join plays the glide's first half and
   then the saw's second, the parts the file states; the box on the keys track
   plays the notes the file holds, as the roll left them if a save came after an
   edit -- double click it to open the roll again. Save writes the session back.
