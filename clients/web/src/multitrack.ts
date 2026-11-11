@@ -132,7 +132,7 @@ async function writeText(path: string, text: string): Promise<void> {
 }
 
 /** Everything in `written` except the keys this build knows. */
-function rest(written: Extra, ...known: string[]): Extra {
+function unknownFields(written: Extra, ...known: string[]): Extra {
     const out: Extra = {};
     for (const [key, value] of Object.entries(written)) {
         if (!known.includes(key)) out[key] = value;
@@ -556,7 +556,7 @@ export class Automation {
     get extra(): Extra {
         const written = this.#written();
         if (this.#holder === null) return { ...(written.extra as Extra) };
-        return rest(written, ...CURVE_FIELDS);
+        return unknownFields(written, ...CURVE_FIELDS);
     }
 
     set extra(value: Extra) {
@@ -656,7 +656,7 @@ export class Automation {
             points: [...((written.points as Extra[]) ?? [])],
             visible: Boolean(written.visible),
             enabled: written.enabled === undefined ? true : Boolean(written.enabled),
-            extra: rest(written, "id", "name", "target", "points", "visible", "enabled"),
+            extra: unknownFields(written, "id", "name", "target", "points", "visible", "enabled"),
         });
     }
 }
@@ -870,7 +870,7 @@ export class Region extends Held {
 
     /** Fields a newer writer wrote, carried as they are. */
     get extra(): Extra {
-        return rest(this.#region(), ...REGION_FIELDS);
+        return unknownFields(this.#region(), ...REGION_FIELDS);
     }
 
     /**
@@ -1182,7 +1182,7 @@ export class Track extends Held {
 
     /** Fields a newer writer wrote, carried as they are. */
     get extra(): Extra {
-        return rest(this.found(), ...TRACK_FIELDS);
+        return unknownFields(this.found(), ...TRACK_FIELDS);
     }
 
     /** Its take lanes, as a live collection. */
@@ -1501,7 +1501,7 @@ export class Tempo {
             at: num(written.at),
             tempo: num(written.tempo),
             ramp: Boolean(written.ramp),
-            extra: rest(written, "at", "tempo", "ramp"),
+            extra: unknownFields(written, "at", "tempo", "ramp"),
         });
     }
 }
@@ -1535,7 +1535,7 @@ export class Meter {
             at: num(written.at),
             beats: num(written.beats),
             unit: num(written.unit),
-            extra: rest(written, "at", "beats", "unit"),
+            extra: unknownFields(written, "at", "beats", "unit"),
         });
     }
 }
@@ -1819,7 +1819,7 @@ export class Multitrack implements CurveHolder {
     writeCurve(scope: CurveScope, written: Extra, label: string): number {
         const id = num(written.id);
         const current = this.writtenCurve(scope, id);
-        const without = (curve: Extra, key: string) => JSON.stringify(rest(curve, key));
+        const without = (curve: Extra, key: string) => JSON.stringify(unknownFields(curve, key));
         if (current !== null && without(current, "visible") === without(written, "visible")) {
             this.editIntent({ intent: "showautomation", automation: id,
                               visible: Boolean(written.visible) }, label);
@@ -1858,7 +1858,7 @@ export class Multitrack implements CurveHolder {
 
     /** Fields a newer writer wrote, carried as they are. */
     get extra(): Extra {
-        return rest(this.write(), "version", "tracks", "channels", "tempo", "meter",
+        return unknownFields(this.write(), "version", "tracks", "channels", "tempo", "meter",
                     "markers", "loop_span", "punch");
     }
 
@@ -2192,7 +2192,7 @@ export class Source {
             sampleRate: written.sample_rate as number | undefined,
             provenance: written.provenance,
             editing: written.editing as Extra | undefined,
-            extra: rest(written, "location", "lifetime", "generation", "channels",
+            extra: unknownFields(written, "location", "lifetime", "generation", "channels",
                         "frames", "sample_rate", "provenance", "editing"),
         });
     }
@@ -2278,7 +2278,7 @@ export class TrackView {
         view.collapsed = written.collapsed === true;
         view.takeLanesShown = written.take_lanes_shown === true;
         if (written.color !== undefined) view.color = String(written.color);
-        view.extra = rest(written, "height", "collapsed", "take_lanes_shown", "color");
+        view.extra = unknownFields(written, "height", "collapsed", "take_lanes_shown", "color");
         return view;
     }
 }
@@ -2298,7 +2298,7 @@ export class TakeLaneView {
     static read(written: Extra): TakeLaneView {
         const view = new TakeLaneView();
         if (written.height !== undefined) view.height = num(written.height);
-        view.extra = rest(written, "height");
+        view.extra = unknownFields(written, "height");
         return view;
     }
 }
@@ -2476,7 +2476,7 @@ export class View {
         for (const [id, entry] of Object.entries((written.take_lanes as Extra) ?? {})) {
             view.takeLanes.set(Number(id), TakeLaneView.read(entry as Extra));
         }
-        view.extra = rest(written, "name", "visible", "scroll", "quant",
+        view.extra = unknownFields(written, "name", "visible", "scroll", "quant",
                           "autofit", "selection", "selected", "focused",
                           "detail", "tracks", "take_lanes");
         return view;
@@ -2713,7 +2713,7 @@ export class Session {
             session.sources.set(Number(id), Source.read(entry as Extra));
         }
         if (written.provenance !== undefined) session.provenance = written.provenance;
-        session.extra = rest(written, "format", "metadata", "multitrack", "arrangement", "views",
+        session.extra = unknownFields(written, "format", "metadata", "multitrack", "arrangement", "views",
                              "end", "document", "sources", "provenance");
         return session;
     }

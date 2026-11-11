@@ -9,13 +9,13 @@ name = "clausters-gui"
 version = "0.11.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
-description = "Exploratory GUI client track for Clausters: a GPU waveform prototype and the widget-protocol design."
+description = "The Clausters GUI host: the program that owns the windows, the widgets and the GPU, driven over OSC by any client or run standalone."
 
 [lib]
 name = "clausters_gui"
 path = "src/lib.rs"
 # `cdylib` so wasm-bindgen can emit the browser host's `.wasm` + JS bindings
-# (the G12 web surface); `rlib` so the native binaries still link the library.
+# (the web surface); `rlib` so the native binaries still link the library.
 crate-type = ["cdylib", "rlib"]
 
 # Binaries are auto-discovered from src/bin/ (waveform, spectrogram, and the
@@ -42,8 +42,8 @@ midi = ["dep:clausters-midi"]
 standalone = ["dep:clausters", "clausters/synth"]
 # Standalone with Faust support: also pull the server's `faust` feature so a
 # bundle's persisted FaustDefs reload into the embedded server. Needs libfaust
-# at build time (see the root LOG.md F0 recipe); without it standalone still
-# runs, just skipping FaustDefs (with a warning). Build with
+# at build time (see BUILD.md, "Building libfaust from source"); without it
+# standalone still runs, just skipping FaustDefs (with a warning). Build with
 # `cargo build --features standalone-faust`.
 standalone-faust = ["standalone", "clausters/faust"]
 # A score file opened by this host alone (`--score`): the engraver that reads
@@ -188,11 +188,11 @@ clausters-net = { path = "../../crates/clausters-net" }
 # clipboard keeps everything that is not text to itself.
 arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
 
-# The browser host (`host::web`, G12/G13): wasm-bindgen for the JS entry point
+# The browser host (`host::web`): wasm-bindgen for the JS entry point
 # and the binding surface, wasm-bindgen-futures to await the async WebGPU
 # bring-up off the main thread, the panic hook so a Rust panic shows in the
 # browser console, and `web-sys`/`js-sys` for the console logs and the native
-# `WebSocket` carrying the audio-server leg (G13). Native builds pull none.
+# `WebSocket` carrying the audio-server leg. Native builds pull none.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # **The engine an editing application holds**, in the applications' build
 # (`apps`): the same crate as natively, without the audio device, its

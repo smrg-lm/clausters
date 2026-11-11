@@ -1,5 +1,5 @@
 [workspace]
-# C0: the server crate is the workspace root (all existing paths stay put);
+# The server crate is the workspace root (all existing paths stay put);
 # the shared native core and its C ABI live under `crates/`. See clients/python/PLAN.md.
 members = [
     "crates/clausters-app-engine",
@@ -47,7 +47,7 @@ repository = "https://github.com/smrg-lm/clausters"
 readme = "README.md"
 
 [lib]
-# The cdylib is the M14 embed surface (a versioned C ABI, see src/embed.rs);
+# The cdylib is the embed surface (a versioned C ABI, see src/embed.rs);
 # the rlib is everything else. Both build always; the C exports only exist
 # with the `embed` feature.
 crate-type = ["rlib", "cdylib"]
@@ -63,7 +63,7 @@ default = ["synth", "faust", "realtime", "midi", "pipewire", "rtprio"]
 synth = []
 # cpal backend. Can be disabled for tests/CI without an audio device.
 realtime = ["dep:cpal"]
-# M17 live MIDI input via midir (ALSA seq on Linux -- the same system MIDI any
+# Live MIDI input via midir (ALSA seq on Linux -- the same system MIDI any
 # DAW/controller uses; reuses the libasound cpal already links). Off in
 # `--no-default-features` builds, which have no system audio/MIDI deps.
 midi = ["dep:midir"]
@@ -84,7 +84,7 @@ midi-jack = ["midi", "midir/jack"]
 # Drop it (`--no-default-features` plus the others) for a SynthDef-only server
 # that builds with no libfaust on the system.
 faust = []
-# M14: the C ABI for embedding the server in-process (clausters_* exports).
+# The C ABI for embedding the server in-process (clausters_* exports).
 embed = []
 # Isolated native hosting infrastructure; the def family is added separately.
 plugin = ["dep:clausters-plugin-host"]
@@ -160,7 +160,7 @@ hound = "3"
 # Multi-format audio decoding for `/buffer_read`/`/buffer_allocRead` (FLAC, OGG/Vorbis,
 # MP3, MP4/AAC, ALAC, AIFF, ...). Pure Rust, decode-only; WAV stays on hound.
 symphonia = { version = "0.6", default-features = false, features = ["flac", "ogg", "vorbis", "mpa", "isomp4", "aac", "alac", "adpcm", "pcm", "wav", "aiff", "caf"] }
-# M17: live MIDI I/O over the OS's standard MIDI (ALSA seq on Linux). Pure
+# Live MIDI I/O over the OS's standard MIDI (ALSA seq on Linux). Pure
 # Rust over libasound (already pulled in by cpal); creates virtual ports.
 midir = { version = "0.11", optional = true }
 rosc = "0.11"
@@ -177,7 +177,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(unix)'.dependencies]
-# Only for mmap-ing the M14 shared-memory segment (already in the tree via
+# Only for mmap-ing the shared-memory segment (already in the tree via
 # cpal, so this adds no new download).
 libc = "0.2"
 

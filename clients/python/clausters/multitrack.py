@@ -91,7 +91,7 @@ __all__ = [
 ]
 
 
-def _rest(written: dict, *known: str) -> dict:
+def _unknown_fields(written: dict, *known: str) -> dict:
     """Whatever a newer writer wrote and this build has no field for.
 
     Carried, never read. A reader that dropped it would lose a multitrack the next
@@ -526,7 +526,7 @@ class Automation:
             points=list(written.get("points", [])),
             visible=bool(written.get("visible", False)),
             enabled=bool(written.get("enabled", True)),
-            extra=_rest(written, *known),
+            extra=_unknown_fields(written, *known),
         )
 
     def __eq__(self, other) -> bool:
@@ -742,7 +742,7 @@ class Region(_Held):
     @property
     def extra(self) -> dict:
         """Fields a newer writer wrote, carried as they are."""
-        return _rest(self._region(), *_REGION_FIELDS)
+        return _unknown_fields(self._region(), *_REGION_FIELDS)
 
     @property
     def automation(self) -> "Curves":
@@ -1055,7 +1055,7 @@ class Track(_Held):
     @property
     def extra(self) -> dict:
         """Fields a newer writer wrote, carried as they are."""
-        return _rest(self._found(), *_TRACK_FIELDS)
+        return _unknown_fields(self._found(), *_TRACK_FIELDS)
 
     @property
     def take_lanes(self) -> TakeLanes:
@@ -1352,7 +1352,7 @@ class Tempo:
     def read(cls, written: dict) -> "Tempo":
         return cls(at=float(written.get("at", 0.0)), tempo=float(written["tempo"]),
                    ramp=bool(written.get("ramp", False)),
-                   extra=_rest(written, "at", "tempo", "ramp"))
+                   extra=_unknown_fields(written, "at", "tempo", "ramp"))
 
 
 @dataclass
@@ -1378,7 +1378,7 @@ class Meter:
     def read(cls, written: dict) -> "Meter":
         return cls(at=float(written.get("at", 0.0)),
                    beats=int(written["beats"]), unit=int(written["unit"]),
-                   extra=_rest(written, "at", "beats", "unit"))
+                   extra=_unknown_fields(written, "at", "beats", "unit"))
 
 
 @dataclass
@@ -1641,7 +1641,7 @@ class Multitrack:
     @property
     def extra(self) -> dict:
         """Fields a newer writer wrote, carried as they are."""
-        return _rest(self.write(), "version", "tracks", "channels", "tempo", "meter",
+        return _unknown_fields(self.write(), "version", "tracks", "channels", "tempo", "meter",
                      "markers", "loop_span", "punch")
 
     @property
@@ -1924,7 +1924,7 @@ class Source:
             sample_rate=written.get("sample_rate"),
             provenance=written.get("provenance"),
             editing=written.get("editing"),
-            extra=_rest(written, *known),
+            extra=_unknown_fields(written, *known),
         )
 
 
@@ -2016,7 +2016,7 @@ class TrackView:
             collapsed=bool(written.get("collapsed", False)),
             take_lanes_shown=bool(written.get("take_lanes_shown", False)),
             color=written.get("color"),
-            extra=_rest(written, *known),
+            extra=_unknown_fields(written, *known),
         )
 
 
@@ -2037,7 +2037,7 @@ class TakeLaneView:
 
     @classmethod
     def read(cls, written: dict) -> "TakeLaneView":
-        return cls(height=written.get("height"), extra=_rest(written, "height"))
+        return cls(height=written.get("height"), extra=_unknown_fields(written, "height"))
 
 
 @dataclass
@@ -2182,7 +2182,7 @@ class View:
                     for id, v in (written.get("tracks") or {}).items()},
             take_lanes={int(id): TakeLaneView.read(v)
                    for id, v in (written.get("take_lanes") or {}).items()},
-            extra=_rest(written, *known),
+            extra=_unknown_fields(written, *known),
         )
 
 
@@ -2386,5 +2386,5 @@ class Session:
             sources={int(id): Source.read(entry)
                      for id, entry in (written.get("sources") or {}).items()},
             provenance=written.get("provenance"),
-            extra=_rest(written, *known),
+            extra=_unknown_fields(written, *known),
         )

@@ -179,7 +179,7 @@ jobs:
             .
             clients/gui
       - run: cargo test --manifest-path clients/gui/Cargo.toml
-      # G11 browser-readiness gate: the agnostic host core must keep
+      # Browser-readiness gate: the agnostic host core must keep
       # compiling for wasm32 with the native I/O shell excluded.
       - name: wasm build gate (GUI host)
         working-directory: clients/gui
