@@ -20,10 +20,12 @@ reached from its menu bar or its toolbar:
 - the **toolbar** holds the transport, then the five **tools** as icons --
   pointer, pencil, eraser, scissors, stretch -- and the snap switch's
   magnet; the tool lit is the one a plain press uses;
+- the **time ruler** over the roll, the window's, as the multitrack's is
+  over its tracks: View > Ruler (``editor.ruler``) counts it in bars and
+  beats, minutes and seconds or samples;
 - the **roll** itself: the keyboard on the left, the grid of notes, under
   it **one lane** -- the velocities, or a curve -- with the **tabs that
-  choose it right over it**, the strip of OSC markers, and the time ruler
-  along the bottom;
+  choose it right over it**, and the strip of OSC markers;
 - the **events panel** beside the roll (View > *Events and inspector*,
   ``editor.events_panel = True``): the selected notes' time, length, pitch,
   velocity and channel, which a value typed changes on all of them at once,
@@ -57,7 +59,7 @@ have. The pass does not stop at the last note: it rolls on, as a
 multitrack's does, until the space bar stops it -- ``editor.end =
 "contents"`` stops it where the last note ends, and a beat is an end marker.
 
-**Click the ruler at the bottom** to place the position cursor: the play line
+**Click the ruler at the top** to place the position cursor: the play line
 goes there, and the next play starts from it. While it plays, the line is
 where the transport is. **Home** puts the cursor at the start and **End** where
 the last note ends. A time range swept over empty grid is what the space bar
@@ -116,7 +118,7 @@ at the play line and lasts as long as it is held. Each one is an edit of the
 sequence like a note a hand drew, so it appears in the other windows and
 **Ctrl+Z** takes it back.
 
-**The strip over the ruler is the sequence's OSC markers**, shown and not
+**The strip at the roll's foot is the sequence's OSC markers**, shown and not
 written: a marker is the message it sends, and the strip has no way to type
 an address, so a Ctrl+click there is refused and says why.
 

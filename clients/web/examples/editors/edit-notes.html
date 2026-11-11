@@ -41,10 +41,12 @@ roll in MIDI mode refuses with why);</li>
 <li>the <b>toolbar</b> holds the transport, then the five <b>tools</b> as
 icons -- pointer, pencil, eraser, scissors, stretch -- and the snap switch's
 magnet; the tool lit is the one a plain press uses;</li>
+<li>the <b>time ruler</b> over the roll, the window's, as the multitrack's is
+over its tracks: View &gt; Ruler (<code>editor.setRuler</code>) counts it in
+bars and beats, minutes and seconds or samples;</li>
 <li>the <b>roll</b> itself: the keyboard on the left, the grid of notes, under
 it <b>one lane</b> -- the velocities, or a curve -- with the <b>tabs that
-choose it right over it</b>, the strip of OSC markers, and the time ruler
-along the bottom;</li>
+choose it right over it</b>, and the strip of OSC markers;</li>
 <li>the <b>events panel</b> beside the roll (View &gt; <i>Events and
 inspector</i>, <code>editor.setEventsPanel(true)</code>): the selected notes'
 time, length, pitch, velocity and channel, which a value typed changes on all
@@ -80,7 +82,7 @@ stop at the last note: it rolls on, as a multitrack's does, until the space bar
 stops it -- <code>editor.end = "contents"</code> stops it where the last note
 ends, and a beat is an end marker.
 
-<b>Click the ruler at the bottom</b> to place the position cursor: the play
+<b>Click the ruler at the top</b> to place the position cursor: the play
 line goes there, and the next play starts from it. While it plays, the line is
 where the transport is. <b>Home</b> puts the cursor at the start and <b>End</b>
 where the last note ends. A time range swept over empty grid is what the space
@@ -148,7 +150,7 @@ difference from the script</b>: a native host opens a port of its own, named
 port, so here the host listens to every MIDI input the browser has -- which the
 browser asks your permission for when the roll opens.
 
-<b>The strip over the ruler is the sequence's OSC markers</b>, shown and not
+<b>The strip at the roll's foot is the sequence's OSC markers</b>, shown and not
 written: a marker is the message it sends, and the strip has no way to type an
 address, so a Ctrl+click there is refused and says why.
 
