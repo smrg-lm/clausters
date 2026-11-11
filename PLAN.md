@@ -2351,6 +2351,227 @@ four `gui/guidef.py` helpers that look Python-only are not — `correlation` and
 `lissajous` are reachable through the wasm core, and the two file writers have
 no page equivalent by design.
 
+### The second review: the shape of the workspace (2026-11-11)
+
+A review of the workspace as a whole, the GUI host and the editor application
+included, fourteen weeks after the first. What it found is of another kind: the
+files are in order and the *crates* are not. The dependency graph already has
+levels and nothing states or checks them; the GUI host is a workspace of its
+own that compiles the server anyway; `clausters-core` holds four things with
+four audiences; a panic behind a binding takes the caller's process with it;
+and the build directories take 371 GB.
+
+The track's invariant holds for all of it: behaviour is preserved, no assertion
+is edited (a test moved to another file is not an edit), and what touches the
+audio thread closes with the bench.
+
+**The work is done on a branch, `restructure`.** These entries are written on
+`main` first, so that `main` says what is in progress and the branch only
+closes checkboxes. The branch merges `main` at the start of every sitting (a
+merge rather than a rebase, so a directory rename is resolved once), and it is
+left green and mergeable at the end of each.
+
+**When each one is done is part of the plan**, because `main` moves fast
+exactly where these land (the GUI host and `clausters-apps` are the two most
+edited directories of the tree):
+
+- What stops drift goes first and collides with nothing: `R13`, `R14`.
+- What moves files goes at a quiet point, in a sitting that does nothing else,
+  and never right before a tag, since it changes paths the release workflow
+  reads: `R15`, `R16`.
+- `R16` goes before the `Q` track opens and before `X11` continues. The first
+  adds a third notation crate and the second adds references to the module
+  that moves, so every week makes it dearer.
+- What orders a crate from inside is done one cycle per visit, with the
+  milestone that already has that module open: `R19`.
+- What rewrites records goes last and on `main`, since it edits every plan and
+  would conflict with each merge: `R23`.
+- `R18`, `R21` and `R22` depend on nothing and are taken between the others.
+
+Left out on purpose: a virtual workspace with the server moved under `crates/`
+(every path the rules, the skills, CI and the books name would move, for no
+gain in behaviour); splitting `clausters-apps` by application and the host's
+files past four thousand lines (done with the next visit to each); and moving
+the transport out of `src/server/engine.rs`, which touches the audio thread
+and so waits for `T3`, the milestone that already owes the bench.
+
+- ⬜ **R13: The levels are a rule.** The crates already sit in levels and a
+  dependency only ever points down, which is cargo's doing for ordinary
+  dependencies and nobody's for dev-dependencies:
+
+  | Level | Crates |
+  |---|---|
+  | 0 | `clausters-core`, `clausters-net` |
+  | 1 | `clausters-document`, `clausters-midi`, `clausters-plugin-host`, `clausters-notation` |
+  | 2 | `clausters-editing`, `clausters` (the server) |
+  | 3 | `clausters-apps` |
+  | 4 | `clausters-app-engine` |
+  | 5 | `clausters-ffi`, `clausters-core-web`, `clausters-web`, `clausters-nrt-web`, `clausters-gui` |
+
+  A test in the shape of `tests/bindings.rs` reads the manifests as text and
+  fails on an edge that points up, dev-dependencies included, and on a crate
+  the table does not name. Today's violations go in a list of exceptions that
+  may only shrink: the server's dev-dependencies on `clausters-apps`,
+  `clausters-editing` and `clausters-document`. The table is written once, in
+  `docs/architecture.md`. **Acceptance:** adding an upward edge to any
+  manifest turns the test red.
+
+- ⬜ **R14: Build profiles, and a pinned toolchain.** No manifest carries a
+  `[profile]`. The dev profile takes line tables only, which is most of what
+  shrinks a debug build; the release profile takes link-time optimization and
+  a single codegen unit only if `examples/bench.rs` justifies them, with both
+  numbers in the commit. The toolchain is pinned in a `rust-toolchain.toml` at
+  the root, which the editor application and the fuzzer inherit and the
+  nightly wasm build (it names its own) does not; CI installs what the file
+  says, and a weekly job runs fmt, clippy and the tests against `stable`, so
+  that a new lint arrives as a commit that raises the pin rather than as a red
+  tree nobody touched. The rule in `AGENTS.md` that CI pins nothing is
+  rewritten with it. **Acceptance:** the weekly job exists and is seen to run;
+  the full feature matrix is clean under the pin.
+
+- ⬜ **R15: The GUI host is a member of the workspace.** It was kept apart so
+  that it could never entangle the server's build, and that stopped being
+  true: `clausters-app-engine` is an unconditional native dependency of the
+  host and links the server, so every host build compiles it. What the
+  separation still costs is measured: two lockfiles that disagree on 26 of
+  the 255 dependencies they share, every shared crate compiled twice (146 GB
+  of the host's own `target/`), and a version written by a script and watched
+  by a test. Two commits, in this order:
+
+  - **The move.** `clients/gui` becomes `crates/clausters-gui`: it is a crate,
+    and a special client that talks to the two language clients and can act
+    alone, where `clients/` holds the Python and web packages. Some 356
+    references move with it (CI, hooks, the build scripts of both clients,
+    the Python launcher's path resolution, the audit scenarios, the rules and
+    the skills); the frozen build log is left as it is. A guard beside `R13`'s
+    test fails on any tracked file outside `docs/history/` that still names
+    the old path, which is what catches a reference arriving from `main`.
+  - **The membership.** The host's own `[workspace]` and lockfile go, it
+    inherits the version, and its binary is built into the root `target/`.
+    The two libfaust-free CI rows exclude it as they already exclude the wasm
+    crates, since the host turns on `realtime` and `notation` and a
+    `--workspace` build would unify them onto the server those rows test.
+    `[workspace.dependencies]` takes what thirteen manifests repeat.
+
+  The root package stays the server and the default member, so a plain
+  `cargo build` or `cargo test` at the root compiles no window system.
+  **Acceptance:** one lockfile; the Python launcher and the web build find
+  the host where it is now built; the release workflow's rehearsal is green.
+
+- ⬜ **R16: Notation is a crate of its own.** `clausters_core::notation` is
+  16,752 of the core's 51 thousand lines, the server does not use it, and
+  inside the core it reads only `ratio` and `event`. It also shares a name
+  with its neighbours: the model is a module of the core, `clausters-notation`
+  is the binding of the engraving library, and `clausters-notate` is a
+  directory holding a plan. The binding becomes `clausters-verovio`; the
+  model becomes the crate `clausters-notation`, at level 1, and takes the XML
+  and pattern-matching dependencies out of the core; the `notation` feature
+  of the five crates above it becomes an optional dependency on that crate.
+  The paths are rewritten rather than re-exported from the core, which would
+  be a second door onto one module. No C or wasm export changes, so
+  `CORE_ABI_VERSION` does not move. **Acceptance:** the isolated feature
+  check of `clausters-apps`, the feature matrix and both clients' suites
+  pass; the core builds with no notation in it.
+
+- ⬜ **R17: A test lives at its level, and `tests/` links few binaries.**
+  Three of the server's integration tests exercise the applications
+  (`multitrack_playback`, `audio_editor_graph`, `long_takes`) and belong to
+  `clausters-app-engine`, the crate whose job is joining the two; with them
+  go the server's upward dev-dependencies and the last of `R13`'s exceptions.
+  Three more, and `R13`'s own, test no crate at all (`ascii`, `bindings`,
+  `versions`) and move to a crate of repository checks, which no longer needs
+  the server compiled to run. What remains of the 78 binaries `tests/` builds
+  today, each linking the whole server, is grouped by def family into a
+  handful, one module per present file. What depends on the state of its process
+  stays a binary of its own: the tests that install a global allocator, the
+  signal guard, the denormal mode, the named shared-memory segments.
+  **Acceptance:** the same number of tests runs before and after under each
+  feature set; link time and the size of `target/debug/deps` are quoted in
+  the commit.
+
+- ⬜ **R18: A panic at a binding's door is an answer.** None of the 248
+  exports of the C ABI catches an unwind, and a panic crossing `extern "C"`
+  aborts: one `unwrap` in any verb of any application takes the Python
+  interpreter, and the unsaved session, with it. The doors that run verbs
+  answer `{"error"}` instead, through one helper, which also recovers the
+  handle's lock (poisoned today, after which every call answers nothing for
+  good). A page cannot recover, since wasm aborts on a panic, so the wasm
+  core installs the reporting hook the browser host already has, and the
+  difference is written in `docs/bindings.md`. The native host logs through
+  its diagnostic channel before it exits. In the same sitting, the
+  application engine's playback tests stop waiting on the wall clock and
+  advance the engine by blocks, which is what the intermittent failures filed
+  under load point at. **Acceptance:** a verb that panics yields an error in
+  both clients and the next call on the same handle answers; the playback
+  tests pass fifty runs in a row under load.
+
+- ⬜ **R19: The host's modules have levels too.** The host is 149 thousand
+  lines in one crate, and measured by reference it is one strongly connected
+  block: its five largest modules use one another, the drawing base is cyclic
+  (`font`, `paint`, `metrics`, `theme`, `layout`), and the renderers at the
+  crate's root reach back into the host. No crate can be cut from it as it
+  stands. `R13`'s test is extended to the host's modules, in five layers
+  (drawing base, views, tree and protocol, elements and gestures, fronts),
+  with today's cycles as exceptions that may only shrink. Two parts are
+  planned and the rest is opportunistic:
+
+  - **R19a** breaks the base's cycles (the rectangle leaves `layout` for the
+    base; `theme` and `metrics` stop reading `paint` and `font`) and groups
+    the native shell, today spread among 73 flat modules, under one module.
+  - **R19b** cuts the base into a crate once its list of cycles is empty.
+
+  The layers above are ordered one cycle per visit, by whichever of the `P`
+  and `D` tracks has the module open. **Acceptance:** the host's headless
+  captures are identical before and after each part.
+
+- ⬜ **R20: The two bindings have one shape, and a C type is checked.**
+  `clausters-ffi` is 24 modules by subject and `clausters-core-web` exposes
+  the same in one file of 3,718 lines; it takes the same modules, so a row of
+  `docs/bindings.md` is read file against file (and `tests/bindings.rs` reads
+  a directory). `R1` settled on checking arity alone for the ctypes leg,
+  since mapping types textually would have stated them a third time. A
+  header generated from the C ABI by the toolchain is not a third statement,
+  it is the first one read back, so each parameter's type is compared with
+  the declared `argtypes` through a fixed table of equivalents. The decision
+  is revised in `docs/decisions.md`. **Acceptance:** changing the width of
+  one declared integer turns the test red.
+
+- ⬜ **R21: The clients are linted, and typed a module at a time.** The
+  Python client is 52 thousand lines with its signatures already annotated,
+  a type checker switched off but for four call-site rules, and no linter.
+  It takes a linter with a minimal rule set (unused and undefined names, the
+  likely bugs) and the checker's basic mode on the modules whose API is
+  settled, starting with the document's (`multitrack`, `document`,
+  `history`); the eleven handlers that swallow every exception are each
+  narrowed or given their reason. The web client takes a linter. Both run in
+  CI. **Acceptance:** zero findings on what is switched on.
+
+- ⬜ **R22: The editor application, reviewed.** `clausters-editor` stays a
+  workspace of its own, which its version, its dependencies and its workflow
+  justify. Found reading it: a restart releases the session's lock between
+  ending one interpreter and keeping the next, so a request arriving then
+  starts a second one that nothing ends; an interpreter replaced after a
+  broken pipe is never waited on; the environments' busy flag is cleared by
+  hand; the window that can read and write any file and run code has no
+  content security policy; and nothing tests the driver (the whole
+  protocol), the session, the environments or the page's pure modules. The
+  fixes, a test of the driver as a subprocess, tests of the pure modules,
+  and the 2024 edition. **Acceptance:** its workflow is green with the new
+  tests in it.
+
+- ⬜ **R23: The plans hold what is open.** The plans are 37 thousand lines
+  against a rule that says a roadmap and a checkbox, `docs/decisions.md` is
+  one file of 277 entries, and `docs/bindings.md` carries 600 lines of what
+  each ABI version changed. Closed tracks move whole to `docs/history/`, one
+  file per plan they came from, and each plan keeps its standing design, its
+  open tracks, its Future directions and its Found by use (whose closed
+  entries stay, being the record the rules ask for). The decisions are split
+  by area, and `docs/decisions.md` remains as an index carrying every title
+  verbatim, since the code and the plans cite a decision by its title. The
+  ABI history gets a file of its own. Done last and on `main`.
+  **Acceptance:** every citation of a decision by title still finds it, and
+  every pointer of `ROADMAP.md` finds its entry.
+
 ## J track — third-party plugins: a `plugin` def family, out of process
 
 Section added 2026-10-13, at the user's request. The earlier "dynamic plugins not for now" decision was about **Rust UGen plugins**, whose ABI is not stable. Third-party plugins use defined binary interfaces: CLAP's C ABI and VST3's COM-style interfaces, with compatibility checked at load and no Rust types crossing the boundary. CLAP is MIT-licensed and the VST3 SDK has been MIT since 3.8. The revised decision is in `docs/decisions.md`, "Third-party plugins run out of process". **The milestone checkboxes below describe the shipped hosting capabilities and the remaining work.**
