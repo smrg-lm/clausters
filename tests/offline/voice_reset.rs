@@ -16,8 +16,7 @@
 
 #![cfg(feature = "synth")]
 
-#[path = "common/bench.rs"]
-mod bench;
+use crate::bench;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -82,8 +81,8 @@ const STATELESS: &[(&str, &str)] = &[
 
 /// Random sources: their stream goes on across a reset, so a restarted voice
 /// draws new numbers and two halves cannot agree. What they reset besides the
-/// stream is covered by their split and seeded tests (`tests/noise.rs`,
-/// `tests/demand.rs`).
+/// stream is covered by their split and seeded tests (`tests/offline/noise.rs`,
+/// `tests/offline/demand.rs`).
 const STOCHASTIC: &[&str] = &[
     "Rand",
     "RandOpUGen",

@@ -1,0 +1,12 @@
+[package]
+name = "clausters-checks"
+version.workspace = true
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "The repository's checks on itself: ASCII sources, one version, the crates' levels and the bindings' table. Tests only; nothing links it."
+publish = false
+
+# No dependency, of the project's or anyone's: each check reads the tree as
+# text, so it runs without the server compiled and holds under every feature
+# configuration.
+[dependencies]

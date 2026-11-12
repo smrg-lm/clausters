@@ -1,5 +1,5 @@
 //! Signal API tests: the JSON -> Signal interpreter (`faust::signals`). Gated
-//! behind the `faust` feature: `cargo test --features faust --test faust_signal`.
+//! behind the `faust` feature: `cargo test --features faust --test faust_offline faust_signal::`.
 //!
 //! Covers: a sine built from the Signal API's explicit `recursion`/`self`
 //! phasor (parity with the box and UGen sines), the explicit-feedback
@@ -10,8 +10,7 @@
 
 #![cfg(feature = "faust")]
 
-#[path = "common/signal.rs"]
-mod signal;
+use crate::signal;
 
 use std::ffi::{CString, c_char};
 use std::time::Duration;

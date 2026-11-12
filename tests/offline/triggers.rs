@@ -9,7 +9,7 @@
 //! the `audio-testing` skill.
 //!
 //! Rule 5 comes from two places. The shared table splits every one of the
-//! seventeen rows in two (`tests/subjects.rs`); `a_counter_is_unmoved_by_a_
+//! seventeen rows in two (`tests/offline/subjects.rs`); `a_counter_is_unmoved_by_a_
 //! block_split` below stays because it does something the table does not --
 //! nine slices per block rather than one cut -- which is the shape a burst of
 //! scheduled events actually produces.

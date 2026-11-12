@@ -1,6 +1,6 @@
 //! Golden tests: a UGen graph and its Faust equivalent render side by
 //! side in the same engine and must agree. Gated behind the `faust` feature:
-//! `cargo test --features faust --test faust_parity`.
+//! `cargo test --features faust --test faust_offline faust_parity::`.
 //!
 //! Two levels of "equivalent":
 //! - Stateless arithmetic on the same input signal is **bit-exact**: both

@@ -97,7 +97,7 @@ its own commit first, then release.
    `package-lock.json` — are written by **`scripts/set-version.sh <x.y.z>`**,
    which also regenerates both lockfiles; run with no argument it prints what
    every file says. Nothing here is on trust any more:
-   `tests/versions.rs` fails when any of them disagrees, and when a Cargo crate
+   `crates/clausters-checks/tests/versions.rs` fails when any of them disagrees, and when a Cargo crate
    writes its own number instead of inheriting. (Before that: `crates/clausters-gui` had
    drifted, and `package-lock.json` was found two minors behind.)
 2. **Both ABI counters and the SemVer tier against the last tag** —

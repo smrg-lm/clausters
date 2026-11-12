@@ -365,7 +365,7 @@ def test_a_generated_score_is_editable():
 # -- the score model ---------------------------------------------------------
 #
 # The model crosses as data and so do the operations, which buys a new verb for
-# no ABI at all and costs the one thing `tests/bindings.rs` used to give free:
+# no ABI at all and costs the one thing `crates/clausters-checks/tests/bindings.rs` used to give free:
 # it sees one symbol and no verbs. So the catalog is what parity is read
 # against, and these are that reading for this client.
 

@@ -175,7 +175,7 @@
         // the wasm backend moves each `Soundfile*` to the front of the DSP
         // struct and leaves it for whoever instantiates the def to fill, so
         // what this measures is that the engine filled it from the *server
-        // buffer* the def names. The def is the one tests/golden.rs uses
+        // buffer* the def names. The def is the one tests/offline/golden.rs uses
         // natively: its first output is the soundfile's length -- the buffer's
         // frame count when it is wired, and 1024 (the empty placeholder) when
         // it is not -- and its second reads the samples themselves.

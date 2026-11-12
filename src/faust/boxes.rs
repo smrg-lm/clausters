@@ -91,7 +91,7 @@ pub unsafe fn build_process(root: &Value, cstrings: &mut Vec<CString>) -> Result
 /// -- a duplicated stateful fragment (the JSON a client emits when one box
 /// value is reused) would duplicate its state and its computation. Reusing
 /// the box pointer makes the duplicates literally the same subterm, which
-/// hash-consing then shares (`tests/faust_box.rs`, the CSE suite).
+/// hash-consing then shares (`tests/faust_offline/faust_box.rs`, the CSE suite).
 type FragMemo = HashMap<String, FaustBox>;
 
 type UnaryFn = unsafe extern "C" fn(FaustBox) -> FaustBox;

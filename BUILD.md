@@ -235,7 +235,7 @@ Docs. Steps:
    files that cannot inherit it (`crates/clausters-gui/Cargo.toml` and its lockfile,
    `clients/python/pyproject.toml`, `clients/web/package.json` and its
    lockfile). With no argument it prints what each file says. `cargo test
-   --test versions` fails if any of them ever disagrees, so a miss cannot ship.
+   -p clausters-checks --test versions` fails if any of them ever disagrees, so a miss cannot ship.
 3. If a binary boundary changed this cycle, bump the matching ABI counter (the
    linkage rule below).
 4. **Commit** (`release: vX.Y.Z`) and **push to `main`**.
@@ -435,7 +435,7 @@ needed. If a segfault ever reappears in a `faust_*` suite, reach for
 
 Suites worth knowing about: `tests/rt_safety.rs` asserts the audio thread
 never allocates (run it after touching anything on the audio path),
-`tests/golden.rs` holds bit-exact render references, and `tests/denormals.rs`
+`tests/offline/golden.rs` holds bit-exact render references, and `tests/denormals.rs`
 guards flush-to-zero.
 
 The Python client has its own suite. **pytest** is its one development

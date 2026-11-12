@@ -3,7 +3,7 @@
 //! any window and hop, however the blocks are sliced, through a gate and
 //! through a live window change; and the compiler holds a chain to its `FFT`.
 //! What each `PV_*` does to a frame is held to a reference in
-//! `tests/pv_reference.rs`.
+//! `tests/offline/pv_reference.rs`.
 
 #![cfg(feature = "synth")]
 

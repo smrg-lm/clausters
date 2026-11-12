@@ -28,7 +28,7 @@ use clausters::synthdef::{SynthDef, SynthDefSpec, compile};
 
 /// A synth that keeps writing `level` to `bus` every block, used to make a
 /// group's output legible without a def file: `ReplaceOut` at a constant bus
-/// with a constant value, the same pattern `tests/engine.rs` uses for its
+/// with a constant value, the same pattern `tests/offline/engine.rs` uses for its
 /// silencer def. `level` is control index 0 rather than a literal, so a test
 /// can move it later with `Cmd::SetControl` -- which is how the scheduling
 /// tests below tell whether a bundle has fired.

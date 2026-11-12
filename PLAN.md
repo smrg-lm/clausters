@@ -2520,7 +2520,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   the web package built and tested, and the three books. The whole feature
   matrix is run once, at the end of the review.
 
-- ⬜ **R17: A test lives at its level, and `tests/` links few binaries.**
+- ✅ **R17: A test lives at its level, and `tests/` links few binaries** *(done 2026-11-12)*.
   Three of the server's integration tests exercise the applications
   (`multitrack_playback`, `audio_editor_graph`, `long_takes`) and belong to
   `clausters-app-engine`, the crate whose job is joining the two; with them
@@ -2535,6 +2535,21 @@ and so waits for `T3`, the milestone that already owes the bench.
   **Acceptance:** the same number of tests runs before and after under each
   feature set; link time and the size of `target/debug/deps` are quoted in
   the commit.
+
+  Shipped narrower than written, on a reading of the files: of the 72 left
+  after the six moves, 42 render offline and share nothing with their
+  process, and those are two binaries now (`tests/offline`, 38 modules, and
+  `tests/faust_offline`, four). The other 30 stay as they were, and the list
+  is longer than the entry foresaw: beside the allocator, signal, denormal
+  and shared-memory tests, every test that boots a live server on a socket,
+  sleeps on the wall clock or runs a plugin's process. Cargo runs test
+  binaries one after another and a binary's tests in parallel, so grouping
+  those would have run servers side by side that never ran together, which is
+  a change of behaviour. The shared helpers are declared once per binary. The
+  server's tests count the same before and after under the three feature
+  sets (958, 141 and 872), the levels' exceptions are empty, and the
+  repository's checks are `crates/clausters-checks`, with no dependency at
+  all. Where a new test goes is in the `audio-testing` skill.
 
 - ⬜ **R18: A panic at a binding's door is an answer.** None of the 248
   exports of the C ABI catches an unwind, and a panic crossing `extern "C"`

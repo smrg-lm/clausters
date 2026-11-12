@@ -4,8 +4,7 @@
 //! answer is known in closed form, so a broken *measurement* fails in this
 //! suite rather than silently passing -- or failing -- a UGen elsewhere.
 
-#[path = "common/signal.rs"]
-mod signal;
+use crate::signal;
 
 use signal::*;
 
@@ -166,7 +165,7 @@ fn group_delay_recovers_an_integer_and_a_fractional_shift() {
 
 /// Not an assert -- a printed record of what the harness actually measures, so
 /// the numbers the U-track docs quote come from a run rather than from memory.
-/// Read it with `cargo test --test signal -- --nocapture report`.
+/// Read it with `cargo test --test offline signal_asserts:: -- --nocapture report`.
 #[test]
 fn report_the_measured_figures() {
     let f = coherent_freq(1000.0, SR, N);

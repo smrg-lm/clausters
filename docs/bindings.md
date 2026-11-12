@@ -21,7 +21,7 @@ wasm, JavaScript has no `u64`, and wasm frees by `Drop` where C needs an explici
 question is never "are they equal" but **"is each difference one somebody
 decided?"**
 
-That is what the table below records, and what `tests/bindings.rs` enforces:
+That is what the table below records, and what `crates/clausters-checks/tests/bindings.rs` enforces:
 every symbol either appears in a row, or the test fails. Adding a function to
 one binding and not the other is allowed; adding it and *not saying why* is not.
 

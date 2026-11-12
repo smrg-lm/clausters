@@ -22,14 +22,12 @@
 //! cannot see a one-sample state error through.
 //!
 //! Rule 5, the block split, is not here: it is the same test for every row and
-//! runs from the shared table over all twelve at once (`tests/subjects.rs`).
+//! runs from the shared table over all twelve at once (`tests/offline/subjects.rs`).
 
 #![cfg(feature = "synth")]
 
-#[path = "common/bench.rs"]
-mod bench;
-#[path = "common/signal.rs"]
-mod signal;
+use crate::bench;
+use crate::signal;
 
 use std::f64::consts::PI;
 use std::sync::Arc;

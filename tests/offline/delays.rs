@@ -8,14 +8,12 @@
 //! accident, so a filter that passes it really is an allpass.
 //!
 //! Rule 5, the block split, is not here: it is the same test for every row and
-//! runs from the shared table over all nine at once (`tests/subjects.rs`).
+//! runs from the shared table over all nine at once (`tests/offline/subjects.rs`).
 
 #![cfg(feature = "synth")]
 
-#[path = "common/bench.rs"]
-mod bench;
-#[path = "common/signal.rs"]
-mod signal;
+use crate::bench;
+use crate::signal;
 
 use std::sync::Arc;
 

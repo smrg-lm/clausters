@@ -1,6 +1,6 @@
 //! Box API tests at the FFI level (`ffi::Cbox*`), the box counterpart of
 //! `faust_signal.rs`. Gated behind the `faust` feature:
-//! `cargo test --features faust --test faust_box`.
+//! `cargo test --features faust --test faust_offline faust_box::`.
 //!
 //! The split across the box suites: `faust_smoke.rs` is the latency probe
 //! (one sine through the Box API), `faust_json.rs` covers the JSON -> Box

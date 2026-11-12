@@ -874,7 +874,7 @@ fn bus_value(s: &mut NrtSession, index: i32) -> f32 {
 /// `/transport_fade` takes off -- which is asserted, with a ramp set, in
 /// `a_stop_fades_the_master_and_leaves_its_meter_to_fall`. No ramp is the
 /// server's default, so this is still what a client that sets none hears:
-/// `cargo test --test mixer_graph where_the_transport -- --ignored --nocapture`
+/// `cargo test --test offline mixer_graph::where_the_transport -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn where_the_transport_clicks() {

@@ -1,5 +1,5 @@
 //! The JSON -> Box API interpreter. Gated behind the `faust`
-//! feature: `cargo test --features faust --test faust_json`.
+//! feature: `cargo test --features faust --test faust_offline faust_json::`.
 //!
 //! Covers: the JSON sine graph built from primitives (parity with the
 //! smoke test), the `faust` escape hatch into the stdlib (`os.osc`), stdlib
@@ -10,8 +10,7 @@
 
 #![cfg(feature = "faust")]
 
-#[path = "common/signal.rs"]
-mod signal;
+use crate::signal;
 
 use std::time::Duration;
 

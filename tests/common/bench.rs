@@ -436,7 +436,7 @@ pub fn assert_subject_resets(s: &Subject, half: usize) {
 /// purpose (correlated noise summed with itself is a comb filter) -- while the
 /// wire has no seed input to pin, since a def has no way to name one. So the
 /// two renders differ at sample 0 for a reason that is not a bug. The split
-/// rule still applies to those rows; `tests/noise.rs` discharges it one level
+/// rule still applies to those rows; `tests/offline/noise.rs` discharges it one level
 /// down, against `with_seed` constructors, where the stream *is* pinned.
 pub fn assert_split_agrees(s: &Subject, samples: usize, at: usize) {
     assert!(

@@ -19,8 +19,8 @@ FAUST_ORIGIN=https://github.com/smrg-lm/faust
 #
 # Still deliberately WITHOUT the boxcos/boxfmod fix -- the clone may carry a
 # local fix-boxcos-boxfmod branch for development, but the shipped artifact
-# stays off it so the upstream-bug canaries in tests/faust_box.rs and
-# tests/faust_signal.rs remain valid. Full 40-char SHA: fetching an arbitrary
+# stays off it so the upstream-bug canaries in tests/faust_offline/faust_box.rs and
+# tests/faust_offline/faust_signal.rs remain valid. Full 40-char SHA: fetching an arbitrary
 # commit by SHA only resolves unabbreviated.
 FAUST_SHA=9f685488554b77323374f1fa7d492c3626e6e83b
 

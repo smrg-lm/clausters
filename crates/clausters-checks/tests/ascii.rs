@@ -18,7 +18,7 @@
 //! typography is the point.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Files whose content is characters, so the characters stay.
@@ -64,8 +64,8 @@ const EXT: &[&str] = &[
     "json", "dsp",
 ];
 
-fn repo() -> &'static Path {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+fn repo() -> PathBuf {
+    clausters_checks::root()
 }
 
 /// Every tracked file, asked of git so that generated and ignored trees (the

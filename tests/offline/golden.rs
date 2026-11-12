@@ -7,7 +7,7 @@
 
 #![cfg(feature = "synth")]
 
-#[path = "common/scenes.rs"]
+#[path = "../common/scenes.rs"]
 mod scenes;
 
 use std::path::{Path, PathBuf};

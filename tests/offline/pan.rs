@@ -38,8 +38,7 @@
 
 #![cfg(feature = "synth")]
 
-#[path = "common/bench.rs"]
-mod bench;
+use crate::bench;
 
 use bench::{Run, render_def};
 use clausters::dsp::pan::{

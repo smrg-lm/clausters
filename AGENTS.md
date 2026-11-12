@@ -224,7 +224,7 @@ The wires and where their ends live:
 - A **shared-core function** (`clausters-core`) — every client binds the same
   one; new numeric or timing logic belongs there rather than in a client. Its
   bindings are declared in `docs/bindings.md` and enforced by
-  `tests/bindings.rs` (C ABI ↔ wasm) and
+  `crates/clausters-checks/tests/bindings.rs` (C ABI ↔ wasm) and
   `clients/python/tests/test_native_parity.py` (C ABI ↔ ctypes): a new symbol
   that reaches only one of them fails a test until the table says why.
 
@@ -292,7 +292,7 @@ on trust, so that is where drift accumulates:
   for a product or a middle dot, `-` for a minus sign, `+/-`, `<=`, `>=`,
   `sqrt()`, `^2`, `_i`, `pi`, `beta`, `sum`, `degrees`. A character a terminal,
   a diff, a grep pattern or an editor's font may not render is a cost the
-  reader pays and the prose never repays. `tests/ascii.rs` enforces it over
+  reader pays and the prose never repays. `crates/clausters-checks/tests/ascii.rs` enforces it over
   every tracked source, configuration and page file, and **prints the file, the
   line and the codepoint** when one appears.
   - The exception is the file whose *subject* is the character: a glyph table
@@ -598,7 +598,7 @@ Denormals: every processing thread runs in flush-to-zero mode —
 `dsp::denormals::flush_to_zero()` is re-armed in the cpal callback and armed
 in `render()` (both, so NRT stays sample-identical to RT) — and Faust
 factories are compiled with `-ftz 2`. Keep all three call sites if you touch
-them; `tests/denormals.rs` and the Faust tail test in `tests/golden.rs` guard
+them; `tests/denormals.rs` and the Faust tail test in `tests/offline/golden.rs` guard
 this. The one exception: the Faust *compiler* path runs inside
 `dsp::denormals::normal_precision` (libfaust's interval typing aborts under
 FTZ/DAZ; the guard restores the armed mode on exit) — keep that bracket too.

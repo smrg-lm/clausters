@@ -662,7 +662,7 @@ pub struct OpSpec {
 /// Every operation this core knows, and the parameters each takes.
 ///
 /// **This exists because the ABI cannot see the verbs.** Operations cross as
-/// data through one symbol, so `tests/bindings.rs` proves nothing about which
+/// data through one symbol, so `crates/clausters-checks/tests/bindings.rs` proves nothing about which
 /// of them a client actually offers -- the same structural blindness the props
 /// manifest has, which is how five builder divergences went unnoticed. Each
 /// client is contrasted against this list instead: a verb here with no binding,

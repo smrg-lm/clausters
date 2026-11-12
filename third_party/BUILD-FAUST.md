@@ -182,8 +182,8 @@ fragment workaround in `src/faust/boxes.rs` — and the missing `kLRsh` case
 in the signal type checker — the reason `CsigLRightShift` is not bound in
 `src/faust/ffi.rs`. Note: if you build and install libfaust **from that
 branch**, the canaries `upstream_boxcos_still_computes_abs`
-(`tests/faust_box.rs`) and `upstream_lrsh_still_fails_the_type_checker`
-(`tests/faust_signal.rs`) fail *by design* — that is the signal to retire
+(`tests/faust_offline/faust_box.rs`) and `upstream_lrsh_still_fails_the_type_checker`
+(`tests/faust_offline/faust_signal.rs`) fail *by design* — that is the signal to retire
 the workaround and bind `lrsh`. That branch is **not** what gets built: see
 the pinned branch below.
 

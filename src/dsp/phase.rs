@@ -7,7 +7,7 @@
 //! `[0, 1)` by `freq / sample_rate` per sample.
 //!
 //! What `f64` gives is worth stating precisely, because the obvious answer is
-//! wrong and the tests measure it (`tests/oscillators.rs`,
+//! wrong and the tests measure it (`tests/offline/oscillators.rs`,
 //! `f64_is_for_the_position_not_the_phase`). For the **wrapped phase** it changes
 //! nothing audible:
 //! the value never leaves `[0, 1)`, so the rounding error per step is about one
@@ -46,7 +46,7 @@
 //!
 //! At 105 Hz that is within about 2.5 dB of the measurement's own floor (a pure
 //! tone reads 99.2 dB through the same analysis), so the low end is as clean as
-//! the harness can see. `tests/oscillators.rs` regenerates both columns on every
+//! the harness can see. `tests/offline/oscillators.rs` regenerates both columns on every
 //! run -- the naive baseline is computed there, not hardcoded, so the comparison
 //! stays honest if either side changes.
 //!

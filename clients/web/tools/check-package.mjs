@@ -29,7 +29,7 @@ const pkg = JSON.parse(readFileSync(join(here, "package.json"), "utf8"));
 // SemVer. (The binary ABIs are counted separately -- see the root AGENTS.md.)
 // The crates inherit `[workspace.package].version`, so that is where the one
 // number is written; `scripts/set-version.sh` writes this file from it and
-// `tests/versions.rs` contrasts every manifest that cannot inherit.
+// `crates/clausters-checks/tests/versions.rs` contrasts every manifest that cannot inherit.
 const cargo = readFileSync(join(here, "..", "..", "Cargo.toml"), "utf8");
 const crateVersion =
     /^\[workspace\.package\][^[]*?^version = "([^"]+)"/ms.exec(cargo)?.[1];

@@ -17,6 +17,6 @@
 //!   host FPU mode and of the architecture.
 //!
 //! Guarded by `tests/denormals.rs` (the FPU switch) and the Faust tail test
-//! in `tests/golden.rs` (`-ftz 2` end to end).
+//! in `tests/offline/golden.rs` (`-ftz 2` end to end).
 
 pub use clausters_core::denormals::{flush_to_zero, normal_precision};

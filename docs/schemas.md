@@ -1118,7 +1118,7 @@ The JSON mirrors Faust's Box API one-to-one: every node denotes a box expression
 | `rwtable` | `in`: size, init, widx, wsig, ridx — or 4 boxes starting with a `waveform` | `rwtable` |
 | `faust` | `src` | escape hatch: a complete Faust program compiled to a composable box, with stdlib access |
 
-Three consumers build this format today: the Python client's `clausters.defs.boxes` module (the box algebra as composable Python values; see the [client book's defs chapter](https://clausters-python.readthedocs.io/en/latest/defs.html)), the web client's `defs/boxes.ts` (the same algebra, the same emitted tree) and machine-generated graphs (the GUI host). `faust` fragments are **memoized by `src` within one compilation**: the same source text yields the same box, so a client that reuses one fragment value many times (duplicating the subtree in the JSON) gets one computation and one compile — every `CDSPToBoxes` evaluation would otherwise mint fresh recursion symbols and defeat the sharing (the CSE suite in `tests/faust_box.rs` pins this).
+Three consumers build this format today: the Python client's `clausters.defs.boxes` module (the box algebra as composable Python values; see the [client book's defs chapter](https://clausters-python.readthedocs.io/en/latest/defs.html)), the web client's `defs/boxes.ts` (the same algebra, the same emitted tree) and machine-generated graphs (the GUI host). `faust` fragments are **memoized by `src` within one compilation**: the same source text yields the same box, so a client that reuses one fragment value many times (duplicating the subtree in the JSON) gets one computation and one compile — every `CDSPToBoxes` evaluation would otherwise mint fresh recursion symbols and defeat the sharing (the CSE suite in `tests/faust_offline/faust_box.rs` pins this).
 
 Example — `sin(2π·phasor(freq)) * 0.2` with `freq` as a named control (`wrap(x) = x - floor(x)`, `phasor = (+(freq/SR) : wrap) ~ _`):
 
@@ -1335,7 +1335,7 @@ MIDI Polyphonic Expression gives each note a channel of its own, so a bend, a pr
 - **Playable unmapped.** A `Voices` node's map starts with `press` and `slide` (the built-in `default`'s) as the pressure and the timbre, so a def that declares those controls plays the three dimensions with no `/midi_map`, and the `default` plays them with nothing sent.
 - **A lane's MIDI decodes the same way.** An event lane's `midi` list is read through the zones' layout when it is set, so an MPE stream on a lane plays per note on its samples.
 
-Conversions take **MIDI 2.0 / UMP resolution** (16-bit velocity, 32-bit controllers, pressure and bend) to the values an event carries — no 7-bit quantization. **MIDI 1.0 is backward-compatible**: classic 7/14-bit input is accepted and widened up to those. A MIDI note is the same event a client's `/bus_event` writes, only from another source (`tests/midi.rs` guards this).
+Conversions take **MIDI 2.0 / UMP resolution** (16-bit velocity, 32-bit controllers, pressure and bend) to the values an event carries — no 7-bit quantization. **MIDI 1.0 is backward-compatible**: classic 7/14-bit input is accepted and widened up to those. A MIDI note is the same event a client's `/bus_event` writes, only from another source (`tests/offline/midi.rs` guards this).
 
 ## Node tree introspection
 
@@ -1446,7 +1446,7 @@ Reloading is **incremental**: the socket starts serving immediately and the libr
 
 ## Generating defs programmatically
 
-`examples/json_client.py` (Python, stdlib only) builds all three formats with a few helper functions and drives the whole lifecycle over OSC — use it as a reference client. The equivalence of the families is pinned down by the golden tests in `tests/faust_parity.rs`: a UGen graph, the box translation and the signal translation render side by side in one engine and must agree (bit-exactly for stateless arithmetic on shared input, within float tolerance for oscillators, since `Sine` accumulates phase in f64 and Faust in f32).
+`examples/json_client.py` (Python, stdlib only) builds all three formats with a few helper functions and drives the whole lifecycle over OSC — use it as a reference client. The equivalence of the families is pinned down by the golden tests in `tests/faust_offline/faust_parity.rs`: a UGen graph, the box translation and the signal translation render side by side in one engine and must agree (bit-exactly for stateless arithmetic on shared input, within float tolerance for oscillators, since `Sine` accumulates phase in f64 and Faust in f32).
 
 ## Persistent plugin events
 

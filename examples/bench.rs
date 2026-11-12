@@ -18,7 +18,7 @@
 //! that run) and the worker-pool sweep (it reads the machine's core count).
 //!
 //! With `--features faust` it also runs two **apples-to-apples** UGen-vs-Faust
-//! sections, both using `tests/faust_parity.rs` pairs the two engines compute
+//! sections, both using `tests/faust_offline/faust_parity.rs` pairs the two engines compute
 //! sample for sample, so the timing isolates per-synth audio-loop overhead --
 //! the Rust UGen graph (boxed `dyn` dispatch per UGen, intermediate wire
 //! buffers) against one Faust LLVM `compute` call. Only `process` is timed;
@@ -985,7 +985,7 @@ fn make_default_synth() -> Box<dyn SynthNode> {
 /// Head-to-head: the **same** DSP run by the two engines, so the only thing
 /// the timing reflects is per-synth audio-loop overhead -- UGen graph vs Faust
 /// LLVM. The graph is `sin(2pi*phasor(freq)) * 0.2 -> one bus`, which is exactly
-/// the parity pair from `tests/faust_parity.rs` (proven to agree sample for
+/// the parity pair from `tests/faust_offline/faust_parity.rs` (proven to agree sample for
 /// sample): identical math, one output each, same frequency control (index 0,
 /// swept by the harness), same `out` bus (0). Setup and JIT happen before the
 /// timed loop, so only `process` is measured -- what runs in the callback.
@@ -1071,7 +1071,7 @@ fn bench_ugen_vs_faust() {
 
 /// Isolates **pure engine overhead**: a `* 0.5` gain stage on a shared input
 /// bus, computed both ways. The two are bit-exact
-/// (`tests/faust_parity.rs::gain_stages_are_bit_exact`) -- one f32 multiply on
+/// (`tests/faust_offline/faust_parity.rs::gain_stages_are_bit_exact`) -- one f32 multiply on
 /// the same samples, no transcendental and no f64/f32 asymmetry -- so the only
 /// difference timed is how each engine moves a block through one synth: three
 /// boxed `dyn` UGens with two intermediate wire buffers (`In * 0.5 -> Out`)

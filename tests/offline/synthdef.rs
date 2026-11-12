@@ -3,8 +3,7 @@
 
 #![cfg(feature = "synth")]
 
-#[path = "common/signal.rs"]
-mod signal;
+use crate::signal;
 
 use std::sync::Arc;
 

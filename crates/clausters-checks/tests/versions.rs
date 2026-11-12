@@ -13,10 +13,10 @@
 //! the tool that answers them.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn repo(rel: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(rel)
+    clausters_checks::root().join(rel)
 }
 
 fn read(rel: &str) -> String {

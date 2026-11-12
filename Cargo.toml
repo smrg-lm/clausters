@@ -4,6 +4,7 @@
 members = [
     "crates/clausters-app-engine",
     "crates/clausters-apps",
+    "crates/clausters-checks",
     "crates/clausters-core",
     "crates/clausters-core-web",
     "crates/clausters-document",
@@ -24,7 +25,7 @@ resolver = "3"
 # same number and nothing checked that they still agreed; they inherit it now
 # (`version.workspace = true`), and the two manifests that cannot inherit --
 # `pyproject.toml` and `package.json` are not Cargo's -- are written from here by `scripts/set-version.sh` and contrasted
-# by `tests/versions.rs`. Bumping a release is editing this line and running
+# by `crates/clausters-checks/tests/versions.rs`. Bumping a release is editing this line and running
 # that script; the rules for *which* number are the `release-versioning` skill's.
 [workspace.package]
 version = "0.11.0"
@@ -203,13 +204,7 @@ libc = { workspace = true }
 clausters-plugin-host = { path = "crates/clausters-plugin-host", optional = true, default-features = false }
 
 [dev-dependencies]
-# The audio editor over takes of hours, measured (`tests/long_takes.rs`).
-clausters-apps = { path = "crates/clausters-apps" }
 assert_no_alloc = { workspace = true }
-# The applications' playbacks, heard offline (`tests/audio_editor_graph.rs`,
-# `tests/multitrack_playback.rs`), and the document they play.
-clausters-editing = { path = "crates/clausters-editing" }
-clausters-document = { path = "crates/clausters-document" }
 serde_json = { workspace = true }
 
 # Line tables only in debug builds: a backtrace still names the file and the

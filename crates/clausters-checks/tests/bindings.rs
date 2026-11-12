@@ -22,7 +22,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    clausters_checks::root()
 }
 
 /// The `extern "C"` items of `clausters-ffi`, in declaration order.

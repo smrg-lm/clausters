@@ -13,8 +13,7 @@
 
 #![cfg(feature = "synth")]
 
-#[path = "common/bench.rs"]
-mod bench;
+use crate::bench;
 
 use std::collections::HashSet;
 
@@ -117,7 +116,7 @@ fn every_stateful_subject_survives_a_split_block() {
     //
     // The stochastic rows are not skipped for convenience: through the def path
     // their two renders are two instances with two seeds, so there is nothing
-    // to compare. `tests/noise.rs` owns their split, seeded, at the struct
+    // to compare. `tests/offline/noise.rs` owns their split, seeded, at the struct
     // level -- see `assert_split_agrees` for why the wire cannot pin a seed.
     for m in MILESTONES {
         for s in subjects(m) {

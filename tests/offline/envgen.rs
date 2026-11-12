@@ -9,7 +9,7 @@
 //! it with `/node_run`. That is engine behavior, not signal.
 //!
 //! Rule 5, the block split, is not here: it is the same test for every row and
-//! runs from the shared table (`tests/subjects.rs`), which covers the two ramps.
+//! runs from the shared table (`tests/offline/subjects.rs`), which covers the two ramps.
 
 #![cfg(feature = "synth")]
 

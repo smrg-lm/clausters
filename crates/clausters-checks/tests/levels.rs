@@ -18,16 +18,10 @@ use std::path::{Path, PathBuf};
 /// **This list only shrinks.** An entry no manifest matches any more fails the
 /// test, so an exception cannot outlive the edge it excuses; a new one is not
 /// added, the code moves to the crate that joins the two layers instead.
-const EXCEPTIONS: &[(&str, &str, &str)] = &[
-    // The server's integration tests of the applications' playback. They
-    // belong to `clausters-app-engine`, the crate that joins the two.
-    ("clausters", "clausters-apps", "dev-dependencies"),
-    ("clausters", "clausters-document", "dev-dependencies"),
-    ("clausters", "clausters-editing", "dev-dependencies"),
-];
+const EXCEPTIONS: &[(&str, &str, &str)] = &[];
 
 fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    clausters_checks::root()
 }
 
 fn read(path: &Path) -> String {
@@ -194,7 +188,6 @@ fn the_reader_sees_the_edges_it_is_there_for() {
     assert_eq!(name, "clausters");
     for (dependency, kind) in [
         ("clausters-core", "dependencies"),
-        ("clausters-apps", "dev-dependencies"),
         // Declared under `[target.'cfg(target_os = "linux")'.dependencies]`.
         ("clausters-plugin-host", "dependencies"),
     ] {
@@ -203,6 +196,25 @@ fn the_reader_sees_the_edges_it_is_there_for() {
             "the reader missed {dependency} in the server's {kind}: {edges:?}"
         );
     }
+    // No manifest of the tree has a dev-dependency on another crate of it any
+    // more, which is the state the rule wants, so that kind is read off a
+    // manifest written here.
+    let probe = std::env::temp_dir().join(format!("clausters-levels-{}", std::process::id()));
+    std::fs::create_dir_all(&probe).expect("a scratch directory");
+    let manifest = probe.join("Cargo.toml");
+    std::fs::write(
+        &manifest,
+        "[package]\nname = \"clausters-probe\"\n\n[dev-dependencies]\n\
+         clausters-apps = { path = \"../clausters-apps\" }\nserde_json = \"1\"\n",
+    )
+    .expect("a scratch manifest");
+    let (name, edges) = package(&manifest);
+    std::fs::remove_dir_all(&probe).expect("the scratch directory removed");
+    assert_eq!(name, "clausters-probe");
+    assert_eq!(
+        edges.into_iter().collect::<Vec<_>>(),
+        [("clausters-apps".to_string(), "dev-dependencies".to_string())]
+    );
     assert_eq!(
         table_entry("dev-dependencies.clausters-core"),
         Some(("dev-dependencies".into(), "clausters-core".into()))

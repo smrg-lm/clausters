@@ -1,4 +1,4 @@
-//! Golden-test scenes, shared between `tests/golden.rs` and the
+//! Golden-test scenes, shared between `tests/offline/golden.rs` and the
 //! `render_golden` example that regenerates the reference files. Everything
 //! here must be **deterministic** (no noise UGens): the same scene renders
 //! the same samples on every run.

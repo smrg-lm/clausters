@@ -627,7 +627,7 @@ mod tests {
     /// behaving differently is a defect by the standing rule.
     ///
     /// A source check rather than a behavioural one is the same trade
-    /// `tests/bindings.rs` makes for the binding tables: what the compiler
+    /// `crates/clausters-checks/tests/bindings.rs` makes for the binding tables: what the compiler
     /// cannot see, and a suite cannot run, is read out of the source and
     /// asserted.
     #[test]

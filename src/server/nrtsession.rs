@@ -15,7 +15,7 @@
 //! *internally*: a self-contained score starting at 0 and lasting the span. So
 //! determinism here is of **process, not of time**: the
 //! same operation over the same samples yields the samples it would yield
-//! expressed in a score and rendered in batch, which is what `tests/nrt_session.rs`
+//! expressed in a score and rendered in batch, which is what `tests/offline/nrt_session.rs`
 //! asserts sample for sample.
 //!
 //! **The front is the embedded server's, reused rather than rebuilt**: an

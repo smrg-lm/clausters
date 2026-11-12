@@ -1,7 +1,7 @@
 //! Operator-UGen tests: the generic `BinaryOpUGen`/`UnaryOpUGen` selected
 //! by a core opcode index, the fused `MulAdd`/`Sum3`/`Sum4`, and the compiler's
 //! `op`-index validation. The bit-for-bit agreement with `clausters_core` over
-//! the whole opcode table lives in `tests/core_parity.rs`; here we drive the
+//! the whole opcode table lives in `tests/offline/core_parity.rs`; here we drive the
 //! full compile+render path and the wire-format validation.
 
 #![cfg(feature = "synth")]

@@ -302,7 +302,7 @@ unsafe extern "C" {
     // faust#1272), so factory creation fails with an `ASSERT : unrecognized
     // opcode : 7` -- and in 2.81.x aborted the host process. The schema's
     // `rsh` is the arithmetic shift below; the canary in
-    // `tests/faust_signal.rs` flags when the bug is gone and `lrsh` can be
+    // `tests/faust_offline/faust_signal.rs` flags when the bug is gone and `lrsh` can be
     // exposed.
     pub fn CsigARightShift(x: FaustSignal, y: FaustSignal) -> FaustSignal;
     pub fn CsigGT(x: FaustSignal, y: FaustSignal) -> FaustSignal;

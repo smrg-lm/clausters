@@ -7,8 +7,7 @@
 
 #![cfg(feature = "synth")]
 
-#[path = "common/bench.rs"]
-mod bench;
+use crate::bench;
 
 use bench::{SR, render_with_input, render_with_input_split};
 use clausters::dsp::BLOCK_SIZE;

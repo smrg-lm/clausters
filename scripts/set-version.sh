@@ -6,7 +6,7 @@
 # `[workspace.package].version`, which every Cargo crate inherits, the GUI host
 # included. The other four cannot inherit it -- `pyproject.toml` and
 # `package.json` are not Cargo's, and the two lockfiles record what their
-# manifest said -- so this writes them, and `tests/versions.rs` fails when any of
+# manifest said -- so this writes them, and `crates/clausters-checks/tests/versions.rs` fails when any of
 # them disagrees. (`clients/web/package-lock.json` had been two minors behind
 # for exactly that reason.)
 #

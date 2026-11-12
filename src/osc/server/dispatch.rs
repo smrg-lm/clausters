@@ -283,7 +283,7 @@ type Command = fn(&mut OscServer, &'static str, &OscMessage, ClientId) -> Answer
 /// binary search and because a sorted list is one a human can scan.
 ///
 /// A `match` over the same addresses would dispatch just as well. What a table
-/// adds is that the set becomes *enumerable*: `tests/schema.rs` walks it and
+/// adds is that the set becomes *enumerable*: `tests/offline/schema.rs` walks it and
 /// fails when a command the server answers is missing from `docs/schemas.md`,
 /// which is the drift nothing could catch before -- a command is easy to add
 /// and easy to forget to document, and the two lived in different files with

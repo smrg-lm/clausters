@@ -14,14 +14,12 @@
 //! never asserted. What they are held to is their shape and their frequency.
 //!
 //! Rule 5, the block split, is not here: it is the same test for every row and
-//! runs from the shared table over all seven at once (`tests/subjects.rs`).
+//! runs from the shared table over all seven at once (`tests/offline/subjects.rs`).
 
 #![cfg(feature = "synth")]
 
-#[path = "common/bench.rs"]
-mod bench;
-#[path = "common/signal.rs"]
-mod signal;
+use crate::bench;
+use crate::signal;
 
 use bench::{SR, render};
 use signal::*;
@@ -462,7 +460,7 @@ fn a_read_position_high_in_a_long_file_still_advances() {
 
 /// Not an assert -- the measurement behind the claim above, kept because it
 /// corrects an intuition the module doc used to state.
-/// `cargo test --test oscillators -- --nocapture f64_is_for`
+/// `cargo test --test offline oscillators:: -- --nocapture f64_is_for`
 #[test]
 fn f64_is_for_the_position_not_the_phase() {
     // The same accumulator, stepped in each precision, for ten seconds.
@@ -511,7 +509,7 @@ fn f64_is_for_the_position_not_the_phase() {
 }
 
 /// Not an assert -- the measured figures the docs quote.
-/// `cargo test --test oscillators -- --nocapture report`
+/// `cargo test --test offline oscillators:: -- --nocapture report`
 #[test]
 fn report_the_measured_alias_figures() {
     println!("        fundamental   Saw      naive     Pulse    naive");

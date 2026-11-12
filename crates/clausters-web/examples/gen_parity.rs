@@ -18,7 +18,7 @@
 //! parity is only guaranteed on a denormal-free render (the recorded FTZ
 //! parity policy). The page's bar is a tight tolerance rather than strict
 //! bit-identity: native (system libm) and wasm (Rust's libm) round
-//! transcendentals a few ULP apart -- the posture tests/golden.rs records.
+//! transcendentals a few ULP apart -- the posture tests/offline/golden.rs records.
 
 use std::path::Path;
 

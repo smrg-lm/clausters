@@ -2,7 +2,7 @@
 two application stages (eval-args splicing vs. box call), client-side arity,
 channel selection, and the wire-reuse lint. The server-side half of the same
 contract (duplicated subtrees share their computation) lives in the Rust CSE
-suite (`tests/faust_box.rs`)."""
+suite (`tests/faust_offline/faust_box.rs`)."""
 
 import pytest
 

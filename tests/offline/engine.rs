@@ -4,10 +4,8 @@
 
 #![cfg(feature = "synth")]
 
-#[path = "common/signal.rs"]
-mod signal;
-#[path = "common/sine.rs"]
-mod sine;
+use crate::signal;
+use crate::sine;
 
 use std::sync::Arc;
 
