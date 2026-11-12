@@ -10,3 +10,6 @@ publish = false
 # text, so it runs without the server compiled and holds under every feature
 # configuration.
 [dependencies]
+
+[dev-dependencies]
+cbindgen = { version = "0.29.4", default-features = false }

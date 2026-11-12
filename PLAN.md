@@ -2637,7 +2637,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   as notation's were. The layers table lost its base row, and the four left
   are numbered from 0. The same seven captures were the same bytes again.
 
-- ⬜ **R20: The two bindings have one shape, and a C type is checked.**
+- ✅ **R20: The two bindings have one shape, and a C type is checked** *(done 2026-11-12)*.
   `clausters-ffi` is 24 modules by subject and `clausters-core-web` exposes
   the same in one file of 3,718 lines; it takes the same modules, so a row of
   `docs/bindings.md` is read file against file (and `tests/bindings.rs` reads
@@ -2648,6 +2648,22 @@ and so waits for `T3`, the milestone that already owes the bench.
   the declared `argtypes` through a fixed table of equivalents. The decision
   is revised in `docs/decisions.md`. **Acceptance:** changing the width of
   one declared integer turns the test red.
+
+  *Done 2026-11-12.* `clausters-core-web` is 22 modules named as
+  `clausters-ffi`'s are (each wasm export lands in the module of its C pair,
+  read off `docs/bindings.md`; `osc` and `midi` have no C pair), the code
+  moved unchanged, and the built module exports the same 1889 symbols as
+  before. One part of the entry did not hold as written: `_native.py`
+  declares its types through variables, list products and loops, so a Rust
+  test cannot read them as text. The work is split where each side can be
+  read: `crates/clausters-checks/tests/c_header.rs` generates the header with
+  cbindgen and fails when the committed
+  `crates/clausters-ffi/include/clausters_ffi.h` differs, and
+  `test_native_parity.py` holds the declared types of the loaded library
+  against that header. Declaring `clausters_core_calc`'s first parameter
+  `c_uint64` fails it; the header compiles in C with every warning an
+  error. The decision is "The ctypes declarations are checked against a
+  header the crate generates".
 
 - ⬜ **R21: The clients are linted, and typed a module at a time.** The
   Python client is 52 thousand lines with its signatures already annotated,

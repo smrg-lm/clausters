@@ -4510,6 +4510,36 @@ exactly that reason: the honest answer is often "I have not thought about the
 other side", and a manifest that had no way to say so would be filled with
 invented rationales instead.
 
+## The ctypes declarations are checked against a header the crate generates
+
+*Decided 2026-11-12, revising the arity-only check of 2026-07.* The first
+version of `clients/python/tests/test_native_parity.py` compared the C ABI and
+the ctypes declarations by **arity** only, and said why: mapping `*const f32` to
+`POINTER(c_float)` by reading the Rust source would state every type a third
+time (in Rust, in `_native.py`, in the test's own mapping), which is the drift
+the test exists to stop. The arity check and the ABI handshake catch a function
+added or a parameter appended; nothing caught a parameter whose width changed,
+which ctypes converts without a word and which comes back as a wrong number far
+from the call.
+
+What changed is where the types come from. `crates/clausters-ffi/include/clausters_ffi.h`
+is **generated** from the crate by cbindgen (a dev-dependency of
+`clausters-checks`, never linked into anything shipped), and
+`crates/clausters-checks/tests/c_header.rs` fails when the committed file is not
+what the crate generates. So the header is not a third statement of the
+signatures, it is the first one read back by the toolchain, and the Python test
+compares each declared type with it through a fixed table of equivalents
+(`uint32_t` is `c_uint32`, `const float *` is `POINTER(c_float)`, any pointer may
+cross as `c_void_p`). The table is the only new knowledge, and it is about C and
+ctypes, not about any function. The header also compiles on its own, the one
+core type that crosses the ABI (the segment's `Shape`) included, which makes it
+usable by a C caller as well.
+
+What it still does not check: whether a pointer declared `c_void_p` points at
+the right thing (any pointer may cross as an address, as handles do), and, on a
+platform where two C types share one ctypes type (`size_t` and `uint64_t` are
+both `c_ulong` on 64-bit Linux), the difference between them.
+
 ## There is no widget registry to generate the builders from
 
 The GUI layer has the same disease the core's bindings had, one level up: a

@@ -21,12 +21,17 @@ What it compares:
   parameter count of the Rust function. A wrong count is the failure ctypes will
   not report: it converts what it was told about and reads the rest as garbage.
 
-What it deliberately does not compare: parameter *types*. Mapping `*const f32`
-to `POINTER(c_float)` textually would re-encode the same knowledge a third time,
-which is the problem, not the fix. Arity plus the ABI-version handshake in
-`_configure` catches the drift that actually happens -- a function added, a
-parameter appended -- and the value tests (`test_native.py` and the parity
-vectors) cover whether the numbers come back right.
+- **Types agree.** Each declared parameter type, and the declared return
+  type, is compared with the C type of the header the crate generates
+  (`crates/clausters-ffi/include/clausters_ffi.h`, kept equal to the crate by
+  `crates/clausters-checks/tests/c_header.rs`), through a fixed table of
+  equivalents: `uint32_t` is `c_uint32`, `const float *` is
+  `POINTER(c_float)`, any pointer may cross as `c_void_p`. The header is not a
+  third statement of the signatures, it is the first one read back, which is
+  why this compares types and the first version of this file did not
+  (`docs/decisions.md`, "The ctypes declarations are checked against a header
+  the crate generates"). A width that disagrees is the failure ctypes never
+  reports: it truncates or pads, and the number is wrong far from the call.
 """
 
 import ctypes
@@ -41,6 +46,7 @@ from clausters import _native
 # and this test is about the repository's internal consistency, so it skips
 # rather than fails there.
 FFI_SRC = pathlib.Path(__file__).resolve().parents[3] / "crates" / "clausters-ffi" / "src"
+HEADER = FFI_SRC.parent / "include" / "clausters_ffi.h"
 
 SIGNATURE = re.compile(r'pub (?:unsafe )?extern "C" fn (\w+)\s*\(')
 CFG_FEATURE = re.compile(r'#\[cfg\(feature = "(\w+)"\)\]')
@@ -178,3 +184,92 @@ def test_declared_arity_matches_the_signature(surfaces):
         if len(fn.argtypes) != arity:
             wrong.append(f"{name}: binding declares {len(fn.argtypes)}, crate takes {arity}")
     assert not wrong, "argtypes disagree with the Rust signature:\n" + "\n".join(wrong)
+
+
+# The C types of the header, as the ctypes types that carry them. Fixed and
+# small on purpose: a type the header gains that is not here fails the test
+# below, and is added here once, rather than a declaration guessing.
+SCALARS = {
+    "double": ctypes.c_double,
+    "float": ctypes.c_float,
+    "bool": ctypes.c_bool,
+    "int8_t": ctypes.c_int8,
+    "uint8_t": ctypes.c_uint8,
+    "int16_t": ctypes.c_int16,
+    "uint16_t": ctypes.c_uint16,
+    "int32_t": ctypes.c_int32,
+    "uint32_t": ctypes.c_uint32,
+    "int64_t": ctypes.c_int64,
+    "uint64_t": ctypes.c_uint64,
+    "size_t": ctypes.c_size_t,
+    "ptrdiff_t": ctypes.c_ssize_t,
+}
+
+C_FUNCTION = re.compile(
+    r"^(?P<ret>[A-Za-z_][\w \*]*?)\s*\b(?P<name>clausters_\w+)\((?P<params>[^;]*?)\);",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def header_signatures() -> dict[str, tuple[str, list[str]]]:
+    """`{symbol: (return type, [parameter types])}` from the generated header."""
+    text = HEADER.read_text()
+    found = {}
+    for m in C_FUNCTION.finditer(text):
+        ret = " ".join(m.group("ret").split())
+        params = []
+        for param in m.group("params").split(","):
+            param = " ".join(param.split())
+            if param in ("", "void"):
+                continue
+            # the parameter's name is the last word; its type is the rest
+            ctype = re.match(r"^(.*?)\s*\b\w+$", param).group(1)
+            params.append(ctype)
+        found[m.group("name")] = (ret, params)
+    return found
+
+
+def carries(ctype: str, declared) -> bool:
+    """Whether a ctypes declaration carries the C type `ctype`."""
+    ctype = ctype.replace(" *", "*").strip()
+    if ctype.endswith("*"):
+        if declared is ctypes.c_void_p:
+            return True  # an address, whatever it points at
+        inner = ctype[:-1].removeprefix("const ").strip()
+        if inner == "char":
+            return declared is ctypes.c_char_p
+        if inner == "uint8_t" and declared is ctypes.c_char_p:
+            return True  # bytes handed over as they are
+        target = getattr(declared, "_type_", None)
+        if not (isinstance(declared, type) and issubclass(declared, ctypes._Pointer)):
+            return False
+        if inner in SCALARS:
+            return target is SCALARS[inner]
+        return inner.startswith("struct ") and issubclass(target, ctypes.Structure)
+    if ctype == "void":
+        # an unset restype is ctypes' int, read and dropped
+        return declared is None or declared is ctypes.c_int
+    return ctype in SCALARS and declared is SCALARS[ctype]
+
+
+def test_declared_types_match_the_header(surfaces):
+    _, declared = surfaces
+    if not HEADER.is_file():
+        pytest.skip("no generated header next to the crate")
+    header = header_signatures()
+    assert len(header) > 50, f"parsed only {len(header)} functions from {HEADER}"
+    wrong = []
+    for name, fn in sorted(declared.items()):
+        if name not in header:
+            wrong.append(f"{name}: not in the generated header")
+            continue
+        ret, params = header[name]
+        if fn.argtypes is not None:
+            for i, (ctype, decl) in enumerate(zip(params, fn.argtypes)):
+                if not carries(ctype, decl):
+                    wrong.append(f"{name}: parameter {i} is {ctype}, declared {decl.__name__}")
+        if not carries(ret, fn.restype):
+            got = getattr(fn.restype, "__name__", fn.restype)
+            wrong.append(f"{name}: returns {ret}, declared {got}")
+    assert not wrong, "ctypes types disagree with the C ABI:\n" + "\n".join(wrong)
+

@@ -8,10 +8,23 @@ outward, and **only the first is checked by a compiler**:
 |---|---|---|
 | `clausters-ffi` | the C ABI (`extern "C"`, flat data) | cargo — a core signature that moves breaks the build |
 | `clausters-core-web` | the wasm/JS surface (`wasm_bindgen`) | cargo, against core — but nothing ties it to the C ABI |
-| `clausters/_native.py` | the ctypes declarations over the C ABI | `clients/python/tests/test_native_parity.py` |
+| `clausters/_native.py` | the ctypes declarations over the C ABI | `clients/python/tests/test_native_parity.py`, against the header the crate generates |
 
 The Python leg needs no table: it must cover the C ABI **entirely**, so its test
 compares the two sets directly and fails on anything the binding never declared.
+It compares the **types** too: `crates/clausters-ffi/include/clausters_ffi.h` is
+the C ABI's header, generated from the crate by cbindgen and kept equal to it by
+`crates/clausters-checks/tests/c_header.rs` (regenerate it with
+`CLAUSTERS_BLESS=1 cargo test -p clausters-checks --test c_header`), and every
+declared parameter and return type is held against it through a fixed table of
+equivalents, so a width that disagrees fails before a number comes back wrong.
+
+The two crates have **one shape**: `clausters-core-web` is split into the same
+modules by subject as `clausters-ffi` (`registry`, `time`, `tempomap`, `event`,
+`document`, `history`, `notation`, ...), so a row of the table below is read
+file against file. What only one side has is a module of its own there:
+`osc` and `midi` in wasm; `shm`, `ws` and `out` (reading a caller's string,
+filling its buffer) in C.
 
 The wasm leg is different, and this file exists because of that difference. It is
 **not** obliged to mirror the C ABI, and pretending otherwise would make the

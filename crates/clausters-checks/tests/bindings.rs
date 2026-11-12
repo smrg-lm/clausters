@@ -49,12 +49,27 @@ fn c_abi_symbols() -> BTreeSet<String> {
 }
 
 /// The `wasm_bindgen` surface of `clausters-core-web`: free functions carrying
-/// the attribute, and every method of an `impl` block that carries it.
+/// the attribute, and every method of an `impl` block that carries it, over
+/// every module of the crate (one per subject, as `clausters-ffi`'s are).
 fn wasm_symbols() -> BTreeSet<String> {
-    let text = std::fs::read_to_string(root().join("crates/clausters-core-web/src/lib.rs"))
-        .expect("clausters-core-web/src/lib.rs");
-    let lines: Vec<&str> = text.lines().collect();
+    let dir = root().join("crates/clausters-core-web/src");
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .expect("clausters-core-web/src")
+        .map(|e| e.expect("a directory entry").path())
+        .filter(|p| p.extension().is_some_and(|e| e == "rs"))
+        .collect();
+    files.sort();
     let mut out = BTreeSet::new();
+    for file in files {
+        let text = std::fs::read_to_string(&file).expect("a module of clausters-core-web");
+        wasm_symbols_of(&text, &mut out);
+    }
+    out
+}
+
+/// The exported symbols of one module's text, into `out`.
+fn wasm_symbols_of(text: &str, out: &mut BTreeSet<String>) {
+    let lines: Vec<&str> = text.lines().collect();
     let mut class: Option<&str> = None;
     let mut class_exported = false;
     for (i, raw) in lines.iter().enumerate() {
@@ -76,7 +91,6 @@ fn wasm_symbols() -> BTreeSet<String> {
             ));
         }
     }
-    out
 }
 
 /// The attribute lines directly above item `i`, stopping at the first blank

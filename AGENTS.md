@@ -228,7 +228,12 @@ The wires and where their ends live:
   bindings are declared in `docs/bindings.md` and enforced by
   `crates/clausters-checks/tests/bindings.rs` (C ABI ↔ wasm) and
   `clients/python/tests/test_native_parity.py` (C ABI ↔ ctypes): a new symbol
-  that reaches only one of them fails a test until the table says why.
+  that reaches only one of them fails a test until the table says why. The
+  ctypes types are held against the C ABI's generated header,
+  `crates/clausters-ffi/include/clausters_ffi.h`, which
+  `crates/clausters-checks/tests/c_header.rs` keeps equal to the crate: a
+  change to the C ABI regenerates it in the same commit
+  (`CLAUSTERS_BLESS=1 cargo test -p clausters-checks --test c_header`).
 
 **What is actually checked, and what is not.** The compiled Rust is safe:
 cargo refuses to build a caller of a signature that moved. Everything else is

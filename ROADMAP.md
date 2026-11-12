@@ -276,8 +276,8 @@ its plan; the plan is where its acceptance is read.
 
 - ⬜ **The second review of the workspace's shape, `R14`, `R19`-`R23`** *(root
   `PLAN.md`, R track, "The second review: the shape of the workspace")*. Done
-  on the branch `restructure`. Open: `R20` (the bindings' shape), `R21` (the
-  clients linted and typed) and `R22` (the editor application). `R23` (the plans hold what is open) is
+  on the branch `restructure`. Open: `R21` (the clients linted and typed)
+  and `R22` (the editor application). `R23` (the plans hold what is open) is
   last, once the branch is accepted. `R14` waits only on the release
   rehearsal, run at the end.
 
