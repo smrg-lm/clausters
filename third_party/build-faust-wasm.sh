@@ -50,7 +50,7 @@
 # `...FromSignals`, in `wasm_dynamic_dsp_aux.cpp`); what was missing was the
 # JS-facing surface over them and the C box/signal API being exported at all.
 # `faust-wasm-bindings.patch` adds four embind methods, and the link exports the
-# C API itself -- the list read out of `src/faust/ffi.rs`, so the two cannot
+# C API itself -- the list read out of the server's `src/faust/ffi.rs`, so the two cannot
 # drift: whatever the one interpreter calls, the artifact exports.
 #
 # This matters more than it looks. Without it a def built with the signal or box
@@ -176,7 +176,7 @@ echo "== linking with em++, for the browser"
 # because the caller writes a signal vector into this module's heap, and the
 # runtime methods because every label crosses as bytes.
 exports=$(grep -oE '\bpub fn (Cbox[A-Za-z0-9_]*|Csig[A-Za-z0-9_]*|CDSPToBoxes)\b' \
-              "$root/src/faust/ffi.rs" \
+              "$root/crates/clausters-server/src/faust/ffi.rs" \
           | awk '{print "\"_"$3"\""}' | sort -u | paste -sd,)
 exports="$exports,\"_malloc\",\"_free\""
 runtime='"stringToUTF8","lengthBytesUTF8","UTF8ToString","HEAPU8","HEAP32","getValue","setValue"'
