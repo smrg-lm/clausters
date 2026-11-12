@@ -24,19 +24,19 @@ use std::process::Command;
 /// Files whose content is characters, so the characters stay.
 const DATA: &[(&str, &str)] = &[
     (
-        "clients/gui/src/host/font/mod.rs",
+        "crates/clausters-gui/src/host/font/mod.rs",
         "the glyph table: every arm is keyed by the character it draws",
     ),
     (
-        "clients/gui/src/host/graphics/textedit.rs",
+        "crates/clausters-gui/src/host/graphics/textedit.rs",
         "a caret test over a string whose letters are two bytes each",
     ),
     (
-        "clients/gui/src/host/gui/app.rs",
+        "crates/clausters-gui/src/host/gui/app.rs",
         "the doc naming the accented capital a keyboard used to swallow",
     ),
     (
-        "clients/gui/src/host/web/compose.rs",
+        "crates/clausters-gui/src/host/web/compose.rs",
         "dead-key composition: the docs name the marks they compose",
     ),
     (

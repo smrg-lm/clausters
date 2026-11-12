@@ -1,12 +1,12 @@
 # Plan - Clausters web client (TypeScript, browser-first)
 
-The TypeScript client: a high-level client of `clausters-server` and of the browser GUI host, the web sibling of `clients/python`. It is its **own package, docs, examples and tests** under `clients/web`, exactly the way the Python client lives under `clients/python` - a parallel client track, not part of the GUI host (`clients/gui`) and not part of the server.
+The TypeScript client: a high-level client of `clausters-server` and of the browser GUI host, the web sibling of `clients/python`. It is its **own package, docs, examples and tests** under `clients/web`, exactly the way the Python client lives under `clients/python` - a parallel client track, not part of the GUI host (`crates/clausters-gui`) and not part of the server.
 
 > **Read alongside `clients/python/PLAN.md`.** That plan already covers the *shared* client rationale (the native Rust core, the C-ABI/wasm seam, the "only flat data crosses" boundary, the coroutine-driver-stays-in-the-language rule) and was written from the start "to serve a future JavaScript client too". This file is the web-specific track; it does not restate the shared design, it points at it and records only what is different in the browser. As there, **sc3 is the reference model** for module structure, clock/routine behaviour, events, patterns and OSC/MIDI semantics; deviate only with an explicit reason.
 
 ## Why a separate track (and why now)
 
-The browser GUI host (`clients/gui`, milestones G11-G16) runs the `/gui_*` widget system under WebGPU and is driven *through* a small wasm binding surface or over WebSocket. Those milestones deliberately use a **throwaway** in-page harness to test the host; the real, product driver - the thing a web app actually programs against - is this TypeScript client. Keeping it here, separate from the host, preserves the same boundary the rest of the system keeps: the host is a front, the client is a consumer of the protocol, and either can change without dragging the other.
+The browser GUI host (`crates/clausters-gui`, milestones G11-G16) runs the `/gui_*` widget system under WebGPU and is driven *through* a small wasm binding surface or over WebSocket. Those milestones deliberately use a **throwaway** in-page harness to test the host; the real, product driver - the thing a web app actually programs against - is this TypeScript client. Keeping it here, separate from the host, preserves the same boundary the rest of the system keeps: the host is a front, the client is a consumer of the protocol, and either can change without dragging the other.
 
 So the web client is one more consumer of the exact same wires the Python client uses: OSC-in-JSON GuiDefs to the GUI host, OSC to the audio server, the same `decode_packet` framing - only the carrier (browser `WebSocket`), the binding technology (wasm, not ctypes) and the host language (TS, not Python) differ.
 
@@ -365,7 +365,7 @@ is the server's client and **no TypeScript client is loaded at run time**. The
 builders run earlier, in the authoring script, and what the page fetches is
 data.
 
-- **The host, from one canvas to N** (`clients/gui/src/host/web.rs`): `window`/`render`/`current_def` are singular today ("the browser shows one at a time"); they become a map keyed by def id — a wgpu surface, a size, a gesture state and a visibility flag each. The native front already keeps one surface per `window`-rooted GuiDef, so the model is ported, not invented. Two reversals ride along: the **element supplies the canvas** (winit's `with_canvas`, instead of `guiHost()` hunting for the one winit appended to `<body>`), and its size comes from the element (`ResizeObserver` + `devicePixelRatio`). A canvas out of the viewport is skipped on the tick and drops its buses from the `/bus_stream`/`/bus_tapStream` sets — a document can hold fifty canvases with three in view, and the browser's own compositing skip does not stop *our* host from computing or the server from streaming.
+- **The host, from one canvas to N** (`crates/clausters-gui/src/host/web.rs`): `window`/`render`/`current_def` are singular today ("the browser shows one at a time"); they become a map keyed by def id — a wgpu surface, a size, a gesture state and a visibility flag each. The native front already keeps one surface per `window`-rooted GuiDef, so the model is ported, not invented. Two reversals ride along: the **element supplies the canvas** (winit's `with_canvas`, instead of `guiHost()` hunting for the one winit appended to `<body>`), and its size comes from the element (`ResizeObserver` + `devicePixelRatio`). A canvas out of the viewport is skipped on the tick and drops its buses from the `/bus_stream`/`/bus_tapStream` sets — a document can hold fifty canvases with three in view, and the browser's own compositing skip does not stop *our* host from computing or the server from streaming.
 - **The bundle grows a contract** (`clausters_core::bundle`, opened to the browser by `clausters-core-web` and to Python by `clausters-ffi`): `bundle.json` gains a symbol table, declared `params` and presets, and becomes a file **both** legs read (absent, the native host keeps listing the directory as today). The GuiDef record becomes a *template* with two kinds of hole — `@symbol`, an id the page allocates, and `$param`, a value the tag supplies — while widget ids stay local `1..N` and are offset by an allocated base. **Holes live only in the GuiDef record**, so def payloads are byte-identical between instances and are sent once; the authoring rule that follows is that a bus or a node reaches a def **as a control**, never as a baked constant (which is exactly why today's `piano_voice`, with its `out_ctl(0.0, env)`, cannot be mounted twice). Resolution is two pure functions — `requirements(manifest)` then `resolve(template, allocation, params)` — with the caller allocating in between, so nothing is added to the `/gui_*` protocol and no state to the host.
 - **The component** (`src/elements.ts`, `src/runtime.ts`): a custom element owning its canvas, with the declared parameters as attributes and `preset` beside them, mounted in two phases — the GuiDef opens and draws on connect, and the engine half (defs, buffers, boot) goes out on the first page gesture, since the AudioContext is page-wide and N power buttons would be wrong. Failures stay per component. A new **slim run-time entry**, `dist/runtime.js`, carries the engine, the host, the codec and the mount and *not* the builders — today's `examples/panels/piano/index.html` imports the whole package facade to use none of it.
 - **The authoring API** (`clausters.bundle`, Python first, Node after): a writer over the existing builders that holds the symbol table, so the author names things instead of numbering them, declares `params` and presets, validates through the core before emitting — an unmountable bundle is unwritable — and generates the five-line ES module that registers the tag.
@@ -374,7 +374,7 @@ data.
 
 **What shipped.** The substitution, and the format that makes it repeatable.
 
-The **browser host went from one canvas to N** (`clients/gui/src/host/web.rs`):
+The **browser host went from one canvas to N** (`crates/clausters-gui/src/host/web.rs`):
 `window`/`render`/`current_def` — all singular, with the comment "the browser
 shows one at a time" — became a map keyed by def id, each entry a wgpu surface,
 a size, a pointer, a gesture state, the scope/tap/spectrum histories and a
@@ -1326,7 +1326,7 @@ theme is a **launch flag** (`--theme file.toml`) and a **wasm export**
 (`GuiBridge.theme(json)`) with **no protocol verb**, which is exactly the shape
 the typeface had before `/gui_font`: a property of the host that every client
 should be able to hand over at run time. The fix was that verb, and it landed the same day
-(`clients/gui/PLAN.md`, Found by use): `/gui_theme <json>` and — since `metrics`
+(`crates/clausters-gui/PLAN.md`, Found by use): `/gui_theme <json>` and — since `metrics`
 sat beside it in exactly the same shape — `/gui_metrics <json>`, with both wasm
 exports removed and `GuiHost.theme(table)`/`.metrics(table)` in both clients.
 `panels/style` is written now, on both sides, and the folder is complete.
@@ -1421,7 +1421,7 @@ publishable by a checker long before anyone runs `npm publish`.
 
 - **The package**: `npm publish` for `clausters`, on the repository's own SemVer (package, crate and wheel are one release), through the gate `prepublishOnly` runs. The procedure, including what has to be built first, is `clients/web/BUILD.md`, "Publishing".
 - **The book**: a third Read the Docs project pointing at `clients/web/.readthedocs.yaml` (the file exists and drives the whole build: TypeDoc, then mdBook).
-- **The inbound links**: the other books and READMEs do not link the web book, because the URL does not resolve yet. Once it does, the badge/link rows (root `README.md`, `clients/python/README.md`, `clients/gui/README.md`) and the Python book's introduction gain it — the cross-linking the three books otherwise already do.
+- **The inbound links**: the other books and READMEs do not link the web book, because the URL does not resolve yet. Once it does, the badge/link rows (root `README.md`, `clients/python/README.md`, `crates/clausters-gui/README.md`) and the Python book's introduction gain it — the cross-linking the three books otherwise already do.
 - The npm publication also decides what W5 could leave open: whether the wasm bundles ship inside the tarball (they do today, ~2 MB) or are fetched, and how a consumer's bundler is expected to treat the worklet module.
 
 **Acceptance:** `npm install clausters` in an empty project yields a working client (the getting-started page's example runs against it unchanged), the web book is live and cross-linked in both directions, and the release's three version numbers agree.
@@ -1443,7 +1443,7 @@ not.
 **Three things only a clean checkout could find**, each fixed where it broke
 rather than worked around in the workflow — a release runner and a docs
 builder are the first machines that are not somebody's working copy:
-`clients/gui/Cargo.lock` was ignored while `build.sh` reads it (the
+`crates/clausters-gui/Cargo.lock` was ignored while `build.sh` reads it (the
 `wasm-bindgen` pin is an agreement between two lockfiles, so one resolved
 fresh per machine is not a pin); the Read the Docs build installed no
 dependencies for the package whose tsconfig asks for the `node` type library;
@@ -1827,7 +1827,7 @@ So what the port owes is a `publish` that forwards to `define` or
 edit named, not the window, because the window is megabytes a second of JSON
 at drag rates on a large piece. It also owes `GuiHost.redefine` itself, which
 is the door for a part and which this client does not have — see the AP track's "Found by use" in
-`clients/gui/PLAN.md`.
+`crates/clausters-gui/PLAN.md`.
 
 It is a **recorded** divergence rather than an accidental one, and it is now
 a much cheaper one to close.
@@ -1861,14 +1861,14 @@ argument `AP0` made when it wrote the seam in Python only, and it held: the
 difference this client bound and never called was deleted on 2026-09-07 before
 the port could copy it. So this waits on
 
-- **`clients/gui/PLAN.md`'s AP track** — `AP5`'s remainder, `AP7` and `AP8`. `AP5` is what
+- **`crates/clausters-gui/PLAN.md`'s AP track** — `AP5`'s remainder, `AP7` and `AP8`. `AP5` is what
   decides what an application still owns; `AP8` is the pass over the packages,
   and a parity reading before the docs and the bindings tables are settled is a
   reading against a moving target.
 - **`crates/clausters-document/PLAN.md`'s `O24`** — the three applications. They
   are the first real consumers of this seam, and `AP7` already defers to them;
   an abstraction ported before its consumers exist is ported against a guess.
-- **`clients/gui/PLAN.md`'s open tracks**, where they touch the wire this seam
+- **`crates/clausters-gui/PLAN.md`'s open tracks**, where they touch the wire this seam
   speaks.
 
 **Acceptance:** `clients/web/src/gui/editing/application.ts` exists and holds
@@ -2452,7 +2452,7 @@ encoding (tuplets, voices, spelling, articulations) extends the *shared* half,
 so both clients gain it at once. This lands with **W16** and not before.
 
 **What that seam grows into is decided, and this port follows it rather than
-re-deriving it** (`clients/gui/PLAN.md`, "N track — notation: the score model").
+re-deriving it** (`crates/clausters-gui/PLAN.md`, "N track — notation: the score model").
 Richer encoding turned out not to be four refinements of `mei` but a **model**
 in `clausters_core::notation`: two durational structures that do not contain
 each other — the metric layout, which does not sound and is addressable, and
@@ -2979,7 +2979,7 @@ as some other milestone has a better claim on it.
     same in both. What is *not* the same: the host has no live door for a blob
     (`/gui_set` takes `data` inline or `reload` for a path), so `Source.set`
     refuses on a spilled source here where Python rewrites the file and
-    re-reads it. That gap is the host's and is written in `clients/gui/PLAN.md`.
+    re-reads it. That gap is the host's and is written in `crates/clausters-gui/PLAN.md`.
   - **A control is told from an option bag by its `default`.** Python separates
     them by position — one positional, the rest keywords — and TypeScript has
     one positional slot, so `knob(freq)` vs `knob({name: "freq"})` is decided on
@@ -3865,7 +3865,7 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   *standalone* door taking its body-shaped branch, and the two doors are only
   the same when something connects them. Found by porting the editor and
   comparing the two clients' screens side by side; fixed in
-  `clients/gui/src/host/elements/curve.rs`, pinned by
+  `crates/clausters-gui/src/host/elements/curve.rs`, pinned by
   `a_clip_body_draws_the_line`, which goes through the body door.
 
 These are not milestones and they are not future directions. They are what
@@ -4375,7 +4375,7 @@ finished work, where a pending item reads as done.
   front existed is covered by nothing. `canvas` is the one that was caught. The
   cheap answer is a page that mounts one of every built-in element and asserts
   only that the host draws a frame and does not panic, which is exactly the
-  shape the desktop's own squeeze test took (`clients/gui/PLAN.md`, "Nothing
+  shape the desktop's own squeeze test took (`crates/clausters-gui/PLAN.md`, "Nothing
   resizes a window, so nothing tests a squeeze") and is what would have caught
   all three of these at once.
 

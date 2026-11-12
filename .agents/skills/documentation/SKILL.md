@@ -55,7 +55,7 @@ writing. Then place the page.
 - **Development** (section 3) — `docs/architecture.md`, `docs/contributing.md`,
   `docs/decisions.md` (the ADR-style design record, in the server book), the
   `PLAN.md` roadmaps (`PLAN.md` / `clients/python/PLAN.md` /
-  `clients/gui/PLAN.md` / `clients/web/PLAN.md`), and the frozen
+  `crates/clausters-gui/PLAN.md` / `clients/web/PLAN.md`), and the frozen
   `docs/history/build-log.md`. The manual-test surface is the runnable
   `examples/`, not a separate checklist.
 

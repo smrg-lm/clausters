@@ -590,7 +590,7 @@ pub trait BusSource: Send + Sync {
     }
 }
 
-// The `/gui_*` vocabulary (canonical tables in clients/gui/PLAN.md).
+// The `/gui_*` vocabulary (canonical tables in crates/clausters-gui/PLAN.md).
 pub const GUI_DEF: &str = "/gui_def";
 pub const GUI_SET: &str = "/gui_set";
 pub const GUI_FREE: &str = "/gui_free";

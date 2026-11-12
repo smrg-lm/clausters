@@ -215,7 +215,7 @@ completed items lives in the git history.)
 
   **(a) A buffer-write command.** The `/buffer_*` family has no write: it reads with `/buffer_get`/`/buffer_getRange` and has no command that puts samples back (scsynth's `/b_set`/`/b_setn` were commands as well as replies; ours are replies only, and now spelled as such). So a client can read a buffer's samples but never put samples into one — it can only ask the server to fill it (`/buffer_gen`, `/buffer_allocRead`, `/buffer_read`) or, when it shares memory with the engine, install them through the embed door (`buffer_load`, what the browser's in-page carrier uses). This is what an audio-editor view needs to close its read → edit → write cycle, and why W10's bulk path is read-only and its `Buffer.load` is in-page only. To settle: the install path (the NRT queue `/buffer_gen` already uses, so a write never touches the audio thread), the semantics (scsynth's `bufnum start count values…`, repeated, plus a single-sample form), how a multi-megabyte edit is chunked against the `--max-frame` ceiling, whether the write is asynchronous with a `/done` or synchronous on the mirror like `/buffer_getRange`, and whether an edited buffer needs any notification for other readers.
 
-  **(b) Ring clients get identities.** Every packet arriving through the shared-memory / in-process ring is `ClientId::Ring` — a *single* client (`src/osc/mod.rs`), which `docs/ipc.md` already names as future work ("the transport keeps one ring client per segment … multiple ring clients … are explicitly future work"). The per-client subscriptions therefore collide: `/bus_stream` and `/bus_tapStream` are "one per client, replaced on each call", so two independent readers over one ring silently take the stream from each other. **The evidence**, from a browser page where the script and the GUI host both push through `engine.send`: the script subscribes `/bus_stream(20, bus 0)` and gets its snapshots; the host opens a `meter` and sends `/bus_stream(33, bus 1)`, after which the script receives **nothing**; the script re-subscribes and takes it back. The loss is **permanent in one direction** — the browser host only re-sends when its own wanted set changes (`clients/gui/src/host/web.rs`, `sync_bus_stream`), so once a script replaces the subscription the host's meters and scopes stay frozen until a widget is added or removed. Over sockets there is no such problem (a native host and a script are different `ClientId`s), so this is specifically the shared ring — and it also means two `BusStream`s in one page collide with each other. To settle: where a sender tag lives (a ring frame-header field, which moves the segment layout, or several rings), how the embed and wasm doors carry it (`clausters_send`, `WebServer::send`), whether replies stay broadcast on the shared reply ring (they can — the identity is needed for subscription bookkeeping, not for reply isolation), and what a peer built against the old layout sees. A page-side arbiter merging the two demands into one subscription was considered and set aside: it is a workaround for a missing server capability, and it would leave the same trap for every other ring embedder.
+  **(b) Ring clients get identities.** Every packet arriving through the shared-memory / in-process ring is `ClientId::Ring` — a *single* client (`src/osc/mod.rs`), which `docs/ipc.md` already names as future work ("the transport keeps one ring client per segment … multiple ring clients … are explicitly future work"). The per-client subscriptions therefore collide: `/bus_stream` and `/bus_tapStream` are "one per client, replaced on each call", so two independent readers over one ring silently take the stream from each other. **The evidence**, from a browser page where the script and the GUI host both push through `engine.send`: the script subscribes `/bus_stream(20, bus 0)` and gets its snapshots; the host opens a `meter` and sends `/bus_stream(33, bus 1)`, after which the script receives **nothing**; the script re-subscribes and takes it back. The loss is **permanent in one direction** — the browser host only re-sends when its own wanted set changes (`crates/clausters-gui/src/host/web.rs`, `sync_bus_stream`), so once a script replaces the subscription the host's meters and scopes stay frozen until a widget is added or removed. Over sockets there is no such problem (a native host and a script are different `ClientId`s), so this is specifically the shared ring — and it also means two `BusStream`s in one page collide with each other. To settle: where a sender tag lives (a ring frame-header field, which moves the segment layout, or several rings), how the embed and wasm doors carry it (`clausters_send`, `WebServer::send`), whether replies stay broadcast on the shared reply ring (they can — the identity is needed for subscription bookkeeping, not for reply isolation), and what a peer built against the old layout sees. A page-side arbiter merging the two demands into one subscription was considered and set aside: it is a workaround for a missing server capability, and it would leave the same trap for every other ring embedder.
 
   **A possible optimization, noted from (a) and deliberately not taken there.** The *read* path still costs one round trip per chunk — 623 ms for 200k samples over the shared-memory carrier, against 121 ms for the write of the same samples once its chunks were batched behind one `/server_sync`. That asymmetry is inherent to request/reply: a write is fire-and-forget with a barrier at the end, while every read chunk has to wait for the reply that carries its data. It could be pipelined — send every `/buffer_getRange` at once and collect the replies as they arrive — but that needs reply-matching machinery neither client has (a request today is one send and one await), so it belongs to whoever opens that layer rather than to a buffer-write milestone.
 
@@ -223,7 +223,7 @@ completed items lives in the git history.)
 
   **What shipped.** (a): `/buffer_set` (single samples by flat index) and `/buffer_setRange` (runs), on the NRT queue like the rest of the writing family, laid into a copy that replaces the buffer whole; a range past the end **fails** rather than being clamped, since a short write would lose data the caller believes it stored. Two things turned up while building it and are recorded in `docs/decisions.md`. First, bulk samples ride as a **little-endian `f32` blob**, not as float arguments — 200k samples took 2.7 s as typed arguments against 0.1 ms as one blob — so `/buffer_getRange.reply` changed to match, and the rule (payload scaling with the audio → blob; with the parameters → typed arguments) is written in `docs/schemas.md` rather than re-derived. Second, a job rebuilding a buffer from its contents snapshotted the network-side mirror at *parse* time, which is wrong for a batch: every chunk copied the same pre-batch contents and the last install erased the rest, so the NRT queue now keeps its own view of what it last produced per index. With that safe the chunks close with **one** `/server_sync` instead of a `/done` each. Clients: `Buffer.set_samples`/`set_sample` and `setSamples`/`setSample`, each with one shared pack/unpack (`clausters.base.bulk`, `src/base/bulk.ts`) so the endianness check has one owner. Example `clients/python/examples/buffers/buffer_edit.py`.
 
-  (b): each ring frame carries a `u32` **peer tag** beside its length — who authored the packet inbound, who the reply is for outbound — and `ClientId::Ring` becomes `ClientId::Ring(u32)`. The tag lives in the *frame*, so no header or data-plane offset moved and the hand-written readers (`clients/gui/src/host/shm.rs`, `clients/python/clausters/ipc.py`) needed only their version constant; several rings were considered and set aside for moving the layout and fixing a client count at boot. SPSC survives because the tag is about the packet, not the ring: a multi-client embedder funnels sends through one producer and demultiplexes replies by tag, which is what the page already did through its one `MessagePort`. Tags are the embedder's to assign (no handshake; peer 0 is the single client a segment always had, so existing embedders are untouched), and the C ABI stays deliberately single-peer since its one consumer is itself one client. Replies being addressed removed the page-wide eavesdrop, so the web client grew an explicit `ANY_PEER` **read** door for observers, which two page tests now use rather than reaching into another client's internals.
+  (b): each ring frame carries a `u32` **peer tag** beside its length — who authored the packet inbound, who the reply is for outbound — and `ClientId::Ring` becomes `ClientId::Ring(u32)`. The tag lives in the *frame*, so no header or data-plane offset moved and the hand-written readers (`crates/clausters-gui/src/host/shm.rs`, `clients/python/clausters/ipc.py`) needed only their version constant; several rings were considered and set aside for moving the layout and fixing a client count at boot. SPSC survives because the tag is about the packet, not the ring: a multi-client embedder funnels sends through one producer and demultiplexes replies by tag, which is what the page already did through its one `MessagePort`. Tags are the embedder's to assign (no handshake; peer 0 is the single client a segment always had, so existing embedders are untouched), and the C ABI stays deliberately single-peer since its one consumer is itself one client. Replies being addressed removed the page-wide eavesdrop, so the web client grew an explicit `ANY_PEER` **read** door for observers, which two page tests now use rather than reaching into another client's internals.
 
   **Acceptance (met).** A client writes samples into a buffer and reads back exactly what it wrote, in chunks, over a socket and over the ring (`tests/buffers.rs`, `clients/python/tests/test_buffer_io.py`, `clients/web/tests/data-ws.test.ts`), and a batch of writes no longer erases itself (`a_batch_of_writes_does_not_erase_itself`, verified to fail without the queue's chain). Two ring peers keep their own `/bus_stream` subscriptions (`tests/ipc.rs`), and on one page over the in-page carrier a GUI host `meter` and a script `BusStream` on different buses **both keep updating**: the probe that used to demonstrate the collision is now the acceptance, `clients/web/tests/ring-peers.html`, in that client's suite — and verified to reproduce the original failure exactly (phase 2 leaves the script at 0 snapshots, and the host never recovers) when both peers share a tag.
 
@@ -320,7 +320,7 @@ completed items lives in the git history.)
   | `ccN` | control change `N` | none | |
   | `progN` | program `N` | (selects an instrument def) | |
 
-  **Four ends, not two, because the packages move together.** The **GUI host** is one of them and it is easy to miss: `clients/gui` has the `midi` feature **on by default**, depends on `clausters-midi` with `live`, and paints live input into a `midi_in` roll through `parse_note` — which reads note-on and note-off and nothing else, so an MPE note would be painted flat, without the bend that is the point of playing it. The host binds the same decoder (it already depends on the crate) and the roll paints the per-note pitch, so a glide reads as a glide. Host-managed voices (`host/voices.rs`) sending expression *out* is a later thing and not this milestone's.
+  **Four ends, not two, because the packages move together.** The **GUI host** is one of them and it is easy to miss: `crates/clausters-gui` has the `midi` feature **on by default**, depends on `clausters-midi` with `live`, and paints live input into a `midi_in` roll through `parse_note` — which reads note-on and note-off and nothing else, so an MPE note would be painted flat, without the bend that is the point of playing it. The host binds the same decoder (it already depends on the crate) and the roll paints the per-note pitch, so a glide reads as a glide. Host-managed voices (`host/voices.rs`) sending expression *out* is a later thing and not this milestone's.
 
   Python's `MidiServer` emits on a fixed channel: output needs a **channel assigner** — round robin over the members, preferring a channel with nothing sounding, and when every member is busy reusing the **least recently used** one (the note that has been held longest), which is the rule JUCE's `MPEChannelAssigner` settles on — the zone RPN written at the head of a file or a port, and `Event` fields for the per-note dimensions. The **web client has no MIDI surface at all** — an existing divergence this milestone does not deepen: it is written into `clients/web/PLAN.md` as the gap it is, naming the shape the port follows.
 
@@ -401,7 +401,7 @@ Cargo feature: every build has both clocks and both queues.
   paused render and asserting it equals the unpaused one sample for sample, over
   a seeded-noise def, with a deliberately non-block-aligned pause.
 
-- ✅ **T5 — The transport has a position, and the engine owns it** *(done 2026-08-16; opened the same day, out of the GUI's session mode wanting a playhead and a seek — `clients/gui/PLAN.md`, H5, which consumes this and is written against it. Opened here rather than there on the user's rule: **the server is the only thing that manages playback time**, so anything that computes where a piece is belongs in the server even when a window is what asked for it.)*
+- ✅ **T5 — The transport has a position, and the engine owns it** *(done 2026-08-16; opened the same day, out of the GUI's session mode wanting a playhead and a seek — `crates/clausters-gui/PLAN.md`, H5, which consumes this and is written against it. Opened here rather than there on the user's rule: **the server is the only thing that manages playback time**, so anything that computes where a piece is belongs in the server even when a window is what asked for it.)*
 
   **What is actually missing, and it is not what the name suggests.** T1 gave the transport a rolling state the engine enforces, and `/transport_locate` looks like the seek an editor wants. It is not, and the reason is one fact: **the position never reaches the engine.** `Transport { origin_sample, tempo, playing, position, group }` lives on the network thread (`src/osc/server/mod.rs`), and exactly two commands cross to the audio side — `Cmd::TransportRun { rolling }` and `Cmd::TransportGroup { id }`. A locate sends **nothing**; it changes a number and broadcasts it. So today the server owns *whether* the piece is rolling and not *where* it is, and nothing in a graph can read the piece's time.
 
@@ -412,7 +412,7 @@ Cargo feature: every build has both clocks and both queues.
   **The shape: a reader follows the transport.** Chosen 2026-08-16 over the alternative of giving each reader its own seek (`PlayBuf` growing scsynth's `trigger`/`startPos`/`doneAction` — a real gap, recorded as **S17**, and deliberately *not* what this rests on). Four pieces:
 
   - **A position on the engine, in samples**, advancing per sample while rolling, holding while stopped, and **jumping on a locate** — which is the first time `/transport_locate` sends the audio thread anything at all. It is a *second* quantity beside the elapsed count, never a redefinition of it: the transport scheduling queue is on the elapsed axis and needs it monotonic (a jumping axis makes "due" ambiguous), so `/sched_atTransport` is untouched — pinned by a test, since that is the half of "nothing else moved" that code can check. What does change is the reference: `transportSample` is documented as elapsed, and the sentence calling it the piece's time now belongs to the position.
-  - **Published in the segment**, because that is how a host reads a clock with no messages. It **fits in the header's reserved space** (`_reserved: [u32; 2]` at offset 56, 8-byte aligned — the same room ABI v6 put the transport clock in), so no offset moves and the out-of-process readers that pin offsets by hand take a number change and nothing else: `clients/gui/src/host/shm.rs`, `clients/python/clausters/ipc.py`, and the web reader. `ABI_VERSION` 7 → 8, with what that drags for the package version read off the `release-versioning` skill rather than decided here. **After this the header has no reserved space left** — the next counter costs a real layout change, and that is worth knowing before it is spent.
+  - **Published in the segment**, because that is how a host reads a clock with no messages. It **fits in the header's reserved space** (`_reserved: [u32; 2]` at offset 56, 8-byte aligned — the same room ABI v6 put the transport clock in), so no offset moves and the out-of-process readers that pin offsets by hand take a number change and nothing else: `crates/clausters-gui/src/host/shm.rs`, `clients/python/clausters/ipc.py`, and the web reader. `ABI_VERSION` 7 → 8, with what that drags for the package version read off the `release-versioning` skill rather than decided here. **After this the header has no reserved space left** — the next counter costs a real layout change, and that is worth knowing before it is spent.
   - **Readable from the graph**, so a reader can follow it: a UGen reporting the transport position in frames, per sample at `ar` (a reader needs consecutive frames within a block) and block-constant at `kr`. A governed node is frozen while stopped and does not process at all, so it holds with everything else and reads the new position on the next play.
   - **Loop points on the transport** (`/transport_loop`), by the same rule that puts the position here: a loop that wrapped by having a client locate on each pass would be a client managing playback time once a bar. With the position wrapping in the engine, a loop is seamless and costs the graph nothing.
 
@@ -532,7 +532,7 @@ Cargo feature: every build has both clocks and both queues.
   its own transport.
 
   **What it left open, closed the same day.** The head clock was one per host
-  (`clients/gui/PLAN.md`, Found by use), and a node outside every governed
+  (`crates/clausters-gui/PLAN.md`, Found by use), and a node outside every governed
   group read transport 0, which is not what `X7`'s output wants. Both were
   decided with the user: **`/gui_headClock <id> <which> [transport]`**, the id
   a window or a widget and never optional, resolved per view -- a widget draws
@@ -909,13 +909,13 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
 
   **The shape, to decide when it opens.** Either a channel argument on the existing writers (`/buffer_setRange bufnum channel start blob`, where the run is that channel's own frames) or a separate `/buffer_setRangeChannel` beside `/buffer_readChannel` — the family already spells a channel-selective variant that way once, which is an argument for the second and against growing an argument on a command whose current shape is in every client. Whichever it is, `/buffer_set` gets the same treatment, and the reply, the past-the-end failure and the NRT chaining are the family's as they stand.
 
-  **Acceptance:** one channel of a stereo buffer is written and the other is asserted unchanged, sample for sample; a span past the end fails like the rest of the family; both clients' builders and `docs/schemas.md` carry it; and the GUI host stops refusing a multichannel take (`clients/gui/PLAN.md`, H4).
+  **Acceptance:** one channel of a stereo buffer is written and the other is asserted unchanged, sample for sample; a span past the end fails like the rest of the family; both clients' builders and `docs/schemas.md` carry it; and the GUI host stops refusing a multichannel take (`crates/clausters-gui/PLAN.md`, H4).
 
   **What shipped** *(2026-08-16)*. Two commands, `/buffer_setChannel bufnum channel [frame value]...` and `/buffer_setRangeChannel bufnum channel [frame blob]...` — the `*Channel` spelling the family already uses once (`/buffer_readChannel`), with the channel **before** the runs because the runs are the variadic tail and a tail cannot be told from a start. Positions are frames of that channel; one message writes one channel, like every other per-channel thing here.
 
   **Inside, it is not a second job.** `NrtJob::Set` now carries `SampleWrite { at, stride, values }`: the flat forms pass a stride of 1 and the channel forms pass the channel count, so the copy-and-swap, the batch chaining and the bounds check are the ones that were already there — one conversion at the parse (`frame * channels + ch`) and nothing downstream knows. A refusal speaks the unit it was written in: past the end reports **frames** for a channel write and samples for a flat one, and a channel the buffer does not have fails the way a channel a *file* does not have already did.
 
-  **It closed the milestone that asked for it in the same commit.** The GUI host writes through `/buffer_setRangeChannel` and no longer refuses a multichannel take; `Intent::WriteSamples` grew a `channel` (serde-default, so an older document reads as channel 0), which is what makes an undo put back the channel it took. Found by using it: the clip's take body drew channel 0 alone, the monitor played channel 0 alone, and a drag that left its lane read the *neighbouring* lane's value — all three in the "Found by use" list of `clients/gui/PLAN.md`.
+  **It closed the milestone that asked for it in the same commit.** The GUI host writes through `/buffer_setRangeChannel` and no longer refuses a multichannel take; `Intent::WriteSamples` grew a `channel` (serde-default, so an older document reads as channel 0), which is what makes an undo put back the channel it took. Found by using it: the clip's take body drew channel 0 alone, the monitor played channel 0 alone, and a drag that left its lane read the *neighbouring* lane's value — all three in the "Found by use" list of `crates/clausters-gui/PLAN.md`.
 
 - ✅ **S17 — `PlayBuf` completes its set: `trigger`, `startPos`, `doneAction`** *(opened 2026-08-16, while deciding T5's shape; the gap itself is older and both `docs/schemas.md` and `src/dsp/buf.rs` have been recording it in prose — "starts at frame 0", "neither has a trigger or done action yet")*. scsynth's `PlayBuf` takes `trigger` and `startPos` (re-cue to a frame on a rising edge) and a `doneAction` (what happens when a non-looping pass reaches the end). Ours takes none of the three, so a buffer player can be started and freed and nothing else — no cue point, no re-trigger, and a finished one-shot sits in the tree outputting silence until somebody frees it. That is the S track's own subject: a capability missing from a set declared complete.
 
@@ -1006,7 +1006,7 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
 
   **Three tests, and the third is the one that means anything**: the directory's rules in isolation (a live slot is odd, a retired one maps no more, what was mapped stays readable, a new allocation takes a new generation and therefore a new name); the region round trip (the server's sample read by the peer and the peer's read back by the server, with nothing sent); and a `/buffer_alloc` **through the ring**, mapped by a peer holding only the segment's path.
 
-  **Who inherits it, asked on the day it shipped and answered honestly: nobody yet.** The directory, the region naming and the seqlock read live in the **server crate** (`src/server/ipc.rs`, `src/dsp/region.rs`), and every other reader of a segment is a **hand-written mirror** that pins offsets by hand: `SharedSegment` for the GUI host (`clients/gui/src/host/shm.rs`) and `ShmClient` for the Python client (`clients/python/clausters/ipc.py`). Both were moved to ABI v9 with this milestone — so neither will attach to a v8 segment or misread a v9 one — and **neither gained the capability**: a client can read the clocks, the buses and the taps of a v9 segment and cannot find the material in it.
+  **Who inherits it, asked on the day it shipped and answered honestly: nobody yet.** The directory, the region naming and the seqlock read live in the **server crate** (`src/server/ipc.rs`, `src/dsp/region.rs`), and every other reader of a segment is a **hand-written mirror** that pins offsets by hand: `SharedSegment` for the GUI host (`crates/clausters-gui/src/host/shm.rs`) and `ShmClient` for the Python client (`clients/python/clausters/ipc.py`). Both were moved to ABI v9 with this milestone — so neither will attach to a v8 segment or misread a v9 one — and **neither gained the capability**: a client can read the clocks, the buses and the taps of a v9 segment and cannot find the material in it.
 
   That is the packages-move-together rule half-applied, and the halves are owed to different milestones. **The Python client's landed the same day**: `ShmClient.buffer_info` reads the directory under its generation (a seqlock, like the crate's) and `ShmClient.map_buffer` hands back a `MappedBuffer` whose `samples` is a writable `memoryview` of `f32` — the server's own memory, so a write is what the engine plays next block. Four tests over a hand-built segment, which is the honest shape for a *mirror*: what is under test is that this reader agrees with the layout, and three readers pin that layout by hand. The **host's** is **H6**: mapping what it edits is that milestone's whole subject, and it needs the directory on the mirror it uses when it is *not* linking the server (`--shm` against an external one). The **web client** inherits nothing here by construction: a page cannot map a file, which `docs/ipc.md` states beside the region.
 
@@ -1025,7 +1025,7 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
   **What this milestone got wrong, found 2026-08-17 by reading its own acceptance against what shipped, and corrected rather than quietly closed.** It was marked done with none of its acceptance run: three tests over hand-built segments and no path a person could take from a server to a sound. Three defects had shipped behind that, and they are the same absence:
 
   - **No example.** Nothing under `examples/` exercised any of it, so the claim "a stroke costs no message" had never been performed. `examples/shm_material.py` is that claim end to end — allocate over the ring, write every sample into the region, play it, edit it in place, play the same buffer again — and `examples/editor_processes.sh` is the arrangement it exists for.
-  - **The host mirror refused every real v9 segment.** It was moved to v9 by its *number* and kept a size check that demanded a segment with no directory (`len != expected`), so `clausters-gui --shm` could not open one at all. A version bump cannot catch that; `clients/gui/tests/material.rs` can, and now does, by putting the two readers side by side under the one feature that links both.
+  - **The host mirror refused every real v9 segment.** It was moved to v9 by its *number* and kept a size check that demanded a segment with no directory (`len != expected`), so `clausters-gui --shm` could not open one at all. A version bump cannot catch that; `crates/clausters-gui/tests/material.rs` can, and now does, by putting the two readers side by side under the one feature that links both.
   - **The wasm build had been broken since the day this landed.** `dsp::region` maps files with `libc`, a unix-only dependency, and nothing gated it — so `scripts/check-wasm.sh` and the web package's build failed on it. The material path is gated where it is genuinely a platform thing now, and off Unix a buffer stays the server's own memory exactly as it does with no segment.
 
   Two rules were added on top of what shipped, both in `docs/decisions.md`: a peer writes **material and announces the span** (`/buffer_touch` → `/buffer_touched`, so a client that cannot map anything — a page above all — still learns a take changed), and a segment has **one owner** (see the entry below).
@@ -1070,9 +1070,9 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
   3. ✅ **The server forgets joins, lists and peaks.** *(The audit of 2026-10-29, with the user's verdict: every command made for an application's editing goes, "the server is the module of audio functions, not of editing logic".)* `/buffer_stitch` goes whole, over buffers and over files, with `/buffer_parts`, the list reading behind them (the stream thread's list path, a page's delegated `shapes` job and its bindings) and `Buffer.stitch`/`parts` in both clients; `/buffer_peaks` goes with the summary the server keeps on every buffer (`dsp::summary`), so the GUI host draws a server buffer from samples it reads (mapped, or read back) and summarizes them itself with the core's measure; `PeaksOut` goes *(done 2026-10-29)*; `TransportDiskIn` reads fed buffers only, the application engine's reader. **Stay**, as the live server's: `/buffer_touch` and `/buffer_stream` (a peer's write announced, a recording's progress), the writes and reads of a buffer, and the transport a client plays with (`play`, `stop`, `locate`, `locateSample`, `loop`, `end`, `fade`, `follow`, `group`). *(Done 2026-10-30: the joins, the list reading of the stream thread and of a page, the delegated `shapes` job, `/buffer_peaks`, the summary on every buffer and the overview file beside a shared region are gone; a host that cannot map reads a server buffer back and summarizes it with the core's pyramid, and one that maps summarizes the mapped cells; the audio editor's reader is a `TransportDiskIn` for a fed take beside a `TransportBufRd` for a pool buffer, each silent over the other's, so a host still sounds a take a script drew.)*
   4. ✅ **The cue goes.** `/transport_cue` and its builders leave the wire and both clients; the engine's cue stays as the command an application pre-rolls its reader with. *(Done 2026-10-30: an endpoint's playback carries no cue over the wire, and an OSC score takes none.)*
   5. ✅ **Closed** *(2026-10-30)*: no client, crate or example names what went; the references and the books follow. No binding of the core or of the embed C ABI and no segment layout changed, so neither ABI counter moves; the development version is already a breaking tier past the last tag.
-- ⬜ **S24 — A buffer's summary is read like its samples** *(named 2026-10-30 by the user after `S23` closed; **waiting on a decision**: whether it is worth a command at all, and who asks it)*. The server half of a question the GUI host asks: how a host that cannot map the engine's memory — a page, or a native host attached to a remote server over TCP or WebSocket — draws a pool buffer that stands still. Since `S23` it reads every sample back (`/buffer_getRange`, `SpanUse::Whole` in `clients/gui/src/host/fetch.rs`) and summarizes them itself; a minute of stereo is 23 MB, which a page fills in over a few seconds. A host that maps reads the cells and is not concerned.
+- ⬜ **S24 — A buffer's summary is read like its samples** *(named 2026-10-30 by the user after `S23` closed; **waiting on a decision**: whether it is worth a command at all, and who asks it)*. The server half of a question the GUI host asks: how a host that cannot map the engine's memory — a page, or a native host attached to a remote server over TCP or WebSocket — draws a pool buffer that stands still. Since `S23` it reads every sample back (`/buffer_getRange`, `SpanUse::Whole` in `crates/clausters-gui/src/host/fetch.rs`) and summarizes them itself; a minute of stereo is 23 MB, which a page fills in over a few seconds. A host that maps reads the cells and is not concerned.
 
-  **What it would be.** `/buffer_summary bufnum bucket [start] [frames]` → `/buffer_summary.reply bufnum startFrame bucket blob`, the blob in `/buffer_stream.reply`'s layout (bucket-major, channel-minor, min, max and mean square as `f32`) and computed by the function `/buffer_stream` already calls (`clausters_core::peaks::overview`, through `streams::overview_blob`). **A read, and stateless**, as `/buffer_getRange` is: nothing kept on the buffer, no file beside a region, no join composed, no write counted — the four things that went with `/buffer_peaks` (`docs/decisions.md`, "The server keeps no command an application's editing made"). Each reply reads a bounded number of samples, so an engine in a page, which answers between two audio blocks, is never late; a long span is asked in several requests. The host's answerer of lists already answers a message of that name in that format (`clients/gui/src/host/disk/answer.rs`), so a host would ask a server buffer and an application's list the same question.
+  **What it would be.** `/buffer_summary bufnum bucket [start] [frames]` → `/buffer_summary.reply bufnum startFrame bucket blob`, the blob in `/buffer_stream.reply`'s layout (bucket-major, channel-minor, min, max and mean square as `f32`) and computed by the function `/buffer_stream` already calls (`clausters_core::peaks::overview`, through `streams::overview_blob`). **A read, and stateless**, as `/buffer_getRange` is: nothing kept on the buffer, no file beside a region, no join composed, no write counted — the four things that went with `/buffer_peaks` (`docs/decisions.md`, "The server keeps no command an application's editing made"). Each reply reads a bounded number of samples, so an engine in a page, which answers between two audio blocks, is never late; a long span is asked in several requests. The host's answerer of lists already answers a message of that name in that format (`crates/clausters-gui/src/host/disk/answer.rs`), so a host would ask a server buffer and an application's list the same question.
 
   **What it gives.** A server buffer drawn by a host that cannot map at about a hundredth of the samples' bytes (one bucket of 256 frames carries three values per channel), with samples read back only for the span a zoom shows; `/buffer_stream` already gives exactly that for a buffer being recorded, and this is the same picture of one standing still.
 
@@ -1090,7 +1090,7 @@ page** behind an AudioWorklet, so browser GUI components stop needing a native
 server process: first the engine itself (headless, then live), then the GuiDef
 standalone equivalence (a bundle boots entirely in a tab — the browser twin of
 `--standalone`), and only then the web-component packaging as a thin capstone.
-This is the track `clients/gui/PLAN.md`'s "In-browser audio engine" section
+This is the track `crates/clausters-gui/PLAN.md`'s "In-browser audio engine" section
 anticipated; that section now points here. The GUI host's browser build
 (G11–G17) is the substrate and stays untouched; the `faust` feature is out of
 scope (LLVM JIT — a Faust *interpreter* backend is its own future work), so the
@@ -1168,7 +1168,7 @@ entries keep their original paths as a record of what shipped where. See
   (natively unit-tested, mirroring the server's own data-dir boot order,
   bracketed by two `/server_sync`s — the second is the page's "bundle up" signal),
   exposed to JS as `bundle_boot_packets`; the fetch half in
-  `clients/gui/web/bundle.js` (+ `bundle.json` manifest, the one addition to
+  `crates/clausters-gui/web/bundle.js` (+ `bundle.json` manifest, the one addition to
   the persisted formats — HTTP cannot list directories;
   `web/bundle-manifest.py` generates it) and the page
   `web/standalone.html`; samples fetch + `decodeAudioData` → the engine's
@@ -2451,7 +2451,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   workflows have not run since the change, so the composite, the weekly job
   and the matrix under the pin are unobserved until they run on the branch.
 
-- ⬜ **R15: The GUI host is a member of the workspace.** It was kept apart so
+- ✅ **R15: The GUI host is a member of the workspace** *(done 2026-11-12)*. It was kept apart so
   that it could never entangle the server's build, and that stopped being
   true: `clausters-app-engine` is an unconditional native dependency of the
   host and links the server, so every host build compiles it. What the
@@ -2460,7 +2460,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   of the host's own `target/`), and a version written by a script and watched
   by a test. Two commits, in this order:
 
-  - **The move.** `clients/gui` becomes `crates/clausters-gui`: it is a crate,
+  - **The move.** `crates/clausters-gui` becomes `crates/clausters-gui`: it is a crate,
     and a special client that talks to the two language clients and can act
     alone, where `clients/` holds the Python and web packages. Some 356
     references move with it (CI, hooks, the build scripts of both clients,
@@ -2479,6 +2479,19 @@ and so waits for `T3`, the milestone that already owes the bench.
   `cargo build` or `cargo test` at the root compiles no window system.
   **Acceptance:** one lockfile; the Python launcher and the web build find
   the host where it is now built; the release workflow's rehearsal is green.
+
+  Shipped as one commit rather than two: a crate under `crates/` must inherit
+  the version (`tests/versions.rs`), which it can only do as a member. The
+  merged lockfile keeps every version the server resolved; of the host's, the
+  twelve general-purpose packages the two lockfiles disagreed on took the
+  server's and the rest stay where the host's lockfile had them.
+  `[workspace.dependencies]` holds the eleven dependencies more than one crate
+  names. Checked: clippy over the workspace and over the host by itself, the
+  host's 1,481 tests, both wasm gates, the isolated feature check of the
+  applications, the Python suite (1,594) with the binaries rebuilt, the web
+  package built and tested (1,431 and the pages), the audit harness's own
+  tests and the three books. The release rehearsal is left for the end of the
+  whole review, with `R14`'s.
 
 - ⬜ **R16: Notation is a crate of its own.** `clausters_core::notation` is
   16,752 of the core's 51 thousand lines, the server does not use it, and
@@ -2940,11 +2953,11 @@ where it came from).
   by nothing** *(named 2026-08-23, fixing the versioning rule and finding the
   check only covered the rule's own half; done 2026-08-24)*. The version lives in the root
   `Cargo.toml`, every crate under `crates/`, `clients/python/pyproject.toml`,
-  `clients/web/package.json`, and `clients/gui/Cargo.toml` with its own lockfile
+  `clients/web/package.json`, and `crates/clausters-gui/Cargo.toml` with its own lockfile
   (an independent workspace, so it needs `cargo update -p clausters-gui
   --offline` after the edit). **Only one pair is verified** — `npm run
   check-package` refuses a `package.json` that disagrees with the crate — and
-  `clients/gui` has drifted before precisely because no root build reads its
+  `crates/clausters-gui` has drifted before precisely because no root build reads its
   manifest. `versions.sh` does not close this: it answers the *rule* question
   (did a counter move since the last tag, did the tier move once) and reads only
   the root manifest.
@@ -2956,13 +2969,13 @@ where it came from).
   non-Cargo manifests are written from it by a small script, so there is one
   number to edit rather than five to keep equal. The second is what makes the
   drift impossible rather than reported, and it is the one worth taking, with
-  the caveat that `clients/gui` is its own workspace and inherits nothing from
+  the caveat that `crates/clausters-gui` is its own workspace and inherits nothing from
   the root.
 
   **Both shapes, because neither closes it alone.** The eight Cargo crates take
   `version.workspace = true`, so the number is *decided* once, in the root
   `[workspace.package]`. The five files that cannot inherit anything —
-  `clients/gui/Cargo.toml` with its lockfile, `pyproject.toml`,
+  `crates/clausters-gui/Cargo.toml` with its lockfile, `pyproject.toml`,
   `package.json` with its lockfile — are **written** by
   `scripts/set-version.sh <x.y.z>`, which regenerates both lockfiles and, given
   no argument, prints what every file says. And because a script is a thing to
@@ -2994,7 +3007,7 @@ where it came from).
 
   The arithmetic is one function, `peaks::overview` in the shared core, and it is the same one the wire uses: `/buffer_stream` reports with it as a take is written, `/buffer_peaks` answers with it for a take at rest, and the refresh above patches with it. So the summary a peer maps, the summary a page is sent and the summary the server keeps are the same three numbers computed once.
 
-  **And something waited on it**, which it did not when this was written: the GUI host has two ways of getting a view's material — the whole buffer downloaded, or shape plus a summary plus the spans a zoom asks for (H9) — and what chooses between them is the `fills` prop, a question about *recording* standing in for a question about *cost*. The right condition is whether a summary can be had without reading the material, and today it can only arrive free from `/buffer_stream` or from a cache file somebody already wrote. Whoever takes this entry unblocks that one (`clients/gui/PLAN.md`, Future directions, "A view of a server buffer has two ways of getting its material, and what chooses between them is the wrong question").
+  **And something waited on it**, which it did not when this was written: the GUI host has two ways of getting a view's material — the whole buffer downloaded, or shape plus a summary plus the spans a zoom asks for (H9) — and what chooses between them is the `fills` prop, a question about *recording* standing in for a question about *cost*. The right condition is whether a summary can be had without reading the material, and today it can only arrive free from `/buffer_stream` or from a cache file somebody already wrote. Whoever takes this entry unblocks that one (`crates/clausters-gui/PLAN.md`, Future directions, "A view of a server buffer has two ways of getting its material, and what chooses between them is the wrong question").
 
 - ✅ **A long take is played out of the pool, and `DiskIn` cannot be
   positioned** *(taken whole by `S21` on 2026-10-22, and closed with it)*
@@ -3611,7 +3624,7 @@ finished work, where a pending item reads as done.
   the bus and so the host says which one. `tests/mixer_graph.rs` renders it: a
   silent track beside a loud one reads nothing, the master reads the sum, and
   the send's gain shuts the track off without touching the fader an automation
-  writes. The other half is `G35.14` in `clients/gui/PLAN.md`: the vertical
+  writes. The other half is `G35.14` in `crates/clausters-gui/PLAN.md`: the vertical
   strip of *n* channels in a track header, which reads that range of buses --
   until it lands, nothing instantiates a meter, because nothing draws one.
 
@@ -3644,7 +3657,7 @@ finished work, where a pending item reads as done.
   `Point::data` (`shape`, `curve`), through `clausters_core::envshape` -- the
   function the host draws it with. *(It was linear between break-points, on the
   grounds that `data` is opaque; a bend drawn on screen was then heard straight.
-  Changed 2026-09-13, `clients/gui/PLAN.md`, "Found by use", "A bent envelope
+  Changed 2026-09-13, `crates/clausters-gui/PLAN.md`, "Found by use", "A bent envelope
   was drawn bent and heard straight".)* `tests/mixer_graph.rs` hears it: a table opens a track's fader over
   eight blocks, and unmapping gives the fader back to the hand.
 
@@ -4601,7 +4614,7 @@ should confirm before the fix.
   replace-per-client stay per command — they read different arguments and
   hold different watches.
 - ✅ **Four stream-transport implementations** *(audit 2026-09-25)*. TCP and
-  WebSocket in `src/osc` and again in `clients/gui/src/host`: `next_frame` 0.97
+  WebSocket in `src/osc` and again in `crates/clausters-gui/src/host`: `next_frame` 0.97
   alike, `local_addr` identical, `write_frame`, `reply`, the connection loop
   0.8, and the server's own TCP and WS `bind` 0.90 alike; two `ClientId` enums
   with the same carriers. The framing and the hub (slots, wake, a thread per
@@ -4897,10 +4910,10 @@ should confirm before the fix.
   the audio editor's review). A run that measures, without someone watching,
   where the server's time goes: blocks and their cost per node and per
   command, the NRT queue, transfers and replies. It measures the server's
-  general efficiency and gives the host's profiler (`clients/gui/PLAN.md`,
+  general efficiency and gives the host's profiler (`crates/clausters-gui/PLAN.md`,
   Found by use, "An automatic profiler for the host") the server's side of
   the same run, so a slow window is told from a slow engine. **Related:**
-  "An automatic profiler for the host" (`clients/gui/PLAN.md`, Found by use).
+  "An automatic profiler for the host" (`crates/clausters-gui/PLAN.md`, Found by use).
   *(Done 2026-10-21: `/server_profile` and `Server.profile(seconds)` in both
   clients; the phases of the block and of the serving turn, every synth and
   def, every command and reply with its bytes, every NRT job's run and wait.

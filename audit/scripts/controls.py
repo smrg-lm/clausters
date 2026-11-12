@@ -53,7 +53,7 @@ def policy_environment(policy, work):
 
 def target_for(base, workspace):
     workspace = str(workspace)
-    if workspace.startswith("clients/gui"):
+    if workspace.startswith("crates/clausters-gui"):
         return Path(str(base) + "-gui")
     if workspace.startswith("clausters-editor"):
         return Path(str(base) + "-editor")

@@ -91,15 +91,14 @@ above say the tier is wrong for what accumulated since the last tag, fix it as
 its own commit first, then release.
 
 1. **One version, one command.** The number is decided in the root
-   `Cargo.toml`'s `[workspace.package].version`, which the eight Cargo crates
-   **inherit** (`version.workspace = true`). The five files that cannot inherit
-   it — `clients/gui/Cargo.toml` (an independent workspace) with its lockfile,
-   `clients/python/pyproject.toml`, `clients/web/package.json` and its
+   `Cargo.toml`'s `[workspace.package].version`, which every Cargo crate
+   **inherits** (`version.workspace = true`), the GUI host included. The files
+   that cannot inherit it — `clients/python/pyproject.toml`, `clients/web/package.json` and its
    `package-lock.json` — are written by **`scripts/set-version.sh <x.y.z>`**,
    which also regenerates both lockfiles; run with no argument it prints what
    every file says. Nothing here is on trust any more:
    `tests/versions.rs` fails when any of them disagrees, and when a Cargo crate
-   writes its own number instead of inheriting. (Before that: `clients/gui` had
+   writes its own number instead of inheriting. (Before that: `crates/clausters-gui` had
    drifted, and `package-lock.json` was found two minors behind.)
 2. **Both ABI counters and the SemVer tier against the last tag** —
    `.agents/skills/release-versioning/versions.sh`, which prints all three and

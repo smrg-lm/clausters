@@ -6,7 +6,7 @@
 // through the application door (`GuiHost.openApp`, `GuiHost.callApp`), how
 // it reads the answer, and the page's multitrack forwarding its changes to
 // the window's while it is open. What the application does with a call is
-// the host's and is tested there (`clients/gui/src/host/audio_editor.rs`).
+// the host's and is tested there (`crates/clausters-gui/src/host/audio_editor.rs`).
 
 import assert from "node:assert/strict";
 import test from "node:test";

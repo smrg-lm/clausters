@@ -3,7 +3,7 @@
 What is checked is this client's half: which call each member makes through
 the application door (`GuiHost.open_app`, `GuiHost.call_app`), and how it
 reads the answer. What the application does with a call is the host's and is
-tested there (`clients/gui/src/host/audio_editor.rs`), and what each gesture
+tested there (`crates/clausters-gui/src/host/audio_editor.rs`), and what each gesture
 does to the take is the crate's.
 """
 

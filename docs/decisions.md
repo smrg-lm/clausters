@@ -1705,7 +1705,7 @@ format. The split of labor is deliberate: the boot's **ordering and encoding**
 live in the GUI host's platform-agnostic `host::bundle` module (natively
 unit-tested; it mirrors the server's own boot order — defs → graphdefs → boot
 preset → the GuiDef's `boot` messages), while the **fetching** stays in page
-JS (`clients/gui/web/bundle.js`). The replay is bracketed by two `/server_sync`s: the
+JS (`crates/clausters-gui/web/bundle.js`). The replay is bracketed by two `/server_sync`s: the
 engine serves strictly in order, so the trailing `/server_sync.reply` is the page's
 "bundle is up" signal — no per-command acking.
 
@@ -1791,7 +1791,7 @@ Context: the B track left the browser JS/HTML where each milestone was born —
 the worklet/loader runtime and its harnesses beside the engine crate
 (`crates/clausters-web/web/`), the standalone page, the bundle fetch module
 and the manifest generator in the GUI host's harness directory
-(`clients/gui/web/`), and the package itself in `clients/web/` — with a
+(`crates/clausters-gui/web/`), and the package itself in `clients/web/` — with a
 two-hop staging chain copying the engine bundle between them, the bundle boot
 implemented twice (the harness's single-consumer `bundle.js` next to the
 package's `bundle.ts`) and the interim page codec still shipped after the
@@ -1800,7 +1800,7 @@ core-backed one replaced it. Unmaintainable as the client track grows.
 - **`clients/web` is the only web directory.** All browser JS/HTML — package
   modules, the worklet/loader runtime, examples, test pages, tools — lives in
   the `clausters` package; the crates (`clausters-web`, `clausters-core-web`,
-  `clients/gui`) stay Rust-only and their wasm-bindgen glue is staged into
+  `crates/clausters-gui`) stay Rust-only and their wasm-bindgen glue is staged into
   the package by `clients/web/build.sh`, directly, with no intermediate
   copies. The duplicates died: `bundle.js` was absorbed by `bundle.ts` (the
   standalone page now boots over the package singletons) and the interim
@@ -2290,7 +2290,7 @@ overrunning a barline splits and ties across it; anything finer than the 32nd
 grid snaps to it. Both are deliberately the *simple correct* policy, not a
 ceiling: reading `sustain`/`legato` for staccato and short-of-slot notes, and
 detecting tuplets instead of snapping, are the undated engraving-refinements
-milestone (`clients/gui/PLAN.md`, G31g). The implementation keeps the two seams
+milestone (`crates/clausters-gui/PLAN.md`, G31g). The implementation keeps the two seams
 that milestone needs — the `dur`→value step (`_pieces`) and the pitch spelling
 (`_spell`) — each isolated in one helper, so the refinement extends them rather
 than rewriting the encoder.
@@ -4513,7 +4513,7 @@ invented rationales instead.
 ## There is no widget registry to generate the builders from
 
 The GUI layer has the same disease the core's bindings had, one level up: a
-widget prop is declared in the host (`clients/gui/src/host/widget`), in the
+widget prop is declared in the host (`crates/clausters-gui/src/host/widget`), in the
 Python builder and in the TypeScript one, and **nothing ties the three
 together**. The wire is untyped JSON on purpose — that is what lets a widget be
 added without touching the protocol — so an unknown prop is ignored and a prop
@@ -4880,7 +4880,7 @@ outbound one — and `ClientId::Ring` becomes `ClientId::Ring(u32)`.
 
 - **The tag lives in the frame, not in the segment header.** That is what makes
   this cheap: no field of the header or the data plane moves, so the readers
-  that pin offsets by hand (`clients/gui/src/host/shm.rs`,
+  that pin offsets by hand (`crates/clausters-gui/src/host/shm.rs`,
   `clients/python/clausters/ipc.py`) need only their version constant bumped —
   exactly the case `shm.rs`'s own comment anticipates. The alternative
   considered, **several rings** (one pair per client), moves the layout, fixes a
@@ -9628,7 +9628,7 @@ pixels were unequal.
 
 **The rasterizer is a default feature, and the crate carries the face.** A
 subset of DejaVu Sans -- Latin, Greek, Cyrillic, punctuation, arrows, signs;
-238 KB -- is compiled into the host (`clients/gui/assets/fonts/`, with the
+238 KB -- is compiled into the host (`crates/clausters-gui/assets/fonts/`, with the
 license it travels under and the script that makes it), and each shell loads
 it as it starts. The three reasons of the first decision, as they stand now.
 *Licensed*: the DejaVu license permits redistribution and modification under
@@ -9656,7 +9656,7 @@ What it cost was measured and then paid for elsewhere: a window that shows a
 playhead is repainted when its counter moves rather than thirty times a second
 for as long as it is open, a page keeps the fills it tessellated, and a
 triangle wholly inside its clip is not walked round it
-(`clients/gui/PLAN.md`, "Found by use").
+(`crates/clausters-gui/PLAN.md`, "Found by use").
 
 ## Note entry is a mode, and an entry replaces
 
@@ -10441,7 +10441,7 @@ repository and checked on whatever machine runs the suite is compared
 **within two levels per channel**, which holds across both and still catches
 anything that moved a line or changed a color. The measurement is a test that
 runs by hand where both adapters are present
-(`clients/gui`, `cargo test --lib -- --ignored --nocapture
+(`crates/clausters-gui`, `cargo test --lib -- --ignored --nocapture
 software_against`), so it can be taken again when the drawing or a driver
 changes.
 
@@ -11197,7 +11197,7 @@ Signed, the range is 68 years either way of the axis' origin, which bounds a
 session and not an instant: a wall-clock instant stays a timetag. A sample
 index is not a time and stays a whole frame, converted where samples are read
 with the rate of what is read. A beat is musical time and stays a beat until a
-tempo map turns it into a time. The pass is `clients/gui/PLAN.md`, "Time is a
+tempo map turns it into a time. The pass is `crates/clausters-gui/PLAN.md`, "Time is a
 type of its own, 64 bits wide".
 
 **The wire stays in frames, and never narrows them.** Two more answers of the
@@ -11258,7 +11258,7 @@ the GUI host twice. The ordinary build stays on stable, without shared
 memory, and stays the one a component embeds with in a page whose headers
 nobody controls. The **applications' build** compiles the applications in,
 with atomics and a shared, imported memory, using the dated nightly pinned
-in `clients/gui/wasm-apps-toolchain` and a target directory of its own; no
+in `crates/clausters-gui/wasm-apps-toolchain` and a target directory of its own; no
 other build uses that toolchain. A page loads the applications' build when
 it is cross-origin isolated (`crossOriginIsolated`), and the ordinary one
 otherwise: the same host compiled twice, with one surface.
@@ -11297,7 +11297,7 @@ with them, and the window is handed the tree in the same process
 (`{"shared": n}`), whose picture the host composes from the nodes a column
 holds whole, each node's summary kept by its identity. Measured in release
 over the pattern carried to 190 hours and 58,800 parts
-(`clients/gui/tests/shared_blocks.rs`): a paste answers in 0.01 ms from the
+(`crates/clausters-gui/tests/shared_blocks.rs`): a paste answers in 0.01 ms from the
 first to the last, an undo or a redo in microseconds, the window is told
 about 830 bytes, a whole picture is drawn in a few milliseconds reading a
 few thousand parts, and memory grows under a megabyte.
@@ -11600,7 +11600,7 @@ written there when one does.
 
 ## The host ships the faces it shapes (2026-11-08)
 
-*Taken in `G43a` (`clients/gui/PLAN.md`).* Shaping Arabic, Hebrew and
+*Taken in `G43a` (`crates/clausters-gui/PLAN.md`).* Shaping Arabic, Hebrew and
 Devanagari needs faces that draw them with their layout tables, and the plan
 left open whether the host bundles them or reaches a system face natively and
 a fetched one in a page through `FontSource`. Both are bundled: DejaVu Sans
@@ -11675,7 +11675,7 @@ verovio chose ("A page break is honoured by laying the score out twice").
 
 ## A page's notes are the model's reading (2026-11-09)
 
-*Taken in `N10` (`clients/gui/PLAN.md`).* Every page a score produces
+*Taken in `N10` (`crates/clausters-gui/PLAN.md`).* Every page a score produces
 carries the notes that sound, and they were asked of the engraver one
 element at a time, each answer a search of the whole document: 1.25 s of
 the 1.78 s an edit cost at five thousand notes. The cursors were already

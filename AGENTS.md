@@ -4,7 +4,7 @@ A real-time audio synthesis server in the style of SuperCollider's scsynth,
 written in Rust and controlled over OSC (UDP, default port 57110).
 
 - Forward roadmaps and milestones: `PLAN.md` (server), `clients/python/PLAN.md`,
-  `clients/gui/PLAN.md`, `clients/web/PLAN.md` (client/GUI/web tracks) and
+  `crates/clausters-gui/PLAN.md`, `clients/web/PLAN.md` (client/GUI/web tracks) and
   `crates/clausters-document/PLAN.md` (the document: the arrangement's model, the
   edit vocabulary and the edit log, shared by every client and by the
   `standalone` host) and `crates/clausters-apps/PLAN.md` (the applications over
@@ -115,7 +115,7 @@ the GUI host native + browser/wasm). The rule: **finish and polish one reference
 client at a time, then port** — never grow two full clients in parallel. What
 makes a port cheap is keeping all language-agnostic logic in the shared core
 (`clausters-core`/`clausters-ffi`, plus the agnostic `host` traits in
-`clients/gui`) and pushing logic down there **as you write it**, so each client
+`crates/clausters-gui`) and pushing logic down there **as you write it**, so each client
 stays a thin language-specific shell (idiomatic API + concurrency/scheduling).
 Porting then = rebind the same core (ctypes/N-API/wasm), not reimplement it.
 Full rationale in `clients/python/PLAN.md` ("Build strategy"). Always factor
@@ -202,11 +202,20 @@ each wire has an end in two or more of them. So a change is not finished when
 its own package builds: **it closes with a pass over the packages it touches**,
 in the same commit. Porting is not a task to schedule later.
 
+**The GUI host is a crate, `crates/clausters-gui`, and a client of a kind of
+its own**: the two language clients (`clients/python`, `clients/web`) drive
+it, and it can act alone, as a standalone application over an embedded
+server. It is a member of the root workspace (one lockfile, one `target/`);
+the root package is the server, so the host is built and tested by name
+(`cargo test -p clausters-gui`), never through `--workspace` together with
+the server's feature rows, since cargo unifies features across what one
+invocation builds.
+
 The wires and where their ends live:
 
 - An **OSC command** (`src/osc`) — its reference in `docs/schemas.md`, its
   builder in `clients/python/clausters`, its builder in `clients/web/src`.
-- A **`/gui_*` widget or prop** — the host in `clients/gui/src`, the reference
+- A **`/gui_*` widget or prop** — the host in `crates/clausters-gui/src`, the reference
   in `docs/gui-protocol.md`, the builders in both clients' `gui` modules.
 - A **client API** — the Python client is the reference and the web client
   ports it. If the surface does not exist in TS yet, say so in the commit and
@@ -298,7 +307,7 @@ on trust, so that is where drift accumulates:
     they keep the em dash. A docstring is *not* a book even though it is
     published into one -- it is read in the editor first.
 - The `PLAN.md` roadmaps (`PLAN.md`, `clients/python/PLAN.md`,
-  `clients/gui/PLAN.md`, `clients/web/PLAN.md`), `docs/decisions.md` and the frozen
+  `crates/clausters-gui/PLAN.md`, `clients/web/PLAN.md`), `docs/decisions.md` and the frozen
   `docs/history/build-log.md` are in English. The conversation with the user is
   in Spanish.
 - **Prose uses the API's own verbs for API actions.** When the protocol or

@@ -88,7 +88,7 @@ jobs:
           prefix: ${{ env.FAUST_PREFIX }}
 
   lint:
-    name: fmt + clippy (workspace + gui)
+    name: fmt + clippy (workspace)
     needs: libfaust
     runs-on: ubuntu-26.04
     steps:
@@ -103,14 +103,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            clients/gui
-      - run: cargo fmt --check
-      - run: cargo fmt --check --manifest-path clients/gui/Cargo.toml
+      - run: cargo fmt --check --all
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo clippy --all-targets --manifest-path clients/gui/Cargo.toml -- -D warnings
+      # The host once more by itself: in the run above cargo unifies features
+      # across the workspace, and the host must also lint with only the
+      # features its own manifest asks of the crates under it.
+      - run: cargo clippy -p clausters-gui --all-targets -- -D warnings
       - name: Isolated application features (without workspace unification)
         run: crates/clausters-apps/check-features.sh
 
@@ -137,11 +135,17 @@ jobs:
         # and that is what these rows check. The wasm crates are proved where
         # they are meant to run: `scripts/check-wasm.sh` checks all three
         # against wasm32 in the `gui` job.
+        #
+        # The GUI host sits out for the same reason from the other side: it
+        # links the application engine with `realtime` and its default `synth`,
+        # which unified onto the server would make both rows test a server that
+        # has features they exist to test it without. Its own tests are the
+        # `gui` job's.
         include:
           - name: no-features
-            flags: --no-default-features --exclude clausters-web --exclude clausters-nrt-web
+            flags: --no-default-features --exclude clausters-web --exclude clausters-nrt-web --exclude clausters-gui
           - name: synth-only
-            flags: --no-default-features --features synth --exclude clausters-web --exclude clausters-nrt-web
+            flags: --no-default-features --features synth --exclude clausters-web --exclude clausters-nrt-web --exclude clausters-gui
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/rust
@@ -161,24 +165,18 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/rust
-      # clients/gui links ALSA through midir (clausters-midi); the native
+      # crates/clausters-gui links ALSA through midir (clausters-midi); the native
       # `cargo test` below needs libasound2-dev. The wasm gates need nothing.
       - name: System deps
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libasound2-dev
       - uses: Swatinem/rust-cache@v2
-        with:
-          # Both workspaces: the host gate builds clients/gui, the engine gate
-          # builds the root one.
-          workspaces: |
-            .
-            clients/gui
-      - run: cargo test --manifest-path clients/gui/Cargo.toml
+      - run: cargo test -p clausters-gui
       # Browser-readiness gate: the agnostic host core must keep
       # compiling for wasm32 with the native I/O shell excluded.
       - name: wasm build gate (GUI host)
-        working-directory: clients/gui
+        working-directory: crates/clausters-gui
         run: ./check-wasm.sh
       # The other two bundles clients/web/build.sh stages: the engine in its
       # browser-viable feature sets, and the shared core's codec. Without this
@@ -213,11 +211,6 @@ jobs:
           python-version: "3.12"
       - uses: Swatinem/rust-cache@v2
         with:
-          # Both workspaces: build.sh compiles the engine and the core codec
-          # from the root one and the GUI host from clients/gui.
-          workspaces: |
-            .
-            clients/gui
           key: web-wasm
       # The same pinned CLI the release workflow stages, and for the same
       # reason: the glue wasm-bindgen exchanges with the crate is a private
@@ -232,11 +225,11 @@ jobs:
               "wasm-bindgen-${PIN}-x86_64-unknown-linux-musl/wasm-bindgen"
           echo "$HOME/bin" >> "$GITHUB_PATH"
       # The applications' build of the GUI host (build.sh) is made with the
-      # dated nightly pinned in clients/gui/wasm-apps-toolchain: shared
+      # dated nightly pinned in crates/clausters-gui/wasm-apps-toolchain: shared
       # memory in wasm needs the standard library rebuilt with atomics.
       - name: The applications' host toolchain
         run: |
-          rustup toolchain install "$(tr -d '[:space:]' < clients/gui/wasm-apps-toolchain)" \
+          rustup toolchain install "$(tr -d '[:space:]' < crates/clausters-gui/wasm-apps-toolchain)" \
             --profile minimal -c rust-src -t wasm32-unknown-unknown
       - name: npm install (build.sh emits the package with tsc)
         working-directory: clients/web
@@ -403,8 +396,8 @@ jobs:
       # job is where the `auto_order` occurrence landed.
       - uses: ./.github/actions/coredump
       - run: bash third_party/prepare-clap.sh
-      - run: ulimit -c unlimited && cargo test --workspace -- --test-threads=1
-      - run: ulimit -c unlimited && cargo test --workspace --features embed -- --test-threads=1
+      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui -- --test-threads=1
+      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui --features embed -- --test-threads=1
       - uses: ./.github/actions/coredump
         if: failure()
         with:

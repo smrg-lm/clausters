@@ -31,7 +31,7 @@ Latin-1 and no shaping, and ``text_size`` on half-steps -- nothing else changes,
 because the sizing table never followed the typeface. To see this window that
 way, build the host without the feature and point the launcher at it::
 
-    cd clients/gui && cargo build --release --no-default-features --bin clausters-gui
+    cargo build --release -p clausters-gui --no-default-features --bin clausters-gui
     CLAUSTERS_GUI_BIN=$PWD/target/release/clausters-gui \
         python clients/python/examples/panels/text.py
 

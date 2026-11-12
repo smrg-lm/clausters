@@ -1,5 +1,5 @@
 # Dependency audit: every lockfile of the project against the public advisory
-# databases -- RustSec for the two Cargo workspaces, the npm registry's for the
+# databases -- RustSec for the Cargo workspace, the npm registry's for the
 # web client. The Python client declares no runtime dependencies, so it has
 # nothing to audit; clausters-editor audits its own lockfiles in
 # clausters-editor.yml.
@@ -32,30 +32,24 @@ on:
     branches: [main]
     paths:
       - "Cargo.lock"
-      - "clients/gui/Cargo.lock"
       - "clients/web/package-lock.json"
       - ".github/workflows/audit.yml"
   pull_request:
     paths:
       - "Cargo.lock"
-      - "clients/gui/Cargo.lock"
       - "clients/web/package-lock.json"
       - ".github/workflows/audit.yml"
 
 jobs:
   cargo:
-    name: cargo audit (${{ matrix.lockfile }})
+    name: cargo audit (Cargo.lock)
     runs-on: ubuntu-26.04
-    strategy:
-      fail-fast: false
-      matrix:
-        lockfile: [Cargo.lock, clients/gui/Cargo.lock]
     steps:
       - uses: actions/checkout@v5
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit
-      - run: cargo audit --file ${{ matrix.lockfile }}
+      - run: cargo audit --file Cargo.lock
 
   npm:
     name: npm audit (clients/web)
@@ -86,15 +80,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: stable-canary
-          workspaces: |
-            .
-            clients/gui
       - run: bash third_party/prepare-clap.sh
-      - run: cargo fmt --check
-      - run: cargo fmt --check --manifest-path clients/gui/Cargo.toml
+      - run: cargo fmt --check --all
       # Without libfaust: the server with the SynthDef family, and every crate
       # but the two wasm ones, which link the Faust family (see ci.yml's `test`
       # job for why they sit out a libfaust-free run).
-      - run: cargo clippy --workspace --all-targets --no-default-features --features synth --exclude clausters-web --exclude clausters-nrt-web -- -D warnings
-      - run: cargo clippy --all-targets --manifest-path clients/gui/Cargo.toml -- -D warnings
-      - run: cargo test --workspace --no-default-features --features synth --exclude clausters-web --exclude clausters-nrt-web
+      - run: cargo clippy --workspace --all-targets --no-default-features --features synth --exclude clausters-web --exclude clausters-nrt-web --exclude clausters-gui -- -D warnings
+      - run: cargo clippy -p clausters-gui --all-targets -- -D warnings
+      - run: cargo test --workspace --no-default-features --features synth --exclude clausters-web --exclude clausters-nrt-web --exclude clausters-gui

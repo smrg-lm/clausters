@@ -20,7 +20,7 @@
 //! What it leaves out is everything it does not need, which is the point of
 //! the trait's defaults: no axis, no samples, no keys, no drag.
 //!
-//! Run it from `clients/gui`, on a machine with a display:
+//! Run it from `crates/clausters-gui`, on a machine with a display:
 //!
 //! ```sh
 //! cargo run --example custom_element

@@ -64,7 +64,7 @@
 //   and open `http://localhost:8000/examples/panels/graph-controls/` --
 //   `index.html` here is just `<clausters-bundle src="...">`; its power button
 //   boots the whole instrument in the tab.
-// - **Desktop, self-contained** (the embedded server; from `clients/gui`):
+// - **Desktop, self-contained** (the embedded server; from `crates/clausters-gui`):
 //
 //       cargo run --features standalone --bin clausters-gui -- \
 //           --standalone fm-trem --data-dir <clients/web>/examples/out/graph-controls
@@ -222,6 +222,6 @@ console.log("    cd ../../..   # clients/web");
 console.log("    ./build.sh && python3 -m http.server");
 console.log("    http://localhost:8000/examples/panels/graph-controls/\n");
 console.log("or run the same bundle self-contained on the desktop " +
-            "(from clients/gui):\n");
+            "(from crates/clausters-gui):\n");
 console.log(`    cargo run --features standalone --bin clausters-gui -- ` +
             `--standalone ${BUNDLE} --data-dir ${dataDir}`);

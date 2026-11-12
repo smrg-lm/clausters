@@ -12,8 +12,8 @@
 # lints (broken intra-doc links above all) were watched by nothing until they
 # were added here.
 #
-# The GUI host is a separate workspace with a feature set of its own; its matrix
-# lives beside it (`clients/gui/check-features.sh`) and runs from here as one
+# The GUI host is a crate with a feature set of its own; its matrix
+# lives beside it (`crates/clausters-gui/check-features.sh`) and runs from here as one
 # row, so this stays the single command.
 #
 # It only ever reads. Nothing here writes to your working tree: this is the gate
@@ -85,7 +85,7 @@ doc() {
 
 if [ "$fast" = 0 ]; then
     run "fmt (workspace)" cargo fmt --check
-    run "fmt (gui)" cargo fmt --check --manifest-path clients/gui/Cargo.toml
+    run "fmt (gui)" cargo fmt --check -p clausters-gui
     clippy "clippy: default features" --all-targets
 fi
 
@@ -205,9 +205,9 @@ fi
 # `--fast` passes through: there it skips what CI covers and the standalone
 # builds that link the server crate.
 if [ "$fast" = 1 ]; then
-    run "gui host: feature matrix (--fast)" clients/gui/check-features.sh --fast
+    run "gui host: feature matrix (--fast)" crates/clausters-gui/check-features.sh --fast
 else
-    run "gui host: feature matrix" clients/gui/check-features.sh
+    run "gui host: feature matrix" crates/clausters-gui/check-features.sh
 fi
 
 # --- Report -------------------------------------------------------------------

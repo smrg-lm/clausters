@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The measurement the in-page shared-memory path waits on
-# (clients/gui/PLAN.md, Future directions -- "The in-page shared-memory path"):
+# (crates/clausters-gui/PLAN.md, Future directions -- "The in-page shared-memory path"):
 # what a frame of `/bus_stream` costs on a page holding forty canvases.
 #
 # Runs tools/bus-stream-profile.html under headless Chrome, exactly as

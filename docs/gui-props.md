@@ -5,7 +5,7 @@ two of them together**:
 
 | Surface | What it is | How it is kept honest |
 |---|---|---|
-| the host | `clients/gui/src/host/widget` — `build` reads a prop at construction, `apply` accepts it from `/gui_set` | cargo, but only against itself: the wire is untyped JSON |
+| the host | `crates/clausters-gui/src/host/widget` — `build` reads a prop at construction, `apply` accepts it from `/gui_set` | cargo, but only against itself: the wire is untyped JSON |
 | the Python client | `clausters.gui.guidef` — one builder per widget, props as keyword arguments | nothing |
 | the web client | `clients/web/src/gui/guidef.ts` — one builder per widget, props as an option type | nothing |
 

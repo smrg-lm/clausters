@@ -39,9 +39,9 @@ cargo build --features embed,realtime
 
 ### The visual server (GUI)
 
-The GUI host — the visual server that opens windows and renders widgets — is **bundled in the same wheel** as the audio server, built from the independent `clients/gui` cargo workspace and stripped. Nothing extra to install: with the package in place, [`Session.live` / `Session.gui`](sessions.md#launching-the-server-and-the-gui) launch the audio and visual servers for you, and `clausters-gui` is also on your `PATH`.
+The GUI host — the visual server that opens windows and renders widgets — is **bundled in the same wheel** as the audio server, built from the `crates/clausters-gui` crate and stripped. Nothing extra to install: with the package in place, [`Session.live` / `Session.gui`](sessions.md#launching-the-server-and-the-gui) launch the audio and visual servers for you, and `clausters-gui` is also on your `PATH`.
 
-Building it adds a wgpu compile (a minute or two the first time). For a lighter, server-only wheel, set `CLAUSTERS_SKIP_GUI_BUILD` when installing; a source-checkout binary built under `clients/gui/target` (`cargo build --release --bin clausters-gui`, from `clients/gui`) is still used at runtime if present, and `CLAUSTERS_GUI_BIN` overrides the lookup.
+Building it adds a wgpu compile (a minute or two the first time). For a lighter, server-only wheel, set `CLAUSTERS_SKIP_GUI_BUILD` when installing; a source-checkout binary built under `target` (`cargo build --release -p clausters-gui`) is still used at runtime if present, and `CLAUSTERS_GUI_BIN` overrides the lookup.
 
 ### The editor
 

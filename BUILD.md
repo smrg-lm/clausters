@@ -103,10 +103,10 @@ ordinary build, on stable, and **the applications' build**, which compiles the
 editing applications in over one shared memory for a page that is cross-origin
 isolated. Shared memory in wasm needs the standard library rebuilt with atomics
 (`-Z build-std`), which only a nightly does, so that one build uses the dated
-nightly pinned in `clients/gui/wasm-apps-toolchain`; nothing else does:
+nightly pinned in `crates/clausters-gui/wasm-apps-toolchain`; nothing else does:
 
 ```sh
-rustup toolchain install "$(cat clients/gui/wasm-apps-toolchain)" \
+rustup toolchain install "$(cat crates/clausters-gui/wasm-apps-toolchain)" \
     --profile minimal -c rust-src -t wasm32-unknown-unknown
 ```
 
@@ -232,7 +232,7 @@ Docs. Steps:
 2. **Bump the version — one line and one command.** It is written in the root
    `Cargo.toml`'s `[workspace.package].version`, which every crate inherits;
    `scripts/set-version.sh X.Y.Z` writes it there and spreads it to the five
-   files that cannot inherit it (`clients/gui/Cargo.toml` and its lockfile,
+   files that cannot inherit it (`crates/clausters-gui/Cargo.toml` and its lockfile,
    `clients/python/pyproject.toml`, `clients/web/package.json` and its
    lockfile). With no argument it prints what each file says. `cargo test
    --test versions` fails if any of them ever disagrees, so a miss cannot ship.
@@ -318,7 +318,7 @@ open a window with the embedded server behind them, so a saved session sounds
 from an installed wheel with no script and no server process. In that mode the
 host *is* `clausters` the server with a window over it, which is why it is
 packaged the same way -- it links libfaust and carries the same `DT_RPATH`
-(`clients/gui/build.rs`, the same recipe as the root one), so the bundled
+(`crates/clausters-gui/build.rs`, the same recipe as the root one), so the bundled
 `_libs/` answers for it. Where there is no libfaust to link, it degrades to
 `standalone` exactly as the server degrades to a SynthDef-only build.
 
@@ -334,14 +334,14 @@ cdylib keeps `faust`, `synth`, `midi`, … too.
 The GUI host's **element families** are features too (`notation`, `patcher`),
 both on by default, so the wheel's host draws every widget the protocol has; a
 build that drops one is an opt-out for a program embedding the crate, not a
-packaging choice here (`clients/gui/README.md`).
+packaging choice here (`crates/clausters-gui/README.md`).
 
 The GUI host's `font-atlas` -- an outline typeface behind a glyph rasterizer
-(`clients/gui/README.md`) -- is on by default too, in the wheel's host and in
+(`crates/clausters-gui/README.md`) -- is on by default too, in the wheel's host and in
 the web package's alike, and the host carries the faces it draws with: a
 subset of DejaVu Sans and one of Noto Sans Devanagari it falls back to, under
 half a megabyte together, compiled into the binary and the wasm with the shaper
-that reads their layout tables (`clients/gui/assets/fonts/`, with their
+that reads their layout tables (`crates/clausters-gui/assets/fonts/`, with their
 licenses and the script that makes them).
 A build without the feature draws with the embedded bitmap face.
 

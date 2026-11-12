@@ -162,7 +162,7 @@ def package_inventory(source):
 
 
 def link_targets(source, target):
-    for relative in (".", "clients/gui"):
+    for relative in (".", "crates/clausters-gui"):
         parent = source / relative
         link = parent / "target"
         if parent.is_dir() and not link.exists() and not link.is_symlink():
@@ -233,7 +233,7 @@ def prepare(work, revision, policy=None):
               "resource_files": {str(p.relative_to(work / "resources")): digest(p) for p in sorted((work / "resources").rglob("*")) if p.is_file()},
               "tools": selected_tools, "source": str(checkout), "crates": crate_inventory(checkout), "packages": package_inventory(checkout),
               "lockfiles": {str(p.relative_to(checkout)): digest(p)
-                            for p in [checkout / n for n in ("Cargo.lock", "clients/gui/Cargo.lock", "clausters-editor/src-tauri/Cargo.lock", "clients/web/package-lock.json", "clausters-editor/package-lock.json", "clients/python/pyproject.toml")] if p.exists()}})
+                            for p in [checkout / n for n in ("Cargo.lock", "clausters-editor/src-tauri/Cargo.lock", "clients/web/package-lock.json", "clausters-editor/package-lock.json", "clients/python/pyproject.toml")] if p.exists()}})
     print(work / "prepared.json")
 
 
@@ -273,7 +273,7 @@ def setup_unit(work, unit, wheelhouse=None):
             relative = "clients/web" if unit == "web" else "clausters-editor"
             commands.append((["npm", "ci", "--offline", "--audit=false", "--fund=false"], source / relative))
             # Existing web staging and Python builders resolve workspace/target literally.
-            for parent in (source, source / "clients/gui"):
+            for parent in (source, source / "crates/clausters-gui"):
                 link = parent / "target"
                 if not link.exists() and not link.is_symlink():
                     link.symlink_to(target_for(work / "target", str(parent.relative_to(source))), target_is_directory=True)

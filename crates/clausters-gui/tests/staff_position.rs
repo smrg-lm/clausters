@@ -3,8 +3,8 @@
 //!
 //! The host measures the position a dragged note reaches and sends it; a client
 //! resolves that position against the page it engraved, through
-//! `clausters_core::notation::DisplayList::staff_position`. The two crates are
-//! in separate workspaces and neither can call the other, so the guard against
+//! `clausters_core::notation::DisplayList::staff_position`. Each side keeps
+//! its own reading, so the guard against
 //! them drifting is that both assert against
 //! `crates/clausters-core/tests/staff_position_vector.json` -- this test and
 //! `the_vector_positions_are_what_the_core_reads` over there. A change to

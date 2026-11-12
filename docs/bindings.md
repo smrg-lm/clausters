@@ -929,7 +929,7 @@ hands back the rows, the boxes, the automations over both, their
 break-points, which are hidden and which boxes loop -- everything a multitrack
 has from the document alone. It was written three times before it was
 written here, and the third was already in Rust: a standalone host draws the
-same picture with no client in the process, so `clients/gui` linked its own
+same picture with no client in the process, so `crates/clausters-gui` linked its own
 copy of the same sextuple, the same septuple and the same row height.
 **Additive**, and the counter moves for v31's reason.
 

@@ -25,5 +25,5 @@ clausters-document = { path = "../clausters-document" }
 # a prop payload and an OSC argument already are. The instance projection has
 # state that crosses too -- the operations a client applies, and what it made of
 # the last ones -- so it derives rather than hand-writing that shape.
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }

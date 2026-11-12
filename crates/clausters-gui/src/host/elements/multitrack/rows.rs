@@ -257,7 +257,7 @@ impl Multitrack {
             // **A facility, and it says so**: what a track may automate is its
             // own question, and this is the smallest thing that makes a multitrack
             // with automation editable while that is worked out. See
-            // `clients/gui/PLAN.md`, "The whole interaction vocabulary is
+            // `crates/clausters-gui/PLAN.md`, "The whole interaction vocabulary is
             // provisional".
             curves: Some(track.curves),
             // **Silent, and the right length**: the strip's width follows the

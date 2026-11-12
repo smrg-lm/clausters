@@ -13,7 +13,7 @@
 # inside its file.
 #
 #   pip install fonttools
-#   clients/gui/assets/fonts/subset.sh \
+#   crates/clausters-gui/assets/fonts/subset.sh \
 #       /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
 #       /usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf
 #

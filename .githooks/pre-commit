@@ -26,7 +26,8 @@
 #     git config core.hooksPath .githooks
 #
 # Only the workspaces the working tree actually touches are linted (root,
-# clients/gui, audit/fuzz, clausters-editor -- four separate workspaces), and only the books whose
+# audit/fuzz, clausters-editor -- three separate workspaces; the GUI host is a
+# member of the root one and is linted by itself too), and only the books whose
 # sources it touches are built, so a commit pays for what it changed and
 # nothing else.
 #
@@ -124,7 +125,7 @@ while IFS= read -r -d '' entry; do
         *) continue ;;
     esac
     case "$path" in
-        clients/gui/*) want_gui=1 ;;
+        crates/clausters-gui/*) want_gui=1 ;;
         audit/fuzz/*) want_fuzz=1 ;;
         audit/*) ;; # the rest of the audit tooling is Python and Markdown
         clausters-editor/*) want_editor=1 ;;
@@ -170,8 +171,10 @@ if [ "$want_root" = 1 ]; then
     check "clippy" "$root" cargo clippy --workspace --all-targets -- -D warnings
 fi
 if [ "$want_gui" = 1 ]; then
-    check "fmt(gui)" "$root/clients/gui" cargo fmt --check
-    check "clippy(gui)" "$root/clients/gui" cargo clippy --all-targets -- -D warnings
+    check "fmt(gui)" "$root" cargo fmt --check -p clausters-gui
+    # By itself as well as in the workspace run: there cargo unifies features
+    # across every member, and the host must lint with only its own.
+    check "clippy(gui)" "$root" cargo clippy -p clausters-gui --all-targets -- -D warnings
 fi
 if [ "$want_fuzz" = 1 ]; then
     check "fmt(fuzz)" "$root/audit/fuzz" cargo fmt --check

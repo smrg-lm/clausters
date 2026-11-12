@@ -10,7 +10,7 @@ This plan covers the **Python** client, the reference client. It was written to 
 
 - **One reference client at a time.** Finish and polish the Python client first — it is the most mature. Do not grow two full clients in parallel: that duplicates tests and bugs and lets them diverge.
 - **Push every language-agnostic piece down into the shared core as you write it** (not "later"). If you find yourself writing protocol/value/time logic inside Python, it belongs in `clausters-core`/`clausters-ffi`. This is what makes the later port mechanical rather than a rewrite. The GUI track proved it: carving the platform seam first (the `host` traits) made the browser port reuse the native code verbatim.
-- **Porting reuses the core, never reimplements it.** A new client = rebind the same core (ctypes/N-API natively, wasm in the browser, mirroring `clients/gui`'s wasm path) + add only the parts that genuinely cannot be shared.
+- **Porting reuses the core, never reimplements it.** A new client = rebind the same core (ctypes/N-API natively, wasm in the browser, mirroring `crates/clausters-gui`'s wasm path) + add only the parts that genuinely cannot be shared.
 - **What is never shared (and should not be forced into the core):** the idiomatic/ergonomic API surface and the concurrency/scheduling model (Python threads + TempoClock vs. JS event loop/async). The core provides the time/value primitives; each language writes its own coroutine driver and ergonomics. See "Guiding principle of the seam" below.
 
 Net: each milestone is built and finished on the reference client, but always factored so that only the thin language-specific shell remains to write per platform.
@@ -46,7 +46,7 @@ region, lane, track, automation - with three classic applications over it
 "The turn: the arrangement stops being a projection" (`O21`-`O24`).
 
 **The seam under them was reworked after, on the application-scope track**
-(`clients/gui/PLAN.md`, AP track): an `Application` owns a window set, a widget id
+(`crates/clausters-gui/PLAN.md`, AP track): an `Application` owns a window set, a widget id
 is named after what it draws rather than leased, the host reconciles a def so no
 client keeps a picture, and the undo order is the applications crate's editing
 context, which `Editing` binds. The reasons are in `docs/decisions.md`.
@@ -307,7 +307,7 @@ Client milestones **with no fixed sequential order**, to be tackled when appropr
   weighing. Not the
   arrangement and not the host -- the host's half of the same rule shipped
   2026-09-08 ("One cursor, it is the transport's, and the content never moves
-  it", `clients/gui/PLAN.md`), and a run's log confirmed the events and the
+  it", `crates/clausters-gui/PLAN.md`), and a run's log confirmed the events and the
   picture are already right when the sound is not. **Both clients, one rule, two
   spellings**: the port is `W31` (`clients/web/PLAN.md`) and lands in the same
   commit.
@@ -581,7 +581,7 @@ through once it is editable on its own).
 
   What is **not** here, and is written where it is read: the standalone host
   *carries* mixing across a save (its config is opaque) and does not draw it —
-  its lane header is not bound to a node. That is `clients/gui/PLAN.md`'s.
+  its lane header is not bound to a node. That is `crates/clausters-gui/PLAN.md`'s.
 
 - ✅ **C49 — `Editor` is the generic one, and the arrangement's becomes
   `FormEditor`.** The split and the rename are **one milestone**, because the
@@ -1244,7 +1244,7 @@ the def already has removes the asymmetry rather than papering over it.
   import view` then resolves to the *submodule*, not the function, and binding
   the name in `__init__` on top of it is a shadowing that depends on import
   order. `View` moved into `guidef.py`, which is where every builder that returns
-  one already lives, and the submodule is gone. (`clients/gui/src/tree.rs` is the
+  one already lives, and the submodule is gone. (`crates/clausters-gui/src/tree.rs` is the
   Rust side of the same job, if a separate module is ever wanted again — the name
   to use is `tree`, not `view`.)
 
@@ -1321,7 +1321,7 @@ the def already has removes the asymmetry rather than papering over it.
   is `{value, min, max, label, text_size}`: linear, no step, no curve. A **named
   spec** (`spec="freq"` → 20..20000 *exponential*) was deliberately **not**
   shipped — a spec that silently drew linear would be worse than none. That is
-  one entry in `clients/gui/PLAN.md`, and it survives the correction unchanged:
+  one entry in `crates/clausters-gui/PLAN.md`, and it survives the correction unchanged:
   it was always about what a *widget* can express.
 
   The props-parity manifest learned that `control` is **not a prop**: it is a
@@ -1421,7 +1421,7 @@ the def already has removes the asymmetry rather than papering over it.
   It may — `GuiHost` is a plain OSC client to any address — but the useful
   topology (host and server together where the screen and the device are, script
   anywhere) is a **bind** question, and the binds are the server's and the
-  host's, not this client's. It went to `clients/gui/PLAN.md` and `PLAN.md`
+  host's, not this client's. It went to `crates/clausters-gui/PLAN.md` and `PLAN.md`
   instead. Two things would degrade under it and are written down there: the
   `path` carrier of a `Source` (the client writes a temp file the host mmaps —
   one filesystem assumed, so remote means inline-only under the 2 KB ceiling)
@@ -1961,7 +1961,7 @@ existing examples rewritten rather than new ones:
   are the multitrack, the roll and the audio editor, whose operations act on
   what the hand marks -- not every editor. The points editor took the two
   words as well, with nothing to act on them ("The points editor carries a
-  range and a selection it has no use for", `clients/gui/PLAN.md`), and
+  range and a selection it has no use for", `crates/clausters-gui/PLAN.md`), and
   lost them the same day: the three editors' `selected`, `select` and
   `unselect` are the `Marking` mixin's, which the points editor does not
   take. A view has
@@ -2896,7 +2896,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   widget: "Element is a term used in form"; renamed 2026-10-07)*. `clausters.form.Element`
   is a thin adornment over an event, a timeline, a buffer or a pattern — an
   onset and a duration, and nothing else. The GUI host's `Element` is the leaf
-  of a widget tree, one object implementing one trait (`clients/gui`'s K track,
+  of a widget tree, one object implementing one trait (`crates/clausters-gui`'s K track,
   and the directory `host/elements/` every widget lives in). They are two
   layers and they never meet in one file, which is why nothing has broken; what
   they cost is a reader's double take on every line either appears in, and the
@@ -4107,7 +4107,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   entry is what a marker's *arguments* would need, and they are not drawn at
   all.
   **Closed 2026-10-08, in two halves.** The roll's half was settled by the
-  user on 2026-09-07 (`clients/gui/PLAN.md`, "Messages are not the roll's to
+  user on 2026-09-07 (`crates/clausters-gui/PLAN.md`, "Messages are not the roll's to
   edit, and nothing else edits them"): the OSC lane is read-only, a press
   meant to edit it is refused, and an editor of messages is not a roll. The
   host's half -- the capability this entry said was missing -- is built: a
@@ -4276,7 +4276,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   def's control positionally like the other four, dropping the control's default
   rather than seeding a `value` it holds nothing in.
 
-  Lands in: `clients/gui/src/host/elements/button.rs` and `toggle.rs` (plus
+  Lands in: `crates/clausters-gui/src/host/elements/button.rs` and `toggle.rs` (plus
   `elements::switch_value`), both clients' `gui` modules, `docs/gui-protocol.md`
   ("The two switches, and what a press means"), the GUI page of both books.
   Tests: `tests/test_control_range.py` and `tests/gui-view.test.ts` — the button
@@ -4318,7 +4318,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   question the machine owns, and the ten other implementors ignore it.
 
   Lands in: `Events::and_interface` + `Element::release`'s third argument
-  (`clients/gui/src/host/widget/element.rs`), `gestures::element::inside` and
+  (`crates/clausters-gui/src/host/widget/element.rs`), `gestures::element::inside` and
   the interface road in `report`, `elements/button.rs`, both clients' host and
   handle, `docs/gui-protocol.md`, the GUI page of both books. Tests: the
   element's six cases and the machine's three (the click, the press slid off,
@@ -4539,7 +4539,7 @@ work, where a pending item reads as done.)*
 
 - ✅ **A leaf's reference changed key between two saves, so what resolved once stopped resolving** *(found 2026-08-17 by the user, saving and reopening twice in `composer.py`: the second open lost the automation lane)*. `_body` wrote a leaf it has no body for as a **generator** node keyed `element`, while a real `Generator` writes the same node kind keyed `generator` — and `_element` reads only the second. So a hand-written `Element(automation)` came back as a `Generator`, and saving *that* wrote the other key: a resolver that recognized the material on the first open could not on the second, and the curve went frozen. One body kind, one key: the fallback writes `generator`, and `element` still reads for files already written. Related to but not the same as the crate-side entry about a leaf's *identity* (`crates/clausters-document/PLAN.md`) — that one is about the reference being `repr()`; this one was about which key it hides under.
 
-- ✅ **A refused note edit sprang back with nothing attached** *(found the same day, same run: the notes on the pattern lane's clip flicker, jump and return)*. Refusing is correct — a `Sequence` over a `Pbind` is forward-only, its notes are a *rendering* of an algorithm, and the acknowledgement pushing the old notes back is what stops the host drawing the one the hand moved. What was missing is the **reason**, which the acknowledgement has carried since the wire grew it: without one the body teaches *sometimes it does not work* rather than *not here*. It now says to render the generator to a track to edit its notes. **The flicker itself is not fixed by this and is not the client's to fix**: the picture still follows the hand and snaps back, because nothing tells the host the body is read-only *before* the gesture — see the entry opened in `clients/gui/PLAN.md`.
+- ✅ **A refused note edit sprang back with nothing attached** *(found the same day, same run: the notes on the pattern lane's clip flicker, jump and return)*. Refusing is correct — a `Sequence` over a `Pbind` is forward-only, its notes are a *rendering* of an algorithm, and the acknowledgement pushing the old notes back is what stops the host drawing the one the hand moved. What was missing is the **reason**, which the acknowledgement has carried since the wire grew it: without one the body teaches *sometimes it does not work* rather than *not here*. It now says to render the generator to a track to edit its notes. **The flicker itself is not fixed by this and is not the client's to fix**: the picture still follows the hand and snaps back, because nothing tells the host the body is read-only *before* the gesture — see the entry opened in `crates/clausters-gui/PLAN.md`.
 
 - ✅ **The whole-loop example wrote a session no other writer could open** *(found 2026-08-17, merging `gui_daw.py` into `composer.py` and reading its source table against the crate's)*. The example wrote `"location": "/tmp/.../take.wav"` — a bare string — while `session::Location` is an internally tagged enum (`{"at": "file", "path": …}`). `to_session` passes the source table through **unvalidated** (`clients/python/clausters/form/document.py`: it is caller data, and the crate is the one that knows the shape), so the file was written happily and read back happily *by the example itself*, which resolved the field by hand. Handing it to the standalone host is what says it: `invalid type: string "take.wav", expected internally tagged enum Location`. So the example that exists to prove "a session written by this client opens in a host with no language attached" was proving the opposite, in silence, for as long as nobody handed the file over. Fixed in the example, and checked the way the claim is written — the host opens the new file and refuses the old one.
 
@@ -5134,7 +5134,7 @@ work, where a pending item reads as done.)*
 
   **The plan already existed, one builder over.** The standalone host builds the
   same view from a session file with `{"drag": "select", "alt": "draw", "ctrl":
-  "sample"}` (`clients/gui/src/host/document/tree.rs`), commented there as "the
+  "sample"}` (`crates/clausters-gui/src/host/document/tree.rs`), commented there as "the
   plan, and it is three gestures rather than a mode". Two builders of one view
   disagreeing is the "why are these two programs not the same program" case, and
   the answer was a call the client never made. Both clients now declare that
@@ -5597,7 +5597,7 @@ work, where a pending item reads as done.)*
   found, the milestone carrying the shape, the acceptance and the port. The host's side of the same rule -- one cursor, placed by a
   click, playing or stopped, and what a drop under it does -- is
   "One cursor, it is the transport's, and the content never moves it"
-  (`clients/gui/PLAN.md`, Future directions), where the user's full
+  (`crates/clausters-gui/PLAN.md`, Future directions), where the user's full
   specification is written down.
 
   **The audio half is verified, 2026-09-27, by the user, by ear** in
@@ -5874,7 +5874,7 @@ work, where a pending item reads as done.)*
   host is a client there and the server is the script's.
   **The decision:** whether the wheel's host links the embedded server —
   `standalone` (the `synth` family only) or `standalone-faust`, which also
-  links libfaust from a binary built in the `clients/gui` workspace, whose
+  links libfaust from a binary built in the `crates/clausters-gui` workspace, whose
   rpath has to find `_libs` the way the root crate's `build.rs` makes the
   server's do — and what that weighs against the 15 MB host staged today; or
   whether the wheel stays a client's host and the docs say a standalone host
@@ -5891,7 +5891,7 @@ work, where a pending item reads as done.)*
   crate; the *rpath* does not, because a link argument is the linking package's
   and stops there. So the host came out with `NEEDED libfaust.so.2` and no
   `RPATH` at all -- `ldd` answered "not found" even on a machine with libfaust
-  installed. `clients/gui/build.rs` states the same recipe the root one does,
+  installed. `crates/clausters-gui/build.rs` states the same recipe the root one does,
   under the feature that links it. Measured on the staged tree, copied away
   from the checkout with `HOME` pointing nowhere: 18.2 MB (was 14.5), libfaust
   resolved through `_libs/`, and `--standalone` looking for the GuiDef instead
@@ -6266,7 +6266,7 @@ than being ticked here.
   client has.
 
   **Related:** "A roll that sounds shows no cursor, and what can drive the line
-  is a `Playhead`" (`clients/gui/PLAN.md`, Future directions) is the same
+  is a `Playhead`" (`crates/clausters-gui/PLAN.md`, Future directions) is the same
   question seen from the view.
 
   *Re-read 2026-09-14.* `Editor.render` and `Editor._apply_notes` were

@@ -23,16 +23,14 @@ fails at the staging step with a "different bindgen format" error, not at
 compile time. `build.sh` only checks that the CLI is *present* — the pin is
 on you.
 
-**Two lockfiles pin it, and one CLI stages all three bundles**: the root
-workspace's `Cargo.lock` (the engine and the core codec) and `clients/gui`'s
-own `Cargo.lock` (the GUI host — a separate workspace by design). They must
-agree; if they ever diverge, reconcile them before installing, because no
-single CLI can serve both. Both are **committed** for that reason: the pin is
-an agreement *between* two files, so a lockfile cargo resolves fresh on
-whatever machine builds — a release runner, say — is not a pin at all.
+**The workspace's `Cargo.lock` pins it, and one CLI stages every bundle**: the
+engine, the core codec and the GUI host are members of one workspace and
+resolve one `wasm-bindgen`. The lockfile is **committed** for that reason: a
+lockfile cargo resolves fresh on whatever machine builds — a release runner,
+say — is not a pin at all.
 
 ```sh
-grep -A1 '^name = "wasm-bindgen"$' ../../Cargo.lock ../gui/Cargo.lock   # both must match
+grep -A1 '^name = "wasm-bindgen"$' ../../Cargo.lock                     # the pinned version
 cargo install wasm-bindgen-cli --version 0.2.126                        # that version
 wasm-bindgen --version
 ```
@@ -156,8 +154,8 @@ The pieces individually:
   `tests/def-vectors.json` and `tests/gui-vectors.json`, and the WebSocket
   carrier end to end against both fronts — `Server` against a spawned
   `target/debug/clausters --ws` and `GuiHost` against a spawned
-  `clients/gui/target/debug/clausters-gui --ws`, each skipping if its debug
-  binary is not built (`cargo build` at the root, and inside `clients/gui`).
+  `target/debug/clausters-gui --ws`, each skipping if its debug
+  binary is not built (`cargo build` at the root, and `cargo build -p clausters-gui`).
   It runs **serially** because `--ws <port>` only moves the WebSocket front:
   the OSC port (57110) is fixed, so two spawned servers cannot overlap.
 - `./test.sh` — the above plus three acceptance pages under headless Chrome,

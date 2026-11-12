@@ -4,7 +4,9 @@ Clausters is a server; clients drive it. This chapter is the **cross-language
 map**: the one native contract every client sits on, the Python client built on
 it, the TypeScript client that sits on the same contract, and the path to
 distributable packages. The
-client work lives in the `clients/` tree; this is the architectural overview.
+language clients live in the `clients/` tree, and the GUI host they both drive
+is a crate of the workspace (`crates/clausters-gui`); this is the architectural
+overview.
 
 ## One contract: the C ABI
 
@@ -69,7 +71,7 @@ Python-specific.
 
 ## The GUI host: a scriptable peer
 
-The GUI (`clients/gui`) is **another peer in the system, not code compiled into
+The GUI (`crates/clausters-gui`) is **another peer in the system, not code compiled into
 the audio server** — the same decoupling Clausters already uses for audio. Just
 as SuperCollider's `sclang` builds Qt widgets by sending messages to a separate
 widget engine, a **GUI host** process owns the windows, widgets and the GPU and
@@ -110,7 +112,7 @@ Two design choices carry the rest:
 The wire reference — the commands, the GuiDef document, the events and the widget
 catalog — is [The GUI protocol](gui-protocol.md). The crate's front door — a
 quick start, the widget vocabulary at a glance and its documentation map — is
-[the `clients/gui` README](https://github.com/smrg-lm/clausters/blob/main/clients/gui/README.md).
+[the `crates/clausters-gui` README](https://github.com/smrg-lm/clausters/blob/main/crates/clausters-gui/README.md).
 
 The widget catalog runs from the ordinary controls (labels, knobs, sliders,
 numbers, buttons, toggles, text, menus) through the live meters and scopes
@@ -182,7 +184,7 @@ transports that disagree about where the sound ends.
 
 ## The GUI host in the browser
 
-The GUI host (`clients/gui`) also compiles to **WebAssembly** and runs in a browser tab: the same widget protocol, layout, renderers and interaction as the desktop host, over a `<canvas>`. It renders through **WebGPU where the browser truly supports it and WebGL2 otherwise** (~99% browser reach), and it talks to an audio server over one of two legs: a **separate server over WebSocket** (start it with `--ws`, default port 57120), or the **in-page engine** — the audio server itself compiled to wasm, running inside an AudioWorklet on the same page (`GuiBridge.connect_page`; see the standalone quick start below). No server process is required in the second case.
+The GUI host (`crates/clausters-gui`) also compiles to **WebAssembly** and runs in a browser tab: the same widget protocol, layout, renderers and interaction as the desktop host, over a `<canvas>`. It renders through **WebGPU where the browser truly supports it and WebGL2 otherwise** (~99% browser reach), and it talks to an audio server over one of two legs: a **separate server over WebSocket** (start it with `--ws`, default port 57120), or the **in-page engine** — the audio server itself compiled to wasm, running inside an AudioWorklet on the same page (`GuiBridge.connect_page`; see the standalone quick start below). No server process is required in the second case.
 
 The browser fills the host's data paths over the network instead of shared memory and mapped files:
 

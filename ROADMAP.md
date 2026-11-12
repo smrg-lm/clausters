@@ -46,7 +46,7 @@ projection" (`O21`-`O24`).
 conversation, its playback and the application itself in the shared crates, run
 by the standalone host and bound by both clients, and a saved session opens and
 sounds from all three. **The application-scope track is closed**
-(`clients/gui/PLAN.md`, AP track): the samples editor is the second application
+(`crates/clausters-gui/PLAN.md`, AP track): the samples editor is the second application
 in `crates/clausters-apps`, and the undo order over both is the crate's editing
 context, in both clients and the standalone host. The applications after the
 multitrack — a buffer editor, the notes editor, the score
@@ -62,11 +62,11 @@ Where the work lives:
 |---|---|---|
 | `Ox` | `crates/clausters-document/PLAN.md` | the document: tree, intents, log, session, bindings |
 | `Xx` | `crates/clausters-apps/PLAN.md` | the applications over the document, each written once |
-| `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx`, `Lx`, `Px`, `Nx`, `Vx` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API, the patcher, the score model, the host seen and driven by a script |
+| `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx`, `Lx`, `Px`, `Nx`, `Vx` | `crates/clausters-gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API, the patcher, the score model, the host seen and driven by a script |
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
 | `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux`, `Jx` | `PLAN.md` (root) | the server, its engine in the browser (`Bx`), and third-party plugins (`Jx`) |
-| `APx` | `clients/gui/PLAN.md` (AP track) | the application scope: the window set, the derived widget id, the reconcile, one undo order |
+| `APx` | `crates/clausters-gui/PLAN.md` (AP track) | the application scope: the window set, the derived widget id, the reconcile, one undo order |
 | `Qx` | `crates/clausters-notate/PLAN.md` | from a performance to a page: beats, quantization, meter, voices, spelling |
 
 Entries that carry no label are **plan entries, not milestones** — they are named
@@ -120,7 +120,7 @@ already carry it.
   open is whether the test's pacing or the crossfade is at fault.
 
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
-  keeps an edited picture** *(`clients/gui/PLAN.md`, Found by use)*. Not
+  keeps an edited picture** *(`crates/clausters-gui/PLAN.md`, Found by use)*. Not
   reproduced in five sequences on a GPU; waits for the exact steps.
 
 - ⬜ **`faust_compiler` failed once in a parallel workspace run** *(root
@@ -163,13 +163,13 @@ a person saw it work.
   folds coming and going, the Hann pulses, the breath -- has not been heard in
   either. **Related:** the arc's measurements are in the plan.
 
-- ⬜ **Nobody has looked at `views/segments`** *(`clients/gui/PLAN.md`,
+- ⬜ **Nobody has looked at `views/segments`** *(`crates/clausters-gui/PLAN.md`,
   `G45`)*. The host draws a list of segments over files; the pair renders a
   swelling tone with its peaks and draws it whole and with its halves swapped.
   To look at, natively and in a page: the drop at the seam, the fades meeting
   when zoomed into it, and single samples read under a deep zoom.
 
-- ⬜ **Nobody has looked at `custom_element`** *(`clients/gui/PLAN.md`,
+- ⬜ **Nobody has looked at `custom_element`** *(`crates/clausters-gui/PLAN.md`,
   `K16c`)*. It compiles against the public surface and opens; what it draws
   and what a press does are still to be looked at by eye.
 
@@ -193,7 +193,7 @@ its plan; the plan is where its acceptance is read.
   identity; a design first.
 
 - ⬜ **The `N` track's other open one — a foreign score's layout**, `N7`
-  *(`clients/gui/PLAN.md`, "N track — notation: the score model, and what
+  *(`crates/clausters-gui/PLAN.md`, "N track — notation: the score model, and what
   is written on it")*. A **decision** before it is work: what opening
   somebody else's score should preserve, since the reader stores an
   engraver's beams and page breaks as though a writer had chosen them; no
@@ -226,7 +226,7 @@ its plan; the plan is where its acceptance is read.
   case nothing currently hits.
 
 - ⬜ **`K16` — the host's own documentation**, and its parts `K16a`/`K16b`/`K16c`
-  *(`clients/gui/PLAN.md`, K track, Part C)*. With Part A done, the extension
+  *(`crates/clausters-gui/PLAN.md`, K track, Part C)*. With Part A done, the extension
   recipe is a public API and has no book to live in: the wire is a page of the
   server's book, driving a host is a chapter of the Python book, the component is
   a chapter of the web book, and how the host is built is a development doc. A
@@ -278,18 +278,17 @@ its plan; the plan is where its acceptance is read.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found running the
   notes editor's example; what is open is where the wait belongs.
 
-- ⬜ **The second review of the workspace's shape, `R14`-`R23`** *(root
+- ⬜ **The second review of the workspace's shape, `R14`, `R16`-`R23`** *(root
   `PLAN.md`, R track, "The second review: the shape of the workspace")*. Done
-  on the branch `restructure`, in this order of kind: the guard that is left
-  first (`R14` profiles and a pinned toolchain), then the two that move
-  files, each in a sitting of its own (`R15` the GUI host into the
-  workspace and under `crates/`, `R16` notation as a crate), then `R17` (tests
-  at their level, fewer binaries), `R19` (the host's modules in levels) and
-  `R20` (the bindings' shape). `R18` (a panic at a binding's door), `R21` (the
-  clients linted and typed) and `R22` (the editor application) depend on
-  nothing. `R23` (the plans hold what is open) is last, once the branch is accepted.
-  **Related:** `R16` goes before the `Q` track below opens and before `X11`
-  continues, since both add to what it moves; `R15` not right before a tag.
+  on the branch `restructure`. Next is `R16` (notation as a crate), in a
+  sitting of its own, then `R17` (tests at their level, fewer binaries),
+  `R19` (the host's modules in levels) and `R20` (the bindings' shape). `R18`
+  (a panic at a binding's door), `R21` (the clients linted and typed) and
+  `R22` (the editor application) depend on nothing. `R23` (the plans hold
+  what is open) is last, once the branch is accepted. `R14` waits only on the
+  release rehearsal, run at the end. **Related:** `R16` goes before the `Q`
+  track below opens and before `X11` continues, since both add to what it
+  moves.
 
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,
@@ -299,17 +298,17 @@ its plan; the plan is where its acceptance is read.
   conversion (`X35.7`) uses the baselines until a method beats them.
 
 - ⬜ **The D track's spectral half — the hand that edits data**
-  *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
+  *(`crates/clausters-gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
   sample, the draw mode, the two-axis marquee, copy/cut/paste, the editor opening
   an element as a signal view). What is left is spectral: the selection the
   `select_box` step already declines to answer, the lasso, and spectral drawing
   and resynthesis — the last of which is **experimental** in the `G20f` sense,
   promoted or dropped on what it sounds like. It needs the A track's descriptors,
-  which shipped with that track (`clients/gui/PLAN.md`, A track) and are what
+  which shipped with that track (`crates/clausters-gui/PLAN.md`, A track) and are what
   the spectral half is read against.
 
 - ⬜ **The P track's phase B — the patcher becomes an editing surface**
-  *(`clients/gui/PLAN.md`, "P track")*. Phase A is complete at both levels: a
+  *(`crates/clausters-gui/PLAN.md`, "P track")*. Phase A is complete at both levels: a
   `GraphDef` and a `SynthDef`/`FaustDef` each have an autonomous read-only view,
   decoded headlessly, laid out by the host. Phase B is two milestones that are
   **deliberately not designed yet** — the editing and authoring surface, and where
@@ -318,7 +317,7 @@ its plan; the plan is where its acceptance is read.
   shared machine; the eye pass is part of closing it) plus the third persistence
   option the host grew while the track was paused.
 
-- ⬜ **The free arrangement plane (the blueprint view)** *(`clients/gui/PLAN.md`,
+- ⬜ **The free arrangement plane (the blueprint view)** *(`crates/clausters-gui/PLAN.md`,
   Future directions)*. A **second kind of multitrack**, explicitly not a milestone
   of the one that shipped: it shares characteristics with the lane stack and its
   model differs structurally, so it is still to be defined and planned.

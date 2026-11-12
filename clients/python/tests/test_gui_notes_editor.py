@@ -2,7 +2,7 @@
 sequence the script holds. Run against a real host with no window on screen
 (``[gui] headless``); what a gesture does on the roll is the application's and
 tested in its crate (``crates/clausters-apps/src/notes``), and the door in the
-host's (``clients/gui/src/host/audio_editor.rs``).
+host's (``crates/clausters-gui/src/host/audio_editor.rs``).
 """
 
 import pytest

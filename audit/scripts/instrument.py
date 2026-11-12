@@ -24,8 +24,8 @@ def build_patch(source, output):
         "src/server/engine.rs": [
             ("        let elapsed_nanos = meter_start.elapsed_nanos();", "        let elapsed_nanos = meter_start.elapsed_nanos();\n        crate::server::audit_timing::BLOCKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);\n        crate::server::audit_timing::BLOCK_MAX_NS.fetch_max(elapsed_nanos, std::sync::atomic::Ordering::Relaxed);"),
             ("    fn apply(&mut self, cmd: Cmd) {", "    fn apply(&mut self, cmd: Cmd) {\n        crate::server::audit_timing::APPLIED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);")],
-        "clients/gui/src/host/gui/mod.rs": [("mod app;", "mod app;\nmod audit_timing;")],
-        "clients/gui/src/gpu.rs": [
+        "crates/clausters-gui/src/host/gui/mod.rs": [("mod app;", "mod app;\nmod audit_timing;")],
+        "crates/clausters-gui/src/gpu.rs": [
             ("        let mut gpu = Self {\n            shown: Some((window, surface)),", '''        if let Ok(path) = std::env::var("CLAUSTERS_AUDIT_RENDERER") {
             let info = adapter.get_info();
             let value = serde_json::json!({
@@ -43,7 +43,7 @@ def build_patch(source, output):
         }
         let mut gpu = Self {
             shown: Some((window, surface)),''')],
-        "clients/gui/src/host/gui/app.rs": [
+        "crates/clausters-gui/src/host/gui/app.rs": [
             ("    fn resumed(&mut self, event_loop: &ActiveEventLoop) {", '    fn resumed(&mut self, event_loop: &ActiveEventLoop) {\n        super::audit_timing::start_writer("CLAUSTERS_AUDIT_GUI_TIMING");'),
             ("    fn draw(&mut self, def_id: i32, capture: bool) -> Option<Result<frame::Readback, String>> {", '    fn draw(&mut self, def_id: i32, capture: bool) -> Option<Result<frame::Readback, String>> {\n        let audit_epoch = super::audit_timing::epoch();\n        let audit_start = std::time::Instant::now();'),
             ("        if let Some(started) = timed {", "        if matches!(drawn, frame::Drawn::Whole | frame::Drawn::Live) {\n            super::audit_timing::TIMING.record(audit_epoch, audit_start, 0);\n        }\n        if let Some(started) = timed {")]
@@ -59,7 +59,7 @@ def build_patch(source, output):
         rendered[name] = text
     template = (AUDIT / "instrumentation/timing.rs.in").read_text()
     rendered["src/server/audit_timing.rs"] = template
-    rendered["clients/gui/src/host/gui/audit_timing.rs"] = '#![allow(dead_code)] // The GUI uses only the shared histogram recorder.\n' + template
+    rendered["crates/clausters-gui/src/host/gui/audit_timing.rs"] = '#![allow(dead_code)] // The GUI uses only the shared histogram recorder.\n' + template
     for name, text in rendered.items():
         (source / name).write_text(text)
     subprocess.run(["rustfmt", "--edition", "2024", *rendered], cwd=source, check=True)

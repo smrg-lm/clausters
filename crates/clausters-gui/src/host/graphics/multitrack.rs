@@ -11,7 +11,7 @@
 //! widgets there was nobody to report *the multitrack*, so a gesture reported
 //! what the hand did to whichever widget it touched -- under one of three tags,
 //! chosen by the gesture rather than by the clip, which two independent readers
-//! got wrong (`clients/gui/PLAN.md`, "The multitrack editor reuses the widget
+//! got wrong (`crates/clausters-gui/PLAN.md`, "The multitrack editor reuses the widget
 //! set that grew past it"). One owner answers with the result
 //! instead, exactly as a roll answers with its notes.
 //!

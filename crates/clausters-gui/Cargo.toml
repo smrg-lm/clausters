@@ -1,12 +1,6 @@
-# Independent workspace: this crate is intentionally NOT a member of the root
-# `clausters` workspace. It is the GUI client track under `clients/gui` and must
-# never entangle the core server build. Building from `clients/gui/` uses this
-# manifest; building the core from the repo root ignores it.
-[workspace]
-
 [package]
 name = "clausters-gui"
-version = "0.11.0"
+version.workspace = true
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "The Clausters GUI host: the program that owns the windows, the widgets and the GPU, driven over OSC by any client or run standalone."
@@ -91,47 +85,48 @@ apps = ["dep:clausters-app-engine", "clausters-apps/notation"]
 # the `canvas` widget's `time` uniform -- so a shader took the whole page down
 # on the first frame it was built for. Not a new dependency in the tree: wgpu
 # and winit already pull this exact shim, and on native it re-exports std.
-web-time = "1.1"
+web-time = { workspace = true }
 # The shared OSC seam (single `decode_packet` door, encode/bundle/message,
 # timetag math) the host's transports ride. A path dependency on the core: it
 # pulls only `rosc`, so the default gui build stays light.
-clausters-core = { path = "../../crates/clausters-core" }
+clausters-core = { path = "../clausters-core" }
 # The document's **clipboard**, and nothing else about the document: the host
 # holds no document, but a cut/copy/paste crosses windows, defs and processes
 # carrying whatever kind of payload it was given, and that type is the crate's.
 # It costs nothing to link -- serde and serde_json, both already here -- and
 # building the same JSON by hand in the host would be the second definition of a
 # format whose whole point is that one definition crosses everything.
-clausters-document = { path = "../../crates/clausters-document" }
+clausters-document = { path = "../clausters-document" }
 # The projections: the props a structure is drawn with. The host links the same
 # one every client binds, which is what makes a standalone editor this host
 # driven by itself rather than a fourth implementation of the picture.
-clausters-editing = { path = "../../crates/clausters-editing" }
+clausters-editing = { path = "../clausters-editing" }
 # The applications: the window an editor opens. The host links the one both
 # clients bind, so a session opened here is the editor a script opens rather
 # than an editor of the host's own.
-clausters-apps = { path = "../../crates/clausters-apps" }
+clausters-apps = { path = "../clausters-apps" }
 # The engraver, for `--score` alone (the `score` feature): a score opened by
 # this host with no client is read by the same libverovio binding a script's is.
-clausters-notation = { path = "../../crates/clausters-notation", optional = true }
+clausters-notation = { path = "../clausters-notation", optional = true }
 # The full server crate, linked ONLY under the `standalone` feature for the
 # in-process embedded server (`host::embed`). `embed` exposes the in-process
 # `Clausters` API; `realtime` brings the audio backend. Default features off so
-# the standalone build does not also pull MIDI/PipeWire. A normal gui build never
-# compiles this.
+# the standalone build does not also pull MIDI/PipeWire. (The native host
+# always compiles the server crate through `clausters-app-engine`; what this
+# feature adds is its embed surface and the audio backend.)
 clausters = { path = "../..", default-features = false, features = ["embed", "realtime"], optional = true }
 # Live MIDI input (the `midi` feature): the message reader and the MPE decoder,
 # the server's own, which is what turns a device's bytes into the notes a roll
 # paints. Pure Rust and on every target; the port it also has is added for the
 # native one alone, below. Without its C ABI (`cabi`): the host calls it from
 # Rust, and its cdylib would export every symbol of it to a page otherwise.
-clausters-midi = { path = "../../crates/clausters-midi", default-features = false, optional = true }
+clausters-midi = { path = "../clausters-midi", default-features = false, optional = true }
 # GuiDef = JSON inside one OSC argument, exactly as a SynthDef/GraphDef. serde's
 # number handling keeps ids i32 and control values f32 across the wire.
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
 # Structured logging, like the server (the host logs the parsed tree).
-tracing = "0.1"
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 bytemuck = { version = "1.25.0", features = ["derive"] }
 # Fill tessellation for the `score` widget: turns SMuFL glyph outlines and
@@ -165,7 +160,7 @@ unicode-segmentation = "1.12"
 # meters/scopes (`host::shm`). Unix-only -- the same raw-mmap path the server's
 # IPC uses, and the server's segment is itself Unix-only.
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 # The device half of live MIDI input (the `midi` feature): the shared MIDI
 # crate's virtual input port (midir/ALSA seq), consumed in-process through its
@@ -176,12 +171,12 @@ libc = "0.2"
 # audio editor this host owns plays on an engine in this process, on the
 # machine's output, spoken to with built commands. A page's is in its
 # worklet, over shared memory.
-clausters-app-engine = { path = "../../crates/clausters-app-engine", features = ["realtime"] }
-clausters-midi = { path = "../../crates/clausters-midi", default-features = false, features = ["live"], optional = true }
+clausters-app-engine = { path = "../clausters-app-engine", features = ["realtime"] }
+clausters-midi = { path = "../clausters-midi", default-features = false, features = ["live"], optional = true }
 # The stream legs of the script front -- TCP, and WebSocket (`--ws`), the
 # browser's carrier into a native host -- and the hub the headless loop
 # drains: the audio server's own, so the two fronts have one implementation.
-clausters-net = { path = "../../crates/clausters-net" }
+clausters-net = { path = "../clausters-net" }
 # The platform's clipboard for the windowed front (`host::gui::clipboard`):
 # text in and out, and the primary selection a middle click pastes on X11 and
 # Wayland. Text only -- the images feature is off, since the host's typed
@@ -197,17 +192,17 @@ arboard = { version = "3.6", default-features = false, features = ["wayland-data
 # **The engine an editing application holds**, in the applications' build
 # (`apps`): the same crate as natively, without the audio device, its
 # processing half run by the page's AudioWorklet over the shared memory.
-clausters-app-engine = { path = "../../crates/clausters-app-engine", optional = true }
+clausters-app-engine = { path = "../clausters-app-engine", optional = true }
 # Same wgpu as native, but with the WebGL2 backend compiled in alongside the
 # default WebGPU one (cargo unifies features, so the wasm build gets webgpu +
 # webgl while native stays webgpu/native-only). This is what lets `gpu.rs` fall
 # back to WebGL2 on browsers whose WebGPU is disabled (notably Linux), so the
 # web host keeps working where WebGPU is not available.
 wgpu = { version = "29.0.3", features = ["webgl"] }
-wasm-bindgen = "0.2"
+wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = "0.4"
 console_error_panic_hook = "0.1"
-js-sys = "0.3"
+js-sys = { workspace = true }
 web-sys = { version = "0.3", features = [
     "console",
     "WebSocket",
@@ -239,7 +234,3 @@ web-sys = { version = "0.3", features = [
     "MidiMessageEvent",
 ] }
 
-# The same debug information as the workspace's crates (see the root manifest):
-# this crate is a workspace of its own, so a profile is not inherited.
-[profile.dev]
-debug = "line-tables-only"

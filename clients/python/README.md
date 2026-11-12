@@ -218,11 +218,11 @@ pip install clients/python/dist/clausters-*.whl clausters-editor/wheel/dist/*.wh
 ```
 
 The wheel also bundles the **visual server** (the `clausters-gui` host binary),
-built from the independent `clients/gui` workspace and stripped, so the one
+built from the `crates/clausters-gui` crate and stripped, so the one
 package is self-contained — server *and* GUI. `Session.live` / `Session.gui`
 launch them for you (see the guide); nothing else to install. For a lighter,
 server-only wheel, set `CLAUSTERS_SKIP_GUI_BUILD` when building (a source-checkout
-`clients/gui/target` binary is still used at runtime if present).
+`target` binary is still used at runtime if present).
 
 ### From the repository, step by step
 
@@ -341,8 +341,8 @@ a path under `clients/python` is editable, one under `site-packages` a copy.
 
 Step 3 builds the GUI binary (wgpu, a minute or two the first time); set
 `CLAUSTERS_SKIP_GUI_BUILD=1` to skip it for a faster, server-only install (a
-`clients/gui/target` binary built with `cargo build --release --bin
-clausters-gui` is still used at runtime if present).
+`target` binary built with `cargo build --release -p clausters-gui` is still
+used at runtime if present).
 
 The audio paths (`Session.live`/`embed`, the standalone server) need PipeWire
 on Linux; the offline renderer and numeric core (`Session.nrt()`,

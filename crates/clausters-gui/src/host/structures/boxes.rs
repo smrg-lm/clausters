@@ -452,7 +452,7 @@ pub fn adjacent(a: Placement, b: Placement, tol: f64) -> bool {
 /// cannot be said in one window at all: joined anyway, the box plays straight
 /// through material the multitracks skipped, and runs into silence past the end of
 /// what it reads. One box over several runs is a **cut**, which is a list of
-/// parts its application reads and not a placement (see `clients/gui/PLAN.md`,
+/// parts its application reads and not a placement (see `crates/clausters-gui/PLAN.md`,
 /// "Join over fragments").
 ///
 /// So the test is the inverse of [`split_at`]'s rule: the later box's window

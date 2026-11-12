@@ -9,6 +9,7 @@ members = [
     "crates/clausters-document",
     "crates/clausters-editing",
     "crates/clausters-ffi",
+    "crates/clausters-gui",
     "crates/clausters-midi",
     "crates/clausters-net",
     "crates/clausters-notation",
@@ -18,15 +19,31 @@ members = [
 ]
 resolver = "3"
 
-# **The one place the package version is written.** Eight crates carried the
+# **The one place the package version is written.** Every crate carried the
 # same number and nothing checked that they still agreed; they inherit it now
-# (`version.workspace = true`), and the three manifests that cannot inherit --
-# `clients/gui` is its own workspace, and `pyproject.toml`/`package.json` are
-# not Cargo's -- are written from here by `scripts/set-version.sh` and contrasted
+# (`version.workspace = true`), and the two manifests that cannot inherit --
+# `pyproject.toml` and `package.json` are not Cargo's -- are written from here by `scripts/set-version.sh` and contrasted
 # by `tests/versions.rs`. Bumping a release is editing this line and running
 # that script; the rules for *which* number are the `release-versioning` skill's.
 [workspace.package]
 version = "0.11.0"
+
+# What several crates of the workspace depend on, declared once: a member
+# writes `name = { workspace = true }` and adds only what is its own (a
+# feature, `optional`). A dependency one crate alone uses stays in its
+# manifest.
+[workspace.dependencies]
+assert_no_alloc = "1"
+js-sys = "0.3"
+libc = "0.2"
+midir = "0.11"
+rtrb = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tungstenite = "0.21"
+wasm-bindgen = "0.2"
+web-time = "1.1"
 
 [package]
 name = "clausters"
@@ -162,24 +179,24 @@ hound = "3"
 symphonia = { version = "0.6", default-features = false, features = ["flac", "ogg", "vorbis", "mpa", "isomp4", "aac", "alac", "adpcm", "pcm", "wav", "aiff", "caf"] }
 # Live MIDI I/O over the OS's standard MIDI (ALSA seq on Linux). Pure
 # Rust over libasound (already pulled in by cpal); creates virtual ports.
-midir = { version = "0.11", optional = true }
+midir = { workspace = true, optional = true }
 rosc = "0.11"
-rtrb = "0.3"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+rtrb = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 # Content checksum for the on-disk def cache (pure Rust, no C deps).
 sha2 = "0.10"
 # Leveled, target-filtered logging. The audio thread never logs (it reports via
 # FIFOs to the network thread); the subscriber is installed only by the binary,
 # so library/embed users keep their own. `env-filter` gives RUST_LOG + the
 # runtime-reloadable filter the `/server_verbosity` OSC command swaps.
-tracing = "0.1"
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(unix)'.dependencies]
 # Only for mmap-ing the shared-memory segment (already in the tree via
 # cpal, so this adds no new download).
-libc = "0.2"
+libc = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 clausters-plugin-host = { path = "crates/clausters-plugin-host", optional = true, default-features = false }
@@ -187,12 +204,12 @@ clausters-plugin-host = { path = "crates/clausters-plugin-host", optional = true
 [dev-dependencies]
 # The audio editor over takes of hours, measured (`tests/long_takes.rs`).
 clausters-apps = { path = "crates/clausters-apps" }
-assert_no_alloc = "1"
+assert_no_alloc = { workspace = true }
 # The applications' playbacks, heard offline (`tests/audio_editor_graph.rs`,
 # `tests/multitrack_playback.rs`), and the document they play.
 clausters-editing = { path = "crates/clausters-editing" }
 clausters-document = { path = "crates/clausters-document" }
-serde_json = "1"
+serde_json = { workspace = true }
 
 # Line tables only in debug builds: a backtrace still names the file and the
 # line, and the build directory is about two fifths smaller for it (the tests

@@ -1244,7 +1244,7 @@ its own LFO bus, and its parameter as an initial port value.
 Open it with no script at all:
 
 ```sh
-# from clients/gui
+# from crates/clausters-gui
 cargo run --features standalone --bin clausters-gui -- \
     --standalone fm-voice --data-dir ./fm-voice
 ```

@@ -63,7 +63,7 @@
 //   and open `http://localhost:8000/examples/panels/piano/` -- `index.html`
 //   here imports the generated module, which registers the `<piano-keys>` tag;
 //   its power button boots the whole instrument in the tab.
-// - **Desktop, self-contained** (the embedded server; from `clients/gui`):
+// - **Desktop, self-contained** (the embedded server; from `crates/clausters-gui`):
 //
 //       cargo run --features standalone --bin clausters-gui -- \
 //           --standalone piano --data-dir <clients/web>/examples/out/piano
@@ -159,6 +159,6 @@ console.log("    cd ../../..   # clients/web");
 console.log("    ./build.sh && python3 -m http.server");
 console.log("    http://localhost:8000/examples/panels/piano/\n");
 console.log("or run the same bundle self-contained on the desktop " +
-            "(from clients/gui):\n");
+            "(from crates/clausters-gui):\n");
 console.log(`    cargo run --features standalone --bin clausters-gui -- ` +
             `--standalone ${BUNDLE} --data-dir ${dataDir}`);

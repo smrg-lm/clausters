@@ -35,10 +35,10 @@ clausters-midi = { path = "../clausters-midi", default-features = false }
 
 # The JS binding surface only exists on the wasm target.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2"
-js-sys = "0.3"
+wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
 # The bundle door's boundary is JSON in, JSON out (a manifest, a GuiDef
 # template, an allocation), so the shell parses and prints at the edge.
-serde_json = "1"
+serde_json = { workspace = true }
 # The document's request objects are deserialized at the JS boundary.
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }

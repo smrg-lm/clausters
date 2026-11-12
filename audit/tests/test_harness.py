@@ -437,7 +437,7 @@ class HarnessTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             controls.policy_environment({"disk_floor_gib": 1e30}, self.root)
         self.assertEqual(controls.policy_environment({}, self.root)["CARGO_INCREMENTAL"], "0")
-        paths = {controls.target_for(self.root / "target", name) for name in (".", "clients/gui", "audit/fuzz", "clausters-editor/src-tauri")}
+        paths = {controls.target_for(self.root / "target", name) for name in (".", "crates/clausters-gui", "audit/fuzz", "clausters-editor/src-tauri")}
         self.assertEqual(len(paths), 4)
         with self.assertRaises(ValueError):
             controls.validate_build_contract({"argv": ["cargo", "test", "--release"], "profile": "debug"}, self.repo)

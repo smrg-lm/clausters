@@ -10,7 +10,7 @@
 # resolve the same specifiers the emitted modules use.
 #
 # One-time setup: rustup target add wasm32-unknown-unknown, the nightly the
-# applications' host is built with (clients/gui/wasm-apps-toolchain, with
+# applications' host is built with (crates/clausters-gui/wasm-apps-toolchain, with
 # rust-src), and cargo install wasm-bindgen-cli at Cargo.lock's wasm-bindgen
 # version.
 #
@@ -26,17 +26,14 @@ flag=""
 # The CLI must be the same version as the `wasm-bindgen` crate the wasm was
 # compiled against: the glue they exchange is a private format, and a mismatch
 # surfaces as an opaque "different bindgen format" error at the staging step
-# below, long after the build. Two lockfiles pin it -- the root workspace's
-# (the engine and the core codec) and clients/gui's own (the host) -- and one
-# CLI stages all three bundles, so they must agree. See BUILD.md.
+# below, long after the build. The workspace's lockfile pins it, for the
+# engine, the core codec and the host alike. See BUILD.md.
 pinned_wasm_bindgen() {   # $1 = a Cargo.lock
     sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' "$1"
 }
 pin=$(pinned_wasm_bindgen ../../Cargo.lock)
-gui_pin=$(pinned_wasm_bindgen ../gui/Cargo.lock)
-if [ -z "$pin" ] || [ "$pin" != "$gui_pin" ]; then
-    echo "the lockfiles disagree on wasm-bindgen (root '$pin', gui '$gui_pin');" >&2
-    echo "no single CLI can stage both -- reconcile them first." >&2
+if [ -z "$pin" ]; then
+    echo "Cargo.lock names no wasm-bindgen; nothing to stage the bundles with." >&2
     exit 1
 fi
 
@@ -60,12 +57,12 @@ fi
 # shellcheck disable=SC2086
 (cd ../.. && cargo build -p clausters-web -p clausters-core-web -p clausters-nrt-web \
     --lib $flag --target wasm32-unknown-unknown)
-# The GUI host (its own workspace under clients/gui). `font-atlas` -- a default
+# The GUI host (crates/clausters-gui). `font-atlas` -- a default
 # feature, named here so the bundle does not depend on that -- compiles in the
 # glyph rasterizer and the face the host draws with; a page may hand over
 # another (`host.font(bytes)`).
 # shellcheck disable=SC2086
-(cd ../gui && cargo build --lib $flag --target wasm32-unknown-unknown \
+(cd ../../crates/clausters-gui && cargo build --lib $flag --target wasm32-unknown-unknown \
     --features font-atlas)
 
 # **The applications' build of the same host**: the editing applications
@@ -73,11 +70,11 @@ fi
 # cross-origin isolated (src/gui/page.ts). Shared memory in wasm needs the
 # standard library rebuilt with atomics (`-Z build-std`), which only a nightly
 # does, so this one build is made with the dated nightly pinned in
-# clients/gui/wasm-apps-toolchain, into a target directory of its own; every
+# crates/clausters-gui/wasm-apps-toolchain, into a target directory of its own; every
 # other build stays on stable. The link arguments make the memory shared and
 # imported, and export what wasm-bindgen sets each thread's stack and storage
 # up with.
-apps_toolchain=$(tr -d '[:space:]' < ../gui/wasm-apps-toolchain)
+apps_toolchain=$(tr -d '[:space:]' < ../../crates/clausters-gui/wasm-apps-toolchain)
 if ! rustup run "$apps_toolchain" rustc --version >/dev/null 2>&1 \
     || ! rustup component list --toolchain "$apps_toolchain" --installed 2>/dev/null \
         | grep -q '^rust-src'; then
@@ -92,9 +89,9 @@ for arg in --shared-memory --max-memory=4294967296 --import-memory \
     apps_flags="$apps_flags -C link-arg=$arg"
 done
 # shellcheck disable=SC2086
-(cd ../gui && RUSTFLAGS="$apps_flags" cargo +"$apps_toolchain" build --lib $flag \
+(cd ../../crates/clausters-gui && RUSTFLAGS="$apps_flags" cargo +"$apps_toolchain" build --lib $flag \
     --target wasm32-unknown-unknown -Z build-std=std,panic_abort \
-    --target-dir target/wasm-apps --features font-atlas,apps)
+    --target-dir ../../target/wasm-apps --features font-atlas,apps)
 
 # `--keep-lld-exports` on the engine alone: wasm-bindgen drops the exports the
 # linker synthesized, and one of them is `__indirect_function_table` -- the
@@ -104,9 +101,9 @@ done
 wasm-bindgen --target web --keep-lld-exports --out-dir dist/engine \
     "../../target/wasm32-unknown-unknown/$profile/clausters_web.wasm"
 wasm-bindgen --target web --out-dir dist/gui-host \
-    "../gui/target/wasm32-unknown-unknown/$profile/clausters_gui.wasm"
+    "../../target/wasm32-unknown-unknown/$profile/clausters_gui.wasm"
 wasm-bindgen --target web --out-dir dist/gui-host-apps \
-    "../gui/target/wasm-apps/wasm32-unknown-unknown/$profile/clausters_gui.wasm"
+    "../../target/wasm-apps/wasm32-unknown-unknown/$profile/clausters_gui.wasm"
 wasm-bindgen --target web --out-dir dist/core \
     "../../target/wasm32-unknown-unknown/$profile/clausters_core_web.wasm"
 wasm-bindgen --target web --out-dir dist/nrt \

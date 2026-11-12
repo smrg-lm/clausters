@@ -6,7 +6,7 @@
 //! verbs a key spells are `verbs`; this is what decides that a key meant one.
 //!
 //! **Provisional, and it says so**: which letters these are and which modifier
-//! does what is not settled -- see `clients/gui/PLAN.md`, "The whole
+//! does what is not settled -- see `crates/clausters-gui/PLAN.md`, "The whole
 //! interaction vocabulary is provisional".
 
 use super::*;
@@ -665,7 +665,7 @@ impl Multitrack {
     ///
     /// **A facility, and it says so.** These are here because the example needs
     /// to reach a stack taller than its window, and which modifiers they are is
-    /// not settled -- see `clients/gui/PLAN.md`, "The whole interaction
+    /// not settled -- see `crates/clausters-gui/PLAN.md`, "The whole interaction
     /// vocabulary is provisional".
     pub(super) fn wheeled(
         &mut self,

@@ -16,7 +16,7 @@ def build(work, output):
     if command(["git", "rev-parse", "HEAD"], source) != prepared["source_commit"] or command(["git", "status", "--porcelain"], source):
         raise ValueError("Control source must be the clean prepared revision")
     receipts = []
-    for role, relative, binary in (("server", ".", "clausters"), ("gui", "clients/gui", "clausters-gui")):
+    for role, relative, binary in (("server", ".", "clausters"), ("gui", "crates/clausters-gui", "clausters-gui")):
         target = work / ("control-target-" + role)
         env = {**os.environ, "CARGO_TARGET_DIR": str(target)}
         # Use the recorded real Cargo, bypassing the instrumented clone's router.

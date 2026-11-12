@@ -357,7 +357,7 @@ class GuiProcess(_Process):
     per-frame messages). `close` (or interpreter exit) stops it.
 
     The GUI binary is bundled in the ``clausters`` package alongside the server;
-    a source checkout uses the one built under ``clients/gui/target``.
+    a source checkout uses the one built under ``target``.
     `clausters._cli.gui_path` locates it.
 
     Args:

@@ -16,14 +16,14 @@ notation = ["clausters-core/notation"]
 # round-trips against it rather than holding handles into it. `serde_json` is
 # what carries a leaf's configuration, which the document transports and never
 # interprets -- see the crate docs on why a leaf is opaque.
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 # `float_roundtrip`, and it is not optional: a payload that leaves the pile for
 # the spill store is written as JSON and read back, and serde_json's default
 # parser is a fast approximation -- so a span of samples came back a few ulps
 # from where it went, and an undo wrote values nobody had ever had. The same
 # parser reads every document a session saved, so exactness is the format's
 # concern before it is the history's.
-serde_json = { version = "1", features = ["float_roundtrip"] }
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 # The node system: `multitrack::nodes` says what a piece is as nodes and
 # groups, which means it needs the tempo map that turns a beat into a second
 # (`clausters_core::tempomap`) and the def and port names a piece is wired with
@@ -33,4 +33,4 @@ clausters-core = { path = "../clausters-core" }
 # A sequence taken in with ids that repeat is repaired, and the repair is
 # logged: renumbering an event is a reading of the data the data did not make,
 # so it is said where whoever runs the program reads (`events::ids`).
-tracing = "0.1"
+tracing = { workspace = true }

@@ -18,15 +18,15 @@ and edits back. A platform-agnostic core (widget model, layout, signal logic,
 flat-geometry drawing) sits behind small traits, with two fronts: the
 **native** host (winit + wgpu) and the **browser/wasm** host on a canvas.
 
-This crate is an **independent workspace** — deliberately not a member of the
-root `clausters` workspace, so the GUI track never entangles the core server
-build.
+This crate is a member of the root `clausters` workspace. The root package is
+the server, so a plain `cargo build` at the repository root does not build the
+host: name it (`-p clausters-gui`) or build from this directory. Either way
+the artifacts land in the repository's `target/`.
 
 ## Quick start
 
 ```sh
-cd clients/gui
-cargo build --release
+cargo build --release -p clausters-gui
 ./target/release/clausters-gui          # the host; UDP+TCP on port 57210
 ./target/release/clausters-gui --help   # ports, --server, --headless, --standalone…
 ```

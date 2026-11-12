@@ -140,10 +140,9 @@ const dataDir = process.argv[2]
 const [synthPath, guiPath] = await writeBundle(dataDir);
 console.log(`wrote ${synthPath}`);
 console.log(`wrote ${guiPath}`);
-console.log("\nlaunch the bundle as a self-contained instrument (the GUI host is " +
-            "its own workspace, so point cargo at its manifest -- run this from the " +
-            "repo root):\n");
-console.log(`    cargo run --manifest-path clients/gui/Cargo.toml ` +
+console.log("\nlaunch the bundle as a self-contained instrument (run this from " +
+            "the repo root):\n");
+console.log(`    cargo run -p clausters-gui ` +
             `--features standalone --bin clausters-gui -- ` +
             `--standalone ${GUI_NAME} --data-dir ${dataDir}\n`);
 console.log("a window opens; turning the knob drives the drone's freq on the " +

@@ -25,9 +25,6 @@ const EXCEPTIONS: &[(&str, &str, &str)] = &[
     ("clausters", "clausters-editing", "dev-dependencies"),
 ];
 
-/// The GUI host's manifest, which is not under `crates/`.
-const HOST_MANIFEST: &str = "clients/gui/Cargo.toml";
-
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -63,10 +60,10 @@ fn levels() -> BTreeMap<String, u32> {
     out
 }
 
-/// Every manifest the rule covers: the root package, the crates under
-/// `crates/`, and the GUI host.
+/// Every manifest the rule covers: the root package and the crates under
+/// `crates/`.
 fn manifests() -> Vec<PathBuf> {
-    let mut out = vec![root().join("Cargo.toml"), root().join(HOST_MANIFEST)];
+    let mut out = vec![root().join("Cargo.toml")];
     for entry in std::fs::read_dir(root().join("crates")).expect("crates/") {
         let manifest = entry.expect("a directory entry").path().join("Cargo.toml");
         if manifest.is_file() {
@@ -210,4 +207,32 @@ fn the_reader_sees_the_edges_it_is_there_for() {
         Some(("dev-dependencies".into(), "clausters-core".into()))
     );
     assert_eq!(table_entry("package.metadata"), None);
+}
+
+/// The GUI host lived under the clients' directory until it became a crate
+/// among the others. Nothing tracked may still name that path: a reference to
+/// it compiles, lints and tests clean, and is found only by whoever follows
+/// it. The frozen build log is history and keeps what it said.
+#[test]
+fn nothing_names_the_host_where_it_used_to_live() {
+    // Spelled in two parts so that this file is not its own finding.
+    let old = ["clients", "gui"].join("/");
+    let out = std::process::Command::new("git")
+        .args([
+            "grep",
+            "-l",
+            "--fixed-strings",
+            &old,
+            "--",
+            ".",
+            ":!docs/history",
+        ])
+        .current_dir(root())
+        .output()
+        .expect("git grep");
+    let found = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        found.trim().is_empty(),
+        "these files still name {old}, which is crates/clausters-gui now:\n{found}"
+    );
 }

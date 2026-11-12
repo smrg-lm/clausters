@@ -6,7 +6,7 @@
 //! dragged note reaches and a client resolves it against the page it engraved,
 //! so a disagreement puts the note somewhere nobody asked for. Neither side can
 //! call the other, so both assert against one file -- this test and
-//! `the_host_reads_the_same_staff_positions_as_the_core` in `clients/gui`.
+//! `the_host_reads_the_same_staff_positions_as_the_core` in `crates/clausters-gui`.
 
 #![cfg(feature = "notation")]
 

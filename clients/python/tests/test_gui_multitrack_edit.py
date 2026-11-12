@@ -5,7 +5,7 @@ What is checked is this client's half: which call each member makes through
 the application door (`GuiHost.open_app`, `GuiHost.call_app`), how it reads
 the answer, and the script's multitrack reading and writing the window's while
 it is open. What the application does with a call is the host's and is tested
-there (`clients/gui/src/host/audio_editor.rs`).
+there (`crates/clausters-gui/src/host/audio_editor.rs`).
 """
 
 import time

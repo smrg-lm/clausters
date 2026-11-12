@@ -85,7 +85,7 @@ under one set of `cfg`s is not always right under another.
 | # | Configuration | In CI? |
 |---|---------------|--------|
 | 1 | `cargo fmt --check` | yes |
-| 2 | `cargo fmt --check --manifest-path clients/gui/Cargo.toml` | yes |
+| 2 | `cargo fmt --check -p clausters-gui` | yes |
 | 3 | `cargo clippy --all-targets` (default features) | yes |
 | 4 | `cargo clippy --all-targets --no-default-features` | **no** |
 | 5 | `cargo clippy --all-targets --no-default-features --features synth` | **no** |
@@ -97,9 +97,9 @@ under one set of `cfg`s is not always right under another.
 | 9 | `cargo doc --no-deps --workspace --no-default-features` | **no** |
 | 10 | `cargo doc --no-deps --workspace --no-default-features --features synth` | **no** |
 | 11 | `cargo doc --no-deps --workspace --no-default-features --features faust` | **no** |
-| 12 | `cargo doc --no-deps --document-private-items` in `clients/gui` | **no** |
+| 12 | `cargo doc --no-deps --document-private-items` in `crates/clausters-gui` | **no** |
 | 13 | `cargo clippy --workspace --all-targets` | yes |
-| 14 | `cargo clippy --all-targets` in `clients/gui` | yes |
+| 14 | `cargo clippy --all-targets` in `crates/clausters-gui` | yes |
 
 The native plugin infrastructure adds opt-in rows: `plugin` with no adapter,
 `clausters-plugin-host --no-default-features`, and CLAP alone, VST3 alone and

@@ -1,7 +1,7 @@
 """The widget prop vocabularies of the three surfaces, checked against a manifest.
 
 A GUI prop is written down in three independent places: the **host** reads it
-(``clients/gui/src/host/widget``), the **Python** builder offers it
+(``crates/clausters-gui/src/host/widget``), the **Python** builder offers it
 (``clausters.gui.guidef``) and the **web** builder offers it
 (``clients/web/src/gui/guidef.ts``). Nothing makes the three agree, and the
 compiler cannot: the wire is untyped JSON by design, so a prop added on one
@@ -44,18 +44,18 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 GUIDEF_TS = ROOT / "clients/web/src/gui/guidef.ts"
-WIDGET_DIR = ROOT / "clients/gui/src/host/widget"
+WIDGET_DIR = ROOT / "crates/clausters-gui/src/host/widget"
 #: The leaves that have moved behind the `Element` trait: one file per widget,
 #: and `elements/mod.rs` is the table naming which wire type each answers to.
-ELEMENT_DIR = ROOT / "clients/gui/src/host/elements"
+ELEMENT_DIR = ROOT / "crates/clausters-gui/src/host/elements"
 #: An element whose file is a **module directory** elsewhere in the host, named
 #: here because the table's own path is all that says so: the signal element is
 #: `host/elements/signal/` (six presentations behind one wire name), and a leaf built by
 #: the schema rather than by the table -- the patcher, whose wire type `plane`
 #: means two constructions -- is found through `build.rs` below.
-ELEMENT_DIRS = {"signal": ROOT / "clients/gui/src/host/elements/signal"}
+ELEMENT_DIRS = {"signal": ROOT / "crates/clausters-gui/src/host/elements/signal"}
 #: Where the axis pair's key is declared.
-AXES_MOD = ROOT / "clients/gui/src/host/widget/axes.rs"
+AXES_MOD = ROOT / "crates/clausters-gui/src/host/widget/axes.rs"
 MANIFEST = ROOT / "docs/gui-props.md"
 #: The manifest section holding the per-builder table (the one keyed by
 #: builder name rather than by wire type).

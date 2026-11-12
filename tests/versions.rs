@@ -1,12 +1,12 @@
 //! **The package version lives in one place, and this is what says so.**
 //!
-//! It used to live in ten: the root manifest, seven crates, the GUI client's
+//! It used to live in ten: the root manifest, seven crates, the GUI host's
 //! own workspace, the wheel's `pyproject.toml`, the npm `package.json` and two
-//! lockfiles -- and exactly one pair of them was checked, so `clients/gui` had
-//! drifted before and `package-lock.json` was found two minors behind. The
-//! eight Cargo crates inherit `[workspace.package].version` now; the rest
-//! cannot inherit anything and are written by `scripts/set-version.sh`, which
-//! is what this contrasts.
+//! lockfiles -- and exactly one pair of them was checked, so the GUI host had
+//! drifted before and `package-lock.json` was found two minors behind. Every
+//! Cargo crate inherits `[workspace.package].version` now, the GUI host among
+//! them; the rest cannot inherit anything and are written by
+//! `scripts/set-version.sh`, which is what this contrasts.
 //!
 //! It answers *where*, never *which*: the pre-1.0 breaking tier and the two ABI
 //! counters are the `release-versioning` skill's, and `versions.sh` there is
@@ -55,7 +55,6 @@ fn every_manifest_carries_the_one_version() {
     );
 
     let elsewhere = [
-        ("clients/gui/Cargo.toml", "[package]"),
         ("clients/python/pyproject.toml", "[project]"),
         ("clients/web/package.json", "{"),
         ("clients/web/package-lock.json", "{"),

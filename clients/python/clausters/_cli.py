@@ -14,8 +14,8 @@ is the handle it owns).
 
 Lookup precedence mirrors `clausters._libpath`: an explicit override
 (``CLAUSTERS_BIN``, ``CLAUSTERS_GUI_BIN``), the binary bundled in the wheel,
-then a source checkout's ``target/{release,debug}/`` -- the workspace's for the
-server, ``clients/gui``'s for the host, which is its own workspace.
+then a source checkout's ``target/{release,debug}/``, where the workspace
+builds the server and the host alike.
 """
 
 import os
@@ -55,19 +55,18 @@ def gui_path() -> str:
 
     1. the ``CLAUSTERS_GUI_BIN`` override,
     2. the binary bundled in the wheel (``clausters/_bin/``),
-    3. a source checkout's ``clients/gui/target/{release,debug}/`` (the GUI crate
-       is an independent workspace, so its ``target`` is separate).
+    3. a source checkout's ``target/{release,debug}/``.
     """
     candidates = [os.environ.get("CLAUSTERS_GUI_BIN")]
     candidates += _libpath.bundled_bin_candidates(_GUI_BIN_NAMES)
-    candidates += _libpath.gui_workspace_candidates(_GUI_BIN_NAMES)
+    candidates += _libpath.workspace_candidates(_GUI_BIN_NAMES)
     for c in candidates:
         if c and os.path.exists(c):
             return c
     raise SystemExit(
         "clausters-gui: visual-server binary not found. A wheel bundles it; in "
         "a source checkout build it with `cargo build --release --bin "
-        "clausters-gui` from clients/gui, or point CLAUSTERS_GUI_BIN at it."
+        "clausters-gui` from crates/clausters-gui, or point CLAUSTERS_GUI_BIN at it."
     )
 
 

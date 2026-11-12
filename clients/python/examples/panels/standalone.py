@@ -43,7 +43,7 @@ It writes the two files and prints, e.g.::
 
 The ``standalone`` feature links the embedded audio server into ``clausters-gui``
 (off by default, since it pulls the engine + audio backend). Run that command
-(from ``clients/gui``) and a window opens whose knob drives the drone's frequency
+(from ``crates/clausters-gui``) and a window opens whose knob drives the drone's frequency
 on the embedded server -- no other process involved. Close the window to stop.
 Needs a display and a Vulkan/Metal/DX12/GL adapter.
 
@@ -167,10 +167,9 @@ def run(data_dir: str = OUT):
     synth_path, gui_path = write_bundle(data_dir)
     print(f"wrote {synth_path}")
     print(f"wrote {gui_path}")
-    print("\nlaunch the bundle as a self-contained instrument (the GUI host is "
-          "its own workspace, so point cargo at its manifest -- run this from the "
-          "repo root):\n")
-    print(f"    cargo run --manifest-path clients/gui/Cargo.toml "
+    print("\nlaunch the bundle as a self-contained instrument (run this from "
+          "the repo root):\n")
+    print(f"    cargo run -p clausters-gui "
           f"--features standalone --bin clausters-gui -- "
           f"--standalone {GUI_NAME} --data-dir {data_dir}\n")
     print("a window opens; turning the knob drives the drone's freq on the "

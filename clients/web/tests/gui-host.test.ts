@@ -4,7 +4,7 @@
 // drives (`server.test.ts`). The in-page half of the acceptance, where the
 // gestures and the bound path live, is `tests/gui.html`.
 //
-// Needs the host binary built (`cargo build` in clients/gui -- its own
+// Needs the host binary built (`cargo build` in crates/clausters-gui -- its own
 // workspace); skips (does not fail) when it is missing, so `npm test` stays
 // runnable from a source tree without that build.
 
@@ -26,7 +26,7 @@ import type { GuiNode } from "../src/gui/guidef.ts";
 import { BASE_ID } from "../src/gui/ids.ts";
 
 const here = new URL(".", import.meta.url);
-const hostBin = new URL("../../gui/target/debug/clausters-gui", here).pathname;
+const hostBin = new URL("../../../target/debug/clausters-gui", here).pathname;
 const wsPort = 57988; // out of the default range; parallel-test friendly
 const udpPort = 57989; // the host front's UDP port, moved off 57210 likewise
 

@@ -1,5 +1,5 @@
 # The emitted package (tsc: js + d.ts + maps) with the staged wasm bundles
-# (build.sh copies them from crates/clausters-web, clients/gui and
+# (build.sh copies them from crates/clausters-web, crates/clausters-gui and
 # crates/clausters-core-web) — the browser's _bin/_libs.
 /dist/
 # The vendored engraver and the vendored Faust compiler: build products of

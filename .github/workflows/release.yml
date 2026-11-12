@@ -139,8 +139,8 @@ jobs:
       # Faust SIGILL, and a release failing here is exactly when the dump is
       # worth having.
       - uses: ./.github/actions/coredump
-      - run: ulimit -c unlimited && cargo test --workspace -- --test-threads=1
-      - run: ulimit -c unlimited && cargo test --workspace --features embed -- --test-threads=1
+      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui -- --test-threads=1
+      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui --features embed -- --test-threads=1
       - uses: ./.github/actions/coredump
         if: failure()
         with:
@@ -347,11 +347,11 @@ jobs:
               "wasm-bindgen-${PIN}-x86_64-unknown-linux-musl/wasm-bindgen"
           echo "$HOME/bin" >> "$GITHUB_PATH"
       # The applications' build of the GUI host (build.sh) is made with the
-      # dated nightly pinned in clients/gui/wasm-apps-toolchain: shared
+      # dated nightly pinned in crates/clausters-gui/wasm-apps-toolchain: shared
       # memory in wasm needs the standard library rebuilt with atomics.
       - name: The applications' host toolchain
         run: |
-          rustup toolchain install "$(tr -d '[:space:]' < clients/gui/wasm-apps-toolchain)" \
+          rustup toolchain install "$(tr -d '[:space:]' < crates/clausters-gui/wasm-apps-toolchain)" \
             --profile minimal -c rust-src -t wasm32-unknown-unknown
       # The two vendored wasm artifacts build.sh stages beside its own: the
       # Faust compiler a page JITs defs with and the engraver it lays scores

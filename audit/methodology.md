@@ -6,7 +6,7 @@ Identify the full application commit and the full audit-resource commit separate
 
 Use a clean, independent checkout of the selected application commit. A worktree shares Git objects and refs but has its own files, index and HEAD. Do not switch branches, stage or commit in another agent's worktree. Do not prune worktrees, rewrite shared refs or run global cleanup during concurrent work. A detached worktree is suitable for a measurement checkout. Create it only under an explicitly chosen work root.
 
-Set an external `CARGO_TARGET_DIR`, including when entering the GUI's independent workspace. Isolate browser profiles, ports, temporary files and client artifacts as well. Python launchers prefer bundled native artifacts: point their documented override variables to the measured build rather than refreshing the active checkout's bundled copies. Preserve the resolved paths and hashes in the manifest.
+Set an external `CARGO_TARGET_DIR`, including when building from the GUI host's directory. Isolate browser profiles, ports, temporary files and client artifacts as well. Python launchers prefer bundled native artifacts: point their documented override variables to the measured build rather than refreshing the active checkout's bundled copies. Preserve the resolved paths and hashes in the manifest.
 
 ## Describe the environment
 

@@ -24,4 +24,4 @@ clausters = { path = "../..", default-features = false, features = ["faust"] }
 # The JS binding surface only exists on the wasm target, so the native
 # workspace build stays free of wasm machinery.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2"
+wasm-bindgen = { workspace = true }

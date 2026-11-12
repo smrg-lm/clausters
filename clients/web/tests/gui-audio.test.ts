@@ -4,7 +4,7 @@
 // What is checked is this client's half: which call each member makes
 // through the application door (`GuiHost.openApp`, `GuiHost.callApp`), and
 // how it reads the answer. What the application does with a call is the
-// host's and is tested there (`clients/gui/src/host/audio_editor.rs`).
+// host's and is tested there (`crates/clausters-gui/src/host/audio_editor.rs`).
 
 import assert from "node:assert/strict";
 import test from "node:test";

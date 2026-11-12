@@ -19,8 +19,8 @@ clausters-core = { path = "../clausters-core", optional = true }
 # (timemap, MIDI values); `serde` derives the `Page` a client receives. Only the
 # `verovio` path needs them, so both are optional and a plain build pulls
 # nothing.
-serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1", optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 
 [features]
 # Off by default: notation is an optional GUI producer, and a plain build must

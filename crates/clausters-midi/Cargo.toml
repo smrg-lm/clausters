@@ -27,7 +27,7 @@ live = ["dep:midir"]
 # The MIDI 1.0 -> 2.0 widening, shared with the server's live input.
 clausters-core = { path = "../clausters-core" }
 # Live MIDI I/O (virtual ports). Pure Rust over libasound on Linux.
-midir = { version = "0.11", optional = true }
+midir = { workspace = true, optional = true }
 # UMP message layer for the MIDI 2.0 clip file: Channel Voice 2 (default),
 # plus the Utility (Delta Clockstamp / DCTPQ) and UMP Stream (Start/End of
 # Clip) messages the SMF2CLIP container needs.
@@ -36,4 +36,4 @@ midi2 = { version = "0.11.1", features = ["utility", "ump-stream"] }
 midly = "0.5"
 # The reader's answer over the C ABI: a file as plain data, JSON like every
 # other door that hands a structure back.
-serde_json = "1"
+serde_json = { workspace = true }

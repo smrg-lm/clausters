@@ -10,7 +10,7 @@
  * and wakes the thread. verovio is fetched the first time it is asked for, so a
  * page that never engraves never downloads it.
  *
- * The request's layout is `Request` of `clients/gui/src/host/web/engraver.rs`.
+ * The request's layout is `Request` of `crates/clausters-gui/src/host/web/engraver.rs`.
  *
  * @module
  */

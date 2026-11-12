@@ -19,7 +19,11 @@ manifest = (apps / "Cargo.toml").read_text().replace(
     "version.workspace = true", f'version = "{version}"')
 manifest = re.sub(r'path = "([^"]+)"',
     lambda match: f'path = "{(apps / match[1]).resolve()}"', manifest)
-manifest += f'\n[lib]\npath = "{apps / "src/lib.rs"}"\n\n[workspace]\n'
+# The probe is a workspace of its own, so what the crate inherits from the
+# real one's `[workspace.dependencies]` is carried over as written.
+root_text = (apps.parent.parent / "Cargo.toml").read_text()
+shared = re.search(r'^\[workspace\.dependencies\]\n(?:(?!\[).*\n)*', root_text, re.M)[0]
+manifest += f'\n[lib]\npath = "{apps / "src/lib.rs"}"\n\n[workspace]\n\n{shared}'
 (probe / "Cargo.toml").write_text(manifest)
 # Preserve the checkout's dependency versions rather than resolving a new set.
 (probe / "Cargo.lock").write_bytes((apps.parent.parent / "Cargo.lock").read_bytes())

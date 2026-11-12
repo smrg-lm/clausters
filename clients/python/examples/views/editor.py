@@ -79,7 +79,7 @@ Then run it either way:
   asked for.
 
 (The install builds the ``clausters-gui`` binary too; ``CLAUSTERS_SKIP_GUI_BUILD=1``
-gives a server-only install, using a ``clients/gui/target`` binary if present.)
+gives a server-only install, using a ``target`` binary if present.)
 Needs a display and a GPU adapter.
 """
 

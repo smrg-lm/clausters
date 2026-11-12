@@ -31,7 +31,7 @@ The project is a workspace with several coordinated parts:
   selective port of SuperCollider's class library covering both def formats:
   patterns and events, routines and clocks, responders, live and offline
   rendering, pip wheels.
-- **[`clients/gui`](clients/gui/README.md)** — a GUI host driven by the same OSC protocol (`GuiDef`
+- **[`crates/clausters-gui`](crates/clausters-gui/README.md)** — a GUI host driven by the same OSC protocol (`GuiDef`
   windows, meters and scopes over shared memory, node-tree views, canvas and
   shaders), native and in the browser (WebGPU with a WebGL2 fallback).
 

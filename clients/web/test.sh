@@ -7,7 +7,7 @@
 # log -- the real-time posture of every web smoke; see docs/decisions.md).
 #
 # Prerequisites: ./build.sh (stages engine/ gui-host/ core/), npm install, and
-# `cargo build` at the workspace root (the WS server) and in clients/gui (the
+# `cargo build` at the workspace root (the WS server) and in crates/clausters-gui (the
 # WS GUI host) for the WS suites -- those skip themselves if the binary is
 # missing.
 #

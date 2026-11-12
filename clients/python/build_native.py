@@ -18,8 +18,8 @@ core through artifacts built by cargo, not pip:
 - ``clausters-plugin-host`` (Linux) -> the isolated CLAP/VST3 helper, staged
   beside the server and resolved by the embedded library too. Its package
   and protocol versions are checked before loading any plugin.
-- the ``clausters-gui`` binary (from the **independent** ``clients/gui`` cargo
-  workspace) -> the **visual server** the launcher runs (`clausters.launch` /
+- the ``clausters-gui`` binary (the ``crates/clausters-gui`` crate) -> the
+  **visual server** the launcher runs (`clausters.launch` /
   `clausters.Session.gui`). Bundled here too, stripped, so the one package is
   self-contained -- server *and* GUI, no separate install.
 - ``libfaust``, copied out of the build machine's prefix (it is not ours to
@@ -52,7 +52,7 @@ Environment knobs (also honoured by ``setup.py``):
                                  ``clausters/_bin/``.
 - ``CLAUSTERS_SKIP_GUI_BUILD``   if set, do not build/stage the heavy
                                  ``clausters-gui`` binary (a light, server-only
-                                 wheel); a source checkout's ``clients/gui/target``
+                                 wheel); a source checkout's ``target``
                                  binary is still used at runtime if present.
 - ``CLAUSTERS_GUI_FEATURES``     the GUI binary's features, replacing the
                                  default (``standalone-faust``, or
@@ -270,11 +270,6 @@ def stage_binary(workspace: str, profile: str) -> str | None:
     return bin_name()
 
 
-def _gui_workspace(workspace: str) -> str:
-    """The independent ``clausters-gui`` crate directory under the repo root."""
-    return os.path.join(workspace, "clients", "gui")
-
-
 def _gui_features(with_faust: bool, with_verovio: bool = False) -> str:
     """The GUI binary's features: **the standalone host**, with the Faust
     family where there is a libfaust to link.
@@ -303,16 +298,17 @@ def _gui_features(with_faust: bool, with_verovio: bool = False) -> str:
 
 def _cargo_build_gui(workspace: str, profile: str, with_faust: bool = True,
                      with_verovio: bool = False):
-    """Build the ``clausters-gui`` binary in its own workspace (``clients/gui``)."""
-    cmd = ["cargo", "build", "--bin", "clausters-gui"]
+    """Build the ``clausters-gui`` binary, a member of the workspace
+    (``crates/clausters-gui``), into the workspace's ``target/``."""
+    cmd = ["cargo", "build", "-p", "clausters-gui", "--bin", "clausters-gui"]
     if profile == "release":
         cmd.append("--release")
     features = (os.environ.get("CLAUSTERS_GUI_FEATURES")
                 or _gui_features(with_faust, with_verovio))
     if features:
         cmd += ["--features", features]
-    print("clausters: " + " ".join(cmd) + " (in clients/gui)")
-    subprocess.run(cmd, cwd=_gui_workspace(workspace), check=True)
+    print("clausters: " + " ".join(cmd))
+    subprocess.run(cmd, cwd=workspace, check=True)
 
 
 def stage_gui_binary(workspace: str, profile: str) -> str | None:
@@ -323,7 +319,7 @@ def stage_gui_binary(workspace: str, profile: str) -> str | None:
     fraction of a debug one, and stripping the staged copy trims it further
     (system libraries are dynamic, not embedded), so the wheel stays small
     without touching the developer's cargo profiles."""
-    src = os.path.join(_gui_workspace(workspace), "target", profile, gui_bin_name())
+    src = os.path.join(workspace, "target", profile, gui_bin_name())
     if not os.path.exists(src):
         return None
     os.makedirs(BIN_DIR, exist_ok=True)
@@ -745,7 +741,7 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
                os.path.join(BIN_DIR, "clausters-plugin-host"))
         _strip(os.path.join(BIN_DIR, "clausters-plugin-host"))
         copied.append("clausters-plugin-host")
-    # The visual server (clausters-gui), from its own workspace, bundled so the
+    # The visual server (clausters-gui), built last, bundled so the
     # one package is self-contained. Skippable for a light, server-only wheel.
     if not os.environ.get("CLAUSTERS_SKIP_GUI_BUILD"):
         _cargo_build_gui(workspace, profile, with_faust, with_verovio)

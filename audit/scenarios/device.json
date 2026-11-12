@@ -61,7 +61,7 @@
         "--bin",
         "clausters-gui"
       ],
-      "cwd": "clients/gui",
+      "cwd": "crates/clausters-gui",
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,

@@ -11,7 +11,7 @@
 # (`synth,embed`) and the browser build proper (`synth,faust,embed` -- what
 # `crates/clausters-web` links, the FaustDef family without libfaust), plus the
 # three wasm shell crates the web package stages: the engine's, the shared
-# core's and the NRT worker's. Between them and `clients/gui/check-wasm.sh`
+# core's and the NRT worker's. Between them and `crates/clausters-gui/check-wasm.sh`
 # (the GUI host's) that is every bundle
 # `clients/web/build.sh` compiles, which is what makes a pass here mean the
 # package still builds.

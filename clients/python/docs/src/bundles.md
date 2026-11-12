@@ -116,7 +116,7 @@ calls, which is a claim a test can only check on bytes.
 # in a tab: serve the package root, and open the page that imports index.js
 cd clients/web && ./build.sh && python3 -m http.server
 
-# on the desktop, self-contained, from clients/gui
+# on the desktop, self-contained, from crates/clausters-gui
 cargo run --features standalone --bin clausters-gui -- \
     --standalone fm-voice --data-dir <dir>
 ```

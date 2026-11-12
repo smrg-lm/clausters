@@ -64,7 +64,7 @@ both clients, with its row in `edit`'s docstring and TSDoc.
 | notes editor (the roll) | `notes`, `notes::editor::NotesEditor` | here, `X3` |
 | points editor | `points`, `points::editor::PointsEditor` | here, `X4`, `X10` |
 | score editor | `score`, `score::editor::ScoreEditor` (feature `notation`) | here, `X5` |
-| the undo order | `editing::Editing`, `turn` | `clients/gui/PLAN.md`, `AP7` step 4; here, `X25` |
+| the undo order | `editing::Editing`, `turn` | `crates/clausters-gui/PLAN.md`, `AP7` step 4; here, `X25` |
 | state and services | `application` (`Services`, runtimes, walks), `closing`, `chrome`, `forms`, `panels` | here, `X15`-`X25` |
 | the engine an application holds | `crates/clausters-app-engine` | here, `X30`, `X34` |
 
@@ -116,7 +116,7 @@ opened it.
     samples editor answers undo and redo with `reload`, which re-reads the
     whole buffer for a stroke of a thousand samples. `/gui_ack` already carries
     `source generation` pairs that the host keeps and nothing reads, and no
-    client sends one (`clients/gui/PLAN.md`, Found by use, "A generation is
+    client sends one (`crates/clausters-gui/PLAN.md`, Found by use, "A generation is
     carried, stored, and read by nothing"). What it waits on is what a source
     id is on that path -- a document's source, or a widget's `buffer=N` -- and
     this application is where that is answered.
@@ -334,8 +334,8 @@ opened it.
 
   **Related, each where it is written:** the audio editor as an analysis tool, in
   panes and layers on Sonic Visualiser's shape (`crates/clausters-document/PLAN.md`,
-  `O24`); the layer stack (`clients/gui/PLAN.md`, `A5`-`A7`); spectral selection,
-  the lasso and spectral drawing (`clients/gui/PLAN.md`, `D5`-`D7`).
+  `O24`); the layer stack (`crates/clausters-gui/PLAN.md`, `A5`-`A7`); spectral selection,
+  the lasso and spectral drawing (`crates/clausters-gui/PLAN.md`, `D5`-`D7`).
 
 - ⬜ **X2 - The buffer editor: drawing a table by hand.** *(Proposed by the user
   2026-09-14, on the samples editor as its model.)* A buffer on the server drawn
@@ -861,7 +861,7 @@ opened it.
   history (`clients/python/PLAN.md`, "Half the editors a hand can use have no
   history") -- that entry closed on 2026-09-21 with `pianoroll` and
   `pianoroll_midi` as its only survivors, and **hands them here**, because
-  porting them onto the editing seam waits on what this milestone edits; configurable key bindings (`clients/gui/PLAN.md`, `G36`) and the
+  porting them onto the editing seam waits on what this milestone edits; configurable key bindings (`crates/clausters-gui/PLAN.md`, `G36`) and the
   interaction-vocabulary entry beside it ("The whole interaction vocabulary is
   provisional…"); and an application inside
   another (`crates/clausters-document/PLAN.md`, Future directions), which is what
@@ -914,7 +914,7 @@ opened it.
   **Left open:** the range and the selection themselves -- no hand can
   leave them and no operation of this editor reads them, since `C61`'s rule
   was decided for the multitrack, the roll and the audio editor and read
-  here as one for every editor (`clients/gui/PLAN.md`, Found by use, "The
+  here as one for every editor (`crates/clausters-gui/PLAN.md`, Found by use, "The
   points editor carries a range and a selection it has no use for";
   *closed 2026-10-03*: both went, with the `selection` gesture, the `span`
   and `selected` verbs and the `sel_*` props). And opening an automation a
@@ -1012,7 +1012,7 @@ opened it.
   the standalone host's playback and export. What stays open: the sound,
   which nobody has listened to.* The notation model
   and what is still open about editing a page are the N track's
-  (`clients/gui/PLAN.md`: `N7` what opening a foreign score preserves, `N8`
+  (`crates/clausters-gui/PLAN.md`: `N7` what opening a foreign score preserves, `N8`
   which element admits which edit, `N9` a score as a box of the multitrack);
   `N8` is taken here, as `X5.0`.
 
@@ -1171,7 +1171,7 @@ opened it.
       form) and a transposing staff (`Staff::lines`, `label`, `abbr`,
       `transpose`, `SetStaff`). What a staff of other than five lines means
       for pitch is still open ("A selected staff is edited by its line
-      count", `clients/gui/PLAN.md`, Future directions).
+      count", `crates/clausters-gui/PLAN.md`, Future directions).
     - ● `staffGrp` (`Sheet::groups`, `SetGroups`) -- a brace or bracket
       grouping staves (a grand staff, a section).
     - ● voices (`ToVoice`) -- a second line on one staff.
@@ -1443,7 +1443,7 @@ opened it.
 
   **The steps**, each closing with its commit, in this order:
 
-  - ✅ **X5.0 - Which element admits which edit** (`clients/gui/PLAN.md`,
+  - ✅ **X5.0 - Which element admits which edit** (`crates/clausters-gui/PLAN.md`,
     `N8`, taken here). The display list carries each id's kind; the table of
     what a kind admits is in the core; a drag moves only what has a pitch, and
     ledger lines follow only a notehead; an accidental's press is its note's.
@@ -1822,7 +1822,7 @@ opened it.
 
   and the pictures whose props are already one rule in
   `clausters_document::view::catalogue` (`waveform`, `bpf`, `pianoroll`). The
-  heavy elements, for the record (`clients/gui/src/host/elements`, lines as of
+  heavy elements, for the record (`crates/clausters-gui/src/host/elements`, lines as of
   2026-09-14): `multitrack` 4963, the `signal` family (`waveform`, `spectrogram`,
   `plot`, `scope`, `spectrum`, `phasescope`) 3677 plus its GPU pipelines and frame
   slots, `notes` 1775, `curve` 803, `score` 788, `patch` 694, `keys` 547.
@@ -1831,7 +1831,7 @@ opened it.
   whether a monitor (scope, phase, spectrum, meters) is one application or several;
   and whether the heavy families -- `timeline` and `signal` -- become Cargo
   features a build can drop, as `notation` and `patcher` are *(moved here from
-  `clients/gui/PLAN.md` by the user, 2026-10-04, "The heavy families as
+  `crates/clausters-gui/PLAN.md` by the user, 2026-10-04, "The heavy families as
   features", which keeps what was measured: `signal` is named in twenty-nine
   files and the timeline family in nineteen, at the frame and the pipelines
   rather than at the edges, so making either a feature is a structural change
@@ -1846,7 +1846,7 @@ opened it.
   the shape below is the user's, the same day.)*
 
   **What exists.** The audio editor sounds its take through the GUI host's
-  monitor (`clients/gui/src/host/play.rs`): one `clausters-gui-take` reader per
+  monitor (`crates/clausters-gui/src/host/play.rs`): one `clausters-gui-take` reader per
   channel, in a group bound to the transport. The host allocates the nodes and
   holds them until another take is played or the monitor is stopped. Nothing
   measures what the readers write, and no client knows the nodes exist. The
@@ -2499,11 +2499,11 @@ opened it.
   **Acceptance:** under MPE a note's CC74 is added and drawn and a channel
   pitch bend refused; a ramp across the velocity lane is one undo.
 
-- ✅ **X40 - What is under the pointer.** *(Done 2026-11-10, before `X39`, which it does not need: `Element::reading`, drawn at the status band's right end; the roll's corner readout moved there, and the notation mode's `spelled` list says how each note is written. The tooltip waits on `clients/gui/PLAN.md`.)* The note's name, MIDI number,
+- ✅ **X40 - What is under the pointer.** *(Done 2026-11-10, before `X39`, which it does not need: `Element::reading`, drawn at the status band's right end; the roll's corner readout moved there, and the notation mode's `spelled` list says how each note is written. The tooltip waits on `crates/clausters-gui/PLAN.md`.)* The note's name, MIDI number,
   velocity and channel, and in notation mode its written value, spelling,
   dynamic and marks, on the status band as a reading of the host's beside
   its history; a tooltip later, once the host has one
-  (`clients/gui/PLAN.md`).
+  (`crates/clausters-gui/PLAN.md`).
   **Acceptance:** hovering a note names it on the band and moving off it
   clears it, with nothing added to the history.
 
@@ -3064,7 +3064,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   - ✅ Native eye and ear pass over the `edit_audio` pair (2026-10-21): play,
     stop, loop, files opened and closed, cut, paste and undo, save.
   - ✅ Browser eye and ear pass over the same (2026-10-21). The pass found
-    the entries of 2026-10-21 in `clients/gui/PLAN.md` and the root
+    the entries of 2026-10-21 in `crates/clausters-gui/PLAN.md` and the root
     `PLAN.md` "Found by use": eight tracks, the page's speed and dialogs,
     a stale spectrogram after undo, a long take that distorts, a profiler.
 
@@ -3089,7 +3089,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     drew a frame per tick whether or not a value moved; and a page polled
     `/transport_query` every tick for a transport that stood. A stage's
     canvas in a page never reported leaving the viewport.
-  - ✅ **Activity is the host's** (`clients/gui/src/host/activity.rs`), one
+  - ✅ **Activity is the host's** (`crates/clausters-gui/src/host/activity.rs`), one
     rule for both fronts: a window ticks for named reasons (animated, fed,
     playhead, recording, fetching, timer, edge scroll, read-back, node tree,
     MIDI); an element's `tick` answers whether what it shows changed, and a
@@ -3116,7 +3116,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     the play cursor). Page, headless on a software adapter: stopped 3.3% to
     0.3-0.6% and no `/transport_query` (thirty a second before); playing
     about 65% before and after, the page's drawing cost already filed in
-    `clients/gui/PLAN.md`; scrolled away 0.3%. The server's idle cost per
+    `crates/clausters-gui/PLAN.md`; scrolled away 0.3%. The server's idle cost per
     open file did not move and is filed in the root `PLAN.md`, "Found by
     use".
   - ✅ Native eye pass over the `edit_audio` pair (2026-10-21): play, stop,
@@ -3124,7 +3124,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     windows settle to nothing within two seconds. A covered or minimized
     window was not reported hidden: the windowing library the host uses
     reports occlusion on X11 but never on Wayland, where the pass ran. Filed
-    in `clients/gui/PLAN.md`, "Found by use".
+    in `crates/clausters-gui/PLAN.md`, "Found by use".
   - ✅ Browser eye pass over the same (2026-10-21): the page behaves as the
     native window, and a tab put in the background or an editor scrolled
     away comes back drawn and still playing.
@@ -3182,7 +3182,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   - ✅ **Browser eye and ear pass** over `editors/audio-lifecycle.html`, by
     the user (2026-10-22): every step as the example says, once a closed
     window's canvas left the page (fixed). It also found an edit of a short
-    take shown about 1.6 s late in a page (`clients/gui/PLAN.md`, Found by
+    take shown about 1.6 s late in a page (`crates/clausters-gui/PLAN.md`, Found by
     use). A write too short for a hand to edit through is checked by the
     fault traces, not by either pass.
 
@@ -3464,7 +3464,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     application holds. Left open at the end of their plans: this file's "A
     multitrack's window does not say whether its session is unsaved" and "A new
     session's first Save or track failed once in the eye pass", and
-    `clients/gui/PLAN.md`'s "A pass can play with no play cursor until a frame
+    `crates/clausters-gui/PLAN.md`'s "A pass can play with no play cursor until a frame
     happens to come" and "A control's size does not follow what it says, in a row
     or across one".
 
@@ -3554,7 +3554,7 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
     is held, with no conversion.
 
   - ✅ The instance's order and the walk, in the host, with its tests.
-    *Done 2026-11-02* (`clients/gui/src/host/panel.rs`, its tests in
+    *Done 2026-11-02* (`crates/clausters-gui/src/host/panel.rs`, its tests in
     `gestures/panel_tests.rs`): the `history` prop, an entry per hold
     recorded where every value is delivered (`effects::deliver`; a walk
     goes through `route` and records nothing), the run closed at a press, a
@@ -3747,7 +3747,7 @@ written; none is left open:
    heard live before it is applied").
 
 **The order**: `S21` and `S22` (root `PLAN.md`), `O34`
-(`crates/clausters-document/PLAN.md`), `G45` (`clients/gui/PLAN.md`), then
+(`crates/clausters-document/PLAN.md`), `G45` (`crates/clausters-gui/PLAN.md`), then
 `X28`, `X29` here, and `S23` last, once nothing calls what it removes. The
 turn comes before `X25`, which ports the audio editor's lifecycle to the other
 editors and should port this one.
@@ -4140,7 +4140,7 @@ over the opened file) carries over.
   them go with the entry, the window is handed the tree by reference and
   composes a column from the nodes it holds whole, and the application's
   reader reads the tree from the frame asked. Measured over the pattern
-  to 190 hours and 58,800 parts (`clients/gui/tests/shared_blocks.rs`):
+  to 190 hours and 58,800 parts (`crates/clausters-gui/tests/shared_blocks.rs`):
   0.01 ms a paste from the first to the last, microseconds an undo or a
   redo, about 830 bytes told to the window, a whole picture in a few
   milliseconds, and memory grown under a megabyte. Left for `X32`, and
@@ -4480,7 +4480,7 @@ Every entry carries a checkbox.
   whose events carry them is read back with nothing to decide.
 
   **Decided 2026-10-06, with the user, and taken with the entry below and
-  with `N9` (`clients/gui/PLAN.md`) as one sequence of work:**
+  with `N9` (`crates/clausters-gui/PLAN.md`) as one sequence of work:**
 
   - **The sequence is the structure, and the page is a reading of it.** The
     reading is a function in Rust, beside the render
@@ -4631,7 +4631,7 @@ Every entry carries a checkbox.
   with a glissando is MPE now, where it was 2.0.
 
 - ⬜ **Time-stretch: an edge that changes the material rather than the window**
-  *(moved here from `clients/gui/PLAN.md` by the user, 2026-10-04: it is the
+  *(moved here from `crates/clausters-gui/PLAN.md` by the user, 2026-10-04: it is the
   multitrack application's)*. An edge drag is a **trim** and the material
   stands still; the other answer a multitrack has is to change the material's
   *length* -- resampling it, or stretching it at pitch -- which is a rendering
@@ -4653,7 +4653,7 @@ Every entry carries a checkbox.
   chrome is, and which of it is the application's rather than the widget's, is
   the design. *(2026-10-04: the elements it is composed from exist in the host
   — a window's menu bar, a context menu, tools, tips, tabs, sections and a
-  dialog (`G37`–`G40`, `clients/gui/PLAN.md`; the `panels/chrome` example holds
+  dialog (`G37`–`G40`, `crates/clausters-gui/PLAN.md`; the `panels/chrome` example holds
   one of each). Which entries an application puts in them is still this
   entry's.)* *(2026-10-06, the user, with the score editor the one application
   that has chrome: an application run standalone has its chrome, since that is
@@ -4673,7 +4673,7 @@ Every entry carries a checkbox.
   verbs as tools, or the multitrack's own row by name with its clock -- and
   the edit tools. Composed once in `crate::chrome` and dressed onto each
   window with its `main` view; the vocabulary is the one decided in
-  `clients/gui/PLAN.md` ("The whole interaction vocabulary is provisional").
+  `crates/clausters-gui/PLAN.md` ("The whole interaction vocabulary is provisional").
   **Bare from a client**: `"chrome": false` in each open request, passed by
   both clients from the editor's `chrome`; the multitrack's transport row then
   stays under it as before. A pick reported as `"menu" <verb>` is read as the
@@ -4854,7 +4854,7 @@ Every entry carries a checkbox.
   was, with `X3.10`: this is the host's live input, at the play line, and a
   take the server records is another thing. The host in a page opens no MIDI
   input, so there the option is carried and nothing is painted:
-  `clients/gui/PLAN.md`, Found by use, "The host in a page opens no MIDI
+  `crates/clausters-gui/PLAN.md`, Found by use, "The host in a page opens no MIDI
   input".)*
 
 - ⬜ **The score editor's editing rules as modules of their own** *(the
@@ -4876,7 +4876,7 @@ Every entry carries a checkbox.
 
 - ⬜ **What a score editor's hand expects and this one has not** *(listed
   2026-10-06, settling "A press on a score means what its context says" in
-  `clients/gui/PLAN.md` against the field's conventions)*. Three, none of
+  `crates/clausters-gui/PLAN.md` against the field's conventions)*. Three, none of
   them a fix:
   - **The signs the engraver draws from the grid and the staff** -- a clef, a
     key signature, a time signature, a barline, a measure repeat -- are
@@ -5103,7 +5103,7 @@ Every entry carries a checkbox.
 
 - ✅ **Whether the multitrack keeps its score boxes** *(left to the user
   2026-11-09, when engraving a box by parts was measured and not taken:
-  `clients/gui/PLAN.md`, Found by use, "What a score box of the multitrack
+  `crates/clausters-gui/PLAN.md`, Found by use, "What a score box of the multitrack
   left open")*. A box of notes drawn as its page is engraved whole after
   every edit of its sequence (about 190 ms at a thousand notes and 2.3 s at
   five thousand, on the application's thread), and the project follows the
@@ -5158,7 +5158,7 @@ Every entry carries a checkbox.
   (`clausters_editing::verbs`, `notes_score`), the multitrack editor's
   pages, its engraver and `refuse_pages`
   (`clausters_apps::multitrack::editor`), the host's binding of an engraver
-  to a multitrack window (`clients/gui/src/host/audio_app.rs`), the page a
+  to a multitrack window (`crates/clausters-gui/src/host/audio_app.rs`), the page a
   box opens in, their tests, and the step of `editors/edit_multitrack` that
   shows it, in both clients wherever they name it. A box of notes is drawn
   as a roll and opens in the notes editor. Taken out so that it can come
@@ -5486,7 +5486,7 @@ wrong.
   a pass that runs to its end keeps the end it was played with. In the
   host, `transport_follows_selection` stays out of a window whose owner
   plays it. The start is matched within what single precision keeps of a
-  frame: `clients/gui/PLAN.md`, "A selection is reported in single
+  frame: `crates/clausters-gui/PLAN.md`, "A selection is reported in single
   precision".)*
 
 - ✅ **A roll over a rendering was offered the drag it could not keep**
@@ -5689,7 +5689,7 @@ wrong.
     the palettes (30). What made them look small was as much the words: the
     host's default text was capitals as high as the whole line, half again a
     desktop's own text. It is three quarters of the line now, for every
-    window (`clients/gui/PLAN.md`, "Found by use").
+    window (`crates/clausters-gui/PLAN.md`, "Found by use").
   - *Deformation.* The host keeps a stroke a pixel wide: under the size where
     a music font's uprights are a pixel it draws the outline's edges over the
     fill. And an outline steps by its own width, so a dynamic of two letters
@@ -6637,7 +6637,7 @@ wrong.
   2026-10-25, reviewing the audio editor's code before `X34`)*. The host's
   application thread forgets a closed window by answering every action
   still waiting on a render with "the window closed", whichever window it
-  was asked through (`clients/gui/src/host/audio_app.rs`, `forget`): with
+  was asked through (`crates/clausters-gui/src/host/audio_app.rs`, `forget`): with
   two editors open, closing one while the other saves raises in the other's
   client, and the save lands anyway. Only that window's actions should be
   answered.
@@ -7165,7 +7165,7 @@ wrong.
   fixed the same day, `docs/app-behavior.md`, "What one window does moves
   what every window offers"); the page beside a roll was checked with `X42`'s
   `phrase`. *Item 11 done 2026-11-10*: the box's roll in the multitrack,
-  once its window could be captured headless (`clients/gui/PLAN.md`, Found by
+  once its window could be captured headless (`crates/clausters-gui/PLAN.md`, Found by
   use, "A capture of the multitrack example's window never answers,
   headless"). The pass found that a client could not reach the roll a double
   click opens, which the decision of 2026-09-28 had given both clients

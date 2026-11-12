@@ -12,7 +12,7 @@
 #
 # The one build this does not govern is the web package's host with the
 # applications in it, which needs a nightly and names its own
-# (clients/gui/wasm-apps-toolchain, passed as `cargo +<toolchain>`).
+# (crates/clausters-gui/wasm-apps-toolchain, passed as `cargo +<toolchain>`).
 #
 # The components and the target are the ones the checks need (fmt, clippy, and
 # the wasm gates of the GUI host, the engine and the shared core), listed here

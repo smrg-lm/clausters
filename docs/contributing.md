@@ -13,7 +13,7 @@ cargo doc --no-deps         # the API reference
 
 The core **must always build and test without any feature and without libfaust installed**, and with any combination of the def-family features `synth`/`faust` (both, either alone, or neither — most integration suites are gated on `synth`, so the featureless run is thin by design).
 
-The GUI host is a **separate workspace** with a feature set of its own, so it is built and tested from inside `clients/gui` (from the repo root `cargo` resolves the server crate instead) and it carries the same rule: it must build with any combination of its optional families (`notation`, `patcher`), with and without `midi`, `font-atlas` and `standalone`. `clients/gui/check-features.sh` runs that matrix — clippy, rustdoc, the wasm gate and the suite over each configuration — and is the sibling of the def-family matrix below.
+The GUI host is a member of the workspace with a feature set of its own. The root package is the server, so the host is built and tested by name (`cargo test -p clausters-gui`) or from inside `crates/clausters-gui`, and it carries the same rule: it must build with any combination of its optional families (`notation`, `patcher`), with and without `midi`, `font-atlas` and `standalone`. `crates/clausters-gui/check-features.sh` runs that matrix — clippy, rustdoc, the wasm gate and the suite over each configuration — and is the sibling of the def-family matrix below.
 
 ## System build dependencies (Ubuntu 26.04)
 
@@ -86,14 +86,14 @@ type a text into it (`editor.press_key("z", "ctrl")`,
 `editor.type_text("name")`), and a host started with `--headless` draws its
 windows offscreen on any adapter, a software one included.
 
-One picture is also kept and compared: `clients/gui/tests/references/window.png`
+One picture is also kept and compared: `crates/clausters-gui/tests/references/window.png`
 is a small window of text, a slider and a roll's notes, and a test draws the
 same window offscreen and fails when a pixel moved more than two levels in a
 channel — the measured distance between a card and a software adapter, so it
 holds on any machine that has one (`docs/decisions.md`, "A capture is the same
 picture on any adapter"). A change that is meant to move it writes it again
 with `CLAUSTERS_GUI_BLESS=1 cargo test --lib -- reference_picture` in
-`clients/gui`; look at the new picture before committing it. Where no adapter
+`crates/clausters-gui`; look at the new picture before committing it. Where no adapter
 answers the test says so and passes.
 
 ## OSC decoding
@@ -136,7 +136,7 @@ goes red, the pin is raised and whatever the new compiler reports is fixed in
 that same commit:
 
 - **lint** — `cargo fmt --check` and `cargo clippy --workspace --all-targets
-  -- -D warnings`, for the root workspace and for `clients/gui` (its own
+  -- -D warnings`, for the root workspace and for `crates/clausters-gui` (its own
   workspace). The tree is clippy-clean; keep it that way.
 - **test** — `cargo test --workspace` across the def-family feature matrix:
   default, `--no-default-features`, `--no-default-features --features synth`,
@@ -148,15 +148,15 @@ that same commit:
   runs their combined functional suite.
   The repository file `third_party/BUILD-PLUGINS.md` describes preparation
   and the local test commands.
-- **gui** — `cargo test` in `clients/gui` plus the two wasm build gates: the
-  GUI host's (`clients/gui/check-wasm.sh`) and the engine's
+- **gui** — `cargo test` in `crates/clausters-gui` plus the two wasm build gates: the
+  GUI host's (`crates/clausters-gui/check-wasm.sh`) and the engine's
   (`scripts/check-wasm.sh`, which also covers the shared core's codec crate).
   Between them they compile every bundle `clients/web/build.sh` stages, so the
   web package's build is proved here rather than in the release workflow.
   The `cargo test` and the host gate run with the crate's **default**
   features, which is the whole of what CI knows about it: the host's own
   feature matrix (a family compiled out, `font-atlas`, `standalone`) is
-  covered by `clients/gui/check-features.sh` and by nothing else — run it
+  covered by `crates/clausters-gui/check-features.sh` and by nothing else — run it
   before committing anything feature-gated there, the way the def-family
   matrix is run for the server.
 - **python** — `python clients/python/build_native.py --debug`, then `pytest`
@@ -309,7 +309,7 @@ Its counterpart for the documentation is `scripts/check-docs.sh`, which builds t
 
 ## The commit hook
 
-`.githooks/pre-commit` stops a commit whose `cargo fmt --check` or `cargo clippy` is dirty, for the default feature set of the workspaces the working tree touches (root, `clients/gui`, `audit/fuzz` and `clausters-editor` are four separate workspaces), and a commit whose changes break a **book** — it runs `scripts/check-docs.sh` for the books whose sources the tree touches (a book's own pages, and whatever its API generator parses: the Python package's docstrings, the web package's TypeScript). A commit that touches neither costs nothing.
+`.githooks/pre-commit` stops a commit whose `cargo fmt --check` or `cargo clippy` is dirty, for the default feature set of the workspaces the working tree touches (root, `audit/fuzz` and `clausters-editor` are three separate workspaces; the GUI host is a member of the root one), and a commit whose changes break a **book** — it runs `scripts/check-docs.sh` for the books whose sources the tree touches (a book's own pages, and whatever its API generator parses: the Python package's docstrings, the web package's TypeScript). A commit that touches neither costs nothing.
 
 The books are in the hook because they are the check with the least coverage anywhere else: a dangling TSDoc `{@link}`, a page missing from a `SUMMARY.md` or a docstring pydoc-markdown chokes on compiles fine, tests fine, lints fine, and is seen by nothing until CI's `docs` job — which is where most of this repository's red builds have come from. The script builds all three the way CI and Read the Docs build them, with the same pinned tools, in about five seconds; run it by hand (`scripts/check-docs.sh [server|python|web]`) whenever the hook is not in play.
 
