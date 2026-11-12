@@ -64,7 +64,8 @@ Two measured facts to keep in mind when reading the meter (numbers from a deskto
 
 | Path | Contents |
 |---|---|
-| `crates/clausters-server/src/server/engine.rs` | The core: `Engine` (audio half), `EngineHandle` (network half), `Cmd`, `Garbage`, the FIFOs, the schedule queue, the sample clock |
+| `crates/clausters-server/src/server/engine.rs` | The core: `Engine` (audio half), `EngineHandle` (network half), `Cmd`, `Garbage`, the FIFOs, the schedule queue, the sample clock, and the block loop that cuts a block at whatever is due next |
+| `crates/clausters-server/src/server/engine/transport.rs` | The transports as the audio thread holds them: each one's rolling state, clock, position, loop, end mark and queues, the edges that cut a block, the cues that wait for disk readers, the lane entries a position fires |
 | `crates/clausters-server/src/server/backend.rs` | cpal glue: `BlockAdapter` slices arbitrary callback sizes into 64-frame engine blocks (feature `realtime`) |
 | `crates/clausters-server/src/server/nrt.rs` | NRT thread, `NrtJob`/`run_job` (also called synchronously by the renderer), audio reading (`read_audio`: WAV via hound, other formats via symphonia) and WAV write helpers |
 | `crates/clausters-server/src/server/workers.rs` | worker pool: stage publish/steal/wait protocol for parallel groups |

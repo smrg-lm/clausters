@@ -1684,7 +1684,7 @@ have a seam".
   (`docs/decisions.md`, "The workspace is virtual, and the server is its
   default member (2026-11-12)".)
 
-- ⬜ **R25: The transport leaves `engine.rs`**. `crates/clausters-server/src/server/engine.rs`
+- ✅ **R25: The transport leaves `engine.rs`** *(done 2026-11-12)*. `crates/clausters-server/src/server/engine.rs`
   is 2,791 lines and holds the transports beside the block loop. The
   transport moves to a module of its own; nothing it does changes. It touches
   the audio thread, so it closes with `examples/bench.rs` before and after on
@@ -1692,6 +1692,16 @@ have a seam".
   on a shared runner and is the backstop). **Acceptance:** the suites pass
   with no assertion edited, `tests/rt_safety.rs` included, and the bench
   moves inside the machine's noise.
+
+  Shipped as `crates/clausters-server/src/server/engine/transport.rs`, a
+  child module of the engine's, so it reads the engine's fields with no
+  field made public: a transport's state and its edges, the cues, the lane
+  entries and the loop changes, 674 lines, leaving `engine.rs` at 2,136.
+  What stayed is what decides *when*: `next_due` and the block loop, and the
+  transport arms of `apply`, which are one `match` with the rest. Six runs a
+  side of the bench, alternated: the worst gated row moved 4.9% against the
+  base, where two halves of the same binary's runs differ by 4.4% in
+  throughput and 11.8% in a peak block.
 
 ## Testing strategy
 
