@@ -131,16 +131,27 @@ def test_a_verb_is_asked_of_the_window_and_its_actions_read(gui_host):
     editor = opened(gui_host, NotesEditor(take))
     assert editor.select_all() and editor.verb("view_all")
     assert editor.actions["undo"]["enabled"] is False
+    # what a verb edits arrives through the host's loop, so each is waited for
+
+    def joined():
+        return take.events[1].get("joins") == take.events[0]._id
+
+    def pitches():
+        return [e["midinote"] for e in take.events]
+
     assert editor.select_all() and editor.join(), "a line of two pitches is joined"
-    assert take.events[1].get("joins") == take.events[0]._id
+    assert gui_host._wait_while(lambda: not joined(), 5.0)
     assert editor.actions["undo"]["enabled"] is True, "and the join is an entry"
     assert editor.select_all() and editor.unjoin()
+    assert gui_host._wait_while(joined, 5.0)
     assert take.events[1].get("joins") is None
     # a transposition with the selection kept: both notes, one entry each
     assert editor.select_all() and editor.step_up()
-    assert [e["midinote"] for e in take.events] == [61.0, 65.0]
+    assert gui_host._wait_while(lambda: pitches() == [60.0, 64.0], 5.0)
+    assert pitches() == [61.0, 65.0]
     assert editor.octave_down()
-    assert [e["midinote"] for e in take.events] == [49.0, 53.0]
+    assert gui_host._wait_while(lambda: pitches() == [61.0, 65.0], 5.0)
+    assert pitches() == [49.0, 53.0]
     assert editor.undo() and editor.undo()
     assert [e["midinote"] for e in take.events] == [60.0, 64.0]
     # the panel beside the roll: shown by its switch, no edit
