@@ -480,7 +480,13 @@ impl AppEngine {
     /// for an engine driven by hand: a device's callback leaves the readers
     /// the time between its bursts, and a loop that processes block after
     /// block leaves them none, so whoever drives it gives them their turn
-    /// here rather than by sleeping. Blocks; never called in a page.
+    /// here rather than by sleeping. Blocks; never called in a page. A
+    /// reader that has ended is not waited for.
+    ///
+    /// # Panics
+    ///
+    /// If a reader runs for a minute without ending a turn with nothing to
+    /// do: it is stuck, and the loop would wait for it forever.
     pub fn fill_readers(&mut self) {
         self.readers.retain(|r| r.strong_count() > 0);
         for pace in self.readers.iter().filter_map(std::sync::Weak::upgrade) {

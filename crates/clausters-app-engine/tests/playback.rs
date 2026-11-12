@@ -790,7 +790,7 @@ fn the_loop_switch_turned_while_it_plays_is_not_heard() {
 #[test]
 fn two_loop_switches_close_together_at_its_end_are_not_heard() {
     let (checked, wrong) = unstarved(|| {
-        let (path, values) = take("switch");
+        let (path, values) = take("switches");
         let (mut engine, handle) = engine_pair(SR as f32, 2);
         let app = Arc::new(Mutex::new(AppEngine::over(handle)));
         let reading = app.lock().unwrap().reading();

@@ -656,7 +656,16 @@ pub(crate) struct Pace {
     turned: Condvar,
     /// The reader, as it says itself once it runs.
     thread: OnceLock<std::thread::Thread>,
+    /// The reader returned, stopped or panicking: it fills nothing more.
+    ended: AtomicBool,
 }
+
+/// How long [`Pace::wait_filled`] waits for a reader that is running and
+/// never ends a turn with nothing to do. A turn renders at most a ring's
+/// room, so a live reader rests within milliseconds; one that has not in
+/// this long is stuck, and a test driving the engine says so rather than
+/// hanging the run.
+const STUCK: Duration = Duration::from_secs(60);
 
 impl Pace {
     /// The reader ended a turn with nothing to do.
@@ -665,16 +674,35 @@ impl Pace {
         self.turned.notify_all();
     }
 
+    /// The reader returned. Taken under the lock, so a waiter that has just
+    /// read `ended` as false is already in the condvar's wait when told.
+    fn end(&self) {
+        let _held = self.rested.lock().unwrap_or_else(|e| e.into_inner());
+        self.ended.store(true, Ordering::Release);
+        self.turned.notify_all();
+    }
+
     /// **Waits until the reader has filled what it can**: until a turn that
     /// began after this call ended with nothing to do, which is every
     /// request seen, every list taken and every ring as full as a turn fills
     /// it. The turn ending as this is called may have begun before a request
     /// the engine just made, so the second one is waited for. Blocks, so it
-    /// is never called on a page's main thread.
+    /// is never called on a page's main thread. A reader that has returned
+    /// fills nothing more, so it is not waited for.
+    ///
+    /// # Panics
+    ///
+    /// If the reader is running and has not ended a turn with nothing to do
+    /// in [`STUCK`]: it is stuck, and the caller would wait forever.
     pub(crate) fn wait_filled(&self) {
         let mut rested = self.rested.lock().unwrap_or_else(|e| e.into_inner());
         let goal = *rested + 2;
-        while *rested < goal {
+        let since = std::time::Instant::now();
+        while *rested < goal && !self.ended.load(Ordering::Acquire) {
+            assert!(
+                since.elapsed() < STUCK,
+                "a take's reader ran for {STUCK:?} without ending a turn with nothing to do"
+            );
             if let Some(thread) = self.thread.get() {
                 thread.unpark();
             }
@@ -771,6 +799,14 @@ impl Drop for TakeFeed {
 /// The reading thread: each turn, every channel's latest request taken and a
 /// chunk rendered from where it left off, until nothing is left to do.
 fn serve(mut feeders: Vec<Feeder>, placed: Arc<Handed>, stop: Arc<AtomicBool>, pace: &Pace) {
+    /// Says the reader ended however it leaves, a panic included.
+    struct Ended<'a>(&'a Pace);
+    impl Drop for Ended<'_> {
+        fn drop(&mut self) {
+            self.0.end();
+        }
+    }
+    let _ended = Ended(pace);
     let _ = pace.thread.set(std::thread::current());
     for feeder in &feeders {
         feeder.wake_me();
@@ -836,6 +872,19 @@ fn serve(mut feeders: Vec<Feeder>, placed: Arc<Handed>, stop: Arc<AtomicBool>, p
 mod tests {
     use super::*;
     use clausters_document::parts::Rates;
+
+    /// A reader that has ended fills nothing more, so waiting for it returns
+    /// rather than waiting for a turn that never comes.
+    #[test]
+    fn an_ended_reader_is_not_waited_for() {
+        let pace = Pace::default();
+        pace.end();
+        pace.wait_filled();
+        let feed = TakeFeed::start(1);
+        let pace = Arc::clone(feed.pace());
+        drop(feed);
+        pace.wait_filled();
+    }
 
     /// A mono float file at `rate`, each frame told apart.
     fn file(name: &str, rate: u32, frames: usize) -> String {

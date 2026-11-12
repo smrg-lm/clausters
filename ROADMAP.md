@@ -119,6 +119,10 @@ already carry it.
   keeps an edited picture** *(`crates/clausters-gui/PLAN.md`, Found by use)*. Not
   reproduced in five sequences on a GPU; waits for the exact steps.
 
+- ⬜ **A playback test of the application's engine hung in CI**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Once, 70 minutes; the
+  wait it hung in is bounded now, and the next failure says where.
+
 - ⬜ **`faust_compiler` failed once in a parallel workspace run** *(root
   `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.

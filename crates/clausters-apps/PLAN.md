@@ -7207,3 +7207,23 @@ wrong.
   it works. Open: whether a verb that edits answers once its edit is in
   (as `select` does), or the client offers a wait for the window's
   answers.
+  *Seen in CI too, 2026-11-12:* the notes editor's test
+  (`test_a_verb_is_asked_of_the_window_and_its_actions_read`) read the
+  sequence right after `join` and failed in four of eight runs, on `main`
+  and on `restructure`. The test now waits for each verb's edit, as the
+  pedal's test already did; the question above is still open.
+
+- ⬜ **A playback test of the application's engine hung in CI** *(found
+  2026-11-12, run 43176962053, job `cargo test (synth-only)`)*.
+  `the_loop_switch_turned_while_it_plays_is_not_heard`
+  (`crates/clausters-app-engine/tests/playback.rs`) ran for 70 minutes and
+  was cancelled; the same tree passed every other run, and 160 local runs
+  under load did not hang. The test's only unbounded wait is
+  `AppEngine::fill_readers`, which waited for a reader turn with no bound,
+  so a reader that had stopped or panicked would hold it forever. Fixed
+  around it the same day: a reader says when it ends, panic included, and
+  is not waited for after; a live reader that does not rest in a minute
+  panics with a message; the two loop-switch tests no longer write the
+  same file at once (both used `app-engine-switch-<pid>.wav` in parallel,
+  and one removed it while the other ran). What is open is the cause: the
+  next failure prints it.
