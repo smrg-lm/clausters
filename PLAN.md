@@ -1703,6 +1703,14 @@ have a seam".
   base, where two halves of the same binary's runs differ by 4.4% in
   throughput and 11.8% in a peak block.
 
+  *The seam, closed after it.* `next_due` still spelled two transport
+  computations inline (a rolling transport's next bundle, and its next lane
+  entry) beside the one that was already the transport's (`edge_due`). They
+  are `TransportState::bundle_due` and `lane_due`, so `next_due` only
+  compares: it is the arbiter between the device queue and the transports,
+  with the tie rules, and stays in `engine.rs`. The transport arms of
+  `apply` are entered under Future directions.
+
 ## Testing strategy
 
 - **Per-UGen unit tests**: offline render of N blocks, asserts on the signal
@@ -2392,6 +2400,20 @@ where it came from).
   `spell_in` instead of a copy of its own, and the score's MEI writer names
   the same table. No FFI export yet: the clients reach them through the
   roll's verbs, and an export waits for a client that calls one.
+
+- ⬜ **The transport's commands, applied where the transport is** *(a
+  refactoring to evaluate, from the review of `R25`, 2026-11-12)*.
+  `Engine::apply` is one `match` over every command, 340 lines, and eight of
+  its arms are a transport's alone (run, group, follow, cue, locate, loop,
+  end, fade: about 130 lines; with the two lane arms, about 200). They
+  could be methods in `server::engine::transport`, called from one line
+  each. It is not a move: the garbage sink borrows three of the engine's
+  fields for the whole `match`, so each arm's borrows are reordered, and
+  what must hold is the order inside an arm (when notes are released, when
+  the taken releases run, when garbage leaves). `Schedule` and `ClearSched`
+  touch both queues and stay in any case. Against it: the one `match` is
+  where every command is seen in one list. It touches the audio thread, so
+  it would close with a bench before and after.
 
 ## Found by use: the running list of fixes
 

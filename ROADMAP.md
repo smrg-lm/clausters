@@ -284,6 +284,10 @@ its plan; the plan is where its acceptance is read.
   release workflow against the branch, and the branch into `main`. The
   rehearsal is the user's to run.
 
+- ⬜ **The transport's commands, applied where the transport is** *(root
+  `PLAN.md`, Future directions)*. To evaluate, not scheduled: the one
+  `match` has a value of its own.
+
 - ⬜ **A roll reads its marks' symbols from the score's palettes**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. The one exception of
   the applications' layers; taken with the next visit to the palettes.

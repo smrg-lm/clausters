@@ -1108,12 +1108,7 @@ impl Engine {
             .transports
             .iter()
             .enumerate()
-            .filter(|(_, t)| t.rolling)
-            .filter_map(|(i, t)| {
-                t.sched
-                    .first()
-                    .map(|b| (i, b.time.to_device(t.frozen_total).get()))
-            })
+            .filter_map(|(i, t)| t.bundle_due().map(|due| (i, due)))
             .min_by_key(|&(_, due)| due);
         let take_transport = match (device_due, transport_due) {
             (_, None) => false,
@@ -1171,21 +1166,7 @@ impl Engine {
             .transports
             .iter()
             .enumerate()
-            .filter(|(_, t)| t.rolling)
-            .filter_map(|(i, t)| {
-                let now = t.at(here);
-                let position = t.position.at(now).get();
-                let next = t
-                    .lanes
-                    .get(t.lanes.partition_point(|e| e.position < position))?;
-                let due = t
-                    .position
-                    .reaching(TransportPosition::new(next.position), now)
-                    .unwrap_or(now)
-                    .to_device(t.frozen_total)
-                    .get();
-                Some((i, due.max(here)))
-            })
+            .filter_map(|(i, t)| t.lane_due(here).map(|due| (i, due)))
             .min_by_key(|&(_, due)| due)
             .filter(|&(_, due)| due < block_end);
         let first = match (take_edge, edge_due, queue_due) {

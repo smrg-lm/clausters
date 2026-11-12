@@ -295,6 +295,40 @@ impl TransportState {
         Some((Edge::EndRamp, self.reaching(ramp, device)))
     }
 
+    /// The device sample its queue's first bundle is due on, when it rolls.
+    /// A stopped transport has none: its entries' device time only exists
+    /// while it rolls.
+    pub(super) fn bundle_due(&self) -> Option<u64> {
+        if !self.rolling {
+            return None;
+        }
+        self.sched
+            .first()
+            .map(|b| b.time.to_device(self.frozen_total).get())
+    }
+
+    /// The device sample its next lane entry is due on, when it rolls: the
+    /// first entry at or after where it stands at `device`, projected
+    /// through its anchor, and never before `device`. An entry behind the
+    /// position is not due.
+    pub(super) fn lane_due(&self, device: u64) -> Option<u64> {
+        if !self.rolling {
+            return None;
+        }
+        let now = self.at(device);
+        let position = self.position.at(now).get();
+        let next = self
+            .lanes
+            .get(self.lanes.partition_point(|e| e.position < position))?;
+        let due = self
+            .position
+            .reaching(TransportPosition::new(next.position), now)
+            .unwrap_or(now)
+            .to_device(self.frozen_total)
+            .get();
+        Some(due.max(device))
+    }
+
     /// **A stop**: with no ramp, it freezes now; with one, the stopping phase
     /// begins -- the level falls from where it is, over as much of the ramp as
     /// it has left to fall, and the transport freezes when it reaches zero.
