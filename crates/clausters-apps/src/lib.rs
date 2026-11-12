@@ -46,6 +46,7 @@ pub mod ruler;
 pub mod samples;
 #[cfg(feature = "notation")]
 pub mod score;
+pub mod takes;
 pub mod turn;
 
 /// **The grid a roll and a multitrack land on when nobody chose one**, in

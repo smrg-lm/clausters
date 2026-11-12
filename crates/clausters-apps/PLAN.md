@@ -4952,9 +4952,9 @@ Every entry carries a checkbox.
   roll's File menu, and the clients' surface for all of it. *Taken into
   `X44` the same day, and done with it 2026-11-11.*
 
-- ⬜ **The applications as modules that read apart** *(a refactoring to
+- ✅ **The applications as modules that read apart** *(a refactoring to
   evaluate, asked by the user 2026-11-12, once the workspace's review is
-  in)*. The crate is 53 thousand lines and already has a module per
+  in; done 2026-11-12)*. The crate is 53 thousand lines and already has a module per
   application (`audio`, `multitrack`, `notes`, `points`, `score`) beside
   what they share (`application`, `editing`, `chrome`, `forms`, `panels`,
   `closing`, `file`, `ruler`, `samples`, `turn`). A crate per application is
@@ -4966,7 +4966,36 @@ Every entry carries a checkbox.
   measured by reference first, as the host's layers were (root `PLAN.md`,
   `R19`), and only then decided.
 
+  *Measured.* Tests apart, the modules already had an order, with four
+  kinds of reference against it. The audio editor and the multitrack named
+  the editing context that opens them, for three things that were never the
+  context's: what an editor hands the engine the context holds
+  (`editing::held`'s take and its lists), a sound file's header, and
+  whether two paths name one file. The notes editor reads its marks'
+  symbols from the score's palettes. No application reaches into another
+  except to place its view (the multitrack's boxes are the audio editor's
+  take and the notes editor's roll, the audio editor's envelope is the
+  points editor's), which is the rule and points one way. `closing` and
+  `turn` name each other and are one layer.
+
+  *Decided.* The order is written as six layers in `docs/architecture.md`
+  ("The applications' modules and their layers") and held by
+  `crates/clausters-checks/tests/apps_layers.rs`, which shares the host
+  check's reader (`clausters_checks::modules`). The three things moved down:
+  the take and its lists and the header to a module of their own, `takes`,
+  and `same_file` to `file`; `editing::held` keeps the engine's trait. The
+  notes editor's reference to the score's palettes is the test's one
+  exception, entered below under Found by use.
+
 ## Found by use: the running list of fixes
+
+- ⬜ **A roll reads its marks' symbols from the score's palettes** *(found
+  2026-11-12, measuring the crate's modules by reference)*.
+  `notes::Symbols` asks `score::palettes::symbol` for the codepoint and the
+  text of an articulation, an ornament or a dynamic, so the notes editor,
+  which the score editor is opened over, names the score. It is the one
+  exception of `crates/clausters-checks/tests/apps_layers.rs`. The table of
+  marks belongs below both, and the palettes would read it from there.
 
 - ✅ **The multitrack's score boxes come out** *(2026-11-09, from the
   user's decision in Future directions, "Whether the multitrack keeps its

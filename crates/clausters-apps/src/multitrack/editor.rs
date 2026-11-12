@@ -1243,9 +1243,9 @@ impl MultitrackEditor {
         &self,
     ) -> (
         HashMap<SourceId, clausters_document::multitrack::read::SourceShape>,
-        std::collections::BTreeMap<SourceId, crate::editing::held::PlacedSource>,
+        std::collections::BTreeMap<SourceId, crate::takes::PlacedSource>,
     ) {
-        use crate::editing::held::PlacedSource;
+        use crate::takes::PlacedSource;
         use clausters_document::multitrack::read::SourceShape;
         use clausters_document::parts::{FileList, Rates, Tree};
         let mut shapes = HashMap::new();

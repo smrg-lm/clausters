@@ -28,6 +28,7 @@ The components that exist (in `crates/clausters-apps/src` unless named), and wha
 | `editing::Editing`, `turn` | One undo order over every application open in a context; members (`Member::{Multitrack, Audio, Notes, Points, Score, External}`); what a turn is |
 | `application::{Services, Runtime, Resources, Histories, clipboard::Exchange}` | Explicit services: histories, one resource graph with retention roots, the clipboard exchange, typed pending operations whose late results address their original object |
 | `editing::coordinator`, `editing::held` | The audio member's playback and the transport facts a script and a hand share; the engine an editing context holds |
+| `takes` | What an editor hands that engine (a take's parts, a track's placed regions) and a sound file's header: below every application, so no editor names the context that opened it |
 | `samples` | The window a take is drawn in and the measures its picture stacks, which the multitrack's boxes reuse |
 | `clausters_editing::verbs` | The one verb table: each verb's name, keys, label and class |
 | `clausters_editing::conversation` | Messages, turns, answers and corrections between a host and an owner |

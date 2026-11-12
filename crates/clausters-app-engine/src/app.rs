@@ -22,7 +22,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
-use clausters_apps::editing::{Caller, Editing, Header, MemberId, call_json};
+use clausters_apps::editing::{Caller, Editing, MemberId, call_json};
+use clausters_apps::takes::Header;
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
 use clausters_editing::apply::Step;
 use serde_json::{Value, json};

@@ -6,11 +6,16 @@
 //! - `ascii` -- a source file is ASCII.
 //! - `versions` -- the package version is written in one place.
 //! - `levels` -- a crate depends only on crates of a lower level.
+//! - `host_layers`, `apps_layers` -- a module of the GUI host, or of the
+//!   applications' crate, refers only to modules of its own layer or a lower
+//!   one. What they share is [`modules`].
 //! - `bindings` -- every symbol of the C ABI and of the wasm core has a row in
 //!   `docs/bindings.md`.
 //!
 //! Run them with `cargo test -p clausters-checks`. They link nothing of the
 //! project, so they need no audio library, no libfaust and no feature.
+
+pub mod modules;
 
 use std::path::{Path, PathBuf};
 

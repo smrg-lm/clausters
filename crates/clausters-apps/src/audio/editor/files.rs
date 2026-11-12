@@ -56,7 +56,7 @@ impl AudioEditor {
                 [Some(file.target.as_str()), file.decoded_from.as_deref()]
                     .into_iter()
                     .flatten()
-                    .any(|held| !held.is_empty() && crate::editing::same_file(held, path))
+                    .any(|held| !held.is_empty() && crate::file::same_file(held, path))
             })
             .map(|file| file.id.0)
     }
@@ -81,7 +81,7 @@ impl AudioEditor {
         &self,
         rate: f64,
         wanted: impl Fn(u64, u64) -> bool,
-    ) -> Vec<crate::editing::held::HeldTake> {
+    ) -> Vec<crate::takes::HeldTake> {
         if !self.open_files.open {
             return Vec::new();
         }
@@ -820,7 +820,7 @@ impl AudioFileState {
     pub fn untitled(&self) -> bool {
         self.target.is_empty()
     }
-    fn held_take(&self, rate: f64) -> crate::editing::held::HeldTake {
+    fn held_take(&self, rate: f64) -> crate::takes::HeldTake {
         let rate = if rate > 0.0 { rate } else { self.rate };
         let list = sources::file_list(
             &self.contents.parts,
@@ -828,10 +828,10 @@ impl AudioFileState {
             self.channels,
             self.rate,
         );
-        crate::editing::held::HeldTake {
+        crate::takes::HeldTake {
             reader: self.id.0 as u64,
             revision: self.revision,
-            list: crate::editing::held::HeldList::Parts(list),
+            list: crate::takes::HeldList::Parts(list),
             channels: self.channels,
             rate,
         }

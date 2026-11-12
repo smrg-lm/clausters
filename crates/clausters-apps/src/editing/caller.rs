@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 
 use super::coordinator::AudioAction;
 use super::{Editing, Member, MemberId};
+use crate::takes::Header;
 use clausters_core::ids::IdSpaces;
 
 /// **What the caller does for a member's run**, at once: the I/O and the
@@ -34,21 +35,6 @@ pub trait Caller {
     /// Calls off member `member`'s renders under way, each before its next
     /// step.
     fn call_off(&mut self, member: MemberId);
-}
-
-/// A sound file's header, as [`Caller::header`] reads it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Header {
-    /// Frames per channel.
-    pub frames: u64,
-    /// Channels.
-    pub channels: u32,
-    /// The rate it was written at.
-    pub rate: f64,
-    /// Its container (`wav`, `w64`, `rf64`, `flac`, ...).
-    pub codec: String,
-    /// Its sample format (`float`, `int24`, `int16`, ...), where it says.
-    pub sample_format: Option<String>,
 }
 
 /// **What an action raised**: its kind (`value`, `command`, `runtime`), and

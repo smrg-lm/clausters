@@ -301,12 +301,12 @@ fn hour_long_takes_open_on_their_peaks_and_a_comp_plays_whole() {
         &Default::default(),
     )
     .remove(0);
-    let list = clausters_apps::editing::held::PlacedList {
+    let list = clausters_apps::takes::PlacedList {
         regions: read.regions.into(),
         sources: Arc::new(
             take_files
                 .into_iter()
-                .map(|(id, f)| (id, clausters_apps::editing::held::PlacedSource::File(f)))
+                .map(|(id, f)| (id, clausters_apps::takes::PlacedSource::File(f)))
                 .collect(),
         ),
         frames: read.frames,

@@ -42,6 +42,7 @@ use clausters_editing::conversation::Answer;
 use crate::application::histories::{Histories, Object, ScopeId};
 use crate::application::resources::{ResourceId, Resources, Root, RootKind, ServerInstance};
 use crate::audio::editor::{self as audio, AudioEditor};
+use crate::file::same_file;
 use crate::multitrack::editor::{self as multitrack, MultitrackEditor};
 use crate::notes::Shared;
 use crate::notes::editor::{self as notes, NotesEditor};
@@ -64,7 +65,7 @@ mod multitrack_runs;
 mod multitrack_walks;
 mod roll_runs;
 
-pub use caller::{Caller, Header, Raised, Ran, Render};
+pub use caller::{Caller, Raised, Ran, Render};
 pub use door::call_json;
 
 /// The version an unedited context is at. One rather than zero, because zero is
@@ -392,28 +393,6 @@ pub enum Place {
     Apart,
     /// The order of this member, as one structure with it under the same key.
     Beside(MemberId),
-}
-
-/// **Whether two paths name one file**: the file each resolves to, where
-/// both exist on a disk, and otherwise the same absolute path, written
-/// either way (`./a` or `a`, a trailing separator). A page's storage has no
-/// links, so the written path is the file there.
-pub fn same_file(a: &str, b: &str) -> bool {
-    use std::path::{Component, Path, PathBuf};
-    if a == b {
-        return true;
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    if let (Ok(a), Ok(b)) = (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
-        return a == b;
-    }
-    let plain = |path: &str| -> PathBuf {
-        let path = std::path::absolute(path).unwrap_or_else(|_| PathBuf::from(path));
-        path.components()
-            .filter(|c| !matches!(c, Component::CurDir))
-            .collect()
-    };
-    plain(a) == plain(b) || Path::new(a) == Path::new(b)
 }
 
 /// **A dispatch of the runtime settled as far as it goes without waiting**:

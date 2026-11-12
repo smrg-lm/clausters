@@ -658,7 +658,7 @@ impl App {
                 window
                     .session
                     .as_deref()
-                    .is_some_and(|opening| clausters_apps::editing::same_file(opening, path))
+                    .is_some_and(|opening| clausters_apps::file::same_file(opening, path))
             })
             .map(|(def_id, _)| *def_id)
             .or_else(|| self.editing.window_holding_file(path))

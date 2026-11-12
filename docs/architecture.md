@@ -1458,6 +1458,21 @@ same application with `--score`. It plays as a roll does: the score's render on
 an event lane of a transport of its own on the application's engine, the page's
 cursor bound to that transport.
 
+### The applications' modules and their layers
+
+`clausters-apps` is one crate, so cargo checks nothing between its modules. The applications are modules of it and not crates, because they are composed of components written once and what they share is the larger half; what keeps them apart is an order, and **a module refers only to modules of its own layer or a lower one**. `crates/clausters-checks/tests/apps_layers.rs` reads this table and the crate's source the way the host's check does (below, "The host's modules and their layers"), and fails on a reference that points up, on a module the table does not name and on a row whose module is gone. A test is not read: one that drives an editor through the editing context is how an editor is tested, and it shapes nothing.
+
+| Layer | What it is | Modules |
+|---|---|---|
+| 0 | the components every window is composed of, and what an editor says of its takes | `ruler`, `panels`, `turn`, `closing`, `chrome`, `forms`, `samples`, `takes` |
+| 1 | the runtime an application runs over, and a window whose document is a file | `application`, `file` |
+| 2 | the editors another application places inside itself: an envelope, a roll | `points`, `notes` |
+| 3 | the applications over one structure | `audio`, `score` |
+| 4 | the multitrack, whose boxes are the audio editor's view of a take and the notes editor's roll | `multitrack` |
+| 5 | the editing context: the one order every application open in it walks, which opens them all | `editing` |
+
+An application that places another's view refers down to it, which is the rule that a view is used and never written again read as an order: the audio editor's envelope is the points editor's, a box of samples is the audio editor's take. What an editor hands the engine the context holds (`takes`) sits at the bottom, so no editor names the context that opened it.
+
 ### The application in each client, and the picture the host owns
 
 On the client side an **application** (`clausters.gui.editing.Application` and

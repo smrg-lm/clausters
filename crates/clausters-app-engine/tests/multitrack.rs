@@ -13,7 +13,7 @@ use clausters::dsp::buffer::Buffer;
 use clausters::server::engine::{BLOCK_SIZE, Cmd, engine_pair};
 use clausters_app_engine::take::{Headers, PlacedRead};
 use clausters_app_engine::{AppEngine, EngineMedium};
-use clausters_apps::editing::held::{PlacedList, PlacedSource};
+use clausters_apps::takes::{PlacedList, PlacedSource};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape, Space};
 use clausters_core::mixer;
 use clausters_document::multitrack::nodes::{self, SourceInfo};
@@ -233,7 +233,8 @@ fn a_region_read_by_the_application_is_the_clip_it_was() {
 #[test]
 fn a_multitrack_plays_its_tracks_on_an_engine_it_holds() {
     use clausters_app_engine::held::Readers;
-    use clausters_apps::editing::held::{HeldEngine, HeldList, HeldTake};
+    use clausters_apps::editing::held::HeldEngine;
+    use clausters_apps::takes::{HeldList, HeldTake};
     use clausters_document::multitrack::nodes::PlannedFeed;
     use clausters_editing::playback::{MultitrackPlayback, View};
 

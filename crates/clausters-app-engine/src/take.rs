@@ -333,12 +333,12 @@ impl PlacedRead {
     /// read is a refusal naming it; a region whose source the list does not
     /// hold is silent.
     pub fn over(
-        list: &clausters_apps::editing::held::PlacedList,
+        list: &clausters_apps::takes::PlacedList,
         channels: usize,
         headers: &mut Headers,
         counts: &Arc<Counts>,
     ) -> Result<PlacedRead, String> {
-        use clausters_apps::editing::held::PlacedSource;
+        use clausters_apps::takes::PlacedSource;
         let mut read: HashMap<SourceId, (Arc<Source>, usize)> = HashMap::new();
         for (id, source) in list.sources.iter() {
             let (source, frames) = match source {

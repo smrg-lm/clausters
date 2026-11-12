@@ -1,5 +1,6 @@
 use super::*;
-use crate::editing::held::{HeldEngine, HeldTake};
+use crate::editing::held::HeldEngine;
+use crate::takes::{Header, HeldTake};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
 use clausters_document::{
     Document, Lifetime,

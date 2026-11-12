@@ -383,3 +383,25 @@ fn close_order(services: &mut Services, target: &Target) {
         id: target.object,
     });
 }
+
+/// **Whether two paths name one file**: the file each resolves to, where
+/// both exist on a disk, and otherwise the same absolute path, written
+/// either way (`./a` or `a`, a trailing separator). A page's storage has no
+/// links, so the written path is the file there.
+pub fn same_file(a: &str, b: &str) -> bool {
+    use std::path::{Component, Path, PathBuf};
+    if a == b {
+        return true;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if let (Ok(a), Ok(b)) = (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        return a == b;
+    }
+    let plain = |path: &str| -> PathBuf {
+        let path = std::path::absolute(path).unwrap_or_else(|_| PathBuf::from(path));
+        path.components()
+            .filter(|c| !matches!(c, Component::CurDir))
+            .collect()
+    };
+    plain(a) == plain(b) || Path::new(a) == Path::new(b)
+}

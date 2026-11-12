@@ -18,7 +18,7 @@ use clausters_document::parts::TakeFile;
 use clausters_document::session::{Location, Part, Session};
 use clausters_editing::apply::Step;
 
-use crate::editing::Header;
+use crate::takes::Header;
 
 /// The folder a session's peaks are kept in, inside its own.
 pub const PEAKS: &str = "peaks";
