@@ -26,7 +26,7 @@
 //! at all.
 
 use super::model::{Header, Item, Marks, Pitch, Sheet, Spanner, Step};
-use crate::ratio::Ratio;
+use clausters_core::ratio::Ratio;
 
 /// Where a new item goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1021,7 +1021,7 @@ pub fn pitch_when(sheet: &Sheet, staff: usize, at: Ratio, position: i32) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::notation::model::{Staff, Step, Voice};
+    use crate::model::{Staff, Step, Voice};
 
     fn c4() -> Pitch {
         Pitch {
@@ -1368,7 +1368,7 @@ mod tests {
     }
     #[test]
     fn a_staff_position_is_a_pitch_once_the_clef_and_the_key_are_known() {
-        use crate::notation::{Slot, voice_to_sheet};
+        use crate::{Slot, voice_to_sheet};
         // The treble staff's top line is F5, and every clef is the same
         // arithmetic on the line it names.
         let treble = voice_to_sheet(&[Slot::rest(8)], "4/4", "G2", "C");
@@ -1392,7 +1392,7 @@ mod tests {
 
     #[test]
     fn a_place_clicked_in_a_key_arrives_in_that_key() {
-        use crate::notation::{Slot, voice_to_sheet};
+        use crate::{Slot, voice_to_sheet};
         // Clicking the middle line in E flat writes a B flat: the armature is
         // part of what the place means, not something applied afterwards. Four
         // steps below the top line F5 is B4.
@@ -1405,7 +1405,7 @@ mod tests {
 
     #[test]
     fn a_staff_that_is_not_there_says_so() {
-        use crate::notation::{Slot, voice_to_sheet};
+        use crate::{Slot, voice_to_sheet};
         let sheet = voice_to_sheet(&[Slot::rest(8)], "4/4", "G2", "C");
         assert!(pitch_at(&sheet, 4, 0).is_err());
     }

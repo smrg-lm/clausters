@@ -662,7 +662,7 @@ export class Scheduler {
 
 /**
  * A loaded score, held open in Rust so it can be edited and re-engraved -- the
- * JS face of [`clausters_core::notation::Score`].
+ * JS face of [`clausters_notation::Score`].
  *
  * The same object the Python client holds over the C ABI, running the same
  * state machine: a page that transposes a note and one that transposes it in a

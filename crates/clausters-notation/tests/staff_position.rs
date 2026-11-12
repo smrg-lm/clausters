@@ -1,16 +1,14 @@
 //! The staff-position reading, against the vector the GUI host reads too.
 //!
 //! `DisplayList::staff_position` and the host's `ScoreData::staff_position`
-//! measure the same thing off the same drawing, from two crates in two
-//! workspaces that cannot link to each other: the host names the position a
+//! measure the same thing off the same drawing, each with a reading of its
+//! own: the host names the position a
 //! dragged note reaches and a client resolves it against the page it engraved,
-//! so a disagreement puts the note somewhere nobody asked for. Neither side can
-//! call the other, so both assert against one file -- this test and
+//! so a disagreement puts the note somewhere nobody asked for. Both
+//! assert against one file -- this test and
 //! `the_host_reads_the_same_staff_positions_as_the_core` in `crates/clausters-gui`.
 
-#![cfg(feature = "notation")]
-
-use clausters_core::notation::DisplayList;
+use clausters_notation::DisplayList;
 
 #[test]
 fn the_vector_positions_are_what_the_core_reads() {

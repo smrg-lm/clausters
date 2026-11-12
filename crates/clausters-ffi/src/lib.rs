@@ -16,7 +16,7 @@
 //! `clausters_core::osc` (Rust-tested).
 //!
 //! Two optional features widen that surface, both off by default: `notation`
-//! adds the notation layer's pure half (see `clausters_core::notation`), and
+//! adds the notation layer's pure half (see `clausters_notation`), and
 //! `verovio` adds the engraver and the editable score on top of it -- the one
 //! that links libverovio, so it stays opt-in the way the Faust family does in
 //! the server.

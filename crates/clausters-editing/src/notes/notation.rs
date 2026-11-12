@@ -80,10 +80,10 @@ mod gated {
     use serde_json::{Map, Value, json};
 
     use clausters_core::event::render::{self, Type};
-    use clausters_core::notation::{Interpretation, Pitch, default_interpretation};
     use clausters_document::events::reading::Transcription;
     use clausters_document::events::{Event, EventSequence, EventsIntent, Polyphony};
     use clausters_document::{Beat, Opaque};
+    use clausters_notation::{Interpretation, Pitch, default_interpretation};
 
     use super::super::{Axis, Editing, SEXTUPLE, YDomain, monophonic, staff_voice};
     use super::stated;

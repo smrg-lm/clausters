@@ -18,7 +18,7 @@
 //! Everything here is pure, as the verbs are: a sheet and a selection in,
 //! operations or a sentence out.
 
-use clausters_core::notation::{Attachment, Item, Marks, Op, Sheet, attachment_id};
+use clausters_notation::{Attachment, Item, Marks, Op, Sheet, attachment_id};
 
 /// What of the selection is written beside the notes, each once, in the
 /// order it was picked. A part of a line in another run of pages, and the
@@ -175,8 +175,8 @@ pub fn describe(sheet: &Sheet, found: &Attachment) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clausters_core::notation::{Control, Pitch, Spanner, Staff, Step, Voice};
     use clausters_core::ratio::Ratio;
+    use clausters_notation::{Control, Pitch, Spanner, Staff, Step, Voice};
 
     fn sheet() -> Sheet {
         let note = |id: u64| Item::Note {

@@ -1335,8 +1335,8 @@ and sends the result as a flat display list, and the host is only the renderer
 that fits and tessellates it. That keeps the engraver a purely client-side
 dependency (verovio, bundled in the Python wheel) and lets a second client in
 another language reuse the same renderer by sending the same display list — and
-the engraving itself is shared native code (`clausters-notation` plus
-`clausters_core::notation`, over the C ABI), so that second client rebinds it
+the engraving itself is shared native code (`clausters-verovio` plus
+`clausters_notation`, over the C ABI), so that second client rebinds it
 rather than writing its own. `vb` is the
 page's own coordinate system — every primitive is expressed in those units, and
 the host scales the page into the widget rect, so the page is

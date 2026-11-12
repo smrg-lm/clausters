@@ -2,8 +2,8 @@
 //
 // A score is laid out into SVG by verovio and that SVG is walked into the flat,
 // resolution-independent display list the host's `score` widget consumes. Both
-// steps are the shared core's: the walk is `clausters_core::notation`, and the
-// stateful, editable document is `clausters_core::notation::Score` -- the order
+// steps are the shared core's: the walk is `clausters_notation`, and the
+// stateful, editable document is `clausters_notation::Score` -- the order
 // an edit is made in, the reload that keeps the timemap honest, the undo stack.
 // What is here is the shell: idiomatic names, plain objects, and the handle's
 // lifetime.
@@ -71,7 +71,7 @@ export interface EngraveOptions {
  * its selection across the round trip: the id the user clicked still names the
  * same note afterwards.
  *
- * The edit cycle is the shared layer's (`clausters_core::notation::Score`), not
+ * The edit cycle is the shared layer's (`clausters_notation::Score`), not
  * this shell's -- as it is in the Python client, which holds the same model over
  * the C ABI.
  *
@@ -572,7 +572,7 @@ export function pageJson(displayList: Page): Record<string, unknown> {
 /**
  * Walk an engraver SVG into a display list. Split out of {@link engrave} so it
  * is testable on a captured SVG, and shared with every other client -- the walk
- * itself is `clausters_core::notation`, so a page feeding it the same SVG a
+ * itself is `clausters_notation`, so a page feeding it the same SVG a
  * window feeds it gets the identical list.
  *
  * Each primitive carries the id of the element it belongs to, and a **sounding

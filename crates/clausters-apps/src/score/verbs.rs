@@ -15,11 +15,11 @@
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use clausters_core::notation::{
+use clausters_core::ratio::Ratio;
+use clausters_notation::{
     FIELDS, Halign, Item, Marks, NOTE, Op, PageSetup, Pages, Pitch, Region, Sheet, Valign,
     default_place, paper,
 };
-use clausters_core::ratio::Ratio;
 
 /// **One verb, as a client names it**: `{"action": ..., <its arguments>}`.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -445,14 +445,14 @@ pub fn ops(sheet: &Sheet, selection: &[u64], action: &Action) -> Result<Vec<Op>,
     }
     if let Action::Group { symbol } = action {
         let (a, b) = (staves[0], staves[staves.len() - 1]);
-        let mut groups: Vec<clausters_core::notation::Group> = sheet
+        let mut groups: Vec<clausters_notation::Group> = sheet
             .groups
             .iter()
             .filter(|g| g.last < a || g.first > b)
             .cloned()
             .collect();
         if symbol != "none" {
-            groups.push(clausters_core::notation::Group {
+            groups.push(clausters_notation::Group {
                 first: a,
                 last: b,
                 symbol: symbol.clone(),
@@ -947,7 +947,7 @@ fn items_where(sheet: &Sheet, keep: impl Fn(&Located<'_>) -> bool) -> Vec<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clausters_core::notation::{Pitch, Staff, Step, Voice};
+    use clausters_notation::{Pitch, Staff, Step, Voice};
 
     fn note(id: u64, dur: (i64, i64)) -> Item {
         Item::Note {
@@ -1090,7 +1090,7 @@ mod tests {
         sheet.staves[0].voices[0]
             .items
             .extend((6..=8).map(|id| note(id, (1, 4))));
-        sheet.grid = clausters_core::notation::Grid::uniform(4, 4);
+        sheet.grid = clausters_notation::Grid::uniform(4, 4);
         assert_eq!(measure_items(&sheet, 1, None), vec![1, 2, 3, 4]);
         assert_eq!(measure_items(&sheet, 2, Some(1)), vec![5, 6, 7, 8]);
         assert!(
@@ -1103,7 +1103,7 @@ mod tests {
     #[test]
     fn a_transformation_takes_the_span_the_selection_covers() {
         let mut sheet = sheet();
-        sheet.grid = clausters_core::notation::Grid::uniform(2, 4);
+        sheet.grid = clausters_notation::Grid::uniform(2, 4);
         let action: Action =
             serde_json::from_str(r#"{"action": "transform", "name": "transpose", "semitones": 2}"#)
                 .unwrap();
@@ -1115,13 +1115,13 @@ mod tests {
             panic!("{ops:?}")
         };
         assert_eq!(*semitones, 2);
-        assert_eq!(*span, clausters_core::notation::Span::Measures(2, 2));
+        assert_eq!(*span, clausters_notation::Span::Measures(2, 2));
         // with nothing selected, everything
         let ops = super::ops(&sheet, &[], &action).unwrap();
         assert!(matches!(
             &ops[0],
             Op::Transpose {
-                span: clausters_core::notation::Span::All,
+                span: clausters_notation::Span::All,
                 ..
             }
         ));
@@ -1133,7 +1133,7 @@ mod tests {
     #[test]
     fn the_measure_verbs_act_on_the_measures_selected() {
         let mut sheet = sheet();
-        sheet.grid = clausters_core::notation::Grid::uniform(2, 4);
+        sheet.grid = clausters_notation::Grid::uniform(2, 4);
         // items 3 and 4 are the second bar of two quarters
         let act = |json: &str| {
             let action: Action = serde_json::from_str(json).unwrap();

@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Map, Value, json};
 
 use clausters_core::event::render as keys_of;
-use clausters_core::notation::{Interpretation, Sheet};
+use clausters_notation::{Interpretation, Sheet};
 
 use super::score::render;
 use super::{CurveKind, Event, EventSequence, MidiSpec};
@@ -413,8 +413,8 @@ fn change(event: &mut Event, before: &Event, after: &Event) {
 mod tests {
     use super::*;
     use crate::events::transcription::{Transcription, read};
-    use clausters_core::notation::{Item, Marks, Pitch, Spanner, Step};
     use clausters_core::ratio::Ratio;
+    use clausters_notation::{Item, Marks, Pitch, Spanner, Step};
 
     /// A take played a little off the grid, with a curve drawn over it.
     fn take() -> EventSequence {

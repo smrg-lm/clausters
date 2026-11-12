@@ -31,8 +31,8 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
-use clausters_core::notation::{View, glyph_char};
 use clausters_core::ratio::Ratio;
+use clausters_notation::{View, glyph_char};
 
 use super::icons;
 use super::menu::VALUES;
@@ -61,7 +61,7 @@ pub const TOOLS: &[&str] = &[
 pub type Ids = BTreeMap<String, i32>;
 
 /// The engraver's outlines, by SMuFL codepoint: what
-/// [`Score::outlines`](clausters_core::notation::Score::outlines) answers.
+/// [`Score::outlines`](clausters_notation::Score::outlines) answers.
 pub type Outlines = BTreeMap<String, String>;
 
 /// The written values' symbols, in [`VALUES`]' order: a note of each, alone.

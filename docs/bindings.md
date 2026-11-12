@@ -516,7 +516,7 @@ the reason was packaging rather than design: `libverovio` is C++ and nothing
 here built it for wasm. That changed on 2026-08-21. The pinned sources are now
 compiled twice — natively by `third_party/build-verovio.sh` and by Emscripten
 through `third_party/build-verovio-wasm.sh`, **with the same importer options** —
-and the score model moved into `clausters_core::notation` over an `Engraver`
+and the score model moved into `clausters_notation` over an `Engraver`
 port, so both clients run one state machine over one engraver
 (`docs/decisions.md`).
 
@@ -537,7 +537,7 @@ out an opaque handle and takes it back to every call, and wasm has a class.
 | `clausters_core_sheet_read_events` | `sheet_read_events` | `idiom` — the same envelope-versus-throw difference. The way back: a sequence read into a sheet, with which item each event became. What the events do not say is decided by the transcription that crosses with them as data — its fields are not symbols, and every one left out keeps its default |
 | `clausters_core_item_id` | `item_id` | which **model item** an engraved element belongs to: `n7`, `n7-2` (a pare split across a barline) and `n7-p1` (one pitch of a chord) are all item 7. It is the step between a page's selection and a model verb, and it is a symbol rather than a line of each client because the answer is the emitter's — a client spelling it out again would disagree the first time the emitter spelled a split differently. `-1` where the element was not written from a model |
 | `clausters_core_interpretation` | `interpretation` | the default reading, and **the parity surface for it**. Its fields are not symbols and are not in this table: they ride inside the payload `sheet_perform` takes, so nothing structural notices if one client's idea of `mf` drifts from the other's. Both clients are read against this value instead. It is also why neither writes those numbers down — a client with its own copy of the dynamics table plays the same score at a different amplitude |
-| — | `engrave_options` | `idiom` — the engraver's options JSON. A native caller builds it from `EngraveOptions` inside `clausters-notation`, which is where its resource path also lives; a page has no such struct and calls the core's builder directly, so both configure verovio identically |
+| — | `engrave_options` | `idiom` — the engraver's options JSON. A native caller builds it from `EngraveOptions` inside `clausters-verovio`, which is where its resource path also lives; a page has no such struct and calls the core's builder directly, so both configure verovio identically |
 | `clausters_score_open` | `JsScore.new` | `idiom` — a constructor where C mints a handle. The engraver is built by the binding either way: natively from a resource path, in a page from the loaded module |
 | `clausters_score_free` | — | `n/a` — wasm frees by `Drop` |
 | `clausters_score_display_list` | `JsScore.display_list` | |
@@ -662,7 +662,7 @@ the one occupancy-map model, internally locked per handle); v11 the
 `clausters_core_patch_compile` cord->bus pass (a directed patch JSON in, its
 GraphDef wiring JSON out -- the GUI patcher's translation, shared so every
 client compiles a patch identically); v12 the notation surface
-(feature-gated, see `clausters_core::notation`) -- the pure
+(see `clausters_notation`) -- the pure
 `clausters_core_svg_to_display_list` and `clausters_core_voice_to_mei`,
 plus, behind `verovio`, the editable
 `clausters_score_*` handle, so a client binds the notation layer instead of

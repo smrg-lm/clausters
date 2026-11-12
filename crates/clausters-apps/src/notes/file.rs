@@ -119,9 +119,9 @@ fn page(sequence: &EventSequence) -> Result<Vec<u8>, String> {
     let read = clausters_document::events::transcription::read(
         sequence,
         &Transcription::of(sequence),
-        &clausters_core::notation::default_interpretation(),
+        &clausters_notation::default_interpretation(),
     )?;
-    clausters_core::notation::sheet_to_mei(&read.sheet).map(String::into_bytes)
+    clausters_notation::sheet_to_mei(&read.sheet).map(String::into_bytes)
 }
 
 /// Without the notation layer there is no page to write.

@@ -15,11 +15,11 @@ default = []
 # The notation layer's pure half (the SVG -> display-list walk, the voice -> MEI
 # encoder): logic every client shares, so no binding reimplements it. Off by
 # default, exactly as in the core it forwards to.
-notation = ["clausters-core/notation", "clausters-apps/notation", "clausters-document/notation", "clausters-editing/notation"]
+notation = ["dep:clausters-notation", "clausters-apps/notation", "clausters-document/notation", "clausters-editing/notation"]
 # The engraver and the editable score on top of it -- this one links libverovio,
 # so it stays opt-in the way the Faust family does in the server. The Python
 # reference wheel turns it on (clients/python/build_native.py).
-verovio = ["notation", "dep:clausters-notation", "clausters-notation/verovio"]
+verovio = ["notation", "dep:clausters-verovio", "clausters-verovio/verovio"]
 
 [dependencies]
 clausters-core = { path = "../clausters-core" }
@@ -37,6 +37,8 @@ clausters-editing = { path = "../clausters-editing" }
 # its own window would be an editor the host and the other client do not have.
 clausters-apps = { path = "../clausters-apps" }
 # The native half of the notation layer (libverovio); `verovio` only.
+clausters-verovio = { path = "../clausters-verovio", optional = true }
+# The notation model; `notation` only.
 clausters-notation = { path = "../clausters-notation", optional = true }
 # `derive`, for the few request objects this surface parses itself -- an entry
 # with its legs, say. The types it can borrow from `clausters-document` it

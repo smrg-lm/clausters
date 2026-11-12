@@ -342,10 +342,10 @@ pub fn complaints(data: &str, opts: &EngraveOptions) -> Result<Vec<String>, Engr
 /// The verovio options JSON: the fixed defaults plus the caller's scale/width,
 /// with `extra` (a JSON object) merged last so it can override any of them.
 pub(crate) fn options_json(opts: &EngraveOptions) -> String {
-    // The defaults are the core's (`clausters_core::notation::engrave_options`),
+    // The defaults are the core's (`clausters_notation::engrave_options`),
     // not this crate's: a page configures its engraver through the same function,
     // so the two clients' pages are laid out identically rather than similarly.
-    clausters_core::notation::engrave_options(opts.scale, opts.page_width, opts.extra.as_deref())
+    clausters_notation::engrave_options(opts.scale, opts.page_width, opts.extra.as_deref())
 }
 
 #[cfg(test)]

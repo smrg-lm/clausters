@@ -96,11 +96,12 @@ The crates sit in levels, and **a crate depends only on crates of a lower level*
 | Level | Crates | What the level is |
 |---|---|---|
 | 0 | `clausters-core`, `clausters-net` | rules and formats every program shares; no crate of the project under them |
-| 1 | `clausters-document`, `clausters-midi`, `clausters-plugin-host`, `clausters-notation` | one model or one device each, over the core |
-| 2 | `clausters-editing`, `clausters` | the projections over the document; the server |
-| 3 | `clausters-apps` | the applications, each written once |
-| 4 | `clausters-app-engine` | the applications joined to an engine |
-| 5 | `clausters-ffi`, `clausters-core-web`, `clausters-web`, `clausters-nrt-web`, `clausters-gui` | the bindings and the hosts: what a client loads or runs |
+| 1 | `clausters-notation`, `clausters-midi`, `clausters-plugin-host` | one model or one device each, over the core |
+| 2 | `clausters-document`, `clausters-verovio`, `clausters` | the document, which reads the notation model; the engraver's binding; the server |
+| 3 | `clausters-editing` | the projections over the document |
+| 4 | `clausters-apps` | the applications, each written once |
+| 5 | `clausters-app-engine` | the applications joined to an engine |
+| 6 | `clausters-ffi`, `clausters-core-web`, `clausters-web`, `clausters-nrt-web`, `clausters-gui` | the bindings and the hosts: what a client loads or runs |
 
 A new crate takes the lowest level its dependencies allow, and its row is added here in the same commit. A dependency that would point up is a sign the code is in the wrong crate: a test of two layers together belongs to the crate that joins them (`clausters-app-engine` for the server and the applications), not to the lower of the two.
 
@@ -2120,11 +2121,11 @@ placed glyphs, strokes, fills and text in page units, each carrying the MEI
 and fills through `lyon`'s fill tessellator, strokes as the painter's own
 thick-line quads), so notation costs no new pipeline and stays WebGL2-safe. The
 engraving itself is the **client's**, but not any one client's: the whole layer
-is shared. `clausters_core::notation` (feature `notation`, so it compiles to
+is shared. `clausters_notation` (a crate of its own, pure Rust, so it compiles to
 wasm) holds all of the logic — the SVG→display-list walk, the MEI writer, the
 timemap→cursor fold, and the editable `Score`: the order an edit is made in, the
 reload that keeps the timemap honest, and the undo stack of MEI snapshots.
-`clausters-notation` is the **binding** under it: `Toolkit` implements the
+`clausters-verovio` is the **binding** under it: `Toolkit` implements the
 `Engraver` port over libverovio's C wrapper, and building one (a resource path,
 the options JSON) is what its `open` does. The split is drawn there because that
 is where the languages actually differ — a page reaches the same engraver
@@ -2172,7 +2173,7 @@ quantizes the gesture with the page's own `step` (page units per step, sent with
 the display list because it follows the engraver's unit size), draws the element
 displaced, and on release emits `"transpose" <id> <steps>` — a request. The
 client applies it (`notation.Score`, a handle on the shared
-`clausters_notation::Score`, which holds the verovio toolkit open),
+`clausters_verovio::Score`, which holds the verovio toolkit open),
 re-engraves and replaces the drawing with one `/gui_set display_list`; the
 widget's chrome and selection survive that, and MEI ids survive the edit, so the
 same id keeps naming the same note. The host still reads no notation: it counts
@@ -2288,7 +2289,7 @@ updates this table in the same change** (step 8 of the recipe below).
 | `multitrack` | `host/elements/multitrack/` (the widget: the props, the stack, the drawing) over the pure model in `host/structures/clips.rs` (`TrackRow`, `Clip`, their wire forms) and `host/graphics/multitrack.rs` (the stack geometry), reusing `host/graphics/track.rs` for a track's header and a clip's box | the GuiDef and `/gui_set`; it holds the multitrack, so its edit-backs are the multitrack and not a gesture |
 | `notes` | an **element**: `host/elements/notes.rs` (its selection, its drags, its live-MIDI held keys and step cursor; the marquee is not among them — a press on empty grid declines and the container sweeps, and this answers which notes fell inside and in what band of semitones) over the note core in `host/graphics/pianoroll.rs`, shared with `clip`, and the slurs an owner sends drawn by `host/graphics/slurs.rs`. One element in two placements, like `curve`: standing on its own it draws its keyboard, its strips and the chrome of the axis it was placed on; *declaring* the notes body role it fills a `clip`, bare against the container's axis. It reads that axis — the group's window, selection and playhead — from `Ctx::time`, and **asks** for the two things it cannot do: moving the group's time selection (`Events::and_select`) and sounding nothing (its live notes arrive through `Element::midi`, from a port the native front opens because the element declared `Needs::midi`) | the script's `notes`/`osc`; live MIDI in (native); edits emit `"notes"`/`"osc"` |
 | `keys` | an **element**: `host/elements/keys.rs` (its two snapshotted drags and its range) over the pure drawing and layout in `host/graphics/piano.rs`; the host's voices in `host/voices.rs` (the two messages, which are the *host's* and not the keyboard's — an element only declares a voice); `midi_to_hz` is `clausters-core::scale`'s | the pointer; presses emit MIDI-shaped `"note"` events (or a binding forwards them), pan/zoom emits `"range"`, and `voice` mode sends `/synth_new`/`gate 0` per held key over the server leg |
-| `score` | `host/elements/score.rs` (the leaf: the passes, the press/drag/release and the press-time origin) over `host/graphics/score/` (page fit, the path tessellation, the hit index, the cursor — pure); the outline fills go through `lyon`. Split by what each part knows, since the element's growth is semantic rather than graphic: `list` decodes the client's page off the wire, `glyphs` turns an outline string into a path, `tess` paints, `cursor` holds the hit and staff indexes and the mappings a gesture measures against | a display list engraved **client-side** (`clausters/gui/notation/`, a shell over `clausters-notation`/`core` through the C ABI: `engraver`, `mei`, `view`); the cursor follows `playhead_at` on the engine clock; a click emits `"element"`, a vertical drag `"transpose"` (diatonic steps), and `display_list` replaces the page after the client re-engraves |
+| `score` | `host/elements/score.rs` (the leaf: the passes, the press/drag/release and the press-time origin) over `host/graphics/score/` (page fit, the path tessellation, the hit index, the cursor — pure); the outline fills go through `lyon`. Split by what each part knows, since the element's growth is semantic rather than graphic: `list` decodes the client's page off the wire, `glyphs` turns an outline string into a path, `tess` paints, `cursor` holds the hit and staff indexes and the mappings a gesture measures against | a display list engraved **client-side** (`clausters/gui/notation/`, a shell over `clausters-verovio`/`core` through the C ABI: `engraver`, `mei`, `view`); the cursor follows `playhead_at` on the engine clock; a click emits `"element"`, a vertical drag `"transpose"` (diatonic steps), and `display_list` replaces the page after the client re-engraves |
 | `plane` (with `boxes`) | an **element**: `host/elements/patch.rs` (its two drags — a cord and a box move — plus its answer to what a marquee caught, which is the one part of a sweep an element owns: the gesture itself is the machine's `Drag::Marquee`, claimed here because only the canvas knows where its own paper ends) over `host/graphics/patch.rs` (box/port geometry, the cords, hit-testing and the layered `solve` layout — pure), one implementation for both levels; the rate vocabulary is `clausters_core::patch`'s | the patch model a client compiled or decoded: a GraphDef's members and cord→bus wiring at level 1, a SynthDef/FaustDef's UGen graph at level 2; drawing a cord emits `"wire"`, dragging a box `"move"` |
 
 ### Adding a widget

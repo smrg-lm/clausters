@@ -2493,7 +2493,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   tests and the three books. The release rehearsal is left for the end of the
   whole review, with `R14`'s.
 
-- ⬜ **R16: Notation is a crate of its own.** `clausters_core::notation` is
+- ✅ **R16: Notation is a crate of its own** *(done 2026-11-12)*. `clausters_core::notation` is
   16,752 of the core's 51 thousand lines, the server does not use it, and
   inside the core it reads only `ratio` and `event`. It also shares a name
   with its neighbours: the model is a module of the core, `clausters-notation`
@@ -2507,6 +2507,18 @@ and so waits for `T3`, the milestone that already owes the bench.
   `CORE_ABI_VERSION` does not move. **Acceptance:** the isolated feature
   check of `clausters-apps`, the feature matrix and both clients' suites
   pass; the core builds with no notation in it.
+
+  Shipped as written. The document reads the notation model, so the levels
+  moved by one: notation at 1, the document, the engraver's binding and the
+  server at 2, and the rest one higher (the table in `docs/architecture.md`
+  is the current one; `R13`'s above is as it was written). That put the
+  server's dev-dependency on the document beside it rather than under it, so
+  it joined the exceptions until `R17` removes all three. Checked: clippy
+  over the workspace, the host by itself and both engraver features; the
+  tests of the six crates the cut touches and of the host; both wasm gates;
+  the isolated feature check; the Python suite with the binaries rebuilt,
+  the web package built and tested, and the three books. The whole feature
+  matrix is run once, at the end of the review.
 
 - ⬜ **R17: A test lives at its level, and `tests/` links few binaries.**
   Three of the server's integration tests exercise the applications

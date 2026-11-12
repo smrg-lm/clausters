@@ -9,8 +9,8 @@
 //! that: the cursor's arithmetic over the model, with no window and no
 //! engraver.
 
-use clausters_core::notation::{Item, Pitch, Sheet, Step};
 use clausters_core::ratio::Ratio;
+use clausters_notation::{Item, Pitch, Sheet, Step};
 
 /// **Where the edit cursor stands**: a staff and a voice of it, from zero,
 /// and a time in whole notes from the start of the score.
@@ -222,7 +222,7 @@ pub fn shown_by(sheet: &Sheet, place: Place) -> Option<(u64, bool)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clausters_core::notation::{Slot, voice_to_sheet};
+    use clausters_notation::{Slot, voice_to_sheet};
 
     /// Four quarters, then a half, in 4/4: ids 1..5.
     fn tune() -> Sheet {
@@ -293,7 +293,7 @@ mod tests {
         // and past the end of a second voice, its own last item, though the
         // first voice's is still sounding
         let mut two = sheet.clone();
-        two.staves[0].voices.push(clausters_core::notation::Voice {
+        two.staves[0].voices.push(clausters_notation::Voice {
             items: vec![Item::Rest {
                 id: 9,
                 dur: Ratio::new(3, 2) - Ratio::new(1, 8),

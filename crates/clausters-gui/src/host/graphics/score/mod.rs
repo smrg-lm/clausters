@@ -489,7 +489,7 @@ pub struct ScoreData {
     /// **What each id is**: the engraver's class for the element that carries
     /// it (`note`, `rest`, `slur`, `clef`, ...), sent by the client because the
     /// walk that engraved the page is what knows. What a kind admits is
-    /// `clausters_core::notation::admits`, read through [`ScoreData::admits`].
+    /// `clausters_notation::admits`, read through [`ScoreData::admits`].
     pub kinds: HashMap<String, String>,
     /// **The part of the ink each primitive is drawn in**, by its place in
     /// `prims`: worked out the first time the ink is drawn, from the staves,
@@ -513,10 +513,10 @@ impl ScoreData {
         })
     }
 
-    pub fn admits(&self, id: &str) -> clausters_core::notation::Admits {
+    pub fn admits(&self, id: &str) -> clausters_notation::Admits {
         self.kinds
             .get(id)
-            .map(|kind| clausters_core::notation::admits(kind))
+            .map(|kind| clausters_notation::admits(kind))
             .unwrap_or_default()
     }
 }

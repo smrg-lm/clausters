@@ -867,9 +867,9 @@ fn a_length_is_written_as_its_value() {
 #[cfg(feature = "notation")]
 #[test]
 fn a_piano_part_edited_in_notation_mode_is_its_page() {
-    use clausters_core::notation::{Item, default_interpretation};
     use clausters_document::events::reading::Transcription;
     use clausters_document::events::transcription::read;
+    use clausters_notation::{Item, default_interpretation};
 
     let mut take = EventSequence::new(vec![
         Event::new(0.0, json!({"midinote": 72, "dur": 2.0})),

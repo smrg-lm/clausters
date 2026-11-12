@@ -1,7 +1,7 @@
 
 ## Reading a document back: what is content, and what the emitter made up
 
-The reader (`clausters_core::notation::read`) is the other return path, and
+The reader (`clausters_notation::read`) is the other return path, and
 naming it that way is the point: the interpreter turns a model into sound, this
 turns a *document* into a model. Until it existed, every verb in the algebra was
 unavailable on exactly the scores a user is most likely to open — a phrase typed

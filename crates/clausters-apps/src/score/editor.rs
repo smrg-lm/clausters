@@ -7,11 +7,6 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use clausters_core::notation::{
-    AnyEngraver, Item, NOTE, Op, PAPERS, Page, PageSetup, Pages, Score, Sheet, View, field_of,
-    item_id, layout_options, measure_id, pitch_near, sheet_to_mei,
-};
-use clausters_core::notation::{Interpretation, default_interpretation, performance};
 use clausters_core::ratio::Ratio;
 use clausters_core::tempomap::TempoMap;
 use clausters_document::Opaque;
@@ -20,6 +15,11 @@ use clausters_document::events::writeback::write_back;
 use clausters_document::events::{self, EventSequence};
 use clausters_document::history::Editable;
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
+use clausters_notation::{
+    AnyEngraver, Item, NOTE, Op, PAPERS, Page, PageSetup, Pages, Score, Sheet, View, field_of,
+    item_id, layout_options, measure_id, pitch_near, sheet_to_mei,
+};
+use clausters_notation::{Interpretation, default_interpretation, performance};
 
 use super::entry::{self, Place};
 use super::verbs::{self, Action};
@@ -657,7 +657,7 @@ impl ScoreEditor {
                 // where it is first heard: a repeat is played out before it
                 let beats = |whole: Ratio| {
                     let written = whole.to_f64() * RENDER_BEAT_UNIT as f64;
-                    clausters_core::notation::heard_beats(sheet, RENDER_BEAT_UNIT, written)
+                    clausters_notation::heard_beats(sheet, RENDER_BEAT_UNIT, written)
                         .first()
                         .copied()
                         .unwrap_or(written)
@@ -1115,10 +1115,7 @@ impl ScoreEditor {
                     {
                         line.push_str(&format!(", {marks}"));
                     }
-                    if matches!(
-                        at.item,
-                        clausters_core::notation::Item::Note { tie: true, .. }
-                    ) {
+                    if matches!(at.item, clausters_notation::Item::Note { tie: true, .. }) {
                         line.push_str(", tied");
                     }
                     line
@@ -2409,7 +2406,7 @@ pub fn over_json(
     let interp = match said.get("interp").filter(|interp| !interp.is_null()) {
         Some(interp) => serde_json::from_value::<Interpretation>(interp.clone())
             .map_err(|e| format!("the interpretation could not be read: {e}"))?,
-        None => clausters_core::notation::default_interpretation(),
+        None => clausters_notation::default_interpretation(),
     };
     let editor = ScoreEditor::over(score, sequence, how, interp, opened.version)?;
     Ok(dressed(editor, opened))

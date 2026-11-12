@@ -1213,7 +1213,7 @@ fn saves_of_different_applications_land_each_on_its_own() {
 
     #[cfg(feature = "notation")]
     let (score, score_at) = {
-        use clausters_core::notation::{AnyEngraver, Score, sheet_to_mei, voice_to_sheet};
+        use clausters_notation::{AnyEngraver, Score, sheet_to_mei, voice_to_sheet};
         let mei = sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C")).unwrap();
         let engraver = AnyEngraver::new(crate::editing::tests::Kept(Mutex::new(String::new())));
         let score = Arc::new(Mutex::new(Score::open(engraver, &mei).unwrap()));

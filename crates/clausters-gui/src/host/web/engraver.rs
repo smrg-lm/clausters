@@ -7,12 +7,12 @@
 //! (`clients/web/src/gui/apps-engraver.ts`) and the thread waits on its state.
 //! The worker loads verovio the first time it is asked, so a page that never
 //! engraves never fetches it. The port is the one every engraver is
-//! ([`clausters_core::notation::Engraver`]), so the score in a page's application
+//! ([`clausters_notation::Engraver`]), so the score in a page's application
 //! takes the same calls to the same engraver as anywhere else.
 
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
-use clausters_core::notation::{AnyEngraver, Engraver, Score, engrave_options};
+use clausters_notation::{AnyEngraver, Engraver, Score, engrave_options};
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 

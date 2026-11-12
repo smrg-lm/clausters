@@ -3328,8 +3328,8 @@ mod tests {
     #[test]
     #[ignore = "timing: only meaningful under --release"]
     fn what_a_whole_frame_costs() {
-        use clausters_core::notation::{Item, Marks, Pitch, Sheet, Staff, Step, Voice};
         use clausters_core::ratio::Ratio;
+        use clausters_notation::{Item, Marks, Pitch, Sheet, Staff, Step, Voice};
 
         crate::host::font::atlas::set_embedded();
         let notes = |octave: i32| -> Vec<Item> {
@@ -3373,7 +3373,7 @@ mod tests {
             }
         }
         sheet.next_id = id;
-        let mei = clausters_core::notation::sheet_to_mei(&sheet).unwrap();
+        let mei = clausters_notation::sheet_to_mei(&sheet).unwrap();
         let mut host = crate::host::Host::new();
         let (engine, _processed) = clausters_app_engine::AppEngine::detached(48_000.0, 2);
         host.hold_audio_engine(std::sync::Arc::new(std::sync::Mutex::new(engine)));
@@ -3436,8 +3436,8 @@ mod tests {
     #[test]
     #[ignore = "timing: only meaningful under --release"]
     fn what_a_change_costs() {
-        use clausters_core::notation::{Item, Marks, Pitch, Sheet, Staff, Step, Voice};
         use clausters_core::ratio::Ratio;
+        use clausters_notation::{Item, Marks, Pitch, Sheet, Staff, Step, Voice};
         use serde_json::json;
 
         crate::host::font::atlas::set_embedded();
@@ -3482,7 +3482,7 @@ mod tests {
             ..Sheet::default()
         };
         sheet.next_id = id + 1;
-        let mei = clausters_core::notation::sheet_to_mei(&sheet).unwrap();
+        let mei = clausters_notation::sheet_to_mei(&sheet).unwrap();
         let mut host = crate::host::Host::new();
         let (engine, _processed) = clausters_app_engine::AppEngine::detached(48_000.0, 2);
         host.hold_audio_engine(std::sync::Arc::new(std::sync::Mutex::new(engine)));

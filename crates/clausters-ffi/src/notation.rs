@@ -20,7 +20,7 @@
 //! Strings cross as UTF-8 pointer+length; invalid UTF-8 is read lossily rather
 //! than refused, so no binding has to validate before calling.
 
-use clausters_core::notation::{
+use clausters_notation::{
     Interpretation, Op, Sheet, Slot, apply, catalog, default_interpretation, item_id, mei_to_sheet,
     perform, sheet_to_mei, svg_to_display_list, voice_to_mei, voice_to_sheet,
 };
@@ -473,7 +473,7 @@ fn envelope_error(message: &str) -> String {
 // ---- the engraver and the editable score (feature `verovio`) ---------------
 
 #[cfg(feature = "verovio")]
-use clausters_notation::{EngraveOptions, Score};
+use clausters_verovio::{EngraveOptions, Score};
 
 /// **A score handle**: the open score, shared with every score editor opened
 /// over it (`clausters_apps_editing_open_score`), so a script reads every edit
@@ -555,7 +555,7 @@ pub unsafe extern "C" fn clausters_score_open(
         return std::ptr::null_mut();
     };
     let opts = self::options(scale, page_width, extra.map(|e| e.into_owned()));
-    match clausters_notation::open(&data, &opts) {
+    match clausters_verovio::open(&data, &opts) {
         Ok(score) => Box::into_raw(Box::new(ScoreHandle(std::sync::Arc::new(
             std::sync::Mutex::new(score),
         )))),
@@ -933,8 +933,8 @@ mod tests {
 
         /// A one-bar C major triad, written by the core's own encoder.
         fn mei() -> String {
-            clausters_core::notation::voice_to_mei(
-                &[clausters_core::notation::Slot::note(vec![60, 64, 67], 32)],
+            clausters_notation::voice_to_mei(
+                &[clausters_notation::Slot::note(vec![60, 64, 67], 32)],
                 "4/4",
                 "G2",
                 "C",

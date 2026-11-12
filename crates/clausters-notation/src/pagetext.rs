@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn the_page_text_is_written_as_running_elements_and_read_back() {
-        use crate::notation::{Sheet, mei_to_sheet, sheet_to_mei};
+        use crate::{Sheet, mei_to_sheet, sheet_to_mei};
 
         let mut header = Header {
             title: "A title".into(),

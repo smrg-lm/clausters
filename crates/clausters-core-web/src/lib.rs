@@ -2915,7 +2915,7 @@ impl JsEngraver {
 unsafe impl Send for JsEngraver {}
 
 #[cfg(target_arch = "wasm32")]
-impl clausters_core::notation::Engraver for JsEngraver {
+impl clausters_notation::Engraver for JsEngraver {
     /// A page has one thread and the engraver is reached from it alone, so
     /// there is nothing to serialize. The guard exists for the native binding,
     /// where libverovio's process-wide state makes it load-bearing.
@@ -2968,7 +2968,7 @@ impl clausters_core::notation::Engraver for JsEngraver {
 }
 
 /// A loaded score, held open in Rust so it can be edited and re-engraved -- the
-/// JS face of [`clausters_core::notation::Score`].
+/// JS face of [`clausters_notation::Score`].
 ///
 /// The same object the Python client holds over the C ABI, running the same
 /// state machine: a page that transposes a note and one that transposes it in a
@@ -2982,10 +2982,7 @@ impl JsScore {
     /// The score, held for one call.
     fn held(
         &self,
-    ) -> std::sync::MutexGuard<
-        '_,
-        clausters_core::notation::Score<clausters_core::notation::AnyEngraver>,
-    > {
+    ) -> std::sync::MutexGuard<'_, clausters_notation::Score<clausters_notation::AnyEngraver>> {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
@@ -3001,8 +2998,8 @@ impl JsScore {
     /// toolkit before handing it over.
     #[wasm_bindgen(constructor)]
     pub fn new(engraver: js_sys::Object, data: &str) -> Result<JsScore, JsError> {
-        clausters_core::notation::Score::open(
-            clausters_core::notation::AnyEngraver::new(JsEngraver { object: engraver }),
+        clausters_notation::Score::open(
+            clausters_notation::AnyEngraver::new(JsEngraver { object: engraver }),
             data,
         )
         .map(|score| JsScore(std::sync::Arc::new(std::sync::Mutex::new(score))))
@@ -3030,7 +3027,7 @@ impl JsScore {
     /// vocabulary this package already binds. Returns whether it was applied;
     /// a refusal leaves both the page and the model as they were.
     pub fn apply(&mut self, op: &str) -> Result<bool, JsError> {
-        let op: clausters_core::notation::Op =
+        let op: clausters_notation::Op =
             serde_json::from_str(op).map_err(|e| JsError::new(&format!("op: {e}")))?;
         Ok(self.held().apply(&op))
     }
@@ -3115,7 +3112,7 @@ impl JsScore {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = engraveOptions)]
 pub fn engrave_options(scale: i32, page_width: i32, extra: Option<String>) -> String {
-    clausters_core::notation::engrave_options(scale, page_width, extra.as_deref())
+    clausters_notation::engrave_options(scale, page_width, extra.as_deref())
 }
 
 /// Walk a verovio SVG into a `score` display list, as JSON.
@@ -3126,7 +3123,7 @@ pub fn engrave_options(scale: i32, page_width: i32, extra: Option<String>) -> St
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = svgToDisplayList)]
 pub fn svg_to_display_list(svg: &str) -> Result<String, JsError> {
-    serde_json::to_string(&clausters_core::notation::svg_to_display_list(svg))
+    serde_json::to_string(&clausters_notation::svg_to_display_list(svg))
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
@@ -3141,11 +3138,9 @@ pub fn svg_to_display_list(svg: &str) -> Result<String, JsError> {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = voiceToMei)]
 pub fn voice_to_mei(voice: &str, meter: &str, clef: &str, key: &str) -> Result<String, JsError> {
-    let voice: Vec<clausters_core::notation::Slot> =
+    let voice: Vec<clausters_notation::Slot> =
         serde_json::from_str(voice).map_err(|e| JsError::new(&format!("voice: {e}")))?;
-    Ok(clausters_core::notation::voice_to_mei(
-        &voice, meter, clef, key,
-    ))
+    Ok(clausters_notation::voice_to_mei(&voice, meter, clef, key))
 }
 
 /// Lift a **voice** -- the v1 wire form, a JSON array of slots -- into the score
@@ -3158,9 +3153,9 @@ pub fn voice_to_mei(voice: &str, meter: &str, clef: &str, key: &str) -> Result<S
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = voiceToSheet)]
 pub fn voice_to_sheet(voice: &str, meter: &str, clef: &str, key: &str) -> Result<String, JsError> {
-    let voice: Vec<clausters_core::notation::Slot> =
+    let voice: Vec<clausters_notation::Slot> =
         serde_json::from_str(voice).map_err(|e| JsError::new(&format!("voice: {e}")))?;
-    let sheet = clausters_core::notation::voice_to_sheet(&voice, meter, clef, key);
+    let sheet = clausters_notation::voice_to_sheet(&voice, meter, clef, key);
     serde_json::to_string(&sheet).map_err(|e| JsError::new(&e.to_string()))
 }
 
@@ -3178,11 +3173,11 @@ pub fn voice_to_sheet(voice: &str, meter: &str, clef: &str, key: &str) -> Result
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = sheetApply)]
 pub fn sheet_apply(sheet: &str, op: &str) -> Result<String, JsError> {
-    let sheet: clausters_core::notation::Sheet =
+    let sheet: clausters_notation::Sheet =
         serde_json::from_str(sheet).map_err(|e| JsError::new(&format!("sheet: {e}")))?;
-    let op: clausters_core::notation::Op =
+    let op: clausters_notation::Op =
         serde_json::from_str(op).map_err(|e| JsError::new(&format!("op: {e}")))?;
-    let out = clausters_core::notation::apply(sheet, &op).map_err(|e| JsError::new(&e))?;
+    let out = clausters_notation::apply(sheet, &op).map_err(|e| JsError::new(&e))?;
     serde_json::to_string(&out).map_err(|e| JsError::new(&e.to_string()))
 }
 
@@ -3195,9 +3190,9 @@ pub fn sheet_apply(sheet: &str, op: &str) -> Result<String, JsError> {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = sheetToMei)]
 pub fn sheet_to_mei(sheet: &str) -> Result<String, JsError> {
-    let sheet: clausters_core::notation::Sheet =
+    let sheet: clausters_notation::Sheet =
         serde_json::from_str(sheet).map_err(|e| JsError::new(&format!("sheet: {e}")))?;
-    clausters_core::notation::sheet_to_mei(&sheet).map_err(|e| JsError::new(&e))
+    clausters_notation::sheet_to_mei(&sheet).map_err(|e| JsError::new(&e))
 }
 
 /// Apply one payload to a structure the crate can hold **as its own state**,
@@ -3389,8 +3384,7 @@ pub fn domain_coalesce_key(domain: &str, payload: &str) -> String {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = sheetOps)]
 pub fn sheet_ops() -> Result<String, JsError> {
-    serde_json::to_string(clausters_core::notation::catalog())
-        .map_err(|e| JsError::new(&e.to_string()))
+    serde_json::to_string(clausters_notation::catalog()).map_err(|e| JsError::new(&e.to_string()))
 }
 
 /// Read an MEI document into the score model.
@@ -3403,7 +3397,7 @@ pub fn sheet_ops() -> Result<String, JsError> {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = meiToSheet)]
 pub fn mei_to_sheet(mei: &str) -> Result<String, JsError> {
-    let sheet = clausters_core::notation::mei_to_sheet(mei).map_err(|e| JsError::new(&e))?;
+    let sheet = clausters_notation::mei_to_sheet(mei).map_err(|e| JsError::new(&e))?;
     serde_json::to_string(&sheet).map_err(|e| JsError::new(&e.to_string()))
 }
 
@@ -3421,14 +3415,14 @@ pub fn mei_to_sheet(mei: &str) -> Result<String, JsError> {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = sheetPerform)]
 pub fn sheet_perform(sheet: &str, interp: &str) -> Result<String, JsError> {
-    let sheet: clausters_core::notation::Sheet =
+    let sheet: clausters_notation::Sheet =
         serde_json::from_str(sheet).map_err(|e| JsError::new(&format!("sheet: {e}")))?;
-    let interp: clausters_core::notation::Interpretation = if interp.trim().is_empty() {
-        clausters_core::notation::default_interpretation()
+    let interp: clausters_notation::Interpretation = if interp.trim().is_empty() {
+        clausters_notation::default_interpretation()
     } else {
         serde_json::from_str(interp).map_err(|e| JsError::new(&format!("interpretation: {e}")))?
     };
-    let notes = clausters_core::notation::perform(sheet, &interp).map_err(|e| JsError::new(&e))?;
+    let notes = clausters_notation::perform(sheet, &interp).map_err(|e| JsError::new(&e))?;
     serde_json::to_string(&notes).map_err(|e| JsError::new(&e.to_string()))
 }
 
@@ -3440,10 +3434,10 @@ pub fn sheet_perform(sheet: &str, interp: &str) -> Result<String, JsError> {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = sheetRenderEvents)]
 pub fn sheet_render_events(sheet: &str, interp: &str) -> Result<String, JsError> {
-    let sheet: clausters_core::notation::Sheet =
+    let sheet: clausters_notation::Sheet =
         serde_json::from_str(sheet).map_err(|e| JsError::new(&format!("sheet: {e}")))?;
-    let interp: clausters_core::notation::Interpretation = if interp.trim().is_empty() {
-        clausters_core::notation::default_interpretation()
+    let interp: clausters_notation::Interpretation = if interp.trim().is_empty() {
+        clausters_notation::default_interpretation()
     } else {
         serde_json::from_str(interp).map_err(|e| JsError::new(&format!("interpretation: {e}")))?
     };
@@ -3472,8 +3466,8 @@ pub fn sheet_read_events(sequence: &str, how: &str, interp: &str) -> Result<Stri
         serde_json::from_str(how).map_err(|e| JsError::new(&format!("transcription: {e}")))?
     };
     let how = Transcription::over(&sequence, &how).map_err(|e| JsError::new(&e))?;
-    let interp: clausters_core::notation::Interpretation = if interp.trim().is_empty() {
-        clausters_core::notation::default_interpretation()
+    let interp: clausters_notation::Interpretation = if interp.trim().is_empty() {
+        clausters_notation::default_interpretation()
     } else {
         serde_json::from_str(interp).map_err(|e| JsError::new(&format!("interpretation: {e}")))?
     };
@@ -3490,7 +3484,7 @@ pub fn sheet_read_events(sequence: &str, how: &str, interp: &str) -> Result<Stri
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = interpretation)]
 pub fn interpretation() -> Result<String, JsError> {
-    serde_json::to_string(&clausters_core::notation::default_interpretation())
+    serde_json::to_string(&clausters_notation::default_interpretation())
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
@@ -3505,7 +3499,7 @@ pub fn interpretation() -> Result<String, JsError> {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = itemId)]
 pub fn item_id(element_id: &str) -> f64 {
-    clausters_core::notation::item_id(element_id).map_or(-1.0, |id| id as f64)
+    clausters_notation::item_id(element_id).map_or(-1.0, |id| id as f64)
 }
 
 // ---- MIDI files --------------------------------------------------------

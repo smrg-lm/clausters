@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 
 use super::model::{Header, Item, Marks, Pitch, Sheet, Step};
 use super::{edit, operators};
-use crate::ratio::Ratio;
+use clausters_core::ratio::Ratio;
 
 /// What part of the score an operation applies to.
 ///
@@ -857,7 +857,7 @@ pub fn catalog() -> &'static [OpSpec] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::notation::model::{Grid, Marks, Meter, Staff, Voice};
+    use crate::model::{Grid, Marks, Meter, Staff, Voice};
 
     fn pitch(step: Step, alter: i32, octave: i32) -> Pitch {
         Pitch {

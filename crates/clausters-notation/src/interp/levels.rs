@@ -22,8 +22,8 @@ use std::collections::{BTreeSet, HashMap};
 use serde::Serialize;
 
 use super::{Hairpin, Interpretation, dynamic_map, placed_of, prevailing, spanners};
-use crate::notation::model::Sheet;
-use crate::ratio::Ratio;
+use crate::model::Sheet;
+use clausters_core::ratio::Ratio;
 
 /// One break-point of a staff's level.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -104,7 +104,7 @@ pub fn levels(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<StaffLeve
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::notation::model::{Item, Marks, Pitch, Spanner, Staff, Step, Voice};
+    use crate::model::{Item, Marks, Pitch, Spanner, Staff, Step, Voice};
 
     fn note(id: u64, dynamic: Option<&str>) -> Item {
         Item::Note {

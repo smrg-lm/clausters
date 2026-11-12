@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
-use clausters_core::notation::glyph_char;
+use clausters_notation::glyph_char;
 
 use super::icons;
 use super::tools::Outlines;

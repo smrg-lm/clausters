@@ -1,43 +1,86 @@
-//! libverovio binding for Clausters -- engrave a score into resolution-independent
-//! geometry, the native half of the notation layer.
+//! The pure half of the notation layer -- the format-agnostic logic every
+//! client shares, so a JS/wasm client rebinds it rather than reimplementing it.
 //!
-//! This crate owns everything that touches **libverovio**, a C++ engraving
-//! library ([verovio](https://verovio.org)) reached through its C wrapper
-//! (`third_party/verovio/tools/c_wrapper.h`): it lays a digital score (MEI,
-//! MusicXML, ABC or Plaine & Easie) out into an SVG of SMuFL glyph outlines and
-//! engraving strokes. The format-agnostic parts -- walking that SVG into the
-//! host's display list, and the MEI encoder -- live in `clausters-core` instead,
-//! so they compile to wasm; this crate is the piece that cannot.
+//! Three entry points, all wasm-safe and dependency-light:
 //!
-//! Behind the `verovio` feature, **off by default**: a plain build links no
-//! libverovio and the crate is empty, exactly as a SynthDef-only server carries
-//! no libfaust. The Python reference wheel turns the feature on
-//! (`clients/python/build_native.py`). libverovio is located at build time
-//! through `VEROVIO_PREFIX` and linked with a relocatable `DT_RPATH` (see
-//! `build.rs`); its SMuFL resource data is resolved at run time (verovio bakes
-//! the configure-time path in, overridable through `CLAUSTERS_VEROVIO`).
+//! - [`svg_to_display_list`] walks a verovio SVG into a [`DisplayList`] -- a
+//!   SMuFL glyph-outline table keyed by codepoint plus placed glyphs, staff
+//!   lines, stems, fills and text in verovio page units, each carrying the MEI
+//!   `xml:id` it was engraved from. The host tessellates that; it knows nothing
+//!   about MEI or verovio, which is what lets one host renderer serve every
+//!   client. The producer that feeds this walk is a *native* libverovio (the
+//!   `clausters-verovio` crate) or a wasm verovio, both emitting the same SVG,
+//!   so cross-client parity is structural.
+//! - [`voice_to_mei`] lays a monophonic-per-slot [`Slot`] stream out into
+//!   barred, tied MEI: the flat form a caller writes a line in by hand. A
+//!   client's sequencing data is not reduced to it -- a sequence of events is
+//!   read into a sheet by `clausters_document::events::transcription`, once,
+//!   for every client.
+//! - [`Score`] is the stateful, editable document: the order an edit is made
+//!   in, when the layout has to be re-run and reloaded, and the undo stack of
+//!   MEI snapshots. It drives an [`Engraver`] -- the port a binding implements,
+//!   and the only part of the layer that differs between a native caller and a
+//!   page.
+//! - [`cursor_track`] folds the engraver's timemap ([`TimemapEntry`]) together
+//!   with that geometry into the playhead's [`Cursor`] track, joining the two on
+//!   the `xml:id` they share. Pure over data the engraver already produced, so
+//!   every client's playhead lands on the same pixel.
 //!
-//! Two ways in: `engrave_svg` is the one-shot form (load, draw, discard), and
-//! `open` builds the stateful one -- the document held open so it can be edited
-//! and re-engraved against the same ids. The C ABI over both lives in
-//! `clausters-ffi`.
-//!
-//! That stateful model is **not** this crate's: `Score` is
-//! `clausters_core::notation::Score` over the `clausters_core::notation::Engraver`
-//! port, which `Toolkit` implements here. The
-//! order an edit is made in, the reload that keeps the timemap honest and the
-//! undo stack of MEI snapshots are logic, and both clients run the same one --
-//! this crate is what that logic calls when the engraver is a C++ library
-//! rather than a wasm module in a page.
+//! The **libverovio binding** is not here: it calls a C++ library and lives in
+//! `clausters-verovio`, which implements [`Engraver`] over it. This crate is
+//! only what compiles to wasm -- which is now the whole of the layer's logic,
+//! the score model included, so a page runs the same state machine a window
+//! does rather than a second one written in TypeScript.
 
-#[cfg(feature = "verovio")]
+mod admits;
+mod any;
+mod cursors;
+mod edit;
+mod interp;
+mod layout;
+mod mei;
+mod model;
+mod operators;
+mod ops;
+mod outlines;
+mod pagetext;
+mod read;
 mod score;
-#[cfg(feature = "verovio")]
-mod verovio;
+mod svg;
 
-#[cfg(feature = "verovio")]
-pub use score::{NoteEvent, Page, Score, open};
-#[cfg(feature = "verovio")]
-pub use verovio::{
-    EngraveError, EngraveOptions, complaints, default_resource_path, engrave_svg, ffi_lock,
+pub use admits::{Admits, admits};
+pub use any::AnyEngraver;
+pub use cursors::{Cursor, TimemapEntry, cursor_track};
+pub use edit::{
+    At, CLEFS, add_control, add_spanner, add_to_chord, delete, enter, insert, move_steps, onset,
+    pitch_at, pitch_near, pitch_when, remove_control, remove_spanner, set_barline, set_break,
+    set_clef, set_dur, set_groups, set_header, set_marks, set_page, set_pitches, set_staff,
+    silence, tie, to_voice,
 };
+pub use interp::{
+    Accent, Articulation, DynamicsAs, Interpretation, LevelPoint, Note, Performance, Played,
+    StaffLevel, default_interpretation, heard_beats, levels, measure_count, perform, performance,
+    unroll,
+};
+pub use layout::{PAPERS, PageSetup, Paper, View, options as layout_options, paper};
+pub use mei::{
+    Attachment, CONTROLS, KEYS, MARKS, OCTAVES, ORNAMENTS, REPEAT_MARKS, SPANNERS, Slot,
+    attachment_id, key_alteration, sheet_to_mei, sheet_to_mei_paged, sheet_to_mei_pages,
+    voice_to_mei, voice_to_sheet,
+};
+pub use model::{
+    Control, Grid, Group, Header, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice,
+};
+pub use operators::{
+    concat, insert_measures, invert, invert_pitch, remove_measures, repeat, retrograde, set_ending,
+    set_key, set_mark, set_meter, set_multirests, set_repeat, stack, stretch,
+};
+pub use ops::{Op, OpSpec, Span, apply, catalog, default_steps, transpose_pitch};
+pub use outlines::{glyph_char, specimen};
+pub use pagetext::{
+    FIELDS, Halign, NOTE, PAGE_NUMBER, Pages, Place, Region, Valign, default_place, field_id,
+    field_of,
+};
+pub use read::mei_to_sheet;
+pub use score::{Engraver, NoteEvent, Page, Score, engrave_options, item_id, measure_id};
+pub use svg::{DisplayList, Prim, svg_to_display_list};

@@ -6,8 +6,8 @@ will not change; `svg_to_display_list` is the adapter both flow through, split
 out so it is testable on a captured SVG and shared with every other client.
 `page_json` is how a re-engraved page replaces the one on screen.
 
-The engraver is libverovio bound in Rust (``clausters-notation``) and the walk
-itself is `clausters_core::notation`, both reached through the C ABI -- so this
+The engraver is libverovio bound in Rust (``clausters-verovio``) and the walk
+itself is `clausters_notation`, both reached through the C ABI -- so this
 module is a shell of names, dicts and one handle whose lifetime Python owns,
 and a client in another language rebinds the same ABI instead of
 reimplementing any of it.
@@ -32,7 +32,7 @@ from .sheet import _unwrap
 # native side reads `CLAUSTERS_VEROVIO` and looks for `<dir>/verovio` under it;
 # `setdefault` so an explicit override still wins, and only when the bundled
 # directory is actually there (a source checkout has none and falls back to the
-# build prefix baked in by `clausters-notation`'s build script).
+# build prefix baked in by `clausters-verovio`'s build script).
 if os.path.isdir(os.path.join(_libpath.LIBS_DIR, "verovio")):
     os.environ.setdefault("CLAUSTERS_VEROVIO", _libpath.LIBS_DIR)
 
@@ -529,7 +529,7 @@ def page_json(display_list: dict) -> str:
 def svg_to_display_list(svg: str) -> dict:
     """Walk an engraver SVG string into a ``score`` display list. Split out of
     `engrave` so it is testable on a captured SVG, and shared with every other
-    client -- the walk itself is `clausters_core::notation`, reached through the
+    client -- the walk itself is `clausters_notation`, reached through the
     ABI, so a wasm client feeding a wasm engraver's SVG gets the identical list.
 
     Each primitive carries the id of the element it belongs to, and a **sounding

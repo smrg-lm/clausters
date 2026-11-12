@@ -2,10 +2,10 @@
 //! this script does nothing.
 //!
 //! The cdylib this crate produces is what a binding loads, so it -- not just the
-//! `clausters-notation` rlib underneath it -- needs the rpath that finds
+//! `clausters-verovio` rlib underneath it -- needs the rpath that finds
 //! libverovio at run time. A build script's `rustc-link-arg` only reaches its own
 //! crate's artifacts, so the prefix travels here as `DEP_VEROVIO_PREFIX`
-//! (published by `clausters-notation`'s script through its `links` key) and the
+//! (published by `clausters-verovio`'s script through its `links` key) and the
 //! same rpath is emitted again.
 //!
 //! `$ORIGIN` and `$ORIGIN/../_libs` come before the build-time prefix, which is

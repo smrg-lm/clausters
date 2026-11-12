@@ -7,7 +7,7 @@ denominator]``. It is data all the way: this module holds no handle, nothing has
 to be freed, and composing operations creates no intermediate anybody owns.
 
 **The logic is not here.** Every operation -- its arithmetic, its validation and
-its refusals -- is `clausters_core::notation`, reached through the C ABI, and
+its refusals -- is `clausters_notation`, reached through the C ABI, and
 this module is a shell of names that assembles the operation and hands it over.
 That is not only the non-divergence rule: a **standalone host has no client
 language in the process at all**, and a score it opens has to be editable there,

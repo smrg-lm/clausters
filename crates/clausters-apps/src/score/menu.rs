@@ -14,8 +14,8 @@
 
 use serde_json::{Value, json};
 
-use clausters_core::notation::{PAPERS, View};
 use clausters_core::ratio::Ratio;
+use clausters_notation::{PAPERS, View};
 
 use super::dialogs::Form;
 

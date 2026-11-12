@@ -11,9 +11,9 @@ same display list. The score editor is the host's application, with an engraver
 of its own (`clausters.gui.editing.ScoreEditor`).
 
 The whole layer is **native and shared**: the engraver is libverovio, bound in
-Rust (``clausters-notation``), and the format-agnostic parts -- the SVG-to-display
+Rust (``clausters-verovio``), and the format-agnostic parts -- the SVG-to-display
 -list walk, the MEI writer, the timemap-to-cursor fold -- live in
-``clausters-core``, reached here through the C ABI (`clausters._native`). This
+``clausters-notation``, reached here through the C ABI (`clausters._native`). This
 module is the Python shell over that: idiomatic names, dicts and a handle whose
 lifetime Python owns. A second client in another language rebinds the same ABI
 instead of reimplementing any of it.

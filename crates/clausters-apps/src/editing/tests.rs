@@ -88,7 +88,7 @@ fn a_notes_editor_edits_the_shared_sequence_and_undoes_through_the_context() {
 pub(super) struct Kept(pub(super) std::sync::Mutex<String>);
 
 #[cfg(feature = "notation")]
-impl clausters_core::notation::Engraver for Kept {
+impl clausters_notation::Engraver for Kept {
     type Guard = ();
     fn lock(&self) -> Self::Guard {}
     fn load_data(&self, data: &str) -> bool {

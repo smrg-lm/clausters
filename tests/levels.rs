@@ -22,6 +22,7 @@ const EXCEPTIONS: &[(&str, &str, &str)] = &[
     // The server's integration tests of the applications' playback. They
     // belong to `clausters-app-engine`, the crate that joins the two.
     ("clausters", "clausters-apps", "dev-dependencies"),
+    ("clausters", "clausters-document", "dev-dependencies"),
     ("clausters", "clausters-editing", "dev-dependencies"),
 ];
 

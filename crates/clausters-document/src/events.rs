@@ -139,7 +139,7 @@ pub struct EventSequence {
     /// sequence so a score rendered into one loses nothing on the way.
     ///
     /// It is held as it was written and not read here: the score's model is
-    /// the notation layer's (`clausters_core::notation`, a feature this crate
+    /// the notation layer's (`clausters_notation`, a feature this crate
     /// does not ask for), and nothing a sequence does -- playing, editing an
     /// event, drawing a roll -- depends on it. Its `reading` is how the
     /// sequence is read into a page ([`EventSequence::reading`]), so every
@@ -640,7 +640,7 @@ impl EventSequence {
         let interp = match interpretation.filter(|i| !i.is_null()) {
             Some(given) => serde_json::from_value(given)
                 .map_err(|e| format!("the interpretation could not be read: {e}"))?,
-            None => clausters_core::notation::default_interpretation(),
+            None => clausters_notation::default_interpretation(),
         };
         realize::realize(self, &interp)
     }
@@ -671,7 +671,7 @@ impl EventSequence {
         let interp = match interpretation.filter(|i| !i.is_null()) {
             Some(given) => serde_json::from_value(given)
                 .map_err(|e| format!("the interpretation could not be read: {e}"))?,
-            None => clausters_core::notation::default_interpretation(),
+            None => clausters_notation::default_interpretation(),
         };
         conversion::to_notation(self, &how, writing, &interp)
     }

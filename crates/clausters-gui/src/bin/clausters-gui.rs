@@ -874,7 +874,7 @@ fn run_score(
     // a file that does not read is said here rather than by an empty host
     if let Some(path) = path {
         let data = std::fs::read_to_string(path).map_err(|e| format!("--score {path}: {e}"))?;
-        clausters_notation::open(&data, &clausters_notation::EngraveOptions::default())
+        clausters_verovio::open(&data, &clausters_verovio::EngraveOptions::default())
             .map_err(|e| format!("--score {path}: {e}"))?;
     }
     let mut host = Host::new();

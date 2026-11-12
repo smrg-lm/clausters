@@ -186,7 +186,7 @@ third_party/build-verovio.sh          # into ~/.local; needs only cmake, make, a
 python clients/python/build_native.py # stages it (and everything else) into the package
 ```
 
-`clausters-notation` links it, behind the **`verovio` feature, off by default**
+`clausters-verovio` links it, behind the **`verovio` feature, off by default**
 — a plain `cargo build --workspace` links no libverovio and that crate is empty,
 exactly as a SynthDef-only server carries no libfaust. `clausters-ffi` re-exports
 the C surface behind the same feature (which pulls `notation`, the pure half in

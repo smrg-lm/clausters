@@ -1,7 +1,7 @@
 //! **The score editor**: a symbolic score on its engraved page, edited by hand.
 //!
 //! What it opens is a [`Score`] -- the core's engraver-driven document, its
-//! model a [`clausters_core::notation::Sheet`] -- and it edits it **in place**:
+//! model a [`clausters_notation::Sheet`] -- and it edits it **in place**:
 //! the score is shared with whoever holds it (a client's `Score` handle), so a
 //! script reads every edit through the handle it already has. The engraver is
 //! a port the caller hands in ([`AnyEngraver`]): libverovio natively, a JS
@@ -44,7 +44,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Map, Value, json};
 
-use clausters_core::notation::{AnyEngraver, Page, PageSetup, Score};
+use clausters_notation::{AnyEngraver, Page, PageSetup, Score};
 
 /// A score the editor and its holder edit together.
 pub type Shared = Arc<Mutex<Score<AnyEngraver>>>;

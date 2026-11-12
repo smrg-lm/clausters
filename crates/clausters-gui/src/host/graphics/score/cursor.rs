@@ -52,7 +52,7 @@ impl ScoreData {
     /// a 2838-unit system), and measuring against the viewBox finds no staff at
     /// all. What this must tell a staff line apart from is a ledger line (a
     /// notehead wide) and a beam (a few noteheads), both far shorter. The rule
-    /// is `clausters_core::notation::DisplayList::staves`' and is kept
+    /// is `clausters_notation::DisplayList::staves`' and is kept
     /// identical to it: a pitch position measured here and resolved there has
     /// to mean the same thing.
     pub(super) fn index_staves(&mut self) {
@@ -179,7 +179,7 @@ impl ScoreData {
     /// its origin, so the origin *is* the pitch, while the bounds' middle is
     /// only the same number for a vertically symmetric outline. Ledger lines
     /// can use the bounds -- they are centred on the ink -- but a pitch cannot,
-    /// and `clausters_core::notation::DisplayList::staff_position` reads the
+    /// and `clausters_notation::DisplayList::staff_position` reads the
     /// origin, which this must agree with byte for byte.
     pub fn staff_position(&self, id: &str) -> Option<i32> {
         let y = self

@@ -13,6 +13,7 @@ members = [
     "crates/clausters-midi",
     "crates/clausters-net",
     "crates/clausters-notation",
+    "crates/clausters-verovio",
     "crates/clausters-plugin-host",
     "crates/clausters-nrt-web",
     "crates/clausters-web",

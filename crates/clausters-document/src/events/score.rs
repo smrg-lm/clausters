@@ -1,6 +1,6 @@
 //! **A score rendered into a sequence**, one way.
 //!
-//! A score's structure is its sheet (`clausters_core::notation::Sheet`):
+//! A score's structure is its sheet (`clausters_notation::Sheet`):
 //! exact values, voices over a grid of its own, spanners over item ids. A
 //! sequence is what plays -- events in beats, with their curves -- and what a
 //! roll edits. [`render`] makes the second from the first, as a timeline and a
@@ -64,10 +64,10 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value, json};
 
 use clausters_core::envshape::SHAPE_HOLD;
-use clausters_core::notation::{
+use clausters_core::ratio::Ratio;
+use clausters_notation::{
     DynamicsAs, Interpretation, Item, Pitch, Sheet, heard_beats, levels, performance,
 };
-use clausters_core::ratio::Ratio;
 
 use super::{Event, EventSequence};
 use crate::multitrack::Automation;
@@ -137,7 +137,7 @@ fn tied_value(
 /// # Errors
 /// As [`render`]'s.
 pub fn played(sheet: &Sheet) -> Result<EventSequence, String> {
-    render(sheet, &clausters_core::notation::default_interpretation())
+    render(sheet, &clausters_notation::default_interpretation())
 }
 
 /// **Render `sheet` under `interp` into a sequence** (see the module).
@@ -473,7 +473,7 @@ fn pedals(
 mod tests {
     use super::*;
     use crate::events::{CurveKind, MidiSpec};
-    use clausters_core::notation::{Marks, Pitch, Spanner, Staff, Step, Voice};
+    use clausters_notation::{Marks, Pitch, Spanner, Staff, Step, Voice};
 
     fn pitch(step: Step, alter: i32) -> Pitch {
         Pitch {
@@ -532,7 +532,7 @@ mod tests {
         if let Item::Note { pitches, .. } = &mut score.staves[0].voices[0].items[7] {
             pitches[0] = pitch(Step::E, 0);
         }
-        score.controls = vec![clausters_core::notation::Control {
+        score.controls = vec![clausters_notation::Control {
             kind: "tempo".into(),
             on: 5,
             text: "Adagio".into(),

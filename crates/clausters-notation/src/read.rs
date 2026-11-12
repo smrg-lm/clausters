@@ -34,7 +34,7 @@ use roxmltree::{Document, Node};
 
 use super::key_alteration;
 use super::model::{Grid, Header, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice};
-use crate::ratio::Ratio;
+use clausters_core::ratio::Ratio;
 
 /// Read a normalized MEI document into the score model.
 ///
@@ -1546,8 +1546,8 @@ fn apply_ties(sheet: &mut Sheet, ties: &[(String, String)]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::notation::{Op, Slot, apply};
-    use crate::notation::{
+    use crate::{Op, Slot, apply};
+    use crate::{
         add_spanner, concat, set_marks, sheet_to_mei, stack, tie, transpose_pitch, voice_to_sheet,
     };
 
@@ -1620,7 +1620,7 @@ mod tests {
     /// groups -- written, read and written again to the same bytes.
     #[test]
     fn every_element_the_model_holds_comes_back() {
-        use crate::notation::model::{Control, Group};
+        use crate::model::{Control, Group};
         let mut sheet = stack(quarters(16), &quarters(16), true).unwrap();
         let ids = |sheet: &Sheet, staff: usize| -> Vec<u64> {
             sheet.staves[staff].voices[0]
@@ -1704,7 +1704,7 @@ mod tests {
             sheet = add_spanner(sheet, kind, from, to).unwrap();
         }
         sheet.grid.keys = vec![(2, "D".into())];
-        sheet.grid.meters.push(crate::notation::Meter {
+        sheet.grid.meters.push(crate::Meter {
             measure: 3,
             count: 3,
             unit: 4,
@@ -1776,7 +1776,7 @@ mod tests {
     /// would be -- and comes back on the item the measure holds there.
     #[test]
     fn what_is_written_into_a_measure_drawn_as_a_repeat_comes_back() {
-        use crate::notation::model::Control;
+        use crate::model::Control;
         let mut sheet = quarters(12);
         sheet.grid.repeats = vec![1];
         // into the repeated measure, out of it, and a mark at a point of it

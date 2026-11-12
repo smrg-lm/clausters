@@ -7,8 +7,8 @@
 
 use std::collections::BTreeMap;
 
-use clausters_core::notation::Op;
 use clausters_editing::conversation::Correction;
+use clausters_notation::Op;
 
 use crate::forms::{Said, corrections};
 

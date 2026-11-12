@@ -72,6 +72,13 @@ becomes the module's **assembler**.
   through an adapter (`events/notate.rs`); wasm reaches it through
   `clausters-core-web`, the C ABI through a JSON door per step, the way the
   core's `articulation` is bound.
+  *The neighbours it sits beside, since 2026-11-12 (root `PLAN.md`, `R16`):*
+  the notation model is the crate `clausters-notation` (it was a module of
+  the core), and the engraving library's binding is `clausters-verovio` (it
+  was `clausters-notation`). `clausters-notate` reads a performance and
+  yields what `clausters-notation` models, so by the levels of
+  `docs/architecture.md` it is at level 1 if it depends on the core alone and
+  at level 2 if it builds the model's types.
 - ⬜ **A sixth step: reading articulation.** Staccato from short played
   lengths, slurs from legato overlaps (through the core's `articulation`),
   pedal spanners from a CC64 lane. Proposed as a step of its own.

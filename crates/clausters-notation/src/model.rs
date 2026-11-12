@@ -31,7 +31,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ratio::Ratio;
+use clausters_core::ratio::Ratio;
 
 /// A diatonic step name -- the letter a notehead sits on, independent of any
 /// accidental. `C` is 0.
@@ -117,7 +117,7 @@ impl Pitch {
     /// a MIDI file, a client's `midinote` -- and the reason a caller has to say
     /// which world it wants.
     pub fn from_midi(midi: i32, flats: bool) -> Pitch {
-        let (step, alter, octave) = crate::event::notation::spell(midi, flats);
+        let (step, alter, octave) = clausters_core::event::notation::spell(midi, flats);
         Pitch {
             step: Step::ALL[step],
             alter,

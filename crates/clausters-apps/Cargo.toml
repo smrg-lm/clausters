@@ -11,12 +11,14 @@ default = []
 # pull an XML reader the other applications do not need -- off by default, as
 # the notation layer is everywhere else. The engraver itself is never linked
 # here: it is a port the caller hands in.
-notation = ["clausters-core/notation", "clausters-document/notation", "clausters-editing/notation"]
+notation = ["dep:clausters-notation", "clausters-document/notation", "clausters-editing/notation"]
 
 [dependencies]
 # The numeric rules an application composes with: where a beat lands on the
 # sample axis, rounded the way every client rounds it.
 clausters-core = { path = "../clausters-core" }
+# The notation model, for the `notation` feature alone.
+clausters-notation = { path = "../clausters-notation", optional = true }
 # The model an application edits.
 clausters-document = { path = "../clausters-document" }
 # The projections an application is built out of: the props a structure is drawn

@@ -10,12 +10,14 @@ description = "The projections an editable structure owes its three endpoints: t
 # rules of notation and its performance derived from the page, which is the
 # document's notation layer. Off by default, as the document's is; the
 # applications turn it on wherever a score is edited.
-notation = ["clausters-core/notation", "clausters-document/notation"]
+notation = ["dep:clausters-notation", "clausters-document/notation"]
 
 [dependencies]
 # The drawing and numeric rules a projection is built out of -- a curve's axis,
 # the mixer's defs, the tempo map.
 clausters-core = { path = "../clausters-core" }
+# The notation model, for the `notation` feature alone.
+clausters-notation = { path = "../clausters-notation", optional = true }
 # The model every projection is a projection *of*: the piece, its picture and
 # what an edit means. The rule this crate exists for is that the document
 # describes and does not encode -- so the dependency runs this way and never

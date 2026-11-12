@@ -32,7 +32,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde_json::Value;
 
-use clausters_core::notation::Interpretation;
+use clausters_notation::Interpretation;
 
 use super::EventSequence;
 use super::articulation::{carry_joins, held_on};

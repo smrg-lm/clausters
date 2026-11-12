@@ -9,7 +9,7 @@
 // owns.
 //
 // **The logic is not here.** Every operation -- its arithmetic, its validation
-// and its refusals -- is `clausters_core::notation`, reached through the core's
+// and its refusals -- is `clausters_notation`, reached through the core's
 // wasm door, and this module is a shell of names that assembles the operation
 // and hands it over. That is not only the non-divergence rule: a **standalone
 // host has no client language in the process at all**, and a score it opens has

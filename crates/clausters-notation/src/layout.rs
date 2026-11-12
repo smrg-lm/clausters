@@ -307,7 +307,7 @@ mod tests {
 
     #[test]
     fn a_setup_is_the_documents_and_survives_being_written() {
-        use crate::notation::{Op, Sheet, apply, mei_to_sheet, sheet_to_mei};
+        use crate::{Op, Sheet, apply, mei_to_sheet, sheet_to_mei};
 
         let setup = PageSetup {
             staff: 725,

@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use crate::forms::{self, Spec};
 
-use clausters_core::notation::{FIELDS, Header, PageSetup};
+use clausters_notation::{FIELDS, Header, PageSetup};
 
 /// The field of the text form holding the footnotes, one to a line.
 pub const NOTES: &str = "notes";

@@ -152,7 +152,7 @@ pub(super) enum AppData {
 /// **A symbolic score read by the engraver this build holds**, or why not.
 #[cfg(feature = "score")]
 pub(super) fn engraved(data: &str) -> Result<clausters_apps::score::Shared, String> {
-    clausters_notation::open(data, &clausters_notation::EngraveOptions::default())
+    clausters_verovio::open(data, &clausters_verovio::EngraveOptions::default())
         .map(|score| Arc::new(Mutex::new(score)))
         .map_err(|e| format!("the engraver could not read the score: {e}"))
 }
@@ -180,7 +180,7 @@ fn engraved(_: &str) -> Result<clausters_apps::score::Shared, String> {
 /// text.
 #[cfg(feature = "notation")]
 fn mark_outlines(codes: &[&str]) -> std::collections::BTreeMap<String, String> {
-    use clausters_core::notation::{sheet_to_mei, voice_to_sheet};
+    use clausters_notation::{sheet_to_mei, voice_to_sheet};
     sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C"))
         .map_err(|e| e.to_string())
         .and_then(|mei| engraved(&mei))
@@ -823,7 +823,7 @@ impl App {
         data: Option<AppData>,
         save_to: Option<Option<String>>,
     ) -> Result<Vec<String>, String> {
-        use clausters_core::notation::{sheet_to_mei, voice_to_sheet};
+        use clausters_notation::{sheet_to_mei, voice_to_sheet};
         let (mei, over, mut request) = match data {
             Some(AppData::Score { mei, over, request }) => (mei, over, request),
             _ => (None, None, json!({})),

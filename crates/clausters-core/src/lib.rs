@@ -99,11 +99,6 @@
 //!   tree takes and the **named** id a view asks for by saying what it draws, so
 //!   a widget keeps its number across a redraw and nothing in flight lands on
 //!   the wrong one.
-//! - `notation` (feature `notation`, off by default) -- the pure half of the
-//!   notation layer: the verovio-SVG -> display-list walk and the voice -> MEI
-//!   encoder, the format-agnostic parts every client shares (the native
-//!   libverovio binding is the separate `clausters-notation` crate). Behind a
-//!   feature so a default core carries no XML/regex weight; compiles to wasm.
 
 pub mod audio_editor;
 pub mod builtins;
@@ -127,8 +122,6 @@ pub mod measure;
 pub mod midi;
 pub mod mixer;
 pub mod node_editor;
-#[cfg(feature = "notation")]
-pub mod notation;
 pub mod numeric;
 pub mod osc;
 pub mod oscil;

@@ -22,7 +22,7 @@
 
 use super::model::{Grid, Item, Meter, Pitch, Sheet, Staff, Step, Voice};
 use super::ops::Span;
-use crate::ratio::Ratio;
+use clausters_core::ratio::Ratio;
 
 /// Split a run of items at `t`, measured from the run's start.
 ///
@@ -824,8 +824,8 @@ fn first_pitch(sheet: &Sheet, bounds: &Option<(Ratio, Ratio)>) -> Option<Pitch> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::notation::mei::sheet_to_mei;
-    use crate::notation::ops::{Op, apply};
+    use crate::mei::sheet_to_mei;
+    use crate::ops::{Op, apply};
 
     /// A one-staff, one-voice sheet of quarter notes on middle C.
     fn quarters(n: usize) -> Sheet {
@@ -899,7 +899,7 @@ mod tests {
 
     #[test]
     fn joining_two_scores_carries_what_is_written_between_their_notes() {
-        use crate::notation::model::Spanner;
+        use crate::model::Spanner;
         // A slur over the second score's two notes has to survive being joined
         // to the first, ids and all -- losing it silently is the worst way an
         // operation can fail: the music is there and the mark is not.
@@ -931,7 +931,7 @@ mod tests {
 
     #[test]
     fn removing_the_notes_a_slur_was_over_removes_the_slur() {
-        use crate::notation::model::Spanner;
+        use crate::model::Spanner;
         // Two bars; a slur over the second bar's notes. Dropping that bar has
         // to take the slur, or the score cannot be engraved at all.
         let mut sheet = quarters(8);

@@ -12,7 +12,7 @@
 // (`ScoreEditor`).
 //
 // The whole layer is **shared**: the score model, the SVG walk and the MEI
-// encoder are `clausters_core::notation`, reached here through the core's wasm
+// encoder are `clausters_notation`, reached here through the core's wasm
 // door, and the engraver is the pinned verovio compiled to wasm with the same
 // options and the same importers the native library is built with. This module
 // is the TypeScript shell over that, as `clausters.gui.notation` is the Python

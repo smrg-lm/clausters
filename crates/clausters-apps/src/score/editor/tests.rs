@@ -2,10 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
-use clausters_core::notation::{
+use clausters_core::ratio::Ratio;
+use clausters_notation::{
     AnyEngraver, Engraver, Item, Marks, Pitch, Score, Sheet, Staff, Step, Voice, sheet_to_mei,
 };
-use clausters_core::ratio::Ratio;
 
 use super::*;
 use crate::file::FileWindow;
@@ -834,7 +834,7 @@ fn a_text_of_the_page_is_written_moved_and_described() {
         assert_eq!(header.notes, vec!["* a footnote".to_string()]);
         assert_eq!(
             header.place("title").halign,
-            clausters_core::notation::Halign::Left
+            clausters_notation::Halign::Left
         );
     }
     // a press on its block says which field it is and where it sits
@@ -2175,7 +2175,7 @@ fn articulations(editor: &ScoreEditor, n: usize) -> Vec<String> {
 
 #[test]
 fn an_edit_on_the_page_of_a_sequence_is_an_edit_of_the_sequence() {
-    use clausters_core::notation::default_interpretation;
+    use clausters_notation::default_interpretation;
 
     let sequence = played();
     let before = sequence.lock().unwrap().clone();
@@ -2278,8 +2278,8 @@ fn a_roll_and_a_page_over_one_sequence_are_one_order() {
 
 #[test]
 fn the_page_of_a_sequence_is_on_the_sequence_s_time() {
-    use clausters_core::notation::{Cursor, Page, default_interpretation};
     use clausters_core::tempomap::TempoMap;
+    use clausters_notation::{Cursor, Page, default_interpretation};
 
     let at = |ms: f64| Cursor {
         t: ms,

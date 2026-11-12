@@ -61,10 +61,10 @@ use serde_json::{Map, Value};
 use clausters_core::envshape::{SHAPE_HOLD, SHAPE_LINEAR, SHAPE_STEP};
 use clausters_core::event::notation::{fifths_of, key_of, spell_in};
 use clausters_core::event::render::{self, Type};
-use clausters_core::notation::{
+use clausters_core::ratio::Ratio;
+use clausters_notation::{
     Control, Grid, Interpretation, Item, Marks, Pitch, Sheet, Spanner, Staff, Step, Voice,
 };
-use clausters_core::ratio::Ratio;
 
 use super::part::{Part, Polyphony, Writing};
 use super::{CurveKind, EventSequence, MidiSpec};
@@ -1281,7 +1281,7 @@ mod tests {
 
     use super::*;
     use crate::events::score::render;
-    use clausters_core::notation::sheet_to_mei;
+    use clausters_notation::sheet_to_mei;
 
     fn sequence(events: Value) -> EventSequence {
         serde_json::from_value(json!({ "events": events })).expect("a sequence")
@@ -1524,7 +1524,7 @@ mod tests {
 
     #[test]
     fn a_score_rendered_is_read_back_as_it_was_written() {
-        let mei_in = clausters_core::notation::voice_to_sheet(&[], "3/4", "F4", "Eb");
+        let mei_in = clausters_notation::voice_to_sheet(&[], "3/4", "F4", "Eb");
         let mut score = mei_in;
         let pitch = |step, alter, octave| Pitch {
             step,

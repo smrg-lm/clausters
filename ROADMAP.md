@@ -278,17 +278,14 @@ its plan; the plan is where its acceptance is read.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found running the
   notes editor's example; what is open is where the wait belongs.
 
-- ⬜ **The second review of the workspace's shape, `R14`, `R16`-`R23`** *(root
+- ⬜ **The second review of the workspace's shape, `R14`, `R17`-`R23`** *(root
   `PLAN.md`, R track, "The second review: the shape of the workspace")*. Done
-  on the branch `restructure`. Next is `R16` (notation as a crate), in a
-  sitting of its own, then `R17` (tests at their level, fewer binaries),
-  `R19` (the host's modules in levels) and `R20` (the bindings' shape). `R18`
-  (a panic at a binding's door), `R21` (the clients linted and typed) and
-  `R22` (the editor application) depend on nothing. `R23` (the plans hold
-  what is open) is last, once the branch is accepted. `R14` waits only on the
-  release rehearsal, run at the end. **Related:** `R16` goes before the `Q`
-  track below opens and before `X11` continues, since both add to what it
-  moves.
+  on the branch `restructure`. Next is `R17` (tests at their level, fewer
+  binaries), then `R19` (the host's modules in levels) and `R20` (the
+  bindings' shape). `R18` (a panic at a binding's door), `R21` (the clients
+  linted and typed) and `R22` (the editor application) depend on nothing.
+  `R23` (the plans hold what is open) is last, once the branch is accepted.
+  `R14` waits only on the release rehearsal, run at the end.
 
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,

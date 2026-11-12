@@ -9,8 +9,8 @@
 //! played, a *fine* ends the piece and a *to coda* goes to the coda -- the
 //! conventions every player reads with.
 
-use crate::notation::model::Grid;
-use crate::ratio::Ratio;
+use crate::model::Grid;
+use clausters_core::ratio::Ratio;
 
 /// One measure as it is played: which measure, and where its pass starts in
 /// the performance, in whole notes.

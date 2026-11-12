@@ -332,7 +332,7 @@ on trust, so that is where drift accumulates:
   plain Python/TS sense survives, and only where nothing is being generated.
 - **"Score" names two structures, so the prose says which.** A **symbolic
   score** is notation: staves, notes and their engraving, edited as MEI — the
-  `Score` of `clausters_core::notation` and of both clients' engraver, and the
+  `Score` of `clausters_notation` and of both clients' engraver, and the
   score editor's. An **OSC score** is a list of timed OSC bundles that an
   offline render runs — the Python client's `OscScore` and the server's
   render script. The class names stay (`Score` alone is the symbolic one);

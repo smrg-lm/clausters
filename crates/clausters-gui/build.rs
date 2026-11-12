@@ -58,7 +58,7 @@ fn main() {
 }
 
 /// **The same for libverovio**, which the `score` feature links to read a
-/// score file (`--score`). Its prefix is the one `clausters-notation`'s script
+/// score file (`--score`). Its prefix is the one `clausters-verovio`'s script
 /// found, published through its `links` key as `DEP_VEROVIO_PREFIX`.
 fn verovio() {
     if std::env::var("CARGO_FEATURE_SCORE").is_err()

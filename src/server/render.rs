@@ -44,7 +44,7 @@ pub struct ScoreEvent {
 /// A render script: events sorted by time (stable for equal times).
 ///
 /// An **OSC score** -- timed bundles -- and not a symbolic score, the notation
-/// `clausters_core::notation` engraves as its `Score`; the prefix is what keeps
+/// `clausters_notation` engraves as its `Score`; the prefix is what keeps
 /// the two apart, and the Python client names this one `OscScore` too.
 pub struct OscScore {
     events: Vec<ScoreEvent>,

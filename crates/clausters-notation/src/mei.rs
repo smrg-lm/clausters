@@ -28,7 +28,7 @@
 use serde::Deserialize;
 
 use super::model::{Grid, Header, Item, Marks, Pitch, Sheet, Staff, Step, Voice};
-use crate::ratio::Ratio;
+use clausters_core::ratio::Ratio;
 
 // 32nd-note resolution: every duration is an integer number of these, so
 // barline splitting and tie decomposition are exact integer arithmetic.
@@ -46,7 +46,7 @@ const VALUES: [(i32, i32); 6] = [
 ];
 
 /// The keys a signature names, by their tonic.
-pub use crate::event::notation::TONICS as KEYS;
+pub use clausters_core::event::notation::TONICS as KEYS;
 
 /// A key name -> (MEI `key.sig`, prefer flats when spelling chromatic notes).
 /// Anything unrecognized falls back to C major (`"0"`, sharps).

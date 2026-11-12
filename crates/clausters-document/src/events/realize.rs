@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 use serde_json::{Value, json};
 
 use clausters_core::event::render as keys_of;
-use clausters_core::notation::Interpretation;
+use clausters_notation::Interpretation;
 
 use super::reading::Transcription;
 use super::score::render;
@@ -157,8 +157,8 @@ mod tests {
     use serde_json::{Map, json};
 
     use super::*;
-    use clausters_core::notation::{Item, Marks, Pitch, Sheet, Spanner, Voice, voice_to_sheet};
     use clausters_core::ratio::Ratio;
+    use clausters_notation::{Item, Marks, Pitch, Sheet, Spanner, Voice, voice_to_sheet};
 
     /// Four quarters: a staccato under `p`, a slur that joins the next two,
     /// and the pedal down over the last two.

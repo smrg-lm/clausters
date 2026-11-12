@@ -3,10 +3,10 @@
 //!
 //! The host measures the position a dragged note reaches and sends it; a client
 //! resolves that position against the page it engraved, through
-//! `clausters_core::notation::DisplayList::staff_position`. Each side keeps
+//! `clausters_notation::DisplayList::staff_position`. Each side keeps
 //! its own reading, so the guard against
 //! them drifting is that both assert against
-//! `crates/clausters-core/tests/staff_position_vector.json` -- this test and
+//! `crates/clausters-notation/tests/staff_position_vector.json` -- this test and
 //! `the_vector_positions_are_what_the_core_reads` over there. A change to
 //! either reading that is not a change to both fails here.
 
@@ -14,8 +14,7 @@
 
 use clausters_gui::host::graphics::score::ScoreData;
 
-const VECTOR: &str =
-    include_str!("../../../crates/clausters-core/tests/staff_position_vector.json");
+const VECTOR: &str = include_str!("../../clausters-notation/tests/staff_position_vector.json");
 
 #[test]
 fn the_host_reads_the_same_staff_positions_as_the_core() {

@@ -44,7 +44,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use super::model::{Item, Marks, Pitch, Sheet};
-use crate::ratio::Ratio;
+use clausters_core::ratio::Ratio;
 
 mod levels;
 mod unroll;
@@ -187,11 +187,11 @@ pub struct Performance {
 impl Performance {
     /// **The tempo as a map of beats to seconds**, beats being `beat_unit`ths
     /// of a whole note as the notes are.
-    pub fn tempo_map(&self, beat_unit: i64) -> crate::tempomap::TempoMap {
+    pub fn tempo_map(&self, beat_unit: i64) -> clausters_core::tempomap::TempoMap {
         let per_second = |qpm: f64| qpm / 60.0 * beat_unit as f64 / 4.0;
         let mut changes = self.tempo.iter();
         let first = changes.next().map_or(120.0, |(_, qpm)| *qpm);
-        let mut map = crate::tempomap::TempoMap::new(per_second(first));
+        let mut map = clausters_core::tempomap::TempoMap::new(per_second(first));
         for (beat, qpm) in changes {
             // a change that restates the beat it is at is a later one's
             let _ = map.push(*beat, per_second(*qpm));
@@ -1113,7 +1113,7 @@ fn metric_gain(sheet: &Sheet, t: Ratio, interp: &Interpretation) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::notation::model::{Marks, Pitch, Spanner, Step, Voice};
+    use crate::model::{Marks, Pitch, Spanner, Step, Voice};
 
     /// A voice of quarter notes on middle C, in one 4/4 bar per four of them.
     fn quarters(n: usize) -> Sheet {
@@ -1175,7 +1175,7 @@ mod tests {
         let mut sheet = quarters(8);
         let plain = performance(sheet.clone(), &Interpretation::default()).unwrap();
         assert_eq!(plain.tempo, vec![(0.0, 120.0)]);
-        sheet.controls = vec![crate::notation::model::Control {
+        sheet.controls = vec![crate::model::Control {
             kind: "tempo".into(),
             on: 5,
             text: "Presto".into(),

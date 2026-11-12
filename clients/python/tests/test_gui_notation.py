@@ -300,7 +300,7 @@ def test_engraving_shares_ids_and_time_between_cursors_and_notes():
 # -- MEI generation from sequencing data ------------------------------------
 # The reduction to a voice is this client's; laying it out into MEI is the
 # shared encoder's, whose own unit tests (pitch spelling, tick decomposition)
-# live in `clausters_core::notation`. These check the whole path.
+# live in `clausters_notation`. These check the whole path.
 
 def test_from_notes_writes_a_monophonic_melody():
     requires_engraver()

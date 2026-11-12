@@ -497,6 +497,7 @@ dependencies = [
  "clausters-document",
  "clausters-editing",
  "clausters-midi",
+ "clausters-notation",
  "serde",
  "serde_json",
 ]
@@ -507,9 +508,7 @@ version = "0.11.0"
 dependencies = [
  "libm",
  "microfft",
- "regex",
  "rosc",
- "roxmltree",
  "serde",
  "serde_json",
  "toml 0.8.23",
@@ -524,6 +523,7 @@ dependencies = [
  "clausters-document",
  "clausters-editing",
  "clausters-midi",
+ "clausters-notation",
  "js-sys",
  "serde",
  "serde_json",
@@ -535,6 +535,7 @@ name = "clausters-document"
 version = "0.11.0"
 dependencies = [
  "clausters-core",
+ "clausters-notation",
  "serde",
  "serde_json",
  "tracing",
@@ -546,6 +547,7 @@ version = "0.11.0"
 dependencies = [
  "clausters-core",
  "clausters-document",
+ "clausters-notation",
  "serde",
  "serde_json",
 ]
@@ -559,6 +561,7 @@ dependencies = [
  "clausters-document",
  "clausters-editing",
  "clausters-notation",
+ "clausters-verovio",
  "serde",
  "serde_json",
  "tungstenite",
@@ -579,6 +582,7 @@ dependencies = [
  "clausters-midi",
  "clausters-net",
  "clausters-notation",
+ "clausters-verovio",
  "console_error_panic_hook",
  "fontdue",
  "js-sys",
@@ -624,6 +628,8 @@ name = "clausters-notation"
 version = "0.11.0"
 dependencies = [
  "clausters-core",
+ "regex",
+ "roxmltree",
  "serde",
  "serde_json",
 ]
@@ -654,6 +660,15 @@ dependencies = [
  "tracing",
  "vst3",
  "x11-dl",
+]
+
+[[package]]
+name = "clausters-verovio"
+version = "0.11.0"
+dependencies = [
+ "clausters-notation",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

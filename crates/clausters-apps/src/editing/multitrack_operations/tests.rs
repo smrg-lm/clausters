@@ -1483,7 +1483,7 @@ fn a_roll_closed_and_reopened_keeps_its_object_and_its_entries() {
 #[cfg(feature = "notation")]
 #[test]
 fn a_score_runs_through_the_applications_door() {
-    use clausters_core::notation::{AnyEngraver, Score, sheet_to_mei, voice_to_sheet};
+    use clausters_notation::{AnyEngraver, Score, sheet_to_mei, voice_to_sheet};
     use std::sync::{Arc, Mutex};
 
     let mut f = Fixture::new();
@@ -1585,7 +1585,7 @@ fn land(f: &mut Fixture, member: MemberId, run: u64, result: Result<(), String>)
 /// A score member of `f`'s, its window numbered, holding `f`'s one blank.
 #[cfg(feature = "notation")]
 fn score_member(f: &mut Fixture, request: Value) -> (MemberId, crate::score::Shared) {
-    use clausters_core::notation::{AnyEngraver, Score, sheet_to_mei, voice_to_sheet};
+    use clausters_notation::{AnyEngraver, Score, sheet_to_mei, voice_to_sheet};
     use std::sync::{Arc, Mutex};
     let mei = sheet_to_mei(&voice_to_sheet(&[], "4/4", "G2", "C")).unwrap();
     let engraver = AnyEngraver::new(crate::editing::tests::Kept(Mutex::new(String::new())));
