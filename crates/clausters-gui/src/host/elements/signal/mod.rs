@@ -43,10 +43,10 @@ use crate::host::graphics::signal::{layers, trace};
 use crate::spectrogram::FreqScale;
 use crate::waveform::WaveformData;
 
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
 use crate::host::widget::element::{SampleBlock, ValueAxis};
 use crate::host::widget::{EditorProps, Rate, Ruler, RulerY};
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 mod apply;
 mod body;
@@ -1242,7 +1242,7 @@ mod tests {
     /// should come back and read the decision.
     #[test]
     fn the_amplitude_unit_labels_the_axis_and_never_maps_it() {
-        let m = crate::host::metrics::Metrics::default();
+        let m = clausters_gui_draw::metrics::Metrics::default();
         let rect = Rect::new(0.0, 0.0, 400.0, 200.0);
         let axis_for = |unit| {
             let mut el = SignalElement::from_preset(&point(Presentation::Signal, false, true));

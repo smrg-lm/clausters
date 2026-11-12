@@ -34,10 +34,10 @@ use std::sync::Arc;
 use clausters_core::osc::OscType;
 use clausters_gui::element::{Claim, Ctx, Input};
 use clausters_gui::host::Host;
-use clausters_gui::host::draw::Draw;
-use clausters_gui::host::metrics::Metrics;
-use clausters_gui::host::rect::Rect;
 use clausters_gui::{Element, register, tree};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 use serde_json::{Map, Value};
 
 /// The wire name the pad is registered under, and what a def calls it by.

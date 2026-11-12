@@ -29,8 +29,8 @@ use lyon::path::iterator::PathIterator;
 use lyon::path::{FillRule, Path as LyonPath, PathEvent};
 
 use super::{Affine, Bounds, Prim, ScoreData};
-use crate::host::path::build_path;
-use crate::host::rect::Rect;
+use clausters_gui_draw::path::build_path;
+use clausters_gui_draw::rect::Rect;
 
 /// **What an entry's extent stands for**, which is the shape a press is tested
 /// against once the extent has let it through.
@@ -269,8 +269,8 @@ impl ScoreData {
                     // As wide as the host draws it -- the width of the string
                     // in the host's own face, at the scale whose body box is
                     // this text's capitals -- and as high as a line of them.
-                    let w = crate::host::font::width(s, 1.0) * size * super::CAP_PER_EM
-                        / crate::host::font::GLYPH_H as f32;
+                    let w = clausters_gui_draw::font::width(s, 1.0) * size * super::CAP_PER_EM
+                        / clausters_gui_draw::font::GLYPH_H as f32;
                     let x0 = anchor.left(*x, w);
                     Some((
                         Bounds {

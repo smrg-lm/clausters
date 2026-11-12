@@ -40,9 +40,9 @@
 //! [`width`], [`text`], the ellipsis and the wrap all read that one result,
 //! so what is measured is what is drawn. The bitmap is never shaped.
 
-use super::paint::Mesh;
-use super::rect::Rect;
-use super::theme::Color;
+use crate::paint::Mesh;
+use crate::rect::Rect;
+use crate::theme::Color;
 
 #[cfg(feature = "font-atlas")]
 pub mod atlas;
@@ -1010,7 +1010,7 @@ mod tests {
     /// **A kept advance is answered until the outlines change.** A
     /// character a window gives a shape steps by its shape, from the
     /// moment the shape arrives -- not by what was kept of it before.
-    #[cfg(feature = "notation")]
+    #[cfg(feature = "path")]
     #[test]
     fn an_advance_kept_follows_the_outlines() {
         let c = '\u{F4B0}';

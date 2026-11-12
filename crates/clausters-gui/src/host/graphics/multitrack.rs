@@ -22,9 +22,9 @@
 //! numbers and places the boxes.
 
 use crate::host::bands::Bands;
-use crate::host::rect::Rect;
 use crate::host::structures::clips::{Clip, Curve, TrackRow};
 use crate::viewport::View;
+use clausters_gui_draw::rect::Rect;
 
 /// Where a clip's box lands on `body` under `nav`, or `None` when it falls
 /// entirely outside the window.

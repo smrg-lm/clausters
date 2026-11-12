@@ -312,10 +312,13 @@ pub struct Marker {
 
 impl Marker {
     /// The colour it draws in, resolved against the theme it is drawn under.
-    pub fn color(&self, theme: &crate::host::theme::Theme) -> crate::host::theme::Color {
+    pub fn color(
+        &self,
+        theme: &clausters_gui_draw::theme::Theme,
+    ) -> clausters_gui_draw::theme::Color {
         self.color
             .as_deref()
-            .and_then(crate::host::theme::parse_hex)
+            .and_then(clausters_gui_draw::theme::parse_hex)
             .unwrap_or(theme.flag)
     }
 }
@@ -906,7 +909,7 @@ impl Group {
 
     /// The height of the title strip -- one line of control -- or zero for a
     /// group with no title.
-    pub fn strip_h(&self, m: &super::super::metrics::Metrics) -> f32 {
+    pub fn strip_h(&self, m: &clausters_gui_draw::metrics::Metrics) -> f32 {
         if self.title.is_some() {
             m.control_h
         } else {
@@ -1388,7 +1391,7 @@ impl ScrollView {
     /// Naming one -- in the wire, or by turning the wheel -- makes it literal
     /// from then on: this number is physical pixels, the unit the pan and the
     /// hit math are written in.
-    pub fn zoom(&self, m: &super::super::metrics::Metrics) -> f64 {
+    pub fn zoom(&self, m: &clausters_gui_draw::metrics::Metrics) -> f64 {
         super::super::scroll::clamp_zoom(self.view_zoom.unwrap_or(m.ui_scale as f64))
     }
 

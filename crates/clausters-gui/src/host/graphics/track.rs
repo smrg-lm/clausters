@@ -7,7 +7,7 @@
 //! rectangle per clip with its label and a body -- a decimated waveform, or a
 //! **piano-roll** of note events when the clip carries `notes` (the events
 //! track's scalar-vertical view). Pure over a [`Draw`] (the flat-geometry
-//! [`crate::host::paint`] painter), so it is unit-testable without a window -- the
+//! [`clausters_gui_draw::paint`] painter), so it is unit-testable without a window -- the
 //! same posture as the static `plot`/`bpf` views.
 //!
 //! The tracks of one window share **one time axis** (aligned tracks): the frame
@@ -20,13 +20,13 @@ use clausters_core::measure;
 use super::meters::{self, fraction};
 use super::signal::layers::Stack;
 use super::signal::trace::{self, Trace, TraceStyle};
-use crate::host::draw::Draw;
-use crate::host::font;
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
 use crate::host::timeline;
 use crate::host::widget::{SourceWindow, WidgetKind};
 use crate::viewport::View;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// A piano-roll note. Re-exported from [`super::pianoroll`], the module that
 /// owns the note model and the drawing/hit-test primitives -- a clip's roll and
@@ -99,7 +99,7 @@ impl Header {
     /// row when it carries one. A declared `w` replaces it outright.
     pub fn width(&self, m: &Metrics) -> f32 {
         if let Some(w) = self.w {
-            return crate::host::metrics::snap_px(w, m.ui_scale).max(0.0);
+            return clausters_gui_draw::metrics::snap_px(w, m.ui_scale).max(0.0);
         }
         if !self.has_controls() {
             return m.header_w;
@@ -287,7 +287,7 @@ fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
     let parts = header_parts(band, header, m);
     draw_meter_strip(mesh, m, theme, parts.meters, &header.meters);
     let mut toggle =
-        |rect: Option<Rect>, on: bool, letter: &str, lit: crate::host::theme::Color| {
+        |rect: Option<Rect>, on: bool, letter: &str, lit: clausters_gui_draw::theme::Color| {
             let Some(r) = rect else { return };
             mesh.rect(r, theme.track);
             if on {
@@ -357,9 +357,9 @@ pub fn draw_meters(d: &mut Draw, rect: Rect, header: &Header, indent: f32) {
 /// track's meter, a `meter` widget and a mixer's strip read alike, down to
 /// where the green becomes red.
 fn draw_meter_strip(
-    mesh: &mut crate::host::paint::Mesh,
+    mesh: &mut clausters_gui_draw::paint::Mesh,
     m: &Metrics,
-    theme: &crate::host::theme::Theme,
+    theme: &clausters_gui_draw::theme::Theme,
     rect: Option<Rect>,
     channels: &[(f32, f32)],
 ) {
@@ -995,7 +995,7 @@ pub(crate) fn draw_take(
                     x_of,
                     y_at,
                     TraceStyle::new(
-                        crate::host::theme::with_alpha(
+                        clausters_gui_draw::theme::with_alpha(
                             trace::measure_color(theme, measure, theme.selection),
                             alpha,
                         ),
@@ -1016,8 +1016,8 @@ pub(crate) fn draw_take(
 mod tests {
 
     use super::*;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
 
     fn track() -> Rect {
         // A 500-wide track: header 96 + a 404-wide track body.

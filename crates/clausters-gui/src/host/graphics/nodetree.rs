@@ -5,7 +5,7 @@
 //! client leg ([`crate::host::native::client`]) and receives a `/group_queryTree.reply`; this
 //! module turns that flat reply into a small [`NodeTree`] model (pure and
 //! testable, no OSC and no GPU) and draws it as indented text through the
-//! flat-geometry painter ([`crate::host::paint`]) plus bitmap text -- the same cheap
+//! flat-geometry painter ([`clausters_gui_draw::paint`]) plus bitmap text -- the same cheap
 //! path the meters and scopes use, no dedicated pipeline.
 //!
 //! The reply is the server's depth-first encoding (`CmdTranslator::query_tree`):
@@ -24,12 +24,12 @@
 use clausters_core::osc::OscType;
 
 use super::controls::body_rect;
-use crate::host::draw::Draw;
-use crate::host::font;
-use crate::host::metrics::Metrics;
-use crate::host::paint::Mesh;
-use crate::host::rect::Rect;
-use crate::host::theme::Theme;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::paint::Mesh;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::Theme;
 
 /// One node of the mirrored tree: its id and whether it is a group (with its
 /// children) or a synth (with its def name and control values).

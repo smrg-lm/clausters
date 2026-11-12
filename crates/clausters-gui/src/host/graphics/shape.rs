@@ -3,7 +3,7 @@
 //!
 //! A hit-test reconstructs the geometry the renderer drew through -- the rule
 //! the whole half is held to -- and most of what the host draws is a rectangle,
-//! so [`Rect::contains`](crate::host::rect::Rect::contains) answered nearly
+//! so [`Rect::contains`](clausters_gui_draw::rect::Rect::contains) answered nearly
 //! everything. The exceptions are the round ones, and they were reading as
 //! their bounding box: a knob's disc grabbed from the corner of its cell where
 //! there is nothing drawn, a notehead picked up by the paper diagonally beside
@@ -22,7 +22,7 @@
 //! spread across the catalog -- a control's disc, a break-point, a notehead --
 //! and each one had reinvented the arithmetic or skipped it.
 
-use crate::host::rect::Rect;
+use clausters_gui_draw::rect::Rect;
 
 /// The squared distance from `(px, py)` to `(cx, cy)`.
 ///

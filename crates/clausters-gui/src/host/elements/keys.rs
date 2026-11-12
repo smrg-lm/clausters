@@ -23,11 +23,11 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
-use crate::host::draw::Draw;
 use crate::host::graphics::piano;
-use crate::host::rect::Rect;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Voice, VoiceSpec};
 use crate::host::widget::parse;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::rect::Rect;
 
 /// A keyboard. `pressed` and `drag` are native view state -- the gestures build
 /// them, the drawing reads them, and no `/gui_set` writes them.
@@ -115,7 +115,7 @@ fn from_props(props: &Map<String, Value>) -> Keys {
 impl Keys {
     /// The key geometry for a placement -- the same one the renderer drew with,
     /// so a press lands on the key that was painted.
-    fn layout(&self, rect: Rect, m: &crate::host::metrics::Metrics) -> piano::Layout {
+    fn layout(&self, rect: Rect, m: &clausters_gui_draw::metrics::Metrics) -> piano::Layout {
         piano::layout(
             rect,
             self.min,
@@ -354,8 +354,8 @@ impl Element for Keys {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::metrics::Metrics;
     use crate::host::widget::element::Mods;
+    use clausters_gui_draw::metrics::Metrics;
 
     fn props(json: &str) -> Map<String, Value> {
         serde_json::from_str(json).unwrap()

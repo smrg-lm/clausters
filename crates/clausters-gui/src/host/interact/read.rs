@@ -13,8 +13,8 @@
 
 use super::super::Host;
 use super::super::layout;
-use super::super::rect::Rect;
 use super::super::widget::{Axis, ScrollView};
+use clausters_gui_draw::rect::Rect;
 
 /// Whether plane `id` has anywhere to pan: its content is bigger than the
 /// window on an axis it may move, or it is a free plane (which always has its

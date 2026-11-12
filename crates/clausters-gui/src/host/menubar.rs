@@ -12,12 +12,12 @@
 //! do not fit the window gather under a last one, whose list holds them as
 //! submenus -- so a narrow window loses no entry.
 
-use super::font::{self, symbol};
 use super::menu::{Entry, EntryKind};
-use super::metrics::Metrics;
 use super::popup;
-use super::rect::Rect;
 use super::widget::{Widget, WidgetKind};
+use clausters_gui_draw::font::{self, symbol};
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// The window's menu, when it carries one with anything in it.
 pub fn entries(tree: &Widget) -> Option<&[Entry]> {

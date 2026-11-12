@@ -17,13 +17,13 @@ use winit::window::{Window, WindowId};
 
 use crate::gpu::Gpu;
 use crate::host::gestures::{Wheel, WheelDelta};
-use crate::host::metrics::Metrics;
-use crate::host::paint::Mesh;
-use crate::host::rect::Rect;
-use crate::host::theme::Theme;
 use crate::painter::Painter;
 use crate::view::{Renderers, TimelineView};
 use crate::viewport::View;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::paint::Mesh;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::Theme;
 
 /// Builds the view once the GPU device exists (it needs the device and queue to
 /// upload its data, and the window's shared [`Renderers`] to bind against).

@@ -25,15 +25,15 @@
 //! point's shape/curve are carried but unused), keeping ints int and floats
 //! float.
 
-use crate::host::draw::Draw;
 use crate::host::graphics::shape;
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
 use crate::host::structures::points::{
     BpfPoint, discontinuities, fraction_to_value, insert_point, place_point, value_at,
     value_fraction,
 };
 use crate::viewport::View;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// The **display mapping** a break-point curve is drawn and grabbed through:
 /// the field it occupies, the slice of its time domain that field spans, and
@@ -295,8 +295,8 @@ mod tests {
     use crate::host::structures::points::*;
 
     use super::*;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
 
     /// **A value reads to its curve's range**: whole over a hundred, finer as
     /// the range narrows.

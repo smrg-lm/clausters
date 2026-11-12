@@ -38,7 +38,7 @@ fn nearest_on(
 /// How far from a staff, in diatonic steps, a press in note entry still
 /// writes on it: the reach of four ledger lines.
 const LEDGER_REACH: f32 = 8.0;
-use crate::host::rect::Rect;
+use clausters_gui_draw::rect::Rect;
 
 impl ScoreData {
     /// Cluster the staff lines into staves. A staff line is the one primitive

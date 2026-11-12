@@ -341,7 +341,7 @@ The GUI host's `font-atlas` -- an outline typeface behind a glyph rasterizer
 the web package's alike, and the host carries the faces it draws with: a
 subset of DejaVu Sans and one of Noto Sans Devanagari it falls back to, under
 half a megabyte together, compiled into the binary and the wasm with the shaper
-that reads their layout tables (`crates/clausters-gui/assets/fonts/`, with their
+that reads their layout tables (`crates/clausters-gui-draw/assets/fonts/`, with their
 licenses and the script that makes them).
 A build without the feature draws with the embedded bitmap face.
 

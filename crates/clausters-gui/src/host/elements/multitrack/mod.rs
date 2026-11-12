@@ -26,14 +26,10 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Map, Value};
 
-use crate::host::draw::Draw;
 use crate::host::elements::notes::Notes;
 use crate::host::elements::signal::{Presentation, SignalElement};
-use crate::host::font;
 use crate::host::graphics::multitrack as stack;
 use crate::host::graphics::track;
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
 use crate::host::structures::boxes::{self, Bounds, Contents, Part, Placement, Placements};
 use crate::host::structures::clips::{self as model, Clip, TrackRow};
 use crate::host::widget::element::{
@@ -44,6 +40,10 @@ use crate::host::widget::parse::{self, label, number, number_f64, truthy};
 use crate::host::widget::size::Natural;
 use crate::host::widget::{EditorProps, GestureMap, Rate, RulerY, SourceWindow};
 use crate::viewport::View;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 // **One application, five questions.** The file was 4650 lines holding a model,
 // its props, its picture, its hit-testing, its gestures, its verbs and its
@@ -75,9 +75,9 @@ pub(super) struct BoxKey {
     pub(super) area: Rect,
     pub(super) indent: f32,
     pub(super) clip: Option<Rect>,
-    pub(super) ink: crate::host::paint::Ink,
-    pub(super) theme: crate::host::theme::Theme,
-    pub(super) metrics: crate::host::metrics::Metrics,
+    pub(super) ink: clausters_gui_draw::paint::Ink,
+    pub(super) theme: clausters_gui_draw::theme::Theme,
+    pub(super) metrics: clausters_gui_draw::metrics::Metrics,
     pub(super) selected: bool,
     pub(super) space: TimeSpace,
     pub(super) contents: u64,
@@ -317,7 +317,7 @@ pub struct Multitrack {
     /// **Each box as it was last drawn** -- its frame and its body -- by its
     /// place in `clips`: a drag of one box draws that box
     /// again and copies the rest.
-    kept: crate::host::paint::KeptParts<BoxKey>,
+    kept: clausters_gui_draw::paint::KeptParts<BoxKey>,
     /// The drag in flight. **The state lives in the element**; the machine
     /// keeps only the sequence.
     grab: Option<Grab>,

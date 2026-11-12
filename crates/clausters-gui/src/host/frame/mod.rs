@@ -8,8 +8,8 @@
 //! it with live inputs (the shared-memory bus source, scope histories, the node
 //! tree, the held-button highlight); the browser entry point (`super::web`)
 //! calls it with the streamed equivalents. It builds the flat-geometry [`Mesh`]
-//! from the placed widgets ([`super::layout`] + [`super::paint`]/
-//! [`super::font`]), uploads the heavy `waveform`/`spectrogram`/`canvas` views,
+//! from the placed widgets ([`super::layout`] + [`clausters_gui_draw::paint`]/
+//! [`clausters_gui_draw::font`]), uploads the heavy `waveform`/`spectrogram`/`canvas` views,
 //! and draws the whole frame in one pass -- the editor chrome (rulers,
 //! selection, playhead, cursor readout) as a second, *overlay* mesh drawn
 //! after the heavy views so it reads on top of them, and a third over a
@@ -49,22 +49,22 @@ use crate::waveform::{WaveformData, WaveformView};
 use super::bands::Bands;
 use super::chrome;
 use super::layout;
-use super::metrics::Metrics;
-use super::rect::Rect;
 use crate::canvas::{self, CanvasView};
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
-use super::draw::Draw;
-use super::font;
-use super::paint::{Ink, Mesh};
 use super::ruler::{self, TimeUnit};
 use super::status;
-use super::theme::{Theme, with_alpha};
 use super::timeline::{GroupState, group_key};
 use super::widget::element::{Ctx, Loaded, SlotFill, SlotFrame};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
 use crate::host::graphics::signal::layers::Paint;
 use crate::painter::Painter;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::paint::{Ink, Mesh};
+use clausters_gui_draw::theme::{Theme, with_alpha};
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.
 pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {
@@ -690,7 +690,7 @@ pub(crate) enum Grab {
 pub(crate) struct FrameInputs<'a> {
     /// The host's size roles: every layout and paint site of this frame reads
     /// its spacing, control and text sizes from here (see
-    /// [`super::metrics`]).
+    /// [`clausters_gui_draw::metrics`]).
     pub(crate) metrics: &'a Metrics,
     /// The read-only per-frame facts no widget owns (see [`World`]).
     pub(crate) world: World<'a>,
@@ -3334,7 +3334,7 @@ mod tests {
         use clausters_core::ratio::Ratio;
         use clausters_notation::{Item, Marks, Pitch, Sheet, Staff, Step, Voice};
 
-        crate::host::font::atlas::set_embedded();
+        clausters_gui_draw::font::atlas::set_embedded();
         let notes = |octave: i32| -> Vec<Item> {
             (0..128u64)
                 .map(|i| Item::Note {
@@ -3443,7 +3443,7 @@ mod tests {
         use clausters_notation::{Item, Marks, Pitch, Sheet, Staff, Step, Voice};
         use serde_json::json;
 
-        crate::host::font::atlas::set_embedded();
+        clausters_gui_draw::font::atlas::set_embedded();
         let median = |mut took: Vec<f64>| {
             took.sort_by(f64::total_cmp);
             took[took.len() / 2]
@@ -3779,7 +3779,7 @@ mod tests {
         for scale in [0.75, 1.0, 1.5, 2.0, 3.0] {
             let m = Metrics::default().at(scale);
             let w = draw::marker_w(&m);
-            let cell = crate::host::font::advance(m.caption_scale);
+            let cell = clausters_gui_draw::font::advance(m.caption_scale);
             assert!(
                 w >= cell,
                 "an arrow narrower than one character of the row it stands on \

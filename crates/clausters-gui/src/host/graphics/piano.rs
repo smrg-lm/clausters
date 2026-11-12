@@ -1,7 +1,7 @@
 //! The virtual piano keyboard's graphic primitives: a playable keyboard laid
 //! out with **real piano proportions** (relative units, so it resizes freely),
 //! and an overview strip spanning the full MIDI range for zoom/pan navigation
-//! -- all pure over a [`Draw`] (the flat-geometry [`crate::host::paint`]
+//! -- all pure over a [`Draw`] (the flat-geometry [`clausters_gui_draw::paint`]
 //! painter), so everything is unit-testable without a window.
 //!
 //! The key geometry follows the real instrument, expressed only as ratios of
@@ -19,11 +19,11 @@
 
 use clausters_core::scale;
 
-use crate::host::draw::Draw;
-use crate::host::font;
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
-use crate::host::theme::with_alpha;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::with_alpha;
 
 // --- Proportions (white-key units) -----------------------------------------
 
@@ -446,8 +446,8 @@ pub fn draw_widget(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
 
     fn l(min: i32, max: i32) -> Layout {
         layout(

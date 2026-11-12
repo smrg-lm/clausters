@@ -14,10 +14,10 @@
 
 use super::super::Host;
 use super::super::layout;
-use super::super::rect::Rect;
 use super::super::widget::{GestureMap, WidgetKind};
 use super::coords::{Coords, Frame, Hit, TimeAxis, YAxis};
 use crate::viewport::View;
+use clausters_gui_draw::rect::Rect;
 
 /// The [`Hit`] under `(x, y)` in window `def_id`. Containers (`window`/`panel`)
 /// are not hit targets -- except `scroll`, whose empty area is the pan gesture's

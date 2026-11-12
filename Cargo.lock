@@ -581,22 +581,20 @@ dependencies = [
  "clausters-core",
  "clausters-document",
  "clausters-editing",
+ "clausters-gui-draw",
  "clausters-midi",
  "clausters-net",
  "clausters-notation",
  "clausters-verovio",
  "console_error_panic_hook",
- "fontdue",
  "js-sys",
  "libc",
  "lyon",
  "pollster",
- "rustybuzz",
  "serde",
  "serde_json",
  "tracing",
  "tracing-subscriber",
- "unicode-bidi",
  "unicode-segmentation",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -604,6 +602,18 @@ dependencies = [
  "web-time",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "clausters-gui-draw"
+version = "0.11.0"
+dependencies = [
+ "fontdue",
+ "lyon",
+ "rustybuzz",
+ "serde_json",
+ "unicode-bidi",
+ "unicode-segmentation",
 ]
 
 [[package]]

@@ -15,10 +15,10 @@
 //! its scale, its rate -- and the machine only ever wanted the numbers.
 
 use super::SignalElement;
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
 use crate::host::widget::RulerY;
 use crate::host::widget::element::FreqAxis;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 impl SignalElement {
     /// The axis inside `rect`, resolved through the **renderer's own** region

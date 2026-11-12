@@ -41,9 +41,9 @@ use std::collections::HashMap;
 
 use clausters_core::osc::OscType;
 
-use super::rect::Rect;
 use super::widget::WidgetKind;
 use super::widget::element::ValueAxis;
+use clausters_gui_draw::rect::Rect;
 
 /// What a gesture asks of the front: everything the machine cannot do itself
 /// because it owns no transport, no window and no GPU.

@@ -20,7 +20,7 @@
 //! `clausters-core`** -- a path dependency that pulls only `rosc` -- for the shared
 //! OSC seam (the single [`clausters_core::osc::decode_packet`] door, plus
 //! encode/bundle/message), and owns a **thin transport front** of its own
-//! ([`transport`]). The default build links no server code; only the optional
+//! ([`transport`](native::transport)). The default build links no server code; only the optional
 //! `standalone` feature pulls the full `clausters` crate, for the in-process
 //! embedded server (`embed`).
 //!
@@ -107,15 +107,7 @@ pub mod structures;
 // The drawing vocabulary every widget and every pass names things in: one mesh
 // primitive, one face, and the two role tables (no paint site names an RGBA, no
 // layout site names a number).
-pub mod draw;
-pub mod font;
 pub mod keymap;
-pub mod metrics;
-pub mod paint;
-#[cfg(feature = "notation")]
-pub mod path;
-pub mod rect;
-pub mod theme;
 
 // Geometry and navigation: where a widget lands, and the axes several of them
 // share.
@@ -1043,14 +1035,14 @@ pub struct Host {
     /// window reads the engine the application holds.
     window_sources: HashMap<i32, Arc<dyn BusSource>>,
     /// The host's color roles -- one look per host, every paint site reads it
-    /// (see [`theme`]).
-    pub theme: theme::Theme,
+    /// (see [`theme`](clausters_gui_draw::theme)).
+    pub theme: clausters_gui_draw::theme::Theme,
     /// The host's size roles in **logical** pixels -- one density per host, the
-    /// table the config declares (see [`metrics`]). A window paints with its
+    /// table the config declares (see [`metrics`](clausters_gui_draw::metrics)). A window paints with its
     /// own resolution of it, from [`metrics_for`](Self::metrics_for), so
     /// changing this table once windows exist means calling
     /// [`refresh_metrics`](Self::refresh_metrics) after it.
-    pub metrics: metrics::Metrics,
+    pub metrics: clausters_gui_draw::metrics::Metrics,
     /// The host's key table -- which chord performs which verb, one per host
     /// like the theme (see [`keymap`]). Read by the one key dispatch both
     /// fronts call, and by a menu showing an entry's chord.
@@ -1091,7 +1083,7 @@ pub struct Host {
     /// at that window's `ui_scale`. Written when a shell reports a scale
     /// ([`set_ui_scale`](Self::set_ui_scale)), which is the only side that may
     /// know one: the core never reads a platform API. Absent = scale 1.
-    resolved_metrics: HashMap<i32, metrics::Metrics>,
+    resolved_metrics: HashMap<i32, clausters_gui_draw::metrics::Metrics>,
     /// The widget currently receiving keystrokes, as `(def_id, widget_id)` --
     /// **one focus per host**, not one per window, because there is one
     /// keyboard.
@@ -1205,8 +1197,8 @@ impl Host {
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             app_wake: Default::default(),
             window_sources: HashMap::new(),
-            theme: theme::Theme::default(),
-            metrics: metrics::Metrics::default(),
+            theme: clausters_gui_draw::theme::Theme::default(),
+            metrics: clausters_gui_draw::metrics::Metrics::default(),
             keys: keymap::Keymap::default(),
             clipboard: clipboard::Clip::default(),
             msaa: DEFAULT_MSAA,
@@ -1364,17 +1356,17 @@ impl Host {
     pub fn load_face(&mut self, source: &dyn FontSource) -> bool {
         source
             .face()
-            .is_some_and(|bytes| font::atlas::set_face(&bytes))
+            .is_some_and(|bytes| clausters_gui_draw::font::atlas::set_face(&bytes))
     }
 
     /// **Draws text with the face the crate carries**
-    /// ([`font::atlas::EMBEDDED`]): what a shell does as it starts, before a
+    /// ([`clausters_gui_draw::font::atlas::EMBEDDED`]): what a shell does as it starts, before a
     /// command line, a config or a client names another. The core does not do
     /// it for itself -- a host is made in a hundred tests that measure the
     /// bitmap's grid -- so it is one call of each front.
     #[cfg(feature = "font-atlas")]
     pub fn load_default_face(&mut self) -> bool {
-        font::atlas::set_embedded()
+        clausters_gui_draw::font::atlas::set_embedded()
     }
 
     /// The GuiDef store, if persistence was configured.
@@ -1395,7 +1387,7 @@ impl Host {
     /// pixels. Every layout, paint and hit-test site of a window reads *this*
     /// one, never the logical table -- a document can sit on a HiDPI screen
     /// while another sits on an ordinary one.
-    pub fn metrics_for(&self, def_id: i32) -> &metrics::Metrics {
+    pub fn metrics_for(&self, def_id: i32) -> &clausters_gui_draw::metrics::Metrics {
         self.resolved_metrics.get(&def_id).unwrap_or(&self.metrics)
     }
 
@@ -1647,7 +1639,12 @@ impl Host {
     /// One window's requested size, measured with `metrics` at `scale`: its
     /// content where it hugs and the composition settles, its declared `w`/`h`
     /// everywhere else (scaled to the same space, so the two mix cleanly).
-    fn sized_window(&self, id: i32, metrics: &metrics::Metrics, scale: f32) -> Option<(u32, u32)> {
+    fn sized_window(
+        &self,
+        id: i32,
+        metrics: &clausters_gui_draw::metrics::Metrics,
+        scale: f32,
+    ) -> Option<(u32, u32)> {
         let tree = self.window_def(id)?;
         let WidgetKind::Window {
             width, height, hug, ..
@@ -1733,8 +1730,8 @@ impl Host {
         def_id: i32,
         fb_w: u32,
         fb_h: u32,
-    ) -> crate::host::rect::Rect {
-        let area = crate::host::rect::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    ) -> clausters_gui_draw::rect::Rect {
+        let area = clausters_gui_draw::rect::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
         let Some(tree) = self.window_def(def_id) else {
             return area;
         };
@@ -1752,8 +1749,8 @@ impl Host {
         def_id: i32,
         fb_w: u32,
         fb_h: u32,
-    ) -> Option<crate::host::rect::Rect> {
-        let area = crate::host::rect::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    ) -> Option<clausters_gui_draw::rect::Rect> {
+        let area = clausters_gui_draw::rect::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
         let tree = self.window_def(def_id)?;
         status::bar(
             tree,
@@ -1771,7 +1768,7 @@ impl Host {
         def_id: i32,
         fb_w: u32,
         fb_h: u32,
-    ) -> Option<crate::host::rect::Rect> {
+    ) -> Option<clausters_gui_draw::rect::Rect> {
         let tree = self.window_def(def_id)?;
         let WidgetKind::Window {
             progress: Some(_), ..
@@ -1780,7 +1777,7 @@ impl Host {
             return None;
         };
         let m = self.metrics_for(def_id);
-        let window = crate::host::rect::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+        let window = clausters_gui_draw::rect::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
         let area = status::content(tree, self.status.borrow().get(&def_id), window, m);
         let area = menubar::content(tree, area, m);
         Some(frame::draw::progress_panel(area, m).cancel)

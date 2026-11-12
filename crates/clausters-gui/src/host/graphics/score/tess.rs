@@ -13,9 +13,9 @@
 //! notehead flattens to a different smoothness than the staff line beside it.
 
 use super::{Affine, FillOf, Prim, ScoreColors, ScoreData, ScoreDrag, Staff, TextEditing};
-use crate::host::paint::Mesh;
-use crate::host::rect::Rect;
-use crate::host::theme::Color;
+use clausters_gui_draw::paint::Mesh;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::Color;
 
 impl ScoreData {
     /// `fit`, shifted by the drag preview when `id` is the element being
@@ -80,7 +80,7 @@ impl ScoreData {
             let b = b.transformed(fit);
             mesh.rect(
                 Rect::new(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0),
-                crate::host::theme::with_alpha(colors.playhead, 0.35),
+                clausters_gui_draw::theme::with_alpha(colors.playhead, 0.35),
             );
         }
         mesh.set_clip(clip);
@@ -262,16 +262,16 @@ impl ScoreData {
                     // size the engraver laid it out for, and two lines of a
                     // head that the engraver had kept apart ran together.
                     let cap = (size * fit.sy).abs() * super::CAP_PER_EM;
-                    let scale = (cap / crate::host::font::GLYPH_H as f32).max(0.5);
+                    let scale = (cap / clausters_gui_draw::font::GLYPH_H as f32).max(0.5);
                     let [sx, sy] = fit.apply(*x, *y);
                     // The anchor is resolved here and nowhere earlier, because
                     // it takes the width of the string *in the host's font*,
                     // which is the one thing the engraver could not know.
-                    let left = anchor.left(sx, crate::host::font::width(s, scale));
+                    let left = anchor.left(sx, clausters_gui_draw::font::width(s, scale));
                     // baseline -> the body box's top
                     let top = sy - cap;
                     if let Some(edit) = editing {
-                        use crate::host::font;
+                        use clausters_gui_draw::font;
                         // what is selected, behind the text; the caret, over it
                         let at = |pos: usize| {
                             let cols = edit.value[..pos.min(edit.value.len())].chars().count();
@@ -286,7 +286,7 @@ impl ScoreData {
                                     at(to) - at(from),
                                     cap + above + below,
                                 ),
-                                crate::host::theme::with_alpha(colors.selection, 0.45),
+                                clausters_gui_draw::theme::with_alpha(colors.selection, 0.45),
                             );
                         }
                         font::text(mesh, s, left, top, scale, color);
@@ -301,7 +301,7 @@ impl ScoreData {
                             color,
                         );
                     } else {
-                        crate::host::font::text(mesh, s, left, top, scale, color);
+                        clausters_gui_draw::font::text(mesh, s, left, top, scale, color);
                     }
                 }
             }
@@ -326,7 +326,7 @@ impl ScoreData {
                 let b = h.bounds.grown(20.0).transformed(fit);
                 mesh.rect(
                     Rect::new(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0),
-                    crate::host::theme::with_alpha(color, 0.30),
+                    clausters_gui_draw::theme::with_alpha(color, 0.30),
                 );
             }
         }

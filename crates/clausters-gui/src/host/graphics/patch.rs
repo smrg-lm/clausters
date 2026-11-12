@@ -17,11 +17,11 @@
 
 use clausters_core::patch::Rate;
 
-use crate::host::draw::Draw;
-use crate::host::font;
-use crate::host::paint::Mesh;
-use crate::host::rect::Rect;
-use crate::host::theme::{Theme, with_alpha};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::paint::Mesh;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::{Theme, with_alpha};
 
 const PAD: f32 = 8.0;
 const OBJ_W: f32 = 96.0;
@@ -713,7 +713,7 @@ fn cord_weight(scale: f32) -> f32 {
 /// The colour a cord of `rate` is drawn in -- the rate reads by **colour** first
 /// (weight alone is hard to tell apart): audio red, control blue, init yellow
 /// (pastel primaries, for good mutual contrast on the dark field).
-fn cord_color(rate: Rate, theme: &Theme) -> crate::host::theme::Color {
+fn cord_color(rate: Rate, theme: &Theme) -> clausters_gui_draw::theme::Color {
     match rate {
         Rate::Audio => theme.cord,
         Rate::Control => theme.cord_control,
@@ -968,7 +968,7 @@ pub fn cord_between(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::metrics::Metrics;
+    use clausters_gui_draw::metrics::Metrics;
 
     /// tone (out) -> trem (in, out) -> dac (in, out), no cords yet placed.
     fn boxes() -> Vec<Obj> {

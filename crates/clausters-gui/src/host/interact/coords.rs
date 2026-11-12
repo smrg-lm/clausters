@@ -18,9 +18,9 @@
 //! [`read`]: super::read
 //! [`edit`]: super::edit
 
-use super::super::rect::Rect;
 use super::super::widget::{GestureMap, ScrollView, WidgetKind};
 use crate::viewport::View;
+use clausters_gui_draw::rect::Rect;
 
 /// The coordinate system a container gives its contents.
 ///

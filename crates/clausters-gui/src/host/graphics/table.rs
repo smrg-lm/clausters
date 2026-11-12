@@ -12,11 +12,11 @@
 //! both read, so a row is hit where it is drawn. Only the rows on screen are
 //! laid down: a list of ten thousand rows costs the rows that fit.
 
-use crate::host::draw::Draw;
-use crate::host::font::{self, symbol};
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
 use crate::host::widget::size::line_box;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font::{self, symbol};
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// One column: its title, and its width in logical pixels when it names one --
 /// the columns that do not share what is left.

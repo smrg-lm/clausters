@@ -36,9 +36,9 @@
 //! on has (Vulkan, Metal, DirectX, WebGPU and WebGL2), so the native window
 //! and the page draw it the same way.
 
-use crate::host::paint::Mesh;
 use crate::painter::Painter;
 use crate::view::Target;
+use clausters_gui_draw::paint::Mesh;
 
 /// The most boxes a frame draws through the atlas; more, and they are drawn
 /// as the one box around them.

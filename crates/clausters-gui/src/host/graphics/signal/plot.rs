@@ -4,7 +4,7 @@
 //!
 //! Where the waveform owns a GPU pipeline and a peak pyramid for editor-grade
 //! zoom/pan, the plot draws a signal once through the flat-geometry painter
-//! ([`crate::host::paint`]) -- the case the catalog calls "a simple static plot of an
+//! ([`clausters_gui_draw::paint`]) -- the case the catalog calls "a simple static plot of an
 //! NRT-generated signal/file". It does not navigate or edit; what it adds over
 //! a bare trace is measurement: adjustable x/y rulers, multichannel rows, an
 //! auto-fitted value range for arbitrary numeric sequences, and a hover
@@ -32,16 +32,16 @@
 use crate::spectrogram::{FreqScale, Stft};
 
 use super::trace::{self, Trace, TraceStyle};
-use crate::host::draw::Draw;
-use crate::host::font;
 use crate::host::frame::{channel_at, channel_rect};
 use crate::host::graphics::controls::body_rect;
 use crate::host::graphics::meters::{self, fraction};
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
 use crate::host::ruler::{self, TimeUnit};
-use crate::host::theme::with_alpha;
 use crate::host::widget::{Ruler, RulerDir};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::with_alpha;
 
 /// Sample rate assumed for the spectrum axis when the source brings none,
 /// matching the live views' fallback.
@@ -330,7 +330,7 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
                 |s| row.x + (s / span) as f32 * row.w,
                 |v| row.y + row.h * (1.0 - fraction(v, lo, hi)),
                 TraceStyle::new(
-                    crate::host::theme::with_alpha(
+                    clausters_gui_draw::theme::with_alpha(
                         trace::measure_color(theme, measure, theme.series(ch)),
                         alpha,
                     ),
@@ -554,8 +554,8 @@ fn hairline_and_dot(d: &mut Draw, row: Rect, x: f32, y: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
 
     /// An auto-fitted plot over a small range labels `-0.0625` where one over
     /// `[-1, 1]` labels `-1.0`, so its y strip asks for more room -- and asks

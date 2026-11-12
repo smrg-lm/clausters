@@ -43,7 +43,7 @@ fn descendants_walk_parents_before_children_in_order() {
 /// number for.
 #[test]
 fn a_plane_zoom_is_named_or_cleared() {
-    let m = crate::host::metrics::Metrics::default().resolved(2.0);
+    let m = clausters_gui_draw::metrics::Metrics::default().resolved(2.0);
     let view = |json: &str| match Widget::from_node(1, &node(json), &[]).unwrap().kind {
         WidgetKind::Scroll { view, .. } => view,
         other => panic!("not a scroll: {other:?}"),
@@ -91,7 +91,7 @@ fn themes_resolve_recursively_at_the_mutation_point() {
           {"id":16,"type":"label","text":"outside"}]}"##,
     );
     let mut w = Widget::from_node(1, &n, &[]).unwrap();
-    let base = Arc::new(super::super::theme::Theme::default());
+    let base = Arc::new(clausters_gui_draw::theme::Theme::default());
     resolve_style(&mut w, &base);
     let theme_of = |id: i32| w.find(id).unwrap().theme.clone().unwrap();
     let red = [1.0, 0.0, 0.0, 1.0];
@@ -166,7 +166,10 @@ fn opacity_composes_down_the_tree_at_the_mutation_point() {
           {"id":14,"type":"label","text":"outside"}]}"#,
     );
     let mut w = Widget::from_node(1, &n, &[]).unwrap();
-    resolve_style(&mut w, &Arc::new(super::super::theme::Theme::default()));
+    resolve_style(
+        &mut w,
+        &Arc::new(clausters_gui_draw::theme::Theme::default()),
+    );
     let alpha_of = |w: &Widget, id: i32| w.find(id).unwrap().alpha;
     assert_eq!(alpha_of(&w, 11), 0.5);
     assert_eq!(alpha_of(&w, 12), 0.5, "the group reaches the subtree");
@@ -178,7 +181,10 @@ fn opacity_composes_down_the_tree_at_the_mutation_point() {
             .unwrap()
             .style_apply("opacity", &Value::from(1.0))
     );
-    resolve_style(&mut w, &Arc::new(super::super::theme::Theme::default()));
+    resolve_style(
+        &mut w,
+        &Arc::new(clausters_gui_draw::theme::Theme::default()),
+    );
     assert_eq!(alpha_of(&w, 12), 1.0);
     assert_eq!(alpha_of(&w, 13), 0.5);
 }
@@ -1166,7 +1172,7 @@ fn the_enum_is_the_containers_plus_the_two_that_are_not_widgets() {
 #[cfg(feature = "notation")]
 #[test]
 fn a_window_brings_the_outlines_of_the_characters_its_text_uses() {
-    use crate::host::font::outline;
+    use clausters_gui_draw::font::outline;
 
     let (built, set, panel) = ('\u{F4B0}', '\u{F4B1}', '\u{F4B2}');
     let mut tree = Widget::from_node(

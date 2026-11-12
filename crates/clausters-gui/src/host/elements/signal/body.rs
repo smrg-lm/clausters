@@ -10,10 +10,10 @@
 //! clip's own local span, because the clip is what says where in time it sits.
 
 use super::SignalElement;
-use crate::host::draw::Draw;
-use crate::host::rect::Rect;
 use crate::host::widget::element::TimeSpace;
 use crate::host::widget::{GestureMap, GestureStep};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::rect::Rect;
 
 impl SignalElement {
     /// The drag table a navigable view wants: a plain drag selects on the

@@ -11,11 +11,11 @@
 use super::super::Host;
 use super::super::layers::Layer;
 use super::super::popup;
-use super::super::rect::Rect;
 use super::super::widget::WidgetKind;
 use super::super::widget::element::{Claim, Element, Events, Input, Mods, TimeSpace};
 use super::effects::{deliver, deliver_args, emit};
 use super::{GestureCtx, GestureEffect};
+use clausters_gui_draw::rect::Rect;
 
 /// **Where an element is**, for the machine: which widget -- or which *body* of
 /// which container -- plus the placement the press was measured against and the
@@ -77,7 +77,7 @@ impl At {
 /// renderer drew with, so a grab lands on the groove that was painted rather
 /// than on the one an unzoomed table would put there.
 pub(super) fn input<'a>(
-    metrics: &'a super::super::metrics::Metrics,
+    metrics: &'a clausters_gui_draw::metrics::Metrics,
     ctx: &GestureCtx,
     at: At,
     time: Option<TimeSpace>,

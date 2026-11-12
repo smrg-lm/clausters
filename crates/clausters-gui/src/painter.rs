@@ -6,8 +6,8 @@
 //! pipelines a window's pass draws (`view`, `waveform`, `spectrogram`).
 
 #[cfg(feature = "font-atlas")]
-use crate::host::paint::FLOATS_PER_GLYPH_VERTEX;
-use crate::host::paint::{FLOATS_PER_VERTEX, Mesh};
+use clausters_gui_draw::paint::FLOATS_PER_GLYPH_VERTEX;
+use clausters_gui_draw::paint::{FLOATS_PER_VERTEX, Mesh};
 
 /// Uploads a [`Mesh`] and draws it.
 pub struct Painter {
@@ -104,7 +104,7 @@ impl GlyphSheet {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("glyph atlas"),
             size: wgpu::Extent3d {
-                width: crate::host::font::atlas::SIDE,
+                width: clausters_gui_draw::font::atlas::SIDE,
                 height: rows.max(1),
                 depth_or_array_layers: 1,
             },
@@ -245,13 +245,13 @@ impl GlyphSheet {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        atlas: &crate::host::font::atlas::Atlas,
+        atlas: &clausters_gui_draw::font::atlas::Atlas,
     ) {
         let pixels = atlas.pixels();
         if self.version == atlas.version() || pixels.is_empty() {
             return;
         }
-        let side = crate::host::font::atlas::SIDE;
+        let side = clausters_gui_draw::font::atlas::SIDE;
         let mut from = self.shelf;
         if atlas.rows() != self.rows {
             (self.texture, self.bind_group) =
@@ -489,7 +489,7 @@ impl Painter {
         // The window's sheet, made on the first letter any of its batches
         // carries, and brought up to what the cache has rasterized since.
         let target = self.target;
-        crate::host::font::atlas::with(|atlas| {
+        clausters_gui_draw::font::atlas::with(|atlas| {
             self.sheet
                 .borrow_mut()
                 .get_or_insert_with(|| GlyphSheet::new(device, target, atlas.rows()))

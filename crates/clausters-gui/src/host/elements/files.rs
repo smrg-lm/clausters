@@ -21,12 +21,12 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::draw::Draw;
 use crate::host::files::{self, Ask, Chooser, DirEntry, Listing};
 use crate::host::graphics::table::{Column, Row};
-use crate::host::metrics::Metrics;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput};
 use crate::host::widget::size::Natural;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::metrics::Metrics;
 
 use super::table::{Hit, Rows};
 
@@ -61,7 +61,7 @@ fn from_props(props: &Map<String, Value>) -> Files {
         // at -- a fixed number cut "70.2 kB" short at the default size.
         Column {
             title: "size".into(),
-            w: Some(crate::host::font::width("000.0 kB", rows.text_size) + SIZE_PAD),
+            w: Some(clausters_gui_draw::font::width("000.0 kB", rows.text_size) + SIZE_PAD),
         },
     ];
     let mut files = Files {
@@ -303,8 +303,8 @@ impl Element for Files {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::rect::Rect;
     use crate::host::widget::element::Mods;
+    use clausters_gui_draw::rect::Rect;
 
     fn input(m: &Metrics) -> Input<'_> {
         Input {
@@ -489,7 +489,7 @@ mod tests {
     fn the_size_column_holds_the_widest_size_it_writes() {
         let f = chooser(r#"{"path":"takes"}"#);
         let w = f.rows.columns[1].w.unwrap();
-        assert!(w > crate::host::font::width(&size_text(999 << 10), f.rows.text_size));
+        assert!(w > clausters_gui_draw::font::width(&size_text(999 << 10), f.rows.text_size));
     }
 
     #[test]

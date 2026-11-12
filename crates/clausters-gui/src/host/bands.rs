@@ -283,13 +283,13 @@ impl Lanes {
     /// wholly outside the body, which the caller's scissor clips.
     pub fn rect(
         &self,
-        body: crate::host::rect::Rect,
+        body: clausters_gui_draw::rect::Rect,
         rows: usize,
         ch: usize,
-    ) -> crate::host::rect::Rect {
+    ) -> clausters_gui_draw::rect::Rect {
         let (y, h) = self.bands(rows, body.h).band(ch);
         let top = body.y + y - self.clamped(rows, body.h);
-        crate::host::rect::Rect::new(body.x, top, body.w, h)
+        clausters_gui_draw::rect::Rect::new(body.x, top, body.w, h)
     }
 
     /// **The rows inside a box** placed on somebody else's stack, at `floor`
@@ -307,7 +307,7 @@ impl Lanes {
     }
 
     /// The row a position `y` in screen pixels falls in, clamped to the stack.
-    pub fn at(&self, body: crate::host::rect::Rect, rows: usize, y: f32) -> usize {
+    pub fn at(&self, body: clausters_gui_draw::rect::Rect, rows: usize, y: f32) -> usize {
         let bands = self.bands(rows, body.h);
         let local = y - body.y + self.clamped(rows, body.h);
         bands
@@ -399,7 +399,7 @@ mod tests {
     }
     #[test]
     fn a_folded_row_is_a_strip_and_the_open_rows_share_the_rest() {
-        use crate::host::rect::Rect;
+        use clausters_gui_draw::rect::Rect;
         let body = Rect::new(0.0, 100.0, 50.0, 400.0);
         let even = Lanes::default();
         assert_eq!(even.rect(body, 4, 2), Rect::new(0.0, 300.0, 50.0, 100.0));
@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn a_stack_past_its_floor_scrolls_and_the_scroll_is_clamped() {
-        use crate::host::rect::Rect;
+        use clausters_gui_draw::rect::Rect;
         let body = Rect::new(0.0, 0.0, 50.0, 300.0);
         let lanes = Lanes {
             min: 60.0,

@@ -15,9 +15,9 @@
 //! tall the element ended up.
 
 use super::SignalElement;
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
 use crate::host::widget::RulerY;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 impl SignalElement {
     /// The band this element reserves left of its body: a value ruler's width,

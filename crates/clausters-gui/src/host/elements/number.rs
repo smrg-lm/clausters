@@ -16,16 +16,16 @@ use serde_json::{Map, Value};
 use clausters_core::osc::OscType;
 
 use crate::host::clipboard::Clip;
-use crate::host::draw::Draw;
 use crate::host::graphics::controls;
 use crate::host::graphics::controls::field_h;
-use crate::host::metrics::Metrics;
 use crate::host::widget::Range;
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput, Verb,
 };
 use crate::host::widget::size::Natural;
 use clausters_editing::verbs::{ActionState, ActionTarget, Verb as ActionVerb};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::metrics::Metrics;
 
 use super::control::{self, Scrub};
 
@@ -244,8 +244,8 @@ impl Element for Number {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::rect::Rect;
     use crate::host::widget::element::Mods;
+    use clausters_gui_draw::rect::Rect;
 
     fn props(json: &str) -> Map<String, Value> {
         serde_json::from_str(json).unwrap()

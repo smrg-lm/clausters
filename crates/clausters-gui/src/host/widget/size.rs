@@ -61,9 +61,9 @@
 //! as pure over the metrics as the wanted size, and an elastic child needs no
 //! floor because sharing the leftover already takes it to nothing.
 
-use super::super::font;
-use super::super::metrics::{Metrics, snap_px};
 use super::{Flow, Layout, Widget, WidgetKind};
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::{Metrics, snap_px};
 
 /// A widget's wanted extent per axis, `None` on an axis meaning elastic.
 pub type Natural = (Option<f32>, Option<f32>);
@@ -659,8 +659,8 @@ mod tests {
     use super::*;
     use crate::host::graphics::controls;
     use crate::host::guidef::GuiNode;
-    use crate::host::rect::Rect;
     use crate::host::widget::Widget;
+    use clausters_gui_draw::rect::Rect;
 
     fn tree(json: &str) -> Widget {
         Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap()
@@ -948,7 +948,7 @@ mod tests {
     /// available widths and not over the terms of the sum.
     #[test]
     fn a_hugged_control_fits_every_part_it_draws() {
-        use crate::host::font;
+        use clausters_gui_draw::font;
         for scale in [1.0f32, 1.5, 2.0] {
             let m = Metrics::default().resolved(scale);
             let json = r#"{"type":"knob","label":"freq","min":80.0,"max":400.0,"value":160.0}"#;
@@ -1031,7 +1031,7 @@ mod tests {
     #[test]
     fn a_slider_keeps_its_groove_and_its_number_apart() {
         let m = Metrics::default();
-        let size = crate::host::font::DEFAULT_SIZE;
+        let size = clausters_gui_draw::font::DEFAULT_SIZE;
         for (json, labelled) in [
             (r#"{"type":"slider","label":"amp"}"#, true),
             (r#"{"type":"slider"}"#, false),
@@ -1065,7 +1065,7 @@ mod tests {
     #[test]
     fn a_natural_size_is_measured_at_the_scale_its_text_draws_at() {
         let m = Metrics::default().resolved(2.0);
-        let size = crate::host::font::DEFAULT_SIZE;
+        let size = clausters_gui_draw::font::DEFAULT_SIZE;
         for scale in [1.0, 2.0, 4.0] {
             let drawn = size * scale;
             let label = kind(r#"{"type":"label","text":"a"}"#)
@@ -1073,7 +1073,7 @@ mod tests {
                 .1
                 .unwrap();
             assert!(
-                label >= crate::host::font::height(drawn),
+                label >= clausters_gui_draw::font::height(drawn),
                 "at {scale} a label's box is smaller than its own line"
             );
 

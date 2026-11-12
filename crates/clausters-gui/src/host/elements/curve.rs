@@ -18,18 +18,19 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::draw::Draw;
 use crate::host::graphics::bpf::{self, Axes};
 use crate::host::graphics::controls;
-use crate::host::rect::Rect;
+use crate::host::ruler;
 use crate::host::structures::points::{self, BpfPoint};
 use crate::host::widget::element::{
     BodyRole, Claim, Ctx, Element, Events, Input, OnAxis, Take, TimeSpace,
 };
 use crate::host::widget::parse::{label, number, number_f64, set_f, set_f64, set_label, truthy};
 use crate::host::widget::{EditorProps, Ruler, RulerY};
-use crate::host::{font, metrics::Metrics, ruler};
 use crate::viewport::View;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::{font, metrics::Metrics};
 
 /// A break-point function over `[min, max]`, using the server's own envelope
 /// shape numbers -- what it draws is what an `EnvGen` plays.
@@ -850,7 +851,7 @@ impl OnAxis for Curve {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::metrics::Metrics;
+    use clausters_gui_draw::metrics::Metrics;
 
     use crate::host::widget::element::{Mods, TimeSpace};
 
@@ -1108,8 +1109,8 @@ mod tests {
     /// handles -- one disc less at each end than the same points as a curve.
     #[test]
     fn a_trapezoid_marks_only_the_corners_of_its_top() {
-        use crate::host::paint::Mesh;
-        use crate::host::theme::Theme;
+        use clausters_gui_draw::paint::Mesh;
+        use clausters_gui_draw::theme::Theme;
         let m = Metrics::default();
         let theme = Theme::default();
         let points = r#""points":[0.0,0.0,1,0.0, 20.0,1.0,1,0.0, 80.0,1.0,1,0.0, 100.0,0.0,1,0.0]"#;

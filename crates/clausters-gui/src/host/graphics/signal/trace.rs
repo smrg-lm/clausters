@@ -31,10 +31,10 @@ use crate::waveform::WaveformData;
 
 use clausters_core::resample;
 
-use crate::host::paint::Mesh;
-use crate::host::rect::Rect;
-use crate::host::theme::Color;
-use crate::host::theme::Theme;
+use clausters_gui_draw::paint::Mesh;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::Color;
+use clausters_gui_draw::theme::Theme;
 
 /// At or below this many samples per pixel a trace **with no sample dots** is
 /// drawn as a polyline through the raw samples rather than as min/max columns,
@@ -845,10 +845,10 @@ fn draw_signal(
     // view -- the question a lit clip lamp raises, and the same answer.
     if worst > 1.0 && style.over_text > 0.0 {
         let text = format!("{:+.1}", 20.0 * worst.log10());
-        let w = crate::host::font::width(&text, style.over_text);
+        let w = clausters_gui_draw::font::width(&text, style.over_text);
         if w < rect.w {
             if let Some((plate, radius)) = style.plate {
-                let h = crate::host::font::height(style.over_text);
+                let h = clausters_gui_draw::font::height(style.over_text);
                 let inset = style.width;
                 mesh.round_rect(
                     Rect::new(
@@ -861,7 +861,7 @@ fn draw_signal(
                     plate,
                 );
             }
-            crate::host::font::text(
+            clausters_gui_draw::font::text(
                 mesh,
                 &text,
                 rect.x + rect.w - w - 2.0,

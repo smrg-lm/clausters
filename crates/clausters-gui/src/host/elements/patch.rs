@@ -24,11 +24,11 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
-use crate::host::draw::Draw;
 use crate::host::graphics::patch::{self, PatchDraw, Port, Side};
-use crate::host::rect::Rect;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Swept};
 use crate::host::widget::parse::{label, set_label};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::rect::Rect;
 
 /// A patcher over its own canvas. `selected` and `drag` are native view state --
 /// the gestures build them and no `/gui_set` writes them.
@@ -449,8 +449,8 @@ fn parse_ports(v: Option<&Value>) -> Vec<Port> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::metrics::Metrics;
     use crate::host::widget::element::Mods;
+    use clausters_gui_draw::metrics::Metrics;
 
     fn props(json: &str) -> Map<String, Value> {
         serde_json::from_str(json).unwrap()

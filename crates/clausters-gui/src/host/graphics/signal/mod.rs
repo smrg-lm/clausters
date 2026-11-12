@@ -5,7 +5,7 @@
 //! product a widget is, what a `/gui_set` means to it, what it loads and what
 //! it accumulates between ticks -- is [`elements::signal`](super::super::elements::signal).
 //! What is here is only the picture, so each module is a set of functions over
-//! a [`Draw`](crate::host::draw::Draw) with no element, no props and no
+//! a [`Draw`](clausters_gui_draw::draw::Draw) with no element, no props and no
 //! device in sight.
 //!
 //! The four are not four renderers of four widgets: they are the presentations

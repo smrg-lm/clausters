@@ -243,7 +243,7 @@ pub(super) fn collect_widgets(
                         });
                     let greyed;
                     let th = if state.as_ref().is_some_and(|s| !s.enabled) {
-                        greyed = crate::host::theme::Theme {
+                        greyed = clausters_gui_draw::theme::Theme {
                             text: th.text_disabled,
                             ..th.clone()
                         };

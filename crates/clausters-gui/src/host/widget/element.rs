@@ -100,15 +100,15 @@ use serde_json::{Map, Value};
 
 use std::path::{Path, PathBuf};
 
-use super::super::draw::Draw;
 use super::super::graphics::shape;
 pub use super::super::keymap::Verb;
-use super::super::metrics::Metrics;
-use super::super::rect::Rect;
 use super::super::world::World;
 use super::GestureMap;
 use super::size::Natural;
 use clausters_editing::verbs::{ActionState, ActionTarget, Verb as ActionVerb};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// Where an element is being drawn and what it is being drawn *into*: the
 /// placement, and the [`World`] the frame reads from.

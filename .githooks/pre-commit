@@ -125,6 +125,12 @@ while IFS= read -r -d '' entry; do
         *) continue ;;
     esac
     case "$path" in
+        # The drawing base is a member of the root workspace, and the host
+        # draws with it, so a change there lints both.
+        crates/clausters-gui-draw/*)
+            want_root=1
+            want_gui=1
+            ;;
         crates/clausters-gui/*) want_gui=1 ;;
         audit/fuzz/*) want_fuzz=1 ;;
         audit/*) ;; # the rest of the audit tooling is Python and Markdown

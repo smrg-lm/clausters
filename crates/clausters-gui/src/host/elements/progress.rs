@@ -9,14 +9,14 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::draw::Draw;
-use crate::host::font;
 use crate::host::graphics::controls;
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
 use crate::host::widget::element::{Ctx, Element, Live, Needs};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, body_inset, label_strip};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// How long the indeterminate band takes to cross the bar, in seconds.
 const SWEEP_S: f64 = 1.4;

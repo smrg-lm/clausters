@@ -40,8 +40,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use serde_json::{Map, Value};
 
 use super::{GLYPH_H, GLYPH_W};
-use crate::host::paint::Mesh;
-use crate::host::theme::Color;
+use crate::paint::Mesh;
+use crate::theme::Color;
 
 /// The units of an outline's coordinates to the em: SMuFL's, and every music
 /// font's that follows it.
@@ -120,9 +120,9 @@ pub fn has(c: char) -> bool {
 
 /// The shape of the path `d`, centred on its bounding box, or `None` when it
 /// fills nothing.
-#[cfg(feature = "notation")]
+#[cfg(feature = "path")]
 fn fill(d: &str) -> Option<Shape> {
-    use crate::host::path;
+    use crate::path;
 
     // A fifth of a pixel at the sizes text is drawn at.
     const TOLERANCE: f32 = 4.0;
@@ -152,7 +152,7 @@ fn fill(d: &str) -> Option<Shape> {
     })
 }
 
-#[cfg(not(feature = "notation"))]
+#[cfg(not(feature = "path"))]
 fn fill(_d: &str) -> Option<Shape> {
     None
 }
@@ -203,7 +203,7 @@ pub(super) type Kept<T> = (u64, std::collections::HashMap<(char, u32), T>);
 /// the triangles they come to, the box they span and the pen's step.
 struct Sized {
     corners: Vec<[f32; 2]>,
-    bounds: crate::host::rect::Rect,
+    bounds: crate::rect::Rect,
     step: f32,
 }
 
@@ -250,9 +250,9 @@ fn sized(c: char, scale: f32) -> Option<std::rc::Rc<Sized>> {
             }
         }
         let bounds = if corners.is_empty() {
-            crate::host::rect::Rect::new(0.0, 0.0, 0.0, 0.0)
+            crate::rect::Rect::new(0.0, 0.0, 0.0, 0.0)
         } else {
-            crate::host::rect::Rect::new(lo[0], lo[1], hi[0] - lo[0], hi[1] - lo[1])
+            crate::rect::Rect::new(lo[0], lo[1], hi[0] - lo[0], hi[1] - lo[1])
         };
         std::rc::Rc::new(Sized {
             corners,
@@ -271,7 +271,7 @@ fn sized(c: char, scale: f32) -> Option<std::rc::Rc<Sized>> {
     Some(made)
 }
 
-#[cfg(all(test, feature = "notation"))]
+#[cfg(all(test, feature = "path"))]
 mod tests {
     use serde_json::json;
 
@@ -330,7 +330,7 @@ mod tests {
     /// never under the cell a character takes.
     #[test]
     fn it_steps_by_its_own_width_and_text_draws_it() {
-        use crate::host::font;
+        use crate::font;
 
         set(&table());
         let cell = (GLYPH_W + 1) as f32 * 2.0;

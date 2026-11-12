@@ -38,12 +38,12 @@
 use clausters_core::measure::{Ballistics, CLIP_CEILING, ClipLatch, floor_db_for_bits};
 use serde_json::{Map, Value};
 
-use crate::host::draw::Draw;
 use crate::host::graphics::meters::{self, ChannelRead, MeterAxis, MeterView, Zones};
 use crate::host::ruler::Side;
 use crate::host::widget::element::{Claim, Ctx, Element, Input, Live, Needs};
 use crate::host::widget::size::Natural;
 use crate::host::widget::{Rate, parse};
+use clausters_gui_draw::draw::Draw;
 
 /// How many channels a meter will read adjacent buses for. A meter of a whole
 /// mix is one or two; the cap is here so a typo cannot ask for a thousand
@@ -454,7 +454,7 @@ impl Element for Meter {
     /// far up it goes, so a meter given more width spends it on nothing while a
     /// meter given more height reads better. A widget that wants a wider one
     /// says `w`, the placement prop every widget has.
-    fn natural(&self, m: &crate::host::metrics::Metrics, scale: f32) -> Natural {
+    fn natural(&self, m: &clausters_gui_draw::metrics::Metrics, scale: f32) -> Natural {
         let column = (m.box_side * 0.5).max(3.0);
         let columns =
             self.channels as f32 * column + (self.channels.saturating_sub(1)) as f32 * m.divider_w;
@@ -465,7 +465,7 @@ impl Element for Meter {
             self.axis
                 .widest_readouts()
                 .iter()
-                .map(|text| crate::host::font::width(text, m.caption_scale))
+                .map(|text| clausters_gui_draw::font::width(text, m.caption_scale))
                 .fold(0.0, f32::max)
         } else {
             0.0
@@ -482,7 +482,7 @@ impl Element for Meter {
         };
         // The body is inset by a pad on each side (`body_rect`).
         (
-            Some(crate::host::metrics::snap_px(
+            Some(clausters_gui_draw::metrics::snap_px(
                 columns + ladder + 2.0 * m.pad,
                 scale,
             )),
@@ -556,9 +556,9 @@ impl Element for Meter {
 mod tests {
     use super::*;
     use crate::host::BusSource;
-    use crate::host::metrics::Metrics;
-    use crate::host::rect::Rect;
     use crate::host::widget::element::Mods;
+    use clausters_gui_draw::metrics::Metrics;
+    use clausters_gui_draw::rect::Rect;
     use std::collections::HashMap;
 
     fn props(json: &str) -> Map<String, Value> {
@@ -898,12 +898,12 @@ mod tests {
             .axis
             .widest_readouts()
             .iter()
-            .map(|t| crate::host::font::width(t, m.caption_scale))
+            .map(|t| clausters_gui_draw::font::width(t, m.caption_scale))
             .fold(0.0, f32::max);
         // What the drawing leaves the columns at that width: the body, less
         // the ladder's strip.
         let body = crate::host::graphics::controls::body_rect(
-            crate::host::rect::Rect::new(0.0, 0.0, width, 300.0),
+            clausters_gui_draw::rect::Rect::new(0.0, 0.0, width, 300.0),
             false,
             &m,
         );

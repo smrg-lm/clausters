@@ -29,11 +29,11 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::draw::Draw;
 use crate::host::graphics::score::{ScoreColors, ScoreData, ScoreDrag, TextEditing};
 use crate::host::graphics::textedit;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyInput, Needs};
 use crate::host::widget::parse;
+use clausters_gui_draw::draw::Draw;
 
 /// An engraved page, plus the one thing a page does not carry: where the pitch
 /// drag in flight was pressed.
@@ -55,7 +55,7 @@ pub struct Score {
     /// them all go. What the hand marks -- the selection, the edit cursor --
     /// is drawn fresh under them every frame, so a press that selects keeps
     /// the page.
-    kept: crate::host::paint::KeptParts<PageKey>,
+    kept: clausters_gui_draw::paint::KeptParts<PageKey>,
 }
 
 /// **What a part of the page's ink is drawn from**: where the page is and in
@@ -63,10 +63,10 @@ pub struct Score {
 /// (`ScoreData::moved_parts`) -- that state.
 #[derive(PartialEq)]
 struct PageKey {
-    rect: crate::host::rect::Rect,
-    clip: Option<crate::host::rect::Rect>,
+    rect: clausters_gui_draw::rect::Rect,
+    clip: Option<clausters_gui_draw::rect::Rect>,
     colors: ScoreColors,
-    ink: crate::host::paint::Ink,
+    ink: clausters_gui_draw::paint::Ink,
     text: u64,
     state: Option<(
         Option<crate::host::graphics::score::ScoreDrag>,
@@ -198,7 +198,7 @@ impl Element for Score {
                 clip: ctx.clip,
                 colors,
                 ink: mesh.ink(),
-                text: crate::host::font::generation(),
+                text: clausters_gui_draw::font::generation(),
                 state: moved.contains(&part).then(|| self.data.ink_state()),
             };
             self.kept.draw(mesh, part, key, |page| {
@@ -466,22 +466,25 @@ impl Element for Score {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::metrics::Metrics;
-    use crate::host::paint::Mesh;
-    use crate::host::rect::Rect;
     use crate::host::widget::element::Mods;
+    use clausters_gui_draw::metrics::Metrics;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::rect::Rect;
 
     /// A one-staff page with two identified noteheads, engraved the way the
     /// client sends one: a viewBox, one glyph outline, and placed primitives.
     /// The triangles `score` draws in a rect of 400 x 400, inked `ink`.
-    fn drawn(score: &Score, ink: crate::host::paint::Ink) -> crate::host::paint::Mesh {
-        use crate::host::metrics::Metrics;
-        use crate::host::rect::Rect;
-        use crate::host::theme::Theme;
+    fn drawn(
+        score: &Score,
+        ink: clausters_gui_draw::paint::Ink,
+    ) -> clausters_gui_draw::paint::Mesh {
         use crate::host::world::World;
+        use clausters_gui_draw::metrics::Metrics;
+        use clausters_gui_draw::rect::Rect;
+        use clausters_gui_draw::theme::Theme;
 
         let (m, theme, world) = (Metrics::default(), Theme::default(), World::default());
-        let mut mesh = crate::host::paint::Mesh::new();
+        let mut mesh = clausters_gui_draw::paint::Mesh::new();
         mesh.set_ink(ink);
         let ctx = Ctx {
             world: &world,
@@ -507,10 +510,10 @@ mod tests {
     /// kept, the frame is the single pass's.
     #[test]
     fn a_kept_page_is_the_page_until_what_it_shows_changes() {
-        let ink = crate::host::paint::Ink::default();
+        let ink = clausters_gui_draw::paint::Ink::default();
         let single = |score: &Score| {
             let mut mesh = Mesh::new();
-            let theme = crate::host::theme::Theme::default();
+            let theme = clausters_gui_draw::theme::Theme::default();
             mesh.rect(Rect::new(0.0, 0.0, 400.0, 400.0), theme.panel);
             let colors = ScoreColors {
                 ink: theme.text,
@@ -529,7 +532,7 @@ mod tests {
         let kept_page = |score: &Score| (score.kept.built() > 0).then(|| score.kept.joined());
         let mut score = page(true);
         // the process's text generation, which another test may move
-        let generation = crate::host::font::generation();
+        let generation = clausters_gui_draw::font::generation();
         let first = drawn(&score, ink);
         let ink_mesh = kept_page(&score).expect("kept");
         assert!(first.near(&drawn(&score, ink), 0.0));
@@ -538,7 +541,7 @@ mod tests {
         let selected = drawn(&score, ink);
         assert!(!selected.near(&first, 0.0), "the selection is on it");
         assert!(selected.near(&single(&score), 0.0), "the single pass");
-        let generation_stood = crate::host::font::generation() == generation;
+        let generation_stood = clausters_gui_draw::font::generation() == generation;
         assert!(
             !generation_stood || kept_page(&score).is_some_and(|page| page.near(&ink_mesh, 0.0)),
             "a selection keeps the ink"
@@ -554,7 +557,7 @@ mod tests {
             "a drag draws the ink again"
         );
         score.data.drag = None;
-        let faded = crate::host::paint::Ink { alpha: 0.5, ..ink };
+        let faded = clausters_gui_draw::paint::Ink { alpha: 0.5, ..ink };
         assert!(!drawn(&score, faded).near(&selected, 0.0), "and the ink");
         assert!(score.set("display_list", &Value::Object(page_props(true))));
         assert_eq!(score.kept.built(), 0, "a new page lets it go");
@@ -565,7 +568,7 @@ mod tests {
     /// drawn again per move, and the frame is still the single pass's.
     #[test]
     fn a_drag_draws_only_its_own_staff_again() {
-        let ink = crate::host::paint::Ink::default();
+        let ink = clausters_gui_draw::paint::Ink::default();
         let (data, _) = crate::host::graphics::score::dense_page_for_tests(3, 8);
         let score = Score {
             data,
@@ -577,8 +580,8 @@ mod tests {
         // The text's generation is the process's: another test that sends
         // outlines moves it, and every kept part is rightly drawn again. The
         // counts are read only while it stood.
-        let generation = crate::host::font::generation();
-        let stood = || crate::host::font::generation() == generation;
+        let generation = clausters_gui_draw::font::generation();
+        let stood = || clausters_gui_draw::font::generation() == generation;
         drawn(&score, ink);
         assert!(!stood() || score.kept.drawn() == parts);
         drawn(&score, ink);
@@ -605,7 +608,7 @@ mod tests {
                 "one part a move"
             );
             let mut single = Mesh::new();
-            let theme = crate::host::theme::Theme::default();
+            let theme = clausters_gui_draw::theme::Theme::default();
             single.rect(Rect::new(0.0, 0.0, 400.0, 400.0), theme.panel);
             score.data.render(
                 &mut single,
@@ -825,7 +828,7 @@ mod tests {
     #[test]
     fn the_text_in_hand_is_drawn_and_survives_a_page_that_still_has_it() {
         use crate::host::graphics::score::ScoreColors;
-        use crate::host::paint::Mesh;
+        use clausters_gui_draw::paint::Mesh;
 
         let metrics = Metrics::default();
         let mut twice = input(&metrics);

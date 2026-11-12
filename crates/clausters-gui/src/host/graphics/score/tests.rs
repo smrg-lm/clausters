@@ -6,10 +6,10 @@
 use serde_json::{Map, Value};
 
 use super::*;
-use crate::host::paint::Mesh;
-use crate::host::path::build_path;
-use crate::host::path::triangles;
-use crate::host::rect::Rect;
+use clausters_gui_draw::paint::Mesh;
+use clausters_gui_draw::path::build_path;
+use clausters_gui_draw::path::triangles;
+use clausters_gui_draw::rect::Rect;
 
 /// One opaque palette for the render tests: they assert that geometry
 /// lands, not which role painted it.

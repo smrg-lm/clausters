@@ -1,0 +1,46 @@
+[package]
+name = "clausters-gui-draw"
+version.workspace = true
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "The Clausters GUI host's drawing base: the rectangle, the color and size roles, the triangle batch, the face and an outline's path."
+
+[features]
+default = ["font-atlas", "path"]
+# A real (outline) typeface behind a glyph atlas, instead of the 5x7 bitmap --
+# the rasterizer, the shaper, and the face drawn with when nobody names another
+# (`assets/fonts/`, a quarter of a megabyte). The bitmap stays the floor under
+# every build: what a host with no face loaded draws with.
+font-atlas = ["dep:fontdue", "dep:rustybuzz", "dep:unicode-bidi"]
+# An outline's SVG path, scanned, filled and flattened (`lyon`): the score's
+# glyphs and the symbols a client sends as outlines.
+path = ["dep:lyon"]
+# The questions a test asks a batch (its extent, its colors, its alphas, how
+# often a kept part was drawn again), for the tests of the crates above: a
+# crate's own `cfg(test)` does not reach the tests of another.
+probe = []
+
+[dependencies]
+# A theme or a size table overlaid from a JSON table, and the outlines a client
+# sends, which arrive as one.
+serde_json = { workspace = true }
+# Grapheme clusters: what a caret steps over and what text is cut at, with or
+# without a face -- one user-perceived character, however many code points it
+# is written with.
+unicode-segmentation = "1.12"
+# Fill tessellation: an outline's bezier path into the triangles the batch
+# draws. Pure Rust and wasm-safe.
+lyon = { version = "1.0", optional = true }
+# The glyph rasterizer of the `font-atlas` feature: pure Rust, `no_std` by
+# default (hashbrown + simd, no `parallel`), so it compiles for wasm32 with no
+# system dependency and no C toolchain -- which is the whole reason it is this
+# crate rather than a FreeType binding.
+fontdue = { version = "0.9", optional = true }
+# The `font-atlas` feature's shaper: a pure-Rust port of the standard shaping
+# engine, over the same font parser fontdue reads with, so it compiles for
+# wasm32 with nothing else. It turns a run of text into glyph ids and
+# positions: ligatures, contextual forms, marks over their bases.
+rustybuzz = { version = "0.20", optional = true }
+# The Unicode bidirectional algorithm: a label's paragraph reordered into
+# visual runs, right-to-left ones included, before each run is shaped.
+unicode-bidi = { version = "0.3", optional = true }

@@ -25,12 +25,12 @@
 use std::sync::Arc;
 
 use crate::host::graphics::signal::trace::{self, Trace, TraceStyle};
-use crate::host::metrics::Metrics;
-use crate::host::paint::Mesh;
-use crate::host::rect::Rect;
-use crate::host::theme::Theme;
 use clausters_core::peaks::Source as _;
 use clausters_core::{loudness, resample};
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::paint::Mesh;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::Theme;
 
 use crate::peaks::{self, MultiPyramid, Pyramid};
 use crate::view::TimelineView;

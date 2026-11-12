@@ -28,10 +28,8 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
-use crate::host::draw::Draw;
 use crate::host::graphics::pianoroll::{self, Pitches};
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
+use crate::host::ruler;
 use crate::host::structures::boxes::{self, Bounds, Placements};
 use crate::host::structures::notes::OscMarker;
 use crate::host::structures::notes::{self, Note};
@@ -41,8 +39,11 @@ use crate::host::widget::element::{
 };
 use crate::host::widget::parse::{self, label, number, number_f64, set_label, truthy};
 use crate::host::widget::{EditorProps, GestureMap, Ruler};
-use crate::host::{font, ruler};
 use crate::viewport::View;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// The default pitch compass of a roll: the range of an 88-key piano.
 const PITCH_MIN: f32 = 21.0;
@@ -402,7 +403,7 @@ pub(super) fn build(
 pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
     // the outlines its marks are drawn with, into the host's one table
     if let Some(glyphs) = props.get("glyphs").and_then(Value::as_object) {
-        crate::host::font::outline::set(glyphs);
+        clausters_gui_draw::font::outline::set(glyphs);
     }
     let osc = parse_osc(props);
     let mut notes = parse_notes(props);
@@ -911,7 +912,10 @@ impl Element for Notes {
             | "slurs" | "slur_style" | "mark_layout" | "mark_place" => self.written.set(key, v),
             // **the outlines its marks are drawn with**, as a window's
             // `glyphs`: the host's one table, which every text reads
-            "glyphs" => v.as_object().map(crate::host::font::outline::set).is_some(),
+            "glyphs" => v
+                .as_object()
+                .map(clausters_gui_draw::font::outline::set)
+                .is_some(),
             "joins" => {
                 let list = parse::as_array_props("joins", v);
                 self.joins = Some(parse_joins(list.get("joins").unwrap_or(&Value::Null)));
@@ -1903,7 +1907,7 @@ impl Notes {
             // font's mark is a fraction of its em; a mark written as text at
             // the text's own size.
             let sized = |t: &str| {
-                if t.chars().any(crate::host::font::outline::has) {
+                if t.chars().any(clausters_gui_draw::font::outline::has) {
                     m.text_scale * 2.0
                 } else {
                     m.text_scale
@@ -2591,12 +2595,12 @@ mod tests {
     /// was, and a note before the window is none of the clip's.
     #[test]
     fn a_clip_s_notes_stand_where_they_were_played_whatever_its_window() {
-        use crate::host::draw::Draw;
-        use crate::host::metrics::Metrics;
-        use crate::host::paint::Mesh;
-        use crate::host::theme::Theme;
         use crate::host::widget::SourceWindow;
         use crate::host::widget::element::TimeSpace;
+        use clausters_gui_draw::draw::Draw;
+        use clausters_gui_draw::metrics::Metrics;
+        use clausters_gui_draw::paint::Mesh;
+        use clausters_gui_draw::theme::Theme;
 
         let body = roll(
             r#"{"notes": [0, 4800, 60, 100, 0, 4800, 2400, 64, 100, 0],
@@ -2909,7 +2913,7 @@ mod tests {
             crate::host::graphics::choice::View::Tabs,
             &labels,
             tabs,
-            crate::host::font::DEFAULT_SIZE * m.ui_scale,
+            clausters_gui_draw::font::DEFAULT_SIZE * m.ui_scale,
             &m,
         );
         let second = parts[1].1;
@@ -3969,10 +3973,10 @@ mod tests {
     /// `/gui_set` replaces the runs, an empty list taking them away.
     #[test]
     fn a_pitch_line_follows_its_run_inside_the_grid() {
-        use crate::host::draw::Draw;
-        use crate::host::metrics::Metrics;
-        use crate::host::paint::Mesh;
-        use crate::host::theme::Theme;
+        use clausters_gui_draw::draw::Draw;
+        use clausters_gui_draw::metrics::Metrics;
+        use clausters_gui_draw::paint::Mesh;
+        use clausters_gui_draw::theme::Theme;
 
         let mut r = roll(
             r#"{"notes": [0, 100, 60, 100, 0, 100, 100, 64, 100, 0],

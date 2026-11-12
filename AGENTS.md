@@ -209,7 +209,9 @@ server. It is a member of the root workspace (one lockfile, one `target/`);
 the root package is the server, so the host is built and tested by name
 (`cargo test -p clausters-gui`), never through `--workspace` together with
 the server's feature rows, since cargo unifies features across what one
-invocation builds.
+invocation builds. What it draws with (the rectangle, the color and size
+roles, the triangle batch, the face) is a crate of its own beneath it,
+`crates/clausters-gui-draw`, which names nothing of the host.
 
 The wires and where their ends live:
 

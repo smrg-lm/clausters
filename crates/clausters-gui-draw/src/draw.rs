@@ -7,9 +7,9 @@
 //! the size roles are measured by the face, so neither can be the module that
 //! names the other.
 
-use super::metrics::Metrics;
-use super::paint::Mesh;
-use super::theme::Theme;
+use crate::metrics::Metrics;
+use crate::paint::Mesh;
+use crate::theme::Theme;
 
 /// What a paint site draws with: the batch it emits into, plus the **size
 /// roles** and the **color roles** it reads them from.
@@ -21,7 +21,7 @@ use super::theme::Theme;
 /// them were really saying.
 ///
 /// Both tables are **passed, never global**: each window resolves its own
-/// metrics at its own `ui_scale` (see [`metrics`](super::metrics)), so the
+/// metrics at its own `ui_scale` (see [`metrics`](crate::metrics)), so the
 /// context is built per frame by the renderer and handed down.
 ///
 /// A draw function takes `&mut Draw` and either passes it on to the sub-draws

@@ -45,9 +45,9 @@
 //! layer by what it is rather than by a number.
 
 use crate::host::graphics::track;
-use crate::host::rect::Rect;
 use crate::host::widget::Widget;
 use crate::host::widget::element::{BodyRole, Input, TimeSpace};
+use clausters_gui_draw::rect::Rect;
 
 /// The **active edit layer** of a container: what a press on it means.
 ///

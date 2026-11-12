@@ -10,14 +10,14 @@
 //! front, which calls these.
 
 use super::textedit;
-use crate::host::draw::Draw;
-use crate::host::font;
-use crate::host::metrics::Metrics;
-use crate::host::paint::Mesh;
-use crate::host::rect::Rect;
-use crate::host::theme::Color;
 use crate::host::widget::size;
 use crate::host::widget::{Align, Range};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::paint::Mesh;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::Color;
 
 /// The label strip height when a control carries a label, else 0 -- **and 0 when
 /// the cell cannot hold both**.
@@ -1038,7 +1038,7 @@ pub fn knob_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::theme::Theme;
 
     /// **A knob at its floor gives up its label, not its disc**: placed at the
     /// height its floor promises, it draws no caption and its disc at full
@@ -1065,7 +1065,7 @@ mod tests {
         assert!(disc(floor) * 2.0 >= m.knob_d - 4.0, "and a whole one");
         // **text twice the default's makes a disc twice the default's**
         let big = Range::parse(
-            serde_json::json!({"label": "cutoff", "text_size": 2.0 * crate::host::font::DEFAULT_SIZE})
+            serde_json::json!({"label": "cutoff", "text_size": 2.0 * clausters_gui_draw::font::DEFAULT_SIZE})
                 .as_object()
                 .unwrap(),
         );

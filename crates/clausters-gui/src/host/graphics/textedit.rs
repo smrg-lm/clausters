@@ -762,7 +762,7 @@ mod shaped_tests {
     use unicode_segmentation::UnicodeSegmentation;
 
     use super::{self as textedit, Caret};
-    use crate::host::font::{atlas, byte_at, caret_x, spans};
+    use clausters_gui_draw::font::{atlas, byte_at, caret_x, spans};
 
     /// **A caret walks a mixed line cluster by cluster, logically, and is
     /// drawn where it stands**: the arrows step one cluster at a time through

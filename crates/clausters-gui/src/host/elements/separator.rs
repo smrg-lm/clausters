@@ -9,12 +9,12 @@
 
 use serde_json::{Map, Value};
 
-use crate::host::draw::Draw;
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
 use crate::host::widget::element::{Ctx, Element};
 use crate::host::widget::parse;
 use crate::host::widget::size::Natural;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// A line between two groups of a strip.
 #[derive(Debug, Clone)]

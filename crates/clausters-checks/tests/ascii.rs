@@ -24,7 +24,7 @@ use std::process::Command;
 /// Files whose content is characters, so the characters stay.
 const DATA: &[(&str, &str)] = &[
     (
-        "crates/clausters-gui/src/host/font/mod.rs",
+        "crates/clausters-gui-draw/src/font/mod.rs",
         "the glyph table: every arm is keyed by the character it draws",
     ),
     (

@@ -5,25 +5,25 @@
 //! backgrounds, sliders, knobs, buttons, toggles and the bitmap glyphs of labels
 //! and values -- is a batch of flat-colored triangles. [`Mesh`] accumulates them
 //! in **device pixels** (top-left origin) with convenience builders (rect, quad,
-//! line, disc), and [`Painter`] uploads the batch once and draws it in a single
+//! line, disc), and the host's `Painter` uploads the batch once and draws it in a single
 //! call, converting pixel space to clip space in the shader feed. It is the same
 //! shape the waveform's column pipeline draws, so it stands on verified ground;
 //! one pipeline, no textures.
 //!
 //! The batch never travels alone: it travels with the two role tables every
-//! paint site reads, and that triple is [`Draw`](super::draw::Draw), what a
+//! paint site reads, and that triple is [`Draw`](crate::draw::Draw), what a
 //! draw function takes.
 
-use super::rect::Rect;
-use super::theme::Color;
+use crate::rect::Rect;
+use crate::theme::Color;
 
 /// `[x, y, r, g, b, a]` per vertex, position in device pixels.
-pub(crate) const FLOATS_PER_VERTEX: usize = 6;
+pub const FLOATS_PER_VERTEX: usize = 6;
 
 /// `[x, y, u, v, r, g, b, a]` per glyph vertex -- the same, plus where in the
 /// atlas texture it samples.
 #[cfg(feature = "font-atlas")]
-pub(crate) const FLOATS_PER_GLYPH_VERTEX: usize = 8;
+pub const FLOATS_PER_GLYPH_VERTEX: usize = 8;
 
 /// **How a widget's own triangles are emitted** -- the two paint capabilities
 /// that are a property of the *widget* rather than of a drawing site: its
@@ -158,7 +158,7 @@ impl Mesh {
     /// **Where each of its triangles lies**, flat and glyph, as `[x0, y0,
     /// x1, y1]` in device pixels: what a frame reads to know which pixels a
     /// batch covers.
-    pub(crate) fn triangle_bounds(&self) -> Vec<[f32; 4]> {
+    pub fn triangle_bounds(&self) -> Vec<[f32; 4]> {
         fn bounds(out: &mut Vec<[f32; 4]>, verts: &[f32], stride: usize) {
             for tri in verts.chunks_exact(stride * 3) {
                 let (mut b, mut i) = ([f32::MAX, f32::MAX, f32::MIN, f32::MIN], 0);
@@ -266,20 +266,20 @@ impl Mesh {
     }
 
     /// The flat vertices accumulated, `[x, y, r, g, b, a]` each.
-    pub(crate) fn flat_vertices(&self) -> &[f32] {
+    pub fn flat_vertices(&self) -> &[f32] {
         &self.verts
     }
 
     /// The glyph vertices accumulated, `[x, y, u, v, r, g, b, a]` each.
     #[cfg(feature = "font-atlas")]
-    pub(crate) fn glyph_vertices(&self) -> &[f32] {
+    pub fn glyph_vertices(&self) -> &[f32] {
         &self.glyphs
     }
 
     /// The alpha of every accumulated flat vertex -- what a test asks to see
     /// the [`Ink`]'s opacity in the batch itself.
-    #[cfg(test)]
-    pub(crate) fn alphas(&self) -> impl Iterator<Item = f32> + '_ {
+    #[cfg(any(test, feature = "probe"))]
+    pub fn alphas(&self) -> impl Iterator<Item = f32> + '_ {
         self.verts
             .as_chunks::<FLOATS_PER_VERTEX>()
             .0
@@ -289,8 +289,8 @@ impl Mesh {
 
     /// The `(y, colour)` of every accumulated flat vertex -- what a test asks
     /// to see a gradient in the batch itself.
-    #[cfg(test)]
-    pub(crate) fn colors_by_y(&self) -> impl Iterator<Item = (f32, Color)> + '_ {
+    #[cfg(any(test, feature = "probe"))]
+    pub fn colors_by_y(&self) -> impl Iterator<Item = (f32, Color)> + '_ {
         self.verts
             .as_chunks::<FLOATS_PER_VERTEX>()
             .0
@@ -300,8 +300,8 @@ impl Mesh {
 
     /// The `(x, y)` of every accumulated vertex, for bounds/layout tests --
     /// the flat geometry's and, where a face is drawing them, the glyphs'.
-    #[cfg(test)]
-    pub(crate) fn positions(&self) -> impl Iterator<Item = (f32, f32)> + '_ {
+    #[cfg(any(test, feature = "probe"))]
+    pub fn positions(&self) -> impl Iterator<Item = (f32, f32)> + '_ {
         let flat = self
             .verts
             .as_chunks::<FLOATS_PER_VERTEX>()
@@ -393,7 +393,7 @@ impl Mesh {
     /// **The corners of the flat triangles accumulated**, three to a
     /// triangle -- what a shape built once is kept as, to be drawn again by
     /// [`tris_at`](Self::tris_at).
-    pub(crate) fn corners(&self) -> Vec<[f32; 2]> {
+    pub fn corners(&self) -> Vec<[f32; 2]> {
         self.verts
             .as_chunks::<FLOATS_PER_VERTEX>()
             .0
@@ -731,8 +731,8 @@ impl Mesh {
     /// The bounding box of everything accumulated, `None` for an empty mesh --
     /// how much of the area a drawing actually inked, which is the one thing a
     /// test can ask about a picture without a window.
-    #[cfg(test)]
-    pub(crate) fn extent(&self) -> Option<Rect> {
+    #[cfg(any(test, feature = "probe"))]
+    pub fn extent(&self) -> Option<Rect> {
         let mut it = self.positions();
         let (fx, fy) = it.next()?;
         let (mut x0, mut x1) = (fx, fx);
@@ -763,7 +763,7 @@ impl Mesh {
 pub struct KeptParts<K> {
     parts: std::cell::RefCell<Vec<Option<(K, Mesh)>>>,
     /// How many parts were drawn again, for a test that counts them.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "probe"))]
     drawn: std::cell::Cell<usize>,
 }
 
@@ -771,7 +771,7 @@ impl<K> Default for KeptParts<K> {
     fn default() -> Self {
         Self {
             parts: std::cell::RefCell::new(Vec::new()),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "probe"))]
             drawn: std::cell::Cell::new(0),
         }
     }
@@ -807,7 +807,7 @@ impl<K: PartialEq> KeptParts<K> {
             built.set_clip(mesh.clip());
             draw(&mut built);
             parts[part] = Some((key, built));
-            #[cfg(test)]
+            #[cfg(any(test, feature = "probe"))]
             self.drawn.set(self.drawn.get() + 1);
         }
         if let Some((_, built)) = &parts[part] {
@@ -828,7 +828,7 @@ impl<K: PartialEq> KeptParts<K> {
     }
 
     /// How many parts it holds built.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "probe"))]
     pub fn built(&self) -> usize {
         self.parts
             .borrow()
@@ -838,13 +838,13 @@ impl<K: PartialEq> KeptParts<K> {
     }
 
     /// How many parts were drawn again since it was made.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "probe"))]
     pub fn drawn(&self) -> usize {
         self.drawn.get()
     }
 
     /// Every part it holds, in order, as one mesh.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "probe"))]
     pub fn joined(&self) -> Mesh {
         let mut out = Mesh::new();
         for (_, part) in self.parts.borrow().iter().flatten() {
@@ -864,7 +864,7 @@ mod tests {
     #[test]
     fn a_vertical_gradient_is_one_quad_cut_at_its_own_colour() {
         let mut mesh = Mesh::new();
-        let r = crate::host::rect::Rect::new(0.0, 0.0, 10.0, 100.0);
+        let r = crate::rect::Rect::new(0.0, 0.0, 10.0, 100.0);
         mesh.vgradient(r, [1.0, 0.0, 0.0, 1.0], [0.0, 0.0, 1.0, 1.0]);
         assert_eq!(mesh.vertex_count(), 6);
         for (y, c) in mesh.colors_by_y() {
@@ -876,7 +876,7 @@ mod tests {
             assert_eq!(c, want, "at y {y}");
         }
         mesh.clear();
-        mesh.set_clip(Some(crate::host::rect::Rect::new(0.0, 25.0, 10.0, 50.0)));
+        mesh.set_clip(Some(crate::rect::Rect::new(0.0, 25.0, 10.0, 50.0)));
         mesh.vgradient(r, [1.0, 0.0, 0.0, 1.0], [0.0, 0.0, 1.0, 1.0]);
         for (y, c) in mesh.colors_by_y() {
             let t = y / 100.0;

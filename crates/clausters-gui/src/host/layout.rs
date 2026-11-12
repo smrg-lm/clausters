@@ -44,11 +44,11 @@
 
 use std::collections::HashMap;
 
-use super::metrics::Metrics;
-use super::rect::Rect;
 use super::scroll;
 use super::timeline::{self, GroupKey, group_key};
 use super::widget::{Anchor, Flow, Layout, Place, Widget, WidgetKind};
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// The space a widget is placed in: how the wire's own lengths become this
 /// space's coordinates, the scale everything in it is drawn at, and the size
@@ -116,7 +116,7 @@ impl Space {
 
     /// One declared length in this space's coordinates.
     fn px(self, declared: f32) -> f32 {
-        super::metrics::snap_px(declared, self.unit)
+        clausters_gui_draw::metrics::snap_px(declared, self.unit)
     }
 }
 
@@ -424,7 +424,7 @@ fn symbol_fit<'w>(
     let mut fit = 1.0f32;
     for (c, r) in kids.iter().zip(rects) {
         if let Some((caption, text_size)) = symbol(c) {
-            let need = super::font::width(&caption, text_size * space.unit);
+            let need = clausters_gui_draw::font::width(&caption, text_size * space.unit);
             let room = (r.w - 2.0 * space.metrics.pad).max(0.0);
             if need > room && need > 0.0 {
                 fit = fit.min(room / need);
@@ -1584,7 +1584,7 @@ mod tests {
         let glyphs: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"F4C0":"M0 0h500v500h-500z","F4C1":"M0 0h1600v500h-1600z"}"#)
                 .unwrap();
-        crate::host::font::outline::set(&glyphs);
+        clausters_gui_draw::font::outline::set(&glyphs);
         let m = Metrics::default();
         let w = tree(
             r#"{"type":"window","flow":"grid","cols":3,"margin":0,"gap":0,"children":[
@@ -1604,7 +1604,7 @@ mod tests {
         assert_eq!(fit(2), fit(3), "the narrow one shrinks with it");
         assert_eq!(fit(4), 1.0, "a word is cut, never shrunk");
         let cell = rect_of(&placed, 3);
-        let wide = crate::host::font::width("\u{F4C1}", 3.0 * fit(3));
+        let wide = clausters_gui_draw::font::width("\u{F4C1}", 3.0 * fit(3));
         assert!(wide <= cell.w - 2.0 * m.pad + 0.01, "{wide} in {cell:?}");
         // and drawn, the fit never takes a symbol under the host's text size
         let drawn = crate::host::graphics::controls::symbol_size("\u{F4C1}", 3.0, 0.01, &m);

@@ -168,11 +168,11 @@ pub trait TimelineView {
     /// view takes when its picture is geometry rather than a texture.
     fn mesh(
         &self,
-        mesh: &mut crate::host::paint::Mesh,
-        rect: crate::host::rect::Rect,
+        mesh: &mut clausters_gui_draw::paint::Mesh,
+        rect: clausters_gui_draw::rect::Rect,
         view: &View,
-        m: &crate::host::metrics::Metrics,
-        theme: &crate::host::theme::Theme,
+        m: &clausters_gui_draw::metrics::Metrics,
+        theme: &clausters_gui_draw::theme::Theme,
     ) {
         let _ = (mesh, rect, view, m, theme);
     }

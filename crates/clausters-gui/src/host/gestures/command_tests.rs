@@ -9,11 +9,11 @@ use clausters_editing::verbs::ActionTarget;
 use super::super::interact;
 use super::super::menu::EntryKind;
 use super::super::popup::Owner;
-use super::super::rect::Rect;
 use super::super::widget::WidgetKind;
 use super::super::widget::element::Key;
 use super::super::{ClientId, GUI_DEF, Host};
 use super::*;
+use clausters_gui_draw::rect::Rect;
 
 fn host_from(json: &str) -> Host {
     let mut host = Host::new();

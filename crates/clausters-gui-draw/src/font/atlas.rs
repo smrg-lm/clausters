@@ -4,7 +4,7 @@
 //! The embedded bitmap ([`super`]) is the floor: with no face loaded, every
 //! measurement and every quad is the bitmap's, unchanged. A shell loads the
 //! face the crate carries ([`EMBEDDED`]) as it starts, and another arrives
-//! through the [`FontSource`](crate::host::FontSource) seam -- a file
+//! through the host's `FontSource` seam -- a file
 //! natively, bytes a client hands over -- and from then on [`super::text`]
 //! emits textured quads instead of one rectangle per lit font-pixel.
 //!
@@ -16,7 +16,7 @@
 //! ([`super::width`]), measured where the string changes.
 //!
 //! **Why this one lives in a thread-local when the size table is passed.** A
-//! window resolves its own [`Metrics`](crate::host::metrics::Metrics), so a
+//! window resolves its own [`Metrics`](crate::metrics::Metrics), so a
 //! table cannot be global without lying about which window it belongs to. A
 //! face is the opposite: a build points at one, every window draws with it, and
 //! the alternative is threading it through every draw function in the crate to
@@ -451,12 +451,12 @@ pub fn has_face() -> bool {
 /// for the shaper -- compiled into the host, so a native window and a page
 /// draw the same text with nothing to find and nothing to fetch.
 /// `assets/fonts/` holds it, its license and the script that makes it.
-pub const EMBEDDED: &[u8] = include_bytes!("../../../assets/fonts/DejaVuSans.ttf");
+pub const EMBEDDED: &[u8] = include_bytes!("../../assets/fonts/DejaVuSans.ttf");
 
 /// **The face the host draws Devanagari with**, which [`EMBEDDED`] does not
 /// draw: a subset of Noto Sans Devanagari, compiled in beside it and fallen
 /// back to for a character the host's face has no glyph for.
-pub const DEVANAGARI: &[u8] = include_bytes!("../../../assets/fonts/NotoSansDevanagari.ttf");
+pub const DEVANAGARI: &[u8] = include_bytes!("../../assets/fonts/NotoSansDevanagari.ttf");
 
 /// Loads [`EMBEDDED`] as the host's typeface, where none is loaded: a second
 /// host of one page finds the first one's face, or the one a client handed
@@ -467,8 +467,8 @@ pub fn set_embedded() -> bool {
 
 /// The face the tests of this module and of [`super`] draw with: the one the
 /// host embeds, so none of them depends on what a machine has installed.
-#[cfg(test)]
-pub(crate) fn system_face() -> Option<Vec<u8>> {
+#[cfg(any(test, feature = "probe"))]
+pub fn system_face() -> Option<Vec<u8>> {
     Some(EMBEDDED.to_vec())
 }
 

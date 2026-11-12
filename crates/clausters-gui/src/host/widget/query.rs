@@ -165,8 +165,8 @@ impl WidgetKind {
     /// what it shows, and at what rate.
     pub fn freq_axis(
         &self,
-        rect: super::super::rect::Rect,
-        m: &super::super::metrics::Metrics,
+        rect: clausters_gui_draw::rect::Rect,
+        m: &clausters_gui_draw::metrics::Metrics,
         sample_rate: f64,
     ) -> Option<super::element::FreqAxis> {
         self.as_element()?
@@ -196,9 +196,9 @@ impl WidgetKind {
     /// restrict a selection on.
     pub fn value_axis(
         &self,
-        rect: super::super::rect::Rect,
+        rect: clausters_gui_draw::rect::Rect,
         indent: f32,
-        m: &super::super::metrics::Metrics,
+        m: &clausters_gui_draw::metrics::Metrics,
         lanes: usize,
     ) -> Option<super::element::ValueAxis> {
         self.as_element()?
@@ -297,7 +297,7 @@ impl WidgetKind {
     ///
     /// A container answers from its variant, an element for itself
     /// ([`OnAxis::gutter`]).
-    pub fn gutter(&self, m: &super::super::metrics::Metrics) -> f32 {
+    pub fn gutter(&self, m: &clausters_gui_draw::metrics::Metrics) -> f32 {
         match self {
             WidgetKind::Custom(el) => el.on_axis().map_or(0.0, |a| a.gutter(m)),
             _ => 0.0,
@@ -308,10 +308,10 @@ impl WidgetKind {
     /// container (whose body is the container's own geometry).
     pub fn axis_body(
         &self,
-        rect: super::super::rect::Rect,
+        rect: clausters_gui_draw::rect::Rect,
         indent: f32,
-        m: &super::super::metrics::Metrics,
-    ) -> Option<(super::super::rect::Rect, bool)> {
+        m: &clausters_gui_draw::metrics::Metrics,
+    ) -> Option<(clausters_gui_draw::rect::Rect, bool)> {
         self.as_element()?.on_axis()?.axis_body(rect, indent, m)
     }
 
@@ -352,8 +352,8 @@ impl WidgetKind {
     /// widget whose first answer stands.
     pub fn measured_gutter(
         &self,
-        rect: super::super::rect::Rect,
-        m: &super::super::metrics::Metrics,
+        rect: clausters_gui_draw::rect::Rect,
+        m: &clausters_gui_draw::metrics::Metrics,
     ) -> Option<f32> {
         self.as_element()?.on_axis()?.measured_gutter(rect, m)
     }
@@ -372,7 +372,7 @@ impl WidgetKind {
 
     /// **How those rows are laid out** -- folded strips, a floor and a scroll
     /// ([`OnAxis::lanes`]); the even split for a widget that says nothing.
-    pub fn lanes(&self, m: &super::super::metrics::Metrics) -> crate::host::bands::Lanes {
+    pub fn lanes(&self, m: &clausters_gui_draw::metrics::Metrics) -> crate::host::bands::Lanes {
         self.as_element()
             .and_then(Element::on_axis)
             .map_or_else(Default::default, |a| a.lanes(m))

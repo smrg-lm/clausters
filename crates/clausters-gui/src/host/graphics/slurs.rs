@@ -8,9 +8,9 @@
 //! the roll; this is the geometry and the drawing, with no props and no
 //! element, so it is tested without a window.
 
-use crate::host::paint::Mesh;
-use crate::host::rect::Rect;
-use crate::host::theme::Color;
+use clausters_gui_draw::paint::Mesh;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::Color;
 
 /// **How a slur is drawn**, by the name the owner sends.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

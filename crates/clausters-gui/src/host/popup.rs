@@ -24,12 +24,12 @@
 //! ([`Element::picked`](super::widget::Element::picked)); a menu's entries
 //! carry a verb and the host reports it.
 
-use super::font;
 use super::menu::{self, Entry};
 use super::menubar::{self, Title};
-use super::metrics::Metrics;
-use super::rect::Rect;
 use super::widget::Widget;
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// Who opened the stack, and so who answers a pick.
 #[derive(Debug, Clone, PartialEq)]

@@ -113,6 +113,12 @@ if [ "$fast" = 0 ]; then
         --all-targets --features standalone-faust
 fi
 
+# The drawing base (`clausters-gui-draw`) is built above under each of the
+# host's configurations, with the features the host forwards; its own floor and
+# its suite there are its own rows, since the host never builds it alone.
+clippy "draw: clippy, the floor" -p clausters-gui-draw --all-targets --no-default-features
+clippy "draw: clippy, default + probe" -p clausters-gui-draw --all-targets --features probe
+
 # --- The wasm gate, under the same axes --------------------------------------
 #
 # `check-wasm.sh` proves the agnostic core never re-couples to native I/O. Here
@@ -136,6 +142,9 @@ run "rustdoc: default features" \
 run "rustdoc: the floor" \
     env RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items \
     --no-default-features
+run "rustdoc: the drawing base" \
+    env RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items \
+    -p clausters-gui-draw
 
 # --- The suite ---------------------------------------------------------------
 #
@@ -146,6 +155,8 @@ run "rustdoc: the floor" \
 
 run "test: default features" cargo test --quiet
 run "test: the floor" cargo test --quiet --no-default-features
+run "test: the drawing base" cargo test --quiet -p clausters-gui-draw
+run "test: the drawing base's floor" cargo test --quiet -p clausters-gui-draw --no-default-features
 
 # --- Report ------------------------------------------------------------------
 

@@ -3,7 +3,7 @@
 //! These are the cheap counterparts of the heavy GPU views: their *data* is a
 //! single control bus read straight from the shared-memory segment each frame
 //! (see [`crate::host::native::shm`]), so they need no buffer, no analysis and no dedicated
-//! pipeline -- just the flat-geometry painter ([`crate::host::paint`]) plus bitmap text,
+//! pipeline -- just the flat-geometry painter ([`clausters_gui_draw::paint`]) plus bitmap text,
 //! exactly like the standard controls. The drawing lives here as pure functions
 //! over a [`Draw`]; the windowed front supplies the live value(s) read from
 //! shared memory and keeps the scope's rolling history. Keeping it GPU- and
@@ -15,16 +15,16 @@ use crate::spectrogram::FreqScale;
 
 use super::controls::body_rect;
 use super::signal::{layers, trace};
-use crate::host::draw::Draw;
-use crate::host::font;
 use crate::host::frame::channel_rect;
 use crate::host::live::TapWindow;
-use crate::host::rect::Rect;
 use crate::host::ruler;
-use crate::host::theme::Color;
-use crate::host::theme::with_alpha;
 use crate::host::widget::RulerDir;
 use crate::viewport::{Axis, Unit};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::Color;
+use clausters_gui_draw::theme::with_alpha;
 
 /// The 0..1 position of `value` in `[min, max]`, clamped. A degenerate range
 /// (min == max) maps to 0.
@@ -111,7 +111,7 @@ impl Scale {
 /// makes the strip readable at a glance: a colour that moved with the signal
 /// would say only "loud", while a fixed scale says *how* loud by where the
 /// colour changes.
-pub fn column_color(theme: &crate::host::theme::Theme, scale: Scale, height: f32) -> Color {
+pub fn column_color(theme: &clausters_gui_draw::theme::Theme, scale: Scale, height: f32) -> Color {
     Paint::scale(scale, theme).color(height)
 }
 
@@ -186,7 +186,7 @@ impl Paint {
     /// into amber, amber held across the middle so a column using its
     /// headroom reads amber, a short blend into red, and red from the hot end
     /// to the top, where a peak that grows any further clips.
-    pub fn scale(scale: Scale, theme: &crate::host::theme::Theme) -> Self {
+    pub fn scale(scale: Scale, theme: &clausters_gui_draw::theme::Theme) -> Self {
         let [warn, amber, fade, hot] = scale.marks();
         let stop = |at, color, shape| Stop { at, color, shape };
         Paint(vec![
@@ -205,7 +205,7 @@ impl Paint {
         origin: f32,
         below: Scale,
         above: Scale,
-        theme: &crate::host::theme::Theme,
+        theme: &clausters_gui_draw::theme::Theme,
     ) -> Self {
         let o = origin.clamp(0.0, 1.0);
         // Below the zero a distance `d` is the height `o - d * o`, so the
@@ -314,15 +314,15 @@ impl ZoneColor {
     /// `#rrggbb[aa]`, or the name of a theme role; `None` for anything else.
     pub fn parse(text: &str) -> Option<Self> {
         if text.starts_with('#') {
-            crate::host::theme::parse_hex(text).map(ZoneColor::Rgba)
+            clausters_gui_draw::theme::parse_hex(text).map(ZoneColor::Rgba)
         } else {
-            crate::host::theme::Theme::default()
+            clausters_gui_draw::theme::Theme::default()
                 .get(text)
                 .map(|_| ZoneColor::Role(text.to_string()))
         }
     }
 
-    fn resolve(&self, theme: &crate::host::theme::Theme) -> Color {
+    fn resolve(&self, theme: &clausters_gui_draw::theme::Theme) -> Color {
         match self {
             ZoneColor::Rgba(color) => *color,
             ZoneColor::Role(name) => theme.get(name).unwrap_or(theme.meter_low),
@@ -379,7 +379,7 @@ impl Zones {
     }
 
     /// What these zones are on `axis`, drawn in `theme`.
-    pub fn paint(&self, axis: MeterAxis, theme: &crate::host::theme::Theme) -> Paint {
+    pub fn paint(&self, axis: MeterAxis, theme: &clausters_gui_draw::theme::Theme) -> Paint {
         match (self, axis) {
             (Zones::Auto, axis) if axis.centred() => Paint::solid(theme.meter_low),
             (Zones::Off, _) => Paint::solid(theme.meter_low),
@@ -415,9 +415,9 @@ impl Zones {
 /// three columns drawn by three call sites is three answers to how loud a
 /// signal is.
 pub fn draw_column(
-    mesh: &mut crate::host::paint::Mesh,
-    m: &crate::host::metrics::Metrics,
-    theme: &crate::host::theme::Theme,
+    mesh: &mut clausters_gui_draw::paint::Mesh,
+    m: &clausters_gui_draw::metrics::Metrics,
+    theme: &clausters_gui_draw::theme::Theme,
     cell: Rect,
     fill: f32,
     mark: f32,
@@ -438,9 +438,9 @@ pub fn draw_column(
 /// of quads however tall it is, and every edge lands on its stop.
 #[allow(clippy::too_many_arguments)] // draw_column's six, and where it stands
 pub fn draw_column_from(
-    mesh: &mut crate::host::paint::Mesh,
-    m: &crate::host::metrics::Metrics,
-    theme: &crate::host::theme::Theme,
+    mesh: &mut clausters_gui_draw::paint::Mesh,
+    m: &clausters_gui_draw::metrics::Metrics,
+    theme: &clausters_gui_draw::theme::Theme,
     cell: Rect,
     origin: f32,
     fill: f32,
@@ -765,9 +765,9 @@ mod tests {
     fn an_overlaid_live_trace_fills_its_lane() {
         use super::*;
         use crate::host::live::TapWindow;
-        use crate::host::metrics::Metrics;
-        use crate::host::paint::Mesh;
-        use crate::host::theme::Theme;
+        use clausters_gui_draw::metrics::Metrics;
+        use clausters_gui_draw::paint::Mesh;
+        use clausters_gui_draw::theme::Theme;
 
         let (m, theme) = (Metrics::default(), Theme::default());
         let rect = Rect::new(0.0, 0.0, 200.0, 120.0);
@@ -823,9 +823,9 @@ mod tests {
     }
 
     use super::*;
-    use crate::host::metrics::Metrics;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::metrics::Metrics;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
 
     #[test]
     fn fraction_clamps_and_handles_degenerate_range() {
@@ -935,7 +935,7 @@ mod tests {
             [-1, "#40c060", "lin"],
             [0, "meter_mid", -3]
         ]);
-        let green = crate::host::theme::parse_hex("#40c060").unwrap();
+        let green = clausters_gui_draw::theme::parse_hex("#40c060").unwrap();
         let want = Some(Zones::Stops(vec![
             (-1.0, ZoneColor::Rgba(green), Shape::Lin),
             (0.0, ZoneColor::Role("meter_mid".into()), Shape::Curve(-3.0)),
@@ -1065,8 +1065,8 @@ mod tests {
     #[test]
     fn zones_are_placed_in_the_axis_units() {
         let theme = Theme::default();
-        let red = crate::host::theme::parse_hex("#d04040").unwrap();
-        let green = crate::host::theme::parse_hex("#40c060").unwrap();
+        let red = clausters_gui_draw::theme::parse_hex("#d04040").unwrap();
+        let green = clausters_gui_draw::theme::parse_hex("#40c060").unwrap();
         let by_sign = Zones::Stops(vec![
             (-1.0, ZoneColor::Rgba(red), Shape::Step),
             (0.0, ZoneColor::Rgba(green), Shape::Step),
@@ -1285,7 +1285,7 @@ mod tests {
         // **Each colour has its band, and the changes between them are
         // short.** Amber is held from -17 to -7, so a column at -12 is plainly
         // amber; the blends take one decibel each; red is reached at -6.
-        let theme = crate::host::theme::Theme::default();
+        let theme = clausters_gui_draw::theme::Theme::default();
         let at = |db_level: f32| {
             column_color(
                 &theme,
@@ -1321,7 +1321,7 @@ mod tests {
             "on an amplitude axis -6 dB is half of unity: {linear:?}"
         );
 
-        let theme = crate::host::theme::Theme::default();
+        let theme = clausters_gui_draw::theme::Theme::default();
         assert_eq!(
             column_color(&theme, db, db.warn * 0.5),
             theme.meter_low,
@@ -1364,9 +1364,9 @@ mod tests {
     #[test]
     fn a_centred_column_runs_down_from_the_zero() {
         let m = Metrics::default();
-        let theme = crate::host::theme::Theme::default();
+        let theme = clausters_gui_draw::theme::Theme::default();
         let cell = Rect::new(0.0, 0.0, 8.0, 100.0);
-        let mut mesh = crate::host::paint::Mesh::new();
+        let mut mesh = clausters_gui_draw::paint::Mesh::new();
         draw_column(&mut mesh, &m, &theme, cell, 0.0, 0.0, Scale::decibels());
         let well = mesh.vertex_count();
         mesh.clear();
@@ -1413,9 +1413,9 @@ mod tests {
     #[test]
     fn an_empty_meter_is_still_a_well() {
         let m = Metrics::default();
-        let theme = crate::host::theme::Theme::default();
+        let theme = clausters_gui_draw::theme::Theme::default();
         let cell = Rect::new(0.0, 0.0, 8.0, 60.0);
-        let mut mesh = crate::host::paint::Mesh::new();
+        let mut mesh = clausters_gui_draw::paint::Mesh::new();
         draw_column(&mut mesh, &m, &theme, cell, 0.0, 0.0, Scale::decibels());
         let empty = mesh.vertex_count();
         assert!(empty > 0, "the well is drawn");
@@ -1575,7 +1575,7 @@ const MIN_COLUMN: f32 = 3.0;
 /// caption**. A lamp is a *mark*, not a panel: what it has to say it says by
 /// being lit, and the number it raises is written over the column on the plate
 /// every overlaid line in this host is written on.
-fn lamp_h(body_h: f32, m: &crate::host::metrics::Metrics) -> f32 {
+fn lamp_h(body_h: f32, m: &clausters_gui_draw::metrics::Metrics) -> f32 {
     let floor = m.divider_w * 3.0;
     (body_h * LAMP_SHARE).clamp(floor, font::height(m.caption_scale).max(floor))
 }

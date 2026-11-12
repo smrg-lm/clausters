@@ -21,10 +21,10 @@
 //! are the body's own), and a restricted one owns all four, because every one
 //! of them is a value the hand chose.
 
-use crate::host::draw::Draw;
-use crate::host::rect::Rect;
-use crate::host::theme::with_alpha;
 use crate::viewport::View;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::with_alpha;
 
 /// The wash a selection is filled with, over whatever it covers.
 const FILL: f32 = 0.18;
@@ -212,7 +212,7 @@ pub fn draw_rect(d: &mut Draw, r: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::rect::Rect;
+    use clausters_gui_draw::rect::Rect;
 
     const BODY: Rect = Rect {
         x: 0.0,
@@ -287,9 +287,9 @@ mod tests {
         // A rectangle is two triangles, so the count is in vertices: what the
         // test is after is how many boxes went down, and six of them are one.
         let boxes = |bands: &[(f32, f32)], full: (f32, f32)| {
-            let m = crate::host::metrics::Metrics::default();
-            let theme = crate::host::theme::Theme::default();
-            let mut mesh = crate::host::paint::Mesh::new();
+            let m = clausters_gui_draw::metrics::Metrics::default();
+            let theme = clausters_gui_draw::theme::Theme::default();
+            let mut mesh = clausters_gui_draw::paint::Mesh::new();
             draw(
                 &mut Draw::new(&mut mesh, &m, &theme),
                 10.0,

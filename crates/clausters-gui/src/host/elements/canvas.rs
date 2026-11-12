@@ -20,11 +20,11 @@
 use serde_json::{Map, Value};
 
 use crate::canvas::{DEFAULT_SHADER, PARAM_COUNT};
-use crate::host::draw::Draw;
-use crate::host::font;
 use crate::host::graphics::controls;
 use crate::host::widget::element::{Ctx, Element, Needs, SlotFrame, SlotKey, SlotKind, Slotted};
 use crate::host::widget::parse;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
 
 /// A shader view. `params` are the four floats fed to the shader; a `buses`
 /// slot that is not negative overrides its param from a control bus each frame.
@@ -151,9 +151,9 @@ impl Slotted for Canvas {
 mod tests {
     use super::*;
     use crate::host::BusSource;
-    use crate::host::metrics::Metrics;
-    use crate::host::rect::Rect;
     use crate::host::world::World;
+    use clausters_gui_draw::metrics::Metrics;
+    use clausters_gui_draw::rect::Rect;
 
     fn props(json: &str) -> Map<String, Value> {
         serde_json::from_str(json).unwrap()

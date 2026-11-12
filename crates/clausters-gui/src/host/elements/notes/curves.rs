@@ -60,7 +60,7 @@ const MAX_ROWS_SHARE: f32 = 0.5;
 /// The size the tabs over the lane are written at: a control's, at the
 /// window's scale.
 fn tab_size(m: &Metrics) -> f32 {
-    crate::host::font::DEFAULT_SIZE * m.ui_scale
+    clausters_gui_draw::font::DEFAULT_SIZE * m.ui_scale
 }
 
 /// **The share of a roll one lane takes** when its owner shows one at a time
@@ -878,9 +878,9 @@ impl Notes {
 /// **A lane's value ruler**, in its label cell: the top of its range at the
 /// top and the bottom at the bottom.
 pub(super) fn value_ruler(
-    mesh: &mut crate::host::paint::Mesh,
+    mesh: &mut clausters_gui_draw::paint::Mesh,
     m: &Metrics,
-    theme: &crate::host::theme::Theme,
+    theme: &clausters_gui_draw::theme::Theme,
     cell: Rect,
     min: f64,
     max: f64,

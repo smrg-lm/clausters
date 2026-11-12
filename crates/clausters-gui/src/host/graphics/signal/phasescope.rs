@@ -16,11 +16,11 @@
 
 use clausters_core::measure::{correlation, lissajous_point};
 
-use crate::host::draw::Draw;
-use crate::host::font;
 use crate::host::graphics::controls::body_rect;
 use crate::host::graphics::meters;
-use crate::host::rect::Rect;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::rect::Rect;
 
 /// The furthest a sample reaches from the origin: a full-scale mono signal sits
 /// at mid `(1+1)/sqrt(2) = sqrt(2)`. The field is scaled so that extent just fits, with a
@@ -141,9 +141,9 @@ fn draw_correlation(d: &mut Draw, strip: Rect, interleaved: &[f32]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::metrics::Metrics;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::metrics::Metrics;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
 
     /// An interleaved window of `n` pairs from two channel functions.
     fn window(n: usize, l: impl Fn(usize) -> f32, r: impl Fn(usize) -> f32) -> Vec<f32> {

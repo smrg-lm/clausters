@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn folded_channels_are_a_prop_and_lay_the_rows_out() {
         use crate::host::widget::element::Element;
-        let m = crate::host::metrics::Metrics::default();
+        let m = clausters_gui_draw::metrics::Metrics::default();
         let mut take =
             element(r#"{"id":1,"type":"signal","view":"trace","buffer":7,"folded":[1, 3]}"#);
         let lanes = take.lanes(&m);

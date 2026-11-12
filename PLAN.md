@@ -2587,7 +2587,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   real time, and the polls of a render or a save landing, bounded by a
   deadline.
 
-- ⬜ **R19: The host's modules have levels too.** The host is 149 thousand
+- ✅ **R19: The host's modules have levels too** *(done 2026-11-12)*. The host is 149 thousand
   lines in one crate, and measured by reference it is one strongly connected
   block: its five largest modules use one another, the drawing base is cyclic
   (`font`, `paint`, `metrics`, `theme`, `layout`), and the renderers at the
@@ -2600,7 +2600,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   - ✅ **R19a** breaks the base's cycles (the rectangle leaves `layout` for the
     base; `theme` and `metrics` stop reading `paint` and `font`) and groups
     the native shell, today spread among 73 flat modules, under one module.
-  - ⬜ **R19b** cuts the base into a crate once its list of cycles is empty.
+  - ✅ **R19b** cuts the base into a crate once its list of cycles is empty.
 
   The layers above are ordered one cycle per visit, by whichever of the `P`
   and `D` tracks has the module open. **Acceptance:** the host's headless
@@ -2625,6 +2625,17 @@ and so waits for `T3`, the milestone that already owes the bench.
   host's root (`Host`, `ClientId`, the addresses) from the layers below it.
   Seven examples captured headless by the host built before and after were
   the same bytes.
+
+  *R19b done 2026-11-12.* The base is `crates/clausters-gui-draw`, level 0
+  (it names no crate of the project), with the face's assets beside it. Its
+  features are the host's, forwarded: `font-atlas`, and `path` under the
+  host's `notation`. What the host's tests asked of a batch under its own
+  `cfg(test)` (an extent, the colors, the alphas, how often a kept part was
+  drawn again) is behind a `probe` feature the host turns on as a
+  dev-dependency, since a crate's `cfg(test)` does not reach another's
+  tests. The host's paths were rewritten to the crate, with no re-export,
+  as notation's were. The layers table lost its base row, and the four left
+  are numbered from 0. The same seven captures were the same bytes again.
 
 - ⬜ **R20: The two bindings have one shape, and a C type is checked.**
   `clausters-ffi` is 24 modules by subject and `clausters-core-web` exposes

@@ -259,7 +259,7 @@ impl Multitrack {
                 selected,
                 space,
                 contents: self.contents,
-                text: crate::host::font::generation(),
+                text: clausters_gui_draw::font::generation(),
             };
             let (m, theme) = (d.m, d.theme);
             self.kept.draw(d.mesh, n, key, |mesh| {

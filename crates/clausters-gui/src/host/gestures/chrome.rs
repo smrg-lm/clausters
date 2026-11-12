@@ -13,10 +13,10 @@ use clausters_core::osc::OscType;
 
 use super::super::Host;
 use super::super::chrome;
-use super::super::rect::Rect;
 use super::effects::{emit, redraws};
 use super::nav::{scroll_view, set_scroll_view};
 use super::{Drag, GestureCtx, GestureEffect, Gestures};
+use clausters_gui_draw::rect::Rect;
 
 /// The tag a folded or unfolded section reports: `"collapsed" <1|0>`.
 pub const COLLAPSED: &str = "collapsed";

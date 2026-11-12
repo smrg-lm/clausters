@@ -14,8 +14,8 @@
 
 use super::super::Host;
 use super::super::layout;
-use super::super::rect::Rect;
 use super::super::widget::WidgetKind;
+use clausters_gui_draw::rect::Rect;
 
 /// Sets a `scroll`'s view state (clamped against its content in `area`),
 /// returning the clamped `(view_x, view_y, view_zoom)` when something actually

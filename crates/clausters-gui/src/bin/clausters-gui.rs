@@ -18,11 +18,11 @@ use std::sync::Arc;
 use clausters_core::config::{Config, PortChoice, WS_PORT_OFFSET};
 use clausters_core::ids::IdShare;
 use clausters_gui::host::keymap::Keymap;
-use clausters_gui::host::metrics::Metrics;
 use clausters_gui::host::native::store::{self, GuiStore};
 use clausters_gui::host::native::transport::{self, DEFAULT_PORT};
-use clausters_gui::host::theme::Theme;
 use clausters_gui::host::{Host, ServerLeg, gui};
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::theme::Theme;
 
 // Feeding a window a GuiDef this binary built: the standalone boot does it.
 #[cfg(feature = "standalone")]

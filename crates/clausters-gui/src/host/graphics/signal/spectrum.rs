@@ -22,14 +22,14 @@ use clausters_core::window::Window;
 
 use crate::spectrogram::FreqScale;
 
-use crate::host::draw::Draw;
 use crate::host::graphics::controls::body_rect;
 use crate::host::graphics::meters::{self, fraction};
-use crate::host::paint::Mesh;
-use crate::host::rect::Rect;
 use crate::host::ruler;
-use crate::host::theme::Color;
 use crate::host::widget::RulerDir;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::paint::Mesh;
+use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::Color;
 
 /// The dB reference the magnitudes are floored at internally: the core's, so
 /// the analysis agrees with the spectrogram before the display dB window is
@@ -239,7 +239,7 @@ pub(crate) fn regions(
     ruler: bool,
     ruler_y: bool,
     db_window: (f32, f32),
-    m: &crate::host::metrics::Metrics,
+    m: &clausters_gui_draw::metrics::Metrics,
 ) -> SpectrumRegions {
     let mut body = body_rect(rect, label, m);
     // The x strip takes height and the y strip takes width, so the two are
@@ -424,7 +424,7 @@ mod tests {
     /// decibel formats decimals and the strip asks for the room to draw them.
     #[test]
     fn the_db_strip_follows_its_window() {
-        let m = crate::host::metrics::Metrics::default();
+        let m = clausters_gui_draw::metrics::Metrics::default();
         let rect = Rect::new(0.0, 0.0, 400.0, 300.0);
         let plain = regions(rect, false, true, true, (-90.0, 0.0), &m);
         let bare = regions(rect, false, true, false, (-90.0, 0.0), &m);

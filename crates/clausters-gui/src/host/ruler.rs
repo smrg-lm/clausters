@@ -33,11 +33,11 @@ use clausters_core::tempomap::TempoMap;
 use crate::spectrogram::FreqScale;
 use crate::waveform::AMP_MARGIN;
 
-use super::draw::Draw;
-use super::font;
-use super::metrics::Metrics;
-use super::rect::Rect;
 use super::widget::{RulerDir, RulerY};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// One ruler tick: its position as a fraction of the visible axis span
 /// (0 = start/bottom, 1 = end/top) and its label (`None` for a minor tick).
@@ -1654,8 +1654,8 @@ pub(crate) fn draw_ticks_v_shared(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
 
     fn labels(ticks: &[Tick]) -> Vec<&str> {
         ticks.iter().filter_map(|t| t.label.as_deref()).collect()

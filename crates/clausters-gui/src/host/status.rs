@@ -72,11 +72,11 @@ use std::collections::{HashMap, VecDeque};
 
 use clausters_core::osc::OscType;
 
-use super::font;
-use super::metrics::Metrics;
-use super::rect::Rect;
 use super::widget::{Widget, WidgetKind};
 use super::wire::string_arg;
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// How many lines one window keeps. Past it the oldest is dropped: this is a
 /// window's recent history, not a transcript -- a session's transcript is the

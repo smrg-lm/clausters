@@ -11,7 +11,7 @@
 //! ([`super::layout`]) and renders it: the heavy `waveform` view into its
 //! viewport (the existing [`WaveformView`](crate::waveform::WaveformView)), and
 //! the control widgets and chrome through the flat-geometry painter
-//! ([`super::paint`]) with bitmap text ([`super::font`]).
+//! ([`clausters_gui_draw::paint`]) with bitmap text ([`clausters_gui_draw::font`]).
 //!
 //! Interaction closes the loop: dragging a slider/knob, clicking a button/toggle/
 //! menu writes the new value back into the host's tree and emits `/gui_event` to

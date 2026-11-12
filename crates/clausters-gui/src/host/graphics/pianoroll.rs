@@ -1,6 +1,6 @@
 //! The piano-roll **drawing**: a note grid, a piano keyboard gutter, a
 //! velocity lane and the OSC markers, all pure over a [`Draw`] (the
-//! flat-geometry [`crate::host::paint`] painter) so they are unit-testable without a
+//! flat-geometry [`clausters_gui_draw::paint`] painter) so they are unit-testable without a
 //! window -- the static-view posture of `track`/`bpf`.
 //!
 //! What a note **is**, and what a hand does to a list of them, is
@@ -29,13 +29,13 @@
 use clausters_core::scale;
 
 use crate::host::bands::Bands;
-use crate::host::draw::Draw;
-use crate::host::font;
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
 use crate::host::structures::boxes::{self, Part};
 use crate::host::structures::notes::{Note, OscMarker};
 use crate::viewport::View;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 // --- Layout ---------------------------------------------------------------
 
@@ -711,8 +711,8 @@ pub fn time_at(grid: Rect, nav: &View, offset: f64, x: f32) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
 
     fn grid() -> Rect {
         Rect::new(50.0, 10.0, 400.0, 240.0)

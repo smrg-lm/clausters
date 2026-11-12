@@ -10,12 +10,12 @@ use clausters_core::osc::OscType;
 
 use super::super::Host;
 use super::super::interact::{self, Hit};
-use super::super::rect::Rect;
 use super::super::widget::element::{FreqAxis, ValueAxis};
 use super::super::widget::{ScrollView, Widget, WidgetKind};
 use super::super::wire::frames_arg;
 use super::effects::{emit, emit_view, redraw_all, report};
 use super::{GestureCtx, GestureEffect};
+use clausters_gui_draw::rect::Rect;
 
 /// The rectangle spanned by two corner points, whatever their order -- the
 /// marquee's own geometry, and the one every sweep is drawn from.

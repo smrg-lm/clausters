@@ -4,7 +4,7 @@
 //! rests, accidentals, flags) plus engraving strokes and fills (staff lines,
 //! stems, ledger lines, beams, slurs, ties). None of it is data-viz, so it does
 //! not get its own GPU pipeline: every primitive is tessellated into the same
-//! flat-colored [`Mesh`](crate::host::paint::Mesh) the rest of the chrome uses, which
+//! flat-colored [`Mesh`](clausters_gui_draw::paint::Mesh) the rest of the chrome uses, which
 //! keeps it one upload, one draw, and WebGL2-safe by construction.
 //!
 //! The host is the *renderer*; it never depends on verovio. A client (the
@@ -23,8 +23,8 @@
 //! **Module layout.** The element's growth is *semantic* rather than graphic --
 //! the timemap, the identity of the element under the cursor, transposition in
 //! diatonic steps, the edit-back payloads -- so it is a submodule split by what
-//! each part knows: [`list`] decodes the client's page off the wire, [`glyphs`]
-//! turns an outline string into a path, [`tess`] paints, and [`cursor`] holds
+//! each part knows: [`list`] decodes the client's page off the wire, the drawing
+//! base's `path` turns an outline string into a path, [`tess`] paints, and [`cursor`] holds
 //! the two indexes and the mappings a gesture measures against. This file is
 //! the page itself: the geometry types, the primitive, and the [`ScoreData`]
 //! every one of them is a method of.
@@ -42,7 +42,7 @@ pub(crate) use tests::dense_page as dense_page_for_tests;
 
 use std::collections::HashMap;
 
-use crate::host::theme::Color;
+use clausters_gui_draw::theme::Color;
 
 /// An affine map restricted to translate + non-uniform scale -- the only
 /// transforms verovio emits (`translate(...)` and `scale(...)`, the glyph's
@@ -273,7 +273,7 @@ impl Fills {
             kept.clear();
         }
         let fill: std::rc::Rc<[[f32; 2]]> =
-            crate::host::path::triangles(d, 2.0f32.powi(i32::from(level))).into();
+            clausters_gui_draw::path::triangles(d, 2.0f32.powi(i32::from(level))).into();
         kept.insert((of, level), fill.clone());
         fill
     }

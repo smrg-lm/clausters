@@ -18,16 +18,16 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::draw::Draw;
 use crate::host::graphics::controls;
 use crate::host::graphics::table::{self, Column, Geometry, Look, Row};
-use crate::host::metrics::Metrics;
-use crate::host::rect::Rect;
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput, Mods,
 };
 use crate::host::widget::parse;
 use crate::host::widget::size::Natural;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// What a press landed on.
 #[derive(Debug, Clone, Copy, PartialEq)]

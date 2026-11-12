@@ -11,6 +11,7 @@ members = [
     "crates/clausters-editing",
     "crates/clausters-ffi",
     "crates/clausters-gui",
+    "crates/clausters-gui-draw",
     "crates/clausters-midi",
     "crates/clausters-net",
     "crates/clausters-notation",

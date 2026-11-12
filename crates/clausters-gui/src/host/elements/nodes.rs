@@ -9,10 +9,10 @@
 
 use serde_json::{Map, Value};
 
-use crate::host::draw::Draw;
 use crate::host::graphics::nodetree;
 use crate::host::widget::element::{Ctx, Element, Needs};
 use crate::host::widget::parse;
+use clausters_gui_draw::draw::Draw;
 
 /// A view of one server group's node tree. `controls` lists each node's
 /// current control values under it.

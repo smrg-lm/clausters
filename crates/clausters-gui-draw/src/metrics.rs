@@ -1,6 +1,6 @@
 //! The metrics: every chrome size as a named **role**, in one table.
 //!
-//! The twin of [`super::theme`], one step behind it: no layout or paint site
+//! The twin of [`crate::theme`], one step behind it: no layout or paint site
 //! names a number, it names a role of this struct, exactly as no paint site
 //! names an RGBA. The roles are named by **function** -- the spacing family
 //! ([`Metrics::pad`], `gap`, `margin`, `indent`), the control family
@@ -43,7 +43,7 @@
 //! their module; a role applies where the meaning is shared, which is what
 //! keeps the table small enough to be read.
 
-use super::font;
+use crate::font;
 
 /// The base unit of every size role: the height of a line of text at the
 /// default scale, in logical pixels.
@@ -56,7 +56,7 @@ use super::font;
 /// reason that has nothing to do with how big anything should be. The
 /// dependency runs the other way now -- the cell is declared and the face is
 /// drawn to fit it -- so a typeface may change without relaying out a window,
-/// which is also the property [`super::font`]'s successor will need.
+/// which is also the property [`crate::font`]'s successor will need.
 pub const CELL: f32 = 14.0;
 
 /// The grid the spacing and extent roles land on, logical pixels. Two rather
@@ -90,7 +90,7 @@ fn glyph(v: f32) -> f32 {
 /// rather than read from the table -- a lamp's number sized to the strip it is
 /// written across. The rule is the font's and not the table's, so it holds
 /// wherever a scale comes from.
-pub(crate) fn glyph_scale(v: f32) -> f32 {
+pub fn glyph_scale(v: f32) -> f32 {
     (v * 2.0).round().max(2.0) / 2.0
 }
 

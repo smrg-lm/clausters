@@ -59,18 +59,23 @@ diagnostics = []
 # so it has to be asked for. A build with it out drops the `score` row from
 # `elements::builtin`, and a def naming one is `Unknown`: laid out, not painted,
 # exactly as a host older than that def already behaves.
-notation = ["dep:lyon", "dep:clausters-notation", "clausters-apps/notation"]
+notation = [
+    "dep:lyon",
+    "dep:clausters-notation",
+    "clausters-apps/notation",
+    "clausters-gui-draw/path",
+]
 # The `plane`-with-boxes patcher: the graph view and its cord editing. Same
 # shape as `notation` -- on by default, and a build without it reads a patcher
 # node as the ordinary scroll workspace the `plane` name otherwise means.
 patcher = []
 # A real (outline) typeface behind a glyph atlas, instead of the 5x7 bitmap --
-# the rasterizer, and the face the host draws with when nobody names another
-# (`assets/fonts/`, a quarter of a megabyte). On by default: text is most of
-# what a window shows, and the bitmap is legible and no more. A build without
-# it draws the bitmap face, which stays the floor under every build: what a
-# host with no face loaded draws with.
-font-atlas = ["dep:fontdue", "dep:rustybuzz", "dep:unicode-bidi"]
+# the drawing base's (`clausters-gui-draw`, which carries the face the host
+# draws with when nobody names another). On by default: text is most of what
+# a window shows, and the bitmap is legible and no more. A build without it
+# draws the bitmap face, which stays the floor under every build: what a host
+# with no face loaded draws with.
+font-atlas = ["clausters-gui-draw/font-atlas"]
 # **The editing applications in a page**: the host the web package builds a
 # second time, with these compiled in, over shared memory, with the nightly
 # pinned in `wasm-apps-toolchain` (`clients/web/build.sh`). A page that is
@@ -105,6 +110,10 @@ clausters-editing = { path = "../clausters-editing" }
 # clients bind, so a session opened here is the editor a script opens rather
 # than an editor of the host's own.
 clausters-apps = { path = "../clausters-apps" }
+# The drawing base: the rectangle, the color and size roles, the triangle
+# batch, the face and an outline's path. Its features are this crate's,
+# forwarded (`font-atlas`, and `path` under `notation`).
+clausters-gui-draw = { path = "../clausters-gui-draw", default-features = false }
 # The engraver, for `--score` alone (the `score` feature): a score opened by
 # this host with no client is read by the same libverovio binding a script's is.
 clausters-verovio = { path = "../clausters-verovio", optional = true }
@@ -140,20 +149,6 @@ lyon = { version = "1.0", optional = true }
 pollster = "0.4.0"
 wgpu = "29.0.3"
 winit = "0.30.13"
-# The glyph rasterizer of the `font-atlas` feature: pure Rust, `no_std` by
-# default (hashbrown + simd, no `parallel`), so it compiles for wasm32 with no
-# system dependency and no C toolchain -- which is the whole reason it is this
-# crate rather than a FreeType binding.
-fontdue = { version = "0.9", optional = true }
-# The `font-atlas` feature's shaper: a pure-Rust port of the standard shaping
-# engine, over the same font parser fontdue reads with, so it compiles for
-# wasm32 with nothing else -- the posture fontdue was chosen for. It turns a
-# run of text into glyph ids and positions: ligatures, contextual forms, marks
-# over their bases.
-rustybuzz = { version = "0.20", optional = true }
-# The Unicode bidirectional algorithm: a label's paragraph reordered into
-# visual runs, right-to-left ones included, before each run is shaped.
-unicode-bidi = { version = "0.3", optional = true }
 # Grapheme clusters: what a caret steps over and what text is cut at, with
 # or without a face -- one user-perceived character, however many code
 # points it is written with.
@@ -237,3 +232,8 @@ web-sys = { version = "0.3", features = [
     "MidiMessageEvent",
 ] }
 
+
+# The questions a test asks a batch, which a crate's own `cfg(test)` does not
+# open to the tests of another.
+[dev-dependencies]
+clausters-gui-draw = { path = "../clausters-gui-draw", default-features = false, features = ["probe"] }

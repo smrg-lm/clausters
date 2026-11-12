@@ -249,8 +249,8 @@ pub struct Widget {
     pub theme_over: Option<serde_json::Map<String, Value>>,
     /// The `color` prop: the single-color shorthand -- an overlay of just the
     /// roles that carry this widget's function (see
-    /// [`Theme::accent_seeded`](super::theme::Theme::accent_seeded)).
-    pub color: Option<super::theme::Color>,
+    /// [`Theme::accent_seeded`](clausters_gui_draw::theme::Theme::accent_seeded)).
+    pub color: Option<clausters_gui_draw::theme::Color>,
     /// The `gestures` prop: the container's own (modifier -> plan) table, replacing
     /// the default its kind carries ([`GestureMap::of_kind`]). `None` on the
     /// overwhelming majority of widgets, which are not containers and whose
@@ -271,7 +271,7 @@ pub struct Widget {
     /// by [`resolve_style`] (an [`Arc`] clone per widget, so the per-frame
     /// path reads exactly one theme and pays nothing). `None` until the first
     /// resolve -- the renderer falls back to the host theme.
-    pub theme: Option<Arc<super::theme::Theme>>,
+    pub theme: Option<Arc<clausters_gui_draw::theme::Theme>>,
     /// The resolved opacity of this widget, the product of its own `opacity`
     /// and every ancestor's -- written at the same mutation point as
     /// [`theme`](Self::theme), never per frame. The radius is not here because
@@ -427,13 +427,13 @@ fn set_style_number(
 /// at -- all at this **mutation point** (a `/gui_def`, a `/gui_set`), never per
 /// frame. Recursive and cheap by construction: a widget with none of them
 /// shares its parent's `Arc` and its parent's alpha.
-pub fn resolve_style(widget: &mut Widget, base: &Arc<super::theme::Theme>) {
+pub fn resolve_style(widget: &mut Widget, base: &Arc<clausters_gui_draw::theme::Theme>) {
     resolve_style_under(widget, base, 1.0, true);
 }
 
 fn resolve_style_under(
     widget: &mut Widget,
-    base: &Arc<super::theme::Theme>,
+    base: &Arc<clausters_gui_draw::theme::Theme>,
     alpha: f32,
     live: bool,
 ) {
@@ -443,7 +443,7 @@ fn resolve_style_under(
     widget.live = live;
     // Opacity **composes**: a control at 0.5 inside a panel at 0.5 draws at
     // 0.25, which is what makes a fade a property of a group rather than of one
-    // box. What it is not is layer compositing -- see [`super::paint::Ink`].
+    // box. What it is not is layer compositing -- see [`clausters_gui_draw::paint::Ink`].
     let alpha = (alpha * widget.opacity.unwrap_or(1.0)).clamp(0.0, 1.0);
     widget.alpha = alpha;
     let group = match &widget.theme_over {
@@ -457,7 +457,7 @@ fn resolve_style_under(
         None => base.clone(),
     };
     let own = match widget.color {
-        Some(c) => Arc::new(super::theme::Theme::accent_seeded(&group, c)),
+        Some(c) => Arc::new(clausters_gui_draw::theme::Theme::accent_seeded(&group, c)),
         None => group.clone(),
     };
     // Out of the hand's reach, it draws the same picture in quieter roles.
@@ -518,7 +518,7 @@ impl Widget {
         if let (WidgetKind::Window { .. }, Some(glyphs)) =
             (&kind, props.get("glyphs").and_then(Value::as_object))
         {
-            super::font::outline::set(glyphs);
+            clausters_gui_draw::font::outline::set(glyphs);
         }
         // Only containers carry children into the typed tree; a leaf's children
         // (if any) are ignored.
@@ -547,7 +547,7 @@ impl Widget {
             color: props
                 .get("color")
                 .and_then(Value::as_str)
-                .and_then(super::theme::parse_hex),
+                .and_then(clausters_gui_draw::theme::parse_hex),
             opacity: props.get("opacity").and_then(opacity_value),
             radius: props.get("radius").and_then(radius_value),
             theme: None,
@@ -628,7 +628,7 @@ impl Widget {
                     self.color = None;
                     true
                 }
-                Some(hex) => match super::theme::parse_hex(hex) {
+                Some(hex) => match clausters_gui_draw::theme::parse_hex(hex) {
                     Some(c) => {
                         self.color = Some(c);
                         true
@@ -720,9 +720,10 @@ impl Widget {
                 true
             }
             // a window's own: more outlines for the characters its text uses
-            "glyphs" if matches!(self.kind, WidgetKind::Window { .. }) => {
-                v.as_object().map(super::font::outline::set).is_some()
-            }
+            "glyphs" if matches!(self.kind, WidgetKind::Window { .. }) => v
+                .as_object()
+                .map(clausters_gui_draw::font::outline::set)
+                .is_some(),
             _ => false,
         }
     }

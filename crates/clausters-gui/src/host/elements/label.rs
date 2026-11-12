@@ -8,12 +8,12 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
-use crate::host::draw::Draw;
 use crate::host::graphics::controls;
-use crate::host::metrics::Metrics;
 use crate::host::widget::element::{Ctx, Element, Needs};
 use crate::host::widget::size::{Natural, ellipsis_w, line_box, text_box};
 use crate::host::widget::{Align, parse};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::metrics::Metrics;
 
 /// Static text. `wrap` word-wraps it on the font's advance (off, a single line
 /// clipped with an ellipsis); `align` places each line in the rect.
@@ -184,7 +184,7 @@ mod tests {
         assert_eq!(l.align, Align::Center);
 
         let l = from_props(&props(r#"{"text":"hi"}"#));
-        assert_eq!(l.text_size, crate::host::font::DEFAULT_SIZE);
+        assert_eq!(l.text_size, clausters_gui_draw::font::DEFAULT_SIZE);
         assert!(!l.wrap);
         assert_eq!(l.align, Align::Start);
     }
@@ -195,10 +195,10 @@ mod tests {
     /// container fitted to its content does not follow it.
     #[test]
     fn a_live_label_draws_its_text_on_the_live_layer() {
-        use crate::host::paint::Mesh;
-        use crate::host::rect::Rect;
-        use crate::host::theme::Theme;
         use crate::host::world::World;
+        use clausters_gui_draw::paint::Mesh;
+        use clausters_gui_draw::rect::Rect;
+        use clausters_gui_draw::theme::Theme;
 
         let m = Metrics::default();
         let theme = Theme::default();

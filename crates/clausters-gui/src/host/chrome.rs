@@ -10,10 +10,10 @@
 //! it is drawn.
 
 use super::layout::{self, Placed};
-use super::metrics::Metrics;
-use super::rect::Rect;
 use super::scroll;
 use super::widget::{Axis, Layout, WidgetKind};
+use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 /// The title strip of a group: the top of its rectangle, one line of control
 /// tall. `None` for a container with no title.

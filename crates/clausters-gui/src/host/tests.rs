@@ -1572,7 +1572,11 @@ fn a_registered_element_defines_through_the_rust_door() {
         fn set(&mut self, _key: &str, _v: &Value) -> bool {
             false
         }
-        fn draw(&self, _d: &mut crate::host::draw::Draw, _ctx: &crate::host::widget::element::Ctx) {
+        fn draw(
+            &self,
+            _d: &mut clausters_gui_draw::draw::Draw,
+            _ctx: &crate::host::widget::element::Ctx,
+        ) {
         }
         fn value(&self) -> Option<OscType> {
             Some(OscType::Int(self.0))

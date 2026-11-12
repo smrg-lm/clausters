@@ -23,12 +23,12 @@
 
 use clausters_core::loudness::Profile;
 
-use crate::host::draw::Draw;
 use crate::host::elements::signal::LoudnessFrame;
 use crate::host::graphics::signal::trace::{self, Trace, TraceStyle};
-use crate::host::rect::Rect;
 use crate::host::ruler;
 use crate::viewport::View;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::rect::Rect;
 
 /// **A live loudness curve**: the readings a streaming meter has taken, with
 /// the scale they are read on.
@@ -83,7 +83,7 @@ pub(crate) fn draw_live(d: &mut Draw, body: Rect, curve: &LiveCurve) {
             |s| body.x + (s / span) as f32 * body.w,
             y_at,
             TraceStyle::new(
-                crate::host::theme::with_alpha(
+                clausters_gui_draw::theme::with_alpha(
                     trace::measure_color(theme, *measure, theme.trace),
                     *alpha,
                 ),
@@ -163,7 +163,7 @@ pub(crate) fn draw(d: &mut Draw, body: Rect, nav: &View, p: &LoudnessParams) {
             x_of,
             y_at,
             TraceStyle::new(
-                crate::host::theme::with_alpha(
+                clausters_gui_draw::theme::with_alpha(
                     trace::measure_color(theme, measure, theme.trace),
                     alpha,
                 ),
@@ -240,7 +240,7 @@ fn lu_ruler(d: &mut Draw, body: Rect, domain: (f32, f32), target: f64, y: (f64, 
     let m = d.m;
     let ticks = ruler::value_ticks((lo - target) as f64, (hi - target) as f64, body.h as f64, m);
     let scale = m.caption_scale;
-    let line = crate::host::font::height(scale);
+    let line = clausters_gui_draw::font::height(scale);
     for tick in &ticks {
         let Some(label) = tick.label.as_ref() else {
             continue;
@@ -253,7 +253,7 @@ fn lu_ruler(d: &mut Draw, body: Rect, domain: (f32, f32), target: f64, y: (f64, 
                 theme.trace_guide,
             );
         }
-        let w = crate::host::font::width(label, scale);
+        let w = clausters_gui_draw::font::width(label, scale);
         let x = body.x + body.w - m.pad * 2.0 - w;
         let ty = (y - line * 0.5).clamp(body.y, body.y + body.h - line);
         crate::host::graphics::plate_text(d, label, x, ty, w, scale, d.theme.trace_loudness);
@@ -313,11 +313,11 @@ fn numbers(d: &mut Draw, body: Rect, p: &LoudnessParams, _profile: &Profile) {
 mod tests {
     use super::*;
     use crate::host::guidef::GuiNode;
-    use crate::host::metrics::Metrics;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
     use crate::host::widget::Widget;
     use crate::host::widget::element::Element;
+    use clausters_gui_draw::metrics::Metrics;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
 
     /// A **stereo** take of `seconds` at `db` dBFS per channel, interleaved --
     /// the EBU test tone, whose peak level in dBFS is its loudness in LUFS

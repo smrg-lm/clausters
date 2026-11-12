@@ -28,12 +28,12 @@ use serde_json::{Map, Value};
 use clausters_core::osc::OscType;
 use clausters_editing::verbs::ActionState;
 
-use crate::host::draw::Draw;
 use crate::host::graphics::controls;
-use crate::host::metrics::Metrics;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, control_box, text_box};
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::metrics::Metrics;
 
 use super::switch_value;
 
@@ -203,10 +203,10 @@ impl Element for Button {
         let caption = controls::button_text(self.label.as_deref(), None);
         let cut = match self.icon {
             Some(icon) if self.label.is_some() => {
-                crate::host::font::width(&format!("{icon} "), size)
+                clausters_gui_draw::font::width(&format!("{icon} "), size)
                     + controls::caption_floor(&caption, size, m)
             }
-            Some(icon) => crate::host::font::width(&icon.to_string(), size),
+            Some(icon) => clausters_gui_draw::font::width(&icon.to_string(), size),
             None => controls::caption_floor(&caption, size, m),
         };
         (Some(cut), Some(control_box(size, m)))
@@ -309,8 +309,8 @@ impl Element for Button {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::rect::Rect;
     use crate::host::widget::element::{Mods, Take};
+    use clausters_gui_draw::rect::Rect;
 
     fn props(json: &str) -> Map<String, Value> {
         serde_json::from_str(json).unwrap()

@@ -110,7 +110,7 @@ fn a_metered_track_declares_its_buses_and_reads_them() {
         bus: Some(&buses),
         ..Default::default()
     };
-    let metrics = crate::host::metrics::Metrics::default();
+    let metrics = clausters_gui_draw::metrics::Metrics::default();
     let ctx = Ctx {
         world: &world,
         metrics: &metrics,
@@ -157,7 +157,7 @@ fn a_meter_takes_its_width_from_the_channels_and_not_from_the_level() {
     let mt = from_props(&props(
         r#"{"tracks": ["one", "", 100, 0, 0, 1.0, 1], "meters": ["one", 10, 12, 2]}"#,
     ));
-    let m = crate::host::metrics::Metrics::default();
+    let m = clausters_gui_draw::metrics::Metrics::default();
     let plain = from_props(&props(r#"{"tracks": ["one", "", 100, 0, 0, 1.0, 1]}"#));
     assert!(
         mt.gutter(&m) > plain.gutter(&m),
@@ -220,7 +220,7 @@ fn a_spectral_box_is_its_views_spectrogram() {
             "clips": ["a", "one", 0, 4096, 0, "", 3]}"#,
     ));
     let world = crate::host::world::World::default();
-    let metrics = crate::host::metrics::Metrics::default();
+    let metrics = clausters_gui_draw::metrics::Metrics::default();
     let ctx = Ctx {
         world: &world,
         metrics: &metrics,
@@ -2588,7 +2588,7 @@ fn the_notes_are_replaced_by_a_set() {
 /// on a box of samples is a press like any other: the multitrack opens no take.
 #[test]
 fn a_double_click_opens_a_box_of_notes_and_no_take() {
-    let m = crate::host::metrics::Metrics::default();
+    let m = clausters_gui_draw::metrics::Metrics::default();
     let rect = Rect::new(0.0, 0.0, 800.0, 200.0);
     let len = 1000.0;
     let mut mt = from_props(&props(
@@ -2698,9 +2698,9 @@ fn a_box_of_notes_stops_at_its_start_and_runs_on_past_its_end() {
 /// the ruler, the toolbar.
 #[test]
 fn a_scrolled_stack_paints_inside_its_own_rect() {
-    use crate::host::draw::Draw;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::draw::Draw;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
     let mut mt = from_props(&props(
         r#"{"tracks": ["one", "", 100, 0, 0, 1, 1, "two", "", 100, 0, 0, 1, 1,
                        "three", "", 100, 0, 0, 1, 1],
@@ -2765,9 +2765,9 @@ fn a_boxs_fades_are_read_off_its_fade_layer() {
 /// line at each end -- and a fade under a pixel is not drawn at all.
 #[test]
 fn a_box_paints_its_fades_and_none_under_a_pixel() {
-    use crate::host::draw::Draw;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::draw::Draw;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
     let world = crate::host::world::World::default();
     let metrics = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 800.0, 200.0);
@@ -2863,9 +2863,9 @@ fn a_fade_corner_is_taken_and_the_flat_top_is_the_boxs() {
 /// rectangle.
 #[test]
 fn a_scrolled_stacks_meters_paint_inside_its_own_rect() {
-    use crate::host::draw::Draw;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::draw::Draw;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
     let mut mt = from_props(&props(
         r#"{"tracks": ["one", "", 300, 0, 0, 1, 1, "two", "", 300, 0, 0, 1, 1,
                        "three", "", 300, 0, 0, 1, 1],
@@ -3000,9 +3000,9 @@ fn a_box_turns_from_its_waveform_to_its_spectrogram_keeping_its_take() {
 /// the track and the boxes of the other tracks are copied.
 #[test]
 fn a_moved_box_is_the_one_box_drawn_again() {
-    use crate::host::draw::Draw;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::draw::Draw;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
     let world = crate::host::world::World::default();
     let metrics = Metrics::default();
     let theme = Theme::default();
@@ -3041,8 +3041,8 @@ fn a_moved_box_is_the_one_box_drawn_again() {
     // The text's generation is the process's: another test that sends
     // outlines moves it, and every kept box is rightly drawn again. The counts
     // are read only while it stood.
-    let generation = crate::host::font::generation();
-    let stood = || crate::host::font::generation() == generation;
+    let generation = clausters_gui_draw::font::generation();
+    let stood = || clausters_gui_draw::font::generation() == generation;
     let first = drawn(&mt);
     assert!(!stood() || mt.kept.drawn() == 3, "each box drawn once");
     let again = drawn(&mt);

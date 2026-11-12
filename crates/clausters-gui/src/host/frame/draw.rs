@@ -608,8 +608,8 @@ pub(super) fn draw_timeline_meshes(
                 // ruler would be, which is also what a press unfolds it by.
                 if look.lanes.is_folded(ch) {
                     let name = format!("Ch {}", ch + 1);
-                    let h = crate::host::font::height(m.caption_scale);
-                    crate::host::font::text_ellipsis(
+                    let h = clausters_gui_draw::font::height(m.caption_scale);
+                    clausters_gui_draw::font::text_ellipsis(
                         mesh,
                         &name,
                         item.rect.x + m.pad * 0.5,

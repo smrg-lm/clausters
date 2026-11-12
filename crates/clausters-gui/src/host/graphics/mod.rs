@@ -43,9 +43,9 @@ pub mod table;
 pub mod textedit;
 pub mod track;
 
-use crate::host::draw::Draw;
-use crate::host::font;
-use crate::host::rect::Rect;
+use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
+use clausters_gui_draw::rect::Rect;
 
 /// A read-out in a body's **top-right corner** -- the slot a scope's
 /// `lock`/`free` state, a spectral view's scale tag and the frame's own overlay
@@ -105,7 +105,7 @@ pub(crate) fn plate_text(
     y: f32,
     max_w: f32,
     scale: f32,
-    color: crate::host::theme::Color,
+    color: clausters_gui_draw::theme::Color,
 ) -> Option<Rect> {
     let (mesh, m, theme) = d.parts();
     if s.is_empty() || max_w <= 0.0 {
@@ -129,9 +129,9 @@ pub(crate) fn plate_text(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::metrics::Metrics;
-    use crate::host::paint::Mesh;
-    use crate::host::theme::Theme;
+    use clausters_gui_draw::metrics::Metrics;
+    use clausters_gui_draw::paint::Mesh;
+    use clausters_gui_draw::theme::Theme;
 
     /// A plate is a **ground**, and the two properties that make it one: it is
     /// under the glyphs (so more geometry than the text alone), and it does not
@@ -143,7 +143,7 @@ mod tests {
         let room = 120.0;
 
         let mut bare = Mesh::new();
-        crate::host::font::text(&mut bare, "take", 10.0, 10.0, m.caption_scale, theme.text);
+        clausters_gui_draw::font::text(&mut bare, "take", 10.0, 10.0, m.caption_scale, theme.text);
 
         let mut plated = Mesh::new();
         let rect = plate_text(
@@ -204,7 +204,7 @@ mod tests {
         let body = Rect::new(0.0, 0.0, 200.0, 80.0);
 
         let mut bare = Mesh::new();
-        crate::host::font::text(&mut bare, "LOCK", 0.0, 0.0, m.text_scale, theme.text);
+        clausters_gui_draw::font::text(&mut bare, "LOCK", 0.0, 0.0, m.text_scale, theme.text);
 
         let mut tagged = Mesh::new();
         corner_text(&mut Draw::new(&mut tagged, &m, &theme), "LOCK", body);
