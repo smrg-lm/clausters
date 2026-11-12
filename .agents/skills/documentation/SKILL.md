@@ -53,10 +53,11 @@ writing. Then place the page.
   doc comments as TSDoc (`/** */`) — a Rust-style `///` is invisible to both
   the generator and the reader's editor.
 - **Development** (section 3) — `docs/architecture.md`, `docs/contributing.md`,
-  `docs/decisions.md` (the ADR-style design record, in the server book), the
+  `docs/decisions.md` (the index of the ADR-style design record, whose pages by area are `docs/decisions/`, in the server book), the
   `PLAN.md` roadmaps (`PLAN.md` / `clients/python/PLAN.md` /
-  `crates/clausters-gui/PLAN.md` / `clients/web/PLAN.md`), and the frozen
-  `docs/history/build-log.md`. The manual-test surface is the runnable
+  `crates/clausters-gui/PLAN.md` / `clients/web/PLAN.md`) with their closed
+  tracks in `docs/history/plans/`, `docs/core-abi-versions.md` (what each core
+  ABI version changed), and the frozen `docs/history/build-log.md`. The manual-test surface is the runnable
   `examples/`, not a separate checklist.
 
 Three rules hold across *all* of the above (repeat them to yourself):
@@ -268,9 +269,12 @@ there is no separate `adr/` or C4 tree, by design:
   entry point: build/test, system deps, feature flags, RT-safety, the E2E
   sandbox rule, conventions. Keep every setup step runnable.
 - **Decision records (ADR-style)** — the curated design record is
-  `docs/decisions.md` (published in the server book). When a choice has
-  non-obvious context and consequences, add a short entry there in ADR spirit:
-  **context -> decision -> consequence**. The *what shipped* is the git history
+  `docs/decisions/`, one page per area, indexed by `docs/decisions.md` (all
+  published in the server book). When a choice has non-obvious context and
+  consequences, add a short entry to its area's page in ADR spirit:
+  **context -> decision -> consequence**, and its title, verbatim and linked,
+  to the index: code and plans cite a decision as `docs/decisions.md, "Title"`,
+  and the index is where that search lands. The *what shipped* is the git history
   (there is no per-milestone log); the roadmap/rationale is the `PLAN.md` set;
   the frozen `docs/history/build-log.md` is not maintained/published as
   reference.

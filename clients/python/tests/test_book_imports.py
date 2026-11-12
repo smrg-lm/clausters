@@ -27,7 +27,8 @@ REPO = PYTHON.parents[1]
 BOOKS = sorted(
     [*(PYTHON / "docs" / "src").rglob("*.md"), PYTHON / "README.md",
      *(p for p in (REPO / "docs").rglob("*.md")
-       if "history" not in p.parts and p.name != "decisions.md")]
+       if "history" not in p.parts and "decisions" not in p.parts
+       and p.name != "decisions.md")]
 )
 
 FENCE = re.compile(r"^```python[^\n]*\n(.*?)^```", re.M | re.S)

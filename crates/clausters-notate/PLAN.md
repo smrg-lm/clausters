@@ -1,7 +1,7 @@
 # clausters-notate: from a performance to a page
 
 *Opened 2026-11-08 by the user, beside the roll's notation mode
-(`crates/clausters-apps/PLAN.md`, `X35`; `crates/clausters-document/PLAN.md`,
+(`crates/clausters-apps/PLAN.md`, `X35`; `docs/history/plans/document.md`,
 "The notation mode: a sequence that is written, not only played"). The `Qx`
 labels are this file's coordinates and appear nowhere else. The crate does
 not exist yet: `Q1` makes it, and until then this directory holds only its

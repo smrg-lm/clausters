@@ -27,6 +27,11 @@ written in Rust and controlled over OSC (UDP, default port 57110).
     done** and reorganizes only what is left. A closed phase leaves no line
     there: the plan's checkbox and the git history already say it shipped. When
     the sequence runs out, the file goes away.
+  - **A plan holds what is open.** A track whose every milestone shipped
+    moves whole to its plan's file under `docs/history/plans/`, and the plan
+    lists its heading under "Closed tracks", so a search for a closed
+    milestone still starts in the plan. What stays is the standing design,
+    the open tracks, "Future directions" and "Found by use".
   - **Anything unresolved goes at the end of its plan, and carries a checkbox.**
     A gap found by use — an eye pass over an example, a path read while doing
     something else, a behavior that is correct and unclear — is written down the
@@ -41,7 +46,11 @@ written in Rust and controlled over OSC (UDP, default port 57110).
     queue that empties.
 - The record of *what shipped* is the git history (clear commit messages); there
   is no separate per-milestone log. Non-obvious decisions and upstream-bug
-  findings are curated in `docs/decisions.md` (ADR spirit); the frozen historical
+  findings are curated in `docs/decisions.md` (ADR spirit): one page per area
+  under `docs/decisions/`, and `docs/decisions.md` their index, which carries
+  every title verbatim because everything cites a decision by its title. A new
+  entry goes in its area's page and its title, linked, in the index. What each
+  core ABI version changed is `docs/core-abi-versions.md`. The frozen historical
   journal is `docs/history/build-log.md`, no longer maintained.
 - English documentation is **three mdBooks, one per platform** — server/
   workspace, Python client, web client — all Markdown and ReadTheDocs-deployed.

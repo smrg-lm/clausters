@@ -143,8 +143,8 @@ a person saw it work.
   the milestone's *code* is done; what is left is somebody watching it fail.
 
 
-- ⬜ **Nobody has listened to `basics/patterns`** *(`clients/python/PLAN.md`,
-  `C74`)*. The patterns arc closed with one example in two languages as its
+- ⬜ **Nobody has listened to `basics/patterns`**
+  *(`docs/history/plans/python.md`, `C74`)*. The patterns arc closed with one example in two languages as its
   manual check; the Python render was run and the page's patterns, ties and
   slurs match the script's, but what it claims is audible -- the voice gliding
   where its notes are joined and re-attacking where they are not, the
@@ -152,15 +152,15 @@ a person saw it work.
   edit to a voice's legato or slur does not rewrite the other" is the arc's
   one open entry, in the same plan's Found by use.
 
-- ⬜ **Nobody has listened to `basics/sc_vocabulary`** *(`clients/python/PLAN.md`,
-  `C69`)*. The numeric builtins arc closed with one example in two languages as
+- ⬜ **Nobody has listened to `basics/sc_vocabulary`**
+  *(`docs/history/plans/python.md`, `C69`)*. The numeric builtins arc closed with one example in two languages as
   its manual check; the Python render was run and the web calls draw the same
   phrase, but what each claims is audible -- the squared-off signed `pow`, the
   folds coming and going, the Hann pulses, the breath -- has not been heard in
   either. **Related:** the arc's measurements are in the plan.
 
-- ⬜ **Nobody has looked at `views/segments`** *(`crates/clausters-gui/PLAN.md`,
-  `G45`)*. The host draws a list of segments over files; the pair renders a
+- ⬜ **Nobody has looked at `views/segments`**
+  *(`docs/history/plans/gui.md`, `G45`)*. The host draws a list of segments over files; the pair renders a
   swelling tone with its peaks and draws it whole and with its halves swapped.
   To look at, natively and in a page: the drop at the seam, the fades meeting
   when zoomed into it, and single samples read under a deep zoom.
@@ -274,11 +274,10 @@ its plan; the plan is where its acceptance is read.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found running the
   notes editor's example; what is open is where the wait belongs.
 
-- ⬜ **The second review of the workspace's shape, `R14`, `R19`-`R23`** *(root
-  `PLAN.md`, R track, "The second review: the shape of the workspace")*. Done
-  on the branch `restructure`. `R23` (the plans hold what is open) is last,
-  once the branch is accepted. `R14` waits only on the release rehearsal,
-  run at the end.
+- ⬜ **The second review of the workspace's shape: `R14`'s release rehearsal**
+  *(root `PLAN.md`, R track, "The second review: the shape of the workspace")*.
+  The rest of the review is done on the branch `restructure`; `R14` waits
+  only on a rehearsal of the release workflow against that branch.
 
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,

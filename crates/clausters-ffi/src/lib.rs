@@ -74,8 +74,7 @@ pub use sched::*;
 pub use time::*;
 
 /// The C ABI version of this surface. Bump on any incompatible change; what
-/// each version changed is recorded in `docs/bindings.md` ("What each core
-/// ABI version changed").
+/// each version changed is recorded in `docs/core-abi-versions.md`.
 pub const CORE_ABI_VERSION: u32 = 97;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.

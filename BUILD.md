@@ -172,7 +172,7 @@ toolchain with it. The script's own header explains each trim and what it gives
 up; `docs/decisions.md` carries the measurements. A full build from source takes
 ~10 min on 8 cores.
 
-See [the design record](docs/decisions.md#faust-embedding-decisions-and-upstream-bugs)
+See [the design record](docs/decisions/faust.md#faust-embedding-decisions-and-upstream-bugs)
 for why the distro package cannot be used.
 
 ### libverovio (the notation engraver, behind the `verovio` feature)

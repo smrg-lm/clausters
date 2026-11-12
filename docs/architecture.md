@@ -2435,7 +2435,7 @@ scsynth grew a binary plugin API (`UnitCmd`/interface tables) whose ABI broke wi
 - The *runtime*-extensible path for users is deliberately not Rust: send a **Faust def** (`/def_send faust`, JIT-compiled, sandboxed by the same `SynthNode` boundary). Most "I need a custom UGen" cases are a Faust one-liner.
 - If dynamic plugins ever become necessary, the lesson from scsynth applies: the boundary must be a **versioned C ABI** (or a wasm interface), checked at load time — the same policy already planned for the shared-memory layout and embed cdylib. Do not expose Rust types across it.
 
-Native **CLAP and VST3 discovery and isolated processing are implemented on Linux**. Both adapters participate in the same engine node tree. Native windows remain planned; delay compensation is shared engine infrastructure. CLAP uses a C ABI; VST3 uses COM-style binary interfaces. Neither exposes Rust types across the boundary. The rationale is in [Third-party plugins run out of process](decisions.md#third-party-plugins-run-out-of-process).
+Native **CLAP and VST3 discovery and isolated processing are implemented on Linux**. Both adapters participate in the same engine node tree. Native windows remain planned; delay compensation is shared engine infrastructure. CLAP uses a C ABI; VST3 uses COM-style binary interfaces. Neither exposes Rust types across the boundary. The rationale is in [Third-party plugins run out of process](decisions/plugins.md#third-party-plugins-run-out-of-process).
 
 ### VST3 adapter
 
