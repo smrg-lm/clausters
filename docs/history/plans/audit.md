@@ -29,8 +29,8 @@ The archived record keeps the findings as they were reported; this is what the m
 - ✅ F04 (ambiguous rustdoc links), F05 (VST3 fixture formatting), F06 (plugin tests naming a path that never existed, and run by no CI job): fixed in `b0eca25c`.
 - ✅ F03 (`Toolkit` public and safe while its soundness depends on the caller): the type is now crate-private, and `Score::engraver`, a second way past the lock, is removed, in `39c46e16`.
 - ✅ F02 (the GUI host's window front queued frames without a ceiling): the front admits frames through one shared `clausters_net::Inflight`, in `7af3ff3d`.
-- ✅ E01 (SIGXCPU in the embedded engine): read as the embed running without the binary's SIGXCPU guard (A19); the decision whether the embed offers it is filed in the root `PLAN.md`, Found by use, in `f472cee0`.
-- ✅ F01 (no per-block bound on the command drain): downgraded to a measurement to take before any policy, filed in the root `PLAN.md`, Future directions, in `f472cee0`.
+- ✅ E01 (SIGXCPU in the embedded engine): read as the embed running without the binary's SIGXCPU guard (A19); the decision whether the embed offers it is filed in the `crates/clausters-server/PLAN.md`, Found by use, in `f472cee0`.
+- ✅ F01 (no per-block bound on the command drain): downgraded to a measurement to take before any policy, filed in the `crates/clausters-server/PLAN.md`, Future directions, in `f472cee0`.
 - ✅ F07 (the editor's evaluation queue has no bound): not filed. The queue is fed by hand from a local REPL, the editor has no plan of its own, and no use has shown a cost.
 
 ## Second campaign: real-device audio and interference
@@ -39,4 +39,4 @@ Campaign `2026-10-15_2558210e_02` (record `audit/records/2026-10-15_2558210e_02.
 
 - ✅ The soft `RLIMIT_RTTIME` was one buffer, so one late callback demoted the audio thread until restart: fixed in `4ee5b7d2`, verified by twelve runs at quantum 128.
 - ✅ Interference at 60 nodes: none systematic on the audio callback (p99 within 20 us per placement mode); the GUI host held 30 fps in every condition. Not filed.
-- ✅ The callback's cost depends on the core it lands on (efficiency cores 53 % against 32 % for the same load); filed in the root `PLAN.md`, Found by use. A 40-minute capture of every callback over 90 % of its deadline found no overrun in 900 000 callbacks and only near misses on efficiency cores, pure DSP time, so the earlier isolated overruns are folded into that entry rather than filed apart.
+- ✅ The callback's cost depends on the core it lands on (efficiency cores 53 % against 32 % for the same load); filed in the `crates/clausters-server/PLAN.md`, Found by use. A 40-minute capture of every callback over 90 % of its deadline found no overrun in 900 000 callbacks and only near misses on efficiency cores, pure DSP time, so the earlier isolated overruns are folded into that entry rather than filed apart.

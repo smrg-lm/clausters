@@ -419,7 +419,7 @@ timeline's events would have to be re-cued on every one of them), and a
 which is the one thing re-cueing from the client requires of its contents. All
 three are the client-clock mode's, and a timeline has both modes.
 
-**Several transports on one server stays a future direction** (root `PLAN.md`):
+**Several transports on one server stays a future direction** (`crates/clausters-server/PLAN.md`):
 a transport addressed by id reaches the `/transport_*` commands,
 `/sched_atTransport`, the `TransportPos` UGen, the shared-memory segment and
 `/gui_headClock` at once. The property was named so that it survives: it holds
@@ -639,7 +639,7 @@ long take landed up to 128 frames away.
 
 ## Backwards is a reading, not a transport (2026-11-08)
 
-*Taken closing the root plan's "A list reader plays backwards".* Three
+*Taken closing the server plan's "A list reader plays backwards".* Three
 places could hold the direction a take is played in: the transport (a
 position that runs down), the reader node (a `TransportDiskIn` input that
 walks its ring backwards) and the reading (the list the application's

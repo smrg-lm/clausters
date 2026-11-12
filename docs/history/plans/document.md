@@ -5,6 +5,10 @@ whole on 2026-11-12 so that the plan holds what is open. They are the record
 of what each track decided and built; a track is not reopened here, and
 work that changes what one built is written in the plan.
 
+The entries of the plan's "Found by use" and "Future directions" lists that
+were fixed or done are at the end of this file, each moved whole once it was
+ticked.
+
 ## The milestones
 
 - ✅ **O1 - The document: the tree, and a leaf is opaque.** The crate's types and their serde form: elements with their placements (`onset`, `duration`), aggregates with their two kinds (**concrete** - members relate in time; **logical** - they relate by processing), and a leaf as `(id, kind, opaque config)`. A **source reference** carries its **lifetime** (external / session / temporary) from the start rather than gaining it later, since it is what a save has to read. No client objects, no widget, no OSC, no I/O. **Two properties the shape has to admit, because they are the arrangement's and not the document's to invent.** A generator's *code* is the opaque leaf; **its output is ordinary tree** - a generator may produce any element, generators included - so nothing about being generated makes a subtree a second kind of thing. And a **clang may reference a generator** to fire it live, which means the document expresses structure resolved at run time and not only at render time: a reference that no flattening pass will ever expand. **The tree stays general, and the views carry their own restrictions** - a multitrack lane is a *projection* that may decline to show what its shape does not admit, exactly as an unknown widget is laid out and not painted; nothing here grows a lane, a vertical position or a type-per-container so that a view is easier to write. **[Withdrawn 2026-09-06 - see "The turn: the arrangement stops being a projection". A projection is not free of structure: the lane, the order within it and the placement's identity are durable and undoable, and with nowhere to live they fell into the widget tree, which is where every multitrack defect of the `application-scope` branch comes from. O1's types are not deleted - they become what a region may contain - but the arrangement stops being derived from a general tree.]** The arrangement's own vocabulary (the Aggregate and the other primitives, the temporal traits) is unchanged by this milestone and is refined by iteration in `clausters.form`, which is why the shape has to stay versatile rather than final: the document need not know the model, but it must not be what blocks its refinement. **Acceptance:** a tree round-trips through serde unchanged; an unknown body kind and an unread config blob both survive a load/save cycle **losslessly**, and writing is **deterministic** (the two are the properties that matter, and byte-identity is not one of them: `serde_json` sorts an object's keys, key order in JSON carries no information, and buying its preservation would mean turning `preserve_order` on for every crate in the workspace since features are additive); the Python `clausters.form` tree converts in and out with no loss.
@@ -543,3 +547,778 @@ follows the parts, and a performance derived from what is written.
     renders gives that page back (a property test); writing a part with ties
     and back with voices gives the same events; the two writings sound the
     same.
+
+## Future directions: the entries that were done
+
+- ✅ **The samples vocabulary is read twice, and a blob is the reason** *(named 2026-09-12, closing the routing above)*. `samples::intake` says what a `sample` or a `draw` report means -- the write, and the run it replaced as its inverse -- and the GUI host's `Owner::read_event`/`read_inverse` say it again, in `Intent::WriteSamples`. The two agree today and neither is long, which is exactly the shape a drift takes.
+
+  What stops it being the same call is the **transport**, not the rule: a stroke's run rides the wire as a little-endian `f32` **blob**, and the crate's door takes JSON numbers. The Python client already pays that conversion (`SamplesDomain.request` reads the blob into numbers before asking the crate), so the host could -- at a JSON array per stroke, on the one editing path where the payload is large by design, and then a parse back into a typed `Intent` to apply it.
+
+  The decision is whether the crate grows a door that takes the samples as samples -- which is what a Rust caller holding a decoded run actually has, and what a wasm one holds too -- or whether the host keeps its own reading and the two are held together by a vector test instead. The second is cheaper and states the risk honestly; the first is the rule this file keeps everywhere else.
+
+  **Taken the first way, 2026-09-12.** `samples::write` is the typed door -- the numbers in, the write out -- and `intake` is that same function with the JSON reading in front of it, so a client and a host reach one rule by the road each of them already has. It speaks `f64` because that is what a report's numbers are once read: the wire's samples are `f32`, every value comes from one, both conversions are exact, and neither door has to know which the other used. The host decodes the blob and asks; nothing turns a stroke into a JSON array to be told what it means.
+
+  **And the host was short two rules, which is the answer to whether this mattered.** The copy it kept recorded an **empty stroke** as an edit (a pile entry that undoes to itself) and accepted an **inverse of a different length** than the write it was meant to undo (an entry that leaves half the edit standing). Both are the crate's rules, both are now the only ones. The third difference was the label: `"edit a sample"` and `"draw"` in the host against `"draw the samples"` in the crate, so one gesture read two ways in the undo stack depending on who owned the document. One verb, one name.
+
+- ✅ **The host's owner reads by domain, and today it names the multitrack** *(found 2026-09-12, in a consistency pass over the GUI host requested by the user)*. `crates/clausters-gui/src/host/document.rs` holds two vocabularies in one type. The tree's half is `read_event`, a flat match over `"clip" | "sample" | "mute" | "solo" | "level" | "draw"` that builds `Intent`s; the piece's half is `read_piece_events`, `apply_piece`, `read_clips`, `read_lanes`, `bind_multitrack` and `multitrack()`. The comment on the second says why there are two readers rather than one -- the tree has one verb for a placement and the piece has three -- and that is honest for a host with one application in it.
+
+  `O24` puts three in it. The audio editor arrives asking for `read_samples` and `bind_pane`, the score editor for its own pair, and the type that already carries two vocabularies carries five. The shape that answers this is in the crate already and the host is the one caller that did not take it: `clausters_editing::intake_json` reads a tag against a **domain**, over the four there are, and a tag no domain answers for is refused rather than quietly grown into a fifth vocabulary. `O27` closed by deleting exactly this duplication from `piece.rs`; what stayed is the *routing* above it, still spelled with the multitrack's name in it.
+
+  So: the owner binds a widget to a node **and a domain**, and reads a report by asking that domain -- one door, the applications behind it. What each application then owns is what genuinely differs: which node a gesture addresses and what the picture is redrawn from.
+
+  **Closed 2026-09-12, and the list was two words short.** The dispatch read `tag == "clips" || tag == "lanes"` and the projection answers for **four**: a curve dragged in a host with no client attached reported `points` to a reader with no arm for it, and a `j` reported `join` the same way -- both fell through to the tree's reader and left on the wire, to nobody. So a standalone host drew curves it could not edit and had a join key that did nothing, and neither had ever been noticed, because the path with a client attached is the one that gets used.
+
+  `multitrack::answers` is the vocabulary, declared once where it is implemented, and the host asks it. `multitrack::reading` is the second half: what a report came to, **edits or the reason there are none**, because "the hand changed nothing" and "the piece refused" are the same empty list and opposite things to tell the person who pressed the key. `read` and `intake` are both written on it, so neither door can drop the half the other keeps -- the host was dropping the refusal, which is how the one verb whose answer can be *no* came to be a key that did nothing and said nothing. It now settles the acknowledgement with the reason, which puts the document's own sentence on the window's status bar: the same line a client's `/gui_ack` would have put there, in a host that has no client.
+
+  Held by `the_pieces_own_vocabulary_reaches_the_owner_whole` and `a_piece_that_refuses_a_verb_says_so_on_the_bar`, both against a host drawing a piece.
+
+  **What stayed, and why it is not the same job.** The tree's own reader (`clip`, `mute`, `solo`, `level`) is a vocabulary the crate has no domain for -- it is the description `O21`-`O24` are retiring -- so routing it by domain would mean inventing a fifth domain for something on its way out. The `samples` overlap is real and is filed on its own below.
+
+- ✅ **A clip's fades are its own property, with session defaults** *(decided 2026-09-14 with the user, after reading what the field's multitracks do: Ardour, Cubase, Pro Tools, REAPER, Logic)*. The common model: a fade belongs to a clip's **edges** and is never its gain envelope; a crossfade is what two regions **overlapping** on one track make, join or no join (Ardour: "region fades *are* crossfades", the region beneath heard through the inverse shape); the shapes are at least equal gain (linear, for correlated material) and equal power (the general case); and the length and curve a new fade takes come from a **configurable default** (Cubase's auto fades, 1-500 ms, per project or per track; REAPER's crossfade length and shape on split; Logic's crossfade time and curve for merge and comping). What follows here:
+
+  1. **A fade is a property of the region.** A region's `fade_in`/`fade_out` -- a length and a shape -- is the one object, drawn on the box and moved by a handle. The `gain` automation stays the mix's and never carries a fade.
+  2. **The preset is the default of that property, and it is the session's.** It states what a new fade on a clip starts as -- length in ms (10 ms unless the session says otherwise, since every clip is added with one) and shape, equal power or equal gain among the shapes -- and it is written as defaults for a property rather than as a crossfade setting, so the same mechanism can hold other properties' defaults later. It can be **turned off for the whole session**, and **per clip**, where a clip that turns it off keeps butt edges whatever the default says.
+  3. **An overlap is a crossfade made out of the fades the clips already have.** Where one clip overlaps the next on a lane, each **stretches its own fade by the time it overlaps the other**: the ending clip's `fade_out` and the beginning clip's `fade_in` both come to cover the overlap, which is symmetric by construction when two clips overlap. Nothing new is stored -- the crossfade is two region fades adjusted -- and it sounds as two readers summed, like any two regions on a lane. It waits for a lane that holds overlapping regions at all.
+  4. **Open: more than two clips overlapping at once.** The overlaps can be of different lengths and nest or chain, so "each fade stretches by its overlap" does not say which fade answers to which overlap. To be settled before a lane holds overlapping regions.
+
+  Not a milestone yet because how a fade *inside* a box is drawn is a picture question the multitrack has not had to answer, and it is worth answering once, for a clip's own fades and for the crossfade an overlap makes of them.
+
+  **Done so far** *(2026-10-07, with the join entry below)*: points 1 and 2 as far as sound and picture go — a region's fade is played by its reader and drawn on its box, the default is the multitrack's (`defaults.fade`, 10 ms, `null` off) and a region states 0 to have none — and the picture question above is answered with a line from the silent corner and a veil. **What is still open:** the verbs both clients would set a fade or the default with (the window sends `FadeRegion` now; neither client has a verb for it); a **box of notes**, whose voices no fade reaches; and nothing more of points 3 and 4, which are done below.
+
+  **Specified further by the user, 2026-10-07**, after seeing the first pass: a region's fade in and fade out are **one trapezoidal envelope** over the box, its two sloped sides with selectable shapes, and edited with the same logic as a clip's automation (its points) while behaving as its own thing — not the amplitude automation; the default shape is **equal power** (quick at first, slow at the end of a rise), selectable; the default length 10 ms; and **two regions that overlap crossfade** through their fades, longer as they overlap more, with the edge cases settled.
+
+  **The shape, done the same day.** `Fade` carries an envelope segment's shape — the `envshape` vocabulary every `Env` and automation segment speaks, by name in the file (`"wel"`, `"lin"`, `"curve"` with its `curve`) — and `wel`, equal power, is the default. The reader plays each side through `EnvShape`, a new UGen that evaluates `envshape::shape_value` at a phase rather than over time (a fade follows the transport's position, which a locate jumps and a stop holds), and the host draws each side traced through the same function, so the curve on the box is the one heard. Both clients' `Fade` became `Fade(length, shape="wel", curve=0.0)` (it carried an opaque shape nobody read), and both bind `env_shape`/`envShape`. Two fades longer than their region together are cut in proportion, so the trapezoid becomes a triangle and never a dip. **Left:** a join's seams are still played as straight ramps — the stitch on the server (`dsp::stitch`) has a fade length per part and no shape, so carrying the shape there is a change to `/buffer_stitch`.
+
+  **The handle, done 2026-10-08.** A box's fades are drawn and edited as an envelope layer of the box, `fade:<region>` (`picture::FADE_LAYER`): the four points of the trapezoid (`picture::fade_points`), each sloped side's shape on the point that starts it, projected beside the clip automations (`editing::fade_layers`/`fade_points`) and edited with the very curve element a clip automation is, under a trapezoid's rules (`curve`'s `trapezoid`: the ends cannot be taken, the corners of the top move in time only and not past each other, no point is added or removed, and the flat top is the box's, so a press on it still moves the box). A report of the layer comes back as the region's fades (`read_fades`): a side that moved is written as the region's own, one that did not stays as the region states it, so a region on the default keeps following it, and a report that moved nothing is no edit. The silenced part is veiled by the box, read off the same layer (the `fades` prop that first carried it lagged behind a drag — the user saw the veil stay put while the curve moved — and is gone).
+
+  **The crossfade, done 2026-10-08** — points 3 and 4 of this entry. `TakeLane::edges` is the one reading of a region's edges on its lane, for the player, the picture and the layer: where a neighbour starts before a region and ends inside it, the region's fade in stretches to cover the overlap, and where one starts inside it and ends after it, its fade out does, so the earlier region's fade out and the later one's fade in cover the same span and the crossfade is as long as the overlap. Nothing is stored: move either and it follows. The edge cases, decided: a stretch never shortens a fade a region states; a region inside another, and two that start or end on the same instant, keep their own fades, since neither has a side to fade out on while the other fades in; a muted region crosses with nobody; with several neighbours each edge takes the longest overlap that reaches it — which answers point 4 without choosing a pair; and two fades that would cross inside a region are cut in proportion and meet. Heard in `an_overlap_crossfades_at_equal_power`: two constant takes are each at sin(pi/4) half way through the overlap. Still open here: a region's fade dragged shorter than the overlap it is stretched to snaps back to the overlap, since the overlap wins.
+
+  **Answered in the window, and a switch** *(2026-10-08, from the user's use)*. The crossfade was played and not seen: a drag that applies cleanly is acknowledged and the window keeps its own picture, so the two boxes kept their short fades where the crossfade should have spanned the overlap. The multitrack editor now answers an edit with the layers and points it moved (`derived`), unless `settle` is about to send the whole picture anyway. And the automatic crossfade is a facility that can be turned off (asked by the user): `Defaults::crossfade`, on unless a file says otherwise, set with `MultitrackIntent::SetDefaults` — the defaults stated whole, undone like any edit — not from the menu: the state is the document's and the menu is one more caller. Both clients set it as `Multitrack.crossfade` (Python and TS, a property whose setter is the same `setdefaults` edit, so a script's change is recorded and drawn like the menu's); the Edit menu's "Crossfade overlaps, on or off" sends the window's `crossfade` verb, which the multitrack editor turns into that edit. Off, overlapping regions keep the fades they state and are two regions summed. A region's own fades already had their verbs in both clients (`Region.fade_in`/`fade_out`); what is left of the verbs is the default fade, `defaults.fade`, which no client sets yet.
+
+  **The rest, done 2026-10-08.** *The default's verb*: both clients set it as `Multitrack.default_fade` (`defaultFade` in TS), a `Fade` or none, through the same `setdefaults` edit. *A box of notes fades*: its voice bus enters its clip through the reader's own envelope (`mixer::input_def` takes `at`, `span` and the fades, handed by the plan as `PlannedClip::edges`), silent outside the box as a reader's gate is, and its `fade:` layer is drawn and edited as a box of samples' is. *A fade dragged shorter than its overlap*: **only an edge on the default is stretched** (`TakeLane::edges`) — an edge the region states, which a drag writes, is the region's word and is kept, shorter or longer than the overlap, while the other region's edge, still on the default, goes on covering it. Heard in `a_box_of_notes_fades_at_its_own_edges`. What stays open of fades is in the two entries below about the curve heard at a seam and the switch's reach.
+
+- ✅ **A join takes its clips' fades, and invents none** *(raised by the user 2026-09-12, on the first working join: "you added a cross fade to the join; it is something that is there but cannot be seen, and it should; it can be a join option, but it has to be specified and configurable"; decided 2026-09-14, with the entry above)*. `O31` fades every seam **where the material is cut** -- 10 ms, `picture::SEAM`, and nothing where two parts read on from each other -- and neither half was asked for. It is **not seen**: the fade is in the source and a box is drawn as a window onto a source, so the picture shows a join and not the shape of its seams, where a region's own fades are drawn where they are. And it is **not stated**: 10 ms is a number this crate chose in a place with no vocabulary for choosing one.
+
+  **The rule as it stands today, written down so it can be found and changed** *(`crates/clausters-document/src/multitrack/picture.rs`, `SEAM` and `read_join`)*:
+
+  1. A seam between two parts is faded **only where the material is cut** -- where the next part does not read on from where the one before it stops, or reads a different source. Two consecutive pieces of one take get **no** fade.
+  2. The fade is **10 ms**, linear, on both sides of the seam: `fade_out` on the part that ends and `fade_in` on the one that begins.
+  3. It is the same number in every client, because the join carries it -- the one part of this that stays: whatever the fade is, it travels with the source, so nothing can disagree about it.
+
+  **What replaces it.** A clip's fades are its own (the entry above), so a join has nothing to decide about them:
+
+  - **A join of juxtaposed clips adds nothing.** Every clip is added with the default fade, so two clips edge to edge already have a `fade_out` and a `fade_in` at the seam; the join carries each region's fades into its parts, and `picture::SEAM` goes. *(Corrected by the user the same day: an earlier reading had the join add a symmetric crossfade sized from the two parts.)*
+  - **Open: a join of overlapping clips cannot be one stitch as the server reads one today** *(found by the user 2026-09-14)*. A join's segments would overlap **in samples**, and each overlapping segment needs its own fade applied while the other sounds -- which is mixing, not reading. `/buffer_stitch` cannot say it: its parts are laid **end to end** (`src/dsp/stitch.rs`: a join's length is the sum of its parts, and no part states where in the join it starts), and a reader holds **one part per run** (`Stitch::run_at`), so exactly one part sounds at any frame. Whatever is chosen also has to answer more than two clips overlapping (the entry above, point 4). Three ways, to be decided later:
+
+     - **A. The stitch learns overlaps; one reader per box stays.** Each part gains its position in the join, and a read in an overlapped span sums the parts that cover it, each through its own fade. *For*: it keeps `O31`'s decision whole -- the node plan, the instance and the picture still see one source and one reader per box. *Against*: a mix lives inside what is meant to read like a buffer; the one-part-per-block fast path becomes up to N parts wherever parts overlap; the `/buffer_stitch` wire and the session's `Location::Segments` both gain a position per part (a `FORMAT` bump); and once takes play out of `DiskIn`, that one reader has to read several file positions at once.
+     - **B. An overlapped join is layers, each with its own reader.** The segments are split into layers with no overlap inside any of them -- as many as the deepest overlap, which is interval colouring -- each layer an ordinary stitch read by its own reader, summed in the box's slot. *For*: it is the shape two overlapping regions on a lane already have (two readers); the stitch read is unchanged; and colouring answers the more-than-two case structurally, each part keeping its fade. *Against*: a box can have N readers, which the node plan, the instance and the picture all have to learn -- the very thing `O31` avoided; and a layer has gaps, and a stitch with silence in it does not exist on the server either (`O31`, "What it deliberately does not do yet"). A join of juxtaposed clips is one layer and would not change.
+     - **C. No overlapped join as one source.** Either the join over overlapping regions is **refused** -- they stay separate regions, heard through their own readers and fades -- or the overlapped span is **rendered** into a new take, as a consolidate does, which writes samples and stops being non-destructive.
+
+     Leaning noted without deciding: B keeps an overlap where the rest of the system already puts one, in several readers summed in the graph, and solves the more-than-two case in the structure; A keeps "one reader per box". To be taken before a join over overlapping regions is allowed.
+
+  **Done 2026-10-07, for a join of boxes that meet**, and it took the entry above's first two points with it, since a join that adds nothing is only silent where the clips already have fades. A region's fades are now **played** — the reader ramps the box's own edges (`mixer::FADE_IN`/`FADE_OUT`, off `TransportPos`) — and **drawn**: a line from the silent corner to full level with the silenced part veiled, from a `fades` prop the projection fills with the same numbers the plan plays. A region that states no fade takes **the multitrack's default** (`Multitrack.defaults.fade`, 10 ms when the file names none, `null` to turn it off for the session; a region turns it off for itself with a fade of length 0), so every clip has one without any writer adding it; `Region::fades` is the one reading of the rule, for the reader, the picture and the join. The join carries each box's fade at an edge it makes inner into the part that edge begins or ends, and keeps the joined box's outer fades as that box's own; `picture::SEAM` is gone. **A cut where nothing moved is not heard**: `SplitRegion` leaves butt edges at the cut, and so does a cut a window reports — a shortened box and a new one reading on from it in the same source (`butt_cuts`) — so the two halves meet as the recording did, and a join that puts them back adds no dip.
+
+  What it changed in what is heard, deliberately: every box of samples in every saved session now fades in and out over 10 ms unless it says otherwise, where before nothing faded but a join's seams. Recorded here because a session that relied on a hard edge — a percussive take starting on its first frame — has to state it with a fade of length 0.
+
+  The join of **overlapping** boxes is still refused, and the three ways above are its own entry now, below.
+
+- ✅ **Which map a region in beats is read through** *(named 2026-09-17, placing
+  the multitrack in seconds -- `clients/python/PLAN.md`, the tempo entry,
+  decision 8; **dissolved the same day** by the user)*. The question assumed a
+  region could hold contents in beats -- a composite region, or a window onto a
+  node of the general tree -- and asked which tempo map would convert them. Its
+  premise is wrong: the multitrack is a model of its own, with no nodes as the
+  `clausters.form` tree has, so no region of it holds beats and there is
+  nothing to convert. What made it look like a question is a leftover of
+  `form` inside the multitrack document, filed under "Found by use" ("A
+  composite region is `form`'s tree inside the multitrack").
+
+- ✅ **A track is as wide as its widest region** *(decided with the user,
+  2026-10-28, settling the audio editor's channel rules)*. Editing a file's
+  channels and holding regions of different widths on one track are not the
+  same problem. A region on a track plays by the audio editor's implicit map
+  (a mono region on every channel of the track, otherwise channel by
+  channel); a track takes the width of its widest region rather than a fixed
+  two (`Track::channels` stays the field that says it, so the mix survives a
+  save), and the channels it has past the multitrack's (`Multitrack::channels`)
+  are routed: to the master's first channels unless the track says where.
+  The routing is the channel matrix the audio editor's paste rules build
+  (`crates/clausters-apps/PLAN.md`, "A file of fewer channels is drawn
+  silent where it is played"), and it is also the N-to-M table the
+  mixer's strip refuses today for widths past stereo; the strip's pan and
+  balance stay its own controls, outside the matrix.
+  Lands with the multitrack's port onto the audio editor's modules (`X34`,
+  `crates/clausters-apps/PLAN.md`).
+  *Done 2026-10-29:* a track's take is read as wide as its widest region,
+  up to eight channels (`mixer::MAX_TRACK_CHANNELS`); past stereo its strip is
+  gains with no image, its meter a column per channel, and its way into the
+  master `mt.route.N.M`, the folded matrix (`ChannelMatrix::folded`): the
+  channels the master has read the track's of the same number, and those past
+  them land on the master's first ones again. A track saying where its
+  channels go is not written yet; the folded routing is what it says today.
+
+- ✅ **The pitch a sequence sounds over time** *(2026-11-10, with the
+  user, from `crates/clausters-apps/PLAN.md`, `X41`; done the same day as
+  `events::sounding::pitch_runs`, the `pitchline` door)*. A function of the
+  sequence, beside `articulation`'s lines: for each line, the pitch that
+  sounds as a run of points in beats and fractional MIDI numbers -- each
+  note's pitch, its own bend curve over it and, under MIDI 1.0, its
+  channel's bend over the time it sounds -- one run across notes a join
+  carries on into, and a new run where the next is attacked. The roll draws
+  it over its boxes, the score editor can read it, and both clients reach
+  it through the sequence's JSON door. A channel's bend stays its own
+  curve; this is only a reading of what sounds.
+
+## Found by use: the entries that were fixed
+
+- ✅ **The master freezes with the transport** *(found 2026-09-23 by the user,
+  while designing the audio editor's nodes: the master's meter, the master and
+  its send must not be frozen, and neither must the master input, the input's
+  own master and its meter)*. The multitrack's instance is created inside the group it binds
+  with `/transport_group` (`clausters_editing::apply`, `Op::Transport`), and the
+  multitrack graph holds the master strip, the master's meter and the send to
+  the hardware (`clausters_core::mixer::multitrack_graph`). So a pause freezes
+  them with the readers: the master's meter holds its last reading instead of
+  falling, and nothing after the tracks can ramp across a stop. **To do:** only
+  what follows the transport is governed -- the tracks, their clips and their
+  readers -- and the master, its meter and its send stay outside that group,
+  under a parent that owns both. It is the shape the audio editor's nodes take
+  in `crates/clausters-apps/PLAN.md`, `X7`, and the transport's stopping phase
+  that `X7` needs for its declick serves this one too.
+  **Fixed 2026-09-24.** The tracks are made in a slot of the multitrack's graph
+  (`mixer::tracks_graph`, the `transport` slot), and that slot is the group the
+  transport governs; the group made at the top **follows** transport 0 and
+  holds the graph, so the master strip, its meter slot and its way out run
+  through a stop. The way out is `mt.out`, the send times `TransportFade`, and the
+  playback gives transport 0 a 5 ms ramp, so a stop and a play fade the whole
+  mix at one place and nothing clicks. A track's meter, still governed, closes
+  itself on the ramp (`mt.trackmeter`), so a frozen track reads zero rather
+  than the level it froze on. The containment stays: the master still hands
+  every track its mix bus. `tests/mixer_graph.rs` hears it, and the user heard
+  the multitrack's example play and pause with no click. The master's meter is
+  a slot nothing fills yet -- "The multitrack has no master in its view", in
+  "Future directions".
+
+- ✅ **A box longer than its source holds the source's last sample** *(found
+  2026-09-23 while measuring the audio editor's example; the user asked for it
+  to be fixed on its own, separately from the audio editor's nodes)*. The
+  multitrack's reader (`clausters_core::mixer::reader_def`) gates on the box's
+  window (`at`, `span`) and nothing else. A box whose window reaches past the
+  end of its buffer -- a take made shorter by an edit, a `span` stated longer
+  than the source -- reads past the last frame, and `BufRd` without a loop
+  clamps there, as it does in scsynth. The last sample stays on the track's bus as a
+  constant until the window closes. No UGen may leave a DC offset on the
+  output (the user's rule). **To do:** decide where the end is enforced --
+  the planner never states a `span` past what is left of the source
+  (`multitrack::nodes::plan`), or the reader's gate also closes at the buffer's
+  end -- keeping in mind that the gate runs per sample in every reader. A
+  first fix gated on `BufFrames` in the reader and was reverted the same day
+  for that per-sample cost. Test: a box of sixteen blocks over a take of four is
+  heard for four, and the rest is exactly zero.
+  **Fixed 2026-09-24, in the planner.** A source's entry in the table says how
+  long it lasts (`SourceInfo::duration`, in its own seconds, optional), and
+  `plan` cuts a box that does not loop at what is left of its source past the
+  window's start, read at its playrate; the reader is untouched. Every endpoint
+  states it: the standalone host from a take's frames and rate, both clients
+  from the buffer they hold (`Sources.table`). A source whose length nobody
+  states is not cut. `tests/multitrack_playback.rs` is the test above, through
+  the playback.
+
+- ✅ **A composite region is `form`'s tree inside the multitrack** *(found
+  2026-09-17 by the user, while the scores phase asked which map converts the
+  beats inside a region: "A composite does not exist in a multitrack because
+  there are no nodes as in the form module. The multitrack is a completely
+  different model.")*. `multitrack::Content::Composite { node }` places a
+  general-tree `Node` as one region, and both clients bind it
+  (`Content.composite`); only tests use it, and `MultitrackPlayback` skips it.
+  It is what is left of the arrangement that was `clausters.form`'s, and it let
+  a region appear to hold beats -- a `Sequence`, a `Clang`, an `Aggregate` --
+  in a document whose regions are sources placed in seconds. **To do:** remove
+  `Composite` from the multitrack document, or move it to another kind of
+  document if the `form` module is taken up again; the logic can live in an
+  editor specific to `form`, never in the multitrack. The same pass reviews the
+  window onto a node (`SegmentSource::Node`, a window onto a node of
+  `Document::content`), which has the same origin, and the migration of a
+  session that saved either.
+
+  **Removed 2026-10-07.** `Content::Composite` is gone from the crate and
+  `Content.composite` from both clients. A region's fill is a window, or one
+  this build does not know.
+
+  **The window onto a node, reviewed: it is the general tree's and stays
+  there; what goes is a *region* being one.** `SegmentSource::Node` is how a
+  `Body::Segments` of the general document reads a node of `Document::content`
+  — a cut of a timeline of notes is two windows onto one node instead of two
+  copies — and that document is alive on its own account: the document door,
+  its log and its history, and the host's owner all hold one. What had the
+  composite's origin was the multitrack borrowing that window type, which let
+  a region name a node of a tree the multitrack does not have. So the
+  multitrack has a window of its own, `multitrack::Window`, over a `SourceRef`
+  and nothing else. The type says what the user said: no region reads a node.
+  On the wire it is the object a window onto samples always was, so nothing a
+  session wrote for a source moves; the readers that asked "is this onto
+  samples at all" (`window.source.samples()`, in the plan, the picture, the
+  loader and the host) stopped asking.
+
+  **No migration, as decided** *(the user, 2026-10-07: a multitrack keeps
+  only its own sessions, with no `form` in them)*. A session that wrote a composite or a
+  window onto a node still opens: both read as `Content::Unknown`, the fill
+  this build does not know, which is carried whole and written back as it came
+  — the region keeps its place and its length, draws as a named box and plays
+  nothing. Nothing converts it and nothing drops it. Held by
+  `a_composite_and_a_window_onto_a_node_are_fills_it_does_not_know`, and by
+  one test in each client that a composite read from a file is written back
+  whole and is no window.
+
+  The shared vectors lost their composite regions (the multitrack's, its
+  session's and the document door's), which are windows onto sources now.
+  `Session::document` stays — the general tree, beside the multitrack — and
+  its doc no longer says a composite region is what replaces it.
+
+- ✅ **Boxes that met on a sample stopped meeting once the multitrack was in seconds** *(found 2026-09-17 by the user, the day it landed: a snap that sometimes missed, a join refused, and in the editor example)*. The projection crossed a length on its own (`dur / rate`) and an end as `(at + dur) / rate`, which differ in the last bit for most sample counts, so a box's end and the next box's start stopped being equal and `read_join` -- comparing seconds against `f64::EPSILON` -- saw a gap. Beats had hidden it by computing a length as the difference of two converted positions. **Fixed** by one rule for every crossing, in the core (`tempoclock::secs_to_samples_over`/`samples_to_secs_over`): a position lands on a whole sample and a length is the difference of its two ends; a join asks where boxes meet in samples at the view's rate. The host also reported positions as `f32`, which holds a whole sample only up to 2^24 (under six minutes at 48 kHz); the `clips` and `points` reports are doubles now. Held by `halves_placed_at_any_sample_draw_back_there_and_join` and the core's `a_span_crosses_as_the_difference_of_its_ends`.
+
+- ✅ **A box drawn a different length than its samples** *(reported 2026-09-17 by the user, with a screenshot, in the same message as the entry above: "the drawing of the samples does not match the length of the clips' box as before")*. In `clients/python/examples/editors/edit_multitrack.py`, the box's picture and its span no longer agree. Not reproduced: the gestures that led there are not known yet, and nothing in the crossing fix above explains a difference that large.
+
+  **Gone, confirmed by the user 2026-09-22; read the path before closing it.**
+  The whole path, since it is spread over four places and this entry is what
+  names them: a box's rectangle is `graphics/track.rs` -- `clip_x_range` puts
+  `offset`/`dur` through the navigation window, `clip_rect` is the rectangle,
+  `clip_local_view` is the slice of `[0, dur]` the rectangle shows, and
+  `clip_ends_on_screen`/`clip_grips` are the two grips, which the renderer and
+  the hit test both call so that the strip that lights up is the strip that
+  resizes. Its **contents** are `elements/multitrack/draw.rs::paint`, which
+  hands the body the box's own axis (`TimeSpace::of(local, dur)`) and its window
+  onto the source (`SourceWindow { start, looping, fit: false }`), or
+  `draw_spans` for a join. And the **stretch** is `structures/boxes.rs::drag`,
+  one function for every box with a time axis -- a multitrack's boxes and a
+  roll's notes alike -- whose rules are: the end edge moves only the duration,
+  the start edge trims by carrying `start` with it, a drag never leaves less
+  than `MIN_DUR` (one sample, a length in the axis' units and never a count of
+  pixels), never passes `Bounds::limit` (the far edge of the domain), and never
+  passes `Contents::total` unless the box loops. `fit: false` is the sentence
+  the drawing and the drag agree on: **an edge drag is a trim**, the samples are
+  read frame for sample, and nothing here stretches material.
+
+  **So the picture and the box can only agree while one sample of the box is
+  one frame of the source**, and the two candidates for this report are both
+  breaks of that. The **join's edge**: a join's own buffer is not fetched, so
+  `contents_of` answered no length and `drag` bounded its edge by nothing until
+  2026-09-21 (`crates/clausters-gui/PLAN.md`, "A box can be stretched past the samples it
+  has") -- a join pulled out is drawn exactly as long as it is and reads the
+  spans it has, which is this picture. The **report's numbers**: `json_arg` sent
+  a box's placement back as `f32`, exact for whole samples only up to 2^24 of
+  them (under six minutes at 48 kHz), which was harmless while a placement on
+  the wire was a count of beats and stopped being so the day it became a count
+  of samples; they are doubles since the crossing fix above, which landed the
+  same day this was reported and said it explained nothing. Which of the two it
+  was is not established, and the entry closes on the picture agreeing rather
+  than on a cause.
+
+  **What the reading turned up is the entry below** -- the rate a box is
+  measured in is the view's and the frames behind it are the source's, and
+  nothing converts between them.
+
+- ✅ **A join is a flat list of segments, and a segment never names a join** *(decided 2026-09-13 by the user, after joins of joins nested past the server's four levels -- `crates/clausters-gui/PLAN.md`, "Found by use")*. The model, in the user's words: a segment is a read-only two-dimensional pointer into a buffer or a file, `{ source, start, length }`, and a join makes a new object that is a list of those; no recursion. So a `Location::Segments` part names a **take**, never another source that is itself segments. `picture::read_join` holds that by construction: a box over a join reads through to the join's parts, cut to what the box shows (`segments_of`), and a part that states no range, or a span past the end of the join, is refused rather than joined around. What a caller has to know for it is the segments of the joins it holds (`Buffers::parts`); the multitrack editor learns them from the joins it mints, since a join is never edited. A session saved before this may still hold a join over a join, which is read one level through and not repaired.
+
+- ✅ **After a trim, a window's duration no longer says what its box plays** *(decided with the user 2026-09-13; see the note at its end)* *(found 2026-09-13, diagnosing a join that came out empty -- `crates/clausters-gui/PLAN.md`, "Found by use", "A join over more than two segments at once fails")*. `picture::read` answers a trim by sliding `window.start` and leaving `window.duration` as the piece had it, on the grounds that a flat report says how long a box is and not how much of the source is behind it. So after a left-hand trim, or on the left half of a split, a window claims more of its source than the box plays -- even past the end of the take. Nothing heard reads the duration (`nodes::plan` plays a box by its position, its length and its window's start) and nothing drawn does, which is why it stayed invisible; `read_join` did, and asked the server for samples that were not there. The join now reads what the box shows. What is still open is **what the field means**: either a trim keeps it equal to what the box shows (and a saved piece stops carrying a number that lies), or it is stated as meaningful only for a box that wraps, where a window shorter than its box is exactly what looping says. The first changes what an edit writes into the format, so it is a decision, not a fix.
+
+  **Decided: neither.** The user's model: a region is a view onto its **whole** source, so a trim hides and pulling the edge back shows (and sounds) again what it hid; keeping the duration equal to what the box shows would throw that away. A join is the more specific case: it turns boxes, trimmed or not, into one box whose source is exactly the sum of its segments, so its edges cannot be pulled past them. So `SegmentRef::duration`, in a region's window, is **how much of the source the window reaches** -- the whole take, or the sum of a join's segments -- and never what the box shows; a trim or a split moves `start`, position and length and leaves it alone, and `start + duration` is not the end of anything that plays. That is what trims already wrote; what did not follow it was `picture::read` minting a box a hand made with what the box showed, and it now writes the source's length where the caller knows it (`reach_of`, from the table's frames). The total length of a take is the **source's** fact and lives in the source table (`Source.frames`), not repeated in each segment -- a segment stays `{source, range}`, read-only, and finds its take's length by id, which is also what a file read with `DiskIn` will need, with no buffer to ask. A standalone host now writes that length down once its takes are mapped (`Owner::learn_lengths`), into both its take table and the session it saves; a client states it with `Source.shaped`, as the multitrack example does. Held by `a_new_box_windows_its_whole_source`.
+
+- ✅ **A second join left an empty box, because a source the piece stopped naming is still a source** *(found 2026-09-12 by the user: "cutting several segments, resizing them, shuffling them and selecting them all, on join an empty clip is left"; fixed the same day)*. `fresh_source` minted off the **piece** alone — the largest source id any region windows, plus one — which is how every other id here is minted and is wrong for this one. A source stops being named by the piece the moment nothing windows it (an undo, a box deleted, a joined box cut back up) while the client still holds the buffer it made for it. So the next join was handed an id that already had samples behind it: the client saw an id it knew, made nothing, and the box became a window onto **the previous join** — or onto a buffer that had since been freed, which is the empty box.
+
+  The piece cannot see the table, so the table says: `Buffers::taken` is the question "which sources do you hold samples for", defaulted to none so a caller with no table is still one, and the mint clears the piece **and** it. The user put the rule in one line while it was being fixed — *"joined clips should create new instances of segments; the implementation that way should be simple"* — and that is what makes it simple: a join never reuses, so nothing has to reason about whether two joins are the same join. A **redo** naming the same id is not reuse; it is the same edit.
+
+  **The same pass closed the other half of the shape.** `read_join` *skipped* a name it could not resolve and joined the rest, which would leave that box where it was, under the box now spanning over it. It refuses instead. Every bug this seam has produced has been a verb quietly acting on less than it was given.
+
+- ✅ **A box that went took its envelope's map with it, and the reconciler named it anyway** *(found 2026-09-12 by the user, deleting a box in `edit_multitrack` the first time the instance projection met a hand)*. `reap_curves` emitted an `Unmap` for the port a deleted clip's curve drove -- after the pass that freed that clip. Freeing a node takes its map with it, so the message was about a node the server no longer had; worse, it named a **handle** whose table entry went with the free, which in Python raised a `KeyError` and in the page would have resolved to `0` and sent `/graph_map` to the **root group**.
+
+  Two halves. The crate does not emit it: a curve remembers whether its owner is a box or a track and which id, so the reaper asks whether the owner is still there. What the curve holds of its own -- its node, its buffer, its bus -- is given back either way, since those are the instance's and outlive whatever port they drove. And both clients now answer an impossible handle the same way, by skipping: one raising while the other addressed node zero is the divergence this track exists to retire.
+
+  It is the argument for handles rather than against them. A node id would have been a number the server quietly ignored or, worse, one it did not; a handle with nothing behind it is a question with no answer, which is a thing a client can *see*.
+
+- ✅ **A break-point compared by how its data was spelled, so a page saw an edit where a script saw none** *(found 2026-09-11 by the parity vectors of `O27`, the first time the same report went through both doors and the answers were put side by side)*. `read_points` asked `held.points != curve.points`, which is derived equality over `Opaque(Value)` -- and a JSON number compares by **representation**: JavaScript writes `0.0` as `0` and Python writes it as `0.0`, so a curve reported back exactly as it was drawn came out as a `SetAutomation` in the page and as nothing at all in a script. Nothing failed loudly: the page simply recorded an undo entry per redraw of an untouched curve.
+
+  It is worth reading as a class rather than as a bug. A point's `data` is **opaque on purpose** -- the document carries it and never reads it, which is what lets a client keep a shape there -- and opaque data travels through whichever serializer the endpoint has. So any comparison of it has to be by what it *says*. Fixed with `same_points`/`same_json` beside `read_points`, numeric-aware and otherwise the equality it always was, with a test that states the rule.
+
+  **And it is the argument for the vectors themselves.** Two clients disagreeing about whether a gesture was an edit is not a build failure, not a type error and not a lint; it took generating the same question from one client and asking it from the other.
+
+- ✅ **A window could only be onto samples, so a cut over notes was a copy**
+  *(found 2026-09-03 by the user, on the split over notes that shipped the same
+  day: "when a piano roll is split, is it still a window onto the original
+  data?" -- it was, until it was written down; fixed the same day)*.
+  `SegmentRef.source` was a `SourceRef` and nothing else, so the only contents a
+  window could be onto was samples. That is enough while what a window reads
+  lives *outside* the document -- two windows are two references and nothing is
+  copied -- and it is not enough for a timeline of notes, whose notes are
+  **nodes**: two windows written as two tracks wrote every note twice, with the
+  same ids in each, which is one identity under two parents. It passed
+  `duplicate_id` only because the copies were identical (the check refuses two
+  *different* nodes under one id, deliberately), and it came apart on reopening,
+  where each half got a timeline of its own.
+
+  Two additions, and the second is what the first needs:
+  **`SegmentSource`** -- a window is onto `Samples(SourceRef)` or onto a
+  `Node { node }` of this document -- and **`Document::content`**, where a node
+  a window names lives. Content is not placement, so it is not in the tree; it
+  *is* in the document, in the same id space, which is what lets a window and an
+  intent name a node the same way. `Body::Segments::duration_unit` is derived
+  from the sources rather than fixed at `Seconds`, the finders an intent uses
+  reach content as well as the tree (without that, no edit could touch shared
+  material), and `duplicate_id`/`max_id`/a session's dangling scan all cover
+  both halves.
+
+  The wire is unchanged for everything that existed: samples are the object a
+  `SourceRef` already was, a node is `{"node": id}`, and `content` is skipped
+  when it is empty -- so every document written before this reads back
+  identical. What decided the shape, over the two alternatives the user weighed,
+  is in `docs/decisions.md`.
+
+- ✅ **The document measures two kinds of leaf with one unit, and for one of
+  them the unit is wrong** *(found 2026-08-30 by the user, arguing that concrete
+  time is seconds or samples and that beats are a ruler and a snap the editor
+  imposes)*. `Beats = f64` is the unit of `Node.onset`, `Node.duration` and
+  `Intent::Place.offset`, for every body. **Storing a quantity in beats is a
+  statement**: it says *the seconds this is worth must follow the tempo*, since
+  the stored number never changes and only its worth in seconds does. For a
+  clang that is exactly right — a note is musical, and a tempo change is
+  supposed to shorten it. For a leaf that references samples it is false: a
+  take's length is `frames / sample_rate`, a wall-clock fact already fixed
+  before the document saw it, and keeping it in beats would need the number
+  rewritten at every tempo change, which nothing does.
+
+  **The rule, as the user stated it**, and it is two rules rather than one
+  because onset and duration answer to different things:
+
+  - **An onset is in the unit of what contains it.** Concrete material inside a
+    sequence measured in beats has its onset in beats — the placement is a
+    musical decision and follows the grid it was placed on.
+  - **A duration is in the unit of the material.** Audio is seconds; a sequence
+    of events is beats. Concrete material is one of those two, and its own
+    nature says which.
+
+  **The document already knows which is which** and needs no new field: the body
+  says it. `Clang` and `Sequence` are events; `Vector` and `Segments` reference
+  samples. So the unit of a duration is derived from the body kind, and only
+  `Beats` as the name of every temporal field has to give.
+
+  **And the conversion belongs to the flattening, not to the structure.** A
+  timeline is a list ordered by *one* number, so it cannot hold items in two
+  bases: the tree keeps each leaf in the unit that leaf is in, and
+  `to_timeline`/`render` convert to the clock's unit while flattening for
+  playback. That leaves `Playhead` and `TempoClock` untouched, which is where
+  beats are correct — everything that runs on a tempo clock stays in beats:
+  `Event.dur`/`delta`/`sustain`, a timeline's keys, patterns, routines, and the
+  editor's ruler and snap.
+
+  **What it reaches**: the alias and the doc lines here, the temporal metadata's
+  meaning per body, the `Place` intent, the Python bridge (`to_document` /
+  `from_document`), both clients' arrangement models and the host wherever it is
+  told a length. The client half is written in `clients/python/PLAN.md` ("Three
+  places call beats what is measured in seconds") with the concrete symbols; this
+  entry is the format's half. **It is a fix and not a design**: the rule is
+  stated, nothing here is waiting on a decision.
+
+  **Fixed 2026-08-30, with the client half, in one commit.** `Beats` now names
+  only what an onset is in (`Node::onset`, `Member::offset`, `Rules::quant`);
+  `Seconds` names a length whose seconds were already fixed, and which of the
+  two a `Node::duration` / `Member::dur` / `SegmentRef::duration` is in is
+  **derived from the body** (`Body::duration_unit` → `TimeUnit`), so nothing new
+  is stored and no writer can disagree with a reader. Three readers learned it:
+  `Place` snaps an offset and leaves a length in seconds exactly as the hand
+  gave it (a musical grid is not a ruler a recording was measured against),
+  `resolve`'s `Mapping` carries `frames_per_second` beside `frames_per_beat`
+  (the C ABI and the wasm request with it, `CORE_ABI_VERSION` 28), and
+  `Body::relation` takes a tempo, since an aggregate can hold a lane of takes
+  beside a lane of notes and their ends are no longer on one axis.
+  `Member::length`/`duration_unit`/`end` are the accessors that keep the
+  conversion in one place.
+
+- ✅ **Material assembled from several windows had no body, so a joined clip was carried and not understood** *(found 2026-08-18 building the multitrack's join: the arrangement grew a `Segments` element — several windows onto several buffers, read as one — and wrote a `segments` node the crate could only keep as `Body::Unknown`)*. The forward-compatibility door did its job: the node round-tripped whole, so nothing was lost and the script-driven editor worked. What did not work is everything that *interprets* a document — the standalone host drew such a clip with no material, `Session::dangling` reported no missing source for its buffers, and a selection over it resolved to nothing.
+
+  **`Body::Segments` closed it the same day**: a list of `SegmentRef` (which source, from which frame, for how long in beats), with the same `config` a `Vector` carries because what the element *is* is one thing to play. It is **not a sixth primitive** — it is the `Vector` primitive over more than one window, which is the framing the arrangement uses too. Four readers learned it: the source walk (`Session::dangling`), the resolver (one `Resolved` per window the selection reaches, since each is a different part of different material), the staleness check (the **stalest** of its sources, because an edit against it was made against every window it shows) and the standalone host's drawing (one clip, a take body per window, each over its own stretch — which the clip protocol had just made sayable).
+
+  **What it leaves open**, recorded rather than resolved: a window is now expressible **two ways** — `SourceRef::range`, in frames, which only this crate's tests write, and the client's own (`start` on a segment, `start` in a buffer's config), which is what the Python writes because `to_document` is unit-less and cannot turn a length in beats into an end frame. Both are honest; two of them is one too many, and which survives is a question for whoever needs a frame-exact trim in the document (a host-side session editor is the first candidate).
+
+- ✅ **Two placements of one element share a node id, and an edit on the second lands on the first** *(found 2026-08-14, dragging the second clip in `gui_daw.py` while writing the example; `composer.py` had the same shape)*. `to_document` stamps the id **on the element object** (`clients/python/clausters/form/document.py`, `_Ids.of`) so that a second conversion numbers the same node the same way - which is the property the whole history rests on - and the same object appearing at two offsets therefore serializes as two nodes with one number. Nothing rejects that document, and the two halves of one edit then disagree about which placement it named: the crate's lookup takes the **first** match (`intent::find_member_mut` returns the first member whose id matches), while `Editor._index` keys `node id -> (owner, handle, element)` and the **last** placement indexed overwrites the first. So a drag on the second clip moves the first placement in the document and writes the new offset into the second handle in the arrangement - two writes, two different placements, and on screen the clip the hand moved comes back to where it was.
+  
+  **Fixed 2026-08-17 by O14**: the id belongs to the member handle, so the two placements are two nodes and an intent naming one moves that one. The acceptance written below was run as a test — build the repeat, drag the second, and exactly that placement moves, in the document and in the arrangement.
+
+  **What shipped first was the examples, not the fix**: `composer.py` (which absorbed `gui_daw.py` on 2026-08-17) now gives each placement its own element over the same server buffer, which is correct authoring and sidesteps the whole question. The model still accepts the ambiguous tree and still mis-addresses it, and it stays open because the fix *is* a decision - see "May one element be placed twice, and what does an intent name if it is?" under Open decisions, where the three answers and what each one costs are written out. Whichever wins, the acceptance is this case: build the repeat, drag the second one, and have exactly that placement move, in both the document and the arrangement.
+
+- ✅ **A session does not round-trip: an aggregate loses its name, and a `Track` comes back as an `Aggregate`** *(found 2026-08-16, running the whole-loop example — `gui_daw.py` then, `composer.py` since the two merged on 2026-08-17 — and pressing open: the reopened piece draws an extra, empty-looking aggregate in the melody lane, and the lanes lose their labels)*. `to_session` -> `from_session` is the loop's fifth step, and what comes back is not what went in:
+
+  - **The name is dropped.** `Aggregate(name="take")` and `Aggregate(name="melody")` come back anonymous, because `_body` (`clients/python/clausters/form/document.py`) writes no `name` and the document schema has no field for one. The multitrack labels its lanes from that name, so a reopened piece loses the labels it was authored with.
+  - **A `Track` becomes an `Aggregate` of `Clang`s.** That is deliberate on the way *out* — the document has one `aggregate` kind, and a track is "an Aggregate with the restrictions of a multitrack view", which is what makes a note in a roll addressable — but nothing on the way *back* says the aggregate was a track. So one level of nesting appears that the author never wrote, and the editor draws it as an aggregate whose members are clangs rather than as a track.
+
+  **Neither is a Python-side bug to patch there**: both need the document format to carry something it does not carry today (a node's name; what an aggregate *is* to a view), which is this crate, its schema and both clients. Recorded rather than folded into the example, and it is what the example's "open it again" step is really testing — *the same composition by identity*, which today holds for the ids and not for the shape.
+
+  **What an eye pass measured, 2026-08-17** *(reopening `composer.py`'s four-lane piece)*: the take clips keep their waveform and the automation clip its curve, and **both roll bodies are gone** — the melody's because a `Track` comes back as an `Aggregate` of clangs (no aggregate is a roll any more), the pattern lane's because a frozen generator has no rendering to draw. The user reads it as "the piano roll is gone", which is the same defect at the size a real piece shows it.
+
+  **The server already answers the naming half, and the document should copy it rather than invent one** *(pointed out by the user 2026-08-17: the server's groups carry a label too)*. `docs/schemas.md` states it as a rule worth reusing verbatim: **a name is a referenceable label, not a new identity** — the id remains what every command addresses and every reply reports, and the name is a second way to *refer* to the same group. A group is **born named** (the string rides in the creating message, so the label travels at the moment the writer knows what it is building), renaming is its own verb, an empty name clears it, and a refused label refuses the creation rather than leaving an anonymous group behind. And it buys navigation for free: every group contributes one path segment — **its name if it has one, its decimal id if it does not** — so `/mixer/drums` and `/1000/drums` both resolve and nothing is unreachable for being anonymous. That fallback is exactly what a document needs in order to grow names without making them mandatory or making them an identity, and both clients already speak it (`Group("mixer")`, `group.rename(...)`, `Server.group_at(...)`). The remaining half is the one the server has no opinion on: what an aggregate *is* to a view, which is this format's own question.
+
+  **Acceptance:** the example's song survives `to_session` -> `from_session` structurally identical — same kinds, same nesting, same names — asserted by a test that compares the two trees rather than by an eye pass over a window.
+
+  **Fixed 2026-08-17, and the format grew exactly two things.** A node carries an optional **`name`** — the server's rule verbatim, a referenceable label and never a second identity, so the id stays what an intent addresses and an anonymous node is reachable exactly as before. And `Body::Aggregate` carries a **`config`**, opaque like a leaf's, in which a writer puts the restrictions it had on that aggregate: the Python client writes `{"form": "track"}` and reads it back into a `Track`, and the crate is not one line wiser about what a track is. **There is still one aggregate kind**, which is the part worth defending — the tree does not act on view-ness, it carries it, the same door a generator's code goes through and the same treatment an unknown widget gets in the GUI protocol. The reasoning, including what it does not fix (two clients agreeing on a string no schema checks), is in `docs/decisions.md`.
+
+  **What it cost across the packages:** the crate (two fields, and every construction site of `Body::Aggregate` in the workspace and the host), the Python bridge both ways, and the parity vectors re-run — which moved nothing here, the document generator using neither a named group nor a track, and instead turned up an unrelated stale vector that shipped on its own.
+
+- ✅ **What a document calls a generator is `repr()`, so a saved session carries a memory address and nothing can find the algorithm again** *(found 2026-08-17, merging the whole-loop example into `composer.py`: its pattern lane comes back frozen and there is no key by which it could come back any other way)*. The conversion names what the document does not own with `_reference` (`clients/python/clausters/form/document.py`), which is the object's `name` when it has one and **`repr(obj)` when it has not** — so a `Pbind` lane serializes as `"<clausters.seq.pattern.Pbind object at 0x7f...>"`. Two things follow and both are bad. The file gets **content that changes between runs of the same script**, which is the one property O1's acceptance asked writing to keep (`deterministic`); and the reference is **unresolvable by construction** — `from_document`'s `resolve(kind, config)` is handed exactly that string, so a caller holding the very pattern cannot tell that this is the leaf it has. An `Automation` happens to work only because it carries a `name`.
+
+  **It is the format's question and not the bridge's**, which is why it is here: a leaf is opaque by decision (the crate never interprets a generator's config), so what is missing is a **stable identity** for one — something an author sets, or the conversion derives and the format carries, such that reopening can hand the recipe back. Until it exists, "the same composition by identity" holds for the ids and not for what the ids name, and a client's only honest posture is the one the example now takes: resolve what can be named, draw the rest frozen. Related to the entry above rather than a duplicate of it: that one loses a node's *shape*, this one loses a leaf's *identity*.
+
+  **Acceptance:** a composition with a pattern lane, saved and reopened by a script that still holds the pattern, plays that lane again — and the file it went through is byte-identical between two runs of the same script.
+
+  **Fixed 2026-08-17, and the answer was the one the entry left implicit: the identity is a name an author sets, and `repr` is worse than nothing.** A reference now comes from three sources in order — the object's own name (a def, an `Automation`), the **element's** `name` (what an author writes for material that has none of its own, a `Pbind` being code), and nothing at all. An unnamed leaf is written with **no reference key**, so the file is the same bytes on every run and a resolver is never handed a string that cannot match; the leaf comes back frozen, which `form.render` already treats as structure. `Element` therefore takes `name=` throughout, and it is the same name the node carries and the multitrack labels its lane with — a label, not an identity, so two elements may share one, which is exactly what *the same algorithm used twice* looks like.
+
+  **Both halves of the acceptance are tests rather than claims**: a named pattern lane saved and reopened by a script that still holds the pattern emits its events again (and the same file with no resolver emits none), and the same script run in **two processes** writes identical bytes — which is the only place the old defect was visible, since an address is stable inside one process. The example names its bass lane and resolves it, and the composition chapter grew the rule.
+
+- ✅ **A note dragged on a generator's clip stays drawn where the hand put it, and the edit never happened** *(found 2026-08-14, reading `clients/python/clausters/gui/editor.py:471` while working out what an acknowledgement is for)*. The roll emits `"notes"`, `Editor._apply_notes` finds no editable timeline because the element is a forward-only generator, returns `False` - *"so the edit is a no-op"*, exactly as intended - and **sends nothing back**. The host has no way to learn that the edit was refused, so it keeps drawing the note in its new position until the next whole-tree redefine, which for a placement edit never comes. **Fixed by O3** *(2026-08-14)*: `Editor.apply` now answers every event it owns, and a refusal is the notes pushed back as they still are - so the host adopts the correction with the ordinary drop-and-adopt rule, no redefine and no second message. Two things the fix needed that the bug did not show. The editor must answer **only for widgets it drew**, or a poll loop shared with a second editor retires a pending edit nobody applied; and the answer must carry a **value**, since "refused" with nothing attached leaves the host guessing what to draw instead.
+
+  It is the cleanest possible demonstration of the hole this crate closes, and worth keeping as one: nobody wrote a bug. The client is right to refuse, the host is right to draw what the hand did, and there simply was no message in the protocol capable of carrying "no". The fix is O3 and nothing else - the refusal is the previous value, pushed back and stamped - and this case is its acceptance test.
+
+- ✅ **A selection's mapping states one tempo, so a selection cannot cross a
+  tempo change** *(found 2026-09-01, taking the entry below — the one caller
+  that legitimately kept a multiplication)*. `resolve::Mapping` carries
+  `frames_per_beat` and `frames_per_second`, whose ratio is a tempo, and every
+  beats↔frames conversion in `resolve.rs` uses it. That is correct for what a
+  `Mapping` *says* — it declares a fixed relation between the two axes — and it
+  quietly makes the surrounding operation wrong wherever the piece's tempo
+  moves: a selection that starts before an accelerando and ends after it
+  resolves to the wrong frames at one of its two edges.
+
+  It is filed rather than fixed because it is a different shape of change from
+  the one beside it. `Member::end` needed the *caller's* answer for one length;
+  a `Mapping` is a value handed around and read many times, so replacing its
+  ratio with a map means deciding what a `Mapping` is — a stated constant that
+  a caller must not build across a tempo change, or a reference to the piece's
+  map. The second is the same identity question the tempo value already waits
+  on, so the two are read together.
+
+  **Fixed** *(2026-10-07)*, and the question had been answered in the
+  meantime: a tempo map is a **value** the caller holds (the clock's), which is
+  what `Member::end` was already given through `SecsToBeats`. So a `Mapping`
+  is neither of the two things above — not a constant, and not a reference to
+  a map the document stores — but **the map itself, handed over for the
+  call**: `Mapping { tempo: &TempoMap, frames_per_second, unit }`. The
+  document still names no clock, and the identity question stays exactly where
+  it was (a saved file saying which clock it is written against), because
+  resolving a selection never needed it.
+
+  Nothing in `resolve.rs` multiplies a length by a tempo any more:
+  `Mapping::end_of` takes where a length starts, `frames_between` takes both
+  beats and reads the seconds between them off the map, and a selection in
+  frames finds its beats with `beats_at`. `length_in_beats`, `to_frames` and
+  the private `tempo()` are gone. A caller whose tempo never moves builds a
+  map of one segment and says so by doing it; both clients take a number for
+  that (`tempo=1.0`, beats per second) beside a `TempoMap`.
+
+  It crosses every binding in one change: `clausters_document_resolve` takes a
+  tempo-map handle where it took `frames_per_beat` (`CORE_ABI_VERSION` 88),
+  `JsDocument.resolve` takes the wasm `TempoMap`, and `Document.resolve` /
+  `resolve_selection` take `tempo` in both clients. The parity vectors gained
+  three selections under a map that doubles at beat 4 — in beats, the same
+  stretch in frames, and one wholly after the change — and both clients land
+  on the same spans.
+
+  **Two more things in the same file read wrong, and were fixed with it.** A
+  window of an assembled body (`Body::Segments`) opens at a **second** of its
+  source — the format has said so since the unit was corrected on
+  `SegmentRef` — and `resolve` was the one reader still taking `start` as
+  frames, so a selection over a join resolved to the first frames of each take
+  whatever the window. And the windows were all laid as seconds, when one onto
+  a node measures beats (`SegmentSource::unit`): it contributes no samples
+  either way, but it moved where the windows after it were found.
+
+- ✅ **`TimeUnit::to_beats` takes a length and a scalar, and no position — and the format has nowhere to put a tempo** *(found 2026-08-31, auditing the call sites of the client's frozen-tempo bridge; `clients/python/PLAN.md` holds the other half)*. `TimeUnit::to_beats(length, tempo)` (`src/lib.rs`) converts a length in seconds to beats by multiplying by one number. Under a tempo that changes along the piece that operation is not imprecise, it is **undefined**: a beat is a logical coordinate, so the same stretch of seconds reaches a different beat depending on where it starts. Its caller `Node::end(tempo)` already has the onset in hand (`self.offset + self.duration_unit().to_beats(d, tempo)`) and simply does not pass it, so the local fix is to take the position — or to return the end beat rather than a "length in beats", which is the honest shape.
+
+  **Fixed** *(2026-09-01)*: `TimeUnit::to_beats` is gone and the crate stops
+  converting. `Member::end` and `Body::relation` take a `SecsToBeats` — a
+  closure from `(onset, seconds)` to beats — so the caller, who holds the
+  piece's map, answers the question the document cannot. A length already in
+  beats never reaches it. `at_tempo(bps)` is the constant-tempo converter,
+  written out so a caller that genuinely has one number **says so at the call
+  site** instead of a scalar assuming it everywhere. A test places two
+  identical takes at different beats under a piecewise tempo and reads two
+  different ends, which is the defect made visible.
+
+  The format still has nowhere to put a tempo, and that is no longer this
+  entry's problem: a tempo map is a **value**, not a field, so what the format
+  needs is an *identity* to reference one by — see "A tempo map is a value, and
+  nothing said so" in `clients/python/PLAN.md`. Nothing here waits on it.
+
+  One conversion stayed a multiplication and is worth naming: `resolve.rs`'s
+  `Mapping::length_in_beats`. A `Mapping` states its own `frames_per_beat`, so
+  its tempo is a constant *by construction* and the multiplication is correct
+  for what that struct expresses. What it cannot express is a selection
+  resolved across a tempo change — a wider question, filed below rather than
+  assumed away.
+
+  What it actually needs is the piece's **time map** (`clausters_core::tempomap::TempoMap`, which shipped 2026-08-31 with the client fix): the beat→second function, the integral of `1/tempo`. Both clients bind it, the clock holds one, and `Node::end` would take one instead of a scalar. That crosses the FFI, which is the same decision as the one below.
+
+  **And the decision this waits on**: a piece with a tempo curve has nowhere to store it. The document carries no tempo field and `to_session` writes none, so a map lives only on the clock and is lost on save. The question is whether a tempo map is **notation** — part of the piece, saved with it, read by whatever plays it — or **execution**, which the clock builds and a save drops. The type is the same either way; what the answer settles is who constructs it and whether the format grows a field. Reading it against `O14` (what a leaf's config is *of*) is the natural place, since both are about what the document claims to carry.
+
+- ✅ **A box is measured in the view's samples and filled with the source's
+  frames, and nothing converts between them** *(found 2026-09-22, reading the
+  drawing and drag path for the entry above)*. A box's `offset`, `dur` and
+  `start` reach the host as samples at the **view's** rate (`clips` crosses each
+  through `look.frame_at`, and `start` through `box_.start * look.rate`), while
+  what bounds and fills it is counted in the **source's** frames: the host's
+  `contents_of` answers the take's frame count, and the body is drawn frame for
+  sample (`fit: false`). The two agree only when the source's samples were
+  recorded at the rate the view measures in, and nothing anywhere checks that,
+  converts for it or carries what would be needed to -- the props door takes one
+  rate and a table of `{buffer, channels, frames}`, and `nodes::SourceInfo`, the
+  plan's own table, carries `buffer` and `channels` and no rate at all. Measured:
+  a one-second take of 44100 frames at 44.1 kHz, placed whole in a 48 kHz
+  session, is drawn **48000 samples long over 44100 frames of samples** -- 8.8%
+  of box with nothing in it, its edge stopping 3900 samples short of its own end.
+  **It reaches sound, not only the picture**: `nodes::plan` reads the window's
+  start as `window.start * sample_rate` with the session's rate, so the reader
+  starts at the wrong frame of such a buffer by the same ratio.
+
+  **`playrate` is the same question already stored**: a `Content` carries one
+  (both clients write it, `Content.onto(..., playrate=)` / `Content.onto(w,
+  {playrate})`), and outside constructors that pass `1.0` **nothing reads it** --
+  not the picture, not the plan, not the drawing. A region at half rate reads
+  twice the frames and would be drawn and bounded as though it read the same
+  number.
+
+  **The decision** is which one the document means, and it is one answer for the
+  picture, the bound and the plan: either a source's samples are resampled to the
+  session's rate when they are read in, so one sample is one frame by
+  construction and `playrate` is the only ratio left; or a box's window carries
+  the ratio (the source's rate and its `playrate`) all the way to the drawing and
+  to `PlayBuf`, which means `SourceInfo`, the props table and `SourceWindow` all
+  grow it. The second is also what a time stretch would need, and `SourceWindow`
+  already reserves `fit` for the picture that produces.
+
+  **Decided by the user 2026-09-22 and done: the reader resamples as it plays,
+  and one ratio is read by everything that has to say it.** Nothing is converted
+  on the way in -- a buffer keeps the rate its file was written at, as it always
+  has and as scsynth does -- and the multitrack's reader crosses its phase by
+  `BufRateScale(buf) * rate` and its window's start by `BufSampleRate(buf)`,
+  which is `PlayBuf`'s own idiom spelled in the def that plays a box. So the
+  **audio path asks a client for nothing**: what travels is the region's
+  `playrate`, which is the half of the reading speed that is a decision, and
+  `mixer::START` is now the source's **seconds**. The picture crosses by
+  `SourceWindow::rate` and the edge a hand pulls by `Contents::rate`, both fed
+  from the `rates` prop the projection writes (flat `box rate` pairs, a name
+  list like `loops`) out of the source table both clients already keep, which
+  grew a `rate` beside its `frames`. Zoomed to the sample a resampled box draws
+  **the samples it plays** -- the reader's own linear reading between frames,
+  through the shared `resample::Interpolator::played` that `BufRd` itself now
+  calls -- with the band-limited reconstruction still drawn through them, so the
+  resampling error is visible instead of being hidden by drawing one curve
+  twice. The reasoning is `docs/decisions.md`, "A source at another rate is
+  resampled as it plays, and one ratio says so everywhere". Held by tests on
+  each layer: the reading in the core, the plan's seconds and playrate, the
+  projection's `rates` and its window in the source's frames, the edge that
+  stops at 48000 samples over 44100 frames, and the grid the dots are drawn on.
+  **`playrate` is read now** -- it was stored by both clients and read by
+  nothing.
+
+  **And the join followed the same day**, since its refusal rested on the same
+  mistake: a stitched buffer owns no samples, so joining takes at different
+  rates converts nothing. Each part carries the ratio its source makes with the
+  join and is read through it (`dsp::stitch`), a part at the join's own rate
+  keeps its indexed load behind a comparison made at build, and what the command
+  states is how many frames **of the join** a part fills -- the ratio itself
+  never travels, because the server takes it off the buffers. `segments` gained
+  the ratio per span so the picture says the same thing, and the projection
+  counts a part's contribution rather than its span. A join is still not a
+  *converter*: nothing is written out at its rate, so a mixed-rate join costs
+  the reading and not memory. `docs/decisions.md` carries both halves.
+
+- ✅ **The takes a history can still reach are never given back** *(found
+  2026-09-22, settling where a join's samples live)*. An undo frees no take: the
+  reconciliation frees only the curve tables, and a source the multitrack stops
+  naming is still a source -- deliberately, since that is what lets a redo find
+  what it left rather than build it again (`clients/python/PLAN.md`, "A second
+  join left an empty box, because a source the piece stopped naming is still a
+  source"). So a session that joins, undoes, joins again holds every join it
+  ever made, and the takes under them, for as long as the history can name them.
+  It is the right default -- rebuilding a join on a redo would cost the stitch
+  and, for a mixed-rate one, would have to be identical rather than equivalent
+  -- and it has no ceiling.
+  **What is undecided** is who gives them back and when. Discarding history is
+  the event that makes a source unreachable, and nothing today connects the two:
+  the pile is trimmed (`clausters-editing`'s history has a depth), the sources
+  are not. The shapes worth weighing: a source table that walks the pile and
+  frees what no entry can reach any more; a lifetime tier below `temporary`
+  whose buffers die with the step that made them; or leaving it and saying so
+  in the docs, which is honest for a session and wrong for a long editing day.
+  **Related:** `Lifetime`, whose `temporary` tier already says "dies with the
+  edit session unless a save promotes it" -- nothing enforces that either.
+  **Decided 2026-09-22, and the work is `X1`'s** (`crates/clausters-apps/PLAN.md`,
+  "The design: the history holds references to immutable takes, never
+  samples"): the first shape, generalized -- a source is freed when no root
+  reaches it (the document, the history's entries, the clipboard), with a byte
+  budget beside the entry count and an explicit clear. This entry closes when
+  that lands. **Closed 2026-09-22 with `X1`**: an entry names the sources
+  each half reaches (`history::Entry::holding`), the history reports the ones
+  none reaches any more (`History::released_sources`) and trims by bytes
+  (`History::trim_to_bytes`); the audio editor's context frees them and spills
+  the oldest to disk past a resident budget. What is left for the multitrack
+  is the entry below.
+
+- ✅ **The multitrack's joins do not say which takes they hold** *(found
+  2026-09-22, closing the entry above)*. The history can now hold and give
+  back takes (`Entry::holding`, `History::released_sources`), and the audio
+  editor uses it. A multitrack's entries go through the document's log and
+  name no sources, so a join minted and undone is still kept for as long as
+  the session runs. The mechanism exists; what is missing is the multitrack's
+  entries stating the sources their two halves reach, and a caller (the
+  clients, the standalone host) freeing what comes back. **Fixed
+  2026-10-01**: a multitrack leg holds the joins its two halves name
+  (`MultitrackIntent::sources`), the editing context hands a released one
+  back under the multitrack's member (`Freed::sources`) once no region reads
+  it, and both clients and the standalone host free its buffer and drop it
+  from their table.
+
+- ✅ **A fade's curve is editable only if the curve drawn is the curve heard**
+  *(found 2026-10-08 by the user)*. A box's `fade:` trapezoid lets a hand bend
+  each sloped side: `points::bend_curve` sets the side's shape to `curve`
+  with a curvature, `picture::read_fades` keeps both on the region's `Fade`,
+  and the reader plays them through `EnvShape` -- so on a region's own edges
+  the drawn curve should be the heard one (read from the code, not yet checked
+  by ear). Where they part is a **join**: a seam takes each box's fade
+  *length* into its part (`Part::fade_in`/`fade_out`) and `/buffer_stitch`
+  plays every part's fade as a straight ramp, so a curve drawn on an edge
+  before a join is played linear after it, and so is the default equal-power
+  one. The rule, from the user: if one shape is kept (equal power, `wel`),
+  the picture must not let a hand bend it; if not, the sound has to follow
+  what is drawn. **The first implementation is the easiest of the two**, and
+  that choice is made by measuring both: taking the bend off the trapezoid
+  is a host change, and a shaped seam is a change to `/buffer_stitch` (a
+  shape and a curvature per part's fade), to its builders in both clients
+  and to `/buffer_parts`.
+
+  **Closed 2026-10-08, the same day, by the sound following the picture.**
+  Measured, taking the bend off was not the smaller fix: the default
+  equal-power edge also played linear at a seam, and a script can state any
+  shape on a `Fade` in both clients, so keeping one shape would have meant
+  forbidding it there too. A seam now has a shape: `/buffer_stitch` and
+  `/buffer_parts` carry `fadeInShape fadeInCurve fadeOutShape fadeOutCurve`
+  per part, a join's `Part` keeps them (`SeamShape`), and the server plays a
+  part's fade through the same `shape_value` the reader and the picture use.
+
+- ✅ **The crossfade switch acts on the edits that follow, and leaves the
+  overlaps already made as they are** *(stated 2026-10-08 by the user)*.
+  Today `TakeLane::edges` works the crossfade out whenever the multitrack is
+  read, from `Defaults::crossfade` and the overlaps as they stand, so
+  turning the switch off takes the crossfade away from every overlap already
+  made, and turning it on gives it back to all of them. What the switch is
+  meant to be is a facility of editing: an edit that makes an overlap while
+  it is on writes the crossfade into the two regions' own fades, and turning
+  it off changes no region. That moves the rule from reading to editing --
+  the edit that moves or trims a box stretches its neighbours' fades and its
+  own, and `TakeLane::edges` goes back to reading each region's fades as
+  they are. Settled with it: what a later move does to a fade a crossfade
+  wrote (a box dragged out of the overlap keeps the long fade, or gets its
+  own back), and whether one gesture that writes a crossfade is still one
+  entry in the history.
+
+  **Closed 2026-10-08, the same day.** A hand's edit (`picture::read`) asks
+  `TakeLane::crossfaded` and writes the crossfade as `FadeRegion` edits in
+  the same report, so the move and its crossfade are one entry and one undo;
+  `TakeLane::edges` reads the fades as they are. Settled: a fade the
+  crossfade wrote is marked (`Fade::crossfade`), follows its overlap when a
+  later edit moves it, and goes when the overlap does, giving the region its
+  own edge back; a fade a hand or a script states is never written over; an
+  overlap no edit touched is left as it is; and a script's edits state the
+  fades they want -- the switch is the hand's facility.
+
+- ✅ **An id can still be written by hand, so nothing keeps it unique**
+  *(found 2026-11-10 by the user: editing a pedal curve in a roll over an
+  MPE file read back, a click on a point added another at the same time, the
+  points could not be dragged, and the host panicked asking for a 384 MiB
+  vertex buffer)*. A sequence's events, its curves and its notes' curves draw
+  on one counter (`EventSequence::hold`, `mint`), and the roll names a curve
+  by that id, so two curves sharing one are drawn as one and every edit
+  writes each one's points into both. `realize` gave the curves it derives
+  from a page an id counted from the sequence's own curves alone; that one
+  is fixed (`events::realize`, it now keeps the replaced lane's id or
+  mints). What is open is that the counter is only a convention:
+  `Automation::id` and `Event::id` are public fields, and
+  `events::conversion` still numbers the curves it carries over the same way
+  (`next` from the page's curves, `conversion.rs`). **To do:**
+  - **One allocator per document, and the only door.** An id is obtained
+    from the structure that owns the counter, never computed; the fields stop
+    being assignable from outside the crate, and the places that build a
+    curve or an event (conversion, realize, scopes, split, the file readers)
+    ask for one. No check runs when an id is added, because none can be
+    written that the counter did not give.
+  - **The host mints none.** It is a view: it draws with the ids its owner
+    sends and reports a new curve or note without one, for the owner to
+    mint. Two allocators would need a split space, as `--id-share` gives the
+    host against the audio server; one makes that unnecessary. Checked
+    2026-11-10: both clients already delegate (the sequence writes `id: 0`
+    and the core mints; the multitrack's objects call its `mint`), and the
+    host mints no document id; the curve emitter's ids are playback's own.
+  - **Validation only where a document comes in, and it repairs.** A repeated
+    id can only arrive from outside: a file saved before the fix, a MIDI
+    file, a sequence a client assembles. `hold` already runs there; it
+    renumbers a repeated id, keeping the first and minting for the rest. For
+    a curve that is safe, since only a view names it. For an event it is
+    not silent: `joins`, a layer's note and a selection name events by id,
+    and with two sharing one the repair picks one reading, so it repairs and
+    says so.
+
+  **Closed 2026-11-10.** Reviewed every door ids come in by, and every
+  minting. The rule taken is the one `docs/decisions.md` records, "An id from
+  outside is taken in, never trusted": a sequence repairs what it is given
+  whole and checks one event or curve alone (`events::ids`), the events
+  choosing before the curves; a multitrack is repaired when read and refuses
+  an intent whose ids name something else (`multitrack::ids`); a symbolic
+  score repairs repeated item ids before each operation and after reading a
+  document; the general tree refuses a members list that would repeat an id.
+  The fields stay public, since `Automation` is shared by four holders and
+  privacy would not cover a whole sequence restored or read anyway: the doors
+  are what guarantee it. Found on the way and fixed: `events::conversion`
+  numbered by hand; `writeback` incremented the counter by hand; the host's
+  cut of a note copied its id, so the owner read two notes under one; a
+  multitrack split cloned the region's curves into the second half under the
+  same ids; one of the multitrack's two minting functions left the markers
+  out; and a tree `SetMembers` was not checked at all.
+
+- ✅ **Writing a sequence as notation renumbers its events from the page**
+  *(found 2026-11-10 reviewing the ids)*. `ToNotation` replaces the sequence
+  with the page's render, whose events are numbered from 1 again
+  (`events::score`), so an event id a client holds from before the
+  conversion may name a different event after it. Nothing repeats (the
+  result is checked as a whole), but a stale reference is not stale on its
+  face. **To do:** number the render's events from the sequence's counter, or
+  carry each event's id where the page still has it, with the notation
+  section's references (`spanners`, `controls`, `marks`, `items`, `joins`)
+  moved with them.
+
+  **Fixed 2026-11-10, the same day.** A note of the page that is a note of
+  the performance keeps that note's id, a curve the id of the curve it is
+  (the note's curve on the same target, the sequence's lane on the same
+  channel), a curve the page does not write keeps its own, and what the page
+  adds is minted from the sequence's counter, with every reference to an event
+  (`joins`, and the notation section's `items`, `spanners`, `controls` and
+  `marks`) renamed with it (`conversion::number_as_the_sequence`,
+  `EventSequence::rename_events`). Found with it and fixed: the conversion
+  dropped the performance's own note curves, a bend among them, which a page
+  does not write; they are kept on the note where the page writes nothing on
+  their target.
+
+- ✅ **A multitrack split leaves the second half's curves where they were**
+  *(found 2026-11-10 reviewing the ids)*. A region's curve is measured from
+  the region's start, and `SplitRegion` gives the second half a copy of the
+  region's curves unshifted, so they read `at - position` late; a note's
+  split cuts its curves at the point (`events::split::cut`). **To do:** cut
+  a region's curves at the split the way a note's are, through the same
+  function made generic over the axis, rather than a second one.
+
+  **Fixed 2026-11-10, the same day.** One cut for both
+  (`multitrack::nodes::cut_points`, generic over the axis): a note's split
+  and `SplitRegion` cut each curve at the seam, each half measured from its
+  own start, and neither jumps, a curve entirely on one side included (a
+  note's split used to drop it from the other half, which then jumped). A cut
+  made in a window was the larger half of this: it arrives as a report of
+  boxes, and the second half was made as a bare window onto the source,
+  losing the region's curves, fade out, layer and mute. It is now read as the
+  region it was cut from (`picture::cut_half`), and the first half keeps its
+  side of each curve.

@@ -65,7 +65,7 @@ Where the work lives:
 | `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx`, `Lx`, `Px`, `Nx`, `Vx` | `crates/clausters-gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API, the patcher, the score model, the host seen and driven by a script |
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
-| `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux`, `Jx` | `PLAN.md` (root) | the server, its engine in the browser (`Bx`), and third-party plugins (`Jx`) |
+| `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux`, `Jx` | `crates/clausters-server/PLAN.md` | the server, its engine in the browser (`Bx`), and third-party plugins (`Jx`) |
 | `APx` | `crates/clausters-gui/PLAN.md` (AP track) | the application scope: the window set, the derived widget id, the reconcile, one undo order |
 | `Qx` | `crates/clausters-notate/PLAN.md` | from a performance to a page: beats, quantization, meter, voices, spelling |
 
@@ -123,8 +123,7 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Once, 70 minutes; the
   wait it hung in is bounded now, and the next failure says where.
 
-- ⬜ **`faust_compiler` failed once in a parallel workspace run** *(root
-  `PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
+- ⬜ **`faust_compiler` failed once in a parallel workspace run** *(`crates/clausters-server/PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
 ## 2. Tests and reviews pending
@@ -134,7 +133,7 @@ watching it, which is the one kind of verification this project has no automatio
 for — CI runs no example, and a plan's checkbox says a thing shipped, never that
 a person saw it work.
 
-- ⬜ **Nobody has watched the release gate stop anything** *(root `PLAN.md`,
+- ⬜ **Nobody has watched the release gate stop anything** *(`crates/clausters-server/PLAN.md`,
   `R12`, the `⚠` clause)*. `R12` shipped: `verify` runs the full feature matrix
   and the tests, `build` and both `publish-*` jobs `needs:` it, and a
   `workflow_dispatch` rehearsal has been watched go green with the publish jobs
@@ -180,8 +179,7 @@ its plan; the plan is where its acceptance is read.
 
 ### Waiting on a decision
 
-- ⬜ **`S24` — a buffer's summary is read like its samples** *(root
-  `PLAN.md`, S track)*. A stateless `/buffer_summary` read beside
+- ⬜ **`S24` — a buffer's summary is read like its samples** *(`crates/clausters-server/PLAN.md`, S track)*. A stateless `/buffer_summary` read beside
   `/buffer_getRange`, for a host that cannot map the engine's memory (a page,
   a remote server) to draw a server buffer standing still without reading
   every sample back. **The decision:** whether it is worth a command, and
@@ -218,7 +216,7 @@ its plan; the plan is where its acceptance is read.
   development resumes and waiting on `O21`(a). **Related:** an application
   inside another, under "The larger questions" below.
 
-- ⬜ **`T3` — classification is once, at drain** *(root `PLAN.md`, T track)*. A
+- ⬜ **`T3` — classification is once, at drain** *(`crates/clausters-server/PLAN.md`, T track)*. A
   bundle scheduled before `/transport_group` binds stays on the device queue even
   if its target becomes governed. It is documented behaviour today.
   **The decision:** whether to accept it as the contract or pay for re-classifying,
@@ -265,7 +263,7 @@ its plan; the plan is where its acceptance is read.
 
 - ⬜ **A MIDI file and an OSC score are sources, as a sound file is, and a
   session holds neither inside** *(`crates/clausters-document/PLAN.md`, Found
-  by use)*, **with `T10` — the server records MIDI** *(root `PLAN.md`, T
+  by use)*, **with `T10` — the server records MIDI** *(`crates/clausters-server/PLAN.md`, T
   track)*, which writes the file this one points at. **The design:** how the
   document keeps ids and the edit log over a file that carries none, what
   `to_midi`/`from_midi` become, how a session written with `Location::Events`
@@ -278,8 +276,7 @@ its plan; the plan is where its acceptance is read.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found running the
   notes editor's example; what is open is where the wait belongs.
 
-- ⬜ **The transport's commands, applied where the transport is** *(root
-  `PLAN.md`, Future directions)*. To evaluate, not scheduled: the one
+- ⬜ **The transport's commands, applied where the transport is** *(`crates/clausters-server/PLAN.md`, Future directions)*. To evaluate, not scheduled: the one
   `match` has a value of its own.
 
 - ⬜ **A roll reads its marks' symbols from the score's palettes**

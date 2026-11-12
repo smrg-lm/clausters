@@ -3,7 +3,7 @@
 A real-time audio synthesis server in the style of SuperCollider's scsynth,
 written in Rust and controlled over OSC (UDP, default port 57110).
 
-- Forward roadmaps and milestones: `PLAN.md` (server), `clients/python/PLAN.md`,
+- Forward roadmaps and milestones: `crates/clausters-server/PLAN.md` (server), `clients/python/PLAN.md`,
   `crates/clausters-gui/PLAN.md`, `clients/web/PLAN.md` (client/GUI/web tracks) and
   `crates/clausters-document/PLAN.md` (the document: the arrangement's model, the
   edit vocabulary and the edit log, shared by every client and by the
@@ -30,8 +30,18 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   - **A plan holds what is open.** A track whose every milestone shipped
     moves whole to its plan's file under `docs/history/plans/`, and the plan
     lists its heading under "Closed tracks", so a search for a closed
-    milestone still starts in the plan. What stays is the standing design,
-    the open tracks, "Future directions" and "Found by use".
+    milestone still starts in the plan. A ticked entry of "Found by use" or
+    "Future directions" moves to the end of the same file. What stays is the
+    standing design, the open tracks and the open entries of those two
+    lists.
+  - **An archived track is not edited, and new work on what it built is a
+    new track in the plan.** A file under `docs/history/plans/` only
+    receives what closes; nothing there is reopened, ticked again or
+    extended. A milestone that continues a closed track is written in the
+    plan under a heading of its own, keeps the track's letter and continues
+    its numbering (after `G46` comes `G47`, never a second `G1`), and cites
+    the archived heading it builds on, so the label still says which family
+    it belongs to and the archive stays a record.
   - **Anything unresolved goes at the end of its plan, and carries a checkbox.**
     A gap found by use — an eye pass over an example, a path read while doing
     something else, a behavior that is correct and unclear — is written down the
@@ -41,9 +51,11 @@ written in Rust and controlled over OSC (UDP, default port 57110).
     milestone that happened to be open, and never in a section of finished work:
     a pending item filed among done ones reads as done, which is how it gets
     lost. Every entry there is `⬜`/`✅`, so what is open reads as open without
-    inferring it from where it sits, and a fixed one **stays** with the record
-    of what was wrong — that is what makes the list worth reading rather than a
-    queue that empties.
+    inferring it from where it sits. A fixed one is ticked **with the record
+    of what was wrong** and moves whole, in the same commit, to the plan's
+    file under `docs/history/plans/` ("Found by use: the entries that were
+    fixed", or "Future directions: the entries that were done"), so the plan
+    lists what is open and the record is kept where a search for it ends.
 - The record of *what shipped* is the git history (clear commit messages); there
   is no separate per-milestone log. Non-obvious decisions and upstream-bug
   findings are curated in `docs/decisions.md` (ADR spirit): one page per area
@@ -334,7 +346,7 @@ on trust, so that is where drift accumulates:
     `PLAN.md` set are read rendered, where the typography is the point, and
     they keep the em dash. A docstring is *not* a book even though it is
     published into one -- it is read in the editor first.
-- The `PLAN.md` roadmaps (`PLAN.md`, `clients/python/PLAN.md`,
+- The `PLAN.md` roadmaps (`crates/clausters-server/PLAN.md`, `clients/python/PLAN.md`,
   `crates/clausters-gui/PLAN.md`, `clients/web/PLAN.md`), `docs/decisions.md` and the frozen
   `docs/history/build-log.md` are in English. The conversation with the user is
   in Spanish.

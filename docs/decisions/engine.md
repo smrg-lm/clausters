@@ -585,7 +585,7 @@ subtree.
 ## An event lane is keyed by the position and fed from the network thread
 
 *2026-09-28.* A roll holds concrete data, as a clip of audio does, so it plays
-on the transport the way a take does (`PLAN.md`, T8). The notes editor had
+on the transport the way a take does (`crates/clausters-server/PLAN.md`, T8). The notes editor had
 played by stamping every event on the transport's **clock** and planning the
 whole sequence again from the client on every play, locate and edit — the
 transport's own work done a second time outside it, and wrong across a loop,

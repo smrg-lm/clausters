@@ -54,7 +54,7 @@ writing. Then place the page.
   the generator and the reader's editor.
 - **Development** (section 3) — `docs/architecture.md`, `docs/contributing.md`,
   `docs/decisions.md` (the index of the ADR-style design record, whose pages by area are `docs/decisions/`, in the server book), the
-  `PLAN.md` roadmaps (`PLAN.md` / `clients/python/PLAN.md` /
+  `PLAN.md` roadmaps (`crates/clausters-server/PLAN.md` / `clients/python/PLAN.md` /
   `crates/clausters-gui/PLAN.md` / `clients/web/PLAN.md`) with their closed
   tracks in `docs/history/plans/`, `docs/core-abi-versions.md` (what each core
   ABI version changed), and the frozen `docs/history/build-log.md`. The manual-test surface is the runnable
@@ -226,7 +226,7 @@ are not authoritative. The **cdylib table** (`libclausters_ffi` / `libclausters`
 plays which role; the authoritative contract is the rustdoc and the C ABI in
 `ipc.md`, so keep it a pointer, not a second source of truth for signatures. The
 **"Status at a glance"** table is project status (done/planned), the user-facing
-snapshot of `PLAN.md` / `clients/python/PLAN.md` — keep it in sync with them and, like
+snapshot of `crates/clausters-server/PLAN.md` / `clients/python/PLAN.md` — keep it in sync with them and, like
 all published docs, free of `Mx`/`Cx` labels. `clients.md` is also a **cross-book
 hub**: it links the Python client book by its Read the Docs URL (an inline
 comment flags the slug risk) — keep that link live.

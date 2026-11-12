@@ -72,7 +72,7 @@ becomes the module's **assembler**.
   through an adapter (`events/notate.rs`); wasm reaches it through
   `clausters-core-web`, the C ABI through a JSON door per step, the way the
   core's `articulation` is bound.
-  *The neighbours it sits beside, since 2026-11-12 (root `PLAN.md`, `R16`):*
+  *The neighbours it sits beside, since 2026-11-12 (`crates/clausters-server/PLAN.md`, `R16`):*
   the notation model is the crate `clausters-notation` (it was a module of
   the core), and the engraving library's binding is `clausters-verovio` (it
   was `clausters-notation`). `clausters-notate` reads a performance and
@@ -282,5 +282,5 @@ for a new method recorded here beside its baseline's.
 
 ## Found by use: the running list of fixes
 
-Every entry is a checkbox, and a fixed one stays with the record of what was
-wrong.
+Every entry is a checkbox. A fixed one is ticked with the record of what was
+wrong and moves whole to this plan's file under `docs/history/plans/`.

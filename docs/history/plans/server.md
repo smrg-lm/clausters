@@ -1,9 +1,13 @@
 # Implementation plan: a real-time scsynth-style audio server: the closed tracks
 
-The tracks of [`PLAN.md`](../../../PLAN.md) whose every milestone shipped, moved here
+The tracks of [`crates/clausters-server/PLAN.md`](../../../crates/clausters-server/PLAN.md) whose every milestone shipped, moved here
 whole on 2026-11-12 so that the plan holds what is open. They are the record
 of what each track decided and built; a track is not reopened here, and
 work that changes what one built is written in the plan.
+
+The entries of the plan's "Found by use" and "Future directions" lists that
+were fixed or done are at the end of this file, each moved whole once it was
+ticked.
 
 ## Milestones
 
@@ -1179,3 +1183,2524 @@ Section added 2026-10-13, at the user's request. The earlier "dynamic plugins no
   - **Acceptance**: the generated GuiDef identical from both clients for the fixtures and for a SynthDef and a FaustDef (parity vectors); an edit in the plugin's own editor moving the generic widget, and a drag not overwritten; value text and list labels for both formats' fixtures; a large-parameter plugin opened usably. Examples: the paired plugin examples open `edit(node)` beside the native editor, and a SynthDef instrument opens its own, checked by eye in the native host and in a page. It follows J10 (catalog, control names) and does not depend on J11.
 
 Further formats/platforms are checkbox entries under Future directions. Document inserts remain the existing `mt.fx` entry; this track provides hosting, state and engine compensation, not a separate application routing implementation.
+
+## R track — The second review: the shape of the workspace (2026-11-11)
+
+A review of the workspace as a whole, the GUI host and the editor application
+included, fourteen weeks after the first. What it found is of another kind: the
+files are in order and the *crates* are not. The dependency graph already has
+levels and nothing states or checks them; the GUI host is a workspace of its
+own that compiles the server anyway; `clausters-core` holds four things with
+four audiences; a panic behind a binding takes the caller's process with it;
+and the build directories take 371 GB.
+
+The track's invariant holds for all of it: behaviour is preserved, no assertion
+is edited (a test moved to another file is not an edit), and what touches the
+audio thread closes with the bench.
+
+**The work is done on a branch, `restructure`, and so is its plan.** These
+entries live on the branch alone until it is accepted, so that `main` keeps no
+trace of a restructuring that is not taken. The branch merges `main` at the
+start of every sitting (a merge rather than a rebase, so a directory rename is
+resolved once), and it is left green and mergeable at the end of each. CI runs
+on a push to `main` and on a pull request only, so the branch is checked
+through a draft pull request, and the two workflows that can be run by hand
+(the weekly `stable` job and the release's `verify`) are run on it.
+
+**When each one is done is part of the plan**, because `main` moves fast
+exactly where these land (the GUI host and `clausters-apps` are the two most
+edited directories of the tree):
+
+- What stops drift goes first and collides with nothing: `R13`, `R14`.
+- What moves files goes at a quiet point, in a sitting that does nothing else,
+  and never right before a tag, since it changes paths the release workflow
+  reads: `R15`, `R16`.
+- `R16` goes before the `Q` track opens and before `X11` continues. The first
+  adds a third notation crate and the second adds references to the module
+  that moves, so every week makes it dearer.
+- What orders a crate from inside is done one cycle per visit, with the
+  milestone that already has that module open: `R19`.
+- What rewrites records goes last, once the branch is accepted, since it
+  edits every plan and would conflict with each merge: `R23`.
+- `R18`, `R21` and `R22` depend on nothing and are taken between the others.
+
+**What the review first left out was taken up when the rest was done**
+*(2026-11-12, asked by the user)*. The review weighed a virtual workspace by
+what it does for the build, which is nothing, and not by what the tree says
+to whoever reads it: with the server as the root package the repository
+reads as a server with things around it, and the server is one component
+among several, which the applications are not even entered through. So the
+workspace becomes virtual (`R24`) and the transport leaves
+`src/server/engine.rs` with a bench of its own rather than waiting for `T3`
+(`R25`). The other two (the applications' crate by application, and the
+host's files past four thousand lines) are refactorings to evaluate once
+these are in, each in its plan's Future directions: `crates/clausters-apps/PLAN.md`,
+"The applications as modules that read apart", and
+`crates/clausters-gui/PLAN.md`, "The host's longest files, cut where they
+have a seam".
+
+- ✅ **R13: The levels are a rule** *(done 2026-11-11)*. The crates already sit in levels and a
+  dependency only ever points down, which is cargo's doing for ordinary
+  dependencies and nobody's for dev-dependencies:
+
+  | Level | Crates |
+  |---|---|
+  | 0 | `clausters-core`, `clausters-net` |
+  | 1 | `clausters-document`, `clausters-midi`, `clausters-plugin-host`, `clausters-notation` |
+  | 2 | `clausters-editing`, `clausters` (the server) |
+  | 3 | `clausters-apps` |
+  | 4 | `clausters-app-engine` |
+  | 5 | `clausters-ffi`, `clausters-core-web`, `clausters-web`, `clausters-nrt-web`, `clausters-gui` |
+
+  A test in the shape of `tests/bindings.rs` reads the manifests as text and
+  fails on an edge that points up, dev-dependencies included, and on a crate
+  the table does not name. Today's violations go in a list of exceptions that
+  may only shrink: the server's dev-dependencies on `clausters-apps` (above
+  it) and `clausters-editing` (beside it). The table is written once, in
+  `docs/architecture.md`. **Acceptance:** adding an upward edge to any
+  manifest turns the test red.
+
+  Shipped as `tests/levels.rs`, which reads the table out of
+  `docs/architecture.md` ("The crates and their levels") rather than keeping
+  a copy, and takes an edge between two crates of one level as a violation
+  too. Proved by mutation: a dev-dependency of the core on the document
+  turned it red, and so did an exception that matched no manifest.
+
+- ✅ **R14: Build profiles, and a pinned toolchain** *(done 2026-11-12)*. No manifest carries a
+  `[profile]`. The dev profile takes line tables only, which is most of what
+  shrinks a debug build; the release profile takes link-time optimization and
+  a single codegen unit only if `crates/clausters-server/examples/bench.rs` justifies them, with both
+  numbers in the commit. The toolchain is pinned in a `rust-toolchain.toml` at
+  the root, which the editor application and the fuzzer inherit and the
+  nightly wasm build (it names its own) does not; CI installs what the file
+  says, and a weekly job runs fmt, clippy and the tests against `stable`, so
+  that a new lint arrives as a commit that raises the pin rather than as a red
+  tree nobody touched. The rule in `AGENTS.md` that CI pins nothing is
+  rewritten with it. **Acceptance:** the weekly job exists and is seen to run;
+  the full feature matrix is clean under the pin.
+
+  *Written 2026-11-11, and open on what only the workflows can show.* The pin is
+  `rust-toolchain.toml` (1.99.0, the version the audit harness already
+  pinned), every workflow installs it through the `.github/actions/rust`
+  composite, and the weekly job is `stable` in `audit.yml`. The dev profile
+  takes line tables only (the tests of two crates: 605 MB to 370 MB). The
+  release profile stays cargo's own: thin link-time optimization with one
+  codegen unit moved the median throughput by +0.8% and 0.0% over two pairs
+  of runs, inside the +2.9% two builds of the unchanged profile differed by,
+  and made the build a third slower (`docs/decisions.md`, "The toolchain is
+  pinned, and a new compiler arrives as a commit"). **What is left:** the
+  workflows have not run since the change, so the composite, the weekly job
+  and the matrix under the pin are unobserved until they run on the branch.
+
+  *Observed 2026-11-12.* The release workflow was rehearsed against the
+  branch at the end of the review and came back green on the commit that
+  went into `main`: its gate (the tests and the whole feature matrix under
+  the pin), the wheel and the server binary, the editor's wheel and the web
+  package. Two earlier rehearsals were red, each on a path still written
+  from the repository root after the workspace became virtual (the VST3
+  fixture's builder, and the recipe that reads the Faust C API's export
+  list for the browser's compiler), which nothing but the release workflow
+  and CI's native plugin rows runs. The weekly job against the newest
+  stable was run by hand on `main` and passed.
+
+- ✅ **R15: The GUI host is a member of the workspace** *(done 2026-11-12)*. It was kept apart so
+  that it could never entangle the server's build, and that stopped being
+  true: `clausters-app-engine` is an unconditional native dependency of the
+  host and links the server, so every host build compiles it. What the
+  separation still costs is measured: two lockfiles that disagree on 26 of
+  the 255 dependencies they share, every shared crate compiled twice (146 GB
+  of the host's own `target/`), and a version written by a script and watched
+  by a test. Two commits, in this order:
+
+  - **The move.** `crates/clausters-gui` becomes `crates/clausters-gui`: it is a crate,
+    and a special client that talks to the two language clients and can act
+    alone, where `clients/` holds the Python and web packages. Some 356
+    references move with it (CI, hooks, the build scripts of both clients,
+    the Python launcher's path resolution, the audit scenarios, the rules and
+    the skills); the frozen build log is left as it is. A guard beside `R13`'s
+    test fails on any tracked file outside `docs/history/` that still names
+    the old path, which is what catches a reference arriving from `main`.
+  - **The membership.** The host's own `[workspace]` and lockfile go, it
+    inherits the version, and its binary is built into the root `target/`.
+    The two libfaust-free CI rows exclude it as they already exclude the wasm
+    crates, since the host turns on `realtime` and `notation` and a
+    `--workspace` build would unify them onto the server those rows test.
+    `[workspace.dependencies]` takes what thirteen manifests repeat.
+
+  The root package stays the server and the default member, so a plain
+  `cargo build` or `cargo test` at the root compiles no window system.
+  **Acceptance:** one lockfile; the Python launcher and the web build find
+  the host where it is now built; the release workflow's rehearsal is green.
+
+  Shipped as one commit rather than two: a crate under `crates/` must inherit
+  the version (`tests/versions.rs`), which it can only do as a member. The
+  merged lockfile keeps every version the server resolved; of the host's, the
+  twelve general-purpose packages the two lockfiles disagreed on took the
+  server's and the rest stay where the host's lockfile had them.
+  `[workspace.dependencies]` holds the eleven dependencies more than one crate
+  names. Checked: clippy over the workspace and over the host by itself, the
+  host's 1,481 tests, both wasm gates, the isolated feature check of the
+  applications, the Python suite (1,594) with the binaries rebuilt, the web
+  package built and tested (1,431 and the pages), the audit harness's own
+  tests and the three books. The release rehearsal is left for the end of the
+  whole review, with `R14`'s.
+
+- ✅ **R16: Notation is a crate of its own** *(done 2026-11-12)*. `clausters_core::notation` is
+  16,752 of the core's 51 thousand lines, the server does not use it, and
+  inside the core it reads only `ratio` and `event`. It also shares a name
+  with its neighbours: the model is a module of the core, `clausters-notation`
+  is the binding of the engraving library, and `clausters-notate` is a
+  directory holding a plan. The binding becomes `clausters-verovio`; the
+  model becomes the crate `clausters-notation`, at level 1, and takes the XML
+  and pattern-matching dependencies out of the core; the `notation` feature
+  of the five crates above it becomes an optional dependency on that crate.
+  The paths are rewritten rather than re-exported from the core, which would
+  be a second door onto one module. No C or wasm export changes, so
+  `CORE_ABI_VERSION` does not move. **Acceptance:** the isolated feature
+  check of `clausters-apps`, the feature matrix and both clients' suites
+  pass; the core builds with no notation in it.
+
+  Shipped as written. The document reads the notation model, so the levels
+  moved by one: notation at 1, the document, the engraver's binding and the
+  server at 2, and the rest one higher (the table in `docs/architecture.md`
+  is the current one; `R13`'s above is as it was written). That put the
+  server's dev-dependency on the document beside it rather than under it, so
+  it joined the exceptions until `R17` removes all three. Checked: clippy
+  over the workspace, the host by itself and both engraver features; the
+  tests of the six crates the cut touches and of the host; both wasm gates;
+  the isolated feature check; the Python suite with the binaries rebuilt,
+  the web package built and tested, and the three books. The whole feature
+  matrix is run once, at the end of the review.
+
+- ✅ **R17: A test lives at its level, and `tests/` links few binaries** *(done 2026-11-12)*.
+  Three of the server's integration tests exercise the applications
+  (`multitrack_playback`, `audio_editor_graph`, `long_takes`) and belong to
+  `clausters-app-engine`, the crate whose job is joining the two; with them
+  go the server's upward dev-dependencies and the last of `R13`'s exceptions.
+  Three more, and `R13`'s own, test no crate at all (`ascii`, `bindings`,
+  `versions`) and move to a crate of repository checks, which no longer needs
+  the server compiled to run. What remains of the 78 binaries `tests/` builds
+  today, each linking the whole server, is grouped by def family into a
+  handful, one module per present file. What depends on the state of its process
+  stays a binary of its own: the tests that install a global allocator, the
+  signal guard, the denormal mode, the named shared-memory segments.
+  **Acceptance:** the same number of tests runs before and after under each
+  feature set; link time and the size of `target/debug/deps` are quoted in
+  the commit.
+
+  Shipped narrower than written, on a reading of the files: of the 72 left
+  after the six moves, 42 render offline and share nothing with their
+  process, and those are two binaries now (`crates/clausters-server/tests/offline`, 38 modules, and
+  `crates/clausters-server/tests/faust_offline`, four). The other 30 stay as they were, and the list
+  is longer than the entry foresaw: beside the allocator, signal, denormal
+  and shared-memory tests, every test that boots a live server on a socket,
+  sleeps on the wall clock or runs a plugin's process. Cargo runs test
+  binaries one after another and a binary's tests in parallel, so grouping
+  those would have run servers side by side that never ran together, which is
+  a change of behaviour. The shared helpers are declared once per binary. The
+  server's tests count the same before and after under the three feature
+  sets (958, 141 and 872), the levels' exceptions are empty, and the
+  repository's checks are `crates/clausters-checks`, with no dependency at
+  all. Where a new test goes is in the `audio-testing` skill.
+
+- ✅ **R18: A panic at a binding's door is an answer** *(done 2026-11-12)*. None of the 248
+  exports of the C ABI catches an unwind, and a panic crossing `extern "C"`
+  aborts: one `unwrap` in any verb of any application takes the Python
+  interpreter, and the unsaved session, with it. The doors that run verbs
+  answer `{"error"}` instead, through one helper, which also recovers the
+  handle's lock (poisoned today, after which every call answers nothing for
+  good). A page cannot recover, since wasm aborts on a panic, so the wasm
+  core installs the reporting hook the browser host already has, and the
+  difference is written in `docs/bindings.md`. The native host logs through
+  its diagnostic channel before it exits. In the same sitting, the
+  application engine's playback tests stop waiting on the wall clock and
+  advance the engine by blocks, which is what the intermittent failures filed
+  under load point at. **Acceptance:** a verb that panics yields an error in
+  both clients and the next call on the same handle answers; the playback
+  tests pass fifty runs in a row under load.
+
+  *The barrier shipped 2026-11-12, and the tests' pacing the same day.* The
+  verb doors of the applications, the document, the runner and the
+  notes playback answer `{"error": "internal: ..."}` on a panic, the calls
+  through a handle answer their null-handle value, and every handle's lock is
+  taken poisoned or not (`crates/clausters-ffi/src/out.rs`, with its tests);
+  the wasm core reports a panic to the console and the native host logs one;
+  `docs/bindings.md` ("What a panic becomes") says why the two differ. Not
+  observed: a real verb panicking through a client, only the helper's tests.
+  The sleep in the playback tests was not a wait for a result but the pacing
+  of a race between the engine the test steps and the take's reader thread.
+  The reader now counts the turns it ends with nothing to do, and
+  `AppEngine::fill_readers` waits for one that began after the call, so a
+  test gives the readers their turn after each block (or each burst, where a
+  device's pace is staged) instead of sleeping; the readers stay threads, as
+  they run in an application. The playback, multitrack and reading suites
+  passed fifty runs in a row under eight busy threads. Two sleeps remain on
+  purpose: the long take's acceptance, which measures the reader's lead in
+  real time, and the polls of a render or a save landing, bounded by a
+  deadline.
+
+- ✅ **R19: The host's modules have levels too** *(done 2026-11-12)*. The host is 149 thousand
+  lines in one crate, and measured by reference it is one strongly connected
+  block: its five largest modules use one another, the drawing base is cyclic
+  (`font`, `paint`, `metrics`, `theme`, `layout`), and the renderers at the
+  crate's root reach back into the host. No crate can be cut from it as it
+  stands. `R13`'s test is extended to the host's modules, in five layers
+  (drawing base, views, tree and protocol, elements and gestures, fronts),
+  with today's cycles as exceptions that may only shrink. Two parts are
+  planned and the rest is opportunistic:
+
+  - ✅ **R19a** breaks the base's cycles (the rectangle leaves `layout` for the
+    base; `theme` and `metrics` stop reading `paint` and `font`) and groups
+    the native shell, today spread among 73 flat modules, under one module.
+  - ✅ **R19b** cuts the base into a crate once its list of cycles is empty.
+
+  The layers above are ordered one cycle per visit, by whichever of the `P`
+  and `D` tracks has the module open. **Acceptance:** the host's headless
+  captures are identical before and after each part.
+
+  *R19a done 2026-11-12.* The base is seven modules with no reference out
+  of it and none among them that turns back: `rect` (the rectangle, out of
+  `layout`), `theme` (which now holds the color type `paint` used to),
+  `path` (an outline's SVG path, scanned, filled and flattened, out of the
+  score's pictures, since the face draws outlines too), `paint` (the batch
+  alone), `font`, `metrics` and `draw` (the context of batch and role
+  tables, out of `paint`). One part of the entry did not hold as written:
+  `metrics` still reads `font`, because the size roles that hold text are
+  measured by the face, so the cycle was broken from the other side, by
+  taking out of `paint` what read the size roles (the context) and what
+  read the face (the GPU half, now `painter` at the crate's root, beside
+  the other pipelines). Two tests of the text caret that reached the
+  pictures moved to them. The native shell is `host::native`. The test is
+  `crates/clausters-checks/tests/host_layers.rs` over the table in
+  `docs/architecture.md` ("The host's modules and their layers"), and it
+  starts with 55 exceptions above the base: most are references to the
+  host's root (`Host`, `ClientId`, the addresses) from the layers below it.
+  Seven examples captured headless by the host built before and after were
+  the same bytes.
+
+  *R19b done 2026-11-12.* The base is `crates/clausters-gui-draw`, level 0
+  (it names no crate of the project), with the face's assets beside it. Its
+  features are the host's, forwarded: `font-atlas`, and `path` under the
+  host's `notation`. What the host's tests asked of a batch under its own
+  `cfg(test)` (an extent, the colors, the alphas, how often a kept part was
+  drawn again) is behind a `probe` feature the host turns on as a
+  dev-dependency, since a crate's `cfg(test)` does not reach another's
+  tests. The host's paths were rewritten to the crate, with no re-export,
+  as notation's were. The layers table lost its base row, and the four left
+  are numbered from 0. The same seven captures were the same bytes again.
+
+- ✅ **R20: The two bindings have one shape, and a C type is checked** *(done 2026-11-12)*.
+  `clausters-ffi` is 24 modules by subject and `clausters-core-web` exposes
+  the same in one file of 3,718 lines; it takes the same modules, so a row of
+  `docs/bindings.md` is read file against file (and `tests/bindings.rs` reads
+  a directory). `R1` settled on checking arity alone for the ctypes leg,
+  since mapping types textually would have stated them a third time. A
+  header generated from the C ABI by the toolchain is not a third statement,
+  it is the first one read back, so each parameter's type is compared with
+  the declared `argtypes` through a fixed table of equivalents. The decision
+  is revised in `docs/decisions.md`. **Acceptance:** changing the width of
+  one declared integer turns the test red.
+
+  *Done 2026-11-12.* `clausters-core-web` is 22 modules named as
+  `clausters-ffi`'s are (each wasm export lands in the module of its C pair,
+  read off `docs/bindings.md`; `osc` and `midi` have no C pair), the code
+  moved unchanged, and the built module exports the same 1889 symbols as
+  before. One part of the entry did not hold as written: `_native.py`
+  declares its types through variables, list products and loops, so a Rust
+  test cannot read them as text. The work is split where each side can be
+  read: `crates/clausters-checks/tests/c_header.rs` generates the header with
+  cbindgen and fails when the committed
+  `crates/clausters-ffi/include/clausters_ffi.h` differs, and
+  `test_native_parity.py` holds the declared types of the loaded library
+  against that header. Declaring `clausters_core_calc`'s first parameter
+  `c_uint64` fails it; the header compiles in C with every warning an
+  error. The decision is "The ctypes declarations are checked against a
+  header the crate generates".
+
+- ✅ **R21: The clients are linted, and typed a module at a time** *(done 2026-11-12)*. The
+  Python client is 52 thousand lines with its signatures already annotated,
+  a type checker switched off but for four call-site rules, and no linter.
+  It takes a linter with a minimal rule set (unused and undefined names, the
+  likely bugs) and the checker's basic mode on the modules whose API is
+  settled, starting with the document's (`multitrack`, `document`,
+  `history`); the eleven handlers that swallow every exception are each
+  narrowed or given their reason. The web client takes a linter. Both run in
+  CI. **Acceptance:** zero findings on what is switched on.
+
+  *Done 2026-11-12.* ruff runs over every Python file of the repository
+  (`ruff.toml` at the root, the editor application left to its own
+  workflow) with F and B less `zip()` without `strict=`; its 93 findings
+  were fixed first, in their own commit, among them an `__all__` naming
+  three builders that no longer exist (so a star import of `guidef`
+  raised) and public names missing from two others. The eleven handlers:
+  the nine in `__del__` say why they swallow, one catches `OSError` only,
+  one lost its `try`. pyright's basic mode is on in the three modules'
+  first line and found a closed editing context reached through `None`,
+  which now raises. The web client takes Biome (`biome.json`; the choice
+  and why is in `docs/decisions.md`, "The web client lints with Biome, a
+  linter that is one package"): correctness and suspicious, less the rules
+  about a style of typing; its 174 findings came to zero, which removed
+  dead state in both clients' transport player and in the web `Server`, and
+  dead helpers in the tests. CI runs ruff and pyright in the `python` job
+  and the linter in the `web` job, `test.sh` runs it too.
+
+- ✅ **R22: The editor application, reviewed** *(done 2026-11-12)*. `clausters-editor` stays a
+  workspace of its own, which its version, its dependencies and its workflow
+  justify. Found reading it: a restart releases the session's lock between
+  ending one interpreter and keeping the next, so a request arriving then
+  starts a second one that nothing ends; an interpreter replaced after a
+  broken pipe is never waited on; the environments' busy flag is cleared by
+  hand; the window that can read and write any file and run code has no
+  content security policy; and nothing tests the driver (the whole
+  protocol), the session, the environments or the page's pure modules. The
+  fixes, a test of the driver as a subprocess, tests of the pure modules,
+  and the 2024 edition. **Acceptance:** its workflow is green with the new
+  tests in it.
+
+  *Done 2026-11-12.* A restart keeps the session's slot locked from the old
+  interpreter's end to the new one's start, a process replaced after a
+  broken pipe is killed and waited on, and every lock of the application is
+  taken poisoned or not; the busy flag is a guard that goes with the task
+  and is released when it ends, whatever ends it. The window has a content
+  security policy (scripts and fonts from the app, styles inline as the
+  editor writes them, nothing framed or loaded from elsewhere; the
+  development server keeps none), checked against the built page, which
+  has no inline script and no `eval`. The driver has eleven tests that run
+  it as a subprocess (an evaluation, an error at the file's line, a syntax
+  error, `input()`, an interrupt, help answered while code runs, a query
+  with or without Jedi, a bad request, the end of input), and the page's
+  pure modules sixteen under `node --test` from the sources (the evaluation
+  regions moved to `regions.ts` to be one of them). The crate is on the
+  2024 edition, whose lints collapsed six `if`s, and builds `rlib` only.
+  Not done here: a session driven by hand in the running window (evaluate,
+  interrupt, restart twice), which is the user's eye pass.
+
+- ✅ **R23: The plans hold what is open.** The plans are 37 thousand lines
+  against a rule that says a roadmap and a checkbox, `docs/decisions.md` is
+  one file of 277 entries, and `docs/bindings.md` carries 600 lines of what
+  each ABI version changed. Closed tracks move whole to `docs/history/`, one
+  file per plan they came from, and each plan keeps its standing design, its
+  open tracks, its Future directions and its Found by use (whose closed
+  entries stay, being the record the rules ask for). The decisions are split
+  by area, and `docs/decisions.md` remains as an index carrying every title
+  verbatim, since the code and the plans cite a decision by its title. The
+  ABI history gets a file of its own. Done last, once the branch is accepted.
+  **Acceptance:** every citation of a decision by title still finds it, and
+  every pointer of `ROADMAP.md` finds its entry.
+  *Done 2026-11-12, on the branch rather than after it, since `main` had not
+  moved since it was cut.* Sixty-four closed tracks and arcs, 9,320 lines,
+  moved to `docs/history/plans/`, one file per plan, and each plan lists their
+  headings under "Closed tracks" where the first one stood; the plans went
+  from 37 to 28 thousand lines, and no line was lost (checked as a multiset
+  of lines against the tree before). The decisions are twelve pages by area
+  under `docs/decisions/`, and the index carries the same 280 titles as the
+  file did, so every citation that found its entry before finds it now; the
+  283 anchors were checked against the built book, and the two citations
+  that had found nothing before either (a paragraph cited as an entry, a
+  title cited as it was before a rename) now name their entries. The ABI
+  history is `docs/core-abi-versions.md`. Three `ROADMAP.md` entries named
+  milestones that moved and now point at their history file.
+
+- ✅ **R24: The workspace is virtual, and the server is a crate among the
+  others** *(done 2026-11-12)*. The root manifest was the workspace and the
+  server's package at once, so the server's `src/`, `tests/`, `examples/`
+  and `build.rs` sat at the root beside the directories of every other
+  component. The root keeps the workspace alone, and the server moves whole
+  to `crates/clausters-server`; its package stays `clausters`, so no `use`
+  and no binary name changes. The server is the workspace's default member,
+  so `cargo build`, `cargo test` and `cargo run` with no `-p` act on it
+  alone, as they did, and no feature of another member is unified onto it.
+  **Acceptance:** the same tests run in every configuration as before the
+  move; the feature matrix, the three books, the audit harness and both
+  clients' suites pass; nothing outside `docs/history/` names a path that
+  moved.
+  *Done 2026-11-12.* `src/`, `tests/`, `examples/` and `build.rs` moved by
+  `git mv`, so the history follows them, and the root manifest was split in
+  two with no line of the package changed but its paths. 280 references in
+  59 files were repointed by a script that replaced a path only where it
+  exists under the server and not under the file's own package, and the
+  prose that called the server the root was rewritten by hand (`AGENTS.md`,
+  `BUILD.md`, the READMEs, the skills, `docs/contributing.md`). What read
+  the root as a package learned the new shape: the levels and the versions
+  checks, the audit harness's feature check and its instrumenter, pyright's
+  include, and the server's examples and plugin tests, which found the
+  repository by a relative path. No CI command changed, which is what the
+  default member is for. The feature matrix came back clean over its 37
+  configurations; CI's test rows (the default set, `embed`, `synth` alone,
+  no features, the host, the native plugins) pass from the root, with the
+  same 34 test binaries of the server; the three books, the wasm gate, the
+  audit harness (41 tests), pytest (1595), ruff and pyright pass. Not run:
+  the web client's suite, whose package changed in comments only, and the
+  release workflow, which `R14`'s rehearsal covers.
+  (`docs/decisions.md`, "The workspace is virtual, and the server is its
+  default member (2026-11-12)".)
+
+- ✅ **R25: The transport leaves `engine.rs`** *(done 2026-11-12)*. `crates/clausters-server/src/server/engine.rs`
+  is 2,791 lines and holds the transports beside the block loop. The
+  transport moves to a module of its own; nothing it does changes. It touches
+  the audio thread, so it closes with `examples/bench.rs` before and after on
+  the same machine, both numbers in the commit (the pull request's gate runs
+  on a shared runner and is the backstop). **Acceptance:** the suites pass
+  with no assertion edited, `tests/rt_safety.rs` included, and the bench
+  moves inside the machine's noise.
+
+  Shipped as `crates/clausters-server/src/server/engine/transport.rs`, a
+  child module of the engine's, so it reads the engine's fields with no
+  field made public: a transport's state and its edges, the cues, the lane
+  entries and the loop changes, 674 lines, leaving `engine.rs` at 2,136.
+  What stayed is what decides *when*: `next_due` and the block loop, and the
+  transport arms of `apply`, which are one `match` with the rest. Six runs a
+  side of the bench, alternated: the worst gated row moved 4.9% against the
+  base, where two halves of the same binary's runs differ by 4.4% in
+  throughput and 11.8% in a peak block.
+
+  *The seam, closed after it.* `next_due` still spelled two transport
+  computations inline (a rolling transport's next bundle, and its next lane
+  entry) beside the one that was already the transport's (`edge_due`). They
+  are `TransportState::bundle_due` and `lane_due`, so `next_due` only
+  compares: it is the arbiter between the device queue and the transports,
+  with the tie rules, and stays in `engine.rs`. The transport arms of
+  `apply` are entered under Future directions.
+
+## Future directions: the entries that were done
+
+- ✅ **A list reader plays backwards** *(named 2026-10-22 by the user, deciding how the audio editor reverses: as an edit it is an NRT render, and reading backwards is the reader's)*. The transport-positioned list reader of `S21` reads forward; reading backwards gives a playhead that runs backwards (scrubbing, a reverse play) for every application that plays a list, and lets an editor reverse a long span as a part read backwards instead of rendering it. What it takes: the disk thread fills the ring ahead in the direction of play, each part's fades and seams read the other way, and a channel map and a resampled part stay correct. After `S21`. *Done 2026-11-08, found already built when it was taken:* a take's reading thread renders a list from its last frame to its first (`TakeRead::Backwards`, `crates/clausters-app-engine/src/take.rs`): each chunk is read forwards and turned round, so the ring is filled ahead in the order it is played, and a part's fades, its seams, its channel map and its resampling are the forward reading's, mirrored. The reverse render streams through it, and `a_take_read_backwards_plays_down_through_its_seams` (`tests/reading.rs`) plays it live on an engine: a cued play down through both seams frame for frame, and a loop over it with no silent frame. Nothing in `TransportDiskIn` or the transport changed, which is the decision (`docs/decisions.md`, "Backwards is a reading, not a transport"). What it gives the applications is open below, as "A play that runs backwards".
+
+- ✅ **A measured bound on what one block drains** *(named 2026-10-15, by the
+  first audit; measured and closed the same day, no policy)*.
+  `Engine::drain_commands` applies every command in the FIFO at the start of a
+  block, and the network thread can refill it while it does, so the FIFO's
+  capacity bounds what is queued at once and not the work one block takes.
+  Capping the commands per block would delay immediate commands to later
+  blocks, so it was measured first: a drain-instrumented release server on the
+  real device, a background load of silent nodes, and ten-second phases of
+  single `/node_set` messages, immediate bundles of 32 and 128 of them, and
+  `/synth_new` + `/node_free` pairs, from paced rates up to four unpaced
+  senders.
+
+  - **The producer is the bound, not the drain.** The network thread applied
+    at most about 21 000 commands a second at quantum 128 and 66 000 at
+    quantum 1024; everything sent beyond that was lost before decoding.
+  - **The busiest block drained 1306 commands in 74 µs** (quantum 1024,
+    where a callback's gap accumulates them), and 57 in 54 µs at quantum 128;
+    the costliest kind, `/synth_new` with its free, peaked at 165 µs. A
+    64-frame block lasts 1333 µs.
+  - **No late block in any phase** at either quantum.
+
+  The FIFO holds 8192 commands (its capacity is raised to `--max-nodes`); full
+  of the costliest kind it would take about 1.8 ms to drain, but at the
+  measured production that takes an audio thread stalled for over 100 ms, a
+  stall that has already broken the audio on its own. So no bound is added. If
+  one is ever needed, the first candidate changes no timing: drain only what
+  the FIFO held when the block started, so a refill during the drain waits one
+  block, as if it had arrived a moment later.
+
+- ✅ **`/graph_moveSlot`: a slot instance changes parent without being made again** *(named 2026-09-11, with `crates/clausters-document/PLAN.md`'s `O28`)*. A clip is a slot inside its track's graph instance, and a slot's wiring is **baked into its `out` controls when it is instantiated**, so moving the node with `/node_move` would leave it writing the track it came from. Today the only answer is to free it and add it again, and the cost of that is not the node: it is everything hanging off it -- the control buses a curve had mapped to its ports (the map names a node, so it goes with the old one), the readers under it, and the ports the hand does not send because a curve owns them, which is how a box dragged to another track came back at the def's own default. The verb is one operation and not two: re-parent the node **and** re-bake the wiring of that one slot against its new parent's private buses. `out0`/`out1` are ordinary controls and `MoveNode` already exists on the audio thread, so what is missing is the bookkeeping that knows which buses the new parent hands it. It is what lets the instance projection do what a monolithic DAW does when a region changes playlist: move a pointer. **Where it lands is now one place**: `clausters_editing::instance` reproduces the rebuild deliberately (`a_clip_that_changed_track_is_made_again`), so the verb arriving is that one arm of that one match, and the test that states today's behaviour is where tomorrow's is stated instead.
+
+  **Done 2026-09-14.** `/graph_moveSlot slotID instanceID` moves the slot group
+  to the head of the new instance and re-wires every bus reference in it --
+  its members' bus controls and maps, and the buses handed down to the graphs
+  nested in it and to their slots -- against the new instance's buses; nothing
+  is freed. The new instance must declare the slot with the same members. The
+  slot's record now keeps its nodes by member (`GraphVoice::nodes`), which is
+  what the re-wiring walks. `clausters_editing::instance` answers a clip that
+  changed track with `Op::Move` instead of a free and a slot, so its readers
+  and the maps on its ports stay (`a_clip_that_changed_track_is_moved_there`);
+  a source of another width is still made again. Heard in
+  `tests/mixer_graph.rs` (`a_moved_box_sounds_through_its_new_track_and_keeps_its_map`),
+  and both clients have the verb (`Group.move_slot` / `Group.moveSlot`).
+
+- ✅ **The transport's edges are square, so a stop and a play are clicks**
+  *(found by ear 2026-09-11 while the multitrack example played, and then
+  measured: `tests/mixer_graph.rs`, `where_the_transport_clicks`)*. A stop
+  freezes the governed subtree and a play thaws it, both at a block boundary
+  and both instantly, so the output steps by whatever was sounding -- 0.566 of
+  full scale on a piece playing a constant, which is the worst case and the
+  clearest one. Every mixer in the field ramps those edges over a few
+  milliseconds, and this cannot be done where it would naturally go: a frozen
+  node gets no time, so the fade has to have happened *before* the freeze.
+
+  **What it needs is a declick window the engine owns.** A stop becomes "ramp
+  the governed subtree's output down over N ms, then freeze", and a play "thaw,
+  then ramp up" -- which asks two things this does not have yet: a place to
+  apply the gain (the piece's master strip is the obvious one, but the
+  transport governs subtrees that are not pieces, so the engine wants something
+  that is not the mixer's), and a rule for what the transport position does
+  during the window (it must not advance, or a stop would play material past
+  where it stopped). Neither is hard; both are decisions. Until then a pause
+  mid-note clicks, and the example says so.
+
+  **Done 2026-09-24, and ticked 2026-10-07 — the fix shipped as the server
+  half of the audio editor's declick and this entry was never closed.** Both
+  decisions were taken there, and neither as the entry guessed. **Where the
+  gain is applied**: nowhere in the engine. A transport publishes a declick
+  level and the `TransportFade` UGen reads it, from the transport of the
+  nearest bound group, so whatever sits *outside* the governed group
+  multiplies by it — the multitrack's way out (`mixer::out_def`) and the
+  audio editor's — and a subtree that is not a multitrack gets the same level
+  by naming the same UGen. **What the position does during the window**: it
+  advances. A stop with a ramp is a stopping phase in which the transport
+  rolls in full while the level falls, and it freezes on the sample the level
+  reaches zero, so the position rests where the readers stopped reading; a
+  stop then plays the ramp's length past where it was asked, which is what
+  every mixer's does and is the opposite of what this entry required.
+  `/transport_fade <transport> <samples>` sets the ramp, 0 by default, and the
+  multitrack's player and the audio editor's both send it
+  (`clausters-editing`, `FADE_SECS`). The rationale is in `docs/decisions.md`.
+
+  What a client that sets no ramp hears is unchanged, and
+  `where_the_transport_clicks` still measures it; with a ramp,
+  `a_stop_fades_the_master_and_leaves_its_meter_to_fall` asserts the edge at
+  the hardware and `tests/transport.rs` the level on a stop and on a play.
+
+- ✅ **A UGen's trailing inputs could be declared optional, so a def survives one growing** *(named 2026-08-16, after S17 moved `PlayBuf` from four inputs to seven and every stored def that used it stopped compiling — seven of them on the author's machine, warning at every boot)*. Arity is exact: `synthdef::compile` rejects a UGen whose input count is not the descriptor's, and `UGenInput.default` is advisory metadata the server never applies. So a UGen that grows breaks every def written against it, including the ones already persisted on disk and the ones inside a saved bundle.
+
+  **The cheap version is the dangerous one and is refused**: "fill whatever is missing from the defaults" makes a short def legal in all 189 input slots of the catalog, and `BinaryOpUGen` is `a=0.0, b=0.0` — a `Mul` truncated to one input would compile, fill `b=0`, and silence the chain with no `/fail` and no name. That is precisely the failure S17 chose an unusual input order to avoid.
+
+  **The shape worth having is a declared optional tail per UGen**: the descriptor says from which index the tail begins, and only there does the compiler fill from `UGenInput.default`. A short `Mul` still fails; a four-input `PlayBuf` still plays. **The user's conditions, stated when the idea was raised** *(2026-08-16)*: no runtime penalty, and resilience to signature changes. The first is met by construction — the fill happens in `compile`, on the network thread, once per def, and the compiled def is byte-identical to one a complete client sent, so the audio thread never learns of it. The second is what the feature *is*, with one limit to state plainly: it makes growth **by the tail** non-breaking and does nothing for an input inserted in the middle, which stays breaking and stays silent.
+
+  **The cost is not the implementation** (interning a constant and pointing an `InputRef` at it is ten lines beside the arity check). It is auditing the 189 slots once to decide where each UGen's tail begins, and accepting that a declared default becomes **wire contract** — changing it afterwards is a breaking change for every def leaning on the fill, where today all 189 are free metadata.
+
+  **What it does not solve, so it is not proposed as a fix for it**: the three copies of the default table (server registry, Python builder, TypeScript builder). A client still materialises every default before the last input the caller *did* give, since the wire is positional and has no sparse form — `play_buf(buf, loop=1.0)` must emit `chan` and `rate` itself. Keeping those copies honest is the contrast tests' job, one per client.
+
+  **Built 2026-08-18, in the shape above and with the audit done.** The declaration sits on the **slot** rather than on the descriptor (`UGenInput::optional`, written `inp_opt(...)` in the catalog), so the fact reads next to the input it is about and a shared signature constant carries it to every kind that shares it; a test enforces that the optional slots are a *suffix* and that a variadic kind's fixed head has none, which is what keeps "how many inputs are required" one number. `compile` accepts a def between `required_inputs()` and the arity and fills the rest from the declared defaults, so a four-input `PlayBuf` compiles into exactly the seven-input def a complete client would have sent.
+
+  **The audit, which was the cost, came out as a rule rather than as a list**: a slot joins the tail only when its default is **inert** — the value that makes the UGen behave as if the slot were not there (0 for a trigger, an offset, a phase, a channel, a done action; 1 for a level or a rate scale) — and never when its default is a *choice* (`freq=440`, `delaytime=0.2`, `width=0.5`, `max=7`), because omitting that is not leaving it alone, and never when the UGen reads its **signal, source, position or chain** from it, whatever the default, because silence and frame 0 are legal values a wrong def would run with. Forty kinds have a tail under that rule and the operators have none, which is the refusal this entry opens with. The reasoning is in `docs/decisions.md`, the rule in `docs/schemas.md`, and the acceptance in `tests/synthdef.rs` (a short `PlayBuf` equals the long one; a truncated `Mul` still fails; too many inputs still fails).
+
+  **What it does not do**, unchanged from what is written above: an input inserted in the middle stays breaking, the clients still materialise every default (the wire has no sparse form), and `/ugen_query` still reports `name, default` per input — publishing optionality would change the reply's shape in three packages and nothing needs it yet.
+
+- ✅ **`LinLin`/`LinExp` as UGens, over the warp family the core already
+  carries** *(named 2026-08-23, adding the warp family to `clausters_core`;
+  done 2026-08-24)*.
+  The eight range maps — `linlin`, `linexp`, `explin`, `expexp`, `lincurve`,
+  `curvelin`, `range`, `exprange` — now exist as **value** functions in
+  `clausters_core::warp`, reached by both clients, so a script maps a fader
+  position to a frequency without writing the arithmetic. A **signal** cannot:
+  there is no `LinExp` UGen (scsynth has one) and no `LinLin` pseudo-UGen, so
+  `saw(...).linexp(-1, 1, 200, 8000)` is unwritable and a def spells the
+  multiply-and-add by hand — which is exactly the drift the shared core exists
+  to prevent, since a def's hand arithmetic and a client's `linexp` are then two
+  implementations of one map.
+
+  **The formulas are not the work; the plumbing is.** `warp::apply_map` is the
+  body of every one of them and a UGen would call it per sample, so what this
+  milestone actually decides is the *shape*: they are five- and six-ary, so
+  they cannot join the `BinaryOpUGen`/`UnaryOpUGen` tables the way `midicps`
+  did, and each needs a descriptor in `dsp::registry`, an entry in
+  `docs/schemas.md`, a builder in `clients/python/clausters/defs/ugens` and its
+  TypeScript mirror, plus a row in the contrast tests that already caught eleven
+  drifted builders. Two questions come with it: whether the bounds are UGen
+  inputs (modulatable, which scsynth's `LinExp` allows) or init-rate like a
+  ramp's geometry, and whether `range`/`exprange` are UGens at all or the
+  method sclang makes them — a composition of `madd` that reads the signal's
+  own polarity, which our graph does not track.
+
+  **Done, and the shape is one kind rather than eight.** `RangeMapUGen` carries
+  the map by **name** in its `op` field over `in, in_lo, in_hi, out_lo, out_hi[,
+  curve]`, which is the argument `BinaryOpUGen` already makes: a math operation
+  is an entry in a shared table, not a kind. `clip` rides beside it as static
+  config (`minmax` by default, as on the value side), `curve` is the declared
+  optional tail — 0 is *no bend*, the inert value the tail rule asks for, while
+  a client's `lincurve` passes sclang's −4 — and the four bounds are ordinary
+  inputs, so **a range may be modulated**. Both clients spell it as methods on
+  a graph node (`lfo.linexp(-1, 1, 200, 8000)`), the sixth of which is where
+  the TypeScript side grew `GraphExpr`: `PvExpr` borrows `SynthExpr` for the
+  operators and must not inherit a map that composes a UGen.
+
+  **The two questions the entry left are answered by what they cost.** The
+  bounds are **inputs**, not init-rate: they are what a modulated map is made
+  of, and the price of moving them is paid by the def that moves them, not by
+  every def. And `range`/`exprange` are **not** UGens — the value functions keep
+  them — because they read the input's own polarity, which sclang knows per
+  UGen and this graph does not track: a def that means −1..1 writes −1..1 and
+  says what it means, which is one word longer and never wrong.
+
+  **The efficiency half is in the core, and it is what kept one implementation
+  of the curves.** A map's bounds settle a good part of its arithmetic —
+  the zero-straddling test, `ln(hi/lo)`, `exp(curve)`, the bend's two terms, two
+  of them transcendentals — so `warp::Map` is the prepared form and the eight
+  named functions are each one of those built and applied once. The UGen builds
+  one per **block** when every bound is a constant (the ordinary def) and one
+  per sample when a bound moves; `map_slice` builds one per array. Nothing was
+  restated to get that: the primitives now *are* `Read`/`Write`, and
+  `each_named_map_is_the_pair_of_primitives_it_documents` asserts bit equality
+  over a sweep, because a def and the client control driving it read the same
+  map and a last-ulp difference between them is drift.
+
+- ✅ **A release bumps one version in five places and four of them are checked
+  by nothing** *(named 2026-08-23, fixing the versioning rule and finding the
+  check only covered the rule's own half; done 2026-08-24)*. The version lives in the root
+  `Cargo.toml`, every crate under `crates/`, `clients/python/pyproject.toml`,
+  `clients/web/package.json`, and `crates/clausters-gui/Cargo.toml` with its own lockfile
+  (an independent workspace, so it needs `cargo update -p clausters-gui
+  --offline` after the edit). **Only one pair is verified** — `npm run
+  check-package` refuses a `package.json` that disagrees with the crate — and
+  `crates/clausters-gui` has drifted before precisely because no root build reads its
+  manifest. `versions.sh` does not close this: it answers the *rule* question
+  (did a counter move since the last tag, did the tier move once) and reads only
+  the root manifest.
+
+  The fix is one of two shapes and they are not the same work. A **check** — the
+  script grows a pass that reads all five and fails on disagreement, cheap and
+  it only catches the mistake after it is made. Or a **single source** — the
+  crates take `version.workspace = true` (they do not today), and the two
+  non-Cargo manifests are written from it by a small script, so there is one
+  number to edit rather than five to keep equal. The second is what makes the
+  drift impossible rather than reported, and it is the one worth taking, with
+  the caveat that `crates/clausters-gui` is its own workspace and inherits nothing from
+  the root.
+
+  **Both shapes, because neither closes it alone.** The eight Cargo crates take
+  `version.workspace = true`, so the number is *decided* once, in the root
+  `[workspace.package]`. The five files that cannot inherit anything —
+  `crates/clausters-gui/Cargo.toml` with its lockfile, `pyproject.toml`,
+  `package.json` with its lockfile — are **written** by
+  `scripts/set-version.sh <x.y.z>`, which regenerates both lockfiles and, given
+  no argument, prints what every file says. And because a script is a thing to
+  remember, `tests/versions.rs` contrasts all of them and fails when one
+  disagrees — including when a Cargo crate writes its own number instead of
+  inheriting, which is how the *next* crate would drift.
+
+  **It found one on the way**, which is the entry's own argument arriving on
+  time: `clients/web/package-lock.json` was a sixth place and had been sitting
+  at `0.8.1` since two minors ago. It was not in the entry's list of five and
+  nothing had ever looked at it.
+
+  The one seam this moved is the web package's own checker
+  (`tools/check-package.mjs`), which read the root `[package] version` and had
+  to learn `[workspace.package]`; `versions.sh` in the skill matched
+  `^version` and would have read `version.workspace = true` as "true", so it
+  matches `^version = ` now. The release procedure is one line and one command
+  in `BUILD.md` and in the skill.
+
+- ✅ **A take's overview could be a file beside its region** *(named 2026-08-18, dropped from S20 the day it was staged — see that milestone for why it stopped being the mechanism)*. Every multitrack editor keeps a summary beside the audio and writes it as the audio is written: Audacity's block files carry min, max and RMS per 256 samples with a second level over 256 of those, which is what lets a project open without reading its audio. Clausters has both halves already — the CLPK format the core writes (`peaks::MultiPyramid::write_cache`, mmap-ready, the same three statistics) and a per-buffer region file the segment names — so the overview would be `<segment>.buf<N>.<gen>.peaks`, created with the region and unlinked with it, and a peer would **map** it instead of building one. What it buys is exactly one thing: the pass a take costs when a view opens it (a ten-minute stereo take is 57.6 million samples read once), which after H7 is a streamed read that allocates only the summary — real, but bounded and paid once. What it costs is a **second writer of derived state**: who refreshes it after an edit (the peer that wrote the samples, the owner, or both), what a reader does with one that disagrees with the material, and whether a stale one is detectable at all. The frontier (S20) deliberately answers the *live* question without any of that, which is why this is an optimization to take on its own terms rather than a milestone's implementation detail. It becomes worth it when a session opens many long takes at once and the opening pass is measured to matter.
+
+  **Done 2026-08-20, and the two costs it named were paid rather than dodged.** The file is `<segment>.buf<N>.<gen>.peaks`, the CLPK the core already writes, built when a buffer is published to its region and unlinked with it. **Who refreshes it after an edit**: the server that owns the samples, and nobody else — a peer maps it read-only, and a peer that edits announces the span exactly as it already did (`/buffer_touch`), which is one more reader of a contract that existed. **What a reader does with one that disagrees**: it cannot get one, because the refresh is by span and not by rebuild — `NrtAction::Wrote` carries the frames every in-place write covered, `Overviews::wrote` recomputes the buckets it touched, and the file is written from the run loop at a bounded rate so a stroke does not rewrite a multi-megabyte file per announcement. **Whether a stale one is detectable**: the generation is in the name, so the one drift left is a peer that stores into the mapping and never announces it — and that is the same thing every *picture* of that take already cannot follow.
+
+  The arithmetic is one function, `peaks::overview` in the shared core, and it is the same one the wire uses: `/buffer_stream` reports with it as a take is written, `/buffer_peaks` answers with it for a take at rest, and the refresh above patches with it. So the summary a peer maps, the summary a page is sent and the summary the server keeps are the same three numbers computed once.
+
+  **And something waited on it**, which it did not when this was written: the GUI host has two ways of getting a view's material — the whole buffer downloaded, or shape plus a summary plus the spans a zoom asks for (H9) — and what chooses between them is the `fills` prop, a question about *recording* standing in for a question about *cost*. The right condition is whether a summary can be had without reading the material, and today it can only arrive free from `/buffer_stream` or from a cache file somebody already wrote. Whoever takes this entry unblocks that one (`crates/clausters-gui/PLAN.md`, Future directions, "A view of a server buffer has two ways of getting its material, and what chooses between them is the wrong question").
+
+- ✅ **A long take is played out of the pool, and `DiskIn` cannot be
+  positioned** *(taken whole by `S21` on 2026-10-22, and closed with it)*
+  *(named 2026-08-15 alongside S12, and narrowed the same day once
+  S12 settled where an* edit *happens: what is left here is where a long take is*
+  read *from, which S12 does not answer)*. The arrangement sounds a take as a
+  **pool buffer** played by an instrument def (`clausters.form.element`: a
+  `Buffer` element renders as an event whose `buf` control carries the bufnum),
+  so a five-minute stereo take is 110 MB of RAM and a thirty-minute one 660 MB —
+  per take, on top of the client's working copy and the host's mapped view of
+  the same material. A multitrack of takes is the case that makes that
+  untenable, and it is also the case the streaming pair was built for:
+  `DiskIn`/`DiskOut` (`crates/clausters-server/src/dsp/disk.rs`) run their own I/O thread and never
+  touch the pool. **The gap is concrete rather than architectural**: `DiskIn`
+  takes one input (`chan`) plus a static path and plays front to back at one
+  file frame per server sample, with **no start offset, no seek and no rate** —
+  so a transport that starts at bar 40, or a take placed at an offset in the
+  arrangement, cannot use it at all. Giving it a start frame is the smallest
+  step and is probably a U-track item rather than a design; giving it a *seek*
+  under a moving playhead is the design, since its ring is filled by a thread
+  that would have to be told to refill from elsewhere. The third shape — the
+  server **mapping** the file and reading it from the audio thread, which is
+  what a monolithic editor does — stays named and unchosen, with the one firm
+  finding this entry carries: a mapped read can **page-fault on the audio
+  thread**, so it could only ever be an editing *mode*, a session's tolerance
+  for a stall not being a live server's.
+
+  **And a join has to be able to name a file, which is the half this entry was
+  missing** *(the user, 2026-09-12, reading the document's `O31`: "multitrack
+  editors read from files; here we also read from buffers on the server")*.
+  `/buffer_stitch` takes `srcBufnum` for every part, so a join is a join over
+  **pool buffers** and nothing else -- which is the same 110 MB per take this
+  entry opens with, now arriving through the one feature built to avoid copying
+  anything. A multitrack's ordinary source is a file on disk; a buffer is the
+  case *this* server adds. So the part needs the other spelling: a path, a start
+  frame and a count, read by a stream rather than out of the pool, with the same
+  fades and the same channel map. The document's half is already written that
+  way and does not move -- a part names a **source and a frame range**, and
+  which of the two a source turns out to be is the session table's answer
+  (`crates/clausters-document/PLAN.md`, `O31`).
+
+  **Prebuffering is what makes it playable, and it is the reason this is one
+  entry and not two.** A positioned `DiskIn` still fills its ring from a
+  background thread, so a seam between two file parts is a refill at a known
+  frame, not an underrun to be survived: the reader knows where every part
+  begins before it gets there, so the next part's head can be read **ahead** of
+  the seam rather than requested at it. That is the whole difference between a
+  join over files that plays and one that clicks, and it is also what makes a
+  start offset worth having on its own -- a transport that starts at bar 40
+  seeks once, into a ring that is already full, instead of beginning to read
+  when the playhead is already moving. The ring's size and how far ahead of a
+  seam a refill starts are the two numbers the work has to pick and state.
+
+  **What has to be measured before it is trusted** *(from the node system's
+  spec, 2026-09-10)*: how far ahead the disk thread has to read so a seam never
+  arrives late, stated against the hard case -- a comping pass chopped into
+  quarter-second parts, each from another file -- and what the reader does when
+  the thread runs out of lead anyway, which is declared silence and never a
+  click. The shape is the stitched buffer's one layer down: the ring `DiskIn`
+  fills becomes a stitch of segments, and the audio thread goes on reading a
+  buffer and nothing more.
+
+  **The start frame, done 2026-10-08** -- the smallest step, as this entry
+  said. `DiskIn` takes a static `start` beside `path` and `loop` (the file
+  frame it begins at, `0` by default; a loop goes back to the file's top), in
+  both clients' builders (`disk_in(start=)`, `diskIn({ start })`) and in a
+  page, where the host's reader asks for its first span from there. The reader
+  thread reaches it by decoding up to it and throwing the frames away before
+  the ring sees them: exact in every format, since a compressed one has no
+  exact frame seek, and the audio thread's first frame is `start`. Still open
+  here: a seek under a moving playhead, a join's part that names a file, and
+  the prebuffering that makes either playable.
+
+- ✅ **Several transports on one server, to play concurrently** *(moved to the
+  T track as T6, 2026-09-23, when the audio editor's nodes gave it a case.
+  Named 2026-09-17 with the user, designing how a timeline plays on a server's
+  transport; `clients/python/PLAN.md`, the tempo-map entry)*. A server has
+  one transport today -- one governed group, one transport clock, one position
+  anchor, one loop -- so two things that each want their own play, pause and
+  locate (two timelines, or a timeline beside a multitrack) share one playhead.
+  The shape: a transport becomes a resource addressed by id and sized at boot
+  (like `--taps`), so the audio thread never allocates, each with its own
+  governed group, clock (frozen total), position anchor, loop and
+  transport-axis queue. The id reaches every surface that names the
+  transport: the `/transport_*` commands and `/sched_atTransport`, the
+  `TransportPos` UGen, the per-transport clocks and positions in the
+  shared-memory segment, the change notifications, and `/gui_headClock`, which
+  says which transport a view draws from. A protocol change across the server,
+  both clients, the GUI host and the books at once; `/transport_query` and the
+  conductor examples change shape.
+
+  **The timeline's transport property was built first, and named to survive
+  this** *(2026-09-17)*: `timeline.transport = server` holds the server, and a
+  server with several transports makes it hold one of them
+  (`server.transport(id)`) with nothing else in the surface moving.
+
+- ✅ **Two node trees kept in step by hand** *(the server audit,
+  2026-09-25; the test written 2026-10-07)*. The network's `TreeMirror` and the engine's `NodeTree` implement the
+  same semantics (insert by add action, move, free all, deep free, the ancestor
+  walk), and `dispatch.rs` says one rule is "kept in step with
+  `Engine::bundle_is_governed` by hand". Two threads, two sets of rules, so two
+  implementations are defensible; nothing checks them against each other. A
+  test driving both with one sequence of operations is the cheap guard.
+  *(Written: `node::tests::the_mirror_and_the_engine_s_tree_take_the_same_walk`
+  puts one fixed walk of four thousand steps to both — every add action, every
+  place of a move, the three frees, over ids that are live, gone and never
+  there — and after each step both took it or both refused it, the two trees
+  read the same row for row, and the ancestor walk agrees over every pair of
+  ids. **It found one difference.** The network's walk was a method of the
+  dispatcher, which the test could not reach, so it moved onto the mirror
+  (`TreeMirror::is_descendant_of`) — and there an id the tree does not hold
+  was at or under itself, where the engine answers `false` for any unknown
+  id. So a `/sched_atTransport` whose packet names the transport's group
+  after that group was freed passed the network's check, though the engine's
+  tree holds no such node to govern; the mirror now answers as the engine
+  does.)*
+
+- ✅ **A pitch spelled by a key, and moved by a step of it** *(2026-11-10,
+  with the user, from `crates/clausters-apps/PLAN.md`, `X37.2`)*. What the
+  core has spells by an accidental world alone:
+  `clausters_core::event::notation::transposed` moves written `pitches` by
+  semitones and spells them again in sharps or in flats, and
+  `clausters_core::notation::ops::transpose_pitch` moves one by steps and
+  semitones as the score editor does. What is missing is the spelling a
+  key gives (a pitch of the scale written as the scale writes it, one out
+  of it by the nearest name on the line of fifths) and a transposition by a
+  step of the key, which moves each pitch to the next degree of its scale.
+  Both are general and belong beside the spelling the core already has:
+  the roll's transposition calls them, the Spelling step of
+  `crates/clausters-notate/PLAN.md` uses them as its baseline, and both
+  clients reach them through the core's doors.
+  *Done 2026-11-10*: `spell_in`, `transposed_in` and `stepped_in`, with
+  `fifths_of`, `key_of` and the table of tonics, in
+  `clausters_core::event::notation`; the document's reading spells with
+  `spell_in` instead of a copy of its own, and the score's MEI writer names
+  the same table. No FFI export yet: the clients reach them through the
+  roll's verbs, and an export waits for a client that calls one.
+
+## Found by use: the entries that were fixed
+
+- ✅ **The embedded engine runs without the SIGXCPU guard** *(found
+  2026-10-15, by the first audit: the Python suite's embed tests were killed by
+  SIGXCPU in the PipeWire callback, on a debug build sharing ten CPUs with
+  other compilations, and not on an ordinary machine; fixed 2026-10-15)*.
+  RTKit grants the audio thread real-time scheduling under `RLIMIT_RTTIME`, and
+  the binary arms `server::rt::install_sigxcpu_guard` so a thread past that
+  budget is demoted instead of killed (M24). The library never armed it, since
+  a signal disposition is process-wide, so an embedded engine died with a core
+  dump under the same overload. The embed now arms it through
+  `server::rt::adopt_sigxcpu_guard`, which replaces only the default
+  disposition and leaves one the host process set. Confirmed by lowering the
+  soft `RLIMIT_RTTIME` of a Python process running the embed: without the guard
+  it died of SIGXCPU at once; with it the audio thread was demoted and the
+  process kept running past 800 nodes at 117% average load.
+
+- ✅ **The audio callback costs half again as much on the efficiency cores**
+  *(found 2026-10-15, by the second audit campaign's device runs; record
+  `audit/records/2026-10-15_2558210e_02.zip`)*. On a hybrid CPU (performance
+  cores 0-11, efficiency cores 12-19) the same load at quantum 128 ran at 32 %
+  average CPU and ~860 us per callback on a performance core, 53 % and ~1420
+  us on an efficiency core. Nothing chooses the core (`--pin` is opt-in and
+  experimental) and the thread migrates between the two kinds within a run, so
+  a server's headroom depends on where the scheduler puts it.
+
+  Forty minutes at that load (900 000 callbacks, with a capture of every
+  callback over 90 % of its deadline) gave no overrun: three near misses, all
+  on an efficiency core, each two DSP blocks of ~1.25 ms with no page fault,
+  no context switch and no command applied, so the margin is the core's speed
+  and nothing else. The two overruns seen earlier (3.03 ms and 2.69 ms, in
+  ~340 000 callbacks) were not reproduced, and one PipeWire error came with no
+  slow callback of the server's. The boot diagnostic now names the CPU the
+  audio thread is on and, on a hybrid CPU, whether it is one of the fastest;
+  `--pin fast` restricts the audio thread and the workers to those cores
+  (`server::rt::fastest_cpus`), which held the same load at 32 % in three of
+  three runs. It stays opt-in, decided with the maintainer: it changes how the
+  server shares the machine, and the default keeps the kernel's choice.
+
+- ✅ **Every stored plugin def is probed again at boot, before the server
+  answers** *(found 2026-10-14, fixed 2026-10-15)*. Restoring
+  `defs/plugindefs/` probed each record on the network thread during startup,
+  so a data directory that had seen a heavy instrument loaded it on every boot
+  and a missing or slow binary delayed the server by its timeout. A record now
+  keeps the surface the probe found when the def was sent; restoring rebuilds
+  the def from it without loading the plugin, and the first node's instance is
+  what checks the binary still matches. A record written before is probed once
+  and rewritten.
+
+- ✅ **Clamped audio buses in dependency analysis** *(fixed 2026-10-14)* —
+  audio I/O clamps an out-of-range index to the last configured bus, while
+  the mirror had analyzed its unbounded index. Ordering, worker masks and
+  compensation now analyze the same physical bus, including control retargets
+  and mapped controls. A reversed source/reader graph with a reduced bus count
+  tests the dependency and allocation-free parallel execution.
+
+- ✅ **Offline plugin unit fixture header path** *(fixed 2026-10-14)* — the
+  unit test compiled the bridge fixture against the retired
+  `tools/plugin-bridge/vendor` include directory. It now uses the same
+  `third_party/clap/include` headers as the production helper and integration
+  fixtures, so a clean checkout does not need an ignored legacy vendor tree.
+
+- ✅ **Large CLAP catalogues hid compatible LSP plugins.** Discovery rejected binaries with more than 128 identities, and one over-capacity metadata row failed every sibling. Raise the bounded catalogue to 512, page administrative requests in groups of four and retain per-plugin compatibility diagnostics; the installed LSP catalogue reports 182 compatible plugins and 12 parameter-capacity diagnostics.
+
+- ✅ **A lane's notes froze with the transport, and a stop cut their releases**
+  *(the user, 2026-09-29, playing `edit_notes`: "The transport cuts the sound
+  before the last note finishes playing", and "Placing the cursor and pressing
+  play plays a fragment of the last note of the previous playback")*. `T8`
+  made a lane's notes in the governed group, so a stop froze them: the end
+  mark, on the last note's end, froze the voice as its release began, and the
+  release was never heard; and a voice frozen mid-release thawed on the next
+  play and finished its release there, wherever the position now was. Freezing
+  is right for a reader, which continues from the sample it read; a voice is
+  not one. **Fixed 2026-09-29**: a stop -- `/transport_stop` and the end mark
+  alike -- releases what the lanes sound, as a DAW's stop sends its note-offs,
+  and the notes are made in a group the transport does not govern (the group
+  that follows it, for the notes editor and the multitrack), so their releases
+  ring out. A play does not bring a released note back. `/lane_new` says to
+  give it such a group.
+
+- ✅ **A group's sort mode is in no structured reply** *(found 2026-09-18 while
+  giving both clients the manual ordering verbs, whose docstrings have to say
+  "refused inside an auto-ordered group" and leave the reader no way to ask
+  which kind a group is; fixed the same day)*. `/group_sortMode` sets it and nothing reads it back:
+  `/group_queryTree.reply` carries `ID, count, name` per node and no flag, and
+  `/node_query.reply` carries none either. The one place the answer exists is
+  `/group_dumpGraph.reply`, which prints `group 1000 (auto)` inside a debug
+  **string** -- the one thing both books tell a client never to scrape. So a
+  client that now has both ways of ordering cannot say which one it is looking
+  at, and a script that moves a node by hand finds out from a `/fail`.
+
+  The shape is a reply change, and that is why it is here rather than in a
+  client's plan: a flag per group in `/group_queryTree.reply` is the obvious
+  place (it is already the structured tree), and it moves the reply's shape, so
+  both clients' parsers and `docs/schemas.md` move with it. Whether `parallel`
+  rides along is the same question asked twice, and the two are one decision.
+
+  **What shipped.** Both flags, both replies, and they are one pair: sort mode
+  and parallel are the two modes a group *runs under*, and reporting one without
+  the other would have left the same hole one question over. A group's record in
+  `/node_query.reply` ends with them, after the name -- which was already past
+  scsynth's record, so nothing there had to move. In `/group_queryTree.reply`
+  they ride at **`detail = 2`**, after each group's name and after the queried
+  group's own, which is what keeps 0 and 1 exactly the shape scsynth replies
+  with; the level-2 reply's first entry therefore starts at argument 6 rather
+  than 4. Both clients carry them on the node record (`auto_order`/`autoOrder`,
+  `parallel`) and **print them on a group's line** -- `group 1000 "mixer" (auto,
+  parallel)` -- which is how `basics/group_order.py` and its page now show the
+  mode changing under the same tree they already printed.
+
+  **Every walker of that reply had to move, including the one that does not read
+  the field.** The GUI host's node-tree view asks for detail 1 and would not have
+  broken today, but its parser handles detail 2, so it now steps over the two
+  ints there: a group read as a synth is what a missed field looks like, and it
+  would have surfaced as a corrupt drawing long after this change.
+
+- ✅ **The disk threads are the one worker the load table cannot see** *(found
+  2026-09-15 while wiring M34: every other long-lived thread reaches the table,
+  these do not)*. `DiskIn::open`/`DiskOut::open` (`crates/clausters-server/src/dsp/disk.rs`) spawn their
+  reader and writer from the **UGen registry**, during a synth's build, which is
+  the one construction path with no route to the engine's `Arc<Meters>` -- and
+  there is one thread per node rather than a fixed count, so the fix is not a
+  slot each but an **aggregated role** (`disk-in`, `disk-out`, index 0, several
+  threads adding to it), which the table already supports since a slot is only a
+  pair of atomics. What it needs is a way for a UGen to reach the table at build
+  time: `UGenConfig` is what the registry hands a UGen, so carrying the meters
+  there is the obvious shape, and it is the part worth thinking about rather
+  than typing. Until then a session bottlenecked on soundfile streaming reads as
+  idle in `/server_load` and honest in `top -H`, which is the one direction a
+  meter must not be wrong in -- so it is named in `docs/schemas.md` as well as
+  here.
+
+  **Fixed 2026-10-07.** Two roles, `disk-in` and `disk-out`, each one slot that
+  every thread of its kind adds to. The table reaches a UGen through
+  **`BuildCtx`** rather than `UGenConfig`: the config is the def's — static,
+  compiled once, shared by every instance and by every server that loads the
+  def — while the build context is "what the engine knows at build time",
+  which is exactly what a load table is, and it already existed for the sample
+  rate. `CmdTranslator::set_meters` hands the server's table over at boot and
+  `make_synth` builds with it (`UGenSynth::metered`); an offline render and a
+  test keep a table nobody reads.
+
+  A thread accounts **the stretches it worked, never the parks between them**
+  (`dsp::disk::Turn`): a stretch runs from one wait on the ring to the next and
+  counts only if something was done in it, so a reader waking to a ring still
+  full is not a call. Nothing of this is the audio thread's — `process` is the
+  same push and pop it was — and that is now held rather than assumed:
+  `crates/clausters-server/tests/rt_safety.rs` had no case for the disk UGens at all, and gained
+  `disk_streams_do_not_allocate_on_the_audio_thread`, which runs both under
+  `assert_no_alloc` with a live table. The wiring from `/synth_new` to the
+  thread is held by `server_load_counts_the_disk_threads` in `crates/clausters-server/tests/osc.rs`.
+
+- ✅ **A stop froze the piece's state, and it came back holding it** *(found
+  2026-09-11 by ear in the multitrack example; fixed the same day)*. The
+  transport governs a group by **pausing** it, so while stopped nothing in the
+  piece gets a block -- while everything that drives it goes on moving: the
+  position, and the curve nodes outside the group writing the buses its ports
+  are mapped to. So every smoother inside kept the value the music ended on. On
+  play a strip glided from there to where the automation now was, over the
+  fader's ten milliseconds, which is a burst of whatever the box holds at a
+  level nothing asked for -- measured at 0.56 where the envelope said zero, and
+  fainter the further into the timeline the box sat, since by then more of the
+  glide was over. The same freeze made a meter report the *last* pass's peak
+  before the new one had played a sample. Both are one thing: **a transport
+  stop is not a node pause.** A paused node should resume exactly as it was; a
+  stopped transport is a piece that is not there, so `SynthNode::resume` --
+  called on the governed subtree, and only when it thaws -- lets every smoother
+  forget where it was. Only smoothing: a filter's memory, a delay line and an
+  oscillator's phase are the signal itself and stay. Held by
+  `a_thawed_strip_does_not_glide_down_from_where_it_stopped` and
+  `a_thawed_meter_does_not_report_the_pass_before_it`.
+
+- ✅ **A track's width is a document field the piece cannot honour yet** *(found
+  2026-09-11, reading the meter's channel count against the strip it draws)*.
+  `Track.channels` is a field of the document and the plan reports it per
+  track, but a piece instantiates its tracks from one slot -- `mt.piece.<n>`
+  declares `tracks` as `mt.track.<n>` with the **piece's** width -- so a track
+  of another width gets the piece's strip and only its *meter* is drawn at the
+  width it asked for. Nothing today writes a track of another width, which is
+  why it has not been heard. The shape of the fix is the clip slot's, which
+  already solved the same problem one level down: a slot per width
+  (`clips.1`, `clips.2`), so the piece would declare `tracks.1` and `tracks.2`
+  and the plan would name which one each track fills.
+
+  **Fixed 2026-10-07**, in that shape. The tracks' group declares a slot per
+  track width (`mixer::track_slot`), the plan names the one each track fills
+  (`PlannedTrack::slot`), and the track graph is named by both widths
+  (`track.<track>x<master>`), since two multitracks of different masters may be
+  loaded at once.
+
+  What the entry did not say is **where the width changes**, and the clip's
+  answer does not carry over: a clip has no meter, so its strip can go straight
+  from the source's width to the track's. A track has one, after its fader, and
+  a mono track read on a stereo meter is the thing the entry was about. So a
+  track is its own width through its mix bus, its strip and its `post` bus —
+  which is what the meter reads — and the node that carries it into the master
+  is where the width changes: the send when the two agree, the 1→2 strip (a
+  pan, with the law) for a mono track in a stereo multitrack, the 2→1 strip
+  (the sum) the other way. `pan` stays one port on every track and lands on
+  the stage that has an image to move: the way out for a mono track, the
+  track's own balance otherwise.
+
+  `defs_for` sends every width a strip is written for rather than the ones in
+  use, because a graph must exist before the one that names it and the tracks'
+  group names both track graphs. A track whose width changes is freed and made
+  again with its clips (`Instance::tracks`) — another graph in another slot is
+  not something a `set` can say.
+
+  Heard rather than inspected, in `tests/mixer_graph.rs`:
+  `a_mono_track_is_one_channel_until_it_meets_the_master` (centred at −3 dB a
+  side, its meter one channel at the fader's level and unmoved by the pan) and
+  `a_stereo_track_is_summed_into_a_mono_master`. The plan and the instance
+  hold their halves in `the_track_width_picks_its_slot`,
+  `a_track_fills_the_slot_of_its_own_width` and
+  `a_track_of_another_width_is_made_again_with_its_clips`.
+
+  And through the whole playback, in `tests/multitrack_playback.rs`:
+  `a_track_s_width_is_the_document_s_and_may_change_while_it_plays` widens a
+  mono track while it sounds — which is what `track.channels = 2` from either
+  client does — and hears it made again.
+
+- ✅ **A meter's ballistics were nobody's, so a level had no readable shape**
+  *(2026-09-10, with the node system)*. A picture of the raw block peak is
+  unreadable: it flickers, and a transient shows for one frame of the screen or
+  for none. Every meter anybody has ever read answers three rules instead --
+  instantaneous attack, a fall of a fixed number of decibels per second, and a
+  peak held long enough to be seen -- and those rules are arithmetic, so they
+  are `clausters_core::measure::Ballistics` and there is one of them. Two
+  clients drawing two different falls off one signal would be two answers to a
+  question that has one.
+
+  `Meter(signal, decay, hold)` runs them on the server: one number a block,
+  which is exactly what a control bus carries, so a metered strip costs one node
+  and one bus per channel and a host reads a *range* of buses rather than a
+  message per value. `hold` of 0 is the level and a second or two is the mark
+  that waits to be read, so two instances give both halves of a meter.
+  `mt.meter` is the def that pairs it with `OutCtl`.
+
+- ✅ **A track's meter has nowhere post-fader to read from** *(found
+  2026-09-10 wiring the meter, fixed the same day)*. A meter is post-fader
+  because that is what a hand expects, and a track's strip wrote straight into
+  the **piece's** mix bus, which every other track writes into too -- so a meter
+  on it read the sum and called it the track. A strip now writes a `post` bus
+  private to its own instance, and `mt.send.<n>` carries `post` onward at a
+  gain: one more node per strip, and the same shape a pre/post-fader send wants,
+  so an extra send is another instance of a def that already exists rather than
+  a mechanism. The meters are a **slot** (`mt.meter.<n>`, one instance covering
+  the strip's width), so a piece nobody is looking at holds none and the level
+  and the mark that waits are two instances rather than two defs; where each
+  channel lands is a port (`meter/out0`, `meter/out1`), because the host reads
+  the bus and so the host says which one. `tests/mixer_graph.rs` renders it: a
+  silent track beside a loud one reads nothing, the master reads the sum, and
+  the send's gain shuts the track off without touching the fader an automation
+  writes. The other half is `G35.14` in `crates/clausters-gui/PLAN.md`: the vertical
+  strip of *n* channels in a track header, which reads that range of buses --
+  until it lands, nothing instantiates a meter, because nothing draws one.
+
+- ✅ **A curve was drawn, edited and saved, and heard by nothing** *(the oldest
+  half of `G35.3`/`G35.4`; closed 2026-09-10)*. An automation's target said
+  `gain` and the header knob said `gain` and they were two words spelled alike.
+  Now they are one port, and the curve reaches it.
+
+  **A curve is a table read at the transport's own position**, not a stream of
+  messages, and the difference is the whole design: with messages a locate would
+  leave the curve wherever the last one put it, so every seek would have to
+  re-send it, and the resolution of an automation would be the resolution of a
+  socket. `mt.curve` reads a buffer at `TransportPos` and writes a control bus,
+  so a curve is simply *at* wherever the piece is -- a locate costs nothing, and
+  it works the same offline. `BufRd` clamps past either end when it is not
+  looping, which is exactly a curve holding its first and last value.
+
+  **`/graph_map instanceID port bus` is what connects the two.** It is the other
+  half of `/node_set` against a surface: instead of writing a value it maps
+  every control the port resolves to onto a bus. Without it a client would have
+  to be told the node behind a port, which is the encapsulation the surface
+  exists to keep -- and a curve drives a port of a track, of a clip, or of an
+  effect three levels down. A negative bus unmaps, and unmapping is not optional:
+  a port left on a bus nobody writes holds whatever was last in it, so a deleted
+  curve would go on driving the control at the last value it happened to say.
+
+  The sampling is the crate's: `nodes::plan` hands back the table itself, on the
+  **frame** axis, so a tempo change bends a curve the way it bends everything
+  else. Each segment is sampled with the shape its first point states in
+  `Point::data` (`shape`, `curve`), through `clausters_core::envshape` -- the
+  function the host draws it with. *(It was linear between break-points, on the
+  grounds that `data` is opaque; a bend drawn on screen was then heard straight.
+  Changed 2026-09-13, `crates/clausters-gui/PLAN.md`, "Found by use", "A bent envelope
+  was drawn bent and heard straight".)* `tests/mixer_graph.rs` hears it: a table opens a track's fader over
+  eight blocks, and unmapping gives the fader back to the hand.
+
+- ✅ **The clients each drove the piece by hand, so the mixer existed twice**
+  *(2026-09-10, the other half of the entry below)*. `playback` in both clients
+  built reader nodes itself and worked out the mixing as it went. Now it asks:
+  `clausters_multitrack_plan` for what to instantiate and `clausters_mixer_defs`
+  for what to send, and what it does with the answer is **compare it against
+  what is already sounding and send the difference**. Both clients run the same
+  two calls, which is what makes one piece sound the same in both of them.
+
+  A diff rather than a rebuild, and that is not an optimization: a piece plays
+  itself from the transport, which only holds if the nodes stay. Rebuilding on
+  every edit would restart everything sounding, and a hand dragging a box would
+  hear its own gesture as a stutter. The one change a `set` cannot express -- a
+  clip whose source changed *width*, which is a different wiring -- is torn down
+  and made again, and nothing else is.
+
+  Three things it turned up:
+
+  - **`buf` did not have to be initial-rate.** `BufRd` reads its bufnum once a
+    block, so it is an ordinary control and changing which buffer a box reads is
+    a `/node_set`. That matters because re-cutting a join *is* a new buffer -- a
+    stitched one is replaced rather than edited -- and a box rebuilt for it
+    would stop and restart every time a hand moved a seam.
+  - **`SegmentRef::start`'s unit was documented backwards.** It said frames
+    while `picture::Box::start` said seconds, and every reader of it -- the
+    picture, the host, both clients -- meant seconds. A unit stated one way and
+    meant the other is the cheapest bug to write and among the more expensive to
+    find: nothing about it shows until a box plays from somewhere nobody put it.
+    Corrected, with the contradiction written into the comment so it is not
+    re-introduced.
+  - **A track's fader is read out of `config["level"]`**, which is the one key
+    the crate looks inside an opaque blob for, and it is there because the
+    host's own row reader already writes it there -- a second place would be a
+    second answer. See the entry below.
+
+- ✅ **A track's level should be a field, beside its width** *(named 2026-09-10
+  writing the instance plan; done the same day)*. `Track::channels` became a
+  field of the document because it decides the mix and both clients must write
+  it identically; `level` is the same kind of thing and was a key inside
+  `Track::config`, which the crate had to reach into -- the one place it read an
+  opaque blob, against its own rule that configuration is carried and never
+  interpreted. It is `Track::level` now, `f64`, unity by default and left out of
+  the file when it is there. `picture::level_of` is the one reader and still
+  answers the old key when the field is at unity, so a piece written before this
+  plays at the level it was saved with; both row readers -- the crate's
+  `SetTracks` path and the host's -- write the field and drop the key as they
+  pass, so nothing ends up with two answers. The same field in both clients,
+  since a document read in one and written in the other has to come back the
+  same.
+
+- ✅ **A piece had no node system, so `gain` on a curve and `gain` on a knob
+  were two words spelled alike** *(named 2026-09-10 by the user; the defs and
+  the plan landed the same day)*. `clausters_core::mixer` says what a track and
+  a clip **are** on the server -- `mt.reader`, `mt.strip.<in>x<out>`,
+  `mt.clip.<in>x<out>`, `mt.track.<n>`, `mt.piece.<n>` -- and what their
+  surfaces answer to; `clausters_document::multitrack::nodes` says which of them
+  a given piece needs, wired to which buffer, at which frame, with which level.
+  Between the two nothing is left for a client to work out, which is why a piece
+  will sound the same in both of them. `tests/mixer_graph.rs` hears it rather
+  than reading it back: a whole piece is one `/graph_new` and everything after
+  it is a slot added to what is already sounding.
+
+  **Three things the work turned up, and all three changed the design.**
+
+  - **The master has to contain the tracks.** A track's output is a bus, the
+    master's mix bus is private to the master's instance, and a graph
+    instantiated on its own could never name it. So a piece is `mt.piece` with a
+    `tracks` slot, a track holds a `clips` slot, a clip holds a `source` slot of
+    readers -- four levels, one `/graph_new`, and containment is what hands each
+    child the bus it writes to.
+  - **A GraphDef could not say which *channel* of a bus a member gets.** A UGen
+    has one output, so a stereo writer is two `Out` rows and each needs its own
+    bus index, which a member cannot compute (a bus input must be a control or a
+    constant). Without it a multichannel private bus could be allocated and only
+    its first channel ever reached -- which is to say a mixer could not be
+    written. `"mix:1"` now names one, and `"OUT:1"` the hardware's second.
+  - **`Balance2` is the pan law over a pair, so it is 3 dB down at centre.**
+    Three strips in series -- clip, track, master -- would take 9 dB off a piece
+    for nothing. A balance *attenuates one side and leaves the centre alone*, so
+    the law is written in the strip as `min(1, 1 -+ pan)`. The UGen is not
+    wrong; it is not a balance, and the name is scsynth's.
+
+  Two fields joined the document with it, both additive and defaulted so every
+  file written until today reads unchanged: `Track::channels` and
+  `Multitrack::channels`. They are fields rather than lines in `config` because
+  the width decides the mix, so reopening a piece has to give back the mix it
+  was left with and both clients have to write it identically -- which is the
+  definition of a field the format owns. Ported to both clients with the
+  parity vectors that cover them.
+
+  Deliberately not in it: **effects** (the slot is declared and empty -- a send
+  to nowhere cannot be heard, so it cannot be checked) and **the meter** (it
+  wants an instant attack, a decay in dB/s and a peak hold, and no UGen does
+  that yet).
+
+- ✅ **A GraphDef was one level of wiring, and a piece is not one level**
+  *(named 2026-09-10 specifying the multitrack's node system; landed the same
+  day)*. A track holds clips, a clip holds an effect chain, and each of those is
+  itself a wiring with a surface of its own -- so a GraphDef whose members can
+  only be single nodes describes the leaves and nothing above them. Two things
+  were missing and they are the same thing twice: a member could not be another
+  GraphDef, and the one kind of repetition that existed (`voice`) had no name,
+  so "there are three clips right now" was not sayable at all.
+
+  Both are in. A member takes `kind: "graph"` and is instantiated as a subgroup
+  with private buses of its own, freed with its parent; a bus takes `external`
+  and is provided by whoever instantiates rather than allocated, so a child does
+  not decide where it goes and one def works standalone and nested; a surface
+  target takes `port` instead of `control` and re-exports a child's interface,
+  the two scalings composing outer-first. And `voice: bool` generalizes to
+  `slot: Option<String>` with `/graph_addSlot instanceID slot id [port value]`,
+  of which `/graph_newVoice` is now the `"voice"` spelling -- unchanged on the
+  wire, unchanged for MIDI.
+
+  **What this forced, and it is the better shape anyway.** Instancing is a tree,
+  and a tree cannot be built the way one level was: a child that fails halfway
+  leaves its siblings standing. So `/graph_new` now **plans and then realizes** --
+  the whole walk happens first, resolving every def, building every synth and
+  taking every bus and node id, holding enough to hand all of it back if any
+  part fails; realizing the plan emits commands and cannot fail. The
+  all-or-nothing rule the one-level version had is the same rule over a tree.
+  Freeing is recursive for the same reason: a nested graph is a registered
+  instance with buses of its own, and only external buses are never reclaimed,
+  because they were never the child's.
+
+  The nesting is of authoring and not of execution: a port resolves once, at
+  instantiation, to the controls of actual nodes however many levels down they
+  were written, so `/node_set` costs what it always did and the audio thread
+  learns nothing. Depth is capped at 8, which is also what refuses a graph that
+  contains itself -- a cycle is not otherwise detectable, since a member names a
+  def and a def may name its own name. Both clients gained the same surface
+  (`kind`, `slot`, `external`, a port target, `add_slot`/`addSlot`), and a
+  member handle answers a control or a port according to what the member is,
+  which is one spelling for both.
+
+- ✅ **A cut assembled from several takes could not be played by one reader**
+  *(named 2026-09-10 specifying the multitrack's node system; the stitched
+  buffer landed the same day)*. A clip was a window onto **one** buffer, so a
+  reader was a `bufnum`, a `start` and a `span`. The moment a clip is a join --
+  fragments of different takes, or one take in another order, which
+  `clausters_document`'s `Body::Segments` has always been able to *write* -- the
+  reader would have to change which buffer it reads with sample accuracy, and
+  `bufnum` is an initial-rate control: changing it is a new node. A new node per
+  seam is a control message in the middle of playback, which is exactly what a
+  piece that plays itself from the transport must not need.
+
+  So the join moved out of the reader and into the buffer. `dsp::stitch`: a
+  `Stitch` is a list of parts -- a span of a source, its own channel map, its
+  own crossfades -- and `Storage::Stitched` makes it a buffer like any other,
+  answering `Buffer::sample` and nothing else. `/buffer_stitch` builds one, the
+  sources are `Arc`s cloned on the network thread (so freeing a take something
+  is stitched over does not silence it), and resolving which part a frame
+  belongs to allocates nothing: a shared cursor is checked first, the part after
+  it second, and only a real jump pays a binary search. `tests/buffer_stitch.rs`
+  and `crates/clausters-server/tests/rt_safety.rs` cover the seam, the ordering, the channel map, the
+  refusal and the no-allocation rule.
+
+  **Two things it changed on the way, both deliberate.** `Buffer::cells` now
+  answers an `Option`, because a join owns no cells: that made the five callers
+  who need a contiguous span (the wavetable oscillators, the waveshaper's
+  transfer table, the convolution kernel, the IPC region copy) say so, rather
+  than reading a silently empty slice. And a join is **read, never written** --
+  `/buffer_set*`, `/buffer_fill`, `/buffer_gain`, `/buffer_reverse` and
+  `/buffer_read` refuse it by name, because writing through would turn one edit
+  into an edit of several takes. It takes nothing away: a join is *replaced*,
+  which is what `/buffer_alloc` and `/buffer_gen` already do, and re-cutting one
+  costs the list of parts rather than the samples.
+
+  **The clients speak it** (2026-09-10): `Buffer.stitch` with a `Part` per
+  span, and `parts()` over `/buffer_parts` -- the same two calls in both, since
+  a command no client can send is a command that exists only in a test.
+
+- ✅ **What a join costs, and the number that reads as alarming is the wrong
+  one** *(measured 2026-09-10; the per-run read landed 2026-09-11)*. Two
+  measurements, and they were taken in the wrong order the first time round.
+
+  **The microbenchmark** (`cargo test --release --test buffer_stitch --
+  --ignored --nocapture`) reads 64-frame blocks interpolated. Resolving the
+  part **on every sample** measured +63% over a plain buffer, against an
+  acceptance of 10% written before anything was measured. That criterion was
+  the wrong measure: a microbenchmark of nothing but the load makes three added
+  operations look enormous, and against the block budget the same numbers were
+  0.016% and 0.026% — a hundredth of a percent of a block more, per reader.
+
+  **The engine-level measurement is the one that decides anything** (`cargo
+  test --release --test stitch_load -- --ignored --nocapture`: N `PlayBuf`
+  readers in one engine, timed by `process_block`). At 128 simultaneous readers
+  — more clips sounding at one instant than a piece usually has — a block cost
+  **5.0% of its budget over plain buffers and 7.5% over joins**.
+
+  **The per-run read**, taken 2026-09-11 rather than postponed further, because
+  it turned out to be the shape of the thing and not an optimization bolted on
+  it. `Buffer::run_at(frame)` answers the contiguous run a frame falls in — one
+  part of a join, the whole of a plain buffer — and `dsp::buf`'s `Reader` holds
+  it across a block, asking again only when a frame leaves it. The lookup it
+  removes was **two** questions, and a run answers both once: which part holds
+  the frame, and where that part's source keeps its samples (`PartRun`), so a
+  read inside a run is the indexed load a plain buffer costs. The per-sample
+  path stays as the fallback for the seam, a jump, a modulated rate and a phase
+  running backwards — and the same run makes a **plain** buffer's read an
+  indexed load too, so the fast path is uniform rather than a stitched-only
+  branch.
+
+  **What it measured.** Per read, holding the run instead of resolving per
+  sample is **-50%** on a join (one part or 256, the same). In an engine at 128
+  readers: plain **5.0% → 4.2%** of a block (every buffer reader in the server
+  got faster), joins **7.5% → 5.3%**, so the join's overhead went from **+50%
+  to +29%**. With the crossfades off it is **+16%**, which says what the rest
+  is: the fade is the remaining difference, and a fade is audio somebody asked
+  for rather than overhead. How many parts a join has still barely matters (the
+  cursor does its job) — what a 256-part join pays is that far more of its
+  samples fall inside a fade.
+
+  **And the free rule stands, which is where the real saving is**: only stitch
+  what is actually a join. A box that is one window over one take is a plain
+  buffer and costs exactly that; the join is built when a hand cuts one, and
+  then it pays for a capability it is using.
+
+- ✅ **A client cannot ask whether a buffer is a join** *(found 2026-09-10
+  writing `/buffer_stitch`, answered the same day)*. `/buffer_query.reply` is a
+  **4-wide repeating group** per buffer, so appending a fifth field is not the
+  harmless append `/server_query.reply` takes -- every parser that chunks it by
+  four would read the flag as the next buffer's index. A client therefore
+  learned a buffer was a join only by being refused when it wrote, which is
+  honest but late: a view that would draw an editable waveform wants to know
+  before it draws one. So it is a reply of its own: **`/buffer_parts bufnum`**
+  -> `/buffer_parts.reply bufnum channels sampleRate [srcBufnum srcStart frames
+  fadeIn fadeOut chan...]...`, the parts in the terms `/buffer_stitch` takes
+  them, which a join editor wants anyway and which can be edited and sent back.
+  A buffer that owns its samples answers with no parts -- that is the answer to
+  the question -- and an empty slot answers `channels = 0`, on the rule
+  `/buffer_query` follows. `Part` carries the number its source was stitched
+  under for this and reads it nowhere else: a join is `Arc`s once it is built,
+  and an index is what a client speaks.
+
+- ✅ **A page's engine died on any ephemeral Faust def** *(found 2026-09-05 by
+  driving the web examples in a browser; fixed the same day)*. `play(expr)`
+  builds a def named `tmp_…`, and `/def_send faust` sends an ephemeral def's
+  bitcode speed-cache to the OS temp directory rather than to the store
+  (`handle_def_send_faust`, `defstore::ephemeral_dir`). On wasm
+  `std::env::temp_dir()` does not return an empty answer — it **panics**, and a
+  panic in a release wasm build is `unreachable`, so the whole in-tab engine
+  stopped answering: the page that played one Faust box expression lost its
+  server, and every later command timed out with nothing said about why. The
+  cache is a speed optimization and a page has no filesystem to keep one in, so
+  that branch is now `#[cfg(not(target_arch = "wasm32"))]` and a page recompiles
+  the expression each time. The rule this belongs to is the standing one: the
+  host and the server are the same Rust compiled twice, so a behavior that
+  differs between the two builds is a defect, never the platform's quirk.
+
+- ✅ **Three quarters of the wheel was an LLVM nobody called**
+  *(found and fixed 2026-08-27, from a question about artifact weight)*. The
+  wheel bundled libfaust plus the distro's monolithic `libLLVM.so` — 137 MB of
+  it, every target backend and the whole toolchain support surface, where the
+  JIT compiles for the machine it runs on and calls one. Linking LLVM into
+  libfaust statically, from a component list rather than `--libs`, took the pair
+  from 146 MiB to 43 and the wheel from 194 MiB installed to 90 (35 packed); five
+  vendored dependencies (libxml2, libedit, libffi, libbsd, libmd) left the
+  package with it. Those are LLVM 21's numbers, measured here; the pinned 18 --
+  what ships -- is smaller still, 39 MiB of library and a wheel of 87 installed
+  / 33 packed, and it keeps `libtinfo.so.6` (0.2 MiB; LLVM 19 is where the
+  terminfo dependency went away).
+
+  **Why it had not been done**: the recipe carried `LINK_LLVM_STATIC=off` with a
+  comment saying the static path needs Polly, and `docs/decisions.md` argued
+  static LLVM "is no lighter" because the binary and the cdylib would each embed
+  a copy. Both were wrong in the same way — they were about a *different* link.
+  Polly comes from Faust's `libfaustwithllvm.a` target and from asking
+  llvm-config for `--libs` (everything); a component list needs neither. And
+  linking LLVM into `libfaust.so` duplicates nothing: it is still one shared
+  library, loaded once by both consumers. Neither claim had a measurement behind
+  it, which is how a wrong one survives three years.
+
+  **The one that was actually hidden**: upstream defines `LLVM_BUILD_UNIVERSAL`
+  on every platform (`build/CMakeLists.txt:141`, outside the `if (UNIVERSAL)`
+  meant to gate it), so `initJIT` called `InitializeAllTargets()` and *required*
+  all twenty backends. The monolithic libLLVM was not a packaging habit, it was
+  a consequence. `docs/decisions.md` ("The LLVM in the wheel is the one the JIT
+  reaches") carries the four trims and their measurements;
+  `third_party/build-faust.sh` explains each where it is applied.
+
+- ✅ **`/buffer_write` fails in a page, and not for the reason the plan gives**
+  *(named and fixed 2026-08-26, closing B6's step 2c)*. Both clients
+  expose `Buffer.write()` and against the in-page engine it answers `/fail`.
+  Two separate things are wrong.
+
+  **The behaviour**: `NrtRunner::take_delegated` matches only
+  `NrtJob::AllocRead`, so a `Write` never leaves the worklet, and there
+  `write_wav` creates its file through `hound` → `std::fs`, which on
+  `wasm32-unknown-unknown` is the unsupported backend. It fails cleanly rather
+  than hanging, and it fails on the thread that owes the next block, which is
+  the second reason it should leave: a write is one payload out and none back,
+  the easiest job in the set to delegate.
+
+  **The reason on record**: B6 said `/buffer_write` "has nowhere to write", and
+  since step 3 that is false — the page has OPFS, and `diskOut` records into it
+  (`tests/disk.html`, 272428 bytes of RIFF). What is missing is the delegation,
+  not the destination. `clients/web/docs/src/platform.md` carried the same stale
+  reason and now carries the real one.
+
+  **Why it was invisible**: it sat as a `⬜` inside B6, which is `✅`. That is
+  the exact case this section exists for, and it is worth noting that the rule
+  caught a real item rather than a hypothetical one.
+
+  **The fix, and the third thing it found.** `Write` now leaves, and its payload
+  leaves **in runs** — `ServeBudget::install_frames` a serving turn, the same
+  ceiling a staged load copies under and for the same measurement, since a
+  one-minute take is 7 ms of copying on the thread that owes the next block. The
+  Worker holds the runs and writes the file **once**, at the last one, so a
+  half-written file never exists; that is what separates it from `diskOut`'s
+  `record`, which rewrites at every flush because a recording has to survive the
+  tab closing mid-take. Only the last run is answered, because an early
+  acknowledgement arriving after the last run was posted would answer the
+  command before the file existed.
+
+  And the reason it did not work on the first try: **there were two lists of
+  what is delegable**, `take_delegated`'s match and the pump's guard. A kind
+  added to one and not the other does not fail — it runs in the wrong place,
+  quietly, which is precisely how this command spent a release writing through a
+  filesystem a page does not have. They are one function now
+  (`server::nrt::delegated_kind`), read by both.
+
+  `tests/nrt.html` is the round trip: a buffer written to the page's storage and
+  read back through the same decoder at worst delta 0, and a 12000-frame take
+  crossing three runs — the seam between runs being where an interleave offset
+  goes wrong — also at 0.
+
+- ✅ **Three wire selectors carry a spelling the table meant to leave behind**
+  *(named 2026-08-23, once the clients' own names were settled; done
+  2026-08-24)*. The operator
+  vocabulary is lowercase and joined — `bitand`, `bitor`, `bitxor`, `lshift`,
+  `rshift`, `midicps`, `softclip`, seventy of them — with **three exceptions**
+  that carry an underscore: `as_int`, `as_float` and `hypot_apx`. It is not a
+  second convention; it is a leak, and the plan says so in its own words at the
+  entry that added the last of them, which describes `hypot_apx` as *"lowercased
+  like every other name in that table, as `as_int` already is"*. The intent was
+  stated and the opposite shipped.
+
+  **The client half is already done**, which is what leaves this visible and
+  small: both clients now spell every operator SuperCollider's way
+  (`asinteger`, `asfloat`, `hypotapx`), and each maps its name to the selector
+  in one line. So only the wire lags, and the rename is `asint`/`asfloat`/
+  `hypotapx` — or `asinteger`, if the selector should read as the method does.
+
+  **What it costs is a format change, which is why it was deferred rather than
+  taken with the client rename.** A stored SynthDef carries the selector, so
+  every persisted def using one of the three stops loading; `docs/schemas.md`
+  lists them; the frozen parity vectors freeze them; and the two Faust `_UNARY`
+  tables key on them. The compatible shape is to **accept both and emit the
+  new** for a release — `UnaryOp::from_name` already resolves by a table, so an
+  alias arm is small — and the incompatible one is to take the break while the
+  major is `0`. Neither is decided here.
+
+  **Decided and done: `asint`, `asfloat`, `hypotapx`, with the old spellings
+  accepted for good.** The short forms rather than the methods' names, because
+  the wire is not the client's vocabulary and never was — `recip` and `lshift`
+  cross as they are while a user types `reciprocal` and `leftshift`, so
+  "lowercase and joined" is the whole rule the three were breaking, and
+  `asinteger` would have been a second decision smuggled in behind a fix.
+
+  The compatible shape, and **without a schedule attached**: `from_name`
+  resolves `as_int`, `as_float` and `hypot_apx`, `name()` never emits them, and
+  that tolerance is permanent. It is three lines on the input side of one table
+  — it is not a deprecation with a removal date, so nothing is postponed by it,
+  and it is what makes renaming a name that lives *inside stored documents*
+  cost nothing: a def written by an older release goes on loading.
+
+  **No version number moved**, and that was checked rather than assumed. The
+  two ABI counters read discriminants and not names, so neither boundary
+  changed; and the SemVer tier had already moved twice since `v0.8.1` (the tree
+  said `0.10.0` then), so under the release rule a further breaking change rode
+  the bump that was already there. `docs/decisions.md` carries the amendment, since
+  the paragraph that said renaming these "would be a format change for a
+  cosmetic gain" is the sentence the three underscores had been hiding behind.
+
+- ✅ **Every carrier takes an address, and all three default to loopback**
+  *(named 2026-08-23, deciding whether a GUI host may be remote; done
+  2026-08-24)*. The two OSC
+  fronts are siblings and bind differently, and neither is quite right:
+
+  | leg | audio server | GUI host |
+  | --- | --- | --- |
+  | UDP | `127.0.0.1`, always on | `127.0.0.1`, always on |
+  | TCP | `--tcp <port>` → **`0.0.0.0`** | on by default → `127.0.0.1` |
+  | WS | `--ws <port>` → **`0.0.0.0`** | `--ws <port>` → **`0.0.0.0`** |
+
+  Choosing a carrier is not consenting to the network, and today it is: a
+  `--tcp` or a `--ws` for a client on the same machine opens the port to the
+  LAN. The fix is one shape for all three — `--tcp [addr:]port`,
+  `--ws [addr:]port`, **loopback by default**, and `--ws 0.0.0.0:57120` for
+  whoever means the LAN, which makes the widening a typed decision instead of a
+  side effect. The WebSocket leg is not an exception: a page served locally
+  reaches `ws://127.0.0.1` either way, so the common case pays nothing.
+
+  The GUI host's TCP is the one that must *stay* loopback whatever else changes
+  — it is on by default, so it is the leg a default-configured host exposes.
+
+  Remote is then something you ask for, which is where it belongs: two things
+  degrade under it and neither is a bind — a `Source`'s `path` carrier (the
+  client writes a temp file the host mmaps, so one filesystem is assumed, and
+  remote means inline-only under the 2 KB ceiling) and `--data-dir` (the GuiDef
+  store is the host's). `GuiHost.attach()` is unaffected: it is a verb of
+  *ownership*, not of distance, and its real case is local — a host left
+  running, one launched from a terminal.
+
+  **Done, and it was six legs rather than the four the table named.** The audio
+  server's TCP is *also* on by default, so a plain `clausters` was already
+  listening on `0.0.0.0:57110` with nobody having asked for anything; that is
+  the one this fixes that the entry had not noticed. All six now take the same
+  spelling — `--udp [addr:]port`, `--tcp [[addr:]port]`, `--ws [[addr:]port]` on
+  both programs — read by one parser in the shared core
+  (`config::PortChoice::parse`): a bare port, an address alone (the port still
+  follows the base), or both, IPv6 included. **Loopback is the default in all
+  six**, and `--ws 0.0.0.0:57120` is what says the network out loud. The config
+  keys take the same string (`tcp = "0.0.0.0:57110"`), beside the
+  `true`/`false`/port they already took, and the Python client's
+  `ServerOptions(tcp=…, ws=…)` passes one through.
+
+  Two things came out of doing it. The bind used to be written **inside each
+  leg's own module** — `bind_tcp` said `"127.0.0.1"`, `bind_ws` said
+  `"0.0.0.0"`, the windowed front repeated both — which is exactly how one front
+  came to differ from the other with nobody choosing it; they take a
+  `SocketAddr` now and the address is settled once, where the command line is
+  read. And a token after `--ws` that is not a bind used to fall through as "no
+  argument" and resurface as `unknown argument: 0.0.0.0:57121`, so a typo
+  silently left the leg on its default; it is now an error against the flag that
+  owns it. The rationale is in `docs/decisions.md` ("Choosing a carrier is not
+  consenting to the network"); watched by hand with `ss` over all six legs,
+  default and widened.
+
+- ✅ **A transport addressed in samples still needs a beat grid** *(noticed 2026-08-16 while closing T5, which left it open on purpose; fixed the same day, on the user's "look at the smell and find a solution")*. `/transport_play`, `/transport_stop`, `/transport_locateSample` and `/transport_loop` all refused until `/transport_set` had defined a grid, because every `/transport_*` command but that one always had. For an audio editor that meant declaring a tempo it never reads — `crates/clausters-server/examples/transport_seek.py` set one and said in a comment that it was arbitrary, which is exactly what a smell is: a comment apologising for a call.
+
+  **The fix is that the transport stops being optional and the grid starts being.** `OscServer.transport` was an `Option<Transport>` doing two jobs — "is there a transport" and "is there a grid" — and those are different questions the moment a position exists in samples. It is now a plain `Transport` that exists from boot, with `defined` saying whether `origin_sample`/`tempo` mean anything; `defined` is the wire field of the same name, so the reply did not change shape and no client had to learn a new one. Only the two commands that name a **beat** refuse without a grid: `/transport_locate`, and `/transport_play` *given a position*. Everything else — a bare play, a stop, `/transport_group`, `/transport_locateSample`, `/transport_loop`, and `/sched_atTransport`, which needed a bound group and not a tempo — is in samples and now needs nothing.
+
+  **What it moved on the client side, which is the part worth checking twice.** `transport_state()`/`transportState()` used to answer `None` when no grid was defined — hiding the rolling state and the position, which is precisely the state this makes reachable. They now always answer, with the grid fields `None`/`null`. That reaches one caller in each client, `Playhead.follow_transport`, and the guard there moves from *the state exists* to **the grid exists**: a playhead runs on beats, and applying a `position` of 0 to a transport being driven in samples would locate it to the start. `transport()`/`transport()` — the grid getters — still answer `None` and did not change.
+
+  **The example is the proof**: it no longer calls `set_transport` at all, and it binds a group, seeks by frame, loops a span, plays and stops with no tempo anywhere in the file.
+
+- ✅ **`--shm` only ever creates a segment, so two servers cannot share one** *(found 2026-08-17, answering the user's question about how the processes are arranged; fixed the same day)*. `clausters --shm <path>` calls `Segment::create_full`, which **truncates** the file and re-initializes the header. That was right while a segment was a transport — one server, its own ring — and it is wrong now that the segment indexes the **material** (S19): the process that may be killed and restarted is the one that would wipe what everybody else is editing.
+
+  What is missing is the other half of the door: `--shm` that **opens** an existing segment, validating magic and ABI exactly as a peer's `Segment::open` already does, and creating one only when there is none.
+
+  **Done.** `--shm` opens what is there and creates only what is not, and the segment carries a **claim** — the pid serving its command plane, in the word that already kept `transport_clock` aligned, so no offset moved. The first server on a segment takes it, serves the rings and owns the material; any later one attaches to the data plane, maps what the owner published, publishes nothing of its own, and serves its clients over its own sockets. A claim whose pid no longer answers is stale and is taken over, which is what makes killing a server recoverable. The rule and its reasoning are in `docs/decisions.md` ("One segment has one owner"); the acceptance is `crates/clausters-server/examples/editor_processes.sh`, which kills the player and starts another against the same segment.
+
+  **And the routing half, which no shared memory could fix, shipped with it.** The server names what it holds and what it is called: `--host`, `--device`, `--input-device`, `--list-devices` and `--client-name`. That last one is the one that matters here — cpal names its PipeWire node `cpal-playback-<pid>`, a different name every run, so every connection a person made was lost on restart; PipeWire reads its properties from the environment, which is the only door cpal leaves open, and under JACK the client name comes from the device instead. Verified by hand: a server started with `--client-name clausters-rt` shows up in `pw-dump` as `clausters-rt`.
+
+  **What attaching does *not* restore, and it is the reason this is not merely plumbing** *(the user's, 2026-08-17)*: an audio editor keeps its input and output devices, and under JACK or PipeWire the ports it publishes and the connections a person made to them live with the **process**. A server that attaches to a segment gets the material back and gets no port, no name and no patch — so restarting one is *recovery*, not a routine, and a design that treats an RT server as disposable is a design that drops the user's routing every time. Two consequences worth naming before they are discovered by ear: a recovery is only cheap if the ports return **with the same names** (today the device is `cpal`'s default and nothing names anything, which is fine for one process and not for one expected to come back), and **capture** belongs to whoever holds the input device — so an on-demand session cannot record, and the split is not "RT plays, on-demand works" but *RT owns the devices*. With it the arrangement H6 wants becomes expressible — the editor (or the on-demand session it opens) creates the segment and owns the material, and every server *attaches* — and its acceptance stops being a diagram: killing the RT server and starting another against the same segment leaves the material where it was.
+
+- ✅ **The editor's server is supposed to be the on-demand one, and the host boots a full RT server instead** *(found 2026-08-17 by the user, reading S19's wiring against what the plans already say: "I thought the documentation and the plans had settled that this file editing was done with the NRT server in on-demand mode")*. It had. **S12** states it as a settled decision — *"the performer is the NRT server (S13): a client drives that mode, it does not call the core functions itself"*, which is what keeps *one place performs audio processing and it is the server* true — and S13 built the mode. What nobody checked since is the practice: the `standalone` host boots `clausters::embed::Clausters::open`, which starts a **full server: audio device, engine and ring**. So every destructive edit H3/H4 make is performed by an RT server that also happens to be playing, and the on-demand session — the thing designed for exactly this — is reachable only from Rust that constructs an `NrtSession` directly.
+
+  **It is not a mistake anyone made; it is a door nobody built.** S13 said so on the way out: *"a client still cannot reach a session, so the builders and the example wait for whatever gives one a door"*. The host used the only embed there was.
+
+  **What it costs, stated so the fix is not sold as tidiness.** An editor that owns its material through an RT server holds an audio device it does not need, cannot be restarted without taking the material with it, and pays the RT server's whole surface to run three verbs. And the two servers a finished editor wants — one that renders and edits on demand, one that plays and can be killed — are the same process, which is precisely what H6 exists to separate.
+
+  **The fix is the embed's door, and it is H6's**: `Clausters` gains a way to open a **session** (no device, `enable_offline_renders`, a segment on a path) beside the way it opens a server. `SessionConfig::shm` landed with S19 and is the half that already exists.
+
+  **Done 2026-08-17 with H6.** `embed::ClaustersSession` is that door — engine, network loop and material, no device, driven with the same `send`/`poll` a caller already knows — and `--session` opens one instead of a full server. One thing had to move with it: a session no longer publishes **time** into the segment (the clocks, the taps, the per-bus levels), because those say where a *device* is and a session has none. With both engines on one segment, which is the arrangement, a session that published would jog the playhead every time somebody applied a fade.
+
+- ✅ **A persisted def that no longer compiles warns on every boot, forever** *(found 2026-08-16 closing S17: changing `PlayBuf`'s arity from 4 to 7 made every stored def that used it unloadable, and the server has printed seven `persisted SynthDef failed to load` warnings at every start since)*. `attach_store` recompiles each stored spec and, on failure, warns and skips it (`crates/clausters-server/src/osc/server/lifecycle.rs`) — the right call at load time, since a def that fails today may be a build missing a feature rather than a def that is wrong. But nothing ever prunes it, so a UGen signature change leaves permanent noise in a place where warnings are supposed to mean something, and the person who sees it has no idea which def or how to clear it. The fix is not to delete on failure (a `--no-default-features` boot would eat the library); it is to say **which def**, name the store path, and offer one way to drop the dead ones — a flag, or a `/def_*` command that prunes what will not load.
+
+  **Fixed 2026-08-18, and the shape is the entry's own.** A failed reload now names the def (its file stem, which is the name it was stored under) and, once per boot, how many did not load, which directory they are in and the one command that clears them. That command is `--prune-defs`: a server flag rather than a `/def_*` command, because the person who has to act on the warning is reading a terminal at boot and not driving a client. Deleting on failure stays refused for the reason the entry gives — a def whose family this build lacks fails for the build's reason and not its own — so pruning only ever removes what the *running* build tried and could not compile: the synchronous families as they fail (`retire_dead_defs`), a Faust def when its reload result comes back. `load_synthdef_specs`/`load_graphdef_specs` hand back the path with the bytes, which is what makes a def nameable at all. The acceptance is `crates/clausters-server/tests/persistence.rs::a_def_that_no_longer_loads_is_named_and_dropped_only_on_request` (a plain boot keeps the dead def, a pruning boot takes it and leaves the live one), and it was watched by hand over a store with one stale def.
+
+- ✅ **`transport_group` takes an id where the rest of the Python client takes a node** *(found 2026-08-16 writing T5's example: `server.transport_group(monitor)` raises `TypeError: int() argument must be ... not 'Group'`, and the call has to be spelled `monitor.id`)*. Everywhere else a group is passed as the object — `Synth(..., target=monitor)`, `Group(target=src)` — so the one place that wants the bare integer is the one a reader gets wrong, and it fails at the client rather than at the server. The TypeScript client already has `nodeId(...)` for exactly this coercion, so the fix is the same shape on the Python side and is a couple of lines; it is recorded rather than folded into T5 because a client-API coercion is not a transport decision and should not ride in on one.
+
+  **Fixed 2026-08-18.** `transport_group` coerces with `defs.node._target_id`, the helper `target=` already used, so the object and the bare id are the same call and the coercion lives in one place rather than two. The two examples and the book's transport chapter drop the `.id` they had to spell; the acceptance is a unit test over the fake interface (`test_defs.py::test_the_governed_group_is_a_node_or_its_id`). The web client needed nothing: it has coerced with `nodeId(...)` since it was written.
+
+- ✅ **A sample write costs the whole buffer, not the samples written**
+  *(noticed 2026-08-14, costing the message-passing design against a monolithic
+  audio editor before opening the document crate's O4)*. `/buffer_setRange`
+  lays its runs into a **copy that replaces the buffer whole**
+  (`crates/clausters-server/src/osc/server/commands/buffer.rs`), which is what lets the engine read
+  without a lock and needs no allocation on the audio thread — a good trade for
+  what the command was written for: a client filling a buffer it just
+  allocated, a wavetable, a one-shot load. It is the wrong trade for an
+  *editor*, where the same command is the write half of every destructive
+  gesture: nudging one sample of a five-minute stereo take copies ~115 MB to
+  change four bytes, and a draw stroke (the GUI track's D2) emits one of those
+  per stroke. The cost is O(buffer) where the edit is O(span), so it grows with
+  the material rather than with the work — a monolithic editor's
+  copy-on-write-per-block copies the block. Worth stating plainly: **this is the
+  only place where splitting the host from the data costs real time.** The
+  gesture itself never crosses (the host draws the drag and emits one intent on
+  release), and the commit round trip is sub-millisecond against a monolith's
+  function call — invisible. Bulk in the other direction is already solved by
+  mapped files and the shm segment. It is only this one write path that is
+  asymptotically wrong. What it needs is a way to write **in place** rather than
+  by whole-buffer replacement, which is a real RT-safety question and not a
+  patch: an in-place write races the reader unless the range is handed over
+  under something the audio thread can honour without locking (a per-buffer
+  epoch the engine checks, a swap of just the affected blocks, or a
+  copy-on-write block table that makes the copy proportional to the span). The
+  choice needs measuring, not guessing. Until it is taken, an editing client's
+  honest workaround is to keep the working copy client-side and push the buffer
+  only on confirmation — which is exactly what the document crate already
+  specifies (`crates/clausters-document/PLAN.md`, O8: the working buffer leads
+  while the session is open), so nothing is blocked; it is the *live* audition
+  of a destructive edit that pays.
+
+  **Measured 2026-08-15, and answered by S12 — but not in this entry's own
+  terms.** The numbers are in the milestone; what belongs here is that
+  **everything above from "What it needs is" onward is the wrong question**, and
+  the measurement is what showed it. The estimate was conservative (a write on a
+  five-minute take costs **33.8 ms** sustained, three quarters of it allocating
+  and faulting in a second take, not the memcpy alone) and mutable storage was
+  measured and found affordable — and it was refused anyway, because the premise
+  under the whole entry is that *every stroke writes the take*, and that was
+  never the architecture. A stroke is heard against a **scratch span** (a
+  one-second buffer sustains 443 writes a second, and D4 already plays a copied
+  block out of a buffer of its own), the edit happens over the **working copy**,
+  and a take's pool buffer is replaced whole exactly once, on confirmation. So
+  the O(buffer) write this entry calls asymptotically wrong is **correct at the
+  one moment it is used**: the material changed, and replacing it whole is what
+  that means. The lasting finding is the opposite of the one recorded here — a
+  buffer stays immutable and replaceable, and editing never goes through the
+  pool at all.
+
+  **Reopened 2026-08-17 by the user, and this time the entry's original title is
+  the right one after all.** *"A buffer stays immutable"* was true when S12 wrote
+  it and false the next day: **S14** made every sample an atomic cell any thread
+  may write, and `BufWr`/`RecordBuf` write in place from the audio thread. So the
+  answer above rests on a premise that no longer holds, and what was a cost
+  argument is now also a correctness one — a copy-and-swap write silently
+  discards whatever an in-place writer put there since the snapshot. Measured
+  again (the table is in **S18**, which is where the fix lives): a 1 ms run costs
+  0.0001 ms in place against 65.7 ms by copy on a ten-minute take, and even the
+  whole-buffer case is 3.1x faster in place. The lasting finding recorded above —
+  *editing never goes through the pool* — is a statement about the **editor's**
+  architecture and survives untouched; what does not survive is the reason the
+  write path copies. **S19** is the other half the user named the same day: with
+  the samples in the shared segment a local peer's edit costs no message at all.
+
+  **Fixed 2026-08-17 by S18**, which is where the whole record of the fix lives:
+  `Set`, `Fill` and `Edit` write through S14's cells and install nothing, so the
+  cost is flat in the material (3.3-3.5 ms through the wire on takes from ten
+  seconds to ten minutes, and that is the `/server_sync` round trip, not the
+  write). The correctness half went with it — a copy-and-swap no longer discards
+  what a `RecordBuf` wrote since the snapshot. The workaround this entry named,
+  a client-side working copy pushed on confirmation, is therefore no longer
+  forced by the write path, and the document crate has since settled that it is
+  not wanted either (`crates/clausters-document/PLAN.md`, Open decisions, "Does
+  the working copy still lead, now that a write costs the span?" - taken: a
+  loaded take is edited where it lies, and a copy stays mandatory only for
+  material reached by reference to the user's own file).
+
+- ✅ **A finished async command waits up to 100 ms to be reported** *(found
+  2026-08-15, measuring the write cost above: every single write round-tripped
+  in ~104 ms whatever its size, which is not a cost any buffer work explains)*.
+  The network loop blocks in `recv_from` under a 100 ms read timeout
+  (`GC_INTERVAL`, `crates/clausters-server/src/osc/server/lifecycle.rs`) and collects NRT and Faust
+  results **after** the recv returns — so with no other traffic a job that
+  finished in 2 ms is reported at the next wakeup, and the `/server_sync` that
+  waits on it answers then. Every async command pays it: a `/buffer_alloc`, a
+  `/buffer_read`, a def compile, and any `wait=True` in the Python client. It
+  hides whenever traffic is flowing (each packet drains the pipes too) and
+  whenever writes are batched behind one barrier, which is why it went unnoticed
+  — a batch of fifty divides the floor by fifty. The timeout is there so garbage
+  is collected without traffic, which is a different need from *promptness on a
+  result*: the fix is a wakeup when a result lands (the NRT thread poking the
+  socket, as the TCP leg already does with a zero-length datagram) or a short
+  timeout while jobs are in flight, not a smaller `GC_INTERVAL` for everyone.
+
+  **Fixed 2026-08-18 with the wakeup, and the tick left where it was.** The NRT
+  runner and the Faust compiler take a `Waker` (`crates/clausters-server/src/osc/wake.rs`) — the same
+  zero-length datagram to the server's own address that the TCP, WebSocket and
+  MIDI readers already sent, packaged so a worker thread carries the socket
+  rather than the address — and poke it *after* queueing a result, so the woken
+  loop finds it. One thing had to move with it, and it is the part that would
+  have made the fix look like it did nothing: the loop's zero-length branch
+  `continue`d straight back to the top, which drains the carriers but collects
+  nothing, so the wake arrived and the result still waited. The three collectors
+  are now one `collect_async()` called from every path out of the recv — a
+  packet, an idle tick, a wake. `GC_INTERVAL` is untouched and stays what it was
+  written to be: housekeeping without traffic. The acceptance is a timed round
+  trip with nothing else talking to the server
+  (`crates/clausters-server/tests/buffers.rs::a_finished_job_is_reported_without_waiting_for_the_idle_tick`),
+  which measured 104 ms before and under 1 ms after.
+
+- ✅ **A node notification waits up to 100 ms on a quiet connection, and the
+  audio thread cannot wake anybody** *(found 2026-08-20, chasing what looked
+  like a flaky web test: `seq-ws.test.ts`'s "two clocks join one grid and land
+  on the same bar" failed once with the two notes 102 ms apart and passed in
+  the twenty-five runs after it)*. It is the entry above, in the one place the
+  wakeup did not reach. `/node_start`/`/node_end` are posted by the **audio
+  thread** into the event queue and drained in `collect_garbage`, which the
+  network loop calls on every path out of `recv_from` — so with no other
+  traffic a notification waits for the 100 ms `GC_INTERVAL` tick, exactly as an
+  NRT result used to.
+
+  **Measured, not inferred**: over a `--ws` connection with nothing else
+  talking, `/node_start` arrives **103–112 ms** after the `/synth_new` that
+  caused it, eight times out of eight. It is not a flake and it is not load —
+  it is the tick, every time. What made it *look* like a flake is that the test
+  compares two notifications with each other: both are late by the same tick,
+  so the difference is 0 ms until the two happen to straddle a tick boundary,
+  and then it is one whole tick. The 0.05 s tolerance is fine; the test was
+  reporting a real 100 ms.
+
+  **The fix is not the same fix**, which is why this is written down instead of
+  folded into the entry above. That one added a `Waker` the worker thread pokes
+  after queueing its result — and the producer here is the **audio thread**,
+  which may not send a datagram, take a lock or do anything else. So promptness
+  has to be bought with a poll rate rather than a wake: `retune_timeout`
+  already narrows the loop's timeout to the fastest subscribed stream period,
+  and the natural shape is another term — while any client has `/server_notify`
+  on, the tick is the notification bound (10 ms, say) rather than
+  `GC_INTERVAL`. That is a cost paid only by connections that asked for
+  notifications, and it wants a number chosen deliberately: what a client
+  watching the node tree is entitled to expect. The alternative — a non-RT
+  helper that watches the queue — is the same poll one thread further away.
+
+  Worth knowing before picking the number: **everything that waits on a
+  notification pays this**, including a client reconciling node ids off
+  `/node_end`, a GUI host's node-tree view, and any test that times a note by
+  when it was told about it.
+
+  **Fixed the same day, with the poll rate and the number already in the
+  file.** `NOTIFY_INTERVAL` is `MIN_STREAM_PERIOD` — 10 ms — and
+  `retune_timeout` now takes it as one more term beside the stream periods,
+  armed while `self.clients` is non-empty and handed back when the last
+  registration goes (`/server_notify 0`, or a dropped TCP/WS connection, which
+  `prune_disconnected` already retunes for). Choosing rather than inventing the
+  number is the whole of the design here: a client that asked to be told about
+  the **node tree** is entitled to the same cadence as one that asked to be
+  told about a **bus**, and that cadence was decided once already. A server
+  nobody is listening to still falls back to `GC_INTERVAL`, which stays what it
+  was written to be.
+
+  **Measured before and after, end to end**: `/node_start` over a `--ws`
+  connection with nothing else talking went from **103–115 ms** to **12–27 ms**
+  (the tick, a block, and the socket hop). The acceptance is
+  `crates/clausters-server/tests/osc.rs::a_node_notification_is_reported_without_waiting_for_the_idle_tick`,
+  which reads 104 ms with the term removed and a few ms with it — **verified by
+  mutation, not by passing**.
+
+  Two things the test had to get right, both of them the reason the defect
+  survived this long. It **sends the server nothing** while a notification is
+  outstanding: the other notify tests call `tick_until`, which nudges with
+  `/server_status` between blocks, and every nudge is a packet that wakes the
+  loop — the bug was hiding behind the harness. And it **times the second
+  event, not the first**: the trip from the socket to the engine is not what is
+  being measured and is not fixed under a parallel harness, so the
+  `/synth_new`/`/node_start` pass is a warm-up and the clock runs over
+  `/node_free`/`/node_end`. The first version of it timed the first event and
+  failed about one run in six on a loaded machine — a flaky test written while
+  fixing a defect that presented as a flaky test.
+
+- ✅ **A wall-clock timetag is placed a block late or early, so a routine's
+  spacing jitters by one device block** *(found 2026-09-16 while checking a
+  report that a routine's first note sounded shorter -- it did not: the output
+  was recorded with `RecordBuf` and every note, the first included, is 329.6 ms
+  long)*. The same recording showed the onsets. A `TempoClock(2)` routine
+  yielding one beat, on the default monotonic timebase, lands its notes
+  **490 to 513 ms** apart; the same routine after `lock_to(server)` lands them
+  **500.0 ms** apart, every one. The spread is one device block (1024 frames,
+  21.3 ms at 48 kHz).
+
+  The cause is in `OscServer::schedule_bundle` (`crates/clausters-server/src/osc/server/dispatch.rs`):
+  the target sample is `current_samples() + delta * sample_rate`, where `delta`
+  is the timetag minus the wall clock **now** and `current_samples()` is the
+  counter **as of the last completed block**. The two terms are read at
+  different instants, and the gap between them -- how far into the current
+  block the packet arrived -- is anywhere from zero to a block, differently for
+  every bundle. A note-on and its release usually arrive together and share the
+  error, which is why lengths stay exact while onsets do not.
+
+  The Python book says the opposite: `timing-models.md` promises wall-clock OSC
+  time "jitter-free *relative* timing". That holds for the timetags the client
+  sends, and this server throws it away on arrival. The fix belongs in the
+  server, not in the promise: place a timetag against an estimate of the wall
+  instant the counter was read at (the `/clock_query` anchor already models
+  exactly that pair), rather than against the moment the packet was handled.
+  Acceptance is an E2E that schedules bundles at a fixed spacing over UDP and
+  reads the onsets back sample-exact.
+
+  **Fixed the same day, in the server.** The audio callback stamps the frame it
+  is about to hand the device with the system clock and publishes the lower
+  edge of `stamp - frame / rate` -- the **device epoch**, the Unix instant sample
+  0 falls on (`server::device_epoch`). The lower edge because a stamp is only
+  ever late (the callback thread's wake-up), tracked with a 1000 ppm rise so a
+  crystal slower than the system clock is followed, and restarted from a stamp
+  more than three callbacks late (an xrun, a restarted stream, a stepped clock).
+  `schedule_bundle` places a timetag at `(T - epoch) * rate`, never before the
+  counter; `/clock_query.reply` anchors on the same line, so a wall-clock
+  client joining a transport maps the grid through the same numbers the bundles
+  land by. A host that drives the engine itself publishes no epoch and keeps
+  the counter-plus-delta placement, which is exact there: its time is the
+  counter. Nothing changed in either client -- the timing is the server's.
+
+  **Measured on the device**, the same recording: the monotonic-timebase
+  routine now lands its notes **499.9 to 500.3 ms** apart (was 490 to 513); the
+  sample-locked one still reads 500.0. The acceptance is
+  `crates/clausters-server/tests/scheduling.rs::wall_clock_timetags_land_on_the_device_line_whenever_they_arrive`:
+  two notes a second apart sent 7 ms apart with the engine not moving between
+  them, onsets read back 48 000 samples apart. With the placement reverted it
+  reads 47 661 -- **verified by mutation**.
+
+- ✅ **`boot()` returns about 100 ms before the device's first callback**
+  *(found 2026-09-16, fixing the entry above)*. A server launched from Python
+  answers `/clock_query` for roughly a tenth of a second with its counter at 0
+  and no device epoch published: the port is up, the stream is not playing yet.
+  A bundle handled in that window can only be placed against a counter that is
+  not moving, so the first note of `Server().boot()` followed at once by a
+  routine landed about 80 ms off the line the later notes sit on. It may also
+  be what a report heard as a first note "shorter" than the rest -- at the
+  engine's output that note is identical, so whatever cuts it happens after the
+  engine, and a device that has only just started is the likeliest place. Not
+  verified by ear. The question is whether readiness should mean the stream is
+  running (the first callback published an epoch) rather than the socket
+  answering, which is a launcher contract both clients read.
+
+  **Decided and fixed the same day: ready means sounding.** `boot` blocks by
+  default, and the case it exists for is a note played on the next line.
+  `backend::start` now waits, after `stream.play()`, until the device has called
+  back twice -- the first callback is late on the stream's own start, and the
+  epoch it seeds settles on the next -- and warns and serves anyway after two
+  seconds of a device that never calls back. The OSC front is bound after
+  `start` returns, so every launcher that waits on the port (the Python one, the
+  web client's node scripts, a terminal, `embed`) reads readiness as sounding
+  with no change of its own. Measured: the first `/clock_query` after `boot()`
+  already reads the settled epoch, and the routine's first note now lands
+  **500.0 ms** before the second (was about 420).
+
+- ✅ **The npm half of a release has never run before the tag that publishes
+  it** *(found 2026-09-21, reviewing the tree)*. The
+  dry run (`gh workflow run release.yml`) proves `verify` and the wheel's
+  `build`, and skips every job guarded by `github.event_name == 'push'` — and
+  `publish-npm` is where the whole web package is **built**, not only where it
+  is published: `.github/actions/wasm-vendor` (the emsdk builds of the Faust
+  compiler and of verovio, added after `v0.8.1`), `build.sh` and `npm run
+  check-package`. CI's `web` job runs the smokes without the vendor step. So
+  that path has never run on Actions, and its first run is the one-way one. A
+  failure there publishes nothing — `publish-pypi` needs `publish-npm` — but
+  leaves a tag to delete and re-cut, which is what the dry run exists to
+  prevent. Locally the package is fine today (`build.sh`, `check-package`
+  "publishable", `test.sh` 1158/1158 and the 24 pages), so what is unproved is
+  the runner's path, not the package.
+  **To do:** split the build out of `publish-npm` into a `build-web` job with
+  no event guard (vendor, `build.sh`, `check-package`, `npm pack`, the tarball
+  uploaded as an artifact, as `build` does for the wheel), and let
+  `publish-npm` publish that tarball. The dry run then packages both halves.
+
+  **Done in the tree 2026-09-21, and open until a dry run is watched.**
+  `build-web` has no event guard and uploads `npm-package` (the `npm pack`
+  tarball, whose file list lands in the log); `publish-npm` checks nothing out,
+  downloads it and runs `npm publish ./clausters-*.tgz --provenance`; the
+  release page downloads the wheel and the server binary by name, so the
+  tarball is not attached to it. `docs/contributing.md`, `clients/web/BUILD.md`
+  and the `release-versioning` skill say what the dry run now runs — two of the
+  three still said it ran `verify` alone, which had been wrong since the wheel
+  joined it. What is left is the proof: a `gh workflow run release.yml` on a
+  pushed `main`, watched through `build-web`, with the wasm-vendor composite
+  building on a cold cache for the first time.
+
+  **Proved 2026-09-26, and the first dry run found what this entry feared.**
+  The wasm-vendor composite failed on its first cold run:
+  `build-faust-wasm.sh` configured cmake without the backend and target lists
+  upstream's `make wasmlib` passes on a fresh tree, so `WASM_BACKEND` was
+  empty and the bindings stopped at `wasm_dynamic_dsp_aux.hh` not found. The
+  maintainer's clone had passed for weeks because its `CMakeCache.txt` still
+  held the lists from a configure through Faust's Makefile. The recipe now
+  passes `build/backends/regular.cmake` and `build/targets/regular.cmake`; a
+  fresh clone of the pin builds locally and the web suite passes with its
+  artifact, and the next dry run went green through `build-web` (verovio built
+  cold too, `check-package` "publishable", an 11.1 MB tarball of 674 files).
+
+- ✅ **Milestone labels and a retired verb are still in published code and
+  docs** *(found 2026-09-21, the same review)*. Labels, which mean nothing to a
+  reader: `clients/web/src/defs/server/index.ts:1` (W0),
+  `clients/web/src/gui/page.ts:195` (W4), `docs/architecture.md:1225`
+  (W26/W27), `docs/bindings.md:273` (O31), and in the GUI host
+  `host/elements/multitrack/mod.rs:10`, `host/graphics/multitrack.rs:14`,
+  `host/widget/build.rs:82` (G34) and `host/widget/reconcile/tests.rs:65`
+  (O23). "Realize" for making a join's buffer:
+  `clients/python/clausters/_native.py:1426`,
+  `clients/python/clausters/gui/editing/multitrack.py:199,230`,
+  `clients/web/src/document.ts:572`,
+  `clients/web/src/gui/editing/multitrack.ts:263,324` and the
+  `clausters_editing_stitch` row of `docs/bindings.md` — the buffer is
+  **built**. (The "realizes" in `docs/architecture.md`'s MIDI lines and in
+  `docs/schemas.md`'s filter note are neither of these and can go with the
+  same pass.)
+
+  **Fixed 2026-09-21.** The labels are gone: a comment that pointed at a
+  milestone for its argument points at the plan section by its title, and the
+  rest lost a coordinate that said nothing. The join's buffer is **built**
+  in all seven places, and the other four "realizes" (the MIDI actuation twice
+  in `docs/architecture.md`, a MIDI voice and scsynth's filters in
+  `docs/schemas.md`) say **translates** and **implements**.
+
+The entries below are one audit of the server and the shared crates
+*(2026-09-25, asked by the user after the GUI host's)*: `src/` and
+`crates/*`, read for defects, redundancy and fixes narrower than their rule,
+with a near-duplicate scan over every function and a scan for doc comments
+fused onto the wrong item. Defects first, then what is duplicated, then
+structure. What is marked *to check* is a reading of the code that a test
+should confirm before the fix.
+
+- ✅ **A page and a native server write different WAV bytes** *(audit
+  2026-09-25)*. Four WAV writers quantize an integer sample: `nrt::write_wav`,
+  `render`'s file writer and `DiskOut`'s thread scale and **round**; the page's
+  `/buffer_write` (`nrt::encode_wav_frames`, through `clausters-nrt-web`)
+  **truncates** (`as i16`, and 24-bit by `8_388_607.0` without a round). The
+  same write differs by up to one LSB in a browser. One quantizer and one frame
+  encoder for all four, and a test pinning the bytes of an int16 and an int24
+  write.
+  **Fixed**: `nrt::quantize` is the one quantizer (clamp, scale, round) and
+  `nrt::write_wav_sample` the one sample writer; `write_wav`, `render_to_wav`
+  and `DiskOut` write through the second and `encode_wav_frames` through the
+  first. `a_page_encodes_the_int_bytes_a_native_write_writes` pins both
+  widths at the half-step values where the two quantizers parted.
+
+- ✅ **An NRT score refuses two buffer commands the live server takes**
+  *(audit 2026-09-25, to check)*. `server::render` keeps its own list of the
+  `/buffer_*` job addresses and lacks `/buffer_setChannel` and
+  `/buffer_setRangeChannel`, which `parse_buffer_msg` and the live dispatch
+  accept; offline they fall to the translator and fail as unschedulable. The
+  set of job addresses is one list the dispatch table and the renderer both
+  read.
+  **Fixed**, confirmed first by a score that failed with `/buffer_setChannel
+  cannot be scheduled in a timed bundle`: `translate::BUFFER_JOBS` is the one
+  list, the renderer matches on it, and two tests hold the command table to it
+  in both directions (a job with no row, a row the parse takes that the list
+  lacks).
+
+- ✅ **`clausters --nrt` takes any unknown argument for a path** *(audit
+  2026-09-25)*. `nrt_main` pushes every argument it does not know into the
+  paths, so `--help` after a score renders a WAV named `--help` — the stray
+  file that once reached `main` — and a misspelled flag becomes a file. An
+  unknown `-`-prefixed argument refuses with the usage, and `--help` prints it.
+  **Fixed**: `nrt_main` refuses an unknown `-`-prefixed argument before it
+  reads the score, and `--help`/`-h` anywhere prints the usage and renders
+  nothing; two tests in `main.rs` hold both.
+
+- ✅ **A transport command can answer `/done` for a change the engine never
+  got** *(audit 2026-09-25)*. `/transport_play`, `_stop`, `_loop`, `_end`,
+  `_fade` and the locates send their engine command with `.ok()`: a full
+  command FIFO leaves the network mirror saying one thing, the engine another,
+  and the client told it worked. `_follow` and `_group` fail instead. One rule:
+  a command whose engine half did not go out fails.
+  **Fixed**: every transport handler sends through `send_engine`, which fails
+  the command on a full FIFO, and sends **before** it changes its mirror, so a
+  failure leaves the mirror, the engine and the client's `/fail` agreeing that
+  nothing changed (`_follow` and `_group` used to fail with the mirror already
+  changed). `a_transport_command_the_engine_never_got_fails` fills the FIFO
+  and checks both the `/fail` and the query. The two unbinds
+  `collect_garbage` sends when a governed or followed group is freed stay
+  best-effort: no client asked for them, so there is nobody to fail to.
+
+- ✅ **`/def_load` does not claim the def's name** *(audit 2026-09-25, to
+  check)*. `/def_send synth` frees the name in the other def kinds
+  (`claim_def_name`); `/def_load` and `/def_loadDir` do not, so a file loaded
+  under a GraphDef's or a FaustDef's name leaves both — what `claim_def_name`
+  exists to prevent — and they persist an ephemeral name without asking.
+  **Fixed**, confirmed first by a listing that named the def twice:
+  `install_synthdef` is the one install (compile, claim, persist unless
+  ephemeral) that `/def_send synth` and the file loads share.
+  `d_load_claims_the_name_from_a_graphdef` counts the name in the listing — a
+  query by name answers the first kind found and could not see the second.
+
+- ✅ **`/node_before` and `/node_after` move by a rule of their own** *(audit
+  2026-09-25)*. They inline the move instead of `move_one`, and refuse when
+  the node's or the target's *current* parent is auto-sorted, where
+  `/node_order` and `/group_head` refuse only an auto-sorted *destination*.
+  One move, one rule.
+  **Fixed**: both go through `move_one`, so every move verb refuses an
+  auto-sorted destination and allows taking a node out of one.
+  `a_node_leaves_an_auto_group_by_any_move` holds it; `docs/auto-order.md`
+  and `docs/schemas.md` now state the destination rule.
+
+- ✅ **`install_buffer` says it is the install path and is not** *(audit
+  2026-09-25)*. Its doc and `ClaustersHeadless::buffer_load`'s say "the same
+  install path as the async `/buffer_*` commands", but it skips
+  `share_buffer`: on a server that owns a segment the buffer would get no
+  region, row or overview. No caller reaches that today; the doc is what is
+  false, and the two install paths should be one with a flag for the mapped
+  peer's case.
+  **Fixed, and it was not latent**: `NrtSession::perform_render` — the body
+  of `/buffer_render` — installs through it, so on a session given a `shm`
+  path a peer kept mapping the allocation the render had replaced (a test saw
+  16 frames of one channel where 256 of two were rendered). `install_buffer`
+  now calls `share_buffer` and the finished-job arm installs through it, so
+  there is one path; no flag was needed, since `share_buffer` already hands a
+  buffer back untouched on a server that does not own the samples, which is
+  the mapped peer's case. `a_render_on_a_session_given_a_path_is_what_a_peer_maps`
+  holds it. The doc of `collect_nrt_results`, fused onto `install_buffer`,
+  went back to its function.
+
+- ✅ **Twenty-odd doc comments sit on the wrong item, and labels sit in
+  comments** *(audit 2026-09-25)*. Fused docs: `osc/server/mod.rs`
+  (`synthdef_spec_bytes`' on `ugen_infos`, two field docs on `translator`),
+  `async_pipes.rs` (`collect_nrt_results`' on `install_buffer`),
+  `osc/translate/graph.rs` (`apply_surface`'s on `graph_map`),
+  `server/engine.rs` (on `silence_time_publication`), `clausters-editing`
+  `multitrack.rs` (the boxes' on `segments`), `clausters-document`
+  `multitrack/picture.rs` and `clausters-core` `warp.rs` (test docs). Roadmap
+  labels in comments, which `CLAUDE.md` forbids: about fifty lines —
+  `clausters-document`'s tests ("O9's acceptance"), `clausters-core-web`'s
+  sections ("W3"), `clausters-web`/`-nrt-web` ("the B track"), `T2`, `S19`,
+  `F0`, `A1`, `K6` — beside note names a scan also matches.
+  **Fixed**: each fused doc went back to its item (two had lost theirs —
+  `synthdef_spec_bytes` and the boxes' flat form were already gone — and were
+  dropped), and the labels were rewritten out of about 180 comment lines in
+  the server, the crates, the host, the Python client and the tests, naming
+  what the label stood for where the sentence needed it. What stays is
+  `tests/subjects.rs` and `crates/clausters-server/tests/common/bench.rs`, whose `U1`…`U8` are the
+  keys of their subject table and not prose.
+
+- ✅ **Two argument readers, two policies** *(audit 2026-09-25)*.
+  `osc::server::Args` exists so a handler stops destructuring `msg.args` with
+  its own wording, and about fifteen still do (the three streams, `/bus_tap`,
+  `/buffer_gen`, `/def_free`, the `/sched_*`, `/server_sync`, `_notify`,
+  `_dumpOsc`, `_verbosity`) — the same set whose table rows return `()` and
+  fail on their own. `osc::translate` has a second reader set (`int_arg`,
+  `string_arg`, `float_value`, `int_value`, and `buffers.rs`' `float_arg` and
+  `mirror_buffer`) whose optional arguments turn a wrong type into the default,
+  where `Args` refuses it, and whose wording drifts ("no buffer allocated at
+  N" beside "buffer N not allocated"). One reader for the wire, in `osc`.
+  *Step 1 done*: `translate::mirror_buffer` is the one lookup and
+  `translate::allocated` the one refusal ("no buffer allocated at N"); the
+  server's copy and its five "buffer N not allocated" sites go through them.
+  *Step 2 done*: `Args` moved to `osc::args` for both sides, with
+  `Args::after` for a tail past a destructured prefix (numbering from the
+  message's first argument) and `opt_float`/`opt_str`; `int_arg`,
+  `string_arg` and `float_arg` are gone, so a wrong-typed optional argument of
+  a `/buffer_*` job or `/midi_bind` is refused instead of read as its default
+  (`a_wrong_optional_argument_is_refused_by_its_number`).
+  *Step 3 done, closing it*: the handlers that destructured `msg.args` and
+  failed on their own — the three subscriptions, `/bus_tap`, `/buffer_gen`,
+  `/def_free`, the three `/sched_*`, `/server_sync`, `_notify`, `_dumpOsc`,
+  `_verbosity` and the three `/def_send` families — read through `Args` and
+  return `Answer`, so the dispatcher is the one place that sends `/fail`.
+
+- ✅ **The command table repeats one closure sixty times** *(audit
+  2026-09-25)*. 17 rows are `handle_buffer_cmd(addr, m, f); Ok(())` and 30 are
+  `handle_via_translate(m, f); Ok(())`; two named functions make each row one
+  line. Beside it, 34 `/done` replies are built by hand (10 in `transport.rs`,
+  each followed by the same broadcast), "every notify client" is looped by hand
+  seven times (two of them "but the writer"), and "send every command, stop on
+  a full FIFO" three times.
+  **Fixed**: `handle_buffer_cmd` and `handle_via_translate` have a row's
+  signature and return `Answer`, so 44 rows name them directly (the three
+  MIDI rows now persist their bindings only when the translate succeeded);
+  `done`/`done_with` build every `/done`, transport's `changed` is the
+  acknowledgement plus the broadcast, `notify`/`notify_but` are the one loop
+  over the notify clients, and `send_all` the one "every command, or a full
+  FIFO".
+
+- ✅ **The server's lifecycle is written twice** *(audit 2026-09-25)*.
+  `OscServer::bind` and `::headless` spell the same forty-five-field struct;
+  `run` and `step` repeat the subscription pump; `drain_tcp` and `drain_ws` are
+  one loop over two hubs and both inline `collect_async`; `bind` recomputes the
+  loopback wake target `wake_target()` already is. The three subscriptions
+  (`/bus_stream`, `/bus_tapStream`, `/buffer_stream`) repeat their parse,
+  replace-per-client, pacing and pump, and a comment in `handle_bus_tap_stream`
+  restates `tap_window_cap`'s doc.
+  **Fixed**: `OscServer::build` is the one struct literal, `bind` and
+  `headless` differ only in the socket, runner, clock and budget they hand it;
+  `loopback` is the one wake-address rule; `pump_subscriptions` ends both a
+  `run` turn and a `step`; `drain_stream` is the one loop over a stream hub,
+  collecting through `collect_async`; the three subscriptions pace through one
+  `Pace`; and the comment in `handle_bus_tap_stream` points at
+  `tap_window_cap` instead of restating it. The subscriptions' parse and
+  replace-per-client stay per command — they read different arguments and
+  hold different watches.
+
+- ✅ **Four stream-transport implementations** *(audit 2026-09-25)*. TCP and
+  WebSocket in `crates/clausters-server/src/osc` and again in `crates/clausters-gui/src/host`: `next_frame` 0.97
+  alike, `local_addr` identical, `write_frame`, `reply`, the connection loop
+  0.8, and the server's own TCP and WS `bind` 0.90 alike; two `ClientId` enums
+  with the same carriers. The framing and the hub (slots, wake, a thread per
+  connection, a frame queue) are one thing both ends could link from the core.
+  **Fixed**: `crates/clausters-net` holds both carriers once -- the framing,
+  the acceptor and connection threads, `ClientSlots`, the `Waker`, one generic
+  `Hub` over a `Conn` reply handle, and a sink seam the GUI's windowed front
+  feeds its event-loop proxy through. The host gains what only the server had:
+  the client ceiling, the TCP reply write timeout, the bounded headless queue,
+  and a dropped connection on a failed TCP reply. Not a network dependency of
+  `clausters-core`. Found on the way: a TCP connection closed for a bad frame
+  prefix stayed open to its client until the loop drained the disconnect,
+  because the write half kept the socket alive; the reader now shuts it down.
+  The two `ClientId` enums stay two -- beside TCP and WS, one has the ring and
+  the other the page, which is what each front actually serves.
+
+- ✅ **Writing one control is written six times** *(audit 2026-09-25)*. In
+  `osc::translate`, `/node_set`, `_setRange`, `_fill`, `_map`, `_mapRange` share
+  the walk (id, unknown node, control targets, the def, the hit flag,
+  re-analysis), and the three setters and the GraphDef surface
+  (`apply_surface`) share the write (`SetControl`, mirror, clear the map).
+  Also here: "blob or string as JSON" three times (`d_recv`, `d_graph`,
+  `synthdef_spec_bytes`), `/def_send synth` and `graph` one function over two
+  families, a dead `let _ = def` in `graph_new`, and the instancing step named
+  `realize`.
+  **Fixed**: `for_each_target` is the walk the five control commands share,
+  `write_control` the write the three setters and `apply_surface` share, and
+  `map_control` the map the two mappers and `graph_map` share;
+  `osc::args::json_payload` is the one "blob or string"; `install_json_def`
+  installs a SynthDef or a GraphDef and `handle_def_send_json` answers both
+  families; the dead binding is gone and the step is `build_plan`.
+
+- ✅ **The wire's sample blob is spelled by hand** *(audit 2026-09-25)*. Raw
+  little-endian `f32` is written in about twelve places (`/buffer_getRange`,
+  `_peaks`, `_export`, the streams, `clausters-editing`'s apply and samples,
+  the audio editor, the clipboard) and read in about eleven (the translator,
+  editing, the clipboard, eight in the GUI host). `clausters_core::bytes` is the
+  cache format, native-endian, and not this. One pair in the core.
+  **Fixed**: `clausters_core::osc::{push_sample, sample_blob, blob_samples}`
+  write and read it, and the server, the translator, `clausters-editing`, the
+  audio editor, the clipboard (whose `encode_samples`/`decode_samples` keep
+  their names and delegate) and the host's readers and writers all go through
+  them. The WAV float body in `nrt` stays its own: it is a file format that
+  happens to share the bytes.
+
+- ✅ **Smaller duplicates** *(audit 2026-09-25)*. The sample FIFO of `Ifft` and
+  of the convolution (one type in `dsp`); `Fft`/`Ifft`'s `window` command; the
+  Faust node body in `faust/synth.rs` and `synth_web.rs` (five methods
+  identical, `process` 0.92 — the web module says it *is* the native code); the
+  MIDI 7-to-16-bit widening in `crates/clausters-server/src/midi` and `clausters-midi`, and
+  `midi2freq` beside the core's `midi_to_hz`; `clausters-ffi`'s `text` and
+  `fill` copied into `notation.rs` and `fill` re-inlined in eight files, with
+  two ways of holding a sized answer until it is fetched, while
+  `clausters-midi` hands bytes out by leaking a `Vec` (a third convention);
+  `audio_editor.rs` and `mixer.rs` repeating `control` and `reader_name`; the
+  two playbacks in `clausters-editing` building transport commands each their
+  own way; the engine building its `GarbageSink` by hand three times and
+  handling `AddSynth`'s and `AddGroup`'s insert result with the same lines.
+  *Done so far*: `dsp::fifo::SampleFifo` is the one sample FIFO, and
+  `window_command` the one window command (which is how the next entry was
+  found). `faust::node::FaustBody` is the Faust node body both backends'
+  `FaustSynth` delegate to. `clausters_core::midi` is the one 7-bit and 14-bit widening the
+  server's live input and `clausters-midi`'s clip reader share, and
+  `midi2freq` is the core's `midicps`. `clausters-ffi`'s `out` module is the one `text`,
+  `fill` and `fill_then` every file calls (the ones with another contract —
+  a nul-terminated path, an error code — keep theirs). The audio editor's defs take `control`
+  from the mixer's; both playbacks send through `apply::transport_command`;
+  the engine builds its `GarbageSink` with one `garbage_sink!` and reports an
+  insert through `started`/`rejected`. (`reader_name` is not a duplicate: the
+  two prefixes name two different defs.) *Left*: the three ways a C ABI call
+  holds a sized answer until it is fetched — the document's `pending`, the
+  apps' `handed`, and `clausters-midi`'s leaked buffer the caller frees —
+  which is a convention of the bindings in both clients, to decide before it
+  is changed.
+  **Decided**: no ABI change. The document and the apps share the protocol
+  (size-then-fill in one function), and what each keeps between the passes
+  differs for a reason — a pure read's bytes, a verb's answer keyed by its
+  request so it never runs twice. `snapshot` copied by hand and now goes
+  through `out::fill_then` like the apps; `clausters-midi` keeps the ordinary
+  allocate-and-free shape of a separate library. `docs/bindings.md` ("How a
+  C call hands bytes back") names both conventions.
+
+- ✅ **An `IFFT` window swap left the overlap-add at the old window's level**
+  *(found 2026-09-25, folding `Fft`'s and `Ifft`'s window command into one)*.
+  `Ifft` refilled its window on `/node_ugenCmd … window` but not `norm`, the
+  COLA denominator computed from the window at construction, so a live swap
+  from Hann to rectangular at a 50% hop reconstructed at about +9 dB (RMS 2.05
+  for a unit sine). `fill_cola_norm` is now the one computation, run at
+  construction and again, in place, on a swap;
+  `a_live_window_swap_keeps_the_round_trip_at_unity` holds it.
+
+- ✅ **The engine finds a node by scanning 8192 slots** *(audit 2026-09-25,
+  measure first)*. `NodeTree::find` is linear over `MAX_NODES`, on the audio
+  thread, for every control set, map, run, free, move, done action and bundle
+  classification, and `insert` scans again for a free slot. A block carrying
+  many `/node_set` pays that per command. An id-to-slot table, preallocated, is
+  O(1); `crates/clausters-server/examples/bench.rs` says whether it matters before anything changes.
+  **Measured, then fixed**: the bench's new "per-command cost" rows read
+  0.03 / 0.2 / 0.8 us per `/node_set` over 32 / 1000 / 4000 nodes — 256 sets
+  in a block over 4000 nodes took 15% of it, and an unknown id always scanned
+  the whole slab. `node::index::IdIndex` (open addressing, sized once to twice
+  the slab, backward-shift deletion) is kept by the one insert and the one
+  `take_slot`, and `find` reads it: 0.03 / 0.05 / 0.06 us. The free-slot scan
+  on insert stays linear — it runs once per new node, not per command.
+
+- ✅ **Long functions that hold several steps** *(audit 2026-09-25)*.
+  `Engine::process_block` (about 340 lines: the next event, a transport edge,
+  the frozen runs, time publication, counters and done actions), with "the
+  transport freezes here" written in the edge branch and again in
+  `TransportRun`'s stop; `synthdef::compile` (about 510); `realtime_main`
+  (about 500, thirty flags parsed with the same two lines each, `nrt_main`
+  holding a helper the other does not use); `ipc::Segment`'s eight
+  telescoping constructors. Named steps, and no behaviour changes.
+  *Done so far*: `flag_value`/`flag_parse` read a flag's value for both
+  `realtime_main` and `nrt_main`, which is twenty-odd pairs of lines each
+  one call. `ipc::Regions` names the four region sizes a segment is
+  created with, so `Segment`'s eight constructors are six (`in_memory`,
+  `in_memory_sized`, `create`, `create_sized`, `open_or_create`, `open`) and
+  no caller passes four bare counts in a row; a session's in-memory segment
+  now takes its audio-bus count from the session like the mapped one did. `Engine::process_block` is 72 lines of named steps —
+  `next_due`, `cross_edge`, `apply_due_bundle`, `publish_block`,
+  `store_counters`, `apply_done_actions`, `drain_replies`, `meter_block` —
+  with the bench's default rows within noise of before. `synthdef::compile`
+  is 236 lines, its controls, arity, static configuration, spectral chain and
+  lag insertion each a function (`parse_controls`, `check_arity`,
+  `ugen_config`, `spectral_chain`, `insert_lags`); what stays inline is the
+  walk over the inputs and the rates, which shares the whole graph built so
+  far. The "transport freezes here" twin turned out to be one line each
+  (`set_paused` on the governed group) with different surroundings, and was
+  left.
+
+- ✅ **Minor** *(audit 2026-09-25)*. `/server_notify` answers a client id that
+  is its position in the list, so an earlier client leaving renumbers the
+  others (no client reads it); a typo "where the the transport is";
+  `/buffer_peaks` defaults its bucket to a literal 256 beside `BASE_BUCKET`;
+  `MAX_NODES` and `Limits::default().max_nodes` kept equal by a comment; a
+  few docs starting lowercase and one "realized" in prose.
+  **Fixed**: a notify client keeps the id it was answered with
+  (`a_notify_id_survives_an_earlier_client_leaving`); the typo; `/buffer_peaks`
+  defaults to `BASE_BUCKET`; `Limits::default()` reads `MAX_NODES`,
+  `MAX_GROUP_CHILDREN` and `NUM_BUFFERS` instead of copying them; the
+  lowercase sentence starts; "realize" for a join is "build" in the four
+  places that said it, the quoted document comment included. One doc in the
+  host's gesture tests had lost its first four lines in the host split and
+  has them back.
+
+- ✅ **A render inside the client's own process loses what the server
+  logged** *(found 2026-09-26 while making a UGen's faults and a `Poll` reach
+  whoever they are for; fixed the same day)*. A render in a separate process now reaches the
+  client: `clausters --nrt` logs to stderr and Python forwards each line to its
+  `clausters.render` logger. A render inside the client's own process does
+  not: Python's `render()` without a `path` goes through the embedded library,
+  and the web client renders with the wasm engine in the page, and neither has
+  a logger installed, so a warning such as a synth the engine rejected is lost.
+  A fault is not lost, since it fails the render in both, but a `Poll` and
+  every warning are. Both clients are the same here, so it is a gap and not a
+  divergence.
+
+  **The decision** is the carrier: a list of warnings on the render's result
+  (`RenderStats`), which moves the C ABI (`clausters_render`) and the wasm
+  entry point together, and so `CORE_ABI_VERSION`; or a log callback the host
+  installs, which moves the same two surfaces differently. The warnings on the
+  result are the smaller change and the one both clients can read the same way.
+
+  **What shipped.** The warnings on the result, carried the way the render's
+  seed already was. While a render runs, `server::render_log::during` puts a
+  subscriber in front of whatever was there that keeps each event at `info`
+  and above and passes every event on, so the CLI prints exactly as before;
+  the lines ride out on `RenderStats::log` (at most a thousand, then a count of
+  what was dropped). Both in-process carriers hand them over the same way, as
+  a second call after the render rather than more out pointers on it:
+  `clausters_render_log(buf, cap)` on the embed ABI and `last_render_log()` on
+  the wasm entry point, one `LEVEL<TAB>message` line each. The render's own
+  signature did not move; the counter did (`ABI_VERSION` 13, the embed ABI,
+  not `CORE_ABI_VERSION` as guessed above), because a binding that reads the
+  log cannot load a library without it and a stale copy should be refused by
+  name. Python logs each line on `clausters.render` at its level through one
+  `render_line`, which the `--nrt` stderr path now uses too; the web client
+  sends `ERROR`/`WARN` to `console.error`/`console.warn` and `INFO` to
+  `console.debug`, shown only when asked, as Python's `info` is.
+
+- ✅ **The render's score is named `Score`, and the clients call it
+  `OscScore`** *(found 2026-09-27, listing every class named after a score)*.
+  `crates/clausters-server/src/server/render.rs` reads the binary an offline render runs into `Score`,
+  a list of `ScoreEvent`s (the messages of one bundle at a time in seconds).
+  The Python client names the same thing `OscScore`, and `Score` with no prefix
+  is notation's across the project (the engraver's editable score in
+  `clausters_core::notation` and both clients). So the server's type becomes
+  **`OscScore`**; `ScoreEvent` stays, since inside the render nothing else
+  it could be confused with lives. **Related:** the web client's copy of the
+  same divergence (`clients/web/PLAN.md`, Found by use, "The offline score and
+  its carrier are named apart from Python's"). **Fixed 2026-10-01** with the
+  web client's, in the same commit.
+
+- ✅ **A lane's data is written twice and typed nowhere** *(found 2026-09-29,
+  with the user, reading what `/lane_set` carries)*. The JSON is right -- a
+  lane is a sequencing structure, and `/lane_set` is the one command besides
+  the defs that takes a JSON object. What is wrong is that no Rust type
+  stands for it: the crate writes it with `json!` in
+  `clausters_editing::notes_playback::data`, and the server reads it by hand
+  into its private `LaneEvent` in `crates/clausters-server/src/osc/server/lanes.rs::parse_events`.
+  A field that moves on one side is found by no compiler on the other. The
+  fix is one type (a lane's notes and messages, in samples) that both sides
+  serialize, where the crate and the server can both depend on it. `T9`'s
+  MIDI event is written into that type, not into both halves. **Fixed
+  2026-09-29 with `T9`**: `clausters_core::lane::LaneData`.
+
+- ✅ **A group's order does not see control maps** *(found 2026-09-30,
+  writing the notes editor's curves, `crates/clausters-apps/PLAN.md` `X3.11c`)*.
+  An auto-sorted group orders its children by the audio buses they read and
+  write (`TreeMirror::sorted_children`); a control bus written by `OutCtl` and
+  read through a `/node_map` counts for nothing, so a curve's reader and the
+  node that reads its bus run in whatever order they were added. The note
+  graph lists its readers before its voice for that reason, and a note, a slot
+  added at the head of its channel's instance, runs before the channel's
+  readers and hears their curves one block late. Folding control writes and
+  control maps into the usage the sort reads would make the order follow the
+  wiring, as it does for audio. **Fixed 2026-09-30**: `BusUsage` keeps the
+  control buses read and written beside the audio ones -- `InCtl` and a
+  control map read, `OutCtl` writes, the new `BusRole::ReadControl` and
+  `WriteControl` -- and `feeds` is either kind; the stage masks fold them into
+  their lanes, a map made or cleared re-sorts, and a GraphDef member's maps
+  count from the moment it is built. A note now runs after its channel's
+  curves, and inside its graph after its own.
+
+- ✅ **A MIDI graph voice released by its gate may leave its slot behind**
+  *(found 2026-09-30, reading `/midi_bind` onto a GraphDef while adding
+  `ends`; not reproduced)*. A gate-aware binding releases a graph voice by
+  setting its `gate` port to 0; the member whose envelope then frees itself
+  goes, and nothing frees the slot group around it. If that holds, every note
+  played leaves an empty group. A GraphDef member marked `ends` now frees its
+  graph and the slot around it; a voice graph's generator member is where the
+  mark belongs, or the binding could free the slot itself. **Reproduced and
+  fixed 2026-10-01**: three gated notes left three empty slot groups under the
+  instance. The server now frees a graph voice whose members have all ended on
+  their own (`CmdTranslator::take_emptied_slots`), so a def need not mark its
+  generator `ends` for the voice to go with its note; a slot that holds a
+  nested graph is left to its `ends`, as before.
+
+- ✅ **A control mapped to a bus reads back what was last set on it** *(found
+  2026-10-16, building `J12`)*. `/synth_get` reads the network thread's mirror
+  of a node, which holds the value a `/node_set` wrote and the map, not what
+  the bus carries; so a generic editor's knob over a mapped control stands still
+  while the control follows its bus. A control bus is an atomic the network
+  thread can read, so `/synth_get` answering the bus for a control mapped to
+  one is a small change; an audio-mapped control has no such value to read and
+  stays as it is. **Fixed 2026-10-30:** `/synth_get`, `/synth_getRange` and
+  `/synth_getText` read a control the mirror records as mapped to a control
+  bus from that bus's atomic.
+
+- ✅ **A FaustDef's `[unit:...]` and `[scale:log]` metadata are not read**
+  *(found 2026-10-16, building `J12`)*. A Faust slider brings its range and
+  step to `/def_query`, and its unit and its scale stay in the DSP's metadata,
+  so a generic editor draws a frequency slider linear and with no unit. Both
+  walks that read a def's parameters (the libfaust UI glue and the compiler's
+  JSON) would read the two declarations into the control's display.
+  **Fixed 2026-10-30:** both walks read a widget's declarations through
+  `ParamSpec::declare`, and `/def_query` reports the unit and, for a log
+  scale over a range above zero, the `exp` warp.
+
+- ✅ **A write in place behind an undrained replacement can miss a shared
+  buffer** *(found 2026-10-16, fixing the audio editor's gain preview)*. While
+  a `/buffer_alloc`, read, gen or stitch on an index is still in the NRT queue,
+  a `/buffer_set`, fill, gain, reverse or mix sent behind it builds on the
+  queue's own buffer (`NrtChain`). When the server shares buffers, the drain
+  copies that buffer into a region and the mirror holds the copy, so a write the
+  NRT thread runs after the copy lands in memory nobody reads. Every client
+  awaits an allocation's `/done` before writing, which is why nothing has hit
+  it; closing it means the chain learning the shared buffer, or the share
+  happening on the NRT thread before the result is returned.
+  *Fixed 2026-11-02, by neither.* A write in place that built on the queue's
+  own buffer answers that buffer as a replacement (`NrtChain::run`): the
+  drain installs and shares it again, with every write behind it, and the
+  index owes a replacement until that result is drained (`nrt::owes`), so a
+  write sent meanwhile chains too rather than landing in a region the next
+  install leaves behind. A region a new install replaces is unlinked by name,
+  as a freed one is. `crates/clausters-server/tests/ipc.rs` reproduces the race with one job a turn
+  (two fills behind a reallocation, both lost before) and checks a write
+  after the drain.
+
+- ✅ **Idle shared-memory level publication scans every allocated audio bus**
+  (2026-10-19, audio-editor window review). Each block cleared all bus samples
+  and scanned them again to publish peak levels, even for unused capacity.
+  Preallocated atomic write markers now identify buses that need clearing on
+  the next block and peak scans in the current block. Silent buses still decay
+  their published levels. Directed IPC, parallel/compensation and no-allocation
+  regressions preserve samples, bus clearing and meter decay; the native
+  multichannel review also checks the live endpoint.
+
+- ✅ **A long take distorts more the further it plays** (2026-10-21, the
+  user, in the audio editor: a long file copied and pasted at its own end
+  until it reached about 30 minutes). The sound distorts progressively as the
+  position advances. Suspected, not verified: a position held in 32-bit
+  float, which stops addressing single frames past 2^24 frames (about six
+  minutes at 48 kHz); the reader's phase and the transport's position are
+  where to check.
+  *(Fixed 2026-10-21: the suspicion was right. The phase crossed from
+  `TransportPos` to `BufRd` as an `f32` signal; `TransportBufRd` keeps it in
+  `f64` and the audio editor's and multitrack's readers use it. `Phasor`
+  into `BufRd` or `BufWr` keeps the limit; removing it for every reader is
+  "A buffer position wider than a signal", Future directions.)*
+
+- ✅ **An automatic profiler for the server** (2026-10-21, the user, after
+  the audio editor's review). A run that measures, without someone watching,
+  where the server's time goes: blocks and their cost per node and per
+  command, the NRT queue, transfers and replies. It measures the server's
+  general efficiency and gives the host's profiler (`crates/clausters-gui/PLAN.md`,
+  Found by use, "An automatic profiler for the host") the server's side of
+  the same run, so a slow window is told from a slow engine. **Related:**
+  "An automatic profiler for the host" (`crates/clausters-gui/PLAN.md`, Found by use).
+  *(Done 2026-10-21: `/server_profile` and `Server.profile(seconds)` in both
+  clients; the phases of the block and of the serving turn, every synth and
+  def, every command and reply with its bytes, every NRT job's run and wait.
+  The per-synth timing runs only while a client asks.)*
+
+- ✅ **A stopped audio editor costs the server CPU for every file it holds**
+  (2026-10-21, measured in `X23` of `crates/clausters-apps/PLAN.md`). The
+  bare server idles at about 4.2% of a core; with an audio editor open and
+  stopped it idles at 6.5% holding one stereo file and 9.2% holding four,
+  although the files not in focus have their readers paused and the one in
+  focus is in a governed group whose transport stands. Where the blocks go
+  is unmeasured: the host's side of the same editor does nothing while
+  stopped. Measured with the server's profiler before a cause is assumed.
+  **Related:** "An automatic profiler for the server", above.
+  *(Fixed 2026-10-21: the profiler put it in the serving turn, which
+  rebuilt the latency plan from a walk of the whole tree on every turn; it
+  is rebuilt now only when the tree changed, and the server idles at 4.7%
+  under the editor whatever it holds.)*
+
+- ✅ **An effect applied from its preview is heard twice for a moment**
+  *(found 2026-10-23, closing the audio editor's move onto files)*. A gain
+  envelope previewed live and then applied renders the take through the
+  curve, and the join is stitched over the render while the preview's
+  insert still applies the curve; the client puts the insert to unity when
+  the edit's answer comes back, so the curve is heard twice between the
+  reader's fade into the new list and that answer. Putting the insert to
+  unity with the stitch moves the fault to the other side (the dry take for
+  as long as the new list takes to read). A signal from the reader to the
+  insert does not reach it either: the insert gets the old list and the new
+  one already mixed by the reader's fade. What does is **the curve riding
+  the list**: a join carries the gain automation it is previewed with, the
+  list reader applies each list's own curve, and its fade then plays the old
+  list through its curve into the new one rendered through it -- which is
+  the X28 acceptance's "nothing heard but the effect", and also keeps a
+  curve aligned when a cut moves it under a preview that plays.
+  *Closed 2026-10-23 by the user's decision to remove the gain envelope's
+  preview* (`crates/clausters-apps/PLAN.md`, the turn to disk's eighth
+  decision): nothing hears the curve before it is applied, so nothing is
+  heard twice. The design above stays as one way to hand an effect heard
+  live over to its render, should one need it (the apps plan's Future
+  directions, "An effect heard live before it is applied").
+
+- ✅ **A disk reader starts with a click, and a loop clicks at every
+  wrap** *(found 2026-10-23, by ear on the audio lifecycle example; design
+  decided with the user the same day)*. `TransportDiskIn` lives in the
+  transport's governed group, which is frozen while the transport stands,
+  so the reader never fills its ring at the standing position: the first
+  block after a play finds it empty, plays silence until the refill lands,
+  and the take comes in as a step after the declick's ramp has ended. A
+  loop does the same at each wrap, since the reader does not know the
+  transport's loop and reads past its end. **The decided design**, the
+  field's pre-roll, which keeps every transport's timing as it is:
+  - **`/transport_cue <transport>`**, a new command: the transport stays
+    stopped where it is, its governed group runs with `rolling` false so
+    the disk readers fill their rings at the standing position, and the
+    reply is `/done` once every reader holds it (or after a bounded wait,
+    reported). Nothing else moves: the transport's clock stays frozen, so
+    its bundles and lanes are where they were.
+  - **`/transport_play` is unchanged**: it rolls on the sample it lands on,
+    alone or in a timetagged bundle, so transports started together stay
+    together. A play with no cue before it behaves as today.
+  - **The audio editor plays by cue, `/done`, then play**: the playback's
+    play and a play after the cursor moved go through the cue in both
+    clients, through the coordinator's steps.
+  - **A loop is read straight through**: the reader is told the transport's
+    loop span (`TransportCtx`), the disk thread renders from the loop's end
+    back to its start, and the audio thread's head wraps with it, so a wrap
+    costs no refill. A span changed while it plays is a list replaced while
+    it plays, which already fades.
+  - Native and page readers alike (`dsp::stream`, `dsp::disk_web`), the
+    reference in `docs/schemas.md`, both clients' builders, and a test that
+    plays from a stand and across a wrap with no silent frame.
+  Shipped as designed (2026-10-23): the cue waits at most 0.2 s, and a
+  reader is ready holding 4096 frames past where it stands. The page's
+  reader has no automated test of its own; it is checked by ear in the
+  page's example.
+  The recording side of the same timing is a Future direction ("Recording,
+  monitoring and playback aligned as one model of the transport's
+  latencies").
+
+- ✅ **A loop switched at its end** *(found 2026-10-23, by ear on the audio
+  editor the GUI host owns; the rest of the case fixed the same day, and
+  this the same day too, by cueing a loop change as the user decided)*.
+  Turning the loop switch, or moving the loop, while a take plays is a
+  reading replaced while it plays: the reader keeps the old reading's next
+  frames aside up to where the two readings part, asks for the new one from
+  there and splices it on, so a switch turned mid-loop is not heard at all.
+  What is left is a switch turned within one device callback of the loop's
+  end (on or off): the frames where the readings part are played before
+  the reader's I/O can read the new ones, and the take comes in again from
+  a short silence. The field's answer would be to cue a loop change as a
+  play is cued (`/transport_cue`): the transport keeps the loop it has
+  until its readers hold the new reading, so a switch turned that late
+  takes effect one pass later instead of being heard. **Done so**: a
+  `/transport_loop` while the transport rolls over disk readers waits until
+  every reader holds the new reading (at most `CUE_WAIT_SECS`), and a
+  splice reached first plays the old reading on and reads it again.
+
+- ✅ **Two loop switches close together at its end** *(found 2026-10-24,
+  measuring the cued loop change)*. A loop change cued while the frames
+  kept from the change before it still play keeps reading the loop asked
+  for, not the one in force: where the second switch is turned just before
+  the loop's end, the engine may put it in place after that end has passed,
+  and the reader then holds no reading of the loop that was in force past
+  it, so the take comes in again from a short silence. One switch at the
+  end is not heard (the change lands a pass later), nor are switches at a
+  hand's pace. The design that closes it: the ring always follows the loop
+  in force, and a second, small ring of each reader is read ahead with the
+  continuation of the loop asked for from where the two part; the engine
+  puts the change in place only while that continuation is held before the
+  parting point, and a reader switches rings there. Natively, through the
+  fed stream's protocol (`dsp::fed`, `TakeFeed`) and in the page's reader
+  and the host that serves its spans. *Fixed 2026-10-24 without a second
+  ring:* the kept frames were the place to look. A reader was not ready
+  while its ring refilled, though the frames it kept from the first change
+  already read the loop asked again (the switch turned back on); they now
+  count. Where the second change asks for another loop, the reader first
+  keeps what the loop in force plays (the kept frames to their splice and
+  what the ring read after it), so a change the engine defers past the
+  loop's end finds the reader holding the loop the transport wraps by.

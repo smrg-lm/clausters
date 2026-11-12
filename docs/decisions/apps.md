@@ -1380,7 +1380,7 @@ for the editor's verbs (`/buffer_gain`, `/buffer_reverse`, `/buffer_mix`,
 
 The model, its decisions and its milestones are in
 `crates/clausters-apps/PLAN.md`, "The turn: an application's takes live on
-disk"; the server's half is the root plan's `S21`-`S23`, the document's
+disk"; the server's half is the server plan's `S21`-`S23`, the document's
 `O34`, the host's `G45`.
 
 ## A render's progress is a window prop, not a status line (2026-10-23)
@@ -1477,7 +1477,7 @@ and embedded servers, the server and host to client design stays, and so
 does the shared memory between them. The server's transports keep their
 role: patterns and sound generated in real time, sample-synchronous playback
 of files, and OSC and MIDI messages. What the server held for an
-application's domain is audited and removed (root `PLAN.md`, `S23`).
+application's domain is audited and removed (`crates/clausters-server/PLAN.md`, `S23`).
 
 Three answers of the user the same day set its edges. The application
 speaks to its engine with built `Cmd`s, never OSC, building them with the
@@ -1700,7 +1700,7 @@ and records with stays: a buffer's reads and writes, `/buffer_touch` (a
 peer's write announced) and `/buffer_stream` (a recording's progress), and
 the transport's play, stop, locate, loop, end mark, fade and follow. The
 applications measure, read and join their takes themselves, with the core's
-functions (root `PLAN.md`, `S23`).
+functions (`crates/clausters-server/PLAN.md`, `S23`).
 
 ## A live parameter's undo writes the value it had (2026-11-02)
 
