@@ -279,13 +279,10 @@ its plan; the plan is where its acceptance is read.
   notes editor's example; what is open is where the wait belongs.
 
 - ⬜ **The second review of the workspace's shape: `R14`'s release
-  rehearsal and the host's longest files** *(root `PLAN.md`, R track, "The
-  second review: the shape of the workspace")*. On the branch `restructure`:
-  1. `R14`'s rehearsal of the release workflow against the branch, and the
-     branch into `main`. When the rehearsal runs is the user's call: now, or
-     after the evaluation below.
-  2. *(`crates/clausters-gui/PLAN.md`, Future directions)* "The host's
-     longest files, cut where they have a seam".
+  rehearsal** *(root `PLAN.md`, R track, "The second review: the shape of
+  the workspace")*. On the branch `restructure`: `R14`'s rehearsal of the
+  release workflow against the branch, and the branch into `main`. The
+  rehearsal is the user's to run.
 
 - ⬜ **A roll reads its marks' symbols from the score's palettes**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. The one exception of

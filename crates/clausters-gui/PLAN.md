@@ -2506,13 +2506,34 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   fronts both name) and an optional text the tip layer shows with the
   timer it already has. Each front sets the pointer from it.
 
-- ⬜ **The host's longest files, cut where they have a seam** *(a
+- ✅ **The host's longest files, cut where they have a seam** *(a
   refactoring to evaluate, asked by the user 2026-11-12, once the
-  workspace's review is in)*. Four files are past four thousand lines:
+  workspace's review is in; done 2026-11-12)*. Four files are past four thousand lines:
   `host/frame/mod.rs` (4,246), `host/elements/notes.rs` (4,258),
   `host/audio_editor.rs` (4,419) and `host/gestures/tests.rs` (4,582). A
   file is cut where it holds two things, never at a line count: each is read
   first for the seam it has, and one with none stays whole.
+
+  *Read.* Three of the four were a file of code with its tests inline, and
+  the tests were the larger part of one of them:
+  - `host/audio_editor.rs` was 1,345 lines of code, one `impl`, and 3,074 of
+    tests. The tests are `audio_editor/tests.rs`; the code has no seam and
+    stays whole.
+  - `host/frame/mod.rs` held three things beside its tests: what a window
+    keeps of a view's data, what a view owes at the zoom it is shown at, and
+    the frame's passes. The first two are `frame/slots.rs` and
+    `frame/owed.rs`; the spine is 1,597 lines.
+  - `host/elements/notes.rs` held the roll's picture and the reading of its
+    props beside its state and its gestures: `notes/picture.rs` and
+    `notes/props.rs`. What is left, 2,089 lines, is the element: its state
+    and what a hand does to it, which read together.
+  - `host/gestures/tests.rs` was 113 tests of unrelated subjects in one
+    file. It is `gestures/tests/`, a file per subject (the plane, the
+    controls, a take, the roll, the piano, the keyboard, a pane and the
+    rest), with the helpers more than one subject uses in its `mod.rs`.
+
+  Code moved as it was and no assertion was edited: the crate has the 1,412
+  tests it had.
 
 ## Found by use: the running list of fixes
 
