@@ -174,7 +174,10 @@ that same commit:
   `scripts/bench-gate.py` compares those two numbers. An absolute threshold
   against a committed number cannot work here (a shared runner swings 10-20%
   between runs of identical code), but the ratio of two runs that shared the
-  machine can. Reproduce it locally with two runs of
+  machine can. A failure is measured again before it fails the run: one more
+  run of each build, each side keeping its best reading of every row, since
+  one pair of runs on today's runners fails on code that did not change.
+  Reproduce it locally with two runs of
   `cargo run --release --example bench -- --json` and the same script. A change
   that knowingly trades speed for something else says `[no-bench]` in its head
   commit message and the gate steps aside.

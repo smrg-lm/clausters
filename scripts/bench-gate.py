@@ -4,6 +4,7 @@
     cargo run --release --example bench -- --json > base.json   # the merge base
     cargo run --release --example bench -- --json > head.json   # this branch
     scripts/bench-gate.py base.json head.json
+    scripts/bench-gate.py base.json head.json --again base2.json head2.json
 
 **The comparison is only meaningful when both numbers come off the same
 machine, back to back.** A shared CI runner swings 10-20% between runs of
@@ -33,6 +34,15 @@ allocation that crept into the block path) without firing on the weather. A 3%
 drift is invisible to this on purpose; on a shared runner it is
 indistinguishable from nothing.
 
+**One pair of runs is not enough on today's runners.** On one pull request in
+November 2026 the gate failed five runs of seven, a commit that changed no
+code among them: throughput down 10-14% and an aligned peak 77% worse, a
+different row each time. So a failure is measured again before it is
+believed: `--again` takes another pair of runs of the same two builds, and
+each side keeps its best reading of every row (the highest throughput, the
+lowest peak). The weather does not repeat on the same row; a regression
+does.
+
 A row that says `"gated": false` is printed and never fails the build. Four
 kinds are, and each for a measured reason: the Faust rows (their cost includes
 whatever the LLVM JIT decided that run), the worker sweep (it reads the
@@ -59,6 +69,20 @@ def load(path):
     return {row["name"]: row for row in rows}
 
 
+def best_of(runs):
+    """One side's best reading of every row over its runs: the highest
+    throughput and the lowest peak block, since noise only ever slows a run."""
+    out = {}
+    for run in runs:
+        for name, row in run.items():
+            kept = out.setdefault(name, dict(row))
+            for metric, pick in (("x_real_time", max), ("peak_block", min)):
+                if row.get(metric) is not None:
+                    kept[metric] = (row[metric] if kept.get(metric) is None
+                                    else pick(kept[metric], row[metric]))
+    return out
+
+
 def regressions(base, head):
     """(name, metric, before, after, change) for every row that moved, worst
     first. `change` is negative for a regression in both metrics, so one sign
@@ -83,12 +107,17 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("base", help="bench --json from the merge base")
     ap.add_argument("head", help="bench --json from this branch")
+    ap.add_argument("--again", nargs=2, action="append", default=[],
+                    metavar=("BASE", "HEAD"),
+                    help="another pair of runs of the same two builds; each "
+                         "side keeps its best reading of every row")
     ap.add_argument("--scale", type=float, default=1.0,
                     help="multiply both thresholds (1.0 = as measured)")
     args = ap.parse_args()
 
     limits = {m: t * args.scale for m, t in THRESHOLDS.items()}
-    base, head = load(args.base), load(args.head)
+    base = best_of([load(args.base)] + [load(b) for b, _ in args.again])
+    head = best_of([load(args.head)] + [load(h) for _, h in args.again])
     missing = sorted(set(base) - set(head))
     rows = regressions(base, head)
     failures = [r for r in rows if r[5] and r[4] < -limits[r[1]]]
@@ -99,7 +128,8 @@ def main():
         return (f"{mark} {name:<28} {metric:<12} {a:>10.2f}{unit} -> {b:>10.2f}{unit}"
                 f"  {change * 100:+6.1f}%")
 
-    print(f"{len(rows)} measurements compared; thresholds "
+    runs = 1 + len(args.again)
+    print(f"{len(rows)} measurements compared, best of {runs} run(s) a side; thresholds "
           + ", ".join(f"{m} {v * 100:.0f}%" for m, v in sorted(limits.items())))
     if missing:
         # Not a failure: a row can legitimately disappear (a section removed, a
