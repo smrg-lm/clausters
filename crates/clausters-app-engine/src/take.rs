@@ -25,7 +25,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::Duration;
 
 use clausters_core::threads::Spawned;
@@ -645,11 +645,54 @@ impl Drop for Handed {
     }
 }
 
+/// **How far a take's reader has got**, for whoever drives an engine by
+/// hand: a device gives the reader the time between its bursts, and a test
+/// that processes block after block gives it none, so it waits for the
+/// reader instead of the wall clock.
+#[derive(Debug, Default)]
+pub(crate) struct Pace {
+    /// The turns the reader ended with nothing to do.
+    rested: Mutex<u64>,
+    turned: Condvar,
+    /// The reader, as it says itself once it runs.
+    thread: OnceLock<std::thread::Thread>,
+}
+
+impl Pace {
+    /// The reader ended a turn with nothing to do.
+    fn rest(&self) {
+        *self.rested.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        self.turned.notify_all();
+    }
+
+    /// **Waits until the reader has filled what it can**: until a turn that
+    /// began after this call ended with nothing to do, which is every
+    /// request seen, every list taken and every ring as full as a turn fills
+    /// it. The turn ending as this is called may have begun before a request
+    /// the engine just made, so the second one is waited for. Blocks, so it
+    /// is never called on a page's main thread.
+    pub(crate) fn wait_filled(&self) {
+        let mut rested = self.rested.lock().unwrap_or_else(|e| e.into_inner());
+        let goal = *rested + 2;
+        while *rested < goal {
+            if let Some(thread) = self.thread.get() {
+                thread.unpark();
+            }
+            rested = self
+                .turned
+                .wait_timeout(rested, Duration::from_millis(1))
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+    }
+}
+
 /// **One take's reading**: a mono fed stream per channel, and the thread of
 /// the application that renders the take into them.
 pub struct TakeFeed {
     streams: Vec<Arc<Fed>>,
     placed: Arc<Handed>,
+    pace: Arc<Pace>,
     stop: Arc<AtomicBool>,
     reader: Option<Spawned>,
     shared: Vec<Arc<clausters::dsp::fed::FeedShared>>,
@@ -668,14 +711,18 @@ impl TakeFeed {
         let shared = feeders.iter().map(|f| Arc::clone(f.shared())).collect();
         let placed = Arc::new(Handed::default());
         let stop = Arc::new(AtomicBool::new(false));
+        let pace = Arc::new(Pace::default());
         let reader = {
-            let (placed, stop) = (Arc::clone(&placed), Arc::clone(&stop));
-            clausters_core::threads::spawn("take-reader", move || serve(feeders, placed, stop))
-                .expect("failed to spawn a take's reader")
+            let (placed, stop, pace) = (Arc::clone(&placed), Arc::clone(&stop), Arc::clone(&pace));
+            clausters_core::threads::spawn("take-reader", move || {
+                serve(feeders, placed, stop, &pace)
+            })
+            .expect("failed to spawn a take's reader")
         };
         TakeFeed {
             streams,
             placed,
+            pace,
             stop,
             reader: Some(reader),
             shared,
@@ -690,6 +737,11 @@ impl TakeFeed {
     /// How many channels it reads.
     pub fn channels(&self) -> usize {
         self.streams.len()
+    }
+
+    /// How far its reader has got.
+    pub(crate) fn pace(&self) -> &Arc<Pace> {
+        &self.pace
     }
 
     /// **Reads `list` from now on**: every channel's reader fades from what
@@ -718,7 +770,8 @@ impl Drop for TakeFeed {
 
 /// The reading thread: each turn, every channel's latest request taken and a
 /// chunk rendered from where it left off, until nothing is left to do.
-fn serve(mut feeders: Vec<Feeder>, placed: Arc<Handed>, stop: Arc<AtomicBool>) {
+fn serve(mut feeders: Vec<Feeder>, placed: Arc<Handed>, stop: Arc<AtomicBool>, pace: &Pace) {
+    let _ = pace.thread.set(std::thread::current());
     for feeder in &feeders {
         feeder.wake_me();
     }
@@ -773,6 +826,7 @@ fn serve(mut feeders: Vec<Feeder>, placed: Arc<Handed>, stop: Arc<AtomicBool>) {
             worked = true;
         }
         if !worked {
+            pace.rest();
             std::thread::park_timeout(PARK);
         }
     }

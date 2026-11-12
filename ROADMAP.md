@@ -115,10 +115,6 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
   load closing the playback tests' entry; rare.
 
-- ⬜ **`a_loop_moved_while_it_plays_is_crossfaded` fails now and then**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Under load only; what is
-  open is whether the test's pacing or the crossfade is at fault.
-
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** *(`crates/clausters-gui/PLAN.md`, Found by use)*. Not
   reproduced in five sequences on a GPU; waits for the exact steps.
@@ -278,13 +274,13 @@ its plan; the plan is where its acceptance is read.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found running the
   notes editor's example; what is open is where the wait belongs.
 
-- ⬜ **The second review of the workspace's shape, `R14`, `R18`-`R23`** *(root
+- ⬜ **The second review of the workspace's shape, `R14`, `R19`-`R23`** *(root
   `PLAN.md`, R track, "The second review: the shape of the workspace")*. Done
-  on the branch `restructure`. Open: `R18` (a panic at a binding's door),
-  `R19` (the host's modules in levels), `R20` (the bindings' shape), `R21`
-  (the clients linted and typed) and `R22` (the editor application). `R23`
-  (the plans hold what is open) is last, once the branch is accepted. `R14`
-  waits only on the release rehearsal, run at the end.
+  on the branch `restructure`. Open: `R19` (the host's modules in levels),
+  `R20` (the bindings' shape), `R21` (the clients linted and typed) and `R22`
+  (the editor application). `R23` (the plans hold what is open) is last,
+  once the branch is accepted. `R14` waits only on the release rehearsal,
+  run at the end.
 
 - ⬜ **From a performance to a page, the `Q` track**
   *(`crates/clausters-notate/PLAN.md`)*. A module of its own: beats,

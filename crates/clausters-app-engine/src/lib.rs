@@ -93,6 +93,9 @@ pub struct AppEngine {
     /// Each transport's loop and end mark, as last told: where a lane is fed
     /// from.
     standings: HashMap<usize, Standing>,
+    /// **The take readers it plays**, as put by [`Self::install_take`]: what
+    /// [`Self::fill_readers`] waits for.
+    readers: Vec<std::sync::Weak<take::Pace>>,
     /// The audio device the engine runs on; `None` for an engine driven by
     /// hand, block by block.
     #[cfg(feature = "realtime")]
@@ -129,6 +132,7 @@ impl AppEngine {
             rolling: HashMap::new(),
             lanes: Default::default(),
             standings: HashMap::new(),
+            readers: Vec::new(),
             #[cfg(feature = "realtime")]
             _backend: None,
         }
@@ -444,6 +448,14 @@ impl AppEngine {
     /// again after an edit that changes the take's length: the readers keep
     /// their rings and refill from where they are.
     pub fn install_take(&mut self, feed: &take::TakeFeed, frames: u64, buffers: &[i32]) -> bool {
+        self.readers.retain(|r| r.strong_count() > 0);
+        if !self
+            .readers
+            .iter()
+            .any(|r| std::ptr::eq(r.as_ptr(), Arc::as_ptr(feed.pace())))
+        {
+            self.readers.push(Arc::downgrade(feed.pace()));
+        }
         let rate = self.sample_rate as f64;
         let cmds = buffers
             .iter()
@@ -462,6 +474,18 @@ impl AppEngine {
             })
             .collect();
         self.push(cmds)
+    }
+
+    /// **Waits until every take reader it plays has filled what it can**,
+    /// for an engine driven by hand: a device's callback leaves the readers
+    /// the time between its bursts, and a loop that processes block after
+    /// block leaves them none, so whoever drives it gives them their turn
+    /// here rather than by sleeping. Blocks; never called in a page.
+    pub fn fill_readers(&mut self) {
+        self.readers.retain(|r| r.strong_count() > 0);
+        for pace in self.readers.iter().filter_map(std::sync::Weak::upgrade) {
+            pace.wait_filled();
+        }
     }
 
     /// **The buffers a take of `channels` channels is played from**, one per

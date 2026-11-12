@@ -7020,7 +7020,7 @@ wrong.
   carry the step to its end and answer whether anything moved, as a roll's do,
   rather than only asking the window.
 
-- ⬜ **`a_loop_moved_while_it_plays_is_crossfaded` fails now and then**
+- ✅ **`a_loop_moved_while_it_plays_is_crossfaded` fails now and then**
   *(found 2026-10-31, running the app engine's tests beside other builds)*.
   `crates/clausters-app-engine/tests/playback.rs` paces its blocks with real
   sleeps and failed in about one run of six under load, on the commit before
@@ -7028,6 +7028,12 @@ wrong.
   whether the test is sensitive to its pacing or a moved loop can step when the
   reader falls behind. **Acceptance:** the assertion's output from a failure
   says which, and the test holds under a loaded machine.
+  *Closed 2026-11-12 (root `PLAN.md`, `R18`)* by taking the pacing out of
+  the question: the test no longer sleeps between blocks but waits for the
+  take's reader to fill (`AppEngine::fill_readers`), so its run is the same
+  on an idle machine and a busy one. Fifty runs in a row passed under eight
+  busy threads. No failure's output was ever caught, so which of the two it
+  was stays unknown; a failure from now on is not the pacing's.
 
 - ✅ **The clients' walk of steps keeps a move no save hands it** *(found
   2026-10-31, verifying the save's moves)*. `clients/python/clausters/_steps.py`

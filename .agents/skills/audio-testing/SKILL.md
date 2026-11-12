@@ -43,6 +43,16 @@ server:
   `crates/clausters-checks/tests/`. The server has no dev-dependency on a crate
   above it (`docs/architecture.md`, "The crates and their levels").
 
+**An engine driven by hand gives its take readers their turn, never a sleep.**
+A device leaves the readers the time between its bursts; a loop that calls
+`process_block` leaves them none, and a sleep to make up for it turns the
+test into a race against the machine's load. After each block (or each burst
+of blocks, to stage a device's pace) the test calls
+`AppEngine::fill_readers()`, which waits until every reader the engine plays
+has filled what it can. A sleep stays only where the reader's lead in real
+time is what the test measures (the long take's acceptance), or as the poll
+interval of a wait for work on another thread, bounded by a deadline.
+
 ## Signal asserts
 
 ```rust

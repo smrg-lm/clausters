@@ -297,7 +297,7 @@ fn a_multitrack_plays_its_tracks_on_an_engine_it_holds() {
         engine.process_block(&mut out);
         app.lock().unwrap().pump();
         left.extend(out.as_chunks::<2>().0.iter().map(|f| f[0]));
-        std::thread::sleep(std::time::Duration::from_micros(1_333));
+        app.lock().unwrap().fill_readers();
     }
     let first = left
         .iter()
@@ -425,8 +425,8 @@ fn a_multitrack_member_plays_and_follows_an_edit_in_its_application() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// Blocks of the engine, paced, the application's turn after each: the
-/// left side.
+/// Blocks of the engine, the application's turn and the readers' fill
+/// after each: the left side.
 fn blocks(
     engine: &mut clausters::server::engine::Engine,
     app_engine: &Mutex<AppEngine>,
@@ -439,9 +439,8 @@ fn blocks(
     while left.len() < n {
         engine.process_block(&mut out);
         let _ = app.landed(editing);
-        let _ = app_engine;
         left.extend(out.as_chunks::<2>().0.iter().map(|f| f[0]));
-        std::thread::sleep(std::time::Duration::from_micros(1_333));
+        app_engine.lock().unwrap().fill_readers();
     }
     left
 }
@@ -848,7 +847,7 @@ fn a_track_wider_than_stereo_folds_onto_the_master() {
         engine.process_block(&mut out);
         let _ = app.landed(&mut editing);
         heard.extend(out.as_chunks::<2>().0.iter().map(|f| (f[0], f[1])));
-        std::thread::sleep(std::time::Duration::from_micros(1_333));
+        app_engine.lock().unwrap().fill_readers();
     }
     let (left, right) = heard[9_000];
     let near = |a: f32, b: f32| (a - b).abs() < 1e-3;

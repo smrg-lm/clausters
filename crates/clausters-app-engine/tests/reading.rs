@@ -10,7 +10,6 @@
 #![cfg(feature = "synth")]
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use clausters::server::engine::{BLOCK_SIZE, Engine, engine_pair};
 use clausters_app_engine::take::{Headers, ReadList, TakeFeed, TakeRead};
@@ -149,15 +148,16 @@ impl Rig {
     }
 
     /// `n` blocks processed, the left channel heard, the application's
-    /// side pumped between them and the time a block takes let pass.
+    /// side pumped between them and its readers let fill.
     fn blocks(&mut self, n: usize) -> Vec<f32> {
         let mut out = vec![0.0f32; BLOCK_SIZE * 2];
         let mut left = Vec::new();
         for _ in 0..n {
             self.engine.process_block(&mut out);
-            self.app.lock().unwrap().pump();
+            let mut app = self.app.lock().unwrap();
+            app.pump();
             left.extend(out.as_chunks::<2>().0.iter().map(|f| f[0]));
-            std::thread::sleep(Duration::from_micros(1_333));
+            app.fill_readers();
         }
         left
     }

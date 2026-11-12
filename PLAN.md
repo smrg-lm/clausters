@@ -2551,7 +2551,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   repository's checks are `crates/clausters-checks`, with no dependency at
   all. Where a new test goes is in the `audio-testing` skill.
 
-- ⬜ **R18: A panic at a binding's door is an answer.** None of the 248
+- ✅ **R18: A panic at a binding's door is an answer** *(done 2026-11-12)*. None of the 248
   exports of the C ABI catches an unwind, and a panic crossing `extern "C"`
   aborts: one `unwrap` in any verb of any application takes the Python
   interpreter, and the unsaved session, with it. The doors that run verbs
@@ -2567,21 +2567,25 @@ and so waits for `T3`, the milestone that already owes the bench.
   both clients and the next call on the same handle answers; the playback
   tests pass fifty runs in a row under load.
 
-  *The barrier shipped 2026-11-12; the tests' pacing did not, so this stays
-  open.* The verb doors of the applications, the document, the runner and the
+  *The barrier shipped 2026-11-12, and the tests' pacing the same day.* The
+  verb doors of the applications, the document, the runner and the
   notes playback answer `{"error": "internal: ..."}` on a panic, the calls
   through a handle answer their null-handle value, and every handle's lock is
   taken poisoned or not (`crates/clausters-ffi/src/out.rs`, with its tests);
   the wasm core reports a panic to the console and the native host logs one;
   `docs/bindings.md` ("What a panic becomes") says why the two differ. Not
   observed: a real verb panicking through a client, only the helper's tests.
-  **What is left:** the playback tests still sleep. Read closely, the sleep
-  is not a wait for a result but the pacing of a race the test stages on
-  purpose, between the engine it steps and the take's reader thread, and
-  nothing in the feed lets a test wait for the reader instead. Removing it
-  needs a feed a test can drive by hand, which is a design of its own and
-  not a refactor. Under eight busy threads the two suites passed 25 runs of
-  25, so the intermittent failures were not reproduced either.
+  The sleep in the playback tests was not a wait for a result but the pacing
+  of a race between the engine the test steps and the take's reader thread.
+  The reader now counts the turns it ends with nothing to do, and
+  `AppEngine::fill_readers` waits for one that began after the call, so a
+  test gives the readers their turn after each block (or each burst, where a
+  device's pace is staged) instead of sleeping; the readers stay threads, as
+  they run in an application. The playback, multitrack and reading suites
+  passed fifty runs in a row under eight busy threads. Two sleeps remain on
+  purpose: the long take's acceptance, which measures the reader's lead in
+  real time, and the polls of a render or a save landing, bounded by a
+  deadline.
 
 - ⬜ **R19: The host's modules have levels too.** The host is 149 thousand
   lines in one crate, and measured by reference it is one strongly connected

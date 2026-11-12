@@ -21,8 +21,8 @@ const FRAMES: usize = 24_000;
 /// A play waits for its cue, so the transport rolls once its readers hold
 /// the frame it starts on: the first block that sounds is the start of the
 /// pass, and from the end of the ramp on the output is the take. The cue
-/// is over when the reader's thread has filled, which a loaded machine
-/// delays.
+/// is over when the reader's thread has filled, which the tests wait for
+/// after each block rather than for the wall clock.
 fn rolled(heard: &[f32]) -> (usize, usize) {
     let first = heard
         .iter()
@@ -118,7 +118,7 @@ fn the_audio_editor_plays_on_an_engine_it_holds() {
             left.push(f[0]);
             right.push(f[1]);
         }
-        std::thread::sleep(Duration::from_micros(1_333));
+        app.lock().unwrap().fill_readers();
     }
     // From where it rolled, past the play's ramp, the output is the file.
     let (at, from) = rolled(&left);
@@ -129,8 +129,8 @@ fn the_audio_editor_plays_on_an_engine_it_holds() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// Blocks of the engine, paced, with the application's turn after each:
-/// the left side.
+/// Blocks of the engine, with the application's turn and the readers' fill
+/// after each: the left side.
 fn blocks(
     engine: &mut clausters::server::engine::Engine,
     app: &Mutex<AppEngine>,
@@ -142,7 +142,7 @@ fn blocks(
         engine.process_block(&mut out);
         app.lock().unwrap().pump();
         left.extend(out.as_chunks::<2>().0.iter().map(|f| f[0]));
-        std::thread::sleep(Duration::from_micros(1_333));
+        app.lock().unwrap().fill_readers();
     }
     left
 }
@@ -255,7 +255,7 @@ fn both(
             left.push(f[0]);
             right.push(f[1]);
         }
-        std::thread::sleep(Duration::from_micros(1_333));
+        app.lock().unwrap().fill_readers();
     }
     (left, right)
 }
@@ -650,7 +650,7 @@ fn moved_loop_steps() -> (Moved, u64) {
         app.lock().unwrap().pump();
         heard.extend(out.as_chunks::<2>().0.iter().map(|f| f[0]));
         at.push(reading.transport_position(transport));
-        std::thread::sleep(Duration::from_micros(1_333));
+        app.lock().unwrap().fill_readers();
     }
     // The take is a ramp that rises 2^-20 a frame: past the play's 5 ms
     // ramp, a step is a discontinuity.
@@ -760,7 +760,7 @@ fn the_loop_switch_turned_while_it_plays_is_not_heard() {
                 }
             }
             if b % 16 == 15 {
-                std::thread::sleep(Duration::from_micros(1_333 * 16));
+                app.lock().unwrap().fill_readers();
             }
         }
         let _ = std::fs::remove_file(&path);
@@ -864,7 +864,7 @@ fn two_loop_switches_close_together_at_its_end_are_not_heard() {
                 }
             }
             if b % 16 == 15 {
-                std::thread::sleep(Duration::from_micros(1_333 * 16));
+                app.lock().unwrap().fill_readers();
             }
         }
         let _ = std::fs::remove_file(&path);
