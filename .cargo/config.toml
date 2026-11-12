@@ -1,0 +1,12 @@
+# Cargo configuration for every build under the repository root: the
+# workspace, `audit/fuzz` and `clausters-editor` (cargo reads this file from
+# the directory it runs in upward, not from the manifest's).
+#
+# No incremental compilation. Its caches are kept per crate and per
+# configuration and nothing ever removes the old ones: `target/debug/
+# incremental` had grown past 190 GB once, and it is the part of `target/`
+# that grows fastest and gives back least, since a feature-matrix run or a
+# full test run rebuilds most crates from scratch anyway. An explicit
+# `CARGO_INCREMENTAL=1` still turns it on for one command.
+[build]
+incremental = false

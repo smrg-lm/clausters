@@ -39,6 +39,10 @@ under `crates/`, and the server is `crates/clausters-server` (the package
 `clausters`). It is the workspace's default member, so the `cargo` commands
 below, run from the root with no `-p`, build and test the server.
 
+`.cargo/config.toml` turns incremental compilation off for every build under
+the root: its caches are never removed and were the fastest-growing part of
+`target/`. `CARGO_INCREMENTAL=1` turns it back on for one command.
+
 ```sh
 cargo build --release                 # default: PipeWire audio + ALSA-seq MIDI
 ```

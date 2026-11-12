@@ -34,6 +34,13 @@ set -uo pipefail
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$root"
 
+# The two rows that build into a target directory of their own (the
+# featureless link and the VST3 fixture) leave a full build behind that no
+# other command reuses, and every run adds to it. They are removed on the way
+# out, however the run ends; the shared `target/debug` is left alone, since
+# that one is what the next ordinary build starts from.
+trap 'rm -rf target/matrix-nofaust target/matrix-vst3-fixture' EXIT
+
 fast=0
 while [ $# -gt 0 ]; do
     case "$1" in
