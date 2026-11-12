@@ -9,6 +9,7 @@
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "notices": "node scripts/notices.mjs",
+    "test": "node --import ./tests/resolve.mjs --experimental-transform-types --no-warnings --test tests/*.test.ts",
     "tauri": "tauri"
   },
   "dependencies": {

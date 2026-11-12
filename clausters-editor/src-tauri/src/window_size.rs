@@ -34,10 +34,9 @@ pub fn manage(window: &WebviewWindow) {
         .and_then(|p| std::fs::read(p).ok())
         .and_then(|bytes| serde_json::from_slice::<Size>(&bytes).ok())
         .filter(|s| s.width > 0 && s.height > 0)
+        && let Ok(gtk) = window.gtk_window()
     {
-        if let Ok(gtk) = window.gtk_window() {
-            gtk.resize(size.width, size.height);
-        }
+        gtk.resize(size.width, size.height);
     }
     let window = window.clone();
     window.clone().on_window_event(move |event| {

@@ -33,10 +33,11 @@ pub(crate) fn collect_md(root: &Path, dir: &Path, out: &mut Vec<String>) {
         let path = entry.path();
         if path.is_dir() {
             collect_md(root, &path, out);
-        } else if path.extension().is_some_and(|e| e == "md") && entry.file_name() != SUMMARY {
-            if let Ok(rel) = path.strip_prefix(root) {
-                out.push(rel.to_string_lossy().replace('\\', "/"));
-            }
+        } else if path.extension().is_some_and(|e| e == "md")
+            && entry.file_name() != SUMMARY
+            && let Ok(rel) = path.strip_prefix(root)
+        {
+            out.push(rel.to_string_lossy().replace('\\', "/"));
         }
     }
 }
@@ -248,15 +249,14 @@ fn search_in(root: &Path, term: &str) -> Vec<DocHit> {
             .into_iter()
             .rev()
             .max_by_key(|(_, score, named)| (*named, *score))
+            && score > 0
         {
-            if score > 0 {
-                hits.push(DocHit {
-                    path: rel,
-                    heading,
-                    score,
-                    named,
-                });
-            }
+            hits.push(DocHit {
+                path: rel,
+                heading,
+                score,
+                named,
+            });
         }
     }
     hits.sort_by(|a, b| rank(b).cmp(&rank(a)).then_with(|| a.path.cmp(&b.path)));

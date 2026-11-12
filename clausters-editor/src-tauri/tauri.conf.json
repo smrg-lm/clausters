@@ -11,9 +11,30 @@
   },
   "app": {
     "windows": [
-      { "title": "clausters-editor", "width": 1280, "height": 800 }
+      {
+        "title": "clausters-editor",
+        "width": 1280,
+        "height": 800
+      }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "img-src": "'self' data: blob:",
+        "connect-src": "ipc: http://ipc.localhost",
+        "object-src": "'none'",
+        "frame-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'"
+      },
+      "devCsp": null,
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ]
+    }
   },
   "bundle": {
     "active": true,
@@ -25,6 +46,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": { "../docs/": "docs/", "../licenses/": "licenses/" }
+    "resources": {
+      "../docs/": "docs/",
+      "../licenses/": "licenses/"
+    }
   }
 }

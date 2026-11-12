@@ -62,6 +62,10 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
+      # The page's pure modules under node's own runner, straight from the
+      # sources (tests/resolve.mjs), and the driver spoken to as a subprocess.
+      - run: npm test
+      - run: python3 -m unittest discover -s src-tauri/python -p 'test_*.py'
       # The third-party notices follow the dependencies: a lockfile change that
       # adds or bumps a package without `npm run notices` fails here. Pinned,
       # since another cargo-about may word the same licenses differently.

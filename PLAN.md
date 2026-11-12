@@ -2692,7 +2692,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   dead helpers in the tests. CI runs ruff and pyright in the `python` job
   and the linter in the `web` job, `test.sh` runs it too.
 
-- ⬜ **R22: The editor application, reviewed.** `clausters-editor` stays a
+- ✅ **R22: The editor application, reviewed** *(done 2026-11-12)*. `clausters-editor` stays a
   workspace of its own, which its version, its dependencies and its workflow
   justify. Found reading it: a restart releases the session's lock between
   ending one interpreter and keeping the next, so a request arriving then
@@ -2704,6 +2704,24 @@ and so waits for `T3`, the milestone that already owes the bench.
   fixes, a test of the driver as a subprocess, tests of the pure modules,
   and the 2024 edition. **Acceptance:** its workflow is green with the new
   tests in it.
+
+  *Done 2026-11-12.* A restart keeps the session's slot locked from the old
+  interpreter's end to the new one's start, a process replaced after a
+  broken pipe is killed and waited on, and every lock of the application is
+  taken poisoned or not; the busy flag is a guard that goes with the task
+  and is released when it ends, whatever ends it. The window has a content
+  security policy (scripts and fonts from the app, styles inline as the
+  editor writes them, nothing framed or loaded from elsewhere; the
+  development server keeps none), checked against the built page, which
+  has no inline script and no `eval`. The driver has eleven tests that run
+  it as a subprocess (an evaluation, an error at the file's line, a syntax
+  error, `input()`, an interrupt, help answered while code runs, a query
+  with or without Jedi, a bad request, the end of input), and the page's
+  pure modules sixteen under `node --test` from the sources (the evaluation
+  regions moved to `regions.ts` to be one of them). The crate is on the
+  2024 edition, whose lints collapsed six `if`s, and builds `rlib` only.
+  Not done here: a session driven by hand in the running window (evaluate,
+  interrupt, restart twice), which is the user's eye pass.
 
 - ⬜ **R23: The plans hold what is open.** The plans are 37 thousand lines
   against a rule that says a roadmap and a checkbox, `docs/decisions.md` is

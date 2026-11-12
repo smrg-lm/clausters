@@ -25,7 +25,7 @@ export function indentation(indent: IndentPref): Extension {
  * With spaces it inserts as many as reach the next indentation stop (a line
  * indented by two takes two more, not four), with tabs one tab character.
  */
-const tab: Command = (view) => {
+export const tab: Command = (view) => {
   const { state } = view;
   if (state.readOnly) return false;
   if (state.selection.ranges.some((r) => !r.empty)) return indentMore(view);

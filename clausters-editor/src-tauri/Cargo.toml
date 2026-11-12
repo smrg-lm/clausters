@@ -8,7 +8,7 @@
 name = "clausters-editor"
 version = "0.1.0"
 description = "A lightweight Python editor with an interactive session"
-edition = "2021"
+edition = "2024"
 license = "GPL-3.0-or-later"
 # An application, not a library: never published to a registry, which is also
 # what keeps it out of its own third-party notices (`about.toml`).
@@ -16,7 +16,10 @@ publish = false
 
 [lib]
 name = "clausters_editor_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# A desktop application: the binary links the library as an ordinary Rust
+# crate. The `staticlib` and `cdylib` the template carries are what a mobile
+# build loads, and nothing here builds one.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

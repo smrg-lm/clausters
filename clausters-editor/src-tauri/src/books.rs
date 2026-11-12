@@ -12,7 +12,7 @@ use std::path::Path;
 
 use tauri::AppHandle;
 
-use crate::files::{collect_md, roots, Root, SUMMARY};
+use crate::files::{Root, SUMMARY, collect_md, roots};
 
 #[derive(serde::Serialize, Debug, PartialEq)]
 pub struct Chapter {

@@ -40,11 +40,13 @@ static CACHE: Mutex<Option<(String, Vec<Book>)>> = Mutex::new(None);
 /// The books of the session's environment, by package name, sorted.
 pub fn books(app: &AppHandle) -> Vec<Book> {
     let (exe, _) = crate::session::python_exe(app);
-    let mut cache = CACHE.lock().unwrap();
-    if let Some((asked, books)) = cache.as_ref() {
-        if *asked == exe {
-            return books.clone();
-        }
+    let mut cache = CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((asked, books)) = cache.as_ref()
+        && *asked == exe
+    {
+        return books.clone();
     }
     let books = ask(&exe);
     *cache = Some((exe, books.clone()));
@@ -53,7 +55,9 @@ pub fn books(app: &AppHandle) -> Vec<Book> {
 
 /// Forgets the answer, so that the next listing asks again.
 pub fn forget() {
-    *CACHE.lock().unwrap() = None;
+    *CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 }
 
 fn ask(exe: &str) -> Vec<Book> {

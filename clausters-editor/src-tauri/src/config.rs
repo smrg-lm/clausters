@@ -50,13 +50,20 @@ pub fn save(app: &AppHandle, config: &Config) -> Result<(), String> {
 
 /// A copy of the current configuration.
 pub fn get(app: &AppHandle) -> Config {
-    app.state::<ConfigState>().0.lock().unwrap().clone()
+    app.state::<ConfigState>()
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
 }
 
 /// Changes the configuration and saves it to disk.
 pub fn update(app: &AppHandle, change: impl FnOnce(&mut Config)) -> Result<Config, String> {
     let state = app.state::<ConfigState>();
-    let mut config = state.0.lock().unwrap();
+    let mut config = state
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     change(&mut config);
     save(app, &config)?;
     Ok(config.clone())
@@ -64,15 +71,19 @@ pub fn update(app: &AppHandle, change: impl FnOnce(&mut Config)) -> Result<Confi
 
 #[tauri::command]
 pub fn get_config(state: State<ConfigState>) -> Config {
-    state.0.lock().unwrap().clone()
+    state
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
 }
 
 #[tauri::command]
 pub fn set_docs_dir(app: AppHandle, dir: Option<String>) -> Result<Config, String> {
-    if let Some(d) = &dir {
-        if !std::path::Path::new(d).is_dir() {
-            return Err(format!("Not a folder: {d}"));
-        }
+    if let Some(d) = &dir
+        && !std::path::Path::new(d).is_dir()
+    {
+        return Err(format!("Not a folder: {d}"));
     }
     update(&app, |c| c.docs_dir = dir)
 }

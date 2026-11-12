@@ -176,7 +176,8 @@ src/
   lib/Editor.svelte        an editor: tabs + CodeMirror, open/save (one or two of them)
   lib/Grip.svelte          the handle every panel is dragged by
   lib/editorTheme.ts       editor theme: shadcn variables + VS Code syntax colors
-  lib/evaluation.ts        what each shortcut evaluates (line, selection, block, cell)
+  lib/evaluation.ts        the evaluation shortcuts and the flash of what they ran
+  lib/regions.ts           what each shortcut evaluates (line, selection, block, cell)
   lib/indent.ts            the indentation unit and what Tab does
   lib/hints.ts             documentation tooltips and parameter help (Jedi, from the session)
   lib/completion.ts        completions (Jedi, from the session)
@@ -193,6 +194,7 @@ src/
 src-tauri/
   python/driver.py         driver: runs the code in a persistent namespace, and the
                            interrupt hooks (clausters_editor.interrupt)
+  python/test_driver.py    the driver's protocol, spoken to as a subprocess
   src/session.rs           the Python process: start, send, interrupt, restart
   src/files.rs             the user's files, the docs/ folder and the package books
   src/books.rs             each documentation folder as a book: title, parts and chapters (SUMMARY.md)
@@ -207,7 +209,18 @@ wheel/                     the Python package: setup.py stages the build, claust
 licenses/                  THIRD-PARTY.txt: the license of every package the app ships, shipped
                            with it -- `npm run notices` writes it (needs `cargo about`)
 scripts/notices.mjs        what writes it: the Vite bundle's packages + `cargo about`
+tests/                     the page's pure modules under `node --test`, from the sources
 ```
+
+The checks the workflow runs, and what to run before a commit: `npm run check`
+and `npm run build`; `npm test` (the page's pure modules, run straight from
+the sources by node, `tests/resolve.mjs` resolving their imports as vite
+does); `python3 -m unittest discover -s src-tauri/python -p 'test_*.py'` (the
+driver); and in `src-tauri/`, `cargo fmt --check`, `cargo clippy --all-targets
+-- -D warnings` and `cargo test`. The window has a content security policy
+(`tauri.conf.json`): scripts and fonts from the app itself, styles inline as
+the editor writes them, and nothing framed, posted or loaded from elsewhere;
+the development server runs without it.
 
 To add components: `npx shadcn-svelte@latest add <name>`.
 

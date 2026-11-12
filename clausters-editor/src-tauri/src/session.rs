@@ -8,10 +8,10 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const DRIVER: &str = include_str!("../python/driver.py");
@@ -53,6 +53,19 @@ pub fn python_exe(app: &AppHandle) -> (String, Option<String>) {
 }
 
 impl Session {
+    /// The process slot, taken whether or not a thread panicked holding it:
+    /// what it guards is an `Option` that is valid at every step.
+    fn slot(&self) -> MutexGuard<'_, Option<Proc>> {
+        self.proc.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Ends `proc` and waits for it, so it leaves no zombie behind.
+    fn end(&self, mut proc: Proc) {
+        self.pid.store(0, Ordering::SeqCst);
+        let _ = proc.child.kill();
+        let _ = proc.child.wait();
+    }
+
     fn spawn(&self, app: &AppHandle) -> Result<Proc, String> {
         // A new session may import other packages: their books are asked again.
         crate::pkgdocs::forget();
@@ -87,7 +100,7 @@ impl Session {
             }
             // stdout closed: the process ended (or was restarted).
             let session = handle.state::<Session>();
-            let mut guard = session.proc.lock().unwrap();
+            let mut guard = session.slot();
             let code = match guard.as_mut() {
                 Some(p) if p.generation == generation => {
                     let code = p.child.wait().ok().and_then(|s| s.code());
@@ -118,23 +131,21 @@ impl Session {
     fn send(&self, app: &AppHandle, request: Value) -> Result<(), String> {
         let mut line = request.to_string();
         line.push('\n');
-        let mut guard = self.proc.lock().unwrap();
+        let mut guard = self.slot();
         if guard.is_none() {
             *guard = Some(self.spawn(app)?);
         }
         let ok = guard
             .as_mut()
-            .unwrap()
-            .stdin
-            .write_all(line.as_bytes())
-            .is_ok();
+            .is_some_and(|p| p.stdin.write_all(line.as_bytes()).is_ok());
         if !ok {
-            // Broken pipe: the process died. It is restarted and the write retried once.
-            *guard = Some(self.spawn(app)?);
-            guard
-                .as_mut()
-                .unwrap()
-                .stdin
+            // Broken pipe: the process died. It is waited for, so it leaves no
+            // zombie, restarted, and the write retried once.
+            if let Some(dead) = guard.take() {
+                self.end(dead);
+            }
+            let proc = guard.insert(self.spawn(app)?);
+            proc.stdin
                 .write_all(line.as_bytes())
                 .map_err(|e| e.to_string())?;
         }
@@ -142,10 +153,9 @@ impl Session {
     }
 
     pub fn kill(&self) {
-        self.pid.store(0, Ordering::SeqCst);
-        if let Some(mut p) = self.proc.lock().unwrap().take() {
-            let _ = p.child.kill();
-            let _ = p.child.wait();
+        let taken = self.slot().take();
+        if let Some(p) = taken {
+            self.end(p);
         }
     }
 }
@@ -192,11 +202,18 @@ pub fn py_query(
 }
 
 /// Ends the current session and starts a new one (with whichever interpreter applies now).
+///
+/// The slot stays locked from the old process's end to the new one's start: a
+/// request arriving in between waits for the new interpreter instead of
+/// starting one of its own, which the restart would then replace and leave
+/// running with nothing to end it.
 pub fn restart(app: &AppHandle) -> Result<(), String> {
     let session = app.state::<Session>();
-    session.kill();
-    let proc = session.spawn(app)?;
-    *session.proc.lock().unwrap() = Some(proc);
+    let mut slot = session.slot();
+    if let Some(old) = slot.take() {
+        session.end(old);
+    }
+    *slot = Some(session.spawn(app)?);
     Ok(())
 }
 

@@ -16,6 +16,22 @@ use crate::{config, session};
 /// Only one create/install operation at a time.
 static BUSY: AtomicBool = AtomicBool::new(false);
 
+/// **The one operation running**: taken before it starts, given back when it
+/// is dropped, however the operation ends -- returned, failed or panicked.
+struct Busy;
+
+impl Busy {
+    fn take() -> Option<Busy> {
+        (!BUSY.swap(true, Ordering::SeqCst)).then_some(Busy)
+    }
+}
+
+impl Drop for Busy {
+    fn drop(&mut self) {
+        BUSY.store(false, Ordering::SeqCst);
+    }
+}
+
 #[derive(Serialize)]
 pub struct EnvInfo {
     name: String,
@@ -133,14 +149,15 @@ fn pip_install(app: &AppHandle, dir: &Path, source: &str) -> Result<(), String> 
 async fn exclusive<T: Send + 'static>(
     task: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
-    if BUSY.swap(true, Ordering::SeqCst) {
-        return Err("An environment operation is already in progress".into());
-    }
-    let result = tauri::async_runtime::spawn_blocking(task)
-        .await
-        .map_err(|e| e.to_string());
-    BUSY.store(false, Ordering::SeqCst);
-    result?
+    let busy = Busy::take().ok_or("An environment operation is already in progress")?;
+    // The guard goes with the task, so the flag is held for as long as the
+    // work runs, even if whoever awaits it stops waiting.
+    tauri::async_runtime::spawn_blocking(move || {
+        let _busy = busy;
+        task()
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -232,10 +249,10 @@ pub fn delete_env(app: AppHandle, name: String) -> Result<(), String> {
 /// Chooses the session's environment (`None` = the system Python) and restarts the session.
 #[tauri::command]
 pub fn use_env(app: AppHandle, name: Option<String>) -> Result<(), String> {
-    if let Some(n) = &name {
-        if !python_in(&env_dir(&app, n)?).exists() {
-            return Err(format!("The environment '{n}' does not exist"));
-        }
+    if let Some(n) = &name
+        && !python_in(&env_dir(&app, n)?).exists()
+    {
+        return Err(format!("The environment '{n}' does not exist"));
     }
     config::update(&app, |c| c.active_env = name)?;
     session::restart(&app)
