@@ -258,8 +258,10 @@ on trust, so that is where drift accumulates:
   parity generators `clients/web/tests/gen-*-vectors.py`) imports the Python
   client; its pages (`clients/web/tests/*.html`, `examples/**`) and its node
   scripts (`examples/**/*.mjs`, which author the example bundles) are plain
-  modules no type-checker reads. `./build.sh && ./test.sh` from `clients/web` is the only
-  thing that proves the package works — and `dist/` is git-ignored, so build
+  modules no type-checker reads; `npm run lint` (`biome.json`, run by
+  `test.sh` and CI) is what reads them for unused and undefined names and
+  likely bugs, with a baseline of zero. `./build.sh && ./test.sh` from
+  `clients/web` is the only thing that proves the package works — and `dist/` is git-ignored, so build
   before testing, always. Re-run the generators and commit whatever vectors
   move.
 - **The pages run in one browser while developing.** `clients/web/test.sh`

@@ -22,7 +22,7 @@ import { SESSION_FORMAT } from "../src/document.ts";
 import { Event } from "../src/seq/event.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 
-import { Automation, Multitrack, Content, Fade, FrozenSource, TakeLaneView, Region,
+import { Automation, Multitrack, Content, Fade, FrozenSource, TakeLaneView, 
          Session, Source, Span, Tempo, Track, TrackView,
          View } from "../src/multitrack.ts";
 import type { TakeLane } from "../src/multitrack.ts";
@@ -66,7 +66,7 @@ test("a comped track keeps every take and plays the one it names", async () => {
     assert.equal(vocals.active, 1);
     assert.equal(vocals.activeTakeLane?.name, "take 2");
     const sources = [...vocals.takeLanes].flatMap((lane) => [...lane.regions]).map(
-        (r) => (r.content.window?.source as Record<string, unknown>).source);
+        (r) => (r.content.window!.source as Record<string, unknown>).source);
     assert.deepEqual(sources, [100, 101, 102]);
 });
 

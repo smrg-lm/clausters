@@ -132,8 +132,6 @@
         ];
 
         const heard = [];
-        let peak = 0;
-        let low = 0;
         let high = 0;
         for (const [label, def] of forms) {
           const t0 = performance.now();
@@ -156,8 +154,6 @@
           log(`${label}: compiled in ${ms} ms, peak ${p.toFixed(3)}, ~${Math.round(hz)} Hz`);
           heard.push([label, p, hz]);
           if (label === "source") {
-            peak = p;
-            low = hz;
             // The control by name, through the node tree, exactly as a
             // SynthDef's would be. Nothing here knows the def is Faust.
             node.set({ freq: 900 });

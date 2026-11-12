@@ -160,6 +160,7 @@ this directory and open the page.</div>
         // server without being handed it, and every clock built below is made
         // on its timebase and kept in it.
         const session = (await Session.embed({ channels: 2 })).activate();
+        // biome-ignore lint/correctness/noUnusedVariables: the Python cell's line, the server a reader reaches for
         const server = session.server;
 
         // The ten clocks: a clock, its ramp, its routine. Each is made on the

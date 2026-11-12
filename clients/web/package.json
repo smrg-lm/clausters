@@ -51,6 +51,7 @@
   ],
   "scripts": {
     "check": "tsc",
+    "lint": "biome lint --error-on-warnings .",
     "build": "tsc -p tsconfig.build.json",
     "test": "node --test --test-concurrency=1 'tests/*.test.ts'",
     "docs": "docs/build.sh",
@@ -58,6 +59,7 @@
     "prepublishOnly": "node tools/check-package.mjs"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.4",
     "@types/node": "^24",
     "esbuild": "^0.28.1",
     "typescript": "^7"

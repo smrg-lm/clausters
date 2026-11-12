@@ -1759,6 +1759,9 @@ Context (the B track's capstone): the web components had a deferred design
 
 ## The web client toolchain is tsc + node:test, nothing else; OSC parity is a committed vector file
 
+*Extended 2026-11-12: a linter joined it, under the same rule ("The web client
+lints with Biome, a linter that is one package").*
+
 Context (the TS track's start): the web client needed a JS toolchain, and the
 default answer in that ecosystem (vite + vitest, or any bundler) contradicts
 both the repo's no-heavy-deps posture and the package's already-settled shape
@@ -1784,6 +1787,28 @@ static assets — the things bundlers fight).
   `clausters.base._osclib` and committed. Both clients answer to the same
   frozen bytes; regenerating the file is an explicit act (new cases), never
   part of a test run.
+
+## The web client lints with Biome, a linter that is one package
+
+*Decided 2026-11-12, extending "The web client toolchain is tsc + node:test,
+nothing else".* The package's pages (`tests/*.html`, `examples/**`) and node
+scripts are plain JavaScript that no type-checker reads, so an undefined name
+or a variable left behind there is found by running the page or not at all,
+and `tsc` itself does not report an unused import or variable. A linter closes
+that, and the toolchain rule decided which one: **Biome**, whose rules run in a
+native binary delivered as one optional dependency per platform, with no
+JavaScript dependency of its own, the posture TypeScript 7 was taken for. The
+established alternative is a linter plus a TypeScript parser and its rules,
+several hundred packages for the same checks.
+
+Two rule groups are on, the ones that name a bug rather than a style:
+correctness and suspicious, less the rules that are a style of typing or of
+writing (`noExplicitAny`, an assignment inside a condition, a callback's return
+value, an unused parameter, an approximate constant, a declaration merged with
+a class, a `let` with no type). The formatter stays off: the package has no
+formatter and this does not add one. `npm run lint` runs it with warnings as
+errors, `test.sh` runs it after the type-check, and CI's web job runs it. A
+`biome-ignore` carries its reason on the line, as a `noqa` does in Python.
 
 ## The web front-end lives in one package that mirrors the Python client
 

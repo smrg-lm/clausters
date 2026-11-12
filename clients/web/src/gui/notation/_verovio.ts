@@ -74,12 +74,10 @@ async function verovioModule(): Promise<VerovioModule> {
  * caching, no recovery, all of which belong to the model.
  */
 export class Toolkit {
-    private readonly module: VerovioModule;
     private readonly ptr: number;
     private readonly fns: Record<string, (...a: unknown[]) => unknown>;
 
     private constructor(module: VerovioModule) {
-        this.module = module;
         const cw = (name: string, ret: string | null, args: string[]) =>
             module.cwrap(`vrvToolkit_${name}`, ret, args);
         this.fns = {

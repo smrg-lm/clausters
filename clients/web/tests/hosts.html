@@ -200,17 +200,17 @@
         // host answers with the value *it* was given.
         const infoA = await query(a.bridge, 1003, a.seen);
         const infoB = await query(b.bridge, 1003, b.seen);
-        const valueOf = (args) => {
+        const valueIn = (args) => {
           const i = args.indexOf("value");
           if (i < 0) throw new Error(`no value in /gui_info: ${JSON.stringify(args)}`);
           return args[i + 1];
         };
-        if (Math.abs(valueOf(infoA) - 0.2) > 1e-3 || Math.abs(valueOf(infoB) - 0.8) > 1e-3) {
+        if (Math.abs(valueIn(infoA) - 0.2) > 1e-3 || Math.abs(valueIn(infoB) - 0.8) > 1e-3) {
           throw new Error(
             `the two hosts' widget 1003 collided: ` +
-            `A=${valueOf(infoA)} B=${valueOf(infoB)} (want 0.2 / 0.8)`);
+            `A=${valueIn(infoA)} B=${valueIn(infoB)} (want 0.2 / 0.8)`);
         }
-        log(`widget 1003 in both: A=${valueOf(infoA)}, B=${valueOf(infoB)}`);
+        log(`widget 1003 in both: A=${valueIn(infoA)}, B=${valueIn(infoB)}`);
 
         // A gesture on A's canvas: the /gui_event leaves through A's outbox
         // and B's stays empty. The slider's band is y 162..272 in the tree's
@@ -237,7 +237,7 @@
         log(`/gui_event from A only: ${JSON.stringify(events[0].args)}`);
 
         // A's slider moved and B's did not: the same widget id, two states.
-        if (Math.abs(valueOf(await query(b.bridge, 1003, b.seen)) - 0.8) > 1e-3) {
+        if (Math.abs(valueIn(await query(b.bridge, 1003, b.seen)) - 0.8) > 1e-3) {
           throw new Error("the gesture on A moved B's widget");
         }
 
@@ -292,7 +292,7 @@
         if (leaked > 0) {
           throw new Error(`closing host A left ${leaked} uncaught error(s) behind it`);
         }
-        if (Math.abs(valueOf(await query(b.bridge, 1003, b.seen)) - 0.8) > 1e-3) {
+        if (Math.abs(valueIn(await query(b.bridge, 1003, b.seen)) - 0.8) > 1e-3) {
           throw new Error("closing host A disturbed host B");
         }
         const beforeClose = (await b.synth.info()).controls.freq;

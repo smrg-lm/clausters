@@ -985,7 +985,6 @@ export class TransportPlayer implements TreeDriver {
      * a node's seconds into a sample of the transport's clock.
      */
     private stamp: [number, number, number] | null = null;
-    private held = 0;
     private rate = 0;
     /**
      * The position sample this client itself cued, so its own locate's
@@ -1128,7 +1127,6 @@ export class TransportPlayer implements TreeDriver {
     }
 
     locate(beat: number, cue = true): void {
-        this.held = beat;
         this.queue(async () => {
             const rate = await this.rateOf();
             const sample = Math.round((this.timeline.transportAt + this.rootSecs(beat)) * rate);
@@ -1141,7 +1139,6 @@ export class TransportPlayer implements TreeDriver {
     }
 
     halt(): void {
-        this.held = this.position();
         this.reported = { ...this.reported, playing: false };
         this.queue(async () => {
             await this.server.transportStop();

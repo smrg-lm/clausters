@@ -39,7 +39,7 @@ import { GuiIdAllocator } from "./ids.ts";
 import type { IdShare } from "../base/ids.ts";
 import { WidgetHandle, WindowHandle } from "./handle.ts";
 import type { EventArgs } from "./handle.ts";
-import { canvasIn, guiHost, newCanvas, newGuiHost, pageGuiConnection, pageGuiIfUp } from "./page.ts";
+import { canvasIn, newCanvas, newGuiHost, pageGuiConnection, pageGuiIfUp } from "./page.ts";
 import { loadCore } from "../base/core.ts";
 import type { ClaustersServer } from "../engine/server.ts";
 import { ambientHost, setAmbientHost } from "./ambient.ts";

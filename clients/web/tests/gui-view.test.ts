@@ -39,7 +39,6 @@ import {
 } from "../src/gui/guidef.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
 
-const here = new URL(".", import.meta.url);
 await loadCore();
 
 /** A carrier that only records; nothing replies. */

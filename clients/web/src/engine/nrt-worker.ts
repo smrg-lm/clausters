@@ -780,7 +780,7 @@ async function toCache(key: string, bytes: ArrayBuffer, json: string): Promise<v
 }
 
 async function compileOnce(request: FaustRequest): Promise<Response> {
-    const { ticket, name } = request;
+    const { ticket } = request;
     const { lib, mod } = await compiler();
     let out: FaustArtifact;
     try {

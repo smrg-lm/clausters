@@ -1,0 +1,47 @@
+{
+    "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+    "vcs": {
+        "enabled": true,
+        "clientKind": "git",
+        "useIgnoreFile": true
+    },
+    "files": {
+        "includes": [
+            "src/**",
+            "tests/**",
+            "examples/**",
+            "tools/**",
+            "!vendor",
+            "!src/core/clausters_core_web.d.ts",
+            "!src/gui-host/clausters_gui.d.ts",
+            "!src/gui-host-apps/clausters_gui.d.ts",
+            "!src/engine/clausters_web.d.ts"
+        ]
+    },
+    "formatter": {
+        "enabled": false
+    },
+    "assist": {
+        "enabled": false
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "preset": "none",
+            "correctness": {
+                "preset": "recommended",
+                "noUnusedFunctionParameters": "off"
+            },
+            "suspicious": {
+                "preset": "recommended",
+                "noExplicitAny": "off",
+                "noAssignInExpressions": "off",
+                "useIterableCallbackReturn": "off",
+                "noConfusingVoidType": "off",
+                "noApproximativeNumericConstant": "off",
+                "noImplicitAnyLet": "off",
+                "noUnsafeDeclarationMerging": "off"
+            }
+        }
+    }
+}

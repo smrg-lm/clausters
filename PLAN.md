@@ -2665,7 +2665,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   error. The decision is "The ctypes declarations are checked against a
   header the crate generates".
 
-- ⬜ **R21: The clients are linted, and typed a module at a time.** The
+- ✅ **R21: The clients are linted, and typed a module at a time** *(done 2026-11-12)*. The
   Python client is 52 thousand lines with its signatures already annotated,
   a type checker switched off but for four call-site rules, and no linter.
   It takes a linter with a minimal rule set (unused and undefined names, the
@@ -2674,6 +2674,23 @@ and so waits for `T3`, the milestone that already owes the bench.
   `history`); the eleven handlers that swallow every exception are each
   narrowed or given their reason. The web client takes a linter. Both run in
   CI. **Acceptance:** zero findings on what is switched on.
+
+  *Done 2026-11-12.* ruff runs over every Python file of the repository
+  (`ruff.toml` at the root, the editor application left to its own
+  workflow) with F and B less `zip()` without `strict=`; its 93 findings
+  were fixed first, in their own commit, among them an `__all__` naming
+  three builders that no longer exist (so a star import of `guidef`
+  raised) and public names missing from two others. The eleven handlers:
+  the nine in `__del__` say why they swallow, one catches `OSError` only,
+  one lost its `try`. pyright's basic mode is on in the three modules'
+  first line and found a closed editing context reached through `None`,
+  which now raises. The web client takes Biome (`biome.json`; the choice
+  and why is in `docs/decisions.md`, "The web client lints with Biome, a
+  linter that is one package"): correctness and suspicious, less the rules
+  about a style of typing; its 174 findings came to zero, which removed
+  dead state in both clients' transport player and in the web `Server`, and
+  dead helpers in the tests. CI runs ruff and pyright in the `python` job
+  and the linter in the `web` job, `test.sh` runs it too.
 
 - ⬜ **R22: The editor application, reviewed.** `clausters-editor` stays a
   workspace of its own, which its version, its dependencies and its workflow

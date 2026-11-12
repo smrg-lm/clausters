@@ -43,7 +43,6 @@
 
 import { EditingCore } from "./core/clausters_core_web.js";
 import type { EventSequence } from "./seq/sequence.ts";
-import type { Multitrack } from "./multitrack.ts";
 import type { Score } from "./gui/notation/engraver.ts";
 
 /**

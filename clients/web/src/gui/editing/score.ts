@@ -18,7 +18,7 @@
  * @module
  */
 
-import { readFileAt, writeFileAt } from "../../base/files.ts";
+import { writeFileAt } from "../../base/files.ts";
 import { Score, TRANSCRIPTION_KEYS } from "../notation/index.ts";
 import type { Interpretation, Transcription } from "../notation/index.ts";
 import { EventSequence } from "../../seq/sequence.ts";

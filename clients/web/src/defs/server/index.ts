@@ -60,7 +60,7 @@ import { OscFunc } from "../../responders.ts";
 import type { RenderOptions, RenderStats } from "../../render.ts";
 import { main } from "../../base/main.ts";
 import { Moment } from "../../base/moment.ts";
-import { LogicalTimebase, MonotonicTimebase, SampleClockTimebase } from "../../base/timebase.ts";
+import { LogicalTimebase, SampleClockTimebase } from "../../base/timebase.ts";
 import type { Timebase } from "../../base/timebase.ts";
 import { sampleClockFor } from "../clocksync.ts";
 import type { ServerSampleClock } from "../clocksync.ts";
@@ -286,8 +286,6 @@ export class Server {
      * makes it one of the page's allocators rather than a client of its own.
      */
     private onPageEngine = false;
-    /** Whether `boot` brought up the engine under this handle, so `quit` ends it. */
-    private ownsEngine = false;
 
     /**
      * The carrier this handle talks over.
@@ -621,7 +619,6 @@ export class Server {
                         "boot() one instead, which brings up its own.",
                 );
             }
-            this.ownsEngine = own && !this.audio;
             this.onPageEngine = !own && !this.audio;
             this.audio = await found;
             this.conn = await pageConnection(this.audio);
@@ -650,7 +647,6 @@ export class Server {
         this.conn?.close();
         this.conn = null;
         this.audio = null;
-        this.ownsEngine = false;
         this.onPageEngine = false;
         this.openedCarrier = false;
     }

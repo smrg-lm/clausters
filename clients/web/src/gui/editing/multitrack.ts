@@ -36,8 +36,7 @@
 
 import { Multitrack, Region, Session } from "../../multitrack.ts";
 import type { Extra, WindowHistory, WindowOver } from "../../multitrack.ts";
-import type { GuiHost, Stage } from "../host.ts";
-import type { WindowHandle } from "../handle.ts";
+import type { GuiHost } from "../host.ts";
 import type { EventSequence } from "../../seq/sequence.ts";
 import { NotesEditor } from "./events.ts";
 import { Held, HostedEditor, MultitrackTransport } from "./hosted.ts";

@@ -19,7 +19,6 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { Multitrack } from "../src/multitrack.ts";
 import {
     conversationAnswer,
     conversationRead,

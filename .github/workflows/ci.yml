@@ -234,6 +234,12 @@ jobs:
       - name: npm install (build.sh emits the package with tsc)
         working-directory: clients/web
         run: npm ci
+      # The linter (clients/web/biome.json): unused names and likely bugs over
+      # the sources, the tests, the pages and the node scripts, which no
+      # type-checker reads. The baseline is zero.
+      - name: lint
+        working-directory: clients/web
+        run: npm run lint
       # The two authored-bundle cases write their bundles with the Python
       # client, which the script puts on PYTHONPATH itself -- and builds
       # `clausters-ffi` for, since writing a bundle validates it through the

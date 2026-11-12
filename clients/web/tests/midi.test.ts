@@ -22,7 +22,6 @@ import { join } from "node:path";
 
 import { loadCore } from "../src/base/core.ts";
 import {
-    MidiNrtInterface,
     MidiReceiver,
     MidiRtInterface,
     MidiScore,
@@ -188,6 +187,7 @@ test("a message at the current beat goes out now, a later one with a deadline", 
         timebase: new ManualTimebase(1000),
         ticker: manualTicker(),
     }).start();
+    // biome-ignore lint/correctness/useYield: a routine's body is a generator, and this one acts once and ends
     clock.play(new Routine(function* () {
         iface.emit(0, [0x90, 60, 100]);       // now
         iface.emit(2, [0x80, 60, 0]);         // two beats out
@@ -433,6 +433,7 @@ test("a MidiItem renders through a MidiServer and refuses an OSC one", async () 
         timebase: new ManualTimebase(1000),
         ticker: manualTicker(),
     }).start();
+    // biome-ignore lint/correctness/useYield: a routine's body is a generator, and this one acts once and ends
     clock.play(new Routine(function* () {
         MidiItem([0xb0, 74, 40]).play(server);
     }));

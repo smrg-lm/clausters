@@ -38,7 +38,7 @@ import type { Intent } from "../../document.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { WindowHandle } from "../handle.ts";
 import type { GuiHost, PropValue, WindowActivity, WindowProfile } from "../host.ts";
-import { Editing, FIRST_VERSION } from "../../history.ts";
+import { Editing } from "../../history.ts";
 import type { RecordingLeg } from "../../history.ts";
 import type { Server } from "../../defs/server/index.ts";
 import type { Adopting, Applier } from "../../history.ts";
@@ -976,7 +976,6 @@ export class Editor<S = unknown> implements Adopting {
             this.editing.moved();
         }
         this.dirty = true;
-        const moved = { structure: this.registered(), payload };
         this.editing.changed();
         return true;
     }

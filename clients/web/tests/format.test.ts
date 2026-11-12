@@ -25,7 +25,7 @@ const cases: Case[] = JSON.parse(
 ) as Case[];
 
 /** The float a case names, the three JSON cannot say included. */
-function valueOf(entry: Case): number {
+function numberOf(entry: Case): number {
     if (entry.value === "nan") return Number.NaN;
     if (entry.value === "inf") return Number.POSITIVE_INFINITY;
     if (entry.value === "-inf") return Number.NEGATIVE_INFINITY;
@@ -40,7 +40,7 @@ test("the vectors are there, ties and all", () => {
 
 test("a number at fixed decimals is the line Python writes", () => {
     for (const entry of cases) {
-        const value = valueOf(entry);
+        const value = numberOf(entry);
         for (const [digits, line] of Object.entries(entry.fixed)) {
             assert.equal(
                 formatFixed(value, Number(digits)), line,
@@ -52,7 +52,7 @@ test("a number at fixed decimals is the line Python writes", () => {
 
 test("a number in the general format is the line Python writes", () => {
     for (const entry of cases) {
-        assert.equal(formatGeneral(valueOf(entry)), entry.general, String(entry.value));
+        assert.equal(formatGeneral(numberOf(entry)), entry.general, String(entry.value));
     }
 });
 

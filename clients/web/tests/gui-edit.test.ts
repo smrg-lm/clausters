@@ -11,7 +11,6 @@
 // Run with `npm test`; this suite needs the core staged (`./build.sh`).
 
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import { TempoMap } from "../src/base/time.ts";
 import test from "node:test";
 
@@ -25,7 +24,7 @@ import { POINTS } from "../src/document.ts";
 import { Bpf, Env } from "../src/defs/ugens/index.ts";
 import { Automation } from "../src/multitrack.ts";
 import { Event } from "../src/seq/event.ts";
-import { OscItem, Timeline } from "../src/seq/timeline.ts";
+import { Timeline } from "../src/seq/timeline.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { OscNrtInterface } from "../src/base/connection.ts";
@@ -49,7 +48,6 @@ await loadCore();
 
 const SR = 48_000;
 const TEMPO = 2.0;
-const BEAT = SR / TEMPO;
 
 /** What the host is told, so an answer can be read. */
 class FakeHost {
@@ -126,8 +124,6 @@ async function opened(editor: { open: (h: GuiHost) => Promise<unknown> }) {
     const tree = host.trees[0] as GuiNode;
     return { host, wid: picture(tree).id as number };
 }
-
-const blob = (values: number[]): Uint8Array => new Uint8Array(Float32Array.from(values).buffer);
 
 // ---- the verb ----
 
@@ -316,17 +312,6 @@ test("a resend of the curve is not an edit", async () => {
 });
 
 // ---- an event sequence, and a timeline rendered into one ----
-
-/** A timeline at `tempo`, opened: its rendered sequence is what the roll edits. */
-async function aRoll(tempo = TEMPO): Promise<{ timeline: Timeline; editor: NotesEditor }> {
-    const timeline = aTimeline();
-    timeline.map = new TempoMap(tempo);
-    const editor = (await edit(timeline, { sampleRate: SR, open: false })) as unknown as NotesEditor;
-    return { timeline, editor };
-}
-
-const midinotes = (seq: EventSequence): [number, unknown][] =>
-    [...seq].map(([beat, e]) => [beat, e.get("midinote")]);
 
 
 
@@ -600,12 +585,6 @@ test("play answers the transport the sequence plays on", async () => {
 });
 
 
-/** The transport a recorded `/transport_*` command names: its first argument. */
-function transportOf(args: unknown[]): number {
-    const first = args[0];
-    return Number(Array.isArray(first) ? first[1] : first);
-}
-
 test("two sequences play together and a free gives the transport back", async () => {
     // Each `play(sequence)` takes a transport, so two sound at once; with none
     // left the play fails saying so, and a `free` gives one back.
@@ -677,32 +656,6 @@ test("a loop asked while stopped is kept for the next play", async () => {
 
 // ---- the score editor plays ----
 
-const scoreEngraver = new URL("../vendor/verovio/verovio.js", import.meta.url);
-
-
-/**
- * A gesture of two edits: the dial to the first value, then the second. A
- * second value of `null` is an edit this domain cannot invert, and one of
- * `"boom"` is one it fails to write.
- */
-class TwoTurnDomain extends DialDomain {
-    override payloads(_structure: Dial, tag: string, values: readonly unknown[]): unknown[] {
-        if (tag !== "two") return [];
-        return values.map((value) => ({ intent: "setpoints", points: [{ at: 0.0, value }] }));
-    }
-
-    override current(structure: Dial, payload: unknown): unknown {
-        if ((payload as { points: { value: unknown }[] }).points[0]!.value === null) return null;
-        return super.current(structure, payload);
-    }
-
-    override project(structure: Dial, payload: unknown): boolean {
-        if ((payload as { points: { value: unknown }[] }).points[0]!.value === "boom") {
-            throw new Error("the dial would not turn");
-        }
-        return super.project(structure, payload);
-    }
-}
 
 
 test("a window verb is asked of the host by name or by member", async () => {

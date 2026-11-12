@@ -28,7 +28,6 @@ import {
     SEGMENT,
     SIMULTANEOUS,
     SUCCESSIVE,
-    Segments,
     Sequence,
     Track,
     Vector,
@@ -229,7 +228,7 @@ test("a placement's length trims what the element plays", () => {
     const song = new Aggregate([[0.0, 1.5, take]]);
     const flat = flatten(song);
     assert.equal(flat.length, 1);
-    assert.equal((flat[0]?.[1] as SeqEvent).get("dur"), 1.5);
+    assert.equal((flat[0][1] as SeqEvent).get("dur"), 1.5);
     assert.equal(take.toEvent().get("dur"), 4.0);
 });
 
@@ -246,7 +245,7 @@ test("a buffer with no instrument is structure and has no sound of its own", () 
     assert.deepEqual(flatten(data), []);
     const sounding = new Vector(buffer(3), null, 2.0, { instrument: "take" });
     assert.equal(flatten(sounding).length, 1);
-    assert.equal((flatten(sounding)[0]?.[1] as SeqEvent).get("buf"), 3);
+    assert.equal((flatten(sounding)[0][1] as SeqEvent).get("buf"), 3);
 });
 
 test("a frozen generator draws and emits nothing", () => {
@@ -319,11 +318,4 @@ test("a generator names its def by string or by object", () => {
 });
 
 // ---- the document bridge ----
-
-function anAggregate(): Aggregate {
-    const aggregate = new Aggregate(null, "concrete", { name: "aggregate" });
-    aggregate.add(new Clang(note(60)), 0.0, 1.0);
-    aggregate.add(new Vector(buffer(100), null, 4.0, { instrument: "take" }), 2.0, 4.0);
-    return aggregate;
-}
 

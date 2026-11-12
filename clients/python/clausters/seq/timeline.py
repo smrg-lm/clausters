@@ -773,7 +773,6 @@ class _TransportPlayer:
         #: ``(base_sample, base_secs, rate)`` while a plan is being written:
         #: what turns a node's seconds into a sample of the transport's clock.
         self._stamp = None
-        self._held = 0.0
         #: what the last broadcast said, so a conductor's own play and locate
         #: are told from this client's.
         #: the position sample this client itself cued, so its own locate's
@@ -897,7 +896,6 @@ class _TransportPlayer:
 
     def locate(self, beat, cue: bool = True):
         beat = float(beat)
-        self._held = beat
         server = self.server
         rate = self._rate()
         with self._lock:
@@ -911,7 +909,6 @@ class _TransportPlayer:
         return self
 
     def halt(self):
-        self._held = self.position()
         self.server.transport_stop()
         self._reported["playing"] = False
         return self

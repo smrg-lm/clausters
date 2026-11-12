@@ -244,7 +244,6 @@ test("a render with no path keeps no output and does its work", async () => {
             { addr: "/synth_new", args: [s("recorded"), i(1000), i(0), i(0)] },
         ]);
         nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
-        const score = [...nrt.score.bytes()].map((b) => b.toString(16).padStart(2, "0")).join("");
         const { renderFile } = await import("../src/engine/file-render.ts");
         await renderFile({ score: nrt.score.bytes(), sampleRate: RATE, channels: 1, seed: 0n, path: "", sampleFormat: "float" });
         const head = new TextDecoder().decode((await readFile(written)).subarray(0, 4));

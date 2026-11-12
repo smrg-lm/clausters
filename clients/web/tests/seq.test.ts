@@ -27,14 +27,11 @@ import {
     pser,
     pseries,
     pwhite,
-    OscItem,
     Timeline,
     rest,
 } from "../src/seq/index.ts";
 import type { EventDestination, PlayDestination } from "../src/seq/index.ts";
 import { synthRender } from "../src/seq/event.ts";
-import type { OscHandler } from "../src/base/receiver.ts";
-import type { Server } from "../src/defs/server/index.ts";
 import { play } from "../src/play.ts";
 import { flush } from "./flush.ts";
 

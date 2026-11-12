@@ -11,9 +11,7 @@
 // missing, so `npm test` stays runnable from a source tree without a build.
 
 import assert from "node:assert/strict";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { access } from "node:fs/promises";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
@@ -22,7 +20,6 @@ import { WsConnection } from "../src/base/connection.ts";
 import { loadCore } from "../src/base/core.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Buffer } from "../src/defs/buffer.ts";
-import { Session } from "../src/multitrack.ts";
 import { Synth } from "../src/defs/node.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";

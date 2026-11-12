@@ -47,7 +47,6 @@ import { Pattern } from "../seq/pattern.ts";
 import { MAX_BOUNCED_EVENTS } from "../render.ts";
 import { Timeline } from "../seq/timeline.ts";
 import type { PlayDestination } from "../seq/timeline.ts";
-import type { TempoClock } from "../base/clock.ts";
 import { CONCRETE, LOGICAL, Aggregate } from "./aggregate.ts";
 import {
     BEATS,

@@ -30,7 +30,7 @@ import { Session } from "../src/session.ts";
 import { OscNrtInterface } from "../src/base/connection.ts";
 import { Synth } from "../src/defs/node.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
-import { Env, control, out, sine } from "../src/defs/ugens/index.ts";
+import { Env, out, sine } from "../src/defs/ugens/index.ts";
 import { Event, pbind, pseq } from "../src/seq/index.ts";
 import { loadRenderer } from "../src/engine/render.ts";
 import { render } from "../src/render.ts";

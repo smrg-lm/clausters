@@ -27,7 +27,6 @@ import {
     itemId,
     marks,
     measures,
-    moveSteps,
     ops,
     pitch,
     removeMeasures,
@@ -57,8 +56,6 @@ import {
     transpose,
 } from "../src/gui/notation/index.ts";
 import type { Sheet } from "../src/gui/notation/index.ts";
-import { edit } from "../src/gui/editing/edit.ts";
-import { Editing } from "../src/history.ts";
 import { Event, NOTATION_KEYS, synthRender } from "../src/seq/event.ts";
 import { event_notation_keys as coreNotationKeys } from "../src/core/clausters_core_web.js";
 import { rest } from "../src/seq/event.ts";
@@ -66,17 +63,6 @@ import { Timeline } from "../src/seq/timeline.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 import * as notation from "../src/gui/notation/index.ts";
 import { setEngraverUrl } from "../src/gui/notation/index.ts";
-
-/**
- * The view a window edits: the node its `main` names, which stands under the
- * toolbar of a window with chrome -- or, in one with none, its first.
- */
-function picture(tree: unknown): Record<string, any> {
-    const root = tree as { main?: number; children?: unknown[] };
-    const find = (node: any): any =>
-        node.id === root.main ? node : (node.children ?? []).map(find).find((f: unknown) => f);
-    return (root.main !== undefined && find(root)) || (root.children as any[])[0];
-}
 
 
 await loadCore();

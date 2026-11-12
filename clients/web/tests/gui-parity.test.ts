@@ -394,8 +394,8 @@ test("a name is client-only: kept in the tree, stripped from the wire", () => {
     const tree = window({}, knob({ id: 1, name: "cutoff", value: 0.5 }));
     assert.equal(tree.children?.[0]?.name, "cutoff");
     const wire = JSON.parse(toJson(tree)) as GuiNode;
-    assert.equal((wire.children?.[0] as GuiNode).name, undefined);
-    assert.equal((wire.children?.[0] as GuiNode).value, 0.5);
+    assert.equal((wire.children![0] as GuiNode).name, undefined);
+    assert.equal((wire.children![0] as GuiNode).value, 0.5);
 });
 
 test("an id must be an integer", () => {

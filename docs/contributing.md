@@ -206,6 +206,11 @@ that same commit:
   fixed or carries a `noqa` with its reason. CI installs the version it is
   pinned at (`pip install ruff==...`); locally `uvx ruff@<that version>`
   needs no install either.
+- **web lint** — a step of the `web` job: `npm run lint` in `clients/web`,
+  configured by `biome.json` there, over the sources, the tests, the pages and
+  the node scripts (`docs/decisions.md`, "The web client lints with Biome, a
+  linter that is one package"). The same two kinds of rule as the Python
+  side's, and a `biome-ignore` carries its reason on the line.
 - **python types** — a step of the `python` job: `pyright` in
   `clients/python`, configured by `pyrightconfig.json` there, at the version
   the job pins. Nothing in the repo vendors it, so **run it

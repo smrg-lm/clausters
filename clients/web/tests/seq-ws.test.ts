@@ -29,12 +29,10 @@ import { loadCore } from "../src/base/core.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { Group } from "../src/defs/node.ts";
-import { control, out, outCtl, sine } from "../src/defs/ugens/index.ts";
+import { control, out, sine } from "../src/defs/ugens/index.ts";
 import { TempoClock } from "../src/base/clock.ts";
 import { SampleClockTimebase } from "../src/base/timebase.ts";
 import { Event, pbind, pseq, Timeline } from "../src/seq/index.ts";
-import { Bus } from "../src/defs/bus.ts";
-import { Synth } from "../src/defs/node.ts";
 
 const here = new URL(".", import.meta.url);
 const serverBin = new URL("../../../target/debug/clausters", here).pathname;

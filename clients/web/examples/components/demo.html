@@ -88,7 +88,8 @@ through the raw singleton -- the REPL surface a future TS client builds on.</div
 
       async function smokeAsserts(engine) {
         // The singleton is a true per-page singleton.
-        if (server() !== server()) throw new Error("server() is not a singleton");
+        const [first, again] = [server(), server()];
+        if (first !== again) throw new Error("server() is not a singleton");
         // The canvas lives in the element's shadow DOM.
         if (!element.shadowRoot.querySelector("canvas")) {
           throw new Error("no canvas inside the element's shadow root");

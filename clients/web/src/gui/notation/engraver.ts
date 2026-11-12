@@ -21,7 +21,6 @@ import { Toolkit } from "./_verovio.ts";
 import { readFileAt, writeFileAt } from "../../base/files.ts";
 import { SCORE_PAGE } from "../guidef.ts";
 import { Editing } from "../../history.ts";
-import type { Intent } from "../../document.ts";
 import { fromNotes, sheetFromEvents, toSequence } from "./mei.ts";
 import type { Placed, PlaybackOptions, ReadOptions } from "./mei.ts";
 import { TRANSCRIPTION_KEYS, toMei } from "./sheet.ts";

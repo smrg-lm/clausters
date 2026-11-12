@@ -103,6 +103,7 @@ lands.</div>
         // is here for the same reason it is there -- a curve is data, and this
         // example never plays it. The script boots no server; a page's session
         // always has its in-page engine, and nothing is sent to it here.
+        // biome-ignore lint/correctness/noUnusedVariables: the Python script's line, named as it names it
         const session = await Session.embed();
 
         // One verb. `edit` dispatches on **what the structure holds**, never
