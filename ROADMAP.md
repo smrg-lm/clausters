@@ -287,7 +287,7 @@ its plan; the plan is where its acceptance is read.
   at their level, fewer binaries), `R19` (the host's modules in levels) and
   `R20` (the bindings' shape). `R18` (a panic at a binding's door), `R21` (the
   clients linted and typed) and `R22` (the editor application) depend on
-  nothing. `R23` (the plans hold what is open) is last and on `main`.
+  nothing. `R23` (the plans hold what is open) is last, once the branch is accepted.
   **Related:** `R16` goes before the `Q` track below opens and before `X11`
   continues, since both add to what it moves; `R15` not right before a tag.
 

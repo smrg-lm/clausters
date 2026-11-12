@@ -2365,11 +2365,14 @@ The track's invariant holds for all of it: behaviour is preserved, no assertion
 is edited (a test moved to another file is not an edit), and what touches the
 audio thread closes with the bench.
 
-**The work is done on a branch, `restructure`.** These entries are written on
-`main` first, so that `main` says what is in progress and the branch only
-closes checkboxes. The branch merges `main` at the start of every sitting (a
-merge rather than a rebase, so a directory rename is resolved once), and it is
-left green and mergeable at the end of each.
+**The work is done on a branch, `restructure`, and so is its plan.** These
+entries live on the branch alone until it is accepted, so that `main` keeps no
+trace of a restructuring that is not taken. The branch merges `main` at the
+start of every sitting (a merge rather than a rebase, so a directory rename is
+resolved once), and it is left green and mergeable at the end of each. CI runs
+on a push to `main` and on a pull request only, so the branch is checked
+through a draft pull request, and the two workflows that can be run by hand
+(the weekly `stable` job and the release's `verify`) are run on it.
 
 **When each one is done is part of the plan**, because `main` moves fast
 exactly where these land (the GUI host and `clausters-apps` are the two most
@@ -2384,8 +2387,8 @@ edited directories of the tree):
   that moves, so every week makes it dearer.
 - What orders a crate from inside is done one cycle per visit, with the
   milestone that already has that module open: `R19`.
-- What rewrites records goes last and on `main`, since it edits every plan and
-  would conflict with each merge: `R23`.
+- What rewrites records goes last, once the branch is accepted, since it
+  edits every plan and would conflict with each merge: `R23`.
 - `R18`, `R21` and `R22` depend on nothing and are taken between the others.
 
 Left out on purpose: a virtual workspace with the server moved under `crates/`
@@ -2435,7 +2438,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   rewritten with it. **Acceptance:** the weekly job exists and is seen to run;
   the full feature matrix is clean under the pin.
 
-  *Written 2026-11-11, and open on what only a push can show.* The pin is
+  *Written 2026-11-11, and open on what only the workflows can show.* The pin is
   `rust-toolchain.toml` (1.99.0, the version the audit harness already
   pinned), every workflow installs it through the `.github/actions/rust`
   composite, and the weekly job is `stable` in `audit.yml`. The dev profile
@@ -2446,7 +2449,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   and made the build a third slower (`docs/decisions.md`, "The toolchain is
   pinned, and a new compiler arrives as a commit"). **What is left:** the
   workflows have not run since the change, so the composite, the weekly job
-  and the matrix under the pin are unobserved until the branch is pushed.
+  and the matrix under the pin are unobserved until they run on the branch.
 
 - ⬜ **R15: The GUI host is a member of the workspace.** It was kept apart so
   that it could never entangle the server's build, and that stopped being
@@ -2587,7 +2590,7 @@ and so waits for `T3`, the milestone that already owes the bench.
   entries stay, being the record the rules ask for). The decisions are split
   by area, and `docs/decisions.md` remains as an index carrying every title
   verbatim, since the code and the plans cite a decision by its title. The
-  ABI history gets a file of its own. Done last and on `main`.
+  ABI history gets a file of its own. Done last, once the branch is accepted.
   **Acceptance:** every citation of a decision by title still finds it, and
   every pointer of `ROADMAP.md` finds its entry.
 
