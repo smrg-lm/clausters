@@ -22,7 +22,7 @@ fn variant(enumerated: bool) -> &'static Path {
         let root = if manifest.join("tests/fixtures/vst3").is_dir() {
             manifest.to_owned()
         } else {
-            manifest.join("crates/clausters-plugin-host")
+            manifest.join("../clausters-plugin-host")
         };
         let target = std::env::temp_dir().join(format!(
             "clausters-vst3-test-{}-{enumerated}",
