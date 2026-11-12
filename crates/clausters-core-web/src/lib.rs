@@ -44,6 +44,17 @@ use clausters_core::{
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+/// Runs when the module is instantiated: a panic is written to the console
+/// with its message and location before the module traps. A panic in wasm
+/// aborts and the module is dead after it, so nothing can be answered then;
+/// what a page can still have is the reason, which without this is the bare
+/// `unreachable` of the trap.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(start)]
+fn report_panics() {
+    console_error_panic_hook::set_once();
+}
+
 /// Encodes one OSC message from already-typed args (the native face; the wasm
 /// face converts JS tagged pairs into `OscType` and calls this).
 pub fn encode_message(addr: &str, args: Vec<OscType>) -> Result<Vec<u8>, String> {

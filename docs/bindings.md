@@ -79,6 +79,31 @@ function of every crate it links.
 
 In wasm neither applies: a call returns the bytes or the string.
 
+## What a panic becomes
+
+A verb that panics has a bug, and the two bindings answer it differently
+because the two platforms do.
+
+**Through the C ABI, a panic is an answer.** An unwind that reaches an
+`extern "C"` function aborts the process, and the process is the caller's: an
+interpreter with an unsaved session in it. So the doors that run a verb and
+answer JSON (`clausters_apps_editing_call` and the other doors of the
+applications, the document's, the runner's and the playback's) catch it and
+answer `{"error": "internal: ..."}`, which a client raises as it raises any
+refusal; the calls that answer a value through a handle (the history, the
+registries, the id tables) answer what they answer for a null handle. A
+handle's lock is taken whether or not an earlier panic poisoned it, so the next
+call on that handle still answers. The doors that edit a copy and commit it
+lose nothing; a context caught in the middle of an edit keeps what the verb had
+done, which is what `internal` warns of.
+
+**In a page, a panic ends the module.** wasm aborts on a panic and a module that
+trapped cannot be called again, so there is nothing to answer with. What the
+wasm core does is write the panic's message and location to the console as it
+goes, where the bare trap would say only `unreachable`. This is `n/a` rather
+than a gap: recovery would need the engine rebuilt with unwinding, and the page
+reloads.
+
 ## Numbers, signals and measurement
 
 | C ABI (`clausters-ffi`) | wasm (`clausters-core-web`) | Note |

@@ -223,7 +223,19 @@ impl Look {
     }
 }
 
+/// A panic is logged before the process ends: on the log's own channel, with
+/// its timestamp and beside whatever the host was doing, and then by the
+/// standard hook, which is what prints the backtrace when one is asked for.
+fn log_panics() {
+    let standard = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic| {
+        tracing::error!("the host panicked: {panic}");
+        standard(panic);
+    }));
+}
+
 fn main() -> ExitCode {
+    log_panics();
     let mut verbosity: i8 = 0;
     let mut rest: Vec<String> = Vec::new();
     for arg in std::env::args().skip(1) {

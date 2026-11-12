@@ -88,13 +88,11 @@ pub unsafe extern "C" fn clausters_apps_editing_call(
     let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
         return 0;
     };
-    let Ok(mut held) = handle.0.lock() else {
-        return 0;
-    };
+    let mut held = crate::out::held(&handle.0);
     let (editing, pending) = &mut *held;
     let answer = match pending.take() {
         Some((asked, answer)) if asked == request => answer,
-        _ => context::call_json(editing, &request),
+        _ => crate::out::guarded(|| context::call_json(editing, &request)),
     };
     let mut handed = false;
     // SAFETY: forwarded from this function's own contract.
@@ -134,9 +132,7 @@ pub unsafe extern "C" fn clausters_apps_editing_open_notes(
     let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
         return 0;
     };
-    let Ok(mut held) = handle.0.lock() else {
-        return 0;
-    };
+    let mut held = crate::out::held(&handle.0);
     let (editing, pending) = &mut *held;
     let asked = format!("openNotes {request}");
     let answer = match pending.take() {
@@ -146,7 +142,7 @@ pub unsafe extern "C" fn clausters_apps_editing_open_notes(
                 .ok()
                 .and_then(|r| r.get("key").and_then(|k| k.as_str().map(str::to_owned)))
                 .unwrap_or_default();
-            editing.open_notes(&key, sequence.0.clone(), &request)
+            crate::out::guarded(|| editing.open_notes(&key, sequence.0.clone(), &request))
         }
     };
     let mut handed = false;
@@ -187,9 +183,7 @@ pub unsafe extern "C" fn clausters_apps_editing_open_score(
     let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
         return 0;
     };
-    let Ok(mut held) = handle.0.lock() else {
-        return 0;
-    };
+    let mut held = crate::out::held(&handle.0);
     let (editing, pending) = &mut *held;
     let asked = format!("openScore {request}");
     let answer = match pending.take() {
@@ -199,7 +193,7 @@ pub unsafe extern "C" fn clausters_apps_editing_open_score(
                 .ok()
                 .and_then(|r| r.get("key").and_then(|k| k.as_str().map(str::to_owned)))
                 .unwrap_or_default();
-            editing.open_score(&key, score.0.clone(), &request)
+            crate::out::guarded(|| editing.open_score(&key, score.0.clone(), &request))
         }
     };
     let mut handed = false;
@@ -249,9 +243,7 @@ pub unsafe extern "C" fn clausters_apps_editing_open_score_over(
     let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
         return 0;
     };
-    let Ok(mut held) = handle.0.lock() else {
-        return 0;
-    };
+    let mut held = crate::out::held(&handle.0);
     let (editing, pending) = &mut *held;
     let asked = format!("openScoreOver {request}");
     let answer = match pending.take() {
@@ -261,7 +253,9 @@ pub unsafe extern "C" fn clausters_apps_editing_open_score_over(
                 .ok()
                 .and_then(|r| r.get("key").and_then(|k| k.as_str().map(str::to_owned)))
                 .unwrap_or_default();
-            editing.open_score_over(&key, score.0.clone(), sequence.0.clone(), &request)
+            crate::out::guarded(|| {
+                editing.open_score_over(&key, score.0.clone(), sequence.0.clone(), &request)
+            })
         }
     };
     let mut handed = false;

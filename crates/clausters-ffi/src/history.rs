@@ -75,7 +75,7 @@ fn with_history<T>(h: *mut FfiHistory, default: T, f: impl FnOnce(&mut History) 
     let Some(history) = (unsafe { h.as_ref() }) else {
         return default;
     };
-    f(&mut history.0.lock().expect("history lock poisoned"))
+    crate::out::caught(default, || f(&mut crate::out::held(&history.0)))
 }
 
 /// A new, empty history. `budget` is how many entries it keeps before the

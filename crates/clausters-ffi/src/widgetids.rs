@@ -44,7 +44,7 @@ fn with_ids<T>(h: *mut FfiWidgetIds, default: T, f: impl FnOnce(&mut WidgetIds) 
     let Some(ids) = (unsafe { h.as_ref() }) else {
         return default;
     };
-    f(&mut ids.0.lock().expect("widget id table lock poisoned"))
+    crate::out::caught(default, || f(&mut crate::out::held(&ids.0)))
 }
 
 /// A fresh drawer: the owner a begin/retire cycle names. One table serves a
@@ -180,7 +180,7 @@ pub unsafe extern "C" fn clausters_widgetids_retire(
     // SAFETY: caller guarantees `h`; the write below is bounded by `cap`.
     let ids = unsafe { h.as_ref() };
     let Some(ids) = ids else { return -1 };
-    let mut ids = ids.0.lock().expect("widget id table lock poisoned");
+    let mut ids = crate::out::held(&ids.0);
     // Peeked first: `retire` is destructive, so an under-sized buffer has to be
     // refused *before* the ids are gone rather than after.
     if ids.stale(owner) > cap {

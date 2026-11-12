@@ -38,6 +38,8 @@ clausters-midi = { path = "../clausters-midi", default-features = false }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }
 js-sys = { workspace = true }
+# Writes a panic's message to the console before the module traps.
+console_error_panic_hook = "0.1"
 # The bundle door's boundary is JSON in, JSON out (a manifest, a GuiDef
 # template, an allocation), so the shell parses and prints at the edge.
 serde_json = { workspace = true }

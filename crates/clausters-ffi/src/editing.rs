@@ -219,11 +219,9 @@ pub unsafe extern "C" fn clausters_editing_runner_call(
     let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
         return 0;
     };
-    let Ok(mut held) = runner.0.lock() else {
-        return 0;
-    };
+    let mut held = crate::out::held(&runner.0);
     let mut next = held.clone();
-    let answer = clausters_editing::run::call_json(&mut next, &request);
+    let answer = crate::out::guarded(|| clausters_editing::run::call_json(&mut next, &request));
     // SAFETY: forwarded from this function's own contract.
     unsafe {
         crate::out::fill_then(answer.as_bytes(), out, out_cap, || {
@@ -298,14 +296,15 @@ pub unsafe extern "C" fn clausters_editing_notes_playback_call(
     ) else {
         return 0;
     };
-    let (Ok(mut held), Ok(mut spaces), Ok(sequence)) =
-        (playback.0.lock(), spaces.0.lock(), sequence.0.lock())
-    else {
-        return 0;
-    };
+    let (mut held, mut spaces, sequence) = (
+        crate::out::held(&playback.0),
+        crate::out::held(&spaces.0),
+        crate::out::held(&sequence.0),
+    );
     let (mut next, mut next_ids) = (held.clone(), spaces.clone());
-    let answer =
-        clausters_editing::notes_playback::call_json(&mut next, &sequence, &request, &mut next_ids);
+    let answer = crate::out::guarded(|| {
+        clausters_editing::notes_playback::call_json(&mut next, &sequence, &request, &mut next_ids)
+    });
     // SAFETY: forwarded from this function's own contract.
     unsafe {
         crate::out::fill_then(answer.as_bytes(), out, out_cap, || {

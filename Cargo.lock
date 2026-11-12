@@ -525,6 +525,7 @@ dependencies = [
  "clausters-editing",
  "clausters-midi",
  "clausters-notation",
+ "console_error_panic_hook",
  "js-sys",
  "serde",
  "serde_json",

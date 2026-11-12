@@ -44,7 +44,7 @@ fn with_registry<T>(h: *mut FfiRegistry, default: T, f: impl FnOnce(&mut Registr
     let Some(reg) = (unsafe { h.as_ref() }) else {
         return default;
     };
-    f(&mut reg.0.lock().expect("registry lock poisoned"))
+    crate::out::caught(default, || f(&mut crate::out::held(&reg.0)))
 }
 
 /// Allocates `width` contiguous ids; returns the first, or -1 when the space
@@ -235,7 +235,7 @@ fn with_ids<T>(h: *mut FfiIdSpaces, default: T, f: impl FnOnce(&mut IdSpaces) ->
     let Some(ids) = (unsafe { h.as_ref() }) else {
         return default;
     };
-    f(&mut ids.0.lock().expect("id spaces lock poisoned"))
+    crate::out::caught(default, || f(&mut crate::out::held(&ids.0)))
 }
 
 /// A run of `width` ids of `space`; the first, or -1 when the space is

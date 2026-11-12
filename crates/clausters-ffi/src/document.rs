@@ -88,7 +88,7 @@ pub(crate) fn with_document<T>(
     let Some(held) = (unsafe { h.as_ref() }) else {
         return default;
     };
-    f(&mut held.0.lock().expect("document lock poisoned"))
+    crate::out::caught(default, || f(&mut crate::out::held(&held.0)))
 }
 
 /// Open a document. `json` is a document as JSON, or null for an empty one (a
@@ -669,18 +669,17 @@ pub unsafe extern "C" fn clausters_document_sequence_call(
     let Some(held) = (unsafe { h.as_ref() }) else {
         return 0;
     };
-    let Ok(mut sequence) = held.0.lock() else {
-        return 0;
-    };
+    let mut sequence = crate::out::held(&held.0);
     // Only an edit changes the sequence, and it runs on a copy so the sizing
     // pass leaves nothing behind; a read answers from the sequence itself.
     if !clausters_document::events::mutates(&request) {
-        let answer = clausters_document::events::call_json(&mut sequence, &request);
+        let answer =
+            crate::out::guarded(|| clausters_document::events::call_json(&mut sequence, &request));
         // SAFETY: forwarded from this function's own contract.
         return unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) };
     }
     let mut next = sequence.clone();
-    let answer = clausters_document::events::call_json(&mut next, &request);
+    let answer = crate::out::guarded(|| clausters_document::events::call_json(&mut next, &request));
     // SAFETY: forwarded from this function's own contract.
     unsafe {
         crate::out::fill_then(answer.as_bytes(), out, out_cap, || {
@@ -761,19 +760,17 @@ pub unsafe extern "C" fn clausters_document_multitrack_call(
     let Some(held) = (unsafe { h.as_ref() }) else {
         return 0;
     };
-    let Ok(mut multitrack) = held.0.lock() else {
-        return 0;
-    };
+    let mut multitrack = crate::out::held(&held.0);
     // Only an edit changes the multitrack, and it runs on a copy so the
     // sizing pass leaves nothing behind; a read answers from the multitrack
     // itself.
     if !handle::mutates(&request) {
-        let answer = handle::call_json(&mut multitrack, &request);
+        let answer = crate::out::guarded(|| handle::call_json(&mut multitrack, &request));
         // SAFETY: forwarded from this function's own contract.
         return unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) };
     }
     let mut next = multitrack.clone();
-    let answer = handle::call_json(&mut next, &request);
+    let answer = crate::out::guarded(|| handle::call_json(&mut next, &request));
     // SAFETY: forwarded from this function's own contract.
     unsafe {
         crate::out::fill_then(answer.as_bytes(), out, out_cap, || {
