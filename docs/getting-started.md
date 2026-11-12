@@ -1,6 +1,6 @@
 # Getting started
 
-This chapter takes you from a checkout to a sound: build the server, run it, play a note over OSC, and render a score offline. (For a feature-by-feature tour, the runnable programs in `examples/` walk every part of the server.)
+This chapter takes you from a checkout to a sound: build the server, run it, play a note over OSC, and render a score offline. (For a feature-by-feature tour, the runnable programs in `crates/clausters-server/examples/` walk every part of the server.)
 
 ## Requirements
 

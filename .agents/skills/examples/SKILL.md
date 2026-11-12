@@ -16,7 +16,7 @@ Which directory it lives in decides its form. This is not taste.
 
 | Directory | Belongs to | Form |
 | --- | --- | --- |
-| `examples/` (root) | the **server** | a **closed script** — even the Python ones |
+| `crates/clausters-server/examples/` | the **server** | a **closed script** — even the Python ones |
 | `clients/python/examples/` | the **Python client** + the GUI | a **`# %%` notebook** |
 | `clients/web/examples/` | the **web client** | a **page** (`.html`), or a **node script** (`.mjs`) for what a page cannot do |
 
@@ -155,8 +155,8 @@ impulse response rendered to be loaded back) — that is scratch, not a product.
 
 ## An example that exists twice is **one example in two languages**
 
-`clients/python/examples/editors/multitrack.py` and
-`clients/web/examples/editors/multitrack.html` are not two examples about the same
+`clients/python/examples/editors/edit_multitrack.py` and
+`clients/web/examples/editors/edit-multitrack.html` are not two examples about the same
 topic: they are the same example, and the pair carries the non-divergence rule the way
 the clients do. So the second one is **ported, not re-invented**:
 

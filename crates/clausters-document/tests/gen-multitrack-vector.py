@@ -3,7 +3,7 @@ by the Python client's `clausters.multitrack`, as it writes it.
 
 Nothing checks that the two sides agree on the format unless something crosses
 between them, and no build ever reaches this client's call sites. So the vector
-is generated here, committed, and parsed by `tests/arrangement_parity.rs`: if
+is generated here, committed, and parsed by `tests/multitrack_parity.rs`: if
 either side moves, that test fails instead of a user finding out with a session
 that will not open.
 

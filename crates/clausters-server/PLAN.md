@@ -439,7 +439,7 @@ Open, not blocking:
   clock, and the premise was wrong.** Re-deriving it showed that a grid held
   through a governed pause cannot be the grid this command was made for.
   `/transport_set` leaves the transport stopped at 0, and clients phase-align
-  on the grid before anyone plays: `examples/transport/sync.py` defines it,
+  on the grid before anyone plays: `clients/python/examples/transport/sync.py` defines it,
   binds a group and has two clients quantize onto it while the transport is
   stopped, and only then plays. A grid that held with the transport would hold
   those notes forever. So the grid is a **metronome**, and the "slide" this

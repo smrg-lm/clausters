@@ -27,15 +27,26 @@ components are crates under `crates/`, the language clients are under
 - **The shared crates beside it** — the shared native core (`clausters-core`/`clausters-ffi`:
   numeric builtins, seeded noise and clock math compiled once for server and
   clients), `clausters-midi` (Standard MIDI File / MIDI 2.0 clip writing and
-  live virtual-port output) and `clausters-net` (the TCP and WebSocket
-  carriers the server and the GUI host both serve OSC on).
+  live virtual-port output), `clausters-net` (the TCP and WebSocket
+  carriers the server and the GUI host both serve OSC on),
+  `clausters-plugin-host` (the isolated CLAP/VST3 plugin helper) and
+  `clausters-notation`/`clausters-verovio` (the symbolic score model and its
+  engraver binding).
+- **The document and its applications** — `clausters-document` (the
+  multitrack, its edit vocabulary and edit log), `clausters-editing`,
+  `clausters-apps` and `clausters-app-engine` (the audio, multitrack, notes
+  and score editors, written once and shared by every client).
 - **[`clients/python`](clients/python/README.md)** — the reference client, a
   selective port of SuperCollider's class library covering both def formats:
   patterns and events, routines and clocks, responders, live and offline
   rendering, pip wheels.
+- **[`clients/web`](clients/web/README.md)** — the same client in TypeScript,
+  with the server compiled to wasm and running in the page
+  (`clausters-web`, `clausters-nrt-web`, `clausters-core-web`).
 - **[`crates/clausters-gui`](crates/clausters-gui/README.md)** — a GUI host driven by the same OSC protocol (`GuiDef`
   windows, meters and scopes over shared memory, node-tree views, canvas and
-  shaders), native and in the browser (WebGPU with a WebGL2 fallback).
+  shaders), native and in the browser (WebGPU with a WebGL2 fallback), with
+  its drawing base in `clausters-gui-draw`.
 
 ## Features
 

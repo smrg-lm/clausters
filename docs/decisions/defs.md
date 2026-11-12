@@ -306,7 +306,7 @@ implemented: `clausters_core::pvprog` (the program + evaluator), the
   Python client's `clausters.defs.pv_expr` composes the expressions with the
   shared `AbstractObject` operators. The acceptance tests are the mechanism
   reproducing curated ops (`PV_BrickWall`, `PV_MagAbove`)
-  **sample-identically** in `tests/spectral.rs`.
+  **sample-identically** in `crates/clausters-server/tests/offline/spectral.rs`.
 - **The conversion-cost risks resolved themselves in the identity path**: an
   identity phase program (the common, pure-magnitude case) keeps each bin's
   phase by scaling the complex pair — the exact arithmetic of the curated
@@ -339,7 +339,7 @@ interactive keyboard cannot use. The one pattern this forgoes — spawning a
 voice with `gate 0` to open later — still works while the release tail lasts
 (the rising gate retriggers from `initLevel`), and beyond that was never
 reliable against `FREE_SELF` anyway. Guarded by
-`tests/envgen.rs::gate_already_closed_at_the_first_block_releases_and_frees`.
+`crates/clausters-server/tests/offline/envgen.rs::gate_already_closed_at_the_first_block_releases_and_frees`.
 
 ## The UGen registry owns its input names; the client tables become mirrors
 
@@ -1078,7 +1078,7 @@ Not a drift, a stall, and silent: the output is a plausible constant.
 
 So the type is chosen by the widest-ranging row and shared by the family, which
 is the right outcome reached by the wrong argument. Both doc comments now say
-which row is paying for it, and `tests/oscillators.rs` carries the measurement
+which row is paying for it, and `crates/clausters-server/tests/offline/oscillators.rs` carries the measurement
 next to the assert (`f64_is_for_the_position_not_the_phase`) so the claim cannot
 quietly become folklore again. The general lesson is worth keeping: for a
 floating-point accumulator, what matters is the **magnitude it reaches**, not the

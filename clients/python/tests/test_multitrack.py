@@ -1,7 +1,7 @@
 """The arrangement's client side (`clausters.multitrack`).
 
 What the crate defines, written and read here. The crossing that proves the two
-agree is `crates/clausters-document/tests/arrangement_parity.rs`, over a vector
+agree is `crates/clausters-document/tests/multitrack_parity.rs`, over a vector
 this client generates; what this suite checks is the surface a person actually
 types against, and the few rules that are the client's own to keep.
 """

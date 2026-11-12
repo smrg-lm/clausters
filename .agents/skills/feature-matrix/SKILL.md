@@ -199,8 +199,8 @@ notices as a timeout rather than as an error:
 - `clients/web/tests/*.test.ts` — several spawn `../../../target/debug/clausters`
   with `--ws` and wait for the endpoint. Sixteen of the 138 fail with
   `server WS endpoint never came up`, five seconds each.
-- Any E2E in one Bash invocation (`./target/debug/clausters & …`), and the root
-  `examples/` that expect a live server.
+- Any E2E in one Bash invocation (`./target/debug/clausters & …`), and the server's
+  `crates/clausters-server/examples/` that expect a live server.
 
 So the failures look like a regression in code that was never touched, in a
 language that was never touched. **Finish with a plain `cargo build`** — default

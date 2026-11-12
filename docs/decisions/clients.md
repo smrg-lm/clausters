@@ -364,7 +364,7 @@ are gated on `midir`; this one is pure computation. It has to build for wasm,
 and it has to be callable from the server as **plain Rust** — `Decoder::feed` /
 `Decoder::poll` — with the C ABI as a thin shell over that safe face, exactly as
 `Input::open` sits under `clausters_midi_input_open`. Which is also the first
-time the root crate depends on `clausters-midi` at all: the two MIDI stacks have
+time the server crate depends on `clausters-midi` at all: the two MIDI stacks have
 not touched until now, and the shared piece is what joins them.
 
 `MIDI_ABI_VERSION` goes to **3**, following v2's precedent of bumping on an

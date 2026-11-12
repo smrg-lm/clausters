@@ -33,7 +33,6 @@ PY
 }
 
 WS='^\[workspace\.package\][^\[]*?^version = "([^"]+)"'
-PKG='^\[package\][^\[]*?^version = "([^"]+)"'
 
 report() {
     printf '%-34s %s\n' "Cargo.toml (workspace)" "$(read_version Cargo.toml "$WS")"

@@ -608,7 +608,7 @@ Example: `{"name": "freq", "default": 440.0, "min": 20.0, "max": 20000.0, "warp"
 
 ### UGen catalog (built-in kinds)
 
-The `kind` field is an **opaque string** as far as the protocol is concerned: the schema above is the whole contract (name + inputs + optional rate + static fields). What follows is a separate thing — the **catalog of UGens the server currently ships**, which the server resolves at runtime and grows independently of the wire format (each is one descriptor entry in `src/dsp/registry.rs`). So this table is reference, not part of the protocol: an unknown name simply fails with `/fail … unknown kind`.
+The `kind` field is an **opaque string** as far as the protocol is concerned: the schema above is the whole contract (name + inputs + optional rate + static fields). What follows is a separate thing — the **catalog of UGens the server currently ships**, which the server resolves at runtime and grows independently of the wire format (each is one descriptor entry under `crates/clausters-server/src/dsp/registry/`). So this table is reference, not part of the protocol: an unknown name simply fails with `/fail … unknown kind`.
 
 A client does not *have* to enumerate the catalog — naming a kind and letting the server validate remains the normal path — but it **can**, with [`/ugen_query`](#def-buffer-and-ugen-introspection): the same descriptors as a typed reply, so a palette or completion list derives from the server's own truth (and from the build it is actually talking to) instead of a copy of this table that would drift. Input names below are given in **wire order**, which is what `/ugen_query` reports.
 

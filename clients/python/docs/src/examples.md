@@ -1,14 +1,15 @@
 # Examples
 
 The examples live in the **repository**, not in the wheel: `pip install
-clausters` gives you the client, a checkout gives you the scripts. There are
-three directories of them —
+clausters` gives you the client, a checkout gives you the scripts. Two
+directories of them are Python (the third, `clients/web/examples/`, holds the
+web client's pages) —
 
 - `clients/python/examples/` — the installed-package scripts: they import
   `clausters` the way your own code does (no `sys.path` shim, no `target/`
   directory), including the `panels/`, `views/` and `editors/` folders that
   drive the GUI host;
-- `examples/` at the repository root — the lower-level demos: the transports,
+- `crates/clausters-server/examples/` — the server's lower-level demos: the transports,
   the raw OSC helpers, the audible tours of the UGen families. Those use a
   `sys.path` shim, so they run from a checkout with no install.
 

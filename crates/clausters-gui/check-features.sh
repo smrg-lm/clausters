@@ -32,7 +32,7 @@
 # the first error hides how many of the others were also broken.
 #
 # `standalone` links the server crate (and `standalone-faust` needs libfaust at
-# build time, like the root matrix's faust rows). `--fast` leaves both out along
+# build time, like the server matrix's faust rows). `--fast` leaves both out along
 # with everything CI already covers, which is the form to run while iterating.
 #
 # Usage:

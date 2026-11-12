@@ -236,10 +236,11 @@ Docs. Steps:
    Spanish workflow: "hacé una release" plus the tier — mayor / menor / bugfix.)
 2. **Bump the version — one line and one command.** It is written in the root
    `Cargo.toml`'s `[workspace.package].version`, which every crate inherits;
-   `scripts/set-version.sh X.Y.Z` writes it there and spreads it to the five
-   files that cannot inherit it (`crates/clausters-gui/Cargo.toml` and its lockfile,
-   `clients/python/pyproject.toml`, `clients/web/package.json` and its
-   lockfile). With no argument it prints what each file says. `cargo test
+   `scripts/set-version.sh X.Y.Z` writes it there, spreads it to the two
+   manifests that cannot inherit it (`clients/python/pyproject.toml` and
+   `clients/web/package.json`) and regenerates both lockfiles (`Cargo.lock`
+   and `clients/web/package-lock.json`). With no argument it prints what each
+   file says. `cargo test
    -p clausters-checks --test versions` fails if any of them ever disagrees, so a miss cannot ship.
 3. If a binary boundary changed this cycle, bump the matching ABI counter (the
    linkage rule below).

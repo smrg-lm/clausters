@@ -81,7 +81,7 @@ as a sound fades out. Three guards, kept in lockstep:
    `dsp::denormals::normal_precision` — libfaust's interval typing aborts under
    FTZ/DAZ, and the guard restores the armed mode on exit.
 
-Guarded by `crates/clausters-server/tests/denormals.rs` and the Faust-tail test in `tests/golden.rs`.
+Guarded by `crates/clausters-server/tests/denormals.rs` and the Faust-tail test in `crates/clausters-server/tests/offline/golden.rs`.
 
 ## MIDI: standard channel-voice, byte-identical to OSC, in a shared crate
 
@@ -296,7 +296,7 @@ outbound one — and `ClientId::Ring` becomes `ClientId::Ring(u32)`.
 
 - **The tag lives in the frame, not in the segment header.** That is what makes
   this cheap: no field of the header or the data plane moves, so the readers
-  that pin offsets by hand (`crates/clausters-gui/src/host/shm.rs`,
+  that pin offsets by hand (`crates/clausters-gui/src/host/native/shm.rs`,
   `clients/python/clausters/ipc.py`) need only their version constant bumped —
   exactly the case `shm.rs`'s own comment anticipates. The alternative
   considered, **several rings** (one pair per client), moves the layout, fixes a

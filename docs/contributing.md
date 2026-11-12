@@ -136,8 +136,10 @@ goes red, the pin is raised and whatever the new compiler reports is fixed in
 that same commit:
 
 - **lint** — `cargo fmt --check` and `cargo clippy --workspace --all-targets
-  -- -D warnings`, for the root workspace and for `crates/clausters-gui` (its own
-  workspace). The tree is clippy-clean; keep it that way.
+  -- -D warnings` over the workspace, then once more for `crates/clausters-gui`
+  alone (`-p clausters-gui`, so it also lints with only the features its own
+  manifest asks for), and `crates/clausters-apps/check-features.sh`. The tree
+  is clippy-clean; keep it that way.
 - **test** — `cargo test --workspace` across the def-family feature matrix:
   default, `--no-default-features`, `--no-default-features --features synth`,
   and default plus `embed`.
@@ -182,7 +184,7 @@ that same commit:
   that knowingly trades speed for something else says `[no-bench]` in its head
   commit message and the gate steps aside.
 - **audit** — a workflow of its own (`audit.yml`): `cargo audit --file` over
-  the server's and the GUI host's `Cargo.lock`, and `npm audit --omit=dev` in
+  the workspace's one `Cargo.lock`, and `npm audit --omit=dev` in
   `clients/web`. It runs weekly as well as on any change to a lockfile, since
   an advisory is published against code nobody touched. Only a vulnerability
   fails it — unmaintained, unsound and yanked crates are printed and pass —
@@ -230,7 +232,7 @@ that same commit:
   surface and nothing runs them, so a renamed parameter or a method that
   stopped being a `@classmethod` breaks them at a call site no build reaches.
   The scope is what those call sites are: the package, the tests, and **both**
-  example directories, root included. The rules left off are not oversights —
+  example directories, the Python client's and the server's. The rules left off are not oversights —
   `reportArgumentType` alone reports hundreds of hits on the def DSL (a
   `SynthExpr` where a `float` is declared, which is what operator overloading
   looks like to a checker) and has never caught one of these. The baseline is
@@ -324,7 +326,7 @@ that same commit:
 
 ## Project skills
 
-Domain knowledge lives in `.agents/skills/`: `realtime-audio` (RT thread rules, lock-free patterns, cpal), `scsynth-osc` (the OSC protocol and node-tree model), `ugen-dsp` (UGen DSP algorithms), `audio-testing` (testing audio without ears: NRT, golden files, signal asserts, no-alloc), `faust-embedding` (the libfaust C API and lifecycles), and `faust-language` (writing Faust and transposing it to the Signal/Box APIs — sample-level feedback, physical modeling). Process skills: `clausters-python` (idiomatic client use), `clausters-gui` (the GUI host and GuiDefs, and checking it by script), `gui-widgets` (what one graphical element is: its algorithm, size, data source and edit payload), `gui-apps` (how an application is composed of modular components, who owns its state and history, and the process for building and checking one) and `documentation` (how to write and place docs — the Diataxis split, the generated API references, and the dev/decision docs).
+Domain knowledge lives in `.agents/skills/`: `realtime-audio` (RT thread rules, lock-free patterns, cpal), `scsynth-osc` (the OSC protocol and node-tree model), `ugen-dsp` (UGen DSP algorithms), `audio-testing` (testing audio without ears: NRT, golden files, signal asserts, no-alloc), `faust-embedding` (the libfaust C API and lifecycles), and `faust-language` (writing Faust and transposing it to the Signal/Box APIs — sample-level feedback, physical modeling). Process skills: `clausters-python` (idiomatic client use), `clausters-gui` (the GUI host and GuiDefs, and checking it by script), `gui-widgets` (what one graphical element is: its algorithm, size, data source and edit payload), `gui-apps` (how an application is composed of modular components, who owns its state and history, and the process for building and checking one), `documentation` (how to write and place docs — the Diataxis split, the generated API references, and the dev/decision docs), `examples` (which of the three example directories one belongs to and the form it takes there) and `release-versioning` (the package version, the two ABI counters, and cutting a release).
 
 One skill is a workflow rather than knowledge: `feature-matrix` runs the fmt + clippy configurations of the commit workflow, including the three the CI never builds (`--no-default-features`, and each def family alone). Run it whenever a change touches feature-gated code.
 

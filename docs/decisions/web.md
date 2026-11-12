@@ -12,7 +12,7 @@ only there (same-platform RT ≡ NRT stays bit-exact, unchanged):
 
 - **Different libm implementations.** Native Rust lowers `f64::sin` & co. to
   the system libm; `wasm32-unknown-unknown` uses Rust's own libm port. The two
-  legitimately round a few ULP apart — the same fact `tests/golden.rs` already
+  legitimately round a few ULP apart — the same fact `crates/clausters-server/tests/offline/golden.rs` already
   records for its cross-platform tolerance. UGens call transcendentals per
   sample (`Sine` is `phase.sin()`), so the difference is unavoidable without
   forcing one libm on every target (a rejected option: pinning the Rust libm

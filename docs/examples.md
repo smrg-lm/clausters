@@ -6,10 +6,10 @@ checkout:
 
 | where | what runs there |
 |---|---|
-| `examples/` | the Rust demos and the Python scripts that drive a server from a source checkout (a `sys.path` shim finds the client; a few build their OSC bytes with nothing but the standard library) |
+| `crates/clausters-server/examples/` | the Rust demos and the Python scripts that drive a server from a source checkout (a `sys.path` shim finds the client; a few build their OSC bytes with nothing but the standard library) |
 | `clients/python/examples/` | the installed-package scripts, including the `gui_*` family that drives the GUI host |
 | `clients/web/examples/` | the browser pages, and the node scripts (`.mjs`) that author the bundles some of them mount |
-| `examples/*.sh` | the shell demos (they need `oscsend`) |
+| `crates/clausters-server/examples/*.sh` | the shell demos (they need `oscsend`) |
 
 **What a run leaves behind goes in `out/`**, at the root of the tree it belongs
 to (`crates/clausters-server/examples/out/`, `clients/python/examples/out/`,

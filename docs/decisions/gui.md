@@ -2611,7 +2611,7 @@ pixels were unequal.
 
 **The rasterizer is a default feature, and the crate carries the face.** A
 subset of DejaVu Sans -- Latin, Greek, Cyrillic, punctuation, arrows, signs;
-238 KB -- is compiled into the host (`crates/clausters-gui/assets/fonts/`, with the
+238 KB -- is compiled into the host (`crates/clausters-gui-draw/assets/fonts/`, with the
 license it travels under and the script that makes it), and each shell loads
 it as it starts. The three reasons of the first decision, as they stand now.
 *Licensed*: the DejaVu license permits redistribution and modification under
