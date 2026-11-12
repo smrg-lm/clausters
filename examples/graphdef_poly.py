@@ -64,7 +64,7 @@ def play(server):
 
     # the shared instance, once
     inst = Group.graph("poly", {"gain": 0.3}, server=server)
-    for i, freq in enumerate(NOTES):
+    for freq in NOTES:
         vid = server.nodes.alloc()                      # a per-note voice id
         # Spawn a voice into the instance at this beat, then free it later
         # (overlapping: each rings for 0.6 beats while notes step every 0.3).

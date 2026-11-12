@@ -139,7 +139,7 @@ def test_a_removed_structure_leaves_its_object_detached():
     r.remove()
     assert not r.held and len(lane.regions) == 0
     with pytest.raises(ValueError, match="no longer holds"):
-        r.position
+        _ = r.position
     track.remove()
     assert not lane.held and len(multitrack.tracks) == 0
 

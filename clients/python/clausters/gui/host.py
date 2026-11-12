@@ -402,7 +402,7 @@ class GuiHost:
             id = self.alloc_id()
         handle = self.define(id, tree, *blobs)
         self._open.add(int(id))
-        self.loop                       # an open window is delivered to
+        _ = self.loop                   # an open window is delivered to
         return handle
 
     def close(self, id: int):

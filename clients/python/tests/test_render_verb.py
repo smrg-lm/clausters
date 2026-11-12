@@ -146,7 +146,7 @@ def test_render_needs_until_for_an_endless_pattern():
     _st2 = render(
         pbind(instrument="default", freq=pwhite(200.0, 800.0), dur=0.25),
         until=2.0, tail=1.0, sample_rate=SR)
-    samples, frames = _st2.samples, _st2.frames
+    frames = _st2.frames
     # Drained at beat 2.0: the last event starts by then, and the take ends a
     # tail after the gate that closes it.
     assert 3.0 * SR <= frames <= 3.5 * SR
@@ -207,7 +207,7 @@ def test_render_bounces_a_timeline():
     tl.add(0.0, Event(degree=0, dur=0.5))
     tl.add(1.0, Event(degree=4, dur=0.5))
     _st3 = render(tl, tail=1.0, sample_rate=SR)
-    samples, frames = _st3.samples, _st3.frames
+    frames = _st3.frames
     assert abs(frames - 2.4 * SR) <= 4096
 
 
@@ -216,7 +216,7 @@ def test_render_bounces_an_arrangement_element():
     from clausters.form import Clang
 
     _st4 = render(Clang(Event(degree=0, dur=0.5)), sample_rate=SR)
-    samples, frames = _st4.samples, _st4.frames
+    frames = _st4.frames
     assert frames > 0.3 * SR
 
 
@@ -229,7 +229,7 @@ def test_render_bounces_a_generator():
         Event(degree=4, dur=0.5).play()
 
     _st5 = render(gen, tail=1.0, sample_rate=SR)
-    samples, frames = _st5.samples, _st5.frames
+    frames = _st5.frames
     assert abs(frames - 1.9 * SR) <= 4096   # second gate at 0.5 + 0.4, and the tail
 
 

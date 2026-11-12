@@ -6,6 +6,8 @@ import struct
 import json
 import pytest
 
+from clausters.errors import ReplyTimeout
+
 from clausters.base.timebase import LogicalTimebase
 from clausters.base import OscNrtInterface, Routine, TempoClock
 from clausters.base import _osclib as osc
@@ -984,7 +986,7 @@ def test_profile_gives_the_timing_back_when_a_read_fails():
     iface = _FakeInterface()
     srv = Server(interface=iface)
     iface.queue_reply("/done", "/server_profile")
-    with pytest.raises(Exception):
+    with pytest.raises(ReplyTimeout):
         srv.profile(seconds=0, timeout=0.01)
     assert iface.sent[-1] == ("/server_profile", [0])
 

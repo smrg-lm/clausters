@@ -470,7 +470,7 @@ def test_attach_does_not_probe_a_supplied_carrier():
     no UDP probe, so the verification is skipped there -- the line
     `clausters.defs.Server.attach` draws with ``_own_carrier``."""
     iface = _Recorder()
-    host = GuiHost(port=57997, interface=iface).attach(adopt_ambient=False)
+    _host = GuiHost(port=57997, interface=iface).attach(adopt_ambient=False)
     assert iface.started
 
 
@@ -488,9 +488,9 @@ def test_attach_adopts_the_ambient_host_first_wins():
     try:
         first = GuiHost(port=57997, interface=_Recorder()).attach()
         assert ambient_host() is first
-        second = GuiHost(port=57996, interface=_Recorder()).attach()
+        _second = GuiHost(port=57996, interface=_Recorder()).attach()
         assert ambient_host() is first          # already registered, not displaced
-        third = GuiHost(port=57995, interface=_Recorder()).attach(adopt_ambient=False)
+        _third = GuiHost(port=57995, interface=_Recorder()).attach(adopt_ambient=False)
         assert ambient_host() is first
         first.stop()
         assert ambient_host() is None           # stopping gives the registration up
@@ -542,7 +542,7 @@ def test_poll_and_pump_stand_down_while_the_loop_drains():
     being the one that delivers."""
     host = GuiHost(interface=_Loopable())
     assert host.looping is False
-    host.loop                                   # built and started here
+    _ = host.loop                               # built and started here
     try:
         assert host.looping is True
         assert host.poll(0.0) is None

@@ -8,7 +8,7 @@ needed -- and with the incoming value when it takes an argument (the event a
 import inspect
 
 from ...base.stream import StopStream
-from ..pattern import INF, Pattern, as_stream, embed, pattern
+from ..pattern import INF, as_stream, embed, pattern
 from .valuepatterns import _counting
 
 

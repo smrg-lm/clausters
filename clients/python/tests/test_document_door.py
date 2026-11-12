@@ -15,7 +15,7 @@ arrangement no longer goes through.
 import clausters
 from clausters.multitrack import Multitrack
 from clausters.document import (MULTITRACK, EVENTS, POINTS, SAMPLES, TREE,
-                                Document, History, Log, apply_intent,
+                                Document, apply_intent,
                                 domain_coalesce_key, domain_edit,
                                 domain_edit_all, resolve_selection)
 

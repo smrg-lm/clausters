@@ -155,7 +155,7 @@ def test_what_the_editor_holds_is_read_from_the_application():
 def test_a_verb_that_needs_a_file_says_none_is_open():
     editor, _ = opened(file={"error": "no file is open"})
     with pytest.raises(ValueError, match="no file is open"):
-        editor.file
+        _ = editor.file
 
 
 def test_a_save_waits_for_the_application_and_answers_the_path():
@@ -247,4 +247,4 @@ def test_an_editor_not_opened_says_so():
     editor = AudioEditor(a_file())
     assert editor.closed and editor.window is None
     with pytest.raises(RuntimeError, match="open"):
-        editor.file
+        _ = editor.file

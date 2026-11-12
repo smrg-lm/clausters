@@ -70,7 +70,6 @@ import re
 from array import array
 from dataclasses import dataclass, field
 
-from .base.main import main
 from .defs.node import Group, Synth
 from .log import LEVELS, render_line
 

@@ -65,8 +65,8 @@ names of the callable that builds it, and only here are all the builders in one
 # The private names other modules in the client import from here: the operator
 # tables `pv_expr` reads and the curve resolver `gui.guidef` reaches for. They
 # were importable when this was one module, so they stay importable.
-from .graph import _BINOP_OPS, _UNOP_OPS
-from .env import _resolve_curve
+from .graph import _BINOP_OPS as _BINOP_OPS, _UNOP_OPS as _UNOP_OPS
+from .env import _resolve_curve as _resolve_curve
 
 from .graph import (
     ChannelList,

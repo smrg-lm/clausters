@@ -285,7 +285,7 @@ class HostedEditor(WindowVerbs):
         self._held().editors.append(self)
         # the host's loop delivers the window's close from now on, and the
         # answers of what follows
-        host.loop
+        _ = host.loop
         if take:
             self._take()
         return self._window

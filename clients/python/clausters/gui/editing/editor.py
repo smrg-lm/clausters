@@ -36,7 +36,7 @@ sounds; it has no multitrack to move over.
 import json
 
 from ... import _native
-from .application import BASE_ID, Application, _resolve_host
+from .application import BASE_ID, Application
 from ...history import Editing
 from .echo import Echo
 from .window_verbs import WindowVerbs
@@ -436,7 +436,7 @@ class Editor(WindowVerbs):
         self._announce()
         self._publish_actions()
         self._host.subscribe(self.apply)
-        self._host.loop            # built and started on first use
+        _ = self._host.loop        # built and started on first use
         return self._window
 
     def _plays_on(self):

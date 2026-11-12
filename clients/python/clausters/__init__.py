@@ -83,7 +83,7 @@ The layers:
 - `clausters.config` -- the shared TOML configuration, read-only.
 """
 
-from . import _native
+from . import _native as _native  # the binding, loaded with the package
 from . import log as log        # noqa: F401 -- arms CLAUSTERS_LOG on import
 from . import (base, data, defs, document, errors, form, gui, ipc, launch,
                multitrack, segments, seq)
@@ -144,11 +144,14 @@ __all__ = [
     "builtins",
     "data",
     "defs",
+    "document",
     "errors",
     "form",
     "gui",
     "ipc",
     "launch",
+    "multitrack",
+    "segments",
     "seq",
     # the hosts
     "Session",

@@ -33,7 +33,6 @@ import time
 
 from clausters import Session
 from clausters.base import OscReceiver
-from clausters.base import _osclib as osc
 from clausters.responders import OscFunc
 from clausters.defs import Synth
 

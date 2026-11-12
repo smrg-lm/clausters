@@ -66,7 +66,7 @@ try:
     # previous one down. A checker reads the file top to bottom and cannot see
     # that, hence the suppressions.
     server.quit()       # noqa: F821  # pyright: ignore[reportUndefinedVariable]
-    server.close()      # pyright: ignore[reportUndefinedVariable]
+    server.close()      # noqa: F821  # pyright: ignore[reportUndefinedVariable]
     proc.wait(timeout=5)  # noqa: F821  # pyright: ignore[reportUndefinedVariable]
 except Exception:
     pass

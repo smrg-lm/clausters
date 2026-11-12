@@ -48,7 +48,7 @@ TAKE = 8
 def _counted(inval):
     """`prout`'s body: three tens."""
     for i in range(3):
-        inval = yield i * 10
+        yield i * 10
 
 
 def _twice():

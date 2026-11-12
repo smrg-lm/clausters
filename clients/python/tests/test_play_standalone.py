@@ -14,7 +14,7 @@ from clausters.defs import (
 from clausters.defs.ugens import (
     detect_silence, free_self, free_self_when_done, line, pause_self,
 )
-from clausters.defs.node import Group, Synth
+from clausters.defs.node import Synth
 from clausters.base._oscinterface import OscNrtInterface
 from clausters.base import LogicalTimebase, TempoClock
 from clausters.seq import pbind, pseq

@@ -83,9 +83,9 @@ def test_a_map_round_trips_through_its_breakpoints():
 
 
 def test_a_stored_map_is_checked_by_the_door_that_reads_it():
-    for json in ("[]", '[{"beats":0.0,"tempo":0.0}]', "not json"):
+    for text in ("[]", '[{"beats":0.0,"tempo":0.0}]', "not json"):
         with pytest.raises(ValueError):
-            TempoMap.load(json)
+            TempoMap.load(text)
 
 
 def test_a_gesture_says_where_it_is_written():

@@ -111,7 +111,7 @@ def main() -> int:
             except ValueError:
                 action = namespace.get(step)
                 if not callable(action):
-                    raise SystemExit(f"{example.name} defines no {step}() to call")
+                    raise SystemExit(f"{example.name} defines no {step}() to call") from None
                 action()
                 look(step)
             else:

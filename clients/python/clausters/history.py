@@ -132,7 +132,7 @@ class Editing:
         Raises:
             ValueError: the crate refused the request, with its reason.
         """
-        answer = self.core.call(verb, key=str(key), **request)
+        answer = self._live().call(verb, key=str(key), **request)
         if "error" in answer or "member" not in answer:
             raise ValueError(answer.get("error", "the context opened nothing"))
         member, identity = int(answer["member"]), int(answer["structure"])
@@ -148,7 +148,7 @@ class Editing:
         Raises:
             ValueError: the crate refused the request, with its reason.
         """
-        answer = self.core.open_notes(sequence._seq, key=str(key), **request)
+        answer = self._live().open_notes(sequence._seq, key=str(key), **request)
         if "error" in answer or "member" not in answer:
             raise ValueError(answer.get("error", "the context opened nothing"))
         member, identity = int(answer["member"]), int(answer["structure"])
@@ -167,7 +167,7 @@ class Editing:
         Raises:
             ValueError: the crate refused the request, with its reason.
         """
-        answer = self.core.open_score(score._h, key=str(key), **request)
+        answer = self._live().open_score(score._h, key=str(key), **request)
         if "error" in answer or "member" not in answer:
             raise ValueError(answer.get("error", "the context opened nothing"))
         member, identity = int(answer["member"]), int(answer["structure"])
@@ -187,7 +187,7 @@ class Editing:
         Raises:
             ValueError: the crate refused the request, with its reason.
         """
-        answer = self.core.open_score_over(score._h, sequence._seq, key=str(key), **request)
+        answer = self._live().open_score_over(score._h, sequence._seq, key=str(key), **request)
         if "error" in answer or "member" not in answer:
             raise ValueError(answer.get("error", "the context opened nothing"))
         member, identity = int(answer["member"]), int(answer["structure"])
@@ -195,6 +195,12 @@ class Editing:
         self._structures.setdefault(id(sequence), (sequence, member, identity))
         self.claim(sequence)
         return member, identity
+
+    def _live(self) -> "_native.EditingCore":
+        """The context in the crate, while it is open."""
+        if self.core is None:
+            raise RuntimeError("the editing context is closed")
+        return self.core
 
     def act(self, member: int, call: dict) -> dict:
         """**One verb a client calls on a member** -- ``call`` as that

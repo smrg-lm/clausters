@@ -95,7 +95,7 @@ def main():
                 print(f"  {info.id} {info.defname} maps {info.maps} "
                       f"(reads {info.reads}, writes {info.writes})")
 
-        print(f"\nb.info() -- the same record, asked of the node itself:")
+        print("\nb.info() -- the same record, asked of the node itself:")
         print(f"  {b.info()}")
 
         gone = Synth.from_id(4242, "beep", server=server)

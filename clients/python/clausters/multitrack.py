@@ -66,6 +66,7 @@ Usage::
 import json
 import weakref
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, overload
 
 from . import _native
 from .document import FIRST_VERSION, SESSION_APPLICATION, SESSION_FORMAT
@@ -89,6 +90,9 @@ __all__ = [
     "TrackView",
     "View",
 ]
+
+if TYPE_CHECKING:
+    from .seq.sequence import EventSequence
 
 
 def _unknown_fields(written: dict, *known: str) -> dict:
@@ -306,7 +310,7 @@ class Automation:
         """The curve as its holder writes it: the value, or what the sequence
         holds now."""
         if self._holder is None:
-            out = {"id": self._id, **self._value}
+            out = {"id": self._id, **self._own()}
             out["points"] = list(out["points"])
             return out
         holder, scope = self._holder
@@ -346,7 +350,12 @@ class Automation:
             raise AttributeError("a held curve keeps the id its holder gave it")
         self._id = int(value)
 
-    def _field(self, name: str):
+    def _own(self) -> dict:
+        """The value of a curve no holder keeps: it holds its own."""
+        assert self._value is not None, "a curve with no holder holds its value"
+        return self._value
+
+    def _field(self, name: str) -> Any:
         written = self._written()
         defaults = {"target": None, "name": None, "points": [], "visible": False,
                     "enabled": True}
@@ -360,7 +369,7 @@ class Automation:
         """Write one field: into the value, or -- for a held curve -- the
         whole curve back into its holder, which keeps its id."""
         if self._holder is None:
-            self._value[name] = value
+            self._own()[name] = value
             return
         written = dict(self._written())
         if name == "extra":
@@ -949,6 +958,12 @@ class TakeLanes:
 
     def __iter__(self):
         return iter([self._track._multitrack._view(TakeLane, i) for i in self._ids()])
+
+    @overload
+    def __getitem__(self, i: int) -> TakeLane: ...
+
+    @overload
+    def __getitem__(self, i: slice) -> "list[TakeLane]": ...
 
     def __getitem__(self, i):
         ids = self._ids()
@@ -1845,7 +1860,7 @@ class Source:
     #: `clausters.seq.EventSequence` itself, held rather than copied, so what an
     #: editor does to it is what the next save writes. Left out of equality:
     #: a handle is compared by what it holds, which `write` says.
-    sequence: "object | None" = field(default=None, compare=False)
+    sequence: "EventSequence | None" = field(default=None, compare=False)
 
     @classmethod
     def file(cls, path: str, lifetime: str = "session") -> "Source":

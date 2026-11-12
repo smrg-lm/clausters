@@ -256,10 +256,8 @@ class _Process:
         """Stop the process (if running) and drop the exit hooks. Idempotent;
         called automatically on context-manager exit and interpreter shutdown."""
         if self._atexit is not None:
-            try:
-                atexit.unregister(self._atexit)
-            except Exception:
-                pass
+            # never raises, whether or not the hook is still registered
+            atexit.unregister(self._atexit)
             self._atexit = None
         if self._finalizer is not None:
             self._finalizer.detach()

@@ -62,7 +62,6 @@ from clausters.defs import (
 from clausters.errors import CommandError
 from clausters.defs.node import AddAction
 from clausters.defs import Group, Synth
-from clausters.defs import Buffer
 
 REPO = os.path.join(os.path.dirname(__file__), "..")
 BIN = os.environ.get("CLAUSTERS_BIN", os.path.join(REPO, "target", "release", "clausters"))

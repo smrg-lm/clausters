@@ -173,6 +173,7 @@ def app_clock(host=None):
 
 
 __all__ = [
+    "guidef",
     "GuiHost",
     "WidgetInfo",
     "format_window_profile",

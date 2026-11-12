@@ -8,10 +8,7 @@ lockstep is the manual E2E in
 """
 
 from clausters.seq import (
-    Event,
     EventPattern,
-    MidiItem,
-    OscItem,
     pbind,
     pn,
     prand,

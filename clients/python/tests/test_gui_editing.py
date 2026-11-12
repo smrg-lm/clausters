@@ -239,7 +239,6 @@ class TwoTurnDomain(DialDomain):
 
 
 def test_a_gesture_lands_whole_or_not_at_all():
-    import pytest
     dial = Dial(0.25)
     ed = Editor(dial, sample_rate=SR, domain=TwoTurnDomain(), view=DialView())
     host = FakeHost()
@@ -308,7 +307,6 @@ def test_a_key_and_a_text_go_to_the_editors_window():
 
 
 def test_a_note_entry_verb_is_spelled_from_its_argument():
-    import pytest
     from clausters.gui.editing.score import _letter
     assert _letter("C") == "c" and _letter(" g ") == "g"
     with pytest.raises(ValueError):

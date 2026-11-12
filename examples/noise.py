@@ -33,7 +33,6 @@ from clausters.defs.ugens import (
     hpf, impulse, leak_dc, lf_noise1, out, pink_noise, rlpf, white_noise,
 )
 from clausters.seq import pbind, pseq
-from clausters.defs import Synth
 
 SR = 48000.0
 SECTION = 1.2  # seconds per shape

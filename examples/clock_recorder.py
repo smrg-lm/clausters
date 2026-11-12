@@ -373,7 +373,6 @@ def analyze(path: str, *, period: int, server_rate: float, expected: int | None,
 
     gaps = [onsets[i + 1] - onsets[i] for i in range(len(onsets) - 1)]
     mean = sum(gaps) / len(gaps)
-    std = math.sqrt(sum((g - mean) ** 2 for g in gaps) / len(gaps))
     ks = [float(k) for k in range(len(onsets))]
     slope, _ = _linfit(ks, [float(o) for o in onsets])  # samples per impulse
     # Jitter = scatter of onsets around the fitted straight line.

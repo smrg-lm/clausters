@@ -11,7 +11,7 @@ from clausters.base import TempoClock, OscNrtInterface
 from clausters.base import _osclib as osc
 from clausters.base.builtins import midicps
 from clausters.defs import Server
-from clausters.seq import Event, pbind, pn, pgeom, pser, pseq, pseries, pwhite, rest
+from clausters.seq import Event, pbind, pn, pgeom, pser, pseq, pseries, pwhite
 
 
 def _embed_or_skip():

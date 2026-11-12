@@ -159,7 +159,7 @@ class Linker:
             if arg:
                 head, line = arg.group(1), line[arg.end():]
 
-            def sub(m):
+            def sub(m, section=section):
                 target = self.resolve(m.group(1), module, section)
                 if target is None or target == section:
                     return m.group(0)

@@ -17,7 +17,7 @@ import heapq
 
 from ...base.stream import StopStream
 from ..event import Event, rest
-from ..pattern import INF, all_events, as_stream, embed, pattern
+from ..pattern import INF, as_stream, pattern
 from .valuepatterns import _counting
 
 

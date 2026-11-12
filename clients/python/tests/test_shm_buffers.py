@@ -22,6 +22,7 @@ import struct
 import pytest
 
 from clausters import _native
+from clausters.errors import SegmentError
 from clausters.ipc import ShmClient
 
 
@@ -70,7 +71,7 @@ def test_a_segment_reports_the_shape_the_core_gave_it(tmp_path):
 def test_something_that_is_not_a_segment_is_refused(tmp_path):
     path = tmp_path / "junk"
     path.write_bytes(b"\0" * 4096)
-    with pytest.raises(Exception):
+    with pytest.raises(SegmentError):
         ShmClient(str(path))
 
 

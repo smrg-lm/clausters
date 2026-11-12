@@ -58,7 +58,6 @@ from clausters.defs import (
 )
 from clausters.errors import CommandError
 from clausters.defs import Group
-from clausters.defs import Buffer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.join(HERE, "..")

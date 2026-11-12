@@ -20,7 +20,7 @@ import os
 
 from ... import _libpath, _native
 from ...errors import CommandError
-from ._abi import _MISSING, _engraver, _text, _u8
+from ._abi import _MISSING, _engraver, _text
 from . import sheet as _sheet
 from .mei import TRANSCRIPTION_KEYS, from_notes, sheet_from_events
 from .sheet import _unwrap

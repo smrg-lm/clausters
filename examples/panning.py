@@ -39,7 +39,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "pyt
 
 from clausters.base import LogicalTimebase, OscNrtInterface, TempoClock
 from clausters import SoundFile
-from clausters.defs import Server, SynthDef, control
+from clausters.defs import Server, SynthDef
 from clausters.defs.ugens import (
     DoneAction, Env, balance2, env_gen, lf_noise1, lf_tri, lin_pan2, mid_side,
     out, pan2, pan_az, pink_noise, pulse, rlpf, saw, select_x, sine, splay,

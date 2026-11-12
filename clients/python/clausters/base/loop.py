@@ -46,6 +46,7 @@ of the caller's own -- so a reader that needs more than one fact at a time takes
 the same lock.
 """
 
+import functools
 import logging
 import os
 import selectors
@@ -385,7 +386,7 @@ class EventLoop:
                 if item is None:
                     continue
                 with self.lock:
-                    _call(lambda: source.deliver(item))
+                    _call(functools.partial(source.deliver, item))
                 did = True
                 did |= self._deliver_all(source)
             for source in blind:
@@ -417,7 +418,7 @@ class EventLoop:
             if item is None:
                 return did
             with self.lock:
-                _call(lambda: source.deliver(item))
+                _call(functools.partial(source.deliver, item))
             did = True
 
     def close(self):
@@ -425,7 +426,7 @@ class EventLoop:
         self.stop()
         try:
             self._sel.close()
-        except Exception:
+        except OSError:  # the descriptor already closed under it
             pass
         for fd in (self._wake_r, self._wake_w):
             try:

@@ -90,7 +90,7 @@ def test_a_read_sees_what_the_sequence_holds_now():
     seq._apply({"intent": "remove", "id": 2})
     assert second.sequence is None
     with pytest.raises(ValueError, match="no longer holds"):
-        second.at
+        _ = second.at
 
 
 def test_the_curves_read_as_automation_with_their_holder():

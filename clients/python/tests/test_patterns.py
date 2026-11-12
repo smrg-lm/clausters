@@ -353,7 +353,7 @@ def test_a_function_computes_values_when_asked():
 
     def body(inval):
         for i in range(3):
-            inval = yield i * 10
+            yield i * 10
 
     assert list(prout(body)) == [0, 10, 20] and list(prout(body)) == [0, 10, 20]
     assert list(pfuncn(lambda: pseq([1, 2]), 2)) == [1, 2, 1, 2]

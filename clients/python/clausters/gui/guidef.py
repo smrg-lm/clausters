@@ -205,10 +205,8 @@ only what it changes, and a press on a view's vertical strip always pans that
 axis. Live via ``set`` (as JSON, the ``theme`` convention).
 """
 
-import array
 import atexit
 import json
-import sys
 from ..base.bulk import samples_to_blob as _samples_to_blob
 from ..defs.ugens import env_to_points, points_to_env  # re-exported; the Env <-> Bpf seam
 
@@ -221,7 +219,6 @@ __all__ = [
     "window",
     "layout",
     "plane",
-    "field",
     "signal",
     "curve",
     "nodes",
@@ -265,8 +262,6 @@ __all__ = [
     "plot",
     "score",
     "timeruler",
-    "track",
-    "clip",
     "patch",
     "canvas",
     "to_json",

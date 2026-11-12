@@ -733,7 +733,7 @@ def _js_params(src: str, tokens: list[tuple[int, str]],
     would otherwise splice the `line` generator into every log call.
     """
     out = []
-    for name, (start, end) in funcs.items():
+    for start, end in funcs.values():
         opening = src.find("(", start[0])
         if opening < 0 or opening > end[0]:
             continue

@@ -31,11 +31,10 @@ import json as _json
 import sys
 import threading
 import time
-import traceback
 import weakref
 
 from .. import _native
-from .stream import Stream, StopStream, resume
+from .stream import resume
 from .timebase import LogicalTimebase, MonotonicTimebase, SampleClockTimebase
 
 #: Every clock alive in the process, so that a panic reaches the ones nobody

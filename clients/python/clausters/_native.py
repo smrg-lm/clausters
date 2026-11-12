@@ -3420,7 +3420,7 @@ class Scheduler:
     def __del__(self):
         try:
             self.close()
-        except Exception:
+        except Exception:  # interpreter teardown: the library may be gone
             pass
 
 
@@ -3754,7 +3754,7 @@ class TempoMap:
     def __del__(self):
         try:
             self.close()
-        except Exception:
+        except Exception:  # interpreter teardown: the library may be gone
             pass
 
 
@@ -3826,7 +3826,7 @@ class IdSpaces:
     def __del__(self):
         try:
             self.close()
-        except Exception:
+        except Exception:  # interpreter teardown: the library may be gone
             pass
 
 
@@ -3902,7 +3902,7 @@ class Registry:
     def __del__(self):
         try:
             self.close()
-        except Exception:
+        except Exception:  # interpreter teardown: the library may be gone
             pass
 
 
@@ -4030,7 +4030,7 @@ class WidgetIds:
     def __del__(self):
         try:
             self.close()
-        except Exception:
+        except Exception:  # interpreter teardown: the library may be gone
             pass
 
 
@@ -4117,7 +4117,7 @@ class ClockSyncModel:
     def __del__(self):
         try:
             self.close()
-        except Exception:
+        except Exception:  # interpreter teardown: the library may be gone
             pass
 
 
@@ -4385,7 +4385,7 @@ class WsClient:
     def __del__(self):
         try:
             self.close()
-        except Exception:
+        except Exception:  # interpreter teardown: the library may be gone
             pass
 
 

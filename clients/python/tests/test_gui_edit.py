@@ -508,7 +508,6 @@ class _PlayingServer(Server):
 
     def lane(self):
         """The note starts of the last `/lane_set`, in samples."""
-        import json
 
         data = [json.loads(str(args[1])) for addr, args in self.sent if addr == "/lane_set"]
         return [note[0] for note in data[-1]["notes"]] if data else None

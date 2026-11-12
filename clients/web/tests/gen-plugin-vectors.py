@@ -96,13 +96,14 @@ def main():
         "rows": ROWS,
         "catalog": {"plugins": [p.data() for p in catalog], "errors": catalog.errors},
         "finds": [{"name": name, "query": query,
-                   "result": answer(lambda: catalog.plugins.index(catalog.find(name, **query)))}
+                   "result": answer(lambda name=name, query=query:
+                                  catalog.plugins.index(catalog.find(name, **query)))}
                   for name, query in FINDS],
         "filters": [{"name": name, "query": query,
                      "result": [catalog.plugins.index(p) for p in catalog.filter(name, **query)]}
                     for name, query in FILTERS],
         "references": [{"plugin": name, "options": options,
-                        "result": answer(lambda: PluginDef(
+                        "result": answer(lambda name=name, options=options: PluginDef(
                             "def", catalog.find(name, format="clap" if name == "Plate" else None),
                             inputs=options.get("inputs"), outputs=options.get("outputs", 0),
                             state=bytes(options["state"]) if "state" in options else None,

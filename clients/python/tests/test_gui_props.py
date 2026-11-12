@@ -513,7 +513,7 @@ def host_props() -> dict:
             out[kind] |= helpers[helper]
 
     # Mutation: `WidgetKind::Waveform { ... } => match key { ... }`.
-    for m, body in _arms(apply, r"\s{8}WidgetKind::(\w+)"):
+    for _, body in _arms(apply, r"\s{8}WidgetKind::(\w+)"):
         keys = _match_arm_keys(body) | keys_in(body)
         for variant in re.findall(r"WidgetKind::(\w+)", body.split("=>")[0]):
             for kind in variant_of.get(variant, []):

@@ -19,7 +19,6 @@ whose amplitude comes from control bus 7 via `InCtl`, faded by writing that
 bus straight into shared memory while it plays.
 """
 
-import json
 import os
 import sys
 import time

@@ -207,7 +207,7 @@ class EmbedSampleClock:
         # A direct read has no round trip: probe the handle once (a closed or
         # dead handle raises here, which sample_timebase reports as no server
         # answering) and report zero uncertainty.
-        self._handle.clock
+        _ = self._handle.clock
         return 0.0
 
     def warmup(self, n: int = 5, gap: float = 0.05) -> float:

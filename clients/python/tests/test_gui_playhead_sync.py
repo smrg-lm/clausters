@@ -12,7 +12,6 @@ import pytest
 
 from clausters.base import TempoClock
 from clausters.gui.playhead_sync import PlayheadSync
-from clausters.seq.event import Event
 from clausters.seq.timeline import Timeline
 
 SR = 48_000.0
@@ -263,7 +262,7 @@ def test_a_play_puts_the_end_of_the_pass_on_the_application_clock():
 def test_a_transport_with_no_host_clock_keeps_update_manual():
     """A view built before it is opened has no clock to schedule on, and `update`
     is the plain call it always was."""
-    tp = transport(FakeHost(), clock=(clock := TempoClock(TEMPO)), extent=lambda: 3.0)
+    tp = transport(FakeHost(), clock=TempoClock(TEMPO), extent=lambda: 3.0)
     tp.play(FakeServer(), at=0.0)
     tp.playhead.drain()
     assert tp.update()
@@ -279,7 +278,7 @@ def test_the_end_is_reported_once():
 
 
 def test_without_an_extent_it_parks_on_the_last_item():
-    tp = transport(clock=(clock := TempoClock(TEMPO)))
+    tp = transport(clock=TempoClock(TEMPO))
     tp.play(FakeServer(), at=0.0)
     tp.playhead.drain()
     tp.update()
@@ -348,7 +347,7 @@ def test_a_pause_inside_the_tail_holds_where_the_music_is():
 
 def test_a_locate_after_the_end_stands():
     """Seeking away from the end must not be undone by the next `update`."""
-    tp = transport(clock=(clock := TempoClock(TEMPO)), extent=lambda: 3.0)
+    tp = transport(clock=TempoClock(TEMPO), extent=lambda: 3.0)
     tp.play(FakeServer(), at=0.0)
     tp.playhead.drain()
     tp.update()
