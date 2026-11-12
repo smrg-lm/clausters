@@ -126,7 +126,7 @@ clausters-notation = { path = "../clausters-notation", optional = true }
 # the standalone build does not also pull MIDI/PipeWire. (The native host
 # always compiles the server crate through `clausters-app-engine`; what this
 # feature adds is its embed surface and the audio backend.)
-clausters = { path = "../..", default-features = false, features = ["embed", "realtime"], optional = true }
+clausters = { path = "../clausters-server", default-features = false, features = ["embed", "realtime"], optional = true }
 # Live MIDI input (the `midi` feature): the message reader and the MPE decoder,
 # the server's own, which is what turns a device's bytes into the notes a roll
 # paints. Pure Rust and on every target; the port it also has is added for the

@@ -2,7 +2,7 @@
 
 The low-level byte layer: build OSC messages and timetagged bundles, and frame
 an NRT score. It is deliberately tiny and matches the helpers in the repo's
-``examples/json_client.py`` so scores produced here render identically. The
+``crates/clausters-server/examples/json_client.py`` so scores produced here render identically. The
 higher-level destination abstraction (RT/NRT/MIDI interfaces, `NetAddr`) sits
 on top of this in `base/_oscinterface.py`.
 

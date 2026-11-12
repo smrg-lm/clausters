@@ -12,7 +12,7 @@ use std::{path::Path, time::Duration};
 #[global_allocator]
 static ALLOC: AllocDisabler = AllocDisabler;
 const ID: &str = "6E33225254224A00AA69301AF318797D";
-#[path = "../../../tests/common/vst3_fixture.rs"]
+#[path = "../../clausters-server/tests/common/vst3_fixture.rs"]
 mod vst3_fixture;
 use vst3_fixture::fixture;
 fn helper() -> &'static Path {

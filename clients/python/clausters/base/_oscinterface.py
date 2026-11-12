@@ -409,7 +409,7 @@ class OscWsInterface(OscInterface):
     transports -- so there is no second implementation to maintain here. This is
     the transport a browser can reach (it cannot open raw UDP or map shared
     memory); the browser itself uses the native ``WebSocket`` API
-    (`examples/ws_ping.html`), not this class. ``wss://`` (TLS) is out of scope."""
+    (`crates/clausters-server/examples/ws_ping.html`), not this class. ``wss://`` (TLS) is out of scope."""
 
     time_mode = "unix"
     stream = True

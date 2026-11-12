@@ -903,7 +903,7 @@ wants `0.707` if the position sweeps a whole block: a 3 dB hole in the middle of
 every block, on exactly the fast pan sweeps someone reaches for audio rate to
 get. A scalar position still computes its gains once per block; the polynomial
 is what makes the other path affordable, and is most of the reason it exists.
-`examples/bench.rs` measures the gap on the same graph
+`crates/clausters-server/examples/bench.rs` measures the gap on the same graph
 (`Sine → Pan2 → 2× Out`, position constant against position from an `LFTri`):
 **1.30×** the whole graph at every voice count from 32 up — and that figure
 includes the `LFTri` the moving version has to run, so it is an upper bound on
@@ -977,7 +977,7 @@ not branches.
 
 Every demand source takes a `repeats` count, and sclang's answer for "keep
 going" is `inf` — a float the language has and the wire does not. `compile`
-rejects a non-finite constant outright (`src/synthdef/mod.rs`), JSON has no
+rejects a non-finite constant outright (`crates/clausters-server/src/synthdef/mod.rs`), JSON has no
 spelling for one, and neither is worth changing for this: a format that accepts
 infinities has to decide what they mean everywhere, not just here.
 
@@ -1004,7 +1004,7 @@ question the audio thread has to be able to answer safely — with no allocation
 no aliasing, and no way to run off the stack.
 
 Both halves fall out of one observation: **a UGen's inputs are always earlier
-UGens**. So `Pull` (`src/synthdef/instance.rs`) borrows the *prefix* of the UGen
+UGens**. So `Pull` (`crates/clausters-server/src/synthdef/instance.rs`) borrows the *prefix* of the UGen
 vector before the UGen it is serving, and each nested pull splits a strictly
 shorter prefix. The borrows up the call stack form a strictly decreasing chain
 of indices — no UGen can be reached twice, no `&mut` can alias, and the compiler
@@ -1094,7 +1094,7 @@ answer and the reasoning behind it.
 no `wide`, and no `RUSTFLAGS`/`target-cpu` anywhere — so a stock build gets the
 baseline of its target: `sse`/`sse2` on x86-64 (128 bits, four `f32`) and NEON on
 aarch64, which has it in the baseline. The one piece of groundwork is the
-cache-line alignment of `Block` (`src/dsp/mod.rs`): a block is `#[repr(C,
+cache-line alignment of `Block` (`crates/clausters-server/src/dsp/mod.rs`): a block is `#[repr(C,
 align(64))]` over `[f32; 64]`, exactly four 64-byte lines, so a vector load or
 store never straddles a line. That was kept **for the stability argument, not for
 a measured gain** — the interleaved A/B benchmark that justified it came back
@@ -1173,7 +1173,7 @@ More than the 4× vectorization alone, because the per-sample jump through a
 control: `Pow` and `Sine` call a scalar libm and barely move, which is what says
 the rest of the table is the loop body and not the harness.
 
-At the engine, `examples/bench.rs` over three interleaved rounds: the default def
+At the engine, `crates/clausters-server/examples/bench.rs` over three interleaved rounds: the default def
 (`Sine · amp → 2× Out`, one multiply among four UGens) gains **~20%** at every
 voice count (1000 synths: 1205 → 1435 blocks/s). The bit-exact `gain` graph —
 the bench built precisely to isolate engine overhead — gains **~70%** (128
@@ -1207,7 +1207,7 @@ through a table the vectorizer cannot see past. The second is something LLVM
 often unswitches by itself — often, not always. The fused rows are where "not
 always" showed up, which is what made hoisting them worth trying.
 
-**At the engine it does not show up at all.** `examples/bench.rs` grew a fused
+**At the engine it does not show up at all.** `crates/clausters-server/examples/bench.rs` grew a fused
 section for exactly this question, and the same A/B through it — `MulAdd` and
 `Sum4` graphs over a shared `Sine`, three interleaved rounds — moves **inside the
 ±1% noise** at every voice count. That is the correct reading rather than a
@@ -1410,15 +1410,15 @@ pushed the voice out of range.
   channel's timbre at 0 while the encoder sent 64 for a note that stated none:
   a device that never sends CC 74 would have played every note at the
   darkest. Both ends now agree on 64.
-- **The graph is `src/synthdef/default.json`**, the wire format verbatim,
+- **The graph is `crates/clausters-server/src/synthdef/default.json`**, the wire format verbatim,
   rather than a hand-indexed `UGenSpec` list: at 35 UGens the indices were
   unreadable either way, and JSON is the form a client-sent def has. The
-  Python twins (`examples/synthdef.py`, `tests/test_synthdef.py`) render it
+  Python twins (`crates/clausters-server/examples/synthdef.py`, `tests/test_synthdef.py`) render it
   byte-identically, which is what keeps the file and the client builder in
   step.
 - **Tests that listen for a sine have their own.** The engine, mapping and
   golden tests measured the old default's frequency and RMS; they now send or
-  compile `tests/common/sine.json`, the old graph, so a change of the default's
+  compile `crates/clausters-server/tests/common/sine.json`, the old graph, so a change of the default's
   tone never moves what the engine is checked against — the arpeggio golden
   stayed byte-identical.
 

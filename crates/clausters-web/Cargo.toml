@@ -17,7 +17,7 @@ crate-type = ["cdylib", "rlib"]
 # FaustDef *family*, not libfaust: on wasm32 the compiler is `libfaust-wasm` in
 # the page's Worker and the def arrives as a second module linked into this
 # engine's memory (see `clausters::faust`).
-clausters = { path = "../..", default-features = false, features = [
+clausters = { path = "../clausters-server", default-features = false, features = [
     "synth",
     "faust",
     "embed",

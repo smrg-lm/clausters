@@ -29,7 +29,7 @@
 //!
 //! It names buses; it does **not** number or order them. The server resolves a
 //! GraphDef's bus *names* to allocated indices and **auto-sorts** the members so
-//! writers run before readers (see `src/osc/graphdef.rs`), so this pass adds no
+//! writers run before readers (see `crates/clausters-server/src/osc/graphdef.rs`), so this pass adds no
 //! ordering and the audio path is untouched. The graphic is a DAG: a genuine
 //! feedback cycle is a code construction (nodes and groups in a control cycle),
 //! never a cord, so the pass does not resolve cycles -- it faithfully wires

@@ -330,3 +330,4 @@ quoted title lands here, on the link to the entry.
 - [The two vendored wasm artifacts are built by the release, from three pins](decisions/project.md#the-two-vendored-wasm-artifacts-are-built-by-the-release-from-three-pins)
 - [The work has no name, so the prose names the structure](decisions/project.md#the-work-has-no-name-so-the-prose-names-the-structure)
 - [The toolchain is pinned, and a new compiler arrives as a commit (2026-11-11)](decisions/project.md#the-toolchain-is-pinned-and-a-new-compiler-arrives-as-a-commit-2026-11-11)
+- [The workspace is virtual, and the server is its default member (2026-11-12)](decisions/project.md#the-workspace-is-virtual-and-the-server-is-its-default-member-2026-11-12)

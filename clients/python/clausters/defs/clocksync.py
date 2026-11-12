@@ -15,7 +15,7 @@ The UDP tracker models
 
 from ``(local monotonic time, counter)`` anchor pairs, a least-squares line over
 a sliding window (JACK-DLL / Ableton-Link in spirit; same model as the server's
-``examples/sample_clock.py``). The TempoClock then paces against this and the
+``crates/clausters-server/examples/sample_clock.py``). The TempoClock then paces against this and the
 Server schedules every event by absolute sample with ``/sched_at`` -- drift-free.
 
 Query latency does not accumulate: an anchor is paired with the *midpoint* of

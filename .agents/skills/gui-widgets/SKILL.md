@@ -96,7 +96,7 @@ The crate-level model — metrics roles, the main-axis resolution order, the log
 
 The audio tap is the prerequisite the scopes share, and it exists: a trailing region of the versioned shm segment (ABI v3; `--taps` single-channel rings of `--tap-frames` samples, each a cache-line-aligned cursor + ring). `/bus_tap tapIndex bus` routes any audio bus into a ring — a command flipping engine routing state, not a UGen (where SuperCollider reaches for `ScopeOut2`); the audio thread appends a block per tap per block, RT-safe. The browser sibling is `/bus_tapStream periodMs frames tapIndex...` → `/bus_tapStream.reply tap endPosition blob` (newest-window snapshots with a stream position; the `/bus_stream` posture). Python: `Server.tap` / `Server.stream_taps` (headless capture, no mmap needed).
 
-One principle bounds all host-side analysis: **the host computes only what plotting needs** (peaks, a display FFT). Audio *processing* happens once, in the server — which already owns a spectral chain (`FFT`/`PV_*`/`IFFT`, `src/dsp/spectral.rs`); a client wanting processed audio runs it there (live or NRT) and hands the host the result resource.
+One principle bounds all host-side analysis: **the host computes only what plotting needs** (peaks, a display FFT). Audio *processing* happens once, in the server — which already owns a spectral chain (`FFT`/`PV_*`/`IFFT`, `crates/clausters-server/src/dsp/spectral.rs`); a client wanting processed audio runs it there (live or NRT) and hands the host the result resource.
 
 ## Placement analysis: every general compute function goes to the core
 

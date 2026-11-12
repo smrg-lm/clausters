@@ -13,7 +13,7 @@ cargo doc --no-deps         # the API reference
 
 The core **must always build and test without any feature and without libfaust installed**, and with any combination of the def-family features `synth`/`faust` (both, either alone, or neither — most integration suites are gated on `synth`, so the featureless run is thin by design).
 
-The GUI host is a member of the workspace with a feature set of its own. The root package is the server, so the host is built and tested by name (`cargo test -p clausters-gui`) or from inside `crates/clausters-gui`, and it carries the same rule: it must build with any combination of its optional families (`notation`, `patcher`), with and without `midi`, `font-atlas` and `standalone`. `crates/clausters-gui/check-features.sh` runs that matrix — clippy, rustdoc, the wasm gate and the suite over each configuration — and is the sibling of the def-family matrix below.
+The GUI host is a member of the workspace with a feature set of its own. The workspace's default member is the server, so the host is built and tested by name (`cargo test -p clausters-gui`) or from inside `crates/clausters-gui`, and it carries the same rule: it must build with any combination of its optional families (`notation`, `patcher`), with and without `midi`, `font-atlas` and `standalone`. `crates/clausters-gui/check-features.sh` runs that matrix — clippy, rustdoc, the wasm gate and the suite over each configuration — and is the sibling of the def-family matrix below.
 
 ## System build dependencies (Ubuntu 26.04)
 
@@ -50,7 +50,7 @@ Every compilation FFI call goes through `faust::compiler::ffi_lock()`, which ser
 
 ## Real-time safety (non-negotiable)
 
-`Engine::process_block` and everything it calls must **never allocate, free, lock or do I/O**. Commands arrive fully pre-built over a lock-free FIFO; freed memory leaves through the garbage FIFO and is dropped on the network thread. `tests/rt_safety.rs` guards this with `assert_no_alloc` — run it after touching anything on the audio path. Denormals are flushed to zero on every processing thread (`dsp::denormals::flush_to_zero()` plus `-ftz 2` for Faust); see the RT-safety notes in [Architecture](architecture.md).
+`Engine::process_block` and everything it calls must **never allocate, free, lock or do I/O**. Commands arrive fully pre-built over a lock-free FIFO; freed memory leaves through the garbage FIFO and is dropped on the network thread. `crates/clausters-server/tests/rt_safety.rs` guards this with `assert_no_alloc` — run it after touching anything on the audio path. Denormals are flushed to zero on every processing thread (`dsp::denormals::flush_to_zero()` plus `-ftz 2` for Faust); see the RT-safety notes in [Architecture](architecture.md).
 
 ## End-to-end testing in a sandboxed shell
 

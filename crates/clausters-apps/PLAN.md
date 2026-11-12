@@ -3980,7 +3980,7 @@ over the opened file) carries over.
     from its first frame under a rising ramp, a loop across both seams with
     no silent frame, and a locate that plays only where it was and then
     where it went; the fed stream's real-time half allocates nothing
-    (`tests/rt_safety.rs`) and takes no lock. In a page
+    (`crates/clausters-server/tests/rt_safety.rs`) and takes no lock. In a page
     (`audio-editor.html?isolated`): a loop across the seams of three files
     reads the take on the editor's meter with no sample missing.
 - **X33 - The audio editor's session file.** *Withdrawn 2026-10-25 by the
@@ -4951,6 +4951,20 @@ Every entry carries a checkbox.
   as a file into another (and what it carries to the same notes), the
   roll's File menu, and the clients' surface for all of it. *Taken into
   `X44` the same day, and done with it 2026-11-11.*
+
+- ⬜ **The applications as modules that read apart** *(a refactoring to
+  evaluate, asked by the user 2026-11-12, once the workspace's review is
+  in)*. The crate is 53 thousand lines and already has a module per
+  application (`audio`, `multitrack`, `notes`, `points`, `score`) beside
+  what they share (`application`, `editing`, `chrome`, `forms`, `panels`,
+  `closing`, `file`, `ruler`, `samples`, `turn`). A crate per application is
+  not the direction: the applications are composed of components written
+  once, and what they share is the larger half. What is to evaluate is
+  whether the modules are as separate as their names say: which application
+  reaches into another's module, what a shared module knows of one
+  application, and whether the shared half has an order of its own. To be
+  measured by reference first, as the host's layers were (root `PLAN.md`,
+  `R19`), and only then decided.
 
 ## Found by use: the running list of fixes
 
@@ -6349,8 +6363,8 @@ wrong.
   the readers fell short of a machine that busy: the silence was the ring
   out of lead, which the engine did not always count -- a replacement whose
   kept frames ran out before its refill landed was silence counted as
-  nothing, natively and in a page. It is counted now (`src/dsp/stream.rs`,
-  `src/dsp/disk_web.rs`; `a_replacement_whose_refill_is_late_is_counted_as_starved`),
+  nothing, natively and in a page. It is counted now (`crates/clausters-server/src/dsp/stream.rs`,
+  `crates/clausters-server/src/dsp/disk_web.rs`; `a_replacement_whose_refill_is_late_is_counted_as_starved`),
   and the three loop tests run again a run the engine reports starved, up
   to four times, failing if every run starved (`unstarved`). Under full
   load the suite then failed once in twelve, on the case below.

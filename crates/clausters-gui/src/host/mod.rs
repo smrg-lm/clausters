@@ -14,7 +14,7 @@
 //! ## Why the host owns its transport
 //!
 //! The host does **not** extract or link the audio server's transport layer
-//! (`src/osc/{server,tcp,ws}.rs`): that code is tangled with the audio
+//! (`crates/clausters-server/src/osc/{server,tcp,ws}.rs`): that code is tangled with the audio
 //! `ServerState`, the engine wake and the IPC ring, so lifting it would drag
 //! server concerns into this crate for no gain. Instead the host **links
 //! `clausters-core`** -- a path dependency that pulls only `rosc` -- for the shared

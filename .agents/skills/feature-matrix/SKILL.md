@@ -131,7 +131,7 @@ involved — and cargo unifies features across the workspace, so CI's
 family turned back into `-lfaust`, and two jobs went red for three days while
 everything here stayed green. CI now excludes those two crates from that run,
 since wasm32 is where they are proved (`scripts/check-wasm.sh`), and 7b checks
-what the promise actually says: the root crate, no features, `FAUST_PREFIX`
+what the promise actually says: the server crate, no features, `FAUST_PREFIX`
 aimed at nothing. It links into a target directory of its own, so the script
 still leaves no crippled `target/debug/clausters` behind — the trap the last
 section is about.

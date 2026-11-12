@@ -8,11 +8,11 @@
 //! `faust` there means the def family, not libfaust -- the browser has no
 //! libfaust to link. In a workspace build (`cargo test --workspace`)
 //! cargo unifies features across members, so the shared `clausters` lib is the
-//! one built for the root package, i.e. with `faust` on, and this crate's test
+//! one built for the server's own default set, i.e. with `faust` on, and this crate's test
 //! binary ends up linking libfaust after all, and needs to find it.
 //!
 //! Link args do not cross package boundaries: the `cargo:rustc-link-arg` lines
-//! in the root `build.rs` apply to the root package's own targets, not to
+//! in the server's `build.rs` apply to the server package's own targets, not to
 //! dependents. Without the rpath repeated here the test binary builds fine and
 //! then fails at startup with `libfaust.so.2: cannot open shared object file`.
 //!

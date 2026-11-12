@@ -1,6 +1,6 @@
 ---
 name: examples
-description: How to write a Clausters example — which of the three directories it belongs to (root examples/ for the server, clients/python/examples/ for the client and GUI, clients/web/examples/ for the browser), the form each one takes (a closed script, a `# %%` notebook, a page), and the idiom rules a generated example gets wrong (the client boots its own server, a beat is never a time.sleep, both ends of a client/server feature are shown). Consult before adding or editing any example, and when closing a user-facing feature, since an example is how that feature is manually tested.
+description: How to write a Clausters example — which of the three directories it belongs to (crates/clausters-server/examples/ for the server, clients/python/examples/ for the client and GUI, clients/web/examples/ for the browser), the form each one takes (a closed script, a `# %%` notebook, a page), and the idiom rules a generated example gets wrong (the client boots its own server, a beat is never a time.sleep, both ends of a client/server feature are shown). Consult before adding or editing any example, and when closing a user-facing feature, since an example is how that feature is manually tested.
 ---
 
 # Writing a Clausters example
@@ -20,7 +20,7 @@ Which directory it lives in decides its form. This is not taste.
 | `clients/python/examples/` | the **Python client** + the GUI | a **`# %%` notebook** |
 | `clients/web/examples/` | the **web client** | a **page** (`.html`), or a **node script** (`.mjs`) for what a page cannot do |
 
-The corpus says it plainly: of the 31 Python files in the root `examples/`, 30
+The corpus says it plainly: of the 31 Python files in the server's `examples/`, 30
 end in an `if __name__ == "__main__":` guard and one has cells; on the client
 side, 31 of 57 are cell-organized.
 
@@ -134,7 +134,7 @@ own example tree**:
 
 | Tree | Where a run leaves its files |
 | --- | --- |
-| `examples/` | `examples/out/` |
+| `examples/` | `crates/clausters-server/examples/out/` |
 | `clients/python/examples/` | `clients/python/examples/out/` |
 | `clients/web/examples/` | `clients/web/examples/out/` |
 
@@ -240,7 +240,7 @@ These are what a generated example gets wrong, every time.
 4. **Reach for the API, not the wire.** `Event(...)`, `Synth(...)`,
    `node.set(...)`, `buf.gen(...)` — a raw `send_msg("/synth_new", ...)` in a
    *client* example teaches the protocol where the client's own surface exists.
-   The root `examples/` are the opposite case: several of them are there
+   The server's `examples/` are the opposite case: several of them are there
    precisely to show the wire (`json_client.py`, `shm_client.py`,
    `tcp_client.py`, `osc_ping.rs`).
 5. **Nothing that is already the default is passed.** Both clients resolve an

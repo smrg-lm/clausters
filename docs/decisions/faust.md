@@ -255,7 +255,7 @@ a compiler artifact does not solve on its own. `libfaust-wasm` gives us a
 it compiled inside a node of our tree.
 
 **The shape of the answer is fixed by what a Faust node already is here.**
-`FaustSynth` (`src/faust/synth.rs`) holds an opaque instance pointer, a `Vec` of
+`FaustSynth` (`crates/clausters-server/src/faust/synth.rs`) holds an opaque instance pointer, a `Vec` of
 `f32` parameter zones reaching into it, and private non-interleaved block
 buffers it stages I/O through; per block it does one FFI call,
 `computeCDSPInstance(dsp, frames, in**, out**)`, and `/node_set` is a plain
@@ -385,7 +385,7 @@ it. Two things had to be built for the interpreters to reach the compiler:
   backend has `createWasmDSPFactoryFromBoxes` and `...FromSignals` already; what
   was missing was the JS-facing surface over them and the C API being exported at
   all. `third_party/faust-wasm-bindings.patch` adds four embind methods, and the
-  link exports the C API — the list read out of `src/faust/ffi.rs`, so a call the
+  link exports the C API — the list read out of `crates/clausters-server/src/faust/ffi.rs`, so a call the
   interpreter grows and the artifact does not export fails at load, by name,
   rather than later.
 - **The two modules do not share an address space.** A box handle is an integer
@@ -473,7 +473,7 @@ that is slower on purpose.
 Porting the box API found that a page cannot write a Faust constant that is
 *real* and integral. A def builder's numeric constant travels as a bare JSON
 number and the server reads it back with `serde_json`: an integral one becomes a
-Faust **int**, anything else a **real** (`src/faust/boxes.rs`, `number_box`; the
+Faust **int**, anything else a **real** (`crates/clausters-server/src/faust/boxes.rs`, `number_box`; the
 signal schema does the same). Python separates them by the literal's type —
 `box(2)` is `int 2`, `box(2.0)` is `real 2.0` — and JavaScript has one number
 type, so `2.0` *is* `2` by the time `boxes.box`/`signals.signal` sees it. It is

@@ -11,7 +11,7 @@
 // Each 128-frame render quantum is one WebServer.process call -- a serving
 // turn (ring, streams, garbage, async results) before each 64-frame engine
 // block, so command pacing stays fine and deterministic (see
-// tests/headless.rs, which drives the same path natively).
+// crates/clausters-server/tests/headless.rs, which drives the same path natively).
 
 import "./worklet-shim.ts";
 import { initSync, WebServer } from "./clausters_web.js";

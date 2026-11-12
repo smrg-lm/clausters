@@ -64,7 +64,7 @@ recursive circuits* (resources below) for the full comparison.
 
 The Python `signals` module (`clients/python/clausters/defs/signals.py`) is a
 1:1 surface over Faust's Signal API; the server maps it in
-`src/faust/signals.rs`. `Signal` overloads Python operators, plain numbers are
+`crates/clausters-server/src/faust/signals.rs`. `Signal` overloads Python operators, plain numbers are
 constants (**Python `int` → Faust int, `float` → real** — write `1.0` for real
 math), and each entry of `from_signals(name, *outputs)` is one output channel.
 

@@ -165,7 +165,7 @@ else.
 ## A cost gate compares two runs, not a number, and its threshold is measured
 
 The R track's invariant is that a refactor closes with a before/after
-`examples/bench.rs`. That is a step a human remembers, and a check that depends
+`crates/clausters-server/examples/bench.rs`. That is a step a human remembers, and a check that depends
 on someone remembering is one that eventually is not run — so it became a CI
 job. What the job is *not* is the obvious design.
 
@@ -332,9 +332,36 @@ to match the pinned version, which `BUILD.md` says.
 
 **The release profile was measured and left alone.** Thin link-time
 optimization with one codegen unit, over the 88 gated rows of
-`examples/bench.rs` on one machine, two runs each way: the median throughput
+`crates/clausters-server/examples/bench.rs` on one machine, two runs each way: the median throughput
 moved by +0.8% and 0.0% against a run-to-run median of +2.9% between two
 builds of the unchanged profile, with the same spread at both ends (about 8%
 either way). It also made the release build a third slower. The dev profile
 does change: line tables only, which made the tests of two crates 39%
 smaller on disk and keeps file and line in a backtrace.
+
+## The workspace is virtual, and the server is its default member (2026-11-12)
+
+The root manifest was the workspace and the server's package at once. That
+was the project's first shape, a server with a client beside it, and it
+stopped being true: the server is one component among the document, the
+applications, the GUI host and the clients, and nobody enters an application
+through it. A tree whose root is the server's `src/` says otherwise to
+whoever opens it, so the server is `crates/clausters-server` and the root
+holds the workspace alone.
+
+**The package is still `clausters`.** The directory takes the component's
+name, the one the documentation already uses for the Rust server; the
+package, the library and the binary keep theirs, so no `use clausters::` and
+no command a user types changed.
+
+**`default-members` is the server, and that is what keeps the commands.** A
+virtual workspace with none makes `cargo build` and `cargo test` act on every
+member, and cargo unifies features across what one invocation builds: the
+GUI host turns `realtime` and `notation` on, which the def-family rows build
+without. With the server as the one default member, a command with no `-p`
+means what it meant when the server was the root package, in CI, in the
+release and in the feature matrix alike.
+
+**What a build gains is nothing, and that was the first verdict.** One
+lockfile and one `target/` were already shared. The review that left this
+out measured only that; what it changes is what the tree says.

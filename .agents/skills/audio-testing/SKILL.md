@@ -26,13 +26,13 @@ the same FIFO the network thread would use, and inspect the output.
 The server's integration tests are few binaries, since each one links the whole
 server:
 
-- **`tests/offline/`** — a test that renders offline and reads the result: no
+- **`crates/clausters-server/tests/offline/`** — a test that renders offline and reads the result: no
   socket, no child process, no wall clock, no process-wide state. A new file
-  there is one line in `tests/offline/main.rs` (`mod <name>;`), keeps its own
+  there is one line in `crates/clausters-server/tests/offline/main.rs` (`mod <name>;`), keeps its own
   `#![cfg(feature = ...)]`, and takes the shared helpers with `use
   crate::signal;` (`bench`, `sine`), never with its own `#[path]`. Run one
   with `cargo test --test offline <name>::`.
-- **`tests/faust_offline/`** — the same, for a test that compiles a FaustDef.
+- **`crates/clausters-server/tests/faust_offline/`** — the same, for a test that compiles a FaustDef.
 - **A file of its own in `tests/`** — a test that depends on its process: it
   installs a global allocator (the `assert_no_alloc` ones), arms a signal or a
   floating-point mode, names a shared-memory segment, boots a live server on a
@@ -80,9 +80,9 @@ for f32); never exact equality except for structural zeros.
 
 ## Measuring instead of pinning (the shared harness)
 
-`tests/common/signal.rs` holds the measurements — include it with
+`crates/clausters-server/tests/common/signal.rs` holds the measurements — include it with
 `#[path = "common/signal.rs"] mod signal;`. Its own tests live in
-`tests/offline/signal_asserts.rs`, each driving a helper with a signal whose answer is known in
+`crates/clausters-server/tests/offline/signal_asserts.rs`, each driving a helper with a signal whose answer is known in
 closed form.
 
 | helper | estimates |
@@ -126,7 +126,7 @@ fold on top of the harmonics and become invisible.
    in split blocks must agree.
 6. Don't assert on a number you cannot derive. If the expected value is not in
    closed form, print it from a run (see `report_the_measured_figures` in
-   `tests/offline/signal_asserts.rs`) and write the measurement into the doc.
+   `crates/clausters-server/tests/offline/signal_asserts.rs`) and write the measurement into the doc.
 
 Rules 4 and 5 are the same for every UGen, so they are driven from one table
 rather than restated per family — see the bench below. Rules 1–3 are claims
@@ -134,28 +134,28 @@ only the family can make, and stay in its own suite.
 
 ## The bench: one declaration, asserts and ears
 
-`tests/common/subjects.json` declares the UGens under test — one entry per row,
+`crates/clausters-server/tests/common/subjects.json` declares the UGens under test — one entry per row,
 keyed by milestone: the kind, its wire inputs, what to feed it, and `traits`
 that select which generic rules apply (`stateful`, `oscillator`, `stochastic`,
 `finite`). **Adding a row to a milestone is one entry there.** Two consumers
 read it:
 
-- `tests/common/bench.rs` (`#[path = "common/bench.rs"] mod bench;`) assembles a
+- `crates/clausters-server/tests/common/bench.rs` (`#[path = "common/bench.rs"] mod bench;`) assembles a
   subject into a def and renders it. `render`/`render_split`/`render_with_input`
   replace the private copies each suite used to carry; `assert_split_agrees`
   (rule 5), `assert_long_run_is_bounded` (rule 4) and `assert_renders_finite`
-  drive the generic rules. `tests/offline/subjects.rs` runs them over the whole table
+  drive the generic rules. `crates/clausters-server/tests/offline/subjects.rs` runs them over the whole table
   and contrasts every entry against `registry::all()`, so a renamed row or a
   family that gains an input fails loudly instead of quietly shrinking coverage.
-- `examples/audition.py` sends the same fragment to a server so you can **hear**
-  it: `python3 examples/audition.py saw`, `... U2 --wav /tmp/u2.wav` (offline, no
+- `crates/clausters-server/examples/audition.py` sends the same fragment to a server so you can **hear**
+  it: `python3 crates/clausters-server/examples/audition.py saw`, `... U2 --wav /tmp/u2.wav` (offline, no
   hardware), `... rlpf --sweep freq 100 8000`. Its sources are the UGen
   equivalents of the test's sample arrays — same character, different samples.
 
 One thing the def path cannot do: a **stochastic** subject's split test. Each
 noise instance seeds from a shared counter and the wire has no seed input, so
 two renders differ at sample 0 by design. `assert_split_agrees` refuses those;
-`tests/offline/noise.rs` discharges rule 5 for them one level down, against `with_seed`
+`crates/clausters-server/tests/offline/noise.rs` discharges rule 5 for them one level down, against `with_seed`
 constructors.
 
 ## Golden files
@@ -163,7 +163,7 @@ constructors.
 For complete scenes (synth + filter + envelope via OSC commands):
 
 1. The test renders N seconds offline into a `Vec<f32>`.
-2. It compares against a reference WAV in `tests/golden/` (loaded with `hound`)
+2. It compares against a reference WAV in `crates/clausters-server/tests/golden/` (loaded with `hound`)
    with per-sample tolerance.
 3. Regenerate goldens with an explicit binary/flag (`cargo run --bin
    render_golden`), never automatically — a self-regenerating golden detects
@@ -194,7 +194,7 @@ available (including synths being created and freed — commands go pre-built in
 the FIFO from outside the closure).
 
 Note: `assert_no_alloc` needs its global allocator (`#[global_allocator]` with
-`AllocDisabler`) in the test binary — it goes in `tests/rt_safety.rs`, not in
+`AllocDisabler`) in the test binary — it goes in `crates/clausters-server/tests/rt_safety.rs`, not in
 `lib.rs`.
 
 ## OSC integration

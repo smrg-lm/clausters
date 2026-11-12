@@ -15,13 +15,13 @@ def build_patch(source, output):
         raise ValueError("Instrumentation needs a clean disposable clone")
     base = command(["git", "rev-parse", "HEAD"], source)
     changes = {
-        "src/server/mod.rs": [("pub mod backend;", "pub mod backend;\n#[cfg(target_os = \"linux\")]\npub mod audit_timing;")],
-        "src/server/backend.rs": [
+        "crates/clausters-server/src/server/mod.rs": [("pub mod backend;", "pub mod backend;\n#[cfg(target_os = \"linux\")]\npub mod audit_timing;")],
+        "crates/clausters-server/src/server/backend.rs": [
             ("                    stream.play()?;", '                    crate::server::audit_timing::TIMING.set_rate(rate);\n                    crate::server::audit_timing::start_writer("CLAUSTERS_AUDIT_TIMING");\n                    crate::server::audit_timing::start_slow_writer();\n                    stream.play()?;'),
             ("    device.build_output_stream(", "    let epoch = crate::server::audit_timing::epoch();\n    device.build_output_stream("),
             ("        move |data: &mut [T], _| {", "        move |data: &mut [T], _| {\n            let callback_start = std::time::Instant::now();\n            let audit_before = crate::server::audit_timing::before(callback_start);"),
             ("                *s = T::from_sample(adapter.next_sample());\n            }", "                *s = T::from_sample(adapter.next_sample());\n            }\n            crate::server::audit_timing::TIMING.record(epoch, callback_start, frames as u64);\n            crate::server::audit_timing::after(epoch, &audit_before, frames as u64);")],
-        "src/server/engine.rs": [
+        "crates/clausters-server/src/server/engine.rs": [
             ("        let elapsed_nanos = meter_start.elapsed_nanos();", "        let elapsed_nanos = meter_start.elapsed_nanos();\n        crate::server::audit_timing::BLOCKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);\n        crate::server::audit_timing::BLOCK_MAX_NS.fetch_max(elapsed_nanos, std::sync::atomic::Ordering::Relaxed);"),
             ("    fn apply(&mut self, cmd: Cmd) {", "    fn apply(&mut self, cmd: Cmd) {\n        crate::server::audit_timing::APPLIED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);")],
         "crates/clausters-gui/src/host/gui/mod.rs": [("mod app;", "mod app;\nmod audit_timing;")],
@@ -58,7 +58,7 @@ def build_patch(source, output):
             text = text.replace(before, after)
         rendered[name] = text
     template = (AUDIT / "instrumentation/timing.rs.in").read_text()
-    rendered["src/server/audit_timing.rs"] = template
+    rendered["crates/clausters-server/src/server/audit_timing.rs"] = template
     rendered["crates/clausters-gui/src/host/gui/audit_timing.rs"] = '#![allow(dead_code)] // The GUI uses only the shared histogram recorder.\n' + template
     for name, text in rendered.items():
         (source / name).write_text(text)

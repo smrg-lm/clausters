@@ -37,7 +37,7 @@ Sorting is per group, treating each child as a unit: a child *group* counts as t
 
 Everything runs on the network thread against a mirror of the node tree; re-sorts reach the audio thread as ordinary node moves. The engine retains the ordering mode to validate its compensation snapshot; dependency analysis remains off RT. The mirror reflects commands **as sent**: messages inside a not-yet-fired timed bundle are mirrored immediately, so `/group_queryTree` can briefly show a future state, and a re-sort racing a scheduled bundle converges at the next change. Order inside an auto group is a *consequence* of the analysis — clients should stop carrying add-action logic for ordering and just use `head`/`tail`.
 
-`python3 examples/auto_order.py` demonstrates the whole flow: a source → fx → master chain built deliberately backwards, silent in a manual group, audible the moment `/group_sortMode 1` arrives, with the inferred graph printed before and after.
+`python3 crates/clausters-server/examples/auto_order.py` demonstrates the whole flow: a source → fx → master chain built deliberately backwards, silent in a manual group, audible the moment `/group_sortMode 1` arrives, with the inferred graph printed before and after.
 
 ## Server delay compensation
 

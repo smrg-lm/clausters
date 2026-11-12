@@ -79,7 +79,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # The local state, where the server, the client and the editor resolve it
-# (crates/clausters-core/src/config.rs, src/server/defstore.rs, the shared
+# (crates/clausters-core/src/config.rs, crates/clausters-server/src/server/defstore.rs, the shared
 # memory segments of src/shm, and Tauri's app_config_dir/app_data_dir/
 # app_cache_dir for the editor's identifier).
 reset_state() {

@@ -26,7 +26,7 @@ Why a container message instead of a special timetag: the OSC bundle timetag is 
 
 ## The client model
 
-The reference implementation is `examples/sample_clock.py` (Python, stdlib only). The recipe:
+The reference implementation is `crates/clausters-server/examples/sample_clock.py` (Python, stdlib only). The recipe:
 
 1. **Anchor**: read the local monotonic clock (`t0`), send `/clock_query`, read it again (`t1`) on the reply. Pair the returned counter with the midpoint `(t0+t1)/2`; the half-width `(t1−t0)/2` bounds the anchor's error.
 2. **Model**: fit `sample(t_local) = a + b·t_local` over a sliding window of anchors — least squares with forgetting, in the spirit of JACK's DLL and Ableton Link. Until there are two anchors, use the nominal sample rate as the slope.

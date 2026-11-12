@@ -404,7 +404,7 @@ class HarnessTests(unittest.TestCase):
                 audit.validate_scenario(invalid)
 
     def test_benchmark_producer_array_contract(self):
-        # emit_json in examples/bench.rs emits these four fields, nullable
+        # emit_json in crates/clausters-server/examples/bench.rs emits these four fields, nullable
         # numbers, and a pretty-printed top-level array, not JSONL.
         output = '[\n {"name":"Sine","x_real_time":2.0000,"peak_block":15.2500,"gated":true},\n {"name":"diagnostic","x_real_time":null,"peak_block":20.0000,"gated":false}\n]\n'
         rows = audit.parse_metrics("bench", output)
@@ -550,7 +550,7 @@ class HarnessTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("rustc"), "Rust compiler unavailable")
     def test_parser_against_executed_benchmark_json_emitter(self):
-        source = (AUDIT.parent / "examples/bench.rs").read_text()
+        source = (AUDIT.parent / "crates/clausters-server/examples/bench.rs").read_text()
         # Compile the producer's actual record/emitter code without its DSP
         # workload, so a format change cannot leave a synthetic fixture green.
         fragment = source[source.index("struct Record {"):source.index("const SAMPLE_RATE:")]

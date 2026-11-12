@@ -1,7 +1,7 @@
 //! On-disk persistence of GuiDefs -- the GUI counterpart of the server's def store.
 //!
 //! A GuiDef persists the same way a `SynthDef`/`GraphDef` does on the server
-//! (`src/server/defstore.rs`): JSON under a `defs/` subdirectory of the data
+//! (`crates/clausters-server/src/server/defstore.rs`): JSON under a `defs/` subdirectory of the data
 //! directory, keyed by name, the JSON being the transparent source of truth. The
 //! GUI keeps its own small store rather than linking the server's -- the same
 //! independence the rest of the gui crate holds -- and resolves the **same** data

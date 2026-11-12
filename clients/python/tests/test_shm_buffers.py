@@ -27,7 +27,7 @@ from clausters.ipc import ShmClient
 
 
 def test_the_segment_size_is_the_one_the_server_builds():
-    """Pinned on both sides: `tests/ipc.rs` asserts the same number in Rust.
+    """Pinned on both sides: `crates/clausters-server/tests/ipc.rs` asserts the same number in Rust.
 
     It is the default-count instance of the layout -- 16384 control buses, an
     audio-bus region of 1024 buses (two words each; a parameter since ABI v11,

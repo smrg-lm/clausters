@@ -12,7 +12,7 @@ checkout:
 | `examples/*.sh` | the shell demos (they need `oscsend`) |
 
 **What a run leaves behind goes in `out/`**, at the root of the tree it belongs
-to (`examples/out/`, `clients/python/examples/out/`,
+to (`crates/clausters-server/examples/out/`, `clients/python/examples/out/`,
 `clients/web/examples/out/`). All three are git-ignored: one place to look in
 and one to delete, and a render lands there however the example was run rather
 than in whatever directory you happened to be in.
@@ -27,7 +27,7 @@ How to run each family:
 
 ```sh
 cargo run --release --example bench          # Rust: cargo run --example <name>
-python3 examples/sequencing.py               # root Python: from a checkout, no install
+python3 crates/clausters-server/examples/sequencing.py   # the server's Python: from a checkout, no install
 
 pip install ./clients/python                 # installed-package scripts:
 python clients/python/examples/basics/hello_note.py #   ...run from anywhere

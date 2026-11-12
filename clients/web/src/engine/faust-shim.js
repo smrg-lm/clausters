@@ -20,7 +20,7 @@
 //  - **special** -- `CDSPToBoxes` alone, which takes an `argv` and writes back
 //    through three out-pointers.
 //
-// The names and their string positions are read off `src/faust/ffi.rs`, which
+// The names and their string positions are read off `crates/clausters-server/src/faust/ffi.rs`, which
 // is the one place either side declares them; `clients/web/build.sh` generates
 // the export list from the module's own declared imports, so an interpreter
 // that grows a call the artifact does not export fails at load with that name

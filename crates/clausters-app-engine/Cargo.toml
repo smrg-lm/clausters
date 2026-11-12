@@ -19,7 +19,7 @@ realtime = ["clausters/realtime"]
 # library: the application builds the engine's commands with the translator's
 # typed doors, so there is one implementation of what a synth, a group or a
 # graph is.
-clausters = { path = "../..", default-features = false }
+clausters = { path = "../clausters-server", default-features = false }
 clausters-core = { path = "../clausters-core" }
 # The take's parts, as the document says them: what the application's
 # reader reads.

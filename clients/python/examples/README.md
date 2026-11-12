@@ -56,6 +56,6 @@ you ran the example rather than in whatever directory you happened to be in. A
 path argument still overrides it: `python basics/envelope.py /tmp/mine.wav`.
 
 The lower-level demos — the transports, the raw OSC helpers, the audible tours
-of the UGen families — live in the repository-root
-[`examples/`](../../../examples/); those use a `sys.path` shim so they run
+of the UGen families — live in the server's
+[`examples/`](../../../crates/clausters-server/examples/); those use a `sys.path` shim so they run
 straight from a source checkout without an install.

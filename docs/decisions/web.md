@@ -42,7 +42,7 @@ written in — `exp2` for powers of two, `f64` rounded once for `exp10`, `tanh`
 and a positive base's `pow` — an operator over an audio-rate signal still cost
 1.5x to 1.8x per sample, and `pow` with a moving base 3.4x. The tolerance
 stays; what the attempt left in the tree is the measurement
-(`examples/bench.rs`, `bench_math`) and two optimizations it uncovered, which
+(`crates/clausters-server/examples/bench.rs`, `bench_math`) and two optimizations it uncovered, which
 stand on any libm: `EnvGen` prepares a segment once (`envshape::Segment`), and
 a fixed-base power is one `exp2` (`warp`). Reopening this is a question of a
 portable libm that matches the system's speed, and the bench section is what
@@ -59,7 +59,7 @@ the `AudioWorkletGlobalScope`. OSC bytes travel over the node's MessagePort in
 both directions; commands cross into the engine through the same in-memory
 ring the native embed mode uses (`Segment::in_memory`), and each 128-frame
 render quantum runs one serving turn before its two 64-frame engine blocks
-(the pulled `step()` pacing, tested natively in `tests/headless.rs`).
+(the pulled `step()` pacing, tested natively in `crates/clausters-server/tests/headless.rs`).
 
 - *(Revised 2026-10-23: this requirement did not hold up, and an editing
   application in a page requires cross-origin isolation and shares memory;
@@ -908,7 +908,7 @@ own default scratch directory as the Python one makes its temporary one. The
 client's own writes -- `SoundFile.write`, `render({ path })`, a MIDI file's or
 a symbolic score's -- went the same way the same day: no write makes a
 directory, in a tab or under node, so a page makes `out/` where its script
-makes `examples/out/`.
+makes `crates/clausters-server/examples/out/`.
 
 ## The web client holds its working folder by what it has (2026-10-24)
 

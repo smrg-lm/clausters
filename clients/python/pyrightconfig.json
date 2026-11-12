@@ -3,10 +3,10 @@
         "clausters",
         "tests",
         "examples",
-        "../../examples"
+        "../../crates/clausters-server/examples"
     ],
     "extraPaths": [
-        "../../examples"
+        "../../crates/clausters-server/examples"
     ],
     "pythonVersion": "3.11",
     "typeCheckingMode": "off",

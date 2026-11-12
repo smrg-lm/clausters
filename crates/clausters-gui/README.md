@@ -18,7 +18,7 @@ and edits back. A platform-agnostic core (widget model, layout, signal logic,
 flat-geometry drawing) sits behind small traits, with two fronts: the
 **native** host (winit + wgpu) and the **browser/wasm** host on a canvas.
 
-This crate is a member of the root `clausters` workspace. The root package is
+This crate is a member of the `clausters` workspace, whose default member is
 the server, so a plain `cargo build` at the repository root does not build the
 host: name it (`-p clausters-gui`) or build from this directory. Either way
 the artifacts land in the repository's `target/`.

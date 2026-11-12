@@ -19,7 +19,7 @@ crate-type = ["cdylib", "rlib"]
 # which is everything the Worker needs to turn a def into a module the engine
 # can link. The C API those interpreters call is not linked but **imported**:
 # see this crate's build.rs and `clients/web/src/engine/faust-imports.js`.
-clausters = { path = "../..", default-features = false, features = ["faust"] }
+clausters = { path = "../clausters-server", default-features = false, features = ["faust"] }
 
 # The JS binding surface only exists on the wasm target, so the native
 # workspace build stays free of wasm machinery.

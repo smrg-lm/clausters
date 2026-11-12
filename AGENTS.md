@@ -75,7 +75,7 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   obligation.
 - **The examples are the manual test surface.** There is no separate smoke
   checklist: new human-audible/visual behavior is checked by ear and by eye
-  through an `examples/` entry (root `examples/` for the server,
+  through an `examples/` entry (`crates/clausters-server/examples/` for the server,
   `clients/python/examples/` for the client and the GUI), so an example that
   exercises the new behavior *is* the manual test, and keeping it runnable is
   part of closing the work. **How one is written — a closed script, a `# %%`
@@ -205,17 +205,23 @@ is here because of that:
 
 ### The packages move together
 
-Four packages share every surface worth changing — the **server** (root crate +
-`crates/`), the **Python client**, the **web client**, the **GUI host** — and
+Four packages share every surface worth changing — the **server** (`crates/clausters-server`
+and the shared crates beside it), the **Python client**, the **web client**, the **GUI host** — and
 each wire has an end in two or more of them. So a change is not finished when
 its own package builds: **it closes with a pass over the packages it touches**,
 in the same commit. Porting is not a task to schedule later.
 
+**The repository root is a virtual workspace: every component is a crate
+under `crates/`**, the server among them (`crates/clausters-server`, the
+package `clausters`), and nothing at the root is a package. The server is the
+workspace's default member, so `cargo build`, `cargo test` and `cargo run`
+with no `-p` act on it alone.
+
 **The GUI host is a crate, `crates/clausters-gui`, and a client of a kind of
 its own**: the two language clients (`clients/python`, `clients/web`) drive
 it, and it can act alone, as a standalone application over an embedded
-server. It is a member of the root workspace (one lockfile, one `target/`);
-the root package is the server, so the host is built and tested by name
+server. It is a member of the workspace (one lockfile, one `target/`);
+the default member is the server, so the host is built and tested by name
 (`cargo test -p clausters-gui`), never through `--workspace` together with
 the server's feature rows, since cargo unifies features across what one
 invocation builds. What it draws with (the rectangle, the color and size
@@ -224,7 +230,7 @@ roles, the triangle batch, the face) is a crate of its own beneath it,
 
 The wires and where their ends live:
 
-- An **OSC command** (`src/osc`) — its reference in `docs/schemas.md`, its
+- An **OSC command** (`crates/clausters-server/src/osc`) — its reference in `docs/schemas.md`, its
   builder in `clients/python/clausters`, its builder in `clients/web/src`.
 - A **`/gui_*` widget or prop** — the host in `crates/clausters-gui/src`, the reference
   in `docs/gui-protocol.md`, the builders in both clients' `gui` modules.
@@ -248,7 +254,7 @@ The wires and where their ends live:
 cargo refuses to build a caller of a signature that moved. Everything else is
 on trust, so that is where drift accumulates:
 
-- **Nothing runs any example.** Not the root `examples/` (mostly Python
+- **Nothing runs any example.** Not the server's `examples/` (mostly Python
   driving the server), not `clients/python/examples/` (including the GUI ones),
   not `clients/web/examples/`. CI runs none of them, and a Python signature
   change breaks them at a call site no build ever reaches. They are the manual
@@ -305,7 +311,7 @@ on trust, so that is where drift accumulates:
 
 ## Language conventions
 
-- Everything under `src/`, `tests/` and `examples/` (code, comments, strings,
+- Everything under a `src/`, `tests/` or `examples/` directory (code, comments, strings,
   test names) is in English.
 - **Git commit messages are in English** (subject and body), ASCII-only.
 - **A source file is ASCII, in every language.** Code, comments, doc comments,
@@ -393,7 +399,7 @@ on trust, so that is where drift accumulates:
   any later class-based client) and for Rust, which already follows it by
   idiomatic style (clippy's `upper_case_acronyms`). The only all-caps
   acronyms left are verbatim external-API symbols, kept as cited: Faust's C
-  API FFI in `src/faust` (`UIGlue`, `CsigFConst`, `CboxHSlider`, ...) and, in
+  API FFI in `crates/clausters-server/src/faust` (`UIGlue`, `CsigFConst`, `CboxHSlider`, ...) and, in
   docstrings, sclang's `OSCFunc`/`MIDIFunc`.
 - **Naming the components** (in the documentation and in our conversations),
   keep these three distinct — each form, English or Spanish:
@@ -614,13 +620,13 @@ FFI call goes through `faust::ffi_lock()`, which serializes libfaust in-process.
 The audio thread (`Engine::process_block` and everything it calls) must never
 allocate, free, lock or do I/O. Commands arrive fully pre-built over a
 lock-free FIFO; freed memory leaves through the garbage FIFO and is dropped on
-the network thread. `tests/rt_safety.rs` guards this with `assert_no_alloc`.
+the network thread. `crates/clausters-server/tests/rt_safety.rs` guards this with `assert_no_alloc`.
 
 Denormals: every processing thread runs in flush-to-zero mode —
 `dsp::denormals::flush_to_zero()` is re-armed in the cpal callback and armed
 in `render()` (both, so NRT stays sample-identical to RT) — and Faust
 factories are compiled with `-ftz 2`. Keep all three call sites if you touch
-them; `tests/denormals.rs` and the Faust tail test in `tests/offline/golden.rs` guard
+them; `crates/clausters-server/tests/denormals.rs` and the Faust tail test in `crates/clausters-server/tests/offline/golden.rs` guard
 this. The one exception: the Faust *compiler* path runs inside
 `dsp::denormals::normal_precision` (libfaust's interval typing aborts under
 FTZ/DAZ; the guard restores the armed mode on exit) — keep that bracket too.

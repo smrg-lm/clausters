@@ -34,11 +34,16 @@ sudo apt install patchelf
 
 ## Building the server
 
+The repository root is a virtual Cargo workspace: every component is a crate
+under `crates/`, and the server is `crates/clausters-server` (the package
+`clausters`). It is the workspace's default member, so the `cargo` commands
+below, run from the root with no `-p`, build and test the server.
+
 ```sh
 cargo build --release                 # default: PipeWire audio + ALSA-seq MIDI
 ```
 
-Feature matrix (see `Cargo.toml`):
+Feature matrix (see `crates/clausters-server/Cargo.toml`):
 
 | feature | default | adds |
 |---|---|---|
@@ -274,7 +279,7 @@ Three version numbers answer different questions; keep them distinct:
 | number | where | contract | checked |
 |---|---|---|---|
 | package **SemVer** | `version` in `Cargo.toml` (+ the Python wheel) | source/package — what `cargo`/`pip` resolves | at resolve/install time |
-| embed / IPC **`ABI_VERSION`** | `src/server/ipc.rs`, via `clausters_abi_version()` | shm segment layout + embed C ABI | at runtime, on attach |
+| embed / IPC **`ABI_VERSION`** | `crates/clausters-server/src/server/ipc.rs`, via `clausters_abi_version()` | shm segment layout + embed C ABI | at runtime, on attach |
 | core FFI **`CORE_ABI_VERSION`** | `crates/clausters-ffi`, via `clausters_core_abi_version()` | the language-agnostic C surface | at runtime, on load |
 
 The two integer counters — not SemVer — are the **source of truth for binary
@@ -318,7 +323,7 @@ open a window with the embedded server behind them, so a saved session sounds
 from an installed wheel with no script and no server process. In that mode the
 host *is* `clausters` the server with a window over it, which is why it is
 packaged the same way -- it links libfaust and carries the same `DT_RPATH`
-(`crates/clausters-gui/build.rs`, the same recipe as the root one), so the bundled
+(`crates/clausters-gui/build.rs`, the same recipe as the server's), so the bundled
 `_libs/` answers for it. Where there is no libfaust to link, it degrades to
 `standalone` exactly as the server degrades to a SynthDef-only build.
 
@@ -433,9 +438,9 @@ serializes libfaust within the process. (Historically they had to run with
 needed. If a segfault ever reappears in a `faust_*` suite, reach for
 `-- --test-threads=1` first — it points at an unlocked FFI path.)
 
-Suites worth knowing about: `tests/rt_safety.rs` asserts the audio thread
+Suites worth knowing about: `crates/clausters-server/tests/rt_safety.rs` asserts the audio thread
 never allocates (run it after touching anything on the audio path),
-`tests/offline/golden.rs` holds bit-exact render references, and `tests/denormals.rs`
+`crates/clausters-server/tests/offline/golden.rs` holds bit-exact render references, and `crates/clausters-server/tests/denormals.rs`
 guards flush-to-zero.
 
 The Python client has its own suite. **pytest** is its one development

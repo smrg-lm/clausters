@@ -15,7 +15,7 @@ uv.lock
 # (the server's, the Python client's, the web client's), so a run leaves one
 # place to look in and one to delete — never the working directory, never a
 # file beside the source.
-/examples/out/
+/crates/clausters-server/examples/out/
 /clients/python/examples/out/
 # Where scripts/render-all.sh drops its WAVs by default (a bench, not a fixture)
 /render

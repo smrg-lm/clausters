@@ -75,7 +75,7 @@ fn every_cargo_crate_inherits_it_rather_than_repeating_it() {
     // A crate that spells its own number is a place the next release will
     // forget, which is the whole reason the workspace has the field.
     let mut checked = 0;
-    let mut manifests = vec![repo("Cargo.toml")];
+    let mut manifests = Vec::new();
     for entry in fs::read_dir(repo("crates")).expect("crates/") {
         let dir = entry.expect("a crate directory").path();
         if dir.join("Cargo.toml").is_file() {

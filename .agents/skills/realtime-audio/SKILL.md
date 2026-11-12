@@ -87,7 +87,7 @@ calls `collector.collect()`.
   (notification events), or — when the only alternatives are blocking or
   freeing on the RT thread — a bounded leak (`mem::forget`). In this project
   the complete table (capacity + failure mode of every structure) lives in
-  `docs/architecture.md`, and `tests/offline/capacity.rs` overflows each one on
+  `docs/architecture.md`, and `crates/clausters-server/tests/offline/capacity.rs` overflows each one on
   purpose (M10).
 
 ### Alignment
@@ -147,7 +147,7 @@ slower. **Implemented in this project** as `dsp::denormals::flush_to_zero()`
 intrinsic is deprecated), re-armed in the cpal callback, armed in `render()`
 and in every M13 DSP worker — all modes, so renders stay sample-identical.
 Faust factories additionally compile with `-ftz 2`. Guarded by
-`tests/denormals.rs` and the Faust tail test in `tests/offline/golden.rs`; do not add
+`crates/clausters-server/tests/denormals.rs` and the Faust tail test in `crates/clausters-server/tests/offline/golden.rs`; do not add
 new processing threads without arming it. (The classic alternative — a tiny
 DC offset, 1e-18, inside filters — is not needed here.)
 

@@ -115,7 +115,7 @@ _CRATES = {
     "clausters_midi": ("clausters-midi", "live"),
 }
 
-# The server crate's default features, mirroring the `default` list in the root
+# The server crate's default features, mirroring the `default` list in its
 # Cargo.toml -- so dropping one means re-adding the rest by hand, which is what
 # `--no-default-features` costs and why this list has to move when that one does.
 _DEFAULT_FEATURES = ["synth", "faust", "realtime", "midi", "pipewire", "rtprio"]

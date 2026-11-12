@@ -4,7 +4,7 @@
 /**
  * The live engine in pulled mode: a 1:1 JS face over
  * `clausters::embed::ClaustersHeadless` (which owns all the logic and is
- * exercised by the native `tests/headless.rs` suite). The AudioWorklet
+ * exercised by the native `crates/clausters-server/tests/headless.rs` suite). The AudioWorklet
  * processor drives it: OSC packets in over `send`, one `process` per render
  * quantum, replies drained with `poll`.
  */
@@ -22,7 +22,7 @@ export class WebServer {
      * [`buffer_load`](Self::buffer_load) copies the whole take in one call,
      * on this thread -- which is the AudioWorklet's, the one that owes the next
      * quantum. Measured natively, a five-minute stereo take is some fourteen
-     * times the quantum's budget (`examples/measure_turn.rs`), so a long take
+     * times the quantum's budget (`crates/clausters-server/examples/measure_turn.rs`), so a long take
      * is loaded in runs instead: `begin`, `chunk` as often as the caller
      * likes, `end`. Nothing is visible under `index` until `end`.
      */

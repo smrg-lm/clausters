@@ -602,7 +602,7 @@ this list rather than being ticked here.
   *(found 2026-08-27 porting the box API, measured and closed the same day)*. A def builder's numeric constant
   travels as a bare JSON number, and the server reads it back with
   `serde_json`: an integral one becomes a Faust **int**, anything else a
-  **real** (`src/faust/boxes.rs`, `number_box`; the signal schema does the
+  **real** (`crates/clausters-server/src/faust/boxes.rs`, `number_box`; the signal schema does the
   same). Python distinguishes them by the literal's type — `box(2)` is `int 2`
   and `box(2.0)` is `real 2.0` — and JavaScript has one number type, so `2.0`
   *is* `2` by the time `boxes.box`/`signals.signal` sees it and a page can only
@@ -1162,8 +1162,8 @@ finished work, where a pending item reads as done.
   `io/responders`, is the pair above. The remaining four turned out not to be
   gaps at all: **their siblings are the *server's* examples**, in the root
   `examples/` directory that the pairing count never looks at —
-  `basics/demand` ↔ `examples/demand.py`, `basics/synth` ↔
-  `examples/synthdef.py`, `transport/sequencing` ↔ `examples/sequencing.py` —
+  `basics/demand` ↔ `crates/clausters-server/examples/demand.py`, `basics/synth` ↔
+  `crates/clausters-server/examples/synthdef.py`, `transport/sequencing` ↔ `crates/clausters-server/examples/sequencing.py` —
   and `panels/host` is the carrier contrast that `panels/skeleton` and
   `panels/attach` show between them. All four now say which example they are, in
   their own headers, which is what the layout rule asks of a page whose name
@@ -1948,7 +1948,7 @@ sound.
   2026-10-01, making generated defs `tmp_`)*. A native server writes an
   ephemeral def's record and bitcode to a temp directory, so a replayed
   expression skips the recompile; the in-tab engine has no temp directory
-  wired and compiles it every time (`src/osc/server/async_pipes.rs`). The
+  wired and compiles it every time (`crates/clausters-server/src/osc/server/async_pipes.rs`). The
   page has storage for it -- the origin private file system its file commands
   already use -- so this is the port's gap: a directory of that storage as
   the ephemeral cache. **Fixed 2026-10-01, and the premise was half wrong**:

@@ -1,7 +1,7 @@
 """Clausters Python bindings: the standard library, plus the shared core.
 
 Two ways in, both speaking ordinary OSC bytes (build them however you like;
-``examples/json_client.py`` has stdlib helpers):
+``crates/clausters-server/examples/json_client.py`` has stdlib helpers):
 
 - `Clausters` -- the **embedded** server: loads the cdylib (build it
   with ``cargo build --release --features embed,realtime``) and runs the

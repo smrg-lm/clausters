@@ -10,7 +10,7 @@ distinct:
 
 - **The package SemVer** — `version` in `Cargo.toml` (and the Python wheel). The
   *source/package* contract: what `cargo`/`pip` resolves and installs.
-- **The embed / IPC ABI** — `ABI_VERSION` in `src/server/ipc.rs`, exposed by
+- **The embed / IPC ABI** — `ABI_VERSION` in `crates/clausters-server/src/server/ipc.rs`, exposed by
   `clausters_abi_version()`. The shm segment layout + the embed C ABI.
 - **The core FFI ABI** — `CORE_ABI_VERSION` in `crates/clausters-ffi`, exposed by
   `clausters_core_abi_version()`. The language-agnostic C surface (ctypes/N-API/
@@ -111,8 +111,8 @@ its own commit first, then release.
 
    The script **searches** for each constant instead of naming its path, and
    that is the point rather than tidiness: `ABI_VERSION` has already moved file
-   once (`src/server/ipc.rs` → `crates/clausters-core/src/shm.rs`), and the
-   hardcoded `git show <tag>:src/server/ipc.rs | grep ABI_VERSION` this step
+   once (`crates/clausters-server/src/server/ipc.rs` → `crates/clausters-core/src/shm.rs`), and the
+   hardcoded `git show <tag>:crates/clausters-server/src/server/ipc.rs | grep ABI_VERSION` this step
    used to be went on returning an empty string afterwards — which reads
    exactly like "did not move". A check whose failure mode is silence is not a
    check, which is the defect rule 5's first wording had in prose.

@@ -104,7 +104,13 @@ def validate_build_contract(step, source):
     if "--manifest-path" in argv:
         manifest = manifest.parent / argv[argv.index("--manifest-path") + 1]
     if features:
-        available = tomllib.loads(manifest.read_text()).get("features", {})
+        data = tomllib.loads(manifest.read_text())
+        available = set(data.get("features", {}))
+        if "package" not in data:
+            # A virtual workspace: a feature is one any member declares.
+            for member in data.get("workspace", {}).get("members", []):
+                for found in manifest.parent.glob(member + "/Cargo.toml"):
+                    available |= set(tomllib.loads(found.read_text()).get("features", {}))
         if any(f not in available and "/" not in f for f in features):
             raise ValueError("Unknown feature for selected workspace")
 

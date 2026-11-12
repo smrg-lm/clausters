@@ -8,7 +8,7 @@
 # not is the state to fix before tagging.
 #
 # It searches for each constant rather than naming a path, because ABI_VERSION
-# has already moved file once (src/server/ipc.rs -> crates/clausters-core/src/
+# has already moved file once (crates/clausters-server/src/server/ipc.rs -> crates/clausters-core/src/
 # shm.rs) and a hardcoded path turns "moved house" into a silent "did not move".
 # A constant it cannot find is an error, never an empty column.
 set -uo pipefail

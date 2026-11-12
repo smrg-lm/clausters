@@ -136,7 +136,7 @@ jobs:
         # cargo unifies features across the workspace, so building them for the
         # *host* turns the family back into `-lfaust` and the libfaust-free run
         # fails to link on a runner that deliberately has no libfaust. What
-        # AGENTS.md and BUILD.md promise is the root crate's featureless build,
+        # AGENTS.md and BUILD.md promise is the server crate's featureless build,
         # and that is what these rows check. The wasm crates are proved where
         # they are meant to run: `scripts/check-wasm.sh` checks all three
         # against wasm32 in the `gui` job.

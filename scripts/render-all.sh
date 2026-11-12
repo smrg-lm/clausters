@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Render every subject on the UGen bench to its own WAV, one file per row.
 #
-# `examples/audition.py U6 --wav x.wav` writes one file with the whole
+# `crates/clausters-server/examples/audition.py U6 --wav x.wav` writes one file with the whole
 # milestone in it, back to back. This writes `whitenoise.wav`, `pinknoise.wav`
 # and so on instead -- the form you want when comparing two rows, scrubbing one,
 # or dropping a handful into an editor. The file name is the subject's handle,
@@ -42,7 +42,7 @@ target="${2:-all}"
 secs="${3:-2.0}"
 [ $# -gt 3 ] && shift 3 || shift $#
 
-subjects="$root/tests/common/subjects.json"
+subjects="$root/crates/clausters-server/tests/common/subjects.json"
 [ -f "$subjects" ] || { echo "no subject table at $subjects" >&2; exit 1; }
 
 # The handles, read from the same table the asserts and the ear both use. `all`
@@ -68,7 +68,7 @@ mkdir -p "$out"
 count=0
 first=""
 for name in $names; do
-    "$python" "$root/examples/audition.py" "$name" \
+    "$python" "$root/crates/clausters-server/examples/audition.py" "$name" \
         --secs "$secs" --wav "$out/$name.wav" "$@" >/dev/null
     printf '  %-14s -> %s\n' "$name" "$out/$name.wav"
     [ -n "$first" ] || first="$name"

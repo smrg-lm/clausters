@@ -55,10 +55,10 @@ fn levels() -> BTreeMap<String, u32> {
     out
 }
 
-/// Every manifest the rule covers: the root package and the crates under
-/// `crates/`.
+/// Every manifest the rule covers: the crates under `crates/`. The root is
+/// a virtual workspace and holds no package.
 fn manifests() -> Vec<PathBuf> {
-    let mut out = vec![root().join("Cargo.toml")];
+    let mut out = Vec::new();
     for entry in std::fs::read_dir(root().join("crates")).expect("crates/") {
         let manifest = entry.expect("a directory entry").path().join("Cargo.toml");
         if manifest.is_file() {
@@ -184,7 +184,7 @@ fn a_crate_depends_only_on_lower_levels() {
 fn the_reader_sees_the_edges_it_is_there_for() {
     // A reader that silently found nothing would pass the rule over an empty
     // graph, so the edges this tree is known to have are asked for by name.
-    let (name, edges) = package(&root().join("Cargo.toml"));
+    let (name, edges) = package(&root().join("crates/clausters-server/Cargo.toml"));
     assert_eq!(name, "clausters");
     for (dependency, kind) in [
         ("clausters-core", "dependencies"),

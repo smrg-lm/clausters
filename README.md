@@ -18,11 +18,13 @@ synth definition written in [Faust](https://faust.grame.fr/) and JIT-compiled
 by the server with LLVM — as an alternative to SuperCollider's UGen graphs,
 which Clausters also supports through its own JSON SynthDef format.
 
-The project is a workspace with several coordinated parts:
+The project is a workspace with several coordinated parts. The Rust
+components are crates under `crates/`, the language clients are under
+`clients/`, and the repository root holds none of them:
 
-- **`clausters-server`** — the Rust server (this crate), also usable as a
-  library and embeddable in-process through a C ABI.
-- **`crates/`** — the shared native core (`clausters-core`/`clausters-ffi`:
+- **`crates/clausters-server`** — the Rust server (the package `clausters`),
+  also usable as a library and embeddable in-process through a C ABI.
+- **The shared crates beside it** — the shared native core (`clausters-core`/`clausters-ffi`:
   numeric builtins, seeded noise and clock math compiled once for server and
   clients), `clausters-midi` (Standard MIDI File / MIDI 2.0 clip writing and
   live virtual-port output) and `clausters-net` (the TCP and WebSocket
@@ -112,7 +114,7 @@ oscsend localhost 57110 /node_free i    1000
 Render a score offline, no audio device needed:
 
 ```sh
-python3 examples/json_client.py score    # writes /tmp/clausters_score.osc
+python3 crates/clausters-server/examples/json_client.py score    # writes /tmp/clausters_score.osc
 cargo run --release -- --nrt /tmp/clausters_score.osc /tmp/out.wav
 ```
 

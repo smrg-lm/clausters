@@ -165,8 +165,8 @@ browser (see [`../web/PLAN.md`](../web/PLAN.md)); the design both share is in
 
 The full documentation (this client's guide and the generated API reference) is
 the mdBook in [`docs/`](docs/). Runnable, installed-package examples are in
-[`examples/`](examples/) (the broader catalog is the repo-root
-[`examples/`](../../examples/)).
+[`examples/`](examples/) (the server's own are in
+[`crates/clausters-server/examples/`](../../crates/clausters-server/examples/)).
 
 ## Installing (pip / wheels)
 

@@ -1,6 +1,6 @@
 //! The engine's JS door (the B track): a thin wasm-bindgen shell over the
 //! `clausters` server crate, the browser sibling of `clausters-ffi` (the C
-//! door) and of the embed C ABI in `src/embed.rs`.
+//! door) and of the embed C ABI in `crates/clausters-server/src/embed.rs`.
 //!
 //! The shell owns no logic: everything it exposes is a one-call wrapper over
 //! the crate's own entry points (`OscScore::from_bytes`, `render_to_vec`), so
@@ -197,7 +197,7 @@ pub fn last_render_events() -> f64 {
 
 /// The live engine in pulled mode: a 1:1 JS face over
 /// `clausters::embed::ClaustersHeadless` (which owns all the logic and is
-/// exercised by the native `tests/headless.rs` suite). The AudioWorklet
+/// exercised by the native `crates/clausters-server/tests/headless.rs` suite). The AudioWorklet
 /// processor drives it: OSC packets in over `send`, one `process` per render
 /// quantum, replies drained with `poll`.
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
@@ -316,7 +316,7 @@ impl WebServer {
     /// [`buffer_load`](Self::buffer_load) copies the whole take in one call,
     /// on this thread -- which is the AudioWorklet's, the one that owes the next
     /// quantum. Measured natively, a five-minute stereo take is some fourteen
-    /// times the quantum's budget (`examples/measure_turn.rs`), so a long take
+    /// times the quantum's budget (`crates/clausters-server/examples/measure_turn.rs`), so a long take
     /// is loaded in runs instead: `begin`, `chunk` as often as the caller
     /// likes, `end`. Nothing is visible under `index` until `end`.
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = bufferLoadBegin))]

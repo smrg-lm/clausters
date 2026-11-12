@@ -42,11 +42,11 @@ The masks come from the same per-def analysis as the auto-sorted groups (`In`/`O
 
 ## Determinism
 
-Parallel rendering is **bit-identical** to sequential rendering. Stage members touch pairwise disjoint buses and read nothing the stage writes, so their results are independent of worker interleaving; stages and the serialized conflicts preserve child order. `tests/parallel.rs` pins this down for live engines and NRT renders, including across an `/node_set` that retargets a bus. Goldens, the RT/NRT sample-identity guarantee and the `--workers` flag therefore compose: workers only change wall-clock time.
+Parallel rendering is **bit-identical** to sequential rendering. Stage members touch pairwise disjoint buses and read nothing the stage writes, so their results are independent of worker interleaving; stages and the serialized conflicts preserve child order. `crates/clausters-server/tests/parallel.rs` pins this down for live engines and NRT renders, including across an `/node_set` that retargets a bus. Goldens, the RT/NRT sample-identity guarantee and the `--workers` flag therefore compose: workers only change wall-clock time.
 
 ## Workers and the real-time path
 
-`--workers N` spawns N DSP threads at startup. The audio thread (the conductor) publishes each stage with a few atomic stores, the workers and the conductor race through it with an atomic work-stealing cursor, and the conductor spin-waits (bounded, no locks) for completion. Idle workers spin briefly, then yield, then park; waking a parked worker costs one `unpark` syscall when audio resumes — while audio runs hot they never park. The conductor path allocates nothing (`tests/rt_safety.rs` covers it, parallel dispatch included).
+`--workers N` spawns N DSP threads at startup. The audio thread (the conductor) publishes each stage with a few atomic stores, the workers and the conductor race through it with an atomic work-stealing cursor, and the conductor spin-waits (bounded, no locks) for completion. Idle workers spin briefly, then yield, then park; waking a parked worker costs one `unpark` syscall when audio resumes — while audio runs hot they never park. The conductor path allocates nothing (`crates/clausters-server/tests/rt_safety.rs` covers it, parallel dispatch included).
 
 Measure before reaching for it: `cargo run --release --example bench` ends with a `/group_parallel` section (8 chains × 125 sines on disjoint buses) comparing worker counts — on the development machine it peaks around 3× with 3 workers and degrades past the physical core count. A graph that already fits in one core gains nothing; a stage with fewer units than workers caps the speedup at the unit count.
 

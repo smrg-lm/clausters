@@ -72,7 +72,7 @@ oscsend localhost 57110 /node_free i 1000                 # stop it
 No audio device needed — the same engine renders a score to WAV:
 
 ```sh
-python3 examples/json_client.py score    # writes /tmp/clausters_score.osc
+python3 crates/clausters-server/examples/json_client.py score    # writes /tmp/clausters_score.osc
 cargo run --release -- --nrt /tmp/clausters_score.osc /tmp/out.wav
 ```
 

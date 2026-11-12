@@ -12,7 +12,7 @@
 
      `score.bin` is a UGen-graph score: the same Rust DSP compiled twice, so
      the only thing between the two renders is the libm each target links. The
-     comparison mirrors tests/offline/golden.rs's cross-platform posture -- renders on
+     comparison mirrors crates/clausters-server/tests/offline/golden.rs's cross-platform posture -- renders on
      one platform are bit-identical, but native (system libm) and wasm (Rust's
      libm) round transcendentals a few ULP apart, so the bar is a tolerance
      (1e-6: well above the observed 1-ULP deltas, well below any DSP bug).

@@ -81,7 +81,7 @@ as a sound fades out. Three guards, kept in lockstep:
    `dsp::denormals::normal_precision` — libfaust's interval typing aborts under
    FTZ/DAZ, and the guard restores the armed mode on exit.
 
-Guarded by `tests/denormals.rs` and the Faust-tail test in `tests/golden.rs`.
+Guarded by `crates/clausters-server/tests/denormals.rs` and the Faust-tail test in `tests/golden.rs`.
 
 ## MIDI: standard channel-voice, byte-identical to OSC, in a shared crate
 
@@ -193,7 +193,7 @@ published for every audio bus every block. Two decisions inside that:
   readable without consuming it.
 
 The cost is one pass over the block per audio bus per block, one relaxed store —
-no allocation, no lock, guarded like the rest by `tests/rt_safety.rs`.
+no allocation, no lock, guarded like the rest by `crates/clausters-server/tests/rt_safety.rs`.
 
 ## A render's noise belongs to the render, and its file to the server
 
@@ -522,7 +522,7 @@ is the only part. A non-Rust peer reaches the rest through
 `clausters_core_shm_*` (the C ABI): the *shape* — every count and offset in one
 call — plus the things that are logic rather than arithmetic.
 
-**Consequence.** `src/server/ipc.rs` lost 700 lines, `host/shm.rs` half of
+**Consequence.** `crates/clausters-server/src/server/ipc.rs` lost 700 lines, `host/shm.rs` half of
 itself, and `ipc.py` its whole layout section; what is left in each is that
 process's own concern. Three `const` assertions tie the constants the engine
 also declares (the audio-bus cap, the block size, the pool size) to the ones
@@ -576,7 +576,7 @@ Three choices, none of them forced by the others:
   client differences two replies into an interval of its own (the `share` field
   both clients compute locally).
 
-The cost, measured with `examples/bench.rs` before and after: under the
+The cost, measured with `crates/clausters-server/examples/bench.rs` before and after: under the
 measurement floor. The audio thread reuses the stamp the CPU meter already
 takes, so a block gains no clock read at all — only two relaxed atomic
 read-modify-writes — and a worker pays one bracket per stage rather than per
