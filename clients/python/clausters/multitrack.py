@@ -1,3 +1,4 @@
+# pyright: basic
 """The arrangement: tracks, take lanes, regions, and the timeline they sit on.
 
 This is the client's side of `clausters_document::arrangement` -- the model a

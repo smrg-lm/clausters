@@ -1,3 +1,4 @@
+# pyright: basic
 """The editing context of one structure -- **whose history it is** -- and the
 `UndoHistory` a script reads it through.
 

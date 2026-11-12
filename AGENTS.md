@@ -248,8 +248,12 @@ on trust, so that is where drift accumulates:
   vendors it; npm's cache is the install) — its
   `pyrightconfig.json` turns every rule off but the four that catch exactly
   this (it is a call-site check, not a type check), over the package, the tests
-  and both example directories. The baseline is zero, so anything it prints is
-  yours; `docs/contributing.md` explains the rule choice.
+  and both example directories. The modules whose API is settled turn its
+  **basic** mode on in their first line (`# pyright: basic`: the document's,
+  `multitrack`, `document` and `history`, so far). **`ruff check .`** at the
+  root lints every Python file for unused and undefined names and likely
+  bugs (`ruff.toml`). CI runs both; the baselines are zero, so anything they
+  print is yours; `docs/contributing.md` explains the rule choice.
 - **The web package is typechecked against nothing else.** Its Python (the
   parity generators `clients/web/tests/gen-*-vectors.py`) imports the Python
   client; its pages (`clients/web/tests/*.html`, `examples/**`) and its node

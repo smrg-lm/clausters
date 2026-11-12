@@ -284,6 +284,20 @@ jobs:
       - name: Build and stage the native artifacts
         run: python clients/python/build_native.py --debug
       - run: pip install pytest
+      # The linters, at the versions the repository is checked with: ruff over
+      # every Python file (ruff.toml) and pyright over the client, its tests
+      # and both example trees (clients/python/pyrightconfig.json, and the
+      # modules that turn its basic mode on in their first line). Both
+      # baselines are zero, so anything they print is the change's.
+      - run: pip install ruff==0.17.4
+      - name: ruff
+        run: ruff check .
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: pyright
+        working-directory: clients/python
+        run: npx --yes pyright@1.1.414
       # Diagnostic for the intermittent Faust SIGILL (see docs/decisions.md):
       # capture the trapping instruction the next time it fires, so the cause
       # stops being guessed at.

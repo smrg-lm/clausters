@@ -1,0 +1,16 @@
+# The Python of the repository -- the client, its tests, both example trees,
+# the web client's vector generators, the scripts and the audit -- linted for
+# what is likely a bug: unused and undefined names (F) and the bugbear set (B).
+# A finding is fixed, or carries a `noqa` with its reason on the line; the
+# baseline is zero, so anything it prints is the change's.
+#
+# `clausters-editor/` is a standalone application with a workflow of its own.
+target-version = "py311"
+extend-exclude = ["clausters-editor"]
+
+[lint]
+select = ["F", "B"]
+# `zip()` without `strict=`: adding it changes what a call does (it raises
+# where lengths differ), so each site would be a decision about its data, not
+# a fix; the rule is left out rather than answered by rote.
+ignore = ["B905"]

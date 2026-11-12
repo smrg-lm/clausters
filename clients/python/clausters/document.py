@@ -1,3 +1,4 @@
+# pyright: basic
 """The document: the multitrack's authoritative model, and the one place an
 edit is applied.
 

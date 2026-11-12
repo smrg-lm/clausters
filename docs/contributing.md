@@ -197,8 +197,18 @@ that same commit:
   `docs/example-parity.md` — the pair table, the idiom table and, per pair, what
   one side says alone. The baseline is zero, so anything it prints is a
   difference nobody declared. Run it after touching either example directory.
-- **python types** — *not a CI job*: `pyright` in `clients/python`, configured
-  by `pyrightconfig.json` there. Nothing in the repo vendors it, so **run it
+- **python lint** — a step of the `python` job: `ruff check .` from the root,
+  configured by `ruff.toml` there, over every Python file of the repository
+  but the editor application's (which has a workflow of its own). Two rule
+  sets, the ones that catch a bug rather than a style: unused and undefined
+  names (`F`) and the bugbear set (`B`), less `zip()` without `strict=`, whose
+  answer changes what a call does and so is a decision per site. A finding is
+  fixed or carries a `noqa` with its reason. CI installs the version it is
+  pinned at (`pip install ruff==...`); locally `uvx ruff@<that version>`
+  needs no install either.
+- **python types** — a step of the `python` job: `pyright` in
+  `clients/python`, configured by `pyrightconfig.json` there, at the version
+  the job pins. Nothing in the repo vendors it, so **run it
   with `npx pyright`** from `clients/python` — npm's own cache is the install,
   no global package and nothing to add to a manifest. (The PyPI `pyright`
   package works too and is what a Python-only setup would reach for, but it is
@@ -218,6 +228,11 @@ that same commit:
   looks like to a checker) and has never caught one of these. The baseline is
   zero; a suppression carries a comment saying why (a cell that redefines what
   an earlier cell used, a call whose `TypeError` *is* the assertion).
+  **A module whose API has settled is typed** on top of that: its first line
+  is `# pyright: basic`, which turns pyright's basic rule set on for that file
+  alone, so the typing grows a module at a time and never asks for a module
+  in the middle of a rewrite. The document's (`multitrack`, `document`,
+  `history`) are the first.
 - **faust** — the default `cargo test` covers it, with libfaust built from
   source at the commit pinned in the workflow (the recipe in
   `third_party/BUILD-FAUST.md`) and cached; a cache hit makes the job cheap.
