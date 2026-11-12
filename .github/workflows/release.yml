@@ -134,13 +134,13 @@ jobs:
       - run: cargo build -p clausters-plugin-host --no-default-features --features clap,vst3
       - run: cargo test --no-default-features --features plugin-clap,plugin-vst3 --test plugin_events --test plugin_family --test plugin_offline --test plugin_scan --test plugin_state --test plugin_vst3 --test plugin_editor
       - run: "cargo test --no-default-features --features plugin-clap,plugin-vst3 --lib plugin::"
-      # Mirrors ci.yml's test-default invocation, including --test-threads=1 and
-      # the coredump capture: this is the run that has historically produced the
+      # Mirrors ci.yml's test-default invocation, including the coredump
+      # capture: this is the run that has historically produced the
       # Faust SIGILL, and a release failing here is exactly when the dump is
       # worth having.
       - uses: ./.github/actions/coredump
-      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui -- --test-threads=1
-      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui --features embed -- --test-threads=1
+      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui
+      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui --features embed
       - uses: ./.github/actions/coredump
         if: failure()
         with:

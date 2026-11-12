@@ -417,17 +417,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: test-default
-      # `-- --test-threads=1`: the faust compilation FFI is serialized in-process
-      # by faust::ffi_lock(), but the historically-safe single-threaded run is
-      # kept here as the authoritative default-set check. The default feature
-      # set already includes faust, so a plain `cargo test --workspace` covers
-      # the synth+faust combo; `--features embed` adds the embed layer on top.
-      # Same SIGILL diagnostic as the python job (see docs/decisions.md): this
-      # job is where the `auto_order` occurrence landed.
+      # The default feature set already includes faust, so a plain `cargo test
+      # --workspace` covers the synth+faust combo; `--features embed` adds the
+      # embed layer on top. The Faust suites run in the ordinary parallel
+      # harness: every compilation FFI call goes through faust::ffi_lock(),
+      # which serializes libfaust in-process (BUILD.md). The coredump capture
+      # is for the JIT's SIGILL on runners that trap CPU features they report
+      # (docs/decisions/faust.md); this job is where the `auto_order`
+      # occurrence landed.
       - uses: ./.github/actions/coredump
       - run: bash third_party/prepare-clap.sh
-      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui -- --test-threads=1
-      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui --features embed -- --test-threads=1
+      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui
+      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui --features embed
       - uses: ./.github/actions/coredump
         if: failure()
         with:
