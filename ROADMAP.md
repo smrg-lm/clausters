@@ -278,12 +278,6 @@ its plan; the plan is where its acceptance is read.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found running the
   notes editor's example; what is open is where the wait belongs.
 
-- ⬜ **The second review of the workspace's shape: `R14`'s release
-  rehearsal** *(root `PLAN.md`, R track, "The second review: the shape of
-  the workspace")*. On the branch `restructure`: `R14`'s rehearsal of the
-  release workflow against the branch, and the branch into `main`. The
-  rehearsal is the user's to run.
-
 - ⬜ **The transport's commands, applied where the transport is** *(root
   `PLAN.md`, Future directions)*. To evaluate, not scheduled: the one
   `match` has a value of its own.

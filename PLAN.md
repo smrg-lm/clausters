@@ -1326,7 +1326,7 @@ have a seam".
   too. Proved by mutation: a dev-dependency of the core on the document
   turned it red, and so did an exception that matched no manifest.
 
-- ⬜ **R14: Build profiles, and a pinned toolchain.** No manifest carries a
+- ✅ **R14: Build profiles, and a pinned toolchain** *(done 2026-11-12)*. No manifest carries a
   `[profile]`. The dev profile takes line tables only, which is most of what
   shrinks a debug build; the release profile takes link-time optimization and
   a single codegen unit only if `crates/clausters-server/examples/bench.rs` justifies them, with both
@@ -1351,6 +1351,17 @@ have a seam".
   pinned, and a new compiler arrives as a commit"). **What is left:** the
   workflows have not run since the change, so the composite, the weekly job
   and the matrix under the pin are unobserved until they run on the branch.
+
+  *Observed 2026-11-12.* The release workflow was rehearsed against the
+  branch at the end of the review and came back green on the commit that
+  went into `main`: its gate (the tests and the whole feature matrix under
+  the pin), the wheel and the server binary, the editor's wheel and the web
+  package. Two earlier rehearsals were red, each on a path still written
+  from the repository root after the workspace became virtual (the VST3
+  fixture's builder, and the recipe that reads the Faust C API's export
+  list for the browser's compiler), which nothing but the release workflow
+  and CI's native plugin rows runs. The weekly job against the newest
+  stable was run by hand on `main` and passed.
 
 - ✅ **R15: The GUI host is a member of the workspace** *(done 2026-11-12)*. It was kept apart so
   that it could never entangle the server's build, and that stopped being
