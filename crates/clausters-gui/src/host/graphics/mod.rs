@@ -43,9 +43,9 @@ pub mod table;
 pub mod textedit;
 pub mod track;
 
+use crate::host::draw::Draw;
 use crate::host::font;
-use crate::host::layout::Rect;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 
 /// A read-out in a body's **top-right corner** -- the slot a scope's
 /// `lock`/`free` state, a spectral view's scale tag and the frame's own overlay
@@ -105,7 +105,7 @@ pub(crate) fn plate_text(
     y: f32,
     max_w: f32,
     scale: f32,
-    color: crate::host::paint::Color,
+    color: crate::host::theme::Color,
 ) -> Option<Rect> {
     let (mesh, m, theme) = d.parts();
     if s.is_empty() || max_w <= 0.0 {

@@ -1082,7 +1082,7 @@ fn named_def_persists_and_gui_load_reinstantiates_it() {
         "clausters_gui_host_store_{:?}",
         std::time::Instant::now()
     ));
-    let store = store::GuiStore::open(&dir).unwrap();
+    let store = native::store::GuiStore::open(&dir).unwrap();
     let mut host = Host::new().with_store(store);
 
     // A named GuiDef auto-persists on /gui_def.
@@ -1572,11 +1572,7 @@ fn a_registered_element_defines_through_the_rust_door() {
         fn set(&mut self, _key: &str, _v: &Value) -> bool {
             false
         }
-        fn draw(
-            &self,
-            _d: &mut crate::host::paint::Draw,
-            _ctx: &crate::host::widget::element::Ctx,
-        ) {
+        fn draw(&self, _d: &mut crate::host::draw::Draw, _ctx: &crate::host::widget::element::Ctx) {
         }
         fn value(&self) -> Option<OscType> {
             Some(OscType::Int(self.0))

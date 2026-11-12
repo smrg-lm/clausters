@@ -13,7 +13,8 @@
 //! separable.
 
 use super::super::Host;
-use super::super::layout::{self, Rect};
+use super::super::layout;
+use super::super::rect::Rect;
 use super::super::widget::WidgetKind;
 
 /// Sets a `scroll`'s view state (clamped against its content in `area`),

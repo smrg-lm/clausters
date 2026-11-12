@@ -29,9 +29,9 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
+use crate::host::draw::Draw;
 use crate::host::graphics::score::{ScoreColors, ScoreData, ScoreDrag, TextEditing};
 use crate::host::graphics::textedit;
-use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyInput, Needs};
 use crate::host::widget::parse;
 
@@ -63,8 +63,8 @@ pub struct Score {
 /// (`ScoreData::moved_parts`) -- that state.
 #[derive(PartialEq)]
 struct PageKey {
-    rect: crate::host::layout::Rect,
-    clip: Option<crate::host::layout::Rect>,
+    rect: crate::host::rect::Rect,
+    clip: Option<crate::host::rect::Rect>,
     colors: ScoreColors,
     ink: crate::host::paint::Ink,
     text: u64,
@@ -466,17 +466,17 @@ impl Element for Score {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::layout::Rect;
     use crate::host::metrics::Metrics;
     use crate::host::paint::Mesh;
+    use crate::host::rect::Rect;
     use crate::host::widget::element::Mods;
 
     /// A one-staff page with two identified noteheads, engraved the way the
     /// client sends one: a viewBox, one glyph outline, and placed primitives.
     /// The triangles `score` draws in a rect of 400 x 400, inked `ink`.
     fn drawn(score: &Score, ink: crate::host::paint::Ink) -> crate::host::paint::Mesh {
-        use crate::host::layout::Rect;
         use crate::host::metrics::Metrics;
+        use crate::host::rect::Rect;
         use crate::host::theme::Theme;
         use crate::host::world::World;
 

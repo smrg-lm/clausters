@@ -10,8 +10,8 @@
 
 use super::super::Host;
 use super::super::layers::Layer;
-use super::super::layout::Rect;
 use super::super::popup;
+use super::super::rect::Rect;
 use super::super::widget::WidgetKind;
 use super::super::widget::element::{Claim, Element, Events, Input, Mods, TimeSpace};
 use super::effects::{deliver, deliver_args, emit};

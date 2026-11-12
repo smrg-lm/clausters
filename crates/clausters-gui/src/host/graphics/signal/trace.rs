@@ -31,8 +31,9 @@ use crate::waveform::WaveformData;
 
 use clausters_core::resample;
 
-use crate::host::layout::Rect;
-use crate::host::paint::{Color, Mesh};
+use crate::host::paint::Mesh;
+use crate::host::rect::Rect;
+use crate::host::theme::Color;
 use crate::host::theme::Theme;
 
 /// At or below this many samples per pixel a trace **with no sample dots** is

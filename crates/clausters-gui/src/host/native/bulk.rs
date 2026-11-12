@@ -15,7 +15,7 @@ use crate::host::diag;
 use std::path::Path;
 use std::sync::Arc;
 
-use super::BulkLoader;
+use super::super::BulkLoader;
 use crate::peaks::MultiPyramid;
 use crate::waveform::WaveformData;
 

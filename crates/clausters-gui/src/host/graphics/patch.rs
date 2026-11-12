@@ -17,9 +17,10 @@
 
 use clausters_core::patch::Rate;
 
+use crate::host::draw::Draw;
 use crate::host::font;
-use crate::host::layout::Rect;
-use crate::host::paint::{Draw, Mesh};
+use crate::host::paint::Mesh;
+use crate::host::rect::Rect;
 use crate::host::theme::{Theme, with_alpha};
 
 const PAD: f32 = 8.0;
@@ -712,7 +713,7 @@ fn cord_weight(scale: f32) -> f32 {
 /// The colour a cord of `rate` is drawn in -- the rate reads by **colour** first
 /// (weight alone is hard to tell apart): audio red, control blue, init yellow
 /// (pastel primaries, for good mutual contrast on the dark field).
-fn cord_color(rate: Rate, theme: &Theme) -> crate::host::paint::Color {
+fn cord_color(rate: Rate, theme: &Theme) -> crate::host::theme::Color {
     match rate {
         Rate::Audio => theme.cord,
         Rate::Control => theme.cord_control,

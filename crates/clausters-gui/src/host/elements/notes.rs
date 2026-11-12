@@ -28,10 +28,10 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
+use crate::host::draw::Draw;
 use crate::host::graphics::pianoroll::{self, Pitches};
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::structures::boxes::{self, Bounds, Placements};
 use crate::host::structures::notes::OscMarker;
 use crate::host::structures::notes::{self, Note};
@@ -2591,8 +2591,9 @@ mod tests {
     /// was, and a note before the window is none of the clip's.
     #[test]
     fn a_clip_s_notes_stand_where_they_were_played_whatever_its_window() {
+        use crate::host::draw::Draw;
         use crate::host::metrics::Metrics;
-        use crate::host::paint::{Draw, Mesh};
+        use crate::host::paint::Mesh;
         use crate::host::theme::Theme;
         use crate::host::widget::SourceWindow;
         use crate::host::widget::element::TimeSpace;
@@ -3968,8 +3969,9 @@ mod tests {
     /// `/gui_set` replaces the runs, an empty list taking them away.
     #[test]
     fn a_pitch_line_follows_its_run_inside_the_grid() {
+        use crate::host::draw::Draw;
         use crate::host::metrics::Metrics;
-        use crate::host::paint::{Draw, Mesh};
+        use crate::host::paint::Mesh;
         use crate::host::theme::Theme;
 
         let mut r = roll(

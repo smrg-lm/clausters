@@ -4,8 +4,8 @@
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType};
 
-use super::super::layout::Rect;
 use super::super::popup::Owner;
+use super::super::rect::Rect;
 use super::super::widget::element::Key;
 use super::super::{ClientId, GUI_DEF, Host};
 use super::*;

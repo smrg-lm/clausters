@@ -30,7 +30,7 @@ use serde_json::Value;
 
 use crate::host::clipboard::Clip;
 use crate::host::graphics::controls;
-use crate::host::layout::Rect;
+use crate::host::rect::Rect;
 use crate::host::widget::element::{Claim, Events, Input, Key, KeyInput, Mods, Verb};
 use crate::host::widget::{Range, parse};
 

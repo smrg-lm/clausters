@@ -13,10 +13,10 @@
 //! submenus -- so a narrow window loses no entry.
 
 use super::font::{self, symbol};
-use super::layout::Rect;
 use super::menu::{Entry, EntryKind};
 use super::metrics::Metrics;
 use super::popup;
+use super::rect::Rect;
 use super::widget::{Widget, WidgetKind};
 
 /// The window's menu, when it carries one with anything in it.

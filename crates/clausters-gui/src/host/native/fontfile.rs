@@ -13,7 +13,7 @@
 use crate::host::diag;
 use std::path::{Path, PathBuf};
 
-use super::FontSource;
+use super::super::FontSource;
 
 /// A typeface file on this machine.
 pub struct FontFile {

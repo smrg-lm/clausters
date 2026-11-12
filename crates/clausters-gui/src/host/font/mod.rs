@@ -40,8 +40,9 @@
 //! [`width`], [`text`], the ellipsis and the wrap all read that one result,
 //! so what is measured is what is drawn. The bitmap is never shaped.
 
-use super::layout::Rect;
-use super::paint::{Color, Mesh};
+use super::paint::Mesh;
+use super::rect::Rect;
+use super::theme::Color;
 
 #[cfg(feature = "font-atlas")]
 pub mod atlas;

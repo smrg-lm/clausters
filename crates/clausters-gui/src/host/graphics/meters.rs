@@ -2,7 +2,7 @@
 //!
 //! These are the cheap counterparts of the heavy GPU views: their *data* is a
 //! single control bus read straight from the shared-memory segment each frame
-//! (see [`crate::host::shm`]), so they need no buffer, no analysis and no dedicated
+//! (see [`crate::host::native::shm`]), so they need no buffer, no analysis and no dedicated
 //! pipeline -- just the flat-geometry painter ([`crate::host::paint`]) plus bitmap text,
 //! exactly like the standard controls. The drawing lives here as pure functions
 //! over a [`Draw`]; the windowed front supplies the live value(s) read from
@@ -15,12 +15,13 @@ use crate::spectrogram::FreqScale;
 
 use super::controls::body_rect;
 use super::signal::{layers, trace};
+use crate::host::draw::Draw;
 use crate::host::font;
 use crate::host::frame::channel_rect;
-use crate::host::layout::Rect;
 use crate::host::live::TapWindow;
-use crate::host::paint::{Color, Draw};
+use crate::host::rect::Rect;
 use crate::host::ruler;
+use crate::host::theme::Color;
 use crate::host::theme::with_alpha;
 use crate::host::widget::RulerDir;
 use crate::viewport::{Axis, Unit};

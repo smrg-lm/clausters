@@ -32,13 +32,13 @@
 use crate::spectrogram::{FreqScale, Stft};
 
 use super::trace::{self, Trace, TraceStyle};
+use crate::host::draw::Draw;
 use crate::host::font;
 use crate::host::frame::{channel_at, channel_rect};
 use crate::host::graphics::controls::body_rect;
 use crate::host::graphics::meters::{self, fraction};
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::ruler::{self, TimeUnit};
 use crate::host::theme::with_alpha;
 use crate::host::widget::{Ruler, RulerDir};

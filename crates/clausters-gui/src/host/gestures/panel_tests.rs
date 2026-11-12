@@ -505,7 +505,7 @@ fn a_loaded_def_starts_a_fresh_order_even_over_its_open_window() {
         std::process::id(),
         std::time::Instant::now()
     ));
-    let store = crate::host::store::GuiStore::open(&dir).unwrap();
+    let store = crate::host::native::store::GuiStore::open(&dir).unwrap();
     let mut host = Host::new().with_store(store);
     // A named def persists as it is defined.
     def(

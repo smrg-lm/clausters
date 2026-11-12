@@ -18,7 +18,7 @@
 //! [`read`]: super::read
 //! [`edit`]: super::edit
 
-use super::super::layout::Rect;
+use super::super::rect::Rect;
 use super::super::widget::{GestureMap, ScrollView, WidgetKind};
 use crate::viewport::View;
 

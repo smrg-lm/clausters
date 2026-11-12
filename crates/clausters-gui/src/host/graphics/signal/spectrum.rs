@@ -22,11 +22,13 @@ use clausters_core::window::Window;
 
 use crate::spectrogram::FreqScale;
 
+use crate::host::draw::Draw;
 use crate::host::graphics::controls::body_rect;
 use crate::host::graphics::meters::{self, fraction};
-use crate::host::layout::Rect;
-use crate::host::paint::{Color, Draw, Mesh};
+use crate::host::paint::Mesh;
+use crate::host::rect::Rect;
 use crate::host::ruler;
+use crate::host::theme::Color;
 use crate::host::widget::RulerDir;
 
 /// The dB reference the magnitudes are floored at internally: the core's, so

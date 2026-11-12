@@ -23,10 +23,10 @@
 
 use clausters_core::loudness::Profile;
 
+use crate::host::draw::Draw;
 use crate::host::elements::signal::LoudnessFrame;
 use crate::host::graphics::signal::trace::{self, Trace, TraceStyle};
-use crate::host::layout::Rect;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::ruler;
 use crate::viewport::View;
 

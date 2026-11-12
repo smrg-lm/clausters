@@ -9,11 +9,11 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
+use crate::host::draw::Draw;
 use crate::host::font;
 use crate::host::graphics::controls;
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::widget::element::{Ctx, Element, Live, Needs};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, body_inset, label_strip};

@@ -45,7 +45,7 @@
 //! layer by what it is rather than by a number.
 
 use crate::host::graphics::track;
-use crate::host::layout::Rect;
+use crate::host::rect::Rect;
 use crate::host::widget::Widget;
 use crate::host::widget::element::{BodyRole, Input, TimeSpace};
 

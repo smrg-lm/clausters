@@ -312,7 +312,7 @@ pub struct Marker {
 
 impl Marker {
     /// The colour it draws in, resolved against the theme it is drawn under.
-    pub fn color(&self, theme: &crate::host::theme::Theme) -> crate::host::paint::Color {
+    pub fn color(&self, theme: &crate::host::theme::Theme) -> crate::host::theme::Color {
         self.color
             .as_deref()
             .and_then(crate::host::theme::parse_hex)

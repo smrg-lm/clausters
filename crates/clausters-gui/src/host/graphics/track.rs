@@ -20,10 +20,10 @@ use clausters_core::measure;
 use super::meters::{self, fraction};
 use super::signal::layers::Stack;
 use super::signal::trace::{self, Trace, TraceStyle};
+use crate::host::draw::Draw;
 use crate::host::font;
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::timeline;
 use crate::host::widget::{SourceWindow, WidgetKind};
 use crate::viewport::View;
@@ -287,7 +287,7 @@ fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
     let parts = header_parts(band, header, m);
     draw_meter_strip(mesh, m, theme, parts.meters, &header.meters);
     let mut toggle =
-        |rect: Option<Rect>, on: bool, letter: &str, lit: crate::host::paint::Color| {
+        |rect: Option<Rect>, on: bool, letter: &str, lit: crate::host::theme::Color| {
             let Some(r) = rect else { return };
             mesh.rect(r, theme.track);
             if on {

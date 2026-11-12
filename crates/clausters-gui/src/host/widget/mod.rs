@@ -250,7 +250,7 @@ pub struct Widget {
     /// The `color` prop: the single-color shorthand -- an overlay of just the
     /// roles that carry this widget's function (see
     /// [`Theme::accent_seeded`](super::theme::Theme::accent_seeded)).
-    pub color: Option<super::paint::Color>,
+    pub color: Option<super::theme::Color>,
     /// The `gestures` prop: the container's own (modifier -> plan) table, replacing
     /// the default its kind carries ([`GestureMap::of_kind`]). `None` on the
     /// overwhelming majority of widgets, which are not containers and whose

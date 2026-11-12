@@ -43,8 +43,8 @@ use crate::host::graphics::signal::{layers, trace};
 use crate::spectrogram::FreqScale;
 use crate::waveform::WaveformData;
 
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
+use crate::host::rect::Rect;
 use crate::host::widget::element::{SampleBlock, ValueAxis};
 use crate::host::widget::{EditorProps, Rate, Ruler, RulerY};
 

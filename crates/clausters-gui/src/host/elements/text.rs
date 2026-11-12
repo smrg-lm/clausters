@@ -28,10 +28,10 @@ use serde_json::{Map, Value};
 use clausters_core::osc::OscType;
 use clausters_editing::verbs::{self, ActionState, ActionTarget, Verb as ActionVerb};
 
+use crate::host::draw::Draw;
 use crate::host::graphics::controls;
 use crate::host::graphics::textedit::{self, Caret, Unit};
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput, Mods, Verb,
 };
@@ -496,7 +496,7 @@ impl Element for Text {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::layout::Rect;
+    use crate::host::rect::Rect;
     use crate::host::widget::element::Mods;
 
     fn props(json: &str) -> Map<String, Value> {

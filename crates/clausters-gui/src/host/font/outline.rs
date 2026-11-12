@@ -40,7 +40,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use serde_json::{Map, Value};
 
 use super::{GLYPH_H, GLYPH_W};
-use crate::host::paint::{Color, Mesh};
+use crate::host::paint::Mesh;
+use crate::host::theme::Color;
 
 /// The units of an outline's coordinates to the em: SMuFL's, and every music
 /// font's that follows it.
@@ -121,11 +122,11 @@ pub fn has(c: char) -> bool {
 /// fills nothing.
 #[cfg(feature = "notation")]
 fn fill(d: &str) -> Option<Shape> {
-    use crate::host::graphics::score;
+    use crate::host::path;
 
     // A fifth of a pixel at the sizes text is drawn at.
     const TOLERANCE: f32 = 4.0;
-    let mut fill = score::triangles(d, TOLERANCE);
+    let mut fill = path::triangles(d, TOLERANCE);
     if fill.is_empty() {
         return None;
     }
@@ -142,7 +143,7 @@ fn fill(d: &str) -> Option<Shape> {
         p[1] -= centre[1];
     };
     fill.iter_mut().for_each(about);
-    let mut edges = score::edges(d, TOLERANCE);
+    let mut edges = path::edges(d, TOLERANCE);
     edges.iter_mut().flatten().for_each(about);
     Some(Shape {
         fill,
@@ -202,7 +203,7 @@ pub(super) type Kept<T> = (u64, std::collections::HashMap<(char, u32), T>);
 /// the triangles they come to, the box they span and the pen's step.
 struct Sized {
     corners: Vec<[f32; 2]>,
-    bounds: crate::host::layout::Rect,
+    bounds: crate::host::rect::Rect,
     step: f32,
 }
 
@@ -249,9 +250,9 @@ fn sized(c: char, scale: f32) -> Option<std::rc::Rc<Sized>> {
             }
         }
         let bounds = if corners.is_empty() {
-            crate::host::layout::Rect::new(0.0, 0.0, 0.0, 0.0)
+            crate::host::rect::Rect::new(0.0, 0.0, 0.0, 0.0)
         } else {
-            crate::host::layout::Rect::new(lo[0], lo[1], hi[0] - lo[0], hi[1] - lo[1])
+            crate::host::rect::Rect::new(lo[0], lo[1], hi[0] - lo[0], hi[1] - lo[1])
         };
         std::rc::Rc::new(Sized {
             corners,

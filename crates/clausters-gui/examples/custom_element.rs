@@ -34,9 +34,9 @@ use std::sync::Arc;
 use clausters_core::osc::OscType;
 use clausters_gui::element::{Claim, Ctx, Input};
 use clausters_gui::host::Host;
-use clausters_gui::host::layout::Rect;
+use clausters_gui::host::draw::Draw;
 use clausters_gui::host::metrics::Metrics;
-use clausters_gui::host::paint::Draw;
+use clausters_gui::host::rect::Rect;
 use clausters_gui::{Element, register, tree};
 use serde_json::{Map, Value};
 

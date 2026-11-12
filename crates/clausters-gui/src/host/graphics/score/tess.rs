@@ -12,14 +12,10 @@
 //! glyph's local font units has to be pre-divided by the local scale, or a
 //! notehead flattens to a different smoothness than the staff line beside it.
 
-use lyon::tessellation::{
-    BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers,
-};
-
-use super::glyphs::build_path;
 use super::{Affine, FillOf, Prim, ScoreColors, ScoreData, ScoreDrag, Staff, TextEditing};
-use crate::host::layout::Rect;
-use crate::host::paint::{Color, Mesh};
+use crate::host::paint::Mesh;
+use crate::host::rect::Rect;
+use crate::host::theme::Color;
 
 impl ScoreData {
     /// `fit`, shifted by the drag preview when `id` is the element being
@@ -473,56 +469,4 @@ fn intersect(rect: Rect, clip: Option<Rect>) -> Rect {
 /// and then mapped, so its tolerance must be pre-divided by the local scale.
 pub(super) fn xf_shrink(xf: Affine) -> f32 {
     1.0 / xf.sx.abs().max(f32::MIN_POSITIVE)
-}
-
-/// **The fill of the path `d`, as triangle corners** in the path's own
-/// coordinates, three to a triangle -- nothing for a path that fills nothing.
-///
-/// What a caller keeps when it draws one outline many times at sizes it does
-/// not know yet: the triangles are tessellated once, at tolerance `tol` in the
-/// path's units, and mapped where they are drawn.
-pub fn triangles(d: &str, tol: f32) -> Vec<[f32; 2]> {
-    let Some(path) = build_path(d) else {
-        return Vec::new();
-    };
-    let mut buffers: VertexBuffers<[f32; 2], u32> = VertexBuffers::new();
-    let opts = FillOptions::tolerance(tol.max(f32::MIN_POSITIVE)).with_fill_rule(FillRule::NonZero);
-    let filled = FillTessellator::new().tessellate_path(
-        &path,
-        &opts,
-        &mut BuffersBuilder::new(&mut buffers, |v: FillVertex| {
-            let p = v.position();
-            [p.x, p.y]
-        }),
-    );
-    if filled.is_err() {
-        return Vec::new();
-    }
-    buffers
-        .indices
-        .iter()
-        .map(|&i| buffers.vertices[i as usize])
-        .collect()
-}
-
-/// **The edges of the path `d`**: its contours flattened at tolerance `tol`,
-/// one segment after another, every contour closed -- nothing for a path that
-/// draws nothing. What a caller that draws an outline small keeps beside its
-/// fill, since an edge is where a stroke thinner than a pixel is lost.
-pub fn edges(d: &str, tol: f32) -> Vec<[[f32; 2]; 2]> {
-    use lyon::path::PathEvent;
-    use lyon::path::iterator::PathIterator;
-
-    let Some(path) = build_path(d) else {
-        return Vec::new();
-    };
-    path.iter()
-        .flattened(tol.max(f32::MIN_POSITIVE))
-        .filter_map(|event| match event {
-            PathEvent::Line { from, to } => Some([[from.x, from.y], [to.x, to.y]]),
-            PathEvent::End { last, first, .. } => Some([[last.x, last.y], [first.x, first.y]]),
-            _ => None,
-        })
-        .filter(|[a, b]| a != b)
-        .collect()
 }

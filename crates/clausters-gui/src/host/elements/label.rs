@@ -8,9 +8,9 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
+use crate::host::draw::Draw;
 use crate::host::graphics::controls;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
 use crate::host::widget::element::{Ctx, Element, Needs};
 use crate::host::widget::size::{Natural, ellipsis_w, line_box, text_box};
 use crate::host::widget::{Align, parse};
@@ -195,8 +195,8 @@ mod tests {
     /// container fitted to its content does not follow it.
     #[test]
     fn a_live_label_draws_its_text_on_the_live_layer() {
-        use crate::host::layout::Rect;
         use crate::host::paint::Mesh;
+        use crate::host::rect::Rect;
         use crate::host::theme::Theme;
         use crate::host::world::World;
 

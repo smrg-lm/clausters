@@ -22,7 +22,7 @@
 //! numbers and places the boxes.
 
 use crate::host::bands::Bands;
-use crate::host::layout::Rect;
+use crate::host::rect::Rect;
 use crate::host::structures::clips::{Clip, Curve, TrackRow};
 use crate::viewport::View;
 

@@ -15,8 +15,8 @@
 //! its scale, its rate -- and the machine only ever wanted the numbers.
 
 use super::SignalElement;
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
+use crate::host::rect::Rect;
 use crate::host::widget::RulerY;
 use crate::host::widget::element::FreqAxis;
 

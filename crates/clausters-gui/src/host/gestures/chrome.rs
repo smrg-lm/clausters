@@ -13,7 +13,7 @@ use clausters_core::osc::OscType;
 
 use super::super::Host;
 use super::super::chrome;
-use super::super::layout::Rect;
+use super::super::rect::Rect;
 use super::effects::{emit, redraws};
 use super::nav::{scroll_view, set_scroll_view};
 use super::{Drag, GestureCtx, GestureEffect, Gestures};

@@ -5,11 +5,11 @@
 
 use serde_json::{Map, Value};
 
-use super::glyphs::build_path;
-use super::tess::triangles;
 use super::*;
-use crate::host::layout::Rect;
 use crate::host::paint::Mesh;
+use crate::host::path::build_path;
+use crate::host::path::triangles;
+use crate::host::rect::Rect;
 
 /// One opaque palette for the render tests: they assert that geometry
 /// lands, not which role painted it.
@@ -806,7 +806,7 @@ fn a_page_keeps_the_fills_it_tessellated() {
     let fit = data.fit(small);
     let tol = 0.33 / fit.sx;
     let level = tol.log2().floor() as i32;
-    let fresh = super::tess::triangles(
+    let fresh = triangles(
         "M0 0c0 60 40 100 100 100s100 -40 100 -100s-40 -100 -100 -100s-100 40 -100 100z",
         2.0f32.powi(level),
     );

@@ -38,8 +38,8 @@
 use clausters_core::measure::{Ballistics, CLIP_CEILING, ClipLatch, floor_db_for_bits};
 use serde_json::{Map, Value};
 
+use crate::host::draw::Draw;
 use crate::host::graphics::meters::{self, ChannelRead, MeterAxis, MeterView, Zones};
-use crate::host::paint::Draw;
 use crate::host::ruler::Side;
 use crate::host::widget::element::{Claim, Ctx, Element, Input, Live, Needs};
 use crate::host::widget::size::Natural;
@@ -556,8 +556,8 @@ impl Element for Meter {
 mod tests {
     use super::*;
     use crate::host::BusSource;
-    use crate::host::layout::Rect;
     use crate::host::metrics::Metrics;
+    use crate::host::rect::Rect;
     use crate::host::widget::element::Mods;
     use std::collections::HashMap;
 
@@ -903,7 +903,7 @@ mod tests {
         // What the drawing leaves the columns at that width: the body, less
         // the ladder's strip.
         let body = crate::host::graphics::controls::body_rect(
-            crate::host::layout::Rect::new(0.0, 0.0, width, 300.0),
+            crate::host::rect::Rect::new(0.0, 0.0, width, 300.0),
             false,
             &m,
         );

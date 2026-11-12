@@ -9,8 +9,9 @@
 //! draw it and by the gesture machine to hit it, so a divider is grabbed where
 //! it is drawn.
 
-use super::layout::{self, Placed, Rect};
+use super::layout::{self, Placed};
 use super::metrics::Metrics;
+use super::rect::Rect;
 use super::scroll;
 use super::widget::{Axis, Layout, WidgetKind};
 

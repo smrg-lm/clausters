@@ -26,14 +26,14 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Map, Value};
 
+use crate::host::draw::Draw;
 use crate::host::elements::notes::Notes;
 use crate::host::elements::signal::{Presentation, SignalElement};
 use crate::host::font;
 use crate::host::graphics::multitrack as stack;
 use crate::host::graphics::track;
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::structures::boxes::{self, Bounds, Contents, Part, Placement, Placements};
 use crate::host::structures::clips::{self as model, Clip, TrackRow};
 use crate::host::widget::element::{

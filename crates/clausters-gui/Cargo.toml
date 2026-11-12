@@ -112,7 +112,7 @@ clausters-verovio = { path = "../clausters-verovio", optional = true }
 # element draws and the model the roll's notation mode reads.
 clausters-notation = { path = "../clausters-notation", optional = true }
 # The full server crate, linked ONLY under the `standalone` feature for the
-# in-process embedded server (`host::embed`). `embed` exposes the in-process
+# in-process embedded server (`host::native::embed`). `embed` exposes the in-process
 # `Clausters` API; `realtime` brings the audio backend. Default features off so
 # the standalone build does not also pull MIDI/PipeWire. (The native host
 # always compiles the server crate through `clausters-app-engine`; what this
@@ -160,7 +160,7 @@ unicode-bidi = { version = "0.3", optional = true }
 unicode-segmentation = "1.12"
 
 # Read-only mmap of the audio server's shared-memory segment, for zero-message
-# meters/scopes (`host::shm`). Unix-only -- the same raw-mmap path the server's
+# meters/scopes (`host::native::shm`). Unix-only -- the same raw-mmap path the server's
 # IPC uses, and the server's segment is itself Unix-only.
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

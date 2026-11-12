@@ -659,7 +659,7 @@ mod tests {
     use super::*;
     use crate::host::graphics::controls;
     use crate::host::guidef::GuiNode;
-    use crate::host::layout::Rect;
+    use crate::host::rect::Rect;
     use crate::host::widget::Widget;
 
     fn tree(json: &str) -> Widget {

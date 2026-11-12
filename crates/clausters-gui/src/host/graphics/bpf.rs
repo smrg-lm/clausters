@@ -25,10 +25,10 @@
 //! point's shape/curve are carried but unused), keeping ints int and floats
 //! float.
 
+use crate::host::draw::Draw;
 use crate::host::graphics::shape;
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::structures::points::{
     BpfPoint, discontinuities, fraction_to_value, insert_point, place_point, value_at,
     value_fraction,

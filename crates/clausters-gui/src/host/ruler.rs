@@ -33,10 +33,10 @@ use clausters_core::tempomap::TempoMap;
 use crate::spectrogram::FreqScale;
 use crate::waveform::AMP_MARGIN;
 
+use super::draw::Draw;
 use super::font;
-use super::layout::Rect;
 use super::metrics::Metrics;
-use super::paint::Draw;
+use super::rect::Rect;
 use super::widget::{RulerDir, RulerY};
 
 /// One ruler tick: its position as a fraction of the visible axis span

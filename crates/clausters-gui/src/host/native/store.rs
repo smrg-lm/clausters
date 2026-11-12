@@ -128,11 +128,11 @@ impl GuiStore {
     }
 }
 
-/// The filesystem store is the native fill of the [`DefStore`](super::DefStore)
+/// The filesystem store is the native fill of the [`DefStore`](super::super::DefStore)
 /// seam: the protocol dispatch persists named GuiDefs and serves `/gui_load`
 /// through this trait, so it never names the filesystem directly (a browser host
 /// simply runs without a store).
-impl super::DefStore for GuiStore {
+impl super::super::DefStore for GuiStore {
     fn save(&self, name: &str, id: i32, tree_json: &[u8]) -> io::Result<()> {
         GuiStore::save(self, name, id, tree_json)
     }
@@ -143,9 +143,9 @@ impl super::DefStore for GuiStore {
 }
 
 /// The GuiDef root's `boot` messages -- moved to the platform-agnostic
-/// [`bundle`](super::bundle) module (the browser bundle boot needs it too);
+/// [`bundle`](super::super::bundle) module (the browser bundle boot needs it too);
 /// re-exported so the native standalone path keeps its `store::` spelling.
-pub use super::bundle::boot_messages;
+pub use super::super::bundle::boot_messages;
 
 /// Maps an arbitrary def name to a safe file stem (percent-encoding anything
 /// outside `[A-Za-z0-9._-]`), matching the server's `defstore::sanitize_name`.

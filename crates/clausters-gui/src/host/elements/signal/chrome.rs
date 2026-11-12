@@ -15,8 +15,8 @@
 //! tall the element ended up.
 
 use super::SignalElement;
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
+use crate::host::rect::Rect;
 use crate::host::widget::RulerY;
 
 impl SignalElement {

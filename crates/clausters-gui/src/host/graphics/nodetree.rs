@@ -2,7 +2,7 @@
 //!
 //! A read-only view that exercises the host's *client of the audio server* leg.
 //! The host queries the server's tree with `/group_queryTree <group> 1` over the
-//! client leg ([`crate::host::client`]) and receives a `/group_queryTree.reply`; this
+//! client leg ([`crate::host::native::client`]) and receives a `/group_queryTree.reply`; this
 //! module turns that flat reply into a small [`NodeTree`] model (pure and
 //! testable, no OSC and no GPU) and draws it as indented text through the
 //! flat-geometry painter ([`crate::host::paint`]) plus bitmap text -- the same cheap
@@ -24,10 +24,11 @@
 use clausters_core::osc::OscType;
 
 use super::controls::body_rect;
+use crate::host::draw::Draw;
 use crate::host::font;
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::{Draw, Mesh};
+use crate::host::paint::Mesh;
+use crate::host::rect::Rect;
 use crate::host::theme::Theme;
 
 /// One node of the mirrored tree: its id and whether it is a group (with its

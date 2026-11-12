@@ -2698,7 +2698,8 @@ fn a_box_of_notes_stops_at_its_start_and_runs_on_past_its_end() {
 /// the ruler, the toolbar.
 #[test]
 fn a_scrolled_stack_paints_inside_its_own_rect() {
-    use crate::host::paint::{Draw, Mesh};
+    use crate::host::draw::Draw;
+    use crate::host::paint::Mesh;
     use crate::host::theme::Theme;
     let mut mt = from_props(&props(
         r#"{"tracks": ["one", "", 100, 0, 0, 1, 1, "two", "", 100, 0, 0, 1, 1,
@@ -2764,7 +2765,8 @@ fn a_boxs_fades_are_read_off_its_fade_layer() {
 /// line at each end -- and a fade under a pixel is not drawn at all.
 #[test]
 fn a_box_paints_its_fades_and_none_under_a_pixel() {
-    use crate::host::paint::{Draw, Mesh};
+    use crate::host::draw::Draw;
+    use crate::host::paint::Mesh;
     use crate::host::theme::Theme;
     let world = crate::host::world::World::default();
     let metrics = Metrics::default();
@@ -2861,7 +2863,8 @@ fn a_fade_corner_is_taken_and_the_flat_top_is_the_boxs() {
 /// rectangle.
 #[test]
 fn a_scrolled_stacks_meters_paint_inside_its_own_rect() {
-    use crate::host::paint::{Draw, Mesh};
+    use crate::host::draw::Draw;
+    use crate::host::paint::Mesh;
     use crate::host::theme::Theme;
     let mut mt = from_props(&props(
         r#"{"tracks": ["one", "", 300, 0, 0, 1, 1, "two", "", 300, 0, 0, 1, 1,
@@ -2997,7 +3000,8 @@ fn a_box_turns_from_its_waveform_to_its_spectrogram_keeping_its_take() {
 /// the track and the boxes of the other tracks are copied.
 #[test]
 fn a_moved_box_is_the_one_box_drawn_again() {
-    use crate::host::paint::{Draw, Mesh};
+    use crate::host::draw::Draw;
+    use crate::host::paint::Mesh;
     use crate::host::theme::Theme;
     let world = crate::host::world::World::default();
     let metrics = Metrics::default();

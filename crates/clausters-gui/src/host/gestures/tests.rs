@@ -416,7 +416,7 @@ fn wheel_zoom_over_a_graph_sized_plane_holds_the_cursor_too() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     let (cx, cy) = (420.0, 260.0);
-    let area = crate::host::layout::Rect::new(0.0, 0.0, 600.0, 400.0);
+    let area = crate::host::rect::Rect::new(0.0, 0.0, 600.0, 400.0);
     // Where the graph itself sits on screen -- the thing an eye tracks, and
     // the thing the content extent moves when it follows the zoom.
     let graph = |host: &Host| {
@@ -1720,11 +1720,7 @@ fn the_wheel_reads_the_same_shape_the_press_does() {
         fn set(&mut self, _key: &str, _v: &serde_json::Value) -> bool {
             false
         }
-        fn draw(
-            &self,
-            _d: &mut crate::host::paint::Draw,
-            _ctx: &crate::host::widget::element::Ctx,
-        ) {
+        fn draw(&self, _d: &mut crate::host::draw::Draw, _ctx: &crate::host::widget::element::Ctx) {
         }
         fn hit_area(
             &self,
@@ -2985,7 +2981,7 @@ impl crate::Element for TestPad {
         false
     }
 
-    fn draw(&self, _d: &mut crate::host::paint::Draw, _ctx: &crate::host::widget::element::Ctx) {}
+    fn draw(&self, _d: &mut crate::host::draw::Draw, _ctx: &crate::host::widget::element::Ctx) {}
 
     fn value(&self) -> Option<OscType> {
         Some(OscType::Int(self.taken))

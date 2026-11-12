@@ -25,11 +25,11 @@ use std::sync::Arc;
 use serde_json::{Map, Value};
 
 use super::{Presentation, SignalElement, Source};
+use crate::host::draw::Draw;
 use crate::host::graphics::meters;
 use crate::host::graphics::signal::{phasescope, plot, spectrum};
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::widget::element::BodyRole;
 use crate::host::widget::element::{
     Ctx, Element, FreqAxis, Input, Live, Loaded, Measured, Needs, OnAxis, SampleBlock, Samples,
@@ -786,10 +786,11 @@ impl SignalElement {
 
 #[cfg(test)]
 mod tests {
+    use crate::host::draw::Draw;
     use crate::host::guidef::GuiNode;
-    use crate::host::layout::Rect;
     use crate::host::metrics::Metrics;
-    use crate::host::paint::{Draw, Mesh};
+    use crate::host::paint::Mesh;
+    use crate::host::rect::Rect;
     use crate::host::theme::Theme;
     use crate::host::widget::element::{Ctx, TimeSpace};
     use crate::host::widget::{Widget, WidgetKind};

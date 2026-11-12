@@ -10,8 +10,8 @@
 //! clip's own local span, because the clip is what says where in time it sits.
 
 use super::SignalElement;
-use crate::host::layout::Rect;
-use crate::host::paint::Draw;
+use crate::host::draw::Draw;
+use crate::host::rect::Rect;
 use crate::host::widget::element::TimeSpace;
 use crate::host::widget::{GestureMap, GestureStep};
 

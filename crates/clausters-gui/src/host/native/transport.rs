@@ -26,8 +26,8 @@ use clausters_net::tcp::TcpHub;
 use clausters_net::ws::WsHub;
 use clausters_net::{ClientSlots, Waker};
 
-use super::gestures::{GestureCtx, GestureEffect, Gestures};
-use super::{ClientId, Host, HostEffect};
+use super::super::gestures::{GestureCtx, GestureEffect, Gestures};
+use super::super::{ClientId, Host, HostEffect};
 
 /// The default port for the GUI host's server front (UDP and TCP alike).
 /// Chosen clear of the audio server's family (UDP/TCP 57110, WebSocket 57120)
@@ -71,7 +71,7 @@ fn waker(socket: &UdpSocket) -> io::Result<Waker> {
 /// wake datagram), decode it, let `host` interpret it, send each reply back
 /// to the sender over its own transport. Single-threaded, like the audio
 /// server's command loop. Window effects are logged rather than acted on --
-/// this front has no display (the windowed front lives in [`super::gui`]); it
+/// this front has no display (the windowed front lives in [`super::super::gui`]); it
 /// is for tests, automation and no-display environments.
 ///
 /// **The applications the host holds answer here too.** An application runs
@@ -171,7 +171,7 @@ fn perform(
             }
             HostEffect::Capture { window, path } => reply(
                 from,
-                super::captured(window, &path, Some("this front draws nothing")),
+                super::super::captured(window, &path, Some("this front draws nothing")),
             ),
             // A verb needs no picture: performed with a context of no size,
             // and what it edits told to the client that asked.

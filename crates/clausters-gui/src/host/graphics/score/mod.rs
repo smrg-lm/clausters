@@ -30,7 +30,6 @@
 //! every one of them is a method of.
 
 mod cursor;
-mod glyphs;
 mod hit;
 mod list;
 mod tess;
@@ -43,7 +42,7 @@ pub(crate) use tests::dense_page as dense_page_for_tests;
 
 use std::collections::HashMap;
 
-use crate::host::paint::Color;
+use crate::host::theme::Color;
 
 /// An affine map restricted to translate + non-uniform scale -- the only
 /// transforms verovio emits (`translate(...)` and `scale(...)`, the glyph's
@@ -144,7 +143,6 @@ impl Bounds {
 
 pub use hit::{HitBox, HitGrid, HitShape};
 pub use list::{edit_cursor, selection};
-pub use tess::{edges, triangles};
 
 /// One placed element of the engraved page, in verovio page units.
 #[derive(Clone, Debug)]
@@ -275,7 +273,7 @@ impl Fills {
             kept.clear();
         }
         let fill: std::rc::Rc<[[f32; 2]]> =
-            tess::triangles(d, 2.0f32.powi(i32::from(level))).into();
+            crate::host::path::triangles(d, 2.0f32.powi(i32::from(level))).into();
         kept.insert((of, level), fill.clone());
         fill
     }

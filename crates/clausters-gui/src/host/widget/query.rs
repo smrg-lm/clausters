@@ -165,7 +165,7 @@ impl WidgetKind {
     /// what it shows, and at what rate.
     pub fn freq_axis(
         &self,
-        rect: super::super::layout::Rect,
+        rect: super::super::rect::Rect,
         m: &super::super::metrics::Metrics,
         sample_rate: f64,
     ) -> Option<super::element::FreqAxis> {
@@ -196,7 +196,7 @@ impl WidgetKind {
     /// restrict a selection on.
     pub fn value_axis(
         &self,
-        rect: super::super::layout::Rect,
+        rect: super::super::rect::Rect,
         indent: f32,
         m: &super::super::metrics::Metrics,
         lanes: usize,
@@ -308,10 +308,10 @@ impl WidgetKind {
     /// container (whose body is the container's own geometry).
     pub fn axis_body(
         &self,
-        rect: super::super::layout::Rect,
+        rect: super::super::rect::Rect,
         indent: f32,
         m: &super::super::metrics::Metrics,
-    ) -> Option<(super::super::layout::Rect, bool)> {
+    ) -> Option<(super::super::rect::Rect, bool)> {
         self.as_element()?.on_axis()?.axis_body(rect, indent, m)
     }
 
@@ -352,7 +352,7 @@ impl WidgetKind {
     /// widget whose first answer stands.
     pub fn measured_gutter(
         &self,
-        rect: super::super::layout::Rect,
+        rect: super::super::rect::Rect,
         m: &super::super::metrics::Metrics,
     ) -> Option<f32> {
         self.as_element()?.on_axis()?.measured_gutter(rect, m)

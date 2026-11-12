@@ -19,7 +19,7 @@
 //! [`ScrollView::view_x`]: super::widget::ScrollView::view_x
 //! [`ScrollView::zoom`]: super::widget::ScrollView::zoom
 
-use super::layout::Rect;
+use super::rect::Rect;
 
 /// The zoom bounds: 1/8 of natural size out to 8x in -- generous for a patch
 /// canvas or an arrangement plane while keeping the mesh geometry sane.

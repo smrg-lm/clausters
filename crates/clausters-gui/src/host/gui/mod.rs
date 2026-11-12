@@ -2,7 +2,7 @@
 //!
 //! This is the GPU front of the host, with windows on the screen ([`run`]) or
 //! drawn offscreen and never shown ([`run_headless`]); the front with no GPU
-//! at all is [`super::transport`].
+//! at all is [`super::native::transport`].
 //! The OSC transport runs on a **background thread** and forwards every datagram
 //! to the winit **main thread** through an [`EventLoopProxy`] (winit owns the
 //! main thread; window creation must happen there). The main thread holds the
@@ -417,7 +417,7 @@ fn server_reply_loop(socket: Arc<UdpSocket>, leg: crate::host::instance::Leg, pr
 #[cfg(unix)]
 pub fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
     let path = path?;
-    match super::shm::SharedSegment::open(std::path::Path::new(&path)) {
+    match super::native::shm::SharedSegment::open(std::path::Path::new(&path)) {
         Ok(seg) => {
             info!(
                 "shared segment mapped at {path} ({} control buses, zero-message meters)",
@@ -443,12 +443,12 @@ pub fn open_shm_buffers(
     path: Option<String>,
 ) -> (
     Option<Arc<dyn BusSource>>,
-    Option<super::mapped::SharedBuffers>,
+    Option<super::native::mapped::SharedBuffers>,
 ) {
     let Some(path) = path else {
         return (None, None);
     };
-    match super::shm::SharedSegment::open(std::path::Path::new(&path)) {
+    match super::native::shm::SharedSegment::open(std::path::Path::new(&path)) {
         Ok(seg) => {
             let seg = Arc::new(seg);
             info!(
@@ -457,7 +457,8 @@ pub fn open_shm_buffers(
                 seg.control_buses(),
                 seg.buffer_rows(),
             );
-            let samples = super::mapped::SharedBuffers::new(Arc::clone(&seg), path.clone().into());
+            let samples =
+                super::native::mapped::SharedBuffers::new(Arc::clone(&seg), path.clone().into());
             (Some(seg as Arc<dyn BusSource>), Some(samples))
         }
         Err(e) => {

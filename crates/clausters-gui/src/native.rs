@@ -17,10 +17,11 @@ use winit::window::{Window, WindowId};
 
 use crate::gpu::Gpu;
 use crate::host::gestures::{Wheel, WheelDelta};
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::{Mesh, Painter};
+use crate::host::paint::Mesh;
+use crate::host::rect::Rect;
 use crate::host::theme::Theme;
+use crate::painter::Painter;
 use crate::view::{Renderers, TimelineView};
 use crate::viewport::View;
 

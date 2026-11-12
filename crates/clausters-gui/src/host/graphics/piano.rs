@@ -19,10 +19,10 @@
 
 use clausters_core::scale;
 
+use crate::host::draw::Draw;
 use crate::host::font;
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::theme::with_alpha;
 
 // --- Proportions (white-key units) -----------------------------------------

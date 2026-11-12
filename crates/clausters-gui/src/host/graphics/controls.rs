@@ -10,10 +10,12 @@
 //! front, which calls these.
 
 use super::textedit;
+use crate::host::draw::Draw;
 use crate::host::font;
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::{Color, Draw, Mesh};
+use crate::host::paint::Mesh;
+use crate::host::rect::Rect;
+use crate::host::theme::Color;
 use crate::host::widget::size;
 use crate::host::widget::{Align, Range};
 

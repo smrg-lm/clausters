@@ -10,7 +10,7 @@ use clausters_core::osc::OscType;
 
 use super::super::Host;
 use super::super::interact::{self, Hit};
-use super::super::layout::Rect;
+use super::super::rect::Rect;
 use super::super::widget::element::{FreqAxis, ValueAxis};
 use super::super::widget::{ScrollView, Widget, WidgetKind};
 use super::super::wire::frames_arg;

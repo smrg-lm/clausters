@@ -19,9 +19,9 @@ use clausters_core::config::{Config, PortChoice, WS_PORT_OFFSET};
 use clausters_core::ids::IdShare;
 use clausters_gui::host::keymap::Keymap;
 use clausters_gui::host::metrics::Metrics;
-use clausters_gui::host::store::{self, GuiStore};
+use clausters_gui::host::native::store::{self, GuiStore};
+use clausters_gui::host::native::transport::{self, DEFAULT_PORT};
 use clausters_gui::host::theme::Theme;
-use clausters_gui::host::transport::{self, DEFAULT_PORT};
 use clausters_gui::host::{Host, ServerLeg, gui};
 
 // Feeding a window a GuiDef this binary built: the standalone boot does it.
@@ -43,7 +43,7 @@ use clausters_gui::host::ServerLink;
 #[cfg(feature = "standalone")]
 use clausters_gui::host::bundle;
 #[cfg(feature = "standalone")]
-use clausters_gui::host::embed::EmbedServer;
+use clausters_gui::host::native::embed::EmbedServer;
 const USAGE: &str = "\
 usage:
   clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
@@ -760,7 +760,7 @@ fn load_face(host: &mut Host, path: Option<String>, headless: bool) {
         // the host's own first: it is what draws if the named one cannot
         host.load_default_face();
         if let Some(path) = &path {
-            let face = clausters_gui::host::fontfile::FontFile::at(path);
+            let face = clausters_gui::host::native::fontfile::FontFile::at(path);
             if host.load_face(&face) {
                 tracing::info!("drawing text with the typeface at {path}");
             } else {

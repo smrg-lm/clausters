@@ -11,10 +11,10 @@ use serde_json::{Map, Value};
 use clausters_core::osc::OscType;
 
 use crate::host::clipboard::Clip;
+use crate::host::draw::Draw;
 use crate::host::graphics::controls;
 use crate::host::graphics::controls::{slider_across, slider_thick};
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput, Verb,
 };
@@ -59,7 +59,7 @@ fn from_props(props: &Map<String, Value>) -> Slider {
 impl Slider {
     /// The groove, not the whole body: the grab has to agree with what the
     /// renderer drew, at the placement's own size table.
-    fn track(&self, input: &Input) -> crate::host::layout::Rect {
+    fn track(&self, input: &Input) -> crate::host::rect::Rect {
         controls::slider_track(
             input.rect,
             self.range.label.is_some(),
@@ -214,7 +214,7 @@ mod tests {
         serde_json::from_str(json).unwrap()
     }
 
-    fn input<'a>(m: &'a Metrics, rect: crate::host::layout::Rect) -> Input<'a> {
+    fn input<'a>(m: &'a Metrics, rect: crate::host::rect::Rect) -> Input<'a> {
         Input {
             metrics: m,
             indent: 0.0,
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn the_press_lands_the_value_and_the_drag_follows_it() {
         let m = Metrics::default();
-        let rect = crate::host::layout::Rect::new(0.0, 0.0, 200.0, 40.0);
+        let rect = crate::host::rect::Rect::new(0.0, 0.0, 200.0, 40.0);
         let mut s = from_props(&props("{}"));
         let claim = s.press((100.0, 20.0), &input(&m, rect));
         let mid = s.range.value;
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn the_hit_area_is_the_groove_and_not_the_cell() {
         let m = Metrics::default();
-        let rect = crate::host::layout::Rect::new(0.0, 0.0, 200.0, 60.0);
+        let rect = crate::host::rect::Rect::new(0.0, 0.0, 200.0, 60.0);
         let s = from_props(&props(r#"{"value":0.25}"#));
         let area = s.hit_area(&input(&m, rect));
         let HitArea::Rect(groove) = area else {
@@ -291,7 +291,7 @@ mod tests {
     #[test]
     fn a_drag_without_a_press_moves_nothing() {
         let m = Metrics::default();
-        let rect = crate::host::layout::Rect::new(0.0, 0.0, 200.0, 40.0);
+        let rect = crate::host::rect::Rect::new(0.0, 0.0, 200.0, 40.0);
         let mut s = from_props(&props(r#"{"value":0.25}"#));
         assert!(s.drag((180.0, 20.0), &input(&m, rect)).is_empty());
         assert_eq!(s.range.value, 0.25);
@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn a_vertical_slider_reads_the_other_axis() {
         let m = Metrics::default();
-        let rect = crate::host::layout::Rect::new(0.0, 0.0, 40.0, 200.0);
+        let rect = crate::host::rect::Rect::new(0.0, 0.0, 40.0, 200.0);
         let mut s = from_props(&props(r#"{"vertical":1}"#));
         s.press((20.0, 0.0), &input(&m, rect));
         assert_eq!(

@@ -9,9 +9,9 @@
 
 use serde_json::{Map, Value};
 
-use crate::host::layout::Rect;
+use crate::host::draw::Draw;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::widget::element::{Ctx, Element};
 use crate::host::widget::parse;
 use crate::host::widget::size::Natural;

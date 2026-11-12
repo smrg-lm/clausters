@@ -30,7 +30,7 @@
 //! was added without touching the protocol or this command loop, and the next
 //! one should be too. The two stream carriers are the audio server's own crate,
 //! which the browser build does not link.
-//! The client leg ([`client::ServerLeg`]) reuses that same encode door, so the
+//! The client leg ([`native::client::ServerLeg`]) reuses that same encode door, so the
 //! gui talks to the audio server with one encoder, not a parallel one.
 
 // The platform-agnostic core: the widget/protocol logic, web-portable (it
@@ -107,10 +107,14 @@ pub mod structures;
 // The drawing vocabulary every widget and every pass names things in: one mesh
 // primitive, one face, and the two role tables (no paint site names an RGBA, no
 // layout site names a number).
+pub mod draw;
 pub mod font;
 pub mod keymap;
 pub mod metrics;
 pub mod paint;
+#[cfg(feature = "notation")]
+pub mod path;
+pub mod rect;
 pub mod theme;
 
 // Geometry and navigation: where a widget lands, and the axes several of them
@@ -170,53 +174,13 @@ mod wire;
 // fetching half is page JS).
 pub mod bundle;
 
-// The native I/O shell, excluded from `wasm32`: the client leg ([`Transport`]),
-// on-disk GuiDef persistence ([`DefStore`]) and the UDP/TCP/WebSocket server
-// fronts. The browser fills the same seams over WebSocket and fetch. The
-// winit/wgpu driver ([`gui`]) and the mmap bulk loader ([`bulk`]) are gated
-// below.
+// The native I/O shell, excluded from `wasm32`: the client leg, on-disk
+// GuiDef persistence, the server fronts, the shared-memory segment and the
+// samples behind it, the embedded server, the mapped files, the bulk loader
+// and the typeface file. Each sits behind a trait the agnostic core names, and
+// the browser fills the same seams over WebSocket and fetch.
 #[cfg(not(target_arch = "wasm32"))]
-pub mod client;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod store;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod transport;
-
-// Reading the audio server's shared-memory segment for zero-message meters and
-// scopes: the native [`BusSource`]. Unix-only, as the server's segment is.
-#[cfg(unix)]
-pub mod shm;
-
-// The samples behind that segment's directory: a take's samples, mapped
-// read/write, so drawing one costs no conversation and editing one costs no
-// message. Unix-only, like `shm`.
-#[cfg(unix)]
-pub mod mapped;
-
-// The in-process embedded server for the standalone mode, a direct dependency on
-// the `clausters` crate behind the optional `standalone` feature (off by default,
-// since it pulls the engine + audio backend). Native-only.
-#[cfg(feature = "standalone")]
-pub mod embed;
-
-// Mapping a local file (raw samples or a prebuilt peak cache) for the bulk-data
-// path: a multi-megabyte buffer read from a shared resource, not over OSC.
-// Unix-only, like `shm`.
-#[cfg(unix)]
-pub mod mapfile;
-
-// The native [`BulkLoader`]: resolves a waveform/plot's local `path`/`cache` to
-// samples or a peak pyramid through the mmap path above. The browser resolves
-// the same references as URLs through `fetch`.
-#[cfg(not(target_arch = "wasm32"))]
-pub mod bulk;
-
-// The native [`FontSource`] (the `font-atlas` feature): the typeface a build
-// draws with, read from a file the command line names or from the system's own
-// faces. The browser fetches one instead and pushes the bytes through the same
-// seam.
-#[cfg(all(not(target_arch = "wasm32"), feature = "font-atlas"))]
-pub mod fontfile;
+pub mod native;
 
 // The shared pointer-gesture state machine (no winit, no web-sys): both the
 // native windowed front and the browser front drive it, so every editing
@@ -252,10 +216,10 @@ use serde_json::Value;
 
 pub use activity::{GUI_ACTIVITY, GUI_ACTIVITY_REPLY};
 pub use bind::Binding;
-#[cfg(not(target_arch = "wasm32"))]
-pub use client::ServerLeg;
 pub use clocks::HeadClock;
 pub use guidef::GuiNode;
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::client::ServerLeg;
 pub use registry::Registry;
 pub(crate) use takes::{buffer_views, span_to_read_back, stream_report};
 pub use widget::{Widget, WidgetKind};
@@ -311,13 +275,13 @@ pub enum ServerLink {
     /// An in-process server linked directly from the `clausters` crate
     /// (standalone boot; the `standalone` feature).
     #[cfg(feature = "standalone")]
-    Embed(embed::EmbedServer),
+    Embed(native::embed::EmbedServer),
     /// An in-process **on-demand session**: the same server with no audio
     /// device, which performs the editing verbs and owns the samples. What an
     /// editor sends its allocations, its edits and its renders to, while the
     /// sound goes to a player that is another process entirely.
     #[cfg(feature = "standalone")]
-    Session(embed::EmbedSession),
+    Session(native::embed::EmbedSession),
     /// A browser WebSocket to a `--ws` audio server (the only carrier a browser
     /// can open to a separate process). Bound widgets forward through it.
     #[cfg(target_arch = "wasm32")]
@@ -378,7 +342,7 @@ impl ServerLink {
 
     /// The embedded server behind this link, if any (the front polls its replies).
     #[cfg(feature = "standalone")]
-    pub fn embed(&self) -> Option<&embed::EmbedServer> {
+    pub fn embed(&self) -> Option<&native::embed::EmbedServer> {
         match self {
             ServerLink::Embed(srv) => Some(srv),
             #[allow(unreachable_patterns)]
@@ -389,7 +353,7 @@ impl ServerLink {
     /// The in-process session behind this link, if any -- polled for replies
     /// exactly as the embedded server is.
     #[cfg(feature = "standalone")]
-    pub fn session(&self) -> Option<&embed::EmbedSession> {
+    pub fn session(&self) -> Option<&native::embed::EmbedSession> {
         match self {
             ServerLink::Session(session) => Some(session),
             #[allow(unreachable_patterns)]
@@ -422,7 +386,7 @@ impl Transport for ServerLink {
 }
 
 /// On-disk (or otherwise persisted) GuiDefs: named-GuiDef auto-save and the
-/// `/gui_load` path. The native filesystem store ([`store::GuiStore`])
+/// `/gui_load` path. The native filesystem store ([`native::store::GuiStore`])
 /// implements it; a browser has no filesystem, so a wasm host simply runs
 /// without one. Behind the trait so the protocol dispatch saves and loads
 /// without naming the filesystem store.
@@ -436,7 +400,7 @@ pub trait DefStore: Send {
 
 /// Resolves a waveform/plot widget's **local** bulk resource (its `path` or
 /// prebuilt `cache`) to ready data, off the OSC path (the bulk-data rule).
-/// The native loader ([`bulk::MmapLoader`]) maps the file read-only; a browser
+/// The native loader ([`native::bulk::MmapLoader`]) maps the file read-only; a browser
 /// fetches the same reference over the network in a later milestone. The seam
 /// returns platform-agnostic data ([`WaveformData`]/samples) so the GPU views
 /// are built the same way on either platform.
@@ -484,7 +448,7 @@ pub const DEFAULT_MSAA: u32 = 4;
 /// `font-atlas` feature).
 ///
 /// A face is bytes, and every platform has its own way of reaching them: a
-/// native host maps a file the command line names (`fontfile::FontFile`), a
+/// native host maps a file the command line names (`native::fontfile::FontFile`), a
 /// client hands bytes over (`/gui_font`). Above the seam neither is named:
 /// the host asks for bytes ([`Host::load_face`]) and every window draws with
 /// them. With none named a shell draws with the face the crate carries
@@ -500,7 +464,7 @@ pub trait FontSource {
 }
 
 /// A source of live control-bus values for the meter/scope views. Implemented by
-/// the shared-memory segment ([`shm::SharedSegment`]) on Unix; the trait lets the
+/// the shared-memory segment ([`native::shm::SharedSegment`]) on Unix; the trait lets the
 /// windowed front hold the source without platform `cfg`s and read a bus each
 /// frame with no OSC traffic.
 pub trait BusSource: Send + Sync {
@@ -954,7 +918,7 @@ pub struct Host {
     /// the wire exactly as they always have, which is what every remote client
     /// and every page keeps doing.
     #[cfg(unix)]
-    shared_buffers: Option<mapped::SharedBuffers>,
+    shared_buffers: Option<native::mapped::SharedBuffers>,
     /// **The lists of segments over files the windows draw**, by take key:
     /// what the disk link was last told each key names (`disk`).
     lists: HashMap<i32, Arc<disk::List>>,
@@ -1353,13 +1317,13 @@ impl Host {
     /// the acknowledgement -- that machinery answers *may I*, and this changes
     /// only how the samples get there.
     #[cfg(unix)]
-    pub fn set_shared_buffers(&mut self, samples: mapped::SharedBuffers) {
+    pub fn set_shared_buffers(&mut self, samples: native::mapped::SharedBuffers) {
         self.shared_buffers = Some(samples);
     }
 
     /// The mapped samples, when the host has any.
     #[cfg(unix)]
-    pub fn shared_buffers(&self) -> Option<&mapped::SharedBuffers> {
+    pub fn shared_buffers(&self) -> Option<&native::mapped::SharedBuffers> {
         self.shared_buffers.as_ref()
     }
 
@@ -1764,8 +1728,13 @@ impl Host {
     /// layout also handed out would swallow presses meant for the widget under
     /// it; a bar the layout avoided and the frame did not draw would be a strip
     /// of dead window.
-    pub(crate) fn content_area(&self, def_id: i32, fb_w: u32, fb_h: u32) -> layout::Rect {
-        let area = layout::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    pub(crate) fn content_area(
+        &self,
+        def_id: i32,
+        fb_w: u32,
+        fb_h: u32,
+    ) -> crate::host::rect::Rect {
+        let area = crate::host::rect::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
         let Some(tree) = self.window_def(def_id) else {
             return area;
         };
@@ -1783,8 +1752,8 @@ impl Host {
         def_id: i32,
         fb_w: u32,
         fb_h: u32,
-    ) -> Option<layout::Rect> {
-        let area = layout::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    ) -> Option<crate::host::rect::Rect> {
+        let area = crate::host::rect::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
         let tree = self.window_def(def_id)?;
         status::bar(
             tree,
@@ -1802,7 +1771,7 @@ impl Host {
         def_id: i32,
         fb_w: u32,
         fb_h: u32,
-    ) -> Option<layout::Rect> {
+    ) -> Option<crate::host::rect::Rect> {
         let tree = self.window_def(def_id)?;
         let WidgetKind::Window {
             progress: Some(_), ..
@@ -1811,7 +1780,7 @@ impl Host {
             return None;
         };
         let m = self.metrics_for(def_id);
-        let window = layout::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+        let window = crate::host::rect::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
         let area = status::content(tree, self.status.borrow().get(&def_id), window, m);
         let area = menubar::content(tree, area, m);
         Some(frame::draw::progress_panel(area, m).cancel)

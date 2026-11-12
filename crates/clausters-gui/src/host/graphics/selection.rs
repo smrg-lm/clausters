@@ -21,8 +21,8 @@
 //! are the body's own), and a restricted one owns all four, because every one
 //! of them is a value the hand chose.
 
-use crate::host::layout::Rect;
-use crate::host::paint::Draw;
+use crate::host::draw::Draw;
+use crate::host::rect::Rect;
 use crate::host::theme::with_alpha;
 use crate::viewport::View;
 
@@ -212,7 +212,7 @@ pub fn draw_rect(d: &mut Draw, r: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::layout::Rect;
+    use crate::host::rect::Rect;
 
     const BODY: Rect = Rect {
         x: 0.0,

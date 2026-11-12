@@ -21,12 +21,12 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
+use crate::host::draw::Draw;
 use crate::host::graphics::choice::{self, Part, View};
 use crate::host::graphics::controls;
-use crate::host::layout::Rect;
 use crate::host::menu::Entry;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput, PopupRequest,
 };

@@ -24,9 +24,9 @@
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
+use crate::host::draw::Draw;
 use crate::host::graphics::patch::{self, PatchDraw, Port, Side};
-use crate::host::layout::Rect;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Swept};
 use crate::host::widget::parse::{label, set_label};
 

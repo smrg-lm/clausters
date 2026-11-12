@@ -58,6 +58,7 @@ pub use host::widget::element::{self, Claim, Element, Needs, register, unregiste
 pub use clausters_core::peaks;
 
 pub mod canvas;
+pub mod painter;
 pub mod spectrogram;
 pub mod view;
 pub mod viewport;

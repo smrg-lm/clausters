@@ -57,7 +57,7 @@ impl Target {
 /// shows. The per-element state that remains is real (a vertex buffer and its
 /// ranges, a magnitude texture, uniforms), and lives in the views.
 ///
-/// The mirror of `host::paint::Painter`, which has always had this shape.
+/// The mirror of `painter::Painter`, which has always had this shape.
 pub struct Renderers {
     pub spectrogram: SpectrogramRenderer,
 }
@@ -169,7 +169,7 @@ pub trait TimelineView {
     fn mesh(
         &self,
         mesh: &mut crate::host::paint::Mesh,
-        rect: crate::host::layout::Rect,
+        rect: crate::host::rect::Rect,
         view: &View,
         m: &crate::host::metrics::Metrics,
         theme: &crate::host::theme::Theme,

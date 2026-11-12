@@ -20,9 +20,9 @@
 use serde_json::{Map, Value};
 
 use crate::canvas::{DEFAULT_SHADER, PARAM_COUNT};
+use crate::host::draw::Draw;
 use crate::host::font;
 use crate::host::graphics::controls;
-use crate::host::paint::Draw;
 use crate::host::widget::element::{Ctx, Element, Needs, SlotFrame, SlotKey, SlotKind, Slotted};
 use crate::host::widget::parse;
 
@@ -151,8 +151,8 @@ impl Slotted for Canvas {
 mod tests {
     use super::*;
     use crate::host::BusSource;
-    use crate::host::layout::Rect;
     use crate::host::metrics::Metrics;
+    use crate::host::rect::Rect;
     use crate::host::world::World;
 
     fn props(json: &str) -> Map<String, Value> {

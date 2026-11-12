@@ -10,7 +10,7 @@
 //! navigation groups.
 //!
 //! That is this struct, and it is what an [`Element`](super::widget::Element)
-//! is handed beside its [`Draw`](super::paint::Draw). It is deliberately not a
+//! is handed beside its [`Draw`](super::draw::Draw). It is deliberately not a
 //! god-context: it grows when the *host* learns a new fact about the outside,
 //! never when a widget is added -- a widget's own state lives in the widget.
 //!

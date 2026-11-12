@@ -28,9 +28,9 @@ use lyon::math::point;
 use lyon::path::iterator::PathIterator;
 use lyon::path::{FillRule, Path as LyonPath, PathEvent};
 
-use super::glyphs::build_path;
 use super::{Affine, Bounds, Prim, ScoreData};
-use crate::host::layout::Rect;
+use crate::host::path::build_path;
+use crate::host::rect::Rect;
 
 /// **What an entry's extent stands for**, which is the shape a press is tested
 /// against once the extent has let it through.

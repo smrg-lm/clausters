@@ -13,7 +13,8 @@
 //! by the pixels it was drawn on.
 
 use super::super::Host;
-use super::super::layout::{self, Rect};
+use super::super::layout;
+use super::super::rect::Rect;
 use super::super::widget::{GestureMap, WidgetKind};
 use super::coords::{Coords, Frame, Hit, TimeAxis, YAxis};
 use crate::viewport::View;

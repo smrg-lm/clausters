@@ -28,9 +28,9 @@ use serde_json::{Map, Value};
 use clausters_core::osc::OscType;
 use clausters_editing::verbs::ActionState;
 
+use crate::host::draw::Draw;
 use crate::host::graphics::controls;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, control_box, text_box};
@@ -309,7 +309,7 @@ impl Element for Button {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::layout::Rect;
+    use crate::host::rect::Rect;
     use crate::host::widget::element::{Mods, Take};
 
     fn props(json: &str) -> Map<String, Value> {

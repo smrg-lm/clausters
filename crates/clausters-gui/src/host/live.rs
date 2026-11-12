@@ -2,7 +2,7 @@
 //!
 //! Meters, scopes and `canvas` bus parameters read control buses every
 //! animation frame. Natively the values come from the shared-memory segment
-//! ([`super::shm`], zero messages); in the browser they arrive as periodic
+//! ([`super::native::shm`], zero messages); in the browser they arrive as periodic
 //! `/bus_stream.reply` snapshots from the server's `/bus_stream` subscription (the
 //! counterpart of the segment). Everything around that difference -- which
 //! buses a tree reads, how a scope's rolling history advances, how a window

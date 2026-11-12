@@ -8,8 +8,9 @@
 //! the roll; this is the geometry and the drawing, with no props and no
 //! element, so it is tested without a window.
 
-use crate::host::layout::Rect;
-use crate::host::paint::{Color, Mesh};
+use crate::host::paint::Mesh;
+use crate::host::rect::Rect;
+use crate::host::theme::Color;
 
 /// **How a slur is drawn**, by the name the owner sends.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

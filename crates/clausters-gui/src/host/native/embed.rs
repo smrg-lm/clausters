@@ -79,7 +79,8 @@ impl EmbedServer {
         // SAFETY: `base`/`size` describe the very segment `segment` keeps
         // alive, and the `Arc` handed over as the owner is what holds it there
         // for as long as the view lives.
-        let view = unsafe { crate::host::shm::SharedSegment::borrowed(base, size, segment) };
+        let view =
+            unsafe { crate::host::native::shm::SharedSegment::borrowed(base, size, segment) };
         match view {
             Ok(view) => Some(Arc::new(view)),
             Err(e) => {

@@ -48,12 +48,14 @@ use crate::waveform::{WaveformData, WaveformView};
 
 use super::bands::Bands;
 use super::chrome;
-use super::layout::{self, Rect};
+use super::layout;
 use super::metrics::Metrics;
+use super::rect::Rect;
 use crate::canvas::{self, CanvasView};
 
+use super::draw::Draw;
 use super::font;
-use super::paint::{Draw, Ink, Mesh, Painter};
+use super::paint::{Ink, Mesh};
 use super::ruler::{self, TimeUnit};
 use super::status;
 use super::theme::{Theme, with_alpha};
@@ -62,6 +64,7 @@ use super::widget::element::{Ctx, Loaded, SlotFill, SlotFrame};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::world::World;
 use crate::host::graphics::signal::layers::Paint;
+use crate::painter::Painter;
 
 /// The window clear color: the theme's `background` role as a `wgpu::Color`.
 pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {

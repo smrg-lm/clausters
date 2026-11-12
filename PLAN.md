@@ -2597,14 +2597,34 @@ and so waits for `T3`, the milestone that already owes the bench.
   with today's cycles as exceptions that may only shrink. Two parts are
   planned and the rest is opportunistic:
 
-  - **R19a** breaks the base's cycles (the rectangle leaves `layout` for the
+  - ✅ **R19a** breaks the base's cycles (the rectangle leaves `layout` for the
     base; `theme` and `metrics` stop reading `paint` and `font`) and groups
     the native shell, today spread among 73 flat modules, under one module.
-  - **R19b** cuts the base into a crate once its list of cycles is empty.
+  - ⬜ **R19b** cuts the base into a crate once its list of cycles is empty.
 
   The layers above are ordered one cycle per visit, by whichever of the `P`
   and `D` tracks has the module open. **Acceptance:** the host's headless
   captures are identical before and after each part.
+
+  *R19a done 2026-11-12.* The base is seven modules with no reference out
+  of it and none among them that turns back: `rect` (the rectangle, out of
+  `layout`), `theme` (which now holds the color type `paint` used to),
+  `path` (an outline's SVG path, scanned, filled and flattened, out of the
+  score's pictures, since the face draws outlines too), `paint` (the batch
+  alone), `font`, `metrics` and `draw` (the context of batch and role
+  tables, out of `paint`). One part of the entry did not hold as written:
+  `metrics` still reads `font`, because the size roles that hold text are
+  measured by the face, so the cycle was broken from the other side, by
+  taking out of `paint` what read the size roles (the context) and what
+  read the face (the GPU half, now `painter` at the crate's root, beside
+  the other pipelines). Two tests of the text caret that reached the
+  pictures moved to them. The native shell is `host::native`. The test is
+  `crates/clausters-checks/tests/host_layers.rs` over the table in
+  `docs/architecture.md` ("The host's modules and their layers"), and it
+  starts with 55 exceptions above the base: most are references to the
+  host's root (`Host`, `ClientId`, the addresses) from the layers below it.
+  Seven examples captured headless by the host built before and after were
+  the same bytes.
 
 - ⬜ **R20: The two bindings have one shape, and a C type is checked.**
   `clausters-ffi` is 24 modules by subject and `clausters-core-web` exposes

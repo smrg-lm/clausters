@@ -15,7 +15,8 @@
 //! [`with_alpha`] -- multiplied, so a translucent themed role stays
 //! translucent.
 
-use super::paint::Color;
+/// An RGBA color: what every role of the table is.
+pub type Color = [f32; 4];
 
 /// `color` with its alpha multiplied by `a` -- the one sanctioned derivation
 /// at a paint site (fills vs. edges of one role).

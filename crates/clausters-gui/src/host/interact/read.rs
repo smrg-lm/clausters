@@ -13,7 +13,7 @@
 
 use super::super::Host;
 use super::super::layout;
-use super::super::layout::Rect;
+use super::super::rect::Rect;
 use super::super::widget::{Axis, ScrollView};
 
 /// Whether plane `id` has anywhere to pan: its content is bigger than the

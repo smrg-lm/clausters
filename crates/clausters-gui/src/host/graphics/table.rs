@@ -12,10 +12,10 @@
 //! both read, so a row is hit where it is drawn. Only the rows on screen are
 //! laid down: a list of ten thousand rows costs the rows that fit.
 
+use crate::host::draw::Draw;
 use crate::host::font::{self, symbol};
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::widget::size::line_box;
 
 /// One column: its title, and its width in logical pixels when it names one --

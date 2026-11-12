@@ -55,7 +55,7 @@ impl App {
     /// there. The zero-message half of [`Self::start_buffer_fetches`].
     ///
     /// **Nothing is read out.** The picture is built over the mapping itself --
-    /// one [`crate::host::mapped::MappedChannel`] per channel, summarized
+    /// one [`crate::host::native::mapped::MappedChannel`] per channel, summarized
     /// where it lies -- so opening a ten-minute take allocates its pyramid and
     /// no copy of the samples. What the analysis path needs is the one
     /// exception, and it says so where it takes it.
@@ -90,7 +90,7 @@ impl App {
     fn place_mapped_buffer_data(
         &mut self,
         bufnum: i32,
-        take: Arc<crate::host::mapped::MappedBuffer>,
+        take: Arc<crate::host::native::mapped::MappedBuffer>,
         channels: usize,
         sample_rate: f64,
         wants: Vec<WaveWant>,
@@ -162,7 +162,7 @@ impl App {
             let data = shared
                 .get_or_insert_with(|| {
                     let sources =
-                        crate::host::mapped::MappedChannel::channels_of(Arc::clone(&take));
+                        crate::host::native::mapped::MappedChannel::channels_of(Arc::clone(&take));
                     Arc::new(WaveformData::from_sources(sources, base_bucket))
                 })
                 .clone();

@@ -14,10 +14,10 @@ use serde_json::{Map, Value};
 use clausters_core::osc::OscType;
 
 use crate::host::clipboard::Clip;
+use crate::host::draw::Draw;
 use crate::host::graphics::controls;
 use crate::host::graphics::controls::knob_h;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
 use crate::host::widget::Range;
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput, Verb,
@@ -184,7 +184,7 @@ impl Element for Knob {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::layout::Rect;
+    use crate::host::rect::Rect;
     use crate::host::widget::element::{Mods, Take};
 
     fn props(json: &str) -> Map<String, Value> {

@@ -29,10 +29,10 @@
 use clausters_core::scale;
 
 use crate::host::bands::Bands;
+use crate::host::draw::Draw;
 use crate::host::font;
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::structures::boxes::{self, Part};
 use crate::host::structures::notes::{Note, OscMarker};
 use crate::viewport::View;

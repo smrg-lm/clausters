@@ -25,10 +25,10 @@
 //! carry a verb and the host reports it.
 
 use super::font;
-use super::layout::Rect;
 use super::menu::{self, Entry};
 use super::menubar::{self, Title};
 use super::metrics::Metrics;
+use super::rect::Rect;
 use super::widget::Widget;
 
 /// Who opened the stack, and so who answers a pick.

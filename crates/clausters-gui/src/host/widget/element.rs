@@ -100,11 +100,11 @@ use serde_json::{Map, Value};
 
 use std::path::{Path, PathBuf};
 
+use super::super::draw::Draw;
 use super::super::graphics::shape;
 pub use super::super::keymap::Verb;
-use super::super::layout::Rect;
 use super::super::metrics::Metrics;
-use super::super::paint::Draw;
+use super::super::rect::Rect;
 use super::super::world::World;
 use super::GestureMap;
 use super::size::Natural;

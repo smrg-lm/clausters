@@ -217,7 +217,7 @@ impl SharedSegment {
     ///
     /// The generation does three jobs with one number: it is *odd while the
     /// buffer is live*, it *names the region file* beside the segment (which is
-    /// where the samples actually are -- see [`crate::host::mapped`]), and it
+    /// where the samples actually are -- see [`crate::host::native::mapped`]), and it
     /// is a *seqlock* the shared reader retries under.
     pub fn buffer_info(&self, bufnum: usize) -> Option<clausters_core::shm::BufferShape> {
         self.view.buffer_info(bufnum)
@@ -247,7 +247,7 @@ impl SharedSegment {
     }
 }
 
-impl super::BusSource for SharedSegment {
+impl super::super::BusSource for SharedSegment {
     fn control(&self, index: usize) -> f32 {
         SharedSegment::control(self, index)
     }

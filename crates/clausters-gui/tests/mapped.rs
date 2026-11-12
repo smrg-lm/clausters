@@ -18,8 +18,8 @@ use std::sync::Arc;
 
 use clausters::dsp::region::Region;
 use clausters::server::ipc::{Regions, Segment};
-use clausters_gui::host::mapped::SharedBuffers;
-use clausters_gui::host::shm::SharedSegment;
+use clausters_gui::host::native::mapped::SharedBuffers;
+use clausters_gui::host::native::shm::SharedSegment;
 
 /// A segment path nothing else in this run uses.
 fn scratch(tag: &str) -> std::path::PathBuf {
@@ -194,7 +194,7 @@ fn a_take_the_server_published_is_drawn_and_edited_in_place() {
 /// is a write to what is drawn.
 #[test]
 fn a_view_of_a_published_take_reads_the_region_it_is_drawn_from() {
-    use clausters_gui::host::mapped::MappedChannel;
+    use clausters_gui::host::native::mapped::MappedChannel;
     use clausters_gui::waveform::WaveformData;
 
     let path = scratch("shared-view");
@@ -247,7 +247,7 @@ fn a_view_of_a_published_take_reads_the_region_it_is_drawn_from() {
 /// maps, and what it cannot otherwise know is how far the samples now goes.
 #[test]
 fn a_view_follows_the_frontier_of_a_take_being_recorded() {
-    use clausters_gui::host::mapped::MappedChannel;
+    use clausters_gui::host::native::mapped::MappedChannel;
     use clausters_gui::waveform::WaveformData;
 
     let path = scratch("recording");

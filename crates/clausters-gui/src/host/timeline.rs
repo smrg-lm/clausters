@@ -63,8 +63,8 @@ use clausters_core::time::Time;
 
 use crate::viewport::{TimeWindow, View};
 
-use super::layout::Rect;
 use super::metrics::Metrics;
+use super::rect::Rect;
 use super::widget::element::TimeSpace;
 use super::widget::{EditorProps, Widget};
 use super::{Host, HostEffect};
@@ -2220,7 +2220,8 @@ mod tests {
 mod indent_tests {
     use super::*;
     use crate::host::guidef::GuiNode;
-    use crate::host::layout::{self, Rect};
+    use crate::host::layout;
+    use crate::host::rect::Rect;
 
     fn tree(json: &str) -> Widget {
         Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap()

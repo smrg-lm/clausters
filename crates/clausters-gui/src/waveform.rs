@@ -25,9 +25,9 @@
 use std::sync::Arc;
 
 use crate::host::graphics::signal::trace::{self, Trace, TraceStyle};
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Mesh;
+use crate::host::rect::Rect;
 use crate::host::theme::Theme;
 use clausters_core::peaks::Source as _;
 use clausters_core::{loudness, resample};

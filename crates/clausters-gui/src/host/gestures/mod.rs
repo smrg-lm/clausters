@@ -41,7 +41,7 @@ use std::collections::HashMap;
 
 use clausters_core::osc::OscType;
 
-use super::layout::Rect;
+use super::rect::Rect;
 use super::widget::WidgetKind;
 use super::widget::element::ValueAxis;
 

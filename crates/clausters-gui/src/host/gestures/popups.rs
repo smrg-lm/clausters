@@ -17,10 +17,10 @@
 use clausters_core::osc::OscType;
 
 use super::super::Host;
-use super::super::layout::Rect;
 use super::super::menu::{self, Entry};
 use super::super::menubar::{self, Title};
 use super::super::popup::{self, Anchor, Keyed, Owner, Stack, Walk};
+use super::super::rect::Rect;
 use super::super::widget::element::{Key, KeyInput, Mods};
 use super::effects::emit;
 use super::{GestureCtx, GestureEffect, Gestures, element};

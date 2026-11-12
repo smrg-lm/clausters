@@ -1,24 +1,30 @@
-//! **The outlines**: an SVG path `d` into a lyon path.
+//! **An SVG path `d`**: scanned into a path, filled into triangles and
+//! flattened into edges.
 //!
-//! A SMuFL glyph reaches the host as the outline the client's font gave it --
-//! one path string per codepoint, sent once with the page and referenced by
-//! every note that draws it. This module is the only place that string is
-//! understood: [`build_path`] scans it into a [`LyonPath`] the tessellator can
-//! fill and the hit index tests a press against, through the scanner
-//! [`Tokens`].
+//! An outline reaches the host as a path string -- a notation glyph the
+//! client's font gave it, sent once with the page and referenced by every
+//! note that draws it, or a symbol a client sent as an outline -- and this
+//! module is the only place that string is understood: [`build_path`] scans
+//! it, through the scanner [`Tokens`], into the path the tessellator fills
+//! and a hit test presses against. It is in the drawing base because the
+//! face draws outlines too (`font::outline`), and the score's pictures build
+//! on it from above.
 //!
-//! Only the subset verovio emits is supported, and a malformed path yields
-//! `None` rather than a panic -- the primitive is then skipped, which is the
-//! same forgiveness the display-list decode applies one level up.
+//! Only the subset an engraver emits is supported, and a malformed path
+//! yields `None` rather than a panic -- the primitive is then skipped, which
+//! is the same forgiveness the display-list decode applies one level up.
 
 use lyon::math::point;
 use lyon::path::Path as LyonPath;
+use lyon::tessellation::{
+    BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers,
+};
 
 /// Build a lyon [`LyonPath`] from an SVG path `d`. Supports the subset verovio
 /// emits: `M/m` moveto, `L/l` lineto, `H/h`/`V/v` axis lines, `C/c` cubic,
 /// `S/s` smooth cubic, and `Z/z` close -- absolute and relative. Returns `None`
 /// on a malformed/empty path (the primitive is then skipped, never a panic).
-pub(super) fn build_path(d: &str) -> Option<LyonPath> {
+pub fn build_path(d: &str) -> Option<LyonPath> {
     let mut b = LyonPath::builder();
     let mut toks = Tokens::new(d);
     let (mut cx, mut cy) = (0.0f32, 0.0f32); // current point
@@ -226,4 +232,56 @@ impl<'a> Tokens<'a> {
             .parse()
             .ok()
     }
+}
+
+/// **The fill of the path `d`, as triangle corners** in the path's own
+/// coordinates, three to a triangle -- nothing for a path that fills nothing.
+///
+/// What a caller keeps when it draws one outline many times at sizes it does
+/// not know yet: the triangles are tessellated once, at tolerance `tol` in the
+/// path's units, and mapped where they are drawn.
+pub fn triangles(d: &str, tol: f32) -> Vec<[f32; 2]> {
+    let Some(path) = build_path(d) else {
+        return Vec::new();
+    };
+    let mut buffers: VertexBuffers<[f32; 2], u32> = VertexBuffers::new();
+    let opts = FillOptions::tolerance(tol.max(f32::MIN_POSITIVE)).with_fill_rule(FillRule::NonZero);
+    let filled = FillTessellator::new().tessellate_path(
+        &path,
+        &opts,
+        &mut BuffersBuilder::new(&mut buffers, |v: FillVertex| {
+            let p = v.position();
+            [p.x, p.y]
+        }),
+    );
+    if filled.is_err() {
+        return Vec::new();
+    }
+    buffers
+        .indices
+        .iter()
+        .map(|&i| buffers.vertices[i as usize])
+        .collect()
+}
+
+/// **The edges of the path `d`**: its contours flattened at tolerance `tol`,
+/// one segment after another, every contour closed -- nothing for a path that
+/// draws nothing. What a caller that draws an outline small keeps beside its
+/// fill, since an edge is where a stroke thinner than a pixel is lost.
+pub fn edges(d: &str, tol: f32) -> Vec<[[f32; 2]; 2]> {
+    use lyon::path::PathEvent;
+    use lyon::path::iterator::PathIterator;
+
+    let Some(path) = build_path(d) else {
+        return Vec::new();
+    };
+    path.iter()
+        .flattened(tol.max(f32::MIN_POSITIVE))
+        .filter_map(|event| match event {
+            PathEvent::Line { from, to } => Some([[from.x, from.y], [to.x, to.y]]),
+            PathEvent::End { last, first, .. } => Some([[last.x, last.y], [first.x, first.y]]),
+            _ => None,
+        })
+        .filter(|[a, b]| a != b)
+        .collect()
 }

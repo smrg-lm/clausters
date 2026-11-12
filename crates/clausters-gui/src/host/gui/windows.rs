@@ -14,10 +14,10 @@ use winit::window::Window;
 
 use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
-use crate::host::bulk::MmapLoader;
 use crate::host::elements::signal;
 use crate::host::frame::Batches;
 use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
+use crate::host::native::bulk::MmapLoader;
 use crate::host::widget::Widget;
 use crate::host::widget::element::SlotKey;
 use crate::host::widget::element::{Bulk, Loaded, SlotKind};

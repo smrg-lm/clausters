@@ -73,8 +73,8 @@ use std::collections::{HashMap, VecDeque};
 use clausters_core::osc::OscType;
 
 use super::font;
-use super::layout::Rect;
 use super::metrics::Metrics;
+use super::rect::Rect;
 use super::widget::{Widget, WidgetKind};
 use super::wire::string_arg;
 

@@ -9,10 +9,10 @@
 //! function the drawing and the press both read. A part is hit where it is
 //! drawn because there is no second derivation of where it is.
 
+use crate::host::draw::Draw;
 use crate::host::font::{self, symbol};
-use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
-use crate::host::paint::Draw;
+use crate::host::rect::Rect;
 use crate::host::widget::size::{control_box, text_box};
 
 use super::controls;
