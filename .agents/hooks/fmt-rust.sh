@@ -12,8 +12,9 @@
 # whole class of "the commit needed a formatting pass" churn.
 #
 # `rustfmt` directly rather than `cargo fmt`: the tree has three workspaces
-# (root, audit/fuzz, clausters-editor/src-tauri). The editor uses edition
-# 2021; the other workspaces use 2024. Select the edition by the resolved path.
+# (root, audit/fuzz, clausters-editor/src-tauri), and `cargo fmt` would take
+# the edition from whichever manifest it found. All three use edition 2024,
+# so it is passed explicitly.
 #
 # Formatting failures return feedback after the edit, which remains applied.
 # A file that does not parse yet can be picked up by the next fmt pass.
@@ -90,11 +91,7 @@ while IFS= read -r file; do
         "$root"/*) ;;
         *) continue ;;
     esac
-    case "$file" in
-        "$root"/clausters-editor/*) edition=2021 ;;
-        *) edition=2024 ;;
-    esac
-    if ! rustfmt --edition "$edition" "$file"; then
+    if ! rustfmt --edition 2024 "$file"; then
         echo "clausters: fmt-rust failed for $file; the edit remains applied. Fix the reported error and run cargo fmt in its workspace." >&2
         failed=2
     fi
