@@ -225,7 +225,7 @@ instance continues processing while stopped. See the
 
 ## `Session` — ergonomic defaults, no globals
 
-`Session` bundles a `Server` and a clock, with {{alt `Session.nrt()` / `Session.live()` || `Session.nrt()` / `Session.embed()` / `Session.live()`}} factories and `.play(pattern)` / `.render()` / `.run(s)`. Several sessions coexist — an offline NRT one for plots next to a live RT one — in the same {{alt script || page}}. See [Sessions](sessions.md) for the full picture.
+`Session` bundles a `Server` and a clock, with `Session.nrt()` / `Session.embed()` / `Session.live()` factories and `.play(pattern)` / `.render()` / `.run(s)`. Several sessions coexist — an offline NRT one for plots next to a live RT one — in the same {{alt script || page}}. See [Sessions](sessions.md) for the full picture.
 
 ## The ambient verbs — `play`, `plot`, `scope`, `render`
 

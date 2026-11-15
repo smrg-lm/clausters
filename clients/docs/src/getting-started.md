@@ -258,7 +258,7 @@ session.close()
 session.close();
 ```
 
-That is the whole loop: a session, a def, nodes or patterns. From here, [Sessions](sessions.md) explains the offline and {{alt embedded || live}} flavours (the same code, a different factory), [Defining instruments](defs.md) is the full def-building vocabulary, and [Routines and clocks](routines-and-clocks.md) drives the clock by hand.
+That is the whole loop: a session, a def, nodes or patterns. From here, [Sessions](sessions.md) explains the offline, embedded and live flavours (the same code, a different factory), [Defining instruments](defs.md) is the full def-building vocabulary, and [Routines and clocks](routines-and-clocks.md) drives the clock by hand.
 
 <!-- web -->
 ## A page that plays a note
