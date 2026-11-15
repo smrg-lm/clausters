@@ -235,7 +235,7 @@ These are the honest edges of a small, composable feature: shared bars, a shared
 | Leave it | `clock.leaveTransport()` |
 | Start on the next bar | `clock.play(routine, 4)` / `session.play(pattern, 4)` |
 | Align to the sample, not just the beat | a clock on `await server.sampleTimebase()` — a session's default (see [Timing models](timing-models.md)) |
-| Follow live tempo changes | a `new OscFunc(…, "/transport_query.reply")` that re-`joinTransport`s (see [Receiving: responders](responders.md)) |
+| Follow live tempo changes | a `new OscFunc(…, "/transport_query.reply")` that re-`joinTransport`s (see [Receiving OSC and MIDI](responders.md)) |
 | Roll a playhead from a conductor | `server.transportPlay()` / `transportStop()` / `transportLocate(beat)`; followers put a timeline on it, `timeline.transport = server` |
 | Read the rolling state | `await server.transportState()` → `{ tempo, playing, position, … }` |
 <!-- /web -->

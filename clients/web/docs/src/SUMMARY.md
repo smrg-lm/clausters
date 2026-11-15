@@ -12,7 +12,7 @@
 - [The ambient verbs: play, plot, scope, render](verbs.md)
 - [A DAW-style transport](transport.md)
 - [Reading the server: buses, taps and takes](data.md)
-- [Receiving: responders](responders.md)
+- [Receiving OSC and MIDI](responders.md)
 - [The document: what a multitrack is, and who edits it](document.md)
 - [`form`: a frozen layer](form.md)
 - [The visual elements in a page](gui.md)

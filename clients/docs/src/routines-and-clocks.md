@@ -341,7 +341,7 @@ What a destination sends is standard OSC and nothing more: a message, or a bundl
 
 Outside any routine there is no clock, and the moment is wall-clock now with delays read as seconds — so the same call works in a script with no `TempoClock` at all.
 
-For the other direction — reacting to OSC another application sends *you* — see {{alt [Receiving OSC and MIDI](responders.md) || [Receiving: responders](responders.md)}}.
+For the other direction — reacting to OSC another application sends *you* — see [Receiving OSC and MIDI](responders.md).
 
 ## See also
 
