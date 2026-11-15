@@ -29,8 +29,8 @@ The edit
   of events.
 - `domain_edit_all` -- the edits one gesture came to, applied as one: all of
   them or none.
-- `TREE`, `MULTITRACK`, `POINTS`, `SAMPLES`, `EVENTS` -- the domain names those
-  two answer for.
+- `TREE`, `MULTITRACK`, `POINTS`, `SAMPLES`, `PARTS`, `EVENTS` -- the domain
+  names those two answer for.
 
 The multitrack
 --------------
@@ -103,7 +103,7 @@ Usage::
     drums.active_take_lane.regions.add(bar, 2.5, Content.onto(take))
 """
 
-from .._native import (MULTITRACK, EVENTS, POINTS, SAMPLES, TREE, Document,
+from .._native import (MULTITRACK, EVENTS, PARTS, POINTS, SAMPLES, TREE, Document,
                        History, Log, domain_coalesce_key, domain_edit,
                        domain_edit_all)
 from .._native import document_apply as apply_intent
@@ -119,6 +119,7 @@ from ._timeline import Meter, Span, Tempo
 __all__ = [
     "MULTITRACK",
     "EVENTS",
+    "PARTS",
     "FIRST_VERSION",
     "SESSION_FORMAT",
     "POINTS",

@@ -783,19 +783,21 @@ The FFT frame is **synth-private scratch on the server** (SuperCollider's `Local
 
 A **two-chain combiner** (`{{api pv_add}}`, `{{api pv_mul}}`, `{{api pv_min}}`, `{{api pv_max}}`, `{{api pv_mag_mul}}`, `{{api pv_copy_phase}}`) takes two chains — both from an `fft` of the **same {{alt `fft_size` || `fftSize`}}**, and distinct — and writes the result into chain A (its first argument), which the combiner's output carries onward. `{{api pv_mag_mul}}` is the classic cross-synthesis: a noise carrier in chain A comes out wearing the spectral envelope of the modulator in chain B (see {{alt `examples/spectral/cross.py` || `examples/spectral/cross.html`}}, which also freezes the ending with `{{api pv_mag_freeze}}`).
 
-<!-- python -->
-The window type is also settable **live** with `Server.u_cmd`, which addresses one UGen instance inside a running synth:
+The window type is also settable **live** with `{{api synth.u_cmd}}`, which addresses one UGen instance inside a running synth:
 
 ```python
-from clausters._native import Window
+from clausters.defs import Window
+
 synth.u_cmd(fft_index, "window", Window.BLACKMAN)  # swap the FFT window
 ```
 
-where `fft_index` is the FFT's position in the serialized graph. The smoothing windows themselves are shared with the server through the native core — `clausters._native.window(Window.HANN, n)` returns the **same** coefficients the server's FFT applies, so a client that pre-windows audio matches the server bit for bit.
-<!-- /python -->
-<!-- web -->
-The window type is also settable **live** with `synth.uCmd(fftIndex, "window", type)`, which addresses one UGen instance inside a running synth, where `fftIndex` is the FFT's position in the serialized graph and `type` the window's number.
-<!-- /web -->
+```ts
+import { Window } from "clausters/defs";
+
+synth.uCmd(fftIndex, "window", Window.BLACKMAN);  // swap the FFT window
+```
+
+where {{alt `fft_index` || `fftIndex`}} is the FFT's position in the serialized graph and `Window` names the server's smoothing windows by the numbers it reads.
 
 ### Writing your own spectral operation
 

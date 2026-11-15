@@ -21,6 +21,7 @@ and the server resources:
   `signals` / `FaustDef` pair.
 """
 
+from .._native import Window
 from . import boxes
 from . import signals
 from . import ugens
@@ -152,7 +153,7 @@ from .ugens import (
     white_noise,
 )
 
-__all__ = ["IdSpaces", 
+__all__ = ["IdSpaces", "Window", 
     "boxes",
     "signals",
     "ugens",

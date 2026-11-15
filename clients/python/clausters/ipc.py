@@ -596,7 +596,7 @@ def write_soundfile(path, samples, channels: int, sample_rate: float,
         raise RenderError(err.value.decode() or f"could not write {path}")
 
 
-def true_peak(samples, channels: int) -> tuple[float, ...]:
+def _true_peak_per_channel(samples, channels: int) -> tuple[float, ...]:
     """Per-channel **true peak** of an interleaved buffer, in linear amplitude,
     measured by the shared core (`clausters_core_true_peak`).
 
@@ -673,7 +673,7 @@ def loudness(samples, channels: int, rate: float,
     return None if measured is None else Loudness(*measured)
 
 
-def channel_stats(samples, channels: int) -> tuple[tuple[float, ...], tuple[float, ...]]:
+def _stats_per_channel(samples, channels: int) -> tuple[tuple[float, ...], tuple[float, ...]]:
     """Per-channel ``(peak, rms)`` of an interleaved buffer, measured by the
     shared core (`clausters_core_stats`) so the numbers match the server's.
 

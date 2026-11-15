@@ -479,13 +479,14 @@ export function channelUnop(m: Channel, selector: string): Channel {
  * single-channel input is an error: index it or `mix` it down. Build one
  * with `dup`, `chans`, or a literal array where one is accepted.
  */
-export class ChannelList extends SynthExpr<ChannelList> {
-    readonly items: Channel[];
+export class ChannelList<T extends Channel = Channel> extends SynthExpr<ChannelList> {
+    /** The channels, in order. `T` says what they are when every one is the same kind. */
+    readonly items: T[];
 
-    constructor(items: ChannelList | readonly Channel[]) {
+    constructor(items: ChannelList<T> | readonly T[]) {
         super();
         const source = items instanceof ChannelList ? items.items : items;
-        const members = [...source].map(checkChannel);
+        const members = [...source].map(checkChannel) as T[];
         if (members.length === 0) {
             throw new TypeError("a channel list needs at least one channel");
         }
@@ -496,13 +497,13 @@ export class ChannelList extends SynthExpr<ChannelList> {
         return this.items.length;
     }
 
-    at(i: number): Channel {
+    at(i: number): T {
         const got = this.items.at(i);
         if (got === undefined) throw new RangeError(`no channel ${i}`);
         return got;
     }
 
-    [Symbol.iterator](): Iterator<Channel> {
+    [Symbol.iterator](): Iterator<T> {
         return this.items[Symbol.iterator]();
     }
 
@@ -591,10 +592,10 @@ export function chans(
  * decorrelated or detuned bank needs; duplicating a `whiteNoise` by
  * reference would give `n` copies of the same noise.
  */
-export function dup(
-    x: Channel | (() => Channel),
+export function dup<T extends Channel>(
+    x: T | (() => T),
     n = 2,
-): ChannelList {
+): ChannelList<T> {
     if (!Number.isInteger(n) || n < 1) {
         throw new TypeError(`dup needs a positive channel count, got ${n}`);
     }
@@ -612,6 +613,9 @@ export function dup(
  * an `Add` chain, so an 8-channel mix costs 2 UGens + 1, not 7. A scalar or
  * single node passes through.
  */
+export function mix(x: number | readonly number[] | ChannelList<number>): number;
+export function mix(x: SynthLeaf | readonly SynthLeaf[] | ChannelList<SynthLeaf>): SynthLeaf;
+export function mix(x: OpOperand): Channel;
 export function mix(x: OpOperand): Channel {
     if (!isList(x)) return x;
     let items = new ChannelList(x).items;

@@ -30,7 +30,7 @@
  * - {@link domainEditAll} -- the edits one gesture came to, applied as one: all
  *   of them or none.
  * - {@link TREE}, {@link MULTITRACK}, {@link POINTS}, {@link SAMPLES},
- *   {@link EVENTS} -- the domain names those two answer for.
+ *   {@link PARTS}, {@link EVENTS} -- the domain names those two answer for.
  *
  * ## The multitrack
  *

@@ -5252,3 +5252,88 @@ sound.
   worker took to load, which in a fresh Firefox profile was often longer
   than the wait; a wake is now armed for an instant, and on the page's own
   timer too until the worker says it runs.
+
+- ✅ **The sample-clock tracker is reached differently from Python's**
+  *(found 2026-11-15, writing the shared Timing models chapter for `W35`)*.
+  Python asks the server for it, `server.sample_clock()`, and reads the
+  measured drift off its model, `sc.model.drift_ppm()`; the web client has a
+  free function, `sampleClockFor(server)`, that warms the model up by
+  default, and a `driftPpm` property on the tracker. The chapter writes both
+  as they are (`names.toml` spells one as the other) and its two blocks are
+  not yet the same calls. The port takes Python's shape: a
+  `Server.sampleClock()` method and the same reading of the drift, or the
+  reference changes too, decided once for both.
+  **Fixed 2026-11-15:** Python's shape, with the drift read off the tracker
+  in both: the web client's `Server.sampleClock()` returns the one reader
+  the server keeps, built and anchored but neither warmed up nor tracking,
+  as `server.sample_clock()` does, and `sampleTimebase` warms and tracks
+  it; the free `sampleClockFor` is gone, and so is the web-only
+  `Server.clockDriftPpm`. The drift is the tracker's `drift_ppm` /
+  `driftPpm` property in both, `None`/`null` for an in-process reader,
+  rather than a reading of Python's private model that its embed reader
+  never had.
+
+- ✅ **A notes editor's pass end is not readable in the web client**
+  *(found 2026-11-15, unifying the shared document chapter)*. Python's
+  `NotesEditor.end` is a property, read and set; the web client has
+  `setEnd(end)` and nothing that reads it back, so the shared chapter names
+  the setter in the web book. A read (`end()`) brings the two to one surface.
+  **Fixed 2026-11-15:** the web client's `NotesEditor` reads it back with
+  `await editor.end()`, beside `setEnd`, the idiom `docs/bindings.md`
+  already wrote for the transport's end; the shared chapter names both, and
+  the notes example's text, which wrote Python's assignment in the page,
+  names the setter.
+
+- ✅ **Return types that lose what a call gives back** *(found 2026-11-15,
+  compiling the web book's TypeScript blocks)*. A reader who copies a book
+  example into a typed page gets a compiler error the example does not have
+  at run time: `play(x)` is typed `unknown`, so `play(sig).free()` does not
+  compile; `mix()` returns a `Channel` and `midSide()` a `ChannelList`, and a
+  `Channel` is `SynthLeaf | number`, so `mix(bank).mul(0.1)` does not either.
+  The values are right; the types say less than the call knows. Overloads
+  (or a narrower `Channel` where no number can come out) bring them to what
+  the call returns; `clients/docs/book_blocks.toml` lists each such error, and
+  an entry there goes when its type is fixed.
+  **Fixed 2026-11-15:** `play` has one overload per kind of playable, each
+  answering what that kind starts (an `EventStreamPlayer`, a `Stream`, a
+  `Node`, a promise of a `Transport`, a `Timeline`, a `Synth`, an `Event`);
+  `ChannelList` carries the kind of its channels, so `dup` of a signal is a
+  list of signals, `midSide` answers two `Ugen`s and `mix` of signals
+  answers a `SynthLeaf` (and of numbers a number). The four entries of
+  `book_blocks.toml` went with them, and the harness's own limit too: a
+  variable a page makes once is now read with its class from any section, a
+  name it makes more than once only from its own, and two bugs went (a
+  class name that is the prefix of another one's, and a `for (const [a, b]
+  of ...)` read as declaring every name after it). The file lists no known
+  error now.
+
+- ✅ **The render and analysis surface is shaped differently in each client**
+  *(found 2026-11-15, writing the shared verbs and data chapters for
+  `W35`)*. One channel of a render is `stats.channel(i)` in Python and
+  `channel(stats, i)` in the web client. The measurements live in
+  `clausters.ipc` and in the private `clausters._native` in Python
+  (`correlation`, `lissajous`, which the Python book imports from the private
+  module) and in `data` in the web client, and `channel_stats`/`true_peak`
+  answer every channel in Python and one in the web client. The peak pyramid
+  is a `data.Peaks` class in the web client and bytes from
+  `_native.peaks_cache` in Python; `peaks_cache_stream_file` and the FFT
+  `Window` enum are Python's alone, the second private. One shape per
+  function, in a public module of each, decided once for both.
+  **Fixed 2026-11-15:** one shape per function, in `data` and `render` of
+  both. A render's channel is `stats.channel(i)` in both: the web client's
+  `RenderStats` is a class with `duration` and `channel`, and the free
+  `channel(stats, i)` is gone. The measurements are `data`'s in both, one
+  channel per call (`channel_stats`, `true_peak`, `correlation`,
+  `lissajous`, `loudness`, `stft_cache`); the two every-channel forms in
+  `clausters.ipc` that shared those names are private, and the two Python
+  examples that used them read `data` as their pages do. The peak pyramid
+  is a `data.Peaks` in both: Python's wraps the cache bytes and reads its
+  four facts through a new C door, `clausters_core_peaks_info` (core ABI
+  v98), and a recording stream answers one per take. The FFT window types
+  are `defs.Window` in both, and the chapter's block about them is one
+  text; the coefficient function stays private, a gap `docs/bindings.md`
+  already records. `decodeSamples`, `deinterleave`, `interleave` and
+  `fetchAudio` left the web client's `data`: the first two repeat
+  `blobToSamples` and `render.channels`, the last two are `Buffer`'s own
+  way in from a URL. The file writers a `path`/`cache` prop maps are a gap
+  of their own ("A page's host reads a `path` or a `cache` only as a URL").

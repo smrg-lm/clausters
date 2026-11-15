@@ -331,7 +331,7 @@ Each take's cache is allocated at the buffer's **full length** and empty, so the
 axis does not move while it fills; `written` is how far the reports have got,
 and past it the cache is the silence the buffer is — read up to it and the two
 stay apart, which is what a `waveform`'s `fills` does for the picture.
-`stream.peaks(take)` is the cache itself, the same bytes {{alt `peaks_cache` || a `Peaks` pyramid}} builds
+`stream.peaks(take)` is the take's `Peaks`, the same cache `Peaks.build` makes
 from samples, so it goes wherever one of those goes.<!-- web --> `stop()` cancels the subscription and `free()` releases the pyramids.<!-- /web -->
 
 Only the overview arrives: inside one bucket there is one figure, so a script
@@ -396,14 +396,19 @@ That one stays in-page by cost rather than by impossibility: over a socket the
 same file would travel sample by sample through `setSamples`, where a native
 server reads it in one command<!-- /web -->.
 
-<!-- web -->
 ### The peak pyramid
 
 A waveform is never drawn sample by sample. The samples are reduced once into a
-min/max pyramid — level 0 summarizes every `baseBucket` samples, each level
+min/max pyramid — level 0 summarizes every {{alt `base_bucket` || `baseBucket`}} samples, each level
 above halves the resolution — and a picture reads the level its magnification
 calls for, so the drawing costs the width of the view rather than the length of
 the buffer:
+
+```python
+from clausters.data import Peaks
+
+peaks = Peaks.build(samples, channels=buffer.channels)
+```
 
 ```ts
 import { Peaks } from "clausters/data";
@@ -415,6 +420,14 @@ What a script asks a pyramid is **what it is**, never what it says — a cell's
 min/max, the level a zoom reads at and the row across a width are the drawing's
 questions, and the drawing is not here:
 
+```python
+peaks.frames         # samples per channel
+peaks.channels
+peaks.base_bucket    # what to subscribe with, so reports fold in
+peaks.num_levels
+peaks.to_bytes()     # the cache, to hand on or to store
+```
+
 ```ts
 peaks.frames;        // samples per channel
 peaks.channels;
@@ -423,11 +436,10 @@ peaks.numLevels;
 peaks.toBytes();     // the cache, to hand on or to store
 ```
 
-The reduction is the shared core's, and so is its cache format: `peaks.toBytes()`
-writes the same bytes the GUI host maps and the Python client produces, and
-`Peaks.fromBytes` reads one back. When a page is done with a pyramid,
-`peaks.free()` returns its wasm memory.
-<!-- /web -->
+The reduction is the shared core's, and so is its cache format: {{alt `peaks.to_bytes()` || `peaks.toBytes()`}}
+writes the same bytes the GUI host maps and the other client produces, and
+{{alt `Peaks.from_bytes` || `Peaks.fromBytes`}} reads one back.<!-- web --> When a page is done with a pyramid,
+`peaks.free()` returns its wasm memory.<!-- /web -->
 
 ## One implementation of every figure
 

@@ -43,7 +43,8 @@
     -->
     <script type="module">
       import { Session, opfs, loadCore, SynthDef, Synth, Bus, Buffer, data,
-        OscNrtInterface, renderScore } from "../dist/index.js";
+        OscNrtInterface } from "../dist/index.js";
+      import { renderScore } from "../dist/render.js";
       import { diskIn, diskOut, out, sine } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");

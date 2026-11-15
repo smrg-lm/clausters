@@ -10,7 +10,7 @@
 //   each bus, as often as asked for.
 // - `TapStream` -- audio taps, streamed (`/bus_tapStream`): the newest window of
 //   an audio bus's samples, on that bus's own axis.
-// - `Peaks`, `fetchAudio` and `Server.getSamples` -- bulk buffer samples and
+// - `Peaks`, `stftCache` and `Server.getSamples` -- bulk buffer samples and
 //   their reduction to the cache format every client reads.
 // - `RecordingStream` -- takes as they record (`/buffer_stream`): the overview
 //   of what was written, since a page can map no memory to watch it fill.
@@ -26,7 +26,7 @@
 // `spectrum` widget in a GuiDef -- and the host reads the very same paths.
 
 export { BusStream, STREAM_PERIOD_MS } from "./buses.ts";
-export { TapStream, decodeSamples } from "./taps.ts";
+export { TapStream } from "./taps.ts";
 export type { TapWindow } from "./taps.ts";
 export { Peaks } from "./peaks.ts";
 export { stftCache } from "./stft.ts";
@@ -41,4 +41,3 @@ export {
     truePeak,
 } from "./analysis.ts";
 export type { Loudness } from "./analysis.ts";
-export { deinterleave, fetchAudio, interleave } from "./samples.ts";

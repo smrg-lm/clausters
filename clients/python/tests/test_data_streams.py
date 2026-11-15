@@ -10,6 +10,7 @@ makes about the same wire: the cache the *reports* built and the cache the
 """
 
 import math
+from array import array
 import socket
 import struct
 import threading
@@ -130,8 +131,8 @@ def test_reports_build_the_cache_the_samples_would_have_built():
         assert seen == [FRAMES // 4, FRAMES // 2, 3 * FRAMES // 4, FRAMES]
         # The claim: nothing was measured on this side, so what the reports
         # left is what reading the samples would have produced.
-        assert stream.peaks(take) == peaks_cache(samples, BUCKET, 1)
-        assert stream.peaks(BUFNUM) == stream.peaks(take)
+        assert stream.peaks(take).to_bytes() == peaks_cache(samples, BUCKET, 1)
+        assert stream.peaks(BUFNUM).to_bytes() == stream.peaks(take).to_bytes()
     finally:
         if stream is not None:
             stream.free()
@@ -146,7 +147,7 @@ def test_a_report_off_the_grid_changes_nothing():
     try:
         take = TakeShape(BUFNUM, FRAMES, 1)
         stream = RecordingStream.open(server, [take], timeout=2.0)
-        before = stream.peaks(take)
+        before = stream.peaks(take).to_bytes()
 
         # A start off a bucket boundary: the core refuses it, and so does the
         # count -- a refused report is not a repaint.
@@ -157,7 +158,7 @@ def test_a_report_off_the_grid_changes_nothing():
 
         assert stream.reports == 0
         assert stream.written(take) == 0
-        assert stream.peaks(take) == before
+        assert stream.peaks(take).to_bytes() == before
         assert stream.peaks(BUFNUM + 1) is None
     finally:
         if stream is not None:
@@ -335,8 +336,8 @@ def test_the_true_peak_reads_above_the_sample_peak():
     from clausters import ipc
 
     x = array("f", [1.0 if (i // 2) % 2 == 0 else -1.0 for i in range(512)])
-    (sample_peak,), _ = ipc.channel_stats(x, 1)
-    (true_peak,) = ipc.true_peak(x, 1)
+    (sample_peak,), _ = ipc._stats_per_channel(x, 1)
+    (true_peak,) = ipc._true_peak_per_channel(x, 1)
     assert sample_peak == 1.0
     over = 20 * math.log10(true_peak / sample_peak)
     assert abs(over - 3.01) < 0.25, f"{over} dB over the samples"
@@ -351,8 +352,8 @@ def test_a_true_peak_is_never_below_the_sample_peak():
 
     x = array("f", [0.8 * math.sin(i * 0.37) + 0.2 * math.sin(i * 1.9)
                     for i in range(1024)])
-    (sample_peak,), _ = ipc.channel_stats(x, 1)
-    (true_peak,) = ipc.true_peak(x, 1)
+    (sample_peak,), _ = ipc._stats_per_channel(x, 1)
+    (true_peak,) = ipc._true_peak_per_channel(x, 1)
     assert true_peak >= sample_peak - 1e-6
 
 
@@ -366,10 +367,10 @@ def test_each_channel_is_measured_through_its_stride():
     loud = [0.9 * math.sin(i * 0.31) for i in range(512)]
     quiet = [0.05 * v for v in loud]
     x = array("f", [v for pair in zip(quiet, loud) for v in pair])
-    peaks = ipc.true_peak(x, 2)
+    peaks = ipc._true_peak_per_channel(x, 2)
     assert peaks[0] < 0.2 < 0.8 < peaks[1]
-    assert ipc.true_peak(x, 0) == ()
-    assert ipc.true_peak(array("f", []), 1) == ()
+    assert ipc._true_peak_per_channel(x, 0) == ()
+    assert ipc._true_peak_per_channel(array("f", []), 1) == ()
 
 
 # ---- loudness: how loud it sounds, as broadcast measures it ----
@@ -443,3 +444,19 @@ def test_nothing_to_measure_and_a_request_that_cannot_be_met():
     assert ipc.loudness(x, 1, 4) is None
     assert ipc.loudness(x, 1, 48000, weights=[1.0, 1.0]) is None
     assert ipc.loudness(array("f"), 1, 48000) is None
+
+
+def test_a_peak_pyramid_says_what_it_is_and_round_trips_its_bytes():
+    from clausters.data import Peaks
+
+    samples = array("f", [((i % 64) - 32) / 32 for i in range(48_000)])
+    peaks = Peaks.build(samples, channels=2, base_bucket=128)
+    assert (peaks.frames, peaks.channels, peaks.base_bucket) == (24_000, 2, 128)
+    assert peaks.num_levels > 1
+    back = Peaks.from_bytes(peaks.to_bytes())
+    assert back is not None and back.to_bytes() == peaks.to_bytes()
+    assert Peaks.from_bytes(b"not a cache") is None
+    empty = Peaks.empty(1024, channels=1, base_bucket=256)
+    assert empty.frames == 1024 and empty.channels == 1
+    assert not empty.write_buckets(100, 256, array("f", [0.0, 0.0, 0.0]))
+

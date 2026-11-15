@@ -592,3 +592,9 @@ the document's (`events::articulation`, the sequence's `join` and
 `unjoin` edits). So the rule that made ties and slurs of a voice's joins
 has no caller: `clausters_core_articulation` (wasm `articulation`) is
 removed. Breaking: one symbol gone.
+
+**v98 a peak cache says what it is.** `clausters_core_peaks_info`: a
+cache's frames, channels, base bucket and levels, read from its bytes --
+the four facts the web client's pyramid answers, so the Python client's
+`Peaks` answers them too without reading the format itself. Additive.
+

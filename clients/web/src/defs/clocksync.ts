@@ -42,7 +42,6 @@
 // only that the round trip shares a queue with everything else the client
 // sends.
 
-import { ReplyTimeout } from "../errors.ts";
 import { SampleClockModel } from "../core/clausters_core_web.js";
 import { SampleClockTimebase } from "../base/timebase.ts";
 import type { SampleClock } from "../base/connection.ts";
@@ -69,6 +68,8 @@ export interface ServerSampleClock {
     /** Re-anchor in the background forever (keeps the slope fresh). */
     track(interval?: number): this;
     untrack(): void;
+    /** Whether it is re-anchoring in the background (always, for a direct read). */
+    readonly tracking: boolean;
     /** The predicted current value of the server's sample counter. */
     now(): number;
     readonly rate: number;
@@ -161,6 +162,10 @@ export class WsSampleClock implements ServerSampleClock {
         this.tracker = null;
     }
 
+    get tracking(): boolean {
+        return this.tracker !== null;
+    }
+
     now(): number {
         return this.model.sampleAt(performance.now() / 1000);
     }
@@ -217,6 +222,11 @@ export class EmbedSampleClock implements ServerSampleClock {
 
     untrack(): void {}
 
+    /** Always true: shared memory needs no model, so there is never a stale one. */
+    get tracking(): boolean {
+        return true;
+    }
+
     now(): number {
         return this.clock.sample();
     }
@@ -238,40 +248,19 @@ export class EmbedSampleClock implements ServerSampleClock {
 }
 
 /**
- * The sample clock of whichever carrier `server` is on, seeded and tracking,
- * or `null` when the server does not answer `/clock_query` -- which leaves the
- * caller on wall-clock time rather than failing.
+ * The sample clock of whichever carrier `server` is on, built and anchored once
+ * but neither warmed up nor tracking: what `Server.sampleClock` keeps. It
+ * rejects when the server does not answer `/clock_query`.
  *
- * An embedded engine needs no warmup and no tracking, so both arguments are
- * ignored there; over a socket they size the regression (see `warmup`).
+ * @internal
  */
-export async function sampleClockFor(
+export async function sampleClockOf(
     server: Server,
-    { timeout, warmup = true, anchors = 5, gap = 0.05, trackEvery = 0.5 }: {
-        timeout?: number;
-        /**
-         * Firm the model up with extra anchors before anything is scheduled --
-         * the reference client's `lock_to(warmup=True)`. Turned off, the clock
-         * locks on the single anchor the first query returned, which is enough
-         * to be *anchored* and not enough to be steady.
-         */
-        warmup?: boolean;
-        anchors?: number;
-        gap?: number;
-        trackEvery?: number;
-    } = {},
-): Promise<ServerSampleClock | null> {
+    { timeout, window }: { timeout?: number; window?: number } = {},
+): Promise<ServerSampleClock> {
     if (server.connection.sampleClock) {
         return new EmbedSampleClock(await server.connection.sampleClock());
     }
-    let first: Anchor;
-    try {
-        first = await WsSampleClock.query(server, timeout);
-    } catch (error) {
-        if (!(error instanceof ReplyTimeout)) throw error;
-        return null;
-    }
-    const clock = new WsSampleClock(server, first, { timeout });
-    if (warmup) await clock.warmup(anchors, gap);
-    return clock.track(trackEvery);
+    const first = await WsSampleClock.query(server, timeout);
+    return new WsSampleClock(server, first, { timeout, window });
 }

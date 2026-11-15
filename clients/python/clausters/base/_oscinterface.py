@@ -541,7 +541,7 @@ class OscNrtInterface(OscInterface):
         samples, frames, events, used = ipc.render(
             self.score.bytes(), sample_rate=sample_rate, channels=channels,
             workers=workers, seed=seed)
-        peak, rms = ipc.channel_stats(samples, channels)
+        peak, rms = ipc._stats_per_channel(samples, channels)
         return RenderStats(frames=frames, channels=channels,
                            sample_rate=sample_rate, events=events, peak=peak,
                            rms=rms, seed=used, samples=samples)

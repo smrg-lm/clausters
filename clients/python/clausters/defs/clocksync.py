@@ -178,6 +178,12 @@ class UdpSampleClock:
     def rate(self) -> float:
         return self.model.rate
 
+    @property
+    def drift_ppm(self) -> float:
+        """The drift the model has measured between this process's clock and
+        the server's, in parts per million."""
+        return self.model.drift_ppm()
+
     def timebase(self) -> SampleClockTimebase:
         """A `SampleClockTimebase` reading this tracker's model."""
         return SampleClockTimebase(self.now, self.rate)
@@ -233,6 +239,11 @@ class EmbedSampleClock:
     @property
     def rate(self) -> float:
         return self._rate
+
+    @property
+    def drift_ppm(self) -> None:
+        """No model, so nothing to measure: the two clocks are the same one."""
+        return None
 
     def timebase(self) -> SampleClockTimebase:
         """A `SampleClockTimebase` reading the handle's counter directly."""

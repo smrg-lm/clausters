@@ -82,8 +82,8 @@ export const rotate2 = (
  * exact; it puts the mid 3 dB above the convention, a plain gain. For a width
  * knob and nothing in between, `stereoWidth` is one row instead of two.
  */
-export const midSide = (a: Channel, b: Channel): ChannelList =>
-    chans([0.0, 1.0].map((c) => new Ugen("MidSide", [a, b, c])));
+export const midSide = (a: Channel, b: Channel): ChannelList<Ugen> =>
+    chans([0.0, 1.0].map((c) => new Ugen("MidSide", [a, b, c]))) as ChannelList<Ugen>;
 
 /**
  * Widens or narrows a stereo image by scaling its side component: `0`

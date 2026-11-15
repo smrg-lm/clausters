@@ -37,7 +37,7 @@ measure again in the next.
 import math
 import sys
 
-from clausters import Session, ipc
+from clausters import Session, data
 from clausters.base import Routine
 from clausters.seq import pbind, pn, pseq
 
@@ -91,12 +91,14 @@ Routine(close).play()
 def run():
     """Render the score and report its loudness against EBU R 128."""
     stats = session.render(sample_rate=SR, channels=2)
-    measured = ipc.loudness(stats.samples, stats.channels, stats.sample_rate)
-    peaks = ipc.true_peak(stats.samples, stats.channels)
+    measured = data.loudness(stats.samples, stats.channels, stats.sample_rate)
     if measured is None:
         print("no loudness: the core library is not loadable")
         return None
-    dbtp = max(20 * math.log10(p) if p > 0 else -math.inf for p in peaks)
+    dbtp = -math.inf
+    for c in range(stats.channels):
+        peak = data.true_peak(stats.samples, stats.channels, c)
+        dbtp = max(dbtp, 20 * math.log10(peak) if peak > 0 else -math.inf)
 
     print(f"rendered {stats.duration:.2f} s")
     print(f"integrated  {measured.integrated:6.1f} LUFS")

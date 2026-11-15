@@ -596,6 +596,42 @@ pub unsafe extern "C" fn clausters_core_peaks_multi_write_buckets(
     cache_len
 }
 
+/// **What a peak cache is**: its frames per channel, its channels, its base
+/// bucket and its number of levels, written into `out[0..4]` in that order.
+/// Returns whether `cache` is one; a refused read writes nothing.
+///
+/// The four facts a client's `Peaks` answers about a cache it holds as bytes
+/// -- never what the cache says, since reading a cell or picking a level for
+/// a zoom is drawing, which is the GUI host's.
+///
+/// # Safety
+/// `cache` must be readable for `cache_len` bytes, and `out` writable for
+/// four `u64`s.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_peaks_info(
+    cache: *const u8,
+    cache_len: usize,
+    out: *mut u64,
+) -> bool {
+    if cache.is_null() || out.is_null() || cache_len == 0 {
+        return false;
+    }
+    // SAFETY: caller guarantees the range.
+    let bytes = unsafe { std::slice::from_raw_parts(cache, cache_len) };
+    let Some(pyr) = MultiPyramid::from_bytes(bytes) else {
+        return false;
+    };
+    let facts = [
+        pyr.frames() as u64,
+        pyr.num_channels() as u64,
+        pyr.base_bucket() as u64,
+        pyr.channel(0).map_or(0, |p| p.num_levels()) as u64,
+    ];
+    // SAFETY: caller guarantees four writable slots.
+    unsafe { std::slice::from_raw_parts_mut(out, 4) }.copy_from_slice(&facts);
+    true
+}
+
 /// The stereo **correlation** (Pearson's r) of channels `left` and `right`
 /// (each `n` `f32`s): `+1` mono/in-phase, `0` decorrelated, `-1` anti-phase --
 /// the same measurement the GUI phasescope shows. Writes the coefficient into

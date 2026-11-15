@@ -43,12 +43,14 @@ import threading
 
 from .base._oscinterface import OscReceiver
 from .errors import CommandError, ReplyTimeout
+from . import _native
 from ._native import peaks_cache_empty, peaks_cache_write_buckets
 from .base.bulk import blob_to_samples
 
 __all__ = ["RECORDING_PERIOD_MS", "STREAM_PERIOD_MS", "BusStream",
-           "RecordingStream", "TakeShape", "TapStream", "TapWindow",
-           "channel_stats", "correlation", "lissajous", "loudness", "true_peak"]
+           "Peaks", "RecordingStream", "TakeShape", "TapStream", "TapWindow",
+           "channel_stats", "correlation", "lissajous", "loudness", "stft_cache",
+           "true_peak"]
 
 #: The subscription period a live view runs at, in milliseconds: ~30 fps,
 #: the GUI host's own.
@@ -518,14 +520,14 @@ class RecordingStream(_Subscription):
             (int(period_ms), int(base_bucket), *stream._takes), timeout, own)
         return stream
 
-    def peaks(self, take) -> "bytes | None":
-        """The peak cache of one take, or ``None`` when it is not in this
-        stream. The same bytes `clausters._native.peaks_cache` builds from
-        samples, so it goes wherever one of those goes -- written to a file a
+    def peaks(self, take) -> "Peaks | None":
+        """The peak pyramid of one take, or ``None`` when it is not in this
+        stream. The same cache `Peaks.build` makes from samples, so its
+        ``to_bytes()`` goes wherever one of those goes -- written to a file a
         ``waveform(cache=...)`` maps, or compared against one."""
         with self._lock:
             entry = self._takes.get(_bufnum_of(take))
-            return None if entry is None else entry["cache"]
+            return None if entry is None else Peaks(entry["cache"])
 
     def written(self, take) -> int:
         """How far one take has been reported, in frames -- the end of the last
@@ -582,15 +584,112 @@ class RecordingStream(_Subscription):
 # shared core: the same names and the same shapes as the web client's
 # `clausters/data`.
 
-from ._native import correlation, lissajous, true_peak  # noqa: E402
+class Peaks:
+    """**A built peak pyramid** over one interleaved sample buffer: the
+    summary a waveform is drawn from, as the bytes every client reads.
+
+    The reduction is the shared core's, and so is the cache format: the bytes
+    are the ones the GUI host maps and the web client writes, so a cache built
+    here and one built there are the same. **The cache is data; the picture is
+    the host's**: what this answers is **what it is** -- how long, how many
+    channels, at what bucket, how many levels -- never what it says, since
+    reading a cell or picking a level for a zoom is drawing.
+
+    ```python
+    samples = buffer.get_samples()
+    peaks = Peaks.build(samples, channels=buffer.channels)
+    data = peaks.to_bytes()          # the cache every client reads
+    ```
+    """
+
+    __slots__ = ("_bytes", "_info")
+
+    def __init__(self, cache: bytes):
+        info = _native.peaks_info(cache)
+        if info is None:
+            raise ValueError("not a peak cache")
+        self._bytes = bytes(cache)
+        self._info = info
+
+    @classmethod
+    def build(cls, samples, *, channels: int = 1, base_bucket: int = 256) -> "Peaks":
+        """Reduces ``samples`` (interleaved, ``channels`` of them). Each bucket
+        of level 0 summarizes ``base_bucket`` frames, and each level above
+        halves the resolution."""
+        return cls(_native.peaks_cache(samples, base_bucket=base_bucket, channels=channels))
+
+    @classmethod
+    def empty(cls, frames: int, *, channels: int = 1, base_bucket: int = 256) -> "Peaks":
+        """An **empty** pyramid over ``frames`` frames -- the picture of a take
+        that has been allocated and not yet recorded into, ready to be filled
+        by `write_buckets` as the reports arrive. It is not `build` over a
+        buffer of zeros: that would allocate the take to summarize samples
+        nobody wrote."""
+        return cls(_native.peaks_cache_empty(int(frames), channels, base_bucket))
+
+    @classmethod
+    def from_bytes(cls, cache: bytes) -> "Peaks | None":
+        """Reads back a serialized cache -- one written here, or the file the
+        GUI host maps and the web client writes. ``None`` when the bytes are
+        not a cache."""
+        return cls(cache) if _native.peaks_info(cache) is not None else None
+
+    def write_buckets(self, start_frame: int, bucket: int, stats) -> bool:
+        """Folds a ``/buffer_stream.reply`` report into this pyramid: the
+        overview of what was written, which the writer measured, put where it
+        belongs and the levels above it rebuilt. ``stats`` is the reply's blob
+        as it arrived, or the floats read from it -- **bucket-major and
+        channel-minor**: for each bucket of ``bucket`` frames, for each
+        channel, ``min``, ``max`` and mean square.
+
+        Returns ``False``, changing nothing, when the report is on another
+        grid than this cache: another bucket size, a start off a bucket
+        boundary, or a run that does not fit."""
+        if isinstance(stats, (bytes, bytearray, memoryview)):
+            stats = blob_to_samples(bytes(stats))
+        try:
+            self._bytes = _native.peaks_cache_write_buckets(
+                self._bytes, int(start_frame), int(bucket), stats)
+        except ValueError:
+            return False
+        return True
+
+    def to_bytes(self) -> bytes:
+        """This cache's bytes, in the format every client reads."""
+        return self._bytes
+
+    @property
+    def frames(self) -> int:
+        """Samples per channel -- the length a view of this cache spans."""
+        return self._info[0]
+
+    @property
+    def channels(self) -> int:
+        return self._info[1]
+
+    @property
+    def base_bucket(self) -> int:
+        """Frames a bucket of level 0 summarizes: what to subscribe with, so
+        reports fold in."""
+        return self._info[2]
+
+    @property
+    def num_levels(self) -> int:
+        return self._info[3]
+
+    def __repr__(self) -> str:
+        return (f"<Peaks: {self.frames} frames, {self.channels} channels, "
+                f"bucket {self.base_bucket}, {self.num_levels} levels>")
+
+
+from ._native import correlation, lissajous, stft_cache, true_peak  # noqa: E402
 from .ipc import loudness  # noqa: E402
 
 
 def channel_stats(samples, channels: int, channel: int) -> list:
     """``[peak, rms]`` of one channel of an interleaved buffer, measured by
-    the shared core so the numbers match the server's. (`clausters.ipc`'s
-    `channel_stats` answers every channel at once.)"""
-    from .ipc import channel_stats as every_channel
+    the shared core so the numbers match the server's."""
+    from .ipc import _stats_per_channel as every_channel
 
     if not 0 <= channel < channels:
         raise ValueError(f"channel {channel} of {channels}")

@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 97
+CORE_ABI_VERSION = 98
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -672,6 +672,11 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_float),
         ctypes.c_size_t,
+    ]
+    lib.clausters_core_peaks_info.restype = ctypes.c_bool
+    lib.clausters_core_peaks_info.argtypes = [
+        ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_uint64),
     ]
     # Stereo-field measurements (ABI v7): the correlation and Lissajous/goniometer
     # geometry the GUI phasescope reads, shared so a headless capture matches it.
@@ -4227,6 +4232,19 @@ def peaks_cache_empty(frames: int, channels: int = 1, base_bucket: int = 256) ->
     return bytes(out)
 
 
+def peaks_info(cache: bytes) -> "tuple[int, int, int, int] | None":
+    """What a peak cache is: ``(frames, channels, base_bucket, levels)``, read
+    from its bytes by the shared core, or ``None`` when the bytes are not one
+    (`clausters_core_peaks_info`)."""
+    if not cache:
+        return None
+    buf = (ctypes.c_ubyte * len(cache)).from_buffer_copy(cache)
+    out = (ctypes.c_uint64 * 4)()
+    if not lib().clausters_core_peaks_info(buf, len(cache), out):
+        return None
+    return int(out[0]), int(out[1]), int(out[2]), int(out[3])
+
+
 def peaks_cache_write_buckets(cache: bytes, start_frame: int, bucket: int, stats) -> bytes:
     """Folds a run of **already-summarized buckets** into a peak cache,
     returning the new bytes -- the receiving half of ``/buffer_stream``, which
@@ -4282,7 +4300,7 @@ def true_peak(samples, channels: int = 1, channel: int = 0) -> float:
     it, by up to about 3 dB, and every converter sees that peak. The filter is
     the one ITU-R BS.1770-4 Annex 2 specifies, at 4*, which is what makes a
     reading dBTP -- so this is the number a delivery specification means when it
-    asks for one. It is never below the peak `clausters.ipc.channel_stats`
+    asks for one. It is never below the peak `clausters.data.channel_stats`
     reports, and the two together are the whole of "did this clip": one says
     what the samples reached, this says what the signal did between them."""
     a, _ = _as_array(samples)

@@ -73,7 +73,7 @@ import { main } from "../../base/main.ts";
 import { Moment } from "../../base/moment.ts";
 import { LogicalTimebase, SampleClockTimebase } from "../../base/timebase.ts";
 import type { Timebase } from "../../base/timebase.ts";
-import { sampleClockFor } from "../clocksync.ts";
+import { sampleClockOf } from "../clocksync.ts";
 import type { ServerSampleClock } from "../clocksync.ts";
 import type { TempoClock } from "../../base/clock.ts";
 import { CurveEmitter } from "../../seq/curves.ts";
@@ -1663,9 +1663,12 @@ export class Server {
                 "an offline server has no sample clock: its clocks are on a LogicalTimebase",
             );
         }
-        if (this.clock !== null) return this.clock.timebase();
-        const clock = await sampleClockFor(this, options);
-        if (clock === null) {
+        const { warmup = true, anchors = 5, gap = 0.05, trackEvery = 0.5 } = options;
+        let clock: ServerSampleClock;
+        try {
+            clock = await this.sampleClock({ timeout: options.timeout });
+        } catch (error) {
+            if (!(error instanceof ReplyTimeout)) throw error;
             throw new Error(
                 "no server answered the sample clock (no /clock_query reply). A clock's "
                 + "timebase is fixed when it is made, so it cannot fall back to wall-clock "
@@ -1673,8 +1676,32 @@ export class Server {
                 + "timebase: new MonotonicTimebase()",
             );
         }
-        this.clock = clock;
+        if (!clock.tracking) {
+            if (warmup) await clock.warmup(anchors, gap);
+            clock.track(trackEvery);
+        }
         return clock.timebase();
+    }
+
+    /**
+     * **This server's** sample-clock reader: an `EmbedSampleClock` when the
+     * engine is in this page (it reads the counter directly -- no socket, no
+     * round trips), otherwise a `WsSampleClock` tracking it over the
+     * connection. Its `timebase()` is what a clock is made on to schedule on
+     * the server's own axis; {@link Server.sampleTimebase} is that, warmed up
+     * and tracking.
+     *
+     * **One reader per server, built on the first call and returned by every
+     * one after it.** There is a single sample counter to model, so a second
+     * model of it is not a second opinion -- it is another carrier, another
+     * loop re-anchoring the same number, and another warmup. It belongs to the
+     * server and is released by {@link Server.close}; `timeout` and `window`
+     * configure the reader the **first** call builds. It rejects when no
+     * server answers `/clock_query`.
+     */
+    async sampleClock(options: { timeout?: number; window?: number } = {}): Promise<ServerSampleClock> {
+        if (this.clock === null) this.clock = await sampleClockOf(this, options);
+        return this.clock;
     }
 
     /**
@@ -1695,15 +1722,6 @@ export class Server {
      * {@link Server.releaseSampleClock}.
      */
     private clock: ServerSampleClock | null = null;
-
-    /**
-     * The drift the sample-clock model has measured, in parts per million, or
-     * `null` when this server is not being tracked (the in-page carrier needs
-     * no model -- it shares the page's audio clock).
-     */
-    get clockDriftPpm(): number | null {
-        return this.clock?.driftPpm ?? null;
-    }
 
     /**
      * Frees every node on the server, leaving it running and empty

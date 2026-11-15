@@ -451,7 +451,7 @@ back = interleave(left, right)       # the inverse
 import { channels, interleave } from "clausters/render";
 
 const [left, right] = channels(stats.samples!, stats.channels);
-channel(stats, 0);                   // the same thing, one channel
+stats.channel(0);                    // the same thing, one channel
 const back = interleave(left, right); // the inverse
 ```
 

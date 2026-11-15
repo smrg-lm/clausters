@@ -111,29 +111,62 @@ export interface RenderOptions {
 }
 
 /** What a render did -- the one thing every render resolves with. */
-export interface RenderStats {
+export class RenderStats {
     /** Frames produced (per channel). */
-    frames: number;
+    readonly frames: number;
     /** Interleaved channel count. */
-    channels: number;
-    sampleRate: number;
+    readonly channels: number;
+    readonly sampleRate: number;
     /** Score events the render ran; 0 for a file read back. */
-    events: number;
-    /** Length in seconds. */
-    duration: number;
+    readonly events: number;
     /** Peak magnitude per channel, in channel order. */
-    peak: number[];
+    readonly peak: number[];
     /** RMS per channel, in channel order. */
-    rms: number[];
+    readonly rms: number[];
     /**
      * The seed this take started from. Unless you asked for one you got a
      * fresh one, so **this is how you get a take back**.
      */
-    seed: bigint;
+    readonly seed: bigint;
     /** The file the take was written to, or `null` when it was kept in memory. */
-    path: string | null;
+    readonly path: string | null;
     /** The audio, interleaved -- `null` when a `path` sent it to a file instead. */
-    samples: Float32Array | null;
+    readonly samples: Float32Array | null;
+
+    constructor(fields: {
+        frames: number;
+        channels: number;
+        sampleRate: number;
+        events: number;
+        peak: number[];
+        rms: number[];
+        seed: bigint;
+        path: string | null;
+        samples: Float32Array | null;
+    }) {
+        this.frames = fields.frames;
+        this.channels = fields.channels;
+        this.sampleRate = fields.sampleRate;
+        this.events = fields.events;
+        this.peak = fields.peak;
+        this.rms = fields.rms;
+        this.seed = fields.seed;
+        this.path = fields.path;
+        this.samples = fields.samples;
+    }
+
+    /** Length in seconds. */
+    get duration(): number {
+        return this.sampleRate > 0 ? this.frames / this.sampleRate : 0;
+    }
+
+    /** Channel `index` on its own, deinterleaved (see {@link channels}). */
+    channel(index: number): Float32Array {
+        const samples = samplesOf(this);
+        const out = new Float32Array(this.frames);
+        for (let i = 0; i < this.frames; i++) out[i] = samples[i * this.channels + index]!;
+        return out;
+    }
 }
 
 /** A finished render's samples, or why there are none. */
@@ -179,15 +212,6 @@ export function interleave(...chans: ArrayLike<number>[]): Float32Array {
     return out;
 }
 
-/** One channel of a finished render, deinterleaved. */
-export function channel(stats: RenderStats, index: number): Float32Array {
-    const out = new Float32Array(stats.frames);
-    for (let i = 0; i < stats.frames; i++) {
-        out[i] = samplesOf(stats)[i * stats.channels + index]!;
-    }
-    return out;
-}
-
 /**
  * Renders a binary score -- the bytes a `OscNrtInterface` accumulated -- and
  * measures what came out.
@@ -212,18 +236,17 @@ export async function renderScore(
             sampleFormat,
         });
         consoleRenderLog(written.log);
-        return {
+        return new RenderStats({
             frames: written.frames,
             channels,
             sampleRate,
             events: written.events,
-            duration: sampleRate > 0 ? written.frames / sampleRate : 0,
             peak: written.peak,
             rms: written.rms,
             seed: written.seed,
             path,
             samples: null,
-        };
+        });
     }
     const { samples, seed: used, events } = await renderScoreBytes(score, sampleRate, channels, seed);
     const frames = channels > 0 ? Math.floor(samples.length / channels) : 0;
@@ -234,18 +257,17 @@ export async function renderScore(
         peak.push(p);
         rms.push(r);
     }
-    return {
+    return new RenderStats({
         frames,
         channels,
         sampleRate,
         events,
-        duration: sampleRate > 0 ? frames / sampleRate : 0,
         peak,
         rms,
         seed: used,
         path: null,
         samples,
-    };
+    });
 }
 
 /** What `render` takes on top of the render's own settings. */

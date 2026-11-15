@@ -177,8 +177,16 @@ export class NotesEditor extends SequenceHandler {
      * `"contents"`, where the last note ends, or a beat, an **end marker**.
      */
     async setEnd(end: End): Promise<void> {
+        this.#end = end;
         await this.act("end", { end });
     }
+
+    /** Where a pass ends, as {@link NotesEditor.setEnd} last set it. */
+    async end(): Promise<End> {
+        return this.#end;
+    }
+
+    #end: End = null;
 
     /**
      * **Play the sequence** from `beat` -- or from the position cursor, or the

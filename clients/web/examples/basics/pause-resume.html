@@ -58,8 +58,9 @@ paused: it is still there.</div>
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, SoundFile, Synth, SynthDef, channels, opfs, play,
+        Buffer, Routine, Server, Session, SoundFile, Synth, SynthDef, opfs, play,
       } from "../../dist/index.js";
+      import { channels } from "../../dist/render.js";
       import { control, out, sine } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);

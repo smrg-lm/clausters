@@ -76,7 +76,7 @@ sc = server.sample_clock()                  # a tracker on its own socket
 sc.warmup(); sc.track()                      # seed and keep the model fresh
 clock = TempoClock(tempo=2.0, timebase=sc.timebase())   # what sample_timebase does, with a handle
 
-print("rate:", sc.rate, "Hz | drift:", f"{sc.model.drift_ppm():.1f} ppm")
+print("rate:", sc.rate, "Hz | drift:", f"{sc.drift_ppm:.1f} ppm")
 before = sc.now()                            # the server's sample counter, now
 clock.run(3.0)                               # play something for 3 seconds
 after = sc.now()
@@ -84,8 +84,8 @@ print(f"counter advanced {after - before} samples = {(after - before) / sc.rate:
 ```
 
 ```ts
-const sc = (await sampleClockFor(server, { warmup: true }))!;   // seeded with a warmup
-sc.track();                                                  // keep the model fresh
+const sc = await server.sampleClock();                       // a tracker on its own carrier
+await sc.warmup(); sc.track();                                // seed and keep the model fresh
 const clock = new TempoClock(2.0, { timebase: sc.timebase() });   // what sampleTimebase does, with a handle
 
 console.log("rate:", sc.rate, "Hz | drift:", `${sc.driftPpm?.toFixed(1)} ppm`);
@@ -95,7 +95,7 @@ const after = sc.now();
 console.log(`counter advanced ${after - before} samples = ${((after - before) / sc.rate).toFixed(3)} s`);
 ```
 
-`sc.now()` is the server's real sample counter (the model is fit from live round trips, not guessed), `sc.rate` is its measured sample rate, and {{alt `sc.model.drift_ppm()` || `sc.driftPpm`}} is the actual measured difference between the two clocks. To verify the lock: the advance should match the `3.0` seconds you ran the clock to within the tracker's small uncertainty, and the drift should be a handful of ppm, not hundreds. (The server can also print the exact sample of each scheduled event at trace level — enable it with {{alt `server.request("/server_verbosity", "clausters::osc=trace", expect=("/done",))` || `await server.request("/server_verbosity", ["clausters::osc=trace"], { expect: ["/done"] })`}} and read the server's own terminal — but the client-side reading above needs nothing but {{alt Python || the client}}.)
+`sc.now()` is the server's real sample counter (the model is fit from live round trips, not guessed), `sc.rate` is its measured sample rate, and {{alt `sc.drift_ppm` || `sc.driftPpm`}} is the actual measured difference between the two clocks. To verify the lock: the advance should match the `3.0` seconds you ran the clock to within the tracker's small uncertainty, and the drift should be a handful of ppm, not hundreds. (The server can also print the exact sample of each scheduled event at trace level — enable it with {{alt `server.request("/server_verbosity", "clausters::osc=trace", expect=("/done",))` || `await server.request("/server_verbosity", ["clausters::osc=trace"], { expect: ["/done"] })`}} and read the server's own terminal — but the client-side reading above needs nothing but {{alt Python || the client}}.)
 
 `{{api Server.sample_timebase}}()` is the same in one call when you do not need the tracker handle; it {{alt raises || throws}} if no master answers.
 

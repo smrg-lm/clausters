@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define CORE_ABI_VERSION 97
+#define CORE_ABI_VERSION 98
 
 #define SHM_INVALID -1
 
@@ -264,6 +264,8 @@ size_t clausters_core_peaks_multi_write_buckets(uint8_t *cache,
                                                 size_t bucket,
                                                 const float *stats,
                                                 size_t n);
+
+bool clausters_core_peaks_info(const uint8_t *cache, size_t cache_len, uint64_t *out);
 
 int32_t clausters_core_correlation(const float *left, const float *right, size_t n, float *out);
 

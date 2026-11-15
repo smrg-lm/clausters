@@ -331,8 +331,8 @@ spaces kept apart by arithmetic are two spaces that eventually overlap.
 | `clausters_core_stft_cache_size` | — | `idiom` — C sizes the buffer, then fills it; wasm returns the bytes |
 | — | `JsPyramid.from_bytes` | `idiom` — the two sides consume a cache differently: through the C ABI the pyramid is a byte blob whoever mapped it reads, while wasm keeps it as an object. The readers below are that object's face, and they answer **what the cache is** — never what it says: reading a cell, picking a level for a zoom or laying a row of columns is drawing, which is the GUI host's on both sides |
 | — | `JsPyramid.to_bytes` | `idiom` — as above |
-| — | `JsPyramid.frames` | `idiom` — as above |
-| — | `JsPyramid.channels` | `idiom` — as above |
+| `clausters_core_peaks_info` | `JsPyramid.frames` | both — **what a cache is**: its frames, channels, base bucket and levels. C reads all four from the bytes at once, into the four slots the caller gives it; wasm answers each as a getter of the object it holds. It is what lets both clients' `Peaks` answer the same four questions |
+| — | `JsPyramid.channels` | `idiom` — the second of the four facts `clausters_core_peaks_info` reads at once |
 | — | `JsPyramid.base_bucket` | `idiom` — as above |
 | — | `JsPyramid.num_levels` | `idiom` — as above |
 
@@ -722,9 +722,10 @@ Python property that reads becomes a method, a property that writes becomes a
 - the roll and the score editor (`NotesEditor`, `ScoreEditor`), handlers of
   applications the GUI host holds, where every read and every verb that edits
   is a call through the host's application door: Python `editor.grid = 1.0`,
-  `editor.value = (1, 8)`, `editor.articulation("stacc")`; TypeScript
-  `await editor.setGrid(1)`, `await editor.setValue([1, 8])`,
-  `await editor.articulation("stacc")`. A window's verb by name (`split`,
+  `editor.value = (1, 8)`, `editor.end`, `editor.end = "contents"`,
+  `editor.articulation("stacc")`; TypeScript `await editor.setGrid(1)`,
+  `await editor.setValue([1, 8])`, `await editor.end()`,
+  `await editor.setEnd("contents")`, `await editor.articulation("stacc")`. A window's verb by name (`split`,
   `select_left`) only asks, and answers at once in both. While a window has it,
   a Python `EventSequence` or `Score` reads the window's at each read, and a
   TypeScript one answers from a copy the page holds, brought to the window's

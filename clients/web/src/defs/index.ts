@@ -12,6 +12,7 @@
 // queries, the subscriptions).
 
 export { DefPatch, GraphPatch, synthdefPorts } from "./patch.ts";
+export { Window } from "./window.ts";
 export type {
     PatchBox,
     BoxKind,
@@ -66,7 +67,7 @@ export {
     DEFAULT_TRANSPORTS,
 } from "./server/index.ts";
 
-export { EmbedSampleClock, WsSampleClock, sampleClockFor } from "./clocksync.ts";
+export { EmbedSampleClock, WsSampleClock } from "./clocksync.ts";
 export type { Anchor, ServerSampleClock } from "./clocksync.ts";
 
 export { AddAction, Group, Node, NodeIdAllocator, ROOT_NODE_ID, Synth, Voices } from "./node.ts";

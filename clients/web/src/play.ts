@@ -62,6 +62,7 @@ import { EventPattern, Pattern } from "./seq/pattern.ts";
 import { Timeline } from "./seq/timeline.ts";
 import { EventSequence } from "./seq/sequence.ts";
 import type { PlayDestination } from "./seq/timeline.ts";
+import type { Transport } from "./defs/server/transport.ts";
 
 /** Anything `play` knows how to start. */
 export type Playable =
@@ -112,6 +113,19 @@ export interface PlayOptions {
  * (`stop()`), and for a sequence a promise of the `Transport` it plays on
  * (`stop()`, `wait()`).
  */
+export function play(playable: EventPattern, options?: PlayOptions): EventStreamPlayer;
+export function play(playable: Pattern<unknown>, options?: PlayOptions): never;
+export function play(
+    playable: Stream | Generator<number | undefined, unknown, unknown>
+        | (() => Generator<number | undefined, unknown, unknown>),
+    options?: PlayOptions,
+): Stream;
+export function play(playable: SynthDef | FaustDef | GraphDef | Expr, options?: PlayOptions): Node;
+export function play(playable: EventSequence, options?: PlayOptions): Promise<Transport>;
+export function play(playable: Timeline, options?: PlayOptions): Timeline;
+export function play(playable: Buffer, options?: PlayOptions): Synth;
+export function play(playable: Event | Record<string, unknown>, options?: PlayOptions): Event;
+export function play(playable: Playable, options?: PlayOptions): unknown;
 export function play(playable: Playable, options: PlayOptions = {}): unknown {
     const { server, clock, quant, controls } = options;
 

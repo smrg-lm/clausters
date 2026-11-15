@@ -31,13 +31,12 @@ import {
     Peaks,
     stftCache,
     correlation,
-    decodeSamples,
-    deinterleave,
-    interleave,
     lissajous,
     loudness,
     truePeak,
 } from "../src/data/index.ts";
+import { decodeSamples } from "../src/data/taps.ts";
+import { deinterleave, interleave } from "../src/data/samples.ts";
 
 await loadCore();
 

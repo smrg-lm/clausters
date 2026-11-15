@@ -42,6 +42,7 @@
         Bus, Buffer, Synth, SynthDef, data,
       } from "../dist/index.js";
       import { control, out, outCtl, sine } from "../dist/defs/index.js";
+      import { channels } from "../dist/render.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -124,7 +125,7 @@
         // the first inverted, and that is what the stereo field reads back.
         const pair = taps.interleaved(audioBus.index, 2);
         if (pair.length === 0) throw new Error("the second tap never arrived");
-        const [left, right] = data.deinterleave(pair, 2);
+        const [left, right] = channels(pair, 2);
         const r = data.correlation(left, right);
         if (r === undefined || Math.abs(r + 1) > 1e-3) {
           throw new Error(`an inverted pair correlates ${r}, not -1`);

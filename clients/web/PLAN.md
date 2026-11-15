@@ -196,16 +196,19 @@ finished work, where a pending item reads as done.
   runs of the case in a row pass locally. The entry stays open on the same
   terms: the next timeout's output names the step.
 
-- ⬜ **The sample-clock tracker is reached differently from Python's**
-  *(found 2026-11-15, writing the shared Timing models chapter for `W35`)*.
-  Python asks the server for it, `server.sample_clock()`, and reads the
-  measured drift off its model, `sc.model.drift_ppm()`; the web client has a
-  free function, `sampleClockFor(server)`, that warms the model up by
-  default, and a `driftPpm` property on the tracker. The chapter writes both
-  as they are (`names.toml` spells one as the other) and its two blocks are
-  not yet the same calls. The port takes Python's shape: a
-  `Server.sampleClock()` method and the same reading of the drift, or the
-  reference changes too, decided once for both.
+- ⬜ **A page's host reads a `path` or a `cache` only as a URL** *(found
+  2026-11-15, bringing the measurement surface to one shape)*. The browser
+  front resolves a widget's `path`/`cache` by fetching it against the page
+  origin (`crates/clausters-gui/src/host/web/bulk.rs`, whose header still says
+  the browser has no filesystem), so a file a page wrote to its own storage
+  (OPFS) cannot be drawn from by name, and the web client has none of the
+  Python client's file writers for those props (`samples_to_file`,
+  `peaks_cache_file`, `peaks_cache_update_file`, `peaks_cache_stream_file` in
+  `clausters.gui.guidef`). A page has a filesystem: the host's browser front
+  reads a path that is not a URL from OPFS, as its file commands already do
+  (`host/web/files.rs`), and the web client's `guidef` gains the four writers
+  over the same core calls, so the GUI chapter's Python-only paragraph about
+  them is one text.
 
 - ⬜ **The web client reads no configuration file** *(found 2026-11-15, the
   same chapter)*. Python's `[client].clock` (and the rest of its
@@ -222,19 +225,6 @@ finished work, where a pending item reads as done.
   carries no native binary, but those three verbs are client calls a node
   program could make: the port decides whether they become a `bin` of the
   package or stay the Python client's, and says so in both books.
-
-- ⬜ **The render and analysis surface is shaped differently in each client**
-  *(found 2026-11-15, writing the shared verbs and data chapters for
-  `W35`)*. One channel of a render is `stats.channel(i)` in Python and
-  `channel(stats, i)` in the web client. The measurements live in
-  `clausters.ipc` and in the private `clausters._native` in Python
-  (`correlation`, `lissajous`, which the Python book imports from the private
-  module) and in `data` in the web client, and `channel_stats`/`true_peak`
-  answer every channel in Python and one in the web client. The peak pyramid
-  is a `data.Peaks` class in the web client and bytes from
-  `_native.peaks_cache` in Python; `peaks_cache_stream_file` and the FFT
-  `Window` enum are Python's alone, the second private. One shape per
-  function, in a public module of each, decided once for both.
 
 - ⬜ **Calls whose arguments are shaped differently** *(found 2026-11-15,
   writing the shared chapters' examples for `W35`)*. `Automation` takes
@@ -260,24 +250,6 @@ finished work, where a pending item reads as done.
   waiting and relies on the server running the two in order. The shared
   chapter states each; which one is the behaviour, and whether the other
   client needs an awaitable form, is to decide.
-
-
-- ⬜ **A notes editor's pass end is not readable in the web client**
-  *(found 2026-11-15, unifying the shared document chapter)*. Python's
-  `NotesEditor.end` is a property, read and set; the web client has
-  `setEnd(end)` and nothing that reads it back, so the shared chapter names
-  the setter in the web book. A read (`end()`) brings the two to one surface.
-
-- ⬜ **Return types that lose what a call gives back** *(found 2026-11-15,
-  compiling the web book's TypeScript blocks)*. A reader who copies a book
-  example into a typed page gets a compiler error the example does not have
-  at run time: `play(x)` is typed `unknown`, so `play(sig).free()` does not
-  compile; `mix()` returns a `Channel` and `midSide()` a `ChannelList`, and a
-  `Channel` is `SynthLeaf | number`, so `mix(bank).mul(0.1)` does not either.
-  The values are right; the types say less than the call knows. Overloads
-  (or a narrower `Channel` where no number can come out) bring them to what
-  the call returns; `clients/docs/ts_blocks.toml` lists each such error, and
-  an entry there goes when its type is fixed.
 
 - ⬜ **A module's names differ between the clients** *(found 2026-11-15,
   when the web package's subpaths were made the Python package's modules)*.

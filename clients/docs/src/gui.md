@@ -77,7 +77,7 @@ const win = await v.open();
 ```
 
 A window appears. Four things about that tree are worth noticing before
-anything else.<!-- web --> And one that is only the page's: the builders take **one options object in camelCase**, and the children come after it — `textSize` becomes `text_size` on the wire, `baseBucket` becomes `base_bucket`; inside an `axes` pair the keys are the wire's own (`{{wire sample_rate}}`, `sel_start`), since that object goes through untouched. Both emit the same JSON the Python builders emit, vector for vector.<!-- /web -->
+anything else.<!-- web --> And one that is only the page's: the builders take **one options object in camelCase**, and the children come after it — `textSize` becomes `text_size` on the wire, `baseBucket` becomes the wire's base_bucket; inside an `axes` pair the keys are the wire's own (`{{wire sample_rate}}`, `sel_start`), since that object goes through untouched. Both emit the same JSON the Python builders emit, vector for vector.<!-- /web -->
 
 **A view with no parent is a window.** There is one container, `view`, not a
 window type and a panel type: nested in another view it is a panel, and at the

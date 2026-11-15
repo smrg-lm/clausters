@@ -12,7 +12,7 @@ example shows both halves of it:
   straight segments a renderer would otherwise invent -- and marks every peak
   that leaves full scale, with how far past it the loudest one went. The dots
   are still the data: the curve passes exactly through them;
-- **measured**: ``ipc.true_peak`` reports the same fact as a number, through the
+- **measured**: ``data.true_peak`` reports the same fact as a number, through the
   shared core, with the filter ITU-R BS.1770-4 Annex 2 specifies -- so the figure
   printed here is the one a delivery specification means when it asks for dBTP,
   and ``-1 dBTP`` is the ceiling those specifications name.
@@ -43,7 +43,7 @@ import math
 import sys
 from array import array
 
-from clausters import Session, ipc
+from clausters import Session, data
 from clausters.defs import Buffer
 from clausters.gui import view, waveform
 
@@ -108,8 +108,8 @@ server.sync()
 
 # %%
 def report(name: str, samples: array) -> None:
-    (sample_peak,), _ = ipc.channel_stats(samples, 1)
-    (peak,) = ipc.true_peak(samples, 1)
+    [sample_peak, _] = data.channel_stats(samples, 1, 0)
+    peak = data.true_peak(samples, 1, 0)
     db = lambda a: 20 * math.log10(a) if a > 0 else float("-inf")
     print(f"{name:>6}: samples {db(sample_peak):+6.2f} dBFS | "
           f"signal {db(peak):+6.2f} dBTP")

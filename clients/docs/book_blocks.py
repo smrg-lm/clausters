@@ -18,8 +18,9 @@ without declaring is declared for it:
   it from, so it is checked with its real type -- a class always, a namespace
   (`gui`, `notation`) unless it is a word the books also use as a variable
   (`seq`, `data`, `multitrack`), a function only where every use is a call;
-- a variable an earlier block of the same section made with `new Cls(...)` is
-  declared as a `Cls`;
+- a variable an earlier block made with `new Cls(...)` is declared as a
+  `Cls`: from any section of the page when the page makes it once, and from
+  the same section when it makes the name more than once;
 - anything else is `any`, which checks nothing but stops nothing either.
 
 What is left is what a reader who copies the block into a page that has the
@@ -55,6 +56,7 @@ PYRIGHT = "pyright@1.1.414"
 
 FENCE = re.compile(r"^(\s*)```(ts|typescript|js|javascript)\s*$")
 NEW = re.compile(r"^(?:export )?(?:const|let) (\w+)\s*=\s*(?:await )?new ([A-Z]\w*)\(", re.M)
+DECLARED = re.compile(r"^(?:export )?(?:const|let) (\w+)\s*=", re.M)
 ERROR = re.compile(r"^(b\d+\.ts)\((\d+),(\d+)\): error (TS\d+): (.*)$")
 UNDECLARED = {"TS2304", "TS2552", "TS18004"}
 # Words the books use for a variable that the package also exports as a
@@ -78,11 +80,16 @@ def blocks():
             pages.append((p, text))
     for path, text in pages:
         lines = text.split("\n")
+        # A name the page makes once is the same thing in every section; one
+        # it makes more than once is only inherited inside a section.
+        counts = {}
+        for n in DECLARED.finditer(text):
+            counts[n.group(1)] = counts.get(n.group(1), 0) + 1
         made = {}
         i = 0
         while i < len(lines):
             if lines[i].startswith("## "):
-                made = {}
+                made = {k: v for k, v in made.items() if counts.get(k) == 1}
             m = FENCE.match(lines[i])
             if m:
                 indent, start = len(m.group(1)), i + 1
@@ -91,6 +98,10 @@ def blocks():
                     end += 1
                 code = "\n".join(line[indent:] for line in lines[start:end])
                 yield os.path.relpath(path, os.path.dirname(HERE)), start + 1, code, dict(made)
+                # A name made again any other way is no longer the class an
+                # earlier block made it as.
+                for n in DECLARED.finditer(code):
+                    made.pop(n.group(1), None)
                 for n in NEW.finditer(code):
                     made[n.group(1)] = n.group(2)
                 i = end
@@ -124,7 +135,7 @@ def declares(code: str, name: str) -> bool:
     n = re.escape(name)
     return re.search(rf"\b(const|let|var|function|class)\s+{n}\b"
                      rf"|\bimport\s*\{{[^}}]*\b{n}\b[^}}]*\}}"
-                     rf"|\b(const|let|var)\s*[{{[][^=]*\b{n}\b", code) is not None
+                     rf"|\b(const|let|var)\s*[{{[][^=\]}}]*\b{n}\b[^=\]}}]*[\]}}]", code) is not None
 
 
 def tsconfig(root: str, include: str) -> None:
@@ -319,8 +330,11 @@ def check_web() -> int:
             head = []
             for cls in re.findall(r"^//needs (\w+)$", body, re.M):
                 spec = importable(cls, "", names)
-                body = body.replace(f"//needs {cls}",
-                                    f'import {{ {cls} }} from "{spec}";' if spec else "")
+                # The block may import the class itself.
+                imported = re.search(rf"^import\b[^;]*\b{cls}\b", body, re.M)
+                body = re.sub(rf"^//needs {cls}$",
+                              f'import {{ {cls} }} from "{spec}";'
+                              if spec and not imported else "", body, count=1, flags=re.M)
             for g in SHADOWED:
                 if re.search(rf"(?<![\w.$]){g}\b", body) and not declares(body, g):
                     head += declare(names, {g}, body)

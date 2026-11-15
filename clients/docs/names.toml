@@ -4,7 +4,6 @@
 # writes it; the value is the web client's. shared_book.py reads it.
 
 [web]
-"Server.sample_clock" = "sampleClockFor"
 "oscn" = "oscN"
 # The GUI builders' size limits keep the wire's own spelling.
 "max_w" = "max_w"

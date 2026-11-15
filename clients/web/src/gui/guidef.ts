@@ -3767,7 +3767,7 @@ export type OscMarkSpec = readonly (number | readonly [number] | readonly [numbe
  * quads, shapes truncated to ints), tuples become `t, v, shape, curve` with
  * the shape resolved like an `Env` curve spec (linear by default).
  */
-export function flatPoints(points: PointSpec): number[] {
+function flatPoints(points: PointSpec): number[] {
     const list = [...points];
     if (list.length === 0) return [];
     if (typeof list[0] === "number") {
@@ -3791,7 +3791,7 @@ export function flatPoints(points: PointSpec): number[] {
  * channel` (the canonical form the host reads for both the `pianoroll` and a
  * `clip`'s roll). A missing velocity defaults to 100, a missing channel to 0.
  */
-export function flatNotes(notes: NoteSpec): number[] {
+function flatNotes(notes: NoteSpec): number[] {
     const out: number[] = [];
     for (const note of notes) {
         out.push(
@@ -3806,7 +3806,7 @@ export function flatNotes(notes: NoteSpec): number[] {
 }
 
 /** A patcher's `cords` as the flat `[fromBox, outlet, toBox, inlet, ...]` ints. */
-export function flatCords(cords: readonly number[]): number[] {
+function flatCords(cords: readonly number[]): number[] {
     return cords.map((n) => Math.trunc(n));
 }
 
@@ -4006,7 +4006,7 @@ export function pageJson(displayList: Page): Record<string, unknown> {
 }
 
 /** A `markers` argument as the flat `time, label, color` triples the host reads. */
-export function flatMarkers(markers: MarkerSpec): (number | string)[] {
+function flatMarkers(markers: MarkerSpec): (number | string)[] {
     const out: (number | string)[] = [];
     for (const marker of markers) {
         if (typeof marker === "number") out.push(marker, "", "");
@@ -4022,7 +4022,7 @@ export function flatMarkers(markers: MarkerSpec): (number | string)[] {
 }
 
 /** An `osc` argument as the flat `time, label` pairs the host reads. */
-export function flatOsc(marks: OscMarkSpec): (number | string)[] {
+function flatOsc(marks: OscMarkSpec): (number | string)[] {
     const out: (number | string)[] = [];
     for (const mark of marks) {
         if (typeof mark === "number") out.push(mark, "");
