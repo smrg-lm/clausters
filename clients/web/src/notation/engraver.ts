@@ -19,7 +19,7 @@ import {
 } from "../core/clausters_core_web.js";
 import { Toolkit } from "./_verovio.ts";
 import { readFileAt, writeFileAt } from "../base/files.ts";
-import { Editing } from "../history.ts";
+import { Editing } from "../document/history.ts";
 import { fromNotes, sheetFromEvents, toSequence } from "./mei.ts";
 import type { Placed, PlaybackOptions, ReadOptions } from "./mei.ts";
 import { TRANSCRIPTION_KEYS, toMei } from "./sheet.ts";

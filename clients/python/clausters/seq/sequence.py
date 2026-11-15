@@ -365,7 +365,7 @@ class EventSequence:
         A sequence with a history -- one an editor is open on, or one a script
         asked for `history` -- takes the change as a turn of it: recorded, and
         every view over the sequence told. One with none just changes."""
-        from ..history import ATTR
+        from ..document._history import ATTR
         from .playback import NotesPlayback
 
         window = self._window()
@@ -423,13 +423,13 @@ class EventSequence:
 
     @property
     def history(self):
-        """**The sequence's history** (`clausters.history.UndoHistory`): the undo
+        """**The sequence's history** (`clausters.document.UndoHistory`): the undo
         order its editors share, made on first ask. From then on every change
         made through the sequence's objects is an entry of it, and a turn the
         windows over the sequence see; ``with seq.history("humanize"):`` makes
         everything inside it one entry. While a window of the GUI host's has
         the sequence it is that window's history, which its Ctrl+Z walks."""
-        from ..history import UndoHistory
+        from ..document import UndoHistory
 
         window = self._window()
         if window is not None:

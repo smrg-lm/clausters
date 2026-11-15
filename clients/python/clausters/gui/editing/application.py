@@ -9,7 +9,7 @@ editor that owns it is an editor that has to be copied whole the moment a second
 one wants to share a window set.
 
 So this is the other half of the split the subpackage already makes between an
-editor and the `clausters.gui.editing.Editing` context. The context is what the
+editor and the `clausters.document.Editing` context. The context is what the
 **data** owns -- its history, its version, the views to tell. An application is
 what the **screen** owns -- the host, the id space, the loop. What is left in
 between is what an editor genuinely is: a structure bound to a
@@ -46,7 +46,7 @@ a script writes changes.
 import weakref
 
 from ..ids import CAPACITY, GuiIdAllocator
-from ...history import FIRST_VERSION, Editing
+from ...document._history import FIRST_VERSION, Editing
 from .trace import log
 
 #: The base a host-less draw counts widget ids from. Above the hand-picked range
@@ -90,7 +90,7 @@ class Application:
     """One window set: its host, its widget ids, its acknowledgement, its loop.
 
     Args:
-        context: the `clausters.gui.editing.Editing` this application's undo
+        context: the `clausters.document.Editing` this application's undo
             order runs in. ``None`` -- the ordinary case -- reads it off the
             editors registered here, so an application over one structure has
             that structure's context without being told.

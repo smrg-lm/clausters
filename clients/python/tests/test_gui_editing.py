@@ -10,8 +10,8 @@ data at all.
 
 import pytest
 
-from clausters.gui.editing import (Application, Domain, Echo, Editing,
-                                   Editor, View)
+from clausters.document import Editing
+from clausters.gui.editing import Application, Domain, Echo, Editor, View
 from clausters.gui.ids import GuiIdAllocator
 from clausters.defs.ugens import Bpf
 
@@ -185,7 +185,7 @@ class QueueHost(FakeHost):
 def test_the_generic_editor_imports_nothing_from_the_arrangement():
     # The whole point of the split, and the one thing a test can check outright:
     # the four collaborators and the editor reach no arrangement module.
-    import clausters.history as context
+    import clausters.document._history as context
     import clausters.gui.editing.domain as domain
     import clausters.gui.editing.echo as echo
     import clausters.gui.editing.editor as editor

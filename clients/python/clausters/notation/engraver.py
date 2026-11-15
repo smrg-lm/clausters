@@ -60,7 +60,7 @@ class Score:
     freed when this object is.
 
     **The undo order is the editing context's**, like every other editable
-    structure's. A score registers in `clausters.gui.editing.Editing.of(score)`
+    structure's. A score registers in `clausters.document.Editing.of(score)`
     under the ``"score"`` vocabulary and records each edit as the MEI it
     produced, with the previous one as its inverse -- an absolute payload, so a
     step is idempotent and carries no direction. That is what makes a window
@@ -166,7 +166,7 @@ class Score:
         structure in one order; attaching makes the score a participant, which
         is what lets an undo made in a *neighbouring* window step it too.
         """
-        from ..history import Editing
+        from ..document import Editing
 
         context = Editing.of(self)
         context.attach(self)
@@ -208,7 +208,7 @@ class Score:
     def project(self, structure, payload) -> bool:
         """Put one payload of a history step back onto this score.
 
-        What `clausters.gui.editing.Editing.carry` asks of whatever was
+        What `clausters.document.Editing.carry` asks of whatever was
         registered for a structure -- a `clausters.gui.editing.Domain` for an
         editor, and this for a page, which is a **state** rather than a payload
         in a vocabulary.

@@ -19,7 +19,7 @@ import { NotesPlayback as CorePlayback, StepRunner } from "../core/clausters_cor
 import type { Server } from "../defs/server/index.ts";
 import type { Transport, TransportDriver } from "../defs/server/transport.ts";
 import { runSteps } from "../steps.ts";
-import { contexts } from "../history.ts";
+import { contexts } from "../document/history.ts";
 import type { EventSequence } from "./sequence.ts";
 
 /** What the playback asks of a roll over the sequence it plays. */

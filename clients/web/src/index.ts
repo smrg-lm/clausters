@@ -186,7 +186,6 @@ export { Event, rest } from "./seq/event.ts";
 export { Timeline } from "./seq/timeline.ts";
 export { EventSequence, SeqAutomation, SeqEvent, SeqEvents } from "./seq/sequence.ts";
 export type { Writing } from "./seq/sequence.ts";
-export { UndoHistory } from "./history.ts";
 export * as data from "./data/index.ts";
 // A client's id spaces on a server: the type `Server.ids` answers with.
 export { IdSpaces, loadCore } from "./base/core.ts";

@@ -108,6 +108,7 @@ from .._native import (MULTITRACK, EVENTS, POINTS, SAMPLES, TREE, Document,
 from .._native import document_apply as apply_intent
 from .._native import document_resolve as resolve_selection
 from ._format import FIRST_VERSION, SESSION_APPLICATION, SESSION_FORMAT
+from ._history import Editing, UndoHistory
 from ._multitrack import (Automation, Content, Curves, Fade, Marker, Markers,
                           Multitrack, Region, Regions, TakeLane, TakeLanes, Track,
                           Tracks)
@@ -125,6 +126,7 @@ __all__ = [
     "SAMPLES",
     "TREE",
     "Document",
+    "Editing",
     "History",
     "Log",
     "apply_intent",
@@ -154,4 +156,5 @@ __all__ = [
     "Track",
     "Tracks",
     "TrackView",
+    "UndoHistory",
 ]

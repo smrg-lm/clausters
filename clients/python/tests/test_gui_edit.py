@@ -14,7 +14,8 @@ import pytest
 from clausters import TempoMap
 
 from clausters.gui import edit
-from clausters.gui.editing import (AudioEditor, Editing, Marking, NotesEditor,
+from clausters.document import Editing
+from clausters.gui.editing import (AudioEditor, Marking, NotesEditor,
                                    PointsEditor)
 from clausters.seq import EventSequence, Timeline
 from clausters.defs.ugens import Bpf, Env
@@ -389,7 +390,7 @@ def test_two_editors_over_one_structure_share_one_stack():
 
 
 def test_a_sequence_nobody_asked_a_history_of_records_nothing():
-    from clausters.history import ATTR
+    from clausters.document._history import ATTR
 
     seq = EventSequence([(0.0, Event(midinote=60, dur=1.0))])
     seq.events[0].at = 2.0

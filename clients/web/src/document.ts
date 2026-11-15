@@ -1202,6 +1202,18 @@ export class Log {
 }
 
 export { FIRST_VERSION, SESSION_APPLICATION, SESSION_FORMAT } from "./document/format.ts";
+export { Editing, UndoHistory } from "./document/history.ts";
+export type {
+    Adopting,
+    Applier,
+    Effect,
+    Freed,
+    RecordingLeg,
+    ScriptStructure,
+    StepHandler,
+    Stepped,
+    Turned,
+} from "./document/history.ts";
 export type { Extra } from "./document/format.ts";
 export {
     Automation,

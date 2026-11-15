@@ -41,9 +41,9 @@
  * @module
  */
 
-import { EditingCore } from "./core/clausters_core_web.js";
-import type { EventSequence } from "./seq/sequence.ts";
-import type { Score } from "./notation/engraver.ts";
+import { EditingCore } from "../core/clausters_core_web.js";
+import type { EventSequence } from "../seq/sequence.ts";
+import type { Score } from "../notation/engraver.ts";
 
 /**
  * **What a history asks of a structure a page changes** -- a sequence, a
@@ -66,9 +66,10 @@ export interface ScriptStructure {
  * what an edit means by *unstated* when it names the state it was made against
  * -- the same reservation the GUI host's sequence numbers make.
  *
- * It is the same number as `form/document.ts`'s `FIRST_VERSION` and deliberately
- * not the same symbol: that one is what a **file** says its version is, this one
- * is what an editing context counts from.
+ * It is the same number as the format's `FIRST_VERSION` (`./format.ts`) and
+ * deliberately not the same symbol: that one is what a **file** says its version
+ * is, this one is what an editing context counts from, so the door does not
+ * export it.
  */
 export const FIRST_VERSION = 1;
 
@@ -96,13 +97,13 @@ export interface StepHandler extends Applier {
 
 /**
  * What a context needs of a view: something with a window it can bring back in
- * step. {@link Editor} is the one that implements it.
+ * step. The generic editor (`Editor`) is the one that implements it.
  */
 export interface Adopting {
     /**
      * Another view of this structure edited it: bring this window in step.
      *
-     * It carries nothing: what {@link Editor.adopt} does is already props, one
+     * It carries nothing: what the editor's `adopt` does is already props, one
      * correction per widget and never a redefine.
      */
     adopt(): void;

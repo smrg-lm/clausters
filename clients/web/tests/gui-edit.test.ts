@@ -15,8 +15,9 @@ import { TempoMap } from "../src/base/time.ts";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
+import { Editing } from "../src/document.ts";
 import {
-    AudioEditor, Domain, Editing, Editor, Marking, NotesEditor, PointsEditor,
+    AudioEditor, Domain, Editor, Marking, NotesEditor, PointsEditor,
     View, edit, watch,
 } from "../src/gui/editing/index.ts";
 import { unwatch } from "../src/base/log.ts";
@@ -383,7 +384,7 @@ test("edit takes the ambient server's rate", async () => {
 
 
 test("a sequence nobody asked a history of records nothing", async () => {
-    const { contexts } = await import("../src/history.ts");
+    const { contexts } = await import("../src/document/history.ts");
     const seq = new EventSequence([[0.0, new Event({ midinote: 60, dur: 1.0 })]]);
     seq.events.item(0).at = 2.0;
     seq.events.add(3.0, { midinote: 62 });

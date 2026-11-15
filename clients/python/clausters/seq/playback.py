@@ -250,7 +250,7 @@ class NotesPlayback:
     def rolls(self) -> list:
         """The rolls open over the sequence: the views of its history that
         draw a span."""
-        from ..history import ATTR
+        from ..document._history import ATTR
 
         context = getattr(self.sequence, ATTR, None)
         return [view for view in ([] if context is None else context.views())

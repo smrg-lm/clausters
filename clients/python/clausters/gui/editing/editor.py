@@ -6,7 +6,7 @@ that possible is that it performs almost nothing itself: it opens a window
 through a `clausters.gui.editing.View`, turns a gesture into a payload through a
 `clausters.gui.editing.Domain`, answers the host through the
 `clausters.gui.editing.Application` it draws in, and records what happened in
-the `clausters.gui.editing.Editing` context the **data** owns rather than one of
+the `clausters.document.Editing` context the **data** owns rather than one of
 its own.
 
 So the boundaries are:
@@ -37,7 +37,7 @@ import json
 
 from ... import _native
 from .application import BASE_ID, Application
-from ...history import Editing
+from ...document import Editing
 from .echo import Echo
 from .window_verbs import WindowVerbs
 from .trace import log
@@ -527,7 +527,7 @@ class Editor(WindowVerbs):
             # was a *view*, so closing a box entered from a multitrack left an entry
             # nobody could apply and the whole pile blocked behind it. The
             # applier is the structure's vocabulary now
-            # (`clausters.gui.editing.Editing.identity`), which no window owns.
+            # (`clausters.document.Editing.identity`), which no window owns.
             if not stepped and self.app.refusal is not None:
                 self._reason = self.app.refusal
             self._acknowledge(seq, reason=self._reason)
@@ -967,7 +967,7 @@ class Editor(WindowVerbs):
         """Close this editor's window (``/gui_free``) and stop listening.
 
         **The history is not closed with it.** An undo order belongs to the data
-        (`clausters.gui.editing.Editing.of`), so editing the same structure again
+        (`clausters.document.Editing.of`), so editing the same structure again
         resumes the same order -- closing a window is not an edit, and never was.
         """
         window, self._window = self._window, None

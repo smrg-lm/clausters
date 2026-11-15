@@ -24,7 +24,7 @@
  */
 
 import { POINTS } from "../../document.ts";
-import { keyOf } from "../../history.ts";
+import { keyOf } from "../../document/history.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import type { Answer } from "./echo.ts";

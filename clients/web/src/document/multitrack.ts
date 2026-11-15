@@ -16,7 +16,7 @@ import type { Curve as CurveSpec, PointsLike } from "../defs/ugens/env.ts";
 import { resolveServer } from "../defs/wire.ts";
 import { FIRST_VERSION, } from "./format.ts";
 import { requireCore } from "../base/core.ts";
-import { UndoHistory, contexts, keyOf } from "../history.ts";
+import { UndoHistory, contexts, keyOf } from "./history.ts";
 
 import { type Extra, num, unknownFields } from "./format.ts";
 import { Meter, Span, Tempo } from "./timeline.ts";

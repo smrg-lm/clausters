@@ -37,9 +37,9 @@ import { CAPACITY, GuiIdAllocator } from "../ids.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { GuiHost } from "../host.ts";
 import type { Server } from "../../defs/server/index.ts";
-import { Editing, FIRST_VERSION } from "../../history.ts";
-import type { Stepped } from "../../history.ts";
-import type { Adopting } from "../../history.ts";
+import { Editing, FIRST_VERSION } from "../../document/history.ts";
+import type { Stepped } from "../../document/history.ts";
+import type { Adopting } from "../../document/history.ts";
 import type { Echo } from "./echo.ts";
 import { log } from "./trace.ts";
 

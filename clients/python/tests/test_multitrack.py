@@ -557,6 +557,6 @@ def test_a_block_is_one_entry_undone_in_one_step():
 def test_a_multitrack_nobody_asked_a_history_of_records_nothing():
     multitrack, _, lane = one_lane()
     place(lane, 0.0, 2.0).position = 1.0
-    from clausters.history import ATTR
+    from clausters.document._history import ATTR
 
     assert getattr(multitrack, ATTR, None) is None

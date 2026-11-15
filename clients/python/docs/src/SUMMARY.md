@@ -34,7 +34,6 @@
   - [config](api/clausters.config.md)
   - [data](api/clausters.data.md)
   - [errors](api/clausters.errors.md)
-  - [history](api/clausters.history.md)
   - [ipc](api/clausters.ipc.md)
   - [launch](api/clausters.launch.md)
   - [log](api/clausters.log.md)

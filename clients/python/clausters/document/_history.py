@@ -42,7 +42,7 @@ a history is session state, never serialized, and it goes when the data goes.
 import weakref
 from contextlib import contextmanager
 
-from . import _native
+from .. import _native
 
 #: Where a structure's context is cached on it.
 ATTR = "_clausters_editing"
@@ -51,9 +51,10 @@ ATTR = "_clausters_editing"
 #: what an edit means by *unstated* when it names the state it was made
 #: against -- the same reservation the GUI host's sequence numbers make.
 #:
-#: It is the same number as `clausters.document.FIRST_VERSION` and
+#: It is the same number as the format's `FIRST_VERSION` (`_format`) and
 #: deliberately not the same symbol: that one is what a **file** says its
-#: version is, this one is what an editing context counts from.
+#: version is, this one is what an editing context counts from, so it stays
+#: private to this file.
 FIRST_VERSION = 1
 
 

@@ -231,7 +231,7 @@ class Automation:
     @property
     def _history_owner(self):
         """The structure that holds the curve -- a sequence, a multitrack --
-        whose history it shares (`clausters.history.Editing.of`), or ``None``
+        whose history it shares (`clausters.document.Editing.of`), or ``None``
         for a free value."""
         return None if self._holder is None else self._holder[0]
 
@@ -510,7 +510,7 @@ class _Held:
     @property
     def _history_owner(self):
         """The multitrack, whose history it shares
-        (`clausters.history.Editing.of`)."""
+        (`clausters.document.Editing.of`)."""
         return self._multitrack
 
 
@@ -1345,7 +1345,7 @@ class Multitrack:
         with a history of this script's -- one a script asked for `history`
         -- takes the change as a turn of it: recorded, and every view over it
         redrawn. One with none just changes."""
-        from ..history import ATTR
+        from ._history import ATTR
 
         window = self._window()
         context = getattr(self, ATTR, None)
@@ -1384,13 +1384,13 @@ class Multitrack:
 
     @property
     def history(self):
-        """**The multitrack's history** (`clausters.history.UndoHistory`): the
+        """**The multitrack's history** (`clausters.document.UndoHistory`): the
         undo order its editors share, made on first ask. From then on every
         change made through the multitrack's objects is an entry of it, and a
         turn the windows over it see; ``with mt.history("tidy"):`` makes
         everything inside it one entry. While the multitrack application has
         it open it is the window's history, which its Ctrl+Z walks."""
-        from ..history import UndoHistory
+        from ._history import UndoHistory
 
         window = self._window()
         if window is not None:

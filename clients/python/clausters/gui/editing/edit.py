@@ -32,7 +32,7 @@ it is: a view names its widgets by what they draw, so a second window of one
 role over one structure would ask for the same widgets as the first and draw
 on them. Views of different roles over one structure are separate windows and
 **one stack** -- a roll in hertz beside one in MIDI notes -- since the editing
-context is the data's (`clausters.gui.editing.Editing`), so an undo in either
+context is the data's (`clausters.document.Editing`), so an undo in either
 updates both. That is not a feature of this verb -- it is what asking the data
 for its history means, and `edit` inherits it for free.
 """
@@ -40,7 +40,7 @@ for its history means, and `edit` inherits it for free.
 from typing import overload
 
 from ...defs.node import Node
-from ...history import Editing
+from ...document import Editing
 from ...seq.timeline import Timeline
 from .controls import NodeEditor
 from .events import NotesEditor, is_events

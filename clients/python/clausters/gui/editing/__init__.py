@@ -24,7 +24,8 @@ whole design:
 - `Marking` -- what the hand marked: `selected`, `select` and `unselect`, for
   the editors whose operations act on it. A capability an editor takes, not a
   level of the hierarchy, so the points editor has none of it.
-- `Editing` -- the editing context: the history, the version, and the views to
+- The editing context it records in is the document's
+  (`clausters.document.Editing`): the history, the version, and the views to
   tell. An editor **asks for it and never builds one**, which is what makes two
   windows over one thing walk one undo order.
 - `trace` -- the path said out loud, at five points: an event routed, an entry
@@ -55,7 +56,6 @@ writes changes.
 
 from .application import BASE_ID, Application
 from .audio import AudioEditor, AudioTransport, reads_in_place
-from ...history import ATTR, FIRST_VERSION, Editing
 from .domain import Domain
 from .echo import Echo
 from .controls import NodeEditor
@@ -74,14 +74,11 @@ from .view import View
 __all__ = [
     "AudioEditor",
     "AudioTransport",
-    "ATTR",
     "Application",
     "BASE_ID",
     "Domain",
     "Echo",
-    "Editing",
     "Editor",
-    "FIRST_VERSION",
     "HostedEditor",
     "HostedTransport",
     "MEASURES",

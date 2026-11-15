@@ -13,7 +13,7 @@
  * - {@link Editor} -- the generic one. It edits **one structure** and imports
  *   nothing from the arrangement: it opens a window through its {@link View},
  *   turns a gesture into a payload through its {@link Domain}, answers the host
- *   through its {@link Echo}, and records in the {@link Editing} context the data
+ *   through its {@link Echo}, and records in the `Editing` context the data
  *   owns.
  * - {@link View} -- the `GuiDef` of one structure, and the registry from widget id
  *   to what it shows. The only per-domain thing on the graphic side.
@@ -27,9 +27,10 @@
  *   `unselect`, for the editors whose operations act on it. A capability an
  *   editor takes, not a level of the hierarchy, so the points editor has none
  *   of it.
- * - {@link Editing} -- the editing context: the history, the version, and the
- *   views to tell. An editor **asks for it and never builds one**, which is what
- *   makes two windows over one thing walk one undo order.
+ * - The editing context it records in is the document's (`Editing`, in
+ *   `clausters/document`): the history, the version, and the views to tell. An
+ *   editor **asks for it and never builds one**, which is what makes two windows
+ *   over one thing walk one undo order.
  * - `trace` -- the path said out loud, at five points: an event routed, an entry
  *   recorded, a step of the pile, a publish, an acknowledgement. Silent unless
  *   asked (`CLAUSTERS_LOG=gui.editing`, or {@link watch}), because what a window
@@ -62,11 +63,6 @@ export type {
 } from "./score.ts";
 export type { AudioEditorOptions, SpectrogramSettings } from "./audio.ts";
 export type { Drawing } from "./application.ts";
-export { Editing, FIRST_VERSION, contexts } from "../../history.ts";
-export type {
-    Adopting, Applier, Effect, Freed, RecordingLeg, ScriptStructure, StepHandler, Stepped,
-    Turned,
-} from "../../history.ts";
 export { Domain } from "./domain.ts";
 export { NodeEditor } from "./controls.ts";
 export { edit } from "./edit.ts";
