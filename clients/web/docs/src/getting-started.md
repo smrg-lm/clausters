@@ -12,6 +12,8 @@ That is the whole install: the tarball carries the emitted modules, their type d
 
 The pages below are served straight off the file system with no build step, so they import `./dist/index.js` by path. Through a bundler the same imports are written `from "clausters"`; nothing else in them changes. A layer imported by path — `./dist/defs/index.js`, and likewise `seq/`, `gui/`, `data/` — is `from "clausters/defs"` there.
 
+The package also carries what [clausters-editor](https://github.com/smrg-lm/clausters/tree/main/clausters-editor), the editor with an interactive session (Python on the desktop, JavaScript as a page), reads from it: this book and the server's, as Markdown, which its documentation viewer shows offline (the API reference included, so its search and its help on a name, `Ctrl+D`, reach them), and the hook its interrupt key calls, `Ctrl+.`, which panics every session not closed yet, as the Python client's does. Neither needs the editor, and neither loads unless the editor asks.
+
 ### From a checkout instead
 
 Building it yourself is only needed to work *on* the client. Two tools once, both user-space (the full recipes are in `clients/web/BUILD.md`): **node** (an LTS under `~/.local`) and the Rust wasm toolchain — `rustup target add wasm32-unknown-unknown` plus `wasm-bindgen-cli` at the version the lockfiles pin.

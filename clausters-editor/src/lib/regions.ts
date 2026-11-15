@@ -67,9 +67,10 @@ export function contiguousBlock(state: EditorState): Region | null {
   return { from: statements[first].from, to: statements[last].to };
 }
 
-/** A cell marker, as VS Code and Jupyter write them in a script: `# %%`, optionally
+/** A cell marker, as VS Code and Jupyter write them in a script: a comment
+ *  starting with `%%` -- `# %%` in Python, `// %%` in JavaScript -- optionally
  *  followed by a title (`# %% Setup`) or a kind (`# %% [markdown]`). */
-export const isCellMarker = (text: string) => /^#\s*%%/.test(text);
+export const isCellMarker = (text: string) => /^(#|\/\/)\s*%%/.test(text);
 
 /** The line numbers of the document's cell markers. */
 export function markerLines(state: EditorState): number[] {

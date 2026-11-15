@@ -31,6 +31,10 @@ package does too. ``CLAUSTERS_SKIP_DOCS=1`` builds without the books, and
 
 ``clausters._book`` is how an installed package names the folders; the
 ``clausters_editor.docs`` entry points point at it.
+
+The web client's package stages the same two books for the same editor
+(``clients/web/tools/stage_books.py``), with `stage_book` and `server_stage`
+from here: one staging, two packages.
 """
 
 import os
@@ -161,10 +165,11 @@ def server_page(text: str, pages: "list[str]", listed: "list[str]") -> str:
     return _LINK.sub(repoint, text)
 
 
-def server_stage() -> bool:
-    """Copy the user's parts of the server's book into the package. Returns
-    whether it was staged: outside the repository (an sdist) there is none."""
-    shutil.rmtree(SERVER_OUT, ignore_errors=True)
+def server_stage(out: str = SERVER_OUT) -> bool:
+    """Copy the user's parts of the server's book into ``out`` (the package's
+    by default). Returns whether it was staged: outside the repository (an
+    sdist) there is none."""
+    shutil.rmtree(out, ignore_errors=True)
     summary_path = os.path.join(SERVER_SRC, "SUMMARY.md")
     if not os.path.exists(summary_path):
         import build_native
@@ -177,18 +182,64 @@ def server_stage() -> bool:
         return False
     with open(summary_path, encoding="utf-8") as f:
         summary, pages, listed = server_summary(f.read())
-    os.makedirs(SERVER_OUT)
-    with open(os.path.join(SERVER_OUT, "SUMMARY.md"), "w", encoding="utf-8") as f:
+    os.makedirs(out)
+    with open(os.path.join(out, "SUMMARY.md"), "w", encoding="utf-8") as f:
         f.write(summary)
     for page in pages:
         with open(os.path.join(SERVER_SRC, page), encoding="utf-8") as f:
             text = f.read()
-        out = os.path.join(SERVER_OUT, page)
-        os.makedirs(os.path.dirname(out), exist_ok=True)
-        with open(out, "w", encoding="utf-8") as f:
+        path = os.path.join(out, page)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
             f.write(server_page(text, pages, listed))
-    print(f"clausters: staged the server's book ({len(pages)} pages) into clausters/_server_docs/")
+    print(f"clausters: staged the server's book ({len(pages)} pages) into {os.path.relpath(out)}/")
     return True
+
+
+def stage_book(src: str, out: str, title: str, cuts: "dict[str, tuple[str, ...]]", url: str,
+               link=None) -> int:
+    """Copy a client's book from ``src`` (an mdBook's ``src/``, its API pages
+    already generated) into ``out``: every page as it is, but the sections
+    ``cuts`` names, page by page, and each link into one of them pointing at
+    ``url``, where the book is published; ``SUMMARY.md`` headed by ``title``.
+    ``link(text, page)`` rewrites each hand-written page (not the API's), if
+    given. Returns how many pages were staged."""
+    shutil.rmtree(out, ignore_errors=True)
+    shutil.copytree(src, out, ignore=shutil.ignore_patterns("SUMMARY.md"))
+    if link is not None:
+        for root, dirs, files in os.walk(out):
+            dirs[:] = [d for d in dirs if os.path.join(root, d) != os.path.join(out, "api")]
+            for name in files:
+                if name.endswith(".md"):
+                    path = os.path.join(root, name)
+                    rel = os.path.relpath(path, out).replace(os.sep, "/")
+                    with open(path, encoding="utf-8") as f:
+                        text = f.read()
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(link(text, rel))
+    anchors = {}
+    for page, headings in cuts.items():
+        path = os.path.join(out, page)
+        with open(path, encoding="utf-8") as f:
+            text, anchors[page] = cut(f.read(), headings)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    for root, _, files in os.walk(out):
+        for name in files:
+            if name.endswith(".md"):
+                path = os.path.join(root, name)
+                with open(path, encoding="utf-8") as f:
+                    text = original = f.read()
+                for page, cut_anchors in anchors.items():
+                    text = repoint_sections(text, page, cut_anchors, url)
+                if text != original:
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(text)
+    with open(os.path.join(src, "SUMMARY.md"), encoding="utf-8") as f:
+        summary = f.read()
+    with open(os.path.join(out, "SUMMARY.md"), "w", encoding="utf-8") as f:
+        f.write(retitle(summary, title))
+    return sum(len([n for n in files if n.endswith(".md")]) for _, _, files in os.walk(out)) - 1
 
 
 def stage() -> bool:
@@ -209,45 +260,11 @@ def stage() -> bool:
             "pydoc-markdown` -- or set CLAUSTERS_SKIP_DOCS=1 to build without the "
             "offline book."
         )
-    shutil.rmtree(OUT, ignore_errors=True)
-    shutil.copytree(SRC, OUT, ignore=shutil.ignore_patterns("SUMMARY.md"))
     sys.path.insert(0, os.path.join(HERE, "docs"))
     import api_links
 
     linker = api_links.load()
-    for root, dirs, files in os.walk(OUT):
-        dirs[:] = [d for d in dirs if os.path.join(root, d) != os.path.join(OUT, "api")]
-        for name in files:
-            if name.endswith(".md"):
-                path = os.path.join(root, name)
-                rel = os.path.relpath(path, OUT).replace(os.sep, "/")
-                with open(path, encoding="utf-8") as f:
-                    text = f.read()
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(linker.link(text, rel))
-    anchors = {}
-    for page, headings in CUT.items():
-        path = os.path.join(OUT, page)
-        with open(path, encoding="utf-8") as f:
-            text, anchors[page] = cut(f.read(), headings)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text)
-    for root, _, files in os.walk(OUT):
-        for name in files:
-            if name.endswith(".md"):
-                path = os.path.join(root, name)
-                with open(path, encoding="utf-8") as f:
-                    text = original = f.read()
-                for page, cut_anchors in anchors.items():
-                    text = repoint_sections(text, page, cut_anchors, URL)
-                if text != original:
-                    with open(path, "w", encoding="utf-8") as f:
-                        f.write(text)
-    with open(os.path.join(SRC, "SUMMARY.md"), encoding="utf-8") as f:
-        summary = f.read()
-    with open(os.path.join(OUT, "SUMMARY.md"), "w", encoding="utf-8") as f:
-        f.write(retitle(summary, TITLE))
-    count = sum(len([n for n in files if n.endswith(".md")]) for _, _, files in os.walk(OUT)) - 1
+    count = stage_book(SRC, OUT, TITLE, CUT, URL, linker.link)
     print(f"clausters: staged the offline book ({count} pages) into clausters/_docs/")
     server_stage()
     return True

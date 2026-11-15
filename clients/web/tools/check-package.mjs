@@ -73,6 +73,13 @@ const required = [
     // The clock's tick worker: loaded by URL into a scope of its own, so it is
     // never reached through the module graph a package check would follow.
     "dist/base/tick-worker.js",
+    // What clausters-editor reads, named in the package.json's
+    // "clausters-editor" field: the interrupt key's hook and the two books,
+    // as Markdown, which tools/stage_books.py stages and build.sh only *notes*
+    // the absence of when TypeDoc is not installed.
+    "dist/editor.js",
+    "dist/books/client/SUMMARY.md",
+    "dist/books/server/SUMMARY.md",
     // The licence travels with the code.
     "COPYING",
     "README.md",
@@ -83,7 +90,9 @@ for (const path of required) {
             ? "run third_party/build-" +
               (path.includes("/faust/") ? "faust" : "verovio") +
               "-wasm.sh, then ./build.sh"
-            : "run ./build.sh";
+            : path.startsWith("dist/books/")
+              ? "install TypeDoc (docs/build.sh says how), then ./build.sh"
+              : "run ./build.sh";
         problems.push(`missing from the package: ${path} (${how})`);
     }
 }

@@ -2,7 +2,7 @@
   // The in-app menu bar (shadcn's Menubar), themed like everything else.
   // Shortcuts are handled in App.svelte; here they are only shown.
   import { onMount } from "svelte";
-  import { homeDir } from "@tauri-apps/api/path";
+  import { host } from "$host";
   import * as Menubar from "$lib/components/ui/menubar";
   import {
     THEMES,
@@ -16,6 +16,7 @@
     zoom,
     type ThemePref,
   } from "./settings.svelte";
+  import { LANGS, LANG_IDS, type Lang } from "./languages";
 
   export interface MenuActions {
     newFile(): void;
@@ -30,6 +31,8 @@
     moveTab(): void;
     interrupt(): void;
     restart(): void;
+    /** The document on screen is code of this language, and so are new files. */
+    chooseLanguage(lang: Lang): void;
     clearPost(): void;
     openDocs(): void;
     searchDocs(): void;
@@ -38,7 +41,8 @@
     chooseDocsFolder(): void;
   }
 
-  let { actions: a }: { actions: MenuActions } = $props();
+  /** `lang`: the language of the document on screen, whose session the menu reaches. */
+  let { actions: a, lang }: { actions: MenuActions; lang: Lang } = $props();
 
   const split = $derived([...settings.layout.left, ...settings.layout.right].includes("editor-2"));
 
@@ -50,7 +54,7 @@
   let home = $state("");
   onMount(async () => {
     try {
-      home = (await homeDir()).replace(/[\\/]$/, "");
+      home = (await host.homeDir()).replace(/[\\/]$/, "");
     } catch {} // outside Tauri
   });
   const folderOf = (path: string) => {
@@ -113,7 +117,21 @@
       <Menubar.Separator />
       {@render item("Interrupt", a.interrupt, "Ctrl+.")}
       {@render item("Restart Session", a.restart)}
-      {@render item("Python Environments...", a.environments)}
+      {#if host.environments}
+        {@render item(`${LANGS[lang].label} Environments...`, a.environments)}
+      {/if}
+      {#if LANG_IDS.length > 1}
+      <Menubar.Sub>
+        <Menubar.SubTrigger>Language</Menubar.SubTrigger>
+        <Menubar.SubContent>
+          <Menubar.RadioGroup value={lang} onValueChange={(v) => a.chooseLanguage(v as Lang)}>
+            {#each LANG_IDS as id (id)}
+              <Menubar.RadioItem value={id}>{LANGS[id].label}</Menubar.RadioItem>
+            {/each}
+          </Menubar.RadioGroup>
+        </Menubar.SubContent>
+      </Menubar.Sub>
+      {/if}
       <Menubar.Separator />
       {@render item("Clear Post Window", a.clearPost, "Ctrl+Shift+P")}
     </Menubar.Content>
@@ -160,7 +178,7 @@
     <Menubar.Content>
       {@render item("Documentation", a.openDocs, "F1")}
       {@render item("Search the Documentation", a.searchDocs, "Ctrl+Shift+F")}
-      {@render item("Documentation Folder...", a.chooseDocsFolder)}
+      {#if host.docsFolder}{@render item("Documentation Folder...", a.chooseDocsFolder)}{/if}
     </Menubar.Content>
   </Menubar.Menu>
 </Menubar.Root>

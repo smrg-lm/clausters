@@ -1,10 +1,12 @@
 // Which region each shortcut evaluates: src/lib/regions.ts over an editor
-// state with the Python language, as the editor holds one.
+// state with the Python language, as the editor holds one, and with the
+// JavaScript one where the two read differently.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { python } from "@codemirror/lang-python";
+import { javascript } from "@codemirror/lang-javascript";
 import {
   cellAt,
   contiguousBlock,
@@ -16,12 +18,12 @@ import {
 } from "../src/lib/regions.ts";
 
 /** A document with the cursor where `|` is (the bar removed). */
-function at(text: string): EditorState {
+function at(text: string, language = python()): EditorState {
   const pos = text.indexOf("|");
   return EditorState.create({
     doc: text.replace("|", ""),
     selection: EditorSelection.cursor(pos),
-    extensions: [python()],
+    extensions: [language],
   });
 }
 
@@ -59,6 +61,16 @@ test("a cell marker is a comment that starts with %%, with or without a title", 
   assert.ok(isCellMarker("# %% [markdown]"));
   assert.ok(!isCellMarker("x = 1  # %%"));
   assert.ok(!isCellMarker("# % not a cell"));
+  assert.ok(isCellMarker("// %% Setup"));
+  assert.ok(isCellMarker("//%%"));
+  assert.ok(!isCellMarker("x = 1 // %%"));
+});
+
+test("in JavaScript, the top-level statement and the cell are read the same way", () => {
+  const s = at("const a = 1;\nfunction f(x) {\n  return |x;\n}\nf(a);\n", javascript());
+  assert.equal(slice(s, topLevelBlock(s)), "function f(x) {\n  return x;\n}");
+  const c = at("// %% one\nconst a = 1;\n\n// %% two\nconst |b = 2;\nb * a\n", javascript());
+  assert.equal(slice(c, cellAt(c, markerLines(c))), "const b = 2;\nb * a");
 });
 
 test("the cell under the cursor, without the blank lines at its edges", () => {

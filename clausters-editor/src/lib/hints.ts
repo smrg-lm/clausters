@@ -1,6 +1,8 @@
 // Documentation in the editor from the live session: a tooltip on hover (signature
-// and docstring) and the parameters of the call being typed. Both are Jedi's answers
-// (see driver.py), which read the text and the session's objects together.
+// and docstring) and the parameters of the call being typed. Both are the
+// driver's answers: Jedi's in Python (driver.py), which reads the text and the
+// session's objects together, the TypeScript language service's in JavaScript
+// (driver.mjs).
 
 import { StateEffect, StateField, type Extension } from "@codemirror/state";
 import {
@@ -14,11 +16,11 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { codeAt, inStringOrComment, posOf } from "./code";
-import type { CodeAt, PyInfo, PySignature } from "./session.svelte";
+import type { CodeAt, NameInfo, Signature } from "./session.svelte";
 
 export interface HintSources {
-  inspect(at: CodeAt): Promise<PyInfo | null>;
-  signatures(at: CodeAt): Promise<PySignature[]>;
+  inspect(at: CodeAt): Promise<NameInfo | null>;
+  signatures(at: CodeAt): Promise<Signature[]>;
 }
 
 // The same look as shadcn's popovers; `!` because CodeMirror's theme also styles
@@ -34,7 +36,7 @@ function el(tag: string, cls: string, text?: string) {
   return e;
 }
 
-function renderInfo(info: PyInfo): HTMLElement {
+function renderInfo(info: NameInfo): HTMLElement {
   const dom = el("div", BOX);
   const head = el("div", "flex items-baseline gap-2");
   head.append(el("code", "font-mono font-medium", info.signature || info.name));
@@ -44,7 +46,7 @@ function renderInfo(info: PyInfo): HTMLElement {
   return dom;
 }
 
-function renderSignature(sig: PySignature): HTMLElement {
+function renderSignature(sig: Signature): HTMLElement {
   const dom = el("div", BOX);
   const code = el("code", "font-mono");
   code.append(sig.name + "(");
@@ -139,7 +141,7 @@ function signaturePlugin(src: HintSources) {
   );
 }
 
-export function pythonHints(src: HintSources): Extension {
+export function sessionHints(src: HintSources): Extension {
   const plugin = signaturePlugin(src);
   return [
     // In the body, not inside the editor: the panel holding it would clip the tooltips.

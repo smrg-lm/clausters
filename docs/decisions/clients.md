@@ -605,3 +605,55 @@ a port, and the worker opens `Session.live(port)` over it.
   alternative, and was not taken: it would move the drawing off the page
   that shows it, and a page that places a window would have nothing to
   place.
+
+## clausters-editor runs as a page, its JavaScript session in a worker (2026-11-15)
+
+The editor's frontend builds twice: the desktop application, whose Rust side
+runs the Python session, and a page, whose session is JavaScript in a worker
+on the clausters web client's engine. Running JavaScript natively under
+Node.js was tried first and set aside: the web client under Node.js has no
+engine of its own (an AudioWorklet is a page's), so sound meant an npm
+package per platform carrying what the wheel carries, and live MIDI and the
+shared-memory buses would still have been missing there. A page has the
+engine, the GUI host and a filesystem already.
+
+- **One frontend, a host per build.** Everything the editor asks of the
+  program it runs in -- files, sessions, configuration, the window -- goes
+  through `$host` (`src/lib/host.ts`), with the desktop's command and event
+  names, so a component asks the same thing of both. The desktop's host maps
+  the per-language commands onto the Rust side's Python ones, which did not
+  change; the page's answers them itself. Which languages a build runs is its
+  host's to say: Python on the desktop, JavaScript in the page. Python in a
+  page (Pyodide or another) is a decision of its own, not taken: the Python
+  client is not pure Python, so it would be a third port of the client.
+- **The page's files are its own storage**, OPFS only: created in the editor,
+  uploaded into it and downloaded out of it from its file dialog. A folder of
+  the disk would have needed `showDirectoryPicker`, which Firefox does not
+  have.
+- **The session is a worker; the engine and the GUI host stay the page's.**
+  The worker reaches them through links (`ClaustersServer.link`,
+  `ClaustersGui.link`), which its code finds as `editor.engine` and
+  `editor.gui` and the default startup code opens a session over. So the
+  interrupt key can do what a page otherwise cannot: an evaluation that
+  awaits is stopped in place and the packages' interrupt hooks run, as on the
+  desktop, and code stuck in a loop -- which no message reaches -- gets its
+  worker terminated and a new one started, with the page silencing what it
+  left sounding. The names are lost in the second case, and the post window
+  says so.
+- **The evaluation rules are the Node.js driver's**: a script, not a module,
+  in the worker's global scope, its top-level `const`, `let` and `class`
+  rewritten to `var` by acorn, `import` and top-level `await` rewritten to an
+  async body. Imports resolve to the packages the page serves, by their
+  manifests' `exports`, and to the page's own files.
+- **The code intelligence is the TypeScript language service, in a worker of
+  its own**, reading the document, a worker's library and the declarations of
+  the packages the page serves, synchronously over HTTP, which a worker may.
+- **Both clients declare the same two things.** The web client's package
+  names an interrupt hook (`src/editor.ts`) that is the Python one in the
+  other language: it panics every session not closed yet and the default one,
+  over the same private set of open sessions the Python client keeps (a
+  `WeakRef` per session, since a JavaScript `WeakSet` cannot be walked). Its
+  package carries its book and the server's as Markdown in `dist/books/`,
+  staged by the Python package's own staging (`build_docs.stage_book`,
+  `server_stage`), so the page's documentation viewer shows them beside the
+  editor's, as the desktop's shows the wheel's.

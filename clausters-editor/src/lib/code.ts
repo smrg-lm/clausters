@@ -4,7 +4,7 @@ import type { EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import type { CodeAt } from "./session.svelte";
 
-/** The editor's text and a position in it, as Jedi reads them. */
+/** The editor's text and a position in it, as the code intelligence reads them. */
 export function codeAt(state: EditorState, pos: number): CodeAt {
   const line = state.doc.lineAt(pos);
   return { source: state.doc.toString(), line: line.number, column: pos - line.from };

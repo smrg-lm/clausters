@@ -1,7 +1,9 @@
 <script lang="ts">
-  // The app's virtual environments: create (installing the configured source), choose the
-  // session's one, reinstall the package and delete. pip's output goes to the post window.
-  import { invoke } from "@tauri-apps/api/core";
+  // A language's environments: create (installing the configured source), choose the
+  // session's one, reinstall the package and delete. Python's are virtual
+  // environments, JavaScript's folders of npm packages; pip's or npm's output
+  // goes to the post window.
+  import { host } from "$host";
   import * as Dialog from "$lib/components/ui/dialog";
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
@@ -11,6 +13,7 @@
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import { confirm } from "./ConfirmDialog.svelte";
   import { info } from "./session.svelte";
+  import { LANGS, type Lang } from "./languages";
 
   interface EnvInfo {
     name: string;
@@ -20,6 +23,8 @@
   }
 
   let open = $state(false);
+  let lang = $state<Lang>("python");
+  const L = $derived(LANGS[lang]);
   let envs = $state<EnvInfo[]>([]);
   let source = $state("");
   let newName = $state("");
@@ -39,10 +44,13 @@
   });
 
   async function refresh() {
-    envs = await invoke<EnvInfo[]>("list_envs");
+    envs = await host.invoke<EnvInfo[]>("list_envs", { lang });
   }
 
-  export async function show() {
+  /** Opens the dialog on `l`'s environments. */
+  export async function show(l: Lang) {
+    if (l !== lang) envs = [];
+    lang = l;
     open = true;
     error = null;
     await refresh().catch((e) => info(`${e}\n`));
@@ -68,16 +76,16 @@
     const name = newName.trim();
     if (!name || nameError) return;
     task(`Creating "${name}"... (progress in the post window)`, async () => {
-      await invoke("create_env", { name, source });
+      await host.invoke("create_env", { lang, name, source });
       newName = "";
       source = "";
     });
   }
 
-  const use = (name: string | null) => task("Switching environment...", () => invoke("use_env", { name }));
+  const use = (name: string | null) => task("Switching environment...", () => host.invoke("use_env", { lang, name }));
 
   const reinstall = (name: string) =>
-    task(`Installing into "${name}"... (progress in the post window)`, () => invoke("install_in_env", { name }));
+    task(`Installing into "${name}"... (progress in the post window)`, () => host.invoke("install_in_env", { lang, name }));
 
   async function remove(name: string) {
     const ok = await confirm({
@@ -85,14 +93,14 @@
       description: "The environment's folder and every package installed in it are deleted.",
       action: "Delete",
     });
-    if (ok) task("Deleting...", () => invoke("delete_env", { name }));
+    if (ok) task("Deleting...", () => host.invoke("delete_env", { lang, name }));
   }
 </script>
 
 <Dialog.Root bind:open>
   <Dialog.Content class="sm:max-w-xl">
     <Dialog.Header>
-      <Dialog.Title>Python Environments</Dialog.Title>
+      <Dialog.Title>{L.label} Environments</Dialog.Title>
       <Dialog.Description>
         They are kept in the app's data folder. The session uses the marked environment, also after reopening the app.
       </Dialog.Description>
@@ -102,7 +110,7 @@
       <Label>Environments</Label>
       <div class="divide-y rounded-md border text-sm">
         <div class="flex h-11 items-center gap-2 px-3">
-          <span class="flex-1">System Python</span>
+          <span class="flex-1">System {L.runtime}</span>
           {#if systemActive}
             <Badge variant="secondary">in use</Badge>
           {:else}
@@ -114,10 +122,10 @@
             <div class="grid min-w-0 flex-1">
               <div class="flex items-baseline gap-2">
                 <span class="font-medium">{env.name}</span>
-                <span class="text-muted-foreground">Python {env.version}</span>
+                {#if env.version}<span class="text-muted-foreground">{L.runtime} {env.version}</span>{/if}
               </div>
               <span class="truncate font-mono text-xs text-muted-foreground" title={env.source}>
-                {env.source || "only jedi, for the completions"}
+                {env.source || `only ${L.intelligence}, for the completions`}
               </span>
             </div>
             {#if env.active}
@@ -155,11 +163,11 @@
 
       <div class="grid gap-1.5">
         <Label for="install-source">1. Install source</Label>
-        <Input id="install-source" class="font-mono" placeholder="-e /path/to/package" bind:value={source} />
+        <Input id="install-source" class="font-mono" placeholder={L.sourceExample} bind:value={source} />
         <p class="text-xs text-muted-foreground">
-          What goes after <code>pip install</code>. It is kept in the environment for the "Reinstall" button;
-          left empty, the environment gets no packages but <code>jedi</code>, which every environment the app
-          creates installs for the completions and the help.
+          What goes after <code>{L.installer}</code>. It is kept in the environment for the "Reinstall" button;
+          left empty, the environment gets no packages but <code>{L.intelligence}</code>, which every environment
+          the app creates installs for the completions and the help.
         </p>
       </div>
 

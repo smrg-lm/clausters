@@ -10,7 +10,12 @@ export default defineConfig({
   // can be requested before the component is compiled and come back empty.
   plugins: [tailwindcss(), svelte({ emitCss: false })],
   resolve: {
-    alias: { $lib: fileURLToPath(new URL("./src/lib", import.meta.url)) },
+    alias: {
+      $lib: fileURLToPath(new URL("./src/lib", import.meta.url)),
+      // The program the editor runs in (src/lib/host.ts): the desktop's here,
+      // the page's in vite.web.config.ts.
+      $host: fileURLToPath(new URL("./src/lib/host-desktop.ts", import.meta.url)),
+    },
   },
   clearScreen: false,
   server: {

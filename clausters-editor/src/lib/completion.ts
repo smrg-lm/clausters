@@ -1,11 +1,13 @@
-// Completions from the live session, through Jedi (see driver.py): it reads the text
-// and the session's objects together, so it offers what a `from module import *`
-// brought in, an object's attributes, and what a call returns.
+// Completions from the live session. In Python they are Jedi's (see driver.py),
+// which reads the text and the session's objects together, so it offers what a
+// `from module import *` brought in, an object's attributes, and what a call
+// returns; in JavaScript the TypeScript language service's (see driver.mjs),
+// which reads the text and the types of what it imports.
 
-import { pythonLanguage } from "@codemirror/lang-python";
+import type { Language } from "@codemirror/language";
 import type { EditorState, Extension } from "@codemirror/state";
 import { codeAt, inStringOrComment } from "./code";
-import type { CodeAt, PyCompletion } from "./session.svelte";
+import type { CodeAt, Completion } from "./session.svelte";
 
 // The part of @codemirror/autocomplete's CompletionContext this source reads.
 interface Context {
@@ -15,7 +17,7 @@ interface Context {
   matchBefore(re: RegExp): { from: number; to: number; text: string } | null;
 }
 
-/** Jedi's kinds as CodeMirror's completion icons. */
+/** Jedi's kinds, which both drivers answer with, as CodeMirror's completion icons. */
 const TYPES: Record<string, string> = {
   module: "namespace",
   class: "class",
@@ -28,11 +30,11 @@ const TYPES: Record<string, string> = {
   path: "text",
 };
 
-export function sessionCompletions(complete: (at: CodeAt) => Promise<PyCompletion[]>): Extension {
-  return pythonLanguage.data.of({
+export function sessionCompletions(language: Language, complete: (at: CodeAt) => Promise<Completion[]>): Extension {
+  return language.data.of({
     autocomplete: async (ctx: Context) => {
       // While typing, from a name's first character or right after a dot.
-      const word = ctx.matchBefore(/\w+$/);
+      const word = ctx.matchBefore(/[\w$]+$/);
       const afterDot = ctx.state.sliceDoc(ctx.pos - 1, ctx.pos) === ".";
       if (!word && !afterDot && !ctx.explicit) return null;
       if (inStringOrComment(ctx.state, ctx.pos, -1)) return null;
@@ -41,7 +43,7 @@ export function sessionCompletions(complete: (at: CodeAt) => Promise<PyCompletio
       return {
         from: ctx.pos - found[0].typed,
         options: found.map((c) => ({ label: c.name, type: TYPES[c.kind] ?? "variable" })),
-        validFor: /^\w*$/,
+        validFor: /^[\w$]*$/,
       };
     },
   });

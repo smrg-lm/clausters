@@ -17,6 +17,7 @@ import { Server } from "../src/defs/server/index.ts";
 import { OscFunc } from "../src/responders.ts";
 import { Session } from "../src/session.ts";
 import { panic } from "../src/panic.ts";
+import { interrupt } from "../src/editor.ts";
 
 await loadCore();
 
@@ -132,4 +133,22 @@ test("responders are freed unless permanent", () => {
     assert.equal(kept.enabled, true);
     kept.free();
     session.close();
+});
+
+test("the editor's interrupt hook panics every session not closed yet", () => {
+    const a = fakeSession();
+    const b = fakeSession();
+    const closed = fakeSession();
+    closed.session.close();
+    try {
+        for (const s of [a, b, closed]) s.session.clock.play(new Routine(forever));
+        interrupt();
+        assert.equal(a.session.clock.queued, 0);
+        assert.equal(b.session.clock.queued, 0);
+        assert.equal(closed.session.clock.queued, 1, "closed: no longer the hook's");
+    } finally {
+        closed.session.clock.clear();
+        a.session.close();
+        b.session.close();
+    }
 });

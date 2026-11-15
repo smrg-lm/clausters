@@ -47,6 +47,13 @@
       "default": "./dist/bundle-writer.js"
     }
   },
+  "clausters-editor": {
+    "interrupt": "./dist/editor.js#interrupt",
+    "docs": {
+      "clausters": "./dist/books/client",
+      "clausters-server": "./dist/books/server"
+    }
+  },
   "files": [
     "dist/",
     "src/",

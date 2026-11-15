@@ -2,6 +2,8 @@
 
 A Python editor with a **persistent interactive session**: the code you
 evaluate stays alive in the session, and its output appears in the *post* window.
+It also runs as a page in a browser tab, for JavaScript on the clausters engine:
+[The editor in a page](page.md).
 
 ## Shortcuts
 

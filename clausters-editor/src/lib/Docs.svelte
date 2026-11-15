@@ -1,20 +1,23 @@
 <script lang="ts" module>
-  /** What help is asked about: a name, and where the session says it lives. */
+  /** What help is asked about: a name, where the session says it lives, and the
+   *  language of the session asked when no document has it. */
   export interface HelpSubject {
     name: string;
+    lang: Lang;
     /** Its name within its module, e.g. "Server.boot". */
     qualname?: string;
     /** Its dotted path, e.g. "clausters.defs.server.Server.boot". */
     fullname?: string;
   }
+  import type { Lang } from "./languages";
 </script>
 
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
-  import { listen } from "@tauri-apps/api/event";
+  import { host } from "$host";
   import { COPIED_ICON, COPY_ICON, escapeHtml, renderMarkdown, slugify } from "./markdown";
-  import { info, pyHelp } from "./session.svelte";
+  import { help as sessionHelp, info } from "./session.svelte";
+  import { LANGS } from "./languages";
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
   import ArrowRight from "@lucide/svelte/icons/arrow-right";
   import House from "@lucide/svelte/icons/house";
@@ -57,7 +60,7 @@
     | { kind: "home" }
     | { kind: "book"; prefix: string }
     | { kind: "doc"; path: string; anchor?: string }
-    | { kind: "text"; title: string; text: string }
+    | { kind: "text"; title: string; text: string; source: string }
     | { kind: "search"; query: string; results: DocResult[] }
   ) & {
     scroll?: number;
@@ -132,7 +135,7 @@
     if (!current || current.kind === "home") return { label: "Documentation" };
     if (current.kind === "book") return { book: books.find((b) => b.prefix === current.prefix), label: "" };
     if (current.kind === "doc") return { book: bookOf(current.path), label: chapterTitle(current.path) };
-    if (current.kind === "text") return { label: `${current.title} (pydoc)` };
+    if (current.kind === "text") return { label: `${current.title} (${current.source})` };
     return { label: `Search: "${current.query}"` };
   });
 
@@ -187,7 +190,7 @@
       // Nothing to draw: the scroll below moves to the anchor.
     } else if (page.kind === "doc") {
       try {
-        source = await invoke<string>("read_doc", { path: page.path });
+        source = await host.invoke<string>("read_doc", { path: page.path });
         shownPath = page.path;
         render();
         plain = null;
@@ -274,7 +277,7 @@
     findInput?.focus();
     const q = findTerm.trim();
     if (!q) return;
-    index ??= DocIndex.build(docs, (path) => invoke<string>("read_doc", { path }));
+    index ??= DocIndex.build(docs, (path) => host.invoke<string>("read_doc", { path }));
     go({ kind: "search", query: q, results: (await index).search(q) });
   }
 
@@ -360,11 +363,11 @@
 
   /** Help on a name: the section whose heading is it (its reference entry); else a
    *  document named after it; else the section that talks about it most; else
-   *  pydoc's page for it, from the session. */
-  export async function help({ name, qualname, fullname }: HelpSubject) {
+   *  the session's page for it (pydoc's, or the TypeScript language service's). */
+  export async function help({ name, qualname, fullname, lang }: HelpSubject) {
     const terms = [...new Set([qualname, name].filter((t): t is string => !!t))];
     const searches = await Promise.all(
-      terms.map((term) => invoke<DocHit[]>("search_docs", { term }).catch(() => [] as DocHit[])),
+      terms.map((term) => host.invoke<DocHit[]>("search_docs", { term }).catch(() => [] as DocHit[])),
     );
     const openHit = (hit: DocHit) => openDoc(hit.path, hit.heading ? slugify(hit.heading) : undefined);
 
@@ -376,7 +379,7 @@
     const found = searches.find((hits) => hits.length);
     if (found) return openHit(found[0]);
     const expr = fullname ?? name;
-    go({ kind: "text", title: expr, text: await pyHelp(expr) });
+    go({ kind: "text", title: expr, text: await sessionHelp(lang, expr), source: LANGS[lang].helpSource });
   }
 
   function resolve(from: string, rel: string): string {
@@ -437,8 +440,8 @@
     renders.clear();
     shownPath = null;
     try {
-      docs = await invoke<string[]>("list_docs");
-      books = await invoke<Book[]>("list_books");
+      docs = await host.invoke<string[]>("list_docs");
+      books = await host.invoke<Book[]>("list_books");
       index = null;
     } catch (e) {
       docs = [];
@@ -461,8 +464,8 @@
    *  another environment, whose packages carry other books. */
   async function relist() {
     const before = docs.length;
-    docs = await invoke<string[]>("list_docs").catch(() => docs);
-    books = await invoke<Book[]>("list_books").catch(() => books);
+    docs = await host.invoke<string[]>("list_docs").catch(() => docs);
+    books = await host.invoke<Book[]>("list_books").catch(() => books);
     index = null;
     // The start page and a book's contents are drawn from the books: again,
     // with what the new environment carries.
@@ -472,7 +475,7 @@
 
   onMount(() => {
     reload();
-    const unlisten = listen("py-start", relist);
+    const unlisten = host.listen("session-start", relist);
     return () => {
       unlisten.then((f) => f());
     };

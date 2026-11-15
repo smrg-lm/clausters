@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { host } from "$host";
   import { info, onMessage, type Msg } from "./session.svelte";
   import { findLinks } from "./markdown";
   import { settings, setAutoscroll } from "./settings.svelte";
@@ -55,7 +55,7 @@
     const a = (e.target as HTMLElement).closest("a");
     if (!a) return;
     e.preventDefault();
-    openUrl(a.href).catch((err) => info(`${err}\n`));
+    host.openUrl(a.href).catch((err) => info(`${err}\n`));
   }
 
   // Written straight into the DOM: the output only grows and can be large.

@@ -30,27 +30,32 @@ function packageOf(path) {
   return m?.[1];
 }
 
-/** Every npm package the build reads into the bundle. */
+/** Every npm package the builds read into their bundles: the desktop
+ *  application's and the page's (vite.web.config.ts), workers included. */
 async function bundledPackages() {
   const found = new Set();
-  await build({
-    root,
-    configFile: join(root, "vite.config.ts"),
-    logLevel: "silent",
-    build: { write: false },
-    plugins: [
-      {
-        name: "list-packages",
-        generateBundle(_, bundle) {
-          for (const id of this.getModuleIds()) found.add(packageOf(id));
-          // Files a stylesheet points at (the fonts) are assets, not modules.
-          for (const chunk of Object.values(bundle)) {
-            for (const name of chunk.originalFileNames ?? []) found.add(packageOf(name));
-          }
-        },
-      },
-    ],
+  const listing = () => ({
+    name: "list-packages",
+    generateBundle(_, bundle) {
+      for (const id of this.getModuleIds()) found.add(packageOf(id));
+      // Files a stylesheet points at (the fonts) are assets, not modules.
+      for (const chunk of Object.values(bundle)) {
+        for (const name of chunk.originalFileNames ?? []) found.add(packageOf(name));
+      }
+    },
   });
+  for (const config of ["vite.config.ts", "vite.web.config.ts"]) {
+    await build({
+      root,
+      configFile: join(root, config),
+      logLevel: "silent",
+      build: { write: false },
+      plugins: [listing()],
+      worker: { plugins: () => [listing()] },
+    });
+  }
+  // The page also carries TypeScript's library declarations as files.
+  found.add("typescript");
   // What Tailwind compiles in from the stylesheets the app imports.
   const css = readFileSync(join(root, "src", "app.css"), "utf8");
   for (const [, spec] of css.matchAll(/@import\s+"([^".][^"]*)"/g)) {

@@ -177,7 +177,11 @@ export class Session extends Environment {
         // and is kept here -- whatever session is active around this constructor.
         this.clock = this.adopt(clock ?? this.use(() => new TempoClock()));
         this.gui_ = gui ?? null;
+        openSessions.add(this.openRef);
     }
+
+    /** This session's entry in `openSessions`, taken out when it is closed. */
+    private readonly openRef = new WeakRef<Session>(this);
 
     private clocks_!: TempoClock[];
     private readonly timebaseHeld: Timebase;
@@ -687,5 +691,25 @@ export class Session extends Environment {
         this.ownedEngine = null;
         if (main.server === this.server) main.server = null;
         if (main.currentSession === this) main.currentSession = null;
+        openSessions.delete(this.openRef);
     }
+}
+
+/**
+ * Every session not closed yet, for what stops them all at once: the
+ * editor's interrupt key (`editor.ts`). Weak, so that a session nobody
+ * closed and nobody holds is still let go of: a `WeakRef` per session,
+ * since a `WeakSet` cannot be walked.
+ */
+const openSessions = new Set<WeakRef<Session>>();
+
+/** @internal The sessions not closed yet that are still held, oldest first. */
+export function liveSessions(): Session[] {
+    const live: Session[] = [];
+    for (const ref of openSessions) {
+        const session = ref.deref();
+        if (session === undefined) openSessions.delete(ref);
+        else live.push(session);
+    }
+    return live;
 }

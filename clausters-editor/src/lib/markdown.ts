@@ -1,20 +1,32 @@
-// Markdown -> sanitized HTML, with Python blocks highlighted in the editor's colors.
+// Markdown -> sanitized HTML, with Python and JavaScript blocks highlighted in the
+// editor's colors.
 
 import MarkdownIt from "markdown-it";
 import DOMPurify from "dompurify";
 import { highlightCode } from "@lezer/highlight";
 import { parser as pythonParser } from "@lezer/python";
+import { parser as javascriptParser } from "@lezer/javascript";
+import type { Parser } from "@lezer/common";
 import { buttonVariants } from "$lib/components/ui/button";
 import { syntaxStyle } from "./editorTheme";
 
 export const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-function highlightPython(code: string, dark: boolean): string {
+/** The grammar a fence's language names, for the ones the editor runs. */
+const PARSERS: Record<string, { name: string; parser: Parser }> = {
+  python: { name: "python", parser: pythonParser },
+  py: { name: "python", parser: pythonParser },
+  javascript: { name: "javascript", parser: javascriptParser },
+  js: { name: "javascript", parser: javascriptParser },
+  mjs: { name: "javascript", parser: javascriptParser },
+};
+
+function highlight(code: string, parser: Parser, dark: boolean): string {
   let html = "";
   highlightCode(
     code,
-    pythonParser.parse(code),
+    parser.parse(code),
     dark ? syntaxStyle.dark : syntaxStyle.light,
     (text, classes) => (html += classes ? `<span class="${classes}">${escapeHtml(text)}</span>` : escapeHtml(text)),
     () => (html += "\n"),
@@ -50,7 +62,7 @@ md.core.ruler.push("heading_ids", (state) => {
   }
 });
 
-// Every code block carries a button that copies it; ```python blocks are highlighted.
+// Every code block carries a button that copies it; ```python and ```js blocks are highlighted.
 const copyButtonClass = buttonVariants({ variant: "ghost", size: "icon-sm" }) + " copy-block";
 
 md.renderer.rules.fence = (tokens, idx, _opts, env) => {
@@ -59,11 +71,11 @@ md.renderer.rules.fence = (tokens, idx, _opts, env) => {
   const code = token.content;
   const e = env as unknown as Env;
   const i = e.blocks.push(code) - 1;
-  const python = lang === "python" || lang === "py";
+  const grammar = PARSERS[lang];
   return (
     `<div class="code-block"><button class="${copyButtonClass}" data-block="${i}" title="Copy" aria-label="Copy">${COPY_ICON}</button>` +
-    (python
-      ? `<pre><code class="language-python">${highlightPython(code, e.dark)}</code></pre></div>`
+    (grammar
+      ? `<pre><code class="language-${grammar.name}">${highlight(code, grammar.parser, e.dark)}</code></pre></div>`
       : `<pre><code>${escapeHtml(code)}</code></pre></div>`)
   );
 };

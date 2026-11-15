@@ -141,6 +141,7 @@ quoted title lands here, on the link to the entry.
 - [A pattern is a function, as a UGen is](decisions/clients.md#a-pattern-is-a-function-as-a-ugen-is)
 - [A sound file is a client object, and a buffer is never one (2026-10-16)](decisions/clients.md#a-sound-file-is-a-client-object-and-a-buffer-is-never-one-2026-10-16)
 - [A worker's session attaches to its page's engine over a port (2026-11-15)](decisions/clients.md#a-workers-session-attaches-to-its-pages-engine-over-a-port-2026-11-15)
+- [clausters-editor runs as a page, its JavaScript session in a worker (2026-11-15)](decisions/clients.md#clausters-editor-runs-as-a-page-its-javascript-session-in-a-worker-2026-11-15)
 
 ## [The web client and the engine in a page](decisions/web.md)
 

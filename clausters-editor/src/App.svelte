@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { host } from "$host";
   import * as Resizable from "$lib/components/ui/resizable";
   import { Button } from "$lib/components/ui/button";
   import { Separator } from "$lib/components/ui/separator";
@@ -12,11 +11,13 @@
   import ConfirmDialog, { confirm } from "./lib/ConfirmDialog.svelte";
   import EnvironmentsDialog from "./lib/EnvironmentsDialog.svelte";
   import PreferencesDialog from "./lib/PreferencesDialog.svelte";
-  import { initSession, interrupt, restart, session, startSession } from "./lib/session.svelte";
+  import { initSession, interrupt, restart, sessions, startSession } from "./lib/session.svelte";
+  import { LANGS, type Lang } from "./lib/languages";
   import {
     COLUMN_SLOTS,
     gridSizes,
     setGridSize,
+    setLanguage,
     setLayout,
     setOpenFiles,
     setShowDocs,
@@ -47,6 +48,24 @@
   // mount: each one records its own files from its first tab on.
   const lastFiles = $state.snapshot(settings.openFiles);
   const editor = () => editors[activeEditor] ?? editors["editor-1"]!;
+
+  // --- The language on screen ---
+  // Each group reports the language of the document it shows; the one the menu
+  // and the shortcuts act on decides which session they reach, and its session
+  // is started the first time it is needed.
+  const langs: Partial<Record<PanelId, Lang>> = $state({});
+  const lang = $derived(langs[activeEditor] ?? langs["editor-1"] ?? settings.language);
+  const session = $derived(sessions[lang]);
+  let ready = false;
+  $effect(() => {
+    if (ready) startSession(lang);
+  });
+
+  /** The document on screen holds code of `l`, and so do new files from now on. */
+  function chooseLanguage(l: Lang) {
+    setLanguage(l);
+    editor().setLanguage(l);
+  }
 
   /** Shows `path` in another group than `from`, if one has it open. */
   function openElsewhere(from: PanelId, path: string): boolean {
@@ -301,13 +320,14 @@
     openRecent: (path) => editor().openPath(path),
     saveFile: (saveAs) => editor().saveFile(saveAs),
     closeTab: () => editor().closeTab(),
-    quit: () => getCurrentWindow().close(),
+    quit: () => host.closeWindow(),
     runLine: () => editor().runLine(),
     runBlock: () => editor().runBlock(),
     toggleSplit,
     moveTab,
-    interrupt,
-    restart,
+    interrupt: () => interrupt(lang),
+    restart: () => restart(lang),
+    chooseLanguage,
     clearPost: () => post.clear(),
     openDocs: () => {
       showDocs();
@@ -317,7 +337,7 @@
       showDocs();
       docs.searchAll(editor().selectedText());
     },
-    environments: () => environments.show(),
+    environments: () => environments.show(lang),
     preferences: () => preferences.show(),
     chooseDocsFolder: () => preferences.chooseDocsDir(),
   };
@@ -342,7 +362,7 @@
       "-": () => zoom(-1),
       "0": () => zoom(null),
     };
-    if (!inEditor) keys["."] = interrupt;
+    if (!inEditor) keys["."] = actions.interrupt;
     // Ctrl+F finds in the documentation when it has the focus (the editor has its own);
     // Ctrl+Shift+F searches every document from anywhere.
     const inDocs = !!(e.target as HTMLElement).closest?.("[data-panel='docs']");
@@ -378,11 +398,12 @@
 
   // Closing the window (its button, Ctrl+Q, File > Quit) asks first when a file has
   // unsaved changes, as closing its tab does.
+  const unsavedNames = () => editorIds.flatMap((id) => editors[id]?.unsaved() ?? []);
   onMount(() => {
     let unlisten: Promise<() => void>;
     try {
-      unlisten = getCurrentWindow().onCloseRequested(async (event) => {
-        const names = editorIds.flatMap((id) => editors[id]?.unsaved() ?? []);
+      unlisten = host.onCloseRequested(async (event) => {
+        const names = unsavedNames();
         if (names.length === 0) return;
         const ok = await confirm({
           title: names.length === 1 ? `Quit with "${names[0]}" unsaved?` : `Quit with ${names.length} files unsaved?`,
@@ -393,7 +414,7 @@
           action: "Quit without saving",
         });
         if (!ok) event.preventDefault();
-      });
+      }, unsavedNames);
     } catch {
       return; // outside Tauri
     }
@@ -412,7 +433,7 @@
     // The files named on the command line, after the restored ones: the last
     // one is on screen.
     try {
-      const files = await invoke<{ path: string; exists: boolean }[]>("cli_files");
+      const files = await host.invoke<{ path: string; exists: boolean }[]>("cli_files");
       for (const f of files) {
         if (f.exists) await editor().openPath(f.path);
         else editor().openMissing(f.path);
@@ -422,7 +443,8 @@
     }
     editors[activeEditor]?.focus();
     await initSession();
-    await startSession();
+    ready = true;
+    await startSession(lang);
   });
 </script>
 
@@ -430,7 +452,7 @@
 
 <div class="flex h-screen flex-col">
   <header class="flex h-10 shrink-0 items-center gap-0.5 border-b bg-secondary px-1.5">
-    <AppMenu {actions} />
+    <AppMenu {actions} {lang} />
     <Separator orientation="vertical" class="mx-1.5 h-5!" />
     <Button variant="ghost" size="icon-sm" onclick={actions.runLine} title="Evaluate line or selection (Shift+Enter)" aria-label="Evaluate line or selection">
       <Play />
@@ -438,10 +460,10 @@
     <Button variant="ghost" size="icon-sm" onclick={actions.runBlock} title="Evaluate block (Ctrl+Enter)" aria-label="Evaluate block">
       <ListVideo />
     </Button>
-    <Button variant="ghost" size="icon-sm" onclick={interrupt} title="Interrupt (Ctrl+.)" aria-label="Interrupt">
+    <Button variant="ghost" size="icon-sm" onclick={actions.interrupt} title="Interrupt (Ctrl+.)" aria-label="Interrupt">
       <Square />
     </Button>
-    <Button variant="ghost" size="icon-sm" onclick={restart} title="Restart the Python session" aria-label="Restart the session">
+    <Button variant="ghost" size="icon-sm" onclick={actions.restart} title="Restart the {LANGS[lang].label} session" aria-label="Restart the session">
       <RotateCcw />
     </Button>
   </header>
@@ -525,7 +547,7 @@
 
   <footer class="flex h-6 shrink-0 items-center gap-2 border-t bg-secondary px-3 text-xs text-muted-foreground">
     <span class={["size-2 rounded-full", !session.alive ? "bg-destructive" : session.busy > 0 ? "bg-warning" : "bg-success"]}></span>
-    <span>Python {session.version} | {session.env ? `environment "${session.env}"` : "system"} | {status}</span>
+    <span>{LANGS[lang].runtime} {session.version} | {#if host.environments}{session.env ? `environment "${session.env}"` : "system"} | {/if}{status}</span>
   </footer>
 </div>
 
@@ -540,6 +562,7 @@
         onDragStart={(e) => startDrag(id, e)}
         openElsewhere={(path) => openElsewhere(id, path)}
         onFilesChange={(files) => setOpenFiles(id, files)}
+        onLangChange={(l) => (langs[id] = l)}
         onHelp={(subject) => {
           showDocs();
           docs.help(subject);

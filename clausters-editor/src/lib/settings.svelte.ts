@@ -1,8 +1,8 @@
-// Preferences (theme, font, size, indentation) and the recent files, remembered
-// between sessions.
+// Preferences (theme, font, size, indentation, the language of new files) and
+// the recent files, remembered between sessions.
 
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { host } from "$host";
+import { LANG_IDS, isLang, type Lang } from "./languages";
 
 export type ThemePref = "system" | "light" | "dark";
 
@@ -20,7 +20,7 @@ export const BUNDLED_FONT = "JetBrains Mono";
 export async function fontOptions(): Promise<[string, string][]> {
   let system: string[] = [];
   try {
-    system = (await invoke<string[]>("list_mono_fonts")) ?? [];
+    system = (await host.invoke<string[]>("list_mono_fonts")) ?? [];
   } catch {}
   return [
     [BUNDLED_FONT, `${BUNDLED_FONT} (bundled)`],
@@ -57,6 +57,8 @@ interface Stored {
   layout: Layout;
   /** One indentation level: what Tab, Enter and the indent commands insert. */
   indent: IndentPref;
+  /** The language of a new file, and of one whose extension names none. */
+  language: Lang;
   /** The files last opened or saved, most recent first. */
   recent: string[];
   /** At startup, each editor opens again the files it had open when the app was
@@ -118,6 +120,7 @@ function load(): Stored {
     evalParagraph: false,
     layout: DEFAULT_LAYOUT,
     indent: "4",
+    language: LANG_IDS[0],
     recent: [],
     reopenFiles: false,
     openFiles: {},
@@ -136,6 +139,7 @@ function load(): Stored {
         validLayout(v.layout) ??
         (v.postPosition === "bottom" ? { left: ["editor-1", "post"], right: ["docs"] } : { ...DEFAULT_LAYOUT }),
       indent: INDENTS.some(([i]) => i === v.indent) ? v.indent : defaults.indent,
+      language: isLang(v.language) ? v.language : defaults.language,
       recent: Array.isArray(v.recent)
         ? v.recent.filter((p: unknown): p is string => typeof p === "string" && p !== "").slice(0, MAX_RECENT)
         : defaults.recent,
@@ -159,7 +163,7 @@ function syncNativeTheme() {
   if (wanted === gtkTheme) return;
   gtkTheme = wanted;
   try {
-    getCurrentWindow().setTheme(wanted).catch(() => {});
+    host.setTheme(wanted).catch(() => {});
   } catch {} // outside Tauri
 }
 
@@ -172,8 +176,20 @@ function apply() {
   root.style.setProperty("--mono", `"${settings.font.replace(/["\\]/g, "")}", "${BUNDLED_FONT}", monospace`);
   root.style.setProperty("--code-size", `${settings.size}px`);
   try {
-    const { theme, font, size, autoscroll, showDocs, evalParagraph, layout, indent, recent, reopenFiles, openFiles } =
-      settings;
+    const {
+      theme,
+      font,
+      size,
+      autoscroll,
+      showDocs,
+      evalParagraph,
+      layout,
+      indent,
+      language,
+      recent,
+      reopenFiles,
+      openFiles,
+    } = settings;
     localStorage.setItem(
       KEY,
       JSON.stringify({
@@ -185,6 +201,7 @@ function apply() {
         evalParagraph,
         layout,
         indent,
+        language,
         recent,
         reopenFiles,
         openFiles,
@@ -225,6 +242,11 @@ export function setAutoscroll(on: boolean) {
 
 export function setIndent(indent: IndentPref) {
   settings.indent = indent;
+  apply();
+}
+
+export function setLanguage(language: Lang) {
+  settings.language = language;
   apply();
 }
 

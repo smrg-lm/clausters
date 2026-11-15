@@ -1,7 +1,9 @@
-// The Python session: sends code to the backend and dispatches the messages that arrive.
+// The sessions, one per language: sends code to the backend and dispatches the
+// messages that arrive. Each is started the first time a document of its
+// language is on screen.
 
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { host } from "$host";
+import { LANGS, type Lang } from "./languages";
 
 /** The questions about code the driver answers right away, even while code runs. */
 type Query = "help" | "inspect" | "signatures" | "complete";
@@ -12,22 +14,25 @@ export interface Msg {
   id: number | null;
   text: string;
   data?: unknown;
+  /** The session it came from; none for the editor's own messages. */
+  lang?: Lang;
 }
 
-/** A position in the editor's text, as Jedi reads it: the whole text, a 1-based
- *  line and a 0-based column. */
+/** A position in a document, as the code intelligence reads it: the whole text,
+ *  a 1-based line, a 0-based column and the document's path, if it has one. */
 export interface CodeAt {
   source: string;
   line: number;
   column: number;
+  file?: string | null;
 }
 
-/** What the name at a position is (see `describe` in driver.py). */
-export interface PyInfo {
+/** What the name at a position is (see `describe` in each driver). */
+export interface NameInfo {
   name: string;
   /** Its name within its module, e.g. "Server.boot". */
   qualname: string;
-  /** Its dotted path, e.g. "clausters.defs.server.Server.boot". */
+  /** Its full path, e.g. "clausters.defs.server.Server.boot", which help is asked about. */
   fullname: string;
   kind: string;
   signature: string;
@@ -35,8 +40,8 @@ export interface PyInfo {
   doc: string;
 }
 
-/** A signature of the call a position is in (see `signatures` in driver.py). */
-export interface PySignature {
+/** A signature of the call a position is in (see `signatures` in each driver). */
+export interface Signature {
   name: string;
   params: string[];
   /** The parameter the position is at, if any. */
@@ -46,26 +51,33 @@ export interface PySignature {
   doc: string;
 }
 
-/** A completion at a position (see `complete` in driver.py). */
-export interface PyCompletion {
+/** A completion at a position (see `complete` in each driver). */
+export interface Completion {
   name: string;
-  /** Jedi's kind: module, class, function, instance, keyword, param, property, statement, path. */
+  /** Jedi's kind, which both drivers use: module, class, function, instance,
+   *  keyword, param, property, statement, path. */
   kind: string;
   /** How many of its characters are already typed. */
   typed: number;
 }
 
-export const session = $state({
-  alive: false,
-  busy: 0,
-  version: "",
-  /** The virtual environment in use; null = the system Python. */
-  env: null as string | null,
-});
+export interface SessionState {
+  alive: boolean;
+  busy: number;
+  version: string;
+  /** The environment in use; null = the system's interpreter. */
+  env: string | null;
+}
+
+const fresh = (): SessionState => ({ alive: false, busy: 0, version: "", env: null });
+
+export const sessions = $state<Record<Lang, SessionState>>({ python: fresh(), javascript: fresh() });
 
 let nextId = 1;
-let generation = 0;
-const pending = new Set<number>();
+const generation: Record<Lang, number> = { python: 0, javascript: 0 };
+const pending: Record<Lang, Set<number>> = { python: new Set(), javascript: new Set() };
+/** The sessions asked to start, so that each starts once. */
+const started = new Set<Lang>();
 /** The queries waiting for their answer, by id. */
 const waiters = new Map<number, (m: Msg) => void>();
 const listeners = new Set<(m: Msg) => void>();
@@ -84,29 +96,32 @@ export function info(text: string) {
   post({ type: "info", id: null, text });
 }
 
-function setPending() {
-  session.busy = pending.size;
+function setPending(lang: Lang) {
+  sessions[lang].busy = pending[lang].size;
 }
 
 export async function initSession() {
-  await listen<{ generation: number; env: string | null }>("py-start", (e) => {
-    generation = e.payload.generation;
-    session.env = e.payload.env;
-    pending.clear();
-    setPending();
+  await host.listen<{ lang: Lang; generation: number; env: string | null }>("session-start", (e) => {
+    const { lang } = e.payload;
+    started.add(lang);
+    generation[lang] = e.payload.generation;
+    sessions[lang].env = e.payload.env;
+    pending[lang].clear();
+    setPending(lang);
   });
-  await listen<Msg>("py-msg", (e) => {
+  await host.listen<Msg & { lang: Lang }>("session-msg", (e) => {
     const m = e.payload;
+    const lang = m.lang;
     switch (m.type) {
       case "ready":
-        session.alive = true;
-        session.version = m.text.split(" ")[0];
-        info(`Python ${session.version} ready\n`);
-        runStartupCode();
+        sessions[lang].alive = true;
+        sessions[lang].version = m.text.split(" ")[0];
+        info(`${LANGS[lang].runtime} ${sessions[lang].version} ready\n`);
+        runStartupCode(lang);
         return;
       case "done":
-        if (m.id != null) pending.delete(m.id);
-        setPending();
+        if (m.id != null) pending[lang].delete(m.id);
+        setPending(lang);
         return;
       case "help":
       case "inspect":
@@ -118,44 +133,45 @@ export async function initSession() {
         post(m);
     }
   });
-  await listen<{ generation: number; code: number | null }>("py-exit", (e) => {
-    if (e.payload.generation !== generation) return; // the end of a session already restarted
-    session.alive = false;
-    pending.clear();
-    setPending();
-    info(`Session ended (code ${e.payload.code ?? "?"})\n`);
+  await host.listen<{ lang: Lang; generation: number; code: number | null }>("session-exit", (e) => {
+    const { lang } = e.payload;
+    if (e.payload.generation !== generation[lang]) return; // the end of a session already restarted
+    sessions[lang].alive = false;
+    pending[lang].clear();
+    setPending(lang);
+    info(`${LANGS[lang].runtime} session ended (code ${e.payload.code ?? "?"})\n`);
   });
 }
 
 /** Runs the configured startup code (Preferences), showing it in the post window first. */
-async function runStartupCode() {
+async function runStartupCode(lang: Lang) {
   let code = "";
   try {
-    code = (await invoke<{ startupCode: string }>("get_config")).startupCode;
+    code = (await host.invoke<Record<Lang, { startupCode: string }>>("get_config"))[lang].startupCode;
   } catch {}
   if (!code.trim()) return;
-  info("Startup code:\n");
+  info(`Startup code (${LANGS[lang].label}):\n`);
   post({ type: "sys", id: null, text: code.replace(/\s+$/, "") + "\n" });
-  await evaluate(code, "<startup code>", 1);
+  await evaluate(lang, code, "<startup code>", 1);
 }
 
-export async function evaluate(code: string, file: string, line: number) {
+export async function evaluate(lang: Lang, code: string, file: string, line: number) {
   const id = nextId++;
-  pending.add(id);
-  setPending();
+  pending[lang].add(id);
+  setPending(lang);
   try {
-    await invoke("py_eval", { id, code, file, line });
+    await host.invoke("session_eval", { lang, id, code, file, line });
   } catch (e) {
-    pending.delete(id);
-    setPending();
+    pending[lang].delete(id);
+    setPending(lang);
     post({ type: "err", id, text: `${e}\n` });
   }
 }
 
-/** Asks the driver `op` and waits for its answer; `fallback` if the session is not
- *  running, the request fails or no answer comes within `timeoutMs`. */
-function query<T>(op: Query, args: object, read: (m: Msg) => T, fallback: T, timeoutMs: number): Promise<T> {
-  if (!session.alive) return Promise.resolve(fallback);
+/** Asks `lang`'s driver `op` and waits for its answer; `fallback` if the session
+ *  is not running, the request fails or no answer comes within `timeoutMs`. */
+function query<T>(lang: Lang, op: Query, args: object, read: (m: Msg) => T, fallback: T, timeoutMs: number): Promise<T> {
+  if (!sessions[lang].alive) return Promise.resolve(fallback);
   const id = nextId++;
   return new Promise((resolve) => {
     const done = (value: T) => {
@@ -165,48 +181,53 @@ function query<T>(op: Query, args: object, read: (m: Msg) => T, fallback: T, tim
     };
     const timer = setTimeout(() => done(fallback), timeoutMs);
     waiters.set(id, (m) => done(read(m)));
-    invoke("py_query", { id, op, args }).catch(() => done(fallback));
+    host.invoke("session_query", { lang, id, op, args }).catch(() => done(fallback));
   });
 }
 
-/** pydoc's documentation for an expression or a dotted path, in the live session. */
-export const pyHelp = (expr: string) =>
-  query("help", { expr }, (m) => m.text, `No documentation found for '${expr}'.`, 5000);
+/** Help on an expression or a dotted path, from the live session: pydoc's in
+ *  Python, the TypeScript language service's in JavaScript. */
+export const help = (lang: Lang, expr: string) =>
+  query(lang, "help", { expr }, (m) => m.text, `No documentation found for '${expr}'.`, 5000);
 
 /** What the name at a position is; null if there is none or no answer in time. */
-export const pyInspect = (at: CodeAt) =>
-  query("inspect", at, (m) => (m.data as PyInfo | null | undefined) ?? null, null, 1500);
+export const inspect = (lang: Lang, at: CodeAt) =>
+  query(lang, "inspect", at, (m) => (m.data as NameInfo | null | undefined) ?? null, null, 1500);
 
 /** The signatures of the call a position is in. */
-export const pySignatures = (at: CodeAt) =>
-  query("signatures", at, (m) => (m.data as PySignature[] | undefined) ?? [], [] as PySignature[], 1500);
+export const signatures = (lang: Lang, at: CodeAt) =>
+  query(lang, "signatures", at, (m) => (m.data as Signature[] | undefined) ?? [], [] as Signature[], 1500);
 
 /** The completions at a position. */
-export const pyComplete = (at: CodeAt) =>
-  query("complete", at, (m) => (m.data as PyCompletion[] | undefined) ?? [], [] as PyCompletion[], 1500);
+export const complete = (lang: Lang, at: CodeAt) =>
+  query(lang, "complete", at, (m) => (m.data as Completion[] | undefined) ?? [], [] as Completion[], 1500);
 
-export async function interrupt() {
+export async function interrupt(lang: Lang) {
   try {
-    await invoke("py_interrupt");
+    await host.invoke("session_interrupt", { lang });
   } catch (e) {
     info(`${e}\n`);
   }
 }
 
-/** Starts the session when the app opens so that the first evaluation does not wait. */
-export async function startSession() {
+/** Starts `lang`'s session if it has not started yet, so that the first
+ *  evaluation and the first completion do not wait for it. */
+export async function startSession(lang: Lang) {
+  if (started.has(lang)) return;
+  started.add(lang);
   try {
-    await invoke("py_restart");
+    await host.invoke("session_start", { lang });
   } catch (e) {
+    started.delete(lang);
     post({ type: "err", id: null, text: `${e}\n` });
   }
 }
 
-export async function restart() {
-  info("Restarting the session...\n");
-  session.alive = false;
+export async function restart(lang: Lang) {
+  info(`Restarting the ${LANGS[lang].label} session...\n`);
+  sessions[lang].alive = false;
   try {
-    await invoke("py_restart");
+    await host.invoke("session_restart", { lang });
   } catch (e) {
     post({ type: "err", id: null, text: `${e}\n` });
   }

@@ -17,6 +17,9 @@
       ],
       "$lib/*": [
         "./src/lib/*"
+      ],
+      "$host": [
+        "./src/lib/host-desktop.ts"
       ]
     }
   },

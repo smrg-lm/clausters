@@ -361,8 +361,18 @@ jobs:
       # the package has no compiler and no engraver -- which is what
       # check-package refuses.
       - uses: ./.github/actions/wasm-vendor
+      # The books the package carries for clausters-editor, as Markdown: the
+      # client's API pages are TypeDoc's, with the same pinned tools the docs
+      # job builds the published book with. Without it build.sh notes their
+      # absence, and check-package refuses the package.
+      - name: TypeDoc, for the package's books
+        run: |
+          npm install --no-save --prefix "$HOME/typedoc" \
+            typedoc@0.28 typedoc-plugin-markdown@4 typescript@5.9
+          echo "TYPEDOC=$HOME/typedoc/node_modules/.bin/typedoc" >> "$GITHUB_ENV"
       # build.sh compiles the engine, the GUI host and the core's JS door to
-      # wasm, stages the bundles into dist/ and emits src/ -> dist/. The
+      # wasm, stages the bundles into dist/, emits src/ -> dist/ and stages
+      # the books into dist/books/ (tools/stage_books.py). The
       # checker then refuses a tree that is missing either half, or a version
       # that disagrees with the crate's -- one release, one version. `npm pack`
       # writes the tarball and prints its file list into the log.

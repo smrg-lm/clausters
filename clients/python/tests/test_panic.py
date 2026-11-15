@@ -128,3 +128,20 @@ def test_a_live_panic_silences_the_server_and_it_plays_again():
             assert server.status().synths == 1
     finally:
         session.close()
+
+
+def test_the_editors_interrupt_hook_panics_every_session_not_closed_yet():
+    from clausters._editor import interrupt
+
+    a, b, closed = Session.nrt(), Session.nrt(), Session.nrt()
+    closed.close()
+    try:
+        for session in (a, b, closed):
+            session.clock.play(Routine(_forever))
+        interrupt()
+        assert a.clock.queued == 0 and b.clock.queued == 0
+        assert closed.clock.queued == 1     # closed: no longer the hook's
+    finally:
+        closed.clock.clear()
+        a.close()
+        b.close()

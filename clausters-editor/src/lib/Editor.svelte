@@ -14,6 +14,7 @@
     head: number;
     dirty: boolean;
     saved: Text;
+    lang: Lang;
   }
 </script>
 
@@ -22,18 +23,17 @@
   import { Compartment, EditorState } from "@codemirror/state";
   import { EditorView } from "@codemirror/view";
   import { basicSetup } from "codemirror";
-  import { pythonLanguage } from "@codemirror/lang-python";
   import { LanguageSupport } from "@codemirror/language";
-  import { invoke } from "@tauri-apps/api/core";
-  import { open, save } from "@tauri-apps/plugin-dialog";
+  import { host as program } from "$host";
   import { Button } from "$lib/components/ui/button";
   import { confirm } from "./ConfirmDialog.svelte";
   import { editorTheme } from "./editorTheme";
   import { evalBlock, evalLine, evaluation, type EvalHandlers } from "./evaluation";
-  import { evaluate, info, interrupt, pyComplete, pyInspect, pySignatures } from "./session.svelte";
+  import { complete, evaluate, info, inspect, interrupt, signatures, type CodeAt } from "./session.svelte";
   import type { HelpSubject } from "./Docs.svelte";
   import { sessionCompletions } from "./completion";
-  import { pythonHints } from "./hints";
+  import { sessionHints } from "./hints";
+  import { LANGS, fileFilters, langOfPath, type Lang } from "./languages";
   import { addRecent, removeRecent, settings, type OpenFiles } from "./settings.svelte";
   import { indentation, tabKeymap } from "./indent";
   import X from "@lucide/svelte/icons/x";
@@ -46,6 +46,7 @@
     onDragStart,
     openElsewhere,
     onFilesChange,
+    onLangChange,
   }: {
     /** The group the menu and the shortcuts act on; its active tab is marked. */
     current?: boolean;
@@ -57,6 +58,8 @@
     openElsewhere: (path: string) => boolean;
     /** The files open in this group changed: which, in tab order, and the one on screen. */
     onFilesChange?: (files: OpenFiles) => void;
+    /** The language of the document on screen changed. */
+    onLangChange?: (lang: Lang) => void;
   } = $props();
 
   interface Tab {
@@ -66,6 +69,9 @@
     dirty: boolean;
     /** The text as last opened or saved: the tab is modified while it differs. */
     saved: Text;
+    /** The language its code is: the one its file's extension names, else the
+     *  one chosen for it (Session > Language), else the one for new files. */
+    lang: Lang;
   }
 
   let tabs = $state<Tab[]>([]);
@@ -73,10 +79,6 @@
   let host: HTMLDivElement;
   let view: EditorView;
 
-  const filters = [
-    { name: "Python", extensions: ["py"] },
-    { name: "All files", extensions: ["*"] },
-  ];
   const basename = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
   // Each tab keeps its own EditorState: the theme is reapplied when the tab or the theme changes.
@@ -116,30 +118,49 @@
     onFilesChange?.({ paths, active: tabs[active]?.path ?? null });
   });
 
+  $effect(() => {
+    const lang = tabs[active]?.lang;
+    if (lang) onLangChange?.(lang);
+  });
+
+  /** The language of the tab on screen. */
+  const lang = () => tabs[active]?.lang ?? settings.language;
+  /** A position, with the document it is in: the code intelligence resolves
+   *  what it imports from there. */
+  const located = (at: CodeAt): CodeAt => ({ ...at, file: tabs[active]?.path ?? null });
+
   const handlers: EvalHandlers = {
     evaluate: (code, line) => {
       const t = tabs[active];
-      evaluate(code, t.path ?? `<${t.name}>`, line);
+      evaluate(t.lang, code, t.path ?? `<${t.name}>`, line);
     },
-    // The name at the cursor as Jedi resolves it, so that help finds its reference entry.
+    // The name at the cursor as the session resolves it, so that help finds its reference entry.
     help: async ({ text, at }) => {
-      const info = at ? await pyInspect(at) : null;
-      onHelp(info ? { name: info.name, qualname: info.qualname, fullname: info.fullname } : { name: text });
+      const l = lang();
+      const info = at ? await inspect(l, located(at)) : null;
+      onHelp(info ? { name: info.name, qualname: info.qualname, fullname: info.fullname, lang: l } : { name: text, lang: l });
     },
-    interrupt,
+    interrupt: () => interrupt(lang()),
   };
 
-  const extensions = () => [
+  /** What the editor does with a language: its grammar, without its own
+   *  completions (the session's cover the file's names too), and the session's
+   *  completions, signatures and hover help. */
+  const langSlot = new Compartment();
+  const langConfig = (l: Lang) => [
+    new LanguageSupport(LANGS[l].language),
+    sessionHints({ inspect: (at) => inspect(l, located(at)), signatures: (at) => signatures(l, located(at)) }),
+    sessionCompletions(LANGS[l].language, (at) => complete(l, located(at))),
+  ];
+
+  const extensions = (l: Lang) => [
     basicSetup,
     tabKeymap,
     indentSlot.of(indentConfig()),
-    // Python without its own completions: the session's (Jedi) cover the file's names too.
-    new LanguageSupport(pythonLanguage),
+    langSlot.of(langConfig(l)),
     themeSlot.of([]),
     fontSlot.of([]),
     evaluation(handlers),
-    pythonHints({ inspect: pyInspect, signatures: pySignatures }),
-    sessionCompletions(pyComplete),
     EditorView.updateListener.of((u) => {
       const t = tabs[active];
       // Compared with what was saved, so undoing back to it (or retyping it) clears the mark.
@@ -150,6 +171,8 @@
   function show(i: number) {
     active = i;
     view.setState(tabs[i].state);
+    // A tab saved under another language's extension while another was on screen.
+    view.dispatch({ effects: langSlot.reconfigure(langConfig(tabs[i].lang)) });
     applyTheme();
     applyFont();
     applyIndent();
@@ -162,11 +185,25 @@
     show(i);
   }
 
-  function addTab(path: string | null, name: string, doc: string, selection?: { anchor: number; head: number }) {
+  function addTab(
+    path: string | null,
+    name: string,
+    doc: string,
+    selection?: { anchor: number; head: number },
+    lang: Lang = (path && langOfPath(path)) || settings.language,
+  ) {
     if (tabs[active]) tabs[active].state = view.state;
-    const state = EditorState.create({ doc, selection, extensions: extensions() });
-    tabs.push({ path, name, dirty: false, saved: state.doc, state });
+    const state = EditorState.create({ doc, selection, extensions: extensions(lang) });
+    tabs.push({ path, name, dirty: false, saved: state.doc, state, lang });
     show(tabs.length - 1);
+  }
+
+  /** Makes the tab on screen hold code of `l`: its grammar, its session. */
+  export function setLanguage(l: Lang) {
+    const t = tabs[active];
+    if (!t || t.lang === l) return;
+    t.lang = l;
+    view.dispatch({ effects: langSlot.reconfigure(langConfig(l)) });
   }
 
   /** An empty, untouched new tab: replaced by the next file instead of piling up. */
@@ -201,7 +238,7 @@
         const t = tabs[i];
         const { anchor, head } = t.state.selection.main;
         const doc = t.state.doc.toString();
-        return { path: t.path, name: t.name, doc, anchor, head, dirty: t.dirty, saved: t.saved };
+        return { path: t.path, name: t.name, doc, anchor, head, dirty: t.dirty, saved: t.saved, lang: t.lang };
       });
     if (all) {
       tabs = [];
@@ -215,7 +252,7 @@
   export function putTabs(moved: MovedTab[]) {
     for (const m of moved) {
       const blank = isBlank(active) ? active : -1;
-      addTab(m.path, m.name, m.doc, { anchor: m.anchor, head: m.head });
+      addTab(m.path, m.name, m.doc, { anchor: m.anchor, head: m.head }, m.lang);
       tabs[active].dirty = m.dirty;
       tabs[active].saved = m.saved;
       if (blank >= 0) closeAt(blank);
@@ -234,8 +271,8 @@
   }
 
   export async function openFile() {
-    const path = await open({ multiple: false, filters });
-    if (typeof path === "string") await openPath(path);
+    const path = await program.openFile({ filters: fileFilters(lang()) });
+    if (path !== null) await openPath(path);
   }
 
   /** Opens `path` in a new tab, or shows the tab that already has it, and puts it
@@ -244,7 +281,7 @@
   export async function openPath(path: string, remember = true) {
     if (showPath(path) || openElsewhere(path)) return remember && addRecent(path);
     try {
-      const text = await invoke<string>("read_file", { path });
+      const text = await program.invoke<string>("read_file", { path });
       const previous = active;
       const replace = isBlank(previous);
       addTab(path, basename(path), text);
@@ -270,16 +307,23 @@
     const t = tabs[active];
     let path = t.path;
     if (!path || saveAs) {
-      path = await save({ defaultPath: t.path ?? `${t.name.replace(/\s+/g, "_")}.py`, filters });
+      const ext = LANGS[t.lang].extensions[0];
+      path = await program.saveFile({ defaultPath: t.path ?? `${t.name.replace(/\s+/g, "_")}.${ext}`, filters: fileFilters(t.lang) });
       if (!path) return;
     }
     // What is written, not what is on screen once the write returns: an edit made
     // in between keeps the tab modified.
     const written = view.state.doc;
     try {
-      await invoke("write_file", { path, contents: written.toString() });
+      await program.invoke("write_file", { path, contents: written.toString() });
       t.path = path;
       t.name = basename(path);
+      // Saved under another language's extension, the tab is code of that one.
+      const named = langOfPath(path);
+      if (named && named !== t.lang) {
+        if (t === tabs[active]) setLanguage(named);
+        else t.lang = named;
+      }
       t.saved = written;
       t.dirty = !(t === tabs[active] ? view.state : t.state).doc.eq(written);
       addRecent(path);

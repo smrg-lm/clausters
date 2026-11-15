@@ -62,6 +62,8 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
+      # The same frontend as a page (vite.web.config.ts): it has to build too.
+      - run: npm run build:web
       # The page's pure modules under node's own runner, straight from the
       # sources (tests/resolve.mjs), and the driver spoken to as a subprocess.
       - run: npm test
