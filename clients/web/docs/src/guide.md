@@ -171,6 +171,37 @@ A carrier can be open with nothing behind it: a WebSocket that connects proves a
 
 `Session.embed` boots instead, which is the pair's other half, and what a tab can bring up is its own engine. Booting a server on the machine a socket points at is the one thing neither half does here — a page starts no process — which is why `live` takes an address and not a launch.
 
+### A session in a worker
+
+A page can run the code that plays in a **worker** and keep the engine itself. The page boots the engine, as always from a gesture, and makes a **link** to it for the worker: a client tag of its own and a port that goes to the engine directly. In the worker, that port is the engine's address:
+
+```js
+// the page
+const engine = await server();
+await engine.resume();
+const worker = new Worker("./player.js", { type: "module" });
+const link = engine.link();
+worker.postMessage({ port: link.port }, [link.port]);
+
+// player.js, the worker
+import { Session, play } from "clausters/session";
+import * as seq from "clausters/seq";
+self.onmessage = async ({ data }) => {
+    const s = (await Session.live(data.port)).activate();
+    s.clock.start();
+    play(seq.pbind({ degree: seq.pseq([0, 2, 4], Infinity), dur: 0.25 }));
+};
+```
+
+The worker imports from `clausters/session`, `clausters/defs` and `clausters/seq`: the package's main entry defines the page's elements, and a worker has no document.
+
+What this gives a page:
+
+- **Code that can be stopped.** `worker.terminate()` ends the worker whatever it is doing, an infinite loop included, and the engine and the page go on. What the worker left sounding stops from the page, with a handle of its own on the engine (`new Server({ engine }).attach()`, then `panic()`). `link.close()` lets the worker's client go; a new worker gets a new link onto the same engine.
+- **A clock that does not compete with drawing.** The worker's routines and patterns run off the page's thread, and what they send reaches the engine without passing through it, so a heavy layout or the GUI host's frames do not delay them.
+
+The session attaches, as `live` does over a socket: the engine is the page's, so the worker cannot `boot` it, and `/quit` from the worker stops it for everyone, as it stops any server. It shares no clock with the engine, so its timebase is anchored over `/clock_query`, as over a socket. When the engine closes, the worker's carrier reports it `gone`.
+
 ### The default session
 
 Beside the named ones there is the **default session**, `defaultSession`: the ambient environment everything falls back to when no session was named. Lend a server to it and the ambient verbs work with nothing wired:

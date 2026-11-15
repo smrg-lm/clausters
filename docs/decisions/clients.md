@@ -562,3 +562,36 @@ through the embed library and a page through the NRT worker's module, and
 with, so the same samples are the same bytes from both clients. An empty
 `SoundFile` is a shape with no path, which `to_buffer` allocates as silence;
 the audio editor opens one and asks for a path when it is saved.
+
+## A worker's session attaches to its page's engine over a port (2026-11-15)
+
+A page can run the code that plays in a worker, so terminating the worker
+stops that code (an infinite loop included) while the engine and the page go
+on. A worker has no `AudioContext`, so the engine stays the page's, and the
+worker reaches it as a third carrier beside the page's own and a WebSocket:
+the page makes a link (`ClaustersServer.link()`), a client tag of its own and
+a port, and the worker opens `Session.live(port)` over it.
+
+- **The worker speaks to the worklet, not to the page.** The link carries a
+  second port whose other end is in the worklet, which routes the client's
+  replies there by tag; the NRT worker already reaches the worklet this way.
+  Relaying through the page would have been less code and would have put the
+  page's main thread, the one that draws, between the worker's clock and the
+  engine, which is what running the code in a worker is meant to avoid.
+- **It attaches, never boots.** The engine is the page's, started from the
+  page's gesture, so the carrier has no `boot`: `Server.boot` refuses it as it
+  refuses a socket, and `/quit` from the worker stops the engine for every
+  client, as it stops any server.
+- **It shares no clock.** A page's carrier reads the engine's counter
+  synchronously through the `AudioContext`; a worker has none, so its
+  `Server` anchors over `/clock_query`, as over a socket, rather than mapping
+  one clock onto another across realms.
+- **The page says when the engine is gone.** A client in another realm
+  cannot see the context close, so the page tells every open link, whoever
+  closed it. The worker asks for the engine's port when it connects, and a
+  link closed before that gives none, so a link is not a way to reach an
+  engine after its page let it go.
+- **Decoding stays on the page.** The one call of the client that decodes
+  with the `AudioContext` (a bundle's buffers) belongs to the page's
+  elements, which a worker cannot have; a buffer from samples or from the
+  page's storage works over the link as it does on the page.

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a session in a worker</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 52rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre; align-self: stretch; overflow-x: auto; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note"><b>A session in a worker</b>, on this page's engine.
+
+The page boots the engine and keeps it: its <code>AudioContext</code>, its
+audio, the gesture that starts it. A worker runs the code that plays
+(<code>worker-session.js</code>), and the page gives it a <b>link</b> to the
+engine (<code>engine.link()</code>), a port the worker opens a session over
+with <code>Session.live(port)</code>. The worker is one client of the engine
+with ids of its own, and what it sends goes to the engine directly, not
+through this page's thread.
+
+What the worker gives: its code can be <b>stopped</b>. Press <i>hang</i> and
+the worker enters a loop that never yields, so its clock never wakes again;
+the page goes on answering. <i>Terminate</i> ends the worker, lets its link go
+and silences the engine from the page (<code>Server.panic</code>), since what
+the worker left sounding has nobody to stop it. The engine is still running:
+<i>start</i> again gives a new worker a new link onto it.
+
+The Python client's counterpart is a script in a process of its own,
+attached with <code>Session.live</code> to a server something else booted;
+the worker is the same separation inside a page.
+
+Build first (<code>./build.sh</code> from <code>clients/web</code>), then serve
+this directory and open the page.</div>
+      <div>
+        <button id="start">start</button>
+        <button id="hang" disabled>hang</button>
+        <button id="terminate" disabled>terminate</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+    <script type="module">
+      import { Server, server } from "../../dist/index.js";
+
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      let engine = null;
+      let worker = null;
+      let link = null;
+
+      el("start").onclick = async () => {
+        el("start").disabled = true;
+        // The page's engine, started from this click.
+        engine = await server({ channels: 2 });
+        await engine.resume();
+
+        worker = new Worker("./worker-session.js", { type: "module" });
+        worker.onmessage = (event) => log(event.data.line);
+        // A link: a client tag of its own and a port to the engine, which
+        // goes to the worker.
+        link = engine.link();
+        worker.postMessage({ type: "link", port: link.port }, [link.port]);
+        el("hang").disabled = false;
+        el("terminate").disabled = false;
+      };
+
+      el("hang").onclick = () => {
+        el("hang").disabled = true;
+        worker.postMessage({ type: "hang" });
+      };
+
+      el("terminate").onclick = async () => {
+        worker.terminate();
+        link.close();
+        // What the worker left sounding stops from here: a handle of the
+        // page's own on the same engine.
+        const handle = await new Server({ engine }).attach({ adoptDefault: false });
+        handle.panic();
+        log(`terminated; the engine answers: ${(await handle.status()).synths} synths`);
+        handle.close();
+        el("hang").disabled = true;
+        el("terminate").disabled = true;
+        el("start").disabled = false;
+      };
+    </script>
+  </body>
+</html>

@@ -176,7 +176,7 @@ subpath. The Node.js-only parts (the Rust carrier spawning `node`, the
 per-language environments under npm, the npm package of the editor) do not
 come across.
 
-### ⬜ W32 - A server reached over a port
+### ✅ W32 - A server reached over a port *(done 2026-11-15)*
 
 A third carrier beside `"page"` and `"ws"`: a `ClaustersServer`
 (`engine/server.ts`) whose engine is in another realm, reached over a
@@ -219,6 +219,22 @@ What it gives a page without the editor:
   render); terminating the worker mid-routine leaves the engine running and
   answering; the reference client's shape is named in `docs/bindings.md` as
   `idiom` if the spelling of the hand-over differs from anything Python has.
+
+**Done.** The page makes a link (`ClaustersServer.link()`: a client tag and a
+port) and transfers its port; the worker opens `Session.live(port)` over it,
+which attaches through `portConnection`. The worker asks for the engine's port
+when it connects, the page hands over a port whose other end is in the worklet
+(which routes that client's replies to it by tag), and tells every open link
+when the engine closes. The open points came out this way: the decoding stays
+on the page, since the one call that decodes with the `AudioContext` is a
+bundle's, an element a worker cannot have; the carrier shares no clock and
+anchors over `/clock_query`; and it has no `boot`. `clausters/session` (the
+session layer without the page's elements) came over from the unmerged
+branch, since a worker cannot import the facade either. Recorded in
+`docs/decisions.md` ("A worker's session attaches to its page's engine over a
+port") and `docs/bindings.md` (a server's address); `tests/worker.html` is the
+acceptance, run in Chrome and Firefox, and `examples/basics/worker.html` the
+example.
 
 ### ⬜ W33 - The GUI host reached over a port
 

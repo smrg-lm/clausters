@@ -140,6 +140,7 @@ quoted title lands here, on the link to the entry.
 - [A panic stops what an environment plays, and the editor's interrupt key reaches it](decisions/clients.md#a-panic-stops-what-an-environment-plays-and-the-editors-interrupt-key-reaches-it)
 - [A pattern is a function, as a UGen is](decisions/clients.md#a-pattern-is-a-function-as-a-ugen-is)
 - [A sound file is a client object, and a buffer is never one (2026-10-16)](decisions/clients.md#a-sound-file-is-a-client-object-and-a-buffer-is-never-one-2026-10-16)
+- [A worker's session attaches to its page's engine over a port (2026-11-15)](decisions/clients.md#a-workers-session-attaches-to-its-pages-engine-over-a-port-2026-11-15)
 
 ## [The web client and the engine in a page](decisions/web.md)
 

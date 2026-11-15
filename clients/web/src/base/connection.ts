@@ -11,6 +11,9 @@
 // - `pageConnection()` -- the in-page engine: the audio server compiled to
 //   wasm in this page's AudioWorklet, reached through the per-page
 //   `server()` singleton. No process, no socket.
+// - `portConnection()` -- the same engine from **another realm**, a worker
+//   the page handed a link to (`ClaustersServer.link`): the worker has no
+//   `AudioContext` of its own, so it speaks to the worklet over a port.
 //
 // Beside the two carriers there is a third thing shaped like one and going
 // nowhere: `OscNrtInterface`, which **writes time instead of waiting for it**.
@@ -22,7 +25,7 @@
 import { encodeScoreBundle, oscArg } from "./osc.ts";
 import type { BundleMessage, MsgArg, OscArg } from "./osc.ts";
 import { server } from "../engine/server.ts";
-import type { ClaustersServer } from "../engine/server.ts";
+import type { ClaustersServer, LinkMessage } from "../engine/server.ts";
 
 /**
  * A synchronous view of a server's sample counter -- what a sample-locked
@@ -303,6 +306,111 @@ export async function pageConnection(
                     Math.round(engine.context.currentTime * sampleRate) - offset,
             };
         },
+    };
+}
+
+/**
+ * The carrier of a client in **another realm**: a worker's connection to an
+ * engine of the page that started it, over the port of a link the page made
+ * for it ({@link ClaustersServer.link}) and transferred.
+ *
+ * The page keeps the engine -- its `AudioContext`, its audio, its gesture --
+ * and the worker is one client of it, with a tag of its own, speaking to the
+ * worklet directly: what it sends and what it hears does not wait for the
+ * page's main thread. So it is a server this realm did not start and cannot:
+ * it has no `boot` (a `Server` over it `attach`es, as `Session.live(port)`
+ * does) and no `quit` (`/quit` on the wire stops the page's engine, as it
+ * stops any server). It shares no clock with the engine either, so a
+ * `Server` anchors over `/clock_query`, as over a socket.
+ *
+ * Resolves when the page hands the engine's port over; a link already
+ * closed, or one nobody answers within `timeout` seconds, rejects.
+ */
+export function portConnection(
+    port: MessagePort,
+    { timeout = 5 }: { timeout?: number } = {},
+): Promise<Connection> {
+    return new Promise((resolve, reject) => {
+        let gone = false;
+        let opened = false;
+        const timer = setTimeout(() => {
+            if (opened) return;
+            port.onmessage = null;
+            reject(new Error(`no engine answered on this port within ${timeout}s`));
+        }, timeout * 1000);
+        port.onmessage = (event: MessageEvent) => {
+            const msg = event.data as LinkMessage;
+            if (msg.type === "gone") {
+                gone = true;
+                if (!opened) {
+                    clearTimeout(timer);
+                    reject(new Error("the engine this port was linked to is gone"));
+                }
+            } else if (msg.type === "engine" && !opened) {
+                opened = true;
+                clearTimeout(timer);
+                resolve(linkedConnection(msg.port, () => gone, () => (gone = true)));
+            }
+        };
+        port.postMessage({ type: "open" });
+    });
+}
+
+/** The `Connection` over an engine's own port, once the link handed it over. */
+function linkedConnection(
+    engine: MessagePort,
+    isGone: () => boolean,
+    setGone: () => void,
+): Connection {
+    const listeners = new Set<(packet: Uint8Array) => void>();
+    const loads: { resolve: () => void; reject: (error: Error) => void }[] = [];
+    engine.onmessage = (event: MessageEvent) => {
+        const msg = event.data as
+            | { type: "osc"; data: Uint8Array }
+            | { type: "buffer_load"; ok: boolean; message?: string }
+            | { type: "quit" }
+            | { type: "error"; message: string };
+        if (msg.type === "osc") {
+            const bytes = new Uint8Array(msg.data);
+            for (const listener of [...listeners]) listener(bytes);
+        } else if (msg.type === "buffer_load") {
+            const waiter = loads.shift();
+            if (msg.ok) waiter?.resolve();
+            else waiter?.reject(new Error(msg.message));
+        } else {
+            // The engine stopped: a `/quit` or a failure of the audio thread.
+            setGone();
+            if (msg.type === "error") console.error(`clausters engine: ${msg.message}`);
+        }
+    };
+    return {
+        // The engine's ring bounds a packet as the page's own carrier is
+        // bounded, so a bulk round trip keeps the classic chunk.
+        stream: false,
+        send: (packet) => {
+            engine.postMessage({ type: "osc", data: packet }, [packet.buffer as ArrayBuffer]);
+        },
+        addReply: (listener) => {
+            listeners.add(listener);
+        },
+        removeReply: (listener) => {
+            listeners.delete(listener);
+        },
+        close: () => {
+            listeners.clear();
+            engine.postMessage({ type: "close" });
+        },
+        gone: isGone,
+        // The worklet installs the samples as it does the page's: one copy,
+        // and the array is the engine's after the call (see `bulkLoad`).
+        bulkLoad: (bufnum, channels, sampleRate, samples) =>
+            new Promise<void>((resolve, reject) => {
+                loads.push({ resolve, reject });
+                engine.postMessage(
+                    { type: "buffer_load", index: bufnum, channels, sampleRate, data: samples.buffer },
+                    [samples.buffer as ArrayBuffer],
+                );
+            }),
     };
 }
 

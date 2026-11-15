@@ -69,6 +69,18 @@ export interface ClaustersServer {
      * subscription is its own. See `docs/ipc.md`.
      */
     claimPeer(): number;
+    /**
+     * This engine for a client in **another realm** -- a worker, which has no
+     * `AudioContext` and cannot reach this one: a peer of its own and a port
+     * that goes to the engine directly. Transfer `link.port` to the worker,
+     * which opens a session over it (`Session.live(port)`); {@link
+     * EngineLink.close} lets the client go, which is what a page does after
+     * terminating that worker.
+     *
+     * The engine stays this page's: the worker attaches to it, starts and
+     * stops nothing, and is told when the engine closes.
+     */
+    link(): EngineLink;
     clock(): Promise<number>;
     /**
      * The engine's clock paired with the context's frame counter, both read
@@ -97,6 +109,31 @@ export interface ClaustersServer {
      */
     close(): Promise<void>;
 }
+
+/**
+ * A client of an engine in another realm, as the engine's page holds it
+ * ({@link ClaustersServer.link}).
+ */
+export interface EngineLink {
+    /** The client's end: transfer it to the worker that runs the client. */
+    readonly port: MessagePort;
+    /** The client's tag on the engine. */
+    readonly peer: number;
+    /**
+     * Lets the client go: the engine forgets its port and the client hears
+     * that the engine is gone. Idempotent.
+     */
+    close(): void;
+}
+
+/**
+ * What an engine's page says to a client in another realm, over the link's
+ * port, once the client has asked with `{ type: "open" }`; the engine's own
+ * messages travel on the port the first one carries.
+ */
+export type LinkMessage =
+    | { type: "engine"; port: MessagePort; peer: number }
+    | { type: "gone" };
 
 let instance: Promise<ClaustersServer> | null = null;
 
@@ -152,6 +189,13 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
     let nextPeer = DEFAULT_PEER;
     /** The one close, remembered -- see `close` below. */
     let closing: Promise<void> | null = null;
+    /** The clients in other realms, each told when the engine goes. */
+    const links = new Set<EngineLink>();
+    // However the context closes -- `close` below or a caller closing it
+    // directly -- a client in another realm cannot see it, so it is told.
+    raw.context.addEventListener("statechange", () => {
+        if (raw.context.state === "closed") for (const link of [...links]) link.close();
+    });
     raw.onReply = (bytes, peer) => {
         const mine = listeners.get(peer);
         if (mine) for (const listener of [...mine]) listener(bytes);
@@ -173,6 +217,46 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
             listeners.get(peer)?.delete(listener);
         },
         claimPeer: () => ++nextPeer,
+        link: () => {
+            // Two channels: this page's to the client, which is the one port
+            // the caller transfers, and the engine's own (the worklet's end
+            // and the client's), which the first carries when the client asks
+            // for it -- and only while the link is open, so a link closed
+            // before anyone used it gives nothing.
+            const peer = ++nextPeer;
+            const control = new MessageChannel();
+            let open = true;
+            let lent = false;
+            const link: EngineLink = {
+                port: control.port2,
+                peer,
+                close: () => {
+                    if (!open) return;
+                    open = false;
+                    links.delete(link);
+                    if (lent) raw.release(peer);
+                    // Not closed after it: a port closed in the same turn may
+                    // drop what was just posted to it, and this is the one
+                    // message the client cannot learn otherwise.
+                    control.port1.postMessage({ type: "gone" } satisfies LinkMessage);
+                },
+            };
+            control.port1.onmessage = (event: MessageEvent) => {
+                if ((event.data as { type?: string }).type !== "open" || lent) return;
+                if (!open) {
+                    control.port1.postMessage({ type: "gone" } satisfies LinkMessage);
+                    return;
+                }
+                lent = true;
+                const engine = raw.lend(peer);
+                control.port1.postMessage(
+                    { type: "engine", port: engine, peer } satisfies LinkMessage,
+                    [engine],
+                );
+            };
+            links.add(link);
+            return link;
+        },
         clock: () => raw.clock(),
         clockAnchor: () => raw.clockAnchor(),
         bufferLoad: (index, channels, sampleRate, samples) =>
@@ -193,6 +277,7 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
             // what makes both callers wait on one close.
             closing ??= (async () => {
                 if (raw.context.state === "closed") return;
+                for (const link of [...links]) link.close();
                 listeners.clear();
                 raw.dispose();
                 await raw.context.close();

@@ -32,6 +32,11 @@ import type { EngineExports } from "./faust-link.ts";
 //                    {type:"nrt-port", port}   the NRT worker's channel; jobs the
 //                        engine cannot do itself (reading a soundfile: no
 //                        filesystem here) leave through it
+//                    {type:"client", port, peer}  a client in another realm (a
+//                        worker's session), reached over `port`: it speaks the
+//                        same osc/clock/buffer_load messages there, always as
+//                        `peer`, and its replies go back over that port
+//                    {type:"client-close", peer}  that client is gone: forget it
 //   worklet -> main: {type:"osc", data, peer}  one reply packet (bytes) and
 //                        which client it is for, so the page routes it
 //                    {type:"clock", clock, frame, epoch}
@@ -42,6 +47,8 @@ type InMessage =
     | { type: "osc"; data: ArrayBuffer; peer: number }
     | { type: "clock" }
     | { type: "nrt-port"; port: MessagePort }
+    | { type: "client"; port: MessagePort; peer: number }
+    | { type: "client-close"; peer: number }
     | {
           type: "buffer_load";
           index: number;
@@ -122,6 +129,12 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     dead: boolean;
     /** The NRT worker's channel, once the page hands one over. */
     nrt: MessagePort | null;
+    /**
+     * The clients in other realms, by their tag: a worker's session speaks to
+     * this engine over its own port, so its replies go there rather than
+     * through the page's main thread.
+     */
+    clients: Map<number, MessagePort>;
     /** Jobs out with the Worker: ticket -> the buffer the result installs to. */
     outstanding: Map<number, number>;
     /** The `/buffer_write` being handed over, a run per turn. */
@@ -171,6 +184,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         this.pending = [];
         this.dead = false;
         this.nrt = null;
+        this.clients = new Map();
         this.outstanding = new Map();
         this.writing = null;
         this.write = null;
@@ -185,16 +199,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         if (msg.type === "osc") {
             this.pending.push({ peer: msg.peer, bytes: new Uint8Array(msg.data) });
         } else if (msg.type === "clock") {
-            // `frame` is the context's own frame counter read in the same
-            // instant as the engine's: their difference is a fixed integer, so
-            // a client can map `AudioContext.currentTime` to the engine's
-            // sample axis afterwards with no round trip and no drift.
-            this.port.postMessage({
-                type: "clock",
-                clock: this.server.clock(),
-                frame: currentFrame,
-                epoch: this.epoch,
-            });
+            this.answerClock(this.port);
         } else if (msg.type === "nrt-port") {
             // The page found a Worker to do the work this thread must not: the
             // engine starts handing those jobs out from here on. The channel
@@ -221,49 +226,113 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             this.nrt.start();
             this.server.delegateJobs();
         } else if (msg.type === "buffer_load") {
-            // Runs between quanta on this thread -- the thread that owes the
-            // next one. So a take is copied in **runs** rather than in one
-            // call: measured natively, a whole five-minute stereo take is some
-            // fourteen times a quantum's budget, and no count of jobs divides
-            // one call. `begin` allocates, each `chunk` costs what it copies,
-            // `end` is a pointer swap; nothing is readable under this index
-            // until then, so the engine never sees a half-written take.
-            try {
-                const samples = new Float32Array(msg.data);
-                const frames = samples.length / msg.channels;
-                const ticket = this.server.bufferLoadBegin(
-                    msg.index,
-                    msg.channels,
-                    msg.sampleRate,
-                    frames,
-                );
-                try {
-                    const run = this.server.installFrames() * msg.channels;
-                    for (let at = 0; at < samples.length; at += run) {
-                        this.server.bufferLoadChunk(
-                            ticket,
-                            at,
-                            samples.subarray(at, Math.min(at + run, samples.length)),
-                        );
-                    }
-                    this.server.bufferLoadEnd(ticket);
-                } catch (e) {
-                    this.server.bufferLoadCancel(ticket);
-                    throw e;
-                }
-                this.port.postMessage({
-                    type: "buffer_load",
-                    index: msg.index,
-                    ok: true,
-                });
-            } catch (e) {
-                this.port.postMessage({
-                    type: "buffer_load",
-                    index: msg.index,
-                    ok: false,
-                    message: String(e),
-                });
+            this.bufferLoad(msg, this.port);
+        } else if (msg.type === "client") {
+            this.openClient(msg.peer, msg.port);
+        } else if (msg.type === "client-close") {
+            this.closeClient(msg.peer);
+        }
+    }
+
+    /**
+     * A client in another realm, from here on reached over `port`. What it
+     * sends there is the page's own protocol, minus the jobs the page hands
+     * over (`nrt-port`, another `client`): a packet, a clock read, a buffer to
+     * install. Its tag is the one the page claimed for it, whatever a message
+     * says, so a client cannot speak as another.
+     */
+    openClient(peer: number, port: MessagePort): void {
+        this.closeClient(peer);
+        this.clients.set(peer, port);
+        port.onmessage = (e: MessageEvent) => {
+            const msg = e.data as InMessage | { type: "close" };
+            if (msg.type === "osc") {
+                this.pending.push({ peer, bytes: new Uint8Array(msg.data) });
+            } else if (msg.type === "clock") {
+                this.answerClock(port);
+            } else if (msg.type === "buffer_load") {
+                this.bufferLoad(msg, port);
+            } else if (msg.type === "close") {
+                this.closeClient(peer);
             }
+        };
+        port.start();
+    }
+
+    /** Forgets a client in another realm; its replies go nowhere after this. */
+    closeClient(peer: number): void {
+        const port = this.clients.get(peer);
+        if (port === undefined) return;
+        this.clients.delete(peer);
+        port.onmessage = null;
+        port.close();
+    }
+
+    /** Tells the page and every client in another realm the same news. */
+    broadcast(message: { type: "quit" } | { type: "error"; message: string }): void {
+        this.port.postMessage(message);
+        for (const port of this.clients.values()) port.postMessage(message);
+    }
+
+    answerClock(port: MessagePort): void {
+        // `frame` is the context's own frame counter read in the same
+        // instant as the engine's: their difference is a fixed integer, so
+        // a client can map `AudioContext.currentTime` to the engine's
+        // sample axis afterwards with no round trip and no drift.
+        port.postMessage({
+            type: "clock",
+            clock: this.server.clock(),
+            frame: currentFrame,
+            epoch: this.epoch,
+        });
+    }
+
+    bufferLoad(
+        msg: { index: number; channels: number; sampleRate: number; data: ArrayBuffer },
+        port: MessagePort,
+    ): void {
+        // Runs between quanta on this thread -- the thread that owes the
+        // next one. So a take is copied in **runs** rather than in one
+        // call: measured natively, a whole five-minute stereo take is some
+        // fourteen times a quantum's budget, and no count of jobs divides
+        // one call. `begin` allocates, each `chunk` costs what it copies,
+        // `end` is a pointer swap; nothing is readable under this index
+        // until then, so the engine never sees a half-written take.
+        try {
+            const samples = new Float32Array(msg.data);
+            const frames = samples.length / msg.channels;
+            const ticket = this.server.bufferLoadBegin(
+                msg.index,
+                msg.channels,
+                msg.sampleRate,
+                frames,
+            );
+            try {
+                const run = this.server.installFrames() * msg.channels;
+                for (let at = 0; at < samples.length; at += run) {
+                    this.server.bufferLoadChunk(
+                        ticket,
+                        at,
+                        samples.subarray(at, Math.min(at + run, samples.length)),
+                    );
+                }
+                this.server.bufferLoadEnd(ticket);
+            } catch (e) {
+                this.server.bufferLoadCancel(ticket);
+                throw e;
+            }
+            port.postMessage({
+                type: "buffer_load",
+                index: msg.index,
+                ok: true,
+            });
+        } catch (e) {
+            port.postMessage({
+                type: "buffer_load",
+                index: msg.index,
+                ok: false,
+                message: String(e),
+            });
         }
     }
 
@@ -657,17 +726,20 @@ class ClaustersProcessor extends AudioWorkletProcessor {
                     4,
                 ).getUint32(0, true);
                 const data = reply.slice(4);
-                this.port.postMessage({ type: "osc", data, peer }, [data.buffer]);
+                (this.clients.get(peer) ?? this.port).postMessage(
+                    { type: "osc", data, peer },
+                    [data.buffer],
+                );
             }
 
             if (this.server.quit_requested()) {
                 this.dead = true;
-                this.port.postMessage({ type: "quit" });
+                this.broadcast({ type: "quit" });
                 return false;
             }
         } catch (e) {
             this.dead = true;
-            this.port.postMessage({ type: "error", message: String(e) });
+            this.broadcast({ type: "error", message: String(e) });
             return false;
         }
         return true;

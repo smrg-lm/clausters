@@ -34,7 +34,7 @@
 import { TempoClock } from "./base/clock.ts";
 import { LogicalTimebase, MonotonicTimebase } from "./base/timebase.ts";
 import type { Timebase } from "./base/timebase.ts";
-import { pageConnection, OscNrtInterface } from "./base/connection.ts";
+import { pageConnection, portConnection, OscNrtInterface } from "./base/connection.ts";
 import { OscDestination } from "./base/destination.ts";
 import { Environment } from "./base/environment.ts";
 import { main } from "./base/main.ts";
@@ -383,18 +383,27 @@ export class Session extends Environment {
      * The browser's only network carrier, and the one that reaches a server
      * with the whole def catalogue (the embedded engine is the `synth,embed`
      * build, with no Faust JIT).
+     *
+     * **In a worker, the address is a port**: the one a page made for it
+     * with `ClaustersServer.link()` and transferred, which reaches that page's
+     * engine. The session attaches to it as to any running server -- the page
+     * keeps the engine and its audio -- and the worker can be terminated with
+     * the engine still running, a loop in the session's code included.
      */
     static async live(
-        url = "ws://127.0.0.1:57120",
+        url: string | MessagePort = "ws://127.0.0.1:57120",
         { clock, timebase, latency, timeout, share }: SessionOptions = {},
     ): Promise<Session> {
         await loadCore();
         // `attach`: nothing here started that server, and a WebSocket that
         // connects proves a listener rather than a server -- so the session
         // refuses to be built against silence instead of dropping every later
-        // message into it.
+        // message into it. A port is the same: the page's engine, not ours.
+        const where: ServerOptions = typeof url === "string"
+            ? { transport: "ws", url }
+            : { connection: await portConnection(url) };
         return Session.over(
-            { transport: "ws", url, timeout, share },
+            { ...where, timeout, share },
             { clock, timebase, latency },
             "attach",
         );

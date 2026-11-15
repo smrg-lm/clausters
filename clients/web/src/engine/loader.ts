@@ -36,6 +36,14 @@ export interface ClaustersEngine {
      * host) must not send under the same tag.
      */
     send(bytes: Uint8Array, peer: number): void;
+    /**
+     * A port straight into the engine for a client in another realm (a
+     * worker), which speaks there as `peer` and hears its replies there: the
+     * worklet routes them by tag, so they do not pass through this thread.
+     */
+    lend(peer: number): MessagePort;
+    /** Forgets the client `lend` gave a port to. */
+    release(peer: number): void;
     /** The engine's sample clock (a round trip through the audio thread). */
     clock(): Promise<number>;
     /**
@@ -151,6 +159,16 @@ export async function bootClausters({
             node.port.postMessage({ type: "osc", data: bytes, peer }, [
                 bytes.buffer as ArrayBuffer,
             ]);
+        },
+        lend(peer: number) {
+            const channel = new MessageChannel();
+            node.port.postMessage({ type: "client", port: channel.port1, peer }, [
+                channel.port1,
+            ]);
+            return channel.port2;
+        },
+        release(peer: number) {
+            node.port.postMessage({ type: "client-close", peer });
         },
         clock() {
             return this.clockAnchor().then((anchor) => anchor.sample);

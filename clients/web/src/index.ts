@@ -38,7 +38,7 @@
 // lazy until first used.
 
 export { server, engine, ANY_PEER, DEFAULT_PEER } from "./engine/server.ts";
-export type { ClaustersServer, ReplyListener } from "./engine/server.ts";
+export type { ClaustersServer, EngineLink, LinkMessage, ReplyListener } from "./engine/server.ts";
 export type { BootOptions, ClockAnchor } from "./engine/loader.ts";
 export { GuiHost, guiHost, newGuiHost, pageGuiConnection } from "./gui/host.ts";
 // Measuring an element against the display, which a page needs wherever it
@@ -192,7 +192,7 @@ export { IdSpaces, loadCore } from "./base/core.ts";
 // reason the options bags below are exported: a public signature names it.
 export type { IdShare } from "./base/ids.ts";
 export { WHOLE_SHARE, shareOf } from "./base/ids.ts";
-export { OscNrtInterface, OscScore, WsConnection, pageConnection } from "./base/connection.ts";
+export { OscNrtInterface, OscScore, WsConnection, pageConnection, portConnection } from "./base/connection.ts";
 export type { Connection, PageConnection, SampleClock } from "./base/connection.ts";
 export * as defs from "./defs/index.ts";
 export { Server, Transport } from "./defs/server/index.ts";

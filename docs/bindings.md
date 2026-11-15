@@ -755,6 +755,15 @@ the multitrack from the snapshot, as a close does, and keep that snapshot by
 the multitrack for a later open. These are JSON payloads on the host's doors,
 with no new C/wasm symbol or ABI counter change.
 
+**A server's address is what the platform reaches it with**: Python
+`Session.live(port=57110)`, a port on the network; TypeScript
+`Session.live("ws://127.0.0.1:57120")` in a page or under node, and in a
+page's worker `Session.live(port)`, the `MessagePort` of a link the page made
+to its engine (`engine.link()`). The verb is the same; where Python boots a
+server when none answers, a page and a worker only attach. A worker has no
+counterpart in Python, whose same separation is a script in a process of its
+own.
+
 **Options are one object in TypeScript**, as everywhere in that client:
 Python `seq.play(at, server)`; TypeScript `seq.play({ at, server })`.
 

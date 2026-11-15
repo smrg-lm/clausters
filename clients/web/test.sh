@@ -312,6 +312,7 @@ run_pages() {
     run_page transport.html # the governing transport: a frozen subtree and a held beat
     run_page hosts.html    # two host instances in one page, sharing only the event loop
     run_page session.html  # two sessions on two engines: the ambient verbs resolve right
+    run_page worker.html   # a session in a worker on the page's engine, terminated in a loop
     run_page plot.html     # the plot verb: its six kinds, each in its own window
     run_page scope.html    # the scope verb: its three views on live buses
     run_page elements.html # one of every element, built, drawn and still answering
