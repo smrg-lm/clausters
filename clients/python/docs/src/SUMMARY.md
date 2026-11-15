@@ -11,7 +11,7 @@
 - [The client, layer by layer](guide.md)
 - [Defining instruments: FaustDef and SynthDef](defs.md)
 - [Sessions](sessions.md)
-- [The ambient verbs: play, plot, render](verbs.md)
+- [The ambient verbs: play, plot, scope, render](verbs.md)
 - [Routines and clocks](routines-and-clocks.md)
 - [Patterns](patterns.md)
 - [Timelines](timelines.md)
