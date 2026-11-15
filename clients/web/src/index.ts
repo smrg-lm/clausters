@@ -41,6 +41,7 @@ export { server, engine, ANY_PEER, DEFAULT_PEER } from "./engine/server.ts";
 export type { ClaustersServer, EngineLink, LinkMessage, ReplyListener } from "./engine/server.ts";
 export type { BootOptions, ClockAnchor } from "./engine/loader.ts";
 export { GuiHost, guiHost, newGuiHost, pageGuiConnection } from "./gui/host.ts";
+export type { GuiLink } from "./gui/page.ts";
 // Measuring an element against the display, which a page needs wherever it
 // sizes a canvas itself -- a component, an embedder's own element.
 export { canvasBox, onScaleChange } from "./gui/page.ts";

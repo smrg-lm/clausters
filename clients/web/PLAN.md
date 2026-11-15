@@ -236,7 +236,7 @@ port") and `docs/bindings.md` (a server's address); `tests/worker.html` is the
 acceptance, run in Chrome and Firefox, and `examples/basics/worker.html` the
 example.
 
-### ⬜ W33 - The GUI host reached over a port
+### ✅ W33 - The GUI host reached over a port *(done 2026-11-15)*
 
 In a page the client calls the GUI host (`GuiBridge`, drawing on a canvas of
 the main thread) with no port between them. A worker's session needs one: a
@@ -247,6 +247,18 @@ drawing off the page that shows it; it is not taken unless the port proves
 too slow. **Acceptance**: a GuiDef shown, a widget driven and its value
 received back, and a scope fed, all from a worker; the same examples running
 from the page and from a worker.
+
+**Done.** The page makes a link to its host (`ClaustersGui.link({ place })`),
+whose port the worker passes to `session.gui({ port })`; the worker opens it
+with the same `portConnection` as the engine's, and the page relays packets to
+the host and every event back. A window the worker opens gets a canvas in the
+element `place` answers for its id, or one of its own appended to the
+document, and the link's close takes them off. `plot` and `scope` joined
+`clausters/session`, so a worker has the visual verbs too. The port was
+enough: the `OffscreenCanvas` alternative was not taken. `tests/worker-gui.html`
+opens `tests/gui.html`'s panel from a worker, with the hand played on the
+canvas the page placed (Chrome and Firefox), and `examples/basics/worker.html`
+gained a slider the worker listens to.
 
 ### ⬜ W34 - The editor in a page
 

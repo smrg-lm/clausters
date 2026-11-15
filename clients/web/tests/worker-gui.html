@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters worker gui</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      #panel { width: 480px; height: 300px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>a session in a worker drawing on this page's GUI host: its panel
+        goes in the box below, its slider reports back to the worker, its knob
+        drives the engine, and its scope follows a tone.</div>
+      <button id="boot">start the worker</button>
+      <div id="panel"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The worker-GUI acceptance (clients/web/test.sh, headless Chrome). The
+      page boots the engine and its GUI host and hands a worker a link to
+      each (`ClaustersServer.link`, `ClaustersGui.link`); the worker's half is
+      tests/worker-gui.js. The page places the worker's first window in
+      #panel and plays the hand on that canvas with real pointer events, as
+      tests/gui.html does for a panel the page opens itself; the scope gets a
+      canvas of its own. Then the GUI link is closed and its canvases must
+      leave the page. ?smoke=1 auto-runs; the verdict is beaconed as a fetch.
+    -->
+    <script type="module">
+      import { guiHost, server } from "../dist/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      // A pointer gesture on a canvas, in the device pixels the GuiDef lays
+      // out in -- tests/gui.html's.
+      function pointer(canvas, type, x, y, buttons) {
+        const rect = canvas.getBoundingClientRect();
+        const scale = canvas.width / rect.width;
+        canvas.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, cancelable: true, pointerId: 1, isPrimary: true,
+          pointerType: "mouse", button: 0, buttons,
+          clientX: rect.left + x / scale, clientY: rect.top + y / scale,
+        }));
+      }
+
+      async function run() {
+        const audio = await server({ channels: 2 });
+        await audio.resume();
+        const host = await guiHost();
+        const panel = document.getElementById("panel");
+
+        // The first window the worker opens goes in #panel; the rest get a
+        // canvas of their own.
+        let placed = false;
+        const guiLink = host.link({
+          place: () => {
+            if (placed) return null;
+            placed = true;
+            return panel;
+          },
+        });
+        const engineLink = audio.link();
+        const canvasesBefore = document.querySelectorAll("canvas").length;
+
+        const worker = new Worker("./worker-gui.js", { type: "module" });
+        const results = await new Promise((resolve, reject) => {
+          worker.onerror = (event) => reject(new Error(event.message));
+          worker.onmessage = async (event) => {
+            const msg = event.data;
+            if (msg.type === "log") log(`worker: ${msg.line}`);
+            else if (msg.type === "error") reject(new Error(msg.message));
+            else if (msg.type === "gesture") {
+              const canvas = panel.querySelector("canvas");
+              if (msg.gesture === "slider") {
+                // A press a quarter along the slider's band (y 162..272).
+                pointer(canvas, "pointerdown", 8 + 0.25 * 464, 217, 1);
+                await sleep(50);
+                pointer(canvas, "pointerup", 8 + 0.25 * 464, 217, 0);
+              } else {
+                // A drag up on the knob's band (y 44..154).
+                pointer(canvas, "pointerdown", 240, 100, 1);
+                await sleep(50);
+                pointer(canvas, "pointermove", 240, 60, 1);
+                await sleep(50);
+                pointer(canvas, "pointerup", 240, 60, 0);
+              }
+              worker.postMessage({ type: "played" });
+            } else if (msg.type === "results") resolve(msg);
+          };
+          worker.postMessage(
+            { type: "links", engine: engineLink.port, gui: guiLink.port },
+            [engineLink.port, guiLink.port],
+          );
+        });
+
+        const inPanel = panel.querySelector("canvas") !== null;
+        const opened = document.querySelectorAll("canvas").length - canvasesBefore;
+        log(`the worker's windows on the page: ${opened} canvases, one in the panel: ${inPanel}`);
+
+        worker.terminate();
+        guiLink.close();
+        engineLink.close();
+        await sleep(100);
+        const left = document.querySelectorAll("canvas").length - canvasesBefore;
+        log(`after the link closed: ${left} of its canvases left on the page`);
+        await audio.close();
+
+        const ok = results.shown && results.heard && results.bound && results.fed
+          && inPanel && opened === 2 && left === 0;
+        verdict(ok
+          ? `PASS: a worker's window drew in the page's panel, its slider reported `
+            + `back to the worker, its bound knob drove the engine, its scope was fed, `
+            + `and closing the link took its ${opened} canvases off the page`
+          : `FAIL: ${JSON.stringify(results)} inPanel=${inPanel} opened=${opened} left=${left}`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

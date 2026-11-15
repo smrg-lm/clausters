@@ -16,7 +16,7 @@
 // time.
 import type { GuiBridge } from "../gui-host/clausters_gui.js";
 import { engine as engineInstance, server } from "../engine/server.ts";
-import type { ClaustersServer } from "../engine/server.ts";
+import type { ClaustersServer, LinkMessage } from "../engine/server.ts";
 import type { IdShare } from "../base/ids.ts";
 import { loadCore } from "../base/core.ts";
 import { splitPageIds } from "../base/pool.ts";
@@ -140,6 +140,21 @@ export interface ClaustersGui {
      */
     deliver(packet: Uint8Array): void;
     /**
+     * This host for a client in **another realm** -- a worker, which has no
+     * document and cannot reach this one: a port that carries the client's
+     * packets to the host and the host's events back. Transfer `link.port` to
+     * the worker, which opens its GUI over it (`session.gui({ port })`);
+     * {@link GuiLink.close} lets the client go and takes its windows' canvases
+     * off the page.
+     *
+     * The page keeps the drawing: a window the client opens gets a canvas,
+     * in the element `place` answers for its id or, with none, of its own,
+     * appended to the document as a view opened with no element is. The
+     * host's audio leg stays the engine it was wired to, so a widget the
+     * client binds reaches that engine.
+     */
+    link(options?: { place?: (window: number) => Stage | null | undefined }): GuiLink;
+    /**
      * The engine this host's audio leg is wired to -- the page's under
      * `guiHost`, its own under `newGuiHost`. Exposed because a caller holding
      * an instance needs exactly this to open a `Server` on it, and asking for
@@ -155,6 +170,17 @@ export interface ClaustersGui {
      * Only an instance from `newGuiHost` is anyone's to close; the page's own
      * (`guiHost`) is shared page state. Closing one leaves every other host on
      * the page drawing.
+     */
+    close(): void;
+}
+
+/** A client of a GUI host in another realm, as the host's page holds it. */
+export interface GuiLink {
+    /** The client's end: transfer it to the worker that runs the client. */
+    readonly port: MessagePort;
+    /**
+     * Lets the client go: its windows' canvases leave the page and the client
+     * hears that the host is gone. Idempotent.
      */
     close(): void;
 }
@@ -375,8 +401,10 @@ async function boot(
     // over one host each keeping their own answer is how a def gets attached
     // twice, the second canvas taking the window off the first.
     const canvases = new Set<number>();
+    /** The clients in other realms, each told when this host closes. */
+    const links = new Set<GuiLink>();
 
-    return {
+    const gui: ClaustersGui = {
         bridge,
         canvas,
         engine,
@@ -390,10 +418,89 @@ async function boot(
             bridge.detach(defId);
         },
         close: () => {
+            for (const link of [...links]) link.close();
             clearInterval(drain);
             listeners.clear();
             canvases.clear();
             bridge.close();
+        },
+        link: ({ place } = {}) => {
+            const control = new MessageChannel();
+            let open = true;
+            let data: MessagePort | null = null;
+            /** Window id -> the canvas made for it, and what stops fitting it. */
+            const windows = new Map<number, { canvas: HTMLCanvasElement; made: boolean; unfit?: () => void }>();
+            const unmount = (id: number) => {
+                const held = windows.get(id);
+                if (held === undefined) return;
+                windows.delete(id);
+                held.unfit?.();
+                gui.detach(id);
+                if (held.made) held.canvas.remove();
+            };
+            // The host's events reach every listener, and a client hears them
+            // all as a socket's client does; a window it closed by the hand
+            // leaves the page here.
+            const forward = (packet: Uint8Array) => {
+                if (data === null) return;
+                for (const { addr, args } of decodePacket(packet)) {
+                    if (addr === "/gui_closed" && typeof args[0] === "number") unmount(args[0]);
+                }
+                data.postMessage({ type: "osc", data: packet });
+            };
+            const feed = (packet: Uint8Array) => {
+                const freed: number[] = [];
+                for (const { addr, args } of decodePacket(packet)) {
+                    const id = args[0];
+                    if (typeof id !== "number") continue;
+                    if (addr === "/gui_def" && !windows.has(id) && isWindow(args[1])) {
+                        // A window of the client's: the canvas the page gives it,
+                        // before the def is fed, as `GuiHost.open` does here.
+                        const element = place?.(id) ?? null;
+                        const target = element !== null ? canvasIn(element) : newCanvas();
+                        const made = !(element instanceof HTMLCanvasElement);
+                        gui.attach(id, target);
+                        const unfit = element !== null ? gui.fit(id, element, target) : undefined;
+                        windows.set(id, { canvas: target, made, unfit });
+                    } else if (addr === "/gui_free") freed.push(id);
+                }
+                bridge.feed(packet);
+                // After the feed, for the reason `pageGuiConnection` gives.
+                for (const id of freed) unmount(id);
+            };
+            const link: GuiLink = {
+                port: control.port2,
+                close: () => {
+                    if (!open) return;
+                    open = false;
+                    links.delete(link);
+                    listeners.delete(forward);
+                    for (const id of [...windows.keys()]) unmount(id);
+                    if (data !== null) data.onmessage = null;
+                    control.port1.postMessage({ type: "gone" } satisfies LinkMessage);
+                },
+            };
+            control.port1.onmessage = (event: MessageEvent) => {
+                if ((event.data as { type?: string }).type !== "open" || data !== null) return;
+                if (!open) {
+                    control.port1.postMessage({ type: "gone" } satisfies LinkMessage);
+                    return;
+                }
+                const channel = new MessageChannel();
+                data = channel.port1;
+                data.onmessage = (e: MessageEvent) => {
+                    const msg = e.data as { type?: string; data?: Uint8Array };
+                    if (msg.type === "osc" && msg.data !== undefined) feed(new Uint8Array(msg.data));
+                    else if (msg.type === "close") link.close();
+                };
+                listeners.add(forward);
+                control.port1.postMessage(
+                    { type: "port", port: channel.port2, peer: 0 } satisfies LinkMessage,
+                    [channel.port2],
+                );
+            };
+            links.add(link);
+            return link;
         },
         fit: (defId, element, target) => {
             const surface = target ?? useFallback();
@@ -427,6 +534,17 @@ async function boot(
         removeEvent: (listener) => listeners.delete(listener),
         deliver,
     };
+    return gui;
+}
+
+/** Whether a `/gui_def`'s document is rooted in a `window`. */
+function isWindow(json: unknown): boolean {
+    if (typeof json !== "string") return false;
+    try {
+        return (JSON.parse(json) as { type?: unknown }).type === "window";
+    } catch {
+        return false;
+    }
 }
 
 /**

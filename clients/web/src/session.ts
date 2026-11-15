@@ -449,6 +449,8 @@ export class Session extends Environment {
      * A session on the page's shared engine gets the page's host (canvas in
      * `<body>` included); one holding its own engine gets a host of its own,
      * which appends no canvas -- pass yours to the def, as a component does.
+     * A session in a worker names the page's host with `port`, the link the
+     * page made to it, and draws where the page places its windows.
      */
     /**
      * The GUI host this session already has, or `null` when none was opened --
@@ -459,13 +461,26 @@ export class Session extends Environment {
         return this.gui_;
     }
 
-    async gui(): Promise<GuiHost> {
+    async gui({ port }: {
+        /**
+         * In a worker, where the host is: the port of a link the page made to
+         * its GUI host (`ClaustersGui.link()`) and transferred -- the host's
+         * address there, as the reference client's `port` is a host's on the
+         * network. The session attaches to that host; the page keeps it and
+         * gives each window the session opens a canvas.
+         */
+        port?: MessagePort;
+    } = {}): Promise<GuiHost> {
         if (this.gui_) return this.gui_;
         // The session's share of the host's widget ids is the one it has on
         // its engine: a session that is one of two clients on an engine is one
         // of two on its host as well.
         const share = this.server.share;
-        if (this.ownedEngine) {
+        if (port !== undefined) {
+            // The page's host, from another realm: attached, never booted,
+            // and its windows are the page's to place.
+            this.gui_ = await new GuiHost({ connection: await portConnection(port), share }).attach();
+        } else if (this.ownedEngine) {
             // A host of this session's own, wired to this session's engine --
             // and this session's to close, unlike the page's shared one. **It
             // allocates on that engine too** (its voices, its take monitor, the

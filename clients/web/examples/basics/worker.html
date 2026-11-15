@@ -28,12 +28,20 @@ with <code>Session.live(port)</code>. The worker is one client of the engine
 with ids of its own, and what it sends goes to the engine directly, not
 through this page's thread.
 
+The page's GUI host is reached the same way: a second link
+(<code>host.link({ place })</code>), which the worker passes to
+<code>session.gui({ port })</code>. The worker's slider sets the arpeggio's
+level; the page decides where its window goes (the box below) and draws it.
+
 What the worker gives: its code can be <b>stopped</b>. Press <i>hang</i> and
 the worker enters a loop that never yields, so its clock never wakes again;
-the page goes on answering. <i>Terminate</i> ends the worker, lets its link go
-and silences the engine from the page (<code>Server.panic</code>), since what
-the worker left sounding has nobody to stop it. The engine is still running:
-<i>start</i> again gives a new worker a new link onto it.
+the page goes on answering, and the slider still moves under the hand,
+since the page draws it, but nothing hears it any more. <i>Terminate</i>
+ends the worker, lets its links go (the panel leaves the page with the GUI
+link) and silences the engine from the page (<code>Server.panic</code>),
+since what the worker left sounding has nobody to stop it. The engine is
+still running:
+<i>start</i> again gives a new worker new links onto it.
 
 The Python client's counterpart is a script in a process of its own,
 attached with <code>Session.live</code> to a server something else booted;
@@ -46,10 +54,11 @@ this directory and open the page.</div>
         <button id="hang" disabled>hang</button>
         <button id="terminate" disabled>terminate</button>
       </div>
+      <div id="panel" style="width: 360px; height: 90px"></div>
       <pre id="log"></pre>
     </main>
     <script type="module">
-      import { Server, server } from "../../dist/index.js";
+      import { Server, guiHost, server } from "../../dist/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
@@ -57,6 +66,7 @@ this directory and open the page.</div>
       let engine = null;
       let worker = null;
       let link = null;
+      let guiLink = null;
 
       el("start").onclick = async () => {
         el("start").disabled = true;
@@ -67,9 +77,15 @@ this directory and open the page.</div>
         worker = new Worker("./worker-session.js", { type: "module" });
         worker.onmessage = (event) => log(event.data.line);
         // A link: a client tag of its own and a port to the engine, which
-        // goes to the worker.
+        // goes to the worker; and one to the page's GUI host, whose windows
+        // the page places (the worker's one window, in #panel).
         link = engine.link();
-        worker.postMessage({ type: "link", port: link.port }, [link.port]);
+        const host = await guiHost();
+        guiLink = host.link({ place: () => el("panel") });
+        worker.postMessage(
+          { type: "links", engine: link.port, gui: guiLink.port },
+          [link.port, guiLink.port],
+        );
         el("hang").disabled = false;
         el("terminate").disabled = false;
       };
@@ -82,6 +98,7 @@ this directory and open the page.</div>
       el("terminate").onclick = async () => {
         worker.terminate();
         link.close();
+        guiLink.close();
         // What the worker left sounding stops from here: a handle of the
         // page's own on the same engine.
         const handle = await new Server({ engine }).attach({ adoptDefault: false });

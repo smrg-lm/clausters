@@ -5,8 +5,10 @@
 // document, so a program with none -- a script under node, a page's worker
 // -- cannot import it. This subpath is what such a program
 // writes a session against: the `Session` and its default, the environment
-// they are, and the two verbs that act on a session without drawing, `play`
-// and `panic`. The same names, from the same modules, as the facade exports;
+// they are, the two verbs that act on a session without drawing, `play` and
+// `panic`, and the two that name what to look at on the session's GUI host,
+// `plot` and `scope` (in a worker, the page's host, reached with
+// `session.gui({ port })`). The same names, from the same modules, as the facade exports;
 // nothing here is a second implementation, and the facade does not change.
 //
 // Under node a session is offline (`Session.nrt`) or on a live server reached
@@ -26,3 +28,7 @@ export { Environment, RandomContext } from "./base/environment.ts";
 export { play } from "./play.ts";
 export type { Playable, PlayOptions } from "./play.ts";
 export { panic } from "./panic.ts";
+export { plot, PatchWindow, PlotWindow } from "./plot.ts";
+export type { PatchViewOptions, Plottable, PlotOptions } from "./plot.ts";
+export { scope, ScopeWindow } from "./scope.ts";
+export type { ScopeOptions, ScopeView } from "./scope.ts";

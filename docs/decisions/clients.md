@@ -595,3 +595,13 @@ a port, and the worker opens `Session.live(port)` over it.
   with the `AudioContext` (a bundle's buffers) belongs to the page's
   elements, which a worker cannot have; a buffer from samples or from the
   page's storage works over the link as it does on the page.
+- **The GUI host is reached the same way, and the page keeps the drawing.**
+  The host draws on the page's canvases, so a link to it (`host.link()`)
+  carries packets to the host and its events back through the page, which
+  owns the host anyway; `session.gui({ port })` attaches over it. The page
+  gives each window the worker opens a canvas, in an element it chooses for
+  that window or of the window's own, and takes them off when the link
+  closes. Moving the host into the worker on an `OffscreenCanvas` was the
+  alternative, and was not taken: it would move the drawing off the page
+  that shows it, and a page that places a window would have nothing to
+  place.

@@ -12,6 +12,8 @@ import { Session } from "../src/session.ts";
 import { main } from "../src/base/main.ts";
 import { play } from "../src/play.ts";
 import { panic } from "../src/panic.ts";
+import { plot } from "../src/plot.ts";
+import { scope } from "../src/scope.ts";
 import { Routine } from "../src/base/stream.ts";
 
 test("it imports with no document, and exports the session and its verbs", () => {
@@ -20,9 +22,14 @@ test("it imports with no document, and exports the session and its verbs", () =>
     assert.equal(layer.main, main);
     assert.equal(layer.play, play);
     assert.equal(layer.panic, panic);
+    assert.equal(layer.plot, plot);
+    assert.equal(layer.scope, scope);
     assert.deepEqual(
         Object.keys(layer).sort(),
-        ["Environment", "RandomContext", "Session", "defaultSession", "main", "panic", "play"],
+        [
+            "Environment", "PatchWindow", "PlotWindow", "RandomContext", "ScopeWindow",
+            "Session", "defaultSession", "main", "panic", "play", "plot", "scope",
+        ],
     );
 });
 

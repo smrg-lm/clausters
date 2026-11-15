@@ -127,12 +127,14 @@ export interface EngineLink {
 }
 
 /**
- * What an engine's page says to a client in another realm, over the link's
- * port, once the client has asked with `{ type: "open" }`; the engine's own
- * messages travel on the port the first one carries.
+ * What a page says to a client in another realm over a link's port -- a link
+ * to an engine ({@link ClaustersServer.link}) or to a GUI host
+ * (`ClaustersGui.link`) -- once the client has asked with `{ type: "open" }`:
+ * the port the client's packets travel on, then, when it goes, that the other
+ * end is gone.
  */
 export type LinkMessage =
-    | { type: "engine"; port: MessagePort; peer: number }
+    | { type: "port"; port: MessagePort; peer: number }
     | { type: "gone" };
 
 let instance: Promise<ClaustersServer> | null = null;
@@ -250,7 +252,7 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
                 lent = true;
                 const engine = raw.lend(peer);
                 control.port1.postMessage(
-                    { type: "engine", port: engine, peer } satisfies LinkMessage,
+                    { type: "port", port: engine, peer } satisfies LinkMessage,
                     [engine],
                 );
             };

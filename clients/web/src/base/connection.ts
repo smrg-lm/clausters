@@ -346,7 +346,7 @@ export function portConnection(
                     clearTimeout(timer);
                     reject(new Error("the engine this port was linked to is gone"));
                 }
-            } else if (msg.type === "engine" && !opened) {
+            } else if (msg.type === "port" && !opened) {
                 opened = true;
                 clearTimeout(timer);
                 resolve(linkedConnection(msg.port, () => gone, () => (gone = true)));

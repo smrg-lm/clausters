@@ -762,7 +762,9 @@ page's worker `Session.live(port)`, the `MessagePort` of a link the page made
 to its engine (`engine.link()`). The verb is the same; where Python boots a
 server when none answers, a page and a worker only attach. A worker has no
 counterpart in Python, whose same separation is a script in a process of its
-own.
+own. The GUI host is named the same way: Python `session.gui(port=57210)`;
+TypeScript, in a worker, `session.gui({ port })`, the port of a link the page
+made to its host (`host.link()`).
 
 **Options are one object in TypeScript**, as everywhere in that client:
 Python `seq.play(at, server)`; TypeScript `seq.play({ at, server })`.

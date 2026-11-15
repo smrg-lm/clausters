@@ -193,7 +193,25 @@ self.onmessage = async ({ data }) => {
 };
 ```
 
-The worker imports from `clausters/session`, `clausters/defs` and `clausters/seq`: the package's main entry defines the page's elements, and a worker has no document.
+The worker imports from `clausters/session`, `clausters/defs`, `clausters/seq` and `clausters/gui`: the package's main entry defines the page's elements, and a worker has no document.
+
+The page's **GUI host** is reached the same way, with a link of its own, and `session.gui({ port })` attaches to it:
+
+```js
+// the page
+const host = await guiHost();
+const guiLink = host.link({ place: (window) => document.getElementById("panel") });
+worker.postMessage({ engine: link.port, gui: guiLink.port }, [link.port, guiLink.port]);
+
+// the worker
+const s = await Session.live(data.engine);
+const host = await s.gui({ port: data.gui });
+host.open(gui.view({ title: "level" }, gui.slider({ name: "level" })));
+```
+
+The page keeps the drawing. A window the worker opens gets a canvas in the element `place` answers for its id, or, when it answers nothing, a canvas of its own appended to the document, as a view opened with no element gets. The worker's widgets report back to the worker, a widget it binds drives the engine the host is wired to, and `plot` and `scope` from the worker open their windows on that host. `guiLink.close()` takes the worker's windows off the page.
+
+A page that also plays or names widgets of its own shares the id spaces with the worker as two clients of one server do: each takes a slice (`Session.live(port, { share: { index: 1, of: 2 } })` in the worker, the other slice on the page).
 
 What this gives a page:
 
