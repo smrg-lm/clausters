@@ -34,6 +34,7 @@ def book(name):
     reader = shared_book.Book(name)
     reader.web_known = None  # the generated reference is not what these test
     reader.python_known = {"sample_timebase", "sample_rate"}
+    reader.web_members = {"entry": {"method"}, "crossfade": {"get", "set"}}
     return reader
 
 
@@ -113,3 +114,12 @@ def test_a_wire_name_is_the_same_in_both_books_and_not_refused():
     text = "The axes keep `{{wire sample_rate}}`.\n"
     assert book("web").render(text, "x.md") == "The axes keep `sample_rate`.\n"
     assert book("python").render(text, "x.md") == "The axes keep `sample_rate`.\n"
+
+
+def test_a_property_write_of_a_web_method_is_refused():
+    with pytest.raises(shared_book.BookError, match="only as a method"):
+        book("web").render("Enter it with `editor.entry = true`.\n", "x.md")
+    web = book("web").render("Set `multitrack.crossfade = false`.\n", "x.md")
+    assert "crossfade = false" in web
+    python = book("python").render("Enter it with `editor.entry = True`.\n", "x.md")
+    assert "entry = True" in python

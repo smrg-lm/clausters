@@ -37,7 +37,9 @@ that the Python reference documents (``sample_timebase``): it is a Python
 spelling that reached the web book, written where a ``{{api ...}}`` was meant.
 A name that is the wire's in both clients (a GuiDef axis key, ``sample_rate``)
 is written ``{{wire sample_rate}}``: the same text in both books, and not a
-spelling of either client.
+spelling of either client. And it refuses a backticked assignment
+(``editor.entry = true``) to a member the web reference has only as a
+method: a Python property written where the web client has a setter.
 """
 
 import json
@@ -67,6 +69,7 @@ _API = re.compile(r"\{\{api ([A-Za-z_][A-Za-z0-9_.]*)\}\}")
 _WIRE = re.compile(r"\{\{wire ([A-Za-z_][A-Za-z0-9_./]*)\}\}")
 _INCLUDE = re.compile(r"\{\{#include ([^}\s]+)\}\}")
 _WORD = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
+_ASSIGN = re.compile(r"(?<![`\w])`(?:[A-Za-z_$][\w$]*\.)+([A-Za-z_$][\w$]*) = [^`=][^`]*`")
 _SNAKE = re.compile(r"(?<![`\w])`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?:\(\))?`")
 
 
@@ -122,6 +125,39 @@ def _web_known():
     return known
 
 
+def _web_members():
+    """What each member name is in the web reference: ``prop`` (a field),
+    ``get`` and ``set`` (an accessor's two signatures), ``method``. A name
+    two classes use differently has every kind it has anywhere. None when the
+    reference has not been generated."""
+    if not os.path.isdir(WEB_API):
+        return None
+    heading = re.compile(r"^(#+) (.*)")
+    section = {"Properties": "prop", "Accessors": "get", "Methods": "method"}
+    members = {}
+    for root, _, files in os.walk(WEB_API):
+        for name in files:
+            if not name.endswith(".md"):
+                continue
+            kind = level = member = None
+            with open(os.path.join(root, name), encoding="utf-8") as f:
+                for line in f:
+                    m = heading.match(line)
+                    if not m:
+                        continue
+                    depth, text = len(m.group(1)), m.group(2).strip().replace("\\_", "_")
+                    if text in section:
+                        kind, level, member = section[text], depth, None
+                    elif kind and depth <= level:
+                        kind = member = None
+                    elif kind and depth == level + 1:
+                        member = re.sub(r"\(\)$", "", text).split(" ")[-1]
+                        members.setdefault(member, set()).add(kind)
+                    elif kind == "get" and member and text == "Set Signature":
+                        members[member].add("set")
+    return members
+
+
 def _python_known():
     try:
         with open(PYTHON_TABLE, encoding="utf-8") as f:
@@ -142,6 +178,7 @@ class Book:
         self.names = _read_names()
         self.web_known = _web_known() if book == "web" else None
         self.python_known = _python_known() if book == "web" else set()
+        self.web_members = _web_members() if book == "web" else None
 
     def spell(self, name: str, where: str) -> str:
         if self.book == "python":
@@ -175,6 +212,7 @@ class Book:
         text = _WIRE.sub(hold, text)
         if self.book == "web":
             self._refuse_python_names(text, where)
+            self._refuse_property_writes(text, where)
         return re.sub("\x00(\\d+)\x00", lambda m: wire[int(m.group(1))], text)
 
     def _refuse_python_names(self, text: str, where: str) -> None:
@@ -185,6 +223,19 @@ class Book:
                     raise BookError(
                         f"{where}:{number}: `{name}` is the Python client's spelling, in the web "
                         f"book: write {{{{api {name}}}}}, or put it in a <!-- python --> region")
+
+
+    def _refuse_property_writes(self, text: str, where: str) -> None:
+        if not self.web_members:
+            return
+        for number, line in _prose_lines(text):
+            for m in _ASSIGN.finditer(line):
+                kinds = self.web_members.get(m.group(1))
+                if kinds and not kinds & {"prop", "set"}:
+                    raise BookError(
+                        f"{where}:{number}: `{m.group(0).strip('`')}` assigns `{m.group(1)}`, which the web "
+                        f"reference has only as a method: write the call (its setter) in the web book, "
+                        f"in an {{{{alt}}}}")
 
 
 def _prose_lines(text: str):

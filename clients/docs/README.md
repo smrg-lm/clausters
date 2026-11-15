@@ -33,6 +33,10 @@ packages carry (`clients/python/build_docs.py`, `clients/web/tools/stage_books.p
   spelling it does not document stops the build, and so does a snake_case
   name in backticks that the Python reference documents: that is a Python
   spelling which reached the web book.
+- **A property is a property in one client only, sometimes**: where Python
+  assigns (`editor.entry = True`) the web client may have a setter
+  (`setEntry(true)`), so the call goes in an `{{alt}}`. An assignment in the
+  web book to a member its reference has only as a method stops the build.
 - **A name that is the wire's in both clients** (a GuiDef axis key,
   `sample_rate`) is `{{wire sample_rate}}`: the same text in both books, and
   exempt from that check.
