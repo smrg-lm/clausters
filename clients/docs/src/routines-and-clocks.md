@@ -1,0 +1,351 @@
+# Routines and clocks
+
+`Session` and `pbind` are convenience layers over three plain objects you can also drive yourself:
+
+- a **`Routine`** — *what* happens over time, written as a {{alt Python generator || generator function}} that `yield`s how long to wait;
+- a **`TempoClock`** — *when* it happens: it schedules the routine and keeps musical time in beats;
+- a **`Server`** — *where* the sound goes: it owns the {{alt communication interface || connection}} and plays events on it.
+
+This page works at that level: write a routine by hand and play notes from it through a `Server`, on the high-level API throughout — you build `Event`s and call `play`, never hand-assemble OSC bundles. For the different ways a clock can keep time — the default wall clock, locked to a server's sample clock, or a shared transport — and how to observe each, see [Timing models](timing-models.md).
+
+## Logical time vs physical time
+
+This is the idea that makes routines worth using, inherited from SuperCollider.
+
+A routine `yield`s numbers, and each one is a wait *in beats* before the clock resumes it. Those waits play out in **physical time** — the actual wall-clock seconds the {{alt OS sleeps || timer sleeps}} — and under load they jitter.<!-- web --> In a tab they jitter badly: a background tab throttles its timers, a long paint blocks everything, and there is one thread for all of it.<!-- /web --> But a routine also keeps a **logical time**: the running sum of everything it has yielded so far, relative to when it started and the clock's tempo. The logical time has no jitter — a routine that yields `0.5` four times is at logical beats `0, 0.5, 1.0, 1.5` exactly, whatever the scheduler did in between.
+
+The Server stamps every event from the routine's **logical** time, not from "now". So even though the routine is woken at slightly irregular physical instants, the timing it asks the server for is precise: the wake-up only has to arrive within the emission headroom (`server.latency`), and the exact instant rides on the bundle's timetag. That is the only way to get jitter-free rhythmic sequences in real time, and every timing model builds on it.
+
+**Reading the clock from inside a routine gives the same logical time.** A routine that asks its own clock `clock.beats()` or `clock.tempo` gets its logical beat and the tempo there, not wherever physical time has got to by the time the code runs — the rule `thisThread.beats` follows in sclang, and the reading an offline render already gives. So a routine that computes where the next bar falls, schedules with `clock.sched`, or reads the tempo beside a tempo change reads exact numbers, live as offline. From anywhere else — {{alt the main thread || the page's own turn}}, another clock's routine — `beats()` is the clock's paced beat, which is what "now" means there.
+
+## A routine by hand
+
+An `Event` is {{alt a dict || a set}} of note parameters that knows how to play itself: {{alt `Event(...).play(server)` || `new Event({...}).play(server)`}} creates a synth at the routine's current logical beat and schedules its release after the note's sustain. <!-- python -->Build it with keywords or from a plain dict — an `Event` *is* a dict — and play<!-- /python --><!-- web -->Build it from an object of keys, and play<!-- /web --> it from inside a routine, yielding the gap to the next note:
+
+```python
+from clausters import Event, Routine, Server, TempoClock
+
+server = Server("127.0.0.1", 57110, latency=0.1)   # a running server, on UDP
+clock = TempoClock(tempo=2.0)                       # 2 beats per second
+
+def melody():
+    for note in [60, 62, 64, 67, 69]:               # MIDI notes
+        e = Event(midinote=note, amp=0.2, dur=0.5)   # half-beat note
+        e.play(server)
+        yield e.delta()                              # advance to the next note
+
+clock.play(Routine(melody))                          # schedule it to start now
+clock.run(3.0)                                       # advance the clock 3 s, then stop
+server.close()
+```
+
+```ts
+import { Event, Routine, Server, TempoClock } from "clausters";
+
+const server = await new Server({ transport: "ws", url: "ws://127.0.0.1:57120", latency: 0.1 })
+    .attach();                                        // a running server, over a WebSocket
+const clock = new TempoClock(2.0);                    // 2 beats per second
+
+function* melody() {
+    for (const note of [60, 62, 64, 67, 69]) {        // MIDI notes
+        const e = new Event({ midinote: note, amp: 0.2, dur: 0.5 });   // half-beat note
+        e.play(server);
+        yield e.delta();                              // advance to the next note
+    }
+}
+
+clock.play(new Routine(melody));                      // schedule it to start now
+await clock.run(3.0);                                 // advance the clock 3 s, then stop
+server.close();
+```
+
+A few things worth knowing:
+
+- An `Event` carries musical defaults (see the API reference): `midinote` (or `degree`, or an explicit `freq`) sets pitch, `amp` the level, `instrument` the def (the server has a built-in `default`, a subtractive voice that also takes `pan`, `press`, `slide` and `out`, the bus it writes). Timing comes from `dur`: the note's `delta` (beats to the next event) is `dur`, and its `sustain` (how long it sounds) is `dur * legato` (`legato` defaults to `0.8`). As in SuperCollider, an explicit `delta` or `sustain` key overrides that calculation — {{alt `Event(..., dur=0.5, sustain=0.4)` || `new Event({ ..., dur: 0.5, sustain: 0.4 })`}} sounds for exactly 0.4 beats.<!-- python --> A dict works just as well — `Event({"midinote": 60, "amp": 0.2, "dur": 0.5}).play(server)`.<!-- /python -->
+
+- **A family's keys are spellings of one quantity, and they stay coherent.** `freq`, `midinote` and `degree` are one pitch, and `amp`, `velocity` and `db` one level: writing one of them rewrites the others the event holds — {{alt `e["midinote"] = 72` || `e.set({ midinote: 72 })`}} on an event written with `freq` moves the `freq` too — and a key the event does not hold is not added. Built with two spellings, `freq` wins over `midinote` over `degree`, and `amp` over `velocity` over `db`. A **degree is altered by `alter`**, in semitones: {{alt `Event(degree=1, alter=1)` || `new Event({ degree: 1, alter: 1 })`}} is D sharp in C major, {{alt `alter=0.5` || `alter: 0.5`}} a quarter tone. SuperCollider's fraction ({{alt `degree=1.1` || `degree: 1.1`}}, degree 1 sharp) and a pair ({{alt `degree=(1, 1)` || `degree: [1, 1]`}}) are read as the same two keys, so the arithmetic a pattern does on degrees stays on integers; {{alt `spelling="flat"` || `spelling: "flat"`}} makes a note moved between two degrees the one above lowered rather than the one below raised.
+- **`clock.play` only schedules; something else has to drive the clock.** A routine played onto a clock nobody drives sits in the queue: no exception, nothing logged, and the result sounds exactly like silence. `clock.run(seconds)`/`clock.start()` drive it live and `clock.render()` drains it offline — through a session, `session.run(...)`, `session.start()` and `session.render()`.<!-- python --> A program that ends with a session's clock still queued and never driven says so on stderr, since that is the one case that can only be a mistake.<!-- /python -->
+- **An ambient play sounds.** When no clock is named — `play(pattern)`, {{alt `Routine(f).play()` || `new Routine(f).play()`}}, `pattern.play()` — the clock it resolves is made ready: the default clock is started on first use, and so is the clock of an activated session that was never started, which is what makes {{alt `Session.live().activate()` || `(await Session.live()).activate()`}} followed by a `play` sound rather than queue. A clock stopped on purpose (`session.stop()`) stays stopped, and the play says once {{alt on stderr || on the console}} that it is queued until the session starts again; an offline clock is left to its render; and a clock you hand in is taken as it is, so scheduling first and starting later stays yours to choose.
+- `clock.run(seconds)` starts the real-time driver, waits, and stops it<!-- web --> (it resolves when the span is over: nothing in a page may block, so the wait is a promise)<!-- /web -->. Use `clock.start()` / `clock.stop()` to keep one clock running across several routines. The pair is a **transport, not a reset**: `stop` holds the beat the clock reached and `start` resumes from it, so whatever is still queued keeps its place in the music (`clock.clear()` is what drops it<!-- web -->, and `clock.close()` also releases the ticker's worker slot<!-- /web -->).
+- `clock.locate(beat)` **moves the logical beat without moving physical time**: from then on, `beat` falls on now. Stopped, the clock holds it and `start` resumes there. Running, what is queued keeps its absolute beat — a locate forward wakes every routine due before `beat` at once, late, and a locate back makes each one wait the difference — and bundles already sent sound where they were. The tempo map does not change, `quant` on the clock's own grid follows the new beat, a frozen clock stays frozen, and from inside a routine on the clock that routine's next `yield` counts from `beat`. It is what a `Timeline` plays its seeks and loops with.
+- `{{api clock.set_tempo}}(bps)` changes tempo **pinning the current instant**: the beat the clock is on keeps mapping to the second it already mapped to, and the new tempo governs from there — so nothing already scheduled jumps.
+- {{alt `clock.set_tempo(bps, over=beats)` || `clock.setTempo(bps, { over: beats })`}} is the same verb writing a **shape over a stretch**: an accelerando or a ritardando, from the tempo now to `bps` across `over` beats, holding it after. {{alt `unit="seconds"` || `unit: "seconds"`}} gives the stretch in wall clock instead, solved exactly rather than searched for, and `curve` picks the shape — `"linear"`, `"exponential"` or a numeric curvature, `Env`'s own vocabulary. Both are plain strings, like every other small option in the client: there is nothing to import. Hand it an `Env` of tempos and the whole shape is written in one call; it must be of finite duration, since a tempo has no gate to sustain on. The formulas behind all of it are in {{alt `clausters.base.time` || the client's time module}}, whose grid conversions ({{alt `bar`, `beat_in_bar`, `quant_delay`, `secs_to_samples`, `samples_to_secs` || `bar`, `beatInBar`, `quantDelay`, `secsToSamples`, `samplesToSecs`}}) are also at the top level.
+- Both write on the clock's **tempo map** (`clock.map`), the function that says which second a beat falls on. A beat is a logical coordinate, so that answer depends on the whole tempo history before it, not on the tempo in force now — which is why a tempo change is *recorded* rather than replacing what came before, and why the beats *before* one still convert correctly afterwards. Under a single tempo the map is the plain line `seconds = beats / tempo` it always was.
+- The map is a plain function of a beat, so it also answers questions with nothing playing — how long an accelerando lasts, how many beats fit in thirty seconds, when bar 40 arrives. A document can hold a map that no clock ever read, and a view drawing it is handed the same one ({{alt `tempo_map=clock.map` || `tempoMap: clock.map`}}) so the line on screen and the sound come from one function.
+
+### The map as an object
+
+`TempoMap` is that function, and it can be built before there is a clock at all:
+
+```python
+from clausters import TempoMap
+
+tempo = TempoMap(1.0)            # one beat a second, to begin with
+tempo.push(2.0, 2.0)             # doubled from beat 2 on
+tempo.ramp(8.0, 16.0, 2.0, 4.0)  # then accelerating over the next two bars
+
+tempo.secs_at(8.0)               # 5.0 — not 8.0, and that is the point
+tempo.beats_at(5.0)              # 8.0 — the inverse, which a playhead asks per frame
+```
+
+```ts
+import { TempoMap } from "clausters";
+
+const tempo = new TempoMap(1.0);   // one beat a second, to begin with
+tempo.push(2.0, 2.0);              // doubled from beat 2 on
+tempo.ramp(8.0, 16.0, 2.0, 4.0);   // then accelerating over the next two bars
+
+tempo.secsAt(8.0);                 // 5.0 — not 8.0, and that is the point
+tempo.beatsAt(5.0);                // 8.0 — the inverse, which a playhead asks per frame
+```
+
+`push` writes a **step** at a beat and `ramp` a stretch between two; both are **recorded on top of** what came before, which is why the beats *before* a change still convert correctly after it. Hand the finished map to a clock with `clock.map = tempo` and there is one function: the one that answered the questions, and the one the notes are played by.
+
+Two of its answers are worth knowing by name, because the arithmetic people reach for instead is wrong:
+
+- **`{{api span_secs}}(b0, b1)` — a length in beats is not a duration.** The same eight beats last eight seconds early in that map and 2.77 s once the tempo has doubled and ramped. So seconds always come from **two positions**, never from a beat count times a tempo, and every conversion in the client takes a position for this reason. `{{api span_beats}}(b0, secs)` is the same question the other way: how many beats fit in the next thirty seconds, starting here.
+- **An accelerando is a logarithm.** Over beats 8 to 16, from 2 to 4 beats per second, the true length is `ln(T1/T0) / k`. Averaging the two tempos says 2.67 s against the real 2.77 — out by a tenth of a second, which is audible and, drawn, visible.
+
+`segments()` reads the whole recorded history back, and `dump()`/`load()` carry it as JSON. {{alt `examples/basics/tempo_map.py` || `examples/basics/tempo-map.html`}} runs all of it and then plays the line, so the acceleration is heard rather than asserted; {{alt `examples/basics/tempo_canon.py` || `examples/basics/tempo-canon.html`}} is its sibling about one gesture — ten ramps in wall clock, landing together.
+
+- A routine optionally receives the clock as its argument ({{alt `def melody(clock):` || `function* melody(clock)`}}) if it needs it, but for playing events you rarely do — the Server finds the logical beat itself.
+- This clock paces against wall-clock OSC time when no session is active. To make the same routine drift-free and sample-accurate, or to phase-align several clients, lock it to the server — see [Timing models](timing-models.md).
+
+### The clock you did not name
+
+Naming a clock is for when you want to set its tempo, run it for a fixed span or share it between routines. You never *have* to:
+
+```python
+Routine(melody).play()      # no clock, no Session, no booted server
+```
+
+```ts
+new Routine(melody).play(); // no clock, no Session, no booted server
+```
+
+`play()` with no clock resolves the same way everything else does — the clock of the routine you are already inside, else the session active {{alt on this thread || here}}, else the default session's clock, **created at tempo 1.0 and started right there** if this is the first thing to need one. Nothing starts a clock {{alt thread || ticker}} until something asks to be scheduled, so importing the package or rendering offline costs nothing.
+
+A routine needs a clock, not an engine: the example above sends notes, so it needs a server too, but a routine that only prints, draws or reads MIDI runs with no server at all. Reach the clock afterwards as `{{api main.default_clock}}` (or `{{api main.get_default_clock}}()`) to change its tempo or stop it.
+
+`Routine.run` is the same thing said over the definition — it wraps and plays in one step, so the name ends up bound to the routine, not to the function:
+
+```python
+@Routine.run
+def melody():
+    for note in [60, 62, 64, 67]:
+        Event(midinote=note, dur=0.5).play()
+        yield 0.5
+```
+
+```ts
+const melody = Routine.run(function* () {
+    for (const note of [60, 62, 64, 67]) {
+        new Event({ midinote: note, dur: 0.5 }).play();
+        yield 0.5;
+    }
+});
+```
+
+### Pausing, stopping, rewinding
+
+A routine has its own transport, and it is not the clock's — `clock.stop()` halts the clock and every routine on it, while these three touch only this routine:
+
+- `melody.pause()` takes it off the clock **keeping its place**. The generator is untouched, so `melody.play()` resumes at the very `yield` it was paused on.
+- `melody.stop()` takes it off the clock **and rewinds** it, so the next `play()` starts the function from the top.
+- `melody.reset()` rewinds without unscheduling — what `stop` calls after pausing.
+
+A routine that {{alt raises || throws}} is dropped the same way, with {{alt its traceback on stderr || the error on the console}}: it loses its place in the schedule and nothing else does. The clock keeps running, and the other routines on it never learn about it.
+
+### The one rule
+
+<!-- python -->
+**A routine must never block the clock thread.** It runs *on* that thread, so a `time.sleep`, a blocking `server.sync()`, or any `wait=True` def send freezes every other routine and the whole timeline. Cede time with `yield` instead. To load a def from within a routine, send it asynchronously — `sdef.send(server, wait=False)` — and `yield` enough time before the first note that uses it.
+<!-- /python -->
+<!-- web -->
+**Never `await` inside a routine.** A routine is resumed by the clock and must return control synchronously; an `await` suspends it mid-beat and holds the queue behind it, which is the browser's version of the Python client's "never block the clock thread". Cede time with `yield` instead. Do the waiting *before* — `await def.send(server)` resolves when the server has acknowledged it — and start the routine after, or `yield` enough beats before the first note that uses a def you sent without awaiting.
+<!-- /web -->
+
+<!-- web -->
+### The wake-up
+
+The clock is woken through a `Ticker`, and the default in a tab is a **shared worker**, because a page's own timers are throttled to roughly one second when the tab is in the background — a routine paced by `setTimeout` would simply stop being music the moment the user changed tabs. The worker's wake-ups are not throttled that way, and since the exactness lives in the timetag, all the wake-up has to do is arrive inside the headroom.
+
+The seam is also what makes the layer testable: a test supplies its own ticker and its own timebase and drives the real driver by hand, deterministically, with no audio device and no waiting.
+<!-- /web -->
+
+## The random context: one seed per session
+
+Everything random — `pwhite`, `prand`, and the draws named as sclang names
+them ({{alt `clausters.rand` || `rand`}}, `rrand`, `exprand`, `linrand`, `bilinrand`, `sum3rand`,
+`gauss`, `coin`, `choose`, `wchoose`, `tablerand`, `scramble`, `sputter`,
+`lprand`, `hprand`, `meanrand`, `betarand`, `cauchy`, `poisson`, and the
+whole-number `irand`, `irand2`, `irrand`<!-- web -->, which are their own functions because a number here cannot say whether it was written `10` or `10.0`<!-- /web -->) — draws from **one seedable context**, the sclang model. The context is the
+**session**: each has its own root, so each reproduces independently.
+
+- `session.seed(n)` seeds *that* session's root. Called before you build and
+  play, it makes every random value in the session reproducible, end to end;
+  {{alt `clausters.seed(n)` || `seed(n)`}} — or `main.seed(n)`, the same verb spelled on the
+  session it seeds — does that for the **default session** (free-standing
+  draws and anything played without a `Session`). Seeding one session never
+  perturbs another.
+- Every routine gets its **own** generator when it is created, seeded from the
+  context creating it (its session's root). Same root seed + same creation
+  order = the same music; and because each routine draws from its own stream,
+  concurrent routines (several clocks, live RT next to an NRT render) stay
+  reproducible per routine no matter how their wakes interleave.
+- A draw always uses the generator of the routine running right now; outside a
+  routine it uses the active session's root — the session driving {{alt on this
+  thread (or entered with `with`) || here (or entered with `use`)}}, else the default session.
+
+There are **no per-pattern seeds** — independent seeds would break
+per-session consistency. To isolate some samples, play it inside its own
+routine (its own derived stream by construction) or its own session. The
+generator itself lives in the shared native core, so the same seed replays the
+same values in every Clausters client language.
+
+```python
+from clausters import Session, rrand
+from clausters.seq import pbind, pwhite
+
+with Session.nrt() as session:
+    session.clock.set_tempo(2.0)
+    session.seed(2026)               # this session is now reproducible
+    base = rrand(-3.0, 3.0)          # a one-off draw from the session's root
+    session.play(pbind(freq=pwhite(400.0, 800.0), dur=0.25))   # draws when played
+    session.render()
+```
+
+```ts
+import { Session, rrand } from "clausters";
+import { pbind, pwhite } from "clausters/seq";
+
+const session = await Session.nrt();
+session.use(() => {
+    session.clock.setTempo(2.0);
+    session.seed(2026);              // this session is now reproducible
+    const base = rrand(-3.0, 3.0);   // a one-off draw from the session's root
+    session.play(pbind({ freq: pwhite(400.0, 800.0), dur: 0.25 }));   // draws when played
+});
+await session.render();
+session.close();
+```
+
+## Offline, with the same code
+
+Everything here works unchanged offline. Build the `Server` with an `OscNrtInterface`, make the clock on a `LogicalTimebase` (every clock of `Session.nrt()` is), drive it with `clock.render()` instead of `run()`, and the routine's `play` calls accumulate a timed score the bundled renderer turns into samples — no server, no audio device. That swap is the client's central seam, covered in [Sessions](sessions.md) and [The client, layer by layer](guide.md).
+
+**Offline, the system clock is logical, and the script runs as it does live.** A `LogicalTimebase` stands in for physical time: seconds that advance only when whatever is due next is woken. Every clock of an offline session shares it and has its origin on it, as a live clock has its origin on the monotonic clock. So what a script sets up before rendering happens at second 0, a clock a routine starts at second 4 starts at second 4, and a render wakes what is due across **all** the started clocks in order of seconds. A clock that is never started does not play, offline as live; the one being rendered is started by rendering it. And a clock never changes mode: rendering one made on another timebase {{alt raises || throws}}, since its queue is measured against the time it was made on. `locate` and a timeline's loop are the same operation on that time, so beats may repeat while the score's seconds go on.
+
+Because it is the same interface, one distinction matters as much offline as live: **a message has no time; a bundle does.** In a bundle a message would carry the *immediate* timetag, and on its own it means exactly that — so {{alt `Synth(…)` || `new Synth(…)`}}, `node.set(…)`, `node.free()` are untimed wherever you call them. Reach for them for what has no place in a timeline: sending defs, allocating buffers, opening the groups a session is built on.
+
+Placing something *in time* is the other path: **`{{api send_bundle}}`** stamps the beat the routine has accumulated by yielding (plus an optional {{alt `delay_beats=` || `delayBeats`}} lookahead), and an `Event` — so every **pattern** — does it for you. Creating a node with `{{api send_msg}}` from inside a routine is therefore an error, not a thing that renders differently: live you cannot see it, because "immediately" and the logical beat are close enough to pass; offline it is the difference between a phrase and a chord.
+
+## The application's clock: `{{api app_clock}}()`
+
+There are two clocks here, and they answer different questions. The
+`TempoClock` above keeps **musical** time — beats, tempo, what the music plays
+on. The other keeps the **application's** time: seconds, on {{alt the thread the
+windows are drained on || the page's own loop}}, and it is where anything that touches a window belongs.
+
+```python
+from clausters.gui import app_clock
+
+app_clock().sched(0.5, lambda: knob.set(value=1.0))    # once, half a second on
+```
+
+```ts
+import { gui } from "clausters";
+
+const app = await gui.appClock();
+app.sched(0.5, () => knob.set({ value: 1.0 }));        // once, half a second on
+```
+
+An **animation** is not an API — it is a routine that waits, exactly like a
+musical one, in the other unit:
+
+```python
+def blink():
+    while True:
+        lamp.set(color="red");  yield 0.25
+        lamp.set(color="grey"); yield 0.25
+
+app_clock().play(Routine(blink))
+```
+
+```ts
+function* blink() {
+    for (;;) {
+        lamp.set({ color: "red" });  yield 0.25;
+        lamp.set({ color: "grey" }); yield 0.25;
+    }
+}
+
+app.play(new Routine(blink));
+```
+
+And `defer` is the door from {{alt any other thread || any other task}}. A routine on the `TempoClock`
+must never block {{alt its own thread || the page}}, so what it wants to do to a window it hands
+over instead:
+
+```python
+def line(clock):
+    for beat in range(8):
+        Event(instrument="default", freq=330).play()
+        app_clock().defer(lambda beat=beat: counter.set(value=beat))
+        yield 1.0
+```
+
+```ts
+function* line(clock: TempoClock) {
+    for (let beat = 0; beat < 8; beat++) {
+        new Event({ instrument: "default", freq: 330 }).play();
+        app.defer(() => counter.set({ value: beat }));
+        yield 1.0;
+    }
+}
+```
+
+The deferred call runs where the windows are, in the loop's own order, and the
+routine goes back to keeping time. Asking for `{{api app_clock}}()` starts the host's
+[event loop](gui.md#the-event-loop-and-the-one-call-a-script-ends-with) if it is not running yet.<!-- web --> A page *is* that loop, so there is no `EventLoop` class here and none is missing: the clock, the calls and what they mean are the same, and what is absent is only the part that made a thread behave like a page.<!-- /web -->
+
+## Sending to another application
+
+The same logical beat is available to anything else that speaks OSC. A destination is where OSC goes, and {{alt `session.destination(host, port)` || `session.destination(url)`}} opens one onto another application:
+
+```python
+lights = session.destination("127.0.0.1", 7000)
+
+def cue(clock):
+    for colour in ("red", "amber", "green"):
+        Event(instrument="default", freq=330).play()
+        lights.send_bundle(("/lamp", colour, 1.0))
+        yield 1.0
+```
+
+```ts
+const lights = await session.destination("ws://127.0.0.1:7000");
+
+function* cue(clock: TempoClock) {
+    for (const colour of ["red", "amber", "green"]) {
+        new Event({ instrument: "default", freq: 330 }).play();
+        lights.sendBundle([["/lamp", colour, 1.0]]);
+        yield 1.0;
+    }
+}
+```
+
+The note and the lamp carry the *same* timetag, because both read the same `Moment` — the beat the routine has accumulated, not what time it happens to be when each line runs.
+
+What a destination sends is standard OSC and nothing more: a message, or a bundle with an NTP timetag. It does not add the server's `latency` — that is a property of our audio pipeline, and what another application needs is its own business, asked for as an explicit {{alt `delay_beats=` || `delayBeats`}}. Nor does it send our own commands (sample-exact `/sched_at`, `/server_sync`) or take part in an offline render, since nothing is listening there.<!-- web --> A page cannot open a UDP socket, so a destination here rides a connection exactly as the server does: for another application, its WebSocket bridge. The difference is the carrier, never the timing.<!-- /web -->
+
+Outside any routine there is no clock, and the moment is wall-clock now with delays read as seconds — so the same call works in a script with no `TempoClock` at all.
+
+For the other direction — reacting to OSC another application sends *you* — see {{alt [Receiving OSC and MIDI](responders.md) || [Receiving: responders](responders.md)}}.
+
+## See also
+
+- [Timing models](timing-models.md) — the ways a clock keeps time (wall-clock, sample-locked, shared transport) and how to observe each.
+- [Sessions](sessions.md) — the ergonomic handle that bundles a clock and a server, for when you do not need this level of control.
+- [The client, layer by layer](guide.md) — where routines, clocks and the server sit in the whole client.
+- {{alt [API reference](api/clausters.base.md) || [API reference](api/index.md)}} — `TempoClock`, `Routine`, `Event` and the `Server` methods used here.
