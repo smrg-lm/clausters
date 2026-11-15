@@ -101,7 +101,7 @@ console.log(`counter advanced ${after - before} samples = ${((after - before) / 
 
 ## Shared transport — phase-aligning several clients
 
-> This section is that timing model in brief; {{alt [A DAW-style transport](transport.md) || [The transport](transport.md)}} is the full workflow guide — conducting, following, starting together on a bar, and following a tempo change live.
+> This section is that timing model in brief; [A DAW-style transport](transport.md) is the full workflow guide — conducting, following, starting together on a bar, and following a tempo change live.
 
 Locking to a master gives every client the same sample axis, but each routine still *starts* whenever you play it. To make several clients begin on the **same beat**, two pieces work together:
 

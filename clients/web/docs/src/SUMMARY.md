@@ -10,7 +10,7 @@
 - [Patterns](patterns.md)
 - [Timing models](timing-models.md)
 - [The ambient verbs: play, plot, scope, render](verbs.md)
-- [The transport: a shared grid, and sound that freezes](transport.md)
+- [A DAW-style transport](transport.md)
 - [Reading the server: buses and buffers](data.md)
 - [Receiving: responders](responders.md)
 - [The document: what a multitrack is, and who edits it](document.md)
