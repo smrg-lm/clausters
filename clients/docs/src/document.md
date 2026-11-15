@@ -63,20 +63,18 @@ opens, which is why the curve row below names three unrelated types:
 
 **A curve's window has a menu bar and no tools**: File, Edit (undo and redo) and Help; {{alt `chrome=False` || `chrome: false`}} draws the curve alone. A curve plays nothing here, has no grid and its points have no clipboard, so a key or a verb that asks for one of those says why on the status line, and its key sheet does not list them. Its holder may play it: with `{{api on_play}}` set, the space bar and a widget that names the `play` verb call it. It needs no engine, no device and no playback.
 
-<!-- python -->
-**An `EventSequence` opens in the notes editor**, `clausters.gui.editing.NotesEditor`: an application the GUI host holds, as the multitrack is, and this script its handler. **The script's sequence is the window's while one is open**: its objects read and write what the window holds, and when the last window over it goes it holds what that window left it as, so there is nothing to write back. It plays on the application's engine, where a note's `instrument` names a def that engine has (`default`, with none named); a def sent to a client's server is not there. Every note on the roll carries the id of its event, so a drag, a trim or a velocity changed with Shift and a vertical drag names the note it touched and keeps everything the roll cannot draw -- its instrument, its amplitude. **A `Timeline` is rendered first** (`Timeline.render_events`): the roll edits the events it produced, which are the editor's `sequence`, and the timeline, being code, is left as it was.
-<!-- /python -->
+**An `EventSequence` opens in the notes editor**, {{alt `clausters.gui.editing.NotesEditor` || `gui.editing.NotesEditor`}}: an application the GUI host holds, as the multitrack is, and this {{alt script || page}} its handler. **The {{alt script's || page's}} sequence is the window's while one is open**: its objects read and write what the window holds{{alt  || , answering at once from a copy the page holds}}, and when the last window over it goes it holds what that window left it as, so there is nothing to write back. It plays on the application's engine, where a note's `instrument` names a def that engine has (`default`, with none named); a def sent to a client's server is not there. Every note on the roll carries the id of its event, so a drag, a trim or a velocity changed with Shift and a vertical drag names the note it touched and keeps everything the roll cannot draw -- its instrument, its amplitude. **A `Timeline` is rendered first** (`{{api Timeline.render_events}}`): the roll edits the events it produced, which are the editor's `sequence`, and the timeline, being code, is left as it was.
 
-{{alt  || **An `EventSequence` opens in the notes editor**, `editing.NotesEditor`: an application the GUI host holds, as the multitrack is, and this page its handler. **The page's sequence is the window's while one is open**: a change through its objects is an edit of the window's, they answer at once from a copy the page holds, and when the last window over it goes it holds what that window left it as, so there is nothing to write back. It plays on the application's engine, where a note's `instrument` names a def that engine has (`default`, with none named); a def sent to a client's server is not there.}} **It plays what it edits**, on a transport of its window's own, so playing it never moves a multitrack nor another window: {{alt `editor.play()` || `await editor.play()`}} (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window, which is play/stop -- a stop goes back to the position cursor. **Where a pass ends** is `editor.end`: {{alt `None` || `null`}} by default, the transport rolling on past the last note as a multitrack's does; `"contents"`, where the last note ends; or a beat, an end marker. A note's release rings out past a stop, which releases the notes rather than freezing them. An edit while it plays is heard at once -- the transport's event lane takes the sequence again and plays on from where the position is -- and a note already sounding ends as it would have. The roll's play cursor is that transport's position, stopped or rolling, and a click on its ruler places the **position cursor**: a stopped transport is cued there, and the next play starts from it. **The roll's vertical axis can be a frequency**: {{alt `y_axis="hz"`, || `yAxis: "hz"`,}} on `NotesEditor` or through `edit`, draws the same notes on a log scale ruled in hertz, where a note an octave up is as high as on the keys and a drag moves it continuously, writing its `freq` -- the MIDI note it was written with follows it. Two editors over one sequence, one in each axis, are two windows onto one {{alt history, each with its own transport and its own selection. || history.}} **A {{alt script || page}} edits the same sequence while the roll is open**, through its {{alt objects (see [Event sequences](timelines.md#event-sequences-events-as-data)): || objects:}} the change is a turn of that history, so the roll redraws, the lane plays it, and Ctrl+Z in the window takes it back — {{alt `with seq.history("humanize"):` || `seq.history.entry("humanize", () => { ... })`}} makes a whole loop one entry. **What the hand marked is the {{alt script's || page's}} to read**: {{alt `roll.selected` || `await roll.selected()`}} is the events marked on the roll (a click, Shift+click or a marquee) as the `SeqEvent` objects they are, {{alt `roll.select(events)` || `await roll.select(events)`}} marks them from the {{alt script || page}} and {{alt `roll.unselect()` || `await roll.unselect()`}} clears — the picture's state, entering no history. The other selection, the time range an Alt+drag sweeps, is the transport's `span`, and `roll.transport` is that transport (see [The transport](transport.md)). {{alt `play(destination=midi)` sends the events to a MIDI port instead, on the client's clock, since the server has no MIDI output. || }}
+**It plays what it edits**, on a transport of its window's own, so playing it never moves a multitrack nor another window: {{alt `editor.play()` || `await editor.play()`}} (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window, which is play/stop -- a stop goes back to the position cursor. **Where a pass ends** is {{alt `editor.end` || `editor.setEnd(end)`}}: {{alt `None` || `null`}} by default, the transport rolling on past the last note as a multitrack's does; `"contents"`, where the last note ends; or a beat, an end marker. A note's release rings out past a stop, which releases the notes rather than freezing them. An edit while it plays is heard at once -- the transport's event lane takes the sequence again and plays on from where the position is -- and a note already sounding ends as it would have. The roll's play cursor is that transport's position, stopped or rolling, and a click on its ruler places the **position cursor**: a stopped transport is cued there, and the next play starts from it. **The roll's vertical axis can be a frequency**: {{alt `y_axis="hz"`, || `yAxis: "hz"`,}} on `NotesEditor` or through `edit`, draws the same notes on a log scale ruled in hertz, where a note an octave up is as high as on the keys and a drag moves it continuously, writing its `freq` -- the MIDI note it was written with follows it. Two editors over one sequence, one in each axis, are two windows onto one history, each with its own transport and its own selection. **A {{alt script || page}} edits the same sequence while the roll is open**, through its objects (see [Event sequences](timelines.md#event-sequences-events-as-data)): the change is a turn of that history, so the roll redraws, the lane plays it, and Ctrl+Z in the window takes it back — {{alt `with seq.history("humanize"):` || `seq.history.entry("humanize", () => { ... })`}} makes a whole loop one entry. **What the hand marked is the {{alt script's || page's}} to read**: {{alt `roll.selected` || `await roll.selected()`}} is the events marked on the roll (a click, Shift+click or a marquee) as the `SeqEvent` objects they are, {{alt `roll.select(events)` || `await roll.select(events)`}} marks them from the {{alt script || page}} and {{alt `roll.unselect()` || `await roll.unselect()`}} clears — the picture's state, entering no history. The other selection, the time range an Alt+drag sweeps, is the transport's `span`, and `roll.transport` is that transport (see [The transport](transport.md)). {{alt `play(destination=midi)` || `play(undefined, midi)`}} sends the events to a MIDI port instead, on the client's clock, since the application has no MIDI output.
 
-**A roll edits polyphonically or monophonically**, and which is the window's, as its grid is: {{alt `roll.monophonic = True`, || `await roll.setMonophonic(true)`,}} M in the window or the Edit menu. Monophonic, a gesture never leaves two notes of one line (a staff and voice, else a channel) overlapping: a note lengthened or moved over the next shortens it from its start and takes it away where it covers it whole, and the note it starts inside ends there, all in one entry of the history. A length that reaches the next note does not join them. **A join is the roll's verb over a line**: `roll.join()` (J) joins the selected notes, each going on into the next without a new attack, and `roll.unjoin()` (Shift+J) takes the joins away; **a line is drawn over the boxes as the pitch it sounds**: from an attack across every note joined on from it, through what bends it (a note's bend and its channel's), and a new line where the next note is attacked -- a reading of the sequence, `{{api EventSequence.pitch_line}}()` from a script. Over notes of one pitch that touch, `join` makes them one note, as before. **A split is the sequence's**: `roll.split()` (E) cuts the selected notes at the cursor, each in two as a region is split, with its keys and its curves on both halves and the second half a new attack (`EventSequence.split` does it from a script). **A transposition moves the selection**, or every note the roll takes when nothing is selected: `{{api roll.step_up}}()` and `{{api roll.step_down}}()` (Up, Down) and `{{api roll.octave_up}}()` and `{{api roll.octave_down}}()` (Ctrl+Up, Ctrl+Down) move it a semitone or an octave in MIDI mode, and in notation mode a step of the key, each note to the next letter with the sign the key writes on it, in one entry of the history. **The status band says what is under the pointer**: over a note its pitch by name and number, its velocity and channel, and in notation mode its staff and voice, how it is written and its dynamic; over a curve its label and value. **The lanes under the roll are shown one at a time**, chosen by the tabs there {{alt (`roll.lane = ...`): || (`await roll.setLane(...)`):}} the notes' velocities, a bar at each note's start that a drag moves -- the selection's together when the bar is selected -- and a drag across the lane draws as a ramp, one entry of the history; or a curve of the sequence, with its value ruler beside it. **A curve is added among those the sequence's format allows**, from the Edit menu's Curves: {{alt `roll.add_curve("cc1")` || `roll.addCurve("cc1")`}} (or `"cc11"`, `"bend"`, `"pressure"`, on the channel of the first selected note), {{alt `roll.add_note_curve("timbre")` || `roll.addNoteCurve("timbre")`}} (or `"bend"`, `"pressure"`, on each selected note) and `{{api roll.remove_curve}}()`; the format refuses the rest with why -- under MPE a channel says its controllers and a note its own bend, pressure and timbre. **The marks a page writes are the roll's verbs in notation mode**, over the selected notes and heard at once: beside the staccato, `roll.tenuto()`, `roll.accent()`, `roll.marcato()` and `roll.breath()` (-, >, ^ and the comma), each on where a note lacks it and off where all have it -- a breath lets the note go a little before the next attack -- and `roll.dynamic("mf")` {{alt (`None` || (`null`}} takes it away), the Notation menu's Dynamic. They are drawn as the page draws them, with the engraver's symbols where the host holds an engraver and as text otherwise: the articulations over the box, the breath at its end, the dynamic under it; and a note's tint tells apart its voice, its staff or its part {{alt (`roll.color_by = "staff"`). || (`await roll.setColorBy("staff")`).}} **A selection by what it holds** marks every note the roll takes that shares a pitch, a channel, a staff and voice, or a staff with a selected one: {{alt `roll.select_pitch()`, `roll.select_channel()`, `roll.select_voice()` || `roll.selectPitch()`, `roll.selectChannel()`, `roll.selectVoice()`}} and `{{api roll.select_staff}}()`, the Edit menu's; it edits nothing. Ctrl on a note removes it, and dragging on from there erases every note the pointer crosses, in one entry; an edge of a selected note resizes the whole selection by as much. **A panel beside the roll shows what the notes hold** {{alt (`roll.events_panel = True`, || (`await roll.setEventsPanel(true)`,}} or the View menu's entry): an inspector of the selected notes, each field one value where they agree and the first's, marked as varying, where they do not, and the list of every event of the sequence, its time as bar and beat. Both follow the roll's selection, and a row chosen in the list selects its note; a value typed in the inspector is written on every selected note as the roll would write it, in either mode, one entry of the history. **A second panel says how the roll draws what is beyond its boxes** {{alt (`roll.display_panel = True`, || (`roll.setDisplayPanel(true)`,}} or the View menu's Display settings), as the audio editor's spectrogram settings do: the slurs, not drawn or drawn as an arc, as an arc dashed where the slur attacks its notes, as a phrasing bracket or as a band behind the notes; a note's articulations, not drawn or stacked at its start or in a row along it, above the box or inside it -- these two a page's, drawn in notation mode -- the pitch line between the boxes, the notes' own curves, and which lanes are offered as tabs. It is the window's and no edit: {{alt `roll.display` || `roll.display()`}} reads it and {{alt `roll.set_display(slurs="band")` || `roll.setDisplay({ slurs: "band" })`}} sets it. A voice rendered from a pattern keeps the joins it was written with, and the roll writes nothing of a page into it.
+**A roll edits polyphonically or monophonically**, and which is the window's, as its grid is: {{alt `roll.monophonic = True`, || `await roll.setMonophonic(true)`,}} M in the window or the Edit menu. Monophonic, a gesture never leaves two notes of one line (a staff and voice, else a channel) overlapping: a note lengthened or moved over the next shortens it from its start and takes it away where it covers it whole, and the note it starts inside ends there, all in one entry of the history. A length that reaches the next note does not join them. **A join is the roll's verb over a line**: `roll.join()` (J) joins the selected notes, each going on into the next without a new attack, and `roll.unjoin()` (Shift+J) takes the joins away; **a line is drawn over the boxes as the pitch it sounds**: from an attack across every note joined on from it, through what bends it (a note's bend and its channel's), and a new line where the next note is attacked -- a reading of the sequence, `{{api EventSequence.pitch_line}}()` from a script. Over notes of one pitch that touch, `join` makes them one note, as before. **A split is the sequence's**: `roll.split()` (E) cuts the selected notes at the cursor, each in two as a region is split, with its keys and its curves on both halves and the second half a new attack (`EventSequence.split` does it from a script). **A transposition moves the selection**, or every note the roll takes when nothing is selected: `{{api roll.step_up}}()` and `{{api roll.step_down}}()` (Up, Down) and `{{api roll.octave_up}}()` and `{{api roll.octave_down}}()` (Ctrl+Up, Ctrl+Down) move it a semitone or an octave in MIDI mode, and in notation mode a step of the key, each note to the next letter with the sign the key writes on it, in one entry of the history. **The status band says what is under the pointer**: over a note its pitch by name and number, its velocity and channel, and in notation mode its staff and voice, how it is written and its dynamic; over a curve its label and value. **The lanes under the roll are shown one at a time**, chosen by the tabs there {{alt (`roll.lane = ...`): || (`await roll.setLane(...)`):}} the notes' velocities, a bar at each note's start that a drag moves -- the selection's together when the bar is selected -- and a drag across the lane draws as a ramp, one entry of the history; or a curve of the sequence, with its value ruler beside it. **A curve is added among those the sequence's format allows**, from the Edit menu's Curves: `{{api roll.add_curve}}("cc1")` (or `"cc11"`, `"bend"`, `"pressure"`, on the channel of the first selected note), `{{api roll.add_note_curve}}("timbre")` (or `"bend"`, `"pressure"`, on each selected note) and `{{api roll.remove_curve}}()`; the format refuses the rest with why -- under MPE a channel says its controllers and a note its own bend, pressure and timbre. **The marks a page writes are the roll's verbs in notation mode**, over the selected notes and heard at once: beside the staccato, `roll.tenuto()`, `roll.accent()`, `roll.marcato()` and `roll.breath()` (-, >, ^ and the comma), each on where a note lacks it and off where all have it -- a breath lets the note go a little before the next attack -- and `roll.dynamic("mf")` {{alt (`None` || (`null`}} takes it away), the Notation menu's Dynamic. They are drawn as the page draws them, with the engraver's symbols where the host holds an engraver and as text otherwise: the articulations over the box, the breath at its end, the dynamic under it; and a note's tint tells apart its voice, its staff or its part {{alt (`roll.color_by = "staff"`). || (`await roll.setColorBy("staff")`).}} **A selection by what it holds** marks every note the roll takes that shares a pitch, a channel, a staff and voice, or a staff with a selected one: `{{api roll.select_pitch}}()`, `{{api roll.select_channel}}()`, `{{api roll.select_voice}}()` and `{{api roll.select_staff}}()`, the Edit menu's; it edits nothing. Ctrl on a note removes it, and dragging on from there erases every note the pointer crosses, in one entry; an edge of a selected note resizes the whole selection by as much. **A panel beside the roll shows what the notes hold** {{alt (`roll.events_panel = True`, || (`await roll.setEventsPanel(true)`,}} or the View menu's entry): an inspector of the selected notes, each field one value where they agree and the first's, marked as varying, where they do not, and the list of every event of the sequence, its time as bar and beat. Both follow the roll's selection, and a row chosen in the list selects its note; a value typed in the inspector is written on every selected note as the roll would write it, in either mode, one entry of the history. **A second panel says how the roll draws what is beyond its boxes** {{alt (`roll.display_panel = True`, || (`await roll.setDisplayPanel(true)`,}} or the View menu's Display settings), as the audio editor's spectrogram settings do: the slurs, not drawn or drawn as an arc, as an arc dashed where the slur attacks its notes, as a phrasing bracket or as a band behind the notes; a note's articulations, not drawn or stacked at its start or in a row along it, above the box or inside it -- these two a page's, drawn in notation mode -- the pitch line between the boxes, the notes' own curves, and which lanes are offered as tabs. It is the window's and no edit: {{alt `roll.display` || `roll.display()`}} reads it and {{alt `roll.set_display(slurs="band")` || `roll.setDisplay({ slurs: "band" })`}} sets it. A voice rendered from a pattern keeps the joins it was written with, and the roll writes nothing of a page into it.
 
-**A roll has two modes, and which one is its sequence's**: {{alt `roll.mode` || `await roll.mode()`}} is `"notation"` over a sequence written as a page and `"midi"` over every other (`seq.format`: `"notation"`, `"1.0"`, `"mpe"`, `"2.0"`, or `"events"` for one that states no MIDI spec). In **MIDI mode** the events are what MIDI says them: notes on and off, velocities, channels, curves, and joins only in a sequence for the server, since MIDI has none (in a MIDI format `join` makes notes of one pitch one note and refuses notes of different pitches). In **notation mode** the roll is a view of the page the sequence is written as: each note on a staff and a voice, drawn as long as it is written with what it sounds inside it (a staccato is the note drawn short, the rest of its value a dotted frame), landing on the reading's grid and on written values, its velocity shown and edited as the dynamic it is, and what it sounds derived from the page at once (`EventSequence.realize`). {{alt `roll.voice = (staff, voice)` || `setVoice([staff, voice])`}} is the voice edited, the others drawn faint and not taken; {{alt `roll.scope` || `setScope`}} shows the `"system"`, a {{alt `("part", n)` || `["part", n]`}} or a {{alt `("staff", n)`; `roll.writing` || `["staff", n]`; `setWriting`}} writes the polyphony in `"voices"` or with `"ties"`, which changes nothing heard; and `slur()`, `{{api slur_join}}()`, `tie()`, `staccato()` and `pedal()` write a page's marks over the selection (S, Shift+S, T, `.`, P). A slur is drawn joined where the roll edits monophonically and attacked otherwise. **Nothing the roll does changes the format**, since each holds what the others do not: going to another is a **conversion into a copy**. {{alt `roll.to_notation(meter="3/4", division=8, writing="ties")` || `roll.toNotation({ meter: "3/4", division: 8, writing: "ties" })`}} answers the sequence written as a page and {{alt `roll.to_midi("2.0")` || `roll.toMidi("2.0")`}} the performance written for a MIDI spec, the page's notation left out (`seq.notated`, `{{api seq.as_midi}}`); `edit` opens the copy in a roll of its own, and the sequence the roll edits is as it was. The window's File menu has the same conversions, *Convert to notation...* asking how in a dialog holding the meter, the shortest value and the writing the sequence's reading says, and each opens its copy in a new roll. **A roll the host holds alone has a file** — one `clausters-gui —roll` opens over a MIDI file or a score, or a conversion's copy — and saves it as its format's file: MEI for a page, a Standard MIDI File for MIDI 1.0 and MPE, a Clip File for MIDI 2.0. A roll a script opens edits the script's sequence, which has no file of its own: the script writes it (`{{api to_smf}}`, `{{api to_clip}}`).
+**A roll has two modes, and which one is its sequence's**: {{alt `roll.mode` || `await roll.mode()`}} is `"notation"` over a sequence written as a page and `"midi"` over every other (`seq.format`: `"notation"`, `"1.0"`, `"mpe"`, `"2.0"`, or `"events"` for one that states no MIDI spec). In **MIDI mode** the events are what MIDI says them: notes on and off, velocities, channels, curves, and joins only in a sequence for the server, since MIDI has none (in a MIDI format `join` makes notes of one pitch one note and refuses notes of different pitches). In **notation mode** the roll is a view of the page the sequence is written as: each note on a staff and a voice, drawn as long as it is written with what it sounds inside it (a staccato is the note drawn short, the rest of its value a dotted frame), landing on the reading's grid and on written values, its velocity shown and edited as the dynamic it is, and what it sounds derived from the page at once (`EventSequence.realize`). {{alt `roll.voice = (staff, voice)` || `await roll.setVoice([staff, voice])`}} is the voice edited, the others drawn faint and not taken; {{alt `roll.scope` || `roll.setScope`}} shows the `"system"`, a {{alt `("part", n)` || `["part", n]`}} or a {{alt `("staff", n)` || `["staff", n]`}}; {{alt `roll.writing` || `roll.setWriting`}} writes the polyphony in `"voices"` or with `"ties"`, which changes nothing heard; and `slur()`, `{{api slur_join}}()`, `tie()`, `staccato()` and `pedal()` write a page's marks over the selection (S, Shift+S, T, `.`, P). A slur is drawn joined where the roll edits monophonically and attacked otherwise. **Nothing the roll does changes the format**, since each holds what the others do not: going to another is a **conversion into a copy**. {{alt `roll.to_notation(meter="3/4", division=8, writing="ties")` || `roll.toNotation({ meter: "3/4", division: 8, writing: "ties" })`}} answers the sequence written as a page and `{{api roll.to_midi}}("2.0")` the performance written for a MIDI spec, the page's notation left out (`seq.notated`, `{{api seq.as_midi}}`); `edit` opens the copy in a roll of its own, and the sequence the roll edits is as it was. The window's File menu has the same conversions, *Convert to notation...* asking how in a dialog holding the meter, the shortest value and the writing the sequence's reading says, and each opens its copy in a new roll. **A roll the host holds alone has a file** — one `clausters-gui --roll` opens over a MIDI file or a score, or a conversion's copy — and saves it as its format's file: MEI for a page, a Standard MIDI File for MIDI 1.0 and MPE, a Clip File for MIDI 2.0. A roll a script opens edits the script's sequence, which has no file of its own: the script writes it (`{{api to_smf}}`, `{{api to_clip}}`).
 
-**A roll can paint what is played**: `edit(sequence, {{alt midi_in=True)` || { midiIn: true })`}} asks the host to open its MIDI input and write each incoming note into the roll — on the step cursor while the transport is stopped, at the play line while it plays, held as long as the key. Each is an edit of the sequence like a note a hand drew, so it is in the history and in every other window over it. A native host opens a port named `clausters-gui` to route a keyboard {{alt into. || into; the host in a page listens to every MIDI input the browser has, and the browser asks the person's permission for that the first time a roll that listens is opened.}}
+**A roll can paint what is played**: `edit(sequence, {{alt midi_in=True)` || { midiIn: true })`}} asks the host to open its MIDI input and write each incoming note into the roll — on the step cursor while the transport is stopped, at the play line while it plays, held as long as the key. Each is an edit of the sequence like a note a hand drew, so it is in the history and in every other window over it. A native host opens a port named `clausters-gui` to route a keyboard into<!-- python -->.<!-- /python --><!-- web -->; the host in a page listens to every MIDI input the browser has, and the browser asks the person's permission for that the first time a roll that listens is opened.<!-- /web -->
 
 **A saved session opens in the multitrack**, an application the GUI host holds,
-over the session's file: {{alt `edit(SavedSession.open(path))` || `await edit(await Session.open(path))`}} (a session saved with
+over the session's file: {{alt `edit(multitrack.Session.open(path))` || `await edit(await multitrack.Session.open(path))`}} (a session saved with
 {{alt `session.save(path)` || `await session.save(path)`}} has a file too; one with none is refused). The session's
 takes are read where they are, never loaded whole: their headers as it opens,
 their peaks as the window draws them -- kept in the session's own `peaks/`
@@ -84,35 +82,34 @@ folder, beside nothing of yours, and measured once when they are missing -- and
 their samples as the transport reads each track's regions, summed where they
 overlap. A box of notes plays the sequence the session holds, and a double
 click on one opens its roll in the same application, one history with the
-multitrack; {{alt `editor.open_roll(region)` || `editor.openRoll(region)`}} opens it from the script and answers the
+multitrack; `{{api editor.open_roll}}(region)` opens it from the {{alt script || page}} and answers the
 roll's notes editor. A `Multitrack` opens the same way, as an **untitled session** over
 it: no file behind it until the first `save(path)` names one. What comes back,
-{{alt `clausters.gui.editing.MultitrackEditor`, || `MultitrackEditor`,}} is its handler:
+{{alt `clausters.gui.editing.MultitrackEditor`, || `gui.editing.MultitrackEditor`,}} is its handler:
 `transport.play(start, end, {{alt looping=True)`, || { looping: true })`,}} `pause`, `stop(mark)`,
 `locate(at)`, {{alt `playing`; || `playing()`;}} `undo`, `redo`, `split`, `join`, `quantize`,
-{{alt `stop_at_end`, `reset_heights`, `compact_tracks` || `stopAtEnd`, `resetHeights`, `compactTracks`}} and any window verb by name
+`{{api stop_at_end}}`, `{{api reset_heights}}`, `{{api compact_tracks}}` and any window verb by name
 (`verb`); {{alt `selected`, || `selected()`,}} the boxes the hand holds as the multitrack's `Region`
 objects, `select(regions)` and `unselect()`, which are the window's and enter
-no history; {{alt `grid` || `grid()`}} and {{alt `snap_to_grid`; `output`, || `snapToGrid()`, each with
+no history; {{alt `grid` and `snap_to_grid`, which a script sets too; `output`, || `grid()` and `snapToGrid()`, each with
 its setter (`setGrid`, ...); `output()`,}} each track's meter
 and the samples played as silence (`starved`); and {{alt `save(path=None)`, || `save(path)`,}} which
 writes the session as the edits have left it, every file inside its folder
 named relative to it. The window saves too: its Save writes
 where the session saves, and an untitled one asks where in the Save as form,
 as Save as always does. **The {{alt script's || page's}} multitrack is the window's while it is
-open**: {{alt  || a change made
-through the objects of}} the session's `multitrack`, or {{alt  || of}} the one handed over, {{alt reads what || is
-made at once in}} the
-{{alt window shows now, a change made through its objects || page and}} is an edit of the {{alt window's || window's, in the order the page
-made them,}}
-that its Ctrl+Z takes {{alt back, and || back;}} `multitrack.history` is the window's {{alt history
-(`with multitrack.history("tidy"):` || history, its steps and reads promises (`multitrack.history.entry("tidy", ...)`}} makes a block one entry). When the window
-goes, the multitrack holds what the window left it as.{{alt  ||  **The multitrack's objects answer at once from a copy the
-page holds**, since a call to the host is a promise; the copy is brought to the
-window's after each of the page's own changes and steps, and after whatever a
-hand does in the window, which the host tells the page. A read made right
-after a hand's gesture can still answer what was there before it, until the
-copy arrives; the Python client reads the window's at every read.}}
+open**: a change made through the objects of the session's `multitrack`, or of
+the one handed over, is an edit of the window's, in the order the {{alt script || page}}
+made them, that its Ctrl+Z takes back, and `multitrack.history` is the window's
+history ({{alt `with multitrack.history("tidy"):` || `multitrack.history.entry("tidy", () => { ... })`}}
+makes a block one entry). When the window goes, the multitrack holds what the
+window left it as. <!-- python -->Its objects read what the window shows now.<!-- /python --><!-- web -->**The multitrack's objects answer at once from a copy
+the page holds**, since a call to the host is a promise (the history's steps
+and reads are promises too); the copy is brought to the window's after each of
+the page's own changes and steps, and after whatever a hand does in the window,
+which the host tells the page. A read made right after a hand's gesture can
+still answer what was there before it, until the copy arrives; the Python
+client reads the window's at every read.<!-- /web -->
 
 {{alt `MultitrackEditor()` || `new MultitrackEditor()`}} opens without a session, and its `multitrack` is {{alt `None`. || `null`.}}
 A window holds one session file at a time. When the hand puts another session
@@ -127,7 +124,7 @@ window close, because the {{alt script's || page's}} multitrack holds it.
 **The window's File menu changes its session**: New session puts an empty,
 untitled one in its place, Open session... chooses a session file in the
 host's chooser and opens it, Close session leaves the window with none. The
-handler has the same three, {{alt `new_file()`, `open_file(path)` || `newFile()`, `openFile(path)`}} and
+handler has the same three, `{{api new_file}}()`, `{{api open_file}}(path)` and
 `{{api close_file}}()`, and each hands the {{alt script's || page's}} multitrack back as above. A window
 the host holds alone asks first when its session has unsaved work (Don't
 save, Cancel, Save), and a Save there changes the session once the file is
@@ -139,12 +136,11 @@ window opens or makes in its place saves where its own file is.
 **A `SoundFile` opens in the audio editor**, an application the GUI host holds: the host
 opens it in a window of its own, on an engine of the application's own, and every gesture,
 render and undo runs in the host's process. What `edit` answers is its **handler**,
-{{alt `clausters.gui.editing.AudioEditor`: || `editing.AudioEditor`:}} each of its members is a call to the application
-{{alt (`GuiHost.open_app`, `GuiHost.call_app`), and || (`host.openApp`,
-`host.callApp`), so}} what it reads is {{alt  || a promise,}} asked again each {{alt time. || time, where the Python
-client's is a property.}} A
+{{alt `clausters.gui.editing.AudioEditor`: || `gui.editing.AudioEditor`:}} each of its members is a call to the application
+({{alt `GuiHost.open_app`, `GuiHost.call_app` || `host.openApp`, `host.callApp`}}), and what it reads is
+asked again each time{{alt  || , so a read is a promise where the Python client's is a property}}. A
 server buffer is not edited, since it is loaded on a server the application does not
-reach: `buffer.write(path)` and edit the file. {{alt  || **In a page the
+reach: `buffer.write(path)` and edit the file. <!-- web -->**In a page the
 application runs over memory shared with its threads**: its own, its renders' and its
 engine's, which plays in an AudioWorklet beside the page's own engine. A browser grants
 shared memory only to a page that is **cross-origin isolated** (served with
@@ -152,11 +148,11 @@ shared memory only to a page that is **cross-origin isolated** (served with
 `tools/serve.py --isolated` serves the package so). There the host is the build that holds
 the application, its files are the page's storage, and `edit(file)` opens as it does under
 node with a native host; in a page that is not isolated it rejects saying the host holds no
-audio editor.}} It writes nothing it was handed while it edits. **A sound file is open once in a host**: `edit` of a file a window already holds answers that window, which comes forward with the file in focus, and an open from a window's File > Open or `{{api open_file}}` does the same rather than read it twice. The take is **a list of spans of files**, and
+audio editor.<!-- /web --> It writes nothing it was handed while it edits. **A sound file is open once in a host**: `edit` of a file a window already holds answers that window, which comes forward with the file in focus, and an open from a window's File > Open or `{{api open_file}}` does the same rather than read it twice. The take is **a list of spans of files**, and
 every edit leaves a new list: a cut takes a span out, a paste of a copy puts its spans in,
-and an edit that makes new samples {{alt -- a || (a}} pencil stroke, a pasted block, a mix
-{{alt (Ctrl+Shift+V), || with Ctrl+Shift+V,}} a gain curve applied, Process -> {{alt Reverse -- || Reverse)}} **renders** them offline into a
-file of the {{alt editor's || application's}} working folder, which the list then names: a stroke is a file the
+and an edit that makes new samples (a pencil stroke, a pasted block, a mix
+with Ctrl+Shift+V, a gain curve applied, Process -> Reverse) **renders** them offline into a
+file of the application's working folder, which the list then names: a stroke is a file the
 size of the stroke, spliced over the frames it was drawn on. An undo is the list before,
 so it costs the list and not the samples, and a take of an hour cuts and pastes as fast as
 one of a second. The files a history or the clipboard can still reach are kept, and
@@ -165,13 +161,13 @@ deleted when nothing can. **A file changed on disk is said**: when the window co
 the window; one a host left when its process was killed goes the next time any editor opens. A
 render that fails takes away what it had written there. A WAV, RF64 or W64 file is read where it
 is; any other (an MP3, a FLAC) is decoded into the working folder a run at a time when it
-opens, and the take appears when the decode ends. {{alt `reads_in_place(file)` || `readsInPlace(file)`}} says which. The
+opens, and the take appears when the decode ends. `{{api reads_in_place}}(file)` says which. The
 decoded copy is what is edited and the file opened is never written over: its first save asks
 for a path, and writes a WAV. {{alt `editor.save()` || `await editor.save()`}} renders the edited take over the file it was
 opened from (moved aside first while the list reads it, and the render moved where it was),
-{{alt answered || resolving}} once the file is whole, and Ctrl+S in the window does the same. {{alt `editor.save(path)` || `await editor.save({ path })`}}
+{{alt answering || resolving}} once the file is whole, and Ctrl+S in the window does the same. {{alt `editor.save(path)` || `await editor.save({ path })`}}
 renders it as another file, which a later save then writes over. {{alt `edit(SoundFile.empty(channels, || `await edit(SoundFile.empty(channels,}} frames, rate))` is silence not
-written anywhere {{alt yet -- || yet:}} its first save needs a path, which Ctrl+S asks for in a **Save
+written anywhere yet: its first save needs a path, which Ctrl+S asks for in a **Save
 as...** form and `editor.save()` refuses without one. {{alt `editor.file` || `await editor.file()`}} is the `SoundFile` the
 take is now. The window's File menu has **New file...** (a form for the channels, the
 length and the rate, which adds the new file to this editor), **Open file...** (the host's
@@ -179,17 +175,17 @@ file chooser, with Ctrl/Shift to select several files) and **Save as...**. {{alt
 the spans of files the take is made of. **It plays what it edits** on the application's engine,
 on a transport of its own (another window's play moves nothing in it), and `editor.transport`
 is that transport in the take's seconds, with the verbs and the span a server's `Transport` has: the space bar over the window plays the
-marked range, or from the position cursor, and `L` loops {{alt it -- || it,}} the same
-{{alt `transport.play()`, `span` || `await transport.play()`, `setSpan`}} and `loop(start, end)` from a {{alt script, || page,}} each side
+marked range, or from the position cursor, and `L` loops it, the same
+{{alt `transport.play()`, `span` || `await transport.play()`, `setSpan`}} and `loop(start, end)` from a {{alt script || page}}, each side
 reading what the other set. **A range swept while it loops is the loop's new
 span**: the loop follows the hand as it draws, and the head goes to the start
 of the range when the sweep is let go. A pass that is not looping keeps the end
 it was played with, and the next play reads the range. What the hand marked is
 samples, and
-{{alt `editor.selected` || `await editor.selected()`}} answers them as a `Segment` over {{alt `editor.file` || the file}} (its `start`
+{{alt `editor.selected` || `await editor.selected()`}} answers them as a `Segment` over the file in focus (its `start`
 a frame, its `duration` seconds); {{alt `editor.select(segment)` || `await editor.select(segment)`}} marks one and
 {{alt `editor.unselect()` || `await editor.unselect()`}} marks nothing. In an audio editor the samples marked and the
-transport's {{alt `span` || span}} are one range, so setting either sets both.
+transport's span are one range, so setting either sets both.
 
 An editor holds several files, listed in an independent widget on the left.
 {{alt `editor.files` || `await editor.files()`}} lists the open SoundFiles,
@@ -222,7 +218,7 @@ closes the window. With no file open, {{alt `editor.file` is `None`, `editor.fil
 is empty, || `editor.file()` resolves to `null`, `editor.files()` to an empty list,}} and a verb that acts on a file (`parts`, `save`, an edit) {{alt raises
 `ValueError`. || rejects with a `RangeError`.}}
 
-The audio editor's View menu selects waveform (`W`), spectrogram (`S`) or both {{alt (`B`). The || (`B`), also available as `editor.viewWave()`, `editor.viewSpectrogram()` and `editor.viewBoth()`. `editor.setLayers(stack)` accepts the}} same {{alt actions are `editor.view_wave()`, `editor.view_spectrogram()` || names}} and {{alt `editor.view_both()`. `editor.layers` accepts names (`peak`, `rms`, `signal`, `momentary`, `short`, `spectrogram`) or || layer}} objects {{alt with `draw`, `visible`, `solo`, `alpha` || as the signal builders,}} and {{alt `y`. `show_layer(name)` || `await editor.layers()` reads them. `showLayer(name)`, `hideLayer(name)`, `soloLayer(name)`}} and {{alt `hide_layer(name)` preserve a layer's place and settings; `solo_layer(name)` || `layerAlpha(name, alpha)` change the shared application's stack. Solo}} toggles {{alt solo, and `layer_alpha(name, alpha)` sets its opacity in `[0, 1]`. || without changing visibility.}} Waveform and spectrogram are two **views** of the take: one replaces the other in the take's lane, and both (`B`) stacks them, the waveform in the take's lane and the spectrogram in a lane under it, on one time axis with one selection and play cursor and a vertical each. The layers of {{alt `editor.layers` || `editor.layers()`}} are the **visualization layers** of the view in the take's lane; a frequency layer and an amplitude layer cannot both claim its vertical, and a stack can still superpose them with one of the two in boxes of its own. The menu's views are the defaults, not the only ones. The gain envelope is an **edit layer** over the take, superposed on whichever view is in its lane. {{alt Changing visualization leaves || Visualization changes leave}} the take and its history intact. The vertical ruler is in the units of the layer that claims the axis, and each quantity keeps its own vertical zoom: a spectrogram opens no further than its whole frequency range, and returning to the waveform finds the amplitude zoom where it was left.
+The audio editor's View menu selects waveform (`W`), spectrogram (`S`) or both (`B`); the same actions are `{{api editor.view_wave}}()`, `{{api editor.view_spectrogram}}()` and `{{api editor.view_both}}()`. {{alt `editor.layers` reads the stack and accepts || `await editor.layers()` reads the stack and `editor.setLayers(stack)` accepts}} names (`peak`, `rms`, `signal`, `momentary`, `short`, `spectrogram`) or layer objects with `draw`, `visible`, `solo`, `alpha` and `y`. `{{api show_layer}}(name)` and `{{api hide_layer}}(name)` keep a layer's place and settings; `{{api solo_layer}}(name)` toggles solo without changing visibility, and `{{api layer_alpha}}(name, alpha)` sets its opacity in `[0, 1]`. Waveform and spectrogram are two **views** of the take: one replaces the other in the take's lane, and both (`B`) stacks them, the waveform in the take's lane and the spectrogram in a lane under it, on one time axis with one selection and play cursor and a vertical each. The layers of {{alt `editor.layers` || `editor.layers()`}} are the **visualization layers** of the view in the take's lane; a frequency layer and an amplitude layer cannot both claim its vertical, and a stack can still superpose them with one of the two in boxes of its own. The menu's views are the defaults, not the only ones. The gain envelope is an **edit layer** over the take, superposed on whichever view is in its lane. Changing visualization leaves the take and its history intact. The vertical ruler is in the units of the layer that claims the axis, and each quantity keeps its own vertical zoom: a spectrogram opens no further than its whole frequency range, and returning to the waveform finds the amplitude zoom where it was left.
 
 The picture now stands in a `pane`: one time ruler, selection and playhead
 shared by its bodies. {{alt `editor.layer = "take"` || `editor.setLayer("take")`}} puts the take body in hand, the
@@ -232,8 +228,8 @@ accepts curve bodies; its `layer` property names the active body (`points`,
 `points:1`, etc.), and `hidden` excludes named bodies from drawing and editing.
 
 `{{api editor.show_envelope}}()` (Process → Edit gain envelope) shows and selects the gain
-curve. `editor.envelope` reads its flat `time, value, shape, curve` quads in
-seconds; {{alt `editor.set_envelope([...])` || `editor.setEnvelope([...])`}} records a curve edit in the same undo
+curve. {{alt `editor.envelope` || `await editor.envelope()`}} reads its flat `time, value, shape, curve` quads in
+seconds; `{{api editor.set_envelope}}([...])` records a curve edit in the same undo
 order as sample edits. The header names the gain scale: zero to one, where one is unity, and the
 vertical ruler and the read-out under the pointer measure gain while the curve
 is in hand and the samples while the take is. The
@@ -266,9 +262,9 @@ curve.toPoints();      // the edited curve, out of the object you already held
 **It opens.** The window is up and listening when that {{alt returns, || resolves,}} so the
 structure you already hold is the edited one from that moment: read it whenever,
 and it says what the hand has left there. {{alt `open=False` || `{ open: false }`}} builds the editor without
-a window, for a caller composing one.{{alt  ||  It is `await`ed where the reference
+a window, for a caller composing one.<!-- web --> It is `await`ed where the Python
 client's `edit` is not, for the reason `plot` and `View.open` are — resolving the
-ambient host may have to boot it.}}
+ambient host may have to boot it.<!-- /web -->
 
 Nothing is handed back: the object passed in *is* the edited one, except a sound file, which the audio editor writes when it is saved. A
 **multitrack** is one of them, and what opens is the multitrack editor — the
@@ -303,18 +299,15 @@ lands. A span of samples is the exception, and a real one rather than an
 omission: the frames are in a server buffer, so the crate holds no state to
 invert. What it shares there is the payload's shape and its coalesce key, and the
 inverse rides on the wire — a stroke's event carries the run it wrote *and* the
-run it replaced. {{alt This client writes a stroke's samples synchronously; a || The}} page's
-buffer calls are asynchronous, so {{alt  || a stroke's write is
-**queued in order** rather than awaited;}} the {{alt web || Python}} client {{alt queues them in order instead, || writes synchronously,}}
-and that is the only difference between the two.
+run it replaced. The Python client writes a stroke's samples synchronously;
+a page's buffer calls are asynchronous, so the web client queues them in order
+rather than awaiting each, and that is the only difference between the two.
 
 ## A running node: `edit(node)`
 
-A `Synth` — of a SynthDef, a FaustDef or a plugin — {{alt is not a document, and
-`edit` || }} opens {{alt it all the same: || in}} a window of its def's controls that nobody
-wrote, {{alt `clausters.gui.editing.NodeEditor`. || `editing.NodeEditor`, the reference client's
-[`edit(node)`](https://clausters-python.readthedocs.io/en/latest/document.html#a-running-node-editnode)
-call for call:}}
+A `Synth` — of a SynthDef, a FaustDef or a plugin — is not a document, and
+`edit` opens it all the same: a window of its def's controls that nobody
+wrote, {{alt `clausters.gui.editing.NodeEditor` || `gui.editing.NodeEditor`}}.
 
 ```python
 freq = control("freq", 660.0, min=220.0, max=1760.0, warp="exp", unit="Hz")
@@ -328,7 +321,6 @@ const node = new Synth("tone");          // of a def with that control
 const editor = await edit(node, { stage: element });
 ```
 
-<!-- python -->
 The editor reads the def's controls as `/def_query` reports them — the same
 record in every family — and the shared core decides what each becomes: a
 slider over the range it declares, a toggle for a control of two steps, a list
@@ -339,43 +331,27 @@ its default. Hidden and read-only parameters, and controls fixed when the node
 starts (`"ir"`), are left out. Beside each control is its value as the server
 writes it: the number with its unit, or a plugin's own words for it (`-6 dB`,
 `Hall`).
-<!-- /python -->
 
-<!-- python -->
-**The host keeps the window, not the script.** Every control is
+**The host keeps the window, not the {{alt script || page}}.** Every control is
 [bound](gui.md#values-that-never-come-back-to-the-script) to the node, so a drag
-reaches the server with no round trip through Python, and every binding is read
-back, so the window follows the node whoever changes it. A plugin of thousands
-of parameters opens by groups (its modules) and pages of sixteen, with a search
-field over the names; `editor.search("cutoff")` and `editor.show_page(2)` do the
-same from the script, and `editor.window["control:freq"]` is the widget of one
+reaches the server with no round trip through the client, and every binding is
+read back, so the window follows the node whoever changes it. A plugin of
+thousands of parameters opens by groups (its modules) and pages of sixteen,
+with a search field over the names; `{{api editor.search}}("cutoff")` and
+`{{api editor.show_page}}(2)` do the same from the {{alt script || page}}, and
+{{alt `editor.window["control:freq"]` || `editor.window.widget("control:freq")`}} is the widget of one
 control (`"text:freq"` its text).
-<!-- /python -->
 
-<!-- web -->
-The shared core decides what each control becomes — a slider over its declared
-range, a toggle, a list for a plugin parameter with named steps, a number for
-one with too many steps — and the host binds every control to the node and
-reads every binding back, so the window follows the node whoever changes it,
-with no callback in the page. A large plugin opens by groups and pages, with a
-search field; `editor.search(...)` and `editor.showPage(...)` do the same from
-the page, `editor.window.widget("control:freq")` is one control's widget, and
-`node.getText(...)`/`node.setText(...)` read and set a value as text. A plugin
-on a native server keeps its own window on the server's machine
-(`node.openPluginEditor()`), and its generic editor draws in the page.
-<!-- /web -->
-
-<!-- python -->
 A running node's controls are the server's state, so nothing here enters an
 undo order. A plugin's **own** window is something else: it opens on the
-server's machine with `node.open_plugin_editor()`, and the two can be open at
-once, each following the other. To read or set a value as text from a script,
-`node.get_text("freq")` and `node.set_text({"freq": "880 Hz"})`.
-<!-- /python -->
+server's machine with `{{api node.open_plugin_editor}}()`, and the two can be
+open at once, each following the other. To read or set a value as text from a
+{{alt script || page}}, {{alt `node.get_text("freq")` || `await node.getText("freq")`}} and
+{{alt `node.set_text({"freq": "880 Hz"})` || `node.setText({ freq: "880 Hz" })`}}.
 
 ## The score editor: `edit(score)`
 
-**A `Score` opens in the score editor**, {{alt `clausters.gui.editing.ScoreEditor`, || `editing.ScoreEditor`,}} and is edited **in
+**A `Score` opens in the score editor**, {{alt `clausters.gui.editing.ScoreEditor`, || `gui.editing.ScoreEditor`,}} and is edited **in
 place**: the editor is the shared crate's and holds the very score the
 {{alt script's || page's}} handle names, so `score.sheet()` and `score.mei()` read every
 edit. `edit(score)` answers the editor, as it does for every structure. A score
@@ -391,7 +367,7 @@ note drags; a slur, a time signature or a rest is selected and never displaced
 
 **Several notes are selected at once**: Ctrl+click adds a note or takes it out,
 and Shift+click extends the selection to the note clicked, in time and across
-the staves between. `editor.selected` is what is selected, as the model's item
+the staves between. {{alt `editor.selected` || `await editor.selected()`}} is what is selected, as the model's item
 ids, and `editor.select(elements)` selects from the {{alt script || page}} by the page's
 `xml:id`s.
 
@@ -413,13 +389,13 @@ and Escape lets it go. They are the keys note entry reads, meaning what the mode
 makes them mean, and bindings of the key table under `[gui.keys.score]`.
 
 **Writing is a mode, note entry**, and the window opens outside it: N, the
-toolbar's pencil or `editor.entry = {{alt True` || true`}} enter it, and Escape, N again or a
+toolbar's pencil or {{alt `editor.entry = True` || `editor.setEntry(true)`}} enter it, and Escape, N again or a
 play leave it. In it an **edit cursor** stands on a staff, in a voice, at a time
 — on what was selected, or where it was last left, or at the first beat — and
 what is entered is written there **over what was there**: nothing after it
 moves, in the bar or past it, and a value longer than what is left of the bar
 goes on into the next one, tied. A letter `a` to `g` writes that pitch, in the
-octave nearest the note before it, of the value in hand (`editor.value = {{alt (1, 8)` || [1, 8]`}}
+octave nearest the note before it, of the value in hand ({{alt `editor.value = (1, 8)` || `editor.setValue([1, 8])`}}
 writes eighths; the digits 1 to 7 pick a value, from a 64th to a whole, `.` the
 dot and `0` a rest), and the cursor goes on by it; Shift and a letter add the
 pitch to the chord just written. The arrows move the cursor a note at a time,
@@ -538,9 +514,8 @@ tremolo, a roll, a breath, let it ring, a fingering, a chord symbol), `lyric`,
 `{{api beat_repeat}}`, `control` (a tempo mark, a direction, a rehearsal mark),
 `{{api set_clef}}` and `spanner` (from the first selected note to the last) act on
 what is selected, and `operate` applies any model operation. The measure
-verbs — {{alt `insert_measures`, `remove_measures`, `set_barline`, `set_break`,
-`set_meter`, `set_key`, `set_ending`, || `insertMeasures`, `removeMeasures`, `setBarline`, `setBreak`,
-`setMeter`, `setKey`, `setEnding`,}} `navigation` and
+verbs — `{{api insert_measures}}`, `{{api remove_measures}}`, `{{api set_barline}}`, `{{api set_break}}`,
+`{{api set_meter}}`, `{{api set_key}}`, `{{api set_ending}}`, `navigation` and
 `{{api measure_repeat}}` — act on the measures the selection covers, `{{api set_staff}}` and
 `group` on its staves, and `multirests` on the whole score. Each is one call
 into the crate and one entry of the editing context's history, so Ctrl+Z over
@@ -560,7 +535,7 @@ out on another (a paper by name — {{alt `editor.page["papers"]` || `editor.pag
 `height` of its own, the `margins`, the `staff` height; tenths of a millimetre,
 the staff in hundredths), as an edit like any other: it is undone with the rest
 and written into the MEI, so the score opens on that paper tomorrow.
-`editor.layout = "continuous"` looks at the same score as one system as long as
+{{alt `editor.layout = "continuous"` || `editor.setLayout("continuous")`}} looks at the same score as one system as long as
 the music, with no page, and `"page"` goes back; that edits nothing.
 
 **The page has text of its own**: the title and its subtitle, the composer and
@@ -598,7 +573,7 @@ time the page's cursor is drawn over; an edit made while it plays — and an und
 — is heard on from where the position is. The cursor is the transport's
 position, which the host reads from the server it is a client of: the session's
 own host, opened with {{alt `session.gui()`, || `await session.gui()`,}} is one, and with no host open the editor
-has one {{alt booted || opened}} as a client of the server it plays on. A host named by hand
+has one opened as a client of the server it plays on. A host named by hand
 that is a client of no server still edits the score and draws no cursor.
 
 ### The score's file
@@ -607,15 +582,15 @@ that is a client of no server still edits the score and draws no cursor.
 notes, marks, slurs and hairpins, the meter and the barlines, the page setup
 and the page's text, not a render of any of it — and {{alt `notation.Score.read(path)` || `await notation.Score.read(path)`}} reads one
 back as the same page; it also reads MusicXML, ABC and Plaine & Easie,
-whichever the engraver finds the file to be. A path names the {{alt disk. || disk under node and the page's own storage in a tab.}} The
+whichever the engraver finds the file to be. A path names the disk<!-- web -->, and in a tab the page's own storage<!-- /web -->. The
 score remembers its file (`score.path`), which is what the File menu's **Save**
 and Ctrl+S write to; a score with none is asked for one, as **Save as...**
 always asks, and **Open...** puts another document in the window. The same two
-are `editor.save()` and {{alt `editor.open_file(path)`. || `editor.openFile(path)`.}} **New** puts an empty one there the
+are `editor.save()` and `{{api editor.open_file}}(path)`. **New** puts an empty one there the
 same way — one staff in the treble clef, common time, C major, four empty bars,
 and no file yet — **Close file** leaves the window with none, and **Close**
 closes it, each asking first where the window is the score's only holder and it
-has changes its file does not hold (`editor.unsaved`): save, don't save, or
+has changes its file does not hold ({{alt `editor.unsaved` || `await editor.unsaved()`}}): save, don't save, or
 cancel.
 
 **A score is exported as what it renders.** The File menu's **Export MIDI...**
@@ -624,7 +599,7 @@ extension or as `"smf"` or `"clip"` — write the rendered sequence as a Standar
 MIDI File or a MIDI 2.0 Clip File: the notes, a channel to a voice, the
 dynamics as each channel's expression, the pedal on controller 64, at the
 score's own tempo. It is the same
-writing a sequence does {{alt (`{{api to_smf}}`, `{{api to_clip}}`), || (`toSmf`, `toClip`),}} so what is
+writing a sequence does (`{{api to_smf}}`, `{{api to_clip}}`), so what is
 exported is what the roll shows.
 
 ### The score into a sequence, one way
@@ -820,8 +795,8 @@ page.
 played, saved and rendered.
 
 **A window holds one document, and may hold none.** Opened over no score it has
-none, its File menu making or opening one {{alt (`new_file()`, `open_file(path)`). || (`newFile()`, `openFile(path)`).}} **Which document the
-window holds is not an edit**: New, Open and Close file {{alt (`close_file()`) || (`closeFile()`)}} take the place of
+none, its File menu making or opening one (`{{api new_file}}()`, `{{api open_file}}(path)`). **Which document the
+window holds is not an edit**: New, Open and Close file (`{{api close_file}}()`) take the place of
 the one there, whose undo order goes with it, so nothing walks back across them.
 The {{alt script's || page's}} score holds what the window left it as, and the window goes on as the
 host's own (`closed`, {{alt `has_document`); || `hasDocument()`);}} where the window is the score's only holder and it
@@ -830,7 +805,7 @@ leaves the window as it was. `save(path)` answers once the file is written: only
 then is the path the score's. `Score.load(mei)` is an edit of the document, one
 entry of the history, and its file stays.
 
-## The arrangement: tracks, take lanes, regions
+## The multitrack: tracks, take lanes, regions
 
 The model a multitrack editor edits is the one the three classic
 applications are built over — the audio editor, the multitrack editor and the
@@ -902,15 +877,15 @@ meter entry, a span, a fade and a region's `content` have no identity of their
 own, so they are read as values and written whole through what holds them. A
 structure the multitrack no longer holds — removed, or undone away — leaves its
 object **detached**: `held` is false and reading it {{alt raises, || throws,}} until an undo brings
-it back.{{alt  ||  A multitrack is a handle over
-the core, so the core is loaded (`loadCore`) before one is made.}}
+it back.<!-- web --> A multitrack is a handle over
+the core, so the core is loaded (`loadCore`) before one is made.<!-- /web -->
 
 **A change is a turn of the multitrack's history, when it has one.**
 `multitrack.history` is that history — the undo order every editor open on the
 multitrack shares — and asking for it, or opening an editor, is what gives a
 multitrack one. From then on each change made through the objects is an entry
-the windows redraw and one Ctrl+Z in a window takes back, and {{alt  || `multitrack.history.entry("tidy", () => { ... })` — Python's}} `with
-multitrack.history("tidy"):` {{alt  || —}} makes everything inside it one entry. A multitrack
+the windows redraw and one Ctrl+Z in a window takes back, and {{alt `with multitrack.history("tidy"):` || `multitrack.history.entry("tidy", () => { ... })`}}
+makes everything inside it one entry. A multitrack
 nobody asked a history of changes freely and records nothing.
 
 A **region** is the model's word and a **clip** is the picture's: a clip, a track
@@ -1001,7 +976,7 @@ together. One entry in a history, one undo, and no moment in between where the
 region is on no take lane at all.
 
 **A region's fades are its own, with a default.** Every edge of a region —
-a box of samples or a box of notes alike — fades: by its own {{alt `fade_in`/`fade_out` || `fadeIn`/`fadeOut`}} where
+a box of samples or a box of notes alike — fades: by its own `{{api fade_in}}`/`{{api fade_out}}` where
 it states one, and by the multitrack's default where it does not, which is
 10 ms of equal power until `{{api multitrack.default_fade}}` says otherwise {{alt (`None` || (`undefined`}} for none at all).
 
@@ -1039,8 +1014,8 @@ either look like a change to both.
 
 ## Editing a multitrack: `edit(session)`, and what it plays
 
-A `Multitrack` {{alt is one of the fundamental structures, so it || }} opens with the same
-verb the others {{alt do — || do,}} and what opens is the **multitrack**, the GUI host's
+A `Multitrack` opens with the same
+verb the others do, and what opens is the **multitrack**, the GUI host's
 application: one widget drawing its own ruler, its own track headers, its own
 automation rows and its own boxes, in a window of the host's, playing on an
 engine of its own.
@@ -1056,8 +1031,8 @@ const editor = await gui.edit(saved, { title: "multitrack", stage: element });
 ```
 
 The document names a **source id**, never a path; the session's table says
-where each source is, and the application reads the takes from {{alt there. || there -- in a
-page, the page's own storage.}}
+where each source is, and the application reads the takes from there<!-- web --> (in a
+page, the page's own storage)<!-- /web -->.
 
 **The multitrack sounds.** Each track's regions are read from their files into
 the track's readers, and an edit moves where they are read from without making a
@@ -1171,16 +1146,16 @@ field does — and a reader that ignores the field opens exactly the same music.
 Everything above is this client's own surface. Underneath it there is one
 authoritative model — the **document** — and it lives in a Rust crate that every
 client binds: this one, the {{alt web || Python}} client, and a GUI host running standalone with
-no language attached at all. {{alt That is not an implementation detail you can ignore
-once you edit from more than one place, so this section says what crosses. || }}
+no language attached at all. That is not an implementation detail you can ignore
+once you edit from more than one place, so this section says what crosses.
 
-{{alt **`clausters.form` || **`form`}} has no door to it, and that is deliberate.** It had one until
+{{alt **`clausters.form` || **The `form` namespace}} has no door to it, and that is deliberate.** It had one until
 2026-09-06 — a bridge that converted its elements to the crate's JSON — and it
 was removed with the turn that made the arrangement a model of its own. What a
-multitrack is written with now is {{alt `clausters.multitrack`, || `arrangement`,}} above; what the crate's
+multitrack is written with now is {{alt `clausters.multitrack`, || the `multitrack` namespace,}} above; what the crate's
 own document holds is a **leaf as an id, a kind and a configuration it never
 interprets**, and a generator travels as a *reference* the way a project file
-references a plugin rather than serializing it. A generator {{alt *is* code, || *is code*,}} in the
+references a plugin rather than serializing it. A generator *is* code, in the
 language that wrote it, so no format owns one; what the document guarantees is
 that it does not lose it.
 
@@ -1197,7 +1172,7 @@ other key is a def's control name, which is one string in every language.
 
 ### An edit is applied in one place
 
-{{alt `clausters.document` || The `document` module}} is the door to it — the same surface in both clients, name for name. The crate is the only thing
+{{alt `clausters.document` || The `document` namespace}} is the door to it — the same surface in both clients, name for name. The crate is the only thing
 that applies an edit. A client does not apply and
 then report — it hands over the document and the **intent** and receives the new
 document plus what happened:
@@ -1392,9 +1367,8 @@ editor.quantize();
 await editor.capture("/out/tidy.png"); // the window, as a PNG
 ```
 
-The path is {{alt  || in the page's own storage in a tab, and}} on the host's {{alt disk, relative to its working directory unless
-absolute. || disk
-against a native host.}} With no window open the call {{alt raises `RuntimeError`. || rejects.}}
+The path is on the host's disk, relative to its working directory unless
+absolute<!-- web -->, and in a tab the page's own storage<!-- /web -->. With no window open the call {{alt raises `RuntimeError`. || rejects.}}
 
 **A hand** is played to the window the same way: `editor.drag(start, end)`
 presses at `start`, moves along the line to `end` and releases there, and
@@ -1423,8 +1397,8 @@ whole or only their live layers, the queries those ticks sent the server, the
 bytes downloads brought — and `demand`, the reasons it is ticking now. A
 window with nothing moving in it has an empty `demand`: an audio editor that
 is stopped draws nothing and asks the server for nothing until something
-changes, and a window that cannot be seen {{alt  || — scrolled away, or in a tab in the
-background —}} is not ticked at all. With them
+changes, and a window that cannot be seen (scrolled away<!-- web -->, or in a tab in the
+background<!-- /web -->) is not ticked at all. With them
 come what its drawn frames cost by phase: placing the tree, drawing it into
 meshes, writing them to the card, recording the pass and presenting it.
 `editor.profile(seconds)` takes two readings that far apart and answers what
@@ -1450,7 +1424,7 @@ console.log(formatWindowProfile(profile));
 window.
 
 **What a quantize, a drag and a paste land on is a grid in beats**, a
-sixteenth until you choose another: `editor.grid = 1.0` for whole beats, `0`
+sixteenth until you choose another: {{alt `editor.grid = 1.0` || `editor.setGrid(1)`}} for whole beats, `0`
 for none. It is read through the structure's tempo map, so a line is a beat
 wherever the tempo puts it, and what a quantize leaves is written into the
 document on its beat exactly — a note quantized to the third beat is at
@@ -1460,7 +1434,7 @@ like its zoom: setting it is no edit.
 **Snap to grid is a switch beside it**, on by default: with it off a drag, a
 paste and a split land where the hand puts them, and a quantize still moves
 onto the grid. G in the window, the View menu and the toolbar's magnet flip
-it, the magnet drawn held while it is on, and so does {{alt `editor.snap_to_grid || `editor.snapToGrid}} = {{alt False`. || false`.}}
+it, the magnet drawn held while it is on, and so does {{alt `editor.snap_to_grid = False` || `editor.setSnapToGrid(false)`}}.
 
 ### What the hand marked, and what it swept
 
@@ -1533,7 +1507,7 @@ The position a paste names is on the **timeline's** axis, and a roll's notes are
 in its clip's own time, so a clip placed at beat 2 holds its own note 0 there —
 the editor converts, and the block keeps the spread it was copied with.
 
-{{alt ### || ##}} Saving: the document plus where its sources are
+## Saving: the document plus where its sources are
 
 A document says what plays when and deliberately not where a source lives — in a
 running system a source is a server buffer, a mapped file or a rendered result,
@@ -1561,9 +1535,9 @@ const reopened = await Session.open("song.json");
 ```
 
 `save` writes the crate's JSON and `open` reads it back; `write` and `read` are
-the same two steps without the file, for a caller that keeps it elsewhere.{{alt  ||  The
-file is on the same filesystem `Buffer.read` names: the disk under node, and the
-page's own storage (`opfs`) in a tab.}}
+the same two steps without the file, for a caller that keeps it elsewhere. The
+file is on the same filesystem `Buffer.read` names: the disk<!-- web -->, and in a tab the
+page's own storage<!-- /web -->.
 
 **A session file says whose it is.** Every application's file is JSON, so the
 extension cannot tell them apart: the file's `metadata` names the application of
@@ -1574,32 +1548,21 @@ reading it as an empty multitrack.
 
 A source's **lifetime** is what makes saving honest: `external` is the user's own
 file, which is never written; `session` is persisted beside the document;
-`temporary` is a destructive edit's working copy. {{alt Saving in the middle of such an
-edit promotes the working copy || A session whose table does not
-cover its own multitrack is what `session.dangling()` reports, rather than reopening
-with a take that draws nothing}} and {{alt **leaves the edit open** — a save is not an
-edit, and refusing to save until you decide would block the safest habit in the
-program. || nothing saying why.}}
+`temporary` is a destructive edit's working copy. Saving in the middle of such an
+edit promotes the working copy (`session.promote(id)`) and **leaves the edit
+open** — a save is not an edit, and refusing to save until you decide would
+block the safest habit in the program.
 
 `provenance` is a reference to whatever produced something, carried and never
 interpreted. It is what makes re-generating possible without the format knowing
 how, which is the same rule the opaque generator follows one level down.
 
-<!-- web -->
-Three questions a save asks the table, and each has an answer rather than an
-exception: `session.volatile()` is what is not written down anywhere,
-`session.openEdits()` is what is still undecided, and `session.dangling()` is
-what the multitrack names and the table does not hold — **every** take lane walked, not
-only the ones that play, because an alternate take names its source whether or
-not anyone has chosen it yet.
-<!-- /web -->
-
-A buffer read from a file {{alt  || knows its `path` and}} is written as that file; one allocated in this run is
-written **volatile** {{alt (`Source.volatile()`) || }} — it existed only while the {{alt process || page}}
+A buffer read from a file knows its `path` and is written as that file; one allocated in this run is
+written **volatile** (`Source.volatile()`) — it existed only while the {{alt process || page}}
 did, and a session that promised otherwise would reopen with silence where it
 promised samples. A path inside the session's own folder is written relative, so
 the pair of files moves together; one outside it stays absolute, because a
-session never claims to own {{alt your || the user's}} file.
+session never claims to own the user's file.
 
 **A sequence of events is a source too**, held in the file rather than beside
 it: `Source.events(notes)` puts an `EventSequence` in the table, and a region
@@ -1610,20 +1573,20 @@ lane, into its track: the track's fader, its curves, its mute and its meter are
 over its notes as they are over a take (below, "What a multitrack is as
 nodes"). And **a double click on it opens its roll** — a notes editor over the
 same sequence, in the multitrack's undo order, which edits what the box draws:
-both hold one sequence, and nothing is copied. {{alt `editor.open_roll(region)` || `editor.openRoll(region)`}} opens the same window
-from the script, or finds it open, and answers its notes editor, whose
+both hold one sequence, and nothing is copied. `{{api editor.open_roll}}(region)` opens the same window
+from the {{alt script || page}}, or finds it open, and answers its notes editor, whose
 `structure` is the session's sequence for the box.
 
-<!-- python -->
 Three questions a save asks the table, and each has an answer rather than an
 exception: `session.volatile()` is what is not written down anywhere,
-`session.open_edits()` is what is still undecided, and `session.dangling()` is
+`{{api session.open_edits}}()` is what is still undecided, and `session.dangling()` is
 what the multitrack names and the table does not hold — **every** take lane walked, not
 only the ones that play, because an alternate take names its source whether or
-not anyone has chosen it yet.
-<!-- /python -->
+not anyone has chosen it yet. A session whose table does not cover its own
+multitrack is reported so, rather than reopening with a take that draws nothing
+saying why.
 
-{{alt ### || ##}} Reopening: structures, not a description
+## Reopening: structures, not a description
 
 `Session.read` gives the multitrack and its table back, and by itself that is half a
 verb: every take is a bare source number. The other half — what a source *is*
@@ -1662,7 +1625,7 @@ tried again. A close that asks to save waits for this confirmation too.
 A save or a measurement that fails publishes nothing and leaves the session
 free to edit at once: its work has nothing on disk to restore.
 
-{{alt ### || ##}} Mixing is the multitrack's
+## Mixing is the multitrack's
 
 A **track** carries its own mix: `muted`, `soloed` and `level`, the fader as
 a linear gain. A muted track is silent, and so is every track that is not
@@ -1692,7 +1655,7 @@ A track's **height** is the other kind of thing and is in no document. It says
 nothing about what the multitrack is; resizing a track (Ctrl+wheel) changes the view
 and no file.
 
-{{alt ### || ##}} What a multitrack is as nodes: the channel strip, three times
+## What a multitrack is as nodes: the channel strip, three times
 
 A multitrack is a picture and a sound, and this is the second one. What plays it is
 not a driver a script writes: it is three GraphDefs over **one** shape, the
@@ -1765,7 +1728,7 @@ And the transport plays the multitrack rather than a client stepping it: each
 track's reader reads the position the engine publishes, so moving a box hands
 the track its regions again and a locate is no message at all.
 
-{{alt ### || ##}} Where a recording lands
+## Where a recording lands
 
 A `Buffer` holds a take and a `RecordingStream` follows one as it is written,
 and neither puts one in a multitrack. `take` does:

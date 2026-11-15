@@ -261,3 +261,9 @@ finished work, where a pending item reads as done.
   chapter states each; which one is the behaviour, and whether the other
   client needs an awaitable form, is to decide.
 
+
+- ⬜ **A notes editor's pass end is not readable in the web client**
+  *(found 2026-11-15, unifying the shared document chapter)*. Python's
+  `NotesEditor.end` is a property, read and set; the web client has
+  `setEnd(end)` and nothing that reads it back, so the shared chapter names
+  the setter in the web book. A read (`end()`) brings the two to one surface.
