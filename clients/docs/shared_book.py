@@ -35,6 +35,9 @@ This module turns the shared text into the book's own:
 The web book also refuses a backticked snake_case name in the shared prose
 that the Python reference documents (``sample_timebase``): it is a Python
 spelling that reached the web book, written where a ``{{api ...}}`` was meant.
+A name that is the wire's in both clients (a GuiDef axis key, ``sample_rate``)
+is written ``{{wire sample_rate}}``: the same text in both books, and not a
+spelling of either client.
 """
 
 import json
@@ -61,6 +64,7 @@ _REGION_LINE = re.compile(r"^[ \t]*<!-- (python|web) -->[ \t]*\n(.*?)^[ \t]*<!--
 _MARKER = re.compile(r"<!-- /?(python|web) -->")
 _ALT = re.compile(r"\{\{alt (.*?) \|\| (.*?)\}\}", re.S)
 _API = re.compile(r"\{\{api ([A-Za-z_][A-Za-z0-9_.]*)\}\}")
+_WIRE = re.compile(r"\{\{wire ([A-Za-z_][A-Za-z0-9_./]*)\}\}")
 _INCLUDE = re.compile(r"\{\{#include ([^}\s]+)\}\}")
 _WORD = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 _SNAKE = re.compile(r"(?<![`\w])`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?:\(\))?`")
@@ -162,9 +166,16 @@ class Book:
         text = _ALT.sub(lambda m: m.group(1) if keep == "python" else m.group(2), text)
         text = _API.sub(lambda m: self.spell(m.group(1), where), text)
         text = _drop_blocks(text, LANGUAGES[drop])
+        wire = []
+
+        def hold(m):
+            wire.append(m.group(1))
+            return f"\x00{len(wire) - 1}\x00"
+
+        text = _WIRE.sub(hold, text)
         if self.book == "web":
             self._refuse_python_names(text, where)
-        return text
+        return re.sub("\x00(\\d+)\x00", lambda m: wire[int(m.group(1))], text)
 
     def _refuse_python_names(self, text: str, where: str) -> None:
         for number, line in _prose_lines(text):

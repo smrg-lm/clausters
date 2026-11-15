@@ -33,7 +33,7 @@ After.
 def book(name):
     reader = shared_book.Book(name)
     reader.web_known = None  # the generated reference is not what these test
-    reader.python_known = {"sample_timebase"}
+    reader.python_known = {"sample_timebase", "sample_rate"}
     return reader
 
 
@@ -107,3 +107,9 @@ def test_every_shared_chapter_reads_in_both_books():
             reader = shared_book.Book(name)
             reader.web_known = None
             reader.render(text, path.name)
+
+
+def test_a_wire_name_is_the_same_in_both_books_and_not_refused():
+    text = "The axes keep `{{wire sample_rate}}`.\n"
+    assert book("web").render(text, "x.md") == "The axes keep `sample_rate`.\n"
+    assert book("python").render(text, "x.md") == "The axes keep `sample_rate`.\n"

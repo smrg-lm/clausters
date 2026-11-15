@@ -33,6 +33,9 @@ packages carry (`clients/python/build_docs.py`, `clients/web/tools/stage_books.p
   spelling it does not document stops the build, and so does a snake_case
   name in backticks that the Python reference documents: that is a Python
   spelling which reached the web book.
+- **A name that is the wire's in both clients** (a GuiDef axis key,
+  `sample_rate`) is `{{wire sample_rate}}`: the same text in both books, and
+  exempt from that check.
 
 What only one client has stays in that client's book (`cli.md`,
 `configuration.md`, `components.md`, `platform.md`), and each book's API

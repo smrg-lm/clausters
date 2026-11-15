@@ -6,3 +6,8 @@
 [web]
 "Server.sample_clock" = "sampleClockFor"
 "oscn" = "oscN"
+# The GUI builders' size limits keep the wire's own spelling.
+"max_w" = "max_w"
+"max_h" = "max_h"
+"min_w" = "min_w"
+"min_h" = "min_h"
