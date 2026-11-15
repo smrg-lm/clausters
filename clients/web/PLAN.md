@@ -133,6 +133,120 @@ by their headings:
 - ✅ W27 - It is written down who draws *(done 2026-08-20)*
 - ✅ W24 - The completeness pass *(done 2026-08-25)*
 
+## The session in a worker, and the editor in a page *(planned 2026-11-15)*
+
+**Why.** clausters-editor runs a language's code in a session that can be
+interrupted and restarted. A first attempt ran the web client under Node.js
+beside the Python session (branch `editor-javascript`, not merged). It works
+for code without sound, but the web client under Node.js cannot boot a server:
+`Server.boot()` is the page engine (an AudioWorklet, which Node.js does not
+have) and `Session.live` only attaches. Giving it a native server means an npm
+package per platform carrying what the wheel carries (about 130 MB: the server,
+the GUI host, the plugin host and the libraries they load), and two gaps would
+stay open under Node.js anyway: live MIDI ports (a page has Web MIDI, Node.js
+has neither that nor the Python client's `clausters-midi` binding) and the shm
+buses and taps. So the editor moves to a page instead, where the web client
+already has the engine, the GUI host and a filesystem (OPFS).
+
+**What is decided.**
+
+- **Files are OPFS only.** The editor's documents live in the page's storage;
+  they are created there in the editor, uploaded into it and downloaded out of
+  it. No `showDirectoryPicker`: Firefox does not have it, and it is the user's
+  browser.
+- **The user's code runs in a Worker**, so `Ctrl+.` can stop a synchronous
+  infinite loop by terminating the worker while the engine and the page live
+  on, as a stuck Python process is stopped today. The page owns the
+  `AudioContext`, the worklet and the GUI host; the worker reaches them over
+  ports.
+- **Python in the page (Pyodide or another) is a separate decision, taken
+  later.** The Python client is not pure Python (ctypes over `clausters-ffi`,
+  OSC over UDP, processes it starts), so running it in a page is a third port
+  of the client, held to the same non-divergence rule as the other two. The
+  desktop editor keeps native Python meanwhile.
+
+**What the branch `editor-javascript` leaves to reuse**: the editor's two
+language frontend (a document's language, the per-language session,
+completions and hints), the top-level rewrite of a fragment with acorn
+(`const`/`let`/`class` redefinable, `import` and top-level `await`), the
+TypeScript language service for completions and help (it runs in a worker in a
+page as in a thread under Node.js), the open-session registry with the
+interrupt hook (`src/editor.ts`, `liveSessions()`) and the `clausters/session`
+subpath. The Node.js-only parts (the Rust carrier spawning `node`, the
+per-language environments under npm, the npm package of the editor) do not
+come across.
+
+### ⬜ W32 - A server reached over a port
+
+A third carrier beside `"page"` and `"ws"`: a `ClaustersServer`
+(`engine/server.ts`) whose engine is in another realm, reached over a
+`MessagePort` the engine's owner hands over. **It is an addition**: a page
+that boots the engine as today does not change, and a page that wants its
+logic in a worker opts in.
+
+What it gives a page without the editor:
+
+- **Code that can be stopped.** A page terminates the worker that runs its
+  logic, an infinite loop included, and the engine, the GUI host and the page
+  go on; with a new port the logic starts again on the same engine.
+- **A clock that does not compete with drawing.** Routines and patterns run
+  off the main thread, so a heavy layout, a render or the GUI host's frames
+  do not delay what the worker schedules, and the worker's messages reach the
+  worklet without passing through the main thread.
+- **The reference client's shape.** The Python client is a process apart that
+  sends OSC to its server; a worker is the same separation inside a page, so
+  a program written for one reads the same in the other.
+
+- Nearly all of it exists. `send`, `addReply`, `claimPeer`, `clock`,
+  `clockAnchor` and `bufferLoad` already travel over the worklet's port as
+  messages, and the NRT render already transfers a `MessageChannel` into the
+  worklet so a worker writes to it without the main thread
+  (`engine/loader.ts`, the `nrt-port` message). The worker's end talks to the
+  worklet directly the same way, so a busy main thread does not delay it.
+- What touches the `AudioContext` itself goes over the port or goes away:
+  `bundle.ts` decodes audio with `decodeAudioData`, which a worker does not
+  have (the page decodes it, or `engine/codec.ts` does in the worker; decide
+  which); `base/connection.ts` anchors the clock with `currentTime`, which
+  `clockAnchor()` already answers; `gone` reads `context.state`, which
+  becomes a message from the owner.
+- The owner side: a call that hands a port for the page's engine to a worker
+  (and a second one to a second worker), each a peer of its own
+  (`claimPeer`), so a restarted worker takes a new port onto the same engine.
+- No DOM in the worker: the client's elements stay on the page, so code that
+  mixes HTML and sound keeps that half on the main thread.
+- **Acceptance**: the same tests the page carrier passes, run from a worker
+  (a def sent, a synth played, a buffer loaded, a routine on the clock, an NRT
+  render); terminating the worker mid-routine leaves the engine running and
+  answering; the reference client's shape is named in `docs/bindings.md` as
+  `idiom` if the spelling of the hand-over differs from anything Python has.
+
+### ⬜ W33 - The GUI host reached over a port
+
+In a page the client calls the GUI host (`GuiBridge`, drawing on a canvas of
+the main thread) with no port between them. A worker's session needs one: a
+port to the bridge, carrying what the client sends it and what it answers,
+as the Python client reaches its host over a channel. The alternative, the
+host in the worker on an `OffscreenCanvas`, is more work and moves the
+drawing off the page that shows it; it is not taken unless the port proves
+too slow. **Acceptance**: a GuiDef shown, a widget driven and its value
+received back, and a scope fed, all from a worker; the same examples running
+from the page and from a worker.
+
+### ⬜ W34 - The editor in a page
+
+clausters-editor's frontend as a page over the web client: OPFS documents
+(create, upload, download), a JavaScript session per worker over `W32` and
+`W33`, `Restart` as a new worker with new ports onto the same engine and
+GUI host, and `Ctrl+.` running the session's interrupt hook (a `panic`, so
+nodes left sounding stop) before terminating the worker. The completions and
+help come from the TypeScript language service in a worker of its own. Where
+the page lives (beside the web client's examples, or as a second build of
+clausters-editor's frontend) is decided when this opens. **Acceptance**: the
+desktop editor's JavaScript behaviors (documented on the branch, in the
+editor's `docs/javascript.md`) hold in the page: redefinable top-level names,
+`import` and `await`, output from timers and promises, an infinite loop
+stopped, a restart that clears every name.
+
 ## Future directions
 
 Every entry carries a checkbox, like the plan's "Found by use" below: an
