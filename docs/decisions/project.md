@@ -400,3 +400,39 @@ same program; that is still read by eye, but now in one place.
 a single-language one: `{{alt A || B}}` for a call each language spells
 differently, `<!-- web -->` regions, `{{api name}}` for a name. They are kept
 few by writing the prose around the API rather than through it.
+
+## An example's two blocks import the same names from the same modules (2026-11-15)
+
+The decision above left one thing to the eye: whether a pair of blocks is
+the same program. Compiling the web book's blocks for the first time showed
+what the eye had let through. Where a Python block wrote
+`from clausters.multitrack import Session, Span, View`, its TypeScript twin
+imported `Session`, `Span` and `View` from the package root, where those
+names are the audio session, a different span and the GUI view; where a
+Python block imported a builder (`from clausters.gui import waveform`), its
+twin reached it through a namespace (`gui.waveform`) or destructured one
+(`const { waveform } = gui`). Every such pair rendered the same picture and
+was a different program, which the non-divergence rule calls a divergence,
+not a port.
+
+**The web package's modules are the Python package's.** The web client
+already mirrored the Python module tree in its sources; its `exports` map
+now says so to a reader: `clausters/base`, `clausters/multitrack`,
+`clausters/document`, `clausters/responders`, `clausters/render`,
+`clausters/defs/pv_expr`, `clausters/gui/guidef` and the rest are the
+modules of the same name, and the bundle writer is `clausters/bundle`, as
+`clausters.bundle` is, rather than `clausters/bundle-writer`. A name a
+Python module exports privately (`clausters._native`) was the wrong door in
+the Python book too: the measurements the web client has in `clausters/data`
+are now in Python's `clausters.data`, with the same shapes.
+
+**The pairing of imports is checked.** `shared_book.py` refuses an example
+whose two blocks import different names, or a name from different modules;
+the names only one platform has (`loadCore`, `requestMidiPorts`) are listed
+in `clients/docs/names.toml`. And the books' blocks are compiled:
+`clients/docs/book_blocks.py` reads the Python ones with the client's
+pyright and rules, and compiles the TypeScript ones with the package's own
+`tsc` against its sources, declaring what a fragment assumes (an earlier
+block's variable, a name the package exports) rather than failing on it, so
+what is left is what a reader copying the block would hit. The errors that
+stand are listed with their reason in `clients/docs/book_blocks.toml`.

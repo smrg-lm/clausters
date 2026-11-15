@@ -208,7 +208,7 @@ A stereo pair reads as one interleaved window, which is what a correlation and a
 phase figure take:
 
 ```python
-from clausters._native import correlation, lissajous
+from clausters.data import correlation, lissajous
 from clausters.render import channels
 
 left, right = channels(taps.interleaved(bus, 2), 2)   # adjacent buses b and b+1
@@ -217,8 +217,8 @@ r = correlation(left, right)                          # -1 … +1, or None
 ```
 
 ```ts
-import { channels } from "clausters";
 import { correlation, lissajous } from "clausters/data";
+import { channels } from "clausters/render";
 
 const [left, right] = channels(taps.interleaved(bus, 2), 2);   // adjacent buses b and b+1
 const points = lissajous(left, right);                         // x, y per frame, interleaved
@@ -233,10 +233,10 @@ the sample rate whose samples all sit at full scale while the signal between
 them reaches `sqrt(2)`.
 
 ```python
-from clausters import ipc
+from clausters.data import channel_stats, true_peak
 
-sample_peak, rms = ipc.channel_stats(samples, channels)
-true_peak = ipc.true_peak(samples, channels)      # one per channel
+sample_peak, rms = channel_stats(samples, channels, 0)   # of channel 0
+tp = true_peak(samples, channels, 0)                     # of channel 0
 ```
 
 ```ts
@@ -265,9 +265,9 @@ the head, a high-pass under 38 Hz), its mean square summed over the channels
 with their weights, in LUFS.
 
 ```python
-from clausters import ipc
+from clausters.data import loudness
 
-measured = ipc.loudness(samples, channels, rate)
+measured = loudness(samples, channels, rate)
 measured.integrated        # LUFS: the programme's loudness
 measured.range             # LU: how far its short-term loudness spreads
 measured.momentary_max     # LUFS: the loudest 400 ms
@@ -386,10 +386,10 @@ read is — a short read hands back less than was asked for and says so, a short
 write would lose samples you believe you stored.
 
 Samples also get into a buffer without being sent at all: `buffer.gen` has the
-server compute them, and `Buffer.read` has the server read a file<!-- web --> (in a tab, a file of the page's storage). In the page, where the carrier shares memory with the engine, `Buffer.load(server, url)` also fetches and decodes with the browser's own decoder:
+server compute them, and `Buffer.read` has the server read a file<!-- web --> (in a tab, a file of the page's storage). In the page, where the carrier shares memory with the engine, `Buffer.load(url, { server })` also fetches and decodes with the browser's own decoder:
 
 ```ts
-const buffer = await Buffer.load(server, "./kick.wav");   // in-page carrier only
+const buffer = await Buffer.load("./kick.wav", { server });   // in-page carrier only
 ```
 
 That one stays in-page by cost rather than by impossibility: over a socket the

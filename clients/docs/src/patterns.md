@@ -118,8 +118,7 @@ pseq(mirror1([60, 64, 67, 72]), 4)     # up and down, looping without a seam
 ```
 
 ```ts
-import { builtins } from "clausters";
-const { mirror1, normalize, pyramid } = builtins;
+import { mirror1, normalize, pyramid } from "clausters/base/builtins";
 
 pseq(normalize([3, 7, 5]));            // 0, 1, 0.5
 pseq(pyramid([60, 62, 64]));           // 60, 60 62, 60 62 64

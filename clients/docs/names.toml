@@ -11,3 +11,12 @@
 "max_h" = "max_h"
 "min_w" = "min_w"
 "min_h" = "min_h"
+
+# The names one client's examples import and the other's never do, because
+# only that platform has them: a page loads the shared core before a model is
+# built (`loadCore`) and asks the browser for its MIDI ports
+# (`requestMidiPorts`). shared_book.py compares the rest of each example's
+# imports between the two blocks.
+[imports]
+web = ["loadCore", "requestMidiPorts"]
+python = []

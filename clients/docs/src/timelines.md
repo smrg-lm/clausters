@@ -326,8 +326,7 @@ dl = score.display_list()          # the engraved page, for the score widget
 ```
 
 ```ts
-import { gui } from "clausters";
-const { notation } = gui;
+import { notation } from "clausters/gui";
 
 const score = await notation.Score.fromTimeline(timeline, { meter: "4/4", key: "C" });
 const dl = score.displayList();    // the engraved page, for the score widget
@@ -458,6 +457,8 @@ mei = notation.to_mei(sheet)                             # ready for engrave/Sco
 ```
 
 ```ts
+import { notation } from "clausters/gui";
+
 let sheet = notation.sheetFromVoice([{ midis: [60], ticks: 8 }]);  // a quarter, middle C
 sheet = notation.transpose(sheet, 4);                    // up a major third: E
 const mei = notation.toMei(sheet);                       // ready for engrave/Score

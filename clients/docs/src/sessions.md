@@ -430,7 +430,7 @@ from clausters.gui import view, label
 session = Session.live()       # attaches, or boots a server (segment auto-chosen)
 gui = session.gui()            # clausters-gui, wired to that server + same segment
 
-win = view(label(name="greeting", text="hello"), title="Panel", w=320, h=120).open()
+win = view(label("hello", name="greeting"), title="Panel", w=320, h=120).open()
 win["greeting"].set(text="edited live")  # edit the widget by name
 win.close()                              # close the window
 
@@ -438,13 +438,14 @@ session.close()                          # stops whatever the session started; l
 ```
 
 ```ts
-import { Session, gui } from "clausters";
+import { Session } from "clausters";
+import { label, view } from "clausters/gui";
 
 const session = await Session.embed();   // this tab's engine, from a gesture
 const host = await session.gui();        // the GUI host, wired to that engine
 
-const win = await gui.view({ title: "Panel", w: 320, h: 120 },
-                           gui.label({ name: "greeting", text: "hello" })).open();
+const win = await view({ title: "Panel", w: 320, h: 120 },
+                           label("hello", { name: "greeting" })).open();
 win.widget("greeting").set({ text: "edited live" });   // edit the widget by name
 win.close();                                           // close the window
 
@@ -471,19 +472,20 @@ from clausters.gui import GuiHost, view, label
 server = Server().boot()                                  # a server process starts
 gui = GuiHost().boot(server=f"{server.target.host}:{server.target.port}", shm=server.shm)
 
-view(label(name="greeting", text="hi"), title="Panel", w=320, h=120).open()
+view(label("hi", name="greeting"), title="Panel", w=320, h=120).open()
 # ...
 gui.stop()        # stops the clausters-gui process
 server.close()    # stops the server process
 ```
 
 ```ts
-import { GuiHost, Server, gui } from "clausters";
+import { Server } from "clausters/defs";
+import { GuiHost, label, view } from "clausters/gui";
 
 const server = await new Server().boot();                 // an engine starts, from a gesture
 const host = await new GuiHost({ engine: server.engine }).boot();
 
-await gui.view({ title: "Panel", w: 320, h: 120 }, gui.label({ name: "greeting", text: "hi" })).open();
+await view({ title: "Panel", w: 320, h: 120 }, label("hi", { name: "greeting" })).open();
 // ...
 host.stop();      // closes the GUI host
 server.close();   // stops the engine
@@ -538,15 +540,15 @@ The GUI host has the same pair, and ownership means the same thing there. **`Gui
 from clausters.gui import GuiHost, view, label
 
 gui = GuiHost().attach()               # raises if no host answers there
-view(label(text="from a second script"), title="Panel").open(host=gui)
+view(label("from a second script"), title="Panel").open(host=gui)
 gui.stop()                             # the host keeps running
 ```
 
 ```ts
-import { GuiHost, gui } from "clausters";
+import { GuiHost, label, view } from "clausters/gui";
 
 const host = await new GuiHost({ transport: "ws", url: "ws://127.0.0.1:57140" }).attach();   // throws if no host answers there
-await gui.view({ title: "Panel" }, gui.label({ text: "from a second page" })).open({ host });
+await view({ title: "Panel" }, label("from a second page")).open(undefined, { host });
 host.stop();                           // the host keeps running
 ```
 
@@ -604,12 +606,16 @@ A page can run the code that plays in a **worker** and keep the engine itself. T
 
 ```js
 // the page
+import { server } from "clausters";
+
 const engine = await server();
 await engine.resume();
 const worker = new Worker("./player.js", { type: "module" });
 const link = engine.link();
 worker.postMessage({ port: link.port }, [link.port]);
+```
 
+```js
 // player.js, the worker
 import { Session, play } from "clausters";
 import { pbind, pseq } from "clausters/seq";
@@ -626,13 +632,19 @@ The page's **GUI host** is reached the same way, with a link of its own, and `se
 
 ```js
 // the page
+import { guiHost } from "clausters";
+
 const host = await guiHost();
 const guiLink = host.link({ place: (window) => document.getElementById("panel") });
 worker.postMessage({ engine: link.port, gui: guiLink.port }, [link.port, guiLink.port]);
+```
 
+```js
 // the worker
+import { Session, gui } from "clausters";
+
 const s = await Session.live(data.engine);
-const host = await s.gui({ port: data.gui });
+await s.gui({ port: data.gui });
 await gui.view({ title: "level" }, gui.slider({ name: "level" })).open();
 ```
 
@@ -674,7 +686,8 @@ server.close()
 ```
 
 ```ts
-import { Server, TempoClock } from "clausters";
+import { TempoClock } from "clausters/base";
+import { Server } from "clausters/defs";
 
 const server = await new Server({ transport: "ws", url: "ws://127.0.0.1:57120", latency: 0.1 }).attach();
 const clock = new TempoClock(2.0);

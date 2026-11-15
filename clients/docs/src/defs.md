@@ -742,7 +742,7 @@ sdef = SynthDef("bank", out(0.0, dup(sig)))       # channels -> buses 0, 1
 ```
 
 ```ts
-import { SynthDef, dup, mix, out, rand, sine } from "clausters/defs";
+import { control, dup, mix, out, rand, sine, SynthDef, whiteNoise } from "clausters/defs";
 
 const stereo = dup(sine(440.0));                      // 2 channels, ONE Sine (by reference)
 const bank = dup(() => sine(rand(438.0, 442.0)), 8);  // 8 DISTINCT detuned sines
@@ -817,8 +817,8 @@ sdef = SynthDef("tiltgate", out(0.0, ifft(gated)))
 ```
 
 ```ts
-import { SynthDef, control, fft, ifft, out, pvExpr, pvKernel, whiteNoise } from "clausters/defs";
-const { mag, binIndex, nbins, param } = pvExpr;
+import { control, fft, ifft, out, pvKernel, SynthDef, whiteNoise } from "clausters/defs";
+import { binIndex, mag, nbins, param } from "clausters/defs/pv_expr";
 
 const src = fft(whiteNoise().mul(0.25));
 // A tilted spectral gate: the threshold rises with frequency, so the gate

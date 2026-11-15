@@ -13,7 +13,7 @@ every client and by the `standalone` host, so what an edit *means* is defined
 once rather than re-derived per language.
 
 **The data is what is fundamental.** Samples, notes, events, curves — they are
-edited and drawn with no arrangement anywhere near them: `edit(x)` opens a
+edited and drawn with no multitrack anywhere near them: `edit(x)` opens a
 buffer, a timeline or a curve on its own. So the pictures are independent of the
 model too — **a clip is a view configured by what it holds**, and the edits it
 admits (move, trim, split, join) come from the structure inside it, in the unit
@@ -28,7 +28,7 @@ around it. See {{alt [`clausters.form`](form.md). || [`form`](form.md).}}
 
 {{alt `clausters.gui.editing.Editor` || `gui.Editor`}} edits **one structure**, a break-point curve or a
 timeline of events, and it knows nothing about any
-arrangement. That is the whole of it, and it is deliberately the plain case:
+multitrack. That is the whole of it, and it is deliberately the plain case:
 editing a curve is what an editor is for.
 
 An editor orchestrates rather than performs, and it is four collaborators
@@ -254,7 +254,9 @@ curve.to_points()      # the edited curve, out of the object you already held
 ```
 
 ```ts
-const editor = await gui.edit(curve, { sampleRate: 48_000, stage: element });
+import { edit } from "clausters/gui";
+
+const editor = await edit(curve, { sampleRate: 48_000, stage: element });
 
 curve.toPoints();      // the edited curve, out of the object you already held
 ```
@@ -813,7 +815,7 @@ score editor, over one document.
 
 The vocabulary is the field's own:
 
-- A **source** is samples. It lives outside the arrangement — the session's
+- A **source** is samples. It lives outside the multitrack — the session's
   table says where — and is never overwritten.
 - A **region** is one placed thing: a span of the timeline (where it starts, how
   long, its fades, which of the overlapping ones is on top) plus what fills it.
@@ -845,19 +847,19 @@ multitrack = Multitrack.read(written)
 ```
 
 ```javascript
-import { Content, Fade, Multitrack, Tempo } from "clausters";
+import { Content, Fade, Multitrack, Tempo } from "clausters/multitrack";
 
 const multitrack = new Multitrack();
-multitrack.setTempo(new Tempo({ at: 0, tempo: 1.6 }));   // beats per second: 96 a minute
-const bar = multitrack.tempoMap().secsAt(4);             // where the second bar begins
+setTempo(new Tempo({ at: 0, tempo: 1.6 }));              // beats per second: 96 a minute
+const bar = tempoMap().secsAt(4);                        // where the second bar begins
 
-const drums = multitrack.tracks.add("drums");            // a Track, with one take lane
+const drums = tracks.add("drums");                       // a Track, with one take lane
 const hit = drums.activeTakeLane.regions.add(bar, 2.5, Content.onto(take));
 hit.fadeIn = new Fade(0.01);
 drums.automation.add({ port: "gain" }, { points: [[0, 1], [8, 0.5]], name: "gain" });
-multitrack.markers.add(bar, "verse");
+markers.add(bar, "verse");
 
-const written = multitrack.write();   // the crate's JSON
+const written = write();              // the crate's JSON
 Multitrack.read(written);
 ```
 
@@ -923,7 +925,7 @@ edited["current"]                       # the edit that puts it back
 ```
 
 ```javascript
-import { document as doc } from "clausters";
+import { domainEdit, MULTITRACK } from "clausters/document";
 
 const edited = doc.domainEdit(doc.MULTITRACK, written, {
     intent: "placeregion", region: 3, track: 1, take_lane: 2,
@@ -952,6 +954,8 @@ gesture["pairs"]                        # [{"forward": ..., "backward": ...}, ..
 ```
 
 ```javascript
+import { domainEditAll } from "clausters/document";
+
 const gesture = doc.domainEditAll(doc.MULTITRACK, written, [move, split]);
 gesture.applied;                    // false if either was refused
 gesture.reason;                     // and then why
@@ -1021,11 +1025,15 @@ automation rows and its own boxes, in a window of the host's, playing on an
 engine of its own.
 
 ```python
+from clausters.multitrack import Session
+
 saved = Session.open(path)              # or a Multitrack, as an untitled session
 editor = edit(saved, title="multitrack")
 ```
 
 ```ts
+import { Session } from "clausters/multitrack";
+
 const saved = await Session.open(path);   // or a Multitrack, as an untitled session
 const editor = await gui.edit(saved, { title: "multitrack", stage: element });
 ```
@@ -1094,26 +1102,26 @@ exists.
 from clausters.multitrack import Session, Span, View
 
 window = View(name="arranger", visible=Span(0.0, 48.0), quant=4.0)
-window.track_view(10).height = 96.0
-window.track_view(10).take_lanes_shown = True      # comping open
+window.track_view(drums).height = 96.0
+window.track_view(drums).take_lanes_shown = True      # comping open
 window.selected = [20, 32]
 
-session = Session(arrangement=multitrack, views=[window])
+session = Session(multitrack=multitrack, views=[window])
 ```
 
 ```javascript
-import { Session, Span, View } from "clausters";
+import { Session, Span, View } from "clausters/multitrack";
 
 const window = new View();
 window.name = "arranger";
 window.visible = new Span(0, 48);
 window.quant = 4;
-window.trackView(10).height = 96;
-window.trackView(10).takeLanesShown = true;      // comping open
+window.trackView(drums).height = 96;
+window.trackView(drums).takeLanesShown = true;      // comping open
 window.selected = [20, 32];
 
 const session = new Session();
-session.arrangement = multitrack;
+session.multitrack = multitrack;
 session.views = [window];
 ```
 
@@ -1151,7 +1159,7 @@ once you edit from more than one place, so this section says what crosses.
 
 {{alt **`clausters.form` || **The `form` namespace}} has no door to it, and that is deliberate.** It had one until
 2026-09-06 — a bridge that converted its elements to the crate's JSON — and it
-was removed with the turn that made the arrangement a model of its own. What a
+was removed with the turn that made the multitrack a model of its own. What a
 multitrack is written with now is {{alt `clausters.multitrack`, || the `multitrack` namespace,}} above; what the crate's
 own document holds is a **leaf as an id, a kind and a configuration it never
 interprets**, and a generator travels as a *reference* the way a project file
@@ -1191,9 +1199,9 @@ result["outcome"]["reason"]      # "snapped to the grid"
 ```
 
 ```ts
-import { document } from "clausters";
+import { applyIntent } from "clausters/document";
 
-const result = await document.applyIntent(
+const result = await applyIntent(
     doc,
     { intent: "place", node: 3, offset: 4.3 },
     { against: { version: doc.version },     // the state you were looking at
@@ -1517,7 +1525,7 @@ that missing half:
 ```python
 from clausters.multitrack import Session, Source
 
-session = Session(arrangement=multitrack, provenance={"script": "song.py"})
+session = Session(multitrack=multitrack, provenance={"script": "song.py"})
 session.sources[7] = Source.file("takes/vocal.wav", lifetime="external")
 
 session.save("song.json")
@@ -1525,8 +1533,10 @@ session = Session.open("song.json")
 ```
 
 ```ts
+import { Session, Source } from "clausters/multitrack";
+
 const session = new Session();
-session.arrangement = multitrack;
+session.multitrack = multitrack;
 session.provenance = { page: "song.html" };
 session.sources.set(7, Source.file("takes/vocal.wav", "external"));
 
@@ -1601,8 +1611,10 @@ editor = edit(session)
 ```
 
 ```ts
+import { Session } from "clausters/multitrack";
+
 const session = await Session.open(path);
-const editor = await gui.edit(session);
+const editor = await edit(session);
 ```
 
 Each take is read from its file **once per source**, a relative path against
@@ -1740,7 +1752,9 @@ song.add(take(recorded, instrument="player"), offset=8.0)
 ```
 
 ```ts
-song.add(form.take(recorded, null, null, { instrument: "player" }), 8.0);
+import { take } from "clausters/form";
+
+song.add(take(recorded, null, null, { instrument: "player" }), 8.0);
 ```
 
 It is a `Vector` whose length is the samples' own — frames over the rate they

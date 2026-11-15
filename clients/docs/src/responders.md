@@ -75,7 +75,9 @@ def on_cc(msg, time, src):
 ```
 
 ```ts
-import { OscFunc, Synth, oscfunc } from "clausters";
+import { OscReceiver } from "clausters/base";
+import { Synth } from "clausters/defs";
+import { OscFunc, oscfunc } from "clausters/responders";
 
 const recv = server.receiver;
 
@@ -124,7 +126,10 @@ MidiFunc(note_off, "note_off", recv=recv)
 ```
 
 ```ts
-import { MidiFunc, MidiReceiver, Synth, requestMidiPorts } from "clausters";
+import { requestMidiPorts } from "clausters";
+import { MidiReceiver } from "clausters/base";
+import { Synth } from "clausters/defs";
+import { MidiFunc } from "clausters/responders";
 
 const recv = await new MidiReceiver({ port: "Keystation", access: await requestMidiPorts() }).start();
 const voices = new Map<number, Synth>();
@@ -169,7 +174,8 @@ pbind(midinote=pseq([60, 64, 67]), dur=0.5).play(midi)
 ```
 
 ```ts
-import { MidiRtInterface, MidiServer, requestMidiPorts } from "clausters";
+import { requestMidiPorts } from "clausters";
+import { MidiRtInterface, MidiServer } from "clausters/base";
 import { pbind, pseq } from "clausters/seq";
 
 const midi = new MidiServer({
@@ -215,7 +221,7 @@ OscFunc(start_phrase, "/go", recv=recv)
 ```
 
 ```ts
-import { Routine } from "clausters";
+import { Routine } from "clausters/base";
 
 function startPhrase(msg: unknown[], time: number | null, src: string) {
     function* phrase() {

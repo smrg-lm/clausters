@@ -90,6 +90,8 @@ if [ "$want_python" = 1 ]; then
     # the book then fails on anything the pages turned into.
     run "python(api)" "$root/clients/python" python3 docs/gen_api.py
     run "python(book)" "$root/clients/python" mdbook build docs
+    # The book's Python blocks, read by the client's pyright and rules.
+    run "python(blocks)" "$root" python3 clients/docs/book_blocks.py python
 fi
 if [ "$want_web" = 1 ]; then
     # TypeDoc has treatWarningsAsErrors on (typedoc.json), so a link to a symbol
@@ -97,6 +99,9 @@ if [ "$want_web" = 1 ]; then
     # rustdoc. It parses statically -- no wasm build, no npm install needed.
     run "web(api)" "$root/clients/web" typedoc
     run "web(book)" "$root/clients/web" mdbook build docs
+    # The book's TypeScript blocks, compiled by the package's own tsc against
+    # its sources (clients/docs/book_blocks.py; it needs `npm ci` in clients/web).
+    run "web(blocks)" "$root" python3 clients/docs/book_blocks.py web
 fi
 
 echo

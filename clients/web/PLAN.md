@@ -267,3 +267,26 @@ finished work, where a pending item reads as done.
   `NotesEditor.end` is a property, read and set; the web client has
   `setEnd(end)` and nothing that reads it back, so the shared chapter names
   the setter in the web book. A read (`end()`) brings the two to one surface.
+
+- ⬜ **Return types that lose what a call gives back** *(found 2026-11-15,
+  compiling the web book's TypeScript blocks)*. A reader who copies a book
+  example into a typed page gets a compiler error the example does not have
+  at run time: `play(x)` is typed `unknown`, so `play(sig).free()` does not
+  compile; `mix()` returns a `Channel` and `midSide()` a `ChannelList`, and a
+  `Channel` is `SynthLeaf | number`, so `mix(bank).mul(0.1)` does not either.
+  The values are right; the types say less than the call knows. Overloads
+  (or a narrower `Channel` where no number can come out) bring them to what
+  the call returns; `clients/docs/ts_blocks.toml` lists each such error, and
+  an entry there goes when its type is fixed.
+
+- ⬜ **A module's names differ between the clients** *(found 2026-11-15,
+  when the web package's subpaths were made the Python package's modules)*.
+  The modules now have the same paths; what each exports does not yet
+  match. Read one against the other, the web client's modules export names
+  the Python module keeps private or does not have (`clausters/data`'s
+  `Peaks`, `decodeSamples`, `fetchAudio`, `stftCache`, `deinterleave`;
+  `clausters/render`'s `channel`; `clausters/document`'s format constants;
+  `clausters/gui/guidef`'s `flat*` helpers), and `sampleClockFor` answers
+  `null` where Python's `Server.sample_clock` always answers a tracker. Each
+  is a name to bring to both, to make private in one, or an idiom to write in
+  `docs/bindings.md`.

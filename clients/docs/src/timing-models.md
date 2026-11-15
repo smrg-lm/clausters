@@ -84,7 +84,7 @@ print(f"counter advanced {after - before} samples = {(after - before) / sc.rate:
 ```
 
 ```ts
-const sc = await sampleClockFor(server, { warmup: true });   // seeded with a warmup
+const sc = (await sampleClockFor(server, { warmup: true }))!;   // seeded with a warmup
 sc.track();                                                  // keep the model fresh
 const clock = new TempoClock(2.0, { timebase: sc.timebase() });   // what sampleTimebase does, with a handle
 

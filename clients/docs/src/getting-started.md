@@ -201,7 +201,7 @@ node.free()
 ```
 
 ```ts
-import { FaustDef, Synth, boxes as box, signals as S } from "clausters/defs";
+import { boxes, FaustDef, signals } from "clausters/defs";
 
 const freq = S.hslider("freq", 440.0, 20.0, 20000.0, 0.01);
 const phase = S.rec((p) => p.add(freq.div(S.sr())).mod(1.0));   // a one-sample feedback phasor

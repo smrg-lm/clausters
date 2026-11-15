@@ -254,9 +254,9 @@ app_clock().sched(0.5, lambda: knob.set(value=1.0))    # once, half a second on
 ```
 
 ```ts
-import { gui } from "clausters";
+import { appClock } from "clausters/gui";
 
-const app = await gui.appClock();
+const app = await appClock();
 app.sched(0.5, () => knob.set({ value: 1.0 }));        // once, half a second on
 ```
 

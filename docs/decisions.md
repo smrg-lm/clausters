@@ -334,3 +334,4 @@ quoted title lands here, on the link to the entry.
 - [The toolchain is pinned, and a new compiler arrives as a commit (2026-11-11)](decisions/project.md#the-toolchain-is-pinned-and-a-new-compiler-arrives-as-a-commit-2026-11-11)
 - [The workspace is virtual, and the server is its default member (2026-11-12)](decisions/project.md#the-workspace-is-virtual-and-the-server-is-its-default-member-2026-11-12)
 - [The two client books are one text (2026-11-15)](decisions/project.md#the-two-client-books-are-one-text-2026-11-15)
+- [An example's two blocks import the same names from the same modules (2026-11-15)](decisions/project.md#an-examples-two-blocks-import-the-same-names-from-the-same-modules-2026-11-15)

@@ -28,7 +28,8 @@ b.write("./fm-voice")
 ```
 
 ```ts
-import { Bundle, loadCore } from "clausters/bundle-writer";
+import { loadCore } from "clausters";
+import { Bundle } from "clausters/bundle";
 
 await loadCore();                      // the writer validates through the core
 const b = new Bundle("fm-voice");

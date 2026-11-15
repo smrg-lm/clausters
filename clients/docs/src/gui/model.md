@@ -20,7 +20,9 @@ gui = GuiHost().boot()
 ```
 
 ```ts
-import { GuiHost, gui, loadCore } from "clausters";
+import { loadCore } from "clausters";
+import { GuiHost } from "clausters/gui";
+
 await loadCore();
 const host = await new GuiHost().boot();
 ```
@@ -38,7 +40,7 @@ node("knob", label="cutoff", min=20.0, max=20000.0, value=800.0)   # identical
 ```
 
 ```ts
-const { knob, node } = gui;
+import { knob, node } from "clausters/gui";
 
 knob({ label: "cutoff", min: 20.0, max: 20000.0, value: 800.0 });
 node("knob", { label: "cutoff", min: 20.0, max: 20000.0, value: 800.0 });   // identical
@@ -63,7 +65,7 @@ from clausters.gui import layout, node, plane, view
 ```
 
 ```ts
-const { layout, plane, view } = gui;
+import { layout, node, plane, view } from "clausters/gui";
 ```
 
 | Type | Builder | Axes | What it gives its children |
@@ -141,7 +143,7 @@ from clausters.gui import curve, keys, label, meter, nodes, score, signal
 ```
 
 ```ts
-const { curve, keys, label, meter, nodes, score, signal } = gui;
+import { curve, keys, label, meter, nodes, score, signal } from "clausters/gui";
 ```
 
 | Builder | What it draws | Its own props |
@@ -260,7 +262,7 @@ win["scroll"].bind_widget(win["lane"], "view_start")
 ```
 
 ```ts
-const { choice, slider } = gui;
+import { choice, curve, layout, node, plane, signal, slider, view } from "clausters/gui";
 
 const SR = 48_000.0, BEAT = 24_000.0;
 const take = new Array(1024).fill(0.0);   // whatever you have; a path or a buffer is likelier
@@ -323,7 +325,9 @@ print(to_json(signal(view="trace", data=[0.0, 1.0], navigable=True,
 ```
 
 ```ts
-console.log(gui.toJson(signal({ view: "trace", data: [0.0, 1.0], navigable: true,
+import { toJson } from "clausters/gui/guidef";
+
+console.log(toJson(signal({ view: "trace", data: [0.0, 1.0], navigable: true,
                                 axes: { x: { unit: "beats", link: 1 } } })));
 ```
 

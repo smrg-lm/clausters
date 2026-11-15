@@ -34,7 +34,7 @@ The verbs carry one semantic each, and the split is deliberate:
 - **`play`** is for what already sounds directly — it starts something *now*
   (or on the clock's next beat) and returns a handle to it.
 - **`render`** is the **change of state**: it evaluates a *generator* thing (a
-  def, a pattern, an arrangement — an algorithm that describes sound) into a
+  def, a pattern, a form element — an algorithm that describes sound) into a
   *generated* one (samples — random-access audio). Offline by default, into
   memory or a file; either way it reports what it did.
 - **`plot`** is the visual sibling of `render`: the same render, drawn
@@ -95,7 +95,8 @@ play(Event(degree=0, dur=2.0, legato=1.0, automation=[
 ```
 
 ```ts
-import { Automation, Event, play } from "clausters";
+import { Event, play } from "clausters";
+import { Automation } from "clausters/multitrack";
 
 play(new Event({ degree: 0, dur: 2.0, legato: 1.0, automation: [
     new Automation({ target: { control: "amp" }, points: [[0.0, 0.0], [1.0, 0.3], [2.0, 0.0]] }),
@@ -158,7 +159,7 @@ ranges):
 |---|---|
 | a binary **score** ({{alt `bytes` || `Uint8Array`}}) | the embedded offline renderer, unchanged |
 | a def, or a bare expression | instances it offline for `dur` seconds — the audible sibling of `plot(def)` |
-| a `FormElement` | with a `destination`, delegates to the arrangement's own render (RT or NRT by the destination); without one, **bounces** it in an ephemeral offline session |
+| a `FormElement` | with a `destination`, delegates to the element's own render (RT or NRT by the destination); without one, **bounces** it in an ephemeral offline session |
 | a `Timeline` | the same dual path |
 | an event pattern, a `Routine`/`Stream`, a generator | offline bounce only — they are forward-only; sounding them live is `play`'s job |
 | a value pattern (`pseq`, `pwhite`, …) | the values it generates, as a {{alt list || array}} (an endless one needs `count`) |
@@ -207,10 +208,10 @@ running routine's clock or, outside one, the default session's, created and
 started on first use. Passing {{alt `server=` / `clock=` || `server` / `clock`}} explicitly overrides
 per call — see [Sessions](sessions.md) for how sessions scope this.
 
-## Rendered, not played: the arrangement
+## Rendered, not played: a form element
 
 A `FormElement` is **not** playable, on purpose. The verbs follow the
-generated/generator split the arrangement is built on: an element still needs
+generated/generator split `form` is built on: an element still needs
 its change of state (the flatten/bounce), so its door is `render` —
 `play(element)` {{alt raises a `TypeError` || throws a `TypeError`}} that points there. A flat `Timeline`,
 being already generated, *is* playable. The full story is in
@@ -397,6 +398,7 @@ copy = buf.write("copy.wav")           # returns a SoundFile for the saved file
 
 ```ts
 import { SoundFile } from "clausters";
+import { Buffer } from "clausters/defs";
 
 const take = await SoundFile.open("take.wav");
 take.frames; take.channels; take.sampleRate; take.codec;   // the header
@@ -446,7 +448,7 @@ back = interleave(left, right)       # the inverse
 ```
 
 ```ts
-import { channel, channels, interleave } from "clausters";
+import { channels, interleave } from "clausters/render";
 
 const [left, right] = channels(stats.samples!, stats.channels);
 channel(stats, 0);                   // the same thing, one channel

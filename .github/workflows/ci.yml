@@ -311,6 +311,9 @@ jobs:
       - name: pyright
         working-directory: clients/python
         run: npx --yes pyright@1.1.414
+      # The Python book's code blocks, read by the same pyright and rules.
+      - name: The Python book's code blocks
+        run: python3 clients/docs/book_blocks.py python
       # Diagnostic for the intermittent Faust SIGILL (see docs/decisions.md):
       # capture the trapping instruction the next time it fires, so the cause
       # stops being guessed at.
@@ -395,6 +398,10 @@ jobs:
           npm ci
           "$HOME/typedoc/node_modules/.bin/typedoc"
           mdbook build docs
+      # The book's TypeScript blocks compile against the package: the
+      # package's own tsc, from the `npm ci` above.
+      - name: Web client book's TypeScript blocks
+        run: python3 clients/docs/book_blocks.py web
 
   # The faust-linking half of the def-family matrix: the full default set
   # (synth + faust + realtime/midi/pipewire/rtprio) and `+embed` on top of it.

@@ -36,7 +36,7 @@ clock.join_transport(server)            # adopt the shared tempo + origin
 ```
 
 ```ts
-import { TempoClock } from "clausters";
+import { TempoClock } from "clausters/base";
 
 const clock = new TempoClock();         // its own tempo is about to be overwritten
 await clock.joinTransport(server);      // adopt the shared tempo + origin
@@ -107,11 +107,12 @@ OscFunc(follow_transport, "/transport_query.reply", recv=recv)
 ```
 
 ```ts
-import { OscFunc } from "clausters";
+import { OscReceiver } from "clausters/base";
+import { OscFunc } from "clausters/responders";
 
 // The page's connection to the server is already its receiver, and already
 // registered for notifications.
-function followTransport(msg: unknown[], time: number, src: string) {
+function followTransport(msg: unknown[], time: number | null, src: string) {
     // msg == ["/transport_query.reply", originSample, tempo, defined]
     if (msg[3]) {                                // defined
         void clock.joinTransport(server);        // re-adopt the new grid
@@ -207,7 +208,7 @@ The analogy to a DAW transport is the **bar grid and tempo plus a play/stop/posi
 - **The server owns the time and broadcasts transport *control*.** It holds the grid, the rolling state and the position, and pushes changes. What it plays by itself is **concrete data**: a take through a reader, and notes and messages through an **event lane** (`{{api server.lane_new}}`, `{{api lane_set}}`, `{{api lane_free}}`), which the transport plays by its position as a reader plays a take — the notes editor sounds that way. What is generated as it plays — a pattern, a routine — is each client's own plan, stamped on the transport's clock (`/sched_atTransport`) or on the device's (`/sched_at`) — see [Timelines](timelines.md).
 - **One grid per transport, last-writer-wins.** Whoever calls `{{api set_transport}}` most recently defines it, and defining it resets the rolling state to stopped at position 0. Several conductors are a coordination choice you make, not something the server arbitrates.
 - **Tempo and origin only — no meter object.** A "bar" is whatever beat multiple you pass as `quant`; there is no separate time-signature the server stores. Pick a `quant` that matches your meter (4 for 4/4, 3 for 3/4).
-- **No server-side recording or arrangement.** The timeline lives in the client; the server holds only the position, the rolling state and the grid, not the notes.
+- **No server-side recording or sequencing.** The timeline lives in the client; the server holds only the position, the rolling state and the grid, not the notes.
 
 These are the honest edges of a small, composable feature: shared bars, a shared tempo, and a shared play/stop/position that several clients phase-align on, with each client owning its own playhead and arrangement.
 

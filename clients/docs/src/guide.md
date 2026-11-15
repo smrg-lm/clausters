@@ -229,7 +229,7 @@ instance continues processing while stopped. See the
 
 ## The ambient verbs — `play`, `plot`, `scope`, `render`
 
-On top of the sessions sit free-standing verbs that resolve the ambient context (the running session, else the default one), each a single entry for many kinds: `play` sounds what already sounds directly (an event or {{alt dict || plain object}}, a pattern, a routine or generator, a def or bare expression, a timeline, a sequence, a buffer), `render` performs the change of state to audio (defs and expressions, arrangement elements, timelines, patterns — offline to samples or a WAV, or delegated to a live destination), and `plot` (with its live sibling `scope`) is the visual counterpart. See [The ambient verbs](verbs.md) for the full dispatch tables and the play/render split.
+On top of the sessions sit free-standing verbs that resolve the ambient context (the running session, else the default one), each a single entry for many kinds: `play` sounds what already sounds directly (an event or {{alt dict || plain object}}, a pattern, a routine or generator, a def or bare expression, a timeline, a sequence, a buffer), `render` performs the change of state to audio (defs and expressions, form elements, timelines, patterns — offline to samples or a WAV, or delegated to a live destination), and `plot` (with its live sibling `scope`) is the visual counterpart. See [The ambient verbs](verbs.md) for the full dispatch tables and the play/render split.
 
 ## The seam, restated
 

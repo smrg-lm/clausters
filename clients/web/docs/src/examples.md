@@ -38,7 +38,7 @@ under the same name:
 | `io/` | the outside: responders |
 | `panels/` | GUI: controls and layout, and the hosts that carry them |
 | `views/` | GUI: reading something — meters, scopes, a waveform, a recording |
-| `editors/` | GUI: writing something — a score, an arrangement, a patch, a document |
+| `editors/` | GUI: writing something — a score, a multitrack, a patch, a document |
 | `components/` | the page's own surface: `<clausters-bundle>` and the authored bundles |
 
 **Each page documents itself**: the comment at the top of its source says what

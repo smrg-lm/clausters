@@ -165,9 +165,10 @@ is here because of that:
   that cannot be written with the supported surface is reporting a missing
   feature, and the feature is decided on its own merits, in both clients.
 - **An example that exists twice is one example in two languages.** Same
-  material, same names, and **the same calls to the same API in the same
-  order** — not merely the same result on screen. Where one client's spelling
-  differs the call is still the same call (`Session.page` is the page's
+  material, same names, **the same imports from the same modules** and **the
+  same calls to the same API in the same order** — not merely the same
+  result on screen. Where one client's spelling differs the call is still
+  the same call (`Session.page` is the page's
   `Session.live`); where a *platform* makes one line impossible, that line is
   named in the example's own prose and the gap is written into a plan. Two
   programs that produce a similar picture by different calls are a divergence,

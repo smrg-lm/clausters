@@ -123,3 +123,27 @@ def test_a_property_write_of_a_web_method_is_refused():
     assert "crossfade = false" in web
     python = book("python").render("Enter it with `editor.entry = True`.\n", "x.md")
     assert "entry = True" in python
+
+
+def test_the_two_blocks_import_the_same_names_from_the_same_modules():
+    same = ('```python\nfrom clausters.multitrack import Session, take_lane\n```\n\n'
+            '```ts\nimport { Session, takeLane } from "clausters/multitrack";\n```\n')
+    shared_book.check(same, "x.md")
+    other_module = ('```python\nfrom clausters.multitrack import Session\n```\n\n'
+                    '```ts\nimport { Session } from "clausters";\n```\n')
+    with pytest.raises(shared_book.BookError, match="import differently"):
+        shared_book.check(other_module, "x.md")
+    through_a_namespace = ('```python\nfrom clausters.gui import waveform\n```\n\n'
+                           '```ts\nimport { gui } from "clausters";\n```\n')
+    with pytest.raises(shared_book.BookError, match="import differently"):
+        shared_book.check(through_a_namespace, "x.md")
+
+
+def test_a_name_only_one_platform_has_is_not_compared():
+    pair = ('```python\nfrom clausters.gui import view\n```\n\n'
+            '```ts\nimport { loadCore } from "clausters";\nimport { view } from "clausters/gui";\n```\n')
+    shared_book.check(pair, "x.md")
+
+
+def test_camel_keeps_a_constant():
+    assert shared_book.camel("WHOLE_SHARE") == "WHOLE_SHARE"

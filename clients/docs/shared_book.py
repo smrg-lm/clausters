@@ -101,6 +101,8 @@ def camel(name: str) -> str:
     """Each dotted part of ``name`` from snake_case to camelCase; a leading
     or doubled underscore is kept, a part with none is left as it is."""
     def part(p: str) -> str:
+        if p.isupper():
+            return p
         head, *tail = p.split("_")
         if not head or any(not t for t in tail):
             return p
@@ -310,18 +312,81 @@ def check(text: str, where: str) -> None:
     for start, end, lang in blocks:
         between = lines[last_end + 1:start] if last_end is not None else None
         if between is not None and all(not line.strip() for line in between):
-            runs[-1].append((start, lang))
+            runs[-1].append((start, end, lang))
         else:
-            runs.append([(start, lang)])
+            runs.append([(start, end, lang)])
         last_end = end
     for run in runs:
-        has = {book for book in BOOKS if any(lang in LANGUAGES[book] for _, lang in run)}
+        has = {book for book in BOOKS if any(lang in LANGUAGES[book] for _, _, lang in run)}
         if len(has) == 1:
             (alone,) = has
             missing = next(b for b in BOOKS if b != alone)
             raise BookError(
                 f"{where}:{run[0][0] + 1}: this example is written for the {alone} client only; "
                 f"write its {missing} block beside it, or mark it <!-- {alone} -->")
+        code = {book: "\n".join("\n".join(lines[s + 1:e]) for s, e, lang in run if lang in LANGUAGES[book])
+                for book in BOOKS}
+        _same_imports(code["python"], code["web"], f"{where}:{run[0][0] + 1}")
+
+
+_PY_FROM = re.compile(r"^[ \t]*from (clausters(?:\.\w+)*) import (\([^)]*\)|[^\n]+)", re.M)
+_PY_IMPORT = re.compile(r"^[ \t]*import (clausters(?:\.\w+)*)", re.M)
+_TS_IMPORT = re.compile(r"^[ \t]*import (?:type )?\{([^}]*)\} from \"(clausters[^\"]*)\"", re.M)
+_TS_STAR = re.compile(r"^[ \t]*import \* as \w+ from \"(clausters[^\"]*)\"", re.M)
+
+
+def _read_imports():
+    """The names one client's examples import and the other's never do, by
+    client: names.toml's ``[imports]`` table."""
+    try:
+        import tomllib
+        with open(NAMES, "rb") as f:
+            table = tomllib.load(f).get("imports", {})
+    except (ImportError, OSError):
+        table = {}
+    return {book: set(table.get(book, [])) for book in BOOKS}
+
+
+def _imported(code: str, book: str) -> set:
+    """What ``code`` imports from the package, as ``(module, name)`` with the
+    module written as a path (``clausters/multitrack``) and the name in the web
+    client's spelling, so the two clients' imports compare as equal."""
+    out = set()
+    names = _read_names()
+    if book == "python":
+        for m in _PY_FROM.finditer(code):
+            for name in m.group(2).strip("()").split(","):
+                name = name.split("#")[0].split(" as ")[0].strip()
+                if name:
+                    out.add((m.group(1).replace(".", "/"), names.get(name) or camel(name)))
+        for m in _PY_IMPORT.finditer(code):
+            out.add((m.group(1).replace(".", "/"), "*"))
+    else:
+        for m in _TS_IMPORT.finditer(code):
+            for name in m.group(1).split(","):
+                name = name.split(" as ")[0].replace("type ", "").strip()
+                if name:
+                    out.add((m.group(2), name))
+        for m in _TS_STAR.finditer(code):
+            out.add((m.group(1), "*"))
+    return out
+
+
+def _same_imports(python: str, web: str, where: str) -> None:
+    """Refuses an example whose two blocks import different things, or the
+    same thing from different modules: the two clients have one surface, so
+    the example is the same program in each."""
+    alone = _read_imports()
+    py = {i for i in _imported(python, "python") if i[1] not in alone["python"]}
+    ts = {i for i in _imported(web, "web") if i[1] not in alone["web"]}
+    if py != ts:
+        def show(items):
+            return ", ".join(f"{n} from {m}" for m, n in sorted(items)) or "nothing"
+        raise BookError(
+            f"{where}: the two blocks import differently -- python only: {show(py - ts)}; "
+            f"web only: {show(ts - py)}. An example is the same program in both clients: "
+            f"import the same names from the same module (a name only one platform has goes "
+            f"in names.toml's [imports])")
 
 
 def _blank(region: str) -> str:

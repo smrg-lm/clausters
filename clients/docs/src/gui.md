@@ -56,8 +56,8 @@ win = v.open()
 ```
 
 ```ts
-import { GuiHost, gui, loadCore } from "clausters";
-const { button, choice, knob, label, panel, slider, view } = gui;
+import { loadCore } from "clausters";
+import { button, choice, GuiHost, knob, label, panel, slider, view } from "clausters/gui";
 
 await loadCore();
 const host = await new GuiHost().boot();
@@ -495,7 +495,7 @@ layout(a, b, flow="free")                 # x/y place the children absolutely
 ```
 
 ```ts
-const { layout } = gui;
+import { layout } from "clausters/gui";
 
 layout({ flow: "row" }, a, b, c);         // side by side
 layout({ flow: "col" }, a, b, c);         // stacked (the default)
@@ -587,7 +587,7 @@ stack(waveform(name="wave", data=take),
 ```
 
 ```ts
-const { stack, spectrogram, waveform } = gui;
+import { spectrogram, stack, waveform } from "clausters/gui";
 
 stack({ name: "pages", index: 0 },
       waveform({ name: "wave", data: take }),
@@ -609,7 +609,9 @@ tabs(waveform(name="wave", data=take), spectrogram(data=take),
 ```
 
 ```ts
-gui.tabs({ titles: ["wave", "spectrum"] },
+import { tabs } from "clausters/gui";
+
+tabs({ titles: ["wave", "spectrum"] },
          waveform({ name: "wave", data: take }), spectrogram({ data: take }));
 ```
 
@@ -640,7 +642,7 @@ win.handle().on_event(lambda tag, *payload: print(tag, payload))
 ```
 
 ```ts
-const { ICON, entry, menu, separator, toolbar } = gui;
+import { button, entry, ICON, menu, separator, toolbar, view } from "clausters/gui";
 
 const bar = menu(entry("File", undefined, { menu: menu(entry("Open", "open"), "-",
                                                      entry("Loop", "loop", { checked: false })) }),
@@ -840,6 +842,8 @@ waveform(cache="take.clpk", layers="peak rms", label="the take")
 ```
 
 ```ts
+import { waveform } from "clausters/gui";
+
 waveform({ cache: "take.clpk", layers: "peak rms", label: "the take" });
 ```
 
@@ -862,6 +866,8 @@ spectrogram(path="take.f32", sample_rate=rate, layers=[
 ```
 
 ```ts
+import { spectrogram } from "clausters/gui";
+
 spectrogram({ path: "take.f32", sampleRate: rate, layers: [
     "spectrogram",                                  // the texture, at the bottom
     { draw: "peak", y: "box", alpha: 0.6 },         // the wave, read through it
@@ -949,12 +955,14 @@ phasescope(0)                             # signal(view="phase", bus=0)
 ```
 
 ```ts
+import { phasescope, plot, scope, spectrogram, spectrum, waveform } from "clausters/gui";
+
 waveform({ path: "take.f32", channels: 2 });      // signal({ view: "trace" }), navigable
-gui.plot({ data: seq });                           // signal({ view: "trace", navigable: 0 })
-gui.scope(0, { channels: 2, trigger: 0.05 });      // signal({ view: "trace", bus: 0 })
-gui.spectrum(0, { freqScale: "mel" });             // signal({ view: "spectrum", bus: 0 })
+plot({ data: seq });                               // signal({ view: "trace", navigable: 0 })
+scope(0, { channels: 2, trigger: 0.05 });          // signal({ view: "trace", bus: 0 })
+spectrum(0, { freqScale: "mel" });                 // signal({ view: "spectrum", bus: 0 })
 spectrogram({ path: "take.f32" });                 // signal({ view: "spectrogram" })
-gui.phasescope(0);                                 // signal({ view: "phase", bus: 0 })
+phasescope(0);                                     // signal({ view: "phase", bus: 0 })
 ```
 
 They are shortcuts, not the catalog: a point the six names never froze is
@@ -967,7 +975,9 @@ signal(view="spectrogram", bus=0, retention=8.0, navigable=True)   # a waterfall
 ```
 
 ```ts
-gui.signal({ view: "spectrogram", bus: 0, retention: 8.0, navigable: true });   // a waterfall
+import { signal } from "clausters/gui";
+
+signal({ view: "spectrogram", bus: 0, retention: 8.0, navigable: true });       // a waterfall
 ```
 
 ### What `navigable` navigates
@@ -1108,7 +1118,7 @@ panel(waveform(name="a", data=KEEP, channels=1),
 ```
 
 ```ts
-const { KEEP } = gui;
+import { KEEP, panel, waveform } from "clausters/gui";
 
 // The panel is stated again so a label can change; the views that did not
 // change name their takes instead of sending them.
@@ -1274,7 +1284,7 @@ from clausters.gui import (bpf, canvas, curve, keys, meter, nodes, nodetree,
 ```
 
 ```ts
-const { bpf, canvas, curve, keys, meter, nodes, nodetree, piano, score } = gui;
+import { bpf, canvas, curve, keys, meter, nodes, nodetree, piano, score } from "clausters/gui";
 ```
 
 | Element | Shortcut | What it is |
@@ -1316,14 +1326,14 @@ win = view(notation.score_view(page, name="page", editable=True), title="score")
 ```
 
 ```ts
-import { Event, gui } from "clausters";
-const { notation } = gui;
+import { Event } from "clausters";
+import { notation, view } from "clausters/gui";
 
 const melody = [67, 69, 71, 72].map((midinote) => new Event({ midinote, dur: 1.0 }));
 const score = await notation.Score.fromNotes(melody, { meter: "4/4", key: "G" });
 
 const page = score.displayList();    // what is drawn, the cursors, the notes
-const win = await gui.view({ title: "score" },
+const win = await view({ title: "score" },
     notation.scoreView(page, { name: "page", editable: true })).open();
 ```
 
@@ -1387,7 +1397,7 @@ plane(a, b, axis="both")              # the full free plane
 ```
 
 ```ts
-const { plane, scroll } = gui;
+import { plane, scroll } from "clausters/gui";
 
 scroll({ axis: "y", zoom: false },
        panel({ x: 0.0, y: 0.0, w: 200.0, h: 1200.0 }));   // a plain vertical scroll view
@@ -1409,7 +1419,9 @@ patch(boxes=[{"def": "source", "inlets": [], "outlets": ["out"]},
 ```
 
 ```ts
-gui.patch({ boxes: [{ def: "source", inlets: [], outlets: ["out"] },
+import { patch } from "clausters/gui";
+
+patch({ boxes: [{ def: "source", inlets: [], outlets: ["out"] },
                     { def: "sink", inlets: ["in", { name: "gain", rate: "control" }],
                       outlets: [] }],
             cords: [0, 0, 1, 0] });
@@ -1559,7 +1571,7 @@ function onClip(tag: string, ...vals: any[]) {
 The rate travels with the block and nothing converts it: resampling is an edit,
 and an edit is something you perform and log, never a side effect of a paste.
 
-Over an arrangement the two verbs mean the same and are answered by whoever holds
+Over a multitrack the two verbs mean the same and are answered by whoever holds
 the document: a cut whose selection covers a clip removes that placement
 (undoably), and a cut *across* a clip — or a paste of samples — is refused with
 its reason, because that is a new length for the samples under it and samples
@@ -1614,7 +1626,9 @@ b.write("./fm-voice")
 ```
 
 ```ts
-import { Bundle, loadCore } from "clausters/bundle-writer";
+import { loadCore } from "clausters";
+import { Bundle } from "clausters/bundle";
+import { knob, label, meter, panel, scope, toggle, view } from "clausters/gui";
 
 await loadCore();
 const b = new Bundle("fm-voice");
@@ -1629,7 +1643,7 @@ const graph = b.graphdef(rig(voice, trem));   // a GraphDef: members wired by bu
 b.gui(view({ title: "FM + tremolo", w: 680, h: 400, layout: "col" },
     panel({ layout: "row", h: 30 },
           label("the GraphDef's surface", { weight: 3 }),
-          gui.toggle({ label: "play", value: true, bind: ["/node_run", node], weight: 1 })),
+          toggle({ label: "play", value: true, bind: ["/node_run", node], weight: 1 })),
     panel({ layout: "row" },
           knob({ label: "freq", min: 60.0, max: 700.0, value: freq,
                  bind: ["/node_set", node, "freq"] }),
@@ -1637,7 +1651,7 @@ b.gui(view({ title: "FM + tremolo", w: 680, h: 400, layout: "col" },
                  bind: ["/node_set", node, "depth"] })),
     panel({ layout: "row" },
           meter(lfo, { rate: "control", min: 0.0, max: 1.0, label: "lfo" }),
-          gui.scope(lfo, { rate: "control", min: 0.0, max: 1.0 }))));
+          scope(lfo, { rate: "control", min: 0.0, max: 1.0 }))));
 
 b.boot(["/graph_new", graph, node, 0, 0, "lfo_bus", lfo, "freq", freq]);
 b.preset("bright", { freq: 110.0 });
