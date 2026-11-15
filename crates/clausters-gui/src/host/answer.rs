@@ -102,6 +102,10 @@ impl Host {
         if self.owns_audio(def_id) {
             return self.answer_audio(def_id, message);
         }
+        // Without the applications nothing here takes an event, and the
+        // trace above compiles out of a release: the two are read by nothing.
+        #[cfg(all(target_arch = "wasm32", not(feature = "apps")))]
+        let _ = (def_id, message);
         false
     }
 
