@@ -1,0 +1,795 @@
+# Timelines
+
+The sequencing you have seen so far is **generative**: a `Routine` is a {{alt Python generator || generator function}}, a `pbind` an event pattern, and a `TempoClock` resumes them forward in time. That way of working is open-ended and expressive, but it has one thing it fundamentally cannot do — **seek**. A generator's musical state lives in its local variables, so you cannot jump it to beat 100 without running through 0–100, and you cannot ask "what plays at bar 33?" without getting there.
+
+A `Timeline` is the complement: **a plan in logical time** — an editable list of timed items, kept sorted by beat, with random access by time, **its own tempo map**, and the verbs that play it: play, pause, stop, locate (seek), loop. This is how a DAW works: the arrangement is random-access for editing and seeking, and playback reads it forward from a position.
+
+This page is the static counterpart to [Routines and clocks](routines-and-clocks.md); the two ways of sequencing coexist, and an event pattern is a timeline item like any other.
+
+## The timeline
+
+A `Timeline` holds `(beat, item)` pairs in beat order. You edit it freely and query it by time.
+
+```python
+from clausters.seq import Timeline, Event
+
+tl = Timeline()
+a = tl.add(0.0, Event(degree=0))     # add returns a handle...
+b = tl.add(1.0, Event(degree=2))
+tl.add(2.0, Event(degree=4))
+
+tl.move(a, 4.0)                      # ...you pass back to move or remove
+tl.remove(b)
+```
+
+```ts
+import { Event, Timeline } from "clausters/seq";
+
+const tl = new Timeline();
+const a = tl.add(0.0, new Event({ degree: 0 }));   // add returns a handle...
+const b = tl.add(1.0, new Event({ degree: 2 }));
+tl.add(2.0, new Event({ degree: 4 }));
+
+tl.move(a, 4.0);                                   // ...you pass back to move or remove
+tl.remove(b);
+```
+
+`add` keeps the list sorted (a stable insert, so items added at the same beat keep their order — a note-off before a re-trigger). It returns a handle you give back to `remove` and `move`, so edits stay correct as other inserts shift positions.
+
+The **random access by time** is the point:
+
+```python
+tl.index_at(1.5)      # the index of the first item at or after beat 1.5
+tl.range(1.0, 3.0)    # the (beat, item) pairs in the half-open window [1.0, 3.0)
+tl.at(2.0)            # the items exactly at beat 2.0
+tl.duration()         # its logical length, in its beats
+```
+
+```ts
+tl.indexAt(1.5);      // the index of the first item at or after beat 1.5
+tl.range(1.0, 3.0);   // the [beat, item] pairs in the half-open window [1.0, 3.0)
+tl.at(2.0);           // the items exactly at beat 2.0
+tl.duration();        // its logical length, in its beats
+```
+
+Starting at an arbitrary point — {{alt `play(at=…)` || `play({ at })`}}, `locate` — is a question this structure can answer, and a forward-only routine never could: what plays next from a beat is the first item at or after it.
+
+### Its tempo is its own
+
+A timeline's beats fall on seconds through **its** `TempoMap`, `tl.map` — the same function [Routines and clocks](routines-and-clocks.md) and the tempo-map example question. It is data, like the notes: written on the map, and what plays follows it.
+
+```python
+tl = Timeline(tempo=2.0)             # two beats a second
+tl.map.push(8.0, 3.0)                # faster from beat 8 on
+tl.map.ramp(16.0, 24.0, 3.0, 1.5)    # then a ritardando
+```
+
+```ts
+const tl = new Timeline([], { tempo: 2.0 });   // two beats a second
+tl.map.push(8.0, 3.0);                     // faster from beat 8 on
+tl.map.ramp(16.0, 24.0, 3.0, 1.5);         // then a ritardando
+```
+
+There is no `{{api set_tempo}}` on a timeline: that is a clock's gesture, and a timeline's clock is its own business. A bare `TempoClock` running routines — live coding with no timeline — still writes on its map with `{{api set_tempo}}`.
+
+### What an item is
+
+An item is **anything playable**:
+
+- an `Event` — it plays a note on a `Server` for OSC, or a `MidiServer` for MIDI, the same double dispatch the patterns use;
+- a raw OSC message or raw MIDI bytes, which `OscItem` and `MidiItem` make events of — an event of `type` `"osc"` (its `addr` and `args`) or `"midi"` (the message its `midicmd` names: `note_on`, `cc`, `bend`, …, or `raw` with its `bytes`) — for a plain editable OSC or MIDI score. Being events, they are read as events are: {{alt `item["addr"]`, `item["type"]` || `item.get("addr")`, `item.get("type")`}};
+- an event pattern, or a `Routine`;
+- **another `Timeline`**.
+
+```python
+from clausters.seq import OscItem, MidiItem
+
+tl.add(0.0, OscItem("/synth_new", "default", -1, 0, 0, "freq", 440.0))
+tl.add(1.0, MidiItem(b"\x90\x3c\x64"))     # note on, key 60, vel 100
+# {"type": "midi", "midicmd": "note_on", "channel": 0, "midinote": 60, "velocity": 100}
+```
+
+```ts
+import { MidiItem, OscItem } from "clausters/seq";
+
+tl.add(0.0, OscItem("/synth_new", "default", -1, 0, 0, "freq", 440.0));
+tl.add(1.0, MidiItem([0x90, 0x3c, 0x64]));  // note on, key 60, vel 100
+// { type: "midi", midicmd: "note_on", channel: 0, midinote: 60, velocity: 100 }
+```
+
+Every item measures in **its timeline's beats**: an event's sustain, a pattern's durations and a routine's `yield`s are all read through the map of the timeline that holds them.
+
+A routine has no position to enter in its middle, so it is played **fresh** each time its onset is reached (a new `Routine` over the same function), and a locate past its onset does not bring it back. Stopping, locating or wrapping a loop unschedules the routines that pass started.
+
+## Playing it
+
+A timeline plays itself, on a clock of its own that is born on its beat 0 — so no clock is handled:
+
+```python
+tl.play(at=0.0, destination=session.server)
+```
+
+```ts
+tl.play({ at: 0.0, destination: session.server });
+```
+
+| Call | What it does |
+| --- | --- |
+| {{alt `play(at=None, quant=None, destination=None)` || `play({ at, quant, destination })`}} | Play from beat `at`; with no `at`, resume where `pause` left it. `quant` starts it on the next multiple of `quant` beats of the **ambient** clock (a routine's, the session's). `destination` is where items go; left out, the ambient server. |
+| `pause()` | Halt, holding the position. |
+| `stop()` | Halt and go back to the mark: the beat of the last `play` given an `at`, or of the last `locate` made while stopped. |
+| `locate(beat)` | Move to `beat`. Playing, it goes on from there; stopped, it is where the next `play` starts. |
+| `loop(start, end)` / `unloop()` | Loop the half-open window `[start, end)`; physical time runs on across the wrap. |
+| `position()` | Where it is, in its beats. |
+| `playing` / `finished` | Whether it is playing, and — once it is not — whether it reached its end rather than being stopped. |
+
+A pass **ends on its own** when nothing is left to play: `playing` goes {{alt `False` || `false`}}, `finished` goes {{alt `True` || `true`}} and `position()` holds where the last item fell. It is the *plan* that ends, so a `loop` never finishes, and the last item keeps sounding for its own length.
+
+The clock it plays on belongs to **the session it sounds in**: it is made there, on that session's timebase, the first time the timeline plays in it, and made again — at the position the timeline stopped at — when it plays in another. So a live session on its server's sample clock plays its timelines sample-exact, and an offline session renders them. A timeline sounding in one session is refused in another until it is stopped.
+
+**What is sounding when a timeline moves.** A locate, a stop or a loop's wrap does not cut what already started: notes keep their own releases. What comes next is decided by what the contents are — a discrete item (an event, a message, a routine) plays from the **next onset**, and one whose onset the new position has passed is not recovered.
+
+**It is edited before it plays.** A pass reads the plan as it goes, and nothing re-cues it when the plan changes, so an edit is heard from the next play or locate. What is edited while it sounds is an `EventSequence`: `{{api render_events}}` turns a timeline into one, and the sequence plays on a transport, where an edit through its objects is heard from where the position is.
+
+## Timelines in timelines
+
+A timeline can hold timelines. The parent plays a child when it reaches it, and each keeps **its own units**: a child's beats go to seconds through the child's map, from the second the parent placed it at. So two children at different tempi placed at one beat start together, by construction.
+
+```python
+verse = Timeline(tempo=2.0)
+drums = Timeline(tempo=4.0)
+song = Timeline(tempo=1.0)
+song.add(0.0, verse)
+song.add(0.0, drums)          # both start at second 0, each at its own tempo
+song.play()
+```
+
+```ts
+const verse = new Timeline([], { tempo: 2.0 });
+const drums = new Timeline([], { tempo: 4.0 });
+const song = new Timeline([], { tempo: 1.0 });
+song.add(0.0, verse);
+song.add(0.0, drums);         // both start at second 0, each at its own tempo
+song.play();
+```
+
+- **One tree, one engine.** The root's clock plays the whole tree; a child is still an object of its own, and `child.play()` plays only it, on its own clock.
+- **One parent per timeline.** A timeline is stateful, so adding one that already has a parent is refused — `copy()` gives an independent one — and so is adding an ancestor, which would be a cycle.
+- **`copy()`** keeps the plan: its own tempo map, its children copied, the other items shared (an event or a message is a value).
+- **A parent covers its children.** `duration()` extends to the end of a child that lasts longer than the parent's own items, converted through both maps; a looping child never ends.
+- **A loop shorter than a child** plays, pass after pass, only the part of the child that falls inside the window, compared in seconds.
+- **Entering a child in its middle** — a locate or a loop landing inside it — enters it at its beat that corresponds, and its contents follow the rule above: the next onset plays, a passed one does not.
+
+## Offline rendering
+
+A timeline plays the same way offline. An offline session's clocks share one **logical** time — the run's physical time, advanced only by what is due — and a timeline played there takes it, so rendering the session renders the timeline:
+
+```python
+from clausters import Session
+
+session = Session.nrt().activate()
+timeline.play(destination=session.server)
+session.clock.render()                       # wake what is due, in seconds
+stats = session.server.render()              # the offline render
+```
+
+```ts
+import { Session } from "clausters";
+
+const session = (await Session.nrt()).activate();
+timeline.play({ destination: session.server });
+session.clock.render();                      // wake what is due, in seconds
+const stats = await session.server.render(); // the offline render
+```
+
+{{alt `clausters.render(timeline)` || `render(timeline)`}} does the same in one call, on a session nobody holds. The timeline's own map sets the seconds.
+
+An **event pattern** is an item like any other, placed at its beat; a pattern of plain values is not, since it is the definition of a generator and does not play (see [Routines and clocks](routines-and-clocks.md)).
+
+## Event sequences: events as data
+
+A timeline holds **playables** — code that runs when it plays. An `EventSequence` holds **events**: concrete data, each with an identity of its own, in beats, with the tempo map that times them. It is what a notes editor edits, and it lives in the document on the Rust side — the object a script holds is a handle to it, so an editor opened on it edits it in place and there is nothing to write back.
+
+```python
+from clausters import Event, EventSequence, TempoMap
+
+seq = EventSequence([(0.0, Event(midinote=60)), (1.0, Event(midinote=64))],
+                    tempo_map=TempoMap(2.0))
+for event in seq.events:
+    print(event.at, event["midinote"])    # 0.0 60, then 1.0 64
+
+first = seq.events[0]                     # a SeqEvent: a view of one event
+first is seq.events.at(0.0)[0]            # True: one event, one object
+seq.events.range(0.0, 2.0)              # the events in [0, 2), in beat order
+first.automation                          # its own curves, as Automation objects
+
+first.at = 2.0                            # a move: the other note keeps its data
+first["midinote"] = 62                    # one key, with its family's coherence
+last = seq.events.add(3.0, {"midinote": 67})        # the SeqEvent it made
+level = seq.automation.add({"control": "amp"}, [(0.0, 0.1), (4.0, 0.5)])
+first.automation.add({"bend": True}, [(0.0, 0.0), (0.5, 1.0)])
+level.points = [(0.0, 0.2), (4.0, 0.6)]   # the curve, written back whole
+last.remove()                             # last is detached from now on
+```
+
+```ts
+import { Event, EventSequence, TempoMap } from "clausters";
+
+const seq = new EventSequence([[0.0, new Event({ midinote: 60 })], [1.0, new Event({ midinote: 64 })]],
+                              { tempoMap: new TempoMap(2.0) });
+for (const event of seq.events) {
+    console.log(event.at, event.get("midinote"));   // 0 60, then 1 64
+}
+
+const first = seq.events.item(0);         // a SeqEvent: a view of one event
+first === seq.events.at(0.0)[0];          // true: one event, one object
+seq.events.range(0.0, 2.0);               // the events in [0, 2), in beat order
+first.automation;                         // its own curves, as Automation objects
+
+first.at = 2.0;                           // a move: the other note keeps its data
+first.set("midinote", 62);                // one key, with its family's coherence
+const last = seq.events.add(3.0, { midinote: 67 });   // the SeqEvent it made
+const level = seq.automation.add({ control: "amp" }, { points: [[0.0, 0.1], [4.0, 0.5]] });
+first.automation.add({ bend: true }, { points: [[0.0, 0.0], [0.5, 1.0]] });
+level.points = [[0.0, 0.2], [4.0, 0.6]];  // the curve, written back whole
+last.remove();                            // last is detached from now on
+```
+
+**What a script reads is objects.** `seq.events` is a live collection of `SeqEvent`s in beat order — iterate it, {{alt index it || take an `item(i)`}}, ask it what is `at` a beat or in a `range` of two — and a `SeqEvent` is a view of one event the sequence holds, not a copy: its `at`, its keys ({{alt `event["midinote"]` || `event.get("midinote")`}}) and its `automation` are read from the sequence each time, so after a hand moves the note in the roll the object reads where it now is. The same event read twice is the same object, so one works as a key of a {{alt `dict` || `Map`}}. `event.event` is a free `Event` with the same keys, to play or to copy. The curves over the whole sequence are `seq.automation`, and each is an `Automation` — the type a track's and a region's curves are — whose points are on the sequence's beats; an event's are measured from its start and may run past its end, into its release. An event the sequence no longer holds is **detached**: its `sequence` is {{alt `None` || `null`}} and reading it {{alt raises || throws}}.
+
+**And what it writes, it writes through them.** Setting `at` moves the event, setting a key writes it with its family's coherence — a moved `midinote` moves the `freq`, the `degree` and the written `pitches` it holds, spelled again by `spelling` — and `remove()` takes it out; `seq.events.add` answers the `SeqEvent` it made. A collection of curves takes {{alt `add(target, points, name=)` || `add(target, { points, name })`}} and answers the curve, and a curve is changed by assigning its fields (`points`, `name`, `target`, `enabled`) or with `{{api set_points}}`, and removed with `remove()`. A free `Automation` a script built is added as it is, and from then on it is the view. `seq.automation.{{api to_events}}(curve)` gives a curve of the sequence to the notes it reaches, and `seq.automation.{{api from_events}}(target)` gathers the notes' curves back into one of the sequence's and answers it. No call takes or answers an id: each object holds its event's identity, which is what keeps an edit from naming the wrong note — removing one leaves every other note its own, and an identity is never handed out twice. `data()` is the sequence as plain data — what a session stores, and what `{{api EventSequence.from_data}}` reads.
+
+**A change is a turn of the sequence's history, when it has one.** `seq.history` is that history — the undo order every editor open on the sequence shares — and asking for it is what gives a sequence one; a notes editor opened on it gives it one too. From then on each change made through the objects is an entry, and the windows over the sequence see it as they see a gesture: they redraw, the lane they play takes the change, and one Ctrl+Z in a window takes back what the script did. A sequence nobody asked a history of changes freely and records nothing, so a script that writes ten thousand notes keeps no ten thousand inverses.
+
+```python
+with seq.history("humanize"):             # one entry, called "humanize"
+    for event in seq.events.range(0.0, 4.0):
+        event.at += 0.01
+        if event["midinote"] >= 67:
+            event["velocity"] = 90
+
+seq.history.undo_label                    # "humanize"
+seq.history.undo()                        # the whole block back, as Ctrl+Z would
+```
+
+```ts
+seq.history.entry("humanize", () => {     // one entry, called "humanize"
+    for (const event of seq.events.range(0.0, 4.0)) {
+        event.at += 0.01;
+        if ((event.get("midinote") as number) >= 67) {
+            event.set("velocity", 90);
+        }
+    }
+});
+
+seq.history.undoLabel;                    // "humanize"
+seq.history.undo();                       // the whole block back, as Ctrl+Z would
+```
+
+{{alt `seq.history(label)` makes everything inside the `with` || `seq.history.entry(label, fn)` makes everything inside `fn`}} one entry, labelled with the text an undo names, and one turn, so the windows redraw once at the end; blocks nest. `undo()`, `redo()`, `{{api can_undo}}` and `{{api undo_label}}` walk the same order a window's Ctrl+Z walks. An event or a curve a step takes away is detached, and the step that brings it back brings back the same object.
+
+**A timeline becomes a sequence by rendering it.** `timeline.{{api render_events}}()` plays the timeline offline against a destination that keeps what plays instead of sounding it: every item runs as it would — an event, a pattern's events, a child timeline in its own tempo, a routine's messages — and each becomes the concrete event it produced, at the beat it played on, in the timeline's beats and with its tempo map. `until` bounds a timeline that does not end on its own. An event pattern renders the same way, {{alt `pbind(...).render_events()` || `pbind({...}).renderEvents()`}}<!-- web --> (asynchronous here, since the offline session it plays in is)<!-- /web -->.
+
+```python
+seq = timeline.render_events(until=16)      # what the timeline played, as data
+```
+
+```ts
+const seq = await timeline.renderEvents(16);   // what the timeline played, as data
+```
+
+**It goes one way.** The sequence holds what the timeline produced, not the timeline: a generator, a nested timeline, a tempo curve inside a child are gone from it, and nothing rebuilds the timeline from the sequence. The two coexist — the timeline is the code, the sequence what it made — and the sequence is what a notes editor edits.
+
+A sequence also goes to a **MIDI file** and back: {{alt `seq.to_smf(ppq=480)` || `seq.toSmf(480)`}} is the file's bytes, every note as its note-on and note-off and the tempo map as the file's tempo, and `{{api EventSequence.from_smf}}(data)` reads one, pairing each note-on with the note-off that closes it. An `"osc"` event has no MIDI spelling and is left out of a file, and a tempo ramp is written as the step at its breakpoint, since a file's tempo only steps. From a **score**, `notation.{{api to_sequence}}(sheet)` reads the same events `{{api to_timeline}}` does, and `notation.{{api sheet_from_events}}(seq)` reads a sequence back into a sheet.
+
+## On a server's transport
+
+A timeline plays **either** on its own clock **or** on a server's transport, and the mode is a property of the timeline:
+
+```python
+server.transport_group(group.id)     # the transport owns the nodes it plays
+timeline.transport = server          # and from here the transport is the time
+```
+
+```ts
+await server.transportGroup(group);  // the transport owns the nodes it plays
+timeline.transport = server;         // and from here the transport is the time
+```
+
+The verbs do not change: `play`, `pause`, `stop` and `locate` are the transport's own commands — `/transport_play`, `/transport_stop`, `/transport_locateSample` — exactly as the multitrack's playback uses them. What the timeline adds is the **plan**: every item from the position, stamped on the transport's clock (`/sched_atTransport`) through the timeline's own map. So a pause freezes the queue with the composed rather than stopping a scan, a resume carries the frozen sound on with nothing re-planned, and a locate clears the transport queue ({{alt `server.sched_clear("transport")` || `server.schedClear("transport")`}}) and re-cues from the new position, `latency` ahead so nothing regenerated is late.
+
+| In transport mode | What it is |
+| --- | --- |
+| `timeline.transport = server` | The mode, and the following: from here a conductor's verbs drive this timeline. {{alt `None` || `null`}} gives it back its own clock. |
+| `timeline.{{api transport_at}}` | Where the timeline's beat 0 falls on the transport, **in seconds** of its position — the transport's axis is physical, so the offset is too. |
+| {{alt `play(at=…)` || `play({ at })`}} / `play()` | A locate and a roll; with no `at`, a bare roll (the frozen queue carries on). |
+| `pause()` / `stop()` | The transport's stop; `stop` goes back to the mark. |
+| `locate(beat)` | The engine's seek, plus the re-cue. |
+| `position()` / `playing` | What this client last heard — a verb it sent, a broadcast, a `refresh()`. Asking is a round trip and reading a position is not. |
+| `refresh()` | Ask the server where the transport is, and keep it. |
+
+**A conductor drives every follower**, and the mode is the whole of the following: a play, a stop or a locate somebody else sent arrives as a `/transport_query.reply` broadcast, and the plan is written again from where it says. Every follower reads the **one** position the engine holds, so they are in lockstep by construction rather than by each estimating its own. {{alt `conductor.py` || `transport/conductor.html`}} ([Examples](examples.md)) puts two followers on one transport.
+
+**What is sounding keeps its release** through any re-cue — a locate, a conductor's locate: the timeline keeps what it queued, and sends back the releases of the notes already started, on their own samples.
+
+**What the mode refuses**, because it would be a second answer to a question the engine already answers: a `quant` (the start is the transport's — locate where you want it and roll), a `loop` (the wrap is the engine's, and a timeline's events would have to be re-cued on every one of them), and a **forward-only item** — a routine or a pattern cannot be planned from a position, so it is refused by name. All three are the client-clock mode's.
+
+## Seeing a timeline as a score
+
+A timeline is timed pitches — the same thing a score draws. {{alt `clausters.gui.notation.from_timeline` || `gui.notation.fromTimeline`}} engraves one as music notation: events that start together become a chord, gaps become rests, a note that starts under another goes to a second voice, and each event's written `dur` becomes its note value. It returns the score as text (MEI), which the `score` widget's engraver reads — the inverse of the usual score→sound direction, so the composed you hear is the composed you see.
+
+```python
+from clausters.gui import notation
+
+score = notation.Score.from_timeline(timeline, meter="4/4", key="C")
+dl = score.display_list()          # the engraved page, for the score widget
+```
+
+```ts
+import { gui } from "clausters";
+const { notation } = gui;
+
+const score = await notation.Score.fromTimeline(timeline, { meter: "4/4", key: "C" });
+const dl = score.displayList();    // the engraved page, for the score widget
+```
+
+**A sequence is read the same way**, and it is the way back from a score
+rendered into one. `Score.{{api from_events}}(sequence)` reads an `EventSequence` —
+or a timeline's placed events, which is what `{{api from_timeline}}` does — into a new
+score:
+
+```python
+take = EventSequence.from_smf(open("take.mid", "rb").read())   # played from a keyboard
+score = notation.Score.from_events(take, meter="3/4", division=8)
+```
+
+```ts
+const take = EventSequence.fromSmf(await (await fetch("take.mid")).bytes());   // played from a keyboard
+const score = await notation.Score.fromEvents(take, { meter: "3/4", division: 8 });
+```
+
+What the events say of their page is written as they say it, so a sequence a
+score was rendered into reads back as it was written. What they do not say is
+decided by the **transcription**, the {{alt keyword arguments || options}}, each with a default:
+
+| Key | What it decides | Left out |
+| --- | --- | --- |
+| `meter` | the barring, `"3/4"` | the sequence's own, else 4/4 |
+| `key` | the signature, and with it how a number is spelled | the sequence's own, else the signature most notes are in |
+| `clef` | the clef of a staff the sequence says none for | chosen by each staff's register |
+| `{{api beat_unit}}` | which written value a beat is | 4, a quarter |
+| `division` | the smallest written value an onset is snapped to | 16, a sixteenth |
+| `tuplets` | the tuplets a beat may be read as, `[3]` for triplets | none |
+| `voices` | the most voices found on one staff | 2 |
+| `dynamics` | whether levels are read back as dynamics and hairpins | {{alt `True` || `true`}} |
+
+A staff is what the events say (`staff`), else a channel — and in an MPE zone,
+where a channel is one note's, one staff for the zone. A level is read back
+from a curve of the staff's channel on the dynamics' controller where it is
+made of steps and straight ramps — a step a dynamic, a ramp a hairpin — and
+otherwise from the notes, a dynamic where their level changes; the names are
+the reading's (`interp`, whose `dynamics` say what each is worth), and a
+curve of any other shape was drawn by hand and stays a curve.
+
+**Reading changes nothing.** A take keeps the times and the lengths that
+arrived, and a coarser or a finer page of it is `{{api from_events}}` again with
+another `division`. No meter and no irregular value is found in a performance:
+the meter is given, and a triplet is read only where `tuplets` asks for it and
+a beat's onsets fit it clearly better.
+
+**An event can also say what the note is on a page.** Beside what it sounds,
+an event carries the **notation keys** — twelve of them, reserved so none
+reaches the synth as a control:
+
+```python
+Event(midinote=60, dur=1, articulations=["stacc"], dynamic="mf")
+Event(midinote=63, dur=1, spelling="flat", accidental="written")  # an E flat, printed
+Event(pitches=[notation.pitch("f", 4, -1)], dur=1 / 3, value=(1, 12))  # an F flat, a triplet eighth
+```
+
+```ts
+new Event({ midinote: 60, dur: 1, articulations: ["stacc"], dynamic: "mf" });
+new Event({ midinote: 63, dur: 1, spelling: "flat", accidental: "written" });  // an E flat, printed
+new Event({ pitches: [notation.pitch("f", 4, -1)], dur: 1 / 3, value: [1, 12] });  // an F flat, a triplet eighth
+```
+
+Each names one fact, in one unit, and says which way it is read. The table is
+the core's, and {{alt `clausters.seq.event.NOTATION_KEYS` || `NOTATION_KEYS`, from `clausters/seq`,}} is its names:
+
+| Key | What it holds | Unit | Which way it is read |
+|---|---|---|---|
+| `pitches` | a list of written pitches, each `{step, alter, octave}`, with `forced` where the accidental is to be printed | `step` a letter `c` to `b`, `alter` in semitones, `octave` scientific (4 holds middle C) | the source of the pitch on a page. An event that states no `freq`, `midinote` or `degree` sounds the first of them; one with no `pitches` is written from `midinote`, spelled by `spelling` |
+| `value` | the written value, numerator and denominator | whole notes, exact: `1/4` a quarter, `3/8` a dotted quarter, `1/12` a triplet eighth | the source of the value on a page. `dur` and `sustain` are its performance in beats; an event without it is written from `dur` |
+| `staff` | the staff it is written on | an index from the top, from zero | where it is written; it sounds nothing |
+| `voice` | the voice of its staff it is written in | an index from zero | where it is written; a voice is one line |
+| `articulations` | a list of articulations | MEI names: `stacc`, `stacciss`, `spicc`, `acc`, `marc`, `ten`, `stress`, `upbow`, `dnbow`, `harm`, `snap`, `open`, `stop` | the mark is the fact; a shortened `sustain` or a raised level beside it is what an interpretation made of it |
+| `dynamic` | a dynamic written at this note | its name: `pp`, `p`, `mp`, `mf`, `f`, `ff`, `sf`, `fp` | the mark is the source of the level, and `amp`, `velocity` or `db` its performance |
+| `ornament` | an ornament on this note | `trill`, `mordent`, `turn`, `fermata` | the mark is the fact; the notes it is played as are the interpretation's |
+| `breath` | a breath after this note, or a full stop of the line | `breath`, or `caesura` | the mark is the fact; the length it takes from the note before the next attack is the interpretation's |
+| `grace` | that this is a grace note, and of which kind | `acc`, an appoggiatura, or `unacc`, an acciaccatura | on a page it takes no time of the bar and stands before the next note of its voice; its `dur` is how it was played and its `value` what it is written as |
+| `stem` | a stem direction the writer forced | `up` or `down` | the page's alone |
+| `tie` | that this note ties into the next of its pitch | true or false | the two are one sound on a page; each event keeps its own length |
+| `spelling` | which accidental a pitch given as a number is written with | `sharp` or `flat` | a preference, read where the event has no `pitches` and where a moved sounding pitch spells them again |
+| `accidental` | whether the accidental is printed where the key or the measure implies it | `written` or `sounding` | read only where the event has no `pitches`, whose own `forced` says it |
+
+Two of them are the written form of something the event also sounds. `pitches`
+is the note as it is written — a letter, an alteration, an octave, as
+`notation.pitch` makes it — where `midinote` is a number two written notes
+share: no spelling of 64 is an F flat. An event that states only `pitches`
+sounds it, so {{alt `Event(pitches=[notation.pitch("a", 4)]).freq()` || `new Event({ pitches: [notation.pitch("a", 4)] }).freq()`}} is 440; one that
+states a sounding pitch beside it sounds that, and the page still writes
+`pitches`. The two move together: setting a sounding key on an event that holds
+`pitches` spells them again by `spelling` (a move by octaves keeps their
+letters), and setting `pitches` moves what it sounds. A chord is one event per note, each with its own pitch, as it sounds.
+`value` is the written value as an exact fraction of a whole note, where `dur`
+is time in beats: a triplet eighth is a third of a beat that no float holds, and
+a grace note has a value and takes no time of the bar at all.
+
+**What is not any note's is not a key.** A slur and a hairpin have two ends; the
+meter and its changes, the key, the clefs, the breaks and the page's text belong
+to the score. A sequence rendered from a score keeps them in its `notation`
+section, beside its tempo map, where what has two ends names them by event id.
+
+Every one is a **musical fact rather than an instruction to the engraver** —
+`articulations` of `["stacc"]`, never "draw a dot" — which is what lets the same key
+be read in both directions: written on the way out, and put back on the event on
+the way in. An event that carries none of them engraves exactly what it always
+did.
+
+An explicit `sustain` becomes how long the note is *held*, but **only where no
+symbol already says it**. A note that is both staccato and short is not two
+facts: the staccato is the fact, and the short length is what an interpretation
+made of it. Written as both, the next reading would shorten an already shortened
+note.
+
+`{{api from_notes}}` is the melodic sibling — a plain list of events (a `rest` for silence), written back to back. A note whose duration is not a single value is written as tied notes (a dotted value when it lands exactly, like `1.5` beats → a dotted quarter), and a note overrunning a barline is split and tied across it. `{{api beat_unit}}` sets what one beat is worth (`4` = a quarter, matching a `TEMPO` of one beat per second). The result flows into `engrave` (a one-shot view), `Score` (to edit and redraw) or `Score.{{api from_timeline}}` (both at once); {{alt `examples/notation/score_from_data.py` || `examples/notation/`}} builds a timeline of chords and a melody, engraves it and plays it from the same timeline.
+
+## The score behind the page: editing it as data
+
+An engraved page is a picture of something, and that something is a **sheet** —
+the score as plain data, which {{alt `clausters.gui.notation` || `gui.notation`}} hands you and takes back:
+
+```python
+from clausters.gui import notation
+
+sheet = notation.sheet_from_voice([{"midis": [60], "ticks": 8}])  # a quarter, middle C
+sheet = notation.transpose(sheet, 4)                     # up a major third: E
+mei = notation.to_mei(sheet)                             # ready for engrave/Score
+```
+
+```ts
+let sheet = notation.sheetFromVoice([{ midis: [60], ticks: 8 }]);  // a quarter, middle C
+sheet = notation.transpose(sheet, 4);                    // up a major third: E
+const mei = notation.toMei(sheet);                       // ready for engrave/Score
+```
+
+A sheet is two structures that do not contain each other. The **grid** is the
+metric layout — measures and meter changes — which does not sound and is what
+lets you *address* the music: `notation.measures(3, 10)` names measures 3 to 10,
+and the span it covers is worked out against the grid, so it stays right across
+a meter change or an irregular bar. The **staves** hold the content, flat, so
+lengthening a phrase does not break anything it was nested in. Every duration is
+an exact fraction of a whole note (`[1, 4]` is a quarter, `[1, 12]` a triplet
+eighth), so nothing rounds on the way through.
+
+Pitches carry their **spelling**, which is why transposing sounds right *and*
+looks right: a major third up from C is E, not F-flat. `semitones` gives the
+chromatic size and `steps` the diatonic one; leave `steps` out and the ordinary
+reading of that interval is used.
+
+None of this arithmetic is written in {{alt Python || TypeScript}}. Operations are named here and
+carried out in the shared core, which is what keeps every client — and a
+standalone host with no client at all — editing a score the same way.
+`notation.ops()` lists the verbs the core knows.
+
+Writing a sheet out can be **refused**, with a reason: a duration that is not an
+exact note value (a tuplet), an accidental past a double, more than one voice.
+Each says which it is, so you can tell a mistake from a feature that has not
+landed yet.
+
+### Composing by operating on a score
+
+Every operation is a function from a score to a score, so they compose — and
+composing two of them gives the same music as applying them to the composed
+score:
+
+```python
+motif = notation.sheet_from_voice(
+    [{"midis": [p], "ticks": 8} for p in (60, 64, 67, 64)])
+
+composed = motif
+for section in (notation.invert(motif),          # turned about its first note
+                notation.retrograde(motif),      # backwards
+                notation.stretch(motif, (2, 1)), # twice as slow
+                notation.transpose(motif, 4)):   # up a major third
+    composed = notation.concat(composed, section)
+```
+
+```ts
+const motif = notation.sheetFromVoice(
+    [60, 64, 67, 64].map((p) => ({ midis: [p], ticks: 8 })));
+
+let composed = motif;
+for (const section of [notation.invert(motif),        // turned about its first note
+                       notation.retrograde(motif),    // backwards
+                       notation.stretch(motif, [2, 1]), // twice as slow
+                       notation.transpose(motif, 4)]) {  // up a major third
+    composed = notation.concat(composed, section);
+}
+```
+
+`concat` puts one score after another and `stack` puts one against another —
+as more voices on the same staves, or ({{alt `as_staff=True` || `{ asStaff: true }`}}) as staves below.
+`repeat` plays a stretch several times in a row. On the grid there are
+`{{api set_meter}}`, `{{api insert_measures}}` and `{{api remove_measures}}`.
+
+**The two structures move independently, and reading the operations against
+that is how they stop being surprising.** `stretch` doubles the written values
+and leaves every barline where it was, so the phrase re-bars across them and
+ties where a value now overruns one — augmentation, as it looks on a page.
+`{{api set_meter}}` rewrites no note: the same notes simply fall in different measures
+afterwards. Only the three that *add or remove time* — `repeat`,
+`{{api insert_measures}}`, `{{api remove_measures}}` — move both.
+
+### Editing one note
+
+An edit names its item by **id**, never by position, so an id you kept still
+names the same note after any number of other edits:
+
+```python
+first = composed["staves"][0]["voices"][0]["items"][0]["id"]
+composed = notation.set_dur(composed, first, (1, 2))         # a half note
+composed = notation.set_pitches(composed, first, [notation.pitch("b", 3, 1)])
+```
+
+```ts
+const first = composed.staves[0].voices[0].items[0].id;
+composed = notation.setDur(composed, first, [1, 2]);         // a half note
+composed = notation.setPitches(composed, first, [notation.pitch("b", 3, 1)]);
+```
+
+Beside those: `insert` writes a new note, chord or rest; `tie` ties one into the
+next; `{{api to_voice}}` moves items to another voice on their staff, leaving rests
+where they were, which is how two lines written as one come apart.
+
+**{{alt `delete` || `del`}} and `silence` are different acts**, and picking the wrong one is how
+time goes missing: {{alt `delete` || `del`}} takes the item out and everything after it moves
+earlier by its value; `silence` leaves a rest of the same length, so nothing
+moves and the item keeps its id.<!-- web --> (It is `del` here because `delete` is a word TypeScript keeps.)<!-- /web -->
+
+### What the page can say
+
+A sheet holds more than pitches and values, and all of it is written out by
+`{{api to_mei}}`:
+
+```python
+sheet = notation.set_marks(sheet, id, notation.marks(
+    articulations=["stacc"], dynamic="mf", sounding=(1, 8)))
+sheet = notation.add_spanner(sheet, "slur", first_id, last_id)
+```
+
+```ts
+sheet = notation.setMarks(sheet, id, notation.marks(
+    { articulations: ["stacc"], dynamic: "mf", sounding: [1, 8] }));
+sheet = notation.addSpanner(sheet, "slur", firstId, lastId);
+```
+
+`marks` is what one note carries — articulations, a dynamic, an ornament,
+whether it is a grace note and a forced stem. It also holds **how long the note
+sounds** as against how long it is written — kept in the score and deliberately
+*not* written onto the page, because an engraver reads a written sounding length
+as the note's real duration and advances its own clock by it, which pulls every
+attack after it earlier. Shortening a staccato is the player's decision, and the
+interpreter is what will honour it. A slur or a hairpin has *two* ends, so
+it goes on the sheet beside the staves (`{{api add_spanner}}`) rather than on a note.
+
+**Several voices and several staves** come from `stack`: as voices they are two
+layers on one staff, as staves they take a brace and one barline through both.
+
+**Tuplets need nothing declared.** A duration whose denominator carries an odd
+factor is already inside one — a triplet eighth is `[1, 12]` — so three of them
+engrave as a bracketed triplet. A tuplet cannot be split, so a group that would
+cross a barline is refused by name rather than written into bars nobody meant.
+
+**Accidentals are printed only where they are needed**: not where the key
+signature already implies them, and not twice in a bar. A natural is a *sign*
+where the key alters that step, and courtesy accidentals are what the pitch's
+own `forced` flag is for.
+
+{{alt `examples/notation/score_editor.py` || The score editor example in `examples/notation/`}} operates on a document this way before it
+opens it in the score editor.
+
+### Opening a score that was only a document
+
+A page typed as ABC, imported from MusicXML or written by hand is a *document*
+and nothing else — none of the verbs above can touch it — until `{{api sheet_from_mei}}`
+reads one:
+
+```python
+score = notation.Score(PHRASE)          # ABC, MusicXML, MEI: the engraver reads them
+sheet = notation.sheet_from_mei(score.mei())
+sheet = notation.transpose(sheet, 2)    # and now every verb applies
+```
+
+```ts
+const score = await notation.Score.open(PHRASE);   // ABC, MusicXML, MEI: the engraver reads them
+let sheet = notation.sheetFromMei(score.mei());
+sheet = notation.transpose(sheet, 2);              // and now every verb applies
+```
+
+There is one input format rather than four: the engraver normalizes whatever it
+loaded, so you hand this `Score.mei()`.
+
+**What the model holds is what somebody chose.** The header
+({{alt `notation.header(title=..., composer=...)` || `notation.header({ title, composer })`}} and `{{api set_header}}`), the barlines
+(`{{api set_barline}}`), the breaks (`{{api set_break}}`) and the beams (a `"beam"` spanner) are
+all read and written, because each is a statement: a beam that crosses a beat
+groups the rhythm a particular way, and a break in a published score is a
+decision about the page. What the engraver works out when nobody said anything —
+the automatic beaming, the line breaks that merely fit — is not read and is not
+loss, because it is recomputed identically every time.
+
+Two things it does *not* read back, and both are deliberate: the rests the
+emitter invents to complete a bar or to keep a short voice level with its
+neighbour (they are not in the model, and reading them would make a score gain a
+bar of silence for having been saved), and the ids of a document written
+somewhere else (an id means something only inside the model that minted it, so
+fresh ones are minted). A score this layer wrote keeps its ids, which is what
+lets an item you were editing before a save still be that item after it.
+
+**An open score is edited through the same verbs.** `Score.sheet()` hands back
+the model behind the page and `Score.apply(op)` applies one operation as a
+single undo step, re-engraving as it goes — so editing a score you have open and
+editing a sheet in your hand are the same operation:
+
+```python
+score = notation.Score(PHRASE)
+score.apply({"op": "transpose", "semitones": 2})   # what `transpose` builds
+score.undo()                                        # the model goes back too
+```
+
+```ts
+const score = await notation.Score.open(PHRASE);
+score.apply({ op: "transpose", semitones: 2 });    // what `transpose` builds
+score.undo();                                      // the model goes back too
+```
+
+**And the undo is the editing context's**, not the score's own. A page registers
+in the editing context like a curve, a take or a roll, and each edit is recorded
+as the MEI it produced with the previous one as its inverse — so a window
+holding a page beside a roll has **one** Ctrl+Z, walked in the order the hand
+made the edits, whichever of the two the pointer was over. `score.{{api can_undo}}`
+answers for that order and may well be an edit to something else.
+
+Dragging a note on the page is `{{api move_steps}}`, which is **not** transposition: it
+moves along the staff and takes the key signature's alteration for the letter it
+lands on, so a note dragged onto a B in E flat is a B flat. `transpose` is the
+other act — a named interval, keeping the alteration the arithmetic implies.
+
+A document that could not be read into a model still draws and still plays;
+`sheet()` {{alt raises || throws}} there, and that is how you tell.
+
+**A page can also be written on.** {{alt `score_view(..., entry=True)` || `scoreView(..., { entry: true })`}} puts it in
+note entry: a press on a staff reports `"enter" <at> <position> <staff>` — the
+element whose column the press fell in, how far up the staff it landed, and
+which staff. It names a *place*, not a note, since a staff position is a pitch
+only once something knows the clef and the key. Hand the three straight to
+`enter`:
+
+```python
+sheet = notation.enter(sheet, (1, 4), item=notation.item_id(at), position=position,
+                       staff=staff)
+```
+
+```ts
+sheet = notation.enter(sheet, [1, 4], { item: notation.itemId(at), position, staff });
+```
+
+and the pitch is worked out from that staff's clef and the key — clicking the
+middle line in E flat writes a B flat — and written over what was there, nothing
+after it moving. `insert` is the other act: it adds time, and everything after
+it moves.
+
+**A gesture names an element; a verb names an item**, and `notation.{{api item_id}}` is
+the step between them. The page reports the element under the cursor the way the
+emitter spelled it — `n7` is the item, `n7-2` a part of it split across a
+barline, `n7-p1` one pitch of a chord — and all three are item 7, which is what
+lets a gesture anywhere on a note reach the note:
+
+```python
+item = notation.item_id(element)      # None where the element is not the model's
+score.apply({"op": "set_marks", "id": item, "marks": notation.marks(...)})
+```
+
+```ts
+const item = notation.itemId(element);  // null where the element is not the model's
+score.apply({ op: "set_marks", id: item, marks: notation.marks({ ... }) });
+```
+
+It comes from the core because the answer is the *emitter's*: a client reading
+the ids itself would disagree the first time a split was spelled differently.
+The score editor example is the whole of this — a document opened,
+edited by hand through the editor's verbs, played, saved and rendered.
+
+### Hearing what the page says
+
+The way back out is `{{api to_notes}}`, and it is not a conversion: the symbols mean
+something, and honouring them is the whole of the step.
+
+```python
+for note in notation.to_notes(sheet):
+    ...      # t, dur, sustain, pitch, amp, staff, voice, id -- all in beats
+
+timeline = notation.to_timeline(sheet, instruments={0: "piano", 1: "bass"})
+```
+
+```ts
+for (const note of notation.toNotes(sheet)) {
+    // t, dur, sustain, pitch, amp, staff, voice, id -- all in beats
+}
+
+const timeline = notation.toTimeline(sheet, { instruments: { 0: "piano", 1: "bass" } });
+```
+
+Every note comes back with **two lengths**: `dur`, what is written, and
+`sustain`, what is heard. They are different numbers whenever an articulation is
+honoured, and keeping them apart is the point — a staccato quarter is still a
+quarter, so the next attack is where it always was and only the sound is
+shorter. `{{api to_timeline}}` puts the pair straight onto an `Event`'s `dur` and
+`sustain`.
+
+What else is read: a **dynamic** governs every note after it until the next one
+is written; a **hairpin** is a shape over a stretch of notes rather than a mark
+on any of them, straight in amplitude from its first note's onset to its last
+one's, and it arrives where the dynamic at its far end says, or travels a
+default distance when nothing is written there and holds what it reached; a **tie** is one sound of the
+summed length; a note's **metric position** stresses it. A tuplet needs no rule
+at all — its division is already exact in the fraction the item holds.
+
+**The reading is data, and it is yours.** `notation.interpretation()` hands back
+every number it depends on — what a staccato does to a length, what `mf` is in
+amplitude, how far a crescendo travels, which positions in the bar are stressed.
+Change what you disagree with and pass it to `{{api to_notes}}`; nothing in the core is
+edited to play a score in another style:
+
+```python
+style = notation.interpretation()
+style["accents"].append({"at": [1, 2], "gain": 1.1, "meter": "4/4"})
+style["detach"] = 0.9                  # a player who does not hold notes whole
+notes = notation.to_notes(sheet, style)
+```
+
+```ts
+const style = notation.interpretation();
+style.accents.push({ at: [1, 2], gain: 1.1, meter: "4/4" });
+style.detach = 0.9;                    // a player who does not hold notes whole
+const notes = notation.toNotes(sheet, style);
+```
+
+What the defaults claim is deliberately as little as a player can claim and
+still be playing: the marks mean roughly what a dictionary says, and the only
+metric stress is the **downbeat**. Stressing one and three of a 4/4 belongs to a
+style, and a style says so by passing its own accents.
+
+**What plays a staff is not in the notation.** A page does not say what
+instrument reads it, so each note names the `staff` and `voice` it was written
+on and the binding is made where the score is rendered — `instruments` above,
+a name for every staff or a mapping from staff index.
+
+**The round trip is honest, and both directions lose something.** Going from
+events to a score loses exact onsets (they snap to written values), continuous
+amplitude (it becomes a dynamic, or nothing), microtones, and which instrument
+played. Coming back, a note keeps everything written *on* it — that is what the
+notation keys carry — and loses everything that is not one note's: a slur and a
+hairpin have two ends, a meter change and a barline belong to the grid, a title
+belongs to the document, and none of the three can ride an event. What survives
+both ways is the note: its pitch and spelling, its written value, its marks, and
+the order they come in.
+
+## See also
+
+- [Routines and clocks](routines-and-clocks.md) — the generative counterpart: routines and patterns, the open-ended side.
+- [A DAW-style transport](transport.md) — the shared beat grid clients phase-align on.
+- [Timing models](timing-models.md) — the timing references a timeline's clock is made on, and `quant`.
+- [Examples](examples.md) — {{alt `timeline.py` || `transport/timeline.html`}}, a timeline's transport live.
+- {{alt [API reference](api/clausters.seq.timeline.md) || [API reference](api/Namespace.seq.md)}} — `Timeline`, `OscItem`, `MidiItem`.

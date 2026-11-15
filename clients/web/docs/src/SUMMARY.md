@@ -10,6 +10,7 @@
 - [Sessions](sessions.md)
 - [Routines and clocks](routines-and-clocks.md)
 - [Patterns](patterns.md)
+- [Timelines](timelines.md)
 - [Timing models](timing-models.md)
 - [The ambient verbs: play, plot, scope, render](verbs.md)
 - [A DAW-style transport](transport.md)
