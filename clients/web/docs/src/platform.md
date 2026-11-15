@@ -139,9 +139,29 @@ import * as defs from "clausters/defs";
 const session = await Session.live("ws://127.0.0.1:57120");   // a `clausters --ws` server
 ```
 
-A page's worker has no document either, and imports the same way (see the
-guide, "A session in a worker").
+A page's worker has no document either, and imports the same way (see
+[Sessions](sessions.md#a-session-in-a-worker)).
 
 `loadCore()` is the one call that has to know where it is: in a browser it
 fetches the module next to the glue, and under node it reads it off disk. Both
 are the same call with no argument — the environment decides, not the caller.
+
+## Two chapters of the Python book this one has not
+
+The two books are one text where the clients are one surface, and two chapters
+of the Python book describe what this package does not have:
+
+- **Configuration.** The Python client, the native server and the native GUI
+  host read one TOML file for their defaults. This client reads no file: a page,
+  a worker or a node program passes every option in code (`Session.embed`'s and
+  `Session.live`'s options, a `Server`'s `sizing`, a host's), and the server
+  book's Configuration chapter is what a native server launched beside a page
+  reads. A page has a filesystem, so this is a gap of the port and is recorded
+  as one, not a property of the platform.
+- **Command line.** The Python wheel bundles the native server and GUI host and
+  puts them on the `PATH` as `clausters` and `clausters-gui`, with three
+  client-side verbs added (`status`, `panic`, `stop`). This package carries the
+  engine and the host as wasm and no native binary, so it installs no command;
+  a native server's own command line is the server book's, and the three verbs
+  have no counterpart here yet, which is recorded as a gap too.
+
