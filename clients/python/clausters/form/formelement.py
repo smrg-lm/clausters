@@ -1,4 +1,4 @@
-"""The arrangement -- elements and their temporal character.
+"""`clausters.form` -- elements and their temporal character.
 
 The client-side layer under a multitrack editor of recursive granularity: it
 places elements in time, groups them recursively and renders them. A `FormElement`
@@ -10,7 +10,7 @@ already has (`clausters.seq.Event`, `clausters.seq.Timeline`, a `Vector`, a
 `Pattern`, a def): it carries the temporal metadata (`onset`, `duration`, and the
 derived temporal *character*) and belongs to an `Aggregate`, while it **delegates
 playing** to the wrapped item's ``play(destination)`` -- the double-dispatch
-seam every leaf item in the client already shares. The arrangement does not
+seam every leaf item in the client already shares. Form does not
 reimplement or subclass those objects.
 
 The five primitives map one-to-one onto what the client already has:
@@ -50,7 +50,7 @@ into ``clausters-core`` in a future port).
 #: hold two bases.
 from .._native import BEATS, SECONDS  # noqa: E402  (the vocabulary's one home)
 
-#: The windows are **not** the arrangement's: a segment is about the contents,
+#: The windows are **not** form's: a segment is about the contents,
 #: not about where it sits in an aggregate, so `Segment` and the runs live beside the
 #: structures (`clausters.segments`) and this module reads them like any other
 #: reader. Re-exported here because `Segments` is the element that places one.
@@ -119,7 +119,7 @@ def temporal_character(onset, duration) -> str:
 
 
 class FormElement:
-    """Base of the arrangement: temporal metadata over a wrapped item.
+    """The base of every form element: temporal metadata over a wrapped item.
 
     An element carries an optional ``onset`` (in beats, relative to its context)
     and ``duration`` (in the unit of what it wraps -- see `duration_unit`) and
@@ -151,7 +151,7 @@ class FormElement:
         self.onset = None if onset is None else float(onset)
         self.duration = None if duration is None else float(duration)
         #: Whether this element's audio is produced by a def running **on the
-        #: server** rather than by messages the arrangement flattens. Such an
+        #: server** rather than by messages form flattens. Such an
         #: element is a generator with no index (see `locatable`).
         self.resident = bool(resident)
         #: **Mixing: the tree's, not the view's.** Whether this element
@@ -171,14 +171,14 @@ class FormElement:
     def locatable(self) -> bool:
         """Whether a position on this element means anything.
 
-        A **generated** element has an index: the arrangement flattens it to
+        A **generated** element has an index: form flattens it to
         messages at absolute beats, so a transport can put itself anywhere on
         it. A **resident generator** -- a def producing its own audio on the
         server, a stochastic process, a demand-rate sequence -- has none. Its
         position *is* its internal state, and no number moves it: the only thing
         a transport can do to it is stop it and let it carry on.
 
-        This is the same asymmetry the arrangement is built around, reaching the
+        This is the same asymmetry form is built around, reaching the
         transport. Pause is symmetric and works for both; locate is not. A
         generator becomes locatable by being **rendered** -- the change of state
         from generator to generated -- after which it is a buffer like any other.
@@ -233,7 +233,7 @@ class FormElement:
         own -- the one number an element may need from the caller.
 
         The **first** half is never built: it is the element it always was, with
-        its placement shortened, which is the arrangement's rule (a placement is
+        its placement shortened, which is form's rule (a placement is
         a window onto an element, never a rewrite of it) and what makes an undo
         of a split one step. Nothing is copied and nothing is lost either way --
         lengthening a half brings back exactly what the cut hid.
@@ -321,7 +321,7 @@ class Vector(FormElement):
     """*Vector*: a list at constant time -- audio or control samples.
 
     Wraps a `clausters.defs.Buffer`. An automation sampled at a constant interval
-    is a control buffer (the List/Vector duality of the arrangement).
+    is a control buffer (the List/Vector duality of form).
 
     A buffer is *data*, so rendering it as an **audio clip** needs an instrument:
     the def that plays it, named by ``instrument`` (a synth whose ``buf`` control
@@ -438,7 +438,7 @@ class Vector(FormElement):
 def take(buffer, onset=None, duration=None, *, instrument=None, controls=None,
          start: float = 0.0, loop: bool = False, name=None,
          sample_rate: float = 0.0) -> "Vector":
-    """A recorded or loaded buffer **placed in the arrangement**: a `Vector`
+    """A recorded or loaded buffer **placed by form**: a `Vector`
     whose length is the samples' own.
 
     This is where recording lands. `clausters.data.RecordingStream` follows
@@ -484,7 +484,7 @@ class Segments(FormElement):
 
     A `Vector` is one window onto one buffer. This is what a **join** makes when
     the fragments do not come from one place, and what a **split** takes apart
-    again. The windows themselves are not the arrangement's -- they are
+    again. The windows themselves are not form's -- they are
     `clausters.segments.BufferSegments`, the general run this element *places* --
     so nothing about assembling contents has to be written twice for the two
     kinds of contents that have a time axis.

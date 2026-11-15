@@ -160,7 +160,7 @@ fn a_source_only_a_region_names_is_still_reported_missing() {
     use clausters_document::{Lifetime, SourceRef};
 
     // The table is walked against **both** halves. A reader that checked only
-    // the tree would open a session missing exactly what the arrangement plays,
+    // the tree would open a session missing exactly what the multitrack plays,
     // and an alternate take counts: it names its source whether or not it is
     // the take lane that plays.
     let window = |source: u64| Window {

@@ -143,7 +143,7 @@ pub enum HeaderPart {
     ///
     /// A facility rather than a design -- which rows a multitrack shows is the
     /// multitrack's, and reaching every one of them from a track's header is the
-    /// shortest thing that makes an arrangement with automation readable while
+    /// shortest thing that makes a multitrack with automation readable while
     /// the rules that replace it are worked out.
     Curves,
     /// **The bottom edge of the band**, where a drag resizes the row -- the
@@ -760,7 +760,7 @@ pub fn clip_grip_on(
 /// on the strip's height, so it reads at any track thickness.
 ///
 /// **The symbol is a parameter of the gesture, not of the clip.** An edge drag
-/// means *trim* on one arrangement and *stretch* on another, and the day a track
+/// means *trim* on one multitrack and *stretch* on another, and the day a track
 /// says which, the arrow is where that is announced -- an outward chevron for
 /// the edge that moves, another mark for the contents that stretches under it.
 pub fn draw_clip_grip(d: &mut Draw, grip: Rect, side: ClipSide) {

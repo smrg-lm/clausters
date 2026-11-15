@@ -369,7 +369,7 @@ class Buffer:
         """Map this buffer out of the shared segment (``/buffer_attach``).
 
         Only meaningful against a server that **attached** to a segment
-        somebody else owns -- the RT server of an editor's arrangement, which
+        somebody else owns -- the RT server of an editor's setup, which
         holds the devices and plays what the on-demand session owns. It
         maps every buffer the owner had published when it started, so this is
         for one published since: after it, that server's engine plays the very

@@ -1184,7 +1184,7 @@ pub fn draw_channel(
 /// body.
 ///
 /// A **channel** row, never a lane: a lane is a track's contents in the
-/// arrangement, and this is a band of one view's vertical axis.
+/// multitrack, and this is a band of one view's vertical axis.
 pub fn channel_rect(body: Rect, channels: usize, ch: usize) -> Rect {
     let channels = channels.max(1) as f32;
     let h = body.h / channels;

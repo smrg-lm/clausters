@@ -1871,7 +1871,7 @@ mod tests {
     /// it has come down to within [`BODY_MERGE_RATIO`] of the level there are
     /// no longer two readings, so the body goes -- before it can poke out of the
     /// shape that is supposed to contain it. One weight throughout, and a cut,
-    /// which is the editors' own answer: Audacity's RMS "will disappear" as you
+    /// which is the field's own answer: an editor's RMS band disappears as you
     /// zoom in.
     #[test]
     fn a_level_is_averaged_over_a_fixed_window_and_goes_when_the_envelope_meets_it() {

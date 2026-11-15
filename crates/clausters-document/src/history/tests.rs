@@ -56,7 +56,7 @@ fn edit(structure: StructureId, label: &str, now: Opaque, before: Opaque) -> Ent
 
 #[test]
 fn a_structure_with_no_document_behind_it_has_a_working_history() {
-    // The shape the module exists for as much as the arrangement's: a curve, a
+    // The shape the module exists for as much as the tree's: a curve, a
     // buffer, a roll the client built, edited in a view and read back. Nothing
     // in this test is a `Document`.
     let mut history = History::new();

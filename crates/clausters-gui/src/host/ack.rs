@@ -21,7 +21,7 @@
 //! two edits in flight needs and what nothing else can supply. The versions --
 //! the document's, and each source's generation -- say *are we talking about the
 //! same state*, which is what catches the document moving by a route that was
-//! not a gesture at all: a script editing the arrangement, a second editor, a
+//! not a gesture at all: a script editing the document, a second editor, a
 //! re-render.
 //!
 //! # There is no branch for a refusal

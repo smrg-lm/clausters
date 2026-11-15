@@ -153,7 +153,7 @@ class Domain:
 
         The one door, so an edit, the projection of an inverse and the adoption
         of a redone state cannot disagree about which of the three happened --
-        the rule the arrangement's editor already follows for a curve.
+        the rule the multitrack's editor already follows for a curve.
         """
         raise NotImplementedError
 

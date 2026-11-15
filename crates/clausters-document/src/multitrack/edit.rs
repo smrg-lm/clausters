@@ -59,7 +59,7 @@ pub const MULTITRACK: &str = "multitrack";
 /// [`MultitrackIntent::SetRange`].
 ///
 /// Not `Range`, which this crate already spends on a span of frames
-/// ([`crate::Range`]), and not `Span`, which is the arrangement's own
+/// ([`crate::Range`]), and not `Span`, which is the timeline's own
 /// ([`Span`]): what this names is *which* of the two the multitrack holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

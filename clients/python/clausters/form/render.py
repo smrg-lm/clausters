@@ -1,11 +1,11 @@
-"""Rendering -- the *change of state* from the arrangement to sound.
+"""Rendering -- the *change of state* from form to sound.
 
 A concrete `Aggregate` is rendered by **flattening** it: a tree-walk that
 accumulates the nested placement offsets into absolute beats, producing a flat
 `clausters.seq.Timeline` of items that each know how to `play(destination)`. That
 timeline then plays itself -- RT (timetagged bundles) or NRT (a score for
 `Session.render`) purely by which destination it holds and how its clock is
-driven, sample-identical, with no scheduling path of its own: the arrangement
+driven, sample-identical, with no scheduling path of its own: form
 reuses the sequencing layer rather than duplicating it.
 
 **The two units meet here.** An onset is in beats and a length is in the unit

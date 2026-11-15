@@ -1,5 +1,5 @@
-// The **arrangement** -- the client-side layer under the multitrack editor
-// (mirrors `clausters/form/__init__.py`).
+// `form` -- a frozen algebra for placing elements in time (mirrors
+// `clausters/form/__init__.py`).
 //
 // A recursive algebra of elements for composing music: the five primitives
 // (`Clang`, `Sequence`, `Vector` -- with `Segments`, the same primitive over
@@ -9,7 +9,7 @@
 // element is *generated* (the rendered thing: random-access, editable) or a
 // *generator* (the algorithm that renders it: forward-only), and evaluating the
 // second into the first is the **change of state** rendering performs. Pure and
-// transport-agnostic.
+// transport-agnostic, and no view draws it.
 //
 // See `./formelement.ts` for the primitives and the temporal *character*,
 // `./aggregate.ts` for grouping and the temporal *relation*, and `./render.ts`
@@ -17,9 +17,9 @@
 //
 // **This module has no door to the shared document.** It had one -- a bridge
 // that converted these elements to the crate's JSON -- and it was removed on
-// 2026-09-06 with the turn that made the arrangement a model of its own. What a
-// multitrack is written with now is `../arrangement.ts`, and the crate is
-// reached through `../document.ts`. Nothing here converts, and nothing here is
+// 2026-09-06 with the turn that made the multitrack a model of its own. What a
+// multitrack is written with now is `../document.ts`, which is also the door to
+// the crate. Nothing here converts, and nothing here is
 // designed around.
 
 export {

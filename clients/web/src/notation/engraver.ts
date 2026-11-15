@@ -342,7 +342,7 @@ export class Score {
                     {
                         structure: this.structure,
                         // The payload is this domain's own vocabulary and
-                        // the pile never reads it; the arrangement's `Intent` is
+                        // the pile never reads it; the tree's `Intent` is
                         // only what the type happens to name.
                         forward: { edit: { mei: after } },
                         backward: { mei: before },

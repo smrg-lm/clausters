@@ -28,7 +28,7 @@ fn multitrack() -> Multitrack {
 
 #[test]
 fn a_view_that_says_nothing_writes_an_empty_object() {
-    // Nothing derived, nothing defaulted, nothing invented -- the arrangement's
+    // Nothing derived, nothing defaulted, nothing invented -- the multitrack's
     // rule, and a view of a multitrack nobody has touched costs a file two braces.
     assert_eq!(serde_json::to_string(&MultitrackView::new()).unwrap(), "{}");
 }

@@ -1,4 +1,4 @@
-"""The **arrangement** -- the client-side layer under the multitrack editor.
+"""`clausters.form` -- a frozen algebra for placing elements in time.
 
 A recursive algebra of elements for composing music: the five primitives
 (`Clang`, `Sequence`, `Vector` -- with `Segments`, the same primitive over
@@ -8,7 +8,7 @@ placing elements recursively with an offset and deriving their temporal
 relation. An element is *generated* (the rendered thing: random-access, editable)
 or a *generator* (the algorithm that renders it: forward-only), and evaluating the
 second into the first is the **change of state** rendering performs. Pure and
-transport-agnostic; the multitrack view of it lives in `clausters.gui.editing`.
+transport-agnostic, and no view draws it.
 
 See `clausters.form.formelement` for the primitives and the temporal *character*,
 `clausters.form.aggregate` for grouping and the temporal *relation*, and
@@ -16,9 +16,9 @@ See `clausters.form.formelement` for the primitives and the temporal *character*
 
 **This module has no door to the shared document.** It had one -- a bridge that
 converted these elements to the crate's JSON -- and it was removed on 2026-09-06
-with the turn that made the arrangement a model of its own. What a multitrack is
-written with now is `clausters.document`, and the crate is reached through
-`clausters.document`. Nothing here converts, and nothing here is designed
+with the turn that made the multitrack a model of its own. What a multitrack is
+written with now is `clausters.document`, which is also the door to the
+crate. Nothing here converts, and nothing here is designed
 around: this is a frozen, secondary module of data structures.
 """
 

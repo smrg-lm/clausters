@@ -1,4 +1,4 @@
-// The arrangement -- elements and their temporal character (mirrors
+// `form` -- elements and their temporal character (mirrors
 // `clausters/form/formelement.py`).
 //
 // The client-side layer under a multitrack editor of recursive granularity: it
@@ -12,7 +12,7 @@
 // metadata (`onset`, `duration`, and the derived temporal *character*) and
 // belongs to an `Aggregate`, while it **delegates playing** to the wrapped
 // item's `play(destination)` -- the double-dispatch seam every leaf item in the
-// client already shares. The arrangement does not reimplement or subclass those
+// client already shares. Form does not reimplement or subclass those
 // objects.
 //
 // The five primitives map one-to-one onto what the client already has:
@@ -70,7 +70,7 @@ export function registerRendering(impl: Rendering): void {
 function dispatch(): Rendering {
     if (rendering.render === undefined || rendering.toTimeline === undefined) {
         throw new Error(
-            "the arrangement's rendering is not loaded: import the layer through " +
+            "form's rendering is not loaded: import the layer through " +
                 "`clausters/form` (or `./render.ts`) before rendering an element",
         );
     }
@@ -142,7 +142,7 @@ export function endBeat(at: number, length: number, unit: string, tempoMap: Temp
     return tempoMap.beatsAt(tempoMap.secsAt(at) + length);
 }
 
-// The windows are **not** the arrangement's: a segment is about the contents,
+// The windows are **not** form's: a segment is about the contents,
 // not about where it sits in an aggregate, so `Segment`, the runs and what they read
 // live beside the structures (`../segments.ts`) and this module reads them like
 // any other reader. Re-exported here because `Segments` is the element that
@@ -174,7 +174,7 @@ export function temporalCharacter(onset: Beats, duration: Beats): TemporalCharac
 }
 
 /**
- * Base of the arrangement: temporal metadata over a wrapped item.
+ * The base of every form element: temporal metadata over a wrapped item.
  *
  * An element carries an optional `onset` (in beats, relative to its context)
  * and `duration` (in the unit of what it wraps -- see
@@ -201,7 +201,7 @@ export class FormElement {
     duration: number | null;
     /**
      * Whether this element's audio is produced by a def running **on the
-     * server** rather than by messages the arrangement flattens. Such an
+     * server** rather than by messages form flattens. Such an
      * element is a generator with no index (see {@link FormElement.locatable}).
      */
     resident: boolean;
@@ -236,14 +236,14 @@ export class FormElement {
     /**
      * Whether a position on this element means anything.
      *
-     * A **generated** element has an index: the arrangement flattens it to
+     * A **generated** element has an index: form flattens it to
      * messages at absolute beats, so a transport can put itself anywhere on it.
      * A **resident generator** -- a def producing its own audio on the server, a
      * stochastic process, a demand-rate sequence -- has none. Its position *is*
      * its internal state, and no number moves it: the only thing a transport can
      * do to it is stop it and let it carry on.
      *
-     * This is the same asymmetry the arrangement is built around, reaching the
+     * This is the same asymmetry form is built around, reaching the
      * transport. Pause is symmetric and works for both; locate is not. A
      * generator becomes locatable by being **rendered** -- the change of state
      * from generator to generated -- after which it is a buffer like any other.
@@ -306,7 +306,7 @@ export class FormElement {
      * an element may need from the caller.
      *
      * The **first** half is never built: it is the element it always was, with
-     * its placement shortened, which is the arrangement's rule (a placement is a
+     * its placement shortened, which is form's rule (a placement is a
      * window onto an element, never a rewrite of it) and what makes an undo of a
      * split one step. Nothing is copied and nothing is lost either way --
      * lengthening a half brings back exactly what the cut hid.
@@ -429,7 +429,7 @@ export interface VectorOptions extends ElementOptions {
  * *Vector*: a list at constant time -- audio or control samples.
  *
  * Wraps a `Buffer`. An automation sampled at a constant interval is a control
- * buffer (the List/Vector duality of the arrangement).
+ * buffer (the List/Vector duality of form).
  *
  * A buffer is *data*, so rendering it as an **audio clip** needs an instrument:
  * the def that plays it, named by `instrument` (a synth whose `buf` control
@@ -594,7 +594,7 @@ export interface SegmentsOptions extends ElementOptions {
  * the segments' when not given.
  */
 /**
- * A recorded or loaded buffer **placed in the arrangement**: a {@link Vector}
+ * A recorded or loaded buffer **placed by form**: a {@link Vector}
  * whose length is the samples' own.
  *
  * This is where recording lands. A `RecordingStream` follows takes as they are

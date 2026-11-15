@@ -17,7 +17,7 @@
 //!
 //! # One time span, and the axes that may restrict it
 //!
-//! Every selection is a span of time first -- that is what makes an arrangement
+//! Every selection is a span of time first -- that is what makes a multitrack
 //! selection, a sample selection and a spectral selection the same kind of thing
 //! -- and each further axis narrows it:
 //!
@@ -34,7 +34,7 @@
 //!
 //! # The unit is whatever the selected thing is measured in
 //!
-//! Frames over samples, beats over an arrangement -- and the crate does not
+//! Frames over samples, beats over a tree -- and the crate does not
 //! convert between them, because the beats<->samples bridge belongs to whoever
 //! renders. Both travel as `f64`, which holds a frame index exactly past any
 //! length a session will have, and which is what the wire already sends.

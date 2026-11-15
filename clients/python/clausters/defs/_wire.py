@@ -3,7 +3,7 @@ def send has.
 
 A handle built by a constructor (`Synth`, `Group`, `Bus.audio`, `Buffer.alloc`)
 carries the server it was created on; one built from a reported id (a
-responder, the GUI, the arrangement) may carry none, and falls back to the
+responder, the GUI, the multitrack) may carry none, and falls back to the
 ambient server -- the same rule `clausters.play` follows. The import is lazy
 because `clausters.base.main` reaches back into these modules.
 """

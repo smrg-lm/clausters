@@ -112,7 +112,7 @@ fn redo(log: &Held) -> serde_json::Value {
 }
 
 /// Applies one leg to the document, the way a binding does: the payload is an
-/// intent because the leg named the arrangement's structure.
+/// intent because the leg named the tree's structure.
 fn project(doc: &Doc, payload: &serde_json::Value) {
     let intent = serde_json::to_string(payload).unwrap();
     let n = unsafe {

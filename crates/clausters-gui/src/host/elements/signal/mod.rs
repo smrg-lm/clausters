@@ -8,8 +8,8 @@
 //! - **Presentation** ([`Presentation`]) -- what is drawn: the signal against
 //!   time, its magnitude spectrum against frequency, its time-frequency
 //!   distribution, or the phase relationship of a stereo pair.
-//! - **Source** ([`Source`]) -- where the samples come from, and in which of the
-//!   arrangement layer's two states: **random-access** (a buffer, a file, an
+//! - **Source** ([`Source`]) -- where the samples come from, and in which of its
+//!   two states: **random-access** (a buffer, a file, an
 //!   inline array -- addressable, so it can be navigated and sliced) or
 //!   **forward-only** (a bus at a rate -- the newest window, and no addressable
 //!   past).
@@ -299,7 +299,7 @@ pub struct Bus {
     pub retention: f32,
 }
 
-/// Where a signal element's samples come from -- the arrangement layer's own
+/// Where a signal element's samples come from -- the document's own
 /// generated/generator split seen from the view: a rendered thing that can be
 /// read backwards and sliced, or a running one that can only be watched.
 #[derive(Debug, Clone)]
@@ -1319,7 +1319,7 @@ mod tests {
         assert!(!el(Presentation::Phase, true, false).is_gpu_view());
     }
 
-    /// The two source kinds are the arrangement layer's two states, and the
+    /// The two source kinds are its two states, and the
     /// wire's `bus` is what puts an element on one of them.
     #[test]
     fn a_live_point_reads_a_bus_and_a_stored_one_reads_samples() {

@@ -83,7 +83,7 @@ class TempoClock:
         name: a label. Says *what* this clock is (``"lead"``, ``"canon 3"``),
             never which one it is -- the same rule a document node's name
             follows. It is what a saved clock is recognised by when an
-            arrangement is written against it.
+            multitrack is written against it.
     """
 
     def __init__(self, tempo: float = 1.0, timebase=None, tempo_map=None, name=None):

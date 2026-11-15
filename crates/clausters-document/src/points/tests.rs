@@ -56,7 +56,7 @@ fn an_edit_in_another_domains_vocabulary_is_refused_with_what_holds() {
     let curve = history.register(POINTS);
     let mut points = Points::new(vec![at(0.0, 0.25)]);
 
-    // The arrangement's own verb, sent to a curve. It names a node, which a
+    // The tree's own verb, sent to a curve. It names a node, which a
     // curve has none of, so the refusal is the whole of what routing by domain
     // exists to prevent -- and it says so rather than doing nothing.
     let intent = Opaque(serde_json::json!({"intent": "place", "node": 1, "offset": 0.0}));

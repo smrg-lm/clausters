@@ -1,7 +1,7 @@
 //! Undo for the multitrack, beside the data it inverts.
 //!
 //! The pile itself is [`crate::history`], which knows no vocabulary at
-//! all. This module is its arrangement-shaped face: a [`Log`] is a
+//! all. This module is its tree-shaped face: a [`Log`] is a
 //! [`History`] with one structure registered in it, and
 //! an [`Entry`] states its halves as [`Intent`]s rather than as opaque payloads.
 //! There is one implementation of the pile, and this is not a second one.
@@ -48,7 +48,7 @@
 //! here whose size follows the audio rather than the parameters. Above a
 //! threshold it goes to a [`Spill`] store -- content-addressed, so an undo/redo
 //! pair that names the same bytes holds one copy. See
-//! [`crate::history`] for the mechanism; what is arrangement-specific
+//! [`crate::history`] for the mechanism; what is tree-specific
 //! is only which edit gets big.
 
 use crate::history::{self, Applied, Editable, History, StructureId};
@@ -124,7 +124,7 @@ pub fn payload(intent: &Intent) -> Opaque {
 /// only a payload some other domain wrote can be.
 ///
 /// Public for the same reason [`payload`] is: a binding reading a leg addressed
-/// to the arrangement needs exactly this.
+/// to the tree needs exactly this.
 pub fn intent_of(payload: &Opaque) -> Option<Intent> {
     serde_json::from_value(payload.0.clone()).ok()
 }
@@ -146,14 +146,14 @@ pub fn coalesce_key(intent: &Intent) -> String {
     format!("{kind}:{}", intent.node().0)
 }
 
-/// The arrangement as an [`Editable`]: a document, plus the two things an edit
+/// The tree as an [`Editable`]: a document, plus the two things an edit
 /// to *this* domain needs and no other does.
 ///
 /// It is built for one call, because that is the lifetime of what it carries --
 /// `against` is the state the editor believed it was editing and `rules` the
 /// grid this gesture snaps to, and neither is a property of the document. That
 /// is why [`Editable`] has no room for them: a curve has no version to check
-/// and no grid to snap to, and a trait sized for the arrangement's needs would
+/// and no grid to snap to, and a trait sized for the tree's needs would
 /// make every other domain carry them empty.
 pub struct Tree<'a> {
     /// The document being edited.
@@ -346,7 +346,7 @@ impl Entry {
 
 /// The undo history of one document.
 ///
-/// A [`History`] with one structure registered in it, read in the arrangement's
+/// A [`History`] with one structure registered in it, read in the tree's
 /// vocabulary. Two views of one document share a `Log`; a context holding
 /// *several* editable structures registers them in a `History` directly, which
 /// is where the general shape is.

@@ -58,7 +58,7 @@ impl JsDocument {
         self.0.version
     }
 
-    /// What makes two edits over the arrangement *the same thing done the same
+    /// What makes two edits over the tree *the same thing done the same
     /// way* -- the key a {@link History} coalesces on, or an empty string when
     /// the intent will not parse.
     ///

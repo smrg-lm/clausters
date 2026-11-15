@@ -267,7 +267,7 @@ pub(crate) fn ink_of(p: &layout::Placed) -> Ink {
 /// it is a [`Bands`] like the other two, on its uniform arm -- a channel stack
 /// divides its body evenly because every channel is worth the same picture.
 ///
-/// Same structure, **different word**: `lane` is the arrangement's, a track's
+/// Same structure, **different word**: `lane` is the multitrack's, a track's
 /// contents, and it is not this. The two were one name until the document
 /// claimed the first.
 pub(crate) fn channel_rect(body: Rect, channels: usize, ch: usize) -> Rect {

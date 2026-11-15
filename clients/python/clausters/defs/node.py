@@ -160,7 +160,7 @@ class Node:
 
     def _server(self):
         """This node's server, or the ambient one -- a handle built from a
-        reported id (a responder, the GUI, the arrangement) carries none."""
+        reported id (a responder, the GUI, the multitrack) carries none."""
         return _resolve(self.server)
 
     def plugin_event(self, event: dict):

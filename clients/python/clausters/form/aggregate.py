@@ -1,6 +1,6 @@
-"""The arrangement -- grouping, and the derived temporal relation.
+"""`clausters.form` -- grouping, and the derived temporal relation.
 
-A `Aggregate` is the one genuinely new structure of the arrangement: the recursive
+An `Aggregate` is the one genuinely new structure of form: the recursive
 placement of elements with an offset, and the temporal *relation* derived from
 how the members sit in time. Everything else (the five primitives) already
 exists and is merely adorned by `clausters.form.formelement.FormElement`.
@@ -277,7 +277,7 @@ class Aggregate(FormElement):
 
     def to_graphdef(self, name=None):
         """Translate this **logical** aggregate into a `clausters.defs.GraphDef` -- the
-        1:1 mapping of the arrangement's logical grouping (nodes wired by sender/
+        1:1 mapping of form's logical grouping (nodes wired by sender/
         receiver buses) onto the configuration the server already expresses.
 
         Each member must be a `clausters.form.formelement.Generator` (its

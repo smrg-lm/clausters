@@ -526,8 +526,8 @@ pub fn read_rows(multitrack: &Multitrack, reported: &[Strip]) -> Vec<MultitrackI
             //
             // Provisional, and the shape rather than the design: what a track
             // may automate is its own question (a port list, a plugin's
-            // parameters) and this is the smallest thing that makes an
-            // arrangement with automation editable while that is worked out.
+            // parameters) and this is the smallest thing that makes a
+            // multitrack with automation editable while that is worked out.
             if track.automation.is_empty() && strip.curves {
                 let mut made = Automation::new(NodeId(next), Opaque(json!({"port": "gain"})));
                 next += 1;

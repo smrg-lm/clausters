@@ -18,7 +18,7 @@ export class Document {
      */
     apply(request: string): string;
     /**
-     * What makes two edits over the arrangement *the same thing done the same
+     * What makes two edits over the tree *the same thing done the same
      * way* -- the key a {@link History} coalesces on, or an empty string when
      * the intent will not parse.
      *
@@ -125,7 +125,7 @@ export class History {
      * thing. `apply(structure, document, requestJson) -> outcomeJson`, the
      * request carrying `{ intent, against?, quant?, label? }`.
      *
-     * The arrangement's door alone, because the document is the one state this
+     * The tree's door alone, because the document is the one state this
      * surface can reach; a caller editing anything else applies the edit
      * itself and hands the pair to {@link History.record}.
      */
@@ -170,7 +170,7 @@ export class History {
     /**
      * Record one entry -- the door for everything {@link History.apply} cannot
      * do: a destructive write, whose overwritten samples are not in the tree,
-     * and every domain that is not the arrangement, whose state this surface
+     * and every domain that is not the tree, whose state this surface
      * cannot reach. Applies nothing.
      *
      * `record(requestJson)` with
@@ -181,13 +181,13 @@ export class History {
      * more than one structure needs, and why the whole entry crosses in one
      * call. It is not coalescing, which merges *successive* entries over one
      * structure. A leg's `key` is what makes two edits *the same thing done
-     * the same way* ({@link Document.coalesceKey} for the arrangement); an
+     * the same way* ({@link Document.coalesceKey} for the tree); an
      * absent one never coalesces.
      *
      * Returns whether it was recorded: an entry with no leg, or one naming a
      * structure this history did not mint, is refused rather than opening a
      * second order over data that already has one. The inverse of an
-     * arrangement leg comes from {@link Document.inverse}, read before the
+     * tree leg comes from {@link Document.inverse}, read before the
      * edit lands.
      */
     record(request: string): boolean;
@@ -195,7 +195,7 @@ export class History {
      * Takes a structure into this history and returns its identity.
      *
      * `domain` names the vocabulary its payloads are written in -- `"tree"` for
-     * the arrangement -- and the history carries it so a caller routing what
+     * the tree -- and the history carries it so a caller routing what
      * comes back knows which reader a leg belongs to. The identity is minted
      * here rather than carried by the data, and it is also the read-back path.
      */
@@ -1126,7 +1126,7 @@ export function degree_to_midinote(degree: number, alter: number, octave: number
  * It is a free function rather than a method because a caller here holds no
  * structure to ask: a curve, a span of samples and a timeline live in this
  * page's own memory, and only their *vocabulary* is the crate's.
- * {@link JsDocument.coalesceKey} stays as it is -- the arrangement's own door,
+ * {@link JsDocument.coalesceKey} stays as it is -- the tree's own door,
  * on the surface its sentence belongs to -- and this is the same rule for the
  * domains that have no handle here.
  */
@@ -1144,7 +1144,7 @@ export function domainCoalesceKey(domain: string, payload: string): string;
  * `state` is the structure in its own vocabulary and the answer is
  * `{"state": ..., "applied": bool, "reason"?: ..., "current"?: ...}`, or an empty
  * string for a vocabulary whose state is not a value a caller can hand over:
- * the arrangement's tree (which has {@link JsDocument.apply} of its own) and a
+ * the document's tree (which has {@link JsDocument.apply} of its own) and a
  * span of samples (a borrowed view whose frames are in a buffer).
  */
 export function domainEdit(domain: string, state: string, payload: string): string;

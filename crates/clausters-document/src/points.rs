@@ -2,7 +2,7 @@
 //!
 //! This is the crate's **second** editable domain, and it is here for the
 //! reason a trait with one implementor is designed wrong: it is what proves
-//! that [`history`](crate::history) carries no arrangement in it. Its whole
+//! that [`history`](crate::history) carries no tree in it. Its whole
 //! vocabulary is one verb -- *the points are now these* -- and it names no node,
 //! because it has none.
 //!

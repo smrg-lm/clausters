@@ -1,4 +1,4 @@
-// Rendering -- the *change of state* from the arrangement to sound (mirrors
+// Rendering -- the *change of state* from form to sound (mirrors
 // `clausters/form/render.py`).
 //
 // A concrete `Aggregate` is rendered by **flattening** it: a tree-walk that
@@ -6,7 +6,7 @@
 // `seq.Timeline` of items that each know how to `play(destination)`. That
 // timeline then plays itself -- RT (timetagged bundles) or NRT (a score for an
 // offline render) purely by which destination it holds and how its clock is
-// driven, sample-identical, with no scheduling path of its own: the arrangement
+// driven, sample-identical, with no scheduling path of its own: form
 // reuses the sequencing layer rather than duplicating it.
 //
 // Scope of the concrete path:

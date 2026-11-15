@@ -1,7 +1,7 @@
-// The arrangement -- grouping, and the derived temporal relation (mirrors
+// `form` -- grouping, and the derived temporal relation (mirrors
 // `clausters/form/aggregate.py`).
 //
-// An `Aggregate` is the one genuinely new structure of the arrangement: the
+// An `Aggregate` is the one genuinely new structure of form: the
 // recursive placement of elements with an offset, and the temporal *relation*
 // derived from how the members sit in time. Everything else (the five
 // primitives) already exists and is merely adorned by `FormElement`.
@@ -366,7 +366,7 @@ export class Aggregate extends FormElement {
 
     /**
      * Translates this **logical** aggregate into a `GraphDef` -- the 1:1 mapping
-     * of the arrangement's logical grouping (nodes wired by sender/receiver
+     * of form's logical grouping (nodes wired by sender/receiver
      * buses) onto the configuration the server already expresses.
      *
      * Each member must be a {@link Generator} (its `defName` is the member def;

@@ -62,7 +62,7 @@ The layers:
   as one: what a join assembles and a split takes apart, over samples
   (`BufferSegments`) or over a timeline of events (`NoteSegments`). A window is
   about the contents, not about where they sit in time, which is why it is
-  here and not in the arrangement.
+  here and not in the document.
 - `clausters.responders` -- `OscFunc`/`MidiFunc`, callbacks on incoming OSC
   replies and live MIDI.
 - `clausters.gui` -- the `GuiHost` and GuiDef building for the Clausters GUI
@@ -70,7 +70,7 @@ The layers:
 - `clausters.play` -- the free-standing `play`, one verb for every playable,
   resolved against the ambient session.
 - `clausters.render` -- the free-standing `render`, one verb for the change
-  of state to sound: scores, defs and bare expressions, arrangement
+  of state to sound: scores, defs and bare expressions, `clausters.form`
   elements, timelines, patterns and routines, bounced offline to samples or
   a WAV (or delegated to a live destination).
 - `clausters.plot` / `clausters.scope` -- the free-standing visual verbs: one

@@ -288,7 +288,7 @@ export class Document {
     }
 
     /**
-     * What makes two edits over the arrangement *the same thing done the same
+     * What makes two edits over the tree *the same thing done the same
      * way* -- the key a {@link History} coalesces on, or `""` when the intent
      * will not parse.
      *
@@ -502,7 +502,7 @@ export interface RecordedLeg {
     forward: Step;
     /**
      * The inverse, a payload in that structure's own vocabulary -- for the
-     * arrangement, {@link Document.inverse} read before the edit landed.
+     * tree, {@link Document.inverse} read before the edit landed.
      *
      * Omit it when nothing can put this leg back: an act with no inverse is
      * still recorded, marked, and walked past in both directions, with the walk
@@ -513,7 +513,7 @@ export interface RecordedLeg {
     backward?: unknown;
     /**
      * What makes two edits *the same thing done the same way*:
-     * {@link Document.coalesceKey} for the arrangement, one verb and one key
+     * {@link Document.coalesceKey} for the tree, one verb and one key
      * for a curve. Absent never coalesces.
      */
     key?: string;
@@ -558,7 +558,7 @@ export const EVENTS = "events";
  * A free function rather than a method because a caller here holds no structure
  * to ask: a curve, a span of samples and a timeline live in this page's own
  * memory, and only their *vocabulary* is the crate's.
- * {@link Document.coalesceKey} stays as it is -- the arrangement's own door --
+ * {@link Document.coalesceKey} stays as it is -- the tree's own door --
  * and this is the same rule for the domains that have no handle.
  */
 export function domainCoalesceKey(domain: string, payload: unknown): string {
@@ -797,7 +797,7 @@ export class History {
      * Takes a structure into this history and returns its identity.
      *
      * `domain` names the vocabulary its payloads are written in -- `"tree"` for
-     * the arrangement, `"points"` for a break-point curve -- and the history
+     * the document's tree, `"points"` for a break-point curve -- and the history
      * carries it so a caller routing what comes back knows which reader a leg
      * belongs to. Nothing in the crate reads it.
      *
@@ -817,7 +817,7 @@ export class History {
      * thing. Nothing is recorded unless the document changed, so a refusal
      * leaves no entry and neither does a resend.
      *
-     * The arrangement's door alone, because the document is the one state the
+     * The tree's door alone, because the document is the one state the
      * crate can reach; for anything else you apply the edit yourself and hand
      * the pair to {@link History.record}.
      */
@@ -846,7 +846,7 @@ export class History {
      *
      * The door for everything {@link History.apply} cannot do: a destructive
      * write, whose overwritten samples are not in the tree, and every domain
-     * that is not the arrangement, whose state the crate cannot reach. This
+     * that is not the tree, whose state the crate cannot reach. This
      * applies nothing: the edits have happened, and what is recorded is how to
      * put them back.
      *
@@ -1001,10 +1001,10 @@ export class History {
  * The undo history of one document: a {@link History} with one structure in it.
  *
  * Undo belongs with the document and not with a view: a view's log sees only
- * the gestures *it* made, so a script editing the arrangement, a second editor
+ * the gestures *it* made, so a script editing the document, a second editor
  * or a re-render leaves it describing a document that has moved on -- and undo
  * then writes a state nobody was ever in. This is that history read in the
- * arrangement's own terms, so there is one order however many surfaces edit.
+ * document's own terms, so there is one order however many surfaces edit.
  *
  * It is a **face**, not a second pile: {@link Log.history} is the one
  * underneath, and a caller composing several editable structures registers them
@@ -1078,8 +1078,8 @@ export class Log {
         backward: Intent,
         options: { label?: string; coalesce?: boolean } = {},
     ): void {
-        // The key is the arrangement's own sentence, so it is asked of the
-        // arrangement rather than spelled again here: a second spelling is how
+        // The key is the tree's own sentence, so it is asked of the
+        // tree rather than spelled again here: a second spelling is how
         // a run coalesces through one door and not through another.
         const edit = "edit" in forward ? forward.edit : undefined;
         const key = edit === undefined ? "" : Document.coalesceKey(edit);

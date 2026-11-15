@@ -1,4 +1,4 @@
-//! A span of samples, and the inverse the arrangement never had.
+//! A span of samples, and the inverse the tree never had.
 //!
 //! This is the crate's **third** editable domain, and the one whose absence was
 //! visible from outside: [`Intent::WriteSamples`](crate::Intent::WriteSamples)

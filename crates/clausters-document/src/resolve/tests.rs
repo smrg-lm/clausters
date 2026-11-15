@@ -345,7 +345,7 @@ fn the_generation_travels_with_the_span() {
 fn a_takes_length_is_seconds_and_the_tempo_does_not_move_it() {
     // The beat and the second come apart: two beats a second, so a beat is
     // 24 000 frames at 48 kHz. The clip is placed at beat 2 and lasts four *seconds*, so it
-    // covers beats 2..10 of the arrangement -- a selection on beat 9 is still
+    // covers beats 2..10 of the tree -- a selection on beat 9 is still
     // inside it, which is what a length in beats would have got wrong (it would
     // have ended the clip at beat 6, halfway through the recording).
     let document = Document::new(aggregate(vec![placed(2.0, Some(4.0), take(2, 100, None))]));

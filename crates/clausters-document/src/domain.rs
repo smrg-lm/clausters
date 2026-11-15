@@ -8,7 +8,7 @@
 //!
 //! One thing does not survive that, and it is the reason this module exists:
 //! **the coalesce key is a sentence in a vocabulary**. "The same thing done the
-//! same way" is *place, node 7* for the arrangement and *this span of this
+//! same way" is *place, node 7* for the tree and *this span of this
 //! channel* for samples, so the pile cannot compute it and a caller recording
 //! its own entry has to state it. Left there, every binding would spell every
 //! domain's rule again -- the divergence

@@ -4,7 +4,7 @@
 //! normalize, fade, copy, reverse -- needs the span of a **source**. Between them
 //! sit three things the view knows and an algorithm does not: where the element
 //! was placed, how much of the source it uses (its trim), and the bridge between
-//! the arrangement's beats and the buffer's frames. This module is that
+//! the tree's beats and the buffer's frames. This module is that
 //! mapping, and only that: it hands back *which source, which frames*, and the
 //! operation is performed by whoever owns it.
 //!
@@ -57,7 +57,7 @@ use crate::{Beats, Body, Document, Member, Node, NodeId, Range, Selection, Sourc
 pub enum Unit {
     /// Frames on the shared timeline axis -- what a view over samples reports.
     Frames,
-    /// Beats of the arrangement -- what a view over placements reports.
+    /// Beats of the tree -- what a view over placements reports.
     Beats,
 }
 

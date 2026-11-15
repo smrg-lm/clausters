@@ -10,7 +10,7 @@ whole design:
   true of a **session on screen** rather than of one structure, so several
   editors can share one -- and an editor handed none is an application of one.
 - `Editor` -- the generic one. It edits **one structure** and imports nothing
-  from the arrangement: it opens a window through its `View`, turns a gesture
+  from the multitrack: it opens a window through its `View`, turns a gesture
   into a payload through its `Domain`, answers the host through its
   `Application`, and records in the `Editing` context the data owns.
 - `View` -- the `GuiDef` of one structure, and the registry from widget id to

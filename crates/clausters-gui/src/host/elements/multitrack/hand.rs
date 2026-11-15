@@ -648,8 +648,8 @@ impl Multitrack {
     /// **The stack's own vertical gestures**: scroll it, and zoom one row.
     ///
     /// The plain wheel stays the **time axis'**, which is what it is over every
-    /// timeline view here and what a hand reaching for a wheel over an
-    /// arrangement means most of the time. The two this adds are the ones the
+    /// timeline view here and what a hand reaching for a wheel over a
+    /// multitrack means most of the time. The two this adds are the ones the
     /// stack has and the axis does not:
     ///
     /// - `Shift` **scrolls the stack**, so a track that fell off the bottom is

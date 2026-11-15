@@ -2,7 +2,7 @@
  * The editor: what orchestrates a picture, a vocabulary and a history.
  *
  * {@link Editor} edits **one structure** -- a buffer's samples, a break-point
- * curve, a timeline of events -- and it imports nothing from the arrangement.
+ * curve, a timeline of events -- and it imports nothing from the multitrack.
  * What makes that possible is that it performs almost nothing itself: it opens a
  * window through a {@link View}, turns a gesture into a payload through a
  * {@link Domain}, answers the host through an {@link Echo}, and records what
@@ -186,8 +186,8 @@ export interface ActionState {
 /** One structure on screen, editable back into it. */
 export class Editor<S = unknown> implements Adopting {
     /**
-     * What is edited. A view over an arrangement calls it `element`, which is the
-     * arrangement's word for the same slot.
+     * What is edited. A view over a `form` element calls it `element`, which
+     * is form's word for the same slot.
      */
     structure: S;
     sampleRate: number;

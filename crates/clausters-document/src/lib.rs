@@ -41,13 +41,13 @@
 //! onset is in **beats** and the duration is in the unit of the data it measures
 //! ([`Body::duration_unit`]: seconds for a body that references samples, beats
 //! for one made of events), which is the one thing about the shape a reader has
-//! to know before reading a number off it. The five primitives are the arrangement's own and are documented on
+//! to know before reading a number off it. The five primitives are `clausters.form`'s own and are documented on
 //! [`Body`]; the sixth variant, [`Body::Unknown`], is what a document written
 //! by a newer writer looks like to an older one, and it is preserved rather
 //! than dropped.
 //!
-//! Two properties the shape has to admit, because they belong to the
-//! arrangement rather than to the document: a generator's *code* is opaque but
+//! Two properties the shape has to admit, because they belong to what
+//! the document places rather than to the document: a generator's *code* is opaque but
 //! **its output is ordinary tree**, so nothing about being generated makes a
 //! subtree a second kind of thing; and a clang may **reference** a generator
 //! to fire it live, so the document expresses structure resolved at run time
@@ -407,7 +407,7 @@ impl Member {
 
 /// What a node **is**.
 ///
-/// The five primitives are the arrangement's, not this crate's invention, and
+/// The five primitives are `clausters.form`'s, not this crate's invention, and
 /// each names a way samples can be organized rather than a widget or a file
 /// format:
 ///
@@ -510,7 +510,7 @@ pub enum Body {
         config: Opaque,
         /// What this generator **last produced**, as ordinary tree.
         ///
-        /// The change of state the arrangement already has a verb for: a
+        /// The change of state `clausters.form` already has a verb for: a
         /// generator element becoming a generated one, by being *rendered*.
         /// It is here rather than derived because a host with no language
         /// attached has nothing to derive it with -- a generator is code, and
@@ -586,7 +586,7 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration: Option<f64>,
     /// Whether the samples are produced by a def running **on the server**
-    /// rather than by messages the arrangement flattens. Such an element has no
+    /// rather than by messages the client flattens. Such an element has no
     /// index: its position *is* its internal state, so a transport can stop it
     /// but cannot locate within it. It becomes locatable by being rendered.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -876,7 +876,7 @@ impl Document {
 
     /// A document with nothing in it: one anonymous, empty aggregate.
     ///
-    /// What a session that is **only an arrangement** carries where its general
+    /// What a session that is **only a multitrack** carries where its general
     /// tree used to be. It is a document rather than an absence so that every
     /// reader of the field goes on working while the leg comes off.
     pub fn empty() -> Self {
@@ -894,7 +894,7 @@ impl Document {
     /// anonymous, empty aggregate with no content beside it.
     ///
     /// What a session consults before writing the field at all, so a session
-    /// that is only an arrangement writes no general tree and reads back
+    /// that is only a multitrack writes no general tree and reads back
     /// without one.
     pub fn is_empty(&self) -> bool {
         *self == Self::empty()

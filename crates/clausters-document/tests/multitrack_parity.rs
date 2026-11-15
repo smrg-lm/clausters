@@ -1,4 +1,4 @@
-//! The arrangement this crate defines is the one the Python client writes.
+//! The multitrack this crate defines is the one the Python client writes.
 //!
 //! The crate's own suite proves the shape round-trips against itself, which
 //! says nothing about whether anyone else agrees with it. This does: the vector
@@ -18,7 +18,7 @@ use clausters_document::timebase::{Beat, Second};
 const VECTOR: &str = include_str!("multitrack_vector.json");
 
 fn vector() -> Multitrack {
-    serde_json::from_str(VECTOR).expect("the Python client's arrangement must parse here")
+    serde_json::from_str(VECTOR).expect("the Python client's multitrack must parse here")
 }
 
 #[test]

@@ -178,7 +178,7 @@ pub unsafe extern "C" fn clausters_document_inverse(
     })
 }
 
-/// What makes two edits over the arrangement *the same thing done the same way*
+/// What makes two edits over the tree *the same thing done the same way*
 /// -- the key a history coalesces on, written to `out`; the byte count it needs,
 /// or `0` when the intent will not parse.
 ///

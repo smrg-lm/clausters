@@ -1,7 +1,7 @@
 """The editor: what orchestrates a picture, a vocabulary and a history.
 
 `Editor` edits **one structure** -- a buffer's samples, a break-point curve, a
-timeline of events -- and it imports nothing from the arrangement. What makes
+timeline of events -- and it imports nothing from the multitrack. What makes
 that possible is that it performs almost nothing itself: it opens a window
 through a `clausters.gui.editing.View`, turns a gesture into a payload through a
 `clausters.gui.editing.Domain`, answers the host through the
@@ -113,8 +113,8 @@ class Editor(WindowVerbs):
                  title: str = "Editor", extra=(),
                  width: int = 1000, height: int = 520, base_id: int = BASE_ID,
                  app=None, chrome: bool = True):
-        #: What is edited. A view over an arrangement calls it `element`, which is the
-        #: arrangement's word for the same slot.
+        #: What is edited. A view over a `clausters.form` element calls it
+        #: `element`, which is form's word for the same slot.
         self.structure = structure
         self.sample_rate = float(sample_rate)
         self.title = title

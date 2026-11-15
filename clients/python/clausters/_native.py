@@ -1300,7 +1300,7 @@ class Document:
 
     @staticmethod
     def coalesce_key(intent: dict) -> str:
-        """What makes two edits over the arrangement *the same thing done the
+        """What makes two edits over the tree *the same thing done the
         same way* -- the key a `History` coalesces on, or ``""`` when the intent
         will not parse. The method form of `document_coalesce_key`, and the one
         the web client spells `Document.coalesceKey`."""
@@ -1405,7 +1405,7 @@ def document_inverse(document: "Document", intent: dict) -> "dict | None":
 
 
 def document_coalesce_key(intent: dict) -> str:
-    """What makes two edits over the arrangement *the same thing done the same
+    """What makes two edits over the tree *the same thing done the same
     way* -- the key a `History` coalesces on, or ``""`` when the intent will not
     parse.
 
@@ -2111,7 +2111,7 @@ def domain_coalesce_key(domain: str, payload: dict) -> str:
     A free function rather than a method because a caller here holds no
     structure to ask: a curve, a span of samples and a timeline live in this
     process's own memory, and only their *vocabulary* is the crate's.
-    `document_coalesce_key` stays as it is -- the arrangement's own door -- and
+    `document_coalesce_key` stays as it is -- the tree's own door -- and
     this is the same rule for the domains that have no handle.
     """
     _lib = lib()
@@ -2199,7 +2199,7 @@ class History:
         """Take a structure into this history and get its identity.
 
         `domain` names the vocabulary its payloads are written in -- ``"tree"``
-        for the arrangement, ``"points"`` for a break-point curve -- and the
+        for the document's tree, ``"points"`` for a break-point curve -- and the
         history carries it so a caller routing what comes back knows which
         reader a leg belongs to. Nothing in the crate reads it.
 
@@ -2221,7 +2221,7 @@ class History:
         unless the document actually changed, so a refusal -- stale or otherwise
         -- leaves no entry, and neither does a resend.
 
-        The arrangement's door alone, because the document is the one state this
+        The tree's door alone, because the document is the one state this
         surface can reach; for anything else you apply the edit yourself and
         hand the pair to `record`.
 
@@ -2244,7 +2244,7 @@ class History:
 
         The door for everything `apply` cannot do: a destructive write, whose
         overwritten samples are not in the tree, and every domain that is not
-        the arrangement, whose state the crate cannot reach. This **applies
+        the tree, whose state the crate cannot reach. This **applies
         nothing** -- you have already made the edits; what is recorded is how to
         put them back.
 
@@ -2266,10 +2266,10 @@ class History:
                   owner re-runs rather than replays, which is what makes a redo
                   of a million-sample operation cost a few bytes;
                 - ``backward``: the inverse, a payload in that structure's own
-                  vocabulary -- for the arrangement, `document_inverse` read
+                  vocabulary -- for the tree, `document_inverse` read
                   before the edit landed;
                 - ``key`` (optional): what makes two edits *the same thing done
-                  the same way*, ``"place:7"`` for the arrangement
+                  the same way*, ``"place:7"`` for the tree
                   (`document_coalesce_key`), one verb and one key for a curve.
                   Absent never coalesces.
             label: what an undo menu calls this.
@@ -2452,10 +2452,10 @@ class Log:
     """The undo history of one document: a `History` with one structure in it.
 
     Undo belongs with the document and not with a view: a view's log sees only
-    the gestures *it* made, so a script editing the arrangement, a second editor
+    the gestures *it* made, so a script editing the document, a second editor
     or a re-render leaves it describing a document that has moved on -- and undo
     then writes a state nobody was ever in. This is that history read in the
-    arrangement's own terms, so there is one order however many surfaces edit.
+    document's own terms, so there is one order however many surfaces edit.
 
     It is a **face**, not a second pile: `history` is the one underneath, and a
     caller composing several editable structures registers them there rather
@@ -2542,8 +2542,8 @@ class Log:
                 node the same way -- a run of small adjustments becoming one
                 undo. You decide, because only you know where the hand stopped.
         """
-        # The key is the arrangement's own sentence, so it is asked of the
-        # arrangement rather than spelled again here: a second spelling is how
+        # The key is the tree's own sentence, so it is asked of the
+        # tree rather than spelled again here: a second spelling is how
         # a run coalesces through one door and not through another.
         edit = forward.get("edit") if isinstance(forward, dict) else None
         key = document_coalesce_key(edit) if edit is not None else ""

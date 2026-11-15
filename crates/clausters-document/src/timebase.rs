@@ -27,9 +27,9 @@
 //! against a number of beats and both are `f64`. A newtype makes that a
 //! compile error, and it is the cheapest thing in this milestone.
 //!
-//! Zrythm's 2026 arrangement overhaul reached the same shape from the same
-//! problem, minting `ContentTick`/`TimelineTick` beside its `Position`
-//! primitive. The names here are ours; the reason is theirs as well as ours.
+//! The field reaches the same shape from the same problem: a tick of the
+//! contents and a tick of the timeline, minted beside the position they
+//! both measure.
 //!
 //! # What they deliberately do not have
 //!

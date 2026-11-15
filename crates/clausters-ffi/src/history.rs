@@ -20,17 +20,17 @@
 //! order*. A structure the client built with no multitrack behind it is a
 //! history with one structure in it; an application composing several editable
 //! views registers them all in one; two views of one structure hold one handle
-//! between them, which is the arrangement the crate exists to make the only
+//! between them, which is the setup the crate exists to make the only
 //! expressible one. [`clausters_history_register`] mints the identity, and every
 //! call that names one takes it.
 //!
 //! # Applying and recording are one call; undoing is not
 //!
-//! [`clausters_history_apply`] is the arrangement's applying door, and the two
+//! [`clausters_history_apply`] is the tree's applying door, and the two
 //! being one call is deliberate rather than convenient: the inverse has to be
 //! read out of the document **before** the edit lands, so a surface that let a
 //! caller apply first and record second would let it record the wrong thing.
-//! It is the arrangement's alone because the document is the one state this
+//! It is the tree's alone because the document is the one state this
 //! surface can reach; a caller editing anything else applies the edit itself
 //! and hands the pair to [`clausters_history_record`].
 //!
@@ -117,7 +117,7 @@ pub unsafe extern "C" fn clausters_history_free(h: *mut FfiHistory) {
 /// the handle is null.
 ///
 /// `domain` names the vocabulary its payloads are written in -- `"tree"` for the
-/// arrangement, `"points"` for a break-point curve -- and the history carries it
+/// document's tree, `"points"` for a break-point curve -- and the history carries it
 /// so a caller routing what comes back knows which reader a leg's payload
 /// belongs to. Nothing in the crate reads it.
 ///
@@ -141,7 +141,7 @@ pub unsafe extern "C" fn clausters_history_register(
 }
 
 /// Apply an edit to `doc` and record it against `structure`, in one call -- the
-/// arrangement's only door for an ordinary entry.
+/// tree's only door for an ordinary entry.
 ///
 /// Arguments are [`crate::clausters_document_apply`]'s, plus the history
 /// handle, the structure the document is registered as, and a `label` (what an
@@ -265,7 +265,7 @@ fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
 
 /// Record one entry -- the door for everything [`clausters_history_apply`]
 /// cannot do: a destructive write, whose overwritten samples are not in the
-/// tree, and every domain that is not the arrangement, whose state this surface
+/// tree, and every domain that is not the tree, whose state this surface
 /// cannot reach.
 ///
 /// `request` is the whole entry as JSON:
@@ -288,7 +288,7 @@ fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
 /// A leg's `forward` is a step (`{"edit": <payload>}` or
 /// `{"recompute": <params>}`), its `backward` a payload in that structure's own
 /// vocabulary, and its `key` what makes two edits *the same thing done the same
-/// way* -- the arrangement spells it `"place:7"`
+/// way* -- the tree spells it `"place:7"`
 /// ([`clausters_document_coalesce_key`](crate::clausters_document_coalesce_key)),
 /// a curve has one verb and one key -- with an absent or empty key never
 /// coalescing. `coalesce` merges this entry into the one before it when every
@@ -299,7 +299,7 @@ fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
 /// Returns 0 on success, -1 when the request will not parse, holds no leg, or
 /// names a structure this history did not mint. **This applies nothing** -- the
 /// caller has already made the edits; what is recorded is how to put them back.
-/// The inverse of an arrangement leg comes from
+/// The inverse of a tree leg comes from
 /// [`clausters_document_inverse`](crate::clausters_document_inverse), read
 /// before the edit lands.
 ///
@@ -664,7 +664,7 @@ pub unsafe extern "C" fn clausters_history_clear(h: *mut FfiHistory) {
 /// surface holds no structure to ask: a curve, a span of samples and a timeline
 /// live in the caller's own memory, and only their *vocabulary* is the crate's.
 /// [`clausters_document_coalesce_key`](crate::clausters_document_coalesce_key)
-/// stays as it is -- the arrangement's own door, on the surface its sentence
+/// stays as it is -- the tree's own door, on the surface its sentence
 /// belongs to -- and this is the same rule for the domains that have no handle
 /// here.
 ///
@@ -715,7 +715,7 @@ pub unsafe extern "C" fn clausters_domain_coalesce_key(
 /// timeline's events -- and the answer is
 /// `{"state": ..., "applied": bool, "reason"?: ..., "current"?: ...}`. Nothing for a
 /// vocabulary whose state is not a value a caller can hand over: the
-/// arrangement's tree (which needs a version to check against and a grid to
+/// document's tree (which needs a version to check against and a grid to
 /// snap to, and has [`clausters_document_apply`](crate::clausters_document_apply)
 /// of its own) and a span of samples (a borrowed view whose frames are in a
 /// buffer, never in a string).

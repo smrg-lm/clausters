@@ -30,9 +30,9 @@
 //!
 //! `Region` is this model's word and **clip** is the picture's. A clip, a track
 //! row, a waveform are what a host draws; a region is what an intent names.
-//! Zrythm made this same turn and merged the two, renaming `Region` to `Clip`;
-//! they are kept apart here, because the multitrack's defects came precisely
-//! from the thing drawn and the thing addressed being one object.
+//! A model can merge the two and call both a clip; they are kept apart here,
+//! because the multitrack's defects came precisely from the thing drawn and
+//! the thing addressed being one object.
 //!
 //! # Identity, and what an id identifies
 //!
@@ -259,7 +259,7 @@ pub enum Content {
     /// Among them, by decision, what the multitrack once held and does not:
     /// a `composite` (the general tree placed as one region) and a window
     /// onto a node of the general document. Both were `clausters.form`'s
-    /// arrangement inside this one, and a multitrack has no nodes -- its
+    /// structure inside this one, and a multitrack has no nodes -- its
     /// regions are sources placed in seconds. A file that wrote either still
     /// reads, and the region is carried as it was written, drawn as a named
     /// box and played by nothing.

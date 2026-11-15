@@ -13,7 +13,7 @@ by kind:
   through `clausters.defs.asdef.as_def`) -> instanced offline for ``dur``
   seconds -- the audible sibling of ``plot(def)``;
 - a **`FormElement`** -> with a ``destination``, delegates to
-  `clausters.form.render` (the arrangement's own seam: RT or NRT by the
+  `clausters.form.render` (`clausters.form`'s own seam: RT or NRT by the
   destination); without one, an **offline bounce** -- an ephemeral NRT session
   plays it and renders the score;
 - a `clausters.seq.timeline.Timeline` -> the same dual: played on
@@ -62,7 +62,7 @@ from clausters.defs import sine
 stats = render(sine(440.0) * 0.2, dur=2.0)
 render(pbind(degree=pseq([0, 2, 4]), dur=0.5), path="phrase.wav")
 render(pseq([1, 2, 3], 2))                          # [1, 2, 3, 1, 2, 3]
-render(multitrack, until=64.0, path="take.wav")    # an arrangement, bounced
+render(element, until=64.0, path="take.wav")       # a form element, bounced
 ```
 """
 

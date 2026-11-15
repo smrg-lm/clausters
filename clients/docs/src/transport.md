@@ -1,6 +1,6 @@
 # A DAW-style transport
 
-A DAW has a *transport*: a shared timeline with a tempo and a bar grid. Everything you arm starts aligned to bars, and moving the tempo moves the whole arrangement with it. Clausters offers that same idea, but across **independent clients**: a server hosts one shared beat grid, several clients join it, and a routine on each starts on the same bar. This page is the practical guide to that workflow — being the conductor, joining as a follower, starting together on a bar, and following a tempo change live — and then to the transport that **governs** sound: freezing it, event lanes, and several transports on one server.
+A DAW has a *transport*: a shared timeline with a tempo and a bar grid. Everything you arm starts aligned to bars, and moving the tempo moves everything placed on it. Clausters offers that same idea, but across **independent clients**: a server hosts one shared beat grid, several clients join it, and a routine on each starts on the same bar. This page is the practical guide to that workflow — being the conductor, joining as a follower, starting together on a bar, and following a tempo change live — and then to the transport that **governs** sound: freezing it, event lanes, and several transports on one server.
 
 It builds on two other pages. [Timing models](timing-models.md) explains *why* the alignment is beat-accurate or sample-exact (the time reference a clock paces against); this page is the *how* of the transport itself. [Receiving OSC and MIDI](responders.md) is the input layer the live-change section uses.
 
@@ -210,7 +210,7 @@ The analogy to a DAW transport is the **bar grid and tempo plus a play/stop/posi
 - **Tempo and origin only — no meter object.** A "bar" is whatever beat multiple you pass as `quant`; there is no separate time-signature the server stores. Pick a `quant` that matches your meter (4 for 4/4, 3 for 3/4).
 - **No server-side recording or sequencing.** The timeline lives in the client; the server holds only the position, the rolling state and the grid, not the notes.
 
-These are the honest edges of a small, composable feature: shared bars, a shared tempo, and a shared play/stop/position that several clients phase-align on, with each client owning its own playhead and arrangement.
+These are the honest edges of a small, composable feature: shared bars, a shared tempo, and a shared play/stop/position that several clients phase-align on, with each client owning its own playhead and what it plays.
 
 ## Cheat-sheet
 

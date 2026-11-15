@@ -1,6 +1,6 @@
 //! A history, and the data it belongs to -- **the pile, with no document in it**.
 //!
-//! [`log`](crate::log) placed the arrangement's undo beside the multitrack,
+//! [`log`](crate::log) placed the tree's undo beside the tree,
 //! and gave the reason: a history that sees only one editor's gestures
 //! describes data that has moved on. This module is that argument made
 //! structural and made general. Nothing here knows what an edit *is*: a
@@ -66,7 +66,7 @@
 //!
 //! It never applies anything. [`History::undo`] hands back the inverses and
 //! [`History::redo`] the steps, and the caller applies them through whatever
-//! door its domain has -- which for the arrangement is
+//! door its domain has -- which for the tree is
 //! [`intent::apply`](crate::intent::apply), the one door. Two things that edit
 //! is exactly what this crate exists to prevent, and a history that edited
 //! would be the second.
@@ -80,7 +80,7 @@ use crate::{Opaque, SourceId};
 
 /// A structure's identity within one history.
 ///
-/// **Minted by the history**, not carried by the data: the arrangement has node
+/// **Minted by the history**, not carried by the data: the tree has node
 /// ids only because whoever wrote the document stamped them, and a curve or a buffer a caller
 /// built has none and is not going to be given a stable one for this. So the
 /// caller registers what it is about to edit and keeps the handle -- which is
@@ -254,7 +254,7 @@ impl Applied {
 /// resulting value, so the edit stating the *previous* value is its inverse and
 /// the owner already knows it.
 ///
-/// What is deliberately *not* here is anything the arrangement needs and a
+/// What is deliberately *not* here is anything the tree needs and a
 /// curve does not: a version to check against, a grid to snap to. Those are the
 /// implementor's own state, carried by whatever it is that implements this
 /// (`log::Tree` carries both, for one call), so the trait stays the size of the
@@ -386,7 +386,7 @@ impl Entry {
     /// the test a merge is decided by.
     ///
     /// The history cannot compute this: "the same thing" is a statement in the
-    /// domain's vocabulary (for the arrangement it is the kind of edit and the
+    /// domain's vocabulary (for the tree it is the kind of edit and the
     /// node it names), and reading it here would be the pile knowing a
     /// vocabulary. A leg with no key never coalesces, which is what a
     /// [`Step::Recompute`] wants: its payload is parameters the crate cannot
@@ -665,7 +665,7 @@ impl History {
     /// Takes a structure into this history and hands back its identity.
     ///
     /// `domain` names the vocabulary its payloads are written in -- `"tree"` for
-    /// the arrangement -- and the history carries it so a caller routing what
+    /// the tree -- and the history carries it so a caller routing what
     /// comes back knows which reader an entry's payload belongs to. Nothing
     /// here reads it.
     pub fn register(&mut self, domain: impl Into<String>) -> StructureId {

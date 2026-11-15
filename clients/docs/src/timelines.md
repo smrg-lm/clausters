@@ -2,7 +2,7 @@
 
 The sequencing you have seen so far is **generative**: a `Routine` is a {{alt Python generator || generator function}}, a `pbind` an event pattern, and a `TempoClock` resumes them forward in time. That way of working is open-ended and expressive, but it has one thing it fundamentally cannot do — **seek**. A generator's musical state lives in its local variables, so you cannot jump it to beat 100 without running through 0–100, and you cannot ask "what plays at bar 33?" without getting there.
 
-A `Timeline` is the complement: **a plan in logical time** — an editable list of timed items, kept sorted by beat, with random access by time, **its own tempo map**, and the verbs that play it: play, pause, stop, locate (seek), loop. This is how a DAW works: the arrangement is random-access for editing and seeking, and playback reads it forward from a position.
+A `Timeline` is the complement: **a plan in logical time** — an editable list of timed items, kept sorted by beat, with random access by time, **its own tempo map**, and the verbs that play it: play, pause, stop, locate (seek), loop. This is how a DAW works: the timeline is random-access for editing and seeking, and playback reads it forward from a position.
 
 This page is the static counterpart to [Routines and clocks](routines-and-clocks.md); the two ways of sequencing coexist, and an event pattern is a timeline item like any other.
 

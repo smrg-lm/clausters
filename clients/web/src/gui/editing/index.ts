@@ -11,7 +11,7 @@
  *   **session on screen** rather than of one structure, so several editors can
  *   share one -- and an editor handed none is an application of one.
  * - {@link Editor} -- the generic one. It edits **one structure** and imports
- *   nothing from the arrangement: it opens a window through its {@link View},
+ *   nothing from the multitrack: it opens a window through its {@link View},
  *   turns a gesture into a payload through its {@link Domain}, answers the host
  *   through its {@link Echo}, and records in the `Editing` context the data
  *   owns.
