@@ -101,7 +101,7 @@ def test_camel_keeps_what_has_no_underscore():
 
 
 def test_every_shared_chapter_reads_in_both_books():
-    for path in sorted((REPO / "clients" / "docs" / "src").glob("*.md")):
+    for path in sorted((REPO / "clients" / "docs" / "src").rglob("*.md")):
         text = path.read_text(encoding="utf-8")
         for name in shared_book.BOOKS:
             reader = shared_book.Book(name)
