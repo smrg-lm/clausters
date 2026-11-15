@@ -47,7 +47,8 @@ from ._native import peaks_cache_empty, peaks_cache_write_buckets
 from .base.bulk import blob_to_samples
 
 __all__ = ["RECORDING_PERIOD_MS", "STREAM_PERIOD_MS", "BusStream",
-           "RecordingStream", "TakeShape", "TapStream", "TapWindow"]
+           "RecordingStream", "TakeShape", "TapStream", "TapWindow",
+           "channel_stats", "correlation", "lissajous", "loudness", "true_peak"]
 
 #: The subscription period a live view runs at, in milliseconds: ~30 fps,
 #: the GUI host's own.
@@ -573,3 +574,25 @@ class RecordingStream(_Subscription):
             entry["written"] = start_frame + buckets * bucket
             self.reports += 1
         self._fire(bufnum, self)
+
+
+# ---- measuring what was read ----
+#
+# The measurements a window of samples is read for, each computed once by the
+# shared core: the same names and the same shapes as the web client's
+# `clausters/data`.
+
+from ._native import correlation, lissajous, true_peak  # noqa: E402
+from .ipc import loudness  # noqa: E402
+
+
+def channel_stats(samples, channels: int, channel: int) -> list:
+    """``[peak, rms]`` of one channel of an interleaved buffer, measured by
+    the shared core so the numbers match the server's. (`clausters.ipc`'s
+    `channel_stats` answers every channel at once.)"""
+    from .ipc import channel_stats as every_channel
+
+    if not 0 <= channel < channels:
+        raise ValueError(f"channel {channel} of {channels}")
+    peaks, rms = every_channel(samples, channels)
+    return [peaks[channel], rms[channel]]
