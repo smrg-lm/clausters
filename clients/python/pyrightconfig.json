@@ -6,7 +6,8 @@
         "../../crates/clausters-server/examples"
     ],
     "extraPaths": [
-        "../../crates/clausters-server/examples"
+        "../../crates/clausters-server/examples",
+        "../docs"
     ],
     "pythonVersion": "3.11",
     "typeCheckingMode": "off",
