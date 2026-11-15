@@ -1,5 +1,5 @@
 // The two directions between the client's sequencing data and a score (mirrors
-// `clausters/gui/notation/mei.py`).
+// `clausters/notation/mei.py`).
 //
 // The third way into the engraver, beside typed score text and the SVG adapter:
 // turn the client's own `seq` data (an `Event` run, a `Timeline`, an
@@ -15,9 +15,9 @@
 // there, once, for every client. What this module adds is the client's own
 // types on either side.
 
-import { Event } from "../../seq/event.ts";
-import { Timeline } from "../../seq/timeline.ts";
-import { EventSequence } from "../../seq/sequence.ts";
+import { Event } from "../seq/event.ts";
+import { Timeline } from "../seq/timeline.ts";
+import { EventSequence } from "../seq/sequence.ts";
 import type { Interpretation, Sheet, Transcription } from "./sheet.ts";
 import { readEvents, renderEvents, toMei } from "./sheet.ts";
 import type { RenderedSequence } from "./sheet.ts";

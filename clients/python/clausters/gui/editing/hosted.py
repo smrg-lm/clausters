@@ -10,7 +10,7 @@ each member is one call to the application
 each time rather than kept here.
 
 **The script's structure is the window's while one is open.** An
-`clausters.seq.EventSequence` or a `clausters.gui.notation.Score` keeps its
+`clausters.seq.EventSequence` or a `clausters.notation.Score` keeps its
 identity and reads and writes what the window holds: a change is an edit of the
 window's, undone by its Ctrl+Z. When the last window over it goes, it holds what
 that window left it as.

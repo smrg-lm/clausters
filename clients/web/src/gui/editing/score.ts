@@ -19,8 +19,8 @@
  */
 
 import { writeFileAt } from "../../base/files.ts";
-import { Score, TRANSCRIPTION_KEYS } from "../notation/index.ts";
-import type { Interpretation, Transcription } from "../notation/index.ts";
+import { Score, TRANSCRIPTION_KEYS } from "../../notation/index.ts";
+import type { Interpretation, Transcription } from "../../notation/index.ts";
 import { EventSequence } from "../../seq/sequence.ts";
 import { Held, HostedEditor, HostedTransport } from "./hosted.ts";
 import type { HostedEditorOptions } from "./hosted.ts";

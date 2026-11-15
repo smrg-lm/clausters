@@ -59,7 +59,7 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
       call for call: the timeline built in code, `sheetFromTimeline`, the
       display list, the minimal transport over it, the *interpreted sheet*
       played as a timeline, and the by-hand cursor anchor (a `/clock_query` plus the server's
-      latency) that the script uses rather than `notation.playheadSync`.
+      latency) that the script uses rather than `PlayheadSync.forScore`.
 
       The platform's differences are the usual two -- the host is the wasm one
       in this tab and draws into an element, and nothing is pumped -- plus the
@@ -70,8 +70,8 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
       /examples/notation/score-from-data.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Event, Session, TempoMap, gui, loadCore, seq } from "../../dist/index.js";
-      const { notation } = gui;
+      import { Event, Session, TempoMap, loadCore, notation, seq } from "../../dist/index.js";
+      import { button, panel, scoreView, view } from "../../dist/gui/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -130,15 +130,15 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
       }
 
       /** A minimal transport over the engraved page. Every widget is *named*. */
-      const scene = (displayList, sampleRate) => gui.view(
+      const scene = (displayList, sampleRate) => view(
         {
           layout: "col", title: "Engraved from a Timeline (data -> score)",
           w: 920, h: 420,
         },
-        gui.panel({ layout: "row", h: 34.0 },
-          gui.button({ name: "play", label: "play" }),
-          gui.button({ name: "stop", label: "stop" })),
-        notation.scoreView(displayList, { name: "score", width: 880.0, sampleRate }),
+        panel({ layout: "row", h: 34.0 },
+          button({ name: "play", label: "play" }),
+          button({ name: "stop", label: "stop" })),
+        scoreView(displayList, { name: "score", width: 880.0, sampleRate }),
       );
 
       async function run() {

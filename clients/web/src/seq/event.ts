@@ -33,8 +33,8 @@ import type { MsgArg, OscArg, TimedMessage } from "../base/osc.ts";
 
 /**
  * The keys that say what the note is on a **page** rather than what it
- * does in the air, read by `gui.notation.sheetFromNotes` and written back by
- * `gui.notation.toTimeline`. Every one is a musical fact --
+ * does in the air, read by `notation.sheetFromNotes` and written back by
+ * `notation.toTimeline`. Every one is a musical fact --
  * `articulations: ["stacc"]`, not an instruction to shorten a drawn value --
  * which is what lets the same key be read in both directions.
  *
@@ -160,7 +160,7 @@ export interface EventDestination {
  *
  * An event may also carry what the note is **on a page**
  * ({@link NOTATION_KEYS}): `pitches` (the written pitches, as
- * `gui.notation.pitch` makes them), `value` (the written value, `[numerator,
+ * `notation.pitch` makes them), `value` (the written value, `[numerator,
  * denominator]` of a whole note), `staff` and `voice` (where it is written),
  * and `articulations`, `dynamic`, `ornament`, `grace`, `stem`, `tie`,
  * `spelling` and `accidental`. They are reserved, so none of them reaches the
@@ -168,7 +168,7 @@ export interface EventDestination {
  * sounds -- an articulation is honoured when a *score* is read, not when an
  * event is played. The one is `pitches`: an event that states no `freq`,
  * `midinote` or `degree` sounds the first pitch it is written with. What reads
- * them is `gui.notation.sheetFromNotes`.
+ * them is `notation.sheetFromNotes`.
  */
 export class Event {
     readonly props: EventProps;

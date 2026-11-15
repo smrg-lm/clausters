@@ -6,7 +6,7 @@ application's and tested in its crate (``crates/clausters-apps/src/score``).
 
 import pytest
 
-from clausters.gui import notation
+from clausters import notation
 from clausters.gui.editing import ScoreEditor, edit
 from conftest import opened
 

@@ -194,9 +194,9 @@ process, no socket.</div>
       /examples/notation/score-editor.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui, loadCore, opfs } from "../../dist/index.js";
+      import { Session, loadCore, notation, opfs } from "../../dist/index.js";
+      import { edit } from "../../dist/gui/index.js";
 
-      const { notation } = gui;
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
 
@@ -224,7 +224,7 @@ B c d e | f2 e d | c B A B | G4 |
       // plays, and this opens it in the notes editor -- where what is done to
       // it stays in that sequence.
       const roll = () =>
-        gui.edit(score.renderEvents(), { title: "The score, rendered", stage: el("roll") });
+        edit(score.renderEvents(), { title: "The score, rendered", stage: el("roll") });
 
       // The page alone, and the notes back in the page's code. The chrome is
       // how a hand reaches what the editor does when nothing else can: a
@@ -245,7 +245,7 @@ B c d e | f2 e d | c B A B | G4 |
       // one's widgets.
       const alone = async () => {
         await editor.close();
-        const page = await gui.edit(score, {
+        const page = await edit(score, {
           chrome: false, title: "The page alone", width: 900, height: 600,
           stage: el("alone"),
         });
@@ -307,7 +307,7 @@ B c d e | f2 e d | c B A B | G4 |
         const session = (await Session.embed()).activate();
         await session.gui();   // the host the editor opens on
 
-        editor = await gui.edit(score, {
+        editor = await edit(score, {
           title: "Score editor (a document, and its model)",
           width: 1100, height: 800, stage: el("stage"),
         });

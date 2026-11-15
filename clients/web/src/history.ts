@@ -43,7 +43,7 @@
 
 import { EditingCore } from "./core/clausters_core_web.js";
 import type { EventSequence } from "./seq/sequence.ts";
-import type { Score } from "./gui/notation/engraver.ts";
+import type { Score } from "./notation/engraver.ts";
 
 /**
  * **What a history asks of a structure a page changes** -- a sequence, a

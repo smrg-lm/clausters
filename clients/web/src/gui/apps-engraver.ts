@@ -15,7 +15,7 @@
  * @module
  */
 
-import { Toolkit, setEngraverUrl } from "./notation/_verovio.ts";
+import { Toolkit, setEngraverUrl } from "../notation/_verovio.ts";
 
 /** The request's fields, by their offsets in it. */
 const field = { state: 0, call: 4, callLen: 8, out: 12, outCap: 16, outLen: 20 } as const;

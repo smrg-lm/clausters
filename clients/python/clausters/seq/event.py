@@ -19,8 +19,8 @@ from .. import _native
 from ..defs.node import Node
 
 #: The keys that say what the note is on a **page** rather than what it
-#: does in the air, read by `clausters.gui.notation.sheet_from_notes` and
-#: written back by `clausters.gui.notation.to_timeline`. Every one is a musical
+#: does in the air, read by `clausters.notation.sheet_from_notes` and
+#: written back by `clausters.notation.to_timeline`. Every one is a musical
 #: fact -- ``articulations=["stacc"]``, not an instruction to shorten a drawn
 #: value -- which is what lets the same key be read in both directions.
 #:
@@ -117,7 +117,7 @@ class Event(dict):
     ``channel`` it names.
 
     An event may also carry what the note is **on a page** (`NOTATION_KEYS`):
-    ``pitches`` (the written pitches, as `clausters.gui.notation.pitch` makes
+    ``pitches`` (the written pitches, as `clausters.notation.pitch` makes
     them), ``value`` (the written value, ``(numerator, denominator)`` of a
     whole note), ``staff`` and ``voice`` (where it is written), and
     ``articulations``, ``dynamic``, ``ornament``, ``grace``, ``stem``, ``tie``,
@@ -126,7 +126,7 @@ class Event(dict):
     sounds -- an articulation is honoured when a *score* is read, not when an
     event is played. The one is ``pitches``: an event that states no ``freq``,
     ``midinote`` or ``degree`` sounds the first pitch it is written with. What
-    reads them is `clausters.gui.notation.sheet_from_notes`.
+    reads them is `clausters.notation.sheet_from_notes`.
     """
 
     def __init__(self, *args, **kwargs):

@@ -80,7 +80,7 @@ class Editing:
         self._structures: dict = {}
         #: ``member -> (structure, handler)`` -- what carries a step out for each
         #: member. An editor hands its `clausters.gui.editing.Domain`, and a
-        #: `clausters.gui.notation.Score` hands itself. It is kept **here**
+        #: `clausters.notation.Score` hands itself. It is kept **here**
         #: rather than on a window, because the order is the context's: a step
         #: must reach a structure whether or not a window over it is open.
         self._handlers: dict = {}
@@ -160,7 +160,7 @@ class Editing:
 
     def open_score(self, key: str, score, request: dict, handler) -> tuple:
         """**Open a score editor over ``score``** -- a
-        `clausters.gui.notation.Score`, which the editor then edits in place --
+        `clausters.notation.Score`, which the editor then edits in place --
         as the structure ``key`` names, and answer its ``(member, identity)``.
         The score is claimed: an edit a script makes through it is a turn of
         this context.
@@ -179,7 +179,7 @@ class Editing:
 
     def open_score_over(self, key: str, score, sequence, request: dict, handler) -> tuple:
         """**Open a score editor over ``sequence``**, on the page it is read
-        into -- ``score`` is the `clausters.gui.notation.Score` the page is
+        into -- ``score`` is the `clausters.notation.Score` the page is
         drawn from, loaded by the crate with the sequence read -- as the
         structure ``key`` names, which is the sequence's: the editor's
         entries are the sequence's, one order with every roll over it. Answers

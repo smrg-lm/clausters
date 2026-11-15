@@ -1,4 +1,4 @@
-// The engraver and its output (mirrors `clausters/gui/notation/engraver.py`).
+// The engraver and its output (mirrors `clausters/notation/engraver.py`).
 //
 // A score is laid out into SVG by verovio and that SVG is walked into the flat,
 // resolution-independent display list the host's `score` widget consumes. Both
@@ -16,18 +16,17 @@ import {
     Score as CoreScore,
     engraveOptions,
     svgToDisplayList as coreSvgToDisplayList,
-} from "../../core/clausters_core_web.js";
+} from "../core/clausters_core_web.js";
 import { Toolkit } from "./_verovio.ts";
-import { readFileAt, writeFileAt } from "../../base/files.ts";
-import { SCORE_PAGE } from "../guidef.ts";
-import { Editing } from "../../history.ts";
+import { readFileAt, writeFileAt } from "../base/files.ts";
+import { Editing } from "../history.ts";
 import { fromNotes, sheetFromEvents, toSequence } from "./mei.ts";
 import type { Placed, PlaybackOptions, ReadOptions } from "./mei.ts";
 import { TRANSCRIPTION_KEYS, toMei } from "./sheet.ts";
-import type { EventSequence } from "../../seq/sequence.ts";
+import type { EventSequence } from "../seq/sequence.ts";
 import type { Op, Sheet } from "./sheet.ts";
-import type { Event } from "../../seq/event.ts";
-import type { Timeline } from "../../seq/timeline.ts";
+import type { Event } from "../seq/event.ts";
+import type { Timeline } from "../seq/timeline.ts";
 
 
 /** One engraved page: what is drawn, where the cursor goes, and what sounds. */
@@ -265,7 +264,7 @@ export class Score {
      * Every sounding note is an event that still says what it is on the page
      * (`seq.NOTATION_KEYS`), each voice renders on a channel of its own, a
      * staff's dynamics are curves of its channels, and what is no note's is
-     * the sequence's `notation` section (`gui.notation.renderEvents`).
+     * the sequence's `notation` section (`notation.renderEvents`).
      * `instruments` binds a staff to what plays it, `interp` is the reading
      * and `event` is merged into every event.
      */
@@ -371,7 +370,7 @@ export class Score {
      * Another window in this context edited. Nothing here: a score is data and
      * draws nothing of its own -- whoever engraved the page redraws it.
      *
-     * It takes no argument, the way no {@link Editor} reads one either.
+     * It takes no argument, the way no editor reads one either.
      */
     adopt(): void {}
 
@@ -547,25 +546,6 @@ export async function engrave(
     } finally {
         score.free();
     }
-}
-
-/**
- * The **drawing** layers of a display list, as the object a live
- * `host.set(scoreId, { displayList })` takes -- how a re-engraved page replaces
- * the one on screen after an edit, without redefining the window.
- *
- * The same layers the `score` builder sends when it builds the widget, so the
- * widget looks the same either way: the client-side `notes` stay here, and so
- * does the host's own chrome (the playhead and the selection survive the
- * replacement, which is what keeps the edited note selected across the round
- * trip).
- */
-export function pageJson(displayList: Page): Record<string, unknown> {
-    const out: Record<string, unknown> = {};
-    for (const key of SCORE_PAGE) {
-        if (key in displayList) out[key] = displayList[key];
-    }
-    return out;
 }
 
 /**

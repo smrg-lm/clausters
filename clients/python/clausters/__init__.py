@@ -56,6 +56,8 @@ The layers:
   itself; this is them opened to the script.
 - `clausters.form` -- a **frozen** algebra of elements
   over the sequencing/def layers, for composing at any granularity.
+- `clausters.notation` -- the symbolic score: notation as MEI, read, edited,
+  written and engraved with no window.
 - `clausters.segments` -- a **window onto contents** and a run of windows read
   as one: what a join assembles and a split takes apart, over samples
   (`BufferSegments`) or over a timeline of events (`NoteSegments`). A window is
@@ -86,7 +88,7 @@ The layers:
 from . import _native as _native  # the binding, loaded with the package
 from . import log as log        # noqa: F401 -- arms CLAUSTERS_LOG on import
 from . import (base, data, defs, document, errors, form, gui, ipc, launch,
-               segments, seq)
+               notation, segments, seq)
 from .base import builtins
 from .errors import ClaustersError
 from .base.clock import TempoClock
@@ -150,6 +152,7 @@ __all__ = [
     "gui",
     "ipc",
     "launch",
+    "notation",
     "segments",
     "seq",
     # the hosts

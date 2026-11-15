@@ -336,3 +336,4 @@ quoted title lands here, on the link to the entry.
 - [The two client books are one text (2026-11-15)](decisions/project.md#the-two-client-books-are-one-text-2026-11-15)
 - [An example's two blocks import the same names from the same modules (2026-11-15)](decisions/project.md#an-examples-two-blocks-import-the-same-names-from-the-same-modules-2026-11-15)
 - [The document's structures are one module, named for the document (2026-11-15)](decisions/project.md#the-documents-structures-are-one-module-named-for-the-document-2026-11-15)
+- [The symbolic score is `clausters.notation`'s, and the GUI keeps its views (2026-11-15)](decisions/project.md#the-symbolic-score-is-clausters-notations-and-the-gui-keeps-its-views-2026-11-15)

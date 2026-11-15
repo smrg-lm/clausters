@@ -1,7 +1,7 @@
 //! **The display-list decode**: the client's engraved page, read off the wire.
 //!
 //! The host owns no notation. What arrives is a *drawing* the client engraved
-//! (verovio, in `clausters.gui.notation`) plus the two indexes that make it
+//! (verovio, in `clausters.notation`) plus the two indexes that make it
 //! interactive -- the `xml:id` on each primitive, and the timemap of cursors --
 //! and this module turns that JSON into the typed page the rest of the module
 //! draws, hits and sweeps.

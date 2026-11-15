@@ -1,5 +1,5 @@
 // The engraver module, and the six calls the score model drives it through
-// (the counterpart of `clausters/gui/notation/_abi.py`).
+// (the counterpart of `clausters/notation/_abi.py`).
 //
 // Python's `_abi` is the plumbing both of its native callers share: a
 // size-then-fill call and a UTF-8 view. A page's plumbing is different in shape

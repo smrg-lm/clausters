@@ -1,6 +1,6 @@
 """Editing a symbolic score on its engraved page: the score editor.
 
-What it opens is a `clausters.gui.notation.Score` -- notation held as MEI, its
+What it opens is a `clausters.notation.Score` -- notation held as MEI, its
 model a sheet. **The score editor is an application of the GUI host's**, as the
 audio editor and the multitrack are: the window, what each gesture does to the
 score, the verbs over what is selected, the entry each one leaves, the engraver
@@ -48,7 +48,7 @@ class ScoreEditor(SequenceHandler):
     one entry of the history, so Ctrl+Z over the window walks them back.
 
     Args:
-        score: the `clausters.gui.notation.Score` to edit. It is the edited
+        score: the `clausters.notation.Score` to edit. It is the edited
             one: read it after any gesture. Left out, the window opens with no
             document, its File menu making or opening one (`new_file`, `open_file`).
         title: the window's title.
@@ -140,7 +140,7 @@ class ScoreEditor(SequenceHandler):
     @classmethod
     def over(cls, sequence, *, interp: "dict | None" = None, **options) -> "ScoreEditor":
         """**The score editor over a sequence**, on the page it is read into
-        (`clausters.gui.notation.Score.from_events`): what
+        (`clausters.notation.Score.from_events`): what
         ``edit(sequence, view="score")`` opens.
 
         The sequence is the structure and the page a reading of it. Opening
@@ -157,7 +157,7 @@ class ScoreEditor(SequenceHandler):
         ``dynamics``) say how the sequence is read where its events do not,
         and ``interp`` is the reading; the rest are the editor's own. The
         editor's `structure` is the sequence, and `score` the page."""
-        from ..notation import TRANSCRIPTION_KEYS, Score
+        from ...notation import TRANSCRIPTION_KEYS, Score
 
         how = {key: options.pop(key) for key in TRANSCRIPTION_KEYS if key in options}
         how = {key: value for key, value in how.items() if value is not None}
@@ -669,7 +669,7 @@ class ScoreEditor(SequenceHandler):
         clip, anything else a MIDI file. The File menu's two Exports, as a
         method.
 
-        It is the sequence `clausters.gui.notation.Score.render_events`
+        It is the sequence `clausters.notation.Score.render_events`
         answers, at the score's own tempo, written as a sequence writes either
         (`clausters.seq.EventSequence.to_smf`, ``to_clip``): its notes, a
         channel to a voice, the dynamics as each channel's expression."""
@@ -687,7 +687,7 @@ class ScoreEditor(SequenceHandler):
         return target
 
     def operate(self, op: dict) -> bool:
-        """A model operation, whole (`clausters.gui.notation.sheet`'s
+        """A model operation, whole (`clausters.notation.sheet`'s
         vocabulary) -- for what has no verb here -- as one entry of the
         history. (``apply`` is every editor's door for the host's messages.)"""
         return self._act({"action": "op", "op": op})
@@ -713,7 +713,7 @@ class ScoreEditor(SequenceHandler):
 
 def is_score(structure) -> bool:
     """Whether `edit` opens this in the score editor: a symbolic score."""
-    from ..notation.engraver import Score
+    from ...notation.engraver import Score
 
     return isinstance(structure, Score)
 

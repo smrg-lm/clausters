@@ -459,7 +459,7 @@ class OscScore:
     (`[i32 len][packet]...`) that the offline renderer consumes.
 
     An **OSC score**: timed messages for a render, not a symbolic score (the
-    notation `Score` of `clausters.gui.notation`), which shares the word and
+    notation `Score` of `clausters.notation`), which shares the word and
     nothing else."""
 
     def __init__(self):

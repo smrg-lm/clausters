@@ -241,6 +241,12 @@ export * as segments from "./segments.ts";
  * shared crate rather than by any client. See `./document.ts`.
  */
 export * as document from "./document.ts";
+
+/**
+ * The symbolic score: notation as data, edited and engraved with no window.
+ * See `./notation/index.ts`.
+ */
+export * as notation from "./notation/index.ts";
 export type {
     Against,
     Applied,

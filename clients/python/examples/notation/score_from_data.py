@@ -4,20 +4,20 @@
 The companion to ``score_editor.py``, which opens a typed document in the
 score editor. Here the score is not typed at all -- it is generated from the client's own data. A `Timeline`
 of `Event`s (a chord progression under a melody) is turned into a score by
-`clausters.gui.notation.sheet_from_timeline`, engraved into the `score` display list,
+`clausters.notation.sheet_from_timeline`, engraved into the `score` display list,
 and shown in the window: the melody in one voice, the chords held under it in
 a second, rests where the data leaves gaps.
 
 This is the inverse of the usual notation flow -- the events *are* the source
 and the score is the view of them (data -> score). What is then **played** is
 not the source timeline but the **score**, read back by
-`clausters.gui.notation.to_timeline`: the round trip closes here, and it is a
+`clausters.notation.to_timeline`: the round trip closes here, and it is a
 round trip rather than a copy, because the notation carries what the events had
 no way to say and the events carried what the page has no way to hold. Going
 out, the exact onsets snap to written values; coming back, a written value
 becomes an exact duration and a symbol becomes a decision -- which is the
 interpreter's, and is data a caller can replace
-(`clausters.gui.notation.interpretation`). The music you hear is the music you
+(`clausters.notation.interpretation`). The music you hear is the music you
 see, cursor locked to it.
 
 **The events say more than pitch and length.** Each one here also carries what
@@ -58,7 +58,8 @@ it as a plain script.
 import sys
 
 from clausters import Event, Session, TempoMap
-from clausters.gui import button, notation, panel, view
+from clausters import notation
+from clausters.gui import button, panel, score_view, view
 from clausters.seq.timeline import Timeline
 
 # Two beats per second: the quarter = 120 the engraver times the page at. It is
@@ -124,7 +125,7 @@ def scene(display_list: dict, sample_rate: float) -> dict:
         panel(button(name="play", label="play"),
               button(name="stop", label="stop"),
               layout="row", h=34.0),
-        notation.score_view(display_list, name="score",
+        score_view(display_list, name="score",
                             width=880.0, sample_rate=sample_rate),
         layout="col", title="Engraved from a Timeline (data -> score)",
         w=920, h=420,

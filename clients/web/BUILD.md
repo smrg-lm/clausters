@@ -64,7 +64,7 @@ symlink flips atomically.
 ## Installing the Emscripten SDK (user space, no sudo) — the two vendored artifacts
 
 Two of the things a page loads are **not compiled from this repository's
-sources**: the engraver (`gui/notation` lays scores out with verovio) and the
+sources**: the engraver (`notation` lays scores out with verovio) and the
 Faust compiler (a page JITs a FaustDef with libfaust itself). Both are built
 here rather than taken from npm, and for one reason in two shapes — a page and a
 window must use the same *build*, not merely the same version: verovio's npm
@@ -246,7 +246,7 @@ gate the workflow passes through.
    the larger half of it — the engine, the GUI host and the core come to ~9 MB
    unpacked, and the **engraver adds 6.5 MB more** when `vendor/verovio` is
    staged. Nothing loads what it does not use (the engraver is imported only by
-   `gui/notation`, and only on demand), but the install pays for all of it; if
+   `notation`, and only on demand), but the install pays for all of it; if
    that ever stops being the right trade, the alternative already named is a
    companion package for the heavy optional artifacts, and it is the same
    question `libfaust-wasm` will ask. The worklet is reached as `new URL("./worklet.js", import.meta.url)`,

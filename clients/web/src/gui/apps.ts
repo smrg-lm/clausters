@@ -11,7 +11,7 @@
  * @module
  */
 
-import { engraverUrlOf } from "./notation/_verovio.ts";
+import { engraverUrlOf } from "../notation/_verovio.ts";
 
 type HostGlue = typeof import("../gui-host/clausters_gui.js");
 

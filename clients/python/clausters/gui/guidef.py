@@ -211,6 +211,8 @@ from ..base.bulk import samples_to_blob as _samples_to_blob
 from ..defs.ugens import env_to_points, points_to_env  # re-exported; the Env <-> Bpf seam
 
 __all__ = [
+    "page_json",
+    "score_view",
     "View",
     "Source",
     "source",
@@ -775,9 +777,9 @@ def source(samples=None, *, buffer: "int | None" = None, path: "str | None" = No
     (an engraved `score` page). It takes the same form the builder's own keyword
     takes, is normalized the same way, and `Source.set` replaces it live::
 
-        page = source(display_list=notation.page_json(dl))
+        page = source(display_list=page_json(dl))
         view(score(display_list=page, editable=True)).open()
-        page.set(notation.page_json(dl))     # after applying an edit
+        page.set(page_json(dl))     # after applying an edit
     """
     return Source(samples, buffer=buffer, path=path, cache=cache, points=points,
                   notes=notes, osc=osc, boxes=boxes, cords=cords,
@@ -2615,7 +2617,7 @@ def _flat_cords(cords) -> list:
 #: The keys of an engraved page the host reads: everything the engraving walk
 #: produced except ``notes``, which is the client's own layer. One list, read
 #: by the definition, by a live ``display_list`` replacement
-#: (`clausters.gui.notation.page_json`) and by a source's expansion, so a key
+#: (`page_json`) and by a source's expansion, so a key
 #: the walk adds reaches the host by every path or by none.
 SCORE_PAGE = ("vb", "glyphs", "prims", "cursors", "step", "elements",
               "systems", "kinds")
@@ -2787,7 +2789,7 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     ``display_list`` is the semantic engraving the host consumes, a dict with
     ``vb`` (the ``[width, height]`` page-unit viewBox), ``glyphs`` (a SMuFL
     codepoint-to-outline table) and ``prims`` (the placed glyphs, lines and
-    fills). Build it from a score with `clausters.gui.notation.engrave`, which
+    fills). Build it from a score with `clausters.notation.engrave`, which
     drives verovio -- an optional dependency the host never needs.
 
     Every primitive carries the MEI ``xml:id`` it was engraved from, and that id
@@ -2807,10 +2809,10 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     cannot move the note twice and one arriving after the page was re-engraved
     still lands where it says. The host owns
     no score, so that event is a request, not a result -- the driver applies it
-    (`clausters.gui.notation.Score.transpose_to` takes exactly those two
+    (`clausters.notation.Score.transpose_to` takes exactly those two
     arguments)
     and sends the re-engraved page back with
-    ``GuiHost.set(score_id, display_list=notation.page_json(dl))``, which
+    ``GuiHost.set(score_id, display_list=page_json(dl))``, which
     replaces the drawing in place. The displacement stays drawn until that page
     arrives, so the note never flicks back to its old pitch; the playhead and
     the selection survive it, so the edited note stays selected. **Default (a
@@ -2831,7 +2833,7 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     more: a staff position is not a pitch until something knows the clef and
     the key, and a duration is a choice nobody made by clicking. Both are the
     driver's, which is the same line every other score gesture draws -- and
-    `clausters.gui.notation.enter` is what turns the three into an operation
+    `clausters.notation.enter` is what turns the three into an operation
     (``item=``, ``position=``, ``staff=``).
 
     ``edit_cursor`` draws where note entry writes next, as the driver keeps
@@ -2868,6 +2870,81 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     else:
         extra.update(_score_props(display_list))
     return node("score", id=id, **extra, **props)
+
+
+def score_view(display_list, *, scroll_id: int | None = None,
+               score_id: int | None = None, name: str | None = None,
+               scroll_name: str | None = None,
+               width: float = 1000.0, zoom: bool = True,
+               sample_rate: float | None = None,
+               editable: bool | None = None,
+               entry: bool | None = None) -> dict:
+    """Wrap an engraved ``display_list`` in a `scroll` sized to the page, ready
+    to drop into a window. The page is a dict, or a
+    `clausters.gui.guidef.Source` holding one so a re-engrave reaches the
+    definition and every window at once (``source(display_list=...)``). The content area is ``width`` wide and as tall as the
+    page's aspect needs, so a multi-system score scrolls down the systems.
+
+    ``zoom`` enables cursor-anchored zoom to read a dense passage, and it also
+    decides the pan axes: **zoomed in, the page is wider than the view**, so x
+    has to pan too (``axis="both"``); without zoom the page always fits the
+    width and only y can move (``axis="y"``, a plain vertical scroll view).
+
+    ``sample_rate`` is the rate the playback cursor reads the engine clock
+    through (omitted = the server's own). ``editable`` opts the page into pitch
+    editing (`clausters.gui.guidef.score`): left off, a drag does nothing and the
+    view is read-only, which is what a plain plot of a score wants; a driver that
+    applies the ``"transpose"`` round trip passes ``editable=True``. ``entry``
+    puts it in **note entry**: a press on a staff reports
+    ``"enter" <xml:id> <position> <staff>`` -- the element whose column it fell
+    in, a place and not a note, since the pitch needs the clef and the key and
+    the duration is nobody's until a driver chooses one.
+
+    Returns the `scroll` node. ``scroll_id``/``score_id`` name the two widgets by
+    hand; left ``None`` the host assigns them when the tree is opened. ``name``
+    tags the inner `score` so a driver can address it by name -- the page the
+    transport anchors, and the one a re-engrave pushes back -- instead of tracking
+    its id (``win[name].set(display_list=...)``). ``scroll_name`` tags the
+    **scroll**, which a driver needs for one thing: **the page is drawn to fit
+    the box it is given**, so an edit that adds a system would shrink the whole
+    engraving to keep it inside. Growing the box with the page instead keeps the
+    drawn size fixed and lets the scroll do what it is for::
+
+        h = round(width * vb[1] / vb[0], 1)
+        win[name].set(h=h)
+        win[scroll_name].set(content_h=h)
+
+    Left out, the view fits whatever it is sent, which is what a page that is
+    never edited wants."""
+    # The scroll is sized from the page, so the size has to be readable here
+    # whether the page arrived as a dict or as a `clausters.gui.guidef.Source`
+    # holding one -- the source's own expansion is what a definition carries.
+    page = display_list.props() if isinstance(display_list, Source) else display_list
+    vb = page.get("vb") or [1.0, 1.0]
+    aspect = (vb[1] / vb[0]) if vb[0] else 1.0
+    height = round(width * aspect, 1)
+    return scroll(
+        score(id=score_id, name=name, display_list=display_list,
+              sample_rate=sample_rate, editable=editable, entry=entry,
+              x=0.0, y=0.0, w=width, h=height),
+        id=scroll_id, name=scroll_name, axis="both" if zoom else "y", zoom=zoom,
+        content_w=width, content_h=height,
+    )
+
+
+def page_json(display_list: dict) -> str:
+    """The **drawing** layers of ``display_list`` as the JSON string a live
+    ``GuiHost.set(score_id, display_list=...)`` takes -- how a re-engraved page
+    replaces the one on screen after an edit, without redefining the window.
+
+    The same layers `clausters.gui.guidef.score` sends when it builds the
+    widget, so the widget looks the same either way: the client-side ``notes``
+    stay here, and so does the host's own chrome (the playhead and the
+    selection survive the replacement, which is what keeps the edited note
+    selected across the round trip).
+    """
+    return json.dumps({k: display_list[k] for k in SCORE_PAGE
+                       if k in display_list})
 
 def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | None = None,
               ruler: str | None = None, dir: str | None = None, sample_rate: float | None = None,

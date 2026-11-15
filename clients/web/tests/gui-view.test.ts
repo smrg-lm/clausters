@@ -18,7 +18,7 @@ import { loadCore } from "../src/base/core.ts";
 import { decodePacket } from "../src/base/osc.ts";
 import { control } from "../src/defs/ugens/index.ts";
 import { GuiHost } from "../src/gui/host.ts";
-import { scoreView } from "../src/gui/notation/view.ts";
+import { scoreView } from "../src/gui/guidef.ts";
 import { setAmbientHost } from "../src/gui/ambient.ts";
 import {
     bpf,

@@ -610,7 +610,7 @@ def stage_verovio() -> list[str]:
 
     The resource data comes along because verovio bakes its resource path in at
     *configure* time, pointing at the prefix it was built for. Staged beside the
-    library as ``_libs/verovio/``, it is found by `clausters.gui.notation`, which
+    library as ``_libs/verovio/``, it is found by `clausters.notation`, which
     passes it to each toolkit explicitly -- a toolkit that cannot find its SMuFL
     data engraves nothing.
 

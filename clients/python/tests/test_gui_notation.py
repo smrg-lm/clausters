@@ -16,7 +16,8 @@ import json
 import pytest
 
 from clausters import Event
-from clausters.gui import notation, score
+from clausters import notation
+from clausters.gui import page_json, score, score_view
 from clausters.seq import EventSequence
 from clausters.seq.event import rest
 from clausters.seq.timeline import Timeline
@@ -110,7 +111,7 @@ def test_score_sends_the_pitch_quantum_the_page_was_engraved_with():
 def test_the_page_json_carries_the_drawing_layers_only():
     requires_engraver()
     dl = notation.engrave(PHRASE)
-    page = json.loads(notation.page_json(dl))
+    page = json.loads(page_json(dl))
     assert sorted(page) == ["cursors", "elements", "glyphs", "kinds", "prims",
                             "step", "systems", "vb"]
     # what each id is reaches the host, and the client's own notes do not
@@ -143,17 +144,17 @@ def test_a_note_owns_everything_drawn_inside_it():
 def test_score_view_pans_both_axes_only_when_it_can_zoom():
     page = {"vb": [1000, 500], "glyphs": {}, "prims": []}
     # zoomed in the page outgrows the view's width, so x has to pan too
-    zoomable = notation.score_view(page, scroll_id=10, score_id=11)
+    zoomable = score_view(page, scroll_id=10, score_id=11)
     assert zoomable["axis"] == "both"
     assert zoomable["zoom"] == 1
     # without zoom the page always fits the width: a plain vertical scroll view
-    fixed = notation.score_view(page, scroll_id=10, score_id=11, zoom=False)
+    fixed = score_view(page, scroll_id=10, score_id=11, zoom=False)
     assert fixed["axis"] == "y"
     assert fixed["zoom"] == 0
 
 
 def test_score_view_places_the_rate_on_the_inner_score():
-    view = notation.score_view({"vb": [1000, 500], "glyphs": {}, "prims": []},
+    view = score_view({"vb": [1000, 500], "glyphs": {}, "prims": []},
                                scroll_id=10, score_id=11, width=800.0,
                                sample_rate=48000.0)
     assert view["type"] == "plane"
@@ -168,7 +169,7 @@ def test_score_view_sizes_itself_from_a_page_held_as_a_source():
     from clausters.gui import source
 
     page = source(display_list={"vb": [1000, 500], "glyphs": {}, "prims": []})
-    view = notation.score_view(page, scroll_id=10, score_id=11, width=800.0)
+    view = score_view(page, scroll_id=10, score_id=11, width=800.0)
     assert view["content_h"] == 400.0
     inner = view["children"][0]
     assert inner["vb"] == [1000, 500] and "display_list" not in inner
@@ -1021,9 +1022,9 @@ def test_a_page_can_ask_for_note_entry_and_says_so_on_the_wire():
     # blank paper clears the selection, and a page that never asked for note
     # entry must keep doing exactly that.
     page = {"vb": [10, 10], "glyphs": {}, "prims": []}
-    plain = notation.score_view(page, name="s")["children"][0]
+    plain = score_view(page, name="s")["children"][0]
     assert "entry" not in plain
-    taking = notation.score_view(page, name="s", entry=True)["children"][0]
+    taking = score_view(page, name="s", entry=True)["children"][0]
     assert taking["entry"] is True
 
 

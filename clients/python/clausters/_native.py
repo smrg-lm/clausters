@@ -908,7 +908,7 @@ def _configure_notation(lib: ctypes.CDLL) -> None:
 
     Both of its features are off by default in the crate, and the wheel turns
     them on, so a hand-built cdylib may legitimately lack these symbols. Missing
-    ones leave `has_notation`/`has_engraver` false and `clausters.gui.notation`
+    ones leave `has_notation`/`has_engraver` false and `clausters.notation`
     raises a readable error; nothing else in the binding is affected.
     """
     global _HAS_NOTATION, _HAS_ENGRAVER
@@ -1837,7 +1837,7 @@ class EditingCore:
 
     def open_score(self, score_handle, **request) -> dict:
         """Open a score editor over the score behind ``score_handle`` (a
-        `clausters.gui.notation.Score`'s), which it then edits in place
+        `clausters.notation.Score`'s), which it then edits in place
         (`clausters_apps_editing_open_score`): ``{"member", "structure"}``."""
         with self._lock:
             if not self._handle:

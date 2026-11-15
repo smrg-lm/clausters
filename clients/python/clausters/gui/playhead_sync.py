@@ -91,6 +91,37 @@ class PlayheadSync:
             transport's position is measured in frames.
     """
 
+    @classmethod
+    def for_score(cls, host, score_id: int, *, source, structure=None,
+                  sample_rate: float, extent=None) -> "PlayheadSync":
+        """A `PlayheadSync` driving a ``score`` widget's
+        playback cursor -- play, pause, stop and locate, with the cursor following
+        the sound.
+
+        The same one the timeline views use; what a page needs on top is only its
+        unit: a ``score`` widget places its static cursor in **score
+        milliseconds**, not samples, so this fills in that conversion and leaves the
+        rest of the arguments as they are -- ``source(at)`` starts a pass at beat
+        ``at`` and returns the `clausters.seq.Timeline` it plays, ``structure`` is
+        that timeline (or a callable returning it) for when nothing is playing, and
+        ``extent()`` gives the score's length in beats.
+
+        The conversion goes through the timeline's own map like every other one,
+        not through a division of its own: a page is engraved on the beat axis, and
+        the millisecond a beat is drawn at is the second it falls on.
+
+        The engraving is what makes both easy to write:
+        `clausters.notation.Score.display_list` hands
+        back the notes with their onsets and lengths, so the timeline a pass plays
+        and the end it stops at are read off the page itself."""
+        tr = cls(host, score_id, source=source, structure=structure,
+                 sample_rate=sample_rate, extent=extent)
+        # An engraved page always plays a timeline, which holds a map; with
+        # none it would be seconds already.
+        tr.to_units = lambda beats: (float(beats) if tr.tempo_map() is None else
+                                     tr.tempo_map().secs_at(float(beats))) * 1000.0
+        return tr
+
     def __init__(self, host, ids, *, source=None, structure=None,
                  sample_rate: float, to_units=None, extent=None, clock=None,
                  governed: bool = False, head_clock: str = "device"):

@@ -42,7 +42,7 @@ import { AudioEditor } from "./audio.ts";
 import { Multitrack, SessionFile } from "../../document.ts";
 import { SoundFile } from "../../soundfile.ts";
 import { ScoreEditor, isScore } from "./score.ts";
-import type { Interpretation, Transcription } from "../notation/sheet.ts";
+import type { Interpretation, Transcription } from "../../notation/sheet.ts";
 import { main } from "../../base/main.ts";
 import { resolveServer } from "../../defs/wire.ts";
 import { Node } from "../../defs/node.ts";

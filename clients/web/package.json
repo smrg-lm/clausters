@@ -58,6 +58,10 @@
       "types": "./dist/history.d.ts",
       "default": "./dist/history.js"
     },
+    "./notation": {
+      "types": "./dist/notation/index.d.ts",
+      "default": "./dist/notation/index.js"
+    },
     "./panic": {
       "types": "./dist/panic.d.ts",
       "default": "./dist/panic.js"

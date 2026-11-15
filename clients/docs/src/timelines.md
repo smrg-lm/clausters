@@ -316,17 +316,17 @@ The verbs do not change: `play`, `pause`, `stop` and `locate` are the transport'
 
 ## Seeing a timeline as a score
 
-A timeline is timed pitches — the same thing a score draws. {{alt `clausters.gui.notation.from_timeline` || `gui.notation.fromTimeline`}} engraves one as music notation: events that start together become a chord, gaps become rests, a note that starts under another goes to a second voice, and each event's written `dur` becomes its note value. It returns the score as text (MEI), which the `score` widget's engraver reads — the inverse of the usual score→sound direction, so the composed you hear is the composed you see.
+A timeline is timed pitches — the same thing a score draws. {{alt `clausters.notation.from_timeline` || `notation.fromTimeline`}} engraves one as music notation: events that start together become a chord, gaps become rests, a note that starts under another goes to a second voice, and each event's written `dur` becomes its note value. It returns the score as text (MEI), which the `score` widget's engraver reads — the inverse of the usual score→sound direction, so the composed you hear is the composed you see.
 
 ```python
-from clausters.gui import notation
+from clausters import notation
 
 score = notation.Score.from_timeline(timeline, meter="4/4", key="C")
 dl = score.display_list()          # the engraved page, for the score widget
 ```
 
 ```ts
-import { notation } from "clausters/gui";
+import { notation } from "clausters";
 
 const score = await notation.Score.fromTimeline(timeline, { meter: "4/4", key: "C" });
 const dl = score.displayList();    // the engraved page, for the score widget
@@ -446,10 +446,10 @@ note.
 ## The score behind the page: editing it as data
 
 An engraved page is a picture of something, and that something is a **sheet** —
-the score as plain data, which {{alt `clausters.gui.notation` || `gui.notation`}} hands you and takes back:
+the score as plain data, which {{alt `clausters.notation` || `clausters/notation`}} hands you and takes back:
 
 ```python
-from clausters.gui import notation
+from clausters import notation
 
 sheet = notation.sheet_from_voice([{"midis": [60], "ticks": 8}])  # a quarter, middle C
 sheet = notation.transpose(sheet, 4)                     # up a major third: E
@@ -457,7 +457,7 @@ mei = notation.to_mei(sheet)                             # ready for engrave/Sco
 ```
 
 ```ts
-import { notation } from "clausters/gui";
+import { notation } from "clausters";
 
 let sheet = notation.sheetFromVoice([{ midis: [60], ticks: 8 }]);  // a quarter, middle C
 sheet = notation.transpose(sheet, 4);                    // up a major third: E

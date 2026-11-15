@@ -141,7 +141,7 @@ cp dist/nrt/clausters_nrt_web.d.ts src/nrt/
 # the same importer options as the native library, so a page and a window
 # engrave with one build (docs/decisions.md). It is staged rather than rebuilt
 # because the SDK is not part of this toolchain, and it is **off the slim
-# runtime**: only `gui/notation` imports it, and only when a page engraves.
+# runtime**: only `notation` imports it, and only when a page engraves.
 if [ -d vendor/verovio ]; then
     mkdir -p dist/vendor/verovio
     cp vendor/verovio/verovio.js vendor/verovio/verovio.wasm dist/vendor/verovio/

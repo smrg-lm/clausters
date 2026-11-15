@@ -18,8 +18,8 @@ from __future__ import annotations
 import json
 import os
 
-from ... import _libpath, _native
-from ...errors import CommandError
+from .. import _libpath, _native
+from ..errors import CommandError
 from ._abi import _MISSING, _engraver, _text
 from . import sheet as _sheet
 from .mei import TRANSCRIPTION_KEYS, from_notes, sheet_from_events
@@ -166,7 +166,7 @@ class Score:
         structure in one order; attaching makes the score a participant, which
         is what lets an undo made in a *neighbouring* window step it too.
         """
-        from ..editing import Editing
+        from ..history import Editing
 
         context = Editing.of(self)
         context.attach(self)
@@ -275,7 +275,7 @@ class Score:
         return True
 
     def sheet(self) -> dict:
-        """The open score as the **model** (`clausters.gui.notation.sheet`).
+        """The open score as the **model** (`clausters.notation.sheet`).
 
         Every one of the model's verbs applies to it, including on a score that was
         typed rather than built: the engraver normalizes whatever it loaded and
@@ -307,10 +307,10 @@ class Score:
         (`clausters.seq.event.NOTATION_KEYS`), each voice renders on a channel
         of its own, a staff's dynamics are curves of its channels, and what is
         no note's is the sequence's ``notation`` section
-        (`clausters.gui.notation.render_events`). ``instruments`` binds a staff
+        (`clausters.notation.render_events`). ``instruments`` binds a staff
         to what plays it -- one def name for every staff, or a mapping from
         staff index -- ``interp`` is the reading
-        (`clausters.gui.notation.interpretation`), and ``event_keys`` are
+        (`clausters.notation.interpretation`), and ``event_keys`` are
         merged into every event.
         """
         from .mei import to_sequence
@@ -322,7 +322,7 @@ class Score:
         """Apply one **model** operation as a single undo step, and re-engrave.
 
         This is the edit path. ``op`` is the payload the sheet verbs build
-        (``clausters.gui.notation.sheet.transpose`` and the rest), so an edit to
+        (``clausters.notation.sheet.transpose`` and the rest), so an edit to
         an open score and an edit to a sheet in hand are the same operation
         through the same code -- which is what lets a standalone host with no
         client language perform it too.
@@ -448,7 +448,7 @@ class Score:
         an event's notation keys (`clausters.seq.event.NOTATION_KEYS`) are
         its note. What they do not say is decided by the **transcription**,
         keyword arguments each of which has a default
-        (`clausters.gui.notation.read_events` describes them): ``meter``,
+        (`clausters.notation.read_events` describes them): ``meter``,
         ``key`` and ``clef`` (left out: the sequence's own, else 4/4, the
         signature most notes are in, and a clef by register), ``beat_unit``,
         ``division`` (the smallest written value an onset is snapped to, 16),
@@ -507,23 +507,6 @@ def engrave(data: str, *, page: int = 1, scale: int = 40,
     """
     return Score(data, scale=scale, page_width=page_width,
                  options=options).display_list(page)
-
-
-def page_json(display_list: dict) -> str:
-    """The **drawing** layers of ``display_list`` as the JSON string a live
-    ``GuiHost.set(score_id, display_list=...)`` takes -- how a re-engraved page
-    replaces the one on screen after an edit, without redefining the window.
-
-    The same layers `clausters.gui.guidef.score` sends when it builds the
-    widget, so the widget looks the same either way: the client-side ``notes``
-    stay here, and so does the host's own chrome (the playhead and the
-    selection survive the replacement, which is what keeps the edited note
-    selected across the round trip).
-    """
-    from ..guidef import SCORE_PAGE
-
-    return json.dumps({k: display_list[k] for k in SCORE_PAGE
-                       if k in display_list})
 
 
 def svg_to_display_list(svg: str) -> dict:

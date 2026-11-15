@@ -33,6 +33,7 @@ import { samplesToBlob } from "../base/bulk.ts";
 import type { TempoMap } from "../base/time.ts";
 import type { GuiHost, PropValue, Stage } from "./host.ts";
 import type { WindowHandle } from "./handle.ts";
+import type { Page } from "../notation/engraver.ts";
 
 export { Env, envToPoints, pointsToEnv };
 export type { Curve };
@@ -3882,6 +3883,127 @@ export type MarkerSpec = readonly (
     | readonly [number, string]
     | readonly [number, string, string]
 )[];
+
+/** What {@link scoreView} takes past the page itself. */
+export interface ScoreViewOptions {
+    /** Name the two widgets by hand; left out, the host assigns them. */
+    scrollId?: number;
+    scoreId?: number;
+    /** Tags the inner `score` so a driver can address it by name. */
+    name?: string;
+    /** Tags the `scroll`, so a driver can grow its content with the page. */
+    scrollName?: string;
+    /** The content width, in the host's units. */
+    width?: number;
+    /** Cursor-anchored zoom, which also decides the pan axes. */
+    zoom?: boolean;
+    /** The rate the playback cursor reads the engine clock through. */
+    sampleRate?: number;
+    /** Opt the page into pitch editing. */
+    editable?: boolean;
+    /** Put the page in note entry: a press on a staff reports where it landed. */
+    entry?: boolean;
+}
+
+/**
+ * Wrap an engraved display list in a `scroll` sized to the page, ready to drop
+ * into a window. The page is an object, or a {@link Source} holding one so a
+ * re-engrave reaches the definition and every window at once
+ * (`source(undefined, { displayList })`). The content area is `width` wide and
+ * as tall as the page's aspect needs, so a multi-system score scrolls down the
+ * systems.
+ *
+ * `zoom` enables cursor-anchored zoom to read a dense passage, and it also
+ * decides the pan axes: **zoomed in, the page is wider than the view**, so x has
+ * to pan too (`axis: "both"`); without zoom the page always fits the width and
+ * only y can move (`axis: "y"`, a plain vertical scroll view).
+ *
+ * `editable` opts the page into pitch editing: left off, a drag does nothing and
+ * the view is read-only, which is what a plain plot of a score wants; a driver
+ * that applies the `"transpose"` round trip passes `editable: true`. `entry`
+ * puts it in **note entry**: a press on a staff reports
+ * `"enter" <xml:id> <position> <staff>` -- the element whose column it fell in,
+ * a place and not a note, since the pitch needs the clef and the key and the
+ * duration is nobody's until a driver chooses one.
+ *
+ * `scrollName` tags the **scroll**, which a driver needs for one thing: the page
+ * is drawn to fit the box it is given, so an edit that adds a system would
+ * shrink the whole engraving to keep it inside. Growing the box with the page
+ * instead keeps the drawn size fixed and lets the scroll do what it is for:
+ *
+ * ```ts
+ * const h = Math.round((width * vb[1]) / vb[0] * 10) / 10;
+ * win.widget(name).set({ h });
+ * win.widget(scrollName).set({ contentH: h });
+ * ```
+ *
+ * Left out, the view fits whatever it is sent, which is what a page that is
+ * never edited wants.
+ */
+export function scoreView(
+    displayList: Record<string, unknown> | Source,
+    {
+        scrollId,
+        scoreId,
+        name,
+        scrollName,
+        width = 1000.0,
+        zoom = true,
+        sampleRate,
+        editable,
+        entry,
+    }: ScoreViewOptions = {},
+): GuiNode {
+    // The scroll is sized from the page, so the size has to be readable here
+    // whether the page arrived as an object or as a `Source` holding one -- the
+    // source's own expansion is what a definition carries.
+    const page = displayList instanceof Source ? displayList.props() : displayList;
+    const vb = (page.vb as number[] | undefined) ?? [1.0, 1.0];
+    const w = vb[0] ?? 1.0;
+    const aspect = w ? (vb[1] ?? 1.0) / w : 1.0;
+    const height = Math.round(width * aspect * 10) / 10;
+    return scroll(
+        {
+            id: scrollId,
+            name: scrollName,
+            axis: zoom ? "both" : "y",
+            zoom,
+            contentW: width,
+            contentH: height,
+        },
+        score({
+            id: scoreId,
+            name,
+            displayList,
+            sampleRate,
+            editable,
+            entry,
+            x: 0.0,
+            y: 0.0,
+            w: width,
+            h: height,
+        }),
+    );
+}
+
+/**
+ * The **drawing** layers of a display list, as the object a live
+ * `host.set(scoreId, { displayList })` takes -- how a re-engraved page replaces
+ * the one on screen after an edit, without redefining the window.
+ *
+ * The same layers the `score` builder sends when it builds the widget, so the
+ * widget looks the same either way: the client-side `notes` stay here, and so
+ * does the host's own chrome (the playhead and the selection survive the
+ * replacement, which is what keeps the edited note selected across the round
+ * trip).
+ */
+export function pageJson(displayList: Page): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const key of SCORE_PAGE) {
+        if (key in displayList) out[key] = displayList[key];
+    }
+    return out;
+}
 
 /** A `markers` argument as the flat `time, label, color` triples the host reads. */
 export function flatMarkers(markers: MarkerSpec): (number | string)[] {

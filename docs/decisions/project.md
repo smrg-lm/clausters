@@ -470,3 +470,25 @@ the same way: `MultitrackView`, beside `TrackView` and `TakeLaneView`, since
 the `session` key a window hands back): what is renamed is the class a
 client types against.
 
+## The symbolic score is `clausters.notation`'s, and the GUI keeps its views (2026-11-15)
+
+The notation layer had been filed under the GUI (`clausters.gui.notation`,
+`gui/notation/` in the web client), and most of it is no view: a `Score` is
+read, edited, undone, written as MEI and engraved into a display list through
+the C ABI alone, with no window and no host, and the sheet operations and the
+reductions between `seq` and a score are data. It is the defect the
+multitrack had, a structure filed under something that is not what it holds.
+
+**The structure is `clausters.notation`** in both clients (`clausters/notation`
+in the web package): `Score`, `engrave`, `svg_to_display_list`, the sheet
+operations and the MEI reductions, as the crate it shells is
+`clausters-notation`. **The GUI has no notation module**, because no other
+widget has one: what a score's page needs on screen sits where its peers do.
+`score_view` and `page_json` are builders of the `score` widget and live in
+`guidef` beside it, and the page's playback cursor is
+`PlayheadSync.for_score`, a constructor of the transport every timeline view
+uses. A method rather than a free `playhead_sync` in `gui.playhead_sync`,
+since a module and a name in it cannot share a word (the reason `View` left
+`clausters.gui.view`). The applications keep their handlers in
+`gui.editing`, the score editor's included.
+

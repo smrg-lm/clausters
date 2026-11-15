@@ -665,7 +665,7 @@ export class EventSequence {
      * **The sequence in parts**: a new sequence for each voice (`"voice"`,
      * the events' `staff` and `voice`), each staff (`"staff"`) or each
      * channel (`"channel"`) that has events, in that order. What a score
-     * rendered into one sequence (`gui.notation.Score.renderEvents`) is taken
+     * rendered into one sequence (`notation.Score.renderEvents`) is taken
      * apart with, a line to a sequence -- to read each as rows, or to put
      * each on a track of its own.
      *

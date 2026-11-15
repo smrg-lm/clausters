@@ -90,7 +90,7 @@ def edit(structure, *, sample_rate: float = 0.0,
             (its notes, in place), a `clausters.seq.Timeline` (rendered into a
             sequence first -- ``until=`` bounds one that does not end -- which
             the editor's ``sequence`` then holds; the timeline is not changed)
-            or a `clausters.gui.notation.Score` (a symbolic score, on its page, in
+            or a `clausters.notation.Score` (a symbolic score, on its page, in
             place) -- or a running `clausters.defs.Node`, whose def's controls
             open in a generic editor (`clausters.gui.editing.NodeEditor`).
         sample_rate: the engine's rate, which fixes the data<->view bridge. A

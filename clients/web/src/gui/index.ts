@@ -44,8 +44,3 @@ export { PlayheadSync } from "./playhead-sync.ts";
 export type { MapHolder, Pass, PlayheadSyncOptions, PlayheadSyncTargets } from "./playhead-sync.ts";
 
 export * from "./guidef.ts";
-
-// Engraving, as its own namespace for the same reason the Python client keeps
-// it a submodule: it is a layer (an engraver, an encoder, a view) rather than a
-// widget, and its module loads 6.5 MB of verovio the first time a page uses it.
-export * as notation from "./notation/index.ts";

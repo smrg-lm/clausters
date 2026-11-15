@@ -25,7 +25,7 @@
       Verdict beaconed as a fetch, read from the access log.
     -->
     <script type="module">
-      import { Event, EventSequence, Session, SoundFile, gui, opfs } from "../dist/index.js";
+      import { Event, EventSequence, Session, SoundFile, gui, notation, opfs } from "../dist/index.js";
       import { Content, Multitrack, SessionFile, Source } from "../dist/document.js";
 
       const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
@@ -228,7 +228,7 @@
         // **a symbolic score is an application too**: the page's engraver
         // worker reads it for the application's thread, a verb is its turn, and
         // the file is written to the page's storage
-        const score = await gui.notation.Score.open("@clef:G-2\n@timesig:4/4\n@data:4CDEF/ 4GABc'/");
+        const score = await notation.Score.open("@clef:G-2\n@timesig:4/4\n@data:4CDEF/ 4GABc'/");
         const page = await gui.edit(score, { title: "score" });
         const items = () => score.sheet().staves[0].voices[0].items;
         const firstNote = items()[0].id;
@@ -236,7 +236,7 @@
         if (!(await page.articulation("stacc"))) throw new Error(`the verb did nothing: ${page.refused}`);
         if (items()[0].marks?.articulations?.[0] !== "stacc") throw new Error("the copy did not follow the verb");
         if ((await page.save("out/app_window.mei")) !== "out/app_window.mei") throw new Error("the score was not saved");
-        const pageOnDisk = await gui.notation.Score.read("out/app_window.mei");
+        const pageOnDisk = await notation.Score.read("out/app_window.mei");
         if (!pageOnDisk.mei().includes("stacc")) throw new Error("the file does not hold the edit");
         if (!(await page.undo())) throw new Error("the window walked nothing");
         if (items()[0].marks !== undefined) throw new Error("the copy did not follow the step");

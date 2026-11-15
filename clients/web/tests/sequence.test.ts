@@ -211,7 +211,7 @@ test("a pattern renders into the events it plays", async () => {
 
 test("a score reads into a sequence and a sequence engraves", async () => {
     const { OscItem } = await import("../src/seq/timeline.ts");
-    const { sheetFromTimeline, toSequence } = await import("../src/gui/notation/mei.ts");
+    const { sheetFromTimeline, toSequence } = await import("../src/notation/mei.ts");
     const seq = new EventSequence([
         [0.0, new Event({ midinote: 60, dur: 1.0 })],
         [1.0, new Event({ midinote: 64, dur: 1.0 })],

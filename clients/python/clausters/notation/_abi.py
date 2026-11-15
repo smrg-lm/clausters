@@ -8,7 +8,7 @@ string. They live here so neither half has to import the other for them.
 
 from __future__ import annotations
 
-from ... import _native
+from .. import _native
 
 _MISSING = (
     "no engraver in libclausters_ffi: build libverovio with "

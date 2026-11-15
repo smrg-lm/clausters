@@ -7,8 +7,8 @@ played from a keyboard is *seen* and edited as notation -- and back again,
 `to_timeline` and `to_sequence`, which read a sheet into what it sounds.
 
 **Both directions are the core's.** A score is rendered into events by
-`clausters.gui.notation.render_events`, and events are read into a score by
-`clausters.gui.notation.read_events`: what the events say of their page is
+`clausters.notation.render_events`, and events are read into a score by
+`clausters.notation.read_events`: what the events say of their page is
 written as they say it, and what they do not -- when a note falls on the
 page, in which voice, spelled how -- is decided there, once, for every client.
 What this module adds is the client's own types on either side.
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from . import sheet
 
-#: The keys of a transcription (`clausters.gui.notation.read_events`): how a
+#: The keys of a transcription (`clausters.notation.read_events`): how a
 #: sequence is read where its events do not say.
 TRANSCRIPTION_KEYS = ("meter", "key", "clef", "beat_unit", "division",
                       "tuplets", "voices", "dynamics")
@@ -58,7 +58,7 @@ def sheet_from_events(sequence, *, interp: dict | None = None, **how) -> dict:
     written as they say, and a sequence a score was rendered into is read
     back as it was written. What the events do not say is decided by the
     transcription, the keyword arguments
-    (`clausters.gui.notation.read_events` describes each): ``meter``,
+    (`clausters.notation.read_events` describes each): ``meter``,
     ``key``, ``clef``, ``beat_unit``, ``division`` (the smallest written
     value an onset is snapped to), ``tuplets``, ``voices`` and ``dynamics``.
     ``interp`` is the reading whose dynamics name a level.
@@ -103,7 +103,7 @@ def _how(how: dict) -> dict:
 def _data(sequence) -> dict:
     """What `read_events` takes: a sequence's data, or the events of
     ``(beat, event)`` pairs as one."""
-    from ...seq.sequence import EventSequence, _keys
+    from ..seq.sequence import EventSequence, _keys
 
     if isinstance(sequence, EventSequence):
         return sequence.data()
@@ -116,7 +116,7 @@ def to_timeline(score, *, instruments=None, interp: dict | None = None,
                 **event_keys):
     """Read a sheet into a `clausters.seq.timeline.Timeline` that plays it.
 
-    The return trip, and the one `clausters.gui.notation.to_notes` does the
+    The return trip, and the one `clausters.notation.to_notes` does the
     thinking for: each sounding note becomes an `clausters.seq.event.Event` at
     its onset, carrying the **written** value as ``dur`` and the **heard** one as
     ``sustain`` -- which is the pair the page keeps apart and the reason a
@@ -128,7 +128,7 @@ def to_timeline(score, *, instruments=None, interp: dict | None = None,
     Anything in ``event_keys`` is merged into every event, for the parameters a
     score has no symbol for at all (``pan``, a control the def reads).
 
-    ``interp`` is the reading (`clausters.gui.notation.interpretation`); left
+    ``interp`` is the reading (`clausters.notation.interpretation`); left
     out, the default.
 
     **What is on the page comes with it.** Each event also carries what the
@@ -141,11 +141,11 @@ def to_timeline(score, *, instruments=None, interp: dict | None = None,
     ride an event. A timeline holds events alone; `to_sequence` keeps the
     rest, in the sequence's ``notation`` section, and the dynamics as curves.
 
-    The render is the core's (`clausters.gui.notation.render_events`), the
+    The render is the core's (`clausters.notation.render_events`), the
     same one in every client.
     """
-    from ...seq.event import Event
-    from ...seq.timeline import Timeline
+    from ..seq.event import Event
+    from ..seq.timeline import Timeline
 
     out = Timeline()
     for event in _rendered(score, instruments, interp, event_keys)["events"]:
@@ -156,12 +156,12 @@ def to_timeline(score, *, instruments=None, interp: dict | None = None,
 def to_sequence(score, *, instruments=None, interp: dict | None = None,
                 **event_keys):
     """Render a sheet into a `clausters.seq.EventSequence`, one way
-    (`clausters.gui.notation.render_events`): its events as concrete data a
+    (`clausters.notation.render_events`): its events as concrete data a
     notes editor edits -- each with an id, in beats, on its voice's channel --
     the staves' dynamics as curves of those channels, and what is no note's
     in the sequence's ``notation`` section. ``instruments`` and ``event_keys``
     are as `to_timeline` takes them."""
-    from ...seq.sequence import EventSequence
+    from ..seq.sequence import EventSequence
 
     return EventSequence.from_data(_rendered(score, instruments, interp, event_keys))
 

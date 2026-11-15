@@ -341,7 +341,7 @@ class EventSequence:
         sequence reads as -- a staccato short, a dynamic a level, a slur that
         joins one line. What is written stays: onsets, written lengths,
         pitches and the notation keys. ``interpretation`` is how a page is
-        played (its fields as `clausters.gui.notation` writes them); ``None``
+        played (its fields as `clausters.notation` writes them); ``None``
         for the default. One edit. `ValueError` when the sequence cannot be
         read into a page."""
         intent: dict = {"intent": "realize"}
@@ -518,7 +518,7 @@ class EventSequence:
         (``"voice"``, the events' ``staff`` and ``voice``), each staff
         (``"staff"``) or each channel (``"channel"``) that has events, in
         that order. What a score rendered into one sequence
-        (`clausters.gui.notation.Score.render_events`) is taken apart with, a
+        (`clausters.notation.Score.render_events`) is taken apart with, a
         line to a sequence -- to read each as rows, or to put each on a track
         of its own.
 

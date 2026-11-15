@@ -11,7 +11,7 @@ and a sequence a roll can take.
 What it shows, in the order it does it:
 
 * **A document becomes a model.** The phrase below is ABC. Read into the
-  model (`clausters.gui.notation.Score.sheet`), everything the model can do
+  model (`clausters.notation.Score.sheet`), everything the model can do
   applies to it -- and the editor writes the page from that model when it
   opens, so a press on a note names an item of it at once.
 * **What was typed once can be operated on.** The bass staff under the typed
@@ -141,7 +141,8 @@ import os
 import sys
 
 from clausters import Session
-from clausters.gui import edit, notation
+from clausters import notation
+from clausters.gui import edit
 
 # Eight bars in ABC -- a score as it usually arrives: typed by somebody else, in
 # a format that is not ours. `M:` is the meter, `L:` the length a bare letter

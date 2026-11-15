@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import json
 
-from ... import _native
+from .. import _native
 from ._abi import _MISSING, _text, _u8
 
 
@@ -184,7 +184,7 @@ def render_events(sheet: dict, interp: dict | None = None) -> dict:
     spanners over event ids -- is the sequence's ``notation`` section.
 
     Nothing travels back: what a roll does to the sequence stays in it.
-    `clausters.gui.notation.Score.render_events` is this, for an open score.
+    `clausters.notation.Score.render_events` is this, for an open score.
     """
     a = json.dumps(sheet)
     b = json.dumps(interp if interp is not None else {})

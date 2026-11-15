@@ -119,7 +119,7 @@ headers **flattened** into `<prefix>/include/verovio` (so the include is
 `BUILD_AS_LIBRARY` also adds `tools/c_wrapper.cpp`, a flat C API over the
 toolkit (`vrvToolkit_loadData`, `_renderToSVG`, `_renderToTimemap`, `_getMEI`,
 `_edit`, `_editInfo`, …). That is the surface **every** consumer uses: the
-Python client binds it with `ctypes` (`clausters/gui/notation.py`), and a wasm
+Python client binds it with `ctypes` (`clausters/notation/`), and a wasm
 build would expose the same functions.
 
 It is also what a future **native producer** would link — a C++ `DeviceContext`
@@ -138,7 +138,7 @@ which pip can replace at any moment with the published one, whose editor is dead
 tests started failing for an upstream reason.
 
 The library has none of that ambiguity. It is ours, it is bundled where we put
-it, and `clausters.gui.notation` loads it by path.
+it, and `clausters.notation` loads it by path.
 
 ### The engraver in the Python wheel
 

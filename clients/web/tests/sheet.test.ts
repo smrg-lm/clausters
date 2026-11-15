@@ -54,15 +54,16 @@ import {
     toTimeline,
     toVoice,
     transpose,
-} from "../src/gui/notation/index.ts";
-import type { Sheet } from "../src/gui/notation/index.ts";
+} from "../src/notation/index.ts";
+import type { Sheet } from "../src/notation/index.ts";
 import { Event, NOTATION_KEYS, synthRender } from "../src/seq/event.ts";
 import { event_notation_keys as coreNotationKeys } from "../src/core/clausters_core_web.js";
 import { rest } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
-import * as notation from "../src/gui/notation/index.ts";
-import { setEngraverUrl } from "../src/gui/notation/index.ts";
+import * as notation from "../src/notation/index.ts";
+import { scoreView } from "../src/gui/guidef.ts";
+import { setEngraverUrl } from "../src/notation/index.ts";
 
 
 await loadCore();
@@ -793,8 +794,8 @@ test("a page can ask for note entry and says so on the wire", () => {
     // entry must keep doing exactly that.
     const page = { vb: [10, 10], glyphs: {}, prims: [] };
     const kids = (n: unknown) => (n as { children: Record<string, unknown>[] }).children;
-    assert.ok(!("entry" in kids(notation.scoreView(page, { name: "s" }))[0]));
-    assert.equal(kids(notation.scoreView(page, { name: "s", entry: true }))[0].entry, true);
+    assert.ok(!("entry" in kids(scoreView(page, { name: "s" }))[0]));
+    assert.equal(kids(scoreView(page, { name: "s", entry: true }))[0].entry, true);
 });
 
 test("the signs, the staves and the marks at a point are the model's", () => {

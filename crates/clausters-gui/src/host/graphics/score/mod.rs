@@ -363,7 +363,7 @@ pub struct EditCursor {
 
 /// The default page units per diatonic step: verovio's default `unit` (9) times
 /// its definition factor (10). Used when a display list names no `step` -- every
-/// display list `clausters.gui.notation` builds does.
+/// display list `clausters.notation` builds does.
 pub const STEP: f32 = 90.0;
 
 /// A fully engraved page ready to render: the definition viewBox (for fitting),

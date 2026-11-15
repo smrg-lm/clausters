@@ -1,5 +1,5 @@
 // The score model: notation as data, and operations as data over it (mirrors
-// `clausters/gui/notation/sheet.py`).
+// `clausters/notation/sheet.py`).
 //
 // A **sheet** is a plain object -- two durational structures that do not contain
 // each other, the metric layout (`grid`) and the content (`staves` of voices of
@@ -35,7 +35,7 @@ import {
     sheetRenderEvents,
     sheetToMei,
     voiceToSheet as coreVoiceToSheet,
-} from "../../core/clausters_core_web.js";
+} from "../core/clausters_core_web.js";
 import type { Slot } from "./mei.ts";
 
 /**

@@ -188,7 +188,7 @@ def test_a_pattern_renders_into_the_events_it_plays():
 
 
 def test_a_score_reads_into_a_sequence_and_a_sequence_engraves():
-    from clausters.gui import notation
+    from clausters import notation
     from clausters.seq import OscItem
 
     seq = EventSequence([(0.0, Event(midinote=60, dur=1.0)), (1.0, Event(midinote=64, dur=1.0)),

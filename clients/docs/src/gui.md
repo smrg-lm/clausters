@@ -1173,7 +1173,7 @@ right one.
 
 ```python
 engraved = source(display_list=score.display_list())
-win = view(notation.score_view(engraved, name="page", editable=True)).open()
+win = view(score_view(engraved, name="page", editable=True)).open()
 
 # a "transpose" event came back: apply it and hand the page back
 score.transpose_to(xml_id, position)
@@ -1182,7 +1182,7 @@ engraved.set(score.display_list())
 
 ```ts
 const engraved = gui.source(undefined, { displayList: score.displayList() });
-const win = await view({}, notation.scoreView(engraved, { name: "page", editable: true })).open();
+const win = await view({}, scoreView(engraved, { name: "page", editable: true })).open();
 
 // a "transpose" event came back: apply it and hand the page back
 score.transposeTo(xmlId, position);
@@ -1308,33 +1308,33 @@ The `score` widget draws a page of music, and what it draws is a **display
 list** — a glyph-outline table plus placed glyphs, staff lines, stems and beams
 in page units — which the client produces and the host tessellates. The host
 reads no notation and links no engraver; that split is what lets one host
-renderer serve every client. The engraving is {{alt `clausters.gui.notation` || `gui.notation`}}, the same layer in both clients:
+renderer serve every client. The engraving is {{alt `clausters.notation` || `clausters/notation`}}, the same layer in both clients:
 the score model, the SVG walk and the MEI encoder are the shared Rust core, and
 the engraver is [verovio](https://verovio.org) from the same pinned sources, with the same options,<!-- web --> compiled to wasm<!-- /web --> — a page and a
 window engrave one score into one drawing, which a parity suite compares
 primitive by primitive. [Timelines](timelines.md#seeing-a-timeline-as-a-score) is where a score is read, edited and heard; what is the widget's is here.
 
 ```python
-from clausters import Event
-from clausters.gui import notation, view
+from clausters import Event, notation
+from clausters.gui import score_view, view
 
 melody = [Event(midinote=m, dur=1.0) for m in (67, 69, 71, 72)]
 score = notation.Score.from_notes(melody, meter="4/4", key="G")
 
 page = score.display_list()          # what is drawn, the cursors, the notes
-win = view(notation.score_view(page, name="page", editable=True), title="score").open()
+win = view(score_view(page, name="page", editable=True), title="score").open()
 ```
 
 ```ts
-import { Event } from "clausters";
-import { notation, view } from "clausters/gui";
+import { Event, notation } from "clausters";
+import { scoreView, view } from "clausters/gui";
 
 const melody = [67, 69, 71, 72].map((midinote) => new Event({ midinote, dur: 1.0 }));
 const score = await notation.Score.fromNotes(melody, { meter: "4/4", key: "G" });
 
 const page = score.displayList();    // what is drawn, the cursors, the notes
 const win = await view({ title: "score" },
-    notation.scoreView(page, { name: "page", editable: true })).open();
+    scoreView(page, { name: "page", editable: true })).open();
 ```
 
 <!-- web -->
@@ -1358,7 +1358,7 @@ it and sends the new page back — through a source, as above, or by hand:
 def on_page(tag, element, position):
     if tag == "transpose":
         score.transpose_to(element, round(position))
-        win["page"].set(display_list=notation.page_json(score.display_list()))
+        win["page"].set(display_list=page_json(score.display_list()))
 
 win["page"].on_event(on_page)
 ```
@@ -1367,7 +1367,7 @@ win["page"].on_event(on_page)
 win.widget("page").onEvent((tag, id, position) => {
     if (tag !== "transpose") return;
     score.transposeTo(id, Math.round(position));
-    win.widget("page").set({ displayList: notation.pageJson(score.displayList()) });
+    win.widget("page").set({ displayList: pageJson(score.displayList()) });
 });
 ```
 
