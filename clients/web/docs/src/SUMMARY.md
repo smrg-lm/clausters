@@ -6,6 +6,7 @@
 
 - [Getting started](getting-started.md)
 - [The client, layer by layer](guide.md)
+- [Sessions](sessions.md)
 - [Routines and clocks](routines-and-clocks.md)
 - [Patterns](patterns.md)
 - [Timing models](timing-models.md)
