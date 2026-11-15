@@ -645,6 +645,13 @@ engine, the GUI host and a filesystem already.
   rewritten to `var` by acorn, `import` and top-level `await` rewritten to an
   async body. Imports resolve to the packages the page serves, by their
   manifests' `exports`, and to the page's own files.
+- **The package imports where there is no page.** The web client's facade
+  registered its custom elements at import, which needs a document, so a
+  worker (or node) could import only its subpaths and a session's first line
+  could not be the Python one, `from clausters import Session`. The elements
+  now extend a base nothing instantiates and are registered only where
+  `customElements` exists; a page loads what it loaded before, and a worker
+  writes `import { Session, play, Routine } from "clausters"`.
 - **The code intelligence is the TypeScript language service, in a worker of
   its own**, reading the document, a worker's library and the declarations of
   the packages the page serves, synchronously over HTTP, which a worker may.

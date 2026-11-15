@@ -23,7 +23,7 @@ interface Config {
 
 /** The startup code a page's session starts with until Preferences says otherwise. */
 const DEFAULT_STARTUP =
-  'import { Session } from "clausters/session";\n' +
+  'import { Session } from "clausters";\n' +
   "const session = (await Session.live(editor.engine)).activate();\n" +
   "const host = await session.gui({ port: editor.gui });\n";
 

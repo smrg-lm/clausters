@@ -1,13 +1,12 @@
 // The worker of worker.html: a session on the page's engine, reached over the
-// port the page linked to it. It imports the session layer and the builders,
-// never the package facade, which defines a page's elements and needs a
-// document a worker does not have.
+// port the page linked to it. It imports the package as the page does; where
+// there is no document the package registers no elements.
 //
 // It plays an arpeggio on its own clock, opens a slider for its level on
 // the page's GUI host and, when the page asks, gets stuck
 // in a loop that never yields -- the thing only terminating a worker stops.
 
-import { Session, play } from "../../dist/session-layer.js";
+import { Session, play } from "../../dist/index.js";
 import { Event } from "../../dist/seq/index.js";
 import * as gui from "../../dist/gui/index.js";
 

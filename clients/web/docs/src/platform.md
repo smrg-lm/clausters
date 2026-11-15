@@ -127,30 +127,20 @@ What ports, and what does not:
 |---|---|
 | The def builders, the sequencing layer, the arrangement, the data figures, the bundle writer (`clausters/defs`, `clausters/seq`, `clausters/form`, `clausters/data`, `clausters/bundle-writer`) | yes — they compute and serialize, and the shared core is what they compute with |
 | The `Server`/`GuiHost` handles over a **WebSocket** carrier, against a `clausters --ws` server and a `clausters-gui --ws` host | yes — node has a global `WebSocket`, and this is what the package's own WS suites drive |
-| The session layer (`clausters/session`): `Session`, the default session, `play`, `Routine`, `panic`, `plot` and `scope` | yes — an offline session (`Session.nrt`) or one on a live server over a WebSocket (`Session.live`); `Session.embed` is a page's |
+| The package facade, `import "clausters"`: `Session`, `play`, `Routine`, `panic` and the rest | yes — an offline session (`Session.nrt`) or one on a live server over a WebSocket (`Session.live`); `Session.embed` is a page's. The facade's custom elements are registered only where there is a page to register them in |
 | The in-page engine (an AudioWorklet) and the page host (a canvas) | no — both are the document's, and there is no headless stand-in for them |
-| The package facade, `import "clausters"` | no — importing it registers the custom elements, which needs a document |
 
-So a node script imports the **subpaths** rather than the facade:
+So a node script imports what a page imports, from the same place:
 
 ```js
-import { Bundle, loadCore } from "clausters/bundle-writer";
+import { Session, play, panic } from "clausters";
 import * as defs from "clausters/defs";
-
-await loadCore();          // finds the core's .wasm on disk, beside the package
-```
-
-A script that plays imports its session from `clausters/session`, the same
-`Session`, `play` and `panic` the facade exports, without the elements:
-
-```js
-import { Session, play, panic } from "clausters/session";
 
 const session = await Session.live("ws://127.0.0.1:57120");   // a `clausters --ws` server
 ```
 
-A page's worker has no document either, and imports its session from the same
-place (see the guide, "A session in a worker").
+A page's worker has no document either, and imports the same way (see the
+guide, "A session in a worker").
 
 `loadCore()` is the one call that has to know where it is: in a browser it
 fetches the module next to the glue, and under node it reads it off disk. Both

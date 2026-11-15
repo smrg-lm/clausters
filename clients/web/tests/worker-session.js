@@ -1,13 +1,12 @@
 // The worker half of tests/worker.html: a session in a worker, on the engine
 // of the page that started it, over the port the page linked to it. It
-// imports only what a worker can: the session layer and the builders, never
-// the facade, which defines a page's elements.
+// imports the package as the page does.
 //
 // The page answers `measure` with the peak its analyser reads on the engine's
 // output, so what this asserts is heard there, not bookkeeping here. It ends
 // in an infinite loop on purpose: the page terminates it from there.
 
-import { Session, play } from "../dist/session-layer.js";
+import { Session, play } from "../dist/index.js";
 import { Buffer, DoneAction, Env, Synth, SynthDef, control, envGen, out, sine } from "../dist/defs/index.js";
 import { Event } from "../dist/seq/index.js";
 import { Routine } from "../dist/base/stream.js";

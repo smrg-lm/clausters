@@ -64,6 +64,19 @@ const BUTTON_STYLE = `
  * The AudioContext is page-wide, so any component's power affordance -- or a
  * `<clausters-power>` -- starts every one of them.
  */
+/**
+ * Whether this realm has a page to register elements in. A worker and node
+ * have none, and the package still imports there: the elements are simply not
+ * defined, as the Python client's top level defines no window at import.
+ */
+const PAGE = typeof customElements !== "undefined";
+
+/**
+ * What the elements extend: the page's `HTMLElement`, or where there is no page
+ * a class nothing ever instantiates, so that declaring them does not fail.
+ */
+const ElementBase: typeof HTMLElement = PAGE ? HTMLElement : (class {} as unknown as typeof HTMLElement);
+
 const waiting = new Set<ClaustersBundle>();
 let gestured = false;
 
@@ -78,7 +91,7 @@ export async function startPage(): Promise<void> {
     await Promise.allSettled(components.map((c) => c.start()));
 }
 
-export class ClaustersBundle extends HTMLElement {
+export class ClaustersBundle extends ElementBase {
     /**
      * The declared parameters, once the manifest is read -- the attributes
      * this element answers to. `preset` and `src` are always among them.
@@ -399,7 +412,7 @@ export class ClaustersBundle extends HTMLElement {
     }
 }
 
-export class ClaustersPower extends HTMLElement {
+export class ClaustersPower extends ElementBase {
     private button: HTMLButtonElement;
 
     constructor() {
@@ -422,8 +435,10 @@ export class ClaustersPower extends HTMLElement {
     }
 }
 
-customElements.define("clausters-bundle", ClaustersBundle);
-customElements.define("clausters-power", ClaustersPower);
+if (PAGE) {
+    customElements.define("clausters-bundle", ClaustersBundle);
+    customElements.define("clausters-power", ClaustersPower);
+}
 
 /**
  * Registers `tag` as a component mounting the bundle at `base` -- what a
@@ -441,6 +456,7 @@ customElements.define("clausters-power", ClaustersPower);
  * a no-op, so two copies of a generated module on one page are harmless.
  */
 export function defineComponent(tag: string, base: string | URL): void {
+    if (!PAGE) throw new Error(`<${tag}> is an element of a page, and there is no page here to define it in`);
     if (customElements.get(tag)) return;
     const src = String(base);
     customElements.define(

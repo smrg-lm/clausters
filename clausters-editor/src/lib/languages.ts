@@ -63,7 +63,7 @@ export const LANGS: Record<Lang, LangInfo> = {
     // The page's session: the engine and the GUI host are the page's, and
     // `editor` holds the ports that reach them.
     startupExample:
-      'import { Session } from "clausters/session";\n' +
+      'import { Session } from "clausters";\n' +
       "const session = (await Session.live(editor.engine)).activate();\n" +
       "const host = await session.gui({ port: editor.gui });",
   },

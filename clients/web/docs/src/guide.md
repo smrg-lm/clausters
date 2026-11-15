@@ -184,8 +184,7 @@ const link = engine.link();
 worker.postMessage({ port: link.port }, [link.port]);
 
 // player.js, the worker
-import { Session, play } from "clausters/session";
-import * as seq from "clausters/seq";
+import { Session, play, seq } from "clausters";
 self.onmessage = async ({ data }) => {
     const s = (await Session.live(data.port)).activate();
     s.clock.start();
@@ -193,7 +192,7 @@ self.onmessage = async ({ data }) => {
 };
 ```
 
-The worker imports from `clausters/session`, `clausters/defs`, `clausters/seq` and `clausters/gui`: the package's main entry defines the page's elements, and a worker has no document.
+The worker imports from `clausters` as the page does; the package's elements are registered only where there is a document, and a worker has none.
 
 The page's **GUI host** is reached the same way, with a link of its own, and `session.gui({ port })` attaches to it:
 

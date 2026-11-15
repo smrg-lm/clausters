@@ -4,7 +4,7 @@
 // listens to its slider, and opens a scope on a tone; the page plays the hand
 // on the canvas it placed the window in.
 
-import { Session, scope } from "../dist/session-layer.js";
+import { Session, scope } from "../dist/index.js";
 import { Synth, SynthDef, control, out, sine } from "../dist/defs/index.js";
 import * as gui from "../dist/gui/index.js";
 

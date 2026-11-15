@@ -21,11 +21,9 @@ greeting("world")
 - What an evaluation declares at the top level -- `const`, `let`, `class`,
   `function` -- the next one sees, and **declaring it again redefines it**.
 - `import` works at the top level, as in a module, and so does `await`.
-  What is imported is the clausters package (`clausters/session`,
+  What is imported is the clausters package (`clausters`, and its subpaths
   `clausters/defs`, `clausters/seq`, `clausters/gui`...) and the page's own
-  files (`./helper.mjs`, beside a saved document). The package's main entry,
-  `clausters`, defines a page's elements and a worker has no page, so a
-  session imports its subpaths.
+  files (`./helper.mjs`, beside a saved document).
 - `console.log` and what a timer or a promise writes after its evaluation has
   ended go to the post window; so does an error nothing catches.
 - **Restart** starts a new worker and clears every name.
@@ -36,7 +34,7 @@ Preferences) makes the session's clausters session with them, and is where
 that changes:
 
 ```javascript
-import { Session } from "clausters/session";
+import { Session } from "clausters";
 const session = (await Session.live(editor.engine)).activate();
 const host = await session.gui({ port: editor.gui });
 ```
@@ -45,7 +43,7 @@ After it, `play`, a `Synth` or a pattern sound with nothing else named, and so
 does a routine:
 
 ```javascript
-import { play, Routine } from "clausters/session";
+import { play, Routine } from "clausters";
 
 function* test() {
   for (let i = 0; i < 10; i++) {

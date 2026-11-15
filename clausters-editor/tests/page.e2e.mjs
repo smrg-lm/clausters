@@ -258,7 +258,7 @@ try {
   at = await run('await new Promise((r) => setTimeout(r, 300));\n"half a second later"');
   check(await waitFor('-> "half a second later"', at), "await works at the top level");
 
-  at = await run('import { Session } from "clausters/session";\ntypeof Session');
+  at = await run('import { Session } from "clausters";\ntypeof Session');
   check(await waitFor('-> "function"', at), "import works, from the clausters package");
 
   at = await run('setTimeout(() => console.log("from a timer"), 200);\n"scheduled"');
@@ -268,16 +268,16 @@ try {
   check(await waitFor("TypeError", at), "an error is shown");
 
   // Sound: the startup code's session, on the page's engine.
-  at = await run('import { sine } from "clausters/defs";\nimport { play } from "clausters/session";\nawait play(sine(660).mul(0.05));\nawait new Promise((r) => setTimeout(r, 300));\n(await session.server.status()).synths');
+  at = await run('import { sine } from "clausters/defs";\nimport { play } from "clausters";\nawait play(sine(660).mul(0.05));\nawait new Promise((r) => setTimeout(r, 300));\n(await session.server.status()).synths');
   check(await waitFor("-> 1", at), "a synth plays on the page's engine");
 
   // A note played now sounds now: the engine's axis follows the wall clock
   // across the time its audio waited for the first key.
-  at = await run('import { play } from "clausters/session";\nconst t0 = performance.now();\nplay({ freq: 440, amp: 0 });\nwhile ((await session.server.status()).synths === 0) await new Promise((r) => setTimeout(r, 5));\nperformance.now() - t0 < 200');
+  at = await run('import { play } from "clausters";\nconst t0 = performance.now();\nplay({ freq: 440, amp: 0 });\nwhile ((await session.server.status()).synths === 0) await new Promise((r) => setTimeout(r, 5));\nperformance.now() - t0 < 200');
   check(await waitFor("-> true", at), "a note played now sounds within the latency");
 
   // A routine, written as the Python client's.
-  at = await run('import { Routine } from "clausters/session";\nvar notes = 0;\nfunction* test() {\n  for (i = 0; i < 4; i++) {\n    play({ freq: 440, amp: 0 });\n    notes++;\n    yield 0.25;\n  }\n}\nr = new Routine(test);\nr.play();\nawait new Promise((r) => setTimeout(r, 1500));\nnotes');
+  at = await run('import { Routine } from "clausters";\nvar notes = 0;\nfunction* test() {\n  for (i = 0; i < 4; i++) {\n    play({ freq: 440, amp: 0 });\n    notes++;\n    yield 0.25;\n  }\n}\nr = new Routine(test);\nr.play();\nawait new Promise((r) => setTimeout(r, 1500));\nnotes');
   check(await waitFor("-> 4", at), "a routine plays on the session's clock");
 
   // Ctrl+. while idle runs the interrupt hook: the session's sound stops.
@@ -323,7 +323,7 @@ try {
   // Completions from the TypeScript language service.
   await evaluate(`document.querySelector(".cm-content").focus()`);
   await key("a", { ctrl: true });
-  await page.insertText('import { Session } from "clausters/session";\nSession.');
+  await page.insertText('import { Session } from "clausters";\nSession.');
   await key(" ", { ctrl: true });
   let options = "";
   for (let i = 0; i < 100 && !options.includes("live"); i++) {
