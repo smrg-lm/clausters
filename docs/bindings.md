@@ -764,7 +764,10 @@ server when none answers, a page and a worker only attach. A worker has no
 counterpart in Python, whose same separation is a script in a process of its
 own. The GUI host is named the same way: Python `session.gui(port=57210)`;
 TypeScript, in a worker, `session.gui({ port })`, the port of a link the page
-made to its host (`host.link()`).
+made to its host (`host.link()`). With no address, Python reads its
+configuration file and a worker the links its starter left at
+`Symbol.for("clausters.links")`, so `Session.live()` and `session.gui()` are
+the same line in both.
 
 **Options are one object in TypeScript**, as everywhere in that client:
 Python `seq.play(at, server)`; TypeScript `seq.play({ at, server })`.

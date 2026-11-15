@@ -20,10 +20,7 @@ const LIB = new URL("../typescript/", self.location.href).href;
 const LIBS = ["lib.es2023.d.ts", "lib.webworker.d.ts", "lib.webworker.iterable.d.ts", "lib.webworker.asynciterable.d.ts"];
 /** What the session defines for its code, beside the worker's own globals. */
 const SESSION_GLOBALS = "/__editor__/globals.d.ts";
-const SESSION_TEXT = `/** The page's engine and GUI host, as the session's code reaches them:
- * \`Session.live(editor.engine)\`, \`session.gui({ port: editor.gui })\`. */
-declare const editor: { readonly engine: MessagePort; readonly gui: MessagePort };
-/** The value of the last evaluation that showed one. */
+const SESSION_TEXT = `/** The value of the last evaluation that showed one. */
 declare var _: any;
 `;
 /** Where an unsaved document is, for the language service. */

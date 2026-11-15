@@ -28,16 +28,20 @@ greeting("world")
   ended go to the post window; so does an error nothing catches.
 - **Restart** starts a new worker and clears every name.
 
-The page keeps the engine and the GUI host, and the session reaches them
-through `editor.engine` and `editor.gui`. The **startup code** (File →
-Preferences) makes the session's clausters session with them, and is where
+The page keeps the engine and the GUI host, and the session reaches them with
+no address named, as a Python session reaches the local server. The **startup
+code** (File → Preferences) makes the session's clausters session, and is where
 that changes:
 
 ```javascript
 import { Session } from "clausters";
-const session = (await Session.live(editor.engine)).activate();
-const host = await session.gui({ port: editor.gui });
+const session = (await Session.live()).activate();
+const host = await session.gui();
 ```
+
+`await new Server().attach()` reaches the same engine, and makes it the default
+session's server if none is; `boot()` refuses, since the engine is the page's
+and already running, as a Python `boot()` refuses where a server answers.
 
 After it, `play`, a `Synth` or a pattern sound with nothing else named, and so
 does a routine:

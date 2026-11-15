@@ -60,12 +60,12 @@ export const LANGS: Record<Lang, LangInfo> = {
     intelligence: "TypeScript",
     installer: "",
     sourceExample: "",
-    // The page's session: the engine and the GUI host are the page's, and
-    // `editor` holds the ports that reach them.
+    // The page's session: the engine and the GUI host are the page's, and a
+    // session in its worker reaches them with no address named.
     startupExample:
       'import { Session } from "clausters";\n' +
-      "const session = (await Session.live(editor.engine)).activate();\n" +
-      "const host = await session.gui({ port: editor.gui });",
+      "const session = (await Session.live()).activate();\n" +
+      "const host = await session.gui();",
   },
 };
 

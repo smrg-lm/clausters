@@ -276,6 +276,11 @@ try {
   at = await run('import { play } from "clausters";\nconst t0 = performance.now();\nplay({ freq: 440, amp: 0 });\nwhile ((await session.server.status()).synths === 0) await new Promise((r) => setTimeout(r, 5));\nperformance.now() - t0 < 200');
   check(await waitFor("-> true", at), "a note played now sounds within the latency");
 
+  // A server handle as a Python script writes one: attach reaches the page's
+  // engine, boot refuses since it is up.
+  at = await run('import { Server } from "clausters";\nconst s = await new Server().attach({ adoptDefault: false });\nconst refused = await new Server().boot().then(() => "booted", (e) => e.message);\n[(await s.status()).synths >= 0, refused.includes("attach()")]');
+  check(await waitFor("-> [ true, true ]", at), "new Server().attach() reaches the page's engine, and boot() refuses");
+
   // A routine, written as the Python client's.
   at = await run('import { Routine } from "clausters";\nvar notes = 0;\nfunction* test() {\n  for (i = 0; i < 4; i++) {\n    play({ freq: 440, amp: 0 });\n    notes++;\n    yield 0.25;\n  }\n}\nr = new Routine(test);\nr.play();\nawait new Promise((r) => setTimeout(r, 1500));\nnotes');
   check(await waitFor("-> 4", at), "a routine plays on the session's clock");
@@ -295,7 +300,7 @@ try {
   check(await waitFor("-> 1", at), "and the session keeps its names");
 
   // A window from the session's code, drawn by the page.
-  at = await run('import * as gui from "clausters/gui";\nconst host = await session.gui({ port: editor.gui });\nhost.open(gui.view({ title: "level" }, gui.slider({ name: "level" })));\n"opened"');
+  at = await run('import * as gui from "clausters/gui";\nconst host = await session.gui();\nhost.open(gui.view({ title: "level" }, gui.slider({ name: "level" })));\n"opened"');
   await waitFor('-> "opened"', at);
   await sleep(500);
   check(await evaluate(`!!document.querySelector(".session-window canvas")`), "a window the session opens is drawn on the page");

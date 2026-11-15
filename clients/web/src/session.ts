@@ -40,6 +40,7 @@ import { Environment } from "./base/environment.ts";
 import { main } from "./base/main.ts";
 import type { IdShare } from "./base/ids.ts";
 import { loadCore } from "./base/core.ts";
+import { defaultLinks } from "./base/links.ts";
 import type { RenderOptions, RenderStats } from "./render.ts";
 import { Server } from "./defs/server/index.ts";
 import type { ServerOptions } from "./defs/server/index.ts";
@@ -392,13 +393,18 @@ export class Session extends Environment {
      * with `ClaustersServer.link()` and transferred, which reaches that page's
      * engine. The session attaches to it as to any running server -- the page
      * keeps the engine and its audio -- and the worker can be terminated with
-     * the engine still running, a loop in the session's code included.
+     * the engine still running, a loop in the session's code included. With
+     * no address, a worker whose starter left it links (at
+     * `Symbol.for("clausters.links")`, as clausters-editor's page does)
+     * attaches over the engine's, so its code writes `Session.live()` as a
+     * script does; anywhere else the default is the local `--ws` server.
      */
     static async live(
-        url: string | MessagePort = "ws://127.0.0.1:57120",
+        url?: string | MessagePort,
         { clock, timebase, latency, timeout, share }: SessionOptions = {},
     ): Promise<Session> {
         await loadCore();
+        url ??= defaultLinks()?.engine ?? "ws://127.0.0.1:57120";
         // `attach`: nothing here started that server, and a WebSocket that
         // connects proves a listener rather than a server -- so the session
         // refuses to be built against silence instead of dropping every later
@@ -471,11 +477,13 @@ export class Session extends Environment {
          * its GUI host (`ClaustersGui.link()`) and transferred -- the host's
          * address there, as the reference client's `port` is a host's on the
          * network. The session attaches to that host; the page keeps it and
-         * gives each window the session opens a canvas.
+         * gives each window the session opens a canvas. With none, a worker
+         * whose starter left it links uses the GUI host's.
          */
         port?: MessagePort;
     } = {}): Promise<GuiHost> {
         if (this.gui_) return this.gui_;
+        port ??= this.ownedEngine ? undefined : defaultLinks()?.gui;
         // The session's share of the host's widget ids is the one it has on
         // its engine: a session that is one of two clients on an engine is one
         // of two on its host as well.

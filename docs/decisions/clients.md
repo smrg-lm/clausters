@@ -632,8 +632,9 @@ engine, the GUI host and a filesystem already.
   have.
 - **The session is a worker; the engine and the GUI host stay the page's.**
   The worker reaches them through links (`ClaustersServer.link`,
-  `ClaustersGui.link`), which its code finds as `editor.engine` and
-  `editor.gui` and the default startup code opens a session over. So the
+  `ClaustersGui.link`), which the worker leaves where the client looks for
+  a worker's default address, so its code writes `Session.live()` and
+  `session.gui()` as a Python script does (below). So the
   interrupt key can do what a page otherwise cannot: an evaluation that
   awaits is stopped in place and the packages' interrupt hooks run, as on the
   desktop, and code stuck in a loop -- which no message reaches -- gets its
@@ -645,6 +646,18 @@ engine, the GUI host and a filesystem already.
   rewritten to `var` by acorn, `import` and top-level `await` rewritten to an
   async body. Imports resolve to the packages the page serves, by their
   manifests' `exports`, and to the page's own files.
+- **A worker's session has a default address, as a script's has.** The
+  Python client's `Session.live()` and `session.gui()` take theirs from its
+  configuration file, and the page's first version made its code name the
+  links (`Session.live(editor.engine)`, an object of the editor's): a
+  divergence in the first line of every session. A program that starts a
+  worker for someone else's code now leaves the links at
+  `globalThis[Symbol.for("clausters.links")]`, where the client reads a
+  worker's default address: `Session.live()`, `session.gui()` and
+  `new Server().attach()` reach the page's engine and host with nothing
+  named, and `new Server().boot()` refuses with `attach()` named, as Python's
+  refuses where a server already answers. Each connection opened over a link
+  is a client of its own, so a second session attaches beside the first.
 - **The package imports where there is no page.** The web client's facade
   registered its custom elements at import, which needs a document, so a
   worker (or node) could import only its subpaths and a session's first line

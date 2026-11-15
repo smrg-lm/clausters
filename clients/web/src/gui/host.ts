@@ -27,7 +27,17 @@ import { decodePacket, encodeMessage, oscArg } from "../base/osc.ts";
 import type { MsgArg, OscMessage } from "../base/osc.ts";
 import { encodeImmediateBundle } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
-import { WsConnection } from "../base/connection.ts";
+import { WsConnection, portConnection } from "../base/connection.ts";
+import { defaultLinks } from "../base/links.ts";
+
+/**
+ * The link to its page's GUI host a worker's starter left it, when this realm
+ * is a worker of that kind (no document): what the default transport reaches.
+ */
+function workerGuiLink(): MessagePort | null {
+    if (typeof document !== "undefined") return null;
+    return defaultLinks()?.gui ?? null;
+}
 import { AppClock } from "../base/appclock.ts";
 import { CaptureError, CommandError, ReplyTimeout } from "../errors.ts";
 import { formatNumber } from "../defs/info.ts";
@@ -433,6 +443,12 @@ export class GuiHost {
             this.openOn(await WsConnection.open(this.carrierUrl));
             return this.conn!;
         }
+        const linked = this.instance ? null : workerGuiLink();
+        if (linked !== null) {
+            // A worker's page host, over the link its starter left.
+            this.openOn(await portConnection(linked));
+            return this.conn!;
+        }
         const found = this.instance
             ?? (own
                 ? newGuiHost(this.audio ? { engine: this.audio } : {})
@@ -480,6 +496,12 @@ export class GuiHost {
      * core is in the process.
      */
     async boot({ adoptAmbient = true }: { adoptAmbient?: boolean } = {}): Promise<this> {
+        if (this.carrierKind === "page" && !this.conn && !this.instance && workerGuiLink() !== null) {
+            throw new Error(
+                "this worker's GUI host is the one of the page that started it, which is " +
+                    "already running -- attach() to it (or session.gui()), which a worker can.",
+            );
+        }
         if (this.carrierKind === "ws" && !this.conn) {
             throw new Error(
                 `this handle points at ${this.carrierUrl} and a page can start ` +

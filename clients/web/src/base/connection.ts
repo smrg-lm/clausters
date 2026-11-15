@@ -330,31 +330,42 @@ export function portConnection(
     port: MessagePort,
     { timeout = 5 }: { timeout?: number } = {},
 ): Promise<Connection> {
+    // A ticket per connection: one port is a door several connections open,
+    // and each answer names the one it is for.
+    const ticket = ++nextTicket;
     return new Promise((resolve, reject) => {
         let gone = false;
         let opened = false;
-        const timer = setTimeout(() => {
+        const done = () => {
+            clearTimeout(timer);
             if (opened) return;
-            port.onmessage = null;
-            reject(new Error(`no engine answered on this port within ${timeout}s`));
+            port.removeEventListener("message", listen);
+        };
+        const timer = setTimeout(() => {
+            done();
+            reject(new Error(`nothing answered on this port within ${timeout}s`));
         }, timeout * 1000);
-        port.onmessage = (event: MessageEvent) => {
+        const listen = (event: MessageEvent) => {
             const msg = event.data as LinkMessage;
             if (msg.type === "gone") {
                 gone = true;
                 if (!opened) {
-                    clearTimeout(timer);
-                    reject(new Error("the engine this port was linked to is gone"));
+                    done();
+                    reject(new Error("what this port was linked to is gone"));
                 }
-            } else if (msg.type === "port" && !opened) {
+            } else if (msg.type === "port" && msg.ticket === ticket && !opened) {
                 opened = true;
-                clearTimeout(timer);
+                done();
                 resolve(linkedConnection(msg.port, () => gone, () => (gone = true)));
             }
         };
-        port.postMessage({ type: "open" });
+        port.addEventListener("message", listen);
+        port.start();
+        port.postMessage({ type: "open", ticket });
     });
 }
+
+let nextTicket = 0;
 
 /** The `Connection` over an engine's own port, once the link handed it over. */
 function linkedConnection(

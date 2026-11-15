@@ -427,7 +427,8 @@ async function boot(
         link: ({ place } = {}) => {
             const control = new MessageChannel();
             let open = true;
-            let data: MessagePort | null = null;
+            /** The clients opened over the link, each a port of its own. */
+            const clients = new Set<MessagePort>();
             /** Window id -> the canvas made for it, and what stops fitting it. */
             const windows = new Map<number, { canvas: HTMLCanvasElement; made: boolean; unfit?: () => void }>();
             const unmount = (id: number) => {
@@ -442,11 +443,11 @@ async function boot(
             // all as a socket's client does; a window it closed by the hand
             // leaves the page here.
             const forward = (packet: Uint8Array) => {
-                if (data === null) return;
+                if (clients.size === 0) return;
                 for (const { addr, args } of decodePacket(packet)) {
                     if (addr === "/gui_closed" && typeof args[0] === "number") unmount(args[0]);
                 }
-                data.postMessage({ type: "osc", data: packet });
+                for (const client of clients) client.postMessage({ type: "osc", data: packet });
             };
             const feed = (packet: Uint8Array) => {
                 const freed: number[] = [];
@@ -476,26 +477,32 @@ async function boot(
                     links.delete(link);
                     listeners.delete(forward);
                     for (const id of [...windows.keys()]) unmount(id);
-                    if (data !== null) data.onmessage = null;
+                    for (const client of clients) client.onmessage = null;
+                    clients.clear();
                     control.port1.postMessage({ type: "gone" } satisfies LinkMessage);
                 },
             };
             control.port1.onmessage = (event: MessageEvent) => {
-                if ((event.data as { type?: string }).type !== "open" || data !== null) return;
+                const ask = event.data as { type?: string; ticket?: number };
+                if (ask.type !== "open") return;
                 if (!open) {
                     control.port1.postMessage({ type: "gone" } satisfies LinkMessage);
                     return;
                 }
                 const channel = new MessageChannel();
-                data = channel.port1;
-                data.onmessage = (e: MessageEvent) => {
+                const client = channel.port1;
+                client.onmessage = (e: MessageEvent) => {
                     const msg = e.data as { type?: string; data?: Uint8Array };
                     if (msg.type === "osc" && msg.data !== undefined) feed(new Uint8Array(msg.data));
-                    else if (msg.type === "close") link.close();
+                    else if (msg.type === "close") {
+                        client.onmessage = null;
+                        clients.delete(client);
+                    }
                 };
+                clients.add(client);
                 listeners.add(forward);
                 control.port1.postMessage(
-                    { type: "port", port: channel.port2, peer: 0 } satisfies LinkMessage,
+                    { type: "port", port: channel.port2, peer: 0, ticket: ask.ticket ?? 0 } satisfies LinkMessage,
                     [channel.port2],
                 );
             };

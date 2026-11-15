@@ -70,9 +70,9 @@ export interface ClaustersServer {
      */
     claimPeer(): number;
     /**
-     * This engine for a client in **another realm** -- a worker, which has no
-     * `AudioContext` and cannot reach this one: a peer of its own and a port
-     * that goes to the engine directly. Transfer `link.port` to the worker,
+     * This engine for clients in **another realm** -- a worker, which has no
+     * `AudioContext` and cannot reach this one: a port through which each
+     * connection opened is a client of its own, going to the engine directly. Transfer `link.port` to the worker,
      * which opens a session over it (`Session.live(port)`); {@link
      * EngineLink.close} lets the client go, which is what a page does after
      * terminating that worker.
@@ -111,17 +111,17 @@ export interface ClaustersServer {
 }
 
 /**
- * A client of an engine in another realm, as the engine's page holds it
- * ({@link ClaustersServer.link}).
+ * The clients of an engine in another realm that one port reaches, as the
+ * engine's page holds them ({@link ClaustersServer.link}): each connection
+ * opened over the port is a client of its own, with its own tag, as each
+ * session attached to one server is.
  */
 export interface EngineLink {
-    /** The client's end: transfer it to the worker that runs the client. */
+    /** The clients' end: transfer it to the worker that runs them. */
     readonly port: MessagePort;
-    /** The client's tag on the engine. */
-    readonly peer: number;
     /**
-     * Lets the client go: the engine forgets its port and the client hears
-     * that the engine is gone. Idempotent.
+     * Lets the clients go: the engine forgets their ports and they hear that
+     * the engine is gone. Idempotent.
      */
     close(): void;
 }
@@ -134,7 +134,7 @@ export interface EngineLink {
  * end is gone.
  */
 export type LinkMessage =
-    | { type: "port"; port: MessagePort; peer: number }
+    | { type: "port"; port: MessagePort; peer: number; ticket: number }
     | { type: "gone" };
 
 let instance: Promise<ClaustersServer> | null = null;
@@ -220,39 +220,40 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
         },
         claimPeer: () => ++nextPeer,
         link: () => {
-            // Two channels: this page's to the client, which is the one port
-            // the caller transfers, and the engine's own (the worklet's end
-            // and the client's), which the first carries when the client asks
-            // for it -- and only while the link is open, so a link closed
-            // before anyone used it gives nothing.
-            const peer = ++nextPeer;
+            // Two channels for each client: this page's to the clients, which
+            // is the one port the caller transfers, and the engine's own (the
+            // worklet's end and the client's), which the first carries when a
+            // client asks for it -- each one a client of its own, as two
+            // sessions attached to one server are, and only while the link is
+            // open, so a link closed before anyone used it gives nothing.
             const control = new MessageChannel();
+            const lent: number[] = [];
             let open = true;
-            let lent = false;
             const link: EngineLink = {
                 port: control.port2,
-                peer,
                 close: () => {
                     if (!open) return;
                     open = false;
                     links.delete(link);
-                    if (lent) raw.release(peer);
+                    for (const peer of lent) raw.release(peer);
                     // Not closed after it: a port closed in the same turn may
                     // drop what was just posted to it, and this is the one
-                    // message the client cannot learn otherwise.
+                    // message the clients cannot learn otherwise.
                     control.port1.postMessage({ type: "gone" } satisfies LinkMessage);
                 },
             };
             control.port1.onmessage = (event: MessageEvent) => {
-                if ((event.data as { type?: string }).type !== "open" || lent) return;
+                const ask = event.data as { type?: string; ticket?: number };
+                if (ask.type !== "open") return;
                 if (!open) {
                     control.port1.postMessage({ type: "gone" } satisfies LinkMessage);
                     return;
                 }
-                lent = true;
+                const peer = ++nextPeer;
+                lent.push(peer);
                 const engine = raw.lend(peer);
                 control.port1.postMessage(
-                    { type: "port", port: engine, peer } satisfies LinkMessage,
+                    { type: "port", port: engine, peer, ticket: ask.ticket ?? 0 } satisfies LinkMessage,
                     [engine],
                 );
             };

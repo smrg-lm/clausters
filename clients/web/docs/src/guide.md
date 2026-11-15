@@ -217,6 +217,8 @@ What this gives a page:
 - **Code that can be stopped.** `worker.terminate()` ends the worker whatever it is doing, an infinite loop included, and the engine and the page go on. What the worker left sounding stops from the page, with a handle of its own on the engine (`new Server({ engine }).attach()`, then `panic()`). `link.close()` lets the worker's client go; a new worker gets a new link onto the same engine.
 - **A clock that does not compete with drawing.** The worker's routines and patterns run off the page's thread, and what they send reaches the engine without passing through it, so a heavy layout or the GUI host's frames do not delay them.
 
+A program that starts a worker for code of someone else's -- clausters-editor's page does -- can leave the links where the client looks for a worker's default address, `globalThis[Symbol.for("clausters.links")] = { engine, gui }`, before that code runs. Then the code names no port, as a Python script names no server: `Session.live()`, `session.gui()` and `await new Server().attach()` reach the page's engine and GUI host, and `new Server().boot()` refuses, since that engine is the page's and already running. Each connection opened over a link is a client of its own.
+
 The session attaches, as `live` does over a socket: the engine is the page's, so the worker cannot `boot` it, and `/quit` from the worker stops it for everyone, as it stops any server. It shares no clock with the engine, so its timebase is anchored over `/clock_query`, as over a socket. When the engine closes, the worker's carrier reports it `gone`.
 
 ### The default session

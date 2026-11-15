@@ -3,9 +3,11 @@
 // sees -- the desktop's Node.js driver, in a page.
 //
 // The page starts it with a link to its clausters engine and one to its GUI
-// host (`ClaustersServer.link`, `ClaustersGui.link`), which the session's code
-// finds as `editor.engine` and `editor.gui`; the engine and the host stay the
-// page's, so terminating this worker -- what stops code stuck in a loop -- leaves
+// host (`ClaustersServer.link`, `ClaustersGui.link`), which this worker leaves
+// where the clausters client looks for a worker's default address
+// (`Symbol.for("clausters.links")`), so the session's code writes
+// `Session.live()` and `session.gui()` as a Python script does; the engine and
+// the host stay the page's, so terminating this worker -- what stops code stuck in a loop -- leaves
 // them running. Questions about code (help, completions) are another worker's
 // (code-worker.ts), so they are answered while code runs here.
 //
@@ -488,11 +490,11 @@ self.addEventListener("message", async (event: MessageEvent) => {
         post("err", null, `The package '${name}' could not be read from ${base}: ${error}\n`);
       }
     }
-    // What the session's code reaches the page's engine and GUI host with.
-    Object.defineProperty(globalThis, "editor", {
-      configurable: true,
-      enumerable: false,
-      value: Object.freeze({ engine: msg.engine as MessagePort, gui: msg.gui as MessagePort }),
+    // The session's default address: the page's engine and GUI host, as the
+    // clausters client reads it in a worker.
+    (globalThis as Record<symbol, unknown>)[Symbol.for("clausters.links")] = Object.freeze({
+      engine: msg.engine as MessagePort,
+      gui: msg.gui as MessagePort,
     });
     post("ready", null, "worker");
   } else if (msg.op === "eval") {

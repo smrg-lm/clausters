@@ -50,7 +50,18 @@ const log = area("server");
 
 export type { TimedMessage } from "../../base/osc.ts";
 import type { Connection, PageConnection } from "../../base/connection.ts";
-import { pageConnection, OscNrtInterface, WsConnection } from "../../base/connection.ts";
+import { pageConnection, portConnection, OscNrtInterface, WsConnection } from "../../base/connection.ts";
+import { defaultLinks } from "../../base/links.ts";
+
+/**
+ * The link to its page's engine a worker's starter left it, when this realm
+ * is a worker of that kind: what the default transport reaches there, since a
+ * worker has no engine of its own to bring up or attach to.
+ */
+function workerEngineLink(): MessagePort | null {
+    if (typeof AudioContext !== "undefined") return null;
+    return defaultLinks()?.engine ?? null;
+}
 import { engine as ownEngine, pageEngineIfUp } from "../../engine/server.ts";
 import type { ClaustersServer } from "../../engine/server.ts";
 import { loadCore } from "../../base/core.ts";
@@ -608,8 +619,12 @@ export class Server {
             return this.conn;
         }
         await loadCore();
+        const linked = this.carrierKind === "page" && !this.audio ? workerEngineLink() : null;
         if (this.carrierKind === "ws") {
             this.conn = await WsConnection.open(this.carrierUrl);
+        } else if (linked !== null) {
+            // A worker's page engine, over the link its starter left.
+            this.conn = await portConnection(linked);
         } else {
             const found = this.audio ?? (own ? ownEngine() : pageEngineIfUp());
             if (!found) {
@@ -693,6 +708,14 @@ export class Server {
         timeout = this.timeout,
         adoptDefault = true,
     }: ServerBootOptions = {}): Promise<this> {
+        if (this.carrierKind === "page" && !this.conn && !this.audio && workerEngineLink() !== null) {
+            // The reference client's refusal to boot where a server already
+            // answers: this worker's server is its page's engine, up already.
+            throw new ServerError(
+                "this worker's server is the engine of the page that started it, which is " +
+                    "already running -- attach() to it (or Session.live()), which a worker can.",
+            );
+        }
         if (this.carrierKind === "ws" && !this.conn) {
             throw new ServerError(
                 `this handle points at ${this.carrierUrl} and a page can start nothing ` +
