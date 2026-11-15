@@ -19,6 +19,7 @@
 - [The document: what a multitrack is, and who edits it](document.md)
 - [`form`: a frozen layer](form.md)
 - [The visual elements in a page](gui.md)
+- [Bundles: an instrument you can hand to a page](bundles.md)
 - [Components: an instrument in the page](components.md)
 - [What a tab cannot do](platform.md)
 - [Examples](examples.md)

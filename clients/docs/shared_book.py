@@ -10,11 +10,12 @@ same name is one line that includes it (``{{#include ../../../docs/src/x.md}}``)
 This module turns the shared text into the book's own:
 
 - **Code by language.** Every example is written twice, a Python block and a
-  TypeScript one (``python``; ``ts``, ``js`` or ``html``), next to each other:
+  TypeScript one (``python``; ``ts`` or ``js``), next to each other:
   a run of code blocks with nothing but blank lines between them is one
   example, and each book keeps its own language's blocks of it. A run that
   has one language and not the other stops the build. A block in any other
-  language (``sh``, ``text``, ``toml``) is the same in both books.
+  language (``sh``, ``text``, ``toml``, ``html``: a page's markup is the
+  same whichever client wrote what it loads) is the same in both books.
 - **Platform prose by marker.** ``<!-- python -->`` ... ``<!-- /python -->``
   and ``<!-- web -->`` ... ``<!-- /web -->`` hold what only one book says, a
   paragraph or a few words. Code inside one of them is that book's alone and
@@ -51,7 +52,7 @@ PYTHON_TABLE = os.path.join(CLIENTS, "python", "docs", "api-names.json")
 BOOKS = ("python", "web")
 LANGUAGES = {
     "python": {"python", "py", "pycon"},
-    "web": {"ts", "typescript", "js", "javascript", "html"},
+    "web": {"ts", "typescript", "js", "javascript"},
 }
 
 _FENCE = re.compile(r"^(\s*)(```+|~~~+)\s*([\w+-]*)")

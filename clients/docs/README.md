@@ -14,11 +14,11 @@ packages carry (`clients/python/build_docs.py`, `clients/web/tools/stage_books.p
 ## Writing a shared chapter
 
 - **An example is written in both languages**, a `python` block and a `ts`
-  (or `js`, or `html`) block next to each other, with nothing but blank lines
+  (or `js`) block next to each other, with nothing but blank lines
   between them. Each book keeps its own. The two are the same calls to the
   same API in the same order; an example in one language alone stops the
-  build. A block in another language (`sh`, `text`, `toml`) is the same in
-  both books.
+  build. A block in another language (`sh`, `text`, `toml`, `html`) is the
+  same in both books.
 - **What only one platform has** goes between `<!-- python -->` and
   `<!-- /python -->`, or `<!-- web -->` and `<!-- /web -->`: a paragraph, a
   table, a few words inside a sentence. A code block inside one needs no
