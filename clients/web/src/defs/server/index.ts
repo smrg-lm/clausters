@@ -170,7 +170,7 @@ export interface ServerOptions {
      * handle that booted one ({@link Server.engine}) to point a second handle
      * at the same server, which is what `attach` is for.
      */
-    engine?: ClaustersServer;
+    engine?: ClaustersServer | null;
     /**
      * A carrier built by hand, which wins over `transport` -- the reference
      * client's `interface=`. This is how an offline handle is made

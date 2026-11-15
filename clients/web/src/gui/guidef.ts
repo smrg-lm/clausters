@@ -1218,7 +1218,7 @@ export function layout(
     hug?: boolean;
     } = {},
     ...children: GuiNode[]
-): GuiNode {
+): View {
     const {
         flow, index, layout: arrangement, margin, gap, cols, hug, theme,
         title, frame, collapsed, modal, split, pack, ...rest
@@ -1265,7 +1265,7 @@ export function plane(
         cords?: readonly number[] | Source;
     } = {},
     ...children: GuiNode[]
-): GuiNode {
+): View {
     const {
         axis, zoom, contentW, contentH, viewX, viewY, viewZoom, bars, boxes, cords,
         flow, layout: arrangement, margin, gap, cols, theme, ...rest
@@ -1458,7 +1458,7 @@ export function signal(
         axes?: AxisPair;
         label?: string;
     } = {},
-): GuiNode {
+): View {
     const {
         view, cache, path, buffer, segments, data, blob, channels, bus, rate, retention,
         baseBucket, navigable, selectable, editable, overlay, folded, layers, measure, fills, at, dur,
@@ -1701,7 +1701,7 @@ export const window = view;
 export function pane(
     options: Props & { axes?: AxisPair; layer?: string; hidden?: string; children?: readonly GuiNode[] } = {},
     ...children: GuiNode[]
-): GuiNode {
+): View {
     return node("pane", { ...options, children: [...(options.children ?? []), ...children] });
 }
 
@@ -1722,7 +1722,7 @@ export function panel(
     hug?: boolean;
     } = {},
     ...children: GuiNode[]
-): GuiNode {
+): View {
     const {
         flow, layout, margin, gap, cols, hug, theme,
         title, frame, collapsed, modal, split, pack, ...rest
@@ -1773,7 +1773,7 @@ export function stack(
         children?: readonly GuiNode[];
     } = {},
     ...children: GuiNode[]
-): GuiNode {
+): View {
     const { index, margin, hug, theme, ...rest } = options;
     return node("layout", {
         ...rest,
@@ -1835,7 +1835,7 @@ export function scroll(
         bars?: boolean;
     } = {},
     ...children: GuiNode[]
-): GuiNode {
+): View {
     const {
         axis, zoom, contentW, contentH, viewX, viewY, viewZoom, bars,
         flow, layout, margin, gap, cols, theme, ...rest
@@ -1886,7 +1886,7 @@ export function label(
         align?: string;
         live?: boolean;
     } = {},
-): GuiNode {
+): View {
     const { textSize, wrap, align, live, ...rest } = options;
     return node("label", {
         ...rest,
@@ -2318,7 +2318,7 @@ export function text(
         multiline?: boolean;
         textSize?: number;
     } = {},
-): GuiNode {
+): View {
     const { value, label: name, multiline, textSize, ...rest } = options;
     return node("text", {
         ...rest,
@@ -2381,7 +2381,7 @@ export function table(
         label?: string;
         textSize?: number;
     } = {},
-): GuiNode {
+): View {
     const { rows, columns, selected, multiple, sort, label: text, textSize, ...rest } = options;
     return node("table", {
         ...rest,
@@ -2416,7 +2416,7 @@ export function table(
 export function files(
     path = ".",
     options: WidgetOptions & { filter?: readonly string[]; textSize?: number; multiple?: boolean } = {},
-): GuiNode {
+): View {
     const { filter, textSize, multiple, ...rest } = options;
     return node("files", {
         ...rest,
@@ -2447,7 +2447,7 @@ export function fileDialog(
         filter?: readonly string[];
         multiple?: boolean;
     } = {},
-): GuiNode {
+): View {
     const { title = "Open", action = "Open", filter, multiple, w = 520.0, h = 360.0, ...rest } = options;
     const field = text({ label: "file", name: "file" });
     const chooser = files(path, {
@@ -2508,7 +2508,7 @@ export function choice(
         values?: readonly number[];
         textSize?: number;
     } = {},
-): GuiNode {
+): View {
     const { index, label: text, view: look, values, textSize, ...others } = rest;
     if (look !== undefined && !CHOICE_VIEWS.includes(look)) {
         throw new Error(
@@ -2633,7 +2633,7 @@ export const ICON = {
  * **spring** that takes the strip's leftover and pushes what follows it to the
  * far edge. `line: false` keeps the space and draws no line.
  */
-export function separator(options: WidgetOptions & { line?: boolean } = {}): GuiNode {
+export function separator(options: WidgetOptions & { line?: boolean } = {}): View {
     const { line, ...rest } = options;
     return node("separator", { ...rest, ...drop([["line", flag(line)]]) });
 }
@@ -2649,7 +2649,7 @@ export function separator(options: WidgetOptions & { line?: boolean } = {}): Gui
 export function progress(
     value?: number,
     options: WidgetOptions & { label?: string; textSize?: number } = {},
-): GuiNode {
+): View {
     const { label: text, textSize, ...rest } = options;
     return node("progress", {
         ...rest,
@@ -2668,7 +2668,7 @@ export function progress(
 export function tabs(
     options: WidgetOptions & { titles: readonly string[]; index?: number },
     ...pages: GuiNode[]
-): GuiNode {
+): View {
     const { titles, index, ...rest } = options;
     if (titles.length !== pages.length) {
         throw new Error(
@@ -2690,7 +2690,7 @@ export function tabs(
 export function pager(
     options: WidgetOptions & { index?: number } = {},
     ...pages: GuiNode[]
-): GuiNode {
+): View {
     const { index, ...rest } = options;
     const shown = stack({ index }, ...pages);
     const strip = choice(pages.map((_, n) => String(n + 1)), {
@@ -2707,7 +2707,7 @@ export function pager(
  * groups, and a `separator({ weight: 1 })` where the rest should go to the far
  * edge.
  */
-export function toolbar(options: GroupOptions = {}, ...children: GuiNode[]): GuiNode {
+export function toolbar(options: GroupOptions = {}, ...children: GuiNode[]): View {
     return panel({ ...options, flow: "row", hug: true, pack: true }, ...children);
 }
 
@@ -2726,7 +2726,7 @@ export function toolbar(options: GroupOptions = {}, ...children: GuiNode[]): Gui
 export function dialog(
     options: GroupOptions & { flow?: string } = {},
     ...children: GuiNode[]
-): GuiNode {
+): View {
     return layout({ ...options, modal: true, frame: true, hug: true }, ...children);
 }
 
@@ -2814,7 +2814,7 @@ export function waveform(
          */
         fills?: boolean;
     } = {},
-): GuiNode {
+): View {
     const {
         cache, path, buffer, segments, data, blob, channels, baseBucket, overlay,
         folded, rulerY, bitDepth, min, max, layers, measure, fills,
@@ -2900,7 +2900,7 @@ export function spectrogram(
         /** The channels drawn folded, as in {@link signal}. */
         folded?: readonly number[];
     } = {},
-): GuiNode {
+): View {
     const {
         cache, path, buffer, segments, data, blob, channels, folded, windowSize,
         hop, dbFloor, dbCeil, freqScale, logFreq, colormap, wintype, normalize,
@@ -2960,7 +2960,7 @@ export function plot(
          */
         axes?: AxisPair;
     } = {},
-): GuiNode {
+): View {
     const {
         cache, path, buffer, data, blob, channels, view, overlay, sampleRate,
         min, max, ruler, rulerY, fftSize, dbFloor, dbCeil, freqScale, layers, measure,
@@ -3090,7 +3090,7 @@ export function meter(
         zones?: boolean | Array<[number, string] | [number, string, "step" | "lin" | number]>;
         label?: string;
     } = {},
-): GuiNode {
+): View {
     const {
         rate = "audio",
         channels,
@@ -3198,7 +3198,7 @@ export function scope(
          */
         axes?: AxisPair;
     } = {},
-): GuiNode {
+): View {
     const {
         rate = "audio", channels, overlay, windowMs, trigger, hold, min, max,
         ruler, rulerY, layers, measure, label: text, axes: pair,
@@ -3246,7 +3246,7 @@ export function phasescope(
         hold?: boolean;
         label?: string;
     } = {},
-): GuiNode {
+): View {
     const { windowMs, hold, label: text, ...rest } = options;
     return node("signal", {
         ...rest,
@@ -3301,7 +3301,7 @@ export function spectrum(
          */
         axes?: AxisPair;
     } = {},
-): GuiNode {
+): View {
     const {
         channels, fftSize, dbFloor, dbCeil, freqScale, logFreq, averaging,
         peakHold, navigable, viewStart, viewLen, ruler, rulerY,
@@ -3343,7 +3343,7 @@ export function spectrum(
  */
 export function nodetree(
     options: WidgetOptions & { group?: number; controls?: boolean; label?: string } = {},
-): GuiNode {
+): View {
     const { group = 0, controls, label: text, ...rest } = options;
     return node("nodes", {
         ...rest,
@@ -3391,7 +3391,7 @@ export function bpf(
          */
         axes?: AxisPair;
     } = {},
-): GuiNode {
+): View {
     const {
         points, min, max, duration, exp, label: text, axes: pair, ...rest
     } = options;
@@ -3434,7 +3434,7 @@ export function piano(
         voiceArgs?: readonly (readonly [string, number])[];
         label?: string;
     } = {},
-): GuiNode {
+): View {
     const {
         min, max, activeMin, activeMax, pan, overview, velocity, channel,
         voice, voiceArgs, label: text, ...rest
@@ -3503,7 +3503,7 @@ export function timeruler(
          */
         dir?: string;
     } = {},
-): GuiNode {
+): View {
     const { h = 20, theme, dir, ...timeline } = options;
     return node("field", {
         ...timelineProps(timeline, {}, drop([["dir", dir]])),
@@ -3558,7 +3558,7 @@ export function score(
         /** Where note entry writes next, as the driver keeps it; `""` is none. */
         editCursor?: EditCursor | "";
     } = {},
-): GuiNode {
+): View {
     const {
         displayList, playhead, playheadAt, playheadLoopStart, playheadLoopLen,
         sampleRate, selected, editable, entry, editCursor, ...rest
@@ -3613,7 +3613,7 @@ export function patch(
         cords?: readonly number[] | Source;
         label?: string;
     } = {},
-): GuiNode {
+): View {
     const { boxes, cords, label: text, ...rest } = options;
     return node("plane", {
         ...rest,
@@ -3643,7 +3643,7 @@ export function canvas(
         buses?: readonly number[];
         label?: string;
     } = {},
-): GuiNode {
+): View {
     const { params, buses, label: text, ...rest } = options;
     return node("canvas", {
         ...rest,

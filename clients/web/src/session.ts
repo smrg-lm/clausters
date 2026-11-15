@@ -343,7 +343,7 @@ export class Session extends Environment {
          * `server=`, and the same rule: one handed in is not this session's to
          * close.
          */
-        engine?: ClaustersServer;
+        engine?: ClaustersServer | null;
         /**
          * The engine's output channel count. The reference reads this from the
          * server's own options or its config file; a page has neither, and an
@@ -357,7 +357,7 @@ export class Session extends Environment {
         // the reference client's `server=`. Otherwise `boot` brings up one of
         // its own, which is the reference's default and the reason there is no
         // flag here: ownership is the verb's to say.
-        if (engine !== undefined) {
+        if (engine != null) {
             return Session.over(
                 { connection: await pageConnection(engine), timeout, share },
                 { clock, timebase, latency },

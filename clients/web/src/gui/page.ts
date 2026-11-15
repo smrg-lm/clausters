@@ -289,7 +289,7 @@ export function pageGuiIfUp(): Promise<ClaustersGui> | null {
  * server, and no engine is opened in the page for it.
  */
 export async function newGuiHost(
-    options: { engine?: ClaustersServer; idShare?: IdShare; url?: string } = {},
+    options: { engine?: ClaustersServer | null; idShare?: IdShare; url?: string } = {},
 ): Promise<ClaustersGui> {
     // A host of a server **over a socket**: its audio leg is a WebSocket to
     // that server (`url`), and no engine in this page is its.

@@ -111,7 +111,7 @@ export interface GuiHostOptions {
      * Without it a booted host brings up an engine of its own, and nothing on
      * another server is bindable from it.
      */
-    engine?: ClaustersServer;
+    engine?: ClaustersServer | null;
     /**
      * A carrier built by hand, which wins over `transport` -- the reference
      * client's `interface=`.
