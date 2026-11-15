@@ -281,6 +281,20 @@ impl WebServer {
         self.inner.clock() as f64
     }
 
+    /// Keeps the Unix axis that wall-clocked timetags land on with the page's
+    /// wall clock (`Date.now() / 1000`) across a gap in its audio -- the
+    /// `AudioContext` suspended until the first gesture, or by the page.
+    /// Called beside every quantum; answers whether sample 0 moved, which
+    /// [`WebServer::unix_epoch`] then reads.
+    pub fn follow_wall(&mut self, unix_now: f64) -> bool {
+        self.inner.follow_wall(unix_now)
+    }
+
+    /// Unix seconds at sample 0.
+    pub fn unix_epoch(&self) -> f64 {
+        self.inner.unix_epoch()
+    }
+
     /// Whether a `/server_quit` arrived; the page decides what closing means.
     pub fn quit_requested(&self) -> bool {
         self.inner.quit_requested()

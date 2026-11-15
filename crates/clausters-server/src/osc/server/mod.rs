@@ -469,6 +469,10 @@ struct PendingSync {
 /// offline host makes streams and timetags follow render time, not wall
 /// time). `unix_epoch` anchors sample 0 on the Unix axis so wall-clocked
 /// clients' timetags still land correctly.
+/// How far, in seconds, the headless mode's Unix axis may stray from the host's
+/// wall clock before [`OscServer::follow_wall`] places it again.
+pub const WALL_SLIP: f64 = 0.1;
+
 enum TimeSource {
     /// Monotonic seconds since `epoch` (construction time).
     Wall { epoch: Instant },
@@ -502,6 +506,42 @@ impl OscServer {
             TimeSource::Sample { unix_epoch } => {
                 unix_epoch + self.handle.current_samples() as f64 / self.handle.sample_rate as f64
             }
+        }
+    }
+
+    /// **Keeps the headless mode's Unix axis on the wall clock** and answers
+    /// whether it moved. `unix_now` is the host's wall clock (Unix seconds),
+    /// read beside the engine's sample counter; where the two disagree by more
+    /// than [`WALL_SLIP`], sample 0 is placed again so that now is `unix_now`.
+    ///
+    /// The axis is `unix_epoch + samples / rate`, which holds only while the
+    /// engine renders without a gap. A host whose audio stops and starts again
+    /// -- a page's `AudioContext`, suspended until the page's first gesture and
+    /// whenever the page suspends it -- leaves the counter standing while the
+    /// wall clock goes on, and every wall-clocked timetag afterwards would wait
+    /// out the gap: a note sent "now" sounding seconds later. Within the slip
+    /// nothing moves, so the axis stays sample-exact between gaps; the slip is
+    /// wider than a host's callback jitter and than the audio clock's drift over
+    /// any short run. The native wall mode reads the wall clock directly and
+    /// ignores this.
+    pub fn follow_wall(&mut self, unix_now: f64) -> bool {
+        let samples = self.handle.current_samples() as f64 / self.handle.sample_rate as f64;
+        match &mut self.clock {
+            TimeSource::Sample { unix_epoch }
+                if (unix_now - (*unix_epoch + samples)).abs() > WALL_SLIP =>
+            {
+                *unix_epoch = unix_now - samples;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The headless mode's Unix seconds at sample 0; `None` natively.
+    pub fn unix_epoch(&self) -> Option<f64> {
+        match &self.clock {
+            TimeSource::Sample { unix_epoch } => Some(*unix_epoch),
+            TimeSource::Wall { .. } => None,
         }
     }
 

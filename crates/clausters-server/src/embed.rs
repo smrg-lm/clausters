@@ -278,6 +278,19 @@ impl ClaustersHeadless {
         self.server.set_max_stream_buses(n);
     }
 
+    /// Keeps the Unix axis wall-clocked timetags land on with the host's wall
+    /// clock across a gap in the audio (`OscServer::follow_wall`); answers
+    /// whether it moved. A host that can stop and restart its audio calls it
+    /// with its wall clock beside every block.
+    pub fn follow_wall(&mut self, unix_now: f64) -> bool {
+        self.server.follow_wall(unix_now)
+    }
+
+    /// Unix seconds at sample 0, as the last [`Self::follow_wall`] placed them.
+    pub fn unix_epoch(&self) -> f64 {
+        self.server.unix_epoch().unwrap_or_default()
+    }
+
     /// Delivers one complete OSC packet (message or bundle) through the
     /// command ring; it takes effect on the next [`Self::process_block`].
     /// Returns `false` when the ring is momentarily full (backpressure).

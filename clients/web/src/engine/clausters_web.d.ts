@@ -120,6 +120,14 @@ export class WebServer {
      */
     finishFaust(ticket: number, compute: number, init: number, json?: string | null, error?: string | null): void;
     /**
+     * Keeps the Unix axis that wall-clocked timetags land on with the page's
+     * wall clock (`Date.now() / 1000`) across a gap in its audio -- the
+     * `AudioContext` suspended until the first gesture, or by the page.
+     * Called beside every quantum; answers whether sample 0 moved, which
+     * [`WebServer::unix_epoch`] then reads.
+     */
+    follow_wall(unix_now: number): boolean;
+    /**
      * How many frames one [`buffer_load_chunk`](Self::buffer_load_chunk)
      * should carry -- the serving budget's number, read from the engine rather
      * than repeated in JavaScript.
@@ -204,6 +212,10 @@ export class WebServer {
      * only where the compiler is the host (see `clausters::faust`).
      */
     takeFaustJobs(): string;
+    /**
+     * Unix seconds at sample 0.
+     */
+    unix_epoch(): number;
     /**
      * One run of the outstanding write's samples, interleaved: frames
      * `at..at + frames` of the span the job declared, and an empty array once
@@ -344,6 +356,7 @@ export interface InitOutput {
     readonly webserver_diskShape: (a: number, b: number, c: number) => void;
     readonly webserver_finishDelegated: (a: number, b: number, c: number, d: number) => void;
     readonly webserver_finishFaust: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+    readonly webserver_follow_wall: (a: number, b: number) => number;
     readonly webserver_installFrames: (a: number) => number;
     readonly webserver_new: (a: number, b: number, c: number) => [number, number, number];
     readonly webserver_poll: (a: number) => [number, number];
@@ -353,6 +366,7 @@ export interface InitOutput {
     readonly webserver_set_max_stream_buses: (a: number, b: number) => void;
     readonly webserver_takeDelegated: (a: number) => [number, number];
     readonly webserver_takeFaustJobs: (a: number) => [number, number];
+    readonly webserver_unix_epoch: (a: number) => number;
     readonly webserver_writeChunk: (a: number, b: number, c: number) => [number, number];
     readonly abi_version: () => number;
     readonly last_render_events: () => number;

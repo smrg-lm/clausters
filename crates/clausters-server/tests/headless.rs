@@ -179,6 +179,41 @@ fn timed_bundle_lands_on_its_exact_sample() {
     );
 }
 
+/// A host whose audio stopped and started again -- a page's suspended
+/// `AudioContext` -- leaves the sample counter behind the wall clock. Fed the
+/// wall clock, the server places sample 0 again, so a bundle stamped "now" on
+/// the wall clock plays now rather than after the gap; within the slip the
+/// axis does not move.
+#[test]
+fn the_unix_axis_follows_the_wall_clock_across_a_gap() {
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 1000.0).unwrap();
+    pull(&mut server, 75); // 0.1 s of audio
+    let rendered = 75.0 * BLOCK_SIZE as f64 / SR;
+    // Callback jitter: nothing moves.
+    assert!(!server.follow_wall(1000.0 + rendered + 0.02));
+    assert_eq!(server.unix_epoch(), 1000.0);
+    // Three seconds suspended: the wall clock went on, the counter did not.
+    let now = 1000.0 + rendered + 3.0;
+    assert!(server.follow_wall(now));
+    assert!((server.unix_epoch() - (1003.0)).abs() < 1e-9);
+    // A note stamped at the wall clock's now sounds in the next blocks, not
+    // three seconds of them later.
+    assert!(server.send(&bundle_at(
+        now,
+        vec![OscMessage {
+            addr: "/synth_new".into(),
+            args: vec![
+                OscType::String("default".into()),
+                OscType::Int(1000),
+                OscType::Int(0),
+                OscType::Int(0),
+            ],
+        }],
+    )));
+    let out = pull(&mut server, 20);
+    assert!(out.iter().any(|x| *x != 0.0), "the note waited out the gap");
+}
+
 #[test]
 fn buffer_load_installs_and_query_reports() {
     let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();

@@ -697,6 +697,11 @@ class ClaustersProcessor extends AudioWorkletProcessor {
                 this.interleaved = new Float32Array(need);
             }
             this.server.process(this.interleaved);
+            // The wall clock beside the block: a context that was suspended
+            // (until the page's first gesture, or by the page) leaves the
+            // sample counter behind it, and a timetag sent "now" would wait
+            // the gap out. The rule, and when it moves, is the server's.
+            if (this.server.follow_wall(Date.now() / 1000)) this.epoch = this.server.unix_epoch();
             // After the block, not before: a job leaving costs a JSON print and
             // a postMessage, and it is owed to the *next* quantum rather than
             // to this one.
