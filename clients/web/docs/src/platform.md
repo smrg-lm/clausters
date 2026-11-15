@@ -127,7 +127,7 @@ What ports, and what does not:
 |---|---|
 | The def builders, the sequencing layer, the arrangement, the data figures, the bundle writer (`clausters/defs`, `clausters/seq`, `clausters/form`, `clausters/data`, `clausters/bundle-writer`) | yes — they compute and serialize, and the shared core is what they compute with |
 | The `Server`/`GuiHost` handles over a **WebSocket** carrier, against a `clausters --ws` server and a `clausters-gui --ws` host | yes — node has a global `WebSocket`, and this is what the package's own WS suites drive |
-| The session layer (`clausters/session`): `Session`, the default session, `play`, `panic`, `plot` and `scope` | yes — an offline session (`Session.nrt`) or one on a live server over a WebSocket (`Session.live`); `Session.embed` is a page's |
+| The session layer (`clausters/session`): `Session`, the default session, `play`, `Routine`, `panic`, `plot` and `scope` | yes — an offline session (`Session.nrt`) or one on a live server over a WebSocket (`Session.live`); `Session.embed` is a page's |
 | The in-page engine (an AudioWorklet) and the page host (a canvas) | no — both are the document's, and there is no headless stand-in for them |
 | The package facade, `import "clausters"` | no — importing it registers the custom elements, which needs a document |
 

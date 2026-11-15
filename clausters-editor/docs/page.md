@@ -41,8 +41,25 @@ const session = (await Session.live(editor.engine)).activate();
 const host = await session.gui({ port: editor.gui });
 ```
 
-After it, `play`, a `Synth` or a pattern sound with nothing else named. The
-engine's audio starts at the page's first key or click, as a browser requires.
+After it, `play`, a `Synth` or a pattern sound with nothing else named, and so
+does a routine:
+
+```javascript
+import { play, Routine } from "clausters/session";
+
+function* test() {
+  for (let i = 0; i < 10; i++) {
+    play({ freq: 440 });
+    yield 1;
+  }
+}
+
+const r = new Routine(test);
+r.play();
+```
+
+The engine's audio starts at the page's first key or click, as a browser
+requires.
 
 A window the session opens goes in a frame of its own at the right of the
 page, which can be resized; the window follows it.

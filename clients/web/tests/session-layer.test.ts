@@ -22,13 +22,14 @@ test("it imports with no document, and exports the session and its verbs", () =>
     assert.equal(layer.main, main);
     assert.equal(layer.play, play);
     assert.equal(layer.panic, panic);
+    assert.equal(layer.Routine, Routine);
     assert.equal(layer.plot, plot);
     assert.equal(layer.scope, scope);
     assert.deepEqual(
         Object.keys(layer).sort(),
         [
-            "Environment", "PatchWindow", "PlotWindow", "RandomContext", "ScopeWindow",
-            "Session", "defaultSession", "main", "panic", "play", "plot", "scope",
+            "Environment", "PatchWindow", "PlotWindow", "RandomContext", "Routine",
+            "ScopeWindow", "Session", "defaultSession", "main", "panic", "play", "plot", "scope",
         ],
     );
 });

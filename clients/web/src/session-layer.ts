@@ -6,7 +6,8 @@
 // -- cannot import it. This subpath is what such a program
 // writes a session against: the `Session` and its default, the environment
 // they are, the two verbs that act on a session without drawing, `play` and
-// `panic`, and the two that name what to look at on the session's GUI host,
+// `panic` (with `Routine`, the generator a session's clock plays, as the
+// Python client's `from clausters import Routine`), and the two that name what to look at on the session's GUI host,
 // `plot` and `scope` (in a worker, the page's host, reached with
 // `session.gui({ port })`). The same names, from the same modules, as the facade exports;
 // nothing here is a second implementation, and the facade does not change.
@@ -26,6 +27,8 @@ export { defaultSession, main } from "./base/main.ts";
 export type { Main, SessionLike } from "./base/main.ts";
 export { Environment, RandomContext } from "./base/environment.ts";
 export { play } from "./play.ts";
+export { Routine } from "./base/stream.ts";
+export type { RoutineFunc } from "./base/stream.ts";
 export type { Playable, PlayOptions } from "./play.ts";
 export { panic } from "./panic.ts";
 export { plot, PatchWindow, PlotWindow } from "./plot.ts";
