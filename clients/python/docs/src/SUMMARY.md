@@ -119,6 +119,8 @@
       - [hosted](api/clausters.gui.editing.hosted.md)
       - [marking](api/clausters.gui.editing.marking.md)
       - [multitrack](api/clausters.gui.editing.multitrack.md)
+      - [multitrack_session](api/clausters.gui.editing.multitrack_session.md)
+      - [multitrack_view](api/clausters.gui.editing.multitrack_view.md)
       - [points](api/clausters.gui.editing.points.md)
       - [samples](api/clausters.gui.editing.samples.md)
       - [score](api/clausters.gui.editing.score.md)

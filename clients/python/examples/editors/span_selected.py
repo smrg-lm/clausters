@@ -12,7 +12,7 @@ import pathlib
 from clausters import Session, SoundFile
 from clausters.gui import edit
 from clausters.document import Content, Multitrack, Source
-from clausters.document import SessionFile
+from clausters.gui.editing import MultitrackSession
 from clausters.segments import Segment
 from clausters.seq import EventSequence
 from clausters.seq.event import Event
@@ -67,7 +67,7 @@ b = mt.tracks.add("two").active_take_lane.regions.add(
     2.0, 2.0, Content.onto({"source": {"source": 2, "lifetime": "session",
                                        "generation": 0},
                             "start": 0.0, "duration": 2.0}), name="990")
-saved = SessionFile(multitrack=mt)
+saved = MultitrackSession(multitrack=mt)
 saved.sources[1] = Source.file("span_selected-660.wav").shaped(1, frames, rate)
 saved.sources[2] = Source.file("span_selected-990.wav").shaped(1, frames, rate)
 saved.save(out / "span_selected.json")

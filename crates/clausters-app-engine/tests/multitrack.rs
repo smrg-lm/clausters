@@ -453,7 +453,8 @@ fn blocks(
 fn a_session_opens_from_its_files_and_saves_relative_paths() {
     use clausters_app_engine::app::App;
     use clausters_apps::editing::Editing;
-    use clausters_document::session::{Session, Source};
+    use clausters_apps::multitrack::session::MultitrackSession;
+    use clausters_document::session::Source;
     use clausters_document::{Document, Lifetime};
 
     let folder = std::env::temp_dir().join(format!("mt-session-{}", std::process::id()));
@@ -463,7 +464,7 @@ fn a_session_opens_from_its_files_and_saves_relative_paths() {
     std::fs::rename(&made, folder.join("take.wav")).unwrap();
     let mut region = region(0.0, 0.5, 0.0, 1.0, false);
     region.fade_in = Some(Fade::of(Second(0.0)));
-    let session = Session::new(Document::empty())
+    let session = MultitrackSession::new(Document::empty())
         .with_multitrack(multitrack(region))
         .with_source(SourceId(9), Source::file("take.wav", Lifetime::Session));
     let path = folder.join("song.json");
@@ -563,8 +564,9 @@ fn a_session_opens_from_its_files_and_saves_relative_paths() {
 /// **A session of one box of notes** over source 5, four notes in its first
 /// second, written into `folder`; answers its path.
 fn notes_session(folder: &std::path::Path) -> std::path::PathBuf {
+    use clausters_apps::multitrack::session::MultitrackSession;
     use clausters_document::events::{Event, EventSequence};
-    use clausters_document::session::{Location, Session, Source};
+    use clausters_document::session::{Location, Source};
     use clausters_document::{Document, Lifetime};
 
     let notes: Vec<Event> = (0..4)
@@ -603,7 +605,7 @@ fn notes_session(folder: &std::path::Path) -> std::path::PathBuf {
         )],
         ..TakeLane::new(NodeId(2))
     };
-    let session = Session::new(Document::empty())
+    let session = MultitrackSession::new(Document::empty())
         .with_multitrack(Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
@@ -762,7 +764,8 @@ fn a_roll_plays_its_notes_on_a_transport_of_its_own() {
 fn a_track_wider_than_stereo_folds_onto_the_master() {
     use clausters_app_engine::app::App;
     use clausters_apps::editing::Editing;
-    use clausters_document::session::{Session, Source};
+    use clausters_apps::multitrack::session::MultitrackSession;
+    use clausters_document::session::Source;
     use clausters_document::{Document, Lifetime};
 
     let folder = std::env::temp_dir().join(format!("mt-wide-{}", std::process::id()));
@@ -807,7 +810,7 @@ fn a_track_wider_than_stereo_folds_onto_the_master() {
         )],
         ..TakeLane::new(NodeId(2))
     };
-    let session = Session::new(Document::empty())
+    let session = MultitrackSession::new(Document::empty())
         .with_multitrack(Multitrack {
             tracks: vec![track],
             channels: 2,

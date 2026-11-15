@@ -1,11 +1,22 @@
 //! The document written to a file, and the table that says where its samples
-//! is.
+//! are.
 //!
 //! A [`crate::Document`] describes *what plays when*; it deliberately does not
 //! say where a source lives, because inside a running system a source is a
 //! server buffer, a mapped file or a rendered result and the tree has no
 //! business knowing which. A **session** is the document plus exactly that
 //! missing half: a source table, so the thing can be closed and opened again.
+//!
+//! # One envelope, and each application's contents in it
+//!
+//! A [`SessionFile`] is what every application's file holds: the format, the
+//! application it belongs to, the general tree, the source table and the
+//! provenance. What one application keeps beside them (the multitrack's
+//! tracks, its windows' views and where a pass ends) is that application's,
+//! read and written by it (`clausters_apps::multitrack::session`), and the
+//! envelope carries it as written. So a second application with a file of
+//! its own adds its contents to the same envelope, and the source table, the
+//! migrations and what a save mid-edit means are written once.
 //!
 //! # Why the format is here and not in a client
 //!
@@ -47,8 +58,7 @@ use clausters_core::tempomap::{TempoChange, TempoMap};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::multitrack::{Extra, Multitrack};
-use crate::view::View;
+use crate::multitrack::Extra;
 use crate::{Document, Lifetime, Opaque, SourceId, SourceRef};
 
 /// The format this file was written in.
@@ -94,7 +104,7 @@ pub const FORMAT_2_TEMPO: f64 = 1.0;
 ///
 /// Applied to the JSON before it is read, so every reader -- the crate's own,
 /// the GUI host's, each client's -- opens an old file the same way. A session
-/// already at [`FORMAT`] (or newer, which [`Session::is_readable`] refuses) is
+/// already at [`FORMAT`] (or newer, which [`SessionFile::is_readable`] refuses) is
 /// handed back untouched, so calling this on every read is safe.
 ///
 /// From 2 to 3, every beat position of the multitrack is taken to seconds
@@ -332,7 +342,7 @@ pub enum Location {
     ///
     /// A session may hold one, because saving must not be blocked by it, but a
     /// reader that finds one knows the samples are not there: it opens with
-    /// that element unresolved rather than pretending. [`Session::volatile`]
+    /// that element unresolved rather than pretending. [`SessionFile::volatile`]
     /// is what a save consults before promising the file is complete.
     Volatile,
     /// **A sequence of events, held here**: notes and messages in beats, with
@@ -574,8 +584,8 @@ impl Source {
 ///   of a multitrack, beats of a sequence), going back the same way.
 ///
 /// **An end is where a pass stops, and nothing else.** It bounds no axis: how
-/// far a window shows, scrolls or zooms out is the view's
-/// ([`crate::view`]), and reads nothing here.
+/// far a window shows, scrolls or zooms out is the view's, and reads nothing
+/// here.
 ///
 /// As JSON: `null`, `"contents"` or the number.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -658,89 +668,65 @@ impl<'de> Deserialize<'de> for End {
     }
 }
 
-/// **The application a session file belongs to**, as its metadata names it:
-/// the multitrack, today the one application of the host whose file is a
-/// session.
-///
-/// A file is opened by the application it belongs to, so the name is written
-/// into it rather than read off its extension, which every application's JSON
-/// shares.
-pub const APPLICATION: &str = "multitrack";
+/// The application a file written before [`Metadata::application`] existed
+/// belongs to: the multitrack, the one application that had a session file
+/// then.
+fn unnamed_application() -> String {
+    "multitrack".to_string()
+}
 
 /// **What a session file says about itself**, beside what it holds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Metadata {
-    /// The application of the host the file belongs to ([`APPLICATION`]). A
-    /// file written before it was named belongs to the multitrack.
-    #[serde(default = "multitrack")]
+    /// The application the file belongs to. A file is opened by the
+    /// application it belongs to, so the name is written into it rather than
+    /// read off its extension, which every application's JSON shares. A file
+    /// written before it was named belongs to the multitrack.
+    #[serde(default = "unnamed_application")]
     pub application: String,
     /// Fields a newer writer wrote. See [`Extra`].
     #[serde(flatten, default, skip_serializing_if = "Extra::is_empty")]
     pub extra: Extra,
 }
 
-fn multitrack() -> String {
-    APPLICATION.to_string()
-}
-
-impl Default for Metadata {
-    fn default() -> Self {
+impl Metadata {
+    /// The metadata of a file that belongs to `application`.
+    pub fn of(application: &str) -> Self {
         Self {
-            application: multitrack(),
+            application: application.to_string(),
             extra: Extra::new(),
         }
     }
 }
 
-/// A session: the multitrack, saved, and where its samples are.
+/// **A session file**: what every application's file holds, whatever the
+/// application keeps in it.
+///
+/// The format, the application the file belongs to, the general tree, the
+/// table that says where each source's samples are and what produced the
+/// whole are the same for every application; what one application keeps
+/// beside them is its own and stays in [`SessionFile::contents`], as the JSON
+/// it was written as, for that application to read. The multitrack's
+/// (`clausters_apps::multitrack::session::MultitrackSession`) is its tracks,
+/// its windows' views and where a pass ends; another application with a file
+/// adds its own contents over the same envelope rather than a second format.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Session {
+pub struct SessionFile {
     /// The format this was written in. See [`FORMAT`].
     pub format: u32,
     /// What the file says about itself: the application it belongs to
     /// ([`Metadata`]). Absent, it is the multitrack's.
-    #[serde(default)]
+    #[serde(default = "default_metadata")]
     pub metadata: Metadata,
-    /// **The multitrack**: its tracks, and the timeline they are placed on.
-    #[serde(
-        default,
-        skip_serializing_if = "is_empty_multitrack",
-        alias = "arrangement"
-    )]
-    pub multitrack: Multitrack,
-    /// The general tree, for what is not a multitrack.
+    /// The general tree, for what no application's contents hold.
     ///
     /// **Absent means empty, not invalid**: a session that is only a
     /// multitrack writes no general tree and reads back without one.
-    ///
-    /// **Beside the multitrack and never inside it.** A region is a window
-    /// onto a source; none places this tree and none reads a node of it
-    /// ([`crate::multitrack::Window`]).
     #[serde(
         default = "Document::empty",
         skip_serializing_if = "Document::is_empty"
     )]
     pub document: Document,
-    /// How the multitrack was being **looked at**: one entry per window.
-    ///
-    /// Presentation, parallel to the model and never inside it
-    /// ([`crate::view`]). A session carries it for the reason every program in
-    /// the field does -- reopening a multitrack into the window it was left in is
-    /// what a person expects -- and a reader that ignores the field opens the
-    /// same multitrack, since nothing here can change what plays.
-    ///
-    /// A **list** because a multitrack drawn in two windows has two views, and they
-    /// disagree on purpose. Empty is the ordinary case: nothing was saved, so
-    /// the window opens on its own defaults.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub views: Vec<View>,
-    /// **Where a pass over the multitrack ends** ([`End`]): the transport's
-    /// own switch, kept so a session opened again stops where it stopped
-    /// before. Not in a view, since it changes what is heard and a view
-    /// changes nothing that plays; and not in the multitrack, since it is no
-    /// edit and no undo puts it back.
-    #[serde(default, skip_serializing_if = "End::is_open")]
-    pub end: End,
     /// Where each source is. A `BTreeMap`, so a written session is stable
     /// under re-saving and a diff of two saves is the edits and not the
     /// iteration order.
@@ -751,43 +737,35 @@ pub struct Session {
     /// not lose the reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<Opaque>,
-    /// Fields a newer writer wrote. See [`Extra`].
+    /// **What the application keeps**, and the fields a newer writer wrote:
+    /// every top-level field this envelope does not name, as written. The
+    /// application the file belongs to reads its own out of it; the rest is
+    /// carried. See [`Extra`].
     #[serde(flatten, default, skip_serializing_if = "Extra::is_empty")]
-    pub extra: Extra,
+    pub contents: Extra,
 }
 
-/// Whether an arrangement says nothing at all, so an empty one stays out of the
-/// file rather than writing an empty object into every session ever saved.
-fn is_empty_multitrack(multitrack: &Multitrack) -> bool {
-    *multitrack == Multitrack::new()
+fn default_metadata() -> Metadata {
+    Metadata::of(&unnamed_application())
 }
 
-impl Session {
-    /// A session over this document, with no arrangement and no sources yet.
-    pub fn new(document: Document) -> Self {
+impl SessionFile {
+    /// A session file of `application`'s over this document, with no sources
+    /// yet and nothing of the application's in it.
+    pub fn new(application: &str, document: Document) -> Self {
         Self {
             format: FORMAT,
-            metadata: Metadata::default(),
-            multitrack: Multitrack::new(),
-            views: Vec::new(),
-            end: End::Open,
+            metadata: Metadata::of(application),
             document,
             sources: BTreeMap::new(),
             provenance: None,
-            extra: Extra::new(),
+            contents: Extra::new(),
         }
     }
 
-    /// Carries this multitrack.
-    pub fn with_multitrack(mut self, multitrack: Multitrack) -> Self {
-        self.multitrack = multitrack;
-        self
-    }
-
-    /// Carries how the multitrack was being looked at. See [`Session::views`].
-    pub fn with_view(mut self, view: View) -> Self {
-        self.views.push(view);
-        self
+    /// Whether the file belongs to `application`.
+    pub fn belongs_to(&self, application: &str) -> bool {
+        self.metadata.application == application
     }
 
     /// Records where a source is.
@@ -826,22 +804,13 @@ impl Session {
             .collect()
     }
 
-    /// Sources the multitrack names but the table does not hold -- what an opening
-    /// reader reports rather than discovering one element at a time.
+    /// Sources the general tree names but the table does not hold -- what an
+    /// opening reader reports rather than discovering one element at a time.
     ///
-    /// Both halves are walked: the arrangement's regions and the general tree.
-    /// A reader that checked only one would open a session missing exactly the
-    /// material the other half plays.
+    /// The tree's half: an application's contents name sources of their own,
+    /// and its file adds those (a multitrack's regions).
     pub fn dangling(&self) -> Vec<SourceId> {
         let mut missing = Vec::new();
-        for region in self.multitrack.regions() {
-            if let Some(source) = region.content.source()
-                && !self.sources.contains_key(&source)
-                && !missing.contains(&source)
-            {
-                missing.push(source);
-            }
-        }
         self.document.walk(&mut |node| {
             let named: Vec<crate::SourceId> = match &node.body {
                 crate::Body::Vector { source, .. } => vec![source.source],
@@ -895,30 +864,21 @@ impl Session {
         true
     }
 
-    /// A session read from its JSON, **migrated first** when it was written in
-    /// an older format ([`migrate`]). The door every reader of a file goes
-    /// through, so an old session opens the same everywhere.
-    ///
-    /// **A file another application's metadata names is refused** -- it is
-    /// not a multitrack's, whatever its JSON happens to hold.
+    /// A session file read from its JSON, **migrated first** when it was
+    /// written in an older format ([`migrate`]). The door every reader of a
+    /// file goes through, so an old session opens the same everywhere; which
+    /// application may open it is that application's to check
+    /// ([`SessionFile::belongs_to`]).
     pub fn read(written: Value) -> Result<Self, serde_json::Error> {
-        use serde::de::Error;
-        let session: Self = serde_json::from_value(migrate(written))?;
-        if session.metadata.application != APPLICATION {
-            return Err(serde_json::Error::custom(format!(
-                "the file belongs to the {} application, not to the multitrack",
-                session.metadata.application
-            )));
-        }
-        Ok(session)
+        serde_json::from_value(migrate(written))
     }
 
-    /// [`Session::read`] over the file's text.
+    /// [`SessionFile::read`] over the file's text.
     pub fn read_str(text: &str) -> Result<Self, serde_json::Error> {
         Self::read(serde_json::from_str(text)?)
     }
 
-    /// [`Session::read`] over the file's bytes.
+    /// [`SessionFile::read`] over the file's bytes.
     pub fn read_slice(bytes: &[u8]) -> Result<Self, serde_json::Error> {
         Self::read(serde_json::from_slice(bytes)?)
     }

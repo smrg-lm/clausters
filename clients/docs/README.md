@@ -20,8 +20,8 @@ packages carry (`clients/python/build_docs.py`, `clients/web/tools/stage_books.p
   build. A block in another language (`sh`, `text`, `toml`, `html`) is the
   same in both books.
 - **The two blocks import the same names from the same modules**: what
-  Python imports `from clausters.document import SessionFile`, TypeScript
-  imports `{ SessionFile } from "clausters/document"`, and a builder imported
+  Python imports `from clausters.gui.editing import MultitrackSession`, TypeScript
+  imports `{ MultitrackSession } from "clausters/gui/editing"`, and a builder imported
   by name in one is imported by name in the other, never reached through a
   namespace. A name only one platform has goes in `names.toml`'s
   `[imports]`; anything else that differs stops the build.

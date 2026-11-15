@@ -5,7 +5,7 @@
 //! list reads, measured as a stack -- what the signal reached (`peak`) with
 //! what it held inside that (`rms`) -- and edited with the catalogue's
 //! three-gesture plan (a drag selects, Alt draws, Ctrl grabs one sample). The
-//! picture is the catalogue's (`clausters_document::view::catalogue`); what is
+//! picture is the catalogue's (`crate::view::catalogue`); what is
 //! the application's is the window it stands in, the measures it stacks, the
 //! label a take is shown under and the correction a write answers with.
 //!
@@ -21,10 +21,10 @@
 //! As in the multitrack's window, the widget ids are a running host's facts
 //! and come in as arguments.
 
-use clausters_document::view::layers::Stack;
+use crate::view::layers::Stack;
 use serde_json::{Map, Value, json};
 
-use clausters_document::view::catalogue::{self, Waveform};
+use crate::view::catalogue::{self, Waveform};
 
 /// **The audio editor's default stack**: what the signal reached, and
 /// what it held inside that. Other layers use the shared view vocabulary.

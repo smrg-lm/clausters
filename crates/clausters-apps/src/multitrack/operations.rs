@@ -8,10 +8,12 @@ use crate::application::{
     operations::{Access, Batch, Operation, Result as IoResult, Target},
     services::{Application, Completion, Services},
 };
-use clausters_document::{SourceId, parts::TakeFile, session::Session};
+use clausters_document::{SourceId, parts::TakeFile};
+
+use crate::multitrack::session::MultitrackSession;
 use clausters_editing::apply::Step;
 
-/// Session work decoded by the application before preparation.
+/// MultitrackSession work decoded by the application before preparation.
 #[derive(Debug)]
 pub struct Request {
     /// Original session and endpoint.
@@ -27,18 +29,18 @@ pub struct Request {
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Snapshot {
     /// Current contents, including source locations and shared sequences.
-    pub session: Session,
+    pub session: MultitrackSession,
     /// Last confirmed destination, or none for an untitled session.
     pub path: Option<String>,
     /// The confirmed checkpoint, kept through changes not saved yet.
-    pub saved: Option<Session>,
+    pub saved: Option<MultitrackSession>,
 }
 
 /// A prepared session snapshot, retained through storage confirmation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Saved {
     /// Contents written, before paths are made relative to the destination.
-    pub session: Session,
+    pub session: MultitrackSession,
     /// Destination confirmed only after storage succeeds.
     pub path: String,
     /// What waits for this save to be confirmed: the window's close, or a
@@ -51,8 +53,8 @@ pub struct Saved {
 /// A session read and resolved by the host, ready for one binding transition.
 #[derive(Debug)]
 pub struct Opened {
-    /// Session contents.
-    pub session: Session,
+    /// MultitrackSession contents.
+    pub session: MultitrackSession,
     /// Files, joins and sequences resolved before publication.
     pub resolved: super::sources::Resolved,
 }

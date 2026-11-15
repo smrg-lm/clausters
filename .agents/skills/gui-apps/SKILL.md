@@ -33,7 +33,7 @@ The components that exist (in `crates/clausters-apps/src` unless named), and wha
 | `clausters_editing::verbs` | The one verb table: each verb's name, keys, label and class |
 | `clausters_editing::conversation` | Messages, turns, answers and corrections between a host and an owner |
 | `clausters_editing` projections | The structure as props, a gesture as payloads, the structure as what sounds, written once per structure |
-| `clausters_document::view::catalogue` | The picture of a structure, which every application that shows that structure uses |
+| `clausters_apps::view::catalogue` | The picture of a structure, which every application that shows that structure uses |
 
 **A dialog asks; a panel shows.** A modal dialog (`forms`) is for asking before an act, such as unsaved work, a conversion's options or quitting, and for work in progress. Choosing what a view shows (which curve a lane draws, a spectrogram's settings, which parameter a note displays) and any view of the data as text (an event list, an inspector) is a section of `panels` beside the work, shown or hidden, never a dialog. A dialog that opens to change what is shown stops the work to adjust its picture.
 

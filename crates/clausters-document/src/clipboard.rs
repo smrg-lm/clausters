@@ -298,7 +298,7 @@ impl Clipboard {
     }
 
     /// The files a clipboard of segments names, each once: a root that keeps
-    /// a render alive ([`crate::session::Session::release_renders`]).
+    /// a render alive ([`crate::session::SessionFile::release_renders`]).
     pub fn files(&self) -> Vec<&str> {
         let mut out: Vec<&str> = Vec::new();
         if let Content::Segments { parts, held, .. } = &self.content {

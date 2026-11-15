@@ -1941,13 +1941,6 @@ export interface InitOutput {
     readonly tempomap_tempoAt: (a: number, b: number) => number;
     readonly tempomap_truncateFrom: (a: number, b: number) => void;
     readonly tempomap_version: (a: number) => number;
-    readonly bundle_requirements: (a: number, b: number) => [number, number, number, number];
-    readonly bundle_resolve: (a: number, b: number) => [number, number, number, number];
-    readonly bundle_validate: (a: number, b: number) => [number, number];
-    readonly patchCompile: (a: number, b: number) => [number, number, number, number];
-    readonly report_panics: () => void;
-    readonly sessionFormat: () => number;
-    readonly sessionMigrate: (a: number, b: number) => [number, number];
     readonly __wbg_sampleclockmodel_free: (a: number, b: number) => void;
     readonly bark_to_hz: (a: number) => number;
     readonly channel_stats: (a: number, b: number, c: number, d: number) => [number, number];
@@ -1965,6 +1958,13 @@ export interface InitOutput {
     readonly sampleclockmodel_sampleAt: (a: number, b: number) => number;
     readonly sampleclockmodel_span: (a: number) => number;
     readonly true_peak: (a: number, b: number, c: number, d: number) => number;
+    readonly bundle_requirements: (a: number, b: number) => [number, number, number, number];
+    readonly bundle_resolve: (a: number, b: number) => [number, number, number, number];
+    readonly bundle_validate: (a: number, b: number) => [number, number];
+    readonly patchCompile: (a: number, b: number) => [number, number, number, number];
+    readonly report_panics: () => void;
+    readonly sessionFormat: () => number;
+    readonly sessionMigrate: (a: number, b: number) => [number, number];
     readonly __wbg_document_free: (a: number, b: number) => void;
     readonly __wbg_editingcore_free: (a: number, b: number) => void;
     readonly __wbg_history_free: (a: number, b: number) => void;

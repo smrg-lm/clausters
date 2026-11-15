@@ -15,24 +15,24 @@
 //!
 //! A render goes **as soon as nothing names it**: not the document, not an
 //! entry of the history (which an undo or a redo would read again), and not
-//! the clipboard. [`Session::release_renders`] walks the three and hands back
+//! the clipboard. [`SessionFile::release_renders`] walks the three and hands back
 //! the files to delete; deleting them is the caller's, since this crate does
 //! no I/O. A save writes a session that names no temporary file
-//! ([`Session::for_saving`]): a render the document still names is kept, in
+//! ([`SessionFile::for_saving`]): a render the document still names is kept, in
 //! the session's folder, and the ones it does not are not written down.
 //!
 //! **A clipboard holds segments by location.** A copy of a span of a take is
 //! the parts it is made of, each naming its file by an absolute path
 //! ([`crate::clipboard::SegmentPart`]), so a copy of an hour is a few parts
 //! and a paste into another session is an edit of a list whose sources that
-//! session adds by the same paths ([`Session::copy_segments`],
-//! [`Session::paste_segments`]).
+//! session adds by the same paths ([`SessionFile::copy_segments`],
+//! [`SessionFile::paste_segments`]).
 
 use std::path::{Path, PathBuf};
 
 use crate::clipboard::{Clipboard, SegmentPart};
 use crate::history::History;
-use crate::session::{Location, Part, Session, Source};
+use crate::session::{Location, Part, SessionFile, Source};
 use crate::{Lifetime, Range, SourceId, SourceRef};
 
 /// The folder a session's renders are written to, and whether it outlives
@@ -86,7 +86,7 @@ impl Workspace {
     }
 }
 
-impl Session {
+impl SessionFile {
     /// An id no source of this session has.
     pub fn next_source_id(&self) -> SourceId {
         SourceId(self.sources.keys().map(|id| id.0 + 1).max().unwrap_or(1))
@@ -115,15 +115,11 @@ impl Session {
         (id, path)
     }
 
-    /// **The sources the document names**: the regions' and the general
+    /// **The sources the session names**: `contents`, the ones its
+    /// application's contents name (a multitrack's regions), and the general
     /// tree's, and through a join every source its parts read.
-    pub fn named(&self) -> Vec<SourceId> {
-        let mut named = Vec::new();
-        for region in self.multitrack.regions() {
-            if let Some(source) = region.content.source() {
-                named.push(source);
-            }
-        }
+    pub fn named(&self, contents: &[SourceId]) -> Vec<SourceId> {
+        let mut named = contents.to_vec();
         self.document.walk(&mut |node| match &node.body {
             crate::Body::Vector { source, .. } => named.push(source.source),
             crate::Body::Segments { segments, .. } => named.extend(
@@ -341,17 +337,19 @@ impl Session {
         )
     }
 
-    /// **Lets go of the renders nothing names**: neither the document, nor an
-    /// entry of `history` an undo or a redo would read, nor `clipboard`. They
-    /// leave the source table, and their files are handed back for the caller
-    /// to delete.
+    /// **Lets go of the renders nothing names**: neither the document nor
+    /// `contents` (the sources the application's contents name), nor an entry
+    /// of `history` an undo or a redo would read, nor `clipboard`. They leave
+    /// the source table, and their files are handed back for the caller to
+    /// delete.
     pub fn release_renders(
         &mut self,
         workspace: &Workspace,
         history: &History,
         clipboard: Option<&Clipboard>,
+        contents: &[SourceId],
     ) -> Vec<PathBuf> {
-        let mut roots = self.named();
+        let mut roots = self.named(contents);
         roots.extend(self.reached(history.held_sources()));
         let copied: Vec<PathBuf> = clipboard
             .map(|c| {
@@ -387,9 +385,15 @@ impl Session {
     /// the document names is kept, as a source of the session's own folder,
     /// written relative to it; one it does not name is not written down. A
     /// workspace that goes when the session closes cannot keep one, and a
-    /// render the document names there is refused, by name.
-    pub fn for_saving(&self, workspace: &Workspace) -> Result<Session, String> {
-        let named = self.named();
+    /// render the document names there is refused, by name. `contents` are the
+    /// sources the application's contents name, as [`SessionFile::named`] takes
+    /// them.
+    pub fn for_saving(
+        &self,
+        workspace: &Workspace,
+        contents: &[SourceId],
+    ) -> Result<SessionFile, String> {
+        let named = self.named(contents);
         let mut saved = self.clone();
         saved.sources.retain(|id, s| {
             s.lifetime != Lifetime::Temporary || named.contains(id) || s.editing.is_some()

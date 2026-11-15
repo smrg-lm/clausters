@@ -1,18 +1,21 @@
 # pyright: basic
-"""The presentation: what a window shows of a multitrack, saved beside it.
+"""The multitrack's window state: what a window shows of a multitrack, saved in
+its session file beside it.
 
-Private: the names are `clausters.document`'s.
+Presentation, parallel to the model and never inside it: nothing here can
+change what plays, and a multitrack round trips the same whether a view of it
+exists or not. It is the multitrack application's, so it lives with it; the
+web client's twin is ``gui/editing/multitrack-view.ts``.
 """
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from ._format import _unknown_fields
-from ._timeline import Span
+from ...document import Span
+from ...document._format import _unknown_fields
 
 if TYPE_CHECKING:
-    from ._multitrack import Multitrack, TakeLane, Track
-
+    from ...document import Multitrack, TakeLane, Track
 
 
 @dataclass

@@ -158,8 +158,8 @@ impl Editing {
         ran: &mut Ran,
     ) -> Result<Value, String> {
         let bytes = clausters_core::files::read(path).map_err(|e| format!("{path}: {e}"))?;
-        let session: clausters_document::session::Session =
-            clausters_document::session::Session::read_slice(&bytes)
+        let session: crate::multitrack::session::MultitrackSession =
+            crate::multitrack::session::MultitrackSession::read_slice(&bytes)
                 .map_err(|e| format!("{path}: not a session: {e}"))?;
         self.open_session_snapshot(member, session, Some(path.to_string()), None, caller, ran)
     }
@@ -167,9 +167,9 @@ impl Editing {
     fn open_session_snapshot(
         &mut self,
         member: MemberId,
-        session: clausters_document::session::Session,
+        session: crate::multitrack::session::MultitrackSession,
         path: Option<String>,
-        checkpoint: Option<clausters_document::session::Session>,
+        checkpoint: Option<crate::multitrack::session::MultitrackSession>,
         caller: &mut dyn Caller,
         ran: &mut Ran,
     ) -> Result<Value, String> {

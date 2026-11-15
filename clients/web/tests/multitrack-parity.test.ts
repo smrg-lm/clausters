@@ -22,9 +22,10 @@ import { SESSION_FORMAT } from "../src/document.ts";
 import { Event } from "../src/seq/event.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 
-import { Automation, Multitrack, Content, Fade, FrozenSource, TakeLaneView,
-         SessionFile, Source, Span, Tempo, Track, TrackView,
-         MultitrackView } from "../src/document.ts";
+import { Automation, Multitrack, Content, Fade, FrozenSource, Source, Span, Tempo,
+         Track } from "../src/document.ts";
+import { MultitrackSession, MultitrackView, TakeLaneView,
+         TrackView } from "../src/gui/editing/index.ts";
 import type { TakeLane } from "../src/document.ts";
 
 await loadCore();
@@ -373,11 +374,11 @@ async function saved(): Promise<Record<string, unknown>> {
 
 test("the client's session parses and survives a round trip", async () => {
     const written = await saved();
-    assert.deepEqual(SessionFile.read(written).write(), written);
+    assert.deepEqual(MultitrackSession.read(written).write(), written);
 });
 
 test("a source table written there reads as sources here", async () => {
-    const session = SessionFile.read(await saved());
+    const session = MultitrackSession.read(await saved());
     assert.equal(session.sources.size, 6);
     const take = session.source(100);
     assert.deepEqual(take?.location, { at: "file", path: "takes/100.wav" });
@@ -393,14 +394,14 @@ test("a sequence of events is a source held in the file", async () => {
     // handle itself held by the table, so a save writes what an editor did.
     await loadCore();
     const notes = new EventSequence([[1.0, new Event({ midinote: 60, sustain: 0.5 })]]);
-    const session = new SessionFile();
+    const session = new MultitrackSession();
     session.sources.set(900, Source.events(notes));
     notes.events.add(2.0, new Event({ midinote: 64, sustain: 0.5 }));
     const written = session.write();
     const location = ((written.sources as Record<string, Record<string, unknown>>)["900"]
         .location) as { at: string; sequence: { events: unknown[] } };
     assert.ok(location.at === "events" && location.sequence.events.length === 2);
-    const back = SessionFile.read(written);
+    const back = MultitrackSession.read(written);
     assert.deepEqual(back.source(900)?.sequence?.data(), notes.data());
     assert.deepEqual(back.write(), written);
     assert.deepEqual(session.volatile(), [], "its events are in the file");
@@ -411,7 +412,7 @@ test("a save that cannot promise everything says which part", async () => {
     // The three states a table has to be able to hold, each read back as
     // itself: a file that is there, samples nobody wrote down, and a working
     // copy whose destructive edit is still open.
-    const session = SessionFile.read(await saved());
+    const session = MultitrackSession.read(await saved());
     assert.deepEqual(session.volatile(), [201]);
     assert.deepEqual(session.openEdits(), [300]);
     assert.equal(session.source(300)?.lifetime, "temporary");
@@ -425,13 +426,13 @@ test("a save that cannot promise everything says which part", async () => {
 });
 
 test("the multitrack inside the session is the same multitrack", async () => {
-    const session = SessionFile.read(await saved());
+    const session = MultitrackSession.read(await saved());
     assert.deepEqual(session.multitrack.write(), await vector());
     assert.deepEqual(session.dangling(), []);
 });
 
 test("an absent multitrack reads as an empty one rather than as nothing", () => {
-    const session = SessionFile.read({ format: SESSION_FORMAT });
+    const session = MultitrackSession.read({ format: SESSION_FORMAT });
     assert.equal(session.multitrack.tracks.length, 0);
     assert.deepEqual(session.write(),
         { format: SESSION_FORMAT, metadata: { application: "multitrack" } });
@@ -450,31 +451,31 @@ test("a session keeps where a pass ends", () => {
     // The transport's end is the session's, in the three forms a playback
     // takes it: none for a pass that rolls on -- which is not written --
     // "contents", and a number of seconds for an end marker.
-    assert.ok(!("end" in new SessionFile().write()));
-    assert.equal(SessionFile.read({ format: SESSION_FORMAT }).end, null);
+    assert.ok(!("end" in new MultitrackSession().write()));
+    assert.equal(MultitrackSession.read({ format: SESSION_FORMAT }).end, null);
     for (const end of ["contents", 12.5] as const) {
-        const session = new SessionFile();
+        const session = new MultitrackSession();
         session.end = end;
         const written = session.write();
         assert.equal(written.end, end);
-        assert.equal(SessionFile.read(written).end, end);
-        assert.ok(!("end" in SessionFile.read(written).extra));
+        assert.equal(MultitrackSession.read(written).end, end);
+        assert.ok(!("end" in MultitrackSession.read(written).contents));
     }
 });
 
 test("a session field a newer writer added survives", () => {
     const written = { format: SESSION_FORMAT, metadata: { application: "multitrack" },
                       mixer: { buses: [{ id: 1, name: "reverb" }] } };
-    assert.deepEqual(SessionFile.read(written).write(), written);
+    assert.deepEqual(MultitrackSession.read(written).write(), written);
 });
 
 test("a session names its application and another's is refused", () => {
     // The file says whose it is, since every application's file is JSON: a
     // file with no metadata is the multitrack's, another's is refused.
-    assert.deepEqual(new SessionFile().write().metadata, { application: "multitrack" });
-    assert.equal(SessionFile.read({ format: SESSION_FORMAT }).metadata.application, "multitrack");
+    assert.deepEqual(new MultitrackSession().write().metadata, { application: "multitrack" });
+    assert.equal(MultitrackSession.read({ format: SESSION_FORMAT }).metadata.application, "multitrack");
     assert.throws(
-        () => SessionFile.read({ format: SESSION_FORMAT, metadata: { application: "roll" } }),
+        () => MultitrackSession.read({ format: SESSION_FORMAT, metadata: { application: "roll" } }),
         /roll/);
 });
 
@@ -490,7 +491,7 @@ test("a format 2 session opens in seconds", async () => {
             content: { fill: "window", window: {
                 source: { source: 1, lifetime: "session" },
                 start: 0.0, duration: 2.0 } } }] }] }] } };
-    const session = SessionFile.read(old);
+    const session = MultitrackSession.read(old);
     assert.equal(session.format, SESSION_FORMAT);
     assert.equal(session.multitrack.tempo[0]!.tempo, 2.0);
     const region = session.multitrack.tracks.item(0).takeLanes.item(0).regions.item(0);
@@ -516,7 +517,7 @@ test("the session carries two views of one multitrack and they disagree on purpo
     // The crossing: screen state written by the Python client, parsed by the
     // crate, read back here. A reader that dropped the field would open the
     // same music and lose the window.
-    const session = SessionFile.read(await saved());
+    const session = MultitrackSession.read(await saved());
     assert.equal(session.views.length, 2);
 
     const arranger = session.views[0];
@@ -554,10 +555,10 @@ test("a view says nothing about what plays", () => {
     view.name = "arranger";
     view.visible = new Span(0, 32);
     view.trackView(multitrack.tracks.item(0)).height = 96;
-    const session = new SessionFile();
+    const session = new MultitrackSession();
     session.multitrack = multitrack;
     session.views = [view];
-    const back = SessionFile.read(session.write());
+    const back = MultitrackSession.read(session.write());
     assert.deepEqual(back.multitrack.write(), written);
     assert.equal(back.views[0]!.track(back.multitrack.tracks.item(0)).height, 96);
 });
@@ -604,8 +605,8 @@ test("a field a newer window wrote survives a load and a save", () => {
 });
 
 test("a session written without views reads back without them", () => {
-    const session = new SessionFile();
+    const session = new MultitrackSession();
     session.multitrack = aMultitrack();
     assert.equal(session.write().views, undefined);
-    assert.deepEqual(SessionFile.read(session.write()).views, []);
+    assert.deepEqual(MultitrackSession.read(session.write()).views, []);
 });

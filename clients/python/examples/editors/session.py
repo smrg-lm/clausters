@@ -64,7 +64,8 @@ import sys
 import wave
 
 from clausters.gui import edit
-from clausters.document import Content, Multitrack, SessionFile, Source, Span, Tempo, MultitrackView
+from clausters.document import Content, Multitrack, Source, Span, Tempo
+from clausters.gui.editing import MultitrackView, MultitrackSession
 
 SAMPLE_RATE = 48_000
 
@@ -195,7 +196,7 @@ window.track_view(tone).height = 96.0
 window.track_view(tone).take_lanes_shown = True
 window.track_view(echo).color = "#4488cc"
 
-session = SessionFile(multitrack=multitrack, views=[window])
+session = MultitrackSession(multitrack=multitrack, views=[window])
 session.sources[TAKE] = Source.file(os.path.basename(take_path)).shaped(
     2, take_frames, float(SAMPLE_RATE))
 
@@ -232,7 +233,7 @@ print(f"  dangling:   {session.dangling()}  (named by the multitrack, absent fro
 # %%
 def run() -> None:
     """Reopen the session, report it, open it in the multitrack and play it."""
-    reopened = SessionFile.open(path)
+    reopened = MultitrackSession.open(path)
     print(f"reopened {os.path.basename(path)}: "
           f"{len(reopened.multitrack.tracks)} tracks, "
           f"{reopened.volatile()} still volatile")

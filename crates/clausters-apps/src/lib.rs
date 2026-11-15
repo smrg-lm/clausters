@@ -48,6 +48,7 @@ pub mod samples;
 pub mod score;
 pub mod takes;
 pub mod turn;
+pub mod view;
 
 /// **The grid a roll and a multitrack land on when nobody chose one**, in
 /// beats: a sixteenth note. A grid is a length in beats and not in samples,

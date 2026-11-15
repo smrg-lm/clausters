@@ -465,7 +465,7 @@ pub unsafe extern "C" fn clausters_document_resolve(
 }
 
 /// **The tags a view reports that are not edits**, as a JSON array of strings --
-/// `clausters_document::view::NOT_AN_EDIT`.
+/// `clausters_apps::view::NOT_AN_EDIT`.
 ///
 /// A client routes an incoming `/gui_event` by its tag: screen state is
 /// answered generically and never reaches a domain, and everything else is the
@@ -483,7 +483,7 @@ pub unsafe extern "C" fn clausters_document_resolve(
 /// `out` must be null or writable for `out_cap` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_view_not_an_edit(out: *mut u8, out_cap: usize) -> usize {
-    let Ok(answer) = serde_json::to_string(&clausters_document::view::NOT_AN_EDIT) else {
+    let Ok(answer) = serde_json::to_string(&clausters_apps::view::NOT_AN_EDIT) else {
         return 0;
     };
     // SAFETY: forwarded from this function's own contract. A pure read, so
@@ -496,7 +496,7 @@ pub unsafe extern "C" fn clausters_view_not_an_edit(out: *mut u8, out_cap: usize
 ///
 /// `kind` is the view's name (`"waveform"`, `"bpf"`, `"pianoroll"`) and `facts`
 /// the JSON that kind is written from
-/// (`clausters_document::view::catalogue`). The answer carries the widget's
+/// (`clausters_apps::view::catalogue`). The answer carries the widget's
 /// `type` and its props and **no id**: which number a widget gets is the
 /// caller's, and nothing in the crate knows it.
 ///
@@ -533,7 +533,7 @@ pub unsafe extern "C" fn clausters_view_props(
     };
     let answer = match serde_json::from_str::<serde_json::Value>(&facts)
         .map_err(|e| format!("the facts are not JSON: {e}"))
-        .and_then(|facts| clausters_document::view::catalogue::props(&kind, &facts))
+        .and_then(|facts| clausters_apps::view::catalogue::props(&kind, &facts))
     {
         Ok(props) => serde_json::Value::Object(props),
         Err(reason) => serde_json::json!({ "error": reason }),
@@ -1145,7 +1145,7 @@ mod tests {
         let tags: Vec<String> = serde_json::from_slice(&buf).unwrap();
         assert!(tags.iter().any(|t| t == "selection"));
         assert!(tags.iter().all(|t| !t.is_empty()));
-        assert_eq!(tags.len(), clausters_document::view::NOT_AN_EDIT.len());
+        assert_eq!(tags.len(), clausters_apps::view::NOT_AN_EDIT.len());
     }
 
     #[test]

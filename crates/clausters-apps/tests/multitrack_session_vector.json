@@ -3,6 +3,77 @@
  "metadata": {
   "application": "multitrack"
  },
+ "sources": {
+  "100": {
+   "location": {
+    "at": "file",
+    "path": "takes/100.wav"
+   },
+   "lifetime": "session",
+   "generation": 0,
+   "channels": 2,
+   "frames": 480000,
+   "sample_rate": 48000.0
+  },
+  "101": {
+   "location": {
+    "at": "file",
+    "path": "takes/101.wav"
+   },
+   "lifetime": "session",
+   "generation": 0,
+   "channels": 2,
+   "frames": 480000,
+   "sample_rate": 48000.0
+  },
+  "102": {
+   "location": {
+    "at": "file",
+    "path": "takes/102.wav"
+   },
+   "lifetime": "session",
+   "generation": 0,
+   "channels": 2,
+   "frames": 480000,
+   "sample_rate": 48000.0
+  },
+  "200": {
+   "location": {
+    "at": "file",
+    "path": "takes/200.wav"
+   },
+   "lifetime": "session",
+   "generation": 0,
+   "channels": 2,
+   "frames": 480000,
+   "sample_rate": 48000.0,
+   "provenance": {
+    "def": "sines"
+   }
+  },
+  "201": {
+   "location": {
+    "at": "volatile"
+   },
+   "lifetime": "session",
+   "generation": 0
+  },
+  "300": {
+   "location": {
+    "at": "file",
+    "path": "scratch/300.wav"
+   },
+   "lifetime": "temporary",
+   "generation": 0,
+   "editing": {
+    "from": 200,
+    "confirmed": false
+   }
+  }
+ },
+ "provenance": {
+  "script": "make.py"
+ },
  "multitrack": {
   "groove": {
    "name": "mpc60"
@@ -313,76 +384,5 @@
    "detail": 42
   }
  ],
- "end": "contents",
- "sources": {
-  "100": {
-   "location": {
-    "at": "file",
-    "path": "takes/100.wav"
-   },
-   "lifetime": "session",
-   "generation": 0,
-   "channels": 2,
-   "frames": 480000,
-   "sample_rate": 48000.0
-  },
-  "101": {
-   "location": {
-    "at": "file",
-    "path": "takes/101.wav"
-   },
-   "lifetime": "session",
-   "generation": 0,
-   "channels": 2,
-   "frames": 480000,
-   "sample_rate": 48000.0
-  },
-  "102": {
-   "location": {
-    "at": "file",
-    "path": "takes/102.wav"
-   },
-   "lifetime": "session",
-   "generation": 0,
-   "channels": 2,
-   "frames": 480000,
-   "sample_rate": 48000.0
-  },
-  "200": {
-   "location": {
-    "at": "file",
-    "path": "takes/200.wav"
-   },
-   "lifetime": "session",
-   "generation": 0,
-   "channels": 2,
-   "frames": 480000,
-   "sample_rate": 48000.0,
-   "provenance": {
-    "def": "sines"
-   }
-  },
-  "201": {
-   "location": {
-    "at": "volatile"
-   },
-   "lifetime": "session",
-   "generation": 0
-  },
-  "300": {
-   "location": {
-    "at": "file",
-    "path": "scratch/300.wav"
-   },
-   "lifetime": "temporary",
-   "generation": 0,
-   "editing": {
-    "from": 200,
-    "confirmed": false
-   }
-  }
- },
- "provenance": {
-  "script": "make.py"
- }
+ "end": "contents"
 }

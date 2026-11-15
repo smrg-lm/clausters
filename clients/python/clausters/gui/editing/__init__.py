@@ -60,6 +60,8 @@ from .domain import Domain
 from .echo import Echo
 from .controls import NodeEditor
 from .edit import edit
+from .multitrack_session import MultitrackSession
+from .multitrack_view import MultitrackView, TakeLaneView, TrackView
 from .editor import Editor, not_an_edit
 from .events import NotesEditor
 from .hosted import HostedEditor, HostedTransport
@@ -72,6 +74,10 @@ from .trace import watch
 from .view import View
 
 __all__ = [
+    "MultitrackSession",
+    "MultitrackView",
+    "TakeLaneView",
+    "TrackView",
     "AudioEditor",
     "AudioTransport",
     "Application",

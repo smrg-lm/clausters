@@ -181,10 +181,11 @@ fn widget_of(host: &Host, def_id: i32) -> i32 {
 /// application's engine, and it closes.
 #[test]
 fn the_host_owns_a_multitrack_opened_from_a_session() {
+    use clausters_apps::multitrack::session::MultitrackSession;
     use clausters_document::multitrack::{
         Content, Multitrack, Region, TakeLane, Track, Window as RegionWindow,
     };
-    use clausters_document::session::{Session, Source};
+    use clausters_document::session::Source;
     use clausters_document::{Document, Lifetime, NodeId, Opaque, SourceId, SourceRef};
 
     let folder = std::env::temp_dir().join(format!("host-mt-{}", std::process::id()));
@@ -216,7 +217,7 @@ fn the_host_owns_a_multitrack_opened_from_a_session() {
         )],
         ..TakeLane::new(NodeId(3))
     };
-    let session = Session::new(Document::empty())
+    let session = MultitrackSession::new(Document::empty())
         .with_multitrack(Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
@@ -457,8 +458,8 @@ fn an_untitled_multitrack_is_saved_through_the_save_as_form() {
 /// Don't save letting it go.
 #[test]
 fn an_empty_multitrack_opens_a_session_from_its_file_menu() {
+    use clausters_apps::multitrack::session::MultitrackSession;
     use clausters_document::Document;
-    use clausters_document::session::Session;
 
     let folder = std::env::temp_dir().join(format!("host-file-menu-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&folder);
@@ -466,7 +467,7 @@ fn an_empty_multitrack_opens_a_session_from_its_file_menu() {
     let path = folder.join("chosen.json");
     std::fs::write(
         &path,
-        serde_json::to_string(&Session::new(Document::empty())).unwrap(),
+        serde_json::to_string(&MultitrackSession::new(Document::empty())).unwrap(),
     )
     .unwrap();
     let mut host = host();
@@ -533,11 +534,12 @@ fn an_empty_multitrack_opens_a_session_from_its_file_menu() {
 /// **A session in `folder` holding one box of notes**: region 3 over
 /// sequence 5, one note long; the path of its file.
 fn a_session_with_a_box_of_notes(folder: &std::path::Path) -> std::path::PathBuf {
+    use clausters_apps::multitrack::session::MultitrackSession;
     use clausters_document::events::{Event, EventSequence};
     use clausters_document::multitrack::{
         Content, Multitrack, Region, TakeLane, Track, Window as RegionWindow,
     };
-    use clausters_document::session::{Location, Session, Source};
+    use clausters_document::session::{Location, Source};
     use clausters_document::{Document, Lifetime, NodeId, Opaque, SourceId, SourceRef};
 
     let _ = std::fs::remove_dir_all(folder);
@@ -574,7 +576,7 @@ fn a_session_with_a_box_of_notes(folder: &std::path::Path) -> std::path::PathBuf
         )],
         ..TakeLane::new(NodeId(2))
     };
-    let session = Session::new(Document::empty())
+    let session = MultitrackSession::new(Document::empty())
         .with_multitrack(Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
@@ -1721,8 +1723,8 @@ fn a_sound_file_already_open_is_focused_in_its_window() {
 /// where it is open, and the host's own open brings it forward alone.
 #[test]
 fn a_session_already_open_brings_its_window_forward() {
+    use clausters_apps::multitrack::session::MultitrackSession;
     use clausters_document::Document;
-    use clausters_document::session::Session;
     use std::net::{Ipv4Addr, SocketAddr};
 
     let folder = std::env::temp_dir().join(format!("host-mt-held-{}", std::process::id()));
@@ -1731,7 +1733,7 @@ fn a_session_already_open_brings_its_window_forward() {
     let path = folder.join("song.json");
     std::fs::write(
         &path,
-        serde_json::to_string(&Session::new(Document::empty())).unwrap(),
+        serde_json::to_string(&MultitrackSession::new(Document::empty())).unwrap(),
     )
     .unwrap();
     let path = path.to_str().unwrap().to_string();
@@ -2851,10 +2853,11 @@ fn two_new_files_in_one_window_are_two_files() {
 
 /// A session of one track and one box over a take, in a folder of its own.
 fn song_session(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    use clausters_apps::multitrack::session::MultitrackSession;
     use clausters_document::multitrack::{
         Automation, Content, Multitrack, Region, TakeLane, Track, Window as RegionWindow,
     };
-    use clausters_document::session::{Session, Source};
+    use clausters_document::session::Source;
     use clausters_document::{Document, Lifetime, NodeId, Opaque, SourceId, SourceRef};
 
     let folder = std::env::temp_dir().join(format!("host-{tag}-{}", std::process::id()));
@@ -2895,7 +2898,7 @@ fn song_session(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
         })
         .to_vec();
     track.automation.push(gain);
-    let session = Session::new(Document::empty())
+    let session = MultitrackSession::new(Document::empty())
         .with_multitrack(Multitrack {
             tracks: vec![track],
             ..Multitrack::default()

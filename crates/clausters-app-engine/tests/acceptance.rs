@@ -22,8 +22,9 @@ use clausters::server::engine::{BLOCK_SIZE, engine_pair};
 use clausters_app_engine::AppEngine;
 use clausters_app_engine::app::App;
 use clausters_apps::editing::Editing;
+use clausters_apps::multitrack::session::MultitrackSession;
 use clausters_document::multitrack::{Content, Fade, Multitrack, Region, TakeLane, Track, Window};
-use clausters_document::session::{Session, Source};
+use clausters_document::session::Source;
 use clausters_document::timebase::Second;
 use clausters_document::{Document, Lifetime, NodeId, Opaque, SourceId, SourceRef};
 use serde_json::json;
@@ -165,7 +166,7 @@ fn hour_long_takes_open_on_their_peaks_and_a_comp_plays_whole() {
         };
         tracks.push(track);
     }
-    let mut session = Session::new(Document::empty()).with_multitrack(Multitrack {
+    let mut session = MultitrackSession::new(Document::empty()).with_multitrack(Multitrack {
         tracks,
         channels: 1,
         ..Multitrack::default()
@@ -232,7 +233,7 @@ fn hour_long_takes_open_on_their_peaks_and_a_comp_plays_whole() {
         regions,
         ..TakeLane::new(NodeId(2))
     };
-    let mut comp = Session::new(Document::empty()).with_multitrack(Multitrack {
+    let mut comp = MultitrackSession::new(Document::empty()).with_multitrack(Multitrack {
         tracks: vec![track],
         channels: 1,
         ..Multitrack::default()

@@ -21,7 +21,8 @@
     -->
     <script type="module">
       import { Session, SoundFile, gui, opfs } from "../dist/index.js";
-      import { Content, Multitrack, SessionFile, Source } from "../dist/document.js";
+      import { Content, Multitrack, Source } from "../dist/document.js";
+      import { MultitrackSession } from "../dist/gui/editing/index.js";
 
       const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
       const verdict = (text) => {
@@ -53,7 +54,7 @@
         await opfs.makeDirectory("out");
         const multitrack = new Multitrack();
         const track = multitrack.tracks.add("comp");
-        const saved = new SessionFile();
+        const saved = new MultitrackSession();
         saved.multitrack = multitrack;
         const regions = [];
         for (const [i, freq] of [[1, 440.0], [2, 550.0], [3, 660.0]]) {

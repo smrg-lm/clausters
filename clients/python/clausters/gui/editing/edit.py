@@ -49,7 +49,7 @@ from .points import PointsEditor, is_curve
 from .audio import AudioEditor
 from ...soundfile import SoundFile
 from ...document import Multitrack
-from ...document import SessionFile
+from .multitrack_session import MultitrackSession
 from .score import ScoreEditor, is_score
 
 
@@ -64,7 +64,7 @@ def edit(structure: SoundFile, *, sample_rate: float = 0.0, host=None,
 
 
 @overload
-def edit(structure: "SessionFile | Multitrack", *, sample_rate: float = 0.0,
+def edit(structure: "MultitrackSession | Multitrack", *, sample_rate: float = 0.0,
          host=None, open: bool = True, **options) -> MultitrackEditor: ...
 
 
@@ -81,7 +81,7 @@ def edit(structure, *, sample_rate: float = 0.0,
         structure: what to edit: a `clausters.SoundFile` (in the audio
             editor, the GUI host's application, which writes the file only on
             `save`; a WAV, RF64 or W64 file on disk), a saved
-            `clausters.document.SessionFile` (in the multitrack, the GUI host's
+            `clausters.gui.editing.MultitrackSession` (in the multitrack, the GUI host's
             application, over the session's file:
             `clausters.gui.editing.MultitrackEditor`), a
             `clausters.document.Multitrack` (in the multitrack, as an
@@ -237,10 +237,10 @@ _open_multitracks: list = []
 
 
 def _is_saved_session(structure) -> bool:
-    """Whether ``structure`` is a `clausters.document.SessionFile`."""
-    from ...document import SessionFile
+    """Whether ``structure`` is a `clausters.gui.editing.MultitrackSession`."""
+    from .multitrack_session import MultitrackSession
 
-    return isinstance(structure, SessionFile)
+    return isinstance(structure, MultitrackSession)
 
 
 def _is_buffer(structure) -> bool:

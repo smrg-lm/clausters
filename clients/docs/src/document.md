@@ -55,7 +55,7 @@ opens, which is why the curve row below names three unrelated types:
 | `edit(x)` where x is | opens | over | its vocabulary |
 |---|---|---|---|
 | a `SoundFile` | `AudioEditor`, the handler of the GUI host's audio editor | a `waveform` | `parts` |
-| a saved `SessionFile` | `MultitrackEditor`, the handler of the GUI host's multitrack | a `multitrack` | `clips`/`tracks` |
+| a saved `MultitrackSession` | `MultitrackEditor`, the handler of the GUI host's multitrack | a `multitrack` | `clips`/`tracks` |
 | a curve — a `Bpf`, an `Env`, an `Automation` | `PointsEditor` | a `bpf` | `points` |
 | an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
 | a `Multitrack` | `MultitrackEditor`, over an untitled session | a `multitrack` | `clips`/`tracks` |
@@ -74,7 +74,7 @@ opens, which is why the curve row below names three unrelated types:
 **A roll can paint what is played**: `edit(sequence, {{alt midi_in=True)` || { midiIn: true })`}} asks the host to open its MIDI input and write each incoming note into the roll — on the step cursor while the transport is stopped, at the play line while it plays, held as long as the key. Each is an edit of the sequence like a note a hand drew, so it is in the history and in every other window over it. A native host opens a port named `clausters-gui` to route a keyboard into<!-- python -->.<!-- /python --><!-- web -->; the host in a page listens to every MIDI input the browser has, and the browser asks the person's permission for that the first time a roll that listens is opened.<!-- /web -->
 
 **A saved session opens in the multitrack**, an application the GUI host holds,
-over the session's file: {{alt `edit(SessionFile.open(path))` || `await edit(await SessionFile.open(path))`}} (a session saved with
+over the session's file: {{alt `edit(MultitrackSession.open(path))` || `await edit(await MultitrackSession.open(path))`}} (a session saved with
 {{alt `session.save(path)` || `await session.save(path)`}} has a file too; one with none is refused). The session's
 takes are read where they are, never loaded whole: their headers as it opens,
 their peaks as the window draws them -- kept in the session's own `peaks/`
@@ -1025,16 +1025,16 @@ automation rows and its own boxes, in a window of the host's, playing on an
 engine of its own.
 
 ```python
-from clausters.document import SessionFile
+from clausters.gui.editing import MultitrackSession
 
-saved = SessionFile.open(path)              # or a Multitrack, as an untitled session
+saved = MultitrackSession.open(path)              # or a Multitrack, as an untitled session
 editor = edit(saved, title="multitrack")
 ```
 
 ```ts
-import { SessionFile } from "clausters/document";
+import { MultitrackSession } from "clausters/gui/editing";
 
-const saved = await SessionFile.open(path);   // or a Multitrack, as an untitled session
+const saved = await MultitrackSession.open(path);   // or a Multitrack, as an untitled session
 const editor = await gui.edit(saved, { title: "multitrack", stage: element });
 ```
 
@@ -1059,7 +1059,7 @@ last region ends — the Transport menu's *Stop at end* and the tool beside Loop
 are the same verb, and `{{api editor.stop_at_end}}()` the {{alt script's. || page's.}} A region placed past
 an end marker takes the marker with it. An end is where a pass stops and nothing
 else: it bounds no view, and a window scrolls and zooms out past it. A session
-keeps it as `SessionFile.end`, so a multitrack opened again stops where it stopped
+keeps it as `MultitrackSession.end`, so a multitrack opened again stops where it stopped
 before.
 
 Two cursors, and only one of them is placed: a click on the ruler — or on the
@@ -1097,18 +1097,20 @@ and writable from a script. A `TrackView` is therefore looked up by the track's
 id, and a `Multitrack` round-trips the same whether or not a view of it exists.
 
 ```python
-from clausters.document import SessionFile, Span, MultitrackView
+from clausters.document import Span
+from clausters.gui.editing import MultitrackSession, MultitrackView
 
 window = MultitrackView(name="arranger", visible=Span(0.0, 48.0), quant=4.0)
 window.track_view(drums).height = 96.0
 window.track_view(drums).take_lanes_shown = True      # comping open
 window.selected = [20, 32]
 
-session = SessionFile(multitrack=multitrack, views=[window])
+session = MultitrackSession(multitrack=multitrack, views=[window])
 ```
 
 ```javascript
-import { SessionFile, Span, MultitrackView } from "clausters/document";
+import { Span } from "clausters/document";
+import { MultitrackSession, MultitrackView } from "clausters/gui/editing";
 
 const window = new MultitrackView();
 window.name = "arranger";
@@ -1118,7 +1120,7 @@ window.trackView(drums).height = 96;
 window.trackView(drums).takeLanesShown = true;      // comping open
 window.selected = [20, 32];
 
-const session = new SessionFile();
+const session = new MultitrackSession();
 session.multitrack = multitrack;
 session.views = [window];
 ```
@@ -1521,25 +1523,27 @@ and the tree has no business knowing which. A **session** is the document plus
 that missing half:
 
 ```python
-from clausters.document import SessionFile, Source
+from clausters.document import Source
+from clausters.gui.editing import MultitrackSession
 
-session = SessionFile(multitrack=multitrack, provenance={"script": "song.py"})
+session = MultitrackSession(multitrack=multitrack, provenance={"script": "song.py"})
 session.sources[7] = Source.file("takes/vocal.wav", lifetime="external")
 
 session.save("song.json")
-session = SessionFile.open("song.json")
+session = MultitrackSession.open("song.json")
 ```
 
 ```ts
-import { SessionFile, Source } from "clausters/document";
+import { Source } from "clausters/document";
+import { MultitrackSession } from "clausters/gui/editing";
 
-const session = new SessionFile();
+const session = new MultitrackSession();
 session.multitrack = multitrack;
 session.provenance = { page: "song.html" };
 session.sources.set(7, Source.file("takes/vocal.wav", "external"));
 
 await session.save("song.json");
-const reopened = await SessionFile.open("song.json");
+const reopened = await MultitrackSession.open("song.json");
 ```
 
 `save` writes the crate's JSON and `open` reads it back; `write` and `read` are
@@ -1596,22 +1600,22 @@ saying why.
 
 ## Reopening: structures, not a description
 
-`SessionFile.read` gives the multitrack and its table back, and by itself that is half a
+`MultitrackSession.read` gives the multitrack and its table back, and by itself that is half a
 verb: every take is a bare source number. The other half — what a source *is*
 while it plays — is the multitrack application's, which resolves the table as
 it opens the session:
 
 ```python
-from clausters.document import SessionFile
+from clausters.gui.editing import MultitrackSession
 
-session = SessionFile.open(path)
+session = MultitrackSession.open(path)
 editor = edit(session)
 ```
 
 ```ts
-import { SessionFile } from "clausters/document";
+import { MultitrackSession } from "clausters/gui/editing";
 
-const session = await SessionFile.open(path);
+const session = await MultitrackSession.open(path);
 const editor = await edit(session);
 ```
 

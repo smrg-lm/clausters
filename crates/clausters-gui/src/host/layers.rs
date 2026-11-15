@@ -2,7 +2,7 @@
 //!
 //! Not the **visualization layers** of one picture (peak, RMS, a texture),
 //! which are the measures inside one signal element and edit nothing
-//! (`clausters_document::view::layers`); an edit layer is a body that a
+//! (`clausters_apps::view::layers`); an edit layer is a body that a
 //! press can take, superposed on the others in one rectangle.
 //!
 //! A container that layers elements draws several things on one rectangle, and

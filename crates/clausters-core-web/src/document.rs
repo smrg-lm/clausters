@@ -283,7 +283,7 @@ pub fn mixer_defs(widths: &str, master: usize) -> String {
 pub fn view_props(kind: &str, facts: &str) -> String {
     let answer = match serde_json::from_str::<serde_json::Value>(facts)
         .map_err(|e| format!("the facts are not JSON: {e}"))
-        .and_then(|facts| clausters_document::view::catalogue::props(kind, &facts))
+        .and_then(|facts| clausters_apps::view::catalogue::props(kind, &facts))
     {
         Ok(props) => serde_json::Value::Object(props),
         Err(reason) => serde_json::json!({ "error": reason }),
@@ -304,5 +304,5 @@ pub fn view_props(kind: &str, facts: &str) -> String {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = viewNotAnEdit)]
 pub fn view_not_an_edit() -> String {
-    serde_json::to_string(&clausters_document::view::NOT_AN_EDIT).unwrap_or_default()
+    serde_json::to_string(&clausters_apps::view::NOT_AN_EDIT).unwrap_or_default()
 }

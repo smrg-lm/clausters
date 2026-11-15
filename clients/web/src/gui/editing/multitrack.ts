@@ -34,7 +34,8 @@
  * @module
  */
 
-import { Multitrack, Region, SessionFile } from "../../document.ts";
+import { Multitrack, Region } from "../../document.ts";
+import { MultitrackSession } from "./multitrack-session.ts";
 import type { Extra } from "../../document/format.ts";
 import type { WindowHistory, WindowOver } from "../../document/multitrack.ts";
 import type { GuiHost } from "../host.ts";
@@ -67,7 +68,7 @@ const snapshots = new WeakMap<Multitrack, Snapshot>();
 /**
  * **The multitrack the GUI host holds, and this page its handler.**
  *
- * `edit` over a `SessionFile` that has a file, or over a
+ * `edit` over a `MultitrackSession` that has a file, or over a
  * {@link Multitrack}, answers one, open. Each member is a call to the
  * application in the host's process, answered by it. A session with no file
  * is refused with a `RangeError`: save it first.
@@ -87,7 +88,7 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
     }
 
     /** The session it was opened over, or `null` for an untitled one. */
-    readonly session: SessionFile | null;
+    readonly session: MultitrackSession | null;
     /** The multitrack it was opened over: the window's while it is open, `null` for one opened over nothing. */
     readonly multitrack: Multitrack | null;
     protected readonly app = "multitrack";
@@ -95,7 +96,7 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
     private snapshot: Snapshot | null = null;
     private readonly holders = new Held();
 
-    constructor(structure: SessionFile | Multitrack | null = null, { title }: MultitrackEditorOptions = {}) {
+    constructor(structure: MultitrackSession | Multitrack | null = null, { title }: MultitrackEditorOptions = {}) {
         if (structure !== null && !(structure instanceof Multitrack)
             && (structure.path === null || structure.path === undefined)) {
             throw new RangeError(
@@ -174,7 +175,7 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
         this.snapshot = snapshot;
         this.filed = snapshot.path;
         if (this.session !== null) {
-            Object.assign(this.session, SessionFile.read(snapshot.session), { multitrack, path: snapshot.path });
+            Object.assign(this.session, MultitrackSession.read(snapshot.session), { multitrack, path: snapshot.path });
         }
     }
 

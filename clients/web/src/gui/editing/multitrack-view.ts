@@ -1,14 +1,17 @@
 /**
- * The presentation: what a window shows of a multitrack, saved beside it.
+ * The multitrack's window state: what a window shows of a multitrack, saved
+ * in its session file beside it (mirrors `clausters/gui/editing/multitrack_view.py`).
  *
- * Private: the names are `clausters/document`'s.
+ * Presentation, parallel to the model and never inside it: nothing here can
+ * change what plays, and a multitrack round trips the same whether a view of it
+ * exists or not. It is the multitrack application's, so it lives with it.
  *
  * @module
  */
 
-import { type Extra, num, unknownFields } from "./format.ts";
-import { Span } from "./timeline.ts";
-import type { Multitrack, TakeLane, Track } from "./multitrack.ts";
+import { type Extra, num, unknownFields } from "../../document/format.ts";
+import { Span } from "../../document/timeline.ts";
+import type { Multitrack, TakeLane, Track } from "../../document/multitrack.ts";
 
 /** How one track is drawn. */
 export class TrackView {

@@ -439,11 +439,11 @@ pub(super) fn parse_notes(props: &Map<String, Value>) -> HashMap<String, Vec<f64
 /// its own turned off.
 ///
 /// The pitch window is the crate's rule
-/// ([`pitch_window`](clausters_document::view::catalogue::pitch_window)), the
+/// ([`pitch_window`](clausters_apps::view::catalogue::pitch_window)), the
 /// same one a standalone roll's picture is fitted with -- so a box and a window
 /// over the same notes agree about how tall they are.
 pub(super) fn roll_body(notes: &[f64]) -> Notes {
-    let (min, max) = clausters_document::view::catalogue::pitch_window(notes);
+    let (min, max) = clausters_apps::view::catalogue::pitch_window(notes);
     let mut props = Map::new();
     props.insert("notes".into(), Value::from(notes.to_vec()));
     props.insert("min".into(), Value::from(min));

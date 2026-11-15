@@ -1,5 +1,5 @@
 # pyright: basic
-"""The session file: a multitrack, saved, and where its samples are.
+"""The session file: what every application's file holds, and its source table.
 
 Private: the names are `clausters.document`'s.
 """
@@ -8,9 +8,7 @@ import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from ._format import SESSION_APPLICATION, SESSION_FORMAT, _unknown_fields
-from ._multitrack import Multitrack
-from ._view import MultitrackView
+from ._format import SESSION_FORMAT, _unknown_fields
 
 if TYPE_CHECKING:
     from ..seq.sequence import EventSequence
@@ -180,21 +178,31 @@ class FrozenSource:
 
 
 
+#: The application a file written before ``metadata["application"]`` existed
+#: belongs to: the multitrack, the one application that had a session file then.
+_UNNAMED_APPLICATION = "multitrack"
+
+#: What the envelope names; every other top-level field is the contents'.
+_ENVELOPE = ("format", "metadata", "document", "sources", "provenance")
+
+
 @dataclass
 class SessionFile:
-    """A session file: the multitrack, saved, and where its samples are.
+    """**A session file**: what every application's file holds, whatever the
+    application keeps in it (the crate's `session::SessionFile`).
 
-    A `Multitrack` says *what plays when* and deliberately does not say where
-    a source lives, because inside a running system a source is a server buffer,
-    a mapped file or a rendered result and the multitrack has no business knowing
-    which. A session is the multitrack plus exactly that missing half.
+    The format, the application the file belongs to, the general tree, the
+    table that says where each source's samples are and what produced the
+    whole are the same for every application; what one application keeps
+    beside them is its own and stays in `contents`, as written, for that
+    application to read. The multitrack's is
+    `clausters.gui.editing.MultitrackSession`, which adds its tracks, its
+    windows' views and where a pass ends over this envelope; another
+    application with a file adds its own the same way, rather than a second
+    format.
 
     It is not `clausters.Session`, which holds a running server, a clock and a
     GUI host. This one is a **file**, and its name says so.
-
-    The `document` field carries the general tree, beside the multitrack and
-    never inside it: a multitrack's regions are windows onto sources, and no
-    region places a tree.
     """
 
     #: The format version this build writes -- `clausters.document.SESSION_FORMAT`,
@@ -202,50 +210,44 @@ class SessionFile:
     #: format is migrated to this one first (`read`), since its numbers are
     #: read differently: format 2 placed the multitrack in beats.
     format: int = SESSION_FORMAT
-    #: What the file says about itself: ``{"application": "multitrack"}``,
-    #: the application of the host it belongs to. A file written before it
-    #: was named belongs to the multitrack, and one another application's
-    #: metadata names is refused by `read`.
-    metadata: dict = field(default_factory=lambda: {"application": SESSION_APPLICATION})
-    #: The multitrack. Always present, possibly empty -- which mirrors the crate,
-    #: where an absent multitrack reads as an empty one rather than as nothing.
-    multitrack: "Multitrack" = field(default_factory=lambda: Multitrack())
-    #: How the multitrack was being **looked at**: one entry per window. Carried for
-    #: the reason every program in the field carries it -- reopening a multitrack
-    #: into the window it was left in is what a person expects -- and a reader
-    #: that ignores it opens the same multitrack.
-    views: list = field(default_factory=list)
-    #: **Where a pass over the multitrack ends**, as a playback's ``end`` says
-    #: it: ``None`` (it rolls on, the default), ``"contents"`` (where the last
-    #: region ends) or a number of seconds, an end marker. The transport's own
-    #: switch, kept so a session opened again stops where it stopped before --
-    #: not in a view, since it changes what is heard. It bounds no axis: how
-    #: far a window shows or zooms out reads nothing here.
-    end: "str | float | None" = None
+    #: What the file says about itself: ``{"application": ...}``, the
+    #: application it belongs to. A file written before it was named belongs
+    #: to the multitrack.
+    metadata: dict = field(default_factory=dict)
+    #: The general tree, for what no application's contents hold.
     document: "dict | None" = None
     #: Where each source is, keyed by source id.
     sources: dict = field(default_factory=dict)
     #: What produced the session as a whole -- the scripts behind it -- carried
-    #: opaquely. The document never knows how to re-run them; it only has to not
-    #: lose the reference.
+    #: opaquely. The document never knows how to re-run them; it only has to
+    #: not lose the reference.
     provenance: "dict | None" = None
-    extra: dict = field(default_factory=dict)
+    #: **What the application keeps**, and the fields a newer writer wrote:
+    #: every top-level field the envelope does not name, as written. The
+    #: application the file belongs to reads its own out of it; the rest is
+    #: carried.
+    contents: dict = field(default_factory=dict)
     #: The file this session was opened from or last saved to, or ``None``.
     #: Not written into the file: where a session is is not what it says.
     path: "str | None" = field(default=None, compare=False, repr=False)
 
     def __eq__(self, other) -> bool:
-        """Two sessions are equal when they write the same file: the multitrack
+        """Two sessions are equal when they write the same file: a multitrack
         is a handle, and a handle is compared by what it holds."""
         if not isinstance(other, SessionFile):
             return NotImplemented
-        return self.write() == other.write()
+        return type(self) is type(other) and self.write() == other.write()
+
+    def belongs_to(self, application: str) -> bool:
+        """Whether the file belongs to ``application``."""
+        return self.metadata.get("application") == application
 
     @classmethod
-    def open(cls, path) -> "SessionFile":
+    def open(cls, path):
         """A session read from the file at ``path``, remembering where it came
-        from: the multitrack application reads relative paths against that
-        file's folder (`clausters.gui.edit`), and `save` writes back to it."""
+        from: an application reads relative paths against that file's folder
+        (`clausters.gui.edit`), and `save` writes back to it. Called on a
+        subclass, it reads that application's file."""
         with open(path) as f:
             session = cls.read(json.load(f))
         session.path = str(path)
@@ -286,22 +288,6 @@ class SessionFile:
         """Sources with a destructive edit still open and undecided."""
         return sorted(id for id, s in self.sources.items() if s.is_being_edited)
 
-    def dangling(self) -> list:
-        """Sources the multitrack names but the table does not hold -- what an opening
-        reader reports rather than discovering one element at a time.
-
-        **Every** take lane is walked and not only the ones that play: an alternate
-        take names its source whether or not anyone has chosen it yet.
-        """
-        missing = []
-        for region in self.multitrack.regions():
-            named = (region.content.window or {}).get("source")
-            id = named.get("source") if isinstance(named, dict) else None
-            if id is not None and int(id) not in self.sources \
-                    and int(id) not in missing:
-                missing.append(int(id))
-        return missing
-
     def promote(self, id: int) -> bool:
         """Promotes a temporary working copy to one saved beside the document,
         **leaving the edit open**. What a save mid-edit does: auto-confirming
@@ -322,16 +308,18 @@ class SessionFile:
         source.editing = dict(source.editing, confirmed=True)
         return True
 
+    def _written_contents(self) -> dict:
+        """What the application writes into the envelope: nothing, for the
+        envelope alone. An application's file answers its own fields."""
+        return {}
+
+    def _read_contents(self) -> None:
+        """Takes the application's own fields out of `contents` after a read.
+        Nothing, for the envelope alone."""
+
     def write(self) -> dict:
         """The session as the crate's JSON."""
         out: dict = {"format": self.format, "metadata": dict(self.metadata)}
-        written = self.multitrack.write()
-        if written:
-            out["multitrack"] = written
-        if self.views:
-            out["views"] = [v.write() for v in self.views]
-        if self.end is not None:
-            out["end"] = self.end if self.end == "contents" else float(self.end)
         if self.document is not None:
             out["document"] = self.document
         if self.sources:
@@ -339,45 +327,34 @@ class SessionFile:
                               for id, s in sorted(self.sources.items())}
         if self.provenance is not None:
             out["provenance"] = self.provenance
-        out.update(self.extra)
+        out.update(self._written_contents())
+        out.update(self.contents)
         return out
 
     @classmethod
-    def read(cls, written: dict) -> "SessionFile":
-        """A session from the crate's JSON, migrated first when it was written in
-        an older format.
+    def read(cls, written: dict):
+        """A session file from the crate's JSON, migrated first when it was
+        written in an older format. Called on a subclass, it reads that
+        application's file, which refuses one another application's metadata
+        names.
 
         The migration is the crate's (`clausters._native.session_migrate`), so
         an old file opens the same here, in the web client and in the GUI host.
-
-        Raises:
-            ValueError: when the file's metadata names another application
-                than the multitrack.
         """
         if int(written.get("format", 1)) < SESSION_FORMAT:
             from .._native import session_migrate
 
             written = session_migrate(written)
         metadata = dict(written.get("metadata") or {})
-        metadata.setdefault("application", SESSION_APPLICATION)
-        if metadata["application"] != SESSION_APPLICATION:
-            raise ValueError(
-                f"the file belongs to the {metadata['application']} application, "
-                "not to the multitrack")
-        known = ("format", "metadata", "multitrack", "views", "end", "document",
-                 "sources", "provenance")
-        return cls(
+        metadata.setdefault("application", _UNNAMED_APPLICATION)
+        session = cls(
             format=int(written.get("format", 1)),
             metadata=metadata,
-            # `arrangement` is what the field was called before 2026-09-08, read
-            # so a session written then still opens.
-            multitrack=Multitrack.read(
-                written.get("multitrack") or written.get("arrangement") or {}),
-            views=[MultitrackView.read(v) for v in written.get("views", [])],
-            end=written.get("end"),
             document=written.get("document"),
             sources={int(id): Source.read(entry)
                      for id, entry in (written.get("sources") or {}).items()},
             provenance=written.get("provenance"),
-            extra=_unknown_fields(written, *known),
+            contents=_unknown_fields(written, *_ENVELOPE),
         )
+        session._read_contents()
+        return session

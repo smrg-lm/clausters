@@ -39,7 +39,9 @@ pub mod calls;
 pub mod dialogs;
 pub mod editor;
 pub mod operations;
+pub mod session;
 pub mod sources;
+pub mod view;
 
 /// A multitrack the editor and its holder edit together -- a script's handle
 /// and the window over it are two holders of one tree.

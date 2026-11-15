@@ -25,7 +25,7 @@
 //! # The window
 //!
 //! One widget: the catalogue's `bpf` picture
-//! ([`clausters_document::view::catalogue`]) over the curve's points, with its
+//! ([`crate::view::catalogue`]) over the curve's points, with its
 //! rules **in sight**: the time ruler under it, in the curve's own seconds,
 //! and the value ruler beside it, over the range.
 //!
@@ -43,8 +43,8 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Map, Value, json};
 
+use crate::view::catalogue::{self, Curve};
 use clausters_document::multitrack::Automation;
-use clausters_document::view::catalogue::{self, Curve};
 use clausters_editing::points;
 
 /// A curve the editor and its holder edit together.

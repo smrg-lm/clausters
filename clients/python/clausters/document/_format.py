@@ -33,12 +33,6 @@ FIRST_VERSION = 1
 #: exist when this said 1 and the crate had moved to 2.
 SESSION_FORMAT = 5
 
-#: **The application a session file belongs to**, as its ``metadata`` names
-#: it -- the crate's `session::APPLICATION`. Every application's file is
-#: JSON, so the file says whose it is rather than its extension.
-SESSION_APPLICATION = "multitrack"
-
-
 def _unknown_fields(written: dict, *known: str) -> dict:
     """Whatever a newer writer wrote and this build has no field for.
 

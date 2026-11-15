@@ -119,7 +119,7 @@ from clausters.defs import SynthDef, out
 from clausters.defs.ugens import line, pink_noise, saw, sine, white_noise
 from clausters.gui import edit
 from clausters.document import Content, Multitrack, Source
-from clausters.document import SessionFile
+from clausters.gui.editing import MultitrackSession
 from clausters.seq import EventSequence
 from clausters.seq.event import Event
 
@@ -234,7 +234,7 @@ HALF = FRAMES // 2
 FADE = int(0.010 * SR)
 ID = {take: id for id, take in SOURCES.items()}
 
-saved = SessionFile(multitrack=multitrack)
+saved = MultitrackSession(multitrack=multitrack)
 for id, take in SOURCES.items():
     if take != "comp":
         saved.sources[id] = Source.file(TAKES[take]).shaped(1, FRAMES, SR)

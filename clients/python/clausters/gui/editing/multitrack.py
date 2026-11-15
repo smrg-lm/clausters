@@ -45,7 +45,7 @@ _snapshots = weakref.WeakKeyDictionary()
 class MultitrackEditor(Marking, HostedEditor):
     """**The multitrack the GUI host holds, and this script its handler.**
 
-    `clausters.gui.edit` over a `clausters.document.SessionFile` that has a
+    `clausters.gui.edit` over a `clausters.gui.editing.MultitrackSession` that has a
     file, or over a `clausters.document.Multitrack`, answers one, open.
     Each member is a call to the application in the host's process,
     answered by it.
@@ -58,7 +58,7 @@ class MultitrackEditor(Marking, HostedEditor):
     sweep leaves is the transport's.)
 
     Args:
-        structure: ``None`` opens without a session. Otherwise, what to open: a `clausters.document.SessionFile`, by the
+        structure: ``None`` opens without a session. Otherwise, what to open: a `clausters.gui.editing.MultitrackSession`, by the
             file it was opened from or saved to; or a
             `clausters.document.Multitrack`, as an untitled session whose
             first `save` names its file.
@@ -139,7 +139,7 @@ class MultitrackEditor(Marking, HostedEditor):
         if self._local is None:
             return
         from ... import _native
-        from ...document import SessionFile
+        from .multitrack_session import MultitrackSession
 
         if snapshot is not None:
             left = snapshot["session"].get("multitrack", left)
@@ -151,7 +151,7 @@ class MultitrackEditor(Marking, HostedEditor):
         self._snapshot = snapshot
         self._path = snapshot.get("path")
         if self._session is not None:
-            restored = SessionFile.read(snapshot["session"])
+            restored = MultitrackSession.read(snapshot["session"])
             restored.multitrack = self._multitrack
             restored.path = self._path
             self._session.__dict__.update(restored.__dict__)
@@ -164,7 +164,7 @@ class MultitrackEditor(Marking, HostedEditor):
 
     @property
     def session(self):
-        """The `clausters.document.SessionFile` it was opened over, or ``None``
+        """The `clausters.gui.editing.MultitrackSession` it was opened over, or ``None``
         for an untitled one."""
         return self._session
 

@@ -33,7 +33,8 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "clients/python"))
 
 from clausters.document import (Multitrack, Content, Fade,  # noqa: E402
-                                Meter, MultitrackView, SessionFile, Span, Source, Tempo)
+                                Meter, Span, Source, Tempo)
+from clausters.gui.editing import MultitrackSession, MultitrackView  # noqa: E402
 
 
 def window(source: int, start: float = 0.0, duration: float = 4.0) -> dict:
@@ -126,7 +127,7 @@ def views(multitrack: Multitrack) -> list:
     return [arranger, editor]
 
 
-def saved() -> SessionFile:
+def saved() -> MultitrackSession:
     """The same multitrack as a **session**: the arrangement plus where its samples
     are, which is the half the multitrack deliberately does not carry.
 
@@ -136,7 +137,7 @@ def saved() -> SessionFile:
     destructive edit is still open.
     """
     multitrack = build()
-    session = SessionFile(multitrack=multitrack, provenance={"script": "make.py"},
+    session = MultitrackSession(multitrack=multitrack, provenance={"script": "make.py"},
                       views=views(multitrack), end="contents")
     for source in (100, 101, 102, 200):
         session.sources[source] = Source.file(f"takes/{source}.wav").shaped(
@@ -152,6 +153,6 @@ if __name__ == "__main__":
     here = pathlib.Path(__file__).resolve().parent
     (here / "multitrack_vector.json").write_text(
         json.dumps(build().write(), indent=1) + "\n")
-    (here / "multitrack_session_vector.json").write_text(
+    (here.parents[1] / "clausters-apps/tests/multitrack_session_vector.json").write_text(
         json.dumps(saved().write(), indent=1) + "\n")
     print(f"wrote {here / 'multitrack_vector.json'} and its session")

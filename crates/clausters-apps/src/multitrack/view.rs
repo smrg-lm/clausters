@@ -1,7 +1,7 @@
 //! The **presentation**: what a window shows of a multitrack, beside the multitrack and
 //! never inside it.
 //!
-//! A [`View`] is one window's picture of one [`Multitrack`]: where it is
+//! A [`MultitrackView`] is one window's picture of one [`Multitrack`]: where it is
 //! looking, how far it is zoomed, what the hand is holding, how tall each track
 //! is drawn. None of that is what the multitrack *is* -- the four-layer rule, and this
 //! project has said three times that a selection and a zoom are each window's
@@ -36,34 +36,32 @@
 //! # What survives, and what goes
 //!
 //! A view entry for an object the multitrack no longer holds is **dropped**
-//! ([`View::prune`]), and that is the same rule the client's screen-state tables
+//! ([`MultitrackView::prune`]), and that is the same rule the client's screen-state tables
 //! were fixed to obey: state goes when the thing goes. Keeping it is worse than
 //! losing it -- a zoom that survives onto a take lane which is not the same take lane is a
 //! defect that looks like a feature.
 //!
 //! # Where a file may carry one, and where nothing may
 //!
-//! A session may hold views ([`crate::Session::views`]), because reopening a
-//! multitrack into the window it was left in is what every program in the field
-//! does. Nothing here ever reaches the **document** or the **history**: a view
-//! is not edited through an intent, an undo never puts a scroll back, and a
-//! [`crate::Log`] that recorded a zoom would make the person's own last edit
-//! two steps away.
-
-pub mod catalogue;
-pub mod layers;
+//! A multitrack's session file may hold views
+//! ([`super::session::MultitrackSession::views`]), because reopening a
+//! multitrack into the window it was left in is what every program in the
+//! field does. Nothing here ever reaches the **document** or the **history**:
+//! a view is not edited through an intent, an undo never puts a scroll back,
+//! and a [`clausters_document::Log`] that recorded a zoom would make the
+//! person's own last edit two steps away.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::NodeId;
-use crate::multitrack::{Extra, Multitrack, Span};
-use crate::timebase::Beat;
+use clausters_document::NodeId;
+use clausters_document::multitrack::{Extra, Multitrack, Span};
+use clausters_document::timebase::Beat;
 
 /// One window's picture of one multitrack.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct View {
+pub struct MultitrackView {
     /// What the window is called, when a person named it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -182,7 +180,7 @@ fn is_origin(beat: &Beat) -> bool {
     *beat == Beat::ZERO
 }
 
-impl View {
+impl MultitrackView {
     /// A window that says nothing: the whole multitrack, no grid, nothing held.
     pub fn new() -> Self {
         Self {
@@ -213,7 +211,7 @@ impl View {
         self.take_lanes.get(&id).cloned().unwrap_or_default()
     }
 
-    /// How this take lane is drawn, to be edited. See [`View::track_mut`].
+    /// How this take lane is drawn, to be edited. See [`MultitrackView::track_mut`].
     pub fn take_lane_mut(&mut self, id: NodeId) -> &mut TakeLaneView {
         self.take_lanes.entry(id).or_default()
     }
@@ -258,39 +256,6 @@ impl View {
                 self.detail,
             )
     }
-}
-
-/// The `/gui_event` tags that are **not** edits of the structure: what a view
-/// is looking at, and where the hand is.
-///
-/// This module says the rule in prose -- a selection and a zoom are each
-/// window's and never the multitrack's -- and the routing table is that rule as
-/// a value, so a client can obey it without restating it. It is here rather
-/// than in a client because it was written twice, once per language, and two
-/// copies of a list of words drift the way every duplicated table drifts: a tag
-/// added to one of them makes that client answer a gesture the other one edits
-/// with.
-///
-/// What a client does with the tags is still the client's: it writes them into
-/// its own screen state, which is not this crate's to hold. What is settled
-/// here is only *which ones* those are.
-pub const NOT_AN_EDIT: [&str; 9] = [
-    "selection",
-    "view",
-    "view_x",
-    "view_y",
-    "layer",
-    "focus",
-    "locate",
-    "height",
-    "port_hold",
-];
-
-/// Whether `tag` names screen state rather than an edit -- [`NOT_AN_EDIT`] asked
-/// of one tag.
-#[must_use]
-pub fn is_screen_state(tag: &str) -> bool {
-    NOT_AN_EDIT.contains(&tag)
 }
 
 #[cfg(test)]

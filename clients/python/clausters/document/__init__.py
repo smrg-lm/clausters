@@ -83,13 +83,14 @@ script that wants a region on bar five asks it where bar five is.
 The session file
 ----------------
 
-A `SessionFile` is a multitrack saved, with its source table (`Source`, or a
-`FrozenSource` for samples this process does not hold) and how each window was
-looking at it (`MultitrackView`, with a `TrackView` and a `TakeLaneView` per
-row). The views are beside the multitrack and never inside it: nothing in them
-changes what plays, and a multitrack round trips the same whether a view of it
-exists or not. `FIRST_VERSION`, `SESSION_FORMAT` and `SESSION_APPLICATION` are
-the numbers and the name the format itself carries.
+A `SessionFile` is what every application's file holds: the format, the
+application it belongs to, the general tree, the source table (`Source`, or a
+`FrozenSource` for samples this process does not hold) and what produced the
+whole. What an application keeps beside them is its own and is read by it: the
+multitrack's file is `clausters.gui.editing.MultitrackSession`, with its
+tracks, its windows' views and where a pass ends, beside the multitrack's
+editor. `FIRST_VERSION` and `SESSION_FORMAT` are the numbers the format itself
+carries.
 
 Usage::
 
@@ -107,21 +108,19 @@ from .._native import (MULTITRACK, EVENTS, POINTS, SAMPLES, TREE, Document,
                        domain_edit_all)
 from .._native import document_apply as apply_intent
 from .._native import document_resolve as resolve_selection
-from ._format import FIRST_VERSION, SESSION_APPLICATION, SESSION_FORMAT
+from ._format import FIRST_VERSION, SESSION_FORMAT
 from ._history import Editing, UndoHistory
 from ._multitrack import (Automation, Content, Curves, Fade, Marker, Markers,
                           Multitrack, Region, Regions, TakeLane, TakeLanes, Track,
                           Tracks)
 from ._session_file import FrozenSource, SessionFile, Source
 from ._timeline import Meter, Span, Tempo
-from ._view import MultitrackView, TakeLaneView, TrackView
 
 __all__ = [
     "MULTITRACK",
     "EVENTS",
     "FIRST_VERSION",
     "SESSION_FORMAT",
-    "SESSION_APPLICATION",
     "POINTS",
     "SAMPLES",
     "TREE",
@@ -143,7 +142,6 @@ __all__ = [
     "Markers",
     "Meter",
     "Multitrack",
-    "MultitrackView",
     "Region",
     "Regions",
     "SessionFile",
@@ -151,10 +149,8 @@ __all__ = [
     "Span",
     "TakeLane",
     "TakeLanes",
-    "TakeLaneView",
     "Tempo",
     "Track",
     "Tracks",
-    "TrackView",
     "UndoHistory",
 ]

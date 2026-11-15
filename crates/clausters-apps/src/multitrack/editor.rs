@@ -33,10 +33,10 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+use crate::view::NOT_AN_EDIT;
 use clausters_core::tempoclock::samples_to_secs;
 use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::edit::{MULTITRACK, MultitrackIntent};
-use clausters_document::view::NOT_AN_EDIT;
 use clausters_document::{Opaque, SourceId, domain};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 use clausters_editing::multitrack::{self as projection, Look};
@@ -391,10 +391,10 @@ pub struct MultitrackEditor {
 /// The file facts of one session, retained with its contents and history.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SessionFile {
-    pub session: Option<clausters_document::session::Session>,
+    pub session: Option<crate::multitrack::session::MultitrackSession>,
     pub path: Option<String>,
     pub save_to: Option<Option<String>>,
-    pub saved: Option<clausters_document::session::Session>,
+    pub saved: Option<crate::multitrack::session::MultitrackSession>,
 }
 
 /// What an unsaved reading was read at ([`MultitrackEditor::unsaved_at`]).
@@ -458,14 +458,12 @@ impl SessionState {
         }
     }
 
-    fn snapshot(&self) -> clausters_document::session::Session {
-        use clausters_document::session::{Location, Session, Source};
+    fn snapshot(&self) -> crate::multitrack::session::MultitrackSession {
+        use clausters_document::session::{Location, Source};
         use clausters_document::{Document, Lifetime};
-        let mut session = self
-            .file
-            .session
-            .clone()
-            .unwrap_or_else(|| Session::new(Document::empty()));
+        let mut session = self.file.session.clone().unwrap_or_else(|| {
+            crate::multitrack::session::MultitrackSession::new(Document::empty())
+        });
         session.multitrack = self
             .multitrack
             .lock()
@@ -496,7 +494,7 @@ impl SessionState {
             .filter_map(|region| region.content.source())
         {
             if let Some(parts) = self.segments.get(&source) {
-                session.sources.entry(source).or_insert_with(|| {
+                session.file.sources.entry(source).or_insert_with(|| {
                     let mut entry = Source::file("", Lifetime::Session);
                     entry.location = Location::Segments {
                         parts: parts.clone(),
@@ -834,7 +832,7 @@ impl MultitrackEditor {
     }
 
     /// Capture the current multitrack, source table and shared sequences.
-    pub(crate) fn session_snapshot(&self) -> clausters_document::session::Session {
+    pub(crate) fn session_snapshot(&self) -> crate::multitrack::session::MultitrackSession {
         self.session.snapshot()
     }
 
@@ -844,7 +842,10 @@ impl MultitrackEditor {
 
     /// **The session's confirmed checkpoint**: what it was last opened or
     /// saved as, or none.
-    pub(crate) fn set_checkpoint(&mut self, saved: Option<clausters_document::session::Session>) {
+    pub(crate) fn set_checkpoint(
+        &mut self,
+        saved: Option<crate::multitrack::session::MultitrackSession>,
+    ) {
         self.session.file.saved = saved;
         self.checkpoint += 1;
     }

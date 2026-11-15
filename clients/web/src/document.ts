@@ -82,14 +82,14 @@
  *
  * ## The session file
  *
- * A {@link SessionFile} is a multitrack saved, with its source table
+ * A {@link SessionFile} is what every application's file holds: the format,
+ * the application it belongs to, the general tree, the source table
  * ({@link Source}, or a {@link FrozenSource} for samples this process does not
- * hold) and how each window was looking at it ({@link MultitrackView}, with a
- * {@link TrackView} and a {@link TakeLaneView} per row). The views are beside
- * the multitrack and never inside it: nothing in them changes what plays, and
- * a multitrack round trips the same whether a view of it exists or not.
- * {@link FIRST_VERSION}, {@link SESSION_FORMAT} and {@link SESSION_APPLICATION}
- * are the numbers and the name the format itself carries.
+ * hold) and what produced the whole. What an application keeps beside them is
+ * its own and is read by it: the multitrack's file is `MultitrackSession`,
+ * with its tracks, its windows' views and where a pass ends, in `gui.editing`
+ * beside the multitrack's editor. {@link FIRST_VERSION} and
+ * {@link SESSION_FORMAT} are the numbers the format itself carries.
  *
  * ## Spelling
  *
@@ -1201,7 +1201,7 @@ export class Log {
     }
 }
 
-export { FIRST_VERSION, SESSION_APPLICATION, SESSION_FORMAT } from "./document/format.ts";
+export { FIRST_VERSION, SESSION_FORMAT } from "./document/format.ts";
 export { Editing, UndoHistory } from "./document/history.ts";
 export type {
     Adopting,
@@ -1238,4 +1238,3 @@ export type {
 } from "./document/multitrack.ts";
 export { FrozenSource, SessionFile, Source } from "./document/session-file.ts";
 export { Meter, Span, Tempo } from "./document/timeline.ts";
-export { MultitrackView, TakeLaneView, TrackView } from "./document/view.ts";

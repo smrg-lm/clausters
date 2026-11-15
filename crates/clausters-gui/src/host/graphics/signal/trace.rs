@@ -284,7 +284,7 @@ impl<'a> Trace<'a> {
     }
 }
 
-pub use clausters_document::view::layers::{Measure, Measures};
+pub use clausters_apps::view::layers::{Measure, Measures};
 
 /// The color a measure is drawn in: the channel's own series color for an
 /// envelope, the **body** role for a level.

@@ -42,12 +42,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::view::NOT_AN_EDIT;
+use crate::view::layers::Stack;
 use clausters_core::tempoclock::{samples_to_secs, secs_to_samples};
 use clausters_document::clipboard::{Clipboard, Content, HeldCopy, SegmentPart};
 use clausters_document::parts::{self, PARTS};
 use clausters_document::session::Part;
-use clausters_document::view::NOT_AN_EDIT;
-use clausters_document::view::layers::Stack;
 use clausters_document::{Lifetime, Opaque, Range, SourceId, SourceRef};
 use clausters_editing::apply::{Step, steps_json};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction, Message};

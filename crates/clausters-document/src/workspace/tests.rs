@@ -26,7 +26,7 @@ fn part(source: SourceId, start: u64, end: u64) -> Part {
 }
 
 /// A session whose document plays the take, a join over the user's file.
-fn session(parts: Vec<Part>) -> Session {
+fn session(parts: Vec<Part>) -> SessionFile {
     let root = Node::new(
         NodeId(1),
         Body::Vector {
@@ -39,7 +39,7 @@ fn session(parts: Vec<Part>) -> Session {
             config: Opaque::default(),
         },
     );
-    Session::new(Document::new(root))
+    SessionFile::new("multitrack", Document::new(root))
         .with_source(
             ORIGINAL,
             Source::file("/user/take.wav", Lifetime::External).shaped(2, 48_000, 48_000.0),
@@ -54,7 +54,7 @@ fn session(parts: Vec<Part>) -> Session {
 }
 
 /// The take's list, put back as an edit or its undo would.
-fn play(session: &mut Session, parts: Vec<Part>) {
+fn play(session: &mut SessionFile, parts: Vec<Part>) {
     session.sources.get_mut(&TAKE).unwrap().location = Location::Segments { parts };
 }
 
@@ -117,7 +117,7 @@ fn a_render_goes_when_nothing_names_it() {
         vec![ORIGINAL, r1],
     );
     assert!(
-        s.release_renders(&ws, &history, None).is_empty(),
+        s.release_renders(&ws, &history, None, &[]).is_empty(),
         "both are named"
     );
 
@@ -125,7 +125,7 @@ fn a_render_goes_when_nothing_names_it() {
     history.undo();
     play(&mut s, one.clone());
     assert!(
-        s.release_renders(&ws, &history, None).is_empty(),
+        s.release_renders(&ws, &history, None, &[]).is_empty(),
         "a redo would read it"
     );
 
@@ -148,7 +148,7 @@ fn a_render_goes_when_nothing_names_it() {
         vec![ORIGINAL, r1],
     );
     assert_eq!(
-        s.release_renders(&ws, &history, None),
+        s.release_renders(&ws, &history, None, &[]),
         vec![ws.render_path(r2, "w64")],
         "exactly the render the dropped redo held"
     );
@@ -159,19 +159,22 @@ fn a_render_goes_when_nothing_names_it() {
     let copied = s.copy_segments(&[part(r1, 0, 100)], &ws).unwrap();
     let clipboard = Clipboard::segments(2, 48_000.0, copied);
     play(&mut s, whole);
-    let gone = s.release_renders(&ws, &History::new(), Some(&clipboard));
+    let gone = s.release_renders(&ws, &History::new(), Some(&clipboard), &[]);
     assert_eq!(
         gone,
         vec![ws.render_path(r3, "w64")],
         "the copy keeps the first render"
     );
-    let gone = s.release_renders(&ws, &History::new(), None);
+    let gone = s.release_renders(&ws, &History::new(), None, &[]);
     assert_eq!(
         gone,
         vec![ws.render_path(r1, "w64")],
         "and lets it go once it is gone"
     );
-    assert!(s.release_renders(&ws, &History::new(), None).is_empty());
+    assert!(
+        s.release_renders(&ws, &History::new(), None, &[])
+            .is_empty()
+    );
     assert!(
         s.source(ORIGINAL).is_some(),
         "the user's file is never a render"
@@ -284,7 +287,7 @@ fn a_saved_session_names_no_temporary_file() {
     let (kept, _) = s.add_render(&ws, 2, 100, 48_000.0, "w64");
     let (dropped, _) = s.add_render(&ws, 2, 100, 48_000.0, "w64");
     play(&mut s, vec![part(ORIGINAL, 0, 100), part(kept, 0, 100)]);
-    let saved = s.for_saving(&ws).unwrap();
+    let saved = s.for_saving(&ws, &[]).unwrap();
     assert!(
         saved
             .sources
@@ -306,6 +309,6 @@ fn a_saved_session_names_no_temporary_file() {
     let mut e = session(vec![]);
     let (r, _) = e.add_render(&editor, 2, 100, 48_000.0, "w64");
     play(&mut e, vec![part(r, 0, 100)]);
-    let refused = e.for_saving(&editor).unwrap_err();
+    let refused = e.for_saving(&editor, &[]).unwrap_err();
     assert!(refused.contains("temporary"), "{refused}");
 }

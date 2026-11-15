@@ -15,7 +15,9 @@ use std::collections::HashMap;
 
 use clausters_document::SourceId;
 use clausters_document::parts::TakeFile;
-use clausters_document::session::{Location, Part, Session};
+use clausters_document::session::{Location, Part};
+
+use crate::multitrack::session::MultitrackSession;
 use clausters_editing::apply::Step;
 
 use crate::takes::Header;
@@ -73,7 +75,7 @@ pub fn peaks_for(folder: &str, path: &str) -> String {
 /// render to measure them; each join's parts; a source only a running
 /// system held, unresolved.
 pub fn resolve(
-    session: &Session,
+    session: &MultitrackSession,
     folder: &str,
     header: &mut dyn FnMut(&str) -> Result<Header, String>,
 ) -> Resolved {
@@ -132,7 +134,7 @@ pub fn resolve(
 
 /// **`session` as a session in `folder` writes it**: every file inside the
 /// folder named relative to it, so the folder can be moved.
-pub fn written(mut session: Session, folder: &str) -> Session {
+pub fn written(mut session: MultitrackSession, folder: &str) -> MultitrackSession {
     for source in session.sources.values_mut() {
         if let Location::File { path } = &mut source.location {
             *path = named(folder, path);
@@ -162,7 +164,7 @@ mod tests {
     /// there.
     #[test]
     fn a_session_s_sources_resolve_through_the_file_layer() {
-        let session = Session::new(Document::empty())
+        let session = MultitrackSession::new(Document::empty())
             .with_source(SourceId(1), Source::file("takes/a.wav", Lifetime::Session))
             .with_source(SourceId(2), Source::volatile(Lifetime::Session));
         let resolved = resolve(&session, "/nowhere-s", &mut |path| {

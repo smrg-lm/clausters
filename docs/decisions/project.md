@@ -470,6 +470,12 @@ the same way: `MultitrackView`, beside `TrackView` and `TakeLaneView`, since
 the `session` key a window hands back): what is renamed is the class a
 client types against.
 
+The same day the file and its views were split by owner (the entry "A
+session file is an envelope, and an application's contents are its own"):
+`SessionFile` stayed the document's as the envelope, and the multitrack's
+file and views moved to the applications as `MultitrackSession` and
+`MultitrackView`.
+
 ## The symbolic score is `clausters.notation`'s, and the GUI keeps its views (2026-11-15)
 
 The notation layer had been filed under the GUI (`clausters.gui.notation`,
@@ -491,4 +497,35 @@ uses. A method rather than a free `playhead_sync` in `gui.playhead_sync`,
 since a module and a name in it cannot share a word (the reason `View` left
 `clausters.gui.view`). The applications keep their handlers in
 `gui.editing`, the score editor's included.
+
+## A session file is an envelope, and an application's contents are its own (2026-11-15)
+
+The session file was the multitrack's and nobody else's: its type held the
+tracks, the windows' views and where a pass ends beside the source table,
+its metadata named the multitrack and its reader refused any other
+application. That shape gave a second application with a file of its own
+two ways in, and both are the defects this project names: a second format
+beside it, or its fields added to the multitrack's.
+
+**The file is split by who owns each half**, in the crate and in both
+clients. `SessionFile` (`clausters_document::session`, `clausters.document`)
+is what every application's file holds: the format and its migrations, the
+application the file belongs to, the general tree, the source table, the
+provenance, and what a save mid-edit means. Everything else at the top level
+is its `contents`, carried as written. `MultitrackSession`
+(`clausters_apps::multitrack::session`, `clausters.gui.editing`) is the
+multitrack's file: it reads its tracks, its views and its end out of those
+contents and writes them back, and refuses a file another application's
+metadata names. The JSON does not change and neither does `SESSION_FORMAT`,
+so every file written before opens as it did; the keys only come out in
+another order.
+
+**The views go with the application.** A `MultitrackView` is a window's
+state and changes nothing that plays, so it left the document crate for
+`clausters_apps::multitrack::view` (`clausters.gui.editing` in the clients),
+and the presentation every application shares -- the catalogue of pictures,
+the layer stacks and the gestures that are not edits -- for
+`clausters_apps::view`. The document crate now holds no presentation.
+`End` stays in the document: the editing crate's playback reads it too, and
+it is no window's state.
 

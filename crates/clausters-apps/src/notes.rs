@@ -10,7 +10,7 @@
 //! # The window
 //!
 //! One widget, the roll: the catalogue's `pianoroll` picture
-//! ([`clausters_document::view::catalogue`]) over the sequence's notes on its
+//! ([`crate::view::catalogue`]) over the sequence's notes on its
 //! own beats, with the ids of the events beside them (`note_ids`) so every
 //! gesture comes back naming the notes it touched. The Y axis is a domain
 //! ([`clausters_editing::notes::YDomain`]); the first is MIDI notes.
@@ -40,8 +40,8 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Map, Value, json};
 
+use crate::view::catalogue::{self, Roll};
 use clausters_document::EventSequence;
-use clausters_document::view::catalogue::{self, Roll};
 use clausters_editing::notes::{self, Axis, Editing, YDomain};
 use clausters_editing::verbs;
 

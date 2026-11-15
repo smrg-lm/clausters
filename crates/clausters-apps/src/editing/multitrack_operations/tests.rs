@@ -1,11 +1,9 @@
 use super::*;
 use crate::editing::held::HeldEngine;
+use crate::multitrack::session::MultitrackSession;
 use crate::takes::{Header, HeldTake};
 use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
-use clausters_document::{
-    Document, Lifetime,
-    session::{Session, Source},
-};
+use clausters_document::{Document, Lifetime, session::Source};
 use clausters_editing::apply::{Applier, Endpoint, Medium, Step};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -94,7 +92,7 @@ impl Fixture {
         }
     }
     fn open(&mut self, name: &str, sources: u64) -> Render {
-        let mut session = Session::new(Document::empty());
+        let mut session = MultitrackSession::new(Document::empty());
         for id in 1..=sources {
             session.sources.insert(
                 SourceId(id),
@@ -159,7 +157,7 @@ fn save_confirms_only_the_snapshot_written_and_failure_keeps_the_previous_destin
     let [Step::Store { path, contents }] = &storage.steps[..] else {
         panic!("a storage step")
     };
-    let captured: Session = serde_json::from_slice(contents).unwrap();
+    let captured: MultitrackSession = serde_json::from_slice(contents).unwrap();
     assert_eq!(
         captured.sources[&SourceId(1)].location,
         clausters_document::session::Location::File {
@@ -180,7 +178,8 @@ fn save_confirms_only_the_snapshot_written_and_failure_keeps_the_previous_destin
         editor.session_snapshot(),
         *editor.file().saved.as_ref().unwrap()
     );
-    let read_back: Session = serde_json::from_slice(&std::fs::read(&destination).unwrap()).unwrap();
+    let read_back: MultitrackSession =
+        serde_json::from_slice(&std::fs::read(&destination).unwrap()).unwrap();
     assert_eq!(read_back, captured);
     let checkpoint = editor.file().saved.clone();
     let retry_path = f.folder.join("retry.json");
@@ -594,7 +593,7 @@ fn replacing_a_session_hands_back_the_one_let_go_and_closes_its_order() {
     let first_scope = f.editing.services.histories.selected();
     assert!(f.editing.can_undo());
     let path = f.folder.join("second.json");
-    let mut session = Session::new(Document::empty());
+    let mut session = MultitrackSession::new(Document::empty());
     session
         .sources
         .insert(SourceId(1), Source::file("second-1.wav", Lifetime::Session));
@@ -1132,7 +1131,7 @@ fn a_window_a_client_holds_changes_its_session_without_asking() {
 #[test]
 fn file_open_chooses_a_session_in_the_form_and_opens_it_in_the_window() {
     let mut f = Fixture::new();
-    let mut other = Session::new(Document::empty());
+    let mut other = MultitrackSession::new(Document::empty());
     other
         .sources
         .insert(SourceId(1), Source::file("chosen-1.wav", Lifetime::Session));
@@ -1170,7 +1169,7 @@ fn file_open_chooses_a_session_in_the_form_and_opens_it_in_the_window() {
 #[test]
 fn a_session_opened_read_only_is_so_alone_and_the_one_in_its_place_saves() {
     let mut f = Fixture::new();
-    let mut session = Session::new(Document::empty());
+    let mut session = MultitrackSession::new(Document::empty());
     session
         .sources
         .insert(SourceId(1), Source::file("kept-1.wav", Lifetime::Session));

@@ -39,14 +39,6 @@ export const FIRST_VERSION = 1;
  */
 export const SESSION_FORMAT = 5;
 
-/**
- * **The application a session file belongs to**, as its `metadata` names it --
- * the crate's `session::APPLICATION`. Every application's file is JSON, so the
- * file says whose it is rather than its extension.
- */
-export const SESSION_APPLICATION = "multitrack";
-
-
 /** Whatever a newer writer wrote and this build has no field for. */
 export type Extra = Record<string, unknown>;
 

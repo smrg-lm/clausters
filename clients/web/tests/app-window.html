@@ -26,7 +26,8 @@
     -->
     <script type="module">
       import { Event, EventSequence, Session, SoundFile, gui, notation, opfs } from "../dist/index.js";
-      import { Content, Multitrack, SessionFile, Source } from "../dist/document.js";
+      import { Content, Multitrack, Source } from "../dist/document.js";
+      import { MultitrackSession } from "../dist/gui/editing/index.js";
 
       const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
       const verdict = (text) => {
@@ -125,7 +126,7 @@
           source: { source: 1, lifetime: "session", generation: 0 },
           start: 0, duration: 2,
         }));
-        const saved = new SessionFile();
+        const saved = new MultitrackSession();
         saved.multitrack = multitrack;
         saved.sources.set(1, Source.file("app_window.wav").shaped(1, frames, rate));
         await saved.save("out/app_window_session.json");
@@ -139,7 +140,7 @@
             return false;
           }
         }, "source measurement and session storage");
-        const reopened = await SessionFile.open("out/app_window_again.json");
+        const reopened = await MultitrackSession.open("out/app_window_again.json");
         if (reopened.sources.get(1)?.location.path !== "app_window.wav" || reopened.multitrack.tracks.length !== 1) {
           throw new Error("the stored session did not retain its track and relative source");
         }
@@ -156,7 +157,7 @@
           }
         }, "reopened source measurement and session storage");
         if (sessionEditor.multitrack !== multitrack) throw new Error("reopening retargeted the client object");
-        const retained = await SessionFile.open("out/app_window_retained.json");
+        const retained = await MultitrackSession.open("out/app_window_retained.json");
         if ([...retained.multitrack.tracks][0]?.name !== "after close" || retained.sources.get(1)?.location.path !== "app_window.wav") {
           throw new Error("reopening lost the retained contents or source location");
         }

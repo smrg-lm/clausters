@@ -274,7 +274,7 @@ fn a_spectral_box_is_its_views_spectrogram() {
 #[test]
 fn a_roll_body_is_fitted_by_the_crates_own_rule() {
     let notes = [0.0, 4800.0, 60.0, 100.0, 0.0];
-    let (min, max) = clausters_document::view::catalogue::pitch_window(&notes);
+    let (min, max) = clausters_apps::view::catalogue::pitch_window(&notes);
     let mt = from_props(&props(
         r#"{"clips": ["b", "one", 0, 48000, 0, "", -1],
             "notes": ["b", 0.0, 4800.0, 60.0, 100.0, 0.0]}"#,
