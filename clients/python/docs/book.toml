@@ -20,6 +20,15 @@ language = "en"
 [build]
 build-dir = "book"
 
+# The chapters both client books share are written once, in clients/docs/src/,
+# and the page of the same name here includes one: shared_book.py keeps this
+# book's language of each example and its platform's prose, and spells the
+# API's names as this client does. It runs before the links, which then read
+# the book's own text.
+[preprocessor.clients]
+command = """python3 -c "import json, os, sys; sys.argv[1:2] == ['supports'] and sys.exit(0); d = json.load(sys.stdin); sys.path.insert(0, os.path.join(d[0]['root'], '..', '..', 'docs')); import shared_book; shared_book.run(d, 'python')" """
+after = ["links"]
+
 # Names in backticks in the hand-written pages become links into the API
 # reference (api_links.py, over the table gen_api.py writes). Without the
 # table -- mdbook run before gen_api.py -- the pages pass through unchanged.
@@ -27,6 +36,7 @@ build-dir = "book"
 # the context it writes to stdin: mdBook runs it from wherever mdBook itself was
 # run (the repository root on CI and Read the Docs, clients/python locally).
 [preprocessor.api-links]
+after = ["clients"]
 command = """python3 -c "import json, sys; sys.argv[1:2] == ['supports'] and sys.exit(0); d = json.load(sys.stdin); sys.path.insert(0, d[0]['root']); import api_links; api_links.run(d)" """
 
 [output.html]

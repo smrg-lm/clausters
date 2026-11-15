@@ -27,22 +27,17 @@ Everything above the connection seam — the `Server`, the def builders, the `Gu
 
 ## How this book relates to the other two
 
-The three books do **not** repeat each other, and this one is deliberately the
-thinnest: it documents **what the browser makes different**, and links out for
-everything the two clients share.
+This book and the [Python client's book](https://clausters-python.readthedocs.io/)
+are **one book in two languages**, as the two clients are one client in two
+languages: the chapters they share are the same text, with every example in
+the language of the book's client, and the same calls in the same order.
 
 | Looking for | Where it is |
 |---|---|
-| the connection seam, the def model, sessions, the clock, the visual elements — **as this package spells them** | here |
+| the connection seam, the def model, sessions, the clock, the visual elements | here, as this package spells them, and in the Python book as that one does |
 | what a page has and a script does not: the in-page engine, promises everywhere, reading buses without a shared segment, components in a document | here, and nowhere else |
-| the *concepts* under all of that — what a def is, what a routine is, how the arrangement works, how a bundle is written | the [Python client's book](https://clausters-python.readthedocs.io/), which is the reference client's and the fuller one |
 | the wire — OSC commands, the two def formats, the `/gui_*` protocol, the bundle format | the [server guide](https://clausters.readthedocs.io/) |
 | a symbol, an option, a payload | the [API reference](api/index.md), generated from this package's own doc comments |
-
-So a page here that looks short usually is: it says the delta and points at the
-chapter that says the rest. Nothing that is true of both clients is written
-twice, on purpose — two copies of one explanation drift, and the reader who
-finds the stale one has no way to tell.
 
 ## How to read this book
 

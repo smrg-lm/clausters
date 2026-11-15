@@ -52,7 +52,7 @@ def stage() -> None:
             "needs TypeDoc -- see docs/build.sh for the install, or TYPEDOC for "
             "where it is."
         ) from None
-    count = build_docs.stage_book(SRC, OUT, TITLE, CUT, URL)
+    count = build_docs.stage_book(SRC, OUT, TITLE, CUT, URL, "web")
     print(f"clausters: staged the offline book ({count} pages) into dist/books/client/")
     if not build_docs.server_stage(SERVER_OUT):
         raise SystemExit("clausters: the server's book was not found beside this package")

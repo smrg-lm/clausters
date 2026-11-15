@@ -398,4 +398,6 @@ The Python client's book is a second, separate mdBook in `clients/python/docs/`,
 uv tool install --python 3.12 pydoc-markdown
 ```
 
+The web client's book is a third, in `clients/web/docs/`, and the chapters the two client books share are written once in `clients/docs/src/`, each example in both languages, and built into each by a preprocessor (`clients/docs/README.md` has the markers). Building a client book therefore needs `python3` on the path as well.
+
 Both books have to stay current: a change that touches the server and the client surfaces belongs in both. See [`clients/python/README.md`](https://github.com/smrg-lm/clausters/blob/main/clients/python/README.md) for the alternatives to `uv` (`uvx`, or a plain `pip install` in an environment that is not externally managed).

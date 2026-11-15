@@ -1,0 +1,7 @@
+# The API names the shared chapters write with `{{api name}}`, spelled for the
+# web client where turning each part from snake_case to camelCase does not
+# give its spelling. The key is the Python client's name, as the chapter
+# writes it; the value is the web client's. shared_book.py reads it.
+
+[web]
+"Server.sample_clock" = "sampleClockFor"

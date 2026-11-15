@@ -13,6 +13,9 @@ three changes:
 - mdBook's table of contents, ``SUMMARY.md``, is headed by the book's title
   instead of mdBook's ``# Summary`` (`retitle`). A viewer that reads it as the
   book's structure names the book by that heading.
+- A page that includes a chapter both client books share
+  (``clients/docs/src/``) gets the chapter as this book reads it, through the
+  preprocessor mdBook runs for the published book (``clients/docs/shared_book.py``).
 - The hand-written pages get the links to the API reference that mdBook's
   preprocessor gives the published book (``docs/api_links.py``), so a name is
   a link in both or in neither.
@@ -47,6 +50,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "docs", "src")
 OUT = os.path.join(HERE, "clausters", "_docs")
 URL = "https://clausters-python.readthedocs.io/en/latest/"
+# The chapters both client books share, and the preprocessor that makes them
+# each book's own.
+SHARED = os.path.join(HERE, "..", "docs")
 
 # The server's book: the repository's root docs/, and where it is published.
 SERVER_SRC = os.path.join(HERE, "..", "..", "docs")
@@ -197,26 +203,41 @@ def server_stage(out: str = SERVER_OUT) -> bool:
 
 
 def stage_book(src: str, out: str, title: str, cuts: "dict[str, tuple[str, ...]]", url: str,
-               link=None) -> int:
+               book: str, link=None) -> int:
     """Copy a client's book from ``src`` (an mdBook's ``src/``, its API pages
     already generated) into ``out``: every page as it is, but the sections
     ``cuts`` names, page by page, and each link into one of them pointing at
     ``url``, where the book is published; ``SUMMARY.md`` headed by ``title``.
-    ``link(text, page)`` rewrites each hand-written page (not the API's), if
-    given. Returns how many pages were staged."""
+    A page that includes a chapter both client books share gets the chapter
+    as ``book`` (``"python"`` or ``"web"``) reads it, which is what mdBook's
+    preprocessor gives the published book (``clients/docs/shared_book.py``).
+    ``link(text, page)`` then rewrites each hand-written page (not the API's),
+    if given. Returns how many pages were staged."""
+    sys.path.insert(0, SHARED)
+    import shared_book
+
+    reader = shared_book.Book(book)
     shutil.rmtree(out, ignore_errors=True)
     shutil.copytree(src, out, ignore=shutil.ignore_patterns("SUMMARY.md"))
-    if link is not None:
-        for root, dirs, files in os.walk(out):
-            dirs[:] = [d for d in dirs if os.path.join(root, d) != os.path.join(out, "api")]
-            for name in files:
-                if name.endswith(".md"):
-                    path = os.path.join(root, name)
-                    rel = os.path.relpath(path, out).replace(os.sep, "/")
-                    with open(path, encoding="utf-8") as f:
-                        text = f.read()
+    for root, dirs, files in os.walk(out):
+        dirs[:] = [d for d in dirs if os.path.join(root, d) != os.path.join(out, "api")]
+        for name in files:
+            if name.endswith(".md"):
+                path = os.path.join(root, name)
+                rel = os.path.relpath(path, out).replace(os.sep, "/")
+                with open(path, encoding="utf-8") as f:
+                    text = original = f.read()
+                text, included = shared_book.expand(text, os.path.join(src, os.path.dirname(rel)))
+                if included:
+                    try:
+                        text = reader.render(text, rel)
+                    except shared_book.BookError as error:
+                        raise SystemExit(f"clausters: {error}") from None
+                if link is not None:
+                    text = link(text, rel)
+                if text != original:
                     with open(path, "w", encoding="utf-8") as f:
-                        f.write(link(text, rel))
+                        f.write(text)
     anchors = {}
     for page, headings in cuts.items():
         path = os.path.join(out, page)
@@ -264,7 +285,7 @@ def stage() -> bool:
     import api_links
 
     linker = api_links.load()
-    count = stage_book(SRC, OUT, TITLE, CUT, URL, linker.link)
+    count = stage_book(SRC, OUT, TITLE, CUT, URL, "python", linker.link)
     print(f"clausters: staged the offline book ({count} pages) into clausters/_docs/")
     server_stage()
     return True

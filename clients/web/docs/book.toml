@@ -21,6 +21,15 @@ language = "en"
 [build]
 build-dir = "book"
 
+# The chapters both client books share are written once, in clients/docs/src/,
+# and the page of the same name here includes one: shared_book.py keeps this
+# book's language of each example and its platform's prose, and spells the
+# API's names as this client does. The command finds it through the book's
+# root, which mdBook passes in the context it writes to stdin.
+[preprocessor.clients]
+command = """python3 -c "import json, os, sys; sys.argv[1:2] == ['supports'] and sys.exit(0); d = json.load(sys.stdin); sys.path.insert(0, os.path.join(d[0]['root'], '..', '..', 'docs')); import shared_book; shared_book.run(d, 'web')" """
+after = ["links"]
+
 [output.html]
 default-theme = "rust"
 preferred-dark-theme = "ayu"

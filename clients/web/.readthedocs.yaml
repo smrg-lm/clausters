@@ -24,6 +24,9 @@ build:
   os: ubuntu-24.04
   tools:
     nodejs: "22"
+    # The chapters both client books share go through a preprocessor in
+    # Python (clients/docs/shared_book.py), as they do for the Python book.
+    python: "3.12"
   commands:
     - npm install --no-save --prefix "$HOME/typedoc" typedoc@0.28 typedoc-plugin-markdown@4 typescript@5.9
     - mkdir -p "$HOME/bin"

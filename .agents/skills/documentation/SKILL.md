@@ -32,10 +32,16 @@ writing. Then place the page.
 - **Python client book** — mdBook in `clients/python/docs/` (its own `book.toml`
   and `src/`). Build with `clients/python/docs/build.sh`.
 - **Web client book** — mdBook in `clients/web/docs/` (its own `book.toml` and
-  `src/`). Build with `clients/web/docs/build.sh`. The **thinnest** of the
-  three by design: it documents what the browser makes different (the two
-  carriers, promises everywhere, components in a document) and links the other
-  two books for the shared model rather than restating it.
+  `src/`). Build with `clients/web/docs/build.sh`.
+- **The chapters the two client books share** — `clients/docs/src/`, written
+  once with each example in both languages; each book's page of the same name
+  is one `{{#include}}` line, and `clients/docs/shared_book.py` (a
+  preprocessor both books run) keeps the book's own language, platform prose
+  and API spellings. A chapter about the shared model is written there, never
+  in one client's book; only what one client alone has (`cli.md`,
+  `configuration.md`, `components.md`, `platform.md`) stays in its book.
+  `clients/docs/README.md` has the markers; `docs/decisions.md`, "The two
+  client books are one text", says why.
 - **Rust API reference** — the rustdoc (`cargo doc --no-deps`), generated from
   `///` / `//!` doc comments. This *is* the crate reference; no hand-written
   mirror.

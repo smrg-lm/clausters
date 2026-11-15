@@ -243,3 +243,22 @@ finished work, where a pending item reads as done.
   were the job cancelled by the process-group reap, since fixed), and twenty
   runs of the case in a row pass locally. The entry stays open on the same
   terms: the next timeout's output names the step.
+
+- ⬜ **The sample-clock tracker is reached differently from Python's**
+  *(found 2026-11-15, writing the shared Timing models chapter for `W35`)*.
+  Python asks the server for it, `server.sample_clock()`, and reads the
+  measured drift off its model, `sc.model.drift_ppm()`; the web client has a
+  free function, `sampleClockFor(server)`, that warms the model up by
+  default, and a `driftPpm` property on the tracker. The chapter writes both
+  as they are (`names.toml` spells one as the other) and its two blocks are
+  not yet the same calls. The port takes Python's shape: a
+  `Server.sampleClock()` method and the same reading of the drift, or the
+  reference changes too, decided once for both.
+
+- ⬜ **The web client reads no configuration file** *(found 2026-11-15, the
+  same chapter)*. Python's `[client].clock` (and the rest of its
+  configuration chapter) has no web counterpart: a page or a worker passes
+  every option in code. A page has a filesystem (OPFS), so this is a gap of
+  the port and not of the platform; until it is decided, the shared chapters
+  say that the web client takes these options in code, and the web book
+  states that it has no Configuration chapter, with the reason.

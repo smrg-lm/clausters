@@ -7,8 +7,9 @@ came to import an `Arrangement` a rename had retired, and the GUI chapter a
 `field` builder that had been removed. This does not run the snippets (most of
 them need a server, a host or a file); it resolves every
 ``from clausters... import ...`` in a ```python block of the Python book, the
-server book and the package's README, which is the half of a snippet a rename
-breaks.
+server book, the chapters both client books share
+(``clients/docs/src/``) and the package's README, which is the half of a
+snippet a rename breaks.
 
 The web book has the same check in `clients/web/tests/book-imports.test.ts`.
 """
@@ -26,6 +27,9 @@ REPO = PYTHON.parents[1]
 # purpose, so they are not read.
 BOOKS = sorted(
     [*(PYTHON / "docs" / "src").rglob("*.md"), PYTHON / "README.md",
+     # The chapters both client books share, whose Python blocks are this
+     # book's.
+     *(REPO / "clients" / "docs" / "src").rglob("*.md"),
      *(p for p in (REPO / "docs").rglob("*.md")
        if "history" not in p.parts and "decisions" not in p.parts
        and p.name != "decisions.md")]

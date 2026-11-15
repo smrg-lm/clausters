@@ -6,7 +6,8 @@
 // `Arrangement` a rename had retired and to edit with a `doc.ARRANGEMENT` that
 // was never there. This does not run the snippets (most need an engine, a host
 // or a page); it resolves every `import { ... } from "clausters..."` in a
-// javascript or typescript block of the book and of the README against the
+// javascript or typescript block of the book, of the chapters both client
+// books share (`clients/docs/src/`) and of the README against the
 // built package, through its `exports` map -- what a reader's import goes
 // through -- and, where an imported name is itself a namespace, every
 // `alias.Name` the same block reads off it.
@@ -45,7 +46,9 @@ async function imports(): Promise<Import[]> {
     const out: Import[] = [];
     const fence = /^```(?:js|javascript|ts|typescript)[^\n]*\n([\s\S]*?)^```/gm;
     const named = /import\s*\{([^}]*)\}\s*from\s*"(clausters(?:\/[\w-]+)?)"/g;
-    for (const page of [...await pages(`${root}docs/src`), `${root}README.md`]) {
+    // The chapters both client books share are this book's too: their
+    // TypeScript blocks are the ones it keeps.
+    for (const page of [...await pages(`${root}docs/src`), ...await pages(`${root}../docs/src`), `${root}README.md`]) {
         const text = await readFile(page, "utf8");
         for (const block of text.matchAll(fence)) {
             const body = block[1];
