@@ -28,8 +28,8 @@ This module turns the shared text into the book's own:
   ``names.toml``, else by turning each part from snake_case to camelCase
   (``Server.sample_timebase`` -> ``Server.sampleTimebase``). Where the web
   book's API reference has been generated (``docs/src/api/``, by TypeDoc),
-  every name spelled for it has to be one the reference documents, so a
-  spelling the rule gets wrong stops the build until the table has it.
+  every part of a name spelled for it has to be a word the reference has, so
+  a spelling the rule gets wrong stops the build until the table has it.
 
 The web book also refuses a backticked snake_case name in the shared prose
 that the Python reference documents (``sample_timebase``): it is a Python
@@ -61,6 +61,7 @@ _MARKER = re.compile(r"<!-- /?(python|web) -->")
 _ALT = re.compile(r"\{\{alt (.*?) \|\| (.*?)\}\}", re.S)
 _API = re.compile(r"\{\{api ([A-Za-z_][A-Za-z0-9_.]*)\}\}")
 _INCLUDE = re.compile(r"\{\{#include ([^}\s]+)\}\}")
+_WORD = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 _SNAKE = re.compile(r"(?<![`\w])`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?:\(\))?`")
 
 
@@ -101,21 +102,18 @@ def camel(name: str) -> str:
 
 
 def _web_known():
-    """Every name the web reference documents, by its last part: the
-    headings TypeDoc writes for each class, member, function and parameter.
-    None when the reference has not been generated."""
+    """Every word the web reference has, by itself: the headings TypeDoc
+    writes for each class, member, function and parameter, and the option
+    names it lays out inside a signature. None when the reference has not
+    been generated."""
     if not os.path.isdir(WEB_API):
         return None
     known = set()
     for root, _, files in os.walk(WEB_API):
         for name in files:
-            if not name.endswith(".md"):
-                continue
-            with open(os.path.join(root, name), encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith("#"):
-                        word = line.rstrip().split(" ")[-1].strip("`").removesuffix("()").removesuffix("?")
-                        known.add(word.rsplit(".", 1)[-1])
+            if name.endswith(".md"):
+                with open(os.path.join(root, name), encoding="utf-8") as f:
+                    known.update(_WORD.findall(f.read()))
     return known
 
 

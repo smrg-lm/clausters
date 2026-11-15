@@ -11,7 +11,7 @@
 - [Timing models](timing-models.md)
 - [The ambient verbs: play, plot, scope, render](verbs.md)
 - [A DAW-style transport](transport.md)
-- [Reading the server: buses and buffers](data.md)
+- [Reading the server: buses, taps and takes](data.md)
 - [Receiving: responders](responders.md)
 - [The document: what a multitrack is, and who edits it](document.md)
 - [`form`: a frozen layer](form.md)
