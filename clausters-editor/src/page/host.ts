@@ -25,7 +25,9 @@ interface Config {
 const DEFAULT_STARTUP =
   'import { Session } from "clausters/session";\n' +
   "const session = (await Session.live(editor.engine)).activate();\n" +
-  "await session.gui({ port: editor.gui });\n";
+  "const host = await session.gui({ port: editor.gui });\n";
+
+session.setStartupCheck(() => config().javascript.startupCode.trim() !== "");
 
 function config(): Config {
   let startupCode = DEFAULT_STARTUP;
@@ -48,7 +50,7 @@ async function invoke<T>(command: string, args: Record<string, any> = {}): Promi
     case "session_restart":
       return (await session.restart()) as T;
     case "session_eval":
-      return session.evaluate(args as never) as T;
+      return (await session.evaluate(args as never)) as T;
     case "session_query":
       return session.query(args as never) as T;
     case "session_interrupt":

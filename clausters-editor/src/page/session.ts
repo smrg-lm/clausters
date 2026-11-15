@@ -22,32 +22,68 @@ const PACKAGES = { clausters: CLAUSTERS };
 const INTERRUPT_MS = 400;
 
 interface Runtime {
+  clausters: any;
   engine: any;
   gui: any;
-  /** A handle of the page's own on the engine: what silences it. */
-  server: any;
+  /** A handle of the page's own on the engine, made the first time the page
+   *  silences it: what silences it. */
+  server: any | null;
 }
 
 let runtime: Promise<Runtime> | null = null;
 
 /** The page's engine and GUI host, brought up once. The engine's audio starts
- *  at the page's first key or click, which a browser requires. */
+ *  at the page's first key or click, which a browser requires; until then the
+ *  engine answers nothing. */
 function bringUp(): Promise<Runtime> {
   runtime ??= (async () => {
     const clausters = await import(/* @vite-ignore */ new URL("dist/index.js", CLAUSTERS).href);
     const engine = await clausters.server({ channels: 2 });
     const gui = await clausters.guiHost();
-    const server = await new clausters.Server({ engine }).attach({ adoptDefault: false });
+    // Asked again at every key and click until the audio runs: a browser may
+    // not count the first one (Firefox does not count a modifier, the Shift
+    // of Shift+Enter).
     const resume = () => {
-      engine.resume();
-      window.removeEventListener("keydown", resume, true);
-      window.removeEventListener("pointerdown", resume, true);
+      if (engine.context.state === "running") {
+        window.removeEventListener("keydown", resume, true);
+        window.removeEventListener("pointerdown", resume, true);
+        return;
+      }
+      engine.resume().catch(() => {});
     };
     window.addEventListener("keydown", resume, true);
     window.addEventListener("pointerdown", resume, true);
-    return { engine, gui, server };
+    return { clausters, engine, gui, server: null };
   })();
   return runtime;
+}
+
+/** Waits for the engine's audio to run, saying once why the session waits. */
+async function running(engine: any): Promise<void> {
+  if (engine.context.state === "running") return;
+  emit("session-msg", {
+    type: "info",
+    id: null,
+    text: "The JavaScript session starts at the first key or click in the page: a browser lets a page start its audio only then.\n",
+    lang: "javascript",
+  });
+  await new Promise<void>((resolve) => {
+    const check = () => {
+      if (engine.context.state !== "running") return;
+      engine.context.removeEventListener("statechange", check);
+      resolve();
+    };
+    engine.context.addEventListener("statechange", check);
+    check();
+  });
+}
+
+/** Silences what the session's code left sounding, from the page. */
+async function silence(): Promise<void> {
+  const rt = await runtime;
+  if (!rt || rt.engine.context.state !== "running") return;
+  rt.server ??= await new rt.clausters.Server({ engine: rt.engine }).attach({ adoptDefault: false });
+  rt.server.panic();
 }
 
 // ---- where the session's windows go ----
@@ -101,9 +137,29 @@ function stop(): void {
   links = null;
 }
 
-export async function start(): Promise<void> {
+/** The session starting, which an evaluation asked for meanwhile waits for:
+ *  until its startup code has been sent, which runs first. */
+let starting: Promise<void> = Promise.resolve();
+/** Lets the evaluations waiting go, once the startup code is on its way. */
+let started: () => void = () => {};
+/** Whether there is startup code to wait for (the page's configuration). */
+let hasStartup: () => boolean = () => false;
+
+export function setStartupCheck(check: () => boolean): void {
+  hasStartup = check;
+}
+
+export function start(): Promise<void> {
+  const gate = new Promise<void>((resolve) => (started = resolve));
+  const begun = begin();
+  starting = begun.then(() => gate);
+  return begun;
+}
+
+async function begin(): Promise<void> {
   stop();
   const { engine, gui } = await bringUp();
+  await running(engine);
   const mine = ++generation;
   worker = new Worker(new URL("./session-worker.ts", import.meta.url), { type: "module" });
   const engineLink = engine.link();
@@ -112,6 +168,7 @@ export async function start(): Promise<void> {
   worker.addEventListener("message", (event) => {
     if (mine !== generation) return;
     if (event.data.type === "interrupted") return taken?.();
+    if (event.data.type === "ready" && !hasStartup()) started();
     emit("session-msg", { ...event.data, lang: "javascript" });
   });
   worker.addEventListener("error", (event) => {
@@ -125,9 +182,12 @@ export async function start(): Promise<void> {
   );
 }
 
-export function evaluate(args: { id: number; code: string; file: string; line: number }): void {
+export async function evaluate(args: { id: number; code: string; file: string; line: number }): Promise<void> {
+  const startup = args.file === "<startup code>";
+  if (!startup) await starting;
   if (worker === null) throw new Error("The JavaScript session is not running");
   worker.postMessage({ op: "eval", ...args });
+  if (startup) started();
 }
 
 export function query(args: { id: number; op: string; args: Record<string, unknown> }): void {
@@ -138,7 +198,7 @@ export function query(args: { id: number; op: string; args: Record<string, unkno
 async function end(code_: number | null): Promise<void> {
   const ended = generation;
   stop();
-  (await runtime)?.server.panic();
+  await silence();
   emit("session-exit", { lang: "javascript", generation: ended, code: code_ });
 }
 

@@ -51,9 +51,8 @@ if (BROWSER === "firefox") {
   writeFileSync(
     join(profile, "user.js"),
     [
-      'user_pref("media.autoplay.default", 0);',
-      'user_pref("media.autoplay.blocking_policy", 0);',
-      'user_pref("media.autoplay.block-webaudio", false);',
+      // The browser's own autoplay policy, as a user's: the page's audio
+      // starts at its first key, which the test presses.
       // Headless Firefox plays a page's audio aloud: silenced.
       'user_pref("media.volume_scale", "0.0");',
       'user_pref("browser.shell.checkDefaultBrowser", false);',
@@ -72,7 +71,6 @@ const browser = spawn(
         "--disable-gpu",
         "--no-sandbox",
         "--enable-unsafe-swiftshader",
-        "--autoplay-policy=no-user-gesture-required",
         "--window-size=1400,900",
         "--remote-debugging-port=0",
         `--user-data-dir=${profile}`,
@@ -239,11 +237,19 @@ try {
     await key(".", { ctrl: true });
   };
 
-  check(await waitFor("JavaScript worker ready", 0, 30000), "the session starts in a worker");
-  check(await waitFor("Startup code", 0, 5000), "the startup code runs");
-  await sleep(1500);
+  // Until a key or a click the page may start no audio, so the session waits,
+  // and an evaluation asked for meanwhile runs once it has started, after the
+  // startup code.
+  check(await waitFor("starts at the first key or click", 0, 30000), "the session waits for the page's first gesture");
+  let at = await run("1 + 1");
+  check(await waitFor("JavaScript worker ready", 0, 30000), "the session starts in a worker at the first key");
+  check(await waitFor("-> 2", at, 15000), "the evaluation asked for meanwhile runs");
+  const order = await post();
+  check(order.indexOf("Startup code") >= 0 && order.indexOf("Startup code") < order.indexOf("-> 2"), "after the startup code");
+  check(!order.includes("-> GuiHost"), "the default startup code shows no value");
+  await sleep(1000);
 
-  let at = await run('const greeting = (name) => `Hello, ${name}`;\ngreeting("world")');
+  at = await run('const greeting = (name) => `Hello, ${name}`;\ngreeting("world")');
   check(await waitFor('-> "Hello, world"', at), "a value is shown after ->");
 
   at = await run('const greeting = 1;\ngreeting + 1');

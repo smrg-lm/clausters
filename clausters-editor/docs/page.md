@@ -38,7 +38,7 @@ that changes:
 ```javascript
 import { Session } from "clausters/session";
 const session = (await Session.live(editor.engine)).activate();
-await session.gui({ port: editor.gui });
+const host = await session.gui({ port: editor.gui });
 ```
 
 After it, `play`, a `Synth` or a pattern sound with nothing else named. The
