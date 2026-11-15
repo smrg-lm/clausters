@@ -6,7 +6,7 @@ The multitrack is one program, and it is not this one. The GUI host opens it
 engine of the application's own: over a saved session, whose takes are read
 where they are -- their headers when it opens, their samples as the transport
 reads them, their peaks, kept in the session's ``peaks/`` folder, as the
-window draws them -- or over a `clausters.multitrack.Multitrack` handed to it
+window draws them -- or over a `clausters.document.Multitrack` handed to it
 whole, an **untitled session** with no file behind it until it is saved.
 What a gesture does, the history, the playback and the save all run in the
 host's process. Every member below is one call to the application
@@ -14,7 +14,7 @@ host's process. Every member below is one call to the application
 there each time rather than kept here.
 
 **The script's multitrack is the window's while it is open.** The
-`clausters.multitrack.Multitrack` it was opened over -- the session's, or the
+`clausters.document.Multitrack` it was opened over -- the session's, or the
 one handed over -- reads and writes the multitrack the application holds: a
 read answers what the window shows now, a change is an edit of the window's,
 undone by its Ctrl+Z, and ``multitrack.history`` is the window's history.
@@ -45,22 +45,22 @@ _snapshots = weakref.WeakKeyDictionary()
 class MultitrackEditor(Marking, HostedEditor):
     """**The multitrack the GUI host holds, and this script its handler.**
 
-    `clausters.gui.edit` over a `clausters.multitrack.Session` that has a
-    file, or over a `clausters.multitrack.Multitrack`, answers one, open.
+    `clausters.gui.edit` over a `clausters.document.SessionFile` that has a
+    file, or over a `clausters.document.Multitrack`, answers one, open.
     Each member is a call to the application in the host's process,
     answered by it.
 
     **What is marked** (`selected`, `select`, `unselect`) is the boxes the
     hand holds -- a click, Alt+click or a marquee -- as the
-    `clausters.multitrack.Region` objects of the multitrack, in the order
+    `clausters.document.Region` objects of the multitrack, in the order
     the boxes are drawn. The window's, not the multitrack's: it enters no
     history, and nothing is marked with no window open. (The time range a
     sweep leaves is the transport's.)
 
     Args:
-        structure: ``None`` opens without a session. Otherwise, what to open: a `clausters.multitrack.Session`, by the
+        structure: ``None`` opens without a session. Otherwise, what to open: a `clausters.document.SessionFile`, by the
             file it was opened from or saved to; or a
-            `clausters.multitrack.Multitrack`, as an untitled session whose
+            `clausters.document.Multitrack`, as an untitled session whose
             first `save` names its file.
         title: the window's title; the session file's name when not given,
             ``"Untitled"`` for a multitrack.
@@ -70,7 +70,7 @@ class MultitrackEditor(Marking, HostedEditor):
     """
 
     def __init__(self, structure=None, *, title: "str | None" = None):
-        from ...multitrack import Multitrack
+        from ...document import Multitrack
 
         if structure is None:
             self._session = None
@@ -139,7 +139,7 @@ class MultitrackEditor(Marking, HostedEditor):
         if self._local is None:
             return
         from ... import _native
-        from ...multitrack import Session
+        from ...document import SessionFile
 
         if snapshot is not None:
             left = snapshot["session"].get("multitrack", left)
@@ -151,20 +151,20 @@ class MultitrackEditor(Marking, HostedEditor):
         self._snapshot = snapshot
         self._path = snapshot.get("path")
         if self._session is not None:
-            restored = Session.read(snapshot["session"])
+            restored = SessionFile.read(snapshot["session"])
             restored.multitrack = self._multitrack
             restored.path = self._path
             self._session.__dict__.update(restored.__dict__)
 
     @property
     def multitrack(self):
-        """The `clausters.multitrack.Multitrack` it was opened over: the
+        """The `clausters.document.Multitrack` it was opened over: the
         window's while it is open, ``None`` for one opened over nothing."""
         return self._multitrack
 
     @property
     def session(self):
-        """The `clausters.multitrack.Session` it was opened over, or ``None``
+        """The `clausters.document.SessionFile` it was opened over, or ``None``
         for an untitled one."""
         return self._session
 
@@ -176,7 +176,7 @@ class MultitrackEditor(Marking, HostedEditor):
 
     def open_roll(self, region) -> "NotesEditor":
         """**The roll of a box of notes**, as a double click on the box opens
-        it: ``region``, a `clausters.multitrack.Region` whose box reads a
+        it: ``region``, a `clausters.document.Region` whose box reads a
         sequence of events, edited in a window of its own, opened if none is
         open over it, in the multitrack's history -- an edit in either window
         is undone from both, and the roll goes when the multitrack does.
@@ -325,7 +325,7 @@ class MultitrackEditor(Marking, HostedEditor):
         """The regions of the boxes the window holds."""
         if self.closed:
             return []
-        from ...multitrack import Region
+        from ...document import Region
 
         multitrack = self.multitrack
         if multitrack is None:
@@ -391,7 +391,7 @@ class MultitrackEditor(Marking, HostedEditor):
 
 
 def is_multitrack(structure) -> bool:
-    """Whether ``structure`` is a `clausters.multitrack.Multitrack`."""
-    from ...multitrack import Multitrack
+    """Whether ``structure`` is a `clausters.document.Multitrack`."""
+    from ...document import Multitrack
 
     return isinstance(structure, Multitrack)

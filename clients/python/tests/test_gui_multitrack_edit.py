@@ -15,8 +15,8 @@ import pytest
 from clausters import _native
 from clausters.gui import edit
 from clausters.gui.editing import MultitrackEditor
-from clausters.multitrack import Multitrack, Region
-from clausters.multitrack import Session as SavedSession
+from clausters.document import Multitrack, Region
+from clausters.document import SessionFile
 
 
 class FakeHost:
@@ -96,7 +96,7 @@ class FakeHost:
         snapshot."""
         if self.held is None:
             return None
-        return {"session": {"format": SavedSession.format,
+        return {"session": {"format": SessionFile.format,
                             "multitrack": self.held.call("state"), "sources": {}},
                 "path": self.path, "saved": None}
 
@@ -141,8 +141,8 @@ class FakeHost:
         self.released_handler = (window, func)
 
 
-def a_session(path="/songs/song.json") -> SavedSession:
-    session = SavedSession()
+def a_session(path="/songs/song.json") -> SessionFile:
+    session = SessionFile()
     session.path = path
     return session
 
@@ -159,7 +159,7 @@ def test_edit_opens_a_saved_session_in_the_multitrack_application():
 
 def test_a_session_with_no_file_is_refused():
     with pytest.raises(ValueError, match="save it first"):
-        MultitrackEditor(SavedSession())
+        MultitrackEditor(SessionFile())
 
 
 def test_a_multitrack_opens_as_an_untitled_session():
@@ -322,7 +322,7 @@ def test_a_window_a_session_left_goes_on_answering_its_own_verbs(gui_host, tmp_p
     file hands that back and leaves the window empty, and its own close closes
     it."""
     path = str(tmp_path / "kept.json")
-    SavedSession().save(path)
+    SessionFile().save(path)
     editor = MultitrackEditor(None, title="empty")
     editor.open(gui_host)
     assert gui_host.call_app(editor.window, {"query": "file"})["empty"] is True
@@ -359,7 +359,7 @@ def test_a_box_of_notes_opens_its_roll_for_the_script(gui_host, tmp_path):
     over the session's sequence, which reads the window's; an edit there is
     undone from the multitrack, a box of no notes is refused before anything
     opens, and the roll goes with the multitrack."""
-    from clausters.multitrack import Content, Source
+    from clausters.document import Content, Source
     from clausters.seq import EventSequence
     from clausters.seq.event import Event
 
@@ -374,7 +374,7 @@ def test_a_box_of_notes_opens_its_roll_for_the_script(gui_host, tmp_path):
     keys = multitrack.tracks.add("keys")
     box = keys.active_take_lane.regions.add(0.0, 2.0, window(7), name="keys")
     other = keys.active_take_lane.regions.add(4.0, 2.0, window(3), name="take")
-    session = SavedSession()
+    session = SessionFile()
     session.multitrack = multitrack
     session.sources[7] = Source.events(notes)
     session.save(str(tmp_path / "notes.json"))

@@ -64,7 +64,7 @@ same origin, which saves <code>out/edit_multitrack.json</code> and its takes.</d
     <script type="module">
       import { Session, loadCore } from "../../dist/index.js";
       import { gui } from "../../dist/index.js";
-      import { Session as SavedSession } from "../../dist/multitrack.js";
+      import { SessionFile } from "../../dist/document.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -77,7 +77,7 @@ same origin, which saves <code>out/edit_multitrack.json</code> and its takes.</d
 
         // ---- open ----
         // The multitrack and its table, as the file says them.
-        const saved = await SavedSession.open("out/edit_multitrack.json");
+        const saved = await SessionFile.open("out/edit_multitrack.json");
         for (const [id, source] of [...saved.sources].sort(([a], [b]) => a - b)) {
           log(`  source ${id}: ${source.location.at}`);
         }

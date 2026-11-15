@@ -17,7 +17,7 @@ import { Routine } from "../src/base/stream.ts";
 import type { Connection, OscNrtInterface } from "../src/base/connection.ts";
 import { OscNrtInterface as NrtInterface } from "../src/base/connection.ts";
 import { Server } from "../src/defs/server/index.ts";
-import { Automation } from "../src/multitrack.ts";
+import { Automation } from "../src/document.ts";
 import { WINDOW } from "../src/seq/curves.ts";
 import { Event } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";

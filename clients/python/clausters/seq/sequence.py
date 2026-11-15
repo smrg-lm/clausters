@@ -80,7 +80,7 @@ class EventSequence:
     def _curve_view(self, event: "int | None", id: int):
         """The object of curve ``id`` -- of the sequence when ``event`` is
         ``None``, else of that event -- the same one every time."""
-        from ..multitrack import Automation
+        from ..document import Automation
 
         found = self._objects.get(("curve", id))
         if found is None:
@@ -126,7 +126,7 @@ class EventSequence:
     @property
     def automation(self) -> "SeqAutomation":
         """**The curves over the whole sequence**: a live collection of
-        `clausters.multitrack.Automation` views, their points on the
+        `clausters.document.Automation` views, their points on the
         sequence's beats. The notes editor draws each as a row under the
         roll."""
         return SeqAutomation(self, None)
@@ -696,7 +696,7 @@ class SeqEvent:
     def automation(self) -> "SeqAutomation":
         """**The curves over this event alone** -- its own automation, as MPE
         gives a note its bend, pressure and timbre: a live collection of
-        `clausters.multitrack.Automation` views, each point's beat counted
+        `clausters.document.Automation` views, each point's beat counted
         from the event's start and free to run past the note's end into its
         release."""
         return SeqAutomation(self._sequence, self._id)
@@ -763,7 +763,7 @@ class SeqEvents:
 
 class SeqAutomation:
     """**Curves a sequence holds, as a live collection** of
-    `clausters.multitrack.Automation` views: the sequence's own
+    `clausters.document.Automation` views: the sequence's own
     (`EventSequence.automation`) or one event's (`SeqEvent.automation`)."""
 
     __slots__ = ("_sequence", "_event")
@@ -792,7 +792,7 @@ class SeqAutomation:
         return self._views()[i]
 
     def add(self, target, points=(), name: "str | None" = None):
-        """**Add a curve** and answer it, held: the `clausters.multitrack.
+        """**Add a curve** and answer it, held: the `clausters.document.
         Automation` that is now a view of what the sequence holds.
 
         ``target`` says what it moves -- ``{"cc": 74}`` (0 to 127), ``{"bend":
@@ -806,7 +806,7 @@ class SeqAutomation:
 
         `ValueError` when the sequence's `EventSequence.midi` spec cannot say
         such a curve here."""
-        from ..multitrack import Automation, _points
+        from ..document._multitrack import Automation, _points
 
         if isinstance(target, Automation):
             curve = target

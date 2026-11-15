@@ -1233,7 +1233,7 @@ def test_an_event_on_a_node_is_a_note_of_it():
     second.release()
     assert json.loads(iface.sent[-1][1][1]) == {"kind": "note_off",
                                                              "note_id": 2}
-    from clausters.multitrack import Automation
+    from clausters.document import Automation
     with pytest.raises(ValueError, match="curves"):
         Event(instrument=keys, automation=[Automation({"control": "amp"})]).play(srv)
 

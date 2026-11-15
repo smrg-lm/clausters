@@ -417,8 +417,7 @@ not a port.
 
 **The web package's modules are the Python package's.** The web client
 already mirrored the Python module tree in its sources; its `exports` map
-now says so to a reader: `clausters/base`, `clausters/multitrack`,
-`clausters/document`, `clausters/responders`, `clausters/render`,
+now says so to a reader: `clausters/base`, `clausters/document`, `clausters/responders`, `clausters/render`,
 `clausters/defs/pv_expr`, `clausters/gui/guidef` and the rest are the
 modules of the same name, and the bundle writer is `clausters/bundle`, as
 `clausters.bundle` is, rather than `clausters/bundle-writer`. A name a
@@ -436,3 +435,38 @@ pyright and rules, and compiles the TypeScript ones with the package's own
 block's variable, a name the package exports) rather than failing on it, so
 what is left is what a reader copying the block would hit. The errors that
 stand are listed with their reason in `clients/docs/book_blocks.toml`.
+
+## The document's structures are one module, named for the document (2026-11-15)
+
+The decision above published the web client's modules under the Python
+package's names, and one of those names was wrong in both: `multitrack`. A
+module named after an application says that each application gets one, and
+the structures in it are not the multitrack editor's alone. The tempo, the
+meter and a span are any timeline's entries, and the session file is the
+format every application's file shares. The other modules are named for
+what they hold (`soundfile`, `seq`, `notation`), and so is this one now.
+The module also split the document in two with no name for how the halves
+relate: `clausters.document` applied an edit and `clausters.multitrack` held
+the objects it was applied to.
+
+**The structures are `clausters.document`'s**, in both clients and from one
+door: the edit (`Document`, `History`, `Log`), the multitrack (`Multitrack`,
+`Track`, `TakeLane`, `Region`, `Content`, `Fade`, `Automation`, `Marker`),
+the timeline (`Tempo`, `Meter`, `Span`) and the session file. The four parts
+are kept apart as private files beneath it (`_multitrack`, `_timeline`,
+`_view`, `_session_file` in Python, `document/*.ts` in the web client),
+which is where the crate keeps them too (`multitrack`, `session`, `view`).
+`clausters.multitrack` and `clausters/multitrack` are gone, and the package
+roots re-export none of these names: the web root had re-exported the
+classes and the edit functions, which the Python root never had.
+
+**The session file is `SessionFile`**, never `Session`. `clausters.Session`
+holds a server, a clock and a GUI host; the file is a multitrack saved with
+its source table and its windows' views, and has nothing to do with it, so
+it does not share the name. The alias every caller had written to tell the
+two apart (`Session as SavedSession`) was the symptom. Its window state goes
+the same way: `MultitrackView`, beside `TrackView` and `TakeLaneView`, since
+`View` is already the GUI's. The format keeps its words (`SESSION_FORMAT`,
+the `session` key a window hands back): what is renamed is the class a
+client types against.
+

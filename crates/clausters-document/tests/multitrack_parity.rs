@@ -2,7 +2,7 @@
 //!
 //! The crate's own suite proves the shape round-trips against itself, which
 //! says nothing about whether anyone else agrees with it. This does: the vector
-//! beside it is an arrangement built with `clausters.multitrack`, as that
+//! beside it is a multitrack built with `clausters.document`, as that
 //! module writes it (`gen-multitrack-vector.py` writes the file, and it is
 //! committed). Nothing in CI runs the Python client's call sites, so without a
 //! crossing like this one the Python and Rust halves could drift until a user found

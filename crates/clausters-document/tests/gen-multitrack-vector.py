@@ -1,5 +1,5 @@
 """Write the parity vector the Rust suite reads: a multitrack read and written
-by the Python client's `clausters.multitrack`, as it writes it.
+by the Python client's `clausters.document`, as it writes it.
 
 Nothing checks that the two sides agree on the format unless something crosses
 between them, and no build ever reaches this client's call sites. So the vector
@@ -32,8 +32,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "clients/python"))
 
-from clausters.multitrack import (Multitrack, Content, Fade,  # noqa: E402
-                                   Meter, Session, Span, Source, Tempo, View)
+from clausters.document import (Multitrack, Content, Fade,  # noqa: E402
+                                Meter, MultitrackView, SessionFile, Span, Source, Tempo)
 
 
 def window(source: int, start: float = 0.0, duration: float = 4.0) -> dict:
@@ -108,7 +108,7 @@ def views(multitrack: Multitrack) -> list:
     objects exist to stop.
     """
     vocals, guitars, _ = multitrack.tracks
-    arranger = View(name="arranger", visible=Span(0.0, 48.0), quant=4.0)
+    arranger = MultitrackView(name="arranger", visible=Span(0.0, 48.0), quant=4.0)
     arranger.selected = [20, 32]
     arranger.focused = 20
     arranger.track_view(vocals).height = 96.0
@@ -119,14 +119,14 @@ def views(multitrack: Multitrack) -> list:
     #: an older reader opening the session and saving it does not lose it.
     arranger.extra["fold"] = "tracks"
 
-    editor = View(name="editor", visible=Span(8.0, 20.0), quant=0.25,
+    editor = MultitrackView(name="editor", visible=Span(8.0, 20.0), quant=0.25,
                   autofit=False, scroll=140.0)
     editor.selection = Span(8.0, 12.0)
     editor.detail = 42
     return [arranger, editor]
 
 
-def saved() -> Session:
+def saved() -> SessionFile:
     """The same multitrack as a **session**: the arrangement plus where its samples
     are, which is the half the multitrack deliberately does not carry.
 
@@ -136,7 +136,7 @@ def saved() -> Session:
     destructive edit is still open.
     """
     multitrack = build()
-    session = Session(multitrack=multitrack, provenance={"script": "make.py"},
+    session = SessionFile(multitrack=multitrack, provenance={"script": "make.py"},
                       views=views(multitrack), end="contents")
     for source in (100, 101, 102, 200):
         session.sources[source] = Source.file(f"takes/{source}.wav").shaped(

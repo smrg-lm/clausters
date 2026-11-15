@@ -459,8 +459,8 @@ impl Region {
 
 /// One of a track's several contents: an ordered list of regions.
 ///
-/// Ardour's structure and our name -- its `Playlist` is this, and *playlist* is
-/// a word every other program spends on something else. A track holds several
+/// The field's structure under a name of its own: *playlist*, the other word
+/// for it, means something else in most programs. A track holds several
 /// and plays one, which is what comping is: record six passes into six take lanes,
 /// then take from each.
 ///

@@ -68,7 +68,7 @@ curve = Bpf([(0.0, 200.0, "lin"),      # linear up
 #
 # `clausters.gui.edit` dispatches on **what the structure holds**, never on its
 # class: anything that can give and take break points -- a `clausters.defs.Bpf`,
-# an `clausters.defs.Env`, a `clausters.multitrack.Automation` -- opens as a
+# an `clausters.defs.Env`, a `clausters.document.Automation` -- opens as a
 # `clausters.gui.editing.PointsEditor`: one `bpf` widget, the ``points``
 # vocabulary, and the curve's own editing context.
 

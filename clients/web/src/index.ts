@@ -236,42 +236,11 @@ export * as form from "./form/index.ts";
 export * as segments from "./segments.ts";
 
 /**
- * The document: the multitrack's authoritative model, applied by the shared
- * crate rather than by any client. See `./document.ts`.
+ * The document: the structures every application edits (the multitrack, its
+ * timeline, its session file) and the one place an edit is applied, by the
+ * shared crate rather than by any client. See `./document.ts`.
  */
 export * as document from "./document.ts";
-
-/**
- * The multitrack: tracks, lanes, regions, and the timeline they sit on -- the
- * model a multitrack editor edits. See `./multitrack.ts`.
- */
-export * as multitrack from "./multitrack.ts";
-export {
-    Multitrack,
-    Automation,
-    Content,
-    Fade,
-    FrozenSource,
-    TakeLane,
-    TakeLaneView,
-    Marker,
-    Meter,
-    Region,
-    Span,
-    Tempo,
-    Track,
-    TrackView,
-    View,
-} from "./multitrack.ts";
-export {
-    History,
-    Log,
-    applyIntent,
-    domainCoalesceKey,
-    domainEdit,
-    domainEditAll,
-    resolveSelection,
-} from "./document.ts";
 export type {
     Against,
     Applied,

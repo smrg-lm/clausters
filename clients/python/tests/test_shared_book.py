@@ -126,11 +126,11 @@ def test_a_property_write_of_a_web_method_is_refused():
 
 
 def test_the_two_blocks_import_the_same_names_from_the_same_modules():
-    same = ('```python\nfrom clausters.multitrack import Session, take_lane\n```\n\n'
-            '```ts\nimport { Session, takeLane } from "clausters/multitrack";\n```\n')
+    same = ('```python\nfrom clausters.document import SessionFile, take_lane\n```\n\n'
+            '```ts\nimport { SessionFile, takeLane } from "clausters/document";\n```\n')
     shared_book.check(same, "x.md")
-    other_module = ('```python\nfrom clausters.multitrack import Session\n```\n\n'
-                    '```ts\nimport { Session } from "clausters";\n```\n')
+    other_module = ('```python\nfrom clausters.document import SessionFile\n```\n\n'
+                    '```ts\nimport { SessionFile } from "clausters";\n```\n')
     with pytest.raises(shared_book.BookError, match="import differently"):
         shared_book.check(other_module, "x.md")
     through_a_namespace = ('```python\nfrom clausters.gui import waveform\n```\n\n'

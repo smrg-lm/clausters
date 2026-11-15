@@ -349,7 +349,7 @@ def _read_imports():
 
 def _imported(code: str, book: str) -> set:
     """What ``code`` imports from the package, as ``(module, name)`` with the
-    module written as a path (``clausters/multitrack``) and the name in the web
+    module written as a path (``clausters/document``) and the name in the web
     client's spelling, so the two clients' imports compare as equal."""
     out = set()
     names = _read_names()

@@ -1688,7 +1688,7 @@ class SequenceHandle:
 class MultitrackHandle:
     """**A multitrack** (`clausters_document_multitrack_*`): the document's
     `Multitrack`, held on the Rust side, every verb through `call`.
-    `clausters.multitrack.Multitrack` is the class a script uses."""
+    `clausters.document.Multitrack` is the class a script uses."""
 
     def __init__(self, data=None):
         body = b"" if data is None else json.dumps(data).encode("utf-8")

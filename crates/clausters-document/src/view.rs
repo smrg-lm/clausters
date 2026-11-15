@@ -10,11 +10,10 @@
 //!
 //! # Parallel to the model, never a field on it
 //!
-//! The shape is Live's, and it is deliberate: `Song.View`, `Track.View` and
-//! `Application.View` are objects **beside** their model objects rather than
-//! children, with presentation on one side and functional data on the other,
+//! A view object sits **beside** each model object rather than being its
+//! child, with presentation on one side and functional data on the other,
 //! both readable and writable by a script. So a [`TrackView`] is looked up by
-//! the track's id rather than held by the track, and an [`Multitrack`] round
+//! the track's id rather than held by the track, and a [`Multitrack`] round
 //! trips byte for byte whether or not a view of it exists.
 //!
 //! Two things follow, and both are the point:
@@ -29,8 +28,8 @@
 //! # There is more than one of them
 //!
 //! A multitrack drawn in two windows has two views, and they disagree on purpose --
-//! that is what a second window is *for*. Live holds the same track as a column
-//! of slots in one picture and a timeline of clips in another; we hold a list.
+//! that is what a second window is *for*: one track may be a column of slots
+//! in one picture and a timeline of clips in another, so a session holds a list.
 //! A format that could carry only one would push the second back to being
 //! anonymous, which is the thing this module exists to stop.
 //!

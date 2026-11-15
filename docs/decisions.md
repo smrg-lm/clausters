@@ -335,3 +335,4 @@ quoted title lands here, on the link to the entry.
 - [The workspace is virtual, and the server is its default member (2026-11-12)](decisions/project.md#the-workspace-is-virtual-and-the-server-is-its-default-member-2026-11-12)
 - [The two client books are one text (2026-11-15)](decisions/project.md#the-two-client-books-are-one-text-2026-11-15)
 - [An example's two blocks import the same names from the same modules (2026-11-15)](decisions/project.md#an-examples-two-blocks-import-the-same-names-from-the-same-modules-2026-11-15)
+- [The document's structures are one module, named for the document (2026-11-15)](decisions/project.md#the-documents-structures-are-one-module-named-for-the-document-2026-11-15)

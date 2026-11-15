@@ -86,7 +86,7 @@ The layers:
 from . import _native as _native  # the binding, loaded with the package
 from . import log as log        # noqa: F401 -- arms CLAUSTERS_LOG on import
 from . import (base, data, defs, document, errors, form, gui, ipc, launch,
-               multitrack, segments, seq)
+               segments, seq)
 from .base import builtins
 from .errors import ClaustersError
 from .base.clock import TempoClock
@@ -150,7 +150,6 @@ __all__ = [
     "gui",
     "ipc",
     "launch",
-    "multitrack",
     "segments",
     "seq",
     # the hosts

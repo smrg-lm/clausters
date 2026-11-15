@@ -2,7 +2,7 @@
 """``edit(session)``: a multitrack of audio and notes, drawn, edited and played.
 
 The fourth structure, and the one that holds the other three: a
-`clausters.multitrack.Multitrack` -- the document the three applications share --
+`clausters.document.Multitrack` -- the document the three applications share --
 saved as a **session** and opened with `clausters.gui.edit` like a sound file.
 **One verb, and the editor is the application**: the GUI host opens the
 multitrack in a window of its own, reads the session's takes from their files
@@ -118,8 +118,8 @@ from clausters import Session, SoundFile, Synth
 from clausters.defs import SynthDef, out
 from clausters.defs.ugens import line, pink_noise, saw, sine, white_noise
 from clausters.gui import edit
-from clausters.multitrack import Content, Multitrack, Source
-from clausters.multitrack import Session as SavedSession
+from clausters.document import Content, Multitrack, Source
+from clausters.document import SessionFile
 from clausters.seq import EventSequence
 from clausters.seq.event import Event
 
@@ -234,7 +234,7 @@ HALF = FRAMES // 2
 FADE = int(0.010 * SR)
 ID = {take: id for id, take in SOURCES.items()}
 
-saved = SavedSession(multitrack=multitrack)
+saved = SessionFile(multitrack=multitrack)
 for id, take in SOURCES.items():
     if take != "comp":
         saved.sources[id] = Source.file(TAKES[take]).shaped(1, FRAMES, SR)

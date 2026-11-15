@@ -2813,7 +2813,7 @@ through, for both applications. What the client keeps is data it can use.
   in another server (the client's), which the application's engine does not
   reach.
 - **The multitrack** opens from its session file: `edit` of a
-  `clausters.multitrack.Session` (the file, not `clausters.Session`, the
+  `clausters.document.SessionFile` (the file, not `clausters.Session`, the
   client's connection to a server: two things, kept apart by name) has the application resolve its
   sources, read its takes and play them on its engine. The `Multitrack`
   object stays a live handle: while the application has it open, a read or

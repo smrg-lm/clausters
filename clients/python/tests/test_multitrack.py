@@ -1,4 +1,4 @@
-"""The arrangement's client side (`clausters.multitrack`).
+"""The arrangement's client side (`clausters.document`).
 
 What the crate defines, written and read here. The crossing that proves the two
 agree is `crates/clausters-document/tests/multitrack_parity.rs`, over a vector
@@ -7,7 +7,7 @@ types against, and the few rules that are the client's own to keep.
 """
 
 import pytest
-from clausters.multitrack import (Multitrack, Automation, Content, Fade,
+from clausters.document import (Multitrack, Automation, Content, Fade,
                                    TakeLane, Marker, Meter, Region, Span, Tempo,
                                    Track)
 
@@ -303,43 +303,43 @@ def test_every_lane_names_its_source_and_not_only_the_one_that_plays():
 # ---- the session: the multitrack, and where its samples are ----
 
 from clausters.document import SESSION_FORMAT  # noqa: E402
-from clausters.multitrack import FrozenSource, Session, Source  # noqa: E402
+from clausters.document import FrozenSource, SessionFile, Source  # noqa: E402
 
 
 def test_a_session_keeps_where_a_pass_ends():
     """The transport's end is the session's, in the three forms a playback
     takes it: none for a pass that rolls on -- which is not written --
     ``"contents"``, and a number of seconds for an end marker."""
-    assert "end" not in Session().write()
-    assert Session.read({"format": SESSION_FORMAT}).end is None
+    assert "end" not in SessionFile().write()
+    assert SessionFile.read({"format": SESSION_FORMAT}).end is None
     for end in ("contents", 12.5):
-        written = Session(end=end).write()
+        written = SessionFile(end=end).write()
         assert written["end"] == end
-        assert Session.read(written).end == end
-        assert "end" not in Session.read(written).extra
+        assert SessionFile.read(written).end == end
+        assert "end" not in SessionFile.read(written).extra
 
 
 def test_a_session_round_trips_with_its_table():
     multitrack, _, lane = one_lane()
     place(lane, 0.0, 4.0, source=700)
-    session = Session(multitrack=multitrack,
+    session = SessionFile(multitrack=multitrack,
                       sources={700: Source.file("take.wav").shaped(2, 480, 48_000.0)},
                       provenance={"script": "make.py"})
     written = session.write()
     assert written["sources"]["700"]["location"] == {"at": "file", "path": "take.wav"}
-    assert Session.read(written) == session
+    assert SessionFile.read(written) == session
 
 
 def test_an_absent_arrangement_reads_as_an_empty_one_rather_than_as_nothing():
     # The crate's own rule, mirrored: a session always has a multitrack, possibly
     # empty, so nothing downstream has to ask whether there is one.
-    session = Session.read({"format": SESSION_FORMAT})
+    session = SessionFile.read({"format": SESSION_FORMAT})
     assert len(session.multitrack.tracks) == 0
     assert session.write() == {"format": SESSION_FORMAT, "metadata": {"application": "multitrack"}}
 
 
 def test_a_save_knows_what_it_cannot_promise():
-    session = Session(sources={
+    session = SessionFile(sources={
         1: Source.file("kept.wav"),
         2: Source.volatile(),
         3: Source.file("scratch.wav", lifetime="temporary"),
@@ -360,7 +360,7 @@ def test_a_source_only_a_region_names_is_reported_missing():
     multitrack, track, first = one_lane()
     place(first, 0.0, 4.0, source=700)
     place(track.take_lanes.add(), 0.0, 4.0, source=701)
-    session = Session(multitrack=multitrack, sources={700: Source.file("one.wav")})
+    session = SessionFile(multitrack=multitrack, sources={700: Source.file("one.wav")})
     # Every lane, not only the one that plays.
     assert session.dangling() == [701]
 
@@ -372,12 +372,12 @@ def test_a_sequence_of_events_is_a_source_held_in_the_file():
     from clausters.seq.event import Event
 
     notes = EventSequence([(1.0, Event(midinote=60, sustain=0.5))])
-    session = Session(sources={900: Source.events(notes)})
+    session = SessionFile(sources={900: Source.events(notes)})
     notes.events.add(2.0, Event(midinote=64, sustain=0.5))
     written = session.write()
     location = written["sources"]["900"]["location"]
     assert location["at"] == "events" and len(location["sequence"]["events"]) == 2
-    back = Session.read(written)
+    back = SessionFile.read(written)
     assert back.sources[900].sequence.data() == notes.data()
     assert back.write() == written
     assert session.volatile() == [], "its events are in the file"
@@ -399,16 +399,16 @@ def test_a_frozen_source_keeps_what_the_table_said():
 def test_a_session_field_a_newer_writer_added_survives():
     written = {"format": SESSION_FORMAT, "metadata": {"application": "multitrack"},
                "mixer": {"buses": [{"id": 1, "name": "reverb"}]}}
-    assert Session.read(written).write() == written
+    assert SessionFile.read(written).write() == written
 
 
 def test_a_session_names_its_application_and_another_s_is_refused():
     # The file says whose it is, since every application's file is JSON: a
     # file with no metadata is the multitrack's, another's is refused.
-    assert Session().write()["metadata"] == {"application": "multitrack"}
-    assert Session.read({"format": SESSION_FORMAT}).metadata["application"] == "multitrack"
+    assert SessionFile().write()["metadata"] == {"application": "multitrack"}
+    assert SessionFile.read({"format": SESSION_FORMAT}).metadata["application"] == "multitrack"
     with pytest.raises(ValueError, match="roll"):
-        Session.read({"format": SESSION_FORMAT, "metadata": {"application": "roll"}})
+        SessionFile.read({"format": SESSION_FORMAT, "metadata": {"application": "roll"}})
 
 
 def test_a_format_2_session_opens_in_seconds():
@@ -422,7 +422,7 @@ def test_a_format_2_session_opens_in_seconds():
             "content": {"fill": "window", "window": {
                 "source": {"source": 1, "lifetime": "session"},
                 "start": 0.0, "duration": 2.0}}}]}]}]}}
-    session = Session.read(old)
+    session = SessionFile.read(old)
     assert session.format == SESSION_FORMAT
     assert session.multitrack.tempo[0].tempo == 2.0
     region = session.multitrack.tracks[0].take_lanes[0].regions[0]
@@ -432,7 +432,7 @@ def test_a_format_2_session_opens_in_seconds():
 
 # ---- the presentation: what a window shows of a multitrack ----
 
-from clausters.multitrack import TakeLaneView, TrackView, View  # noqa: E402
+from clausters.document import TakeLaneView, TrackView, MultitrackView  # noqa: E402
 
 
 def a_multitrack() -> Multitrack:
@@ -449,7 +449,7 @@ def a_multitrack() -> Multitrack:
 def test_a_view_that_says_nothing_writes_an_empty_object():
     # The arrangement's rule, mirrored: a view of a multitrack nobody has touched
     # costs a file two braces.
-    assert View().write() == {}
+    assert MultitrackView().write() == {}
 
 
 def test_a_view_says_nothing_about_what_plays():
@@ -458,21 +458,21 @@ def test_a_view_says_nothing_about_what_plays():
     multitrack = a_multitrack()
     written = multitrack.write()
     vocals = multitrack.tracks[0]
-    view = View(name="arranger", visible=Span(0.0, 32.0))
+    view = MultitrackView(name="arranger", visible=Span(0.0, 32.0))
     view.track_view(vocals).height = 96.0
-    session = Session(multitrack=multitrack, views=[view])
-    back = Session.read(session.write())
+    session = SessionFile(multitrack=multitrack, views=[view])
+    back = SessionFile.read(session.write())
     assert back.multitrack.write() == written
     assert back.views[0].track(back.multitrack.tracks[0]).height == 96.0
 
 
 def test_two_windows_over_one_multitrack_are_two_views_and_disagree_on_purpose():
-    arranger = View(name="arranger", visible=Span(0.0, 64.0), quant=4.0)
-    editor = View(name="editor", visible=Span(8.0, 20.0), quant=0.25,
+    arranger = MultitrackView(name="arranger", visible=Span(0.0, 64.0), quant=4.0)
+    editor = MultitrackView(name="editor", visible=Span(8.0, 20.0), quant=0.25,
                   autofit=False)
     editor.detail = 20
-    session = Session(multitrack=a_multitrack(), views=[arranger, editor])
-    back = Session.read(session.write())
+    session = SessionFile(multitrack=a_multitrack(), views=[arranger, editor])
+    back = SessionFile.read(session.write())
     assert len(back.views) == 2
     assert back.views[0].quant == 4.0
     assert back.views[1].quant == 0.25
@@ -482,7 +482,7 @@ def test_two_windows_over_one_multitrack_are_two_views_and_disagree_on_purpose()
 
 def test_a_track_nobody_touched_reads_as_the_default_and_costs_nothing():
     vocals = a_multitrack().tracks[0]
-    view = View()
+    view = MultitrackView()
     assert view.track(vocals) == TrackView()
     assert view.take_lane(vocals.take_lanes[0]) == TakeLaneView()
     assert view.tracks == {}, "asking is not touching"
@@ -494,7 +494,7 @@ def test_state_goes_when_the_thing_goes():
     # The rule the client's screen-state tables were fixed to obey, in this
     # structure's terms: a height kept for a track that is not the same track is
     # a defect that looks like a feature.
-    view = View()
+    view = MultitrackView()
     view.tracks[10] = TrackView(height=96.0)
     view.tracks[999] = TrackView(height=48.0)
     view.take_lanes[11] = TakeLaneView(height=24.0)
@@ -514,16 +514,16 @@ def test_state_goes_when_the_thing_goes():
 def test_a_field_a_newer_window_wrote_survives_a_load_and_a_save():
     written = {"name": "arranger", "fold": "tracks",
                "tracks": {"10": {"height": 96.0, "waveform": "rectified"}}}
-    view = View.read(written)
+    view = MultitrackView.read(written)
     assert view.extra["fold"] == "tracks"
     assert view.tracks[10].extra["waveform"] == "rectified"
     assert view.write() == written
 
 
 def test_a_session_written_without_views_reads_back_without_them():
-    session = Session(multitrack=a_multitrack())
+    session = SessionFile(multitrack=a_multitrack())
     assert "views" not in session.write()
-    assert Session.read(session.write()).views == []
+    assert SessionFile.read(session.write()).views == []
 
 
 # ---- the history: a script's changes, recorded and walked ----

@@ -407,7 +407,7 @@ def test_the_session_format_constant_is_the_crates():
     """`clausters.document.SESSION_FORMAT` is a literal, so this is what keeps
     it the crate's.
 
-    It is a literal because a `clausters.multitrack.Session` is plain data and
+    It is a literal because a `clausters.document.SessionFile` is plain data and
     writing one must not need a native load. The cost of that is exactly this
     check: without it the number drifts silently, which is what happened when
     the crate moved to 2 for a source whose samples are spans of other sources

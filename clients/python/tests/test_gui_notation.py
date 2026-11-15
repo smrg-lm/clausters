@@ -771,13 +771,14 @@ def test_the_notation_keys_are_the_cores_table():
 
 def test_both_books_reference_every_notation_key():
     # the reference is the table, row for row: a key added to the core and to
-    # no book is a key nobody can look up
+    # no book is a key nobody can look up. Both books include the shared
+    # chapter that holds the table, so that chapter is what is read.
     import pathlib
 
     from clausters import _native
 
     root = pathlib.Path(__file__).resolve().parents[3]
-    for page in ("clients/python/docs/src/timelines.md", "clients/web/docs/src/gui.md"):
+    for page in ("clients/docs/src/timelines.md",):
         text = (root / page).read_text(encoding="utf-8")
         for key in _native.event_notation_keys():
             assert f"| `{key['name']}` |" in text, f"{page} has no row for {key['name']}"

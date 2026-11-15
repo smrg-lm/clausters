@@ -10,7 +10,9 @@ are excluded that way). A hand-written list went stale once, silently: the
 modules added after it were missing from the reference with no error.
 
 Each module gets `src/api/<dotted.name>.md`: its docstring, a contents list and
-its members. A package's page also lists its modules and subpackages, linked;
+its members. A package's members include what its `__init__` imports from a
+private module of its own (`from ._multitrack import Multitrack`): the private
+file is where the code is kept, and the package is where a reader finds it. A package's page also lists its modules and subpackages, linked;
 a page the guide links to lists those guide pages back ("In the guide"); and a
 name in backticks that resolves to one documented object is a link to it, so a
 docstring's `boot` or `ServerOptions` reads as a reference. The table of those
@@ -27,6 +29,7 @@ does not have it (a `uv tool` install lives in its own environment), the script
 re-runs itself with the interpreter of the `pydoc-markdown` command.
 """
 
+import ast
 import io
 import json
 import os
@@ -74,6 +77,42 @@ def discover() -> list:
             elif not stem.startswith("_"):
                 names.append(".".join(rel + [stem]))
     return names
+
+
+def private_imports(names: list) -> dict:
+    """For each public package, the names its `__init__` imports from a private
+    module beside it: package -> {private module: [names]}."""
+    found = {}
+    for name in names:
+        init = os.path.join(CLIENT, *name.split("."), "__init__.py")
+        if not os.path.exists(init):
+            continue
+        with open(init, encoding="utf-8") as fp:
+            tree = ast.parse(fp.read())
+        for node in tree.body:
+            if (isinstance(node, ast.ImportFrom) and node.level == 1 and node.module
+                    and node.module.startswith("_")):
+                found.setdefault(name, {}).setdefault(f"{name}.{node.module}", []).extend(
+                    alias.name for alias in node.names if alias.asname is None)
+    return found
+
+
+def graft(modules: list, imports: dict) -> list:
+    """Moves the members a package imports from its private modules into the
+    package, and leaves the private modules out."""
+    by_name = {m.name: m for m in modules}
+    private = set()
+    for package, sources in imports.items():
+        target = by_name.get(package)
+        for source, wanted in sources.items():
+            private.add(source)
+            module = by_name.get(source)
+            if target is None or module is None:
+                continue
+            target.members.extend(m for m in module.members if m.name in wanted)
+        if target is not None:
+            target.sync_hierarchy()
+    return [m for m in modules if m.name not in private]
 
 
 def children(name: str, names: list) -> list:
@@ -168,8 +207,9 @@ def main() -> int:
     config = PydocMarkdown()
     config.load_config("pydoc-markdown.yml")
     config.init(Context(directory=CLIENT))
-    config.loaders[0].modules = names
-    modules = config.load_modules()
+    imports = private_imports(names)
+    config.loaders[0].modules = names + [s for sources in imports.values() for s in sources]
+    modules = graft(list(config.load_modules()), imports)
     docs = {m.name: m.docstring for m in modules}
     config.process(modules)
     renderer = config.renderer

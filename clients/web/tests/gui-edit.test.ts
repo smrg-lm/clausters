@@ -22,7 +22,7 @@ import {
 import { unwatch } from "../src/base/log.ts";
 import { POINTS } from "../src/document.ts";
 import { Bpf, Env } from "../src/defs/ugens/index.ts";
-import { Automation } from "../src/multitrack.ts";
+import { Automation } from "../src/document.ts";
 import { Event } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";
 import { EventSequence } from "../src/seq/sequence.ts";

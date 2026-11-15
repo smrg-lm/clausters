@@ -86,7 +86,7 @@ event plays them, so a pattern, a routine and a timeline all do, and
 
 ```python
 from clausters import Event, play
-from clausters.multitrack import Automation
+from clausters.document import Automation
 
 play(Event(degree=0, dur=2.0, legato=1.0, automation=[
     Automation({"control": "amp"}, [(0.0, 0.0), (1.0, 0.3), (2.0, 0.0)]),
@@ -96,7 +96,7 @@ play(Event(degree=0, dur=2.0, legato=1.0, automation=[
 
 ```ts
 import { Event, play } from "clausters";
-import { Automation } from "clausters/multitrack";
+import { Automation } from "clausters/document";
 
 play(new Event({ degree: 0, dur: 2.0, legato: 1.0, automation: [
     new Automation({ target: { control: "amp" }, points: [[0.0, 0.0], [1.0, 0.3], [2.0, 0.0]] }),

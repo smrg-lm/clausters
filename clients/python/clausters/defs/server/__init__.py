@@ -611,7 +611,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         return self._curves
 
     def play_automation(self, curve):
-        """Play a `clausters.multitrack.Automation` as **a channel's curve**:
+        """Play a `clausters.document.Automation` as **a channel's curve**:
         from now on it sets the control it names (``{"control": "amp"}``, or
         ``{"bend": True}`` for the pitch) on the notes of its channel
         (``"channel"`` in its target, counted from 0; without it, every
@@ -625,7 +625,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         the default one, the clock a pattern plays on.
 
         Returns what `clausters.seq.curves.CurveEmitter.stop` takes;
-        `clausters.multitrack.Automation.stop` is the door a script uses."""
+        `clausters.document.Automation.stop` is the door a script uses."""
         when = Moment.current()
         if when.clock is None:
             clock = main.play_clock()

@@ -32,7 +32,7 @@ import { Bus } from "../src/defs/bus.ts";
 import { Buffer } from "../src/defs/buffer.ts";
 import { Group, Synth, Voices } from "../src/defs/node.ts";
 import { Event } from "../src/seq/event.ts";
-import { Automation } from "../src/multitrack.ts";
+import { Automation } from "../src/document.ts";
 import { formatLoad, formatMidiBinding, loadName, Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { FaustDef } from "../src/defs/faustdef.ts";

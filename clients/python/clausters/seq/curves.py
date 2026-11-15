@@ -2,7 +2,7 @@
 
 An `clausters.seq.event.Event` carries its curves (``automation=[...]``), and a
 channel's curve is a playable of its own
-(`clausters.multitrack.Automation.play`). Neither builds anything on the
+(`clausters.document.Automation.play`). Neither builds anything on the
 server: a note is the plain synth it always was, and the controls its curves
 drive are **set**, one value every block, in timed bundles. `CurveEmitter` is
 what sends them -- one per `clausters.defs.Server`, reached as
@@ -265,7 +265,7 @@ class CurveEmitter:
 
     Made by its `clausters.defs.Server` (``server.curves``) and driven by it:
     `clausters.defs.Server.play_event` hands it every note, and
-    `clausters.multitrack.Automation.play` a channel's curve. A script does
+    `clausters.document.Automation.play` a channel's curve. A script does
     not call it.
 
     Args:

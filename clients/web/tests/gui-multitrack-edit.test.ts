@@ -13,7 +13,7 @@ import test from "node:test";
 
 import { MultitrackEditor, edit } from "../src/gui/editing/index.ts";
 import type { GuiHost } from "../src/gui/host.ts";
-import { Content, Multitrack, Region, Session as SavedSession, Source } from "../src/multitrack.ts";
+import { Content, Multitrack, Region, SessionFile, Source } from "../src/document.ts";
 import { Event } from "../src/seq/event.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 import { loadCore } from "../src/base/core.ts";
@@ -98,7 +98,7 @@ class FakeHost {
     /** What the window hands back of its session: a `/gui_app_open` snapshot. */
     snapshotOf(): unknown {
         if (this.held === null) return null;
-        return { session: { format: new SavedSession().format, multitrack: this.held.write(), sources: {} }, path: this.path, saved: null };
+        return { session: { format: new SessionFile().format, multitrack: this.held.write(), sources: {} }, path: this.path, saved: null };
     }
 
     /** The window goes, as the host says it: what it left the multitrack as rides with the close. */
@@ -169,8 +169,8 @@ class FakeHost {
     }
 }
 
-function aSession(path = "/songs/song.json"): SavedSession {
-    const session = new SavedSession();
+function aSession(path = "/songs/song.json"): SessionFile {
+    const session = new SessionFile();
     session.path = path;
     return session;
 }
@@ -185,7 +185,7 @@ test("edit opens a saved session in the multitrack application", async () => {
 });
 
 test("a session with no file is refused", () => {
-    assert.throws(() => new MultitrackEditor(new SavedSession()), /save it first/);
+    assert.throws(() => new MultitrackEditor(new SessionFile()), /save it first/);
 });
 
 test("a multitrack opens as an untitled session", async () => {

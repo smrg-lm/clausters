@@ -39,7 +39,7 @@ import sys
 
 from clausters import Session
 from clausters.gui import edit
-from clausters.multitrack import Session as SavedSession
+from clausters.document import SessionFile
 
 # %% [markdown]
 # ## Open
@@ -47,7 +47,7 @@ from clausters.multitrack import Session as SavedSession
 # The multitrack and its table, as the file says them.
 
 # %%
-saved = SavedSession.open("clients/python/examples/out/edit_multitrack.json")
+saved = SessionFile.open("clients/python/examples/out/edit_multitrack.json")
 
 for id, source in sorted(saved.sources.items()):
     print(f"  source {id}: {source.location['at']}")

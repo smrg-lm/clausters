@@ -22,7 +22,7 @@ because that is the question a caller has already answered by holding one.
 
 **A multitrack is the multitrack application's**, as a sound file is the
 audio editor's: the GUI host opens it, over a saved session's file or over a
-`clausters.multitrack.Multitrack` handed to it whole (an untitled session),
+`clausters.document.Multitrack` handed to it whole (an untitled session),
 and this script is its handler (`clausters.gui.editing.MultitrackEditor`).
 The script's multitrack is the window's while it is open.
 
@@ -48,8 +48,8 @@ from .multitrack import MultitrackEditor, is_multitrack
 from .points import PointsEditor, is_curve
 from .audio import AudioEditor
 from ...soundfile import SoundFile
-from ...multitrack import Multitrack
-from ...multitrack import Session as SavedSession
+from ...document import Multitrack
+from ...document import SessionFile
 from .score import ScoreEditor, is_score
 
 
@@ -64,7 +64,7 @@ def edit(structure: SoundFile, *, sample_rate: float = 0.0, host=None,
 
 
 @overload
-def edit(structure: "SavedSession | Multitrack", *, sample_rate: float = 0.0,
+def edit(structure: "SessionFile | Multitrack", *, sample_rate: float = 0.0,
          host=None, open: bool = True, **options) -> MultitrackEditor: ...
 
 
@@ -81,12 +81,12 @@ def edit(structure, *, sample_rate: float = 0.0,
         structure: what to edit: a `clausters.SoundFile` (in the audio
             editor, the GUI host's application, which writes the file only on
             `save`; a WAV, RF64 or W64 file on disk), a saved
-            `clausters.multitrack.Session` (in the multitrack, the GUI host's
+            `clausters.document.SessionFile` (in the multitrack, the GUI host's
             application, over the session's file:
             `clausters.gui.editing.MultitrackEditor`), a
-            `clausters.multitrack.Multitrack` (in the multitrack, as an
+            `clausters.document.Multitrack` (in the multitrack, as an
             untitled session over it, whose first save names its file), a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
-            `clausters.multitrack.Automation`), a `clausters.seq.EventSequence`
+            `clausters.document.Automation`), a `clausters.seq.EventSequence`
             (its notes, in place), a `clausters.seq.Timeline` (rendered into a
             sequence first -- ``until=`` bounds one that does not end -- which
             the editor's ``sequence`` then holds; the timeline is not changed)
@@ -237,10 +237,10 @@ _open_multitracks: list = []
 
 
 def _is_saved_session(structure) -> bool:
-    """Whether ``structure`` is a `clausters.multitrack.Session`."""
-    from ...multitrack import Session as SavedSession
+    """Whether ``structure`` is a `clausters.document.SessionFile`."""
+    from ...document import SessionFile
 
-    return isinstance(structure, SavedSession)
+    return isinstance(structure, SessionFile)
 
 
 def _is_buffer(structure) -> bool:

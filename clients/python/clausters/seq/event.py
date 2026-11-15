@@ -106,14 +106,14 @@ class Event(dict):
     and a pair (``degree=(1, 1)``) are both read as the two keys.
 
     **An event carries its curves**: ``automation`` is a list of
-    `clausters.multitrack.Automation`, each over one control of the note
+    `clausters.document.Automation`, each over one control of the note
     (``{"control": "cutoff"}``, or ``{"bend": True}`` for its pitch, in
     semitones), its points in beats from the note's start. Whatever plays the
     event -- a pattern, a routine, a timeline -- plays them: the control
     follows the curve from the note's start to its off, and keeps the last
     value through the release. A control with no curve is the plain value it
     always was. A **channel's** curve is not the event's: it is a playable of
-    its own (`clausters.multitrack.Automation.play`), read by the notes whose
+    its own (`clausters.document.Automation.play`), read by the notes whose
     ``channel`` it names.
 
     An event may also carry what the note is **on a page** (`NOTATION_KEYS`):

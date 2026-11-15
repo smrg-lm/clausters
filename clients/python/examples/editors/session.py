@@ -64,7 +64,7 @@ import sys
 import wave
 
 from clausters.gui import edit
-from clausters.multitrack import Content, Multitrack, Session, Source, Span, Tempo, View
+from clausters.document import Content, Multitrack, SessionFile, Source, Span, Tempo, MultitrackView
 
 SAMPLE_RATE = 48_000
 
@@ -190,12 +190,12 @@ print(f"  undone: {again.name!r} is on {again.track.name!r} again, at "
 #: multitrack -- nothing here can change what plays -- and all of it is state
 #: the person loses on a reopen unless the file carries it. A list, because a
 #: multitrack drawn in two windows has two views and they disagree on purpose.
-window = View(name="arranger", visible=Span(0.0, multitrack.end), quant=1.0)
+window = MultitrackView(name="arranger", visible=Span(0.0, multitrack.end), quant=1.0)
 window.track_view(tone).height = 96.0
 window.track_view(tone).take_lanes_shown = True
 window.track_view(echo).color = "#4488cc"
 
-session = Session(multitrack=multitrack, views=[window])
+session = SessionFile(multitrack=multitrack, views=[window])
 session.sources[TAKE] = Source.file(os.path.basename(take_path)).shaped(
     2, take_frames, float(SAMPLE_RATE))
 
@@ -232,7 +232,7 @@ print(f"  dangling:   {session.dangling()}  (named by the multitrack, absent fro
 # %%
 def run() -> None:
     """Reopen the session, report it, open it in the multitrack and play it."""
-    reopened = Session.open(path)
+    reopened = SessionFile.open(path)
     print(f"reopened {os.path.basename(path)}: "
           f"{len(reopened.multitrack.tracks)} tracks, "
           f"{reopened.volatile()} still volatile")

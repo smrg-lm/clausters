@@ -39,7 +39,7 @@ import { PointsEditor, isCurve } from "./points.ts";
 import type { PointsEditorOptions } from "./points.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { AudioEditor } from "./audio.ts";
-import { Multitrack, Session as MultitrackSession } from "../../multitrack.ts";
+import { Multitrack, SessionFile } from "../../document.ts";
 import { SoundFile } from "../../soundfile.ts";
 import { ScoreEditor, isScore } from "./score.ts";
 import type { Interpretation, Transcription } from "../notation/sheet.ts";
@@ -240,7 +240,7 @@ async function editorFor(structure: unknown, options: EditOptions): Promise<Edit
  */
 export async function edit(structure: Node, options?: EditOptions): Promise<NodeEditor>;
 export async function edit(structure: SoundFile, options?: EditOptions): Promise<AudioEditor>;
-export async function edit(structure: MultitrackSession | Multitrack, options?: EditOptions): Promise<MultitrackEditor>;
+export async function edit(structure: SessionFile | Multitrack, options?: EditOptions): Promise<MultitrackEditor>;
 export async function edit(structure: EventSequence | Timeline, options: EditOptions & { view?: "roll" }): Promise<NotesEditor>;
 export async function edit(structure: unknown, options?: EditOptions): Promise<any>;
 export async function edit(
@@ -249,7 +249,7 @@ export async function edit(
 ): Promise<Editor<never> | NodeEditor | AudioEditor | MultitrackEditor | NotesEditor | ScoreEditor> {
     if (structure instanceof Node) return nodeEditor(structure, options);
     if (structure instanceof SoundFile) return audioEditor(structure, options);
-    if (structure instanceof MultitrackSession || isMultitrack(structure)) {
+    if (structure instanceof SessionFile || isMultitrack(structure)) {
         return multitrackEditor(structure, options);
     }
     // **A timeline is rendered, and the roll edits what it produced**: the
@@ -313,7 +313,7 @@ const openMultitracks: MultitrackEditor[] = [];
  * handler.
  */
 async function multitrackEditor(
-    structure: MultitrackSession | Multitrack,
+    structure: SessionFile | Multitrack,
     options: EditOptions,
 ): Promise<MultitrackEditor> {
     for (let i = openMultitracks.length - 1; i >= 0; i--) {
@@ -322,7 +322,7 @@ async function multitrackEditor(
     if (options.open !== false) {
         const current = openMultitracks.find((editor) =>
             (editor.multitrack === structure ||
-                (structure instanceof MultitrackSession && structure.path !== null &&
+                (structure instanceof SessionFile && structure.path !== null &&
                     editor.path === String(structure.path))) &&
             (options.host === undefined || editor.host === options.host));
         if (current !== undefined) return current;

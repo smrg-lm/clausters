@@ -216,7 +216,7 @@ def test_a_sequence_curve_and_a_notes_curve_are_curves_the_sequence_holds():
 
 
 def test_a_free_curve_becomes_the_view_once_added():
-    from clausters.multitrack import Automation
+    from clausters.document import Automation
 
     level = Automation({"control": "amp"}, [(0.0, 0.1), (4.0, 0.5)], name="level")
     assert not level.held and level.id == 0

@@ -150,7 +150,7 @@ moves its first note an octave up: Ctrl+Z in either window takes it back.</div>
       import { gui } from "../../dist/index.js";
       import { Synth, SynthDef } from "../../dist/defs/index.js";
       import { line, out, pinkNoise, saw, sine, whiteNoise } from "../../dist/defs/ugens/index.js";
-      import { Content, Multitrack, Session as SavedSession, Source } from "../../dist/multitrack.js";
+      import { Content, Multitrack, SessionFile, Source } from "../../dist/document.js";
       import { Event, EventSequence } from "../../dist/seq/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -264,7 +264,7 @@ moves its first note an octave up: Ctrl+Z in either window takes it back.</div>
         const FADE = Math.floor(0.010 * SR);
         const ID = Object.fromEntries(Object.entries(SOURCES).map(([id, take]) => [take, Number(id)]));
 
-        const saved = new SavedSession();
+        const saved = new SessionFile();
         saved.multitrack = multitrack;
         for (const [id, take] of Object.entries(SOURCES)) {
           if (take !== "comp") saved.sources.set(Number(id), Source.file(takes[take]).shaped(1, FRAMES, SR));

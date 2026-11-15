@@ -24,13 +24,13 @@ import { TempoMap } from "../base/time.ts";
 import type { TimedMessage } from "../base/osc.ts";
 import { Event, eventOfKeys } from "./event.ts";
 import type { EventProps } from "./event.ts";
-import { Automation } from "../multitrack.ts";
+import { Automation } from "../document/multitrack.ts";
 import { UndoHistory, contexts, keyOf } from "../history.ts";
 import { NotesPlayback, playSequence } from "./playback.ts";
 import { main } from "../base/main.ts";
 import type { Server } from "../defs/server/index.ts";
 import type { Transport } from "../defs/server/transport.ts";
-import type { PointLike } from "../multitrack.ts";
+import type { PointLike } from "../document/multitrack.ts";
 
 /** One event of a sequence as the document writes it. */
 interface Written {

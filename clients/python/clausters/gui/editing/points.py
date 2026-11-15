@@ -1,7 +1,7 @@
 """Editing a **break-point curve**: the points editor.
 
 It is the automation editor seen on its own: what it edits is a curve over one
-parameter -- an `clausters.multitrack.Automation`, the curve a track, a region,
+parameter -- an `clausters.document.Automation`, the curve a track, a region,
 a sequence and a note hold -- with nothing around it, which is also how an
 envelope is made: an `clausters.defs.ugens.Env` and a
 `clausters.defs.ugens.Bpf` are curves nobody holds yet.
@@ -34,7 +34,7 @@ class PointsDomain(Domain):
 
     **What it asks of the structure is `to_points` and `set_points`**, and
     nothing about its type -- an `clausters.defs.ugens.Env`, a
-    `clausters.defs.ugens.Bpf` and a `clausters.multitrack.Automation` are all
+    `clausters.defs.ugens.Bpf` and a `clausters.document.Automation` are all
     curves here, and a fourth thing that learns the pair would be too."""
 
     name = _native.POINTS
@@ -86,7 +86,7 @@ class PointsEditor(Editor):
         min: with ``max``, the **range the curve's values are kept in** -- a
             rule, not a picture: the value axis is the range and holds, and no
             point is left outside it. Without them a curve that automates a
-            parameter (a `clausters.multitrack.Automation` with a ``target``)
+            parameter (a `clausters.document.Automation` with a ``target``)
             is kept in that parameter's range, the one the roll and the
             multitrack draw it over; and a curve that says nothing (an
             `clausters.defs.ugens.Env`, a `clausters.defs.ugens.Bpf`) is drawn
@@ -222,7 +222,7 @@ class PointsEditor(Editor):
 
 def _target(curve):
     """What the curve automates, for a curve that says (an
-    `clausters.multitrack.Automation`), else ``None``."""
+    `clausters.document.Automation`), else ``None``."""
     target = getattr(curve, "target", None)
     return target if isinstance(target, dict) else None
 
@@ -238,7 +238,7 @@ def is_curve(structure) -> bool:
     **Asked of the structure, not of a type list.** What a curve editor needs is
     an addressable list of break points it can read and write back, which is the
     ``to_points``/``set_points`` pair -- so an `clausters.defs.ugens.Env`, a
-    `clausters.defs.ugens.Bpf` and a `clausters.multitrack.Automation` all open,
+    `clausters.defs.ugens.Bpf` and a `clausters.document.Automation` all open,
     and none of them is named here.
     """
     return (callable(getattr(structure, "to_points", None))

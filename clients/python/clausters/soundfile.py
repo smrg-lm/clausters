@@ -114,12 +114,12 @@ class SoundFile:
 
     @property
     def source(self):
-        """Return a document `clausters.multitrack.Source` for this file.
+        """Return a document `clausters.document.Source` for this file.
 
         The source includes the channel count, frame count and sample rate. It
         references the file path when available; otherwise it is a volatile source.
         """
-        from .multitrack import Source
+        from .document import Source
 
         source = Source.file(self.path) if self.path else Source.volatile()
         return source.shaped(self.channels, self.frames, self.sample_rate)

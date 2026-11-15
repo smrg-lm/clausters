@@ -1,23 +1,112 @@
 /**
- * The document: the multitrack's authoritative model, and the one place an
- * edit is applied.
+ * The document: the structures every application edits, and the one place an
+ * edit is applied (mirrors `clausters/document/__init__.py`).
  *
  * The model lives in a Rust crate (`crates/clausters-document`) and every
  * client binds that one -- this client, the Python client, and a `standalone`
  * GUI host with no language attached. **The tree stays there**: a client opens
- * a {@link Document}, applies intents to it, and asks for the JSON when it
- * actually wants the JSON.
+ * a {@link Document}, or a {@link Multitrack}, applies intents to it, and asks
+ * for the JSON when it actually wants the JSON.
  *
- * That is not how this started. The first binding passed the whole document in
- * and took the whole new one back, which cost a serialization of the entire
- * document per edit -- 205 ms for one placement on a 10240-event multitrack,
- * whatever the edit touched. It is not an accessor handle either: the same
- * three verbs, plus `snapshot`.
+ * The discipline is the point: the crate is the **only** thing that applies an
+ * intent, so no client can apply an edit and then report what it did -- which
+ * is what would let three clients mean three different things by the same
+ * gesture.
  *
- * The discipline is unchanged and is the point: the crate is the **only** thing
- * that applies an intent, so no client can apply an edit and then report what
- * it did -- which is what would let three clients mean three different things by
- * the same gesture.
+ * ## The edit
+ *
+ * - {@link Document} -- the tree, held by the crate. `Document.apply` hands
+ *   over an intent and takes back what happened; `Document.snapshot` is how
+ *   the JSON leaves, asked for rather than paid per edit.
+ * - {@link History} and {@link Log} -- the edit pile. A `Log` is a history over
+ *   one document, which is what an ordinary editing client wants; a `History`
+ *   spans several structures, which is what an application showing a roll and
+ *   a curve together needs so an undo crosses both in one order.
+ * - {@link applyIntent} and {@link resolveSelection} -- the one-shot forms, for
+ *   a caller that holds no document.
+ * - {@link domainEdit} and {@link domainCoalesceKey} -- the same two questions
+ *   for a structure that is **not** a document: a curve, a span of samples, a
+ *   timeline of events.
+ * - {@link domainEditAll} -- the edits one gesture came to, applied as one: all
+ *   of them or none.
+ * - {@link TREE}, {@link MULTITRACK}, {@link POINTS}, {@link SAMPLES},
+ *   {@link EVENTS} -- the domain names those two answer for.
+ *
+ * ## The multitrack
+ *
+ * The structure the multitrack editor edits, in the field's own vocabulary:
+ *
+ * - A **source** is samples. It lives outside the multitrack -- the session
+ *   file's table says where -- and is never overwritten.
+ * - A {@link Region} is **one placed thing**: a span of the timeline (where it
+ *   starts, how long, its fades, which of the overlapping ones is on top) plus
+ *   a {@link Content} saying what fills it. Six regions over one source are six
+ *   identities and one source, referenced rather than copied. That is the
+ *   whole of non-destructive editing.
+ * - A {@link TakeLane} is one of a track's several contents, an ordered list of
+ *   regions.
+ * - A {@link Track} holds several take lanes and **plays one**, which is what
+ *   comping is: record six passes into six take lanes, then take from each.
+ * - An {@link Automation} is a curve over one parameter, in the multitrack's
+ *   time.
+ * - A {@link Multitrack} is the tracks plus what the multitrack has one of: the
+ *   tempo map, the meter map, the markers, the loop and punch spans. They are
+ *   on the multitrack and not on a track precisely so that no two tracks can
+ *   disagree about them.
+ *
+ * `Region` is the model's word; **clip** is the picture's. A clip, a track row,
+ * a waveform are what the host draws; a region is what an edit names. Keeping
+ * them apart is deliberate -- the multitrack's defects came from the thing
+ * drawn and the thing addressed being one object.
+ *
+ * ## The timeline
+ *
+ * {@link Tempo}, {@link Meter} and {@link Span} are the timeline's entries: a
+ * tempo change, a time signature from a beat on, a half-open stretch of
+ * seconds. They are values and hold nothing, so any structure with a timeline
+ * states them the same way.
+ *
+ * Everything a multitrack places is placed in **seconds**: a region's
+ * position, length and fades, every automation point, the markers, the loop
+ * and the punch. No tempo change moves anything in it. What fills a region is
+ * measured in its own source's units -- seconds of a recording, beats of a
+ * node -- and the two are not the same axis. The crate makes that a type; here
+ * it is a rule the field names say (`position` and `length` are the region's,
+ * `start` and `duration` are its window's).
+ *
+ * The **tempo map and the meter map** are structures the multitrack holds, not
+ * its axis: their entries are stated at beats, in beats per second, and what
+ * reads them is a ruler drawing beats and bars over the seconds and a snap to
+ * them. {@link Multitrack.tempoMap} is that map as a `TempoMap`, so a script
+ * that wants a region on bar five asks it where bar five is.
+ *
+ * ## The session file
+ *
+ * A {@link SessionFile} is a multitrack saved, with its source table
+ * ({@link Source}, or a {@link FrozenSource} for samples this process does not
+ * hold) and how each window was looking at it ({@link MultitrackView}, with a
+ * {@link TrackView} and a {@link TakeLaneView} per row). The views are beside
+ * the multitrack and never inside it: nothing in them changes what plays, and
+ * a multitrack round trips the same whether a view of it exists or not.
+ * {@link FIRST_VERSION}, {@link SESSION_FORMAT} and {@link SESSION_APPLICATION}
+ * are the numbers and the name the format itself carries.
+ *
+ * ## Spelling
+ *
+ * The fields are camelCase here and snake_case in the format, which is the
+ * same `idiom` split every other module keeps: `fadeIn` is written as
+ * `fade_in`, and a reader moving between the clients finds the same call in
+ * its own language's shape.
+ *
+ * ```ts
+ * import { Content, Multitrack, Tempo } from "clausters/document";
+ *
+ * const multitrack = new Multitrack();
+ * multitrack.setTempo(new Tempo({ at: 0.0, tempo: 1.6 })); // 96 beats a minute
+ * const bar = multitrack.tempoMap().secsAt(4.0);          // where the second bar begins
+ * const drums = multitrack.tracks.add("drums");
+ * drums.activeTakeLane!.regions.add(bar, 2.5, Content.onto(take));
+ * ```
  *
  * @module
  */
@@ -459,46 +548,6 @@ export const SAMPLES = "samples";
 export const PARTS = "parts";
 /** A timeline of events' vocabulary. See {@link TREE}. */
 export const EVENTS = "events";
-
-/**
- * The version an unedited document and an unedited multitrack are at.
- *
- * The counter moves when the description changes, so an edit made against a
- * version the document has left behind is refused as stale rather than applied
- * blind.
- */
-export const FIRST_VERSION = 1;
-
-/**
- * The session format this build writes -- the crate's `session::FORMAT`.
- *
- * It moves when a reader that does not know the new shape would read a file
- * **wrongly** -- never for an added field, which an older reader ignores and a
- * newer one defaults. **2** added a source whose samples are spans of other
- * sources, which is a tagged variant an older reader must fail on rather than
- * read as something else. **3** measures the multitrack in seconds where 2
- * measured it in beats, and states a tempo in beats per second; an older file is
- * migrated on reading (`Session.read`). **4** added a source that is a sequence
- * of events held in the file itself, a tagged variant for the reason 2 gives.
- * **5** names a sequence's curves as the multitrack names a track's --
- * `automation` where it said `lanes` and `expression` -- which an older reader
- * would drop without a word.
- *
- * A literal rather than a call into the core, deliberately: a `Session` is plain
- * data and `multitrack.ts` opens the core for nothing else, so reading the
- * number from wasm would make writing a session need an `await loadCore()` it
- * has never needed. What keeps the two in step instead is a **test** that asks
- * the crate (`sessionFormat`) and compares -- which is the check that did not
- * exist when this said 1 and the crate had moved to 2.
- */
-export const SESSION_FORMAT = 5;
-
-/**
- * **The application a session file belongs to**, as its `metadata` names it --
- * the crate's `session::APPLICATION`. Every application's file is JSON, so the
- * file says whose it is rather than its extension.
- */
-export const SESSION_APPLICATION = "multitrack";
 
 /**
  * What makes two of a **domain's** edits *the same thing done the same way* --
@@ -1151,3 +1200,30 @@ export class Log {
         if (this.#owned) this.history.free();
     }
 }
+
+export { FIRST_VERSION, SESSION_APPLICATION, SESSION_FORMAT } from "./document/format.ts";
+export type { Extra } from "./document/format.ts";
+export {
+    Automation,
+    Content,
+    Curves,
+    Fade,
+    Marker,
+    Markers,
+    Multitrack,
+    Region,
+    Regions,
+    TakeLane,
+    TakeLanes,
+    Track,
+    Tracks,
+} from "./document/multitrack.ts";
+export type {
+    CurveHolder,
+    PointLike,
+    WindowHistory,
+    WindowOver,
+} from "./document/multitrack.ts";
+export { FrozenSource, SessionFile, Source } from "./document/session-file.ts";
+export { Meter, Span, Tempo } from "./document/timeline.ts";
+export { MultitrackView, TakeLaneView, TrackView } from "./document/view.ts";

@@ -12,7 +12,7 @@ import test from "node:test";
 import { loadCore } from "../src/base/core.ts";
 import { TempoMap } from "../src/base/time.ts";
 import { Event } from "../src/seq/event.ts";
-import { Automation } from "../src/multitrack.ts";
+import { Automation } from "../src/document.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 
 await loadCore();

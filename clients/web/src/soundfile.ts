@@ -19,7 +19,7 @@ import { readFileAt, writeFileAt } from "./base/files.ts";
 import { Buffer } from "./defs/buffer.ts";
 import type { BufferOptions } from "./defs/buffer.ts";
 import { decodeSoundfile, encodeWav, probeSoundfile } from "./engine/codec.ts";
-import { Source } from "./multitrack.ts";
+import { Source } from "./document.ts";
 
 /** A WAV sample format {@link SoundFile.write} can write. */
 export type SoundFileFormat = "int16" | "int24" | "float";

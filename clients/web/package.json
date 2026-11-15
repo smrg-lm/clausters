@@ -58,10 +58,6 @@
       "types": "./dist/history.d.ts",
       "default": "./dist/history.js"
     },
-    "./multitrack": {
-      "types": "./dist/multitrack.d.ts",
-      "default": "./dist/multitrack.js"
-    },
     "./panic": {
       "types": "./dist/panic.d.ts",
       "default": "./dist/panic.js"

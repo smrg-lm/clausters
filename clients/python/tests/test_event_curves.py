@@ -16,7 +16,7 @@ from clausters import Session, play
 from clausters.base import _osclib
 from clausters.base.stream import Routine
 from clausters.defs import Server
-from clausters.multitrack import Automation
+from clausters.document import Automation
 from clausters.seq import Timeline
 from clausters.seq.curves import WINDOW
 from clausters.seq.event import Event

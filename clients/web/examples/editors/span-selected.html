@@ -74,7 +74,7 @@ editors. Press the buttons in order; each step says what to look at.</div>
     -->
     <script type="module">
       import { Session, SoundFile, gui, loadCore, opfs } from "../../dist/index.js";
-      import { Content, Multitrack, Session as SavedSession, Source } from "../../dist/multitrack.js";
+      import { Content, Multitrack, SessionFile, Source } from "../../dist/document.js";
       import { Segment } from "../../dist/segments.js";
       import { Event, EventSequence } from "../../dist/seq/index.js";
 
@@ -158,7 +158,7 @@ editors. Press the buttons in order; each step says what to look at.</div>
         b = mt.tracks.add("two").activeTakeLane.regions.add(
           2.0, 2.0, Content.onto({ source: { source: 2, lifetime: "session", generation: 0 },
                                    start: 0.0, duration: 2.0 }), { name: "990" });
-        const saved = new SavedSession();
+        const saved = new SessionFile();
         saved.multitrack = mt;
         saved.sources.set(1, Source.file("span_selected-660.wav").shaped(1, frames, rate));
         saved.sources.set(2, Source.file("span_selected-990.wav").shaped(1, frames, rate));

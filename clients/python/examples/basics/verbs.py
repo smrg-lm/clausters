@@ -39,7 +39,7 @@ from clausters.seq.timeline import Timeline
 
 from clausters import Session
 from clausters.defs import Buffer
-from clausters.multitrack import Automation
+from clausters.document import Automation
 
 session = Session.embed().activate()
 # The session's clock is *this* session's, and an ambient `play` resolves it --

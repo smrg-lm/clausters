@@ -24,14 +24,14 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 from clausters import _native  # noqa: E402
 from clausters._native import Log  # noqa: E402
-from clausters.multitrack import Multitrack  # noqa: E402
+from clausters.document import Multitrack  # noqa: E402
 
 
 def multitrack() -> dict:
     """The multitrack the arrangement's edits are applied to, as the client
     writes it.
 
-    Read through `clausters.multitrack` and written back rather than handed on
+    Read through `clausters.document` and written back rather than handed on
     as typed, on purpose: what crosses here is a whole multitrack as JSON
     state, so the vector is worth more if the state is the one the client's
     handle writes. Two tracks, two take lanes on the first, one region on each

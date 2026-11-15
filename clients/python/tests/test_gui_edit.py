@@ -240,7 +240,7 @@ def test_a_normalized_envelope_is_kept_inside_its_ranges():
 def test_an_automation_is_kept_in_the_range_of_what_it_automates():
     """With nothing declared, a curve over a parameter is kept in that
     parameter's range -- the one the roll and the multitrack draw it over."""
-    from clausters.multitrack import Automation
+    from clausters.document import Automation
 
     cutoff = Automation({"cc": 74}, [(0.0, 10.0), (1.0, 100.0)])
     editor = edit(cutoff, sample_rate=SR, open=False)

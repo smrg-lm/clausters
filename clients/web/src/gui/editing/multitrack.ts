@@ -34,25 +34,15 @@
  * @module
  */
 
-import { Multitrack, Region, Session } from "../../multitrack.ts";
-import type { Extra, WindowHistory, WindowOver } from "../../multitrack.ts";
+import { Multitrack, Region, SessionFile } from "../../document.ts";
+import type { Extra } from "../../document/format.ts";
+import type { WindowHistory, WindowOver } from "../../document/multitrack.ts";
 import type { GuiHost } from "../host.ts";
-import type { EventSequence } from "../../seq/sequence.ts";
 import { NotesEditor } from "./events.ts";
 import { Held, HostedEditor, MultitrackTransport } from "./hosted.ts";
 import { Marking, marking } from "./marking.ts";
 
 export { MultitrackTransport };
-
-/** What a {@link MultitrackEditor} opens over by its file: a saved session. */
-export interface SavedSession {
-    /** The file it was opened from or saved to, or `null` for none. */
-    path: string | null;
-    /** Its multitrack. */
-    multitrack: Multitrack;
-    /** What its regions are windows onto, by source id: a box of notes reads its `sequence`. */
-    sources?: Map<number, { sequence?: EventSequence | null }>;
-}
 
 /** How a {@link MultitrackEditor} opens. */
 export interface MultitrackEditorOptions {
@@ -77,7 +67,7 @@ const snapshots = new WeakMap<Multitrack, Snapshot>();
 /**
  * **The multitrack the GUI host holds, and this page its handler.**
  *
- * `edit` over a multitrack `Session` that has a file, or over a
+ * `edit` over a `SessionFile` that has a file, or over a
  * {@link Multitrack}, answers one, open. Each member is a call to the
  * application in the host's process, answered by it. A session with no file
  * is refused with a `RangeError`: save it first.
@@ -97,7 +87,7 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
     }
 
     /** The session it was opened over, or `null` for an untitled one. */
-    readonly session: SavedSession | null;
+    readonly session: SessionFile | null;
     /** The multitrack it was opened over: the window's while it is open, `null` for one opened over nothing. */
     readonly multitrack: Multitrack | null;
     protected readonly app = "multitrack";
@@ -105,7 +95,7 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
     private snapshot: Snapshot | null = null;
     private readonly holders = new Held();
 
-    constructor(structure: SavedSession | Multitrack | null = null, { title }: MultitrackEditorOptions = {}) {
+    constructor(structure: SessionFile | Multitrack | null = null, { title }: MultitrackEditorOptions = {}) {
         if (structure !== null && !(structure instanceof Multitrack)
             && (structure.path === null || structure.path === undefined)) {
             throw new RangeError(
@@ -184,7 +174,7 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
         this.snapshot = snapshot;
         this.filed = snapshot.path;
         if (this.session !== null) {
-            Object.assign(this.session, Session.read(snapshot.session), { multitrack, path: snapshot.path });
+            Object.assign(this.session, SessionFile.read(snapshot.session), { multitrack, path: snapshot.path });
         }
     }
 

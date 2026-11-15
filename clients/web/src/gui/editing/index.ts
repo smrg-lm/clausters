@@ -76,7 +76,7 @@ export { Held, HostedEditor, HostedTransport } from "./hosted.ts";
 export type { HostedEditorOptions } from "./hosted.ts";
 export type { NotesEditorOptions } from "./events.ts";
 export { MultitrackEditor, MultitrackTransport } from "./multitrack.ts";
-export type { MultitrackEditorOptions, SavedSession } from "./multitrack.ts";
+export type { MultitrackEditorOptions } from "./multitrack.ts";
 export { Marking } from "./marking.ts";
 export type { Marks } from "./marking.ts";
 export type { End, Pass, RenderStep, Step, StepArg } from "./playback.ts";

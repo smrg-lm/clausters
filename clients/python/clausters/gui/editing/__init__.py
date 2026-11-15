@@ -36,10 +36,10 @@ dispatching on what the structure is -- `AudioEditor` over a
 `clausters.SoundFile` (the handler of the GUI host's audio editor),
 `PointsEditor` over a curve (a
 `clausters.defs.Bpf`, an `clausters.defs.Env` or a
-`clausters.multitrack.Automation`),
+`clausters.document.Automation`),
 `NotesEditor` over a `clausters.seq.Timeline`. Each is `Editor` with its own
 domain and view in it and nothing else, which is what the split was for. A
-`clausters.multitrack.Multitrack` or a saved `clausters.multitrack.Session` is
+`clausters.document.Multitrack` or a saved `clausters.document.SessionFile` is
 the GUI host's multitrack application, and `MultitrackEditor` its handler, as
 `AudioEditor` is the audio editor's.
 A running `clausters.defs.Node` is the one structure that is not a document:
