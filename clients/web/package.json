@@ -10,37 +10,101 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./defs": {
-      "types": "./dist/defs/index.d.ts",
-      "default": "./dist/defs/index.js"
+    "./base": {
+      "types": "./dist/base/index.d.ts",
+      "default": "./dist/base/index.js"
     },
-    "./form": {
-      "types": "./dist/form/index.d.ts",
-      "default": "./dist/form/index.js"
+    "./base/builtins": {
+      "types": "./dist/base/builtins.d.ts",
+      "default": "./dist/base/builtins.js"
     },
-    "./seq": {
-      "types": "./dist/seq/index.d.ts",
-      "default": "./dist/seq/index.js"
-    },
-    "./gui": {
-      "types": "./dist/gui/index.d.ts",
-      "default": "./dist/gui/index.js"
+    "./bundle": {
+      "types": "./dist/bundle-writer.d.ts",
+      "default": "./dist/bundle-writer.js"
     },
     "./data": {
       "types": "./dist/data/index.d.ts",
       "default": "./dist/data/index.js"
     },
+    "./defs": {
+      "types": "./dist/defs/index.d.ts",
+      "default": "./dist/defs/index.js"
+    },
+    "./defs/pv_expr": {
+      "types": "./dist/defs/pv_expr.d.ts",
+      "default": "./dist/defs/pv_expr.js"
+    },
+    "./document": {
+      "types": "./dist/document.d.ts",
+      "default": "./dist/document.js"
+    },
     "./errors": {
       "types": "./dist/errors.d.ts",
       "default": "./dist/errors.js"
+    },
+    "./form": {
+      "types": "./dist/form/index.d.ts",
+      "default": "./dist/form/index.js"
+    },
+    "./gui": {
+      "types": "./dist/gui/index.d.ts",
+      "default": "./dist/gui/index.js"
+    },
+    "./gui/guidef": {
+      "types": "./dist/gui/guidef.d.ts",
+      "default": "./dist/gui/guidef.js"
+    },
+    "./history": {
+      "types": "./dist/history.d.ts",
+      "default": "./dist/history.js"
+    },
+    "./multitrack": {
+      "types": "./dist/multitrack.d.ts",
+      "default": "./dist/multitrack.js"
+    },
+    "./panic": {
+      "types": "./dist/panic.d.ts",
+      "default": "./dist/panic.js"
+    },
+    "./play": {
+      "types": "./dist/play.d.ts",
+      "default": "./dist/play.js"
+    },
+    "./plot": {
+      "types": "./dist/plot.d.ts",
+      "default": "./dist/plot.js"
+    },
+    "./render": {
+      "types": "./dist/render.d.ts",
+      "default": "./dist/render.js"
+    },
+    "./responders": {
+      "types": "./dist/responders.d.ts",
+      "default": "./dist/responders.js"
     },
     "./runtime": {
       "types": "./dist/runtime.d.ts",
       "default": "./dist/runtime.js"
     },
-    "./bundle-writer": {
-      "types": "./dist/bundle-writer.d.ts",
-      "default": "./dist/bundle-writer.js"
+    "./scope": {
+      "types": "./dist/scope.d.ts",
+      "default": "./dist/scope.js"
+    },
+    "./segments": {
+      "types": "./dist/segments.d.ts",
+      "default": "./dist/segments.js"
+    },
+    "./seq": {
+      "types": "./dist/seq/index.d.ts",
+      "default": "./dist/seq/index.js"
+    },
+    "./session": {
+      "types": "./dist/session.d.ts",
+      "default": "./dist/session.js"
+    },
+    "./soundfile": {
+      "types": "./dist/soundfile.d.ts",
+      "default": "./dist/soundfile.js"
     }
   },
   "clausters-editor": {

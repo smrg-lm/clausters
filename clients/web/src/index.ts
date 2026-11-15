@@ -54,7 +54,8 @@ export { bootBundle, freeBundle, openBundle, startBundle } from "./bundle.ts";
 export type { BundleManifest, MountOptions, Mounted, ParamSpec } from "./bundle.ts";
 // Authoring one, the other direction: `write` is a node verb, `files` is the
 // same bundle in memory for a page to mount. Its own subpath as well
-// (`clausters/bundle-writer`), for a node script that wants the writer alone.
+// (`clausters/bundle`, the Python client's module), for a node script that
+// wants the writer alone.
 export { Bundle, DEFAULT_RUNTIME } from "./bundle-writer.ts";
 export type { Hole, ParamOptions, ParamType, WritableDef, WriteOptions } from "./bundle-writer.ts";
 export { ClaustersBundle, ClaustersPower, defineComponent, startPage } from "./elements.ts";

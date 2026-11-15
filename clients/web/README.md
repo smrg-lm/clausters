@@ -49,7 +49,7 @@ the markup. Two instances of one bundle hold their own node ids and buses, and
 the def they share is sent once. Declared parameters are attributes, resolved
 attribute → preset → default. The first gesture anywhere on the page starts the
 audio for all of them; a component scrolled out of the viewport stops drawing
-and stops streaming. Write one with `Bundle` — `clausters/bundle-writer` here, `clausters.bundle`
+and stops streaming. Write one with `Bundle` — `clausters/bundle` here, `clausters.bundle`
 in the Python client, one writer in two languages that emit the same directory
 byte for byte. `write` is a node verb and `examples/panels/piano/make_bundle.mjs`
 is the worked example; a page authors one with `files()` and mounts it from

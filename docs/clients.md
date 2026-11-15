@@ -334,7 +334,7 @@ asserts the exclusion). A page that *does* want the TypeScript client imports
 `dist/index.js` on top; both postures target the same element.
 
 **Writing one** is `Bundle` — `clausters.bundle.Bundle` in the Python client,
-`clausters/bundle-writer` in the web client, one writer in two languages. It
+`clausters/bundle` in the web client, one writer in two languages. It
 holds the symbol table so the author names things instead of numbering them,
 and validates through the core before emitting — an unmountable bundle is
 unwritable. Both emit **canonical JSON** (keys sorted, no space between tokens,
