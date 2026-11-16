@@ -87,24 +87,25 @@ function validOpenFiles(v: unknown): Partial<Record<PanelId, OpenFiles>> {
   return out;
 }
 
-/** The panels: one or two code editors, the documentation and the post window. */
-export type PanelId = "editor-1" | "editor-2" | "docs" | "post";
+/** The panels: one or two code editors, the documentation, the post window
+ *  and -- in a build that draws the session's windows itself -- the windows. */
+export type PanelId = "editor-1" | "editor-2" | "docs" | "post" | "windows";
 export interface Layout {
   left: PanelId[];
   right: PanelId[];
 }
-export const COLUMN_SLOTS = 2;
+export const COLUMN_SLOTS = 3;
 
 const DEFAULT_LAYOUT: Layout = { left: ["editor-1"], right: ["docs", "post"] };
 
 /** A stored layout, if it is a well-formed one: every panel once (the second
- *  editor optional), at most two per column. */
+ *  editor and the windows optional), at most three per column. */
 function validLayout(v: unknown): Layout | null {
   const l = v as Layout;
   if (!l || !Array.isArray(l.left) || !Array.isArray(l.right)) return null;
   if (l.left.length > COLUMN_SLOTS || l.right.length > COLUMN_SLOTS) return null;
   const all = [...l.left, ...l.right];
-  const known: PanelId[] = ["editor-1", "editor-2", "docs", "post"];
+  const known: PanelId[] = ["editor-1", "editor-2", "docs", "post", "windows"];
   if (all.some((p) => !known.includes(p)) || new Set(all).size !== all.length) return null;
   if (!all.includes("editor-1") || !all.includes("docs") || !all.includes("post")) return null;
   return { left: [...l.left], right: [...l.right] };

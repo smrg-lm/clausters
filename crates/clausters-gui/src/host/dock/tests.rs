@@ -225,6 +225,37 @@ fn a_dragged_tab_lands_where_it_is_let_go() {
     assert_eq!(ws.tree().panes(), [1, 3, 2]);
 }
 
+/// **A tab dragged past the dock's edge lands out of it**: the dock moves
+/// nothing and tells its front which pane to give a window of its own.
+#[test]
+fn a_tab_dragged_out_of_the_dock_is_told_to_the_front() {
+    let mut ws = dock((400, 300), 4.0, &[1, 2]);
+    let tab = ws.tab_parts(&ws.groups()[1].clone())[0].1;
+    ws.moved(f64::from(tab.x + tab.w * 0.5), f64::from(tab.y + 3.0));
+    ws.pressed();
+    ws.moved(450.0, 100.0);
+    let (landing, place) = ws.landing().expect("out");
+    assert_eq!(landing, Landing::Out);
+    assert_eq!(
+        place,
+        ws.rect(2).expect("placed").rect(),
+        "the pane it leaves"
+    );
+    ws.take_dirty();
+    assert_eq!(ws.released(), None);
+    assert_eq!(ws.take_dirty().out, Some(2));
+    assert_eq!(ws.tree().panes(), [1, 2], "the front takes it out");
+    assert!(ws.land(2, Landing::Out).is_err());
+    assert_eq!(
+        Call::read(r#"{"verb": "undock", "pane": 2}"#),
+        Ok(Call::Undock(2))
+    );
+    assert_eq!(
+        Call::read(r#"{"verb": "dock", "pane": 2}"#),
+        Ok(Call::Dock(2))
+    );
+}
+
 /// **A tab alone in its group dragged onto its own group lands nowhere**:
 /// the move would change nothing.
 #[test]

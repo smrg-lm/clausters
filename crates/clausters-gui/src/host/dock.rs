@@ -103,6 +103,9 @@ pub struct Dirty {
     /// Only the dock's own chrome (a tab lit under the pointer, where a
     /// dragged tab would land): the dock is drawn, and no pane.
     pub chrome: bool,
+    /// A pane whose tab was dragged out of the dock and let go there: the
+    /// front gives it a window of its own ([`Landing::Out`]).
+    pub out: Option<i32>,
 }
 
 /// A group of tabs as measured: its tab strip and the body its shown pane
@@ -138,6 +141,9 @@ pub enum Landing {
     Join { of: i32, at: Option<usize> },
     /// On `side` of the group holding `of`, a group of its own.
     Split { of: i32, side: Side },
+    /// Out of the dock: a window of its own, which only a front can open, so
+    /// the dock says so ([`Dirty::out`]) rather than moving anything.
+    Out,
 }
 
 /// What a press is holding.
@@ -562,7 +568,12 @@ impl Dock {
                 dragging: true,
                 ..
             }) => {
-                let _ = self.land(pane, landing);
+                if landing == Landing::Out {
+                    self.dirty.out = Some(pane);
+                    self.dirty.chrome = true;
+                } else {
+                    let _ = self.land(pane, landing);
+                }
                 None
             }
             Some(_) => {
@@ -604,6 +615,7 @@ impl Dock {
         match landing {
             Landing::Join { of, at } => self.tree.join(pane, of, at)?,
             Landing::Split { of, side } => self.tree.split(pane, side, of)?,
+            Landing::Out => return Err("a pane is taken out by the front that holds it".into()),
         }
         self.focus = Some(pane);
         self.arrange();
@@ -673,9 +685,14 @@ impl Dock {
     /// **Where a tab dragged to `(x, y)` would land**: among the tabs of the
     /// strip under it, before the tab whose middle is past it; in a group's
     /// body, on the side whose edge is near (a new group there) or among its
-    /// tabs from the middle. Nowhere when the move would change nothing.
+    /// tabs from the middle; past the dock's edge, out of it, the pane it
+    /// leaves lit. Nowhere when the move would change nothing.
     fn landing_at(&self, pane: i32, x: f64, y: f64) -> Option<(Landing, Rect)> {
         let source = self.groups.iter().find(|g| g.panes.contains(&pane))?;
+        let (w, h) = self.size;
+        if x < 0.0 || y < 0.0 || x >= f64::from(w) || y >= f64::from(h) {
+            return Some((Landing::Out, source.body.rect()));
+        }
         let alone = source.panes.len() == 1;
         let group = self
             .groups

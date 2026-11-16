@@ -169,11 +169,20 @@ export interface ClaustersGui {
      *
      * The page keeps the drawing: a window the client opens gets a canvas,
      * in the element `place` answers for its id or, with none, of its own,
-     * appended to the document as a view opened with no element is. The
-     * host's audio leg stays the engine it was wired to, so a widget the
-     * client binds reaches that engine.
+     * appended to the document as a view opened with no element is. On a
+     * host given a dock ({@link ClaustersGui.dock}) every window is a pane
+     * of the one canvas the dock draws in, so `place` is not asked: that
+     * canvas is where the page put the dock. `onOpen` hears each window
+     * the client opens, a def or an application, as it opens -- what tells
+     * a page to show the place its dock is in. The host's audio leg stays
+     * the engine it was wired to, so a widget the client binds reaches that
+     * engine. A window the client opened leaves the page, or the dock, when
+     * it closes or the link does.
      */
-    link(options?: { place?: (window: number) => Stage | null | undefined }): GuiLink;
+    link(options?: {
+        place?: (window: number) => Stage | null | undefined;
+        onOpen?: (window: number) => void;
+    }): GuiLink;
     /**
      * The engine this host's audio leg is wired to -- the page's under
      * `guiHost`, its own under `newGuiHost`. Exposed because a caller holding
@@ -446,20 +455,32 @@ async function boot(
             canvases.clear();
             bridge.close();
         },
-        link: ({ place } = {}) => {
+        link: ({ place, onOpen } = {}) => {
             const control = new MessageChannel();
             let open = true;
             /** The clients opened over the link, each a port of its own. */
             const clients = new Set<MessagePort>();
-            /** Window id -> the canvas made for it, and what stops fitting it. */
-            const windows = new Map<number, { canvas: HTMLCanvasElement; made: boolean; unfit?: () => void }>();
+            /** Window id -> the canvas made for it (none for a pane of the
+             * dock), and what stops fitting it. */
+            const windows = new Map<
+                number,
+                { canvas: HTMLCanvasElement | null; made: boolean; unfit?: () => void }
+            >();
             const unmount = (id: number) => {
                 const held = windows.get(id);
                 if (held === undefined) return;
                 windows.delete(id);
                 held.unfit?.();
-                gui.detach(id);
-                if (held.made) held.canvas.remove();
+                // a pane leaves the dock
+                if (held.canvas === null) bridge.detach(id);
+                else gui.detach(id);
+                if (held.made) held.canvas?.remove();
+            };
+            /** A window of the client's that is a pane of the dock. */
+            const docks = (id: number) => {
+                if (windows.has(id)) return;
+                windows.set(id, { canvas: null, made: false });
+                onOpen?.(id);
             };
             // The host's events reach every listener, and a client hears them
             // all as a socket's client does; a window it closed by the hand
@@ -468,6 +489,12 @@ async function boot(
                 if (clients.size === 0) return;
                 for (const { addr, args } of decodePacket(packet)) {
                     if (addr === "/gui_closed" && typeof args[0] === "number") unmount(args[0]);
+                    // an application this client opened: its window is a
+                    // pane, and the client's for as long as the link is
+                    else if (addr === "/gui_app_reply" && docked) {
+                        const window = appWindow(args[1]);
+                        if (window !== null) docks(window);
+                    }
                 }
                 for (const client of clients) client.postMessage({ type: "osc", data: packet });
             };
@@ -476,7 +503,10 @@ async function boot(
                 for (const { addr, args } of decodePacket(packet)) {
                     const id = args[0];
                     if (typeof id !== "number") continue;
-                    if (addr === "/gui_def" && !windows.has(id) && isWindow(args[1])) {
+                    if (addr === "/gui_def" && !windows.has(id) && isWindow(args[1]) && docked) {
+                        // the host makes it a pane of the dock as it opens it
+                        docks(id);
+                    } else if (addr === "/gui_def" && !windows.has(id) && isWindow(args[1])) {
                         // A window of the client's: the canvas the page gives it,
                         // before the def is fed, as `GuiHost.open` does here.
                         const element = place?.(id) ?? null;
@@ -485,6 +515,7 @@ async function boot(
                         gui.attach(id, target);
                         const unfit = element !== null ? gui.fit(id, element, target) : undefined;
                         windows.set(id, { canvas: target, made, unfit });
+                        onOpen?.(id);
                     } else if (addr === "/gui_free") freed.push(id);
                 }
                 bridge.feed(packet);
@@ -586,6 +617,18 @@ async function boot(
         deliver,
     };
     return gui;
+}
+
+/** The window a `/gui_app_reply` answers an opening with, `null` for any
+ * other answer. */
+function appWindow(json: unknown): number | null {
+    if (typeof json !== "string") return null;
+    try {
+        const window = (JSON.parse(json) as { ok?: { window?: unknown } }).ok?.window;
+        return typeof window === "number" ? window : null;
+    } catch {
+        return null;
+    }
 }
 
 /** Whether a `/gui_def`'s document is rooted in a `window`. */

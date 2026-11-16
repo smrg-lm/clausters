@@ -264,10 +264,11 @@ impl WebApp {
     /// of its place (a pane whose rectangle changed is resized and draws
     /// again whole), a pane behind another's tab not seen and one shown again
     /// seen, and the dock drawn if anything of it moved.
-    fn settle_dock(&mut self) {
-        let Some(shell) = self.dock.as_mut() else {
-            return;
-        };
+    ///
+    /// Answers the pane a hand dragged out of the dock, for the caller to
+    /// give a canvas of its own ([`WebApp::move_window`]).
+    fn settle_dock(&mut self) -> Option<i32> {
+        let shell = self.dock.as_mut()?;
         let dirty = shell.layout.take_dirty();
         if dirty.layout {
             for def in shell.layout.panes() {
@@ -300,13 +301,82 @@ impl WebApp {
         {
             shell.window.request_redraw();
         }
+        dirty.out
+    }
+
+    /// **Window `def` moves into the dock (`into`) or out of it** into a
+    /// canvas of its own, appended to the page as a window the host opens
+    /// with no place is: its GPU state goes with the surface it drew on, and
+    /// it is built again where it goes -- the def and the state the host
+    /// holds of it as they were, its gesture machine and its histories
+    /// carried, its pictures read again.
+    pub(super) fn move_window(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        def: i32,
+        into: bool,
+    ) -> Result<(), String> {
+        if self.dock.is_none() {
+            return Err("the dock is not open: the page has not handed it a canvas".into());
+        }
+        if self.is_pane(def) == into {
+            return Err(if into {
+                format!("window {def} is a pane already")
+            } else {
+                format!("window {def} is not a pane")
+            });
+        }
+        let old = self
+            .canvases
+            .get_mut(&def)
+            .ok_or_else(|| format!("no window {def}"))?;
+        let gestures = std::mem::take(&mut old.gestures);
+        let histories = std::mem::take(&mut old.histories);
+        self.drop_own(def);
+        if into {
+            self.undocked.remove(&def);
+        } else {
+            self.undocked.insert(def);
+        }
+        self.attach(event_loop, def, None);
+        if let Some(slot) = self.canvases.get_mut(&def) {
+            slot.gestures = gestures;
+            slot.histories = histories;
+        }
+        self.start_bulk(def);
+        self.on_tree_changed();
+        log(&format!(
+            "def {def}: {}",
+            if into {
+                "put back in the dock"
+            } else {
+                "taken out of the dock"
+            }
+        ));
+        Ok(())
+    }
+
+    /// **Window `def` leaves where it is drawn**: out of the dock if it is a
+    /// pane, its own canvas off the page if this front appended one.
+    pub(super) fn drop_own(&mut self, def: i32) {
+        if let Some(slot) = self.canvases.remove(&def)
+            && !self.is_dock_window(slot.window.id())
+        {
+            self.by_winit.remove(&slot.window.id());
+            if slot.appended
+                && let Some(element) = slot.window.canvas()
+            {
+                element.remove();
+            }
+        }
+        self.detach_pane(def);
     }
 
     /// **What the page said of the dock's canvas**, handed to the pane
     /// it is about: the motion, the buttons and a touch to the pane under it
     /// (or the one a press holds), the keys to the pane last pressed in, what
     /// is the whole canvas' to the dock or to every pane.
-    pub(super) fn dock_event(&mut self, event: WindowEvent) {
+    pub(super) fn dock_event(&mut self, event_loop: &ActiveEventLoop, event: WindowEvent) {
         let Some(shell) = self.dock.as_mut() else {
             return;
         };
@@ -363,7 +433,12 @@ impl WebApp {
                 if let Some(def) = pane {
                     self.on_def_event(def, event);
                 }
-                self.settle_dock();
+                // a tab let go out of the dock: a canvas of its own
+                if let Some(def) = self.settle_dock()
+                    && let Err(e) = self.move_window(event_loop, def, false)
+                {
+                    log(&format!("dock: {e}"));
+                }
             }
             WindowEvent::Touch(mut touch) => {
                 // a finger goes where a pointer would: its pane, its pixels
@@ -382,7 +457,11 @@ impl WebApp {
                     touch.location = winit::dpi::PhysicalPosition::new(lx, ly);
                     self.on_def_event(def, WindowEvent::Touch(touch));
                 }
-                self.settle_dock();
+                if let Some(def) = self.settle_dock()
+                    && let Err(e) = self.move_window(event_loop, def, false)
+                {
+                    log(&format!("dock: {e}"));
+                }
             }
             WindowEvent::MouseWheel { .. } => {
                 if let Some(def) = shell.layout.pointer() {
@@ -457,40 +536,62 @@ impl WebApp {
     /// **A call to the dock** (`/gui_dock`), carried out and answered: a
     /// move of the layout, a hand on the surface, the picture (answered
     /// once it is written).
-    pub(super) fn dock_call(&mut self, seq: i32, call: Call) {
-        let answer = match (self.dock.as_mut(), call) {
-            (None, _) => Err((
+    pub(super) fn dock_call(&mut self, event_loop: &ActiveEventLoop, seq: i32, call: Call) {
+        let refused = |e: String| ("command".to_string(), e);
+        let answer = match (self.dock.is_some(), call) {
+            (_, Call::Undock(def)) => self
+                .move_window(event_loop, def, false)
+                .map(|()| self.dock_state())
+                .map_err(refused),
+            (_, Call::Dock(def)) => self
+                .move_window(event_loop, def, true)
+                .map(|()| self.dock_state())
+                .map_err(refused),
+            (false, _) => Err((
                 "runtime".to_string(),
                 "the dock is not open: the page has not handed it a canvas".to_string(),
             )),
-            (Some(_), Call::Pointer { kind, x, y }) => {
-                self.dock_pointer(kind, x, y);
+            (true, Call::Pointer { kind, x, y }) => {
+                if let Some(def) = self.dock_pointer(kind, x, y)
+                    && let Err(e) = self.move_window(event_loop, def, false)
+                {
+                    log(&format!("dock: {e}"));
+                }
                 Ok(self.dock_state())
             }
-            (Some(_), Call::Capture(path)) => match self.dock_capture(seq, path) {
+            (true, Call::Capture(path)) => match self.dock_capture(seq, path) {
                 Ok(()) => return,
                 Err(e) => Err(("runtime".to_string(), e)),
             },
-            (Some(shell), call) => {
-                let answer = shell.layout.apply(&call);
+            (true, call) => {
+                let answer = match self.dock.as_mut() {
+                    Some(shell) => shell.layout.apply(&call),
+                    None => Ok(Value::Null),
+                };
                 self.settle_dock();
-                answer
+                answer.map(|_| self.dock_state())
             }
         };
         self.queue(call::reply(seq, answer));
     }
 
+    /// The dock as it stands, with the windows taken out of it.
     fn dock_state(&self) -> Value {
-        self.dock.as_ref().map_or(Value::Null, |s| s.layout.state())
+        let state = self
+            .dock
+            .as_ref()
+            .map_or_else(call::closed_state, |s| s.layout.state());
+        let out: Vec<i32> = self.undocked.iter().copied().collect();
+        call::with_out(state, &out)
     }
 
     /// **A scripted hand on the dock's surface**, at `(x, y)` of it: the
     /// chrome takes what lands on it, and a pane what lands in it, at its own
     /// pixels, through the canvas' scripted pointer.
-    fn dock_pointer(&mut self, kind: PointerKind, x: f64, y: f64) {
-        let Some(shell) = self.dock.as_mut() else {
-            return;
-        };
+    ///
+    /// Answers a pane the hand dragged out of the dock.
+    fn dock_pointer(&mut self, kind: PointerKind, x: f64, y: f64) -> Option<i32> {
+        let shell = self.dock.as_mut()?;
         let layout = &mut shell.layout;
         let motion = layout.moved(x, y);
         let to = match kind {
@@ -502,7 +603,7 @@ impl WebApp {
         if let Some((def, (lx, ly))) = local {
             self.pointer(def, kind, lx, ly, PointerMods::default());
         }
-        self.settle_dock();
+        self.settle_dock()
     }
 
     /// **The dock's picture at `path`**: every shown pane drawn into its

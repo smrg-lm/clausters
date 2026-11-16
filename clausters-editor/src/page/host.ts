@@ -84,6 +84,7 @@ export const host: Host = {
   languages: ["javascript"],
   environments: false,
   docsFolder: false,
+  windows: session.windows,
   invoke,
   listen,
   openFile: ({ filters }) => pickFile({ mode: "open", filters }),

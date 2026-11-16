@@ -39,6 +39,20 @@ type DefResources = (
     Vec<(i32, i32, bool)>,
 );
 
+/// What a window carries when it opens again elsewhere (into or out of the
+/// dock): its owner, its cursor, its shift, ctrl and alt, whether its
+/// modifiers were named, its gesture machine and its bus histories.
+pub(super) type Carried = (
+    ClientId,
+    Option<(f64, f64)>,
+    bool,
+    bool,
+    bool,
+    bool,
+    crate::host::gestures::Gestures,
+    HashMap<i32, crate::host::live::BusHistory>,
+);
+
 impl App {
     /// Opens the window a window-rooted GuiDef asks for -- **or brings the one
     /// it already has up to the new tree**.
@@ -108,8 +122,9 @@ impl App {
             }
             None => {
                 let gpu = match lp {
-                    // a pane of the dock, on its device
-                    _ if self.host.dock => {
+                    // a pane of the dock, on its device, unless it was
+                    // taken out of it
+                    _ if self.host.dock && !self.undocked.contains(&id) => {
                         let Some(gpu) = self.open_pane(lp, id) else {
                             return;
                         };
@@ -149,7 +164,8 @@ impl App {
                         gpu.config.width, gpu.config.height, gpu.adapter
                     );
                 }
-                (gpu, renderers, batches, None)
+                // a window moving into or out of the dock keeps its state
+                (gpu, renderers, batches, self.carried.remove(&id))
             }
         };
 
@@ -401,7 +417,71 @@ impl App {
         self.start_buffer_fetches(def_id, buffer_refs);
     }
 
+    /// **Window `id` moves into the dock (`into`) or out of it** into a
+    /// window of its own: its GPU state goes with the surface it drew on, and
+    /// it opens again where it goes -- the def, the state the host holds of
+    /// it (its view, its selection) and what it carries ([`Carried`]) as they
+    /// were, its pictures read again.
+    pub(super) fn move_window(&mut self, lp: Loop, id: i32, into: bool) -> Result<(), String> {
+        if !self.host.dock {
+            return Err("this host has no dock".into());
+        }
+        if self.is_pane(id) == into {
+            return Err(if into {
+                format!("window {id} is a pane already")
+            } else {
+                format!("window {id} is not a pane")
+            });
+        }
+        let ws = self
+            .windows
+            .remove(&id)
+            .ok_or_else(|| format!("no window {id}"))?;
+        if let Some(window) = ws.gpu.window() {
+            self.by_winit.remove(&window.id());
+        }
+        let origin = ws.origin;
+        self.carried.insert(
+            id,
+            (
+                ws.origin,
+                // the pointer is somewhere else in a window that opens
+                None,
+                ws.shift,
+                ws.ctrl,
+                ws.alt,
+                ws.unnamed,
+                ws.gestures,
+                ws.histories,
+            ),
+        );
+        self.fetches.drop_def(id);
+        if into {
+            self.undocked.remove(&id);
+        } else {
+            self.undocked.insert(id);
+            self.close_pane(id);
+        }
+        self.open_window(lp, id, origin);
+        self.carried.remove(&id);
+        if self.windows.contains_key(&id) {
+            info!(
+                "gui_def {id}: {}",
+                if into {
+                    "put back in the dock"
+                } else {
+                    "taken out of the dock"
+                }
+            );
+            Ok(())
+        } else {
+            Err(format!("window {id} could not open again"))
+        }
+    }
+
     pub(super) fn drop_window(&mut self, id: i32) {
+        self.undocked.remove(&id);
+        self.carried.remove(&id);
         // **Closing lets go of what the window ticked for**: its def may stay
         // with the host until its owner frees it, and nothing is done for it
         // meanwhile.

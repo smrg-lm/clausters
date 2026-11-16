@@ -39,6 +39,12 @@ pub enum Call {
     /// `{"verb": "capture", "path": path}`: the dock's picture as a PNG,
     /// answered once the file is whole.
     Capture(String),
+    /// `{"verb": "undock", "pane": id}`: take a pane out into a window of its
+    /// own -- an OS window natively, a canvas of its own in a page.
+    Undock(i32),
+    /// `{"verb": "dock", "pane": id}`: put a window taken out back in, as a
+    /// column of its own.
+    Dock(i32),
 }
 
 /// A request the door could not read.
@@ -100,6 +106,8 @@ impl Call {
                     y: at("y")?,
                 }
             }
+            "undock" => Self::Undock(id(&call, "pane")?),
+            "dock" => Self::Dock(id(&call, "pane")?),
             "capture" => Self::Capture(
                 call.get("path")
                     .and_then(Value::as_str)
@@ -113,7 +121,8 @@ impl Call {
 
 impl Dock {
     /// **Carries out a call that only moves the layout** -- every one but a
-    /// hand and a capture, which the front carries out -- and answers the
+    /// hand, a capture and a pane taken out or put back, which the front
+    /// carries out -- and answers the
     /// dock as it stands after it. A move it cannot make is an error of kind
     /// `command`.
     pub fn apply(&mut self, call: &Call) -> Result<Value, (String, String)> {
@@ -134,7 +143,7 @@ impl Dock {
                     },
                 )
                 .map_err(refused)?,
-            Call::Pointer { .. } | Call::Capture(_) => {}
+            Call::Pointer { .. } | Call::Capture(_) | Call::Undock(_) | Call::Dock(_) => {}
         }
         Ok(self.state())
     }
@@ -171,6 +180,27 @@ impl Dock {
             "focus": self.focus(),
         })
     }
+}
+
+/// **The state of a dock that is not open** -- a host asked for one whose
+/// panes have all left it, or not arrived yet: no pane, no surface.
+pub fn closed_state() -> Value {
+    json!({
+        "layout": super::Node::default().to_json(),
+        "size": [0, 0],
+        "panes": [],
+        "dividers": [],
+        "focus": null,
+    })
+}
+
+/// The state answered, with the windows taken out of the dock that a
+/// `dock` call puts back.
+pub fn with_out(mut state: Value, out: &[i32]) -> Value {
+    let mut out = out.to_vec();
+    out.sort_unstable();
+    state["out"] = json!(out);
+    state
 }
 
 /// **The dock's answer**, as `/gui_dock_reply` carries it.

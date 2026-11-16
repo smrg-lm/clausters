@@ -338,8 +338,8 @@ impl WebApp {
             return;
         }
         // **With a dock, a window is a pane of it**, whatever canvas
-        // the page offered for it.
-        if self.dock.is_some() {
+        // the page offered for it -- unless it was taken out of it.
+        if self.dock.is_some() && !self.undocked.contains(&def_id) {
             if canvas.is_some() {
                 log(&format!(
                     "def {def_id}: a pane of the dock; the canvas offered for it is left empty"

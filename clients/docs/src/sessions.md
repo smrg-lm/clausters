@@ -650,6 +650,14 @@ await gui.view({ title: "level" }, gui.slider({ name: "level" })).open();
 
 The page keeps the drawing. A window the worker opens gets a canvas in the element `place` answers for its id, or, when it answers nothing, a canvas of its own appended to the document, as a view opened with no element gets. The worker's widgets report back to the worker, a widget it binds drives the engine the host is wired to, and `plot` and `scope` from the worker open their windows on that host. `guiLink.close()` takes the worker's windows off the page.
 
+A page that would rather hold every window in one place gives the host a dock first, `host.dock(element)`: then every window the worker opens, an application's included, is a pane of the one canvas in that element, with tabs and splits a hand rearranges, and `place` is not asked. `onOpen`, beside `place`, hears each window the worker opens as it opens, which is how a page knows to show the element the dock is in:
+
+```ts
+const windows = document.getElementById("windows")!;
+host.dock(windows);
+const guiLink = host.link({ onOpen: () => { windows.hidden = false; } });
+```
+
 A page that also plays or names widgets of its own shares the id spaces with the worker as two clients of one server do: each takes a slice (`Session.live(port, { share: { index: 1, of: 2 } })` in the worker, the other slice on the page).
 
 What this gives a page:

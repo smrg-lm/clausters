@@ -1,32 +1,7 @@
-/* The session's windows: a column above the editor, at the right, each in a
-   frame the user resizes and the GUI host follows. */
-.session-windows {
-  position: fixed;
-  top: 3rem;
-  right: 1rem;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  max-height: calc(100vh - 4rem);
-  overflow-y: auto;
-}
-.session-window {
-  border: 1px solid var(--border);
-  border-radius: 0.375rem;
-  background: var(--background);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
-  overflow: hidden;
-}
-.session-window > header {
-  padding: 0.125rem 0.5rem;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-  border-bottom: 1px solid var(--border);
-}
-.session-window-box {
-  width: 480px;
-  height: 360px;
-  resize: both;
+/* The session's windows: the dock the GUI host draws them all in, filling
+   the editor's windows panel. */
+.session-dock {
+  width: 100%;
+  height: 100%;
   overflow: hidden;
 }

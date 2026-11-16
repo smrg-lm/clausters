@@ -1189,12 +1189,13 @@ export class GuiHost {
      * of `"press"`, `"move"`, `"release"`) plays a hand on the dock's
      * surface, on its tabs and dividers or, through them, on a pane, in the
      * surface's device pixels; `{ verb: "capture", path }` writes the dock's
-     * picture.
+     * picture; `{ verb: "undock", pane }` takes a pane out into a canvas of
+     * its own, and `{ verb: "dock", pane }` puts it back.
      *
      * The answer is the dock: `layout` (the layout as data, what `restore`
      * takes), `size`, `panes` (each with its `id`, `title`, whether it is
-     * `shown`, its `rect` and its `tab` as `[x, y, w, h]`), `dividers` and
-     * `focus`. Rejects with a `RangeError` for a call it cannot read, a
+     * `shown`, its `rect` and its `tab` as `[x, y, w, h]`), `dividers`,
+     * `focus` and `out` (the windows taken out). Rejects with a `RangeError` for a call it cannot read, a
      * `CommandError` for a move it cannot make, an `Error` when the host has
      * no dock open.
      */

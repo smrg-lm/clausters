@@ -63,8 +63,13 @@ r.play();
 The engine's audio starts at the page's first key or click, as a browser
 requires.
 
-A window the session opens goes in a frame of its own at the right of the
-page, which can be resized; the window follows it.
+A window the session opens is drawn in the *windows* panel, which shows once
+the session opens its first one and goes with the session. Every window is a
+pane of it, with a tab: drag a tab onto another pane to put the two in one
+group or side by side, drag the line between two panes to resize them, or drag
+a tab out of the panel to give the window a canvas of its own. An application
+the session opens (`edit()` of a pattern opens the notes editor) is a pane like
+any other window.
 
 ## Interrupting
 

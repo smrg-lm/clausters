@@ -292,6 +292,13 @@ pub(super) struct App {
     /// **The dock**, once a window opened as a pane of it
     /// (`Host::dock`): its window, its surface and its panes.
     pub(super) dock: Option<super::dock::Shell>,
+    /// The windows taken out of the dock into windows of their own, which
+    /// stay out until they are put back.
+    pub(super) undocked: std::collections::HashSet<i32>,
+    /// What a window moving into or out of the dock carries to the window it
+    /// opens as: its owner, its modifiers, its gesture machine, its
+    /// histories.
+    pub(super) carried: HashMap<i32, super::windows::Carried>,
 }
 
 impl App {
@@ -342,6 +349,8 @@ impl App {
             tick_clock: Default::default(),
             tick_reasons: HashMap::new(),
             dock: None,
+            undocked: Default::default(),
+            carried: HashMap::new(),
         }
     }
 
@@ -551,7 +560,7 @@ impl App {
                     self.host.performed(window);
                 }
                 HostEffect::Capture { window, path } => self.capture(window, path, from),
-                HostEffect::Dock { seq, call } => self.dock_call(from, seq, call),
+                HostEffect::Dock { seq, call } => self.dock_call(lp, from, seq, call),
             }
         }
     }

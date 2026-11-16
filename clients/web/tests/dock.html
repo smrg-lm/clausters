@@ -17,7 +17,9 @@
       second's does not, and a press over the second moves only the second.
       Then the dock's own door: the second pane put among the first's tabs
       and shown, a press on the first's tab showing it again, a layout put
-      back as it was read, and the dock's picture written.
+      back as it was read, and the dock's picture written; the second pane
+      taken out into a canvas of its own and put back; and a pane closed
+      leaving the dock.
       Verdict beaconed as a fetch, read from the access log.
     -->
     <script type="module">
@@ -113,6 +115,29 @@
           throw new Error(`restored ${JSON.stringify(st.layout)} against ${JSON.stringify(saved)}`);
         }
         log(`dock capture: ${await host.dockCapture("dock_whole.png")}`);
+
+        // out into a canvas of its own, and back
+        const canvases = () => document.querySelectorAll("canvas").length - before - 1;
+        st = await host.dockCall({ verb: "undock", pane: b.id });
+        await sleep(300);
+        if (st.panes.some((p) => p.id === b.id) || String(st.out) !== String(b.id)) {
+          throw new Error(`undock: ${JSON.stringify(st)}`);
+        }
+        if (canvases() !== 1) throw new Error(`a pane taken out has ${canvases()} canvases of its own`);
+        st = await host.dockCall({ verb: "dock", pane: b.id });
+        await sleep(300);
+        if (!st.panes.some((p) => p.id === b.id) || st.out.length !== 0 || canvases() !== 0) {
+          throw new Error(`dock: ${JSON.stringify(st)}, ${canvases()} canvases`);
+        }
+        log("taken out and put back");
+
+        // a pane closed leaves the dock
+        b.close();
+        await sleep(300);
+        st = await host.dockCall({ verb: "layout" });
+        if (st.panes.length !== 1 || st.panes[0].id !== a.id) {
+          throw new Error(`a closed pane stayed: ${JSON.stringify(st.layout)}`);
+        }
         if (extra !== 0) throw new Error(`the panes left ${extra} canvases of their own on the page`);
         verdict("PASS dock");
       } catch (error) {

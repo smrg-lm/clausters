@@ -33,6 +33,11 @@ export interface Host {
   readonly environments: boolean;
   /** Whether the documentation folder can be chosen (Preferences). */
   readonly docsFolder: boolean;
+  /** Where the session's windows are drawn, in a build that draws them
+   *  itself (the page): one element, holding a dock every window is a pane
+   *  of, which the editor places in its windows panel. Null where the
+   *  session's windows are windows of the platform. */
+  readonly windows: HTMLElement | null;
   /** One of the backend's commands, by the desktop's name. */
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
   /** One of the backend's events, by the desktop's name. */

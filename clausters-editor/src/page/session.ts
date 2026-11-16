@@ -40,6 +40,7 @@ function bringUp(): Promise<Runtime> {
     const clausters = await import(/* @vite-ignore */ new URL("dist/index.js", CLAUSTERS).href);
     const engine = await clausters.page.server({ channels: 2 });
     const gui = await clausters.page.guiHost();
+    gui.dock(windows);
     // Asked again at every key and click until the audio runs: a browser may
     // not count the first one (Firefox does not count a modifier, the Shift
     // of Shift+Enter).
@@ -88,34 +89,15 @@ async function silence(): Promise<void> {
 
 // ---- where the session's windows go ----
 
-let windows: HTMLElement | null = null;
+/** **The element the session's windows are drawn in**: the page's host draws
+ *  them all as panes of one dock in it, with tabs and splits of its own, and
+ *  the editor gives it a panel of its grid (`host.windows`). */
+export const windows: HTMLElement = document.createElement("div");
+windows.className = "session-dock";
 
-/** A frame for one of the session's windows, in a column of the page's own
- *  above the editor; the user resizes it, and the host follows its box. */
-function frameFor(window_: number): HTMLElement {
-  if (windows === null) {
-    windows = document.createElement("div");
-    windows.className = "session-windows";
-    document.body.append(windows);
-  }
-  const frame = document.createElement("section");
-  frame.className = "session-window";
-  frame.dataset.window = String(window_);
-  const title = document.createElement("header");
-  title.textContent = `window ${window_}`;
-  const box = document.createElement("div");
-  box.className = "session-window-box";
-  frame.append(title, box);
-  windows.append(frame);
-  // The frame goes when its canvas does: the host took the window away.
-  new MutationObserver((_, observer) => {
-    if (box.childElementCount === 0 && frame.isConnected) {
-      frame.remove();
-      observer.disconnect();
-    }
-  }).observe(box, { childList: true });
-  return box;
-}
+/** The windows panel is shown once the session opens a window, and goes
+ *  with the session. */
+const showWindows = (shown: boolean) => emit("session-windows", { shown });
 
 // ---- the session ----
 
@@ -135,6 +117,7 @@ function stop(): void {
   links?.engine.close();
   links?.gui.close();
   links = null;
+  showWindows(false);
 }
 
 /** The session starting, which an evaluation asked for meanwhile waits for:
@@ -163,7 +146,7 @@ async function begin(): Promise<void> {
   const mine = ++generation;
   worker = new Worker(new URL("./session-worker.ts", import.meta.url), { type: "module" });
   const engineLink = engine.link();
-  const guiLink = gui.link({ place: frameFor });
+  const guiLink = gui.link({ onOpen: () => showWindows(true) });
   links = { engine: engineLink, gui: guiLink };
   worker.addEventListener("message", (event) => {
     if (mine !== generation) return;

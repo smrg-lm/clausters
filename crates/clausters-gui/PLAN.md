@@ -1813,9 +1813,10 @@ something reusable if the track stops there.
   as tabs of one group, each answering its own history, the one behind the
   tab reported not visible; `tests/dock.html` joins, shows by a press on a
   tab, restores and captures in a page. `panels/dock` in both clients makes
-  the moves by name. Left for WS3: a tab dragged out of the dock. The dock's
-  menu is the one entry of "Future directions" this left.
-- ⬜ **WS3 — Every window the host opens enters the dock.** `/gui_def`,
+  the moves by name. A tab dragged out of the dock was left for WS3 and
+  came with it. The dock's menu is the one entry of "Future directions"
+  this left.
+- ✅ **WS3 — Every window the host opens enters the dock.** `/gui_def`,
   `/gui_app_open` and a window a gesture opens (a box's roll) all become panels
   of the dock where there is one, and an OS window of their own (or a
   canvas) where there is none, so a host run by a script alone behaves as it
@@ -1824,6 +1825,27 @@ something reusable if the track stops there.
   and the editor page drops `.session-windows`. This closes the two defects
   above; the page's acceptance run checks that an application's window is a
   panel with a nonzero size.
+  *Shipped:* every window already opened through the one `OpenWindow` the
+  host emits (`define.rs`), so a def, an application and a box's roll were
+  panes from WS1 on; what WS3 added is the way out and back and the page's
+  side. A tab let go past the dock's edge (`Landing::Out`, told to the
+  front) or `{"verb": "undock"}` gives a window one of its own, and
+  `{"verb": "dock"}` puts it back: each front's `move_window` drops the GPU
+  state with the surface it drew on and opens the window again where it
+  goes, the host's state of it and its gesture machine carried. A pane
+  closed now leaves the dock in a page too, as it did natively. In a page,
+  `link` on a docked host asks no `place` and creates no canvas, takes the
+  client's windows (its defs and the applications it opened) out of the
+  dock when they close or the link does, and tells `onOpen`. The editor
+  page docks into a *windows* panel of its grid (three panels a column
+  now), shown when the session opens a window and hidden when it goes;
+  `.session-windows` is gone. Checked: a headless host takes a pane out and
+  back by verb and by a drag past the edge, the window answering its hand
+  in its own window, and the dock closing with its last pane and opening
+  again; `tests/dock.html` does the same in a page and closes a pane; the
+  editor page's acceptance run (Chrome and Firefox) checks the windows
+  panel has a size, that the notes editor `edit()` opens is a pane with a
+  nonzero rectangle, and that a stuck session's windows leave the dock.
 - ⬜ **WS4 — Pages: one arrangement per kind of work.** A page is a named
   layout of the dock, switched by a strip of page tabs; an application may
   contribute a page (the multitrack's, the audio editor's), and a page
@@ -1951,8 +1973,10 @@ holds what is open.
   are verbs on the wire (`/gui_dock`) and gestures on its tabs, and no menu
   calls them yet: a tab's context menu (close, move to a new group on a
   side, show the tabs gathered behind the last one as a list rather than one
-  after another, as a press on that tab does now) and the resize cursor over
-  a divider. The popup layer and the menus of a window (`host::popup`) are
+  after another, as a press on that tab does now), the resize cursor over
+  a divider, and -- left by WS3 -- a way back into the dock for a hand: a
+  window taken out returns today only by `{"verb": "dock"}`, so its own
+  window wants an entry that puts it back. The popup layer and the menus of a window (`host::popup`) are
   per window, and the dock's chrome is drawn by the dock, so this is a menu
   the dock opens over its own surface with that layer, not a second one.
 

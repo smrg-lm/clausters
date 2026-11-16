@@ -162,10 +162,11 @@ impl App {
     /// of its place (a pane whose rectangle changed is resized and draws
     /// again whole), a pane behind another's tab told it is not seen and one
     /// shown again told it is, and the dock drawn if anything of it moved.
-    fn settle_dock(&mut self) {
-        let Some(shell) = self.dock.as_mut() else {
-            return;
-        };
+    ///
+    /// Answers the pane a hand dragged out of the dock, for the caller to
+    /// give a window of its own ([`App::move_window`]).
+    fn settle_dock(&mut self) -> Option<i32> {
+        let shell = self.dock.as_mut()?;
         let dirty = shell.layout.take_dirty();
         if dirty.layout {
             for id in shell.layout.panes() {
@@ -195,6 +196,7 @@ impl App {
         if dirty.layout || dirty.chrome {
             shell.gpu.request_redraw();
         }
+        dirty.out
     }
 
     /// **What the platform said of the dock's window**, handed to the
@@ -279,7 +281,12 @@ impl App {
                 if let Some(id) = pane {
                     self.def_event(event_loop, id, event);
                 }
-                self.settle_dock();
+                // a tab let go out of the dock: a window of its own
+                if let Some(id) = self.settle_dock()
+                    && let Err(e) = self.move_window(Loop::Shown(event_loop), id, false)
+                {
+                    warn!("dock: {e}");
+                }
             }
             WindowEvent::MouseWheel { .. } => {
                 if let Some(id) = shell.layout.pointer() {
@@ -372,41 +379,63 @@ impl App {
 
     /// **A call to the dock** (`/gui_dock`), carried out and answered to
     /// `from`: a move of the layout, a hand on the surface, the picture.
-    pub(super) fn dock_call(&mut self, from: ClientId, seq: i32, call: Call) {
-        let answer = match (self.dock.as_mut(), call) {
-            (None, _) => Err((
+    pub(super) fn dock_call(&mut self, lp: Loop, from: ClientId, seq: i32, call: Call) {
+        let refused = |e: String| ("command".to_string(), e);
+        let answer = match (self.dock.is_some(), call) {
+            (_, Call::Undock(id)) => self
+                .move_window(lp, id, false)
+                .map(|()| self.dock_state())
+                .map_err(refused),
+            (_, Call::Dock(id)) => self
+                .move_window(lp, id, true)
+                .map(|()| self.dock_state())
+                .map_err(refused),
+            (false, _) => Err((
                 "runtime".to_string(),
                 "the dock is not open: it opens with its first pane".to_string(),
             )),
-            (Some(_), Call::Pointer { kind, x, y }) => {
-                self.dock_pointer(kind, x, y);
+            (true, Call::Pointer { kind, x, y }) => {
+                if let Some(id) = self.dock_pointer(kind, x, y)
+                    && let Err(e) = self.move_window(lp, id, false)
+                {
+                    warn!("dock: {e}");
+                }
                 Ok(self.dock_state())
             }
-            (Some(_), Call::Capture(path)) => self
+            (true, Call::Capture(path)) => self
                 .dock_capture(&path)
                 .map(|()| json!({ "path": path }))
                 .map_err(|e| ("runtime".to_string(), e)),
-            (Some(shell), call) => {
-                let answer = shell.layout.apply(&call);
+            (true, call) => {
+                let answer = match self.dock.as_mut() {
+                    Some(shell) => shell.layout.apply(&call),
+                    None => Ok(Value::Null),
+                };
                 self.settle_dock();
-                answer
+                answer.map(|_| self.dock_state())
             }
         };
         self.send(from, call::reply(seq, answer));
     }
 
+    /// The dock as it stands, with the windows taken out of it.
     fn dock_state(&self) -> Value {
-        self.dock.as_ref().map_or(Value::Null, |s| s.layout.state())
+        let state = self
+            .dock
+            .as_ref()
+            .map_or_else(call::closed_state, |s| s.layout.state());
+        let out: Vec<i32> = self.undocked.iter().copied().collect();
+        call::with_out(state, &out)
     }
 
     /// **A scripted hand on the dock's surface**, at `(x, y)` of it: the
     /// chrome takes what lands on it, and a pane what lands in it, at its own
     /// pixels, through the window's scripted pointer -- the hand the
     /// platform's pointer is.
-    fn dock_pointer(&mut self, kind: PointerKind, x: f64, y: f64) {
-        let Some(shell) = self.dock.as_mut() else {
-            return;
-        };
+    ///
+    /// Answers a pane the hand dragged out of the dock.
+    fn dock_pointer(&mut self, kind: PointerKind, x: f64, y: f64) -> Option<i32> {
+        let shell = self.dock.as_mut()?;
         let layout = &mut shell.layout;
         let motion = layout.moved(x, y);
         let to = match kind {
@@ -418,7 +447,7 @@ impl App {
         if let Some((id, (lx, ly))) = local {
             self.pointer(id, kind, lx, ly, PointerMods::default());
         }
-        self.settle_dock();
+        self.settle_dock()
     }
 
     /// **The dock's picture at `path`**: every shown pane drawn into its

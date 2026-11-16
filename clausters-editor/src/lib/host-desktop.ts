@@ -54,6 +54,7 @@ export const host: Host = {
   languages: ["python"],
   environments: true,
   docsFolder: true,
+  windows: null,
   invoke,
   listen: <T>(event: string, handler: (event: { payload: T }) => void) => {
     const own = EVENTS[event];

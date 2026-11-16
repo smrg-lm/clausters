@@ -303,11 +303,17 @@ try {
   at = await run('import * as gui from "clausters/gui";\nconst host = await session.gui();\nhost.open(gui.view({ title: "level" }, gui.slider({ name: "level" })));\n"opened"');
   await waitFor('-> "opened"', at);
   await sleep(500);
-  check(await evaluate(`!!document.querySelector(".session-window canvas")`), "a window the session opens is drawn on the page");
+  check(
+    await evaluate(`(() => { const d = document.querySelector(".session-dock"); return !!d?.querySelector("canvas") && d.getBoundingClientRect().height > 0 && !!d.offsetParent; })()`),
+    "a window the session opens is drawn in the windows panel",
+  );
 
   // An application: the page is cross-origin isolated, so its host has them.
   at = await run('import { pbind, pseq } from "clausters/seq";\nimport { edit } from "clausters/gui";\nconst notes = await edit(await pbind({ midinote: pseq([60, 62, 64]), dur: 0.5 }).renderEvents());\nnotes.constructor.name');
   check(await waitFor('-> "NotesEditor"', at), "edit() of a rendered pattern opens the notes editor");
+  await sleep(500);
+  at = await run('const docked = await host.dockCall({ verb: "layout" });\n`${docked.panes.length}:${docked.panes.every((p) => p.rect[2] > 0 && p.rect[3] > 0)}`');
+  check(await waitFor('-> "2:true"', at), "an application's window is a pane of the dock, with a size");
 
   // An infinite loop: the worker is terminated and the session started again.
   at = await run("for (;;) {}");
@@ -315,10 +321,12 @@ try {
   await interrupt();
   check(await waitFor("could not stop it, so it was started again", at), "Ctrl+. stops an infinite loop");
   check(await waitFor("JavaScript worker ready", at, 15000), "and a new session starts");
-  check(await evaluate(`!document.querySelector(".session-window canvas")`), "the old session's windows leave the page");
+  check(await evaluate(`!document.querySelector(".session-dock")?.offsetParent`), "the windows panel goes with the old session");
   await sleep(1500);
   at = await run("typeof greeting");
   check(await waitFor('-> "undefined"', at), "the stuck session's names are gone");
+  at = await run('(await host.dockCall({ verb: "layout" })).panes.length');
+  check(await waitFor("-> 0", at), "and its windows left the dock");
 
   // Restart clears every name.
   at = await run("const kept = 1;\nkept");

@@ -81,12 +81,14 @@ which lists the chapters of every book the editor has: its own, and those of the
 packages installed in the session's environment. The bar says which book and
 chapter is on screen; the book's name there opens its whole table of contents.
 
-The window holds up to four panels in two columns: the editor, the documentation,
-the post window and, with View → Split Editor, a second editor beside the first
-(View → Move Tab to Other Editor moves the current file across). Any panel can be
-dragged by the handle at the start of its bar to another place; the places it can
-go to are shown while dragging. A moved panel takes the size of the place it goes
-to, and keeps its own height when it enters a column that had one panel.
+The window holds its panels in two columns, up to three in each: the editor, the
+documentation, the post window and, with View → Split Editor, a second editor
+beside the first (View → Move Tab to Other Editor moves the current file across).
+In a page, the windows the session opens have a panel of their own as well. Any
+panel can be dragged by the handle at the start of its bar to another place; the
+places it can go to are shown while dragging. A moved panel takes the size of the
+place it goes to, and keeps its own height when it enters a column that had one
+panel.
 
 A tab with unsaved changes shows a dot; closing it, or closing the window, asks
 before those changes are lost. Undoing back to the saved text clears the dot.

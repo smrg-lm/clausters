@@ -930,12 +930,15 @@ class GuiHost:
         ``{"verb": "pointer", "kind": "press" | "move" | "release", "x": ...,
         "y": ...}`` plays a hand on the dock's surface, on its tabs and
         dividers or, through them, on a pane, in the surface's device pixels;
-        ``{"verb": "capture", "path": ...}`` writes the dock's picture.
+        ``{"verb": "capture", "path": ...}`` writes the dock's picture;
+        ``{"verb": "undock", "pane": id}`` takes a pane out into a window of
+        its own, and ``{"verb": "dock", "pane": id}`` puts it back.
 
         The answer is the dock: ``layout`` (the layout as data, what
         ``restore`` takes), ``size``, ``panes`` (each with its ``id``,
         ``title``, whether it is ``shown``, its ``rect`` and its ``tab`` as
-        ``[x, y, w, h]``), ``dividers`` and ``focus``. Raises `ValueError`
+        ``[x, y, w, h]``), ``dividers``, ``focus`` and ``out`` (the windows
+        taken out). Raises `ValueError`
         for a call it cannot read, `clausters.errors.CommandError` for a move
         it cannot make, `RuntimeError` when the host has no dock open.
         """

@@ -273,6 +273,9 @@ struct WebApp {
     dock: Option<dock::WebShell>,
     /// The dock's canvas, handed over before the loop resumed.
     pending_dock: Option<web_sys::HtmlCanvasElement>,
+    /// The windows taken out of the dock into canvases of their own, which
+    /// stay out until they are put back.
+    undocked: std::collections::HashSet<i32>,
     /// Live control-bus values streamed from the audio server (`/bus_stream` ->
     /// `/bus_stream.reply`), the browser's [`BusSource`] for meters/scopes/canvases.
     buses: Arc<StreamedBuses>,
@@ -377,6 +380,7 @@ impl WebApp {
             pending_attach: Vec::new(),
             dock: None,
             pending_dock: None,
+            undocked: Default::default(),
             buses: Arc::new(StreamedBuses::default()),
             streamed: Vec::new(),
             taps: Arc::new(StreamedTaps::default()),
@@ -479,6 +483,14 @@ impl WebApp {
                     }
                     self.on_tree_changed();
                 }
+                // a pane, or a window taken out of the dock, is the host's:
+                // it goes with its window, as a window of the platform does
+                HostEffect::CloseWindow(id) if self.is_pane(id) || self.undocked.contains(&id) => {
+                    self.drop_own(id);
+                    self.undocked.remove(&id);
+                    self.fetches.drop_def(id);
+                    self.on_tree_changed();
+                }
                 HostEffect::CloseWindow(id) => {
                     if let Some(slot) = self.canvases.get_mut(&id) {
                         slot.clear_def_state();
@@ -541,7 +553,7 @@ impl WebApp {
                     self.host.performed(window);
                 }
                 HostEffect::Capture { window, path } => self.capture(window, path),
-                HostEffect::Dock { seq, call } => self.dock_call(seq, call),
+                HostEffect::Dock { seq, call } => self.dock_call(event_loop, seq, call),
             }
         }
     }
@@ -1340,14 +1352,14 @@ impl ApplicationHandler<HostEvent> for WebHosts {
     /// claims the id. The set is a page's worth of hosts -- units, not
     /// thousands -- and asking them is what keeps the routing correct across
     /// every attach and detach without a second index to maintain.
-    fn window_event(&mut self, _event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         let owner = self
             .apps
             .iter()
             .find(|(_, app)| app.owns(id))
             .map(|(host, _)| *host);
         if let Some(app) = owner.and_then(|host| self.apps.get_mut(&host)) {
-            app.on_window_event(id, event);
+            app.on_window_event(event_loop, id, event);
         }
     }
 }

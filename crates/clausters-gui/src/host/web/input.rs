@@ -422,11 +422,16 @@ impl WebApp {
 
     /// Every per-canvas event routes by winit's window id: a document's
     /// canvases each get their own pointer, modifiers and repaints.
-    pub(super) fn on_window_event(&mut self, id: WindowId, event: WindowEvent) {
+    pub(super) fn on_window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        id: WindowId,
+        event: WindowEvent,
+    ) {
         // the dock's canvas holds panes, each a canvas slot with no
         // canvas of its own
         if self.is_dock_window(id) {
-            self.dock_event(event);
+            self.dock_event(event_loop, event);
             return;
         }
         let Some(def) = self.by_winit.get(&id).copied() else {

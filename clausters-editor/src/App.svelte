@@ -7,6 +7,7 @@
   import Editor, { type MovedTab } from "./lib/Editor.svelte";
   import Post from "./lib/Post.svelte";
   import Docs from "./lib/Docs.svelte";
+  import Windows from "./lib/Windows.svelte";
   import AppMenu, { type MenuActions } from "./lib/AppMenu.svelte";
   import ConfirmDialog, { confirm } from "./lib/ConfirmDialog.svelte";
   import EnvironmentsDialog from "./lib/EnvironmentsDialog.svelte";
@@ -142,9 +143,34 @@
     });
   };
 
-  // What is on screen: the hidden documentation keeps its place in the layout, so
+  // The session's windows, in a build that draws them (the page): a panel that
+  // shows once the session opens a window, and hides when the session goes.
+  let windowsShown = $state(false);
+
+  /** Whether a panel of the layout is on screen: the documentation can be
+   *  hidden, and the windows are shown only while the session has some. */
+  const isShown = (p: PanelId) => (p !== "docs" || settings.showDocs) && (p !== "windows" || windowsShown);
+
+  /** The windows panel's first place: at the bottom of the column with fewer
+   *  panels on screen (the right one on a tie). */
+  function withWindows(l: Layout): Layout {
+    const out = clone(l);
+    const count = (side: "left" | "right") => out[side].filter(isShown).length;
+    let side: "left" | "right" = count("left") < count("right") ? "left" : "right";
+    if (out[side].length >= COLUMN_SLOTS) side = side === "left" ? "right" : "left";
+    out[side].push("windows");
+    return out;
+  }
+
+  function showWindows(shown: boolean) {
+    windowsShown = shown;
+    const l = settings.layout;
+    if (shown && !l.left.includes("windows") && !l.right.includes("windows")) setLayout(withWindows(l));
+  }
+
+  // What is on screen: a hidden panel keeps its place in the layout, so
   // showing it again puts it back there; a column left empty is not drawn.
-  const shown = (col: PanelId[]) => col.filter((p) => p !== "docs" || settings.showDocs);
+  const shown = (col: PanelId[]) => col.filter(isShown);
   const columns = $derived(
     (["left", "right"] as const)
       .map((side) => ({ side, panels: shown(settings.layout[side]) }))
@@ -159,7 +185,7 @@
   // --- Dragging a panel (by the grip on its bar) to one of the four places ---
   // A place: the top or bottom of a column, or the whole column ("full").
   type Side = "left" | "right";
-  type Place = { side: Side; row: 0 | 1 | "full" };
+  type Place = { side: Side; row: number | "full" };
   type Edge = "top" | "bottom" | "left" | "right";
   /** A place a dragged panel can go to, drawn as the space it would take there. */
   interface Zone {
@@ -182,8 +208,9 @@
   /**
    * Puts `id` at `to`: into the column if it has room, or in place of the panel
    * there, which goes to where `id` was; for a whole column, the panel that was in
-   * it goes to the other one. Only what is on screen counts: the hidden
-   * documentation takes no place while panels move, and goes back after.
+   * it goes to the other one. Only what is on screen counts: a hidden panel (the
+   * documentation, the windows) takes no place while panels move, and goes back
+   * after.
    *
    * The sizes follow one rule: a moved panel takes the size of the place it goes to
    * where that size is defined, and keeps its own where it is not. In place of
@@ -196,8 +223,10 @@
    */
   function move(id: PanelId, to: Place) {
     const l = clone(settings.layout);
-    const hiddenSide = settings.showDocs ? null : columnOf(l, "docs");
-    if (hiddenSide) l[hiddenSide] = l[hiddenSide].filter((p) => p !== "docs");
+    const hidden = ([...l.left, ...l.right] as PanelId[])
+      .filter((p) => !isShown(p))
+      .map((p) => [p, columnOf(l, p)] as const);
+    for (const [p, side] of hidden) l[side] = l[side].filter((q) => q !== p);
 
     const main = mainEl.getBoundingClientRect();
     const own = nodes[id]!.getBoundingClientRect();
@@ -229,7 +258,7 @@
       setGridSize("x", to.side === "left" ? x : 100 - x);
     }
 
-    if (hiddenSide) l[l[hiddenSide].length < COLUMN_SLOTS ? hiddenSide : otherSide(hiddenSide)].push("docs");
+    for (const [p, side] of hidden) l[l[side].length < COLUMN_SLOTS ? side : otherSide(side)].push(p);
     setLayout(l);
   }
 
@@ -257,23 +286,23 @@
     return all.filter((z) => z.edge !== current);
   }
 
-  /** Three or four panels: the places of the grid as they are drawn -- each panel's
-   *  own space in a column of two, the two halves of a column of one -- but the one
-   *  `id` is in. */
+  /** Three panels or more: the places of the grid as they are drawn -- each
+   *  panel's own space in a column of two or three, the two halves of a column of
+   *  one -- but the one `id` is in. */
   function cellZones(id: PanelId): Zone[] {
     const zones: Zone[] = [];
     for (const c of columns) {
       const col = columnEls[c.side]?.getBoundingClientRect();
       if (!col) continue;
       const rows: DOMRect[] =
-        c.panels.length === 2
+        c.panels.length >= 2
           ? c.panels.map((p) => nodes[p]!.getBoundingClientRect())
           : [new DOMRect(col.x, col.y, col.width, col.height / 2), new DOMRect(col.x, col.y + col.height / 2, col.width, col.height / 2)];
       rows.forEach((rect, row) => {
-        if (c.panels.length === 2 && c.panels[row] === id) return;
+        if (c.panels.length >= 2 && c.panels[row] === id) return;
         if (c.panels.length === 1 && c.panels[0] === id) return;
-        const label = `${row === 0 ? "Top" : "Bottom"} ${c.side}`;
-        zones.push({ label, place: { side: c.side, row: row as 0 | 1 }, rect });
+        const at = row === 0 ? "Top" : row === rows.length - 1 ? "Bottom" : "Middle";
+        zones.push({ label: `${at} ${c.side}`, place: { side: c.side, row }, rect });
       });
     }
     return zones;
@@ -424,6 +453,8 @@
   });
 
   onMount(async () => {
+    // the page's session says when its windows come and go
+    await host.listen<{ shown: boolean }>("session-windows", (e) => showWindows(e.payload.shown));
     if (settings.reopenFiles) {
       for (const id of editorIds) {
         const files = lastFiles[id];
@@ -486,20 +517,29 @@
             minSize={15}
           >
             <div class="h-full" bind:this={columnEls[col.side]}>
-              {#if col.panels.length === 2}
+              {#if col.panels.length > 1}
+                <!-- Two panels keep the size the grid remembers; three share the column. -->
                 <Resizable.PaneGroup
                   direction="vertical"
                   onLayoutChange={(sizes) => {
                     if (sizes.length === 2) setGridSize(col.side, sizes[0]);
                   }}
                 >
-                  <Resizable.Pane id={col.panels[0]} order={1} defaultSize={gridSizes[col.side]} minSize={10}>
-                    <div class="h-full" {@attach adopt(nodes[col.panels[0]])}></div>
-                  </Resizable.Pane>
-                  <Resizable.Handle />
-                  <Resizable.Pane id={col.panels[1]} order={2} defaultSize={100 - gridSizes[col.side]} minSize={10}>
-                    <div class="h-full" {@attach adopt(nodes[col.panels[1]])}></div>
-                  </Resizable.Pane>
+                  {#each col.panels as panel, row (panel)}
+                    {#if row > 0}<Resizable.Handle />{/if}
+                    <Resizable.Pane
+                      id={panel}
+                      order={row + 1}
+                      defaultSize={col.panels.length === 2
+                        ? row === 0
+                          ? gridSizes[col.side]
+                          : 100 - gridSizes[col.side]
+                        : 100 / col.panels.length}
+                      minSize={10}
+                    >
+                      <div class="h-full" {@attach adopt(nodes[panel])}></div>
+                    </Resizable.Pane>
+                  {/each}
                 </Resizable.PaneGroup>
               {:else}
                 <div class="h-full" {@attach adopt(nodes[col.panels[0]])}></div>
@@ -581,6 +621,11 @@
   <div class="h-full" bind:this={nodes.post}>
     <Post bind:this={post} onDragStart={(e) => startDrag("post", e)} />
   </div>
+  {#if host.windows}
+    <div class="h-full" bind:this={nodes.windows}>
+      <Windows onDragStart={(e) => startDrag("windows", e)} />
+    </div>
+  {/if}
 </div>
 
 <EnvironmentsDialog bind:this={environments} />
