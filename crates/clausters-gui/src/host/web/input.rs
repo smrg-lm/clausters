@@ -417,15 +417,27 @@ impl WebApp {
     /// [`WebHosts`] finds an event's owner without a second index to keep in
     /// step with every attach and detach.
     pub(super) fn owns(&self, id: WindowId) -> bool {
-        self.by_winit.contains_key(&id)
+        self.by_winit.contains_key(&id) || self.is_dock_window(id)
     }
 
     /// Every per-canvas event routes by winit's window id: a document's
     /// canvases each get their own pointer, modifiers and repaints.
     pub(super) fn on_window_event(&mut self, id: WindowId, event: WindowEvent) {
+        // the dock's canvas holds panes, each a canvas slot with no
+        // canvas of its own
+        if self.is_dock_window(id) {
+            self.dock_event(event);
+            return;
+        }
         let Some(def) = self.by_winit.get(&id).copied() else {
             return;
         };
+        self.on_def_event(def, event);
+    }
+
+    /// **What the page said of canvas `def`**: its own canvas' event, or one
+    /// the dock handed the pane it reached, in the pane's pixels.
+    pub(super) fn on_def_event(&mut self, def: i32, event: WindowEvent) {
         match event {
             WindowEvent::Resized(size) => {
                 let Some(slot) = self.canvases.get_mut(&def) else {

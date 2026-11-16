@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>clausters: the dock in a page</title>
+  </head>
+  <body>
+    <div id="dock" style="width: 800px; height: 300px"></div>
+    <pre id="log"></pre>
+    <!--
+      The dock in a page (clients/web/test.sh, headless). A host booted
+      with a dock draws every window as a pane of one canvas, side by
+      side: two windows opened after it and one the host had before leave no
+      canvas of their own on the page, each pane's capture is the window's own
+      picture at the pane's size, and a press on the dock's canvas
+      reaches the pane under it -- the slider of the first pane moves, the
+      second's does not, and a press over the second moves only the second.
+      Verdict beaconed as a fetch, read from the access log.
+    -->
+    <script type="module">
+      import { GuiHost, gui } from "../dist/index.js";
+      import { loadCore } from "../dist/page.js";
+
+      const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`).catch(() => {});
+      };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const until = async (test, what, ms = 20_000) => {
+        const end = performance.now() + ms;
+        for (;;) {
+          if (await test()) return;
+          if (performance.now() > end) throw new Error(`timeout: ${what}`);
+          await sleep(20);
+        }
+      };
+
+      // A press and a release at `(x, y)` of `canvas`, in its device pixels.
+      const click = (canvas, x, y) => {
+        const box = canvas.getBoundingClientRect();
+        const scale = canvas.width / box.width;
+        const at = { clientX: box.left + x / scale, clientY: box.top + y / scale, bubbles: true,
+          composed: true, pointerId: 1, pointerType: "mouse", isPrimary: true };
+        canvas.dispatchEvent(new PointerEvent("pointermove", { ...at, buttons: 0 }));
+        canvas.dispatchEvent(new PointerEvent("pointerdown", { ...at, button: 0, buttons: 1 }));
+        canvas.dispatchEvent(new PointerEvent("pointerup", { ...at, button: 0, buttons: 0 }));
+      };
+
+      try {
+        await loadCore();
+        const before = document.querySelectorAll("canvas").length;
+        const element = document.getElementById("dock");
+        const host = await new GuiHost().boot({ dock: element });
+        const slider = (title) => gui.view({ title, w: 300, h: 200 }, gui.slider({ name: "s", value: 0.5 }));
+        const a = host.open(slider("a"));
+        const b = host.open(slider("b"));
+        const canvas = element.querySelector("canvas");
+        if (canvas === null) throw new Error("the dock has no canvas in its element");
+        await sleep(1500);
+        const extra = document.querySelectorAll("canvas").length - before - 1;
+        log(`canvases: the dock's, and ${extra} more`);
+
+        // each pane's picture is the window's own, at the pane's size: half
+        // the dock, less the divider
+        const pictures = [];
+        for (const [name, win] of [["a", a], ["b", b]]) {
+          const path = `dock_${name}.png`;
+          await host.capture(win, path);
+          pictures.push(path);
+        }
+        log(`captured: ${pictures.join(", ")}`);
+
+        // a press on the dock's canvas reaches the pane under it, in
+        // its own pixels: near the right end of the first pane's slider
+        const values = async () => [await a.widget("s").query(), await b.widget("s").query()];
+        const read = (info) => Number(info.props.value);
+        const width = canvas.width;
+        const y = 16 * (canvas.width / canvas.getBoundingClientRect().width);
+        click(canvas, 0.45 * width, y);
+        await sleep(400);
+        let [va, vb] = (await values()).map(read);
+        log(`after a press over the first pane: ${va.toFixed(3)}, ${vb.toFixed(3)}`);
+        if (!(va > 0.8) || Math.abs(vb - 0.5) > 1e-6) {
+          throw new Error(`the press did not reach the first pane alone: ${va}, ${vb}`);
+        }
+        click(canvas, 0.55 * width, y);
+        await sleep(400);
+        [va, vb] = (await values()).map(read);
+        log(`after a press over the second pane: ${va.toFixed(3)}, ${vb.toFixed(3)}`);
+        if (!(vb < 0.2)) throw new Error(`the press did not reach the second pane: ${vb}`);
+        if (extra !== 0) throw new Error(`the panes left ${extra} canvases of their own on the page`);
+        verdict("PASS dock");
+      } catch (error) {
+        verdict(`FAIL dock: ${error?.message ?? error} -- ${document.getElementById("log").textContent.replaceAll("\n", " / ")}`);
+      }
+    </script>
+  </body>
+</html>

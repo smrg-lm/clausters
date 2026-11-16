@@ -494,8 +494,17 @@ export class GuiHost {
      * {@link loadCore} first; one that opened a `Server` or went through
      * `Session` already has it. The reference client has no such line -- its
      * core is in the process.
+     *
+     * **`dock`** opens every window as a pane of one surface, side by
+     * side, instead of a canvas each -- the reference client's
+     * `boot(dock=True)`. A native host opens a window of its own for
+     * it; a page's draws into the canvas of the element named here, which
+     * it follows as {@link ClaustersGui.fit} makes a window's canvas follow.
      */
-    async boot({ adoptAmbient = true }: { adoptAmbient?: boolean } = {}): Promise<this> {
+    async boot({
+        adoptAmbient = true,
+        dock,
+    }: { adoptAmbient?: boolean; dock?: Element } = {}): Promise<this> {
         if (this.carrierKind === "page" && !this.conn && !this.instance && workerGuiLink() !== null) {
             throw new Error(
                 "this worker's GUI host is the one of the page that started it, which is " +
@@ -519,6 +528,7 @@ export class GuiHost {
             );
         }
         this.page = page;
+        if (dock !== undefined) page.dock(dock);
         if (adoptAmbient) this.adoptAmbient();
         return this;
     }
@@ -625,7 +635,8 @@ export class GuiHost {
             );
         }
         let canvas: HTMLCanvasElement | undefined;
-        if (this.page !== null) {
+        // a pane of the dock draws in the dock's canvas
+        if (this.page !== null && !this.page.docked) {
             // A page has no window manager, so *a view with no parent is a
             // window* finishes here: with an element, the view takes that
             // element's box; with none, it gets a canvas of its own. Either
@@ -1132,7 +1143,7 @@ export class GuiHost {
         // **The box it takes**: the host opened it on a canvas of its own,
         // which the element's takes over, the way a view opened into an
         // element draws there.
-        if (element != null && this.page !== null) {
+        if (element != null && this.page !== null && !this.page.docked) {
             const canvas = canvasIn(element);
             if (!(element instanceof HTMLCanvasElement)) this.made.set(window, canvas);
             this.page.attach(window, canvas);

@@ -119,6 +119,8 @@ pub mod timeline;
 // The passes over that tree, and the read-only facts a frame hands them.
 pub mod frame;
 pub mod interact;
+// Several windows in one surface: the panes of a dock.
+pub mod dock;
 pub mod status;
 pub mod world;
 // What opens over a window's tree, and the tree of entries a menu is.
@@ -1062,6 +1064,12 @@ pub struct Host {
     /// comes up, and a window already open keeps the pass it was built with,
     /// since every pipeline in a pass agrees on the count.
     pub msaa: u32,
+    /// **Whether the windows open as panes of one dock** (`--dock`):
+    /// one window of the platform, or one canvas, holding every window the
+    /// host opens side by side ([`dock`]), instead of a window of the
+    /// platform each. One setting per host that the shell consumes, as
+    /// [`msaa`](Self::msaa) is.
+    pub dock: bool,
     /// **How much recorded audio a picture waits for** before it re-reads
     /// its summary, in seconds (`--follow-block`, default `0` -- every frame).
     ///
@@ -1204,6 +1212,7 @@ impl Host {
             keys: keymap::Keymap::default(),
             clipboard: clipboard::Clip::default(),
             msaa: DEFAULT_MSAA,
+            dock: false,
             follow_block: 0.0,
             resolved_metrics: HashMap::new(),
             focused: None,

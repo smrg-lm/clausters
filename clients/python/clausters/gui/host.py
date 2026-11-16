@@ -216,7 +216,8 @@ class GuiHost:
 
     def boot(self, server: "str | None" = None, *, shm: "str | None" = None,
              verbose: int = 0, data_dir=None, id_share=None, extra_args=(),
-             ready_timeout: float = 10.0, adopt_ambient: bool = True) -> "GuiHost":
+             ready_timeout: float = 10.0, adopt_ambient: bool = True,
+             dock: bool = False) -> "GuiHost":
         """Start the ``clausters-gui`` process **this handle is for**, connect
         to it, and return ``self``.
 
@@ -250,11 +251,18 @@ class GuiHost:
                 booting a second host. First-wins, exactly as
                 `clausters.defs.Server.boot`'s ``adopt_default``: an ambient host
                 already registered is not displaced.
+            dock: open every window as a pane of **one** window of the
+                host's, side by side, instead of a window each. A pane keeps
+                its def, its events and its picture; only where it is drawn
+                changes. A page's host is given its one canvas with the web
+                client's ``gui.dock(element)``.
 
         Returns: ``self``, so ``GuiHost().boot()`` reads as one expression.
         """
         from ..launch import GuiProcess
 
+        if dock:
+            extra_args = (*extra_args, "--dock")
         self._process = GuiProcess(
             server=server, shm=shm, port=self.target[1], verbose=verbose,
             data_dir=data_dir, id_share=id_share, extra_args=extra_args,

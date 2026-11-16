@@ -141,6 +141,20 @@ against.
 what the widget is made of — a container's children, a label's text, a choice's
 options — || A container's children follow its options, and a label's text and a choice's options are its first argument,}} so an ordinary tree mentions no ids at all.
 
+### Every window in one: a dock
+
+A host gives each window {{alt a window of the platform's || a canvas}} of its own. Booted with a **dock** it draws them all in one, and every window is a **pane** of it, side by side: the panes share the width, and a pane opened later makes room for itself.
+
+```python
+gui = GuiHost().boot(dock=True)
+```
+
+```ts
+const host = await new GuiHost().boot({ dock: element });
+```
+
+{{alt The dock is a window the host opens for it || The dock is the canvas inside `element`, which follows the element's box and the page's `devicePixelRatio` as a view opened into an element does}}. A pane is a window in everything but its frame: it keeps its def, its handle, its events and its picture, a press or a key reaches the pane it lands in, and closing a pane gives its room to the others. So a script written for separate windows runs unchanged in a dock<!-- web -->, and a view opened with an element draws in its pane rather than in that element<!-- /web -->. `panels/dock` shows it.
+
 ### A control widget is built from the control it drives
 
 A `knob`, `slider`, `number`, `toggle` or `button` takes a **def's control**

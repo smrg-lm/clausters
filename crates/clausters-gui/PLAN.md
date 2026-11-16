@@ -1517,7 +1517,13 @@ engraving-refinements milestone"), the notation pages of the client's book, and
 the score examples in their `notation/` family — this feature's manual test
 surface — which grow the case the milestone adds, in both packages.
 
-## WS track — the workspace: the host is the application's one window
+## WS track — the dock: the host is the application's one window
+
+*The track was written as "the workspace" and renamed the day its first
+milestone landed (2026-11-16): "workspace" already names the 2D `scroll`
+container in the protocol and the books, and the Cargo workspace beside it.
+The label stays `WS`; the structure is the **dock** and a window in it a
+**pane**.*
 
 **Experimental, and on its own branch (`host-workspace`) until its checkpoints
 say otherwise.** Opened 2026-11-16 at the user's request, with their doubts
@@ -1551,7 +1557,7 @@ shape behind them:
 What the user asked for is one window holding everything -- the code, the
 post window, the documentation, every GuiDef and every application -- arranged
 in panels, tabs and pages, the same natively and in a page. The windows of an
-application become panels of one workspace, and a page per application (a
+application become panels of one dock, and a page per application (a
 global pager) switches between the arrangements each kind of work wants.
 
 ### The constraints found before choosing (2026-11-16)
@@ -1598,7 +1604,7 @@ why the track takes the shape it does. Each one closed a cheaper route.
 
 ### What the track decides, and what it leaves where it is
 
-- **The host is the shell.** The workspace -- panels, splits, tabs, pages --
+- **The host is the shell.** The dock -- panels, splits, tabs, pages --
   is the host's, written once in Rust and drawn the same by both fronts. The
   editor's panels (code, post, documentation) become host elements.
 - **The language sessions stay outside the host.** The Python session stays a
@@ -1612,12 +1618,12 @@ why the track takes the shape it does. Each one closed a cheaper route.
   the files (`clausters-editor/src-tauri/src/`). The webview, its framework and
   its toolkit leave the native path. The shm segment and every native data path
   stay exactly as they are.
-- **In a page, the host draws the whole workspace into one canvas.** The page
+- **In a page, the host draws the whole dock into one canvas.** The page
   keeps what only a page has (the workers, the storage, the first-gesture audio
   start) and gives the host the canvas.
 - **The clients do not change their surface for this.** A GuiDef is still sent
   by either client and still opens; what changes is that it opens as a panel of
-  the workspace where there is one. If a `code` element (or a `post` or a
+  the dock where there is one. If a `code` element (or a `post` or a
   documentation element) becomes a widget a GuiDef may name, it is a widget like
   any other: its builders in both clients, its reference in
   `docs/gui-protocol.md`, in the same commit.
@@ -1697,7 +1703,7 @@ Files, tabs and layout:
   changes (tab and window), recent files, reopening the last session's files,
   files named on the command line.
 - must -- two editors side by side, moving a tab across, panels dragged to
-  another place with the places shown while dragging (the workspace does this
+  another place with the places shown while dragging (the dock does this
   for every panel).
 - must -- in a page: the page's storage as the file system, upload and
   download in the file dialog.
@@ -1742,9 +1748,9 @@ headless host and by the page's acceptance run:
 Each ends with a decision the user takes on what was measured, and each leaves
 something reusable if the track stops there.
 
-- **Checkpoint 1 -- after WS1-WS4.** The workspace holds GuiDefs and
+- **Checkpoint 1 -- after WS1-WS4.** The dock holds GuiDefs and
   applications, natively and in a page, beside the current editor. Decided
-  here: whether the workspace merges to `main` on its own (it fixes the two
+  here: whether the dock merges to `main` on its own (it fixes the two
   defects above whatever happens to the rest).
 - **Checkpoint 2 -- after WS5-WS10.** The post window and the code element
   reach every "must" of editing, evaluation and language help. Decided here, by
@@ -1752,25 +1758,29 @@ something reusable if the track stops there.
   quality and editing feel are acceptable.
 - **Checkpoint 3 -- after WS11.** The documentation panel. Decided here, with
   the bar above checked item by item: whether the current application is
-  retired (WS12-WS14) or the track stops with the workspace and the elements as
+  retired (WS12-WS14) or the track stops with the dock and the elements as
   parts the current application does not use.
 
 ### The milestones
 
-- ⬜ **WS1 — The embedded front: several trees, one surface.** Today a front
-  owns one surface per def: one `Gpu`, one scale, and input routed by the OS
-  window or canvas it arrived on (`host/gui/windows.rs`,
-  `host/web/canvas.rs`). The workspace needs the host to draw a set of def
-  trees into one surface, each in a rectangle, with one device, one atlas and
-  one scale for the surface, and pointer and keyboard routed by rectangle and
-  by the workspace's focus. Written as a layer under both fronts, not a third
-  front beside them: a front owns surfaces; the workspace decides what each
-  surface shows. A def keeps its id, its instance, its history and every
-  reply; what it loses is only the OS window of its own. Acceptance: two
-  GuiDefs and an application drawn in one native window and in one canvas,
-  each def's capture identical to the same def drawn alone at the same size;
-  a press, a drag, a key and a wheel reach the def under them and no other.
-- ⬜ **WS2 — Panels, splits and tabs.** The workspace's layout is a tree of
+- ✅ **WS1 — The embedded front: several trees, one surface.** A pane draws
+  its frame through the passes a window's frame takes, into a texture of its
+  own on the dock's device (`Gpu::pane`), and the dock copies every pane into
+  its surface with the copy the kept picture already used (`frame::Copier`,
+  taken out of `Underlay`). The arrangement and the hand are one shared module
+  (`host::dock`: equal columns, the pane under the pointer, the pane a press
+  holds until its release, the pane the keyboard goes to), and each front only
+  routes its platform's events to the pane they reach (`gui::dock`,
+  `web::dock`). Asked for with `--dock` natively and `GuiBridge.dock(canvas)`
+  in a page; the clients' `GuiHost.boot(dock=True)` and `boot({ dock })`.
+  Checked: a test composes two windows as panes and reads each region back as
+  the window's own capture; a headless host with `--dock` delivers a press to
+  each of two panes; `tests/dock.html` opens two panes in one canvas, leaves
+  no canvas of their own on the page and reaches each pane with a press.
+  `panels/dock` is the example in both clients. Left for `WS3`: the editor
+  page still places windows by `link({ place })`, and a capture of the dock as
+  a whole has no door on the wire.
+- ⬜ **WS2 — Panels, splits and tabs.** The dock's layout is a tree of
   splits (horizontal, vertical, with a ratio) whose leaves are tab groups of
   panels; a panel is a def or one of the editor's elements. The host draws the
   tab strips and the dividers (G40's split panes are the start, extended, not
@@ -1780,18 +1790,18 @@ something reusable if the track stops there.
   a verb set the clients' handlers and the menus call, as every application verb is.
   Acceptance: every gesture driven by script with a capture of each step; the
   layout round-trips through save and load; the behavior rules of
-  `docs/app-behavior.md` hold with two applications open in one workspace.
-- ⬜ **WS3 — Every window the host opens enters the workspace.** `/gui_def`,
+  `docs/app-behavior.md` hold with two applications open in one dock.
+- ⬜ **WS3 — Every window the host opens enters the dock.** `/gui_def`,
   `/gui_app_open` and a window a gesture opens (a box's roll) all become panels
-  of the workspace where there is one, and an OS window of their own (or a
+  of the dock where there is one, and an OS window of their own (or a
   canvas) where there is none, so a host run by a script alone behaves as it
   does today. A panel can be taken out into a window of its own and put back.
-  In a page, `link({ place })` places the one canvas the workspace draws in,
+  In a page, `link({ place })` places the one canvas the dock draws in,
   and the editor page drops `.session-windows`. This closes the two defects
   above; the page's acceptance run checks that an application's window is a
   panel with a nonzero size.
 - ⬜ **WS4 — Pages: one arrangement per kind of work.** A page is a named
-  layout of the workspace, switched by a strip of page tabs; an application may
+  layout of the dock, switched by a strip of page tabs; an application may
   contribute a page (the multitrack's, the audio editor's), and a page
   remembers its own layout. Switching a page moves panels, never frees them:
   the defs stay alive and keep playing. Acceptance: a session with two
@@ -1848,7 +1858,7 @@ something reusable if the track stops there.
   The books it reads are the ones the current application finds
   (`books.rs`, `pkgdocs.rs`); the `pydoc` fallback stays the session's; the
   editor's `docIndex.test.ts` is ported to the Rust index.
-- ⬜ **WS12 — The native application.** One binary: the host, the workspace
+- ⬜ **WS12 — The native application.** One binary: the host, the dock
   and the editor's application, with the current application's non-drawing
   Rust moved in. Menus as the host's menu bar, the dialogs (preferences,
   environments, confirmations) as host windows, the file dialogs as the
@@ -1856,7 +1866,7 @@ something reusable if the track stops there.
   line, the window state, following the desktop's light or dark theme. The
   Python session, its environments and its interrupt hooks unchanged.
 - ⬜ **WS13 — The page application.** The editor page becomes the host's
-  workspace full-window, with the JavaScript session and the TypeScript
+  dock full-window, with the JavaScript session and the TypeScript
   service feeding it, and the file dialog over the page's storage as a host
   window. The page's Svelte interface is retired.
 - ⬜ **WS14 — Retiring the webview application.** Tauri, Svelte, CodeMirror and
@@ -1874,7 +1884,7 @@ something reusable if the track stops there.
   the new binary has neither. Like the host, it is built and tested by name
   (`cargo build -p clausters-editor`), never through `--workspace` with the
   server's feature rows, and the server stays the default member. The
-  workspace and the elements stay the host's (`crates/clausters-gui`); the
+  dock and the elements stay the host's (`crates/clausters-gui`); the
   crate holds the editor's application -- its files, its session, its
   preferences, its menus -- and the binary.
   - **While the two coexist** (WS1-WS13) the webview application stays where it
@@ -1895,7 +1905,7 @@ something reusable if the track stops there.
   both clients' builders and the protocol reference come with them.
 - **Nesting.** An application's window as a panel is the first step of "An
   application inside another" (`crates/clausters-document/PLAN.md`, Future
-  directions); the workspace must not decide that question by accident -- a
+  directions); the dock must not decide that question by accident -- a
   panel holds a whole window, it does not nest one application's widgets in
   another's tree.
 

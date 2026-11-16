@@ -143,7 +143,7 @@ clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
               [--udp [addr:]port] [--tcp [[addr:]port] | --no-tcp]
               [--ws [[addr:]port]] [--max-frame <bytes>]
               [--data-dir <dir>] [--standalone [name]] [--config <path>]
-              [--theme <path>] [--font <path>] [--msaa <n>]
+              [--theme <path>] [--font <path>] [--msaa <n>] [--dock]
               [--clock <device|transport>] [--follow-block <seconds>]
               [--id-share <i/of>]
 ```
@@ -181,5 +181,6 @@ is assumed, and `--data-dir` names the *host's* GuiDef store.
 | `--font` | path | the host's own | Draw text with this typeface (TrueType/OpenType) instead of the one the host carries (a subset of DejaVu Sans, compiled in). A file it cannot read is a warning, and the host draws with its own. A host built without the rasterizer (`font-atlas`, on by default) warns and draws with its bitmap face. |
 | `--follow-block` | seconds | `0` | How much recorded audio a picture waits for before it re-reads its summary. A take being recorded grows with nothing announcing it, so the host follows the buffer's **write frontier** (see [`ipc.md`](ipc.md)) and re-summarizes what appeared. The default follows **every frame**, which is what the picture should do: the work is the block's and not the take's — summarizing a span touches the buckets over it and their parents — so a step costs about five microseconds a channel whatever the take's length. A larger block is cheaper and choppier, and neither the sound nor a playhead over it is affected. |
 | `--msaa` | count | `4` | Antialias every window with n-sample multisampling; `4` is the usual smoothing and `1` turns it off. It is the render pass's attachment that is multisampled, so it costs one attachment per window and nothing per widget; a count this GPU does not offer for the surface format falls back to `1` with a warning. |
+| `--dock` | — | — | Open every window as a **pane** of one window, side by side, instead of a window each. The panes share the window's width, and a pane opened later makes room for itself; each keeps its def, its replies and its picture, and a press or a key reaches the pane it lands in. A page's host is given its one canvas through `GuiBridge.dock(canvas)`. |
 | `--headless` | — | — | Show no window. Each one is drawn offscreen, on any adapter a software one included, so a script can capture it (`/gui_capture`), play a hand to it (`/gui_pointer`) and type into it (`/gui_keypress`, `/gui_text`) with nothing on the screen; with no adapter at all the host runs the protocol and its applications and draws nothing, for tests and machines with no GPU. The default opens windows. |
 | `-v`, `-vv`, `-vvv` | — | warn | Log verbosity, as the server's. |

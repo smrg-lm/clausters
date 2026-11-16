@@ -91,6 +91,27 @@ impl GuiBridge {
         });
     }
 
+    /// **Gives the host one canvas for every window**: from now on each
+    /// `window`-rooted def is a pane of a dock drawn into `canvas`, side
+    /// by side with the others, instead of a canvas of its own -- and so is
+    /// every window already open. The page sizes the canvas with
+    /// [`resize_dock`](Self::resize_dock), as it sizes a def's.
+    pub fn dock(&self, canvas: web_sys::HtmlCanvasElement) {
+        self.send(WebEvent::Dock(canvas));
+    }
+
+    /// Sizes the dock's canvas in **device pixels**, with the **scale**
+    /// they were measured at -- what [`resize`](Self::resize) is to a def's
+    /// canvas.
+    #[wasm_bindgen(js_name = resizeDock)]
+    pub fn resize_dock(&self, width: u32, height: u32, scale: f32) {
+        self.send(WebEvent::DockResize {
+            width,
+            height,
+            scale,
+        });
+    }
+
     /// Tells the host whether a canvas is in the viewport (a component's
     /// `IntersectionObserver`).
     ///

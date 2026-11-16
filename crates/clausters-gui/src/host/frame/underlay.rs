@@ -127,56 +127,19 @@ fn union(a: &[f32; 4], b: &[f32; 4]) -> [f32; 4] {
     ]
 }
 
-/// The texture a window's picture is kept in, the atlas its live boxes are
-/// drawn in, and what copies either into a pass.
-pub(crate) struct Underlay {
-    /// The copy, into the window's multisampled attachment (the atlas).
-    multi: wgpu::RenderPipeline,
-    /// The copy, into a single-sampled one (the surface).
-    single: wgpu::RenderPipeline,
-    layout: wgpu::BindGroupLayout,
-    target: Target,
-    held: Option<Held>,
-    atlas: Option<Atlas>,
-    /// The offsets each copy reads at, one buffer a copy, and the binding
-    /// of each with the texture it copies, as of the textures' `epoch`.
-    shifts: Vec<wgpu::Buffer>,
-    bound: Vec<Option<(u64, wgpu::BindGroup)>>,
-    /// Counts the textures made: a binding of an older one is made again.
-    epoch: u64,
-    /// What draws the live layers into each box.
-    painters: Vec<Painter>,
-    /// The boxes of the frame being encoded, each with its place in the
-    /// atlas and the bindings that copy into it and out of it.
-    placed: Vec<Placed>,
-    /// The texture holds the picture of the batches as they stand.
-    pub(super) fresh: bool,
+/// **What copies a texture into a pass**, each pixel the texel its shift
+/// away (`SHADER`): the binding layout and the pipeline, into a
+/// multisampled attachment and into a single-sampled one. A window's kept
+/// picture is copied by it, and a dock's panes into its surface.
+pub(crate) struct Copier {
+    /// The copy, into an attachment of the target's samples.
+    pub(crate) multi: wgpu::RenderPipeline,
+    /// The copy, into a single-sampled one (a surface, a pane's texture).
+    pub(crate) single: wgpu::RenderPipeline,
+    pub(crate) layout: wgpu::BindGroupLayout,
 }
 
-/// The picture's texture at one size; the binding in slot 0 copies it whole.
-struct Held {
-    size: (u32, u32),
-    view: wgpu::TextureView,
-}
-
-/// The atlas the boxes are drawn into, multisampled and resolved.
-struct Atlas {
-    size: (u32, u32),
-    samples: wgpu::TextureView,
-    resolved: wgpu::TextureView,
-}
-
-/// One box of a frame: where it is in the window and in the atlas.
-struct Placed {
-    window: PxBox,
-    at: (u32, u32),
-    /// The binding that copies the picture under the box into the atlas,
-    /// and the one that copies the atlas' box into the window.
-    under: usize,
-    out: usize,
-}
-
-impl Underlay {
+impl Copier {
     pub(crate) fn new(device: &wgpu::Device, target: Target) -> Self {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("kept picture bgl"),
@@ -247,6 +210,84 @@ impl Underlay {
             multi: pipeline(target.samples.max(1)),
             single: pipeline(1),
             layout,
+        }
+    }
+
+    /// **A binding of `view`, read `shift` texels away** through `shift`, a
+    /// uniform buffer of 16 bytes the caller writes the offset into.
+    pub(crate) fn bind(
+        &self,
+        device: &wgpu::Device,
+        view: &wgpu::TextureView,
+        shift: &wgpu::Buffer,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("copy bg"),
+            layout: &self.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: shift.as_entire_binding(),
+                },
+            ],
+        })
+    }
+}
+
+/// The texture a window's picture is kept in, the atlas its live boxes are
+/// drawn in, and what copies either into a pass.
+pub(crate) struct Underlay {
+    /// The copy, into the atlas and into the surface.
+    copier: Copier,
+    target: Target,
+    held: Option<Held>,
+    atlas: Option<Atlas>,
+    /// The offsets each copy reads at, one buffer a copy, and the binding
+    /// of each with the texture it copies, as of the textures' `epoch`.
+    shifts: Vec<wgpu::Buffer>,
+    bound: Vec<Option<(u64, wgpu::BindGroup)>>,
+    /// Counts the textures made: a binding of an older one is made again.
+    epoch: u64,
+    /// What draws the live layers into each box.
+    painters: Vec<Painter>,
+    /// The boxes of the frame being encoded, each with its place in the
+    /// atlas and the bindings that copy into it and out of it.
+    placed: Vec<Placed>,
+    /// The texture holds the picture of the batches as they stand.
+    pub(super) fresh: bool,
+}
+
+/// The picture's texture at one size; the binding in slot 0 copies it whole.
+struct Held {
+    size: (u32, u32),
+    view: wgpu::TextureView,
+}
+
+/// The atlas the boxes are drawn into, multisampled and resolved.
+struct Atlas {
+    size: (u32, u32),
+    samples: wgpu::TextureView,
+    resolved: wgpu::TextureView,
+}
+
+/// One box of a frame: where it is in the window and in the atlas.
+struct Placed {
+    window: PxBox,
+    at: (u32, u32),
+    /// The binding that copies the picture under the box into the atlas,
+    /// and the one that copies the atlas' box into the window.
+    under: usize,
+    out: usize,
+}
+
+impl Underlay {
+    pub(crate) fn new(device: &wgpu::Device, target: Target) -> Self {
+        Self {
+            copier: Copier::new(device, target),
             target,
             held: None,
             atlas: None,
@@ -379,7 +420,7 @@ impl Underlay {
             let [_, _, w, h] = p.window;
             pass.set_viewport(p.at.0 as f32, p.at.1 as f32, w as f32, h as f32, 0.0, 1.0);
             pass.set_scissor_rect(p.at.0, p.at.1, w, h);
-            pass.set_pipeline(&self.multi);
+            pass.set_pipeline(&self.copier.multi);
             pass.set_bind_group(0, self.bound(p.under), &[]);
             pass.draw(0..3, 0..1);
             painter.draw(pass);
@@ -395,7 +436,7 @@ impl Underlay {
         if self.held.is_none() {
             return;
         }
-        pass.set_pipeline(&self.single);
+        pass.set_pipeline(&self.copier.single);
         pass.set_bind_group(0, self.bound(0), &[]);
         pass.draw(0..3, 0..1);
         for p in &self.placed {
@@ -478,20 +519,7 @@ impl Underlay {
         {
             return;
         }
-        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("kept picture bg"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.shifts[slot].as_entire_binding(),
-                },
-            ],
-        });
+        let group = self.copier.bind(device, view, &self.shifts[slot]);
         self.bound[slot] = Some((self.epoch, group));
     }
 }

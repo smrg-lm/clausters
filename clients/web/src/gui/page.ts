@@ -125,6 +125,26 @@ export interface ClaustersGui {
         element: Element,
         canvas?: HTMLCanvasElement,
     ): () => void;
+    /**
+     * **Gives the host one canvas for every window**: from now on each window
+     * is a pane of a dock drawn into `element`'s canvas, side by side
+     * with the others, instead of a canvas of its own -- and so is every
+     * window already open. The canvas follows the element's box and the
+     * display's scale, as {@link ClaustersGui.fit} makes a window's follow.
+     *
+     * A pane keeps its def, its events and its picture; only where it is
+     * drawn changes. A native host is asked for the same with
+     * `GuiHost.boot(dock=True)` in the Python client.
+     *
+     * Returns the disposer that stops following the element's box.
+     */
+    dock(element: Element): () => void;
+    /**
+     * Whether {@link ClaustersGui.dock} gave this host its canvas: a
+     * window opened from then on is a pane of it, and needs no canvas of its
+     * own.
+     */
+    readonly docked: boolean;
     addEvent(listener: EventListener): void;
     removeEvent(listener: EventListener): void;
     /**
@@ -401,6 +421,8 @@ async function boot(
     // over one host each keeping their own answer is how a def gets attached
     // twice, the second canvas taking the window off the first.
     const canvases = new Set<number>();
+    /** Whether the windows are panes of one dock canvas. */
+    let docked = false;
     /** The clients in other realms, each told when this host closes. */
     const links = new Set<GuiLink>();
 
@@ -534,6 +556,28 @@ async function boot(
             return () => {
                 observer.disconnect();
                 view.disconnect();
+                unwatch();
+            };
+        },
+        get docked() {
+            return docked;
+        },
+        dock: (element) => {
+            const surface = canvasIn(element);
+            docked = true;
+            bridge.dock(surface);
+            const apply = () => {
+                const { width, height, scale } = canvasBox(element);
+                surface.width = width;
+                surface.height = height;
+                bridge.resizeDock(width, height, scale);
+            };
+            apply();
+            const observer = new ResizeObserver(apply);
+            observer.observe(element);
+            const unwatch = onScaleChange(apply);
+            return () => {
+                observer.disconnect();
                 unwatch();
             };
         },

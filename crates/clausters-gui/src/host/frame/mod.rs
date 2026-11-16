@@ -31,6 +31,7 @@ mod items;
 mod owed;
 mod slots;
 mod underlay;
+pub(crate) use underlay::Copier;
 
 use crate::host::diag;
 use clausters_core::spectra;
@@ -735,6 +736,25 @@ pub(crate) fn render(
         Drawn::Whole
     };
 
+    // **A pane draws into its own texture**, kept between frames, which the
+    // dock composes into the surface it presents: the same passes a
+    // window of its own draws, into a texture instead of a frame.
+    if let Some(target) = gpu.pane_view().cloned() {
+        let encoding = web_time::Instant::now();
+        let encoder = encode_pass(
+            gpu,
+            renderers,
+            batches,
+            spectrograms,
+            canvases,
+            theme,
+            &target,
+        );
+        gpu.queue.submit(std::iter::once(encoder.finish()));
+        batches.cost.encode = encoding.elapsed();
+        batches.asked.drawn();
+        return drawn;
+    }
     // Offscreen there is nothing to present: the batches hold the frame, and
     // a capture draws it into a texture of its own.
     let Some(surface) = gpu.surface() else {
@@ -1044,12 +1064,8 @@ pub(crate) fn capture(
     theme: &Theme,
 ) -> Result<Readback, String> {
     let theme = tree.theme.as_deref().unwrap_or(theme);
-    let format = gpu.config.format;
-    let bgra = match format {
-        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb => true,
-        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb => false,
-        other => return Err(format!("cannot read back a {other:?} window")),
-    };
+    let (width, height) = (gpu.config.width.max(1), gpu.config.height.max(1));
+    let texture = read_target(&gpu.device, gpu.config.format, (width, height))?;
     draw_whole(
         gpu,
         renderers,
@@ -1061,24 +1077,8 @@ pub(crate) fn capture(
         inputs,
         theme,
     );
-    let (width, height) = (gpu.config.width.max(1), gpu.config.height.max(1));
-    let size = wgpu::Extent3d {
-        width,
-        height,
-        depth_or_array_layers: 1,
-    };
-    let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("gui capture"),
-        size,
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
     let target = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder = encode_pass(
+    let encoder = encode_pass(
         gpu,
         renderers,
         batches,
@@ -1087,9 +1087,63 @@ pub(crate) fn capture(
         theme,
         &target,
     );
+    Ok(read_back(&gpu.device, &gpu.queue, encoder, &texture))
+}
+
+/// **A texture a picture is drawn into to be read back**: `size`, of a
+/// format whose pixels [`Readback::pixels`] knows how to read.
+pub(crate) fn read_target(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    (width, height): (u32, u32),
+) -> Result<wgpu::Texture, String> {
+    if !matches!(
+        format,
+        wgpu::TextureFormat::Bgra8Unorm
+            | wgpu::TextureFormat::Bgra8UnormSrgb
+            | wgpu::TextureFormat::Rgba8Unorm
+            | wgpu::TextureFormat::Rgba8UnormSrgb
+    ) {
+        return Err(format!("cannot read back a {format:?} window"));
+    }
+    Ok(device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("gui capture"),
+        size: wgpu::Extent3d {
+            width: width.max(1),
+            height: height.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    }))
+}
+
+/// **`texture`, read back**: the passes in `encoder` that drew it submitted,
+/// then the copy into a buffer the CPU maps -- a window's capture and a
+/// dock's alike. `texture` is one [`read_target`] made.
+pub(crate) fn read_back(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    mut encoder: wgpu::CommandEncoder,
+    texture: &wgpu::Texture,
+) -> Readback {
+    let (width, height) = (texture.width(), texture.height());
+    let bgra = matches!(
+        texture.format(),
+        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+    );
+    let size = wgpu::Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
     let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
     let stride = (width * 4).div_ceil(align) * align;
-    let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("gui capture readback"),
         size: u64::from(stride) * u64::from(height),
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
@@ -1097,7 +1151,7 @@ pub(crate) fn capture(
     });
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
-            texture: &texture,
+            texture,
             mip_level: 0,
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
@@ -1112,7 +1166,7 @@ pub(crate) fn capture(
         },
         size,
     );
-    gpu.queue.submit(std::iter::once(encoder.finish()));
+    queue.submit(std::iter::once(encoder.finish()));
     let mapped = Arc::new(std::sync::Mutex::new(None));
     let answer = Arc::clone(&mapped);
     buffer
@@ -1122,14 +1176,14 @@ pub(crate) fn capture(
                 *slot = Some(result.map_err(|e| e.to_string()));
             }
         });
-    Ok(Readback {
+    Readback {
         buffer,
         width,
         height,
         stride,
         bgra,
         mapped,
-    })
+    }
 }
 
 /// **A whole frame's picture**, into the batches: the tree laid out, every

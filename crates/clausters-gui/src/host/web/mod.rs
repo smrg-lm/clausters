@@ -62,6 +62,7 @@ mod canvas;
 mod capture;
 mod compose;
 mod disk;
+mod dock;
 #[cfg(feature = "apps")]
 #[cfg(all(feature = "apps", feature = "notation"))]
 pub(crate) mod engraver;
@@ -162,6 +163,14 @@ enum WebEvent {
     PageShown,
     /// The page's window gained the platform's focus, or lost it.
     Activated(bool),
+    /// The page hands the dock its canvas: every window becomes a pane
+    /// of it.
+    Dock(web_sys::HtmlCanvasElement),
+    /// The dock's canvas changed size, as [`WebEvent::Resize`] says of
+    /// a def's.
+    DockResize { width: u32, height: u32, scale: f32 },
+    /// The async device for the dock's canvas is ready.
+    DockGpuReady(Box<Gpu>),
     /// The async WebGPU device for one canvas is ready.
     /// Boxed: a `Gpu` is ~276 bytes and every other variant is a handful, so
     /// carrying it inline would size the whole event queue to it.
@@ -258,6 +267,12 @@ struct WebApp {
     /// so an `attach` that arrives first waits here.
     resumed: bool,
     pending_attach: Vec<(i32, Option<web_sys::HtmlCanvasElement>)>,
+    /// **The dock**, once the page handed it a canvas
+    /// ([`GuiBridge::dock`](bridge::GuiBridge)): every window a pane of
+    /// it.
+    dock: Option<dock::WebShell>,
+    /// The dock's canvas, handed over before the loop resumed.
+    pending_dock: Option<web_sys::HtmlCanvasElement>,
     /// Live control-bus values streamed from the audio server (`/bus_stream` ->
     /// `/bus_stream.reply`), the browser's [`BusSource`] for meters/scopes/canvases.
     buses: Arc<StreamedBuses>,
@@ -360,6 +375,8 @@ impl WebApp {
             capturing: Vec::new(),
             resumed: false,
             pending_attach: Vec::new(),
+            dock: None,
+            pending_dock: None,
             buses: Arc::new(StreamedBuses::default()),
             streamed: Vec::new(),
             taps: Arc::new(StreamedTaps::default()),
@@ -999,6 +1016,9 @@ impl WebApp {
     /// attaches that raced ahead of the loop.
     fn on_resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.resumed = true;
+        if let Some(canvas) = self.pending_dock.take() {
+            self.open_dock(event_loop, canvas);
+        }
         for (def_id, canvas) in std::mem::take(&mut self.pending_attach) {
             self.attach(event_loop, def_id, canvas);
         }
@@ -1008,6 +1028,13 @@ impl WebApp {
         match event {
             WebEvent::Attach { def_id, canvas } => self.attach(event_loop, def_id, canvas),
             WebEvent::Detach(def_id) => self.detach(def_id),
+            WebEvent::Dock(canvas) => self.open_dock(event_loop, canvas),
+            WebEvent::DockResize {
+                width,
+                height,
+                scale,
+            } => self.resize_dock(width, height, scale),
+            WebEvent::DockGpuReady(gpu) => self.dock_gpu_ready(*gpu),
             WebEvent::Resize {
                 def_id,
                 width,

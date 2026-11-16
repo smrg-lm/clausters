@@ -108,6 +108,13 @@ impl App {
             }
             None => {
                 let gpu = match lp {
+                    // a pane of the dock, on its device
+                    _ if self.host.dock => {
+                        let Some(gpu) = self.open_pane(lp, id) else {
+                            return;
+                        };
+                        gpu
+                    }
                     Loop::Shown(event_loop) => {
                         let Some(gpu) = self.show_window(event_loop, id, &title, (width, height))
                         else {
@@ -131,7 +138,12 @@ impl App {
                 // binds its textures against their layout.
                 let renderers = Renderers::new(&gpu.device, gpu.target());
                 let batches = Batches::new(&gpu.device, gpu.target());
-                if gpu.window().is_none() {
+                if gpu.pane_view().is_some() {
+                    info!(
+                        "gui_def {id}: opened window \"{title}\" as a pane at {}x{}",
+                        gpu.config.width, gpu.config.height
+                    );
+                } else if gpu.window().is_none() {
                     info!(
                         "gui_def {id}: opened window \"{title}\" offscreen at {}x{} on {}",
                         gpu.config.width, gpu.config.height, gpu.adapter
@@ -399,6 +411,7 @@ impl App {
         {
             self.by_winit.remove(&window.id());
         }
+        self.close_pane(id);
         // Drop any pending buffer wants this window had, so a finished fetch does
         // not try to fill a window that is gone (or being rebuilt).
         self.fetches.drop_def(id);

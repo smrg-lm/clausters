@@ -212,56 +212,7 @@ impl CanvasSlot {
     /// whose target is not this canvas is another canvas' (or the page's) and
     /// is left alone.
     fn watch_buttons(&mut self) {
-        let Some(canvas) = self.window.canvas() else {
-            return;
-        };
-        let Some(window) = web_sys::window() else {
-            return;
-        };
-        let buttons = self.buttons.clone();
-        let mods = self.mods.clone();
-        let target = canvas.clone();
-        let closure =
-            Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
-                // **A canvas inside a component is in a shadow root**, and an
-                // event seen on `window` has already been *retargeted* to the
-                // host element -- `target` is the `<clausters-...>` tag, never
-                // the canvas, so the mask would stay 0 for every component on
-                // the page and the first move of any drag would look like a
-                // release the page never saw (see `CanvasSlot::buttons`): a
-                // held key let go the moment the pointer moved, a ruler that
-                // could not be dragged at all. The composed path is the one
-                // view that still names the canvas itself.
-                let canvas: &JsValue = target.as_ref();
-                let mine = event.target().as_ref() == Some(target.as_ref())
-                    || event.composed_path().iter().any(|node| &node == canvas);
-                if mine {
-                    // A wheel event is a `MouseEvent` too but carries no button
-                    // mask worth reading, so only the pointer ones set it.
-                    if let Some(pointer) = event.dyn_ref::<web_sys::PointerEvent>() {
-                        buttons.set(pointer.buttons());
-                    }
-                    mods.set(mod_bits(
-                        event.shift_key(),
-                        event.ctrl_key(),
-                        event.alt_key(),
-                        event.meta_key(),
-                    ));
-                }
-            });
-        let mut attached = false;
-        for name in POINTER_EVENTS {
-            attached |= window
-                .add_event_listener_with_callback_and_bool(
-                    name,
-                    closure.as_ref().unchecked_ref(),
-                    true,
-                )
-                .is_ok();
-        }
-        if attached {
-            self.pointer_listener = Some(PointerListener { window, closure });
-        }
+        self.pointer_listener = watch_buttons(&self.window, &self.buttons, &self.mods);
     }
 
     /// Forgets everything derived from a def's tree, keeping the canvas itself
@@ -310,6 +261,57 @@ impl CanvasSlot {
     }
 }
 
+/// **Follows the browser's button state and modifier keys on `window`'s
+/// canvas** into `buttons` and `mods` ([`CanvasSlot::buttons`],
+/// [`CanvasSlot::mods`]): what a canvas slot keeps, and a dock's canvas
+/// for all its panes. Answers the listener, which stops when dropped.
+pub(super) fn watch_buttons(
+    window: &Window,
+    buttons: &Rc<Cell<u16>>,
+    mods: &Rc<Cell<u8>>,
+) -> Option<PointerListener> {
+    let canvas = window.canvas()?;
+    let window = web_sys::window()?;
+    let buttons = buttons.clone();
+    let mods = mods.clone();
+    let target = canvas.clone();
+    let closure =
+        Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
+            // **A canvas inside a component is in a shadow root**, and an
+            // event seen on `window` has already been *retargeted* to the
+            // host element -- `target` is the `<clausters-...>` tag, never
+            // the canvas, so the mask would stay 0 for every component on
+            // the page and the first move of any drag would look like a
+            // release the page never saw (see `CanvasSlot::buttons`): a
+            // held key let go the moment the pointer moved, a ruler that
+            // could not be dragged at all. The composed path is the one
+            // view that still names the canvas itself.
+            let canvas: &JsValue = target.as_ref();
+            let mine = event.target().as_ref() == Some(target.as_ref())
+                || event.composed_path().iter().any(|node| &node == canvas);
+            if mine {
+                // A wheel event is a `MouseEvent` too but carries no button
+                // mask worth reading, so only the pointer ones set it.
+                if let Some(pointer) = event.dyn_ref::<web_sys::PointerEvent>() {
+                    buttons.set(pointer.buttons());
+                }
+                mods.set(mod_bits(
+                    event.shift_key(),
+                    event.ctrl_key(),
+                    event.alt_key(),
+                    event.meta_key(),
+                ));
+            }
+        });
+    let mut attached = false;
+    for name in POINTER_EVENTS {
+        attached |= window
+            .add_event_listener_with_callback_and_bool(name, closure.as_ref().unchecked_ref(), true)
+            .is_ok();
+    }
+    attached.then_some(PointerListener { window, closure })
+}
+
 impl WebApp {
     /// Gives `def_id` a canvas and starts its GPU bring-up.
     ///
@@ -327,6 +329,17 @@ impl WebApp {
             // A window cannot be created before the loop resumes; `resumed`
             // drains this.
             self.pending_attach.push((def_id, canvas));
+            return;
+        }
+        // **With a dock, a window is a pane of it**, whatever canvas
+        // the page offered for it.
+        if self.dock.is_some() {
+            if canvas.is_some() {
+                log(&format!(
+                    "def {def_id}: a pane of the dock; the canvas offered for it is left empty"
+                ));
+            }
+            self.attach_pane(def_id);
             return;
         }
         if let Some(old) = self.canvases.remove(&def_id) {
@@ -411,9 +424,12 @@ impl WebApp {
     /// Drops a def's canvas: the wgpu surface and every derived resource go.
     /// The `<canvas>` element itself belongs to the page, which removes it.
     pub(super) fn detach(&mut self, def_id: i32) {
-        if let Some(slot) = self.canvases.remove(&def_id) {
+        if let Some(slot) = self.canvases.remove(&def_id)
+            && !self.is_dock_window(slot.window.id())
+        {
             self.by_winit.remove(&slot.window.id());
         }
+        self.detach_pane(def_id);
         self.pending_attach.retain(|(id, _)| *id != def_id);
         self.fetches.drop_def(def_id);
         self.on_tree_changed();
@@ -481,7 +497,8 @@ impl WebApp {
         // moves over the one it kept.
         let whole = capture || self.canvases.get(&def).is_none_or(CanvasSlot::whole_wanted);
         // the canvas is never made smaller than its root's floor
-        if whole {
+        // (a pane's floor is the dock's to keep, not its canvas')
+        if whole && !self.is_pane(def) {
             let min = self.host.window_min_px(def);
             if let Some(slot) = self.canvases.get_mut(&def) {
                 let window = slot.window.clone();

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: one canvas for every window</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             max-width: 62rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; align-self: flex-start; }
+      #dock { height: 260px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A GUI host gives each window it opens a canvas of its own.
+Booted with a <b>dock</b> it draws them all in <b>one</b>, and every window is a
+<b>pane</b> of it, side by side: the panes share its width, and a pane opened
+later makes room for itself. A pane is a window in everything but its frame --
+it keeps its def, its events and its picture -- so the code below is the one it
+would be without the dock, and a press reaches the pane it lands in.</div>
+      <div id="dock"></div>
+      <button id="close">close the third pane</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/dock.py, call for call:
+      boot a host with a dock, open three windows on it, print what the slider
+      and the knob report, close the third pane.
+
+      One difference, the platform's: the script's host opens a window of its
+      own for the dock, and a page's draws in the canvas of the element named
+      here, which follows the element's box. Closing the third pane is a
+      button, because it is what a hand does in the script's cell too.
+
+      Serve clients/web (the package root) and open /examples/panels/dock.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui } from "../../dist/index.js";
+      import { loadCore } from "../../dist/page.js";
+
+      // The one line the script has no counterpart for: the numeric core is
+      // wasm here and is fetched on demand.
+      await loadCore();
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // ---- a host with a dock ----
+      const host = await new GuiHost().boot({ dock: $("dock") });
+
+      // ---- three windows, three panes ----
+      const tone = await gui.view({ title: "tone", w: 360, h: 240 },
+        gui.slider({ name: "freq", value: 0.4 })).open(null, { host });
+      const level = await gui.view({ title: "level", w: 360, h: 240 },
+        gui.knob({ name: "level", value: 0.7 })).open(null, { host });
+      const note = await gui.view({ title: "note", w: 360, h: 240 },
+        gui.label("a third pane makes room for itself", { name: "note" })).open(null, { host });
+
+      // ---- each pane answers its own hand ----
+      tone.widget("freq").onEvent((...payload) => log(`freq ${payload.join(" ")}`));
+      level.widget("level").onEvent((...payload) => log(`level ${payload.join(" ")}`));
+
+      // ---- closing a pane gives its room back ----
+      $("close").onclick = () => {
+        note.close();
+        $("close").disabled = true;
+      };
+    </script>
+  </body>
+</html>

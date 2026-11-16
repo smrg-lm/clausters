@@ -67,6 +67,14 @@ export class GuiBridge {
      */
     detach(def_id: number): void;
     /**
+     * **Gives the host one canvas for every window**: from now on each
+     * `window`-rooted def is a pane of a dock drawn into `canvas`, side
+     * by side with the others, instead of a canvas of its own -- and so is
+     * every window already open. The page sizes the canvas with
+     * [`resize_dock`](Self::resize_dock), as it sizes a def's.
+     */
+    dock(canvas: HTMLCanvasElement): void;
+    /**
      * Feeds one raw OSC packet (e.g. a `/gui_def`/`/gui_set`/`/gui_bind`) to the
      * host, exactly as the WS wire format delivers it (one packet per call).
      */
@@ -119,6 +127,12 @@ export class GuiBridge {
      * scales its box by `devicePixelRatio` passes the same ratio here.
      */
     resize(def_id: number, width: number, height: number, scale: number): void;
+    /**
+     * Sizes the dock's canvas in **device pixels**, with the **scale**
+     * they were measured at -- what [`resize`](Self::resize) is to a def's
+     * canvas.
+     */
+    resizeDock(width: number, height: number, scale: number): void;
     /**
      * Feeds one reply packet from the in-page engine (a streamed `/bus_stream.reply`, a
      * `/bus_tapStream.reply`, a `/buffer_query.reply`/`/buffer_getRange.reply`, a `/clock_query.reply`) into the host --
@@ -265,11 +279,6 @@ export function start(): GuiBridge;
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
-    readonly apps_engine_block: () => number;
-    readonly apps_engine_process: (a: number) => number;
-    readonly apps_engine_rate: (a: number) => void;
-    readonly apps_said: (a: number) => void;
-    readonly __wbg_guibridge_free: (a: number, b: number) => void;
     readonly apps_files_check: () => [number, number];
     readonly apps_files_checked: () => number;
     readonly apps_files_failed: () => [number, number];
@@ -281,6 +290,9 @@ export interface InitOutput {
     readonly apps_thread_check_wake: () => void;
     readonly apps_thread_checked: () => number;
     readonly apps_thread_run: (a: number) => void;
+    readonly guibridge_midi: (a: number, b: number, c: number) => void;
+    readonly __wbg_guibridge_free: (a: number, b: number) => void;
+    readonly apps_said: (a: number) => void;
     readonly bundle_boot_packets: (a: any, b: any, c: number, d: number, e: number, f: number, g: number) => any;
     readonly guibridge_attach: (a: number, b: number, c: any) => void;
     readonly guibridge_close: (a: number) => void;
@@ -288,15 +300,19 @@ export interface InitOutput {
     readonly guibridge_connect_server: (a: number, b: number, c: number) => void;
     readonly guibridge_def: (a: number, b: number, c: number, d: number) => void;
     readonly guibridge_detach: (a: number, b: number) => void;
+    readonly guibridge_dock: (a: number, b: any) => void;
     readonly guibridge_feed: (a: number, b: number, c: number) => void;
     readonly guibridge_id_share: (a: number, b: number, c: number) => void;
-    readonly guibridge_midi: (a: number, b: number, c: number) => void;
     readonly guibridge_msaa: (a: number, b: number) => void;
     readonly guibridge_poll: (a: number) => [number, number];
     readonly guibridge_resize: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly guibridge_resizeDock: (a: number, b: number, c: number, d: number) => void;
     readonly guibridge_server_reply: (a: number, b: number, c: number) => void;
     readonly guibridge_set_visible: (a: number, b: number, c: number) => void;
     readonly start: () => number;
+    readonly apps_engine_block: () => number;
+    readonly apps_engine_process: (a: number) => number;
+    readonly apps_engine_rate: (a: number) => void;
     readonly wasm_bindgen_91405ed81f056d08___convert__closures_____invoke___wasm_bindgen_91405ed81f056d08___JsValue__core_9edd6172b0a6ff98___result__Result_____wasm_bindgen_91405ed81f056d08___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_91405ed81f056d08___convert__closures_____invoke___js_sys_efc41df31af51903___Array__web_sys_5e1c45052bc29be0___features__gen_ResizeObserver__ResizeObserver______true_: (a: number, b: number, c: any, d: any) => void;
     readonly wasm_bindgen_91405ed81f056d08___convert__closures_____invoke___js_sys_efc41df31af51903___Function_fn_wasm_bindgen_91405ed81f056d08___JsValue_____wasm_bindgen_91405ed81f056d08___sys__Undefined___js_sys_efc41df31af51903___Function_fn_wasm_bindgen_91405ed81f056d08___JsValue_____wasm_bindgen_91405ed81f056d08___sys__Undefined_______true_: (a: number, b: number, c: any, d: any) => void;

@@ -34,6 +34,18 @@ pub(crate) struct Gpu {
     /// Which adapter this draws on, as a person reads it: its name, its kind
     /// and its backend.
     pub(crate) adapter: String,
+    /// **A pane of a dock**: the texture this window's frames are drawn
+    /// into, which the dock composes into its own surface, and what
+    /// asks that surface for a frame. `None` for a window of its own.
+    pane: Option<Pane>,
+}
+
+/// What a pane draws into and how it asks for a frame ([`Gpu::pane`]).
+struct Pane {
+    view: wgpu::TextureView,
+    /// The dock's window, asked for a frame when the pane wants one;
+    /// `None` when the dock is drawn offscreen.
+    redraws: Option<Arc<Window>>,
 }
 
 /// An adapter as a person reads it: its name, its kind (a card, a software
@@ -121,6 +133,7 @@ impl Gpu {
             samples,
             msaa: None,
             adapter: describe(&adapter.get_info()),
+            pane: None,
         };
         gpu.rebuild_msaa();
         Ok(gpu)
@@ -209,6 +222,7 @@ impl Gpu {
             samples,
             msaa: None,
             adapter: described,
+            pane: None,
         };
         gpu.rebuild_msaa();
         Ok(gpu)
@@ -227,9 +241,67 @@ impl Gpu {
     /// Asks the window for a frame; offscreen there is no window to ask, and
     /// a frame is drawn when a capture wants one.
     pub(crate) fn request_redraw(&self) {
-        if let Some(window) = self.window() {
+        if let Some(window) = self
+            .window()
+            .or_else(|| self.pane.as_ref().and_then(|p| p.redraws.as_ref()))
+        {
             window.request_redraw();
         }
+    }
+
+    /// **A pane of the dock drawn by `dock`**: a window with no
+    /// surface of its own, on the dock's device, whose frames are drawn
+    /// into a texture of `width` x `height` the dock composes into its
+    /// surface. Its format and its antialiasing are the dock's, so what
+    /// it draws is what a window of its own would draw.
+    pub(crate) fn pane(dock: &Gpu, width: u32, height: u32) -> Self {
+        let mut config = dock.config.clone();
+        config.width = width.max(1);
+        config.height = height.max(1);
+        let mut gpu = Self {
+            shown: None,
+            device: dock.device.clone(),
+            queue: dock.queue.clone(),
+            config,
+            samples: dock.samples,
+            msaa: None,
+            adapter: dock.adapter.clone(),
+            pane: None,
+        };
+        gpu.pane = Some(Pane {
+            view: gpu.pane_texture(),
+            redraws: dock.window().cloned(),
+        });
+        gpu.rebuild_msaa();
+        gpu
+    }
+
+    /// The texture a pane's frames are drawn into, `None` for a window of its
+    /// own.
+    pub(crate) fn pane_view(&self) -> Option<&wgpu::TextureView> {
+        self.pane.as_ref().map(|p| &p.view)
+    }
+
+    /// A pane's texture at the configuration's size: drawn into, and read by
+    /// the dock's copy.
+    fn pane_texture(&self) -> wgpu::TextureView {
+        self.device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("pane picture"),
+                size: wgpu::Extent3d {
+                    width: self.config.width.max(1),
+                    height: self.config.height.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+            .create_view(&wgpu::TextureViewDescriptor::default())
     }
 
     /// What every pipeline drawing into this window declares: its format and
@@ -253,6 +325,12 @@ impl Gpu {
             self.config.height = height;
             if let Some(surface) = self.surface() {
                 surface.configure(&self.device, &self.config);
+            }
+            if self.pane.is_some() {
+                let view = self.pane_texture();
+                if let Some(pane) = &mut self.pane {
+                    pane.view = view;
+                }
             }
             self.rebuild_msaa();
         }

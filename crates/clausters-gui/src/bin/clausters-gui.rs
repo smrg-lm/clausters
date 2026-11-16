@@ -54,6 +54,7 @@ usage:
                 [--score [file] [--save-to <file>]] [--audio [file]]
                 [--roll [file] [--save-to <file>]]
                 [--theme <path>] [--keys <path>] [--font <path>] [--msaa <n>]
+                [--dock]
                 [--follow-block <seconds>] [--id-share <i/of>]
       --port <n>            port for the GUI host's server front
                             (script -> host, UDP and TCP); default 57210
@@ -173,6 +174,9 @@ usage:
                             One multisampled attachment per window and nothing
                             per widget; a count this GPU does not offer for the
                             surface format falls back to 1 with a warning.
+      --dock                open every window as a pane of one window, side
+                            by side, instead of a window each; each keeps
+                            its def, its replies and its picture
       --headless            show no window: draw each one offscreen, to be
                             captured and played to (/gui_capture, /gui_pointer,
                             /gui_keypress, /gui_text), on any adapter, a
@@ -200,6 +204,8 @@ struct Look {
     /// The key table. Not a look either, and here for `follow_block`'s reason.
     keys: Keymap,
     msaa: u32,
+    /// Whether the windows open as panes of one dock (`--dock`).
+    dock: bool,
     /// Seconds of recorded audio a picture waits for before re-reading its
     /// summary (`--follow-block`). Not a *look*, strictly -- it is here because
     /// it is resolved and applied with the rest, on both launch paths.
@@ -218,6 +224,7 @@ impl Look {
         host.metrics = self.metrics;
         host.keys = self.keys;
         host.msaa = self.msaa;
+        host.dock = self.dock;
         host.follow_block = self.follow_block;
         load_face(host, self.font, self.headless);
     }
@@ -295,6 +302,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut cli_shm: Option<String> = None;
     let mut cli_id_share = IdShare::WHOLE;
     let mut cli_headless = false;
+    let mut cli_dock = false;
     let mut cli_data_dir: Option<String> = None;
     let mut cli_head: Option<HeadClock> = None;
     let mut standalone_flag = false;
@@ -471,6 +479,7 @@ fn run(args: &[String]) -> Result<(), String> {
                 );
             }
             "--headless" => cli_headless = true,
+            "--dock" => cli_dock = true,
             "--help" | "-h" => {
                 println!("{USAGE}");
                 return Ok(());
@@ -565,6 +574,7 @@ fn run(args: &[String]) -> Result<(), String> {
         metrics,
         keys,
         msaa,
+        dock: cli_dock,
         follow_block,
         font: font_path.or_else(|| cfg.gui.font.clone()),
         headless,

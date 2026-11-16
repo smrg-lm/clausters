@@ -289,6 +289,9 @@ pub(super) struct App {
     /// Why each window asked for the frame tick when it was last read, once
     /// a frame ([`App::tick_demand`]).
     tick_reasons: HashMap<i32, Vec<Reason>>,
+    /// **The dock**, once a window opened as a pane of it
+    /// (`Host::dock`): its window, its surface and its panes.
+    pub(super) dock: Option<super::dock::Shell>,
 }
 
 impl App {
@@ -338,6 +341,7 @@ impl App {
             midi_warned: false,
             tick_clock: Default::default(),
             tick_reasons: HashMap::new(),
+            dock: None,
         }
     }
 
@@ -625,7 +629,7 @@ impl App {
     /// Renders window `def_id` through the shared frame path ([`frame::render`]),
     /// the same code the browser front drives -- here fed the live inputs (the
     /// shared-memory bus, the scope histories, the node trees, the held button).
-    fn render(&mut self, def_id: i32) {
+    pub(super) fn render(&mut self, def_id: i32) {
         if let Some(ws) = self.windows.get(&def_id)
             && ws.answered()
         {
@@ -1174,9 +1178,27 @@ impl ApplicationHandler<UserEvent> for App {
         window_id: WindowId,
         event: WindowEvent,
     ) {
+        // the dock's window holds panes, each a window with no surface
+        if self.is_dock_window(window_id) {
+            self.dock_event(event_loop, event);
+            return;
+        }
         let Some(&def_id) = self.by_winit.get(&window_id) else {
             return;
         };
+        self.def_event(event_loop, def_id, event);
+    }
+}
+
+impl App {
+    /// **What the platform said of window `def_id`**: its own window's event,
+    /// or one the dock handed the pane it reached, in the pane's pixels.
+    pub(super) fn def_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        def_id: i32,
+        event: WindowEvent,
+    ) {
         match event {
             WindowEvent::CloseRequested => self.user_close(def_id, Loop::Shown(event_loop)),
             // **The window came back, or went**: an owner that asked is told,
@@ -1351,7 +1373,11 @@ impl ApplicationHandler<UserEvent> for App {
                 for key in keys {
                     consumed |= self.press_key(def_id, key);
                 }
-                if !consumed && matches!(pressed, Key::Named(NamedKey::Escape)) {
+                // a pane is not a window of the desktop's: Escape is not its
+                if !consumed
+                    && matches!(pressed, Key::Named(NamedKey::Escape))
+                    && !self.is_pane(def_id)
+                {
                     self.user_close(def_id, Loop::Shown(event_loop));
                 }
             }

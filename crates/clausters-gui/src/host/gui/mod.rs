@@ -30,6 +30,7 @@
 mod app;
 mod capture;
 mod clipboard;
+mod dock;
 mod input;
 #[cfg(feature = "midi")]
 mod midi;
