@@ -32,13 +32,20 @@ pub enum Call {
     /// `{"verb": "split", "pane": id, "side": "left" | "right" | "top" |
     /// "bottom", "of": id}`: put a pane on a side of another's group.
     Split { pane: i32, side: Side, of: i32 },
-    /// `{"verb": "pointer", "kind": "press" | "move" | "release", "x", "y"}`:
-    /// a hand on the dock's surface, in its device pixels -- on its chrome
-    /// or, through it, on a pane, as the platform's pointer is.
-    Pointer { kind: PointerKind, x: f64, y: f64 },
-    /// `{"verb": "capture", "path": path}`: the dock's picture as a PNG,
-    /// answered once the file is whole.
-    Capture(String),
+    /// `{"verb": "pointer", "kind": "press" | "move" | "release", "x", "y",
+    /// "panel": id?}`: a hand on the dock's surface, in its device pixels --
+    /// on its chrome or, through it, on a pane, as the platform's pointer is.
+    /// With `panel`, on the floating panel of that window taken out.
+    Pointer {
+        kind: PointerKind,
+        x: f64,
+        y: f64,
+        panel: Option<i32>,
+    },
+    /// `{"verb": "capture", "path": path, "panel": id?}`: the dock's
+    /// picture as a PNG, answered once the file is whole -- or, with
+    /// `panel`, the floating panel's of that window.
+    Capture { path: String, panel: Option<i32> },
     /// `{"verb": "undock", "pane": id}`: take a pane out into a window of its
     /// own -- an OS window natively, a canvas of its own in a page.
     Undock(i32),
@@ -78,6 +85,14 @@ fn id(call: &Value, key: &str) -> Result<i32, (String, String)> {
         .and_then(Value::as_i64)
         .and_then(|v| i32::try_from(v).ok())
         .ok_or_else(|| bad(format!("`{key}` is a pane's id")))
+}
+
+/// The floating panel a call names, if it names one.
+fn panel(call: &Value) -> Result<Option<i32>, (String, String)> {
+    match call.get("panel") {
+        None | Some(Value::Null) => Ok(None),
+        Some(_) => id(call, "panel").map(Some),
+    }
 }
 
 impl Call {
@@ -125,6 +140,7 @@ impl Call {
                     kind,
                     x: at("x")?,
                     y: at("y")?,
+                    panel: panel(&call)?,
                 }
             }
             "undock" => Self::Undock(id(&call, "pane")?),
@@ -137,12 +153,14 @@ impl Call {
             "place" => Self::Place(id(&call, "pane")?),
             "leave" => Self::Leave(id(&call, "pane")?),
             "dock" => Self::Dock(id(&call, "pane")?),
-            "capture" => Self::Capture(
-                call.get("path")
+            "capture" => Self::Capture {
+                path: call
+                    .get("path")
                     .and_then(Value::as_str)
                     .ok_or_else(|| bad("`capture` takes a `path`"))?
                     .to_string(),
-            ),
+                panel: panel(&call)?,
+            },
             other => return Err(bad(format!("the dock has no verb `{other}`"))),
         })
     }
@@ -179,7 +197,7 @@ impl Dock {
             Call::PageClose(name) => self.close_page(name).map_err(refused)?,
             Call::Place(pane) => self.place(*pane).map_err(refused)?,
             Call::Leave(pane) => self.leave(*pane).map_err(refused)?,
-            Call::Pointer { .. } | Call::Capture(_) | Call::Undock(_) | Call::Dock(_) => {}
+            Call::Pointer { .. } | Call::Capture { .. } | Call::Undock(_) | Call::Dock(_) => {}
         }
         Ok(self.state())
     }

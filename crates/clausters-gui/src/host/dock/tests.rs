@@ -525,6 +525,39 @@ fn a_panels_menu_moves_and_closes_its_window() {
     assert_eq!(ws.tree().panes(), [2], "2 on the new page, shown");
 }
 
+/// **A floating panel keeps its bar and asks its way back**: the window of
+/// a pane taken out of the dock is its bar and its body, with no page strip
+/// and no grip to drag, and its menu's first pick hands the pane back.
+#[test]
+fn a_floating_panel_has_a_bar_and_a_way_back() {
+    let mut ws = Dock::floating((300, 200), metrics(4.0));
+    ws.add(7);
+    ws.take_dirty();
+    let bar = ws.bar_height();
+    let g = ws.groups()[0].clone();
+    assert_eq!(g.body.y, bar, "the body under the bar");
+    assert_eq!(g.body.h, 200 - bar, "no page strip under the body");
+    let parts: Vec<BarPart> = ws.bar_parts(&g).into_iter().map(|(p, _)| p).collect();
+    assert_eq!(parts, [BarPart::Title, BarPart::Menu, BarPart::Close]);
+    // the title takes no panel in hand: a drag moves nothing
+    let title = part(&ws, 0, BarPart::Title);
+    ws.moved(f64::from(title.x + 4.0), f64::from(title.y + 4.0));
+    ws.pressed();
+    ws.moved(150.0, 150.0);
+    assert!(ws.landing().is_none());
+    ws.released();
+    ws.take_dirty();
+    let button = part(&ws, 0, BarPart::Menu);
+    ws.moved(f64::from(button.x + 2.0), f64::from(button.y + 2.0));
+    ws.pressed();
+    ws.released();
+    let menu = ws.menu().expect("open").clone();
+    assert_eq!(menu.stack.levels[0].entries[0].label, "Back into the dock");
+    ws.close_menu();
+    ws.picked(super::bar::Target::Pane(7), "dock");
+    assert_eq!(ws.take_dirty().back, [7]);
+}
+
 /// **A tab alone in its group dragged onto its own group lands nowhere**:
 /// the move would change nothing.
 #[test]
@@ -639,7 +672,15 @@ fn the_door_reads_calls_and_answers_the_state() {
         Ok(Call::Pointer {
             kind: crate::host::PointerKind::Press,
             x: 1.0,
-            y: 2.5
+            y: 2.5,
+            panel: None,
+        })
+    );
+    assert_eq!(
+        Call::read(r#"{"verb": "capture", "path": "p.png", "panel": 4}"#),
+        Ok(Call::Capture {
+            path: "p.png".into(),
+            panel: Some(4),
         })
     );
 }

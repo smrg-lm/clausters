@@ -113,6 +113,36 @@ pub struct Dirty {
     /// Panes a hand closed (a tab's close mark, the panel's, its menu): the
     /// front closes each window as its own close mark would.
     pub close: Vec<i32>,
+    /// Panes a floating panel's menu asked back into the dock
+    /// ([`Dock::floating`]): the front moves each back.
+    pub back: Vec<i32>,
+}
+
+/// **Which shell** a front means: the dock's, or the floating panel of a
+/// window taken out of it ([`Dock::floating`]), named by that window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Which {
+    Main,
+    Float(i32),
+}
+
+/// What a hand asked of the windows of the shells, gathered from each one's
+/// [`Dirty`] for the front to carry out: the panes taken out, those closed,
+/// those put back.
+#[derive(Debug, Default)]
+pub struct Handed {
+    pub out: Vec<i32>,
+    pub close: Vec<i32>,
+    pub back: Vec<i32>,
+}
+
+impl Handed {
+    /// Adds what one shell's hand asked.
+    pub fn take(&mut self, dirty: Dirty) {
+        self.out.extend(dirty.out);
+        self.close.extend(dirty.close);
+        self.back.extend(dirty.back);
+    }
 }
 
 /// A group of tabs as measured: its tab strip and the body its shown pane
@@ -230,6 +260,9 @@ pub struct Dock {
     focus: Option<i32>,
     /// **The menu open over the dock**: a panel's or a page's.
     menu: Option<bar::DockMenu>,
+    /// A floating panel's: one window taken out of the dock, with its bar
+    /// and no pages ([`Dock::floating`]).
+    floating: bool,
     dirty: Dirty,
 }
 
@@ -253,8 +286,32 @@ impl Dock {
             hot: None,
             focus: None,
             menu: None,
+            floating: false,
             dirty: Dirty::default(),
         }
+    }
+
+    /// **A floating panel**: the window of a pane taken out of the dock,
+    /// which keeps the bar it had as a panel -- its title, its menu, its
+    /// close mark -- so it still reads as one, and its menu is the way back
+    /// into the dock. It has no pages and no grip: there is nothing in it
+    /// to drag a panel to.
+    pub fn floating(size: (u32, u32), metrics: Metrics) -> Self {
+        Self {
+            floating: true,
+            ..Self::new(size, metrics)
+        }
+    }
+
+    /// Whether this is a floating panel's ([`Dock::floating`]).
+    pub fn is_floating(&self) -> bool {
+        self.floating
+    }
+
+    /// **The height of a panel's bar**, in device pixels: what a floating
+    /// panel's window adds to its window's own height.
+    pub fn bar_height(&self) -> u32 {
+        self.strip_h()
     }
 
     /// Every pane the dock holds, in the order they came: shown, behind a
@@ -872,6 +929,11 @@ impl Dock {
         control_box(self.text_size(), &self.metrics).round() as u32
     }
 
+    /// The height of the page strip: none in a floating panel.
+    pub(super) fn page_strip_h(&self) -> u32 {
+        if self.floating { 0 } else { self.strip_h() }
+    }
+
     /// **The layout measured at this size**: every group's strip and body,
     /// every divider; and what that changed marked for the fronts.
     fn arrange(&mut self) {
@@ -879,7 +941,7 @@ impl Dock {
         let mut dividers = Vec::new();
         let (w, h) = self.size;
         // the page's layout, over the page strip along the bottom
-        let strip = self.strip_h().min(h.saturating_sub(1));
+        let strip = self.page_strip_h().min(h.saturating_sub(1));
         let whole = PaneRect {
             x: 0,
             y: 0,

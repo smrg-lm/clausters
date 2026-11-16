@@ -11,6 +11,11 @@
 //! (a tab, a divider) -- the frame that copies every shown pane into the
 //! surface with the chrome over it, and the dock's door on the wire
 //! (`/gui_dock`).
+//!
+//! A window taken out of the dock is a **floating panel**: a window of the
+//! platform of its own, drawn as the dock draws a panel -- its pane under
+//! its bar ([`Dock::floating`]) -- so it is a shell like the dock's, with
+//! one pane and no pages ([`Which::Float`]).
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -27,7 +32,7 @@ use winit::window::{Window, WindowId};
 
 use crate::gpu::Gpu;
 use crate::host::dock::call::{self, Call};
-use crate::host::dock::{Composer, Dock, divider_color};
+use crate::host::dock::{Composer, Dock, Handed, Which, divider_color};
 use crate::host::{ClientId, PointerKind, PointerMods, png};
 
 use super::Loop;
@@ -35,6 +40,16 @@ use super::app::App;
 
 /// The size a dock's window opens at, in logical pixels.
 const OPENS_AT: (u32, u32) = (1280, 800);
+
+/// The shell `which` names, borrowing only the field it lives in.
+macro_rules! shell_mut {
+    ($app:expr, $which:expr) => {
+        match $which {
+            Which::Main => $app.dock.as_mut(),
+            Which::Float(id) => $app.floats.get_mut(&id),
+        }
+    };
+}
 
 /// The dock's window, its surface and its panes.
 pub(in crate::host::gui) struct Shell {
@@ -48,12 +63,16 @@ pub(in crate::host::gui) struct Shell {
 }
 
 impl App {
-    /// Whether `id` is the dock's window.
-    pub(super) fn is_dock_window(&self, id: WindowId) -> bool {
-        self.dock
-            .as_ref()
-            .and_then(|s| s.gpu.window())
-            .is_some_and(|w| w.id() == id)
+    /// The shell whose window is `id`: the dock's, or a floating panel's.
+    pub(super) fn shell_of(&self, id: WindowId) -> Option<Which> {
+        let is = |s: &Shell| s.gpu.window().is_some_and(|w| w.id() == id);
+        if self.dock.as_ref().is_some_and(is) {
+            return Some(Which::Main);
+        }
+        self.floats
+            .iter()
+            .find(|(_, s)| is(s))
+            .map(|(&def, _)| Which::Float(def))
     }
 
     /// Whether window `def_id` is a pane of the dock.
@@ -66,7 +85,8 @@ impl App {
     /// make room for it.
     pub(super) fn open_pane(&mut self, lp: Loop, id: i32) -> Option<Gpu> {
         if self.dock.is_none() {
-            self.dock = Some(self.open_shell(lp)?);
+            let size = (OPENS_AT.0, OPENS_AT.1);
+            self.dock = Some(self.open_shell(lp, "clausters", size, false)?);
         }
         let title = self.host.window_title(id);
         let page = self.host.window_dock_page(id);
@@ -83,20 +103,57 @@ impl App {
         Some(gpu)
     }
 
-    /// **Pane `id`'s title changed**: its tab says it.
+    /// **The GPU of window `id` as a floating panel**: a window of the
+    /// platform of its own, of the size the window declares with its
+    /// panel's bar above it, which draws the pane under the bar.
+    pub(super) fn open_float(&mut self, lp: Loop, id: i32, (w, h): (u32, u32)) -> Option<Gpu> {
+        let title = self.host.window_title(id).unwrap_or_default();
+        let bar = Dock::floating((1, 1), self.host.metrics.resolved(1.0)).bar_height();
+        let mut shell = self.open_shell(lp, &title, (w, h + bar), true)?;
+        self.host.set_ui_scale(id, shell.scale);
+        // the window's own size at its scale, under the bar at that scale
+        if let (Some(window), Some((pw, ph))) = (shell.gpu.window(), self.host.window_size_px(id)) {
+            let bar = shell.layout.bar_height();
+            let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(pw, ph + bar));
+        }
+        shell.layout.add(id);
+        if !title.is_empty() {
+            shell.layout.set_title(id, title);
+        }
+        let rect = shell.layout.rect(id)?;
+        let gpu = Gpu::pane(&shell.gpu, rect.w, rect.h);
+        shell.gpu.request_redraw();
+        self.floats.insert(id, shell);
+        self.settle_dock();
+        Some(gpu)
+    }
+
+    /// **Pane `id`'s title changed**: its tab says it, and a floating
+    /// panel's window too.
     pub(super) fn retitle_pane(&mut self, id: i32) {
-        let title = self.host.window_title(id);
-        if let (Some(shell), Some(title)) = (self.dock.as_mut(), title)
+        let Some(title) = self.host.window_title(id) else {
+            return;
+        };
+        if let Some(shell) = self.floats.get_mut(&id) {
+            if let Some(window) = shell.gpu.window() {
+                window.set_title(&title);
+            }
+            shell.layout.set_title(id, title);
+        } else if let Some(shell) = self.dock.as_mut()
             && shell.layout.holds(id)
         {
             shell.layout.set_title(id, title);
-            self.settle_dock();
         }
+        self.settle_dock();
     }
 
     /// **Window `id` is no longer a pane**: the others share its room, and
-    /// the dock's window closes with its last pane.
+    /// the dock's window closes with its last pane; a floating panel's
+    /// window closes with it.
     pub(super) fn close_pane(&mut self, id: i32) {
+        if self.floats.remove(&id).is_some() {
+            return;
+        }
         let Some(shell) = self.dock.as_mut() else {
             return;
         };
@@ -111,17 +168,21 @@ impl App {
         self.settle_dock();
     }
 
-    /// The dock's window and its GPU: on the screen, or offscreen for a
-    /// headless host, at the size a dock opens at.
-    fn open_shell(&mut self, lp: Loop) -> Option<Shell> {
+    /// A shell's window and its GPU, `size` logical pixels: on the screen,
+    /// or offscreen for a headless host. The dock's, or a floating panel's
+    /// (`floating`).
+    fn open_shell(
+        &mut self,
+        lp: Loop,
+        title: &str,
+        size: (u32, u32),
+        floating: bool,
+    ) -> Option<Shell> {
         let (gpu, scale) = match lp {
             Loop::Shown(event_loop) => {
                 let attrs = Window::default_attributes()
-                    .with_title("clausters")
-                    .with_inner_size(LogicalSize::new(
-                        f64::from(OPENS_AT.0),
-                        f64::from(OPENS_AT.1),
-                    ));
+                    .with_title(title)
+                    .with_inner_size(LogicalSize::new(f64::from(size.0), f64::from(size.1)));
                 let window = match event_loop.create_window(attrs) {
                     Ok(w) => Arc::new(w),
                     Err(e) => {
@@ -139,7 +200,7 @@ impl App {
                 }
             }
             Loop::Headless(_) => {
-                match pollster::block_on(Gpu::offscreen(OPENS_AT.0, OPENS_AT.1, self.host.msaa)) {
+                match pollster::block_on(Gpu::offscreen(size.0, size.1, self.host.msaa)) {
                     Ok(gpu) => (gpu, 1.0),
                     Err(e) => {
                         warn!("dock: cannot start the GPU: {e}");
@@ -150,70 +211,95 @@ impl App {
         };
         let size = (gpu.config.width.max(1), gpu.config.height.max(1));
         let metrics = self.host.metrics.resolved(scale);
-        info!("dock: opened at {}x{} on {}", size.0, size.1, gpu.adapter);
+        info!(
+            "dock: opened {} at {}x{} on {}",
+            if floating {
+                "a floating panel"
+            } else {
+                "the dock"
+            },
+            size.0,
+            size.1,
+            gpu.adapter
+        );
         Some(Shell {
             composer: Composer::new(&gpu.device, gpu.config.format),
-            layout: Dock::new(size, metrics),
+            layout: if floating {
+                Dock::floating(size, metrics)
+            } else {
+                Dock::new(size, metrics)
+            },
             gpu,
             scale,
             hidden: HashSet::new(),
         })
     }
 
-    /// **The dock brought up to what changed in it**: every pane at the size
-    /// of its place (a pane whose rectangle changed is resized and draws
-    /// again whole), a pane behind another's tab told it is not seen and one
-    /// shown again told it is, and the dock drawn if anything of it moved.
+    /// **Every shell brought up to what changed in it**: every pane at the
+    /// size of its place (a pane whose rectangle changed is resized and
+    /// draws again whole), a pane behind another's tab told it is not seen
+    /// and one shown again told it is, and a shell drawn if anything of it
+    /// moved.
     ///
     /// Answers what a hand asked of the windows themselves -- the panes
-    /// taken out of the dock and those closed -- for the caller to carry out
-    /// ([`App::hand_over`]).
-    fn settle_dock(&mut self) -> (Vec<i32>, Vec<i32>) {
-        let Some(shell) = self.dock.as_mut() else {
-            return Default::default();
-        };
-        let dirty = shell.layout.take_dirty();
-        if dirty.layout {
-            for id in shell.layout.panes() {
-                let shown = shell.layout.shown(id);
-                let rect = shell.layout.rect(id);
-                let Some(ws) = self.windows.get_mut(&id) else {
-                    continue;
-                };
-                if let Some(rect) = rect
-                    && (ws.gpu.config.width, ws.gpu.config.height) != (rect.w, rect.h)
-                {
-                    ws.gpu.resize(rect.w, rect.h);
-                    ws.repaint();
-                }
-                // a hidden tab is a covered window: no tick, no frame
-                if shown == shell.hidden.contains(&id) {
-                    ws.occluded = !shown;
-                    if shown {
-                        shell.hidden.remove(&id);
+    /// taken out of the dock, those closed, those put back -- for the caller
+    /// to carry out ([`App::hand_over`]).
+    fn settle_dock(&mut self) -> Handed {
+        let App {
+            dock,
+            floats,
+            windows,
+            ..
+        } = self;
+        let mut handed = Handed::default();
+        for shell in dock.iter_mut().chain(floats.values_mut()) {
+            let dirty = shell.layout.take_dirty();
+            if dirty.layout {
+                for id in shell.layout.panes() {
+                    let shown = shell.layout.shown(id);
+                    let rect = shell.layout.rect(id);
+                    let Some(ws) = windows.get_mut(&id) else {
+                        continue;
+                    };
+                    if let Some(rect) = rect
+                        && (ws.gpu.config.width, ws.gpu.config.height) != (rect.w, rect.h)
+                    {
+                        ws.gpu.resize(rect.w, rect.h);
                         ws.repaint();
-                    } else {
-                        shell.hidden.insert(id);
+                    }
+                    // a hidden tab is a covered window: no tick, no frame
+                    if shown == shell.hidden.contains(&id) {
+                        ws.occluded = !shown;
+                        if shown {
+                            shell.hidden.remove(&id);
+                            ws.repaint();
+                        } else {
+                            shell.hidden.insert(id);
+                        }
                     }
                 }
             }
+            if dirty.layout || dirty.chrome {
+                shell.gpu.request_redraw();
+            }
+            handed.take(dirty);
         }
-        if dirty.layout || dirty.chrome {
-            shell.gpu.request_redraw();
-        }
-        (dirty.out, dirty.close)
+        handed
     }
 
-    /// **What a hand asked of the windows of the dock**: each pane taken out
-    /// gets a window of its own, and each one closed closes as its own close
-    /// mark would close it (its owner asked first where it asks).
-    fn hand_over(&mut self, lp: Loop, (out, close): (Vec<i32>, Vec<i32>)) {
-        for id in out {
-            if let Err(e) = self.move_window(lp, id, false) {
-                warn!("dock: {e}");
+    /// **What a hand asked of the windows of a shell**: each pane taken out
+    /// gets a window of its own, each one put back is a pane again, and each
+    /// one closed closes as its own close mark would close it (its owner
+    /// asked first where it asks).
+    fn hand_over(&mut self, lp: Loop, handed: Handed) {
+        for (ids, into) in [(handed.out, false), (handed.back, true)] {
+            for id in ids {
+                if let Err(e) = self.move_window(lp, id, into) {
+                    warn!("dock: {e}");
+                }
             }
         }
-        for id in close {
+        for id in handed.close {
             self.user_close(id, lp);
         }
     }
@@ -223,15 +309,26 @@ impl App {
     /// pointer (or the one a press holds), the keys to the pane last pressed
     /// in, what is the whole window's -- its size, its scale, the modifiers,
     /// being seen -- to the dock or to every pane.
-    pub(super) fn dock_event(&mut self, event_loop: &ActiveEventLoop, event: WindowEvent) {
-        let Some(shell) = self.dock.as_mut() else {
+    pub(super) fn dock_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        which: Which,
+        event: WindowEvent,
+    ) {
+        let Some(shell) = shell_mut!(self, which) else {
             return;
         };
         let panes = shell.layout.panes().to_vec();
         match event {
-            WindowEvent::RedrawRequested => self.compose_dock(),
+            WindowEvent::RedrawRequested => self.compose_dock(which),
+            // the dock's window is the application's: its floating panels
+            // close with it
             WindowEvent::CloseRequested => {
-                for id in panes {
+                let floats: Vec<i32> = match which {
+                    Which::Main => self.floats.keys().copied().collect(),
+                    Which::Float(_) => Vec::new(),
+                };
+                for id in panes.into_iter().chain(floats) {
                     self.user_close(id, Loop::Shown(event_loop));
                 }
             }
@@ -336,13 +433,11 @@ impl App {
         }
     }
 
-    /// **The dock's frame**: each shown pane that asked for a frame draws
+    /// **A shell's frame**: each shown pane that asked for a frame draws
     /// it into its texture, then every shown pane is copied into its place
-    /// in the surface with the dock's chrome over them.
-    fn compose_dock(&mut self) {
-        let Some(shown) = self
-            .dock
-            .as_ref()
+    /// in the surface with the shell's chrome over them.
+    fn compose_dock(&mut self, which: Which) {
+        let Some(shown) = shell_mut!(self, which)
             .map(|s| s.layout.placed().map(|(id, _)| id).collect::<Vec<_>>())
         else {
             return;
@@ -359,11 +454,16 @@ impl App {
         let clear = divider_color(&self.host.theme);
         let App {
             dock,
+            floats,
             windows,
             host,
             ..
         } = self;
-        let Some(shell) = dock.as_mut() else {
+        let shell = match which {
+            Which::Main => dock.as_mut(),
+            Which::Float(id) => floats.get_mut(&id),
+        };
+        let Some(shell) = shell else {
             return;
         };
         let Some(surface) = shell.gpu.surface() else {
@@ -424,17 +524,51 @@ impl App {
                 .move_window(lp, id, true)
                 .map(|()| self.dock_state())
                 .map_err(refused),
+            (
+                _,
+                Call::Pointer {
+                    panel: Some(id), ..
+                }
+                | Call::Capture {
+                    panel: Some(id), ..
+                },
+            ) if !self.floats.contains_key(&id) => {
+                Err(refused(format!("window {id} is not a floating panel")))
+            }
+            (
+                _,
+                Call::Pointer {
+                    kind,
+                    x,
+                    y,
+                    panel: Some(id),
+                },
+            ) => {
+                let handed = self.dock_pointer(Which::Float(id), kind, x, y);
+                self.hand_over(lp, handed);
+                Ok(self.dock_state())
+            }
+            (
+                _,
+                Call::Capture {
+                    path,
+                    panel: Some(id),
+                },
+            ) => self
+                .dock_capture(Which::Float(id), &path)
+                .map(|()| json!({ "path": path }))
+                .map_err(|e| ("runtime".to_string(), e)),
             (false, _) => Err((
                 "runtime".to_string(),
                 "the dock is not open: it opens with its first pane".to_string(),
             )),
-            (true, Call::Pointer { kind, x, y }) => {
-                let handed = self.dock_pointer(kind, x, y);
+            (true, Call::Pointer { kind, x, y, .. }) => {
+                let handed = self.dock_pointer(Which::Main, kind, x, y);
                 self.hand_over(lp, handed);
                 Ok(self.dock_state())
             }
-            (true, Call::Capture(path)) => self
-                .dock_capture(&path)
+            (true, Call::Capture { path, .. }) => self
+                .dock_capture(Which::Main, &path)
                 .map(|()| json!({ "path": path }))
                 .map_err(|e| ("runtime".to_string(), e)),
             (true, call) => {
@@ -459,14 +593,14 @@ impl App {
         call::with_out(state, &out)
     }
 
-    /// **A scripted hand on the dock's surface**, at `(x, y)` of it: the
+    /// **A scripted hand on a shell's surface**, at `(x, y)` of it: the
     /// chrome takes what lands on it, and a pane what lands in it, at its own
     /// pixels, through the window's scripted pointer -- the hand the
     /// platform's pointer is.
     ///
     /// Answers what the hand asked of the windows ([`App::hand_over`]).
-    fn dock_pointer(&mut self, kind: PointerKind, x: f64, y: f64) -> (Vec<i32>, Vec<i32>) {
-        let Some(shell) = self.dock.as_mut() else {
+    fn dock_pointer(&mut self, which: Which, kind: PointerKind, x: f64, y: f64) -> Handed {
+        let Some(shell) = shell_mut!(self, which) else {
             return Default::default();
         };
         let layout = &mut shell.layout;
@@ -483,13 +617,11 @@ impl App {
         self.settle_dock()
     }
 
-    /// **The dock's picture at `path`**: every shown pane drawn into its
+    /// **A shell's picture at `path`**: every shown pane drawn into its
     /// texture, then composed with the chrome into a texture of the
     /// surface's size, read back and written as a PNG.
-    fn dock_capture(&mut self, path: &str) -> Result<(), String> {
-        let shown: Vec<i32> = self
-            .dock
-            .as_ref()
+    fn dock_capture(&mut self, which: Which, path: &str) -> Result<(), String> {
+        let shown: Vec<i32> = shell_mut!(self, which)
             .map(|s| s.layout.placed().map(|(id, _)| id).collect())
             .unwrap_or_default();
         for &id in &shown {
@@ -501,11 +633,16 @@ impl App {
         let clear = divider_color(&self.host.theme);
         let App {
             dock,
+            floats,
             windows,
             host,
             ..
         } = self;
-        let shell = dock.as_mut().ok_or("the dock closed")?;
+        let shell = match which {
+            Which::Main => dock.as_mut(),
+            Which::Float(id) => floats.get_mut(&id),
+        };
+        let shell = shell.ok_or("the dock closed")?;
         let chrome = chrome_mesh(&shell.layout, &host.theme);
         let views: Vec<_> = shell
             .layout

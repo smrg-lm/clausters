@@ -122,10 +122,15 @@ impl App {
             }
             None => {
                 let gpu = match lp {
-                    // a pane of the dock, on its device, unless it was
-                    // taken out of it
-                    _ if self.host.dock && !self.undocked.contains(&id) => {
-                        let Some(gpu) = self.open_pane(lp, id) else {
+                    // a pane of the dock, on its device, or -- taken out of
+                    // it -- a floating panel's
+                    _ if self.host.dock => {
+                        let gpu = if self.undocked.contains(&id) {
+                            self.open_float(lp, id, (width, height))
+                        } else {
+                            self.open_pane(lp, id)
+                        };
+                        let Some(gpu) = gpu else {
                             return;
                         };
                         gpu
@@ -460,8 +465,9 @@ impl App {
             self.undocked.remove(&id);
         } else {
             self.undocked.insert(id);
-            self.close_pane(id);
         }
+        // out of the dock, or out of its floating panel
+        self.close_pane(id);
         self.open_window(lp, id, origin);
         self.carried.remove(&id);
         if self.windows.contains_key(&id) {

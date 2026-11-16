@@ -12,7 +12,11 @@
 //! layer ([`popup::Stack`]), placed by its one [`popup::layout`] and drawn by
 //! the frame's own list painter, over the dock's surface rather than over a
 //! window's. A pick is a move the dock makes, or -- closing a window, taking
-//! it out -- one it hands its front ([`super::Dirty`]).
+//! it out, putting it back -- one it hands its front ([`super::Dirty`]).
+//!
+//! A window taken out of the dock keeps its bar, as a **floating panel**
+//! ([`Dock::floating`]): its title, its menu and its close mark, with no
+//! grip, and a menu whose first entry puts it back into the dock.
 
 use clausters_gui_draw::font;
 use clausters_gui_draw::rect::Rect;
@@ -73,8 +77,16 @@ impl Dock {
         let m = self.metrics();
         let h = r.h;
         let size = self.text_size();
-        let grip_w = (h * 0.75).round();
-        let mut out = vec![(BarPart::Grip, Rect::new(r.x, r.y, grip_w, h))];
+        // a floating panel has nowhere to be dragged to, so no grip
+        let grip_w = if self.floating {
+            0.0
+        } else {
+            (h * 0.75).round()
+        };
+        let mut out = Vec::new();
+        if !self.floating {
+            out.push((BarPart::Grip, Rect::new(r.x, r.y, grip_w, h)));
+        }
         let single = group.panes.len() <= 1;
         let buttons = if single { 2.0 } else { 1.0 };
         let end = (r.x + r.w - buttons * h).max(r.x + grip_w);
@@ -136,6 +148,7 @@ impl Dock {
         let g = &self.groups[group];
         let shown = g.panes[g.active];
         match part {
+            BarPart::Grip | BarPart::Title if self.floating => self.focus = Some(shown),
             BarPart::Grip | BarPart::Title => {
                 self.focus = Some(shown);
                 self.grip = Some(Grip::Tab {
@@ -199,6 +212,14 @@ impl Dock {
         let Some(g) = self.groups.iter().find(|g| g.panes.contains(&pane)) else {
             return;
         };
+        if self.floating {
+            let entries = vec![
+                Entry::action("Back into the dock", "dock"),
+                Entry::separator(),
+                Entry::action("Close", "close"),
+            ];
+            return self.open_menu(entries, at, Target::Pane(pane));
+        }
         let several = g.panes.len() > 1;
         let mut entries = Vec::new();
         if several {
@@ -338,6 +359,7 @@ impl Dock {
                         .close
                         .extend(group.iter().filter(|&&p| p != pane)),
                     "undock" => self.dirty.out.push(pane),
+                    "dock" => self.dirty.back.push(pane),
                     "split:right" | "split:bottom" => {
                         let side = if verb == "split:right" {
                             Side::Right

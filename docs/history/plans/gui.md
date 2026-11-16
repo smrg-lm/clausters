@@ -8008,3 +8008,12 @@ module of its own.
   reads as 32 bars of 6/8 in F with its repeat, its piano's name and its
   head, writes back the same, and the engraver says nothing about it
   (`a_score_written_staff_by_staff_reads_whole`).
+
+- ✅ **A hand's way back into the dock** *(left by WS3, 2026-11-16; done
+  the same day)*. A window taken out of the dock could return only by
+  `{"verb": "dock"}`: its own window had no entry for it, and the dock had
+  none either once its last pane was out, since the dock's window closes
+  with it. A window taken out is now a floating panel -- a shell like the
+  dock's, holding one pane under its panel's bar, with no pages and no
+  grip -- whose menu's *Back into the dock* puts it back, natively and in
+  a page; `pointer` and `capture` name it with `"panel"`.

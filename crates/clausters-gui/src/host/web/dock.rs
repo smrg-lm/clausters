@@ -9,6 +9,11 @@
 //! What this adds is the canvas, its routing (to a pane, or to the dock's
 //! own chrome), the frame that copies every shown pane into its surface with
 //! the chrome over it, and the dock's door on the wire (`/gui_dock`).
+//!
+//! A window taken out of the dock is a **floating panel**: a canvas of its
+//! own appended to the page, drawn as the dock draws a panel -- its pane
+//! under its bar ([`Dock::floating`]) -- so it is a shell like the dock's,
+//! with one pane and no pages ([`Which::Float`]).
 
 use std::collections::HashSet;
 
@@ -20,7 +25,7 @@ use super::canvas::{PointerListener, watch_buttons};
 use super::capture::CaptureOf;
 use super::*;
 use crate::host::dock::call::{self, Call};
-use crate::host::dock::{Composer, Dock, divider_color};
+use crate::host::dock::{Composer, Dock, Handed, Which, divider_color};
 use crate::host::{PointerKind, PointerMods};
 
 /// The dock's canvas, its surface once the GPU is up, and its panes.
@@ -42,10 +47,32 @@ pub(super) struct WebShell {
     hidden: HashSet<i32>,
 }
 
+/// The shell `which` names, borrowing only the field it lives in.
+macro_rules! shell_mut {
+    ($app:expr, $which:expr) => {
+        match $which {
+            Which::Main => $app.dock.as_mut(),
+            Which::Float(def) => $app.floats.get_mut(&def),
+        }
+    };
+}
+
 impl WebApp {
-    /// Whether `id` is the dock's canvas window.
+    /// Whether `id` is a shell's canvas window: the dock's or a floating
+    /// panel's.
     pub(super) fn is_dock_window(&self, id: WindowId) -> bool {
-        self.dock.as_ref().is_some_and(|s| s.window.id() == id)
+        self.shell_of(id).is_some()
+    }
+
+    /// The shell whose canvas window is `id`.
+    pub(super) fn shell_of(&self, id: WindowId) -> Option<Which> {
+        if self.dock.as_ref().is_some_and(|s| s.window.id() == id) {
+            return Some(Which::Main);
+        }
+        self.floats
+            .iter()
+            .find(|(_, s)| s.window.id() == id)
+            .map(|(&def, _)| Which::Float(def))
     }
 
     /// Whether canvas slot `def` is a pane of the dock.
@@ -72,41 +99,55 @@ impl WebApp {
             .with_active(false)
             .with_canvas(Some(canvas))
             .with_append(false);
-        let window = match event_loop.create_window(attrs) {
-            Ok(w) => Arc::new(w),
-            Err(e) => return log(&format!("dock: cannot open its canvas: {e}")),
+        let Some(shell) = self.open_shell(event_loop, attrs, Which::Main) else {
+            return;
         };
-        let buttons = Rc::new(Cell::new(0));
-        let mods = Rc::new(Cell::new(0));
-        let listener = watch_buttons(&window, &buttons, &mods);
-        let scale = window.scale_factor() as f32;
-        let metrics = self.host.metrics.resolved(scale);
-        self.dock = Some(WebShell {
-            window: window.clone(),
-            render: None,
-            layout: Dock::new((1, 1), metrics),
-            scale,
-            buttons,
-            mods,
-            _listener: listener,
-            pending_size: None,
-            hidden: HashSet::new(),
-        });
+        self.dock = Some(shell);
         self.host.dock = true;
         // the windows already open move into it
         let open: Vec<i32> = self.canvases.keys().copied().collect();
         for def in open {
             self.attach(event_loop, def, None);
         }
+    }
+
+    /// **A shell over a canvas**: its window made from `attrs`, the
+    /// browser's buttons watched over it, and its device asked for
+    /// (`WebEvent::DockGpuReady` answers it).
+    fn open_shell(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        attrs: winit::window::WindowAttributes,
+        which: Which,
+    ) -> Option<WebShell> {
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                log(&format!("dock: cannot open its canvas: {e}"));
+                return None;
+            }
+        };
+        let buttons = Rc::new(Cell::new(0));
+        let mods = Rc::new(Cell::new(0));
+        let listener = watch_buttons(&window, &buttons, &mods);
+        let scale = window.scale_factor() as f32;
+        let metrics = self.host.metrics.resolved(scale);
+        let layout = match which {
+            Which::Main => Dock::new((1, 1), metrics),
+            Which::Float(_) => Dock::floating((1, 1), metrics),
+        };
         log("dock: canvas attached; requesting GPU adapter");
         let (proxy, host) = (web_proxy(), self.id);
         let samples = self.host.msaa;
+        let gpu_window = window.clone();
         wasm_bindgen_futures::spawn_local(async move {
-            match Gpu::new(window, samples).await {
+            match Gpu::new(gpu_window, samples).await {
                 Ok(gpu) => {
                     if let Some(proxy) = proxy {
-                        let _ = proxy
-                            .send_event(HostEvent::To(host, WebEvent::DockGpuReady(Box::new(gpu))));
+                        let _ = proxy.send_event(HostEvent::To(
+                            host,
+                            WebEvent::DockGpuReady(which, Box::new(gpu)),
+                        ));
                     }
                 }
                 Err(e) => {
@@ -115,13 +156,53 @@ impl WebApp {
                 }
             }
         });
+        Some(WebShell {
+            window,
+            render: None,
+            layout,
+            scale,
+            buttons,
+            mods,
+            _listener: listener,
+            pending_size: None,
+            hidden: HashSet::new(),
+        })
     }
 
-    /// **Canvas slot `def` as a pane**: the dock's canvas window, the
-    /// dock's buttons and modifiers, a texture of its own once the
-    /// device is up. The panes already there make room for it.
-    pub(super) fn attach_pane(&mut self, def_id: i32) {
-        let Some(shell) = self.dock.as_mut() else {
+    /// **Canvas slot `def` as a floating panel**: a canvas of its own
+    /// appended to the page, as a window the host opens with no place is,
+    /// of the size the window declares with its panel's bar above it.
+    pub(super) fn open_float(&mut self, event_loop: &ActiveEventLoop, def: i32) {
+        let (w, h) = self.host.window_size(def).unwrap_or(CANVAS_SIZE);
+        let bar = Dock::floating((1, 1), self.host.metrics.resolved(1.0)).bar_height();
+        let attrs = Window::default_attributes()
+            .with_title(format!("clausters-gui {def}"))
+            .with_inner_size(LogicalSize::new(f64::from(w), f64::from(h + bar)))
+            .with_active(false)
+            .with_append(true);
+        let Some(shell) = self.open_shell(event_loop, attrs, Which::Float(def)) else {
+            return;
+        };
+        self.host.set_ui_scale(def, shell.scale);
+        if let Some((pw, ph)) = self.host.window_size_px(def) {
+            let bar = shell.layout.bar_height();
+            let _ = shell
+                .window
+                .request_inner_size(PhysicalSize::new(pw, ph + bar));
+        }
+        self.floats.insert(def, shell);
+        self.attach_pane(Which::Float(def), def);
+    }
+
+    /// **Canvas slot `def` as a pane** of shell `which`: the shell's
+    /// canvas window, its buttons and modifiers, a texture of its own once
+    /// the device is up. The panes already there make room for it.
+    pub(super) fn attach_pane(&mut self, which: Which, def_id: i32) {
+        let page = match which {
+            Which::Main => self.host.window_dock_page(def_id),
+            Which::Float(_) => None,
+        };
+        let Some(shell) = shell_mut!(self, which) else {
             return;
         };
         if let Some(old) = self.canvases.remove(&def_id) {
@@ -133,9 +214,7 @@ impl WebApp {
                 element.remove();
             }
         }
-        shell
-            .layout
-            .add_on(def_id, self.host.window_dock_page(def_id).as_deref());
+        shell.layout.add_on(def_id, page.as_deref());
         if let Some(title) = self.host.window_title(def_id) {
             shell.layout.set_title(def_id, title);
         }
@@ -146,34 +225,46 @@ impl WebApp {
         slot.composer = compose::Composer::attach(self.id, def_id);
         self.canvases.insert(def_id, slot);
         log(&format!("def {def_id}: a pane of the dock"));
+        let window = shell.window.clone();
         self.pane_render(def_id);
         self.settle_dock();
-        if let Some(shell) = &self.dock {
-            shell.window.request_redraw();
-        }
+        window.request_redraw();
     }
 
     /// **Pane `def`'s title changed**: its tab says it.
     pub(super) fn retitle_pane(&mut self, def: i32) {
-        let title = self.host.window_title(def);
-        if let (Some(shell), Some(title)) = (self.dock.as_mut(), title)
+        let Some(title) = self.host.window_title(def) else {
+            return;
+        };
+        if let Some(shell) = self.floats.get_mut(&def) {
+            shell.layout.set_title(def, title);
+        } else if let Some(shell) = self.dock.as_mut()
             && shell.layout.holds(def)
         {
             shell.layout.set_title(def, title);
-            self.settle_dock();
         }
+        self.settle_dock();
     }
 
     /// Gives pane `def` its texture on the dock's device, once there is
     /// one, and builds its resources against it.
     fn pane_render(&mut self, def: i32) {
-        let Some(shell) = self.dock.as_ref() else {
+        let WebApp {
+            dock,
+            floats,
+            canvases,
+            ..
+        } = self;
+        let Some(shell) = floats
+            .get(&def)
+            .or_else(|| dock.as_ref().filter(|s| s.layout.holds(def)))
+        else {
             return;
         };
         let (Some((gpu, _)), Some(rect)) = (shell.render.as_ref(), shell.layout.rect(def)) else {
             return;
         };
-        let Some(slot) = self.canvases.get_mut(&def) else {
+        let Some(slot) = canvases.get_mut(&def) else {
             return;
         };
         if slot.render.is_some() {
@@ -196,8 +287,15 @@ impl WebApp {
         self.request_redraw(def);
     }
 
-    /// **Canvas slot `def` is no longer a pane**: the others share its room.
+    /// **Canvas slot `def` is no longer a pane**: the others share its
+    /// room; a floating panel's canvas leaves the page with it.
     pub(super) fn detach_pane(&mut self, def: i32) {
+        if let Some(float) = self.floats.remove(&def) {
+            if let Some(element) = float.window.canvas() {
+                element.remove();
+            }
+            return;
+        }
         let Some(shell) = self.dock.as_mut() else {
             return;
         };
@@ -210,8 +308,8 @@ impl WebApp {
 
     /// The dock's device is up: the surface takes the canvas' size, and
     /// every pane waiting for it gets its texture.
-    pub(super) fn dock_gpu_ready(&mut self, mut gpu: Gpu) {
-        let Some(shell) = self.dock.as_mut() else {
+    pub(super) fn dock_gpu_ready(&mut self, which: Which, mut gpu: Gpu) {
+        let Some(shell) = shell_mut!(self, which) else {
             return;
         };
         let size = shell.window.inner_size();
@@ -262,63 +360,75 @@ impl WebApp {
         }
     }
 
-    /// **The dock brought up to what changed in it**: every pane at the size
-    /// of its place (a pane whose rectangle changed is resized and draws
-    /// again whole), a pane behind another's tab not seen and one shown again
-    /// seen, and the dock drawn if anything of it moved.
+    /// **Every shell brought up to what changed in it**: every pane at the
+    /// size of its place (a pane whose rectangle changed is resized and
+    /// draws again whole), a pane behind another's tab not seen and one
+    /// shown again seen, and a shell drawn if anything of it moved.
     ///
     /// Answers what a hand asked of the windows themselves -- the panes
-    /// taken out of the dock and those closed -- for the caller to carry out
-    /// ([`WebApp::hand_over`]).
-    fn settle_dock(&mut self) -> (Vec<i32>, Vec<i32>) {
-        let Some(shell) = self.dock.as_mut() else {
-            return Default::default();
-        };
-        let dirty = shell.layout.take_dirty();
-        if dirty.layout {
-            for def in shell.layout.panes() {
-                let shown = shell.layout.shown(def);
-                let rect = shell.layout.rect(def);
-                let Some(slot) = self.canvases.get_mut(&def) else {
-                    continue;
-                };
-                if let (Some(render), Some(rect)) = (slot.render.as_mut(), rect)
-                    && (render.gpu.config.width, render.gpu.config.height) != (rect.w, rect.h)
-                {
-                    render.gpu.resize(rect.w, rect.h);
-                    slot.request_redraw();
-                }
-                // a hidden tab is a canvas out of view: no tick, no frame
-                if shown == shell.hidden.contains(&def) {
-                    slot.visible = shown;
-                    if shown {
-                        shell.hidden.remove(&def);
+    /// taken out of the dock, those closed, those put back -- for the caller
+    /// to carry out ([`WebApp::hand_over`]).
+    fn settle_dock(&mut self) -> Handed {
+        let WebApp {
+            dock,
+            floats,
+            canvases,
+            ..
+        } = self;
+        let mut handed = Handed::default();
+        let mut moved = false;
+        for shell in dock.iter_mut().chain(floats.values_mut()) {
+            let dirty = shell.layout.take_dirty();
+            if dirty.layout {
+                moved = true;
+                for def in shell.layout.panes() {
+                    let shown = shell.layout.shown(def);
+                    let rect = shell.layout.rect(def);
+                    let Some(slot) = canvases.get_mut(&def) else {
+                        continue;
+                    };
+                    if let (Some(render), Some(rect)) = (slot.render.as_mut(), rect)
+                        && (render.gpu.config.width, render.gpu.config.height) != (rect.w, rect.h)
+                    {
+                        render.gpu.resize(rect.w, rect.h);
                         slot.request_redraw();
-                    } else {
-                        shell.hidden.insert(def);
+                    }
+                    // a hidden tab is a canvas out of view: no tick, no frame
+                    if shown == shell.hidden.contains(&def) {
+                        slot.visible = shown;
+                        if shown {
+                            shell.hidden.remove(&def);
+                            slot.request_redraw();
+                        } else {
+                            shell.hidden.insert(def);
+                        }
                     }
                 }
             }
+            if dirty.layout || dirty.chrome {
+                shell.window.request_redraw();
+            }
+            handed.take(dirty);
+        }
+        if moved {
             self.on_tree_changed();
         }
-        if (dirty.layout || dirty.chrome)
-            && let Some(shell) = &self.dock
-        {
-            shell.window.request_redraw();
-        }
-        (dirty.out, dirty.close)
+        handed
     }
 
-    /// **What a hand asked of the windows of the dock**: each pane taken out
-    /// gets a canvas of its own, and each one closed closes as a window's own
-    /// close mark would close it (its owner asked first where it asks).
-    fn hand_over(&mut self, event_loop: &ActiveEventLoop, (out, close): (Vec<i32>, Vec<i32>)) {
-        for def in out {
-            if let Err(e) = self.move_window(event_loop, def, false) {
-                log(&format!("dock: {e}"));
+    /// **What a hand asked of the windows of a shell**: each pane taken out
+    /// gets a floating panel of its own, each one put back is a pane again,
+    /// and each one closed closes as a window's own close mark would close
+    /// it (its owner asked first where it asks).
+    fn hand_over(&mut self, event_loop: &ActiveEventLoop, handed: Handed) {
+        for (defs, into) in [(handed.out, false), (handed.back, true)] {
+            for def in defs {
+                if let Err(e) = self.move_window(event_loop, def, into) {
+                    log(&format!("dock: {e}"));
+                }
             }
         }
-        for def in close {
+        for def in handed.close {
             self.close_by_hand(def);
         }
     }
@@ -428,13 +538,18 @@ impl WebApp {
     /// it is about: the motion, the buttons and a touch to the pane under it
     /// (or the one a press holds), the keys to the pane last pressed in, what
     /// is the whole canvas' to the dock or to every pane.
-    pub(super) fn dock_event(&mut self, event_loop: &ActiveEventLoop, event: WindowEvent) {
-        let Some(shell) = self.dock.as_mut() else {
+    pub(super) fn dock_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        which: Which,
+        event: WindowEvent,
+    ) {
+        let Some(shell) = shell_mut!(self, which) else {
             return;
         };
         let panes = shell.layout.panes();
         match event {
-            WindowEvent::RedrawRequested => self.compose_dock(),
+            WindowEvent::RedrawRequested => self.compose_dock(which),
             WindowEvent::Resized(size) => {
                 if let Some((gpu, _)) = shell.render.as_mut() {
                     gpu.resize(size.width, size.height);
@@ -544,10 +659,8 @@ impl WebApp {
     /// **The dock's frame**: each shown pane that asked for a frame draws
     /// it into its texture, then every shown pane is copied into its place
     /// in the surface with the dock's chrome over them.
-    fn compose_dock(&mut self) {
-        let Some(shown) = self
-            .dock
-            .as_ref()
+    fn compose_dock(&mut self, which: Which) {
+        let Some(shown) = shell_mut!(self, which)
             .map(|s| s.layout.placed().map(|(def, _)| def).collect::<Vec<_>>())
         else {
             return;
@@ -560,11 +673,16 @@ impl WebApp {
         let clear = divider_color(&self.host.theme);
         let WebApp {
             dock,
+            floats,
             canvases,
             host,
             ..
         } = self;
-        let Some(shell) = dock.as_mut() else {
+        let shell = match which {
+            Which::Main => dock.as_mut(),
+            Which::Float(def) => floats.get_mut(&def),
+        };
+        let Some(shell) = shell else {
             return;
         };
         let chrome = chrome_mesh(&shell.layout, &host.theme);
@@ -611,16 +729,50 @@ impl WebApp {
                 .move_window(event_loop, def, true)
                 .map(|()| self.dock_state())
                 .map_err(refused),
+            (
+                _,
+                Call::Pointer {
+                    panel: Some(def), ..
+                }
+                | Call::Capture {
+                    panel: Some(def), ..
+                },
+            ) if !self.floats.contains_key(&def) => {
+                Err(refused(format!("window {def} is not a floating panel")))
+            }
+            (
+                _,
+                Call::Pointer {
+                    kind,
+                    x,
+                    y,
+                    panel: Some(def),
+                },
+            ) => {
+                let handed = self.dock_pointer(Which::Float(def), kind, x, y);
+                self.hand_over(event_loop, handed);
+                Ok(self.dock_state())
+            }
+            (
+                _,
+                Call::Capture {
+                    path,
+                    panel: Some(def),
+                },
+            ) => match self.dock_capture(Which::Float(def), seq, path) {
+                Ok(()) => return,
+                Err(e) => Err(("runtime".to_string(), e)),
+            },
             (false, _) => Err((
                 "runtime".to_string(),
                 "the dock is not open: the page has not handed it a canvas".to_string(),
             )),
-            (true, Call::Pointer { kind, x, y }) => {
-                let handed = self.dock_pointer(kind, x, y);
+            (true, Call::Pointer { kind, x, y, .. }) => {
+                let handed = self.dock_pointer(Which::Main, kind, x, y);
                 self.hand_over(event_loop, handed);
                 Ok(self.dock_state())
             }
-            (true, Call::Capture(path)) => match self.dock_capture(seq, path) {
+            (true, Call::Capture { path, .. }) => match self.dock_capture(Which::Main, seq, path) {
                 Ok(()) => return,
                 Err(e) => Err(("runtime".to_string(), e)),
             },
@@ -651,8 +803,8 @@ impl WebApp {
     /// pixels, through the canvas' scripted pointer.
     ///
     /// Answers what the hand asked of the windows ([`WebApp::hand_over`]).
-    fn dock_pointer(&mut self, kind: PointerKind, x: f64, y: f64) -> (Vec<i32>, Vec<i32>) {
-        let Some(shell) = self.dock.as_mut() else {
+    fn dock_pointer(&mut self, which: Which, kind: PointerKind, x: f64, y: f64) -> Handed {
+        let Some(shell) = shell_mut!(self, which) else {
             return Default::default();
         };
         let layout = &mut shell.layout;
@@ -673,10 +825,8 @@ impl WebApp {
     /// texture, composed with the chrome into a texture of the surface's
     /// size, and written into the page's storage once the card has it --
     /// answered then.
-    fn dock_capture(&mut self, seq: i32, path: String) -> Result<(), String> {
-        let shown: Vec<i32> = self
-            .dock
-            .as_ref()
+    fn dock_capture(&mut self, which: Which, seq: i32, path: String) -> Result<(), String> {
+        let shown: Vec<i32> = shell_mut!(self, which)
             .map(|s| s.layout.placed().map(|(def, _)| def).collect())
             .unwrap_or_default();
         for def in shown {
@@ -690,11 +840,16 @@ impl WebApp {
         let host_id = self.id;
         let WebApp {
             dock,
+            floats,
             canvases,
             host,
             ..
         } = self;
-        let shell = dock.as_mut().ok_or("the dock closed")?;
+        let shell = match which {
+            Which::Main => dock.as_mut(),
+            Which::Float(def) => floats.get_mut(&def),
+        };
+        let shell = shell.ok_or("the dock closed")?;
         let chrome = chrome_mesh(&shell.layout, &host.theme);
         let (gpu, composer) = shell
             .render

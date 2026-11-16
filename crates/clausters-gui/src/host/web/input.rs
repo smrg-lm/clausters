@@ -430,8 +430,8 @@ impl WebApp {
     ) {
         // the dock's canvas holds panes, each a canvas slot with no
         // canvas of its own
-        if self.is_dock_window(id) {
-            self.dock_event(event_loop, event);
+        if let Some(which) = self.shell_of(id) {
+            self.dock_event(event_loop, which, event);
             return;
         }
         let Some(def) = self.by_winit.get(&id).copied() else {

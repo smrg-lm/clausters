@@ -295,6 +295,9 @@ pub(super) struct App {
     /// The windows taken out of the dock into windows of their own, which
     /// stay out until they are put back.
     pub(super) undocked: std::collections::HashSet<i32>,
+    /// **The floating panels**: each window taken out of the dock, drawn
+    /// under its panel's bar in a window of its own.
+    pub(super) floats: HashMap<i32, super::dock::Shell>,
     /// What a window moving into or out of the dock carries to the window it
     /// opens as: its owner, its modifiers, its gesture machine, its
     /// histories.
@@ -350,6 +353,7 @@ impl App {
             tick_reasons: HashMap::new(),
             dock: None,
             undocked: Default::default(),
+            floats: HashMap::new(),
             carried: HashMap::new(),
         }
     }
@@ -1189,9 +1193,10 @@ impl ApplicationHandler<UserEvent> for App {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        // the dock's window holds panes, each a window with no surface
-        if self.is_dock_window(window_id) {
-            self.dock_event(event_loop, event);
+        // the dock's window holds panes, each a window with no surface, and
+        // so does a floating panel's
+        if let Some(which) = self.shell_of(window_id) {
+            self.dock_event(event_loop, which, event);
             return;
         }
         let Some(&def_id) = self.by_winit.get(&window_id) else {

@@ -26,19 +26,21 @@ impl Dock {
         for group in self.groups() {
             self.draw_bar(d, group);
         }
-        // the pages, along the bottom
-        let strip = self.page_strip();
-        d.mesh.rect(strip, d.theme.status_bar);
-        choice::draw(
-            d,
-            choice::View::Tabs,
-            &self.page_options(),
-            self.page_index(),
-            None,
-            strip,
-            size,
-            self.lit_page(),
-        );
+        // the pages, along the bottom; a floating panel has none
+        if !self.is_floating() {
+            let strip = self.page_strip();
+            d.mesh.rect(strip, d.theme.status_bar);
+            choice::draw(
+                d,
+                choice::View::Tabs,
+                &self.page_options(),
+                self.page_index(),
+                None,
+                strip,
+                size,
+                self.lit_page(),
+            );
+        }
         if let Some(divider) = self.lit_divider() {
             d.mesh.rect(divider.rect, d.theme.accent);
         }

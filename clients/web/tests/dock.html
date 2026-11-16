@@ -132,6 +132,22 @@
         }
         log("taken out and put back");
 
+        // out again, as a floating panel: its bar's menu puts it back by hand
+        const bar = st.bars[0].bar[3];
+        st = await host.dockCall({ verb: "undock", pane: b.id });
+        await sleep(300);
+        const fw = [...document.querySelectorAll("canvas")].at(-1).width;
+        const hand = (kind, x, y) => host.dockCall({ verb: "pointer", kind, x, y, panel: b.id });
+        for (const kind of ["move", "press", "release"]) await hand(kind, fw - 1.5 * bar, bar / 2);
+        await host.dockCall({ verb: "capture", path: "dock_float.png", panel: b.id });
+        await hand("move", fw - 70, 1.5 * bar);
+        st = await hand("press", fw - 70, 1.5 * bar);
+        await sleep(300);
+        if (!st.panes.some((p) => p.id === b.id) || st.out.length !== 0 || canvases() !== 0) {
+          throw new Error(`back by hand: ${JSON.stringify(st)}, ${canvases()} canvases`);
+        }
+        log("a floating panel's menu put it back");
+
         // a window naming its page opens on it; switching pages moves panes
         // and frees none
         const main = await host.dockLayout();

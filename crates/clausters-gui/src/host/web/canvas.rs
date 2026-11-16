@@ -338,14 +338,18 @@ impl WebApp {
             return;
         }
         // **With a dock, a window is a pane of it**, whatever canvas
-        // the page offered for it -- unless it was taken out of it.
-        if self.dock.is_some() && !self.undocked.contains(&def_id) {
+        // the page offered for it -- or, taken out of it, a floating panel's.
+        if self.dock.is_some() {
             if canvas.is_some() {
                 log(&format!(
                     "def {def_id}: a pane of the dock; the canvas offered for it is left empty"
                 ));
             }
-            self.attach_pane(def_id);
+            if self.undocked.contains(&def_id) {
+                self.open_float(event_loop, def_id);
+            } else {
+                self.attach_pane(crate::host::dock::Which::Main, def_id);
+            }
             return;
         }
         if let Some(old) = self.canvases.remove(&def_id) {

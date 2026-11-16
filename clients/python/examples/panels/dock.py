@@ -101,13 +101,13 @@ note.close()
 
 # %% [markdown]
 # ## Keep it open
-# Close the dock's window to end the run.
+# Close the dock's window (or every pane) to end the run.
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        tone.wait()
+        host.wait()
     finally:
         host.stop()
 else:
-    print("the dock is up - tone.wait(10) to hold it, host.stop() to end")
+    print("the dock is up - host.wait(10) to hold it, host.stop() to end")

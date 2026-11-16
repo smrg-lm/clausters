@@ -187,7 +187,7 @@ impl Dock {
     /// The strip of page tabs, along the dock's bottom -- apart from the
     /// panels' bars, which run along each panel's top.
     pub fn page_strip(&self) -> Rect {
-        let h = self.strip_h().min(self.size.1.saturating_sub(1));
+        let h = self.page_strip_h().min(self.size.1.saturating_sub(1));
         Rect::new(0.0, (self.size.1 - h) as f32, self.size.0 as f32, h as f32)
     }
 

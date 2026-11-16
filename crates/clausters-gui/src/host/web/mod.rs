@@ -169,8 +169,9 @@ enum WebEvent {
     /// The dock's canvas changed size, as [`WebEvent::Resize`] says of
     /// a def's.
     DockResize { width: u32, height: u32, scale: f32 },
-    /// The async device for the dock's canvas is ready.
-    DockGpuReady(Box<Gpu>),
+    /// The async device for a shell's canvas -- the dock's or a floating
+    /// panel's -- is ready.
+    DockGpuReady(crate::host::dock::Which, Box<Gpu>),
     /// The async WebGPU device for one canvas is ready.
     /// Boxed: a `Gpu` is ~276 bytes and every other variant is a handful, so
     /// carrying it inline would size the whole event queue to it.
@@ -276,6 +277,9 @@ struct WebApp {
     /// The windows taken out of the dock into canvases of their own, which
     /// stay out until they are put back.
     undocked: std::collections::HashSet<i32>,
+    /// **The floating panels**: each window taken out of the dock, drawn
+    /// under its panel's bar in a canvas of its own.
+    floats: HashMap<i32, dock::WebShell>,
     /// Live control-bus values streamed from the audio server (`/bus_stream` ->
     /// `/bus_stream.reply`), the browser's [`BusSource`] for meters/scopes/canvases.
     buses: Arc<StreamedBuses>,
@@ -381,6 +385,7 @@ impl WebApp {
             dock: None,
             pending_dock: None,
             undocked: Default::default(),
+            floats: HashMap::new(),
             buses: Arc::new(StreamedBuses::default()),
             streamed: Vec::new(),
             taps: Arc::new(StreamedTaps::default()),
@@ -1051,7 +1056,7 @@ impl WebApp {
                 height,
                 scale,
             } => self.resize_dock(width, height, scale),
-            WebEvent::DockGpuReady(gpu) => self.dock_gpu_ready(*gpu),
+            WebEvent::DockGpuReady(which, gpu) => self.dock_gpu_ready(which, *gpu),
             WebEvent::Resize {
                 def_id,
                 width,
