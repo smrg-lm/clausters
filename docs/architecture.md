@@ -1464,7 +1464,7 @@ cursor bound to that transport.
 
 | Layer | What it is | Modules |
 |---|---|---|
-| 0 | the components every window is composed of, and what an editor says of its takes | `ruler`, `panels`, `turn`, `closing`, `chrome`, `forms`, `samples`, `takes` |
+| 0 | the components every window is composed of, the presentation every view shares, and what an editor says of its takes | `ruler`, `panels`, `turn`, `closing`, `chrome`, `forms`, `view`, `samples`, `takes` |
 | 1 | the runtime an application runs over, and a window whose document is a file | `application`, `file` |
 | 2 | the editors another application places inside itself: an envelope, a roll | `points`, `notes` |
 | 3 | the applications over one structure | `audio`, `score` |
