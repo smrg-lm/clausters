@@ -427,47 +427,47 @@ export class ScoreEditor extends SequenceHandler {
     }
 
     /** Select the item before -- the window's `select_left` (`verb`). */
-    selectLeft(): boolean {
+    selectLeft(): Promise<boolean> {
         return this.verb("select_left");
     }
 
     /** Select the item after -- the window's `select_right` (`verb`). */
-    selectRight(): boolean {
+    selectRight(): Promise<boolean> {
         return this.verb("select_right");
     }
 
     /** In note entry: the cursor back -- the window's `cursor_left` (`verb`). */
-    cursorLeft(): boolean {
+    cursorLeft(): Promise<boolean> {
         return this.verb("cursor_left");
     }
 
     /** In note entry: the cursor forward -- the window's `cursor_right` (`verb`). */
-    cursorRight(): boolean {
+    cursorRight(): Promise<boolean> {
         return this.verb("cursor_right");
     }
 
     /** In note entry: the cursor to the bar before -- the window's `bar_left` (`verb`). */
-    barLeft(): boolean {
+    barLeft(): Promise<boolean> {
         return this.verb("bar_left");
     }
 
     /** In note entry: the cursor to the bar after -- the window's `bar_right` (`verb`). */
-    barRight(): boolean {
+    barRight(): Promise<boolean> {
         return this.verb("bar_right");
     }
 
     /** In note entry: the cursor to the staff above -- the window's `staff_up` (`verb`). */
-    staffUp(): boolean {
+    staffUp(): Promise<boolean> {
         return this.verb("staff_up");
     }
 
     /** In note entry: the cursor to the staff below -- the window's `staff_down` (`verb`). */
-    staffDown(): boolean {
+    staffDown(): Promise<boolean> {
         return this.verb("staff_down");
     }
 
     /** In note entry: write a rest at the cursor -- the window's `enter_rest` (`verb`). */
-    enterRest(): boolean {
+    enterRest(): Promise<boolean> {
         return this.verb("enter_rest");
     }
 
@@ -476,7 +476,7 @@ export class ScoreEditor extends SequenceHandler {
      * nearest the note before -- the window's `pitch_a` ... `pitch_g`
      * (`verb`).
      */
-    write(pitch: string): boolean {
+    write(pitch: string): Promise<boolean> {
         return this.verb(`pitch_${letter(pitch)}`);
     }
 
@@ -484,7 +484,7 @@ export class ScoreEditor extends SequenceHandler {
      * In note entry: **add `pitch`** (`"A"` to `"G"`) to the chord just written
      * -- the window's `chord_a` ... `chord_g` (`verb`).
      */
-    chord(pitch: string): boolean {
+    chord(pitch: string): Promise<boolean> {
         return this.verb(`chord_${letter(pitch)}`);
     }
 
@@ -492,7 +492,7 @@ export class ScoreEditor extends SequenceHandler {
      * In note entry: **write in voice `voice`** (1 to 4) from here on -- the
      * window's `voice_1` ... `voice_4` (`verb`).
      */
-    entryVoice(voice: number): boolean {
+    entryVoice(voice: number): Promise<boolean> {
         if (![1, 2, 3, 4].includes(voice)) throw new RangeError(`a voice is 1 to 4, not ${voice}`);
         return this.verb(`voice_${voice}`);
     }

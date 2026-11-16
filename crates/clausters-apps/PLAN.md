@@ -3523,20 +3523,6 @@ finished work, where a pending item reads as done.
   window's version, the file and the Save as form all come out right, so what the
   hand did differently is open, and the symptom is what to write down next time.
 
-- ⬜ **A script's verb does not wait for the window's edit** *(found
-  2026-11-11, running the notes editor's example)*. `editor.split()` asks
-  the window and returns before the edit lands, so the example's `rework()`
-  -- split, then select by pitch -- selects one note where the split left
-  two, unless something waits between them; stepped through cell by cell
-  it works. Open: whether a verb that edits answers once its edit is in
-  (as `select` does), or the client offers a wait for the window's
-  answers.
-  *Seen in CI too, 2026-11-12:* the notes editor's test
-  (`test_a_verb_is_asked_of_the_window_and_its_actions_read`) read the
-  sequence right after `join` and failed in four of eight runs, on `main`
-  and on `restructure`. The test now waits for each verb's edit, as the
-  pedal's test already did; the question above is still open.
-
 - ⬜ **A playback test of the application's engine hung in CI** *(found
   2026-11-12, run 43176962053, job `cargo test (synth-only)`)*.
   `the_loop_switch_turned_while_it_plays_is_not_heard`

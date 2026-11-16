@@ -9,10 +9,23 @@ says which window (``_window``) on which host (``_host``).
 
 from typing import Any
 
+#: How long a step may take to be answered: an application's edit of a long
+#: take is the slow one, and it is answered once it is in.
+_TAKEN_TIMEOUT = 10.0
+
 
 class WindowVerbs:
     """**A window's verbs, as members**: each one call to the host about the
-    window ``_window`` names, ``False`` or a `RuntimeError` with none open."""
+    window ``_window`` names, ``False`` or a `RuntimeError` with none open.
+
+    **A step answers once the window has taken it**: a verb, a hand or a key
+    returns when what it edits is in, so the next line of a script reads the
+    result (a selection by pitch after a split finds both halves). The host
+    takes a script's steps on a window one at a time, and on a window an
+    application holds each once the application has answered the one before
+    (``docs/gui-protocol.md``, ``/gui_verb``), so a query of the window after
+    the step is answered after it; and the event loop has delivered whatever
+    the step sent back by then."""
 
     #: What the composing class says: the host, and the window on it.
     _host: Any
@@ -22,6 +35,13 @@ class WindowVerbs:
         """Whether there is a window to ask."""
         return self._host is not None and self._window is not None
 
+    def _taken(self) -> None:
+        """Wait for the window to have taken the steps sent before: a query
+        of it, answered after them. A host whose loop is not running delivers
+        nothing until it is pumped, so there is nothing to wait for there."""
+        if getattr(self._host, "looping", False):
+            self._host.query(self._window, timeout=_TAKEN_TIMEOUT)
+
     def verb(self, name: str) -> bool:
         """**Perform the window's verb ``name``**, as its key, its menu entry
         or its tool would -- the door every verb of the one verb table is
@@ -30,12 +50,14 @@ class WindowVerbs:
         this editor's comes back to it as the window's event would; what it
         edits arrives as a gesture's edit does, through the event loop.
 
-        Answers whether it was asked: ``False`` with no window open, since a
-        window's verb acts on what the window holds.
+        Answers whether it was asked, once the window has taken it: ``False``
+        with no window open, since a window's verb acts on what the window
+        holds.
         """
         if not self._has_window():
             return False
         self._host.verb(self._window, str(name))
+        self._taken()
         return True
 
     def pointer(self, kind: str, x: float, y: float, mods: str = "") -> bool:
@@ -44,17 +66,21 @@ class WindowVerbs:
         `clausters.gui.host.GuiHost.pointer` on this editor's window. What it
         edits arrives as a gesture's edit does, through the event loop.
 
-        Answers whether it was sent: ``False`` with no window open.
+        Answers whether it was sent, once the window has taken it: ``False``
+        with no window open.
         """
         if not self._has_window():
             return False
         self._host.pointer(self._window, kind, x, y, mods)
+        self._taken()
         return True
 
     def click(self, x: float, y: float, mods: str = "") -> bool:
         """A press and a release at ``(x, y)``, with ``mods`` held (`pointer`)."""
-        return (self.pointer("press", x, y, mods)
-                and self.pointer("release", x, y, mods))
+        if not self._has_window():
+            return False
+        self._host.pointer(self._window, "press", x, y, mods)
+        return self.pointer("release", x, y, mods)
 
     def drag(self, start, end, mods: str = "", steps: int = 8) -> bool:
         """**A drag from ``start`` to ``end``**, each an ``(x, y)`` in the
@@ -64,12 +90,14 @@ class WindowVerbs:
         a constraint does to one, it does to this.
         """
         (x0, y0), (x1, y1) = start, end
-        if not self.pointer("press", x0, y0, mods):
+        if not self._has_window():
             return False
+        self._host.pointer(self._window, "press", x0, y0, mods)
         n = max(int(steps), 1)
         for i in range(1, n + 1):
             t = i / n
-            self.pointer("move", x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, mods)
+            self._host.pointer(self._window, "move", x0 + (x1 - x0) * t,
+                               y0 + (y1 - y0) * t, mods)
         return self.pointer("release", x1, y1, mods)
 
     def press_key(self, key: str, mods: str = "") -> bool:
@@ -78,11 +106,13 @@ class WindowVerbs:
         focused element's key, or the verb the key table binds to it. What it
         edits arrives as a key's edit does, through the event loop.
 
-        Answers whether it was sent: ``False`` with no window open.
+        Answers whether it was sent, once the window has taken it: ``False``
+        with no window open.
         """
         if not self._has_window():
             return False
         self._host.press_key(self._window, key, mods)
+        self._taken()
         return True
 
     def type_text(self, text: str) -> bool:
@@ -90,11 +120,13 @@ class WindowVerbs:
         `clausters.gui.host.GuiHost.type_text` on this editor's window: what
         a focused field types.
 
-        Answers whether it was sent: ``False`` with no window open.
+        Answers whether it was sent, once the window has taken it: ``False``
+        with no window open.
         """
         if not self._has_window():
             return False
         self._host.type_text(self._window, text)
+        self._taken()
         return True
 
     def capture(self, path, timeout: float = 5.0) -> str:

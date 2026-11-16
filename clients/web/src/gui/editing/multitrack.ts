@@ -213,42 +213,42 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
     // ---- the window's verbs ----
 
     /** Split the box under the cursor: the window's `split`. */
-    split(): boolean {
+    split(): Promise<boolean> {
         return this.verb("split");
     }
 
     /** Join the selected boxes: the window's `join`. */
-    join(): boolean {
+    join(): Promise<boolean> {
         return this.verb("join");
     }
 
     /** Move the selected boxes onto the grid: the window's `quantize`. */
-    quantize(): boolean {
+    quantize(): Promise<boolean> {
         return this.verb("quantize");
     }
 
     /** Switch whether a pass stops where the contents end: the window's `stop_at_end`. */
-    stopAtEnd(): boolean {
+    stopAtEnd(): Promise<boolean> {
         return this.verb("stop_at_end");
     }
 
     /** Give every track its default height back: the window's `reset_heights`. */
-    resetHeights(): boolean {
+    resetHeights(): Promise<boolean> {
         return this.verb("reset_heights");
     }
 
     /** Fit every track into the window: the window's `compact_tracks`. */
-    compactTracks(): boolean {
+    compactTracks(): Promise<boolean> {
         return this.verb("compact_tracks");
     }
 
     /** Draw every box of samples as its take's waveform, as the audio editor draws a take: the window's `view_wave`. */
-    viewWave(): boolean {
+    viewWave(): Promise<boolean> {
         return this.verb("view_wave");
     }
 
     /** Draw every box of samples as its take's spectrogram, as the audio editor draws a take: the window's `view_spectrogram`. */
-    viewSpectrogram(): boolean {
+    viewSpectrogram(): Promise<boolean> {
         return this.verb("view_spectrogram");
     }
 
@@ -290,8 +290,8 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
     }
 
     /** Sets what the window's time ruler counts in: no edit. */
-    setRuler(unit: "beats" | "time" | "samples"): void {
-        this.chooseRuler(unit);
+    setRuler(unit: "beats" | "time" | "samples"): Promise<void> {
+        return this.chooseRuler(unit);
     }
 
     // ---- what the hand holds ----

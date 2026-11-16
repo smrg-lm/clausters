@@ -3954,3 +3954,28 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   `clausters-editing`, the `channel_all`, `channel_1` ... `channel_16`
   choices under the Edit menu's Channel, `NotesEditor.channel` in both
   clients, and the host's veil drawn in either mode.
+
+- ✅ **A script's verb does not wait for the window's edit** *(found
+  2026-11-11, running the notes editor's example)*. `editor.split()` asks
+  the window and returns before the edit lands, so the example's `rework()`
+  -- split, then select by pitch -- selects one note where the split left
+  two, unless something waits between them; stepped through cell by cell
+  it works. Open: whether a verb that edits answers once its edit is in
+  (as `select` does), or the client offers a wait for the window's
+  answers.
+  *Seen in CI too, 2026-11-12:* the notes editor's test
+  (`test_a_verb_is_asked_of_the_window_and_its_actions_read`) read the
+  sequence right after `join` and failed in four of eight runs, on `main`
+  and on `restructure`. The test now waits for each verb's edit, as the
+  pedal's test already did; the question above is still open.
+  **Fixed 2026-11-15**: a verb that edits answers once its edit is in, as
+  `select` does, in both clients and with nothing added to the protocol. A
+  verb, a hand and a key are followed by a `/gui_query` of the window,
+  which the host takes after them, on an application's window once the
+  application answered the step, and which arrives after the `/gui_event`
+  the step sent back; Python returns then and TypeScript resolves
+  (`WindowVerbs` in Python, `Editor` and `HostedEditor` in the web client,
+  whose verbs answer promises now, `setRuler` among them). The notes
+  editor's test reads the sequence right after `join`, `unjoin` and the
+  transpositions, with no wait of its own; `docs/gui-protocol.md` and
+  `docs/bindings.md` say so.

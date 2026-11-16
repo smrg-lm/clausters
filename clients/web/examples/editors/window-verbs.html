@@ -112,10 +112,10 @@ the audio engine in the page, so the server a script would launch is
         // on the line of the grid nearest it -- what Ctrl+A and then Q do on
         // the roll. The grid is the window's own, like its zoom, and a whole
         // beat here.
-        function tidy() {
+        async function tidy() {
           editor.grid = 1.0;
-          editor.selectAll();
-          editor.quantize();
+          await editor.selectAll();
+          await editor.quantize();
         }
 
         // The window's verbs, by name: `selectAll` holds every note, `copy`
@@ -125,24 +125,24 @@ the audio engine in the page, so the server a script would launch is
         // entry of its history. The last line asks for the R key through the
         // door itself, `verb("view_all")`: what `viewAll()` is one line over,
         // and what reaches a verb no member names.
-        function again() {
-          editor.selectAll();
-          editor.copy();
-          editor.toEnd();
-          editor.paste();
-          editor.verb("view_all");
+        async function again() {
+          await editor.selectAll();
+          await editor.copy();
+          await editor.toEnd();
+          await editor.paste();
+          await editor.verb("view_all");
         }
 
         // Cut, and put back: `cut` takes what is held off the roll and onto
         // the clipboard; `toStart` and `paste` put it back at the beginning.
-        function clear() {
-          editor.selectAll();
-          editor.cut();
+        async function clear() {
+          await editor.selectAll();
+          await editor.cut();
         }
 
-        function back() {
-          editor.toStart();
-          editor.paste();
+        async function back() {
+          await editor.toStart();
+          await editor.paste();
         }
 
         // The window, as a picture: `capture` writes what the window shows as

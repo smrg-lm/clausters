@@ -97,6 +97,11 @@ class FakeHost {
         return () => {};
     }
 
+    /** The window's step taken: what a client asks after each one. */
+    async query(id: number): Promise<{ id: number; type: string; props: Record<string, string> }> {
+        return { id, type: "window", props: {} };
+    }
+
     verb(_window: unknown, name: string): void {
         this.verbs.push(name);
     }
@@ -227,16 +232,16 @@ test("the transport, the grid and the verbs are calls to the application", async
     await editor.setDisplayPanel(true);
     await editor.setDisplay({ slurs: "band" });
     assert.ok(host.calls.some((c) => c.do?.verb === "set" && c.do.call.display?.slurs === "band"));
-    assert.equal(editor.split(), true);
-    assert.equal(editor.unjoin(), true);
-    assert.equal(editor.stepUp() && editor.stepDown() && editor.octaveUp() && editor.octaveDown(), true);
-    assert.equal(editor.selectPitch() && editor.selectChannel() && editor.selectVoice() && editor.selectStaff(), true);
+    assert.equal(await editor.split(), true);
+    assert.equal(await editor.unjoin(), true);
+    assert.equal((await editor.stepUp()) && (await editor.stepDown()) && (await editor.octaveUp()) && (await editor.octaveDown()), true);
+    assert.equal((await editor.selectPitch()) && (await editor.selectChannel()) && (await editor.selectVoice()) && (await editor.selectStaff()), true);
     assert.deepEqual(host.verbs, [
         "events_panel", "display_settings", "split", "unjoin", "step_up", "step_down", "octave_up", "octave_down",
         "select_pitch", "select_channel", "select_voice", "select_staff",
     ]);
     await editor.close();
-    assert.equal(editor.split(), false, "no window, no verb");
+    assert.equal(await editor.split(), false, "no window, no verb");
     assert.equal(await editor.playing(), false);
 });
 
@@ -271,7 +276,7 @@ test("the roll's mode, what it shows and the voice it edits are calls to the app
     assert.ok(host.calls.some((c) => c.do?.verb === "set" && c.do.call.voice?.[1] === 1));
     assert.equal(editor.writing(), "voices");
     editor.setWriting("ties");
-    assert.equal(editor.slur() && editor.slurJoin() && editor.tie() && editor.staccato() && editor.pedal(), true);
+    assert.equal((await editor.slur()) && (await editor.slurJoin()) && (await editor.tie()) && (await editor.staccato()) && (await editor.pedal()), true);
     assert.deepEqual(host.verbs, ["write_ties", "slur", "slur_join", "tie", "staccato", "pedal"]);
     await editor.close();
 });

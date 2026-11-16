@@ -129,6 +129,11 @@ class FakeHost {
         return left;
     }
 
+    /** The window's step taken: what a client asks after each one. */
+    async query(id: number): Promise<{ id: number; type: string; props: Record<string, string> }> {
+        return { id, type: "window", props: {} };
+    }
+
     verb(window: number | { id: number }, verb: string): void {
         this.verbs.push([typeof window === "number" ? window : window.id, verb]);
     }
@@ -272,7 +277,7 @@ test("the transport and the save are calls to the application", async () => {
     host.answers.undo = true;
     assert.equal(await editor.undo(), true);
     assert.ok(host.calls.some((c) => c[0] === "call" && JSON.stringify(c[2]) === JSON.stringify({ do: { verb: "undo" } })));
-    assert.ok(editor.split());
+    assert.ok(await editor.split());
     assert.deepEqual(host.verbs[host.verbs.length - 1], [9, "split"]);
 });
 

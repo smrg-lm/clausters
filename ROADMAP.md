@@ -272,10 +272,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **A script's verb does not wait for the window's edit**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found running the
-  notes editor's example; what is open is where the wait belongs.
-
 - ⬜ **A page's host keeps no named GuiDef**
   *(`crates/clausters-gui/PLAN.md`, Found by use)*. Found wiring a widget's
   files to the page's storage; what is open is how a synchronous store

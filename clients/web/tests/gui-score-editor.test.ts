@@ -111,6 +111,11 @@ class FakeHost {
         return () => this.listeners.delete(listener);
     }
 
+    /** The window's step taken: what a client asks after each one. */
+    async query(id: number): Promise<{ id: number; type: string; props: Record<string, string> }> {
+        return { id, type: "window", props: {} };
+    }
+
     verb(_window: unknown, name: string): void {
         this.verbs.push(name);
     }
@@ -151,7 +156,7 @@ if (!existsSync(engraver)) {
         await editor.setValue([1, 2]);
         assert.ok(host.calls.some((c) => c.do?.verb === "set" && String(c.do.call.value) === "1,2"));
         assert.equal(await editor.dotted(), true);
-        assert.equal(editor.selectLeft(), true);
+        assert.equal(await editor.selectLeft(), true);
         assert.deepEqual(host.verbs, ["select_left"]);
         await editor.close();
     });

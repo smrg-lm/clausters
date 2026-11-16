@@ -665,13 +665,13 @@ test("a window verb is asked of the host by name or by member", async () => {
     const editor = new Editor(new Dial(), {
         sampleRate: SR, domain: new DialDomain(), view: new DialView(),
     });
-    assert.equal(editor.verb("split"), false, "no window, nothing to act on");
+    assert.equal(await editor.verb("split"), false, "no window, nothing to act on");
     const host = new FakeHost();
     await editor.open(asHost(host));
     const window = 900 + host.trees.length;
-    assert.equal(editor.verb("view_all"), true);
-    assert.equal(editor.selectAll(), true);
-    assert.equal(editor.paste(), true);
+    assert.equal(await editor.verb("view_all"), true);
+    assert.equal(await editor.selectAll(), true);
+    assert.equal(await editor.paste(), true);
     assert.deepEqual(host.verbs, [[window, "view_all"], [window, "select_all"], [window, "paste"]]);
 });
 

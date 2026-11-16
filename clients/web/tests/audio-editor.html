@@ -83,7 +83,7 @@
         await until(async () => (await editor.actions()).reverse.pending === false,
           async () => `the open's work to land: ${JSON.stringify((await editor.actions()).reverse)}`);
         await editor.select(new Segment(file, 0, half / rate));
-        editor.reverse();
+        await editor.reverse();
         await until(async () => (await editor.parts()).length === 2,
           async () => `the reverse to land: ${JSON.stringify(await editor.parts())}`);
         const reversed = await editor.parts();
@@ -117,11 +117,11 @@
         // span across its seam reversed in turn, so the take reads two
         // renders and the file it was opened from, with a seam between each.
         await editor.select(new Segment(file, 0, half / rate));
-        editor.reverse();
+        await editor.reverse();
         await until(async () => (await editor.parts()).length === 2,
           async () => `the first reverse to land: ${JSON.stringify(await editor.parts())}`);
         await editor.select(new Segment(file, 0.4, 0.2));
-        editor.reverse();
+        await editor.reverse();
         await until(async () => new Set((await editor.parts()).map((p) => p.path)).size === 3,
           async () => `the second reverse to land: ${JSON.stringify(await editor.parts())}`);
         log(`three files: ${(await editor.parts()).map((p) => p.path).join(", ")}`);

@@ -356,9 +356,9 @@ leaves every other note its own.</div>
           });
           const [first, second] = [written.events.item(0), written.events.item(1)];
           await roll.select([first, second]);
-          roll.accent();
+          await roll.accent();
           await roll.select([second]);
-          roll.breath();
+          await roll.breath();
           await roll.select([first]);
           roll.dynamic("mf");
           phrased = roll;
@@ -376,7 +376,7 @@ leaves every other note its own.</div>
         $("drawn").onclick = async () => {
           const roll = phrased ?? (await phrase());
           await roll.select([...roll.sequence.events].slice(0, 3));
-          roll.slur();
+          await roll.slur();
           await roll.setDisplayPanel(true);
           await roll.setDisplay({ slurs: "band", marks: "stacked", marks_place: "inside" });
         };
@@ -396,11 +396,11 @@ leaves every other note its own.</div>
         $("rework").onclick = async () => {
           await editor.locate(0.5);
           await editor.select([first]);
-          editor.split();
+          await editor.split();
           await editor.select([first]);
-          editor.selectPitch();
+          await editor.selectPitch();
           log(`${(await editor.selected()).length} notes at the first one's pitch`);
-          editor.octaveUp();
+          await editor.octaveUp();
         };
 
         // A tool taken from the script. What a plain press does is the
@@ -424,7 +424,7 @@ leaves every other note its own.</div>
         $("legato").disabled = false;
         $("legato").onclick = async () => {
           await editor.select([...notes.events].slice(0, 2));
-          editor.join();
+          await editor.join();
         };
         $("line").disabled = false;
         $("line").onclick = () => {

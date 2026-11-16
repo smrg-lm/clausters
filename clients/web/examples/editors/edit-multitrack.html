@@ -314,7 +314,7 @@ moves its first note an octave up: Ctrl+Z in either window takes it back.</div>
         $("roll").onclick = async () => {
           const notes = await editor.openRoll(keysBox);
           await notes.select([...notes.sequence.events].slice(0, 1));
-          notes.octaveUp();
+          await notes.octaveUp();
         };
 
         log("drag the boxes, click the ruler to place the cursor, play/pause to hear it");

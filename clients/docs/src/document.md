@@ -1344,17 +1344,18 @@ editor.verb("view_all")      # R, through the door every member is over
 ```
 
 ```javascript
-editor.selectAll();          // Ctrl+A
-editor.copy();               // Ctrl+C
-editor.toEnd();              // End
-editor.paste();              // Ctrl+V
-editor.verb("view_all");     // R, through the door every member is over
+await editor.selectAll();          // Ctrl+A
+await editor.copy();               // Ctrl+C
+await editor.toEnd();              // End
+await editor.paste();              // Ctrl+V
+await editor.verb("view_all");     // R, through the door every member is over
 ```
 
 What a verb edits comes back as the edit a hand made — recorded, drawn,
-undone with Ctrl+Z — and it arrives through the window's event loop, so it is
-in the structure a moment after the call returns. A verb needs a window: with
-none open, `verb` answers {{alt `False`. || `false`.}} `docs/verbs.md` in the repository lists
+undone with Ctrl+Z — and the call {{alt returns || resolves}} once the window has taken it, so the
+next line reads what it edited: a selection by pitch after a split finds
+both halves. The same holds for a hand and a key below. A verb needs a
+window: with none open, `verb` answers {{alt `False`. || `false`.}} `docs/verbs.md` in the repository lists
 every verb with the member that asks for it.
 
 **A window's picture** is asked for the same way: `editor.capture(path)`
@@ -1370,8 +1371,8 @@ editor.capture("out/tidy.png")      # the window, as a PNG
 ```
 
 ```javascript
-editor.selectAll();
-editor.quantize();
+await editor.selectAll();
+await editor.quantize();
 await editor.capture("/out/tidy.png"); // the window, as a PNG
 ```
 
@@ -1395,7 +1396,7 @@ editor.capture("out/dragged.png")
 
 ```javascript
 editor.snapToGrid = false;
-editor.drag([450, 416], [700, 416]);    // a note, a little later
+await editor.drag([450, 416], [700, 416]);    // a note, a little later
 await editor.capture("/out/dragged.png");
 ```
 

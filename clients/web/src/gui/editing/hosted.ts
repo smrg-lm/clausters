@@ -27,6 +27,12 @@
 import type { GuiHost, Stage, WindowActivity, WindowProfile } from "../host.ts";
 import type { WindowHandle } from "../handle.ts";
 
+/**
+ * How long a step may take to be answered: an application's edit of a long
+ * take is the slow one, and it is answered once it is in.
+ */
+const TAKEN_TIMEOUT = 10.0;
+
 /** One leg of a page's block: the change, and the edit that puts it back. */
 export interface Leg {
     forward: unknown;
@@ -457,12 +463,15 @@ export abstract class HostedEditor {
         return "";
     }
 
-    /** Asks the window's ruler verb for `unit`; a `RangeError` for no unit. @internal */
-    protected chooseRuler(unit: "beats" | "time" | "samples"): void {
+    /**
+     * Asks the window's ruler verb for `unit`, resolving once the window has
+     * taken it; a `RangeError`, at once, for no unit. @internal
+     */
+    protected chooseRuler(unit: "beats" | "time" | "samples"): Promise<void> {
         if (unit !== "beats" && unit !== "time" && unit !== "samples") {
             throw new RangeError(`a ruler counts in "beats", "time" or "samples", not ${JSON.stringify(unit)}`);
         }
-        this.verb(`ruler_${unit}`);
+        return this.verb(`ruler_${unit}`).then(() => undefined);
     }
 
     /** Nothing to bring in step: what a page changes is the window's already, and every window over it is redrawn when it does. */
@@ -471,52 +480,71 @@ export abstract class HostedEditor {
     // ---- the window's verbs ----
 
     /**
-     * **Perform the window's verb `name`**, as its key, its menu entry or its
-     * tool would (`docs/verbs.md`). Answers whether it was asked: `false` with
-     * no window open.
+     * Waits for the window to have taken the steps sent before: a query of
+     * it, answered after them -- the host takes a script's steps on a window
+     * one at a time, and on a window an application holds each once the
+     * application has answered the one before (`docs/gui-protocol.md`,
+     * `/gui_verb`), and what a step sent back has been heard by then.
      */
-    verb(name: string): boolean {
+    private async stepTaken(): Promise<void> {
+        if (this.closed) return;
+        await (this.hostOf as GuiHost).query(this.opened().id, TAKEN_TIMEOUT);
+    }
+
+    /**
+     * **Perform the window's verb `name`**, as its key, its menu entry or its
+     * tool would (`docs/verbs.md`). Resolves, once the window has taken it,
+     * to whether it was asked: `false` with no window open.
+     */
+    async verb(name: string): Promise<boolean> {
         if (this.closed) return false;
         (this.hostOf as GuiHost).verb(this.opened(), String(name));
+        await this.stepTaken();
         return true;
     }
 
-    /** **A hand played to the window**, at `(x, y)` in its device pixels; whether it was sent. */
-    pointer(kind: "press" | "move" | "release", x: number, y: number, mods = ""): boolean {
+    /** **A hand played to the window**, at `(x, y)` in its device pixels; whether it was sent, once taken. */
+    async pointer(kind: "press" | "move" | "release", x: number, y: number, mods = ""): Promise<boolean> {
         if (this.closed) return false;
         (this.hostOf as GuiHost).pointer(this.opened(), kind, x, y, mods);
+        await this.stepTaken();
         return true;
     }
 
     /** A press and a release at `(x, y)`, with `mods` held. */
-    click(x: number, y: number, mods = ""): boolean {
-        return this.pointer("press", x, y, mods) && this.pointer("release", x, y, mods);
+    async click(x: number, y: number, mods = ""): Promise<boolean> {
+        if (this.closed) return false;
+        (this.hostOf as GuiHost).pointer(this.opened(), "press", x, y, mods);
+        return this.pointer("release", x, y, mods);
     }
 
     /** **A drag from `start` to `end`**, as a hand makes it. */
-    drag(start: [number, number], end: [number, number], mods = "", steps = 8): boolean {
+    async drag(start: [number, number], end: [number, number], mods = "", steps = 8): Promise<boolean> {
         const [x0, y0] = start;
         const [x1, y1] = end;
-        if (!this.pointer("press", x0, y0, mods)) return false;
+        if (this.closed) return false;
+        (this.hostOf as GuiHost).pointer(this.opened(), "press", x0, y0, mods);
         const n = Math.max(Math.trunc(steps), 1);
         for (let i = 1; i <= n; i++) {
             const t = i / n;
-            this.pointer("move", x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, mods);
+            (this.hostOf as GuiHost).pointer(this.opened(), "move", x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, mods);
         }
         return this.pointer("release", x1, y1, mods);
     }
 
-    /** **A key pressed on the window**, with `mods` held; whether it was sent. */
-    pressKey(key: string, mods = ""): boolean {
+    /** **A key pressed on the window**, with `mods` held; whether it was sent, once taken. */
+    async pressKey(key: string, mods = ""): Promise<boolean> {
         if (this.closed) return false;
         (this.hostOf as GuiHost).pressKey(this.opened(), key, mods);
+        await this.stepTaken();
         return true;
     }
 
-    /** **Text typed into the window**, a key per character; whether it was sent. */
-    typeText(text: string): boolean {
+    /** **Text typed into the window**, a key per character; whether it was sent, once taken. */
+    async typeText(text: string): Promise<boolean> {
         if (this.closed) return false;
         (this.hostOf as GuiHost).typeText(this.opened(), text);
+        await this.stepTaken();
         return true;
     }
 
@@ -536,42 +564,42 @@ export abstract class HostedEditor {
     }
 
     /** The whole of what the window's view holds, in view: its `view_all`. */
-    viewAll(): boolean {
+    viewAll(): Promise<boolean> {
         return this.verb("view_all");
     }
 
     /** Cut what is selected: the window's `cut`. */
-    cut(): boolean {
+    cut(): Promise<boolean> {
         return this.verb("cut");
     }
 
     /** Copy what is selected: the window's `copy`. */
-    copy(): boolean {
+    copy(): Promise<boolean> {
         return this.verb("copy");
     }
 
     /** Paste at the cursor: the window's `paste`. */
-    paste(): boolean {
+    paste(): Promise<boolean> {
         return this.verb("paste");
     }
 
     /** Select everything the view holds: the window's `select_all`. */
-    selectAll(): boolean {
+    selectAll(): Promise<boolean> {
         return this.verb("select_all");
     }
 
     /** The position cursor to the start: the window's `to_start`. */
-    toStart(): boolean {
+    toStart(): Promise<boolean> {
         return this.verb("to_start");
     }
 
     /** The position cursor to the end: the window's `to_end`. */
-    toEnd(): boolean {
+    toEnd(): Promise<boolean> {
         return this.verb("to_end");
     }
 
     /** The loop switch, on or off: the window's `loop`. */
-    loop(): boolean {
+    loop(): Promise<boolean> {
         return this.verb("loop");
     }
 }

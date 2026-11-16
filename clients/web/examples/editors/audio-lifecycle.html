@@ -193,7 +193,7 @@ for nothing.</div>
         // puts it back.
         const cutSecond = async () => {
           await second.select(new segments.Segment(await second.file(), Math.round(0.5 * await second.sampleRate()), 0.1));
-          second.cut();
+          await second.cut();
         };
         const undoInFirst = () => first.undo();
         const undoInSecond = () => second.undo();
@@ -204,13 +204,13 @@ for nothing.</div>
         const copyFirst = async () => {
           await first.focusFile(0);
           await first.select(new segments.Segment(await first.file(), Math.round(0.2 * await first.sampleRate()), 0.3));
-          first.copy();
+          await first.copy();
         };
         const pasteSecond = () => second.paste();
         const closeOrigin = () => first.closeFile(0);
         const pasteStereo = async () => {
           await first.focusFile(0);
-          first.paste();
+          await first.paste();
         };
 
         // Saves: a refused write keeps the file dirty and where it was; a
@@ -226,7 +226,7 @@ for nothing.</div>
         const saveThenEdit = async () => {
           await second.save({ path: "out/d_saved.wav" });
           await second.select(new segments.Segment(await second.file(), Math.round(0.5 * await second.sampleRate()), 0.1));
-          second.cut();
+          await second.cut();
         };
         const saveAndClose = async () => {
           await second.save({ path: "out/d_closed.wav" });

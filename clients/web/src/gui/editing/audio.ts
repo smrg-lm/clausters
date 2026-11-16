@@ -253,16 +253,16 @@ export class AudioEditor extends HostedEditor {
     // ---- the window's verbs ----
 
     /** Delete what is selected: the window's `delete`. */
-    delete(): boolean { return this.verb("delete"); }
+    delete(): Promise<boolean> { return this.verb("delete"); }
 
     /** Paste onto what is there, mixed with it: the window's `mix`. */
-    mix(): boolean { return this.verb("mix"); }
+    mix(): Promise<boolean> { return this.verb("mix"); }
 
     /**
      * Play the selection backwards, or the whole take with nothing selected,
      * rendered into a file the list then names: the window's `reverse`.
      */
-    reverse(): boolean { return this.verb("reverse"); }
+    reverse(): Promise<boolean> { return this.verb("reverse"); }
 
     // ---- the history: the order of the file in focus ----
 
@@ -541,8 +541,8 @@ export class AudioEditor extends HostedEditor {
     }
 
     /** Sets what the window's time ruler counts in: no edit. */
-    setRuler(unit: "beats" | "time" | "samples"): void {
-        this.chooseRuler(unit);
+    setRuler(unit: "beats" | "time" | "samples"): Promise<void> {
+        return this.chooseRuler(unit);
     }
 
     /**

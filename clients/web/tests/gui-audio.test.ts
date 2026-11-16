@@ -49,6 +49,11 @@ class FakeHost {
         return typeof answer === "function" ? answer(call) : answer;
     }
 
+    /** The window's step taken: what a client asks after each one. */
+    async query(id: number): Promise<{ id: number; type: string; props: Record<string, string> }> {
+        return { id, type: "window", props: {} };
+    }
+
     verb(window: number | { id: number }, verb: string): void {
         this.verbs.push([typeof window === "number" ? window : window.id, verb]);
     }
@@ -207,8 +212,8 @@ test("an undo is the window's event against the version now", async () => {
 
 test("the window's verbs go to its window", async () => {
     const [editor, host] = await opened();
-    editor.cut();
-    editor.reverse();
+    await editor.cut();
+    await editor.reverse();
     assert.deepEqual(host.verbs, [[7, "cut"], [7, "reverse"]]);
 });
 

@@ -48,6 +48,12 @@ import { Echo } from "./echo.ts";
 import { log } from "./trace.ts";
 import type { View } from "./view.ts";
 
+/**
+ * How long a step may take to be answered: an application's edit of a long
+ * take is the slow one, and it is answered once it is in.
+ */
+const TAKEN_TIMEOUT = 10.0;
+
 let notAnEditHeld: readonly string[] = [];
 
 /**
@@ -1121,6 +1127,18 @@ export class Editor<S = unknown> implements Adopting {
     // ---- the window's verbs ----
 
     /**
+     * Waits for the window to have taken the steps sent before: a query of
+     * it, answered after them -- the host takes a script's steps on a window
+     * one at a time, and on a window an application holds each once the
+     * application has answered the one before (`docs/gui-protocol.md`,
+     * `/gui_verb`), and what a step sent back has been heard by then.
+     */
+    private async stepTaken(): Promise<void> {
+        if (this.host === null || this.windowId === null) return;
+        await this.host.query(this.windowId, TAKEN_TIMEOUT);
+    }
+
+    /**
      * **Perform the window's verb `name`**, as its key, its menu entry or its
      * tool would -- the door every verb of the one verb table is reached by
      * from a script (`docs/verbs.md`). The host performs it on what the
@@ -1128,12 +1146,14 @@ export class Editor<S = unknown> implements Adopting {
      * editor's comes back to it as the window's event would; what it edits
      * arrives as a gesture's edit does, through the event loop.
      *
-     * Answers whether it was asked: `false` with no window open, since a
-     * window's verb acts on what the window holds.
+     * Resolves, once the window has taken it, to whether it was asked:
+     * `false` with no window open, since a window's verb acts on what the
+     * window holds.
      */
-    verb(name: string): boolean {
+    async verb(name: string): Promise<boolean> {
         if (this.host === null || this.windowId === null) return false;
         this.host.verb(this.windowId, name);
+        await this.stepTaken();
         return true;
     }
 
@@ -1143,17 +1163,21 @@ export class Editor<S = unknown> implements Adopting {
      * {@link GuiHost.pointer} on this editor's window. What it edits arrives
      * as a gesture's edit does, through the event loop.
      *
-     * Answers whether it was sent: `false` with no window open.
+     * Resolves, once the window has taken it, to whether it was sent:
+     * `false` with no window open.
      */
-    pointer(kind: "press" | "move" | "release", x: number, y: number, mods = ""): boolean {
+    async pointer(kind: "press" | "move" | "release", x: number, y: number, mods = ""): Promise<boolean> {
         if (this.host === null || this.windowId === null) return false;
         this.host.pointer(this.windowId, kind, x, y, mods);
+        await this.stepTaken();
         return true;
     }
 
     /** A press and a release at `(x, y)`, with `mods` held ({@link Editor.pointer}). */
-    click(x: number, y: number, mods = ""): boolean {
-        return this.pointer("press", x, y, mods) && this.pointer("release", x, y, mods);
+    async click(x: number, y: number, mods = ""): Promise<boolean> {
+        if (this.host === null || this.windowId === null) return false;
+        this.host.pointer(this.windowId, "press", x, y, mods);
+        return this.pointer("release", x, y, mods);
     }
 
     /**
@@ -1163,14 +1187,15 @@ export class Editor<S = unknown> implements Adopting {
      * It is the drag a hand makes -- what a snap or a constraint does to one,
      * it does to this.
      */
-    drag(start: [number, number], end: [number, number], mods = "", steps = 8): boolean {
+    async drag(start: [number, number], end: [number, number], mods = "", steps = 8): Promise<boolean> {
         const [x0, y0] = start;
         const [x1, y1] = end;
-        if (!this.pointer("press", x0, y0, mods)) return false;
+        if (this.host === null || this.windowId === null) return false;
+        this.host.pointer(this.windowId, "press", x0, y0, mods);
         const n = Math.max(Math.trunc(steps), 1);
         for (let i = 1; i <= n; i++) {
             const t = i / n;
-            this.pointer("move", x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, mods);
+            this.host.pointer(this.windowId, "move", x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, mods);
         }
         return this.pointer("release", x1, y1, mods);
     }
@@ -1181,11 +1206,13 @@ export class Editor<S = unknown> implements Adopting {
      * key, or the verb the key table binds to it. What it edits arrives as a
      * key's edit does, through the event loop.
      *
-     * Answers whether it was sent: `false` with no window open.
+     * Resolves, once the window has taken it, to whether it was sent:
+     * `false` with no window open.
      */
-    pressKey(key: string, mods = ""): boolean {
+    async pressKey(key: string, mods = ""): Promise<boolean> {
         if (this.host === null || this.windowId === null) return false;
         this.host.pressKey(this.windowId, key, mods);
+        await this.stepTaken();
         return true;
     }
 
@@ -1194,11 +1221,13 @@ export class Editor<S = unknown> implements Adopting {
      * {@link GuiHost.typeText} on this editor's window: what a focused field
      * types.
      *
-     * Answers whether it was sent: `false` with no window open.
+     * Resolves, once the window has taken it, to whether it was sent:
+     * `false` with no window open.
      */
-    typeText(text: string): boolean {
+    async typeText(text: string): Promise<boolean> {
         if (this.host === null || this.windowId === null) return false;
         this.host.typeText(this.windowId, text);
+        await this.stepTaken();
         return true;
     }
 
@@ -1250,47 +1279,47 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /** The whole of what the window's view holds, in view -- the window's `view_all` ({@link Editor.verb}). */
-    viewAll(): boolean {
+    viewAll(): Promise<boolean> {
         return this.verb("view_all");
     }
 
     /** Cut what is selected -- the window's `cut` ({@link Editor.verb}). */
-    cut(): boolean {
+    cut(): Promise<boolean> {
         return this.verb("cut");
     }
 
     /** Copy what is selected -- the window's `copy` ({@link Editor.verb}). */
-    copy(): boolean {
+    copy(): Promise<boolean> {
         return this.verb("copy");
     }
 
     /** Paste at the cursor -- the window's `paste` ({@link Editor.verb}). */
-    paste(): boolean {
+    paste(): Promise<boolean> {
         return this.verb("paste");
     }
 
     /** Delete what is selected -- the window's `delete` ({@link Editor.verb}). */
-    delete(): boolean {
+    delete(): Promise<boolean> {
         return this.verb("delete");
     }
 
     /** Select everything the view holds -- the window's `select_all` ({@link Editor.verb}). */
-    selectAll(): boolean {
+    selectAll(): Promise<boolean> {
         return this.verb("select_all");
     }
 
     /** The position cursor to the start -- the window's `to_start` ({@link Editor.verb}). */
-    toStart(): boolean {
+    toStart(): Promise<boolean> {
         return this.verb("to_start");
     }
 
     /** The position cursor to the end -- the window's `to_end` ({@link Editor.verb}). */
-    toEnd(): boolean {
+    toEnd(): Promise<boolean> {
         return this.verb("to_end");
     }
 
     /** The loop switch, on or off -- the window's `loop` ({@link Editor.verb}). */
-    loop(): boolean {
+    loop(): Promise<boolean> {
         return this.verb("loop");
     }
 

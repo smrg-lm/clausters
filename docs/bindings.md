@@ -726,7 +726,8 @@ Python property that reads becomes a method, a property that writes becomes a
   `editor.articulation("stacc")`; TypeScript `await editor.setGrid(1)`,
   `await editor.setValue([1, 8])`, `await editor.end()`,
   `await editor.setEnd("contents")`, `await editor.articulation("stacc")`. A window's verb by name (`split`,
-  `select_left`) only asks, and answers at once in both. While a window has it,
+  `select_left`), a hand and a key answer once the window has taken them:
+  Python returns then, TypeScript resolves a promise. While a window has it,
   a Python `EventSequence` or `Score` reads the window's at each read, and a
   TypeScript one answers from a copy the page holds, brought to the window's
   after each change;

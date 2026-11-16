@@ -263,7 +263,7 @@ export class NotesEditor extends SequenceHandler {
     }
 
     /** Split what is held at the cursor: the window's `split`. */
-    split(): boolean {
+    split(): Promise<boolean> {
         return this.verb("split");
     }
 
@@ -273,7 +273,7 @@ export class NotesEditor extends SequenceHandler {
      * selection of a line is joined, each note going on into the next without
      * a new attack ({@link EventSequence.join}).
      */
-    join(): boolean {
+    join(): Promise<boolean> {
         return this.verb("join");
     }
 
@@ -281,7 +281,7 @@ export class NotesEditor extends SequenceHandler {
      * Take the joins among what is selected away -- the window's `unjoin`
      * (Shift+J), {@link EventSequence.unjoin} over the roll's selection.
      */
-    unjoin(): boolean {
+    unjoin(): Promise<boolean> {
         return this.verb("unjoin");
     }
 
@@ -291,12 +291,12 @@ export class NotesEditor extends SequenceHandler {
      * after with the sign the key writes on it. The window's `step_up` (Up);
      * one entry of the history.
      */
-    stepUp(): boolean {
+    stepUp(): Promise<boolean> {
         return this.verb("step_up");
     }
 
     /** Move what is selected down, as {@link stepUp} moves it up: the window's `step_down` (Down). */
-    stepDown(): boolean {
+    stepDown(): Promise<boolean> {
         return this.verb("step_down");
     }
 
@@ -304,12 +304,12 @@ export class NotesEditor extends SequenceHandler {
      * Move what is selected up an octave, every note the roll takes when
      * nothing is, its letters kept: the window's `octave_up` (Ctrl+Up).
      */
-    octaveUp(): boolean {
+    octaveUp(): Promise<boolean> {
         return this.verb("octave_up");
     }
 
     /** Move what is selected down an octave: the window's `octave_down` (Ctrl+Down). */
-    octaveDown(): boolean {
+    octaveDown(): Promise<boolean> {
         return this.verb("octave_down");
     }
 
@@ -317,7 +317,7 @@ export class NotesEditor extends SequenceHandler {
      * Select every note the roll takes that shares its pitch with a
      * selected one: the window's `select_pitch`; it edits nothing.
      */
-    selectPitch(): boolean {
+    selectPitch(): Promise<boolean> {
         return this.verb("select_pitch");
     }
 
@@ -325,7 +325,7 @@ export class NotesEditor extends SequenceHandler {
      * Select every note the roll takes that shares its channel with a
      * selected one: the window's `select_channel`; it edits nothing.
      */
-    selectChannel(): boolean {
+    selectChannel(): Promise<boolean> {
         return this.verb("select_channel");
     }
 
@@ -333,7 +333,7 @@ export class NotesEditor extends SequenceHandler {
      * Select every note the roll takes that shares its staff and voice with a
      * selected one: the window's `select_voice`; it edits nothing.
      */
-    selectVoice(): boolean {
+    selectVoice(): Promise<boolean> {
         return this.verb("select_voice");
     }
 
@@ -341,17 +341,17 @@ export class NotesEditor extends SequenceHandler {
      * Select every note the roll takes that shares its staff with a
      * selected one: the window's `select_staff`; it edits nothing.
      */
-    selectStaff(): boolean {
+    selectStaff(): Promise<boolean> {
         return this.verb("select_staff");
     }
 
     /** Quantize what is selected to the grid: the window's `quantize`. */
-    quantize(): boolean {
+    quantize(): Promise<boolean> {
         return this.verb("quantize");
     }
 
     /** Delete what is selected: the window's `delete`. */
-    delete(): boolean {
+    delete(): Promise<boolean> {
         return this.verb("delete");
     }
 
@@ -408,8 +408,8 @@ export class NotesEditor extends SequenceHandler {
     }
 
     /** Sets what the window's time ruler counts in: no edit. */
-    setRuler(unit: "beats" | "time" | "samples"): void {
-        this.chooseRuler(unit);
+    setRuler(unit: "beats" | "time" | "samples"): Promise<void> {
+        return this.chooseRuler(unit);
     }
 
     /**
@@ -454,7 +454,7 @@ export class NotesEditor extends SequenceHandler {
 
     /** Shows or hides the panel beside the roll: no edit. */
     async setEventsPanel(on: boolean): Promise<void> {
-        if (Boolean(on) !== (await this.eventsPanel())) this.verb("events_panel");
+        if (Boolean(on) !== (await this.eventsPanel())) await this.verb("events_panel");
     }
 
     /**
@@ -468,7 +468,7 @@ export class NotesEditor extends SequenceHandler {
 
     /** Shows or hides the display panel beside the roll: no edit. */
     async setDisplayPanel(on: boolean): Promise<void> {
-        if (Boolean(on) !== (await this.displayPanel())) this.verb("display_settings");
+        if (Boolean(on) !== (await this.displayPanel())) await this.verb("display_settings");
     }
 
     /**
@@ -594,7 +594,7 @@ export class NotesEditor extends SequenceHandler {
      * where the sequence's format cannot say it (under MPE a channel says its
      * controllers alone). Throws for another name.
      */
-    addCurve(name: "cc1" | "cc11" | "bend" | "pressure"): boolean {
+    addCurve(name: "cc1" | "cc11" | "bend" | "pressure"): Promise<boolean> {
         if (!["cc1", "cc11", "bend", "pressure"].includes(name)) {
             throw new Error(`no channel curve ${JSON.stringify(name)}: cc1, cc11, bend or pressure`);
         }
@@ -607,7 +607,7 @@ export class NotesEditor extends SequenceHandler {
      * and `note_timbre`. Refused, with why, where the sequence's format
      * cannot say it of one note. Throws for another name.
      */
-    addNoteCurve(name: "bend" | "pressure" | "timbre"): boolean {
+    addNoteCurve(name: "bend" | "pressure" | "timbre"): Promise<boolean> {
         if (!["bend", "pressure", "timbre"].includes(name)) {
             throw new Error(`no note curve ${JSON.stringify(name)}: bend, pressure or timbre`);
         }
@@ -615,7 +615,7 @@ export class NotesEditor extends SequenceHandler {
     }
 
     /** **The curve of the lane shown taken away** -- `curve_remove`; refused with the velocities shown. */
-    removeCurve(): boolean {
+    removeCurve(): Promise<boolean> {
         return this.verb("curve_remove");
     }
 
@@ -690,7 +690,7 @@ export class NotesEditor extends SequenceHandler {
     }
 
     /** Writes every part so: one edit of the parts that changes no event and nothing heard. */
-    setWriting(writing: "voices" | "ties"): boolean {
+    setWriting(writing: "voices" | "ties"): Promise<boolean> {
         if (writing !== "voices" && writing !== "ties") {
             throw new Error(`a writing is "voices" or "ties", not ${JSON.stringify(writing)}`);
         }
@@ -703,12 +703,12 @@ export class NotesEditor extends SequenceHandler {
      * monophonically, attacked otherwise. Again over the same notes, it is
      * taken away.
      */
-    slur(): boolean {
+    slur(): Promise<boolean> {
         return this.verb("slur");
     }
 
     /** Turn the slurs on what is selected from joined to attacked, or back -- `slur_join` (Shift+S). */
-    slurJoin(): boolean {
+    slurJoin(): Promise<boolean> {
         return this.verb("slur_join");
     }
 
@@ -716,27 +716,27 @@ export class NotesEditor extends SequenceHandler {
      * Tie the selected notes of one pitch that touch into one -- the window's
      * `tie` (T): a tied note is one event, which the page writes with ties.
      */
-    tie(): boolean {
+    tie(): Promise<boolean> {
         return this.verb("tie");
     }
 
     /** A staccato on each selected note, or none where all have one -- `staccato` (.). */
-    staccato(): boolean {
+    staccato(): Promise<boolean> {
         return this.verb("staccato");
     }
 
     /** A tenuto on each selected note, or none where all have one -- `tenuto` (-). */
-    tenuto(): boolean {
+    tenuto(): Promise<boolean> {
         return this.verb("tenuto");
     }
 
     /** An accent on each selected note, or none where all have one -- `accent` (>). */
-    accent(): boolean {
+    accent(): Promise<boolean> {
         return this.verb("accent");
     }
 
     /** A marcato on each selected note, or none where all have one -- `marcato` (^). */
-    marcato(): boolean {
+    marcato(): Promise<boolean> {
         return this.verb("marcato");
     }
 
@@ -745,7 +745,7 @@ export class NotesEditor extends SequenceHandler {
      * window's `breath` (,): the note is let go a little before the next
      * attack, and heard so.
      */
-    breath(): boolean {
+    breath(): Promise<boolean> {
         return this.verb("breath");
     }
 
@@ -756,7 +756,7 @@ export class NotesEditor extends SequenceHandler {
      * menu's. The level the notes are heard at is derived from it. Throws for
      * another name.
      */
-    dynamic(name: "pp" | "p" | "mp" | "mf" | "f" | "ff" | null): boolean {
+    dynamic(name: "pp" | "p" | "mp" | "mf" | "f" | "ff" | null): Promise<boolean> {
         if (name !== null && !["pp", "p", "mp", "mf", "f", "ff"].includes(name)) {
             throw new Error(`no dynamic ${JSON.stringify(name)}: pp, p, mp, mf, f or ff`);
         }
@@ -764,7 +764,7 @@ export class NotesEditor extends SequenceHandler {
     }
 
     /** The pedal down from the first selected note to the last -- `pedal` (P). */
-    pedal(): boolean {
+    pedal(): Promise<boolean> {
         return this.verb("pedal");
     }
 
