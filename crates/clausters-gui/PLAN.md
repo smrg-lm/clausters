@@ -1517,6 +1517,388 @@ engraving-refinements milestone"), the notation pages of the client's book, and
 the score examples in their `notation/` family — this feature's manual test
 surface — which grow the case the milestone adds, in both packages.
 
+## WS track — the workspace: the host is the application's one window
+
+**Experimental, and on its own branch (`host-workspace`) until its checkpoints
+say otherwise.** Opened 2026-11-16 at the user's request, with their doubts
+stated up front: the quality the result can reach and the features that could
+be lost are both open questions, so the track is written to answer them early
+and cheaply, and it may be abandoned at any checkpoint. Nothing here reaches
+`main` before checkpoint 1 passes, and the editor's current application is not
+retired before checkpoint 3 does.
+
+### The problem it answers
+
+Two defects found by using the editor as a page (2026-11-16), and the larger
+shape behind them:
+
+- **A window the host opens on its own does not appear in the page.** The
+  page's link between the session's worker and the host
+  (`clients/web/src/gui/page.ts`, `link({ place })`) places only the windows
+  that arrive by `/gui_def`. A window the host opens itself -- an
+  application's (`/gui_app_open`), the roll a multitrack's box opens -- gets a
+  canvas the wasm front appends to the end of `<body>`, out of sight, at a
+  surface of 1x1.
+- **The page's windows float and cannot be moved.** They sit in a fixed frame
+  at the top right of the page (`.session-windows` in
+  `clausters-editor/src/page/page.css`), over the documentation; they resize
+  and do not move.
+- **Natively, the editor and the host are two programs in two kinds of
+  window.** The editor is a webview application; the host is a winit/wgpu
+  program the session launches. Every window of the host is its own OS window,
+  and nothing arranges them.
+
+What the user asked for is one window holding everything -- the code, the
+post window, the documentation, every GuiDef and every application -- arranged
+in panels, tabs and pages, the same natively and in a page. The windows of an
+application become panels of one workspace, and a page per application (a
+global pager) switches between the arrangements each kind of work wants.
+
+### The constraints found before choosing (2026-11-16)
+
+These were established by reading the code and by measurement, and they are
+why the track takes the shape it does. Each one closed a cheaper route.
+
+- **Under Wayland one process cannot place its window inside another's.** The
+  X11 embedding protocol does not exist there, the toolkit's socket widget is
+  gone, and a client cannot position its own toplevels. So one window natively
+  means **one process draws it** -- the editor's webview and the host cannot be
+  stitched together across processes.
+- **A webview cannot map the OS's shared memory.** Page code runs in the
+  engine's sandboxed content process; no web API maps a shm segment or a file,
+  a `SharedArrayBuffer` is allocated by the engine, and wasm's linear memory
+  cannot alias external memory. Running the host's wasm build inside the
+  desktop webview would therefore copy every bus, tap and bulk read across
+  IPC that the native host reads in place. Rejected: the data paths are the
+  point of the native host.
+- **A webview cannot be a child of a winit window under Wayland.** The
+  embedding library builds a child webview only on X11; on Wayland it needs a
+  toolkit window, which winit's is not.
+- **Drawing the host inside another toolkit's window ties the two together.**
+  A webview window with a wgpu surface under it is unreliable on Linux, and an
+  HTML/CSS engine that renders with wgpu and composes a custom wgpu texture was
+  evaluated: it would let the host draw into one shared device with no copy,
+  but it is beta, runs no JavaScript (so the code editor would still be ours),
+  pins the host's wgpu and winit versions to its own (wgpu 30 and a winit beta
+  against the host's 29 and 0.30), and adds a second layout model beside the
+  host's -- the trade-off "What we explicitly reject" already declined.
+- **The code editor is the expensive part, and Rust has the pieces.** A probe
+  (branch `probe/code-widget`, commit `3a61d3d7a`) built a `code` element in
+  the host: cosmic-text for the text, cursor and selection, tree-sitter for
+  highlighting, the host's atlas for the glyphs. Measured: both libraries
+  build for `wasm32-unknown-unknown` (the grammars' C needs tree-sitter's libc
+  headers passed by hand); the host's wasm grows 12.0 -> 16.2 MB raw, 3.4 ->
+  4.7 MB gzip; the stripped native binary 34.3 -> 37.3 MB; re-highlighting the
+  whole text per key costs 0.6 ms for 700 bytes and 12 ms for 185 KB in a
+  release build, which is over a frame and is why highlighting must be
+  incremental. A whole editor taken as a library is not available: those that
+  exist are bound to their own toolkit and window, and the one editing core
+  published as a crate does not build for wasm (it reads the home directory
+  and loads grammars from disk).
+
+### What the track decides, and what it leaves where it is
+
+- **The host is the shell.** The workspace -- panels, splits, tabs, pages --
+  is the host's, written once in Rust and drawn the same by both fronts. The
+  editor's panels (code, post, documentation) become host elements.
+- **The language sessions stay outside the host.** The Python session stays a
+  process of its own, and its completion and help keep coming from it (Jedi,
+  as now). In a page the JavaScript session stays a worker and the TypeScript
+  language service another; the page feeds their answers to the host. The
+  host draws a completion list; it never computes one.
+- **The native application becomes one binary that links the host** and
+  absorbs what the current application's Rust does that is not drawing: the
+  session process, the environments, the configuration, the books, the fonts,
+  the files (`clausters-editor/src-tauri/src/`). The webview, its framework and
+  its toolkit leave the native path. The shm segment and every native data path
+  stay exactly as they are.
+- **In a page, the host draws the whole workspace into one canvas.** The page
+  keeps what only a page has (the workers, the storage, the first-gesture audio
+  start) and gives the host the canvas.
+- **The clients do not change their surface for this.** A GuiDef is still sent
+  by either client and still opens; what changes is that it opens as a panel of
+  the workspace where there is one. If a `code` element (or a `post` or a
+  documentation element) becomes a widget a GuiDef may name, it is a widget like
+  any other: its builders in both clients, its reference in
+  `docs/gui-protocol.md`, in the same commit.
+
+### The bar: what the current editor does
+
+Everything below exists today (`clausters-editor/docs/`, `src/lib/`). Each item
+is marked **must** (the track cannot retire the current application without
+it), **should** (a regression a user notices, accepted only as a named gap
+with an entry in "Found by use") or **later** (wanted, not a reason to stop).
+This list is what checkpoint 3 is checked against, item by item.
+
+Editing (today CodeMirror 6 with its basic setup, plus the editor's own
+extensions):
+
+- must -- typing, selection by keyboard and pointer, double and triple click,
+  Shift+click, drag selection, select all, clipboard (the platform's, both
+  fronts), undo and redo grouped by typing run, the dirty marker that clears
+  when undo returns to the saved text.
+- must -- line numbers, the current line marked, horizontal and vertical
+  scrolling with the wheel and the keyboard, the caret kept in view.
+- must -- indentation: Tab inserts a level or indents the selected lines,
+  Shift+Tab unindents, the level is a preference (tab, 2 or 4 spaces), Enter
+  keeps the indentation and indents after a line that opens a block.
+- must -- syntax highlighting for Python and JavaScript, in the editor's light
+  and dark themes.
+- must -- input methods and dead keys (the host's composition path, both
+  fronts).
+- should -- bracket matching, closing brackets and quotes, highlighting the
+  other occurrences of the selection, toggling a comment.
+- should -- find and replace in the file, go to line.
+- later -- folding, several cursors and rectangular selection, special
+  characters drawn visibly.
+
+Evaluation:
+
+- must -- Shift+Enter evaluates the selection or the line; Ctrl+Enter the
+  selection or the top-level block under the cursor and moves past it; cells
+  (`# %%`) evaluated one at a time; the "contiguous lines as a block"
+  preference; the evaluated region flashed.
+- must -- Ctrl+. interrupts and calls the packages' interrupt hooks; Restart;
+  the startup code.
+- The logic that finds a block, a cell or a paragraph (`evaluation.ts`,
+  `regions.ts`) moves to Rust once, beside the element, rather than being
+  written a second time.
+
+Language help:
+
+- must -- completion while typing and on Ctrl+Space, from the file and from
+  what the session holds.
+- must -- signature help inside a call (on `(` and `,`, and Ctrl+Shift+Space),
+  the current parameter marked, Esc closes it.
+- should -- hover over a name shows its signature and documentation.
+- must -- Ctrl+D: help on the name under the cursor, in the documentation, or
+  the session's `pydoc` text when no page has it.
+
+Post window:
+
+- must -- output, errors, results (`->`) and info lines told apart; selection
+  and copy; clear (Ctrl+Shift+P); autoscroll as a preference.
+
+Documentation:
+
+- must -- Markdown rendered: headings, paragraphs, emphasis, inline code,
+  links (inside a book, across books, to the web), lists, tables, code blocks
+  highlighted with a copy button.
+- must -- the start page listing every book (the editor's and those of the
+  packages installed in the session's environment), a book's table of
+  contents, the bar saying which book and chapter is shown, back and forward.
+- must -- find in the page (Ctrl+F) and search across every document
+  (Ctrl+Shift+F), the selection as the query.
+- should -- images in a page.
+
+Files, tabs and layout:
+
+- must -- new, open, save, save as, close tab, the confirmation before losing
+  changes (tab and window), recent files, reopening the last session's files,
+  files named on the command line.
+- must -- two editors side by side, moving a tab across, panels dragged to
+  another place with the places shown while dragging (the workspace does this
+  for every panel).
+- must -- in a page: the page's storage as the file system, upload and
+  download in the file dialog.
+
+Preferences and session:
+
+- must -- theme (system, light, dark), editor font and size, indentation,
+  autoscroll, evaluation as paragraph, startup code, reopening files.
+- must -- environments: choosing the session's interpreter, creating one (the
+  environments dialog), `CLAUSTERS_EDITOR_PYTHON`.
+- must -- the window's size and place kept between runs, natively.
+
+What a webview gives for free and the host does not have, named so its loss is
+a decision and not a discovery:
+
+- **Accessibility.** A screen reader reads the webview; it reads nothing in the
+  host today. Not a reason to stop the track, but checkpoint 3 states it, and a
+  later track over an accessibility tree is the remedy.
+- **The browser's text quality and font fallback.** The host rasterizes with
+  its own atlas (grayscale coverage, whole-pixel sizes). Checkpoint 2 compares
+  the two side by side at the same size and scale.
+- **Everything HTML renders in a documentation page.** A page that relies on
+  raw HTML inside its Markdown loses it.
+
+### Budgets
+
+Numbers the milestones are held to, measured in a release build with the
+headless host and by the page's acceptance run:
+
+- A key in a 5,000-line file, from the key to the frame that shows it: under
+  4 ms natively and under 8 ms in a page, highlighting included.
+- Opening a 5,000-line file: under 100 ms to the first frame.
+- Scrolling: one frame per wheel step at 60 Hz, natively and in a page, with
+  no frame that re-lays-out more than the lines that became visible.
+- At rest (nothing typed, nothing playing): no frames drawn, per the
+  "least CPU" rule the host already follows.
+- The page's download: the code element's share at most +1.5 MB gzip over
+  today's host, the grammars included.
+
+### Checkpoints
+
+Each ends with a decision the user takes on what was measured, and each leaves
+something reusable if the track stops there.
+
+- **Checkpoint 1 -- after WS1-WS4.** The workspace holds GuiDefs and
+  applications, natively and in a page, beside the current editor. Decided
+  here: whether the workspace merges to `main` on its own (it fixes the two
+  defects above whatever happens to the rest).
+- **Checkpoint 2 -- after WS5-WS10.** The post window and the code element
+  reach every "must" of editing, evaluation and language help. Decided here, by
+  side-by-side captures, the budgets and an hour of real use: whether text
+  quality and editing feel are acceptable.
+- **Checkpoint 3 -- after WS11.** The documentation panel. Decided here, with
+  the bar above checked item by item: whether the current application is
+  retired (WS12-WS14) or the track stops with the workspace and the elements as
+  parts the current application does not use.
+
+### The milestones
+
+- ⬜ **WS1 — The embedded front: several trees, one surface.** Today a front
+  owns one surface per def: one `Gpu`, one scale, and input routed by the OS
+  window or canvas it arrived on (`host/gui/windows.rs`,
+  `host/web/canvas.rs`). The workspace needs the host to draw a set of def
+  trees into one surface, each in a rectangle, with one device, one atlas and
+  one scale for the surface, and pointer and keyboard routed by rectangle and
+  by the workspace's focus. Written as a layer under both fronts, not a third
+  front beside them: a front owns surfaces; the workspace decides what each
+  surface shows. A def keeps its id, its instance, its history and every
+  reply; what it loses is only the OS window of its own. Acceptance: two
+  GuiDefs and an application drawn in one native window and in one canvas,
+  each def's capture identical to the same def drawn alone at the same size;
+  a press, a drag, a key and a wheel reach the def under them and no other.
+- ⬜ **WS2 — Panels, splits and tabs.** The workspace's layout is a tree of
+  splits (horizontal, vertical, with a ratio) whose leaves are tab groups of
+  panels; a panel is a def or one of the editor's elements. The host draws the
+  tab strips and the dividers (G40's split panes are the start, extended, not
+  a second one), and the gestures: drag a divider, drag a tab to another
+  group, to an edge (a new split) or out (WS3's own window), with the place it
+  would land shown while dragging. The layout is data, saved and restored, and
+  a verb set the clients' handlers and the menus call, as every application verb is.
+  Acceptance: every gesture driven by script with a capture of each step; the
+  layout round-trips through save and load; the behavior rules of
+  `docs/app-behavior.md` hold with two applications open in one workspace.
+- ⬜ **WS3 — Every window the host opens enters the workspace.** `/gui_def`,
+  `/gui_app_open` and a window a gesture opens (a box's roll) all become panels
+  of the workspace where there is one, and an OS window of their own (or a
+  canvas) where there is none, so a host run by a script alone behaves as it
+  does today. A panel can be taken out into a window of its own and put back.
+  In a page, `link({ place })` places the one canvas the workspace draws in,
+  and the editor page drops `.session-windows`. This closes the two defects
+  above; the page's acceptance run checks that an application's window is a
+  panel with a nonzero size.
+- ⬜ **WS4 — Pages: one arrangement per kind of work.** A page is a named
+  layout of the workspace, switched by a strip of page tabs; an application may
+  contribute a page (the multitrack's, the audio editor's), and a page
+  remembers its own layout. Switching a page moves panels, never frees them:
+  the defs stay alive and keep playing. Acceptance: a session with two
+  applications and a code panel, switched across three pages and back, every
+  panel where it was left, nothing re-sent by the client.
+- ⬜ **WS5 — The post panel.** An append-only log element: lines of kinds
+  (output, error, result, info) styled by theme roles, selection and copy, a
+  clear verb, autoscroll that stops while the user reads up and resumes at the
+  end, and a cap on kept lines. Fed by the session's messages as the current
+  `Post.svelte` is. Acceptance: a session printing 10,000 lines at once stays
+  inside the frame budget, and copy returns exactly what was selected.
+- ⬜ **WS6 — The code element: the text base.** Decided first, by extending the
+  probe into a comparison: cosmic-text's editor, Parley's plain editor, or
+  ropey with the host's own shaping and atlas (the host already shapes, orders
+  bidi text, steps graphemes and composes input; cosmic-text brought a second
+  shaper and font parser beside them). The choice is recorded in
+  `docs/decisions.md` with the numbers. Then every "must" of editing above but
+  highlighting: selection by every hand, clipboard, undo grouped by typing
+  run, line numbers, the current line, both scroll axes, indentation by the
+  preference, and **Tab claimed by the element**: today Tab is the focus
+  ring's before any element sees it, so the host gains a way for a focused
+  element to take Tab (and Shift+Tab), with another key to leave it.
+  A monospaced face is embedded (an OFL face, its license beside the others in
+  `crates/clausters-gui-draw/assets/fonts/`). Acceptance: a script types,
+  selects, cuts, pastes, undoes and indents through the host's own keyboard
+  dispatch, asserting on the text after each step, natively and in a page.
+- ⬜ **WS7 — Highlighting, incremental.** tree-sitter kept as a tree: an edit
+  is applied to it and the text re-parsed incrementally, and only the visible
+  lines are highlighted and re-shaped. Python and JavaScript; syntax colors as
+  theme roles, light and dark. The grammars' wasm build passes tree-sitter's
+  libc headers from a build script, not by hand. Acceptance: the key budget on
+  a 5,000-line file, measured, natively and in a page.
+- ⬜ **WS8 — Find and replace, and the "should" of editing.** Find and replace
+  in the file with its bar, go to line, bracket matching, closing pairs, the
+  other occurrences of the selection, toggling a comment.
+- ⬜ **WS9 — Evaluation.** The verbs of evaluation on the code element: the
+  selection or line, the block (top-level statement, cell, paragraph), the
+  move past it, the flash, interrupt and restart. The region logic is Rust,
+  once, and the editor's `regions.test.ts` and `indent.test.ts` are ported to
+  it case by case. The verbs reach the session through the application, never through the
+  element.
+- ⬜ **WS10 — Language help.** A completion list, signature help and hover
+  help as popups of the host's popup layer, filled by whoever answers for the
+  session: the Python session's queries as today, the page's TypeScript
+  service in a page. Ctrl+D opens the documentation panel at the name.
+  Acceptance: tests of the popups' contents and of what a choice inserts --
+  the current application has none for completion, so these are new.
+- ⬜ **WS11 — The documentation panel.** Markdown read once (pulldown-cmark)
+  into a laid-out document the host draws: headings, paragraphs, emphasis,
+  inline code, links, lists, tables, code blocks highlighted by WS7's
+  highlighter with a copy button, images where the book has them. Navigation
+  (back, forward, a book's contents, the start page listing every book), find
+  in the page, and search across every document with an index built in Rust.
+  The books it reads are the ones the current application finds
+  (`books.rs`, `pkgdocs.rs`); the `pydoc` fallback stays the session's; the
+  editor's `docIndex.test.ts` is ported to the Rust index.
+- ⬜ **WS12 — The native application.** One binary: the host, the workspace
+  and the editor's application, with the current application's non-drawing
+  Rust moved in. Menus as the host's menu bar, the dialogs (preferences,
+  environments, confirmations) as host windows, the file dialogs as the
+  platform's own (a portal natively), recent files, files from the command
+  line, the window state, following the desktop's light or dark theme. The
+  Python session, its environments and its interrupt hooks unchanged.
+- ⬜ **WS13 — The page application.** The editor page becomes the host's
+  workspace full-window, with the JavaScript session and the TypeScript
+  service feeding it, and the file dialog over the page's storage as a host
+  window. The page's Svelte interface is retired.
+- ⬜ **WS14 — Retiring the webview application.** Tauri, Svelte, CodeMirror and
+  the page's interface removed; the third-party licenses regenerated; the
+  wheel, `install.sh` and the README rebuilt around the new binary; the
+  editor's documentation rewritten where it names what moved.
+
+### Open decisions (taken in the milestone that needs them)
+
+- **Where the editor's application lives -- decided 2026-11-16.** A member of
+  the root virtual workspace, `crates/clausters-editor`, beside the host it
+  links: one lockfile and one `target/`, the toolchain pin, fmt and clippy as
+  for every other crate. The reason the editor kept a Cargo workspace of its
+  own was to keep the webview and its toolkit out of the server's build, and
+  the new binary has neither. Like the host, it is built and tested by name
+  (`cargo build -p clausters-editor`), never through `--workspace` with the
+  server's feature rows, and the server stays the default member. The
+  workspace and the elements stay the host's (`crates/clausters-gui`); the
+  crate holds the editor's application -- its files, its session, its
+  preferences, its menus -- and the binary.
+  - **While the two coexist** (WS1-WS13) the webview application stays where it
+    is, in `clausters-editor/` with its own workspace and workflow, and keeps
+    working; the new crate is added under `crates/` at WS12. WS14 removes the
+    old directory and moves what survives of it (the user documentation, the
+    wheel, `install.sh`, the third-party notices) to the crate.
+  - **What the move changes, at WS14:** the rule in `AGENTS.md` that names
+    `clausters-editor/` a standalone application with its own workspace and
+    version is rewritten for the crate; `clausters-editor.yml` becomes part of
+    the workspace's CI or is folded into it; the editor's version is decided
+    then (its own `version` in the crate's manifest, or the workspace's); the
+    wheel and the `clausters[editor]` extra stage the new binary. At run time
+    the editor still works with any Python, clausters or not: linking the host
+    is a build fact, not a requirement on the session.
+- **Whether `code`, `post` and the documentation are widgets a GuiDef may
+  name**, or the editor application's own elements only. If they are widgets,
+  both clients' builders and the protocol reference come with them.
+- **Nesting.** An application's window as a panel is the first step of "An
+  application inside another" (`crates/clausters-document/PLAN.md`, Future
+  directions); the workspace must not decide that question by accident -- a
+  panel holds a whole window, it does not nest one application's widgets in
+  another's tree.
+
 ## Definition of done (per milestone)
 
 Following the project rule: code + tests, a clear commit message (the record of *what* shipped) and this file's checkbox updated; developer/user docs where the feature touches them; a commented example when the feature is user-facing — the example is also how new human-visible behavior gets checked by eye; and a `docs/decisions.md` note only when a choice has non-obvious context.

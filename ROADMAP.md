@@ -347,6 +347,13 @@ Named, not enumerated: each is written where it belongs and is read there.
   ids a parent hands a child, events routed to the application that owns each
   widget, and who answers a key when applications nest -- a window's own keys
   are built (its `keys` scopes), and nesting is what is left of them.
+- **The host as the application's one window, the `WS` track**
+  *(`crates/clausters-gui/PLAN.md`, WS track)*. Experimental, on the
+  `host-workspace` branch: a workspace of panels, tabs and pages in the host,
+  and the editor's code, post and documentation as host elements, so one
+  window holds everything natively and in a page. It goes through three
+  checkpoints, each a decision on what was measured; the first (the workspace
+  alone, WS1-WS4) is what may reach `main` on its own.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the
