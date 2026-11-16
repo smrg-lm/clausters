@@ -54,7 +54,7 @@ from clausters.defs import (
     in_,
     out,
     play_buf,
-    signals as S,
+    signals as sig,
 )
 from clausters.errors import CommandError
 from clausters.defs import Group
@@ -153,9 +153,9 @@ def load_pluck(server: Server, path: str, freq: float = 330.0, dur: float = 0.7)
 
 def member_defs():
     """The FaustDef + SynthDefs the GraphDef references by name."""
-    freq = S.hslider("freq", 220.0, 20.0, 20000.0, 0.01)
-    phasor = S.rec(lambda s: (s + freq / S.sr()) % 1.0)
-    fsine = FaustDef.from_signals("fsine", S.sin(phasor * S.TAU) * 0.2)
+    freq = sig.hslider("freq", 220.0, 20.0, 20000.0, 0.01)
+    phasor = sig.rec(lambda s: (s + freq / sig.sr()) % 1.0)
+    fsine = FaustDef.from_signals("fsine", sig.sin(phasor * sig.TAU) * 0.2)
 
     bufnum, rate, amp, obus = (control("bufnum"), control("rate", 1.0),
                                control("amp", 0.5), control("out"))

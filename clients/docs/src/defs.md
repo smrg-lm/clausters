@@ -16,16 +16,16 @@ This page is the conceptual map and the catalog of what each callable does. The 
 Every graph node is an `AbstractObject`, the {{alt operator-overloading || operator}} base shared with the value layer. Composing two nodes — or a node and a plain number — returns a new node rather than a computed value:
 
 ```python
-from clausters.defs import signals as S
+from clausters.defs import signals as sig
 
-freq = S.hslider("freq", 220.0, 20.0, 20000.0, 0.01)   # a Signal (a control)
+freq = sig.hslider("freq", 220.0, 20.0, 20000.0, 0.01)   # a Signal (a control)
 detuned = freq * 1.5                                    # another Signal, not a float
 ```
 
 ```ts
-import { signals as S } from "clausters/defs";
+import { signals as sig } from "clausters/defs";
 
-const freq = S.hslider("freq", 220.0, 20.0, 20000.0, 0.01);   // a Signal (a control)
+const freq = sig.hslider("freq", 220.0, 20.0, 20000.0, 0.01);   // a Signal (a control)
 const detuned = freq.mul(1.5);                                 // another Signal, not a number
 ```
 
@@ -46,20 +46,20 @@ Three constructors, one per payload the server's `/def_send faust` accepts. They
 **From signals.** Each argument to `{{api from_signals}}` is one **output** (a `Signal` or a number): one argument is mono, two is stereo, and so on.
 
 ```python
-from clausters.defs import signals as S, FaustDef
+from clausters.defs import signals as sig, FaustDef
 
-freq = S.hslider("freq", 220.0, 20.0, 20000.0, 0.01)
-phase = S.rec(lambda s: (s + freq / S.sr()) % 1.0)   # one-sample feedback phasor
-sine = S.sin(phase * S.TAU) * 0.2
+freq = sig.hslider("freq", 220.0, 20.0, 20000.0, 0.01)
+phase = sig.rec(lambda s: (s + freq / sig.sr()) % 1.0)   # one-sample feedback phasor
+sine = sig.sin(phase * sig.TAU) * 0.2
 fdef = FaustDef.from_signals("fsine", sine)          # one output -> mono
 ```
 
 ```ts
-import { FaustDef, signals as S } from "clausters/defs";
+import { FaustDef, signals as sig } from "clausters/defs";
 
-const freq = S.hslider("freq", 220.0, 20.0, 20000.0, 0.01);
-const phase = S.rec((s) => s.add(freq.div(S.sr())).mod(1.0));   // one-sample feedback phasor
-const sine = S.sin(phase.mul(S.TAU)).mul(0.2);
+const freq = sig.hslider("freq", 220.0, 20.0, 20000.0, 0.01);
+const phase = sig.rec((s) => s.add(freq.div(sig.sr())).mod(1.0));   // one-sample feedback phasor
+const sine = sig.sin(phase.mul(sig.TAU)).mul(0.2);
 const fdef = FaustDef.fromSignals("fsine", sine);                // one output -> mono
 ```
 
@@ -93,7 +93,7 @@ Which one to pick is a question of *how you are thinking about the graph* — on
 
 ### The signal API
 
-`signals` (imported as `S` by convention) is the Signal API as lowercase callables. {{alt Arithmetic, comparison and bitwise **operators** compose nodes directly; the rest are functions or methods. || Arithmetic, comparison and bitwise operations are **methods** of the operator's name; the rest are functions or methods.}}
+`signals` is the Signal API as lowercase callables. {{alt Arithmetic, comparison and bitwise **operators** compose nodes directly; the rest are functions or methods. || Arithmetic, comparison and bitwise operations are **methods** of the operator's name; the rest are functions or methods.}}
 
 **Maths via operators and methods.** These compose a `Signal`:
 
@@ -116,7 +116,7 @@ Which one to pick is a question of *how you are thinking about the graph* — on
 | Binary methods | `.min(b) .max(b) .atan2(b) .pow(b) .mod(b)` |
 <!-- /web -->
 
-The same unary/binary maths is also available as **module functions** (so you can write `S.sin(x)` as well as `x.sin()`), plus a few that have no method form:
+The same unary/binary maths is also available as **module functions** (so you can write `sig.sin(x)` as well as `x.sin()`), plus a few that have no method form:
 
 | Kind | Functions |
 | --- | --- |
@@ -148,7 +148,7 @@ The same unary/binary maths is also available as **module functions** (so you ca
 | `fconst(ctype, name, file="")` | a foreign scalar resolved once at compile time — the building block of `sr` |
 | `fvar(ctype, name, file="")` | like `fconst` but re-read each block |
 
-Use `sr()` — never a baked-in `SR` constant — wherever the maths depends on the rate ({{alt `freq / S.sr()` || `freq.div(S.sr())`}}, filter coefficients): the def then stays in tune at whatever rate the live engine or the NRT renderer runs. `PI` / `TAU` are literals because they are literals in Faust too, so they involve no server round-trip and become constant signals as soon as they meet a `Signal`.
+Use `sr()` — never a baked-in `SR` constant — wherever the maths depends on the rate ({{alt `freq / sig.sr()` || `freq.div(sig.sr())`}}, filter coefficients): the def then stays in tune at whatever rate the live engine or the NRT renderer runs. `PI` / `TAU` are literals because they are literals in Faust too, so they involve no server round-trip and become constant signals as soon as they meet a `Signal`.
 
 <!-- python -->
 **Integer vs real constants — `2` is not `2.0`.** Faust distinguishes an *integer* constant from a *real* one, and so does this graph. JSON has only one "number" type, so it is tempting to assume `2` and `2.0` are interchangeable, but they are **not**: the distinction rides on the literal's form, which survives the whole way through. The client takes the constant straight from your Python value (it does not coerce it), so a Python `int` serializes as `2` and a `float` as `2.0`; the server then reads an integral token as an **integer** constant and a token with a decimal point as a **real** one — a `2.0` is stored as a float and is *not* folded back to an integer. This matters wherever the operation is integer-typed — the bitwise and shift ops (`& | ^ << >>`), `rem`, `asinteger()`, table indices — while ordinary `+ - * /` promote an int constant to real and so are unaffected. When it matters, write the literal the way you want it read: `2` for an integer, `2.0` for a real. (A `SynthDef` offers no such choice — it coerces every constant to `float`, since UGens compute only in f32.)
@@ -177,7 +177,7 @@ Use `sr()` — never a baked-in `SR` constant — wherever the maths depends on 
 
 ### The box API: reusing the Faust libraries
 
-`boxes` (imported as `box` by convention) is the same lowercase-callable pattern over Faust's **Box API**: the point-free algebra where whole **processors** compose by their input/output arities (`seq` / `par` / `split` / `merge` / `rec`). It is the counterpart of `signals` and a complete def-building API in its own right — where `signals` describes one output at a time referentially (`input(n)`), boxes describe multi-channel blocks that plug into each other, the natural shape for routing, chains, and anything conceived as units with inputs and outputs.
+`boxes` is the same lowercase-callable pattern over Faust's **Box API**: the point-free algebra where whole **processors** compose by their input/output arities (`seq` / `par` / `split` / `merge` / `rec`). It is the counterpart of `signals` and a complete def-building API in its own right — where `signals` describes one output at a time referentially (`input(n)`), boxes describe multi-channel blocks that plug into each other, the natural shape for routing, chains, and anything conceived as units with inputs and outputs.
 
 On top of the algebra, one addition opens the Faust libraries to it:
 

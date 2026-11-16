@@ -59,11 +59,11 @@ The other def format is a peer, not a fallback — the same voice as a `FaustDef
 which the server JIT-compiles (Faust ships inside the wheel; nothing to install):
 
 ```python
-from clausters.defs import signals as S, boxes as box, FaustDef
+from clausters.defs import signals as sig, boxes as box, FaustDef
 
-freq = S.hslider("freq", 440.0, 20.0, 20000.0, 0.01)
-phase = S.rec(lambda p: (p + freq / S.sr()) % 1.0)         # one-sample feedback phasor
-FaustDef.from_signals("fbeep", S.sin(phase * S.TAU) * 0.2).send(server)
+freq = sig.hslider("freq", 440.0, 20.0, 20000.0, 0.01)
+phase = sig.rec(lambda p: (p + freq / sig.sr()) % 1.0)         # one-sample feedback phasor
+FaustDef.from_signals("fbeep", sig.sin(phase * sig.TAU) * 0.2).send(server)
 
 # or point-free with the box API, borrowing the oscillator from Faust's library:
 FaustDef.from_box(

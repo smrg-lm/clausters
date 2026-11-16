@@ -25,7 +25,7 @@ from clausters.defs import (
     format_load,
     format_profile,
 )
-from clausters.defs import signals as S
+from clausters.defs import signals as sig
 
 
 def test_plugin_scan_reassembles_chunks_and_rejects_missing_metadata():
@@ -118,8 +118,8 @@ def _ffi_or_skip():
 # ---- signals: lowercase callables compose the JSON signal tree ----
 
 def test_signal_functions_and_operators_build_the_tree():
-    freq = S.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
-    expr = S.sin(freq * 2.0) * 0.5
+    freq = sig.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
+    expr = sig.sin(freq * 2.0) * 0.5
     node = expr.to_json()
     assert node == {
         "op": "mul",
@@ -134,7 +134,7 @@ def test_signal_functions_and_operators_build_the_tree():
 
 
 def test_recursion_and_self():
-    phasor = S.rec(lambda s: (s + 0.01) % 1.0)
+    phasor = sig.rec(lambda s: (s + 0.01) % 1.0)
     node = phasor.to_json()
     assert node["op"] == "recursion"
     assert node["in"][0]["op"] == "rem"          # `% 1.0`
@@ -143,11 +143,11 @@ def test_recursion_and_self():
 
 def test_foreign_constant_and_sample_rate():
     # fconst/fvar carry ctype/name/file; sr() is the ma.SR clamp built on them.
-    assert S.fconst("int", "fSamplingFreq", "<math.h>").to_json() == {
+    assert sig.fconst("int", "fSamplingFreq", "<math.h>").to_json() == {
         "op": "fconst", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"}
-    assert S.fvar("real", "x").to_json() == {
+    assert sig.fvar("real", "x").to_json() == {
         "op": "fvar", "ctype": "real", "name": "x", "file": ""}
-    sr = S.sr().to_json()
+    sr = sig.sr().to_json()
     assert sr["op"] == "min"                      # min(192000, max(1, fconst))
     assert sr["in"][0] == 192000.0
     inner = sr["in"][1]
@@ -158,8 +158,8 @@ def test_foreign_constant_and_sample_rate():
 
 def test_pi_and_tau_are_plain_literals():
     # PI/TAU are floats (ma.PI is a literal too), becoming constants in graphs.
-    assert S.TAU == pytest.approx(2.0 * S.PI)
-    assert (S.sin(S.TAU) * 1.0).to_json()["in"][0]["in"][0] == pytest.approx(S.TAU)
+    assert sig.TAU == pytest.approx(2.0 * sig.PI)
+    assert (sig.sin(sig.TAU) * 1.0).to_json()["in"][0]["in"][0] == pytest.approx(sig.TAU)
 
 
 # ---- FaustDef payloads and controls ----
@@ -167,8 +167,8 @@ def test_pi_and_tau_are_plain_literals():
 def test_faustdef_signal_dump_and_controls():
     import json
 
-    freq = S.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
-    fdef = FaustDef.from_signals("d", S.sin(freq) * 0.2)
+    freq = sig.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
+    fdef = FaustDef.from_signals("d", sig.sin(freq) * 0.2)
     payload = json.loads(fdef.dump_def())
     assert list(payload) == ["signals"] and len(payload["signals"]) == 1
     assert fdef.control_names() == ["freq"]
@@ -716,9 +716,9 @@ def test_done_action_full_set():
 # ---- end-to-end vertical slice: graph -> /def_send faust -> /synth_new -> control -> render ----
 
 def _sine_def(name="c3sine", default_freq=330.0):
-    freq = S.hslider("freq", default_freq, 20.0, 20000.0, 0.01)
-    phasor = S.rec(lambda s: (s + freq / 48000.0) % 1.0)
-    return FaustDef.from_signals(name, S.sin(phasor * 6.283185307179586) * 0.2)
+    freq = sig.hslider("freq", default_freq, 20.0, 20000.0, 0.01)
+    phasor = sig.rec(lambda s: (s + freq / 48000.0) % 1.0)
+    return FaustDef.from_signals(name, sig.sin(phasor * 6.283185307179586) * 0.2)
 
 
 def test_faustdef_renders_through_the_seam():

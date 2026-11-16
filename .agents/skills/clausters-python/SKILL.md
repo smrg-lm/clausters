@@ -34,11 +34,11 @@ Two def kinds, both built with **lowercase callables** that compose via Python
 operators and become a JSON tree:
 
 ```python
-from clausters.defs import signals as S, FaustDef, SynthDef
+from clausters.defs import signals as sig, FaustDef, SynthDef
 # Faust signal API -> {"signals":[...]} tree (one node per output):
-freq = S.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
-phasor = S.rec(lambda s: (s + freq / 48000.0) % 1.0)   # explicit 1-sample feedback
-fdef = FaustDef.from_signals("sine", S.sin(phasor * 6.2831853) * 0.2, ...)  # >1 arg = >1 output
+freq = sig.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
+phasor = sig.rec(lambda s: (s + freq / 48000.0) % 1.0)   # explicit 1-sample feedback
+fdef = FaustDef.from_signals("sine", sig.sin(phasor * 6.2831853) * 0.2, ...)  # >1 arg = >1 output
 ```
 
 - `signals`: arithmetic + `sin/cos/...`, `delay`/`delay1` (Faust `'`), `rec`/`self_`
@@ -48,7 +48,7 @@ fdef = FaustDef.from_signals("sine", S.sin(phasor * 6.2831853) * 0.2, ...)  # >1
 - **Sample rate:** use `signals.sr()` (the port of Faust's `ma.SR`) — *do not* bake
   an `SR` constant into the graph. `sr()` is a foreign constant (`fconst`) the
   server resolves at def-compile time, so the def stays in tune at whatever rate
-  the engine/NRT renderer runs (`freq / S.sr()`, RBJ coeffs, etc.). `signals.PI`/
+  the engine/NRT renderer runs (`freq / sig.sr()`, RBJ coeffs, etc.). `signals.PI`/
   `signals.TAU` are *literals* (Faust's `ma.PI` is one too), so they are plain
   Python floats — no server round-trip.
 - `boxes` (imported as `box`): the **Box API**, the peer of `signals` — Faust's

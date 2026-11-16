@@ -186,11 +186,11 @@ node.free();                           // silence
 The **other def format is a peer, not a fallback**: the same instrument as a `FaustDef`, which the server JIT-compiles. Write it as a signal graph, as a box graph reusing the Faust libraries, or as Faust source — three ways of saying the same thing. Nothing to install: the package bundles Faust (see [What the server must support](defs.md#what-the-server-must-support)).
 
 ```python
-from clausters.defs import signals as S, boxes as box, FaustDef
+from clausters.defs import signals as sig, boxes as box, FaustDef
 
-freq = S.hslider("freq", 440.0, 20.0, 20000.0, 0.01)
-phase = S.rec(lambda p: (p + freq / S.sr()) % 1.0)          # a one-sample feedback phasor
-FaustDef.from_signals("fbeep", S.sin(phase * S.TAU) * 0.2).send(server)
+freq = sig.hslider("freq", 440.0, 20.0, 20000.0, 0.01)
+phase = sig.rec(lambda p: (p + freq / sig.sr()) % 1.0)          # a one-sample feedback phasor
+FaustDef.from_signals("fbeep", sig.sin(phase * sig.TAU) * 0.2).send(server)
 
 # the same voice, point-free, borrowing the oscillator from Faust's library:
 FaustDef.from_box(
@@ -201,11 +201,11 @@ node.free()
 ```
 
 ```ts
-import { boxes, FaustDef, signals } from "clausters/defs";
+import { boxes as box, FaustDef, signals as sig } from "clausters/defs";
 
-const freq = S.hslider("freq", 440.0, 20.0, 20000.0, 0.01);
-const phase = S.rec((p) => p.add(freq.div(S.sr())).mod(1.0));   // a one-sample feedback phasor
-await FaustDef.fromSignals("fbeep", S.sin(phase.mul(S.TAU)).mul(0.2)).send(server);
+const freq = sig.hslider("freq", 440.0, 20.0, 20000.0, 0.01);
+const phase = sig.rec((p) => p.add(freq.div(sig.sr())).mod(1.0));   // a one-sample feedback phasor
+await FaustDef.fromSignals("fbeep", sig.sin(phase.mul(sig.TAU)).mul(0.2)).send(server);
 
 // the same voice, point-free, borrowing the oscillator from Faust's library:
 await FaustDef.fromBox(

@@ -55,14 +55,14 @@ class FaustDef:
 
     ```python
     from clausters import FaustDef, Server, Synth
-    from clausters.defs import boxes as box, signals as S
+    from clausters.defs import boxes as box, signals as sig
 
     s = Server().boot()
 
     # signals: the phasor written out, one sample of feedback
-    freq = S.hslider("freq", 440.0, 20.0, 20000.0, 0.01)
-    phase = S.rec(lambda p: (p + freq / S.sr()) % 1.0)
-    FaustDef.from_signals("a", S.sin(phase * S.TAU) * 0.2).send(s)
+    freq = sig.hslider("freq", 440.0, 20.0, 20000.0, 0.01)
+    phase = sig.rec(lambda p: (p + freq / sig.sr()) % 1.0)
+    FaustDef.from_signals("a", sig.sin(phase * sig.TAU) * 0.2).send(s)
 
     # boxes: the same oscillator, borrowed from Faust's library
     d = FaustDef.from_box(

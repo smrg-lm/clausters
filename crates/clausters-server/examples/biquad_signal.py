@@ -48,13 +48,13 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "clients", "python"))
 
-from clausters.defs import signals as S
+from clausters.defs import signals as sig
 from clausters.defs import FaustDef, Server
 from clausters.seq import Event
 
 # Host-side render rate for the offline path: the rate we ask the NRT renderer
 # for and write into the WAV header. It is NOT baked into the DSP -- the graph
-# reads its rate from the server via `S.sr()`, so changing this stays in tune.
+# reads its rate from the server via `sig.sr()`, so changing this stays in tune.
 RENDER_SR = 48000.0
 FDEF_NAME = "rlpf_signal"
 
@@ -75,9 +75,9 @@ def biquad(x, b0, b1, b2, a1, a2):
     """
     # w[n] = x[n] - a1*w[n-1] - a2*w[n-2].  Inside `rec`, `w1` is the
     # one-sample-delayed output (w[n-1]); `delay1(w1)` is w[n-2].
-    w = S.rec(lambda w1: x - (a1 * w1 + a2 * S.delay1(w1)))
-    w1 = S.delay1(w)        # w[n-1]
-    w2 = S.delay1(w1)       # w[n-2]
+    w = sig.rec(lambda w1: x - (a1 * w1 + a2 * sig.delay1(w1)))
+    w1 = sig.delay1(w)        # w[n-1]
+    w2 = sig.delay1(w1)       # w[n-2]
     # y[n] = b0*w[n] + b1*w[n-1] + b2*w[n-2].
     return b0 * w + b1 * w1 + b2 * w2
 
@@ -86,11 +86,11 @@ def rbj_lowpass_coeffs(cutoff, q):
     """Cook the 5 monic biquad coefficients of a resonant low-pass from
     `cutoff` (Hz) and `q`, both `Signal`s, with the RBJ Audio EQ Cookbook
     formulas -- built entirely from signal primitives. The sample rate comes
-    from the server via `S.sr()` (Faust's `ma.SR`), so the coefficients are
+    from the server via `sig.sr()` (Faust's `ma.SR`), so the coefficients are
     correct at the engine's actual rate."""
-    w0 = cutoff * (S.TAU / S.sr())       # normalized angular frequency
-    cosw = S.cos(w0)
-    sinw = S.sin(w0)
+    w0 = cutoff * (sig.TAU / sig.sr())       # normalized angular frequency
+    cosw = sig.cos(w0)
+    sinw = sig.sin(w0)
     alpha = sinw / (q * 2.0)
     a0 = 1.0 + alpha                     # normalization (make denominator monic)
     b1 = (1.0 - cosw) / a0
@@ -107,14 +107,14 @@ def build_def(name=FDEF_NAME):
     Controls: `freq` (saw pitch), `cutoff`, `q`, `amp`. Output is duplicated to
     two channels so it lands on the stereo `out` bus the server adds.
     """
-    freq = S.hslider("freq", 110.0, 20.0, 2000.0, 0.01)
-    cutoff = S.hslider("cutoff", 800.0, 20.0, 18000.0, 0.01)
-    q = S.hslider("q", 4.0, 0.5, 20.0, 0.001)
-    amp = S.hslider("amp", 0.2, 0.0, 1.0, 0.0001)
+    freq = sig.hslider("freq", 110.0, 20.0, 2000.0, 0.01)
+    cutoff = sig.hslider("cutoff", 800.0, 20.0, 18000.0, 0.01)
+    q = sig.hslider("q", 4.0, 0.5, 20.0, 0.001)
+    amp = sig.hslider("amp", 0.2, 0.0, 1.0, 0.0001)
 
     # Internal source: a naive sawtooth via a phasor (same idiom as the other
     # examples), mapped from [0,1) to [-1,1). Plenty of harmonics to filter.
-    phasor = S.rec(lambda s: (s + freq / S.sr()) % 1.0)
+    phasor = sig.rec(lambda s: (s + freq / sig.sr()) % 1.0)
     saw = phasor * 2.0 - 1.0
 
     coeffs = rbj_lowpass_coeffs(cutoff, q)

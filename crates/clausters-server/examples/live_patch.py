@@ -58,7 +58,7 @@ from clausters.defs import (
     in_,
     out,
     play_buf,
-    signals as S,
+    signals as sig,
 )
 from clausters.errors import CommandError
 from clausters.defs.node import AddAction
@@ -143,11 +143,11 @@ def alloc_read(server: Server, path: str, frames: int):
 def build_defs():
     """A Faust sine voice, a UGen buffer player, and a UGen 2-input mixer."""
     # FaustDef: a sine oscillator. `freq` is its control; the server adds the
-    # reserved `out` bus selector. `S.sr()` (Faust's ma.SR) keeps it in tune at
+    # reserved `out` bus selector. `sig.sr()` (Faust's ma.SR) keeps it in tune at
     # whatever rate the engine runs.
-    freq = S.hslider("freq", 220.0, 20.0, 20000.0, 0.01)
-    phasor = S.rec(lambda s: (s + freq / S.sr()) % 1.0)   # 1-sample feedback ramp
-    fsine = FaustDef.from_signals("fsine", S.sin(phasor * S.TAU) * 0.2)
+    freq = sig.hslider("freq", 220.0, 20.0, 20000.0, 0.01)
+    phasor = sig.rec(lambda s: (s + freq / sig.sr()) % 1.0)   # 1-sample feedback ramp
+    fsine = FaustDef.from_signals("fsine", sig.sin(phasor * sig.TAU) * 0.2)
 
     # SynthDef: loop a buffer into the bus named by `out`, scaled by `amp`.
     bufnum, rate, amp, obus = (control("bufnum"), control("rate", 1.0),
