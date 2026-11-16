@@ -21,6 +21,7 @@ from clausters.gui import page_json, score, score_view
 from clausters.seq import EventSequence
 from clausters.seq.event import rest
 from clausters.seq.timeline import Timeline
+from clausters.notation import _abi
 
 
 def view_of(tree: dict) -> dict:
@@ -45,7 +46,7 @@ def view_of(tree: dict) -> dict:
 def _engraver() -> bool:
     """Whether this checkout can engrave at all."""
     try:
-        notation._abi._engraver()
+        _abi._engraver()
         return True
     except RuntimeError:
         return False

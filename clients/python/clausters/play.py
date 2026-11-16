@@ -56,11 +56,43 @@ the uniform entry that picks the right one.
 """
 
 import inspect
+from typing import TYPE_CHECKING, Any, Callable, Generator, overload
 
 from .base.main import main
 from .defs.node import Group, Synth
 
+if TYPE_CHECKING:
+    from .base.stream import Stream
+    from .defs import Buffer, FaustDef, GraphDef, SynthDef
+    from .defs.expr import Expr
+    from .defs.node import Node
+    from .defs.server.transport import Transport
+    from .seq.event import Event
+    from .seq.eventstream import EventStreamPlayer
+    from .seq.pattern import EventPattern
+    from .seq.sequence import EventSequence
+    from .seq.timeline import Timeline
+
 __all__ = ["play"]
+
+
+# What comes back, by what is played -- the same table as the web client's.
+@overload
+def play(playable: "EventPattern", *, server=None, clock=None, quant=None, controls=None) -> "EventStreamPlayer": ...
+@overload
+def play(playable: "Stream | Callable[..., Generator[Any, Any, Any]] | Generator[Any, Any, Any]", *, server=None, clock=None, quant=None, controls=None) -> "Stream": ...
+@overload
+def play(playable: "SynthDef | FaustDef | GraphDef | Expr", *, server=None, clock=None, quant=None, controls=None) -> "Node": ...
+@overload
+def play(playable: "EventSequence", *, server=None, clock=None, quant=None, controls=None) -> "Transport": ...
+@overload
+def play(playable: "Timeline", *, server=None, clock=None, quant=None, controls=None) -> "Timeline": ...
+@overload
+def play(playable: "Buffer", *, server=None, clock=None, quant=None, controls=None) -> "Synth": ...
+@overload
+def play(playable: "Event | dict", *, server=None, clock=None, quant=None, controls=None) -> "Event": ...
+@overload
+def play(playable: Any, *, server=None, clock=None, quant=None, controls=None) -> Any: ...
 
 
 def play(playable, *, server=None, clock=None, quant=None, controls=None):

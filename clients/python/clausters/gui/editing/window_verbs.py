@@ -7,10 +7,16 @@ holds (`clausters.gui.editing.HostedEditor`) both reach a window so; each only
 says which window (``_window``) on which host (``_host``).
 """
 
+from typing import Any
+
 
 class WindowVerbs:
     """**A window's verbs, as members**: each one call to the host about the
     window ``_window`` names, ``False`` or a `RuntimeError` with none open."""
+
+    #: What the composing class says: the host, and the window on it.
+    _host: Any
+    _window: Any
 
     def _has_window(self) -> bool:
         """Whether there is a window to ask."""

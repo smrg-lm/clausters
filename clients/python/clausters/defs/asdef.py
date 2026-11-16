@@ -15,6 +15,7 @@ The verbs read it differently on purpose -- see its docstring.
 """
 
 import uuid
+from typing import Any, overload
 
 from .boxes import Box
 from .faustdef import FaustDef
@@ -72,6 +73,22 @@ def _tmp_name(family: str) -> str:
 def _is_sink(m) -> bool:
     """Whether ``m`` already delivers its data somewhere -- see `_SINK_KINDS`."""
     return isinstance(m, Ugen) and m.kind in _SINK_KINDS
+
+
+# What a coercion makes: a def passes through, a Faust expression is a
+# `FaustDef`, and a UGen graph or a channel list of one a `SynthDef`.
+@overload
+def as_def(expr: SynthDef, name: "str | None" = None) -> SynthDef: ...
+@overload
+def as_def(expr: FaustDef, name: "str | None" = None) -> FaustDef: ...
+@overload
+def as_def(expr: GraphDef, name: "str | None" = None) -> GraphDef: ...
+@overload
+def as_def(expr: "Signal | Box", name: "str | None" = None) -> FaustDef: ...
+@overload
+def as_def(expr: "Ugen | ChannelList", name: "str | None" = None) -> SynthDef: ...
+@overload
+def as_def(expr: Any, name: "str | None" = None) -> "SynthDef | FaustDef | GraphDef": ...
 
 
 def as_def(expr, name: str | None = None):

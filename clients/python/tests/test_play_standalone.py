@@ -437,7 +437,8 @@ def test_as_def_wraps_a_bare_ugen_in_out():
 
 
 def test_as_def_keeps_an_output_or_side_effect_root():
-    assert as_def(out(1.0, sine(440.0))).roots[0].kind == "Out"
+    sdef = as_def(out(1.0, sine(440.0)))
+    assert isinstance(sdef, SynthDef) and sdef.roots[0].kind == "Out"
     assert as_def(send_trig(sine(1.0))).roots[0].kind == "SendTrig"
 
 
@@ -506,8 +507,8 @@ def test_disk_out_is_a_sink_so_it_is_not_wrapped():
     sdef = as_def(disk_out(sine(440.0), path="/tmp/rec.wav"))
     assert sdef.roots[0].kind == "DiskOut"
     # Recording *and* hearing stays available, explicitly.
-    assert as_def(out(0.0, disk_out(sine(440.0), path="/tmp/rec.wav"))) \
-        .roots[0].kind == "Out"
+    sdef = as_def(out(0.0, disk_out(sine(440.0), path="/tmp/rec.wav")))
+    assert isinstance(sdef, SynthDef) and sdef.roots[0].kind == "Out"
 
 
 def test_graph_management_ugens_are_not_sinks_and_stay_wrapped():

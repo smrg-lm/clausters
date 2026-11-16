@@ -118,7 +118,7 @@ def build_timeline() -> Timeline:
 # ## The window
 
 # %%
-def scene(display_list: dict, sample_rate: float) -> dict:
+def scene(display_list: dict, sample_rate: float):
     """A minimal transport over the engraved page. Every widget is *named*, so
     the script drives it by name and never picks an id."""
     return view(

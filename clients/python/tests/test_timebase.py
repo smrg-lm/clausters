@@ -4,6 +4,7 @@ by absolute sample via ``/sched_at``). Robust tests for **both** options.
 """
 
 import struct
+import types
 
 import pytest
 
@@ -53,9 +54,7 @@ class _FakeIface:
 
 def _running_routine(clock, beat):
     """Pretend a routine is being resumed at ``beat`` on a started RT clock."""
-    r = type("R", (), {})()
-    r.clock = clock
-    r._logical_beat = beat
+    r = types.SimpleNamespace(clock=clock, _logical_beat=beat)
     main.current_routine = r
     return r
 
@@ -183,7 +182,7 @@ def test_only_a_clock_on_logical_time_renders():
             clock.render()
         assert clock.timebase is timebase
     with pytest.raises(AttributeError):
-        clock.timebase = MonotonicTimebase()
+        clock.timebase = MonotonicTimebase()  # pyright: ignore[reportAttributeAccessIssue]
 
 
 # ---- immediate against timed, offline ----

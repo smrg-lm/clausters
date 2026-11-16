@@ -13,6 +13,8 @@ against a server's transport -- a `clausters.seq.Timeline`, a playback --
 plays on whichever it is handed.
 """
 
+from typing import TYPE_CHECKING, Any
+
 from ...base import _osclib
 from ...errors import CommandError
 from ..node import _target_id
@@ -28,6 +30,11 @@ def _is_transport(transport: int):
 
 class ServerTransport:
     """The transport half of `Server`; never instantiated on its own."""
+
+    if TYPE_CHECKING:
+        # What the `Server` this is a part of has, and these verbs use.
+        def request(self, *args: Any, **kwargs: Any) -> Any: ...
+        ids: Any
 
     #: The transport this handle addresses: 0 on a `Server`, the one it was
     #: made for on what `transport_at` answers.

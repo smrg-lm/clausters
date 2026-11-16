@@ -32,6 +32,7 @@ import sys
 import threading
 import time
 import weakref
+from typing import Any
 
 from .. import _native
 from .stream import resume
@@ -112,7 +113,7 @@ class TempoClock:
         #: made: the OS monotonic clock, the server's sample clock, or an
         #: offline run's logical time. The Server reads it to choose how to
         #: stamp events (NTP timetag vs ``/sched_at`` absolute sample).
-        self._timebase = timebase if timebase is not None else MonotonicTimebase()
+        self._timebase: Any = timebase if timebase is not None else MonotonicTimebase()
         self._now = self._timebase
         if isinstance(self._timebase, LogicalTimebase):
             self._timebase.join(self)
@@ -155,7 +156,7 @@ class TempoClock:
         #: so this back-reference is the *only* thing an ambient play can follow
         #: from inside a routine. A clock built with no session ambient has
         #: ``None`` here and resolves against the default session.
-        self.session = None
+        self.session: Any = None
         if ambient is not None:
             ambient.adopt(self)
         _ALIVE.add(self)

@@ -95,7 +95,7 @@ def horizontal_strip() -> dict:
 # ## The workspace
 
 # %%
-def workspace() -> dict:
+def workspace():
     return view(
         panel(panel(label("free plane -- drag to pan, wheel to zoom"),
                     button(name="reset", label="reset view", w=120.0),

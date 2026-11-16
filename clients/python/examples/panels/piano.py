@@ -97,7 +97,7 @@ voice().send(server)
 
 
 # %%
-def scene() -> dict:
+def scene():
     return view(
         label("click/drag plays; drag the strip to pan, wheel to zoom"),
         piano(name="keys", min=48, max=84, active_min=21, active_max=108, label="keys"),

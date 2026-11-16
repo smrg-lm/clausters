@@ -82,7 +82,7 @@ TIME_UNITS = ["time", "samples", "beats"]
 AMP_UNITS = ["norm", "db", "bits", "percent"]
 FREQ_SCALES = ["log", "linear", "mel", "bark"]
 
-def scene(path: str) -> dict:
+def scene(path: str):
     # The two heavy views take a full row each; the unit controls share one
     # compact row underneath (a nested `row` panel), so the views keep most of
     # the window. Every widget is *named*, so the script drives it by name.

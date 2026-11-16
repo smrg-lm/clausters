@@ -22,6 +22,7 @@ import json
 import queue
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from ..base import _osclib
 from ..base._oscinterface import OscTcpInterface, OscUdpInterface
@@ -133,6 +134,8 @@ class GuiHost:
         #: `attach` does not verify one (the audio `clausters.defs.Server` draws
         #: the same line).
         self._own_carrier = interface is None
+        #: The carrier, whichever the transport made it (see `Server.interface`).
+        self._osc: Any
         if interface is not None:
             self._osc = interface
         elif transport == "tcp":

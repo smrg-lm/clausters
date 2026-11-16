@@ -744,6 +744,12 @@ class Regions:
     def __iter__(self):
         return iter([self._lane._multitrack._view(Region, i) for i in self._ids()])
 
+    @overload
+    def __getitem__(self, i: int) -> Region: ...
+
+    @overload
+    def __getitem__(self, i: slice) -> "list[Region]": ...
+
     def __getitem__(self, i):
         ids = self._ids()
         if isinstance(i, slice):
@@ -1065,6 +1071,12 @@ class Tracks:
     def __iter__(self):
         return iter([self._multitrack._view(Track, i) for i in self._ids()])
 
+    @overload
+    def __getitem__(self, i: int) -> Track: ...
+
+    @overload
+    def __getitem__(self, i: slice) -> "list[Track]": ...
+
     def __getitem__(self, i):
         ids = self._ids()
         if isinstance(i, slice):
@@ -1166,6 +1178,12 @@ class Markers:
 
     def __iter__(self):
         return iter([self._multitrack._view(Marker, i) for i in self._ids()])
+
+    @overload
+    def __getitem__(self, i: int) -> Marker: ...
+
+    @overload
+    def __getitem__(self, i: slice) -> "list[Marker]": ...
 
     def __getitem__(self, i):
         ids = self._ids()
@@ -1276,7 +1294,7 @@ class Multitrack:
 
     def __init__(self, *, channels: int = 2):
         data = {} if int(channels) == 2 else {"channels": int(channels)}
-        self._mt = _native.MultitrackHandle(data)
+        self._mt: Any = _native.MultitrackHandle(data)
 
     @classmethod
     def read(cls, written: dict) -> "Multitrack":

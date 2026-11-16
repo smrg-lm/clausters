@@ -204,7 +204,7 @@ class HostedEditor(WindowVerbs):
         self._settled = True
         self._released = False
         self._depth = 0
-        self._legs = None
+        self._legs: "list | None" = None
 
     @property
     def dirty(self) -> bool:

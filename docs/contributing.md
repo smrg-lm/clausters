@@ -225,12 +225,17 @@ that same commit:
   a wrapper that fetches the same npm build, so keeping both means two versions
   of one tool against a baseline that is supposed to be zero — pick one.)
   It is deliberately **not a type check**. Every
-  rule is off except the four that catch a **signature that moved out from
-  under a caller** — `reportCallIssue`, `reportIndexIssue`,
-  `reportMissingImports`, `reportUndefinedVariable` — because that is the one
-  defect class nothing else here catches: the examples are the manual test
-  surface and nothing runs them, so a renamed parameter or a method that
-  stopped being a `@classmethod` breaks them at a call site no build reaches.
+  rule is off except the five that catch a **signature that moved out from
+  under a caller** — `reportAttributeAccessIssue`, `reportCallIssue`,
+  `reportIndexIssue`, `reportMissingImports`, `reportUndefinedVariable` —
+  because that is the one defect class nothing else here catches: the
+  examples are the manual test surface and nothing runs them, so a renamed
+  parameter, a method that stopped being a `@classmethod` or an attribute a
+  class no longer has breaks them at a call site no build reaches. The
+  attribute rule reads what a call answers, so a verb that answers one of
+  several kinds by what it is given says which in overloads (`play`,
+  `render`, `as_def`, the patterns a decorator builds), and a class composed
+  into another declares what it uses of it.
   The scope is what those call sites are: the package, the tests, and **both**
   example directories, the Python client's and the server's. The rules left off are not oversights —
   `reportArgumentType` alone reports hundreds of hits on the def DSL (a
@@ -241,8 +246,8 @@ that same commit:
   **A module whose API has settled is typed** on top of that: its first line
   is `# pyright: basic`, which turns pyright's basic rule set on for that file
   alone, so the typing grows a module at a time and never asks for a module
-  in the middle of a rewrite. The document's (`multitrack`, `document`,
-  `history`) are the first.
+  in the middle of a rewrite. The modules of `clausters.document` and the
+  multitrack's session and views are the first.
 - **faust** — the default `cargo test` covers it, with libfaust built from
   source at the commit pinned in the workflow (the recipe in
   `third_party/BUILD-FAUST.md`) and cached; a cache hit makes the job cheap.

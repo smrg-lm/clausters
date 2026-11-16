@@ -7,11 +7,17 @@ The snapshots arrive on their own reply address, so they are received with an
 the ``/done`` ack.
 """
 
+from typing import TYPE_CHECKING, Any
+
 from ..bus import Bus
 
 
 class ServerStreams:
     """The subscription half of `Server`; never instantiated on its own."""
+
+    if TYPE_CHECKING:
+        # What the `Server` this is a part of has, and these verbs use.
+        def request(self, *args: Any, **kwargs: Any) -> Any: ...
 
     # ---- bus and tap subscriptions (one per client, over a set) ----
 

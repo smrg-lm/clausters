@@ -45,7 +45,7 @@ The patterns themselves are in `clausters.seq.patterns`, by family.
 
 import functools
 import math
-from typing import Any, Callable, Generator, overload
+from typing import Any, Callable, Generator, Literal, overload
 
 from ..base.absobject import AbstractObject
 from ..base.stream import Stream, StopStream
@@ -252,13 +252,21 @@ class EventPattern(Pattern):
 
 _Gfunc = Callable[..., Generator[Any, Any, Any]]
 _Build = Callable[..., Pattern]
+_BuildEvents = Callable[..., EventPattern]
 
 
+# What a decorated name builds: a value pattern, an event pattern, or -- when
+# a function of the arguments decides, as for a list pattern -- whichever the
+# arguments make it, which nothing can say before the call.
 @overload
-def pattern(gfunc: _Gfunc, *, events: "bool | Callable[..., bool]" = False) -> _Build: ...
+def pattern(gfunc: _Gfunc, *, events: "Literal[False]" = False) -> _Build: ...
+@overload
+def pattern(gfunc: None = None, *, events: "Literal[False]" = False) -> Callable[[_Gfunc], _Build]: ...
+@overload
+def pattern(gfunc: None = None, *, events: "Literal[True]") -> Callable[[_Gfunc], _BuildEvents]: ...
 @overload
 def pattern(gfunc: None = None, *,
-            events: "bool | Callable[..., bool]" = False) -> Callable[[_Gfunc], _Build]: ...
+            events: "Callable[..., bool]") -> Callable[[_Gfunc], Callable[..., Any]]: ...
 
 
 def pattern(gfunc=None, *, events=False):
@@ -298,7 +306,8 @@ def pattern(gfunc=None, *, events=False):
             cls = EventPattern if is_events else Pattern
             return cls(gfunc, args, kwargs)
 
-        build.generator = gfunc
+        # The function a pattern shell reads, on the builder it made.
+        build.generator = gfunc  # pyright: ignore[reportAttributeAccessIssue]
         return build
 
     return decorate if gfunc is None else decorate(gfunc)

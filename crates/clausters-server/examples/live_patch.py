@@ -51,6 +51,7 @@ from clausters.defs import (
     Bus,
     FaustDef,
     Server,
+    ServerInfo,
     ServerOptions,
     SynthDef,
     control,
@@ -84,7 +85,7 @@ def launch(options: ServerOptions, *extra_args: str) -> subprocess.Popen:
     return subprocess.Popen([BIN, *options.args(), *extra_args])
 
 
-def wait_until_ready(server: Server, timeout: float = 8.0) -> "object":
+def wait_until_ready(server: Server, timeout: float = 8.0) -> ServerInfo:
     """Poll ``/server_query`` until the freshly launched server answers, then
     return what it reports so we can confirm it matches our options."""
     deadline = time.monotonic() + timeout

@@ -187,6 +187,13 @@ class RawDef:
     def dump_def(self):
         return self._text
 
+    def send(self, server):
+        """Sends the def as `SynthDef.send` does: into the score offline, and
+        on a live server followed by a sync, so the synth made next finds it."""
+        server.send_msg("/def_send", "synth", self._text)
+        if getattr(server.interface, "time_mode", "unix") != "score":
+            server.sync()
+
 
 # ---- 4. play it, or render it -------------------------------------------------
 

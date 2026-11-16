@@ -11,6 +11,7 @@
     ],
     "pythonVersion": "3.11",
     "typeCheckingMode": "off",
+    "reportAttributeAccessIssue": "error",
     "reportCallIssue": "error",
     "reportIndexIssue": "error",
     "reportMissingImports": "error",

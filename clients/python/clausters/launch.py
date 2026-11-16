@@ -159,6 +159,9 @@ class _Process:
 
     #: what to call the process in messages.
     kind = "process"
+    #: where the process listens, which each subclass sets.
+    host: str
+    port: int
 
     def __init__(self):
         self.proc: "subprocess.Popen | None" = None

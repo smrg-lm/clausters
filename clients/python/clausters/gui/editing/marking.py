@@ -19,6 +19,7 @@ says what sounds -- by what it is, not by which editor holds it.
 """
 
 import json
+from typing import Any
 
 
 class Marking:
@@ -33,6 +34,10 @@ class Marking:
     of what is held -- ``_marks`` reads them and ``_set_marks`` writes them,
     so an editor's hooks are only the mapping between a name and its object.
     """
+
+    #: What the composing editor says: the host, and the window on it.
+    _host: Any
+    _window: Any
 
     @property
     def selected(self):

@@ -9,6 +9,7 @@ Python control flow and never moves to Rust.
 """
 
 import inspect
+from typing import Any
 
 from .absobject import AbstractObject
 
@@ -38,6 +39,33 @@ class Stream(AbstractObject):
     drawn while a stream runs come from *its* stream, so one root seed
     (``main.seed``) reproduces a whole script and concurrent routines stay
     reproducible per routine."""
+
+    #: What the clock that runs this stream stamps on it as it wakes it (a
+    #: stream that was never woken has none of them but `clock`).
+    clock: Any = None
+    app_clock: Any
+    _logical_beat: float
+    state: str
+
+    def play(self, clock=None, quant=None):
+        """Schedule this stream to start on ``clock``; returns ``self``.
+
+        Args:
+            clock: the `TempoClock` to run on. ``None`` resolves against the
+                ambient context like every other play: the clock of the routine
+                running on this thread, else the active session's, else the
+                default session's -- created and started on first use. So
+                ``Routine(f).play()`` runs with no `clausters.Session` and no
+                booted server; a routine needs a clock, not an engine.
+            quant: start quantization, forwarded to the clock (see
+                `TempoClock.play`; not yet implemented).
+        """
+        from .main import main
+
+        clock = main.play_clock(clock)
+        self.clock = clock          # known from scheduling, not only from waking
+        clock.play(self, quant)
+        return self
 
     #: the stream's random generator; ``None`` falls back to the root context.
     rng = None
@@ -219,25 +247,6 @@ class Routine(Stream):
             self.reset()
             return e.value
 
-    def play(self, clock=None, quant=None):
-        """Schedule this routine to start on ``clock``; returns ``self``.
-
-        Args:
-            clock: the `TempoClock` to run on. ``None`` resolves against the
-                ambient context like every other play: the clock of the routine
-                running on this thread, else the active session's, else the
-                default session's -- created and started on first use. So
-                ``Routine(f).play()`` runs with no `clausters.Session` and no
-                booted server; a routine needs a clock, not an engine.
-            quant: start quantization, forwarded to the clock (see
-                `TempoClock.play`; not yet implemented).
-        """
-        from .main import main
-
-        clock = main.play_clock(clock)
-        self.clock = clock          # known from scheduling, not only from waking
-        clock.play(self, quant)
-        return self
 
     def pause(self):
         """Take this routine off its clock, keeping its position; returns

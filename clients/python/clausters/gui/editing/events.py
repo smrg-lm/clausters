@@ -21,6 +21,8 @@ pauses. A note names the def it plays with: the application's engine knows
 ``default``, and a def sent to a client's server is not there.
 """
 
+from typing import Any
+
 from ...seq.sequence import EventSequence
 from ...seq.timeline import Timeline
 from .hosted import HostedEditor, HostedTransport, _Block, _Held, _RemoteHistory
@@ -55,7 +57,7 @@ class SequenceHandler(HostedEditor):
     makes through its objects entries of the history the window walks."""
 
     #: The sequence the window shows, or ``None``.
-    _shown = None
+    _shown: Any = None
 
     def _held(self) -> _Held:
         return _held_of(self._shown)

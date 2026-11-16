@@ -28,6 +28,7 @@ import bisect
 import math
 import threading
 import weakref
+from typing import Any
 
 from .. import _native
 from ..base.main import main
@@ -408,7 +409,9 @@ class Timeline:
             # locate needs is the re-cue -- so the broadcasts are listened to
             # from the moment the timeline is on the transport, whoever drives
             # it.
-            self._player_for().follow()
+            player = self._player_for()
+            assert isinstance(player, _TransportPlayer)  # a transport makes one
+            player.follow()
 
     def play(self, at: "float | None" = None, quant=None, destination=None):
         """Play the timeline from beat ``at``, on a clock of its own.
@@ -1049,6 +1052,8 @@ class _PlanMoment:
     to stamp an item, with no clock running behind it."""
 
     __slots__ = ("clock", "_logical_beat")
+    clock: Any
+    _logical_beat: Any
 
     def __init__(self):
         self.clock = None
@@ -1069,7 +1074,7 @@ class _Player:
         self.timeline = timeline
         self.clock = None
         self.destination = None
-        self.loop = None
+        self.loop: "tuple[float, float] | None" = None
         self.mark = 0.0
         self.running = False
         self.finished = False

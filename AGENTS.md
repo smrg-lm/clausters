@@ -276,11 +276,11 @@ on trust, so that is where drift accumulates:
   test surface, so run the ones the change touches, by hand. **After changing
   any Python signature, also run `npx pyright` in `clients/python`** (nothing
   vendors it; npm's cache is the install) — its
-  `pyrightconfig.json` turns every rule off but the four that catch exactly
+  `pyrightconfig.json` turns every rule off but the five that catch exactly
   this (it is a call-site check, not a type check), over the package, the tests
   and both example directories. The modules whose API is settled turn its
-  **basic** mode on in their first line (`# pyright: basic`: the document's,
-  `multitrack`, `document` and `history`, so far). **`ruff check .`** at the
+  **basic** mode on in their first line (`# pyright: basic`: the modules of
+  `clausters.document` and the multitrack's session and views, so far). **`ruff check .`** at the
   root lints every Python file for unused and undefined names and likely
   bugs (`ruff.toml`). CI runs both; the baselines are zero, so anything they
   print is yours; `docs/contributing.md` explains the rule choice.

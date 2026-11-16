@@ -69,9 +69,13 @@ render(element, until=64.0, path="take.wav")       # a form element, bounced
 import re
 from array import array
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, overload
 
 from .defs.node import Group, Synth
 from .log import LEVELS, render_line
+
+if TYPE_CHECKING:
+    from .seq.pattern import EventPattern, Pattern
 
 __all__ = ["render", "bounce_def", "RenderStats",
            "channels", "interleave", "MAX_BOUNCED_EVENTS"]
@@ -156,6 +160,38 @@ def interleave(*chans) -> array:
     for i, c in enumerate(chans):
         out[i::len(chans)] = array("f", c)
     return out
+
+
+# What comes back: the take's `RenderStats` offline, a value pattern's values,
+# and on a live destination whatever playing there answers.
+@overload
+def render(obj: "EventPattern", *, destination: None = None, clock=None, at: float = 0.0, quant=None,
+           ports=None, dur: float = 1.0, controls=None, defs=(),
+           until: "float | None" = None, count: "int | None" = None,
+           tail: float = 0.0, sample_rate: float = 48_000.0, channels: int = 2,
+           workers: int = 0, path=None, seed: "int | None" = None,
+           sample_format: str = "float") -> "RenderStats": ...
+@overload
+def render(obj: "Pattern", *, destination: None = None, clock=None, at: float = 0.0, quant=None,
+           ports=None, dur: float = 1.0, controls=None, defs=(),
+           until: "float | None" = None, count: "int | None" = None,
+           tail: float = 0.0, sample_rate: float = 48_000.0, channels: int = 2,
+           workers: int = 0, path=None, seed: "int | None" = None,
+           sample_format: str = "float") -> list: ...
+@overload
+def render(obj: Any, *, destination: None = None, clock=None, at: float = 0.0, quant=None,
+           ports=None, dur: float = 1.0, controls=None, defs=(),
+           until: "float | None" = None, count: "int | None" = None,
+           tail: float = 0.0, sample_rate: float = 48_000.0, channels: int = 2,
+           workers: int = 0, path=None, seed: "int | None" = None,
+           sample_format: str = "float") -> "RenderStats": ...
+@overload
+def render(obj: Any, *, destination: Any, clock=None, at: float = 0.0, quant=None,
+           ports=None, dur: float = 1.0, controls=None, defs=(),
+           until: "float | None" = None, count: "int | None" = None,
+           tail: float = 0.0, sample_rate: float = 48_000.0, channels: int = 2,
+           workers: int = 0, path=None, seed: "int | None" = None,
+           sample_format: str = "float") -> Any: ...
 
 
 def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,

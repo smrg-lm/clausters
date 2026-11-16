@@ -48,6 +48,7 @@ into ``clausters-core`` in a future port).
 #: element wraps rather than stored, and `clausters.form.render.flatten`
 #: converts on the way to a timeline, which is ordered by one number and cannot
 #: hold two bases.
+from typing import Any
 from .._native import BEATS, SECONDS  # noqa: E402  (the vocabulary's one home)
 
 #: The windows are **not** form's: a segment is about the contents,
@@ -522,8 +523,9 @@ class Segments(FormElement):
             duration = run.total
         super().__init__(wraps=run.segments, onset=onset, duration=duration,
                          name=name)
-        #: The windows themselves, as the general structure they are.
-        self.run = run
+        #: The windows themselves, as the general structure they are: a run
+        #: of samples or of timelines, which `render` asks apart by its unit.
+        self.run: Any = run
         self.instrument = instrument
         self.controls = dict(controls or {})
 

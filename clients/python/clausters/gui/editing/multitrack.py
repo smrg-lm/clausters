@@ -150,7 +150,7 @@ class MultitrackEditor(Marking, HostedEditor):
         _snapshots[self._multitrack] = snapshot
         self._snapshot = snapshot
         self._path = snapshot.get("path")
-        if self._session is not None:
+        if self._session is not None and self._multitrack is not None:
             restored = MultitrackSession.read(snapshot["session"])
             restored.multitrack = self._multitrack
             restored.path = self._path

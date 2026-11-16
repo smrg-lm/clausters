@@ -16,6 +16,7 @@ driving surface (`play`/`render`/`run`, the factories) lives on `Session`.
 """
 
 import os
+from typing import Any
 
 
 class RandomContext:
@@ -69,7 +70,7 @@ class Environment(RandomContext):
         #: the environment's server; ``None`` until one is set (the default
         #: session adopts one via a free-standing ``Server().boot()``; a `Session`
         #: is built around one).
-        self.server = None
+        self.server: Any = None
 
     def panic(self):
         """**Stop everything this environment plays**, and leave it ready to

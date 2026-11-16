@@ -42,7 +42,7 @@ class FakeSocket:
 
 def _iface(chunks=()) -> OscTcpInterface:
     iface = OscTcpInterface()
-    iface._sock = FakeSocket(chunks)      # bypass start()/the network
+    iface._sock = FakeSocket(chunks)      # pyright: ignore[reportAttributeAccessIssue] -- bypass start()/the network
     return iface
 
 
@@ -67,10 +67,10 @@ def test_disconnect_drops_the_connection_and_the_next_send_opens_another():
     assert iface._buf == b""
 
     reconnected = FakeSocket()
-    iface.start = lambda: setattr(iface, "_sock", reconnected)   # no network
+    iface.start = lambda: setattr(iface, "_sock", reconnected)   # pyright: ignore[reportAttributeAccessIssue] -- no network
     iface.send_msg(("127.0.0.1", 57110), "/server_status")
     assert iface._sock is reconnected, "the next send reconnects"
-    assert first.sent == bytearray(), "nothing went to the dead socket"
+    assert first.sent == bytearray(), "nothing went to the dead socket"  # pyright: ignore[reportAttributeAccessIssue]
     addr, _ = osc.decode(_unframe(bytes(reconnected.sent)))
     assert addr == "/server_status"
 
@@ -78,7 +78,7 @@ def test_disconnect_drops_the_connection_and_the_next_send_opens_another():
 def test_send_msg_is_length_prefixed():
     iface = _iface()
     iface.send_msg(("127.0.0.1", 57110), "/synth_new", "default", 1000, 1, 0)
-    addr, args = osc.decode(_unframe(bytes(iface._sock.sent)))
+    addr, args = osc.decode(_unframe(bytes(iface._sock.sent)))  # pyright: ignore[reportAttributeAccessIssue]
     assert addr == "/synth_new"
     assert args[:4] == ["default", 1000, 1, 0]
 
@@ -86,7 +86,7 @@ def test_send_msg_is_length_prefixed():
 def test_send_bundle_is_framed():
     iface = _iface()
     iface.send_bundle(("127.0.0.1", 57110), 1.0, ("/server_status",))
-    payload = _unframe(bytes(iface._sock.sent))
+    payload = _unframe(bytes(iface._sock.sent))  # pyright: ignore[reportAttributeAccessIssue]
     assert payload[:8] == b"#bundle\x00"     # an OSC bundle
 
 
@@ -148,6 +148,6 @@ def test_a_read_leaves_the_socket_blocking_for_the_next_send():
     assert iface._sock.timeout is None, "the read left its timeout on the socket"
     # The send that was dying. It goes out because nothing is set any more.
     iface.send_msg(("127.0.0.1", 57110), "/node_set", 1000, "freq", 440.0)
-    addr, args = osc.decode(_unframe(bytes(iface._sock.sent)))
+    addr, args = osc.decode(_unframe(bytes(iface._sock.sent)))  # pyright: ignore[reportAttributeAccessIssue]
     assert addr == "/node_set"
     assert args[:3] == [1000, "freq", 440.0]

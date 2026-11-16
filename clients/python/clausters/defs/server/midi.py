@@ -14,6 +14,7 @@ plays its messages.
 """
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from ..node import ROOT_NODE_ID, AddAction, _target_id
 
@@ -93,6 +94,11 @@ class ServerMidi:
     the server takes them in order, so a lane set after a bind plays through
     it, and one it refuses -- an instrument it does not hold, a channel a zone
     covers -- answers ``/fail``."""
+
+    if TYPE_CHECKING:
+        # What the `Server` this is a part of has, and these verbs use.
+        def send_msg(self, *args: Any, **kwargs: Any) -> Any: ...
+        def _request_batch(self, *args: Any, **kwargs: Any) -> Any: ...
 
     def midi_bind(self, channel: int, instrument: "str | int", target=ROOT_NODE_ID,
                   action: AddAction = AddAction.HEAD):

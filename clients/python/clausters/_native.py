@@ -1351,8 +1351,9 @@ class Document:
         # A number is a map of one segment, made for this call and freed after
         # it; a map handed in is the caller's and is left as it is.
         steady = None if isinstance(tempo, TempoMap) else TempoMap(float(tempo))
+        tempo_map = tempo if isinstance(tempo, TempoMap) else steady
         try:
-            handle = (steady or tempo)._handle
+            handle = tempo_map._handle
             args = (self._handle, sel_ptr, sel_len, handle,
                     float(frames_per_second), int(bool(in_beats)))
             need = fn(*args, None, 0)

@@ -13,9 +13,13 @@ instant. What a destination *does* with that instant is the destination's:
 """
 
 import time
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from .main import main
+
+
+if TYPE_CHECKING:
+    from .clock import TempoClock
 
 
 class Moment(NamedTuple):
@@ -26,7 +30,7 @@ class Moment(NamedTuple):
     machinery as one inside a routine.
     """
 
-    clock: "object | None"
+    clock: "TempoClock | None"
     beat: float
 
     @classmethod

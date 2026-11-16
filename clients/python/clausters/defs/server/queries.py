@@ -8,7 +8,7 @@ why asking beats assuming.
 """
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ...errors import CommandError
 from ..info import (
@@ -37,6 +37,11 @@ if TYPE_CHECKING:
 
 class ServerQueries:
     """The introspection half of `Server`; never instantiated on its own."""
+
+    if TYPE_CHECKING:
+        # What the `Server` this is a part of has, and these verbs use.
+        def request(self, *args: Any, **kwargs: Any) -> Any: ...
+        def _request_batch(self, *args: Any, **kwargs: Any) -> Any: ...
 
     # ---- server introspection: what a running server actually holds ----
 
@@ -187,7 +192,7 @@ class ServerQueries:
         **structured** way to read the tree -- never scrape the server's logs.
 
         ``print(tree)`` draws it indented. Blocking, RT only."""
-        gid = group.id if hasattr(group, "id") else group
+        gid = getattr(group, "id", group)
         addr, args = self.request("/group_queryTree", int(gid), 2,
                                   timeout=timeout, expect=("/group_queryTree.reply", "/fail"))
         if addr == "/fail":
@@ -215,7 +220,7 @@ class ServerQueries:
         """The inferred bus graph of `group` as a human-readable string
         (``/group_dumpGraph``): what each child reads/writes and the current order.
         A debugging aid; for machine use prefer `query_tree`."""
-        gid = group.id if hasattr(group, "id") else group
+        gid = getattr(group, "id", group)
         addr, args = self.request("/group_dumpGraph", int(gid),
                                   timeout=timeout, expect=("/group_dumpGraph.reply", "/fail"))
         if addr == "/fail":

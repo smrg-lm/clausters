@@ -201,7 +201,7 @@ server.sync()
 SELECT_PLAN = {"drag": "select", "ctrl": "select_box select"}
 
 
-def scene(path: str) -> dict:
+def scene(path: str):
     return view(
         waveform(name="wave", path=path, channels=2, sample_rate=SR,
                  gestures=SELECT_PLAN),

@@ -24,7 +24,7 @@ server's MIDI plays).
 import json
 import time
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:                       # `render` returns one; importing it at
     from ...render import RenderStats   # runtime would close an import cycle
@@ -194,6 +194,9 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         #: Whether this handle built its own interface, and may therefore have
         #: a process behind it that `boot` can start.
         self._own_carrier = interface is None
+        #: The carrier, whichever the transport made it: what a score or a
+        #: socket alone has is asked of it by whoever knows which it is.
+        self.interface: Any
         if interface is not None:
             self.interface = interface
         else:

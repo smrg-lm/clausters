@@ -643,7 +643,7 @@ def test_a_curve_window_has_its_menu_and_says_what_it_does_not_do():
     the curve alone. It reads them from the moment it opens."""
     host = FakeHost()
     set_props = []
-    host.set = lambda wid, **props: set_props.append((wid, props))
+    host.set = lambda wid, **props: set_props.append((wid, props))  # pyright: ignore[reportAttributeAccessIssue]
     editor = edit(a_curve(), sample_rate=SR, host=host)
     assert [title["label"] for title in host.trees[-1]["menu"]] == ["File", "Edit", "Help"]
     assert set_props[-1][0] == int(editor.window)

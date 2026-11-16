@@ -460,7 +460,8 @@ def _load(path: str | None = None) -> ctypes.CDLL:
     # `embed,realtime` surface: the live embedded server. Optional at load
     # time so `render()` works with an `embed`-only build; if it is absent the
     # error is deferred to `Clausters()`, where it is actually needed.
-    lib._clausters_live_error = _bind_live(lib)
+    # A field of this package's own on the loaded library, read by `Clausters`.
+    lib._clausters_live_error = _bind_live(lib)  # pyright: ignore[reportAttributeAccessIssue]
     return lib
 
 

@@ -492,7 +492,7 @@ def test_render_routes_a_logical_aggregate_to_graphdef():
     g.add(Generator("gsrc", controls={"out": "mix"}))
     server = _StubServer()
     instance = g.render(server, ports={"gain": 0.5})
-    assert instance.id == 1000 and instance.server is server
+    assert instance.id == 1000 and instance.server is server  # pyright: ignore[reportAttributeAccessIssue]
     sent_def, sent_new = server.sent
     assert sent_def[0] == "/def_send" and sent_def[1][0] == "graph"
     assert json.loads(sent_def[1][1])["name"] == "chain"

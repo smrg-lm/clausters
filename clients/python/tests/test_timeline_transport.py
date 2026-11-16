@@ -235,7 +235,7 @@ def test_a_conductors_locate_re_plans_from_where_it_says():
     reply = ["/transport_query.reply", 0, 2.0, 1, 1, 0.0, 7, BASE, int(1.5 * SR), 0, 0,
              -1, -1, 0]
     player = tl._player
-    player._broadcast(reply[0], reply[1:], 0.0, "test")     # a conductor's locate
+    player._broadcast(reply[0], reply[1:], 0.0, "test")     # pyright: ignore[reportAttributeAccessIssue] -- a conductor's locate
 
     assert tl.position() == pytest.approx(3.0)              # beat 3 at two beats a second
     assert server.onsets() == [0.0]                         # the last item, re-planned

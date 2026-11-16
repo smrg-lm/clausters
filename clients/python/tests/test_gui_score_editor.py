@@ -8,12 +8,13 @@ import pytest
 
 from clausters import notation
 from clausters.gui.editing import ScoreEditor, edit
+from clausters.notation import _abi
 from conftest import opened
 
 
 def _engraver() -> bool:
     try:
-        notation._abi._engraver()
+        _abi._engraver()
         return True
     except RuntimeError:
         return False
