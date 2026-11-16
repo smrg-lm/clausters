@@ -1636,6 +1636,19 @@ it), **should** (a regression a user notices, accepted only as a named gap
 with an entry in "Found by use") or **later** (wanted, not a reason to stop).
 This list is what checkpoint 3 is checked against, item by item.
 
+**And how it looks is part of the bar** *(added 2026-11-16, at the user's
+request)*. The current editor looks very good and has many functions the
+user does not want to lose, so before it is retired the track takes a
+**comparative style review** against it, the two side by side in the same
+states (light and dark, each panel, menus, tabs, the post window busy, the
+documentation open, a long file being edited): typography and its sizes,
+spacing and density, colors and their roles, the chrome of panels and tabs,
+icons, focus and hover, scrolling, what moves and how. Every difference is
+either matched or named as a choice the user takes, never left as the side
+effect of a reimplementation. The review is also an inventory: anything the
+current editor does that this list does not name is added to it, with its
+mark, before checkpoint 3 is checked against it.
+
 Editing (today CodeMirror 6 with its basic setup, plus the editor's own
 extensions):
 
@@ -1759,7 +1772,8 @@ something reusable if the track stops there.
   side-by-side captures, the budgets and an hour of real use: whether text
   quality and editing feel are acceptable.
 - **Checkpoint 3 -- after WS11.** The documentation panel. Decided here, with
-  the bar above checked item by item: whether the current application is
+  the bar above checked item by item and the comparative style review
+  against the current editor done: whether the current application is
   retired (WS12-WS14) or the track stops with the dock and the elements as
   parts the current application does not use.
 
