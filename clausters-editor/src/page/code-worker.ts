@@ -37,6 +37,8 @@ function fetchText(url: string): string | null {
   try {
     const request = new XMLHttpRequest();
     request.open("GET", url, false);
+    // Read as text whatever comes back, so a miss is not parsed as XML.
+    request.overrideMimeType("text/plain");
     request.send();
     if (request.status >= 200 && request.status < 300) text = request.responseText;
   } catch {}
@@ -53,6 +55,19 @@ function urlOf(name: string): string | null {
 
 const files = new Map<string, { text: string; version: number }>();
 files.set(SESSION_GLOBALS, { text: SESSION_TEXT, version: 1 });
+
+/**
+ * Whether a file is there. What is read over HTTP is a package's
+ * declarations and manifests, so a name that is neither is answered without
+ * a request: resolving `./steps.ts` in a package's declarations probes
+ * `steps.ts` and `steps.tsx` before `steps.d.ts`, and each probe was a
+ * request that failed.
+ */
+function fileExists(name: string): boolean {
+  if (files.has(name)) return true;
+  if (!name.endsWith(".d.ts") && !name.endsWith(".json")) return false;
+  return readFile(name) !== undefined;
+}
 
 function readFile(name: string): string | undefined {
   const open = files.get(name);
@@ -95,6 +110,10 @@ const options: ts.CompilerOptions = {
   allowImportingTsExtensions: true,
   // Read beside the default library, which names where they are.
   lib: LIBS,
+  // A default library is not looked up as a package of its own
+  // (`@typescript/lib-*` under node_modules): the page serves none, and each
+  // lookup was a request that failed, dozens of them per library.
+  libReplacement: false,
   types: [],
 };
 
@@ -108,7 +127,7 @@ const host: ts.LanguageServiceHost = {
   },
   getCurrentDirectory: () => "/",
   getDefaultLibFileName: () => `/__lib__/${LIBS[0]}`,
-  fileExists: (name) => readFile(name) !== undefined,
+  fileExists,
   readFile,
   // A package's specifier is its manifest's `exports`; a relative one inside
   // a package's declarations is read beside it.
@@ -122,7 +141,7 @@ const host: ts.LanguageServiceHost = {
         };
       }
       const found = ts.resolveModuleName(text, containing, options, {
-        fileExists: (name) => readFile(name) !== undefined,
+        fileExists,
         readFile,
       });
       return found;

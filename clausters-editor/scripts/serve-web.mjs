@@ -52,7 +52,7 @@ function fileFor(url) {
 createServer((request, response) => {
   const file = fileFor(request.url ?? "/");
   if (file === null) {
-    response.writeHead(404).end("not found");
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("not found");
     return;
   }
   // Cross-origin isolated, so the page loads the GUI host built with the
