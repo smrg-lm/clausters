@@ -1529,9 +1529,9 @@ The label stays `WS`; the structure is the **dock** and a window in it a
 say otherwise.** Opened 2026-11-16 at the user's request, with their doubts
 stated up front: the quality the result can reach and the features that could
 be lost are both open questions, so the track is written to answer them early
-and cheaply, and it may be abandoned at any checkpoint. Nothing here reaches
-`main` before checkpoint 1 passes, and the editor's current application is not
-retired before checkpoint 3 does.
+and cheaply, and it may be abandoned at any checkpoint. Nothing here reached
+`main` before checkpoint 1 passed (it did on 2026-11-16, with the dock), and
+the editor's current application is not retired before checkpoint 3 does.
 
 ### The problem it answers
 
@@ -1751,7 +1751,9 @@ something reusable if the track stops there.
 - **Checkpoint 1 -- after WS1-WS4.** The dock holds GuiDefs and
   applications, natively and in a page, beside the current editor. Decided
   here: whether the dock merges to `main` on its own (it fixes the two
-  defects above whatever happens to the rest).
+  defects above whatever happens to the rest). **Passed 2026-11-16**: the
+  user tried the dock natively, its panel bar and menus and a window taken
+  out and put back by hand, and the dock (WS1-WS4) merged to `main`.
 - **Checkpoint 2 -- after WS5-WS10.** The post window and the code element
   reach every "must" of editing, evaluation and language help. Decided here, by
   side-by-side captures, the budgets and an hour of real use: whether text
@@ -1989,10 +1991,6 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 An entry that was done without becoming a milestone is ticked and moves whole
 to [`docs/history/plans/gui.md`](../../docs/history/plans/gui.md) ("Future directions: the entries that were done"), so this list
 holds what is open.
-
-- ⬜ **The dock's resize cursor** *(left by WS2, 2026-11-16)*. The pointer
-  keeps its arrow over a divider of the dock, where a resize cursor would
-  say it can be dragged.
 
 - ⬜ **A paste that needs tracks could make them** *(named 2026-09-12, with the fix above; **the refusal is the decided behaviour**, confirmed by the user the same day -- "if there are no more tracks it is a refuse" -- so this entry is an alternative somebody may want and not a defect waiting)*. A block taller than what is under the selected track is refused today, which is Pro Tools' and Cubase's answer and the honest one for a widget that owns no piece. **REAPER's** is the other: it creates the tracks the block needs and pastes whole. This widget already has the verb — a double click on a header adds a track — so what stands between it and this is not the capability but the **report**: adding tracks is a `lanes` payload and pasting is a `clips` one, and a paste that did both would be the first gesture here to leave two. That is a decision about the conversation and not about the multitrack: whether an owner may be handed a run of payloads from one gesture, in order, as one entry in the history. Worth taking with the audio editor's own paste, which will ask the same question about panes.
 

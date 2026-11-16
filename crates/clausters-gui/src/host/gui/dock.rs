@@ -60,6 +60,8 @@ pub(in crate::host::gui) struct Shell {
     scale: f32,
     /// The panes behind another's tab, told they are not seen.
     hidden: HashSet<i32>,
+    /// The resize cursor the window shows ([`Dock::resize_cursor`]).
+    cursor: Option<bool>,
 }
 
 impl App {
@@ -232,6 +234,7 @@ impl App {
             gpu,
             scale,
             hidden: HashSet::new(),
+            cursor: None,
         })
     }
 
@@ -281,6 +284,14 @@ impl App {
             }
             if dirty.layout || dirty.chrome {
                 shell.gpu.request_redraw();
+            }
+            // a divider under the pointer, or in the hand, says it is dragged
+            let cursor = shell.layout.resize_cursor();
+            if cursor != shell.cursor {
+                shell.cursor = cursor;
+                if let Some(window) = shell.gpu.window() {
+                    window.set_cursor(resize_icon(cursor));
+                }
             }
             handed.take(dirty);
         }
@@ -667,4 +678,14 @@ fn chrome_mesh(layout: &Dock, theme: &clausters_gui_draw::theme::Theme) -> Mesh 
     let metrics = *layout.metrics();
     layout.draw(&mut Draw::new(&mut mesh, &metrics, theme));
     mesh
+}
+
+/// The platform's cursor for [`Dock::resize_cursor`]: a resize arrow
+/// sideways or up and down, the arrow off a divider.
+fn resize_icon(cursor: Option<bool>) -> winit::window::CursorIcon {
+    match cursor {
+        Some(true) => winit::window::CursorIcon::ColResize,
+        Some(false) => winit::window::CursorIcon::RowResize,
+        None => winit::window::CursorIcon::Default,
+    }
 }

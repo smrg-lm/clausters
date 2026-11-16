@@ -392,6 +392,44 @@ fn the_dragged_divider_is_lit_where_it_is() {
     ws.released();
 }
 
+/// **A divider asks for a resize cursor**: under the pointer and while it
+/// is dragged, sideways for one standing upright and up and down for one
+/// lying across; off it the pointer is the arrow again.
+#[test]
+fn a_divider_asks_for_a_resize_cursor() {
+    let mut ws = dock((400, 300), 4.0, &[1, 2]);
+    let gap = ws.dividers()[0].rect;
+    assert_eq!(ws.resize_cursor(), None);
+    ws.moved(f64::from(gap.x + 1.0), 150.0);
+    assert_eq!(ws.resize_cursor(), Some(true), "an upright divider");
+    ws.pressed();
+    ws.moved(f64::from(gap.x - 40.0), 150.0);
+    assert_eq!(
+        ws.resize_cursor(),
+        Some(true),
+        "while dragged, off its old place"
+    );
+    ws.released();
+    ws.moved(50.0, 150.0);
+    assert_eq!(ws.resize_cursor(), None);
+    ws.land(
+        2,
+        Landing::Split {
+            of: 1,
+            side: Side::Bottom,
+        },
+    )
+    .expect("splits");
+    let across = ws
+        .dividers()
+        .iter()
+        .find(|d| !d.row)
+        .expect("one across")
+        .rect;
+    ws.moved(f64::from(across.x + 5.0), f64::from(across.y + 1.0));
+    assert_eq!(ws.resize_cursor(), Some(false), "a divider lying across");
+}
+
 /// **An empty dock has no panel**: nothing measured, nothing to draw or to
 /// press -- a page's dock keeps its canvas after its last pane goes.
 #[test]

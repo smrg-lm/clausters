@@ -8017,3 +8017,9 @@ module of its own.
   dock's, holding one pane under its panel's bar, with no pages and no
   grip -- whose menu's *Back into the dock* puts it back, natively and in
   a page; `pointer` and `capture` name it with `"panel"`.
+
+- ✅ **The dock's resize cursor** *(left by WS2, 2026-11-16; done the same
+  day)*. The pointer kept its arrow over a divider of the dock, where a
+  resize cursor says it can be dragged. The dock answers the cursor it wants
+  (`Dock::resize_cursor`: over a divider or while one is dragged, sideways
+  or up and down by how it stands) and each front sets it on its window.

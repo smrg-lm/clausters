@@ -348,13 +348,10 @@ Named, not enumerated: each is written where it belongs and is read there.
   widget, and who answers a key when applications nest -- a window's own keys
   are built (its `keys` scopes), and nesting is what is left of them.
 - **The host as the application's one window, the `WS` track**
-  *(`crates/clausters-gui/PLAN.md`, WS track)*. Experimental, on the
-  `host-workspace` branch: a dock of panels, tabs and pages in the host, and
-  the editor's code, post and documentation as host elements, so one window
-  holds everything natively and in a page. It goes through three checkpoints,
-  each a decision on what was measured. Next is checkpoint 1: the dock
-  (WS1-WS4) is built, and whether it reaches `main` on its own is the
-  user's decision on it.
+  *(`crates/clausters-gui/PLAN.md`, WS track)*. Experimental: the editor's
+  code, post and documentation as host elements in the dock, so one window
+  holds everything natively and in a page. Checkpoint 1 passed and the dock
+  is on `main`; next is `WS5`, the post panel, toward checkpoint 2.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the

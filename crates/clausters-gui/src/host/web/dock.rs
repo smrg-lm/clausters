@@ -45,6 +45,8 @@ pub(super) struct WebShell {
     pending_size: Option<(u32, u32)>,
     /// The panes behind another's tab, told they are not seen.
     hidden: HashSet<i32>,
+    /// The resize cursor the canvas shows ([`Dock::resize_cursor`]).
+    cursor: Option<bool>,
 }
 
 /// The shell `which` names, borrowing only the field it lives in.
@@ -166,6 +168,7 @@ impl WebApp {
             _listener: listener,
             pending_size: None,
             hidden: HashSet::new(),
+            cursor: None,
         })
     }
 
@@ -407,6 +410,16 @@ impl WebApp {
             }
             if dirty.layout || dirty.chrome {
                 shell.window.request_redraw();
+            }
+            // a divider under the pointer, or in the hand, says it is dragged
+            let cursor = shell.layout.resize_cursor();
+            if cursor != shell.cursor {
+                shell.cursor = cursor;
+                shell.window.set_cursor(match cursor {
+                    Some(true) => winit::window::CursorIcon::ColResize,
+                    Some(false) => winit::window::CursorIcon::RowResize,
+                    None => winit::window::CursorIcon::Default,
+                });
             }
             handed.take(dirty);
         }

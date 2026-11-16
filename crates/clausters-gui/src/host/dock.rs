@@ -532,6 +532,17 @@ impl Dock {
         }
     }
 
+    /// **The resize cursor the pointer wants**, over a divider or dragging
+    /// one: `Some(true)` for a divider standing upright (dragged sideways),
+    /// `Some(false)` for one lying across; `None` anywhere else, where the
+    /// pointer is the platform's arrow.
+    pub fn resize_cursor(&self) -> Option<bool> {
+        if self.menu.is_some() {
+            return None;
+        }
+        self.lit_divider().map(|d| d.row)
+    }
+
     /// The part of group `path`'s bar lit under the pointer.
     pub fn lit_bar(&self, path: &[usize]) -> Option<BarPart> {
         match (&self.grip, &self.hot, &self.menu) {
