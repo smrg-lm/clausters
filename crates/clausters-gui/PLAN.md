@@ -1992,6 +1992,43 @@ An entry that was done without becoming a milestone is ticked and moves whole
 to [`docs/history/plans/gui.md`](../../docs/history/plans/gui.md) ("Future directions: the entries that were done"), so this list
 holds what is open.
 
+- ⬜ **The pointer says what a press will do: a cursor per element, and per
+  part of it** *(named 2026-11-16, by the user, when the dock's dividers got
+  their resize cursor)*. The host sets no cursor anywhere but over the dock's
+  dividers: the pointer is the platform's arrow over a clip's edge that trims
+  it, over a note's body that moves it, over a text field that takes a
+  caret. A desktop application says it before the press, and the
+  applications need it as much as the host's own chrome does -- the
+  multitrack's clips (move, trim each edge, the fades' handles, a copy while
+  the modifier that duplicates is held), the roll's notes (move, the end that
+  lengthens them, the empty grid a press draws on), an audio editor's
+  selection edges, the score editor's elements, every text field.
+
+  **Where it lives.** The cursor is a question the hit-test already answers:
+  what lies under the pointer, and what a press there would start. So it is
+  one more question an element answers (beside `needs`, `natural`, `slot`),
+  for a point of its own -- the part under it, the same parts its gestures
+  already tell apart -- and the gesture machine holds the press's cursor
+  until the release, as a drag owns the pointer. The front only sets what it
+  is told on its window: natively the platform's cursor theme, in a page the
+  canvas's CSS `cursor`, both named by the same list, so the two fronts ask
+  for the same cursor by construction. In the dock the chrome answers over
+  its own parts (`Dock::resize_cursor` is the first of these) and the pane
+  under the pointer answers everywhere else. A host enum of the names below
+  keeps the core free of the windowing crate's type.
+
+  **The cursors a platform has**, by the CSS names both fronts use (the
+  windowing crate's `CursorIcon` carries the same list, and a cursor made
+  from an image is possible besides):
+
+  | Kind | Cursors | What each says, and where it would fit here |
+  |---|---|---|
+  | General | `default`, `pointer`, `text`, `vertical-text`, `crosshair`, `cell`, `help`, `context-menu` | the arrow; a link (desktop buttons keep the arrow); a caret, over text fields and the code element; precise placement, a press that draws (the roll's empty grid, a pencil); a cell of a table; help; a menu |
+  | State | `wait`, `progress`, `not-allowed`, `no-drop` | busy, the hand blocked; busy, the hand still free (a render running); a press that does nothing here; a drop refused here |
+  | Dragging | `grab`, `grabbing`, `move`, `copy`, `alias`, `all-scroll` | a thing that can be taken (a clip, a note, a panel's grip); taken; moving it; a drag that duplicates; a drag that links; panning in every direction |
+  | Resizing | `col-resize`, `row-resize`, `ew-resize`, `ns-resize`, `n-resize` ... `nw-resize` (the eight edges and corners), `nesw-resize`, `nwse-resize` | a divider between columns or rows (the dock's); an edge dragged sideways or up and down (a clip's or a note's ends, a selection's edges, a fade's length); an edge or corner of a box; a corner diagonally |
+  | Zoom | `zoom-in`, `zoom-out` | a press that zooms in or out |
+
 - ⬜ **A paste that needs tracks could make them** *(named 2026-09-12, with the fix above; **the refusal is the decided behaviour**, confirmed by the user the same day -- "if there are no more tracks it is a refuse" -- so this entry is an alternative somebody may want and not a defect waiting)*. A block taller than what is under the selected track is refused today, which is Pro Tools' and Cubase's answer and the honest one for a widget that owns no piece. **REAPER's** is the other: it creates the tracks the block needs and pastes whole. This widget already has the verb — a double click on a header adds a track — so what stands between it and this is not the capability but the **report**: adding tracks is a `lanes` payload and pasting is a `clips` one, and a paste that did both would be the first gesture here to leave two. That is a decision about the conversation and not about the multitrack: whether an owner may be handed a run of payloads from one gesture, in order, as one entry in the history. Worth taking with the audio editor's own paste, which will ask the same question about panes.
 
 - ⬜ **The free arrangement plane (the blueprint view)** — *a second kind of multitrack, not a milestone of the one that shipped: it shares characteristics with the lane stack and its model differs from it structurally, so it is named here and still to be defined and planned.* A second projection of the same arrangement: the L3 workspace with its x `View` joined to the window's navigation group, so the plane's x axis *is* the composition's time axis (ruler, selection, the playhead sweeping the whole plane as a vertical line — all existing group machinery), while y is **free spatial organization** — clips and visual elements placed like an architectural plan, not locked to lanes. The model (`clausters.form`) is untouched: `offset`/`dur` stay the temporal truth, and y is presentation geometry owned by the driver and persisted by the `Editor` beside the tree, exactly the P1 `"move"` pattern. A concrete `Aggregate` draws as a bounding **zone** (visual containment as the aggregate's projection) instead of a lane; the classic lane-stack multitrack becomes the *constrained* case of the free plane, the same general-to-constrained pattern L3 fixes for scrolling — which is the direction of the relation and the reason this cannot be an increment on G22: the general case is the one that is missing. One boundary to hold when this opens: **y means nothing to the render** — not pitch, not bus, not bounce order; presentation only, stated so the view never implies semantics the engine does not have (any later mapped-y is an explicit decision, not drift). The honest precedent is the graphic score — **a UPIC whose material is the multitrack's editing structures**: not freehand curves but clips, groups, snap, selection and the edit-back payloads, placed on a free plane (IanniX is the other kin), and the whole of what "free" means there is what a design has to settle. **What it was waiting on has landed** — G22's clip bodies, L2's placement props and L3's workspace — so what stands between it and a track of its own is that definition, not a dependency.

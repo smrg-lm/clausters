@@ -363,7 +363,8 @@ Named, not enumerated: each is written where it belongs and is read there.
   its buffers; plugin formats and platforms after the Linux reference host;
   a generic editor that carries the node's own verbs; a buffer position
   wider than a signal, which `Phasor` into `BufRd` and `BufWr` still needs),
-  the GUI's (a steady
+  the GUI's (a cursor per element and per part, for the host's chrome and
+  the applications alike; a steady
   goniometer; a Tauri wrapper, only a possibility; the page's clipboard
   reaching the browser's; a selected staff edited by its line count; a paste
   that could make tracks; a frame of what moves that presents only what
