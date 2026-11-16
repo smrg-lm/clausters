@@ -305,6 +305,10 @@ try {
   await sleep(500);
   check(await evaluate(`!!document.querySelector(".session-window canvas")`), "a window the session opens is drawn on the page");
 
+  // An application: the page is cross-origin isolated, so its host has them.
+  at = await run('import { pbind, pseq } from "clausters/seq";\nimport { edit } from "clausters/gui";\nconst notes = await edit(await pbind({ midinote: pseq([60, 62, 64]), dur: 0.5 }).renderEvents());\nnotes.constructor.name');
+  check(await waitFor('-> "NotesEditor"', at), "edit() of a rendered pattern opens the notes editor");
+
   // An infinite loop: the worker is terminated and the session started again.
   at = await run("for (;;) {}");
   await sleep(500);

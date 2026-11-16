@@ -55,7 +55,16 @@ createServer((request, response) => {
     response.writeHead(404).end("not found");
     return;
   }
-  response.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream", "cache-control": "no-cache" });
+  // Cross-origin isolated, so the page loads the GUI host built with the
+  // applications (the notes and score editors), which needs shared memory.
+  // Without these two headers the host it loads has none of them, and
+  // edit() of a sequence is refused with `no application named "notes"`.
+  response.writeHead(200, {
+    "content-type": TYPES[extname(file)] ?? "application/octet-stream",
+    "cache-control": "no-cache",
+    "cross-origin-opener-policy": "same-origin",
+    "cross-origin-embedder-policy": "require-corp",
+  });
   createReadStream(file).pipe(response);
 }).listen(port, "127.0.0.1", () => {
   console.log(`clausters-editor: http://127.0.0.1:${port}/ (clausters from ${clausters})`);

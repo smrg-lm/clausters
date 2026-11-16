@@ -37,7 +37,10 @@ npm run test:page      # drives it in headless Chrome (-- firefox: in Firefox)
 ```
 
 The page needs the clausters web package built (`./build.sh` in
-`clients/web`; `CLAUSTERS_WEB` names another folder). Its frontend is this
+`clients/web`; `CLAUSTERS_WEB` names another folder), and is served cross-origin
+isolated (`Cross-Origin-Opener-Policy: same-origin`,
+`Cross-Origin-Embedder-Policy: require-corp`): only then does it load the GUI
+host with the applications, so a server of its own sends the two headers too. Its frontend is this
 one: what differs between the two builds is the host it runs in
 (`src/lib/host.ts`), `src/lib/host-desktop.ts` for Tauri and `src/page/` for
 the page -- files in the page's storage, the JavaScript session in a worker,
