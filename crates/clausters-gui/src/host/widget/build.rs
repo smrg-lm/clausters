@@ -45,6 +45,11 @@ pub(super) fn build_kind(
             progress: progress_of(props.get("progress"), props.get("progress_label")),
             activation: props.get("activation").and_then(truthy).unwrap_or(false),
             history: props.get("history").and_then(truthy).unwrap_or(false),
+            dock_page: props
+                .get("dock_page")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
         },
         // A container with no axes. `stack` -- one child at a time, the one
         // `index` names -- is one of the arrangements rather than a type of its

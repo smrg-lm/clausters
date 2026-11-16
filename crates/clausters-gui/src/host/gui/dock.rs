@@ -68,8 +68,9 @@ impl App {
             self.dock = Some(self.open_shell(lp)?);
         }
         let title = self.host.window_title(id);
+        let page = self.host.window_dock_page(id);
         let shell = self.dock.as_mut()?;
-        shell.layout.add(id);
+        shell.layout.add_on(id, page.as_deref());
         if let Some(title) = title {
             shell.layout.set_title(id, title);
         }

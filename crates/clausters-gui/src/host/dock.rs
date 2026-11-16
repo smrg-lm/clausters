@@ -46,6 +46,7 @@ use crate::view::Target;
 
 pub mod call;
 mod chrome;
+mod pages;
 pub mod tree;
 
 pub use tree::{Group, Node, Path, Side};
@@ -144,6 +145,9 @@ pub enum Landing {
     /// Out of the dock: a window of its own, which only a front can open, so
     /// the dock says so ([`Dirty::out`]) rather than moving anything.
     Out,
+    /// Onto the page at this index, leaving the page shown: a column of its
+    /// own there. One past the last page is a new page holding it alone.
+    Page(usize),
 }
 
 /// What a press is holding.
@@ -169,6 +173,8 @@ enum Grip {
 enum Hot {
     Tab(Path, Part),
     Divider(usize),
+    /// A part of the page strip.
+    Page(Part),
 }
 
 /// How far a pressed tab moves before it is dragged rather than chosen.
@@ -181,8 +187,17 @@ const EDGE: f32 = 0.25;
 /// **The arrangement of the panes, and where the hand is among them.**
 #[derive(Debug)]
 pub struct Dock {
-    /// The layout: splits and groups of tabs ([`tree`]).
+    /// The shown page's layout: splits and groups of tabs ([`tree`]).
     tree: Node,
+    /// **The pages**: each a name and its layout. The shown one's layout is
+    /// `tree`, and its entry here holds an empty one meanwhile.
+    pages: Vec<(String, Node)>,
+    /// Which page is shown.
+    page: usize,
+    /// Every pane the dock holds, in the order they came: on the shown page,
+    /// on another, or on none -- a pane no page names is kept, and shown
+    /// again by putting it on one.
+    members: Vec<i32>,
     /// What the layout measures to at this size.
     groups: Vec<GroupPlace>,
     dividers: Vec<DividerPlace>,
@@ -213,6 +228,9 @@ impl Dock {
     pub fn new(size: (u32, u32), metrics: Metrics) -> Self {
         Self {
             tree: Node::default(),
+            pages: vec![(FIRST_PAGE.to_string(), Node::default())],
+            page: 0,
+            members: Vec::new(),
             groups: Vec::new(),
             dividers: Vec::new(),
             size,
@@ -227,14 +245,15 @@ impl Dock {
         }
     }
 
-    /// Every pane, in layout order: the shown ones and those behind a tab.
+    /// Every pane the dock holds, in the order they came: shown, behind a
+    /// tab, or on another page.
     pub fn panes(&self) -> Vec<i32> {
-        self.tree.panes()
+        self.members.clone()
     }
 
     /// Whether `def_id` is a pane here.
     pub fn holds(&self, def_id: i32) -> bool {
-        self.tree.group_of(def_id).is_some()
+        self.members.contains(&def_id)
     }
 
     /// Whether pane `def_id` is shown: the chosen tab of its group.
@@ -290,11 +309,23 @@ impl Dock {
         std::mem::take(&mut self.dirty)
     }
 
-    /// Adds `def_id` as a column of its own at the right, and gives it the
-    /// keyboard. Answers whether it was not one already.
+    /// Adds `def_id` as a column of its own at the right of the page shown,
+    /// and gives it the keyboard. Answers whether it was not one already.
     pub fn add(&mut self, def_id: i32) -> bool {
+        self.add_on(def_id, None)
+    }
+
+    /// **Adds `def_id` on page `page`** -- made if there is none of that
+    /// name, and shown -- or on the page shown with none, as a column of its
+    /// own at the right, and gives it the keyboard. Answers whether it was
+    /// not a pane already.
+    pub fn add_on(&mut self, def_id: i32, page: Option<&str>) -> bool {
         if self.holds(def_id) {
             return false;
+        }
+        self.members.push(def_id);
+        if let Some(name) = page {
+            self.show_page(name);
         }
         self.tree.add(def_id);
         self.focus = Some(def_id);
@@ -302,11 +333,16 @@ impl Dock {
         true
     }
 
-    /// Takes `def_id` out; the panes left share its room. Answers whether it
-    /// was one.
+    /// Takes `def_id` out, off every page; the panes left share its room.
+    /// Answers whether it was one.
     pub fn remove(&mut self, def_id: i32) -> bool {
-        if !self.tree.remove(def_id) {
+        if !self.holds(def_id) {
             return false;
+        }
+        self.members.retain(|&p| p != def_id);
+        self.tree.remove(def_id);
+        for (_, tree) in &mut self.pages {
+            tree.remove(def_id);
         }
         self.titles.remove(&def_id);
         if self.pointer == Some(def_id) {
@@ -516,6 +552,10 @@ impl Dock {
             return Some(p);
         }
         let (x, y) = self.at?;
+        if let Some(part) = self.page_at(x, y) {
+            self.press_page(part);
+            return None;
+        }
         if let Some(i) = self.divider_at(x, y) {
             let place = self.dividers[i].clone();
             let from = if place.row { x } else { y };
@@ -571,6 +611,8 @@ impl Dock {
                 if landing == Landing::Out {
                     self.dirty.out = Some(pane);
                     self.dirty.chrome = true;
+                } else if let Landing::Page(to) = landing {
+                    self.move_to_page(pane, to);
                 } else {
                     let _ = self.land(pane, landing);
                 }
@@ -616,15 +658,22 @@ impl Dock {
             Landing::Join { of, at } => self.tree.join(pane, of, at)?,
             Landing::Split { of, side } => self.tree.split(pane, side, of)?,
             Landing::Out => return Err("a pane is taken out by the front that holds it".into()),
+            Landing::Page(to) => {
+                self.move_to_page(pane, to);
+                return Ok(());
+            }
         }
         self.focus = Some(pane);
         self.arrange();
         Ok(())
     }
 
-    /// **A layout put in place of this one** ([`Node::from_json`]).
+    /// **A layout put in place of this one**: every page, from
+    /// `{"pages": [{"name", "layout"}...], "page": name}`, or the page shown
+    /// from a layout alone ([`Node::read`]). A pane no page names after it
+    /// goes on the page shown, as a column of its own, so no pane is lost.
     pub fn restore(&mut self, layout: &serde_json::Value) -> Result<(), String> {
-        self.tree = Node::from_json(layout, &self.panes())?;
+        self.restore_pages(layout)?;
         self.grip = None;
         self.hot = None;
         if self.focus.is_none_or(|f| !self.tree_shows(f)) {
@@ -656,6 +705,9 @@ impl Dock {
 
     /// What the chrome lights at `(x, y)`.
     fn hot_at(&self, x: f64, y: f64) -> Option<Hot> {
+        if let Some(part) = self.page_at(x, y) {
+            return Some(Hot::Page(part));
+        }
         if let Some(i) = self.divider_at(x, y) {
             return Some(Hot::Divider(i));
         }
@@ -692,6 +744,9 @@ impl Dock {
         let (w, h) = self.size;
         if x < 0.0 || y < 0.0 || x >= f64::from(w) || y >= f64::from(h) {
             return Some((Landing::Out, source.body.rect()));
+        }
+        if self.page_strip().contains(x, y) {
+            return self.page_landing(x, y);
         }
         let alone = source.panes.len() == 1;
         let group = self
@@ -741,7 +796,7 @@ impl Dock {
         Some((Landing::Join { of, at: None }, body))
     }
 
-    /// The height of a group's tab strip.
+    /// The height of a group's tab strip, and of the page strip.
     fn strip_h(&self) -> u32 {
         control_box(self.text_size(), &self.metrics).round() as u32
     }
@@ -752,7 +807,14 @@ impl Dock {
         let mut groups = Vec::new();
         let mut dividers = Vec::new();
         let (w, h) = self.size;
-        let whole = PaneRect { x: 0, y: 0, w, h };
+        // the page strip along the top, the page's layout under it
+        let top = self.strip_h().min(h.saturating_sub(1));
+        let whole = PaneRect {
+            x: 0,
+            y: top,
+            w,
+            h: h - top,
+        };
         let divider = (self.metrics.divider_w.round() as u32).max(1);
         measure(
             &self.tree,
@@ -775,6 +837,9 @@ impl Dock {
         }
     }
 }
+
+/// The name of the page a dock opens with.
+pub const FIRST_PAGE: &str = "Main";
 
 /// Measures `node` into `rect`: a group's strip and body, a split's parts
 /// along its axis with a divider between each two, the last part taking what

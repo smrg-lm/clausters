@@ -365,14 +365,23 @@ impl Node {
     /// place, and a pane it does not name is added as a column of its own,
     /// so the dock shows every pane it holds whatever it was given.
     pub fn from_json(value: &Value, panes: &[i32]) -> Result<Self, String> {
-        let mut seen = Vec::new();
-        let mut node = read(value, panes, &mut seen)?;
-        node.normalize();
+        let mut node = Self::read(value, panes)?;
+        let named = node.panes();
         for &p in panes {
-            if !seen.contains(&p) {
+            if !named.contains(&p) {
                 node.add(p);
             }
         }
+        Ok(node)
+    }
+
+    /// **A layout read back** as [`from_json`](Self::from_json) reads it,
+    /// leaving out the panes it does not name: one page's layout, which need
+    /// not hold every pane.
+    pub fn read(value: &Value, panes: &[i32]) -> Result<Self, String> {
+        let mut seen = Vec::new();
+        let mut node = read(value, panes, &mut seen)?;
+        node.normalize();
         Ok(node)
     }
 }

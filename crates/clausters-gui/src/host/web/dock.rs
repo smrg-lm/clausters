@@ -133,7 +133,9 @@ impl WebApp {
                 element.remove();
             }
         }
-        shell.layout.add(def_id);
+        shell
+            .layout
+            .add_on(def_id, self.host.window_dock_page(def_id).as_deref());
         if let Some(title) = self.host.window_title(def_id) {
             shell.layout.set_title(def_id, title);
         }

@@ -1846,13 +1846,34 @@ something reusable if the track stops there.
   editor page's acceptance run (Chrome and Firefox) checks the windows
   panel has a size, that the notes editor `edit()` opens is a pane with a
   nonzero rectangle, and that a stuck session's windows leave the dock.
-- ⬜ **WS4 — Pages: one arrangement per kind of work.** A page is a named
+- ✅ **WS4 — Pages: one arrangement per kind of work.** A page is a named
   layout of the dock, switched by a strip of page tabs; an application may
   contribute a page (the multitrack's, the audio editor's), and a page
   remembers its own layout. Switching a page moves panels, never frees them:
   the defs stay alive and keep playing. Acceptance: a session with two
   applications and a code panel, switched across three pages and back, every
   panel where it was left, nothing re-sent by the client.
+  *Shipped:* a page is a name and a layout of its own (`dock/pages.rs`);
+  the dock shows one, its tree measured as before, the others kept, and a
+  strip of page tabs along its top switches them -- a press shows a page,
+  its last tab makes a copy of the page shown, a pane's tab dropped on a
+  page's tab moves the pane there. A pane may be on several pages or on
+  none; one the shown page does not name is hidden and occluded as a pane
+  behind a tab is, and nothing is freed. A window names its page with the
+  `dock_page` prop (both clients' `view`), made and shown as it opens; the
+  multitrack, the audio editor and the score editor name theirs. The door
+  grew `page`, `place`, `leave`, `page_rename` and `page_close`; the state
+  carries `pages`, `page` and `page_tabs`; `restore` takes every page.
+  Checked: tests of a page's own arrangement, the strip's switch, copy and
+  drop, and the pages' round trip; a headless host with the multitrack, the
+  audio editor and a GuiDef panel standing in for the code panel (the code
+  element is WS6's) on three pages, switched three ways and back twice,
+  every pane's rectangle and every layout as left, the slider's edited value
+  and both applications' histories unchanged, the hidden panes reported not
+  visible, the client sending nothing but the switches; `tests/dock.html`
+  opens a window on its page and switches back and forth in a page. A
+  page's host also stopped attaching a canvas to a def before it was fed,
+  which had left a pane its id for a title.
 - ⬜ **WS5 — The post panel.** An append-only log element: lines of kinds
   (output, error, result, info) styled by theme roles, selection and copy, a
   clear verb, autoscroll that stops while the user reads up and resumes at the

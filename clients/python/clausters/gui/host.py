@@ -933,12 +933,19 @@ class GuiHost:
         ``{"verb": "capture", "path": ...}`` writes the dock's picture;
         ``{"verb": "undock", "pane": id}`` takes a pane out into a window of
         its own, and ``{"verb": "dock", "pane": id}`` puts it back.
+        **Pages**: ``{"verb": "page", "name": ...}`` shows a page (made if
+        new); ``{"verb": "place", "pane": id}`` and ``{"verb": "leave",
+        "pane": id}`` put a pane on the page shown or take it off;
+        ``{"verb": "page_rename", "name": ..., "to": ...}`` and
+        ``{"verb": "page_close", "name": ...}``. ``restore`` also takes
+        ``{"pages": [...], "page": name}``, every page at once.
 
         The answer is the dock: ``layout`` (the layout as data, what
         ``restore`` takes), ``size``, ``panes`` (each with its ``id``,
         ``title``, whether it is ``shown``, its ``rect`` and its ``tab`` as
-        ``[x, y, w, h]``), ``dividers``, ``focus`` and ``out`` (the windows
-        taken out). Raises `ValueError`
+        ``[x, y, w, h]``), ``dividers``, ``focus``, ``out`` (the windows
+        taken out), ``pages`` (each ``name`` with its ``layout``), ``page``
+        (the one shown) and ``page_tabs``. Raises `ValueError`
         for a call it cannot read, `clausters.errors.CommandError` for a move
         it cannot make, `RuntimeError` when the host has no dock open.
         """

@@ -13,6 +13,10 @@ its tabs, near one of its edges to stand beside it -- and drag the line between
 two panes to give one more room. The same moves are verbs a script calls, and
 the arrangement they leave is data it can read and put back.
 
+Along the dock's top is a strip of **pages**, each an arrangement of its own: a
+window can name the page it opens on, the strip switches them, and a tab
+dropped on a page's tab moves its pane there. Switching a page frees nothing.
+
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
 **runs out of the box**. Install once, from the repo root::
 
@@ -75,6 +79,18 @@ host.dock_call({"verb": "select", "pane": tone})
 host.dock_restore(layout)
 
 # %% [markdown]
+# ## Pages
+# A window naming its page opens on it, made and shown: ``mix`` on a page of
+# its own. ``tone`` is put on it too, beside ``mix``, and the first page is
+# shown again as it was left -- ``mix`` waits on its page, open.
+
+# %%
+mix = view(knob(name="pan", value=0.5), title="mix", w=360, h=240,
+           dock_page="Mix").open(host=host)
+host.dock_call({"verb": "place", "pane": tone})
+host.dock_call({"verb": "page", "name": "Main"})
+
+# %% [markdown]
 # ## Closing a pane gives its room back
 # ``tone`` is shown again in the group ``note`` leaves.
 
@@ -92,4 +108,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     finally:
         host.stop()
 else:
-    print("two panes up - tone.wait(10) to hold them, host.stop() to end")
+    print("the dock is up - tone.wait(10) to hold it, host.stop() to end")

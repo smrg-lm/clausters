@@ -1,4 +1,5 @@
-//! **What the dock draws of its own**: a tab strip over each group, the
+//! **What the dock draws of its own**: the page strip along its top, a tab
+//! strip over each group, the
 //! divider under the pointer or in the hand, and where a dragged tab would
 //! land. Drawn over the panes, in the dock's surface, with the drawing the
 //! widgets use -- a group's strip is a `choice`'s row of tabs
@@ -15,6 +16,19 @@ impl Dock {
     /// landing.
     pub fn draw(&self, d: &mut Draw) {
         let size = self.text_size();
+        // the pages, along the top
+        let strip = self.page_strip();
+        d.mesh.rect(strip, d.theme.status_bar);
+        choice::draw(
+            d,
+            choice::View::Tabs,
+            &self.page_options(),
+            self.page_index(),
+            None,
+            strip,
+            size,
+            self.lit_page(),
+        );
         for group in self.groups() {
             let titles: Vec<String> = group.panes.iter().map(|&p| self.title(p)).collect();
             d.mesh.rect(group.strip, d.theme.background);

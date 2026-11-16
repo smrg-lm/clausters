@@ -239,6 +239,8 @@ pub fn window(w: Window<'_>) -> Value {
         "w": size.0,
         "h": size.1,
         "flow": "col",
+        // **Its kind of work has a page of its own** in a dock
+        "dock_page": "Score",
         // **The space bar is the application's**: it plays the score through
         // the editor's own playback, so the host's monitor stays out.
         "plays": true,

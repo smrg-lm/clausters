@@ -441,6 +441,8 @@ impl WebApp {
                 HostEffect::Reply(msg) | HostEffect::Send { msg, .. } => self.queue(msg),
                 HostEffect::OpenWindow(id) => {
                     log(&format!("/gui_def {id}: opened from the page"));
+                    // a pane attached before its def knows its title now
+                    self.retitle_pane(id);
                     // A page that fed a `/gui_def` without attaching a canvas
                     // gets one appended, as the single-canvas host always did.
                     if !self.canvases.contains_key(&id) {

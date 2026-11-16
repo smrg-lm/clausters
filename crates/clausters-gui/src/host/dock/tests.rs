@@ -135,7 +135,7 @@ fn a_dragged_divider_trades_room_between_its_neighbours() {
     let widths: Vec<_> = ws.placed().map(|(_, r)| r.w).collect();
     assert_eq!(widths, [250, 150]);
     ws.moved(2000.0, s + 60.0);
-    let least = 2 * strip(&ws);
+    let least = 2 * ws.groups()[0].strip.h as u32;
     assert_eq!(
         ws.rect(2).map(|r| r.w),
         Some(least),
@@ -254,6 +254,109 @@ fn a_tab_dragged_out_of_the_dock_is_told_to_the_front() {
         Call::read(r#"{"verb": "dock", "pane": 2}"#),
         Ok(Call::Dock(2))
     );
+}
+
+/// **A page is a layout of its own**: a window naming a page opens on it,
+/// made and shown; switching pages hides what the shown page does not name
+/// and frees nothing; every page keeps its arrangement.
+#[test]
+fn a_page_keeps_its_own_arrangement() {
+    let mut ws = dock((600, 400), 4.0, &[1, 2]);
+    assert_eq!(ws.page_names(), [FIRST_PAGE]);
+    ws.take_dirty();
+    ws.add_on(3, Some("Multitrack"));
+    assert_eq!(ws.page_name(), "Multitrack");
+    assert!(ws.take_dirty().layout);
+    assert_eq!(ws.placed().map(|(id, _)| id).collect::<Vec<_>>(), [3]);
+    assert!(
+        ws.holds(1) && !ws.shown(1),
+        "a pane on another page is kept, hidden"
+    );
+    assert_eq!(ws.rect(1), None);
+    ws.place(1).expect("on this page too");
+    ws.land(
+        1,
+        Landing::Split {
+            of: 3,
+            side: Side::Bottom,
+        },
+    )
+    .expect("under the multitrack");
+    let here = ws.tree().to_json();
+    assert!(ws.show_page(FIRST_PAGE));
+    assert_eq!(ws.tree().panes(), [1, 2], "the first page as it was left");
+    assert!(ws.show_page("Multitrack"));
+    assert_eq!(ws.tree().to_json(), here, "and this one as it was left");
+    // a pane freed leaves every page
+    ws.remove(1);
+    assert_eq!(ws.tree().panes(), [3]);
+    ws.show_page(FIRST_PAGE);
+    assert_eq!(ws.tree().panes(), [2]);
+    // a page closed: its arrangement goes, its panes stay
+    ws.close_page("Multitrack").expect("closes");
+    assert!(ws.holds(3) && !ws.shown(3));
+    assert!(
+        ws.close_page(FIRST_PAGE).is_err(),
+        "the dock keeps one page"
+    );
+}
+
+/// **The page strip switches pages**, its last tab makes a copy of the page
+/// shown, and a tab dropped on another page's tab moves its pane there.
+#[test]
+fn the_page_strip_switches_and_takes_a_dragged_tab() {
+    let mut ws = dock((600, 400), 4.0, &[1, 2]);
+    let press = |ws: &mut Dock, r: Rect| {
+        ws.moved(f64::from(r.x + r.w * 0.5), f64::from(r.y + r.h * 0.5));
+        ws.pressed();
+        ws.released();
+    };
+    let plus = ws.page_parts()[1].1;
+    press(&mut ws, plus);
+    assert_eq!(ws.page_names(), [FIRST_PAGE, "Page 2"]);
+    assert_eq!(ws.page_name(), "Page 2");
+    assert_eq!(ws.tree().panes(), [1, 2], "a copy of the page shown");
+    let first = ws.page_parts()[0].1;
+    press(&mut ws, first);
+    assert_eq!(ws.page_name(), FIRST_PAGE);
+    // pane 2's tab dragged onto Page 2's tab: it leaves this page
+    let tab = ws.tab_parts(&ws.groups()[1].clone())[0].1;
+    ws.moved(f64::from(tab.x + tab.w * 0.5), f64::from(tab.y + 3.0));
+    ws.pressed();
+    let to = ws.page_parts()[1].1;
+    ws.moved(f64::from(to.x + 2.0), f64::from(to.y + to.h * 0.5));
+    ws.moved(f64::from(to.x + to.w * 0.5), f64::from(to.y + to.h * 0.5));
+    assert_eq!(ws.landing().map(|l| l.0), Some(Landing::Page(1)));
+    ws.released();
+    assert_eq!(ws.tree().panes(), [1]);
+    assert!(ws.holds(2));
+    ws.show_page("Page 2");
+    assert_eq!(ws.tree().panes(), [1, 2]);
+}
+
+/// **The pages round-trip through their JSON**, and a pane no page names
+/// after a restore goes on the page shown.
+#[test]
+fn the_pages_round_trip() {
+    let mut ws = dock((600, 400), 4.0, &[1, 2, 3]);
+    ws.show_page("Mix");
+    ws.place(3).expect("placed");
+    let state = ws.state();
+    let saved = json!({"pages": state["pages"], "page": state["page"]});
+    let mut other = dock((600, 400), 4.0, &[1, 2, 3]);
+    other.restore(&saved).expect("restores");
+    let again = other.state();
+    assert_eq!(again["pages"], state["pages"]);
+    assert_eq!(again["page"], json!("Mix"));
+    other
+        .restore(&json!({"pages": [{"name": "A", "layout": {"tabs": [1]}}]}))
+        .expect("restores");
+    assert_eq!(other.page_names(), ["A"]);
+    assert_eq!(other.tree().panes(), [1, 2, 3], "the panes no page named");
+    let call = Call::read(r#"{"verb": "page", "name": "B"}"#).expect("reads");
+    let state = other.apply(&call).expect("shows");
+    assert_eq!(state["page"], json!("B"));
+    assert_eq!(state["page_tabs"].as_array().map(Vec::len), Some(3));
 }
 
 /// **A tab alone in its group dragged onto its own group lands nowhere**:

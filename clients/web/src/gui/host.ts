@@ -1192,10 +1192,17 @@ export class GuiHost {
      * picture; `{ verb: "undock", pane }` takes a pane out into a canvas of
      * its own, and `{ verb: "dock", pane }` puts it back.
      *
+     * **Pages**: `{ verb: "page", name }` shows a page (made if new);
+     * `{ verb: "place", pane }` and `{ verb: "leave", pane }` put a pane on
+     * the page shown or take it off; `{ verb: "page_rename", name, to }` and
+     * `{ verb: "page_close", name }`. `restore` also takes
+     * `{ pages: [...], page: name }`, every page at once.
+     *
      * The answer is the dock: `layout` (the layout as data, what `restore`
      * takes), `size`, `panes` (each with its `id`, `title`, whether it is
      * `shown`, its `rect` and its `tab` as `[x, y, w, h]`), `dividers`,
-     * `focus` and `out` (the windows taken out). Rejects with a `RangeError` for a call it cannot read, a
+     * `focus`, `out` (the windows taken out), `pages` (each `name` with its
+     * `layout`), `page` (the one shown) and `page_tabs`. Rejects with a `RangeError` for a call it cannot read, a
      * `CommandError` for a move it cannot make, an `Error` when the host has
      * no dock open.
      */

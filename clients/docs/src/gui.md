@@ -173,7 +173,9 @@ await host.dockRestore(layout);
 await host.dockCapture("dock.png");
 ```
 
-`{"verb": "undock", "pane": ...}` takes a pane out the same way, and `{"verb": "dock", "pane": ...}` puts it back. Every call answers the dock as it stands: the layout, and where each pane, its tab and each divider are, in the pixels a capture of the dock has — what a script points at with `{"verb": "pointer", ...}` to play a drag on the tabs as a hand would.
+`{"verb": "undock", "pane": ...}` takes a pane out the same way, and `{"verb": "dock", "pane": ...}` puts it back. **Pages.** Along the dock's top is a strip of pages, each an arrangement of its own: a window opened with {{alt `dock_page` || `dockPage`}} names the page it opens on, which is made and shown, and every other window opens on the page shown; an application's window opens on its own page (the multitrack's, the audio editor's). A press on a page's tab shows it, the last tab makes a copy of the page shown, and a pane's tab dropped on a page's tab moves the pane there. Switching a page moves panes and frees none — a window on another page keeps playing. The verbs are `page` (show one by `name`, made if new), `place` and `leave` (a pane onto or off the page shown), `page_rename` and `page_close`, and {{api dock_layout}} and {{api dock_restore}} read and put back the page shown — with `{"pages": ..., "page": ...}`, every page.
+
+Every call answers the dock as it stands: the layout, and where each pane, its tab and each divider are, in the pixels a capture of the dock has — what a script points at with `{"verb": "pointer", ...}` to play a drag on the tabs as a hand would.
 
 ### A control widget is built from the control it drives
 

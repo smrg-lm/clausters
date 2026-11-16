@@ -45,11 +45,32 @@ pub enum Call {
     /// `{"verb": "dock", "pane": id}`: put a window taken out back in, as a
     /// column of its own.
     Dock(i32),
+    /// `{"verb": "page", "name": name}`: show a page, made with nothing on
+    /// it if there is none of that name.
+    Page(String),
+    /// `{"verb": "page_rename", "name": name, "to": name}`.
+    PageRename { name: String, to: String },
+    /// `{"verb": "page_close", "name": name}`: its arrangement goes, its
+    /// panes stay.
+    PageClose(String),
+    /// `{"verb": "place", "pane": id}`: put a pane on the page shown.
+    Place(i32),
+    /// `{"verb": "leave", "pane": id}`: take a pane off the page shown; it
+    /// stays a pane.
+    Leave(i32),
 }
 
 /// A request the door could not read.
 fn bad(message: impl Into<String>) -> (String, String) {
     ("value".into(), message.into())
+}
+
+fn name(call: &Value, key: &str) -> Result<String, (String, String)> {
+    call.get(key)
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| bad(format!("`{key}` is a page's name")))
 }
 
 fn id(call: &Value, key: &str) -> Result<i32, (String, String)> {
@@ -107,6 +128,14 @@ impl Call {
                 }
             }
             "undock" => Self::Undock(id(&call, "pane")?),
+            "page" => Self::Page(name(&call, "name")?),
+            "page_rename" => Self::PageRename {
+                name: name(&call, "name")?,
+                to: name(&call, "to")?,
+            },
+            "page_close" => Self::PageClose(name(&call, "name")?),
+            "place" => Self::Place(id(&call, "pane")?),
+            "leave" => Self::Leave(id(&call, "pane")?),
             "dock" => Self::Dock(id(&call, "pane")?),
             "capture" => Self::Capture(
                 call.get("path")
@@ -143,6 +172,13 @@ impl Dock {
                     },
                 )
                 .map_err(refused)?,
+            Call::Page(name) => {
+                self.show_page(name);
+            }
+            Call::PageRename { name, to } => self.rename_page(name, to).map_err(refused)?,
+            Call::PageClose(name) => self.close_page(name).map_err(refused)?,
+            Call::Place(pane) => self.place(*pane).map_err(refused)?,
+            Call::Leave(pane) => self.leave(*pane).map_err(refused)?,
             Call::Pointer { .. } | Call::Capture(_) | Call::Undock(_) | Call::Dock(_) => {}
         }
         Ok(self.state())
@@ -172,8 +208,21 @@ impl Dock {
             }
         }
         let dividers: Vec<Value> = self.dividers().iter().map(|d| rect(d.rect)).collect();
+        // the page strip's tabs, the pages' and then the new page's
+        let parts = self.page_parts();
+        let page_tabs: Vec<Value> = (0..self.page_options().len())
+            .map(|i| {
+                parts
+                    .iter()
+                    .find(|(part, _)| *part == super::Part::Option(i))
+                    .map_or(Value::Null, |(_, r)| rect(*r))
+            })
+            .collect();
         json!({
             "layout": self.tree().to_json(),
+            "pages": self.pages_json(),
+            "page": self.page_name(),
+            "page_tabs": page_tabs,
             "size": [self.size().0, self.size().1],
             "panes": panes,
             "dividers": dividers,
@@ -187,6 +236,9 @@ impl Dock {
 pub fn closed_state() -> Value {
     json!({
         "layout": super::Node::default().to_json(),
+        "pages": [],
+        "page": null,
+        "page_tabs": [],
         "size": [0, 0],
         "panes": [],
         "dividers": [],

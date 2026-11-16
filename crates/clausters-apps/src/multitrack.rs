@@ -220,6 +220,8 @@ pub fn window(w: &Window<'_>) -> Value {
         "w": w.size.0,
         "h": w.size.1,
         "flow": "col",
+        // **Its kind of work has a page of its own** in a dock
+        "dock_page": "Multitrack",
         "ask_close": crate::closing::asks(w.asks, w.close_form.is_some()),
         // the window's own verbs, and the scope of the key table they are in
         "keys": [editor::KEYS],

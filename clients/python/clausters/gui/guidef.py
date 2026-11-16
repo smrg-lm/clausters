@@ -1112,7 +1112,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          status: bool | None = None, plays: bool | None = None,
          keys: list | str | None = None, verbs: dict | None = None,
          ask_close: bool | None = None, activation: bool | None = None,
-         history: bool | None = None,
+         history: bool | None = None, dock_page: str | None = None,
          progress: float | None = None, progress_label: str | None = None,
          split: bool | None = None, menu: list | None = None,
          main: int | None = None, glyphs: dict | None = None,
@@ -1196,6 +1196,12 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     afresh. For a panel of a synth's controls, which has no document to keep
     a history in; an application keeps its own. Off by default.
 
+    ``dock_page`` names **the page of the dock the window opens on**, on a
+    host booted with a dock: made if the dock has no page of that name, and
+    shown as the window opens -- an arrangement of its own for a kind of work.
+    With none the window opens on the page shown; a host with no dock reads
+    nothing in it.
+
     ``progress`` is **work the owner is doing for the window**, a fraction in
     ``0..1`` with ``progress_label`` naming it, drawn at the right end of the
     status bar while it is set; a negative value takes it away. An owner sets
@@ -1248,6 +1254,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
         extra["activation"] = 1 if activation else 0
     if history is not None:
         extra["history"] = 1 if history else 0
+    if dock_page is not None:
+        extra["dock_page"] = dock_page
     if progress is not None:
         extra["progress"] = float(progress)
     if progress_label is not None:

@@ -671,8 +671,9 @@ export async function pageGuiConnection(
                 if (typeof args[0] !== "number") continue;
                 // Idempotent on the host, so a def whose canvas the caller
                 // already chose keeps it: this is the *default* policy, not an
-                // override of one.
-                if (addr === "/gui_def") gui.attach(args[0]);
+                // override of one. A docked host makes the window a pane as
+                // it opens it, knowing the def -- its title, its page.
+                if (addr === "/gui_def" && !gui.docked) gui.attach(args[0]);
                 else if (addr === "/gui_free") freed.push(args[0]);
             }
             gui.bridge.feed(packet);

@@ -1611,6 +1611,14 @@ export function view(
      */
     history?: boolean;
     /**
+     * **The page of the dock the window opens on**, on a host given a dock:
+     * made if the dock has no page of that name, and shown as the window
+     * opens -- an arrangement of its own for a kind of work. With none the
+     * window opens on the page shown; a host with no dock reads nothing in
+     * it.
+     */
+    dockPage?: string;
+    /**
      * **The owner is told when the window comes back** -- it gains or loses
      * the platform's focus, or its page is shown or hidden -- as the window's
      * `activated` verb, `1` or `0`. Off by default.
@@ -1663,7 +1671,8 @@ export function view(
 ): View {
     const {
         title, flow, layout, margin, gap, cols, hug, status, plays, keys, verbs, askClose,
-        history, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs, ...rest
+        history, dockPage, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs,
+        ...rest
     } = options;
     return node("window", {
         ...rest,
@@ -1685,6 +1694,7 @@ export function view(
             ["verbs", verbs === undefined ? undefined : { ...verbs }],
             ["ask_close", flag(askClose)],
             ["history", flag(history)],
+            ["dock_page", dockPage],
             ["activation", flag(activation)],
             ["progress", progress],
             ["progress_label", progressLabel],

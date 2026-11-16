@@ -143,6 +143,13 @@ pub enum WidgetKind {
         /// being reported to the owner. Read when the window is defined. Off
         /// by default: an ordinary GuiDef holds no history.
         history: bool,
+        /// The `dock_page` prop: **the page of the dock the window opens
+        /// on** ([`crate::host::dock`]), made if the dock has none of that
+        /// name, and shown as the window opens -- how an application gives
+        /// its kind of work an arrangement of its own. None by default: the
+        /// window opens on the page shown. A host with no dock reads nothing
+        /// in it.
+        dock_page: Option<String>,
     },
     /// A nestable container.
     Panel {

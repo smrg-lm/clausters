@@ -28,7 +28,11 @@ would be without the dock, and a press reaches the pane it lands in.
 <br><br>Every pane has a tab. Drag a tab onto another pane -- into its middle to
 join its tabs, near one of its edges to stand beside it -- and drag the line
 between two panes to give one more room. The same moves are verbs the code
-calls, and the arrangement they leave is data it can read and put back.</div>
+calls, and the arrangement they leave is data it can read and put back.
+<br><br>Along the dock's top is a strip of <b>pages</b>, each an arrangement of
+its own: a window can name the page it opens on, the strip switches them, and a
+tab dropped on a page's tab moves its pane there. Switching a page frees
+nothing.</div>
       <div id="dock"></div>
       <button id="close">close the third pane</button>
       <pre id="log"></pre>
@@ -38,7 +42,9 @@ calls, and the arrangement they leave is data it can read and put back.</div>
       The web sibling of clients/python/examples/panels/dock.py, call for call:
       boot a host with a dock, open three windows on it, print what the slider
       and the knob report, put the third among the first's tabs and the second
-      under the first, read the layout and put it back, close the third pane.
+      under the first, read the layout and put it back, open a fourth on a
+      page of its own and put the first beside it, show the first page again,
+      close the third pane.
 
       One difference, the platform's: the script's host opens a window of its
       own for the dock, and a page's draws in the canvas of the element named
@@ -83,6 +89,12 @@ calls, and the arrangement they leave is data it can read and put back.</div>
       log(JSON.stringify(layout));
       await host.dockCall({ verb: "select", pane: tone.id });
       await host.dockRestore(layout);
+
+      // ---- pages ----
+      await gui.view({ title: "mix", w: 360, h: 240, dockPage: "Mix" },
+        gui.knob({ name: "pan", value: 0.5 })).open(null, { host });
+      await host.dockCall({ verb: "place", pane: tone.id });
+      await host.dockCall({ verb: "page", name: "Main" });
 
       // ---- closing a pane gives its room back ----
       $("close").onclick = () => {

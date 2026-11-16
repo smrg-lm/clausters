@@ -1474,6 +1474,14 @@ impl Host {
 
     /// **The title window `id` shows**: its `title` prop, which its owner
     /// sets as the work it holds moves, or the host's name for it.
+    /// **The dock page window `id` asks to open on** (its `dock_page`).
+    pub fn window_dock_page(&self, id: i32) -> Option<String> {
+        match &self.window_def(id)?.kind {
+            WidgetKind::Window { dock_page, .. } => dock_page.clone(),
+            _ => None,
+        }
+    }
+
     pub fn window_title(&self, id: i32) -> Option<String> {
         match &self.window_def(id)?.kind {
             WidgetKind::Window { title, .. } => Some(
