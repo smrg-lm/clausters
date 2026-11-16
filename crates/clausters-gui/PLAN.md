@@ -2077,6 +2077,17 @@ holds what is open.
   lengthens them, the empty grid a press draws on), an audio editor's
   selection edges, the score editor's elements, every text field.
 
+  **Text first, as the current editor has it** *(added 2026-11-16, at the
+  user's request, after WS6)*. Editing text is where a missing cursor is
+  felt most, and the behaviour to match is the current editor's, checked
+  side by side with it: the I-beam (`text`) over the text a press puts a
+  caret in -- the `code` element's text area, a `text` field, the post
+  window's lines and a documentation page's text, which a press selects --
+  and the arrow over what is not text there: the code's line numbers, the
+  scroll bars, a panel's bar; the hand (`pointer`) over a link, in the post
+  window and in the documentation. A drag that selects keeps the I-beam
+  until its release, wherever the pointer goes.
+
   **Where it lives.** The cursor is a question the hit-test already answers:
   what lies under the pointer, and what a press there would start. So it is
   one more question an element answers (beside `needs`, `natural`, `slot`),
