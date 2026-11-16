@@ -86,6 +86,14 @@ struct Face {
     faces: Vec<Loaded>,
     /// Cap height per pixel size: what makes a capital fill the body box.
     cap: f32,
+    /// Each face's cap height per pixel size, which sizes its glyphs: the
+    /// host's for the faces it falls back to, which are drawn at its size,
+    /// and the monospaced face's own, so a capital of code stands as tall
+    /// as a capital of the interface.
+    caps: Vec<f32>,
+    /// Which of `faces` is the monospaced one ([`MONO`]), the face of
+    /// [`Family::Mono`](super::Family) and no fallback of the interface's.
+    mono: Option<usize>,
     /// The advance of a digit per pixel size -- the *nominal* cell, for the size
     /// roles that reserve room for N characters.
     digit: f32,
@@ -98,11 +106,13 @@ impl Face {
     }
 
     /// **The face that draws `c`**: the first that has a glyph for it, or the
-    /// host's, which draws its box for a character none has.
+    /// host's, which draws its box for a character none has. The monospaced
+    /// face draws code only.
     fn of(&self, c: char) -> usize {
         self.faces
             .iter()
-            .position(|f| f.font.has_glyph(c))
+            .enumerate()
+            .position(|(i, f)| Some(i) != self.mono && f.font.has_glyph(c))
             .unwrap_or(0)
     }
 }
@@ -172,18 +182,32 @@ impl Atlas {
                 });
             }
         }
-        let font = &faces[0].font;
-        // The cap height: how tall the face draws a capital at the reference
-        // size. Falling back to the ascent covers a face whose 'H' has no
-        // outline (a symbol face), which still measures and still draws.
-        let cap = match font.metrics('H', REF_PX).height as f32 {
-            h if h > 0.0 => h,
-            _ => font
-                .horizontal_line_metrics(REF_PX)
-                .map_or(REF_PX * 0.7, |m| m.ascent),
-        } / REF_PX;
-        let digit = font.metrics('0', REF_PX).advance_width / REF_PX;
-        self.face = Some(Face { faces, cap, digit });
+        // the monospaced face, which code is drawn with whatever the host's is
+        let mono = Font::from_bytes(MONO, settings).ok().map(|font| {
+            faces.push(Loaded {
+                font,
+                data: std::sync::Arc::from(MONO),
+            });
+            faces.len() - 1
+        });
+        let cap = cap_of(&faces[0].font);
+        let digit = faces[0].font.metrics('0', REF_PX).advance_width / REF_PX;
+        let caps = (0..faces.len())
+            .map(|i| {
+                if Some(i) == mono {
+                    cap_of(&faces[i].font)
+                } else {
+                    cap
+                }
+            })
+            .collect();
+        self.face = Some(Face {
+            faces,
+            cap,
+            caps,
+            mono,
+            digit,
+        });
         self.reset();
         true
     }
@@ -209,6 +233,37 @@ impl Atlas {
     pub fn px(&self, scale: f32) -> f32 {
         let cap = self.face.as_ref().map_or(1.0, |f| f.cap).max(0.01);
         (GLYPH_H as f32 * scale / cap).round().max(1.0)
+    }
+
+    /// The pixel size face `face`'s glyphs rasterize at for `scale`: the
+    /// host's ([`px`](Self::px)) for its fallbacks, and for the monospaced
+    /// face the size whose own capital fills the body box.
+    pub fn px_of(&self, face: usize, scale: f32) -> f32 {
+        let cap = self
+            .face
+            .as_ref()
+            .and_then(|f| f.caps.get(face).copied())
+            .unwrap_or(1.0)
+            .max(0.01);
+        (GLYPH_H as f32 * scale / cap).round().max(1.0)
+    }
+
+    /// Which face is the monospaced one, when one is loaded.
+    pub fn mono(&self) -> Option<usize> {
+        self.face.as_ref()?.mono
+    }
+
+    /// The monospaced face's cell at `scale`: its advance, every
+    /// character's.
+    pub fn mono_advance(&self, scale: f32) -> Option<f32> {
+        let face = self.face.as_ref()?;
+        let at = face.mono?;
+        Some(
+            face.faces[at]
+                .font
+                .metrics('0', self.px_of(at, scale))
+                .advance_width,
+        )
     }
 
     /// The nominal advance at `scale` -- a digit's, since the roles that ask are
@@ -257,7 +312,7 @@ impl Atlas {
             .as_ref()
             .and_then(|f| f.faces.get(face))
             .map_or(1.0, |f| f.font.units_per_em());
-        self.px(scale) / units.max(1.0)
+        self.px_of(face, scale) / units.max(1.0)
     }
 
     /// The distance from the body box's top to the baseline at `scale` -- where
@@ -295,7 +350,7 @@ impl Atlas {
     /// rasterized into the texture if it is not there yet. `None` when no
     /// face is loaded or there is no such face.
     pub fn glyph_id(&mut self, face: usize, id: u16, scale: f32) -> Option<Glyph> {
-        let px = self.px(scale);
+        let px = self.px_of(face, scale);
         let key = (face as u8, id, px as u32);
         if let Some(g) = self.map.get(&key) {
             return Some(*g);
@@ -457,6 +512,24 @@ pub const EMBEDDED: &[u8] = include_bytes!("../../assets/fonts/DejaVuSans.ttf");
 /// draw: a subset of Noto Sans Devanagari, compiled in beside it and fallen
 /// back to for a character the host's face has no glyph for.
 pub const DEVANAGARI: &[u8] = include_bytes!("../../assets/fonts/NotoSansDevanagari.ttf");
+
+/// **The face the host draws code with**: JetBrains Mono, whole, the face
+/// the editor writes its code in, compiled in beside the others and
+/// loaded with whichever face the interface is drawn with
+/// ([`Family::Mono`](super::Family)).
+pub const MONO: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMono.ttf");
+
+/// The cap height of `font` per pixel size: how tall it draws a capital at
+/// the reference size. Falling back to the ascent covers a face whose 'H'
+/// has no outline (a symbol face), which still measures and still draws.
+fn cap_of(font: &Font) -> f32 {
+    (match font.metrics('H', REF_PX).height as f32 {
+        h if h > 0.0 => h,
+        _ => font
+            .horizontal_line_metrics(REF_PX)
+            .map_or(REF_PX * 0.7, |m| m.ascent),
+    }) / REF_PX
+}
 
 /// Loads [`EMBEDDED`] as the host's typeface, where none is loaded: a second
 /// host of one page finds the first one's face, or the one a client handed

@@ -477,7 +477,8 @@ when the window's own properties matter.
 One widget at a time holds the **focus**, and it is the only one keys reach.
 Click a `text` field to focus it and type; press **Tab** to walk the window's
 focusable widgets in the order they are laid out, **Shift+Tab** back along
-them. The focused widget wears a ring in the theme's `focus` role, so where the
+them -- except out of a `code` editor, which keeps Tab to indent with: from it
+the ring moves on **Ctrl+Tab** and **Ctrl+Shift+Tab**. The focused widget wears a ring in the theme's `focus` role, so where the
 keyboard is pointing is always visible.<!-- web --> A canvas is focusable, and while it holds the focus the host reads the keys.<!-- /web -->
 
 **Every control is a stop on that ring**, worked by the keys a reader already
@@ -1312,12 +1313,12 @@ the window's own group.
 ## The rest of the elements
 
 ```python
-from clausters.gui import (bpf, canvas, curve, keys, meter, nodes, nodetree,
-                           piano, post, score)
+from clausters.gui import (bpf, canvas, code, curve, keys, meter, nodes,
+                           nodetree, piano, post, score)
 ```
 
 ```ts
-import { bpf, canvas, curve, keys, meter, nodes, nodetree, piano, post, score } from "clausters/gui";
+import { bpf, canvas, code, curve, keys, meter, nodes, nodetree, piano, post, score } from "clausters/gui";
 ```
 
 | Element | Shortcut | What it is |
@@ -1329,6 +1330,7 @@ import { bpf, canvas, curve, keys, meter, nodes, nodetree, piano, post, score } 
 | `score` | — | an engraved notation page: the client engraves and sends a display list, the host fits and tessellates it. A click names an element, a drag on a note transposes it (only what has a pitch drags) |
 | `canvas` | — | a {{alt script-supplied || page-supplied}} WGSL shader over the widget area, fed by `params` and by control `buses` |
 | `label` | — | static text: `{{api text_size}}`, `wrap`, `align` |
+| `code` | — | an editor of code in the monospaced face: line numbers, the line the caret is on, selection by every hand, the host's clipboard, undo by typing run, and indentation by a level (`indent`) with Enter keeping it and opening one after a block in `language`. Tab indents in it, Ctrl+Tab leaves it; its text is read by a query, and `"dirty"` says when it stops or starts being the one marked `saved` |
 | `post` | — | a post window: the lines a session writes, appended by a set of their kind ({{alt `set(out=text)` || `set({ out: text })`}}, `err`, `result`, `info`) and emptied by `clear`. It keeps `keep` lines, follows the newest while the reader is at the end, and copies what a hand selects; only the rows in view are measured and drawn |
 
 `curve`, `nodes` and `keys` are the model's names; `bpf`, `nodetree` and

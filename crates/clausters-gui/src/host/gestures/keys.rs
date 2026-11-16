@@ -69,7 +69,9 @@ impl Gestures {
         if let Some(out) = super::naming::key(host, ctx, &key, clipboard) {
             return Some(out);
         }
-        if key == Key::Tab {
+        // **Tab is the ring's**, unless the focused element keeps it (code,
+        // where it indents): then Ctrl+Tab and Ctrl+Shift+Tab leave it.
+        if key == Key::Tab && (ctx.ctrl || !focused_takes_tab(host, ctx)) {
             return Some(focus::step(host, ctx, ctx.shift));
         }
         // **Escape asks a dialog to go**: with one up it is the dialog's,
@@ -1118,4 +1120,17 @@ fn walk_writes(
     }
     out.push(GestureEffect::Redraw(def_id));
     out
+}
+
+/// Whether the element focused in this window keeps Tab for itself
+/// ([`Element::takes_tab`](crate::host::widget::Element::takes_tab)).
+fn focused_takes_tab(host: &Host, ctx: &GestureCtx) -> bool {
+    let Some((fdef, id)) = host.focused() else {
+        return false;
+    };
+    fdef == ctx.def_id
+        && matches!(
+            host.widget_kind(ctx.def_id, id),
+            Some(crate::host::widget::WidgetKind::Custom(el)) if el.takes_tab()
+        )
 }

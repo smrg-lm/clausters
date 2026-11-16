@@ -647,11 +647,41 @@ fn bitmap_glyph(mesh: &mut Mesh, ch: char, x: f32, y: f32, scale: f32, color: Co
 /// with a face loaded, the width of `s` **shaped** (`shape`), which is
 /// what [`text`] draws; with the bitmap, its cells.
 pub fn width(s: &str, scale: f32) -> f32 {
+    width_in(Family::Ui, s, scale)
+}
+
+/// **The faces a text is drawn with**: the interface's, or code's, whose
+/// face is monospaced. Every measurement and drawing below has a form that
+/// takes one (`_in`); the bare form is the interface's. With no face loaded
+/// both are the bitmap, which is fixed-pitch already.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Family {
+    #[default]
+    Ui,
+    Mono,
+}
+
+/// [`width`] in `family`.
+pub fn width_in(family: Family, s: &str, scale: f32) -> f32 {
     #[cfg(feature = "font-atlas")]
     if atlas::has_face() {
-        return shape::shape(s, scale).width;
+        return shape::shape_in(family, s, scale).width;
     }
+    let _ = family;
     s.chars().map(|c| advance_of(c, scale)).sum()
+}
+
+/// **The cell of `family` at `scale`**: the monospaced face's advance, or
+/// the interface's nominal one ([`advance`]).
+pub fn cell_in(family: Family, scale: f32) -> f32 {
+    #[cfg(feature = "font-atlas")]
+    if family == Family::Mono
+        && let Some(w) = atlas::with(|a| a.mono_advance(scale))
+    {
+        return w;
+    }
+    let _ = family;
+    advance(scale)
 }
 
 /// The width of the first `cols` characters of `s` -- where a caret sits, and
@@ -686,21 +716,31 @@ pub fn column_at(s: &str, dx: f32, scale: f32) -> usize {
 /// in a line that mixes directions is not the width of what comes before it
 /// (`shape::Shaped::caret_x`). With the bitmap it is that width.
 pub fn caret_x(s: &str, at: usize, scale: f32) -> f32 {
+    caret_x_in(Family::Ui, s, at, scale)
+}
+
+/// [`caret_x`] in `family`.
+pub fn caret_x_in(family: Family, s: &str, at: usize, scale: f32) -> f32 {
     #[cfg(feature = "font-atlas")]
     if atlas::has_face() {
-        return shape::shape(s, scale).caret_x(s, at);
+        return shape::shape_in(family, s, scale).caret_x(s, at);
     }
-    width(&s[..at.min(s.len())], scale)
+    width_in(family, &s[..at.min(s.len())], scale)
 }
 
 /// **The caret position a click `dx` pixels from the left of `s` lands on**:
 /// the grapheme boundary of `s` whose [`caret_x`] is nearest, as a byte.
 pub fn byte_at(s: &str, dx: f32, scale: f32) -> usize {
+    byte_at_in(Family::Ui, s, dx, scale)
+}
+
+/// [`byte_at`] in `family`.
+pub fn byte_at_in(family: Family, s: &str, dx: f32, scale: f32) -> usize {
     use unicode_segmentation::UnicodeSegmentation;
     s.grapheme_indices(true)
         .map(|(at, _)| at)
         .chain(std::iter::once(s.len()))
-        .map(|at| (at, (caret_x(s, at, scale) - dx).abs()))
+        .map(|at| (at, (caret_x_in(family, s, at, scale) - dx).abs()))
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map_or(0, |(at, _)| at)
 }
@@ -709,15 +749,23 @@ pub fn byte_at(s: &str, dx: f32, scale: f32) -> usize {
 /// spans a selection paints, `(left, right)` in pixels from its left --
 /// several where it crosses a change of direction.
 pub fn spans(s: &str, from: usize, to: usize, scale: f32) -> Vec<(f32, f32)> {
+    spans_in(Family::Ui, s, from, to, scale)
+}
+
+/// [`spans`] in `family`.
+pub fn spans_in(family: Family, s: &str, from: usize, to: usize, scale: f32) -> Vec<(f32, f32)> {
     #[cfg(feature = "font-atlas")]
     if atlas::has_face() {
-        return shape::shape(s, scale).spans(from, to);
+        return shape::shape_in(family, s, scale).spans(from, to);
     }
     let (from, to) = (from.min(s.len()), to.min(s.len()));
     if to <= from {
         return Vec::new();
     }
-    vec![(width(&s[..from], scale), width(&s[..to], scale))]
+    vec![(
+        width_in(family, &s[..from], scale),
+        width_in(family, &s[..to], scale),
+    )]
 }
 
 /// The size a script's `text_size` actually draws at -- **the one place two
@@ -776,11 +824,16 @@ pub fn ascent(scale: f32) -> f32 {
 /// as an unaccented one, and what kept this whole family of glyphs from moving
 /// any text that was already on screen.
 pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) {
+    text_in(mesh, Family::Ui, s, x, y, scale, color);
+}
+
+/// [`text`] in `family`.
+pub fn text_in(mesh: &mut Mesh, family: Family, s: &str, x: f32, y: f32, scale: f32, color: Color) {
     #[cfg(feature = "font-atlas")]
     if atlas::has_face() {
         // **Shaped first** ([`shape`]): the glyphs that draw `s` and where
         // each stands, in the order they stand on the line.
-        let run = shape::shape(s, scale);
+        let run = shape::shape_in(family, s, scale);
         atlas::with(|a| {
             // The baseline is the body box's bottom, which is where the face's
             // cap height was fitted: an accented capital overshoots above `y`
@@ -826,6 +879,7 @@ pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) 
     // is drawn at the whole step nearest the size ([`bitmap_pixel`]), centred
     // in the cell the size asked for -- which every measurement still is, so
     // nothing a layout computed moves.
+    let _ = family;
     let px = bitmap_pixel(scale);
     let inset = (GLYPH_W as f32 * (scale - px) * 0.5).floor().max(0.0);
     let top = (y + GLYPH_H as f32 * (scale - px) * 0.5).round();

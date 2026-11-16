@@ -27,6 +27,8 @@ pub(crate) fn to_key(key: &Key) -> Option<HostKey> {
         Key::Named(NamedKey::ArrowDown) => Some(HostKey::Down),
         Key::Named(NamedKey::Home) => Some(HostKey::Home),
         Key::Named(NamedKey::End) => Some(HostKey::End),
+        Key::Named(NamedKey::PageUp) => Some(HostKey::PageUp),
+        Key::Named(NamedKey::PageDown) => Some(HostKey::PageDown),
         Key::Named(NamedKey::Enter) => Some(HostKey::Enter),
         Key::Named(NamedKey::Space) => Some(HostKey::Char(' ')),
         Key::Named(NamedKey::Tab) => Some(HostKey::Tab),

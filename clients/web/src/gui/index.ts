@@ -48,7 +48,7 @@ export type { MapHolder, Pass, PlayheadSyncOptions, PlayheadSyncTargets } from "
 // `guidef`, by the same names; the rest of the module (its vocabularies and
 // its serializer) is `gui.guidef`, as in the Python client.
 export {
-    ICON, KEEP, Source, View, bpf, button, canvas, choice, curve, dialog, entry,
+    ICON, KEEP, Source, View, bpf, button, canvas, choice, code, curve, dialog, entry,
     envToPoints, fileDialog, files, keys, knob, label, layout, menu, meter, node,
     nodes, nodetree, number, pageJson, pager, pane, panel, patch,
     peaksCacheEmptyFile, peaksCacheFile, peaksCacheStreamFile, peaksCacheUpdateFile,

@@ -46,6 +46,7 @@ pub(crate) fn switch_value(v: f32) -> clausters_core::osc::OscType {
 mod button;
 mod canvas;
 mod choice;
+mod code;
 mod control;
 pub(crate) mod curve;
 mod files;
@@ -81,6 +82,7 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         // One of several. It was `menu`, which now names the tree of entries a
         // window, a button or a context carries as a prop (`host::menu`).
         "choice" => choice::build,
+        "code" => code::build,
         "curve" => curve::build,
         "keys" => keys::build,
         "knob" => knob::build,

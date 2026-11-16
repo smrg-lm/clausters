@@ -144,6 +144,8 @@ pub fn key_named(name: &str) -> Result<Key, String> {
         "enter" | "return" => Key::Enter,
         "home" => Key::Home,
         "end" => Key::End,
+        "pageup" | "pgup" => Key::PageUp,
+        "pagedown" | "pgdn" => Key::PageDown,
         "left" => Key::Left,
         "right" => Key::Right,
         "up" => Key::Up,

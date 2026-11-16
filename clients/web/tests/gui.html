@@ -277,9 +277,9 @@
         await sleep(300);
         postWin.widget("post").set({ out: "alpha beta\ngamma delta\nepsilon\n" });
         await sleep(100);
-        host.pointer(postWin, "press", 52, 12);
-        host.pointer(postWin, "move", 60, 30);
-        host.pointer(postWin, "release", 60, 30);
+        host.pointer(postWin, "press", 60, 12);
+        host.pointer(postWin, "move", 52, 30);
+        host.pointer(postWin, "release", 52, 30);
         let postInfo = await postWin.widget("post").query();
         for (let i = 0; i < 40 && postInfo.props.selected !== "beta\ngamma"; i++) {
           await sleep(50);
@@ -290,6 +290,45 @@
         }
         log(`a post window selected ${JSON.stringify(postInfo.props.selected)}`);
         postWin.close();
+
+        // **An editor of code takes the keys the script plays**: Tab brings
+        // the focus in, what is typed keeps and opens the indentation, a
+        // selection is cut and pasted twice, an undo takes the last paste
+        // back, Shift+Tab takes the level off and Tab puts it back.
+        const codeWin = host.open(gui.view(
+          { title: "code", w: 480, h: 240 },
+          gui.code("", { language: "python", name: "code" }),
+        ));
+        await sleep(300);
+        const codeText = async () => (await codeWin.widget("code").query()).props.text;
+        const expectText = async (want, step) => {
+          let got = await codeText();
+          for (let i = 0; i < 40 && got !== want; i++) {
+            await sleep(50);
+            got = await codeText();
+          }
+          if (got !== want) {
+            throw new Error(`code, ${step}: ${JSON.stringify(got)} for ${JSON.stringify(want)}`);
+          }
+        };
+        host.pressKey(codeWin, "Tab");
+        host.typeText(codeWin, "def f():\nreturn 1");
+        await expectText("def f():\n    return 1", "typed");
+        host.pressKey(codeWin, "Left", "shift");
+        host.pressKey(codeWin, "x", "ctrl");
+        await expectText("def f():\n    return ", "cut");
+        host.pressKey(codeWin, "v", "ctrl");
+        host.pressKey(codeWin, "v", "ctrl");
+        await expectText("def f():\n    return 11", "pasted");
+        host.pressKey(codeWin, "z", "ctrl");
+        await expectText("def f():\n    return 1", "undone");
+        host.pressKey(codeWin, "Tab", "shift");
+        await expectText("def f():\nreturn 1", "unindented");
+        host.pressKey(codeWin, "Home");
+        host.pressKey(codeWin, "Tab");
+        await expectText("def f():\n    return 1", "indented");
+        log("an editor of code typed, cut, pasted, undid and indented");
+        codeWin.close();
 
         // **A roll that listens paints what is played, in a page as on the
         // desktop.** The host reads the bytes of a MIDI message into a note
@@ -338,7 +377,7 @@
         synth.free();
         verdict(`PASS: page GUI carrier -- event ${JSON.stringify(events[0])}, `
           + `bound freq ${before} -> ${after}, touch ${touched}, scripted ${scripted}, `
-          + `scripted keys typed "${entered()}", a post window selected, a played key painted, `
+          + `scripted keys typed "${entered()}", a post window selected, code edited, a played key painted, `
           + `subtree freed`);
       }
 

@@ -1065,15 +1065,18 @@ pub enum Key {
     Down,
     Home,
     End,
+    PageUp,
+    PageDown,
     /// Enter: a newline in a multiline field, ignored in a single-line one.
     Enter,
     /// Escape: closes whatever is open over the window -- a list, a tip. Only
     /// the popup layer reads it; with nothing open it is the front's.
     Escape,
-    /// Tab: **the focus ring's**, never an element's. The machine consumes it
-    /// before any element sees it (see
-    /// [`Gestures::key`](super::super::gestures::Gestures::key)), which is what
-    /// makes a window keyboard-navigable without every element agreeing to it.
+    /// Tab: **the focus ring's**. The machine consumes it before any element
+    /// sees it (see [`Gestures::key`](super::super::gestures::Gestures::key)),
+    /// which is what makes a window keyboard-navigable without every element
+    /// agreeing to it -- except an element that keeps it
+    /// ([`Element::takes_tab`]), from which Ctrl+Tab leaves.
     Tab,
     /// A function key, `F1` to `F12`: nothing edits with one, so it reaches an
     /// element only as the verb a binding gave it.
@@ -1958,6 +1961,14 @@ pub trait Element: fmt::Debug {
     /// this control does.
     fn activate(&mut self, _input: &Input) -> Option<Events> {
         None
+    }
+
+    /// **Whether this element keeps Tab for itself** while it has the
+    /// keyboard: code, where Tab and Shift+Tab indent and unindent. The
+    /// focus ring then moves on Ctrl+Tab and Ctrl+Shift+Tab instead. `false`
+    /// by default: Tab is the ring's.
+    fn takes_tab(&self) -> bool {
+        false
     }
 
     /// Whether this element, while focused, is **taking typed text** -- as

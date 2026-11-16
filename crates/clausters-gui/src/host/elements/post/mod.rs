@@ -12,6 +12,9 @@
 //! pixel offset over the whole, so ten thousand lines written at once cost
 //! the append and the rows on screen -- nothing measures the rest.
 //!
+//! Its lines are written in the monospaced face ([`Family::Mono`]), as the
+//! code they come from is.
+//!
 //! **It follows the end** while the reader is at it: a write shows the
 //! newest lines, a reader who scrolls up stays where they read, and coming
 //! back down to the end follows again. `autoscroll` off never follows.
@@ -29,7 +32,7 @@ use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyI
 use crate::host::widget::parse;
 use crate::host::widget::size::Natural;
 use clausters_gui_draw::draw::Draw;
-use clausters_gui_draw::font;
+use clausters_gui_draw::font::{self, Family};
 use clausters_gui_draw::metrics::Metrics;
 use clausters_gui_draw::rect::Rect;
 use clausters_gui_draw::theme::{Color, Theme};
@@ -144,7 +147,9 @@ impl PostView {
             return kept.clone();
         }
         let shown = display(&line.text);
-        let breaks = post::rows(&shown, g.text.w, |s| font::width(s, g.size));
+        let breaks = post::rows(&shown, g.text.w, |s| {
+            font::width_in(Family::Mono, s, g.size)
+        });
         rows.lines.insert(n, (line.text.len(), breaks.clone()));
         breaks
     }
@@ -273,7 +278,7 @@ impl PostView {
         }
         let text = self.post.line(n).map_or("", |l| l.text.as_str());
         let shown = display(&text[from..to]);
-        let byte = from + font::byte_at(&shown, x - g.text.x, g.size);
+        let byte = from + font::byte_at_in(Family::Mono, &shown, x - g.text.x, g.size);
         Pos { line: n, byte }
     }
 
@@ -376,7 +381,7 @@ impl PostView {
                 };
                 let ends = n < b.line && to == line.text.len();
                 let [r, gr, bl, _] = theme.selection;
-                for (l, rr) in font::spans(&shown, s - from, e - from, g.size) {
+                for (l, rr) in font::spans_in(Family::Mono, &shown, s - from, e - from, g.size) {
                     mesh.rect(
                         Rect::new(g.text.x + l, y, rr - l, g.row_h),
                         [r, gr, bl, 0.35],
@@ -384,7 +389,7 @@ impl PostView {
                 }
                 if ends {
                     // a line's end selected: a sliver past its text
-                    let x = g.text.x + font::width(&shown, g.size);
+                    let x = g.text.x + font::width_in(Family::Mono, &shown, g.size);
                     mesh.rect(Rect::new(x, y, g.size * 2.0, g.row_h), [r, gr, bl, 0.35]);
                 }
             }
@@ -393,7 +398,7 @@ impl PostView {
                 if s >= e {
                     continue;
                 }
-                let x = g.text.x + font::width(&shown[..s - from], g.size);
+                let x = g.text.x + font::width_in(Family::Mono, &shown[..s - from], g.size);
                 font::text(
                     mesh,
                     &shown[s - from..e - from],

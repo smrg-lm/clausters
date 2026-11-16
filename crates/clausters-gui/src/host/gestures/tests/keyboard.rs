@@ -324,6 +324,38 @@ fn tab_past_the_last_stop_hands_the_keyboard_back() {
     );
 }
 
+/// **An editor of code keeps Tab, and Ctrl+Tab leaves it.** Entered from the
+/// ring, Tab indents the code instead of walking on; Ctrl+Tab walks on, and
+/// a field keeps Tab the ring's.
+#[test]
+fn an_editor_of_code_keeps_tab_and_ctrl_tab_leaves_it() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"row","children":[
+            {"id":5,"type":"code"},{"id":6,"type":"text"}]}"#,
+    );
+    let g = Gestures::default();
+    let mut ctx = GestureCtx::new(1, 600, 400);
+    key(&g, &mut host, &ctx, Key::Tab);
+    assert_eq!(host.focused(), Some((1, 5)), "the ring enters the editor");
+    key(&g, &mut host, &ctx, Key::Tab);
+    assert_eq!(host.focused(), Some((1, 5)), "Tab stays in it");
+    let text = match host.widget_kind(1, 5) {
+        Some(crate::host::widget::WidgetKind::Custom(el)) => el
+            .info()
+            .into_iter()
+            .find(|(k, _)| k == "text")
+            .map(|(_, v)| v),
+        _ => None,
+    };
+    assert_eq!(text, Some(serde_json::Value::from("    ")), "and indents");
+    ctx.ctrl = true;
+    key(&g, &mut host, &ctx, Key::Tab);
+    assert_eq!(host.focused(), Some((1, 6)), "Ctrl+Tab walks on");
+    ctx.ctrl = false;
+    key(&g, &mut host, &ctx, Key::Tab);
+    assert_ne!(host.focused(), Some((1, 6)), "a field's Tab is the ring's");
+}
+
 /// **A frequency axis does not zoom past its own analysis.** Below a few FFT
 /// bins across the whole body the curve is the interpolation between two
 /// neighbours -- a flat line that no longer answers to the signal -- so the

@@ -312,13 +312,13 @@ fn char_at(value: &str, p: usize) -> char {
 
 /// The byte offset where the line containing `pos` begins (just after the
 /// previous newline, or 0).
-fn line_start(value: &str, pos: usize) -> usize {
+pub(crate) fn line_start(value: &str, pos: usize) -> usize {
     value[..pos].rfind('\n').map_or(0, |i| i + 1)
 }
 
 /// The byte offset where the line containing `pos` ends (at the next newline, or
 /// the end).
-fn line_end(value: &str, pos: usize) -> usize {
+pub(crate) fn line_end(value: &str, pos: usize) -> usize {
     value[pos..].find('\n').map_or(value.len(), |i| pos + i)
 }
 

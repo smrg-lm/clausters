@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: an editor of code</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             max-width: 62rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A <b>code</b> element holds a text drawn in the monospaced
+face, with its line numbers and the line the caret is on, and edits it as a code
+editor does: click to place the caret (two clicks a word, three a line, a press
+on a line's number the whole line), drag or Shift and an arrow to select, Ctrl+X,
+Ctrl+C and Ctrl+V, Ctrl+Z to undo a run of typing at once. <b>Tab indents</b>
+and Shift+Tab takes a level off; Enter keeps the line's indentation and adds one
+after a line that opens a block. Tab stays in the editor: Ctrl+Tab moves on.
+<br><br>Under it is a <b>post</b> window with what a session might have printed;
+drag the divider between the two to give one more room.</div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/code.py, call for call:
+      boot a host, open a window split between a code editor holding a short
+      program and a post window, write a notice, output and a result to the
+      post, listen to the editor and mark its text saved.
+
+      One difference, the platform's: the script's window is a window of the
+      platform, and the page's is a canvas the host appends to the page; what
+      the script prints, the page writes under the note.
+
+      Serve clients/web (the package root) and open /examples/panels/code.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui } from "../../dist/index.js";
+      import { loadCore } from "../../dist/page.js";
+
+      // The one line the script has no counterpart for: the numeric core is
+      // wasm here and is fetched on demand.
+      await loadCore();
+
+      const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
+
+      // ---- the code, and the post under it ----
+      const TEXT = `from clausters import Session
+
+def chord(root, *steps):
+    """The notes of a chord over root."""
+    notes = [root]
+    for step in steps:
+        notes.append(notes[-1] + step)
+    return notes
+
+with Session() as s:
+    for note in chord(60, 4, 3):
+        s.synth("default", note=note)
+`;
+
+      const host = await new GuiHost().boot();
+      const window = await gui.view(
+        { split: true, title: "code", w: 720, h: 520 },
+        gui.code(TEXT, { language: "python", name: "code", weight: 2.0 }),
+        gui.post({ name: "post", weight: 1.0 }),
+      ).open(null, { host });
+      const editor = window.widget("code");
+      const out = window.widget("post");
+
+      // ---- what a session printed ----
+      out.set({ info: "session started\n" });
+      out.set({ out: "[60, 64, 67]\n" });
+      out.set({ result: "None" });
+
+      // ---- edited, and saved ----
+      editor.onEvent((...payload) => log(`code ${payload.join(" ")}`));
+      editor.set({ saved: 1 });
+    </script>
+  </body>
+</html>

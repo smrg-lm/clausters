@@ -2674,6 +2674,48 @@ export function progress(
 }
 
 /**
+ * A `code` editor: `text` in the monospaced face, with its line numbers, the
+ * line the caret is on, a selection and the caret, scrolled on both axes.
+ *
+ * It edits as a code editor does: by grapheme, word and line, Shift
+ * extending; two clicks a word, three a line, a press on a line's number the
+ * line; cut, copy and paste through the host's clipboard; undo and redo with
+ * a run of typing as one step. `indent` is a level -- a number of spaces (4 by
+ * default) or `"tab"`: **Tab** inserts one or indents the lines selected,
+ * Shift+Tab takes one off, Backspace in a line's leading spaces goes back one,
+ * and Enter keeps the line's indentation, a level more after a line that
+ * opens a block in `language` (`"python"` or `"javascript"`). Tab stays in the
+ * editor; Ctrl+Tab moves the focus on. `lineNumbers: false` takes the numbers
+ * away.
+ *
+ * Its text is reported by `query` (`text`, with `line`, `column`, `selected`
+ * and `dirty`), and the event `"dirty"` with `1` or `0` says when the text
+ * stops or starts again being the one last marked saved -- by
+ * `set({ saved: 1 })`, or by a `set({ text })` that replaces it.
+ */
+export function code(
+    text = "",
+    options: WidgetOptions & {
+        language?: string;
+        indent?: number | "tab";
+        lineNumbers?: boolean;
+        textSize?: number;
+    } = {},
+): View {
+    const { language, indent, lineNumbers, textSize, ...rest } = options;
+    return node("code", {
+        ...rest,
+        ...drop([
+            ["text", text === "" ? undefined : text],
+            ["language", language],
+            ["indent", indent],
+            ["line_numbers", flag(lineNumbers)],
+            ["text_size", textSize],
+        ]),
+    });
+}
+
+/**
  * A `post` window: the lines a session writes, as it writes them.
  *
  * Written to by a set of its kind -- `set({ out: text })` for output, `err`

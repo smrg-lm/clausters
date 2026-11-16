@@ -243,6 +243,7 @@ __all__ = [
     "separator",
     "progress",
     "post",
+    "code",
     "tabs",
     "pager",
     "toolbar",
@@ -1975,6 +1976,36 @@ def progress(value: float | None = None, *, label: str | None = None,
     until the next ``set(value=...)``."""
     extra = _drop_none(value=value, label=label, text_size=text_size, color=color)
     return node("progress", id=id, **extra, **props)
+
+
+def code(text: str = "", *, language: str | None = None,
+         indent: "int | str | None" = None, line_numbers: bool | None = None,
+         text_size: float | None = None, id: int | None = None, **props) -> View:
+    """A ``code`` editor: ``text`` in the monospaced face, with its line
+    numbers, the line the caret is on, a selection and the caret, scrolled on
+    both axes.
+
+    It edits as a code editor does: by grapheme, word and line, Shift
+    extending; two clicks a word, three a line, a press on a line's number the
+    line; cut, copy and paste through the host's clipboard; undo and redo
+    with a run of typing as one step. ``indent`` is a level -- a number of
+    spaces (4 by default) or ``"tab"``: **Tab** inserts one or indents the
+    lines selected, Shift+Tab takes one off, Backspace in a line's leading
+    spaces goes back one, and Enter keeps the line's indentation, a level
+    more after a line that opens a block in ``language`` (``"python"`` or
+    ``"javascript"``). Tab stays in the editor; Ctrl+Tab moves the focus on.
+    ``line_numbers=False`` takes the numbers away.
+
+    Its text is reported by `query` (``text``, with ``line``, ``column``,
+    ``selected`` and ``dirty``), and the event ``"dirty"`` with ``1`` or ``0``
+    says when the text stops or starts again being the one last marked
+    saved -- by ``set(saved=1)``, or by a ``set(text=...)`` that replaces it."""
+    extra = _drop_none(language=language, indent=indent, text_size=text_size)
+    if text:
+        extra["text"] = text
+    if line_numbers is not None:
+        extra["line_numbers"] = 1 if line_numbers else 0
+    return node("code", id=id, **extra, **props)
 
 
 def post(*, keep: int | None = None, wrap: bool | None = None,

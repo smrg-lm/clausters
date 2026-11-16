@@ -1649,6 +1649,13 @@ effect of a reimplementation. The review is also an inventory: anything the
 current editor does that this list does not name is added to it, with its
 mark, before checkpoint 3 is checked against it.
 
+**The faces are the current editor's, whole** *(added 2026-11-16, at the
+user's request)*. The host draws code, the documentation and the window with
+the typefaces the current editor draws them with, embedded complete rather
+than cut to a subset, so the look the review compares starts from the same
+letters: JetBrains Mono for code (WS6), Inter for the documentation (WS11)
+and the window's chrome (WS12).
+
 Editing (today CodeMirror 6 with its basic setup, plus the editor's own
 extensions):
 
@@ -1921,7 +1928,7 @@ something reusable if the track stops there.
   application wires its session to it when it moves into the host (WS12,
   WS13); until then the example writes to it. Not yet: web addresses in the
   output opening in the browser, which the bar now names.
-- ⬜ **WS6 — The code element: the text base.** Decided first, by extending the
+- ✅ **WS6 — The code element: the text base.** Decided first, by extending the
   probe into a comparison: cosmic-text's editor, Parley's plain editor, or
   ropey with the host's own shaping and atlas (the host already shapes, orders
   bidi text, steps graphemes and composes input; cosmic-text brought a second
@@ -1936,6 +1943,30 @@ something reusable if the track stops there.
   `crates/clausters-gui-draw/assets/fonts/`). Acceptance: a script types,
   selects, cuts, pastes, undoes and indents through the host's own keyboard
   dispatch, asserting on the text after each step, natively and in a page.
+
+  **What shipped (2026-11-16).** The host's own text base, recorded in
+  `docs/decisions.md` ("Code is edited on the host's own text base") with
+  the numbers: cosmic-text alone is 2.1 MB of wasm (0.69 MB gzip) and a
+  second text stack, the host's own adds nothing but the face. A `code`
+  widget a GuiDef names, with its builder in both clients and its row in the
+  protocol: the open decision below is taken for it. The model is
+  `host/graphics/code/` (one `String` under the `text` field's caret model,
+  a line index, a history of changes rather than copies with a run of typing
+  as one step and the dirty mark an undo clears, indentation by `indent`
+  with Enter keeping it and opening a level after a block in `language`);
+  the element is `host/elements/code/` (line numbers, the current line, the
+  selection and the caret on the monospaced grid with tabs to their stops,
+  both scrolls with the caret kept in view, the hand by click, word, line
+  and the line's number, the keys including PageUp and PageDown, which the
+  host's keyboard gained, the context menu and the window's edit verbs). The
+  drawing base gained a family (`font::Family::Mono`, every measurement and
+  drawing in an `_in` form) and JetBrains Mono, whole, as the user asked;
+  the post window draws in it too. **Tab is claimed** by an element that
+  keeps it (`Element::takes_tab`), and Ctrl+Tab leaves it. A key in a
+  5,000-line file costs well under the budget; checked natively by script
+  and in a page (`gui.html`). An example in each client puts the editor
+  over a post window.
+
 - ⬜ **WS7 — Highlighting, incremental.** tree-sitter kept as a tree: an edit
   is applied to it and the text re-parsed incrementally, and only the visible
   lines are highlighted and re-shaped. Python and JavaScript; syntax colors as
@@ -2012,8 +2043,8 @@ something reusable if the track stops there.
   name**, or the editor application's own elements only. If they are widgets,
   both clients' builders and the protocol reference come with them. **Taken
   for `post` at WS5 (2026-11-16): a widget**, since a running output is
-  useful to any script and costs the catalog one row; `code` and the
-  documentation are still open, taken at WS6 and WS11.
+  useful to any script and costs the catalog one row; **and for `code` at
+  WS6, the same way**. The documentation is still open, taken at WS11.
 - **Nesting.** An application's window as a panel is the first step of "An
   application inside another" (`crates/clausters-document/PLAN.md`, Future
   directions); the dock must not decide that question by accident -- a

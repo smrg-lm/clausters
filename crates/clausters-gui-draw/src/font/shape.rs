@@ -37,7 +37,7 @@ use unicode_bidi::BidiInfo;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::atlas::{self, Atlas};
-use super::{ADVANCE, outline, symbol};
+use super::{ADVANCE, Family, outline, symbol};
 
 /// One placed piece of a shaped run.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -82,7 +82,7 @@ const KEPT: usize = 4096;
 
 /// The kept runs: by a hash of the string and the size, each beside the
 /// string it was shaped from, so a lookup builds nothing.
-type Kept = HashMap<(u64, u32), Vec<(Box<str>, Rc<Shaped>)>>;
+type Kept = HashMap<(u64, u32, Family), Vec<(Box<str>, Rc<Shaped>)>>;
 
 thread_local! {
     /// The strings shaped at each size, kept until what they were shaped
@@ -94,12 +94,17 @@ thread_local! {
 /// asked, so a frame that measures and draws a label shapes it once. With no
 /// face loaded, empty.
 pub fn shape(s: &str, scale: f32) -> Rc<Shaped> {
+    shape_in(Family::Ui, s, scale)
+}
+
+/// [`shape`] in `family`: code is shaped with the monospaced face first.
+pub fn shape_in(family: Family, s: &str, scale: f32) -> Rc<Shaped> {
     use std::hash::{Hash, Hasher};
     let now = super::generation();
     let key = {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         s.hash(&mut hasher);
-        (hasher.finish(), scale.to_bits())
+        (hasher.finish(), scale.to_bits(), family)
     };
     let kept = SHAPED.with(|kept| {
         let mut kept = kept.borrow_mut();
@@ -114,7 +119,7 @@ pub fn shape(s: &str, scale: f32) -> Rc<Shaped> {
     if let Some(shaped) = kept {
         return shaped;
     }
-    let shaped = Rc::new(atlas::with(|a| shape_with(a, s, scale)));
+    let shaped = Rc::new(atlas::with(|a| shape_with(a, s, scale, family)));
     SHAPED.with(|kept| {
         let mut kept = kept.borrow_mut();
         if kept.1 >= KEPT {
@@ -220,7 +225,7 @@ enum Piece {
 }
 
 /// [`shape`], against `atlas`.
-fn shape_with(atlas: &Atlas, s: &str, scale: f32) -> Shaped {
+fn shape_with(atlas: &Atlas, s: &str, scale: f32, family: Family) -> Shaped {
     let mut out = Shaped::default();
     if s.is_empty() || atlas.faces() == 0 {
         return out;
@@ -243,7 +248,7 @@ fn shape_with(atlas: &Atlas, s: &str, scale: f32) -> Shaped {
             let mut pieces: Vec<(Piece, std::ops::Range<usize>)> = Vec::new();
             for (at, grapheme) in s[run.clone()].grapheme_indices(true) {
                 let at = run.start + at;
-                let piece = piece_of(atlas, grapheme);
+                let piece = piece_of(atlas, grapheme, family);
                 match pieces.last_mut() {
                     Some((was, range)) if *was == piece && matches!(piece, Piece::Face(_)) => {
                         range.end = at + grapheme.len();
@@ -311,7 +316,7 @@ fn shape_with(atlas: &Atlas, s: &str, scale: f32) -> Shaped {
 /// **What draws one grapheme**: a symbol or a character a window sent the
 /// outline of, alone, is drawn as it always was; anything else by the first
 /// face that has every character of it, or by the first that has its first.
-fn piece_of(atlas: &Atlas, grapheme: &str) -> Piece {
+fn piece_of(atlas: &Atlas, grapheme: &str, family: Family) -> Piece {
     let mut chars = grapheme.chars();
     let first = chars.next().unwrap_or(' ');
     if chars.next().is_none() && (symbol::ALL.contains(&first) || outline::has(first)) {
@@ -319,15 +324,31 @@ fn piece_of(atlas: &Atlas, grapheme: &str) -> Piece {
     }
     // the joiners and selectors a face need not have do not decide it
     let decides = |c: char| !matches!(c, '\u{200C}' | '\u{200D}' | '\u{FE00}'..='\u{FE0F}');
-    let faces = atlas.faces();
-    (0..faces)
+    // code tries the monospaced face first; the interface never falls back
+    // to it
+    let mono = atlas.mono();
+    let order: Vec<usize> = match family {
+        Family::Mono => mono.into_iter().collect(),
+        Family::Ui => Vec::new(),
+    }
+    .into_iter()
+    .chain((0..atlas.faces()).filter(|&face| Some(face) != mono))
+    .collect();
+    order
+        .iter()
+        .copied()
         .find(|&face| {
             grapheme
                 .chars()
                 .filter(|&c| decides(c))
                 .all(|c| atlas.covers(face, c))
         })
-        .or_else(|| (0..faces).find(|&face| atlas.covers(face, first)))
+        .or_else(|| {
+            order
+                .iter()
+                .copied()
+                .find(|&face| atlas.covers(face, first))
+        })
         .map_or(Piece::Face(0), Piece::Face)
 }
 
@@ -364,6 +385,34 @@ mod tests {
                 Kind::Char(_) => None,
             })
             .collect()
+    }
+
+    /// **Code is drawn on a grid**: in the monospaced family a narrow letter
+    /// and a wide one take the same room, drawn by the monospaced face; the
+    /// interface's face stays proportional and never falls back to it.
+    #[test]
+    fn code_is_drawn_on_a_grid() {
+        assert!(atlas::set_embedded());
+        let mono = atlas::with(|a| a.mono()).expect("the monospaced face loads");
+        let narrow = shape_in(Family::Mono, "iii", 2.0).width;
+        let wide = shape_in(Family::Mono, "WWW", 2.0).width;
+        assert!((narrow - wide).abs() < 0.01, "{narrow} against {wide}");
+        assert!(shape("iii", 2.0).width < shape("WWW", 2.0).width);
+        let faces = |run: &Shaped| -> Vec<u8> {
+            run.items
+                .iter()
+                .filter_map(|i| match i.kind {
+                    Kind::Glyph { face, .. } => Some(face),
+                    Kind::Char(_) => None,
+                })
+                .collect()
+        };
+        assert!(
+            faces(&shape_in(Family::Mono, "ab", 2.0))
+                .iter()
+                .all(|&f| f as usize == mono)
+        );
+        assert!(faces(&shape("ab", 2.0)).iter().all(|&f| f as usize != mono));
     }
 
     /// **A ligature is one glyph**: `fi` in the host's face is the face's own
@@ -429,11 +478,8 @@ mod tests {
     fn a_devanagari_vowel_sign_is_drawn_before_its_consonant() {
         let run = shaped("\u{0915}\u{093F}");
         let faces: Vec<u8> = glyphs(&run).iter().map(|(face, _)| *face).collect();
-        assert!(
-            faces
-                .iter()
-                .all(|&face| face as usize == atlas::with(|a| a.faces()) - 1)
-        );
+        // the faces are the host's, the Devanagari one, the monospaced one
+        assert!(faces.iter().all(|&face| face == 1), "{faces:?}");
         let ids: Vec<u16> = glyphs(&run).into_iter().map(|(_, id)| id).collect();
         assert_eq!(ids.len(), 2, "{run:?}");
         assert_eq!(ids[1], id_of(1, '\u{0915}'), "the consonant second");

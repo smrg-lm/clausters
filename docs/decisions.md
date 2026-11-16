@@ -241,6 +241,7 @@ quoted title lands here, on the link to the entry.
 - [A host draws a list of segments from its files, through the fetch machine it already has (2026-10-22)](decisions/gui.md#a-host-draws-a-list-of-segments-from-its-files-through-the-fetch-machine-it-already-has-2026-10-22)
 - [A list's spectrogram is analyzed where it is looked at (2026-10-22)](decisions/gui.md#a-lists-spectrogram-is-analyzed-where-it-is-looked-at-2026-10-22)
 - [The host ships the faces it shapes (2026-11-08)](decisions/gui.md#the-host-ships-the-faces-it-shapes-2026-11-08)
+- [Code is edited on the host's own text base (2026-11-16)](decisions/gui.md#code-is-edited-on-the-hosts-own-text-base-2026-11-16)
 
 ## [The document and the applications](decisions/apps.md)
 

@@ -6,6 +6,7 @@ use super::*;
 use crate::host::clipboard::Clip;
 use crate::host::widget::element::Mods;
 use crate::host::world::World;
+use clausters_gui_draw::font::Family;
 use clausters_gui_draw::paint::Mesh;
 
 const RECT: Rect = Rect {
@@ -99,7 +100,9 @@ fn a_drag_selects_and_a_copy_is_exactly_what_was_selected() {
     let rows = v.visible(&g);
     assert_eq!(rows.len(), 3);
     // from inside "beta" on the first row to inside "delta" on the second
-    let x_of = |row: &str, at: usize| f64::from(g.text.x + font::width(&row[..at], g.size)) + 0.1;
+    let x_of = |row: &str, at: usize| {
+        f64::from(g.text.x + font::width_in(Family::Mono, &row[..at], g.size)) + 0.1
+    };
     let y_of = |i: usize| f64::from(rows[i].3 + g.row_h * 0.5);
     let inp = input(&m, 1, false);
     v.press((x_of("alpha beta", 6), y_of(0)), &inp);

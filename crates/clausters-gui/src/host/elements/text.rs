@@ -247,7 +247,7 @@ pub(crate) fn edit_key(
         Key::Enter => {}
         // The ring's, never the field's -- and a function key edits
         // nothing, so it goes on to the key table.
-        Key::Tab | Key::Escape | Key::F(_) => return None,
+        Key::Tab | Key::Escape | Key::F(_) | Key::PageUp | Key::PageDown => return None,
     }
     Some(changed)
 }

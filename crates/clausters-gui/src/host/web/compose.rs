@@ -288,6 +288,8 @@ fn to_winit_key(key: &str) -> Option<Key> {
         "ArrowDown" => Key::Named(ArrowDown),
         "Home" => Key::Named(Home),
         "End" => Key::Named(End),
+        "PageUp" => Key::Named(PageUp),
+        "PageDown" => Key::Named(PageDown),
         "Enter" => Key::Named(Enter),
         "Tab" => Key::Named(Tab),
         "Escape" => Key::Named(Escape),

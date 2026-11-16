@@ -3202,3 +3202,36 @@ window draws depend on the machine and leave a page with a fetch the window does
 not need, and the acceptance's tests shape against the face the host ships; the
 cost is about a megabyte of wasm with the shaper, measured in the plan. A face a
 client loads replaces only the first, so the fallbacks stay under it.
+
+## Code is edited on the host's own text base (2026-11-16)
+
+*Taken in `WS6` (`crates/clausters-gui/PLAN.md`).* The code element needed a
+text base -- the buffer, the caret, the motions, the shaping and the glyphs --
+and three were weighed: cosmic-text's editor, Parley's plain editor, and the
+host's own pieces with a buffer under them. The host's own is taken: the text
+is one `String` edited by the `text` field's caret model
+(`host/graphics/textedit.rs`: graphemes, words, lines, the column kept up and
+down), with a line index, a history of changes and the indentation beside it
+(`host/graphics/code/`), drawn by the drawing base's shaper and atlas in a
+monospaced family of its own (`Family::Mono`, JetBrains Mono whole).
+
+The numbers. cosmic-text 0.19 alone -- its buffer, its editor, its shaping and
+its rasterizer, built for `wasm32-unknown-unknown` in release in a crate of its
+own -- is 2.1 MB of wasm, 0.69 MB gzip, before the grammars; and what it brings
+is a second shaper and font parser (harfrust, skrifa, swash, fontdb) beside the
+ones the host already shapes, orders bidi text and rasterizes with, so the
+host would carry two text stacks and draw code with one and its interface with
+the other. Parley's editor was not measured, since it could not be fetched
+where the comparison ran; it is set aside on the same ground, as it brings its
+own shaper and font stack (harfrust, skrifa, fontique) beside the host's. The
+host's own adds no dependency: 274 KB of face, and an edit of a 5,000-line
+file -- the change found by comparing the text before and after, recorded,
+and the line index rebuilt -- takes 0.34 ms in a release build against the
+budget's 4 ms per key (the test holds it under 2 ms there), and a frame of
+that file 1.3 ms.
+
+A rope was not taken either: a `String` costs a copy of the text per edit,
+which at the budget's size is tens of microseconds, and it keeps one model of
+a caret for the field and the code. A file whose size makes that copy matter
+is the point at which the buffer under `Code` changes, behind the same
+methods.
