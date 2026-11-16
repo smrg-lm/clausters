@@ -134,7 +134,19 @@ impl Host {
         // bar says which way it went.
         let (props, looping) = Self::take_flag(props, "looping");
         let keys: Vec<&String> = props.iter().map(|(k, _)| k).collect();
-        if !self.registry.set(id, props.clone()) {
+        // A key that writes into an element (a post window's text) is applied
+        // to it and kept nowhere: the document holds props, not what was
+        // written.
+        let writes = |k: &str| {
+            self.registry
+                .root_of(id)
+                .and_then(|root| self.window_defs.get(&root))
+                .and_then(|tree| tree.find(id))
+                .is_some_and(|w| matches!(&w.kind, widget::WidgetKind::Custom(el) if el.writes(k)))
+        };
+        let kept: Vec<(String, Value)> =
+            props.iter().filter(|(k, _)| !writes(k)).cloned().collect();
+        if !self.registry.set(id, kept) {
             return false;
         }
         if let Some(on) = focus {

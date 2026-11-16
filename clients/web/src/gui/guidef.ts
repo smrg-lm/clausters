@@ -2674,6 +2674,44 @@ export function progress(
 }
 
 /**
+ * A `post` window: the lines a session writes, as it writes them.
+ *
+ * Written to by a set of its kind -- `set({ out: text })` for output, `err`
+ * for an error, `result` for a value (shown `-> value` on a line of its
+ * own), `info` for a notice (always on a new line) -- and emptied by
+ * `set({ clear: 1 })`. Output and errors continue the line left open, so two
+ * writes with no line's end between them share a line. Each kind is drawn in
+ * a role of the theme.
+ *
+ * It keeps `keep` lines (20000 by default; the oldest go), wraps a long line
+ * at its width unless `wrap: false`, and follows the newest line while the
+ * reader is at the end: scrolling up stops following and coming back down
+ * resumes it, and `autoscroll: false` never follows. A hand selects by
+ * dragging (two clicks a word, three a line) and copies with the platform's
+ * key; its menu copies, selects all, clears and switches the autoscroll. Only
+ * the rows seen are measured and drawn, so a large write costs the write.
+ */
+export function post(
+    options: WidgetOptions & {
+        keep?: number;
+        wrap?: boolean;
+        autoscroll?: boolean;
+        textSize?: number;
+    } = {},
+): View {
+    const { keep, wrap, autoscroll, textSize, ...rest } = options;
+    return node("post", {
+        ...rest,
+        ...drop([
+            ["keep", keep],
+            ["wrap", flag(wrap)],
+            ["autoscroll", flag(autoscroll)],
+            ["text_size", textSize],
+        ]),
+    });
+}
+
+/**
  * **Tabs**: a row of `titles` over the `pages` they show, one at a time.
  *
  * A shortcut onto the model -- a {@link choice} in its `"tabs"` view bound to

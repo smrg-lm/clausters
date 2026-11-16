@@ -451,7 +451,7 @@ things:
 | Kind | What it is | Types |
 |---|---|---|
 | **Container** | owns 0, 1 or 2 **axes**, and so a coordinate system its children are placed in | `window`, `layout`, `plane`, `field` |
-| **Element** | draws against the axes of the container holding it | `signal`, `notes`, `curve`, `score`, `keys`, `nodes`, `meter`, `canvas`, `label`, `separator`, `progress` |
+| **Element** | draws against the axes of the container holding it | `signal`, `notes`, `curve`, `score`, `keys`, `nodes`, `meter`, `canvas`, `label`, `separator`, `progress`, `post` |
 | **Control** | an element with a value and no axis | `slider`, `knob`, `number`, `button`, `toggle`, `text`, `choice` |
 
 That is the whole vocabulary. The builders you just used — `panel`, and later
@@ -1313,11 +1313,11 @@ the window's own group.
 
 ```python
 from clausters.gui import (bpf, canvas, curve, keys, meter, nodes, nodetree,
-                           piano, score)
+                           piano, post, score)
 ```
 
 ```ts
-import { bpf, canvas, curve, keys, meter, nodes, nodetree, piano, score } from "clausters/gui";
+import { bpf, canvas, curve, keys, meter, nodes, nodetree, piano, post, score } from "clausters/gui";
 ```
 
 | Element | Shortcut | What it is |
@@ -1329,6 +1329,7 @@ import { bpf, canvas, curve, keys, meter, nodes, nodetree, piano, score } from "
 | `score` | — | an engraved notation page: the client engraves and sends a display list, the host fits and tessellates it. A click names an element, a drag on a note transposes it (only what has a pitch drags) |
 | `canvas` | — | a {{alt script-supplied || page-supplied}} WGSL shader over the widget area, fed by `params` and by control `buses` |
 | `label` | — | static text: `{{api text_size}}`, `wrap`, `align` |
+| `post` | — | a post window: the lines a session writes, appended by a set of their kind ({{alt `set(out=text)` || `set({ out: text })`}}, `err`, `result`, `info`) and emptied by `clear`. It keeps `keep` lines, follows the newest while the reader is at the end, and copies what a hand selects; only the rows in view are measured and drawn |
 
 `curve`, `nodes` and `keys` are the model's names; `bpf`, `nodetree` and
 `piano` are the same builder under the name the catalog used. The `notes`

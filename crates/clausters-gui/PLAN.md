@@ -1697,6 +1697,7 @@ Post window:
 
 - must -- output, errors, results (`->`) and info lines told apart; selection
   and copy; clear (Ctrl+Shift+P); autoscroll as a preference.
+- should -- a web address in the output is a link the browser opens.
 
 Documentation:
 
@@ -1890,12 +1891,36 @@ something reusable if the track stops there.
   opens a window on its page and switches back and forth in a page. A
   page's host also stopped attaching a canvas to a def before it was fed,
   which had left a pane its id for a title.
-- ⬜ **WS5 — The post panel.** An append-only log element: lines of kinds
+- ✅ **WS5 — The post panel.** An append-only log element: lines of kinds
   (output, error, result, info) styled by theme roles, selection and copy, a
   clear verb, autoscroll that stops while the user reads up and resumes at the
   end, and a cap on kept lines. Fed by the session's messages as the current
   `Post.svelte` is. Acceptance: a session printing 10,000 lines at once stays
   inside the frame budget, and copy returns exactly what was selected.
+
+  **What shipped (2026-11-16).** A widget a GuiDef names, `post`, with its
+  builder in both clients and its row in `docs/gui-protocol.md`: the open
+  decision below is taken for it. The model is `host/graphics/post.rs` (lines
+  made of runs of a kind, numbered since the last clear so a selection and a
+  scroll position survive the oldest lines going, `keep` lines kept, the
+  append rules of `Post.svelte`: output and errors continue the open line, a
+  notice starts its own, a result is `-> value`); the element is
+  `host/elements/post/`. A set of a kind (`out`, `err`, `result`, `info`)
+  writes into it, and a key that writes is now a question an element answers
+  (`Element::writes`), so it is applied and kept in no document -- a query
+  does not report the last text written. The scroll position is a line and a
+  row of it, and a line is wrapped when first shown, so a write measures
+  nothing: 10,000 lines written and a frame drawn take 1.9 ms in a release
+  build (the test holds it under 16 ms there), measuring only the rows seen.
+  Selection by drag, two clicks a word, three a line, Shift extends; Ctrl+C,
+  Ctrl+A and the window's `copy` and `select_all`; a context menu with Copy,
+  Select all, Clear and the autoscroll; the wheel and a scroll bar. Checked
+  headlessly by script natively and in a page (a drag copies `beta\ngamma`
+  from `alpha beta` and `gamma delta`). **Fed** by whoever owns the session:
+  the element takes the session's message kinds as they are, and the editor's
+  application wires its session to it when it moves into the host (WS12,
+  WS13); until then the example writes to it. Not yet: web addresses in the
+  output opening in the browser, which the bar now names.
 - ⬜ **WS6 — The code element: the text base.** Decided first, by extending the
   probe into a comparison: cosmic-text's editor, Parley's plain editor, or
   ropey with the host's own shaping and atlas (the host already shapes, orders
@@ -1985,7 +2010,10 @@ something reusable if the track stops there.
     is a build fact, not a requirement on the session.
 - **Whether `code`, `post` and the documentation are widgets a GuiDef may
   name**, or the editor application's own elements only. If they are widgets,
-  both clients' builders and the protocol reference come with them.
+  both clients' builders and the protocol reference come with them. **Taken
+  for `post` at WS5 (2026-11-16): a widget**, since a running output is
+  useful to any script and costs the catalog one row; `code` and the
+  documentation are still open, taken at WS6 and WS11.
 - **Nesting.** An application's window as a panel is the first step of "An
   application inside another" (`crates/clausters-document/PLAN.md`, Future
   directions); the dock must not decide that question by accident -- a

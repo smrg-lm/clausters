@@ -59,6 +59,7 @@ pub(crate) mod notes;
 mod number;
 #[cfg(feature = "patcher")]
 pub(crate) mod patch;
+mod post;
 mod progress;
 #[cfg(feature = "notation")]
 mod score;
@@ -95,6 +96,7 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         "signal" => signal::build,
         "files" => files::build,
         "number" => number::build,
+        "post" => post::build,
         "progress" => progress::build,
         "separator" => separator::build,
         "slider" => slider::build,

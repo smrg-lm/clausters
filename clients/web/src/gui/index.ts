@@ -52,7 +52,7 @@ export {
     envToPoints, fileDialog, files, keys, knob, label, layout, menu, meter, node,
     nodes, nodetree, number, pageJson, pager, pane, panel, patch,
     peaksCacheEmptyFile, peaksCacheFile, peaksCacheStreamFile, peaksCacheUpdateFile,
-    phasescope, piano, plane, plot, pointsToEnv, progress, row, samplesToBlob,
+    phasescope, piano, plane, plot, pointsToEnv, post, progress, row, samplesToBlob,
     samplesToFile, scope, score, scoreView, scroll, separator, signal, slider,
     source, spectrogram, spectrogramCacheFile, spectrum, stack, table, tabs, text,
     timeruler, toggle, toolbar, view, waveform, window,

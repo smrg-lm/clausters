@@ -33,6 +33,7 @@ pub mod nodetree;
 pub mod patch;
 pub mod piano;
 pub mod pianoroll;
+pub mod post;
 #[cfg(feature = "notation")]
 pub mod score;
 pub mod selection;

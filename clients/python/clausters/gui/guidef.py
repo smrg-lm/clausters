@@ -242,6 +242,7 @@ __all__ = [
     "ICON",
     "separator",
     "progress",
+    "post",
     "tabs",
     "pager",
     "toolbar",
@@ -1974,6 +1975,34 @@ def progress(value: float | None = None, *, label: str | None = None,
     until the next ``set(value=...)``."""
     extra = _drop_none(value=value, label=label, text_size=text_size, color=color)
     return node("progress", id=id, **extra, **props)
+
+
+def post(*, keep: int | None = None, wrap: bool | None = None,
+         autoscroll: bool | None = None, text_size: float | None = None,
+         id: int | None = None, **props) -> View:
+    """A ``post`` window: the lines a session writes, as it writes them.
+
+    Written to by a set of its kind -- ``set(out=text)`` for output,
+    ``err`` for an error, ``result`` for a value (shown ``-> value`` on a
+    line of its own), ``info`` for a notice (always on a new line) -- and
+    emptied by ``set(clear=1)``. Output and errors continue the line left
+    open, so two writes with no line's end between them share a line. Each
+    kind is drawn in a role of the theme.
+
+    It keeps ``keep`` lines (20000 by default; the oldest go), wraps a long
+    line at its width unless ``wrap=False``, and follows the newest line
+    while the reader is at the end: scrolling up stops following and coming
+    back down resumes it, and ``autoscroll=False`` never follows. A hand
+    selects by dragging (two clicks a word, three a line) and copies with
+    the platform's key; its menu copies, selects all, clears and switches
+    the autoscroll. Only the rows seen are measured and drawn, so a large
+    write costs the write."""
+    extra = _drop_none(keep=keep, text_size=text_size)
+    if wrap is not None:
+        extra["wrap"] = 1 if wrap else 0
+    if autoscroll is not None:
+        extra["autoscroll"] = 1 if autoscroll else 0
+    return node("post", id=id, **extra, **props)
 
 
 def tabs(*pages, titles, index: int | None = None, id: int | None = None,

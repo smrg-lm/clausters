@@ -267,6 +267,30 @@
         }
         log(`scripted keys typed into the field: ${JSON.stringify(typed.map((a) => a.at(-1)))}`);
 
+        // **A post window holds what is written and copies what a hand
+        // selects**: three lines in one write, a drag from the first row into
+        // the second, and the text selected is exactly what lies between.
+        const postWin = host.open(gui.view(
+          { title: "post", w: 640, h: 200 },
+          gui.post({ name: "post" }),
+        ));
+        await sleep(300);
+        postWin.widget("post").set({ out: "alpha beta\ngamma delta\nepsilon\n" });
+        await sleep(100);
+        host.pointer(postWin, "press", 52, 12);
+        host.pointer(postWin, "move", 60, 30);
+        host.pointer(postWin, "release", 60, 30);
+        let postInfo = await postWin.widget("post").query();
+        for (let i = 0; i < 40 && postInfo.props.selected !== "beta\ngamma"; i++) {
+          await sleep(50);
+          postInfo = await postWin.widget("post").query();
+        }
+        if (postInfo.props.selected !== "beta\ngamma" || postInfo.props.lines !== 3) {
+          throw new Error(`the post window selected ${JSON.stringify(postInfo.props)}`);
+        }
+        log(`a post window selected ${JSON.stringify(postInfo.props.selected)}`);
+        postWin.close();
+
         // **A roll that listens paints what is played, in a page as on the
         // desktop.** The host reads the bytes of a MIDI message into a note
         // and hands it to every element that declared it reads live MIDI --
@@ -314,7 +338,7 @@
         synth.free();
         verdict(`PASS: page GUI carrier -- event ${JSON.stringify(events[0])}, `
           + `bound freq ${before} -> ${after}, touch ${touched}, scripted ${scripted}, `
-          + `scripted keys typed "${entered()}", a played key painted, `
+          + `scripted keys typed "${entered()}", a post window selected, a played key painted, `
           + `subtree freed`);
       }
 

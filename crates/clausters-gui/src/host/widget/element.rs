@@ -2175,6 +2175,16 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **Whether a set of `key` writes into this element** rather than
+    /// setting one of its props: a post window's `out` appends a line, and
+    /// its `clear` empties it. Such a key reaches [`set`](Element::set) and
+    /// is never kept in the widget's document, so a query does not report
+    /// the last text written and a redefinition does not write it again.
+    /// `false` by default: a set is a prop.
+    fn writes(&self, _key: &str) -> bool {
+        false
+    }
+
     /// **A directory this element wants listed**, asked once: the element
     /// clears its ask as it answers. `None` (the default) for one that shows
     /// no directory. The front lists it and hands the answer back through

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a post window</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             max-width: 62rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A <b>post</b> element holds lines of four kinds and draws
+each in a role of the theme: <b>output</b>, an <b>error</b>, a <b>result</b>
+(written <code>-&gt; value</code> on a line of its own) and a <b>notice</b>
+(always on a line of its own). Output and errors continue the line left open.
+<br><br>It follows the newest line while you are at the end of it: scroll up and
+it stays where you read; scroll back down and it follows again. Drag to select
+(two clicks a word, three a line), copy with Ctrl+C, and open its menu with the
+secondary button. Only the rows in view are measured and drawn, so the ten
+thousand lines written at once cost the write.</div>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/post.py, call for call:
+      boot a host, open a window holding a post element, write a notice, two
+      writes of output sharing a line, a result and an error, a long line that
+      wraps, then ten thousand lines in one write and a notice after them.
+
+      One difference, the platform's: the script's window is a window of the
+      platform, and the page's is a canvas the host appends to the page.
+
+      Serve clients/web (the package root) and open /examples/panels/post.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui } from "../../dist/index.js";
+      import { loadCore } from "../../dist/page.js";
+
+      // The one line the script has no counterpart for: the numeric core is
+      // wasm here and is fetched on demand.
+      await loadCore();
+
+      // ---- a post window ----
+      const host = await new GuiHost().boot();
+      const window = await gui.view({ title: "post", w: 640, h: 360 },
+        gui.post({ name: "post" })).open(null, { host });
+      const out = window.widget("post");
+
+      // ---- the four kinds ----
+      out.set({ info: "session started\n" });
+      out.set({ out: "counting: " });
+      out.set({ out: "1 2 3\n" });
+      out.set({ result: "42" });
+      out.set({ err: "Traceback (most recent call last):\n  ValueError: not a number\n" });
+
+      // ---- a long line wraps at the window's width ----
+      out.set({ out: Array.from({ length: 60 }, (_, i) => `word${i}`).join(" ") + "\n" });
+
+      // ---- ten thousand lines at once ----
+      out.set({ out: Array.from({ length: 10000 }, (_, i) => `line ${i}\n`).join("") });
+      out.set({ info: "done\n" });
+    </script>
+  </body>
+</html>
