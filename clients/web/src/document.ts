@@ -605,8 +605,10 @@ export interface Intake {
  *
  * No payloads and no refusal is "nothing to say" -- a tag this domain does not
  * answer for -- which is the ordinary answer rather than a failure.
+ *
+ * @internal
  */
-export function editingIntake(
+export function _editingIntake(
     domain: string,
     tag: string,
     request: Record<string, unknown>,

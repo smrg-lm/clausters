@@ -256,7 +256,7 @@ curve.to_points()      # the edited curve, out of the object you already held
 ```ts
 import { edit } from "clausters/gui";
 
-const editor = await edit(curve, { sampleRate: 48_000, stage: element });
+const editor = await edit(curve, { sampleRate: 48_000 });
 
 curve.toPoints();      // the edited curve, out of the object you already held
 ```
@@ -320,7 +320,7 @@ editor = edit(node)
 ```js
 const freq = control("freq", 660.0, { min: 220.0, max: 1760.0, warp: "exp", unit: "Hz" });
 const node = new Synth("tone");          // of a def with that control
-const editor = await edit(node, { stage: element });
+const editor = await edit(node);
 ```
 
 The editor reads the def's controls as `/def_query` reports them — the same
@@ -1035,7 +1035,7 @@ editor = edit(saved, title="multitrack")
 import { MultitrackSession } from "clausters/gui/editing";
 
 const saved = await MultitrackSession.open(path);   // or a Multitrack, as an untitled session
-const editor = await gui.edit(saved, { title: "multitrack", stage: element });
+const editor = await edit(saved, { title: "multitrack" });
 ```
 
 The document names a **source id**, never a path; the session's table says

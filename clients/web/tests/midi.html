@@ -44,10 +44,9 @@
       Verdict beaconed as a fetch, read from the HTTP access log.
     -->
     <script type="module">
-      import {
-        MidiFunc, MidiReceiver, MidiRtInterface, MidiServer, Server, Session,
-        Synth, SynthDef, loadCore, opfs,
-      } from "../dist/index.js";
+      import { MidiFunc, Server, Session, Synth, SynthDef } from "../dist/index.js";
+      import { MidiReceiver, MidiRtInterface, MidiServer } from "../dist/base/index.js";
+      import { loadCore, opfs } from "../dist/page.js";
       import { out, sine } from "../dist/defs/index.js";
       import { pbind, pseq } from "../dist/seq/index.js";
 
@@ -104,9 +103,9 @@
         // All three on the same quant, so they start on one beat boundary and
         // the grid is read relative to it -- what has to hold is the spacing,
         // not which absolute beat a freshly started clock happened to be on.
-        bind().play(oscLeg, { clock, quant: 1 });
-        bind().play(score, { clock, quant: 1 });
-        bind().play(live, { clock, quant: 1 });
+        bind().play(clock, oscLeg, 1);
+        bind().play(clock, score, 1);
+        bind().play(clock, live, 1);
         await sleep(5200);
 
         const onsets = score.score.sorted()

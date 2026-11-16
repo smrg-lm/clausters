@@ -18,21 +18,22 @@
 //
 // In the browser the host is the wasm one on this page's canvas
 // (a handle over `pageGuiConnection()`, `boot`ed) or a native
-// `clausters-gui --ws` over a WebSocket (a handle over a `WsConnection`,
+// `clausters-gui --ws` over a WebSocket (a handle over a `OscWsInterface`,
 // `attach`ed) -- the same
 // object either way.
 
-export { formatWidgetInfo, formatWindowProfile, GuiHost, guiHost, newGuiHost, pageGuiConnection, DEFAULT_PORT, DEFAULT_WS_PORT } from "./host.ts";
+export { formatWidgetInfo, formatWindowProfile, GuiHost, DEFAULT_PORT } from "./host.ts";
 export { ambientHost, appClock, setAmbientHost } from "./ambient.ts";
 export type {
-    ClaustersGui, EventListener, PageGuiConnection, PropValue, WidgetInfo, WindowActivity,
-    WindowProfile,
+    EventListener, PropValue, WidgetInfo, WindowActivity, WindowProfile,
 } from "./host.ts";
+
+// The allocator `GuiHost.ids` answers with; `clausters/gui/ids` in Python.
+export type { GuiIdAllocator } from "./ids.ts";
 
 export { WidgetHandle, WindowHandle } from "./handle.ts";
 export type { EventArgs } from "./handle.ts";
 
-export { BASE_ID, CAPACITY, GuiIdAllocator } from "./ids.ts";
 
 export { Editor, MEASURES, edit, measures } from "./editing/index.ts";
 export type { Measure } from "./editing/index.ts";
@@ -43,4 +44,18 @@ export * as editing from "./editing/index.ts";
 export { PlayheadSync } from "./playhead-sync.ts";
 export type { MapHolder, Pass, PlayheadSyncOptions, PlayheadSyncTargets } from "./playhead-sync.ts";
 
-export * from "./guidef.ts";
+// The GuiDef builders the Python client's `clausters.gui` exports from its
+// `guidef`, by the same names; the rest of the module (its vocabularies and
+// its serializer) is `gui.guidef`, as in the Python client.
+export {
+    ICON, KEEP, Source, View, bpf, button, canvas, choice, curve, dialog, entry,
+    envToPoints, fileDialog, files, keys, knob, label, layout, menu, meter, node,
+    nodes, nodetree, number, pageJson, pager, pane, panel, patch,
+    peaksCacheEmptyFile, peaksCacheFile, peaksCacheStreamFile, peaksCacheUpdateFile,
+    phasescope, piano, plane, plot, pointsToEnv, progress, row, samplesToBlob,
+    samplesToFile, scope, score, scoreView, scroll, separator, signal, slider,
+    source, spectrogram, spectrogramCacheFile, spectrum, stack, table, tabs, text,
+    timeruler, toggle, toolbar, view, waveform, window,
+} from "./guidef.ts";
+export type * from "./guidef.ts";
+export * as guidef from "./guidef.ts";

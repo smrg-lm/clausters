@@ -101,7 +101,8 @@
       import {
         Server, Bus, Synth, SynthDef, GuiHost, gui,
       } from "../../dist/index.js";
-      import { control, lpf, out, saw } from "../../dist/defs/index.js";
+      import { control, out } from "../../dist/defs/index.js";
+      import { lpf, saw } from "../../dist/defs/ugens/index.js";
 
       const note = document.getElementById("note");
       const say = (text) => { note.textContent = text; };

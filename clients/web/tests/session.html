@@ -32,9 +32,8 @@
       import {
         Bpf, DoneAction, Env, control, envGen, out, sine,
       } from "../dist/defs/index.js";
-      import {
-        Buffer, Event, Session, SynthDef, Synth, engine, play, seq,
-      } from "../dist/index.js";
+      import { Buffer, Event, Session, SynthDef, Synth, play, seq } from "../dist/index.js";
+      import { engine } from "../dist/page.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -150,15 +149,15 @@
             }
           });
         });
-        await heard("SynthDef", () => {
+        await heard("SynthDef", async () => {
           const sig = sine(control("freq", 180.0)).mul(0.2);
-          const node = play(new SynthDef("session_drone", out(0.0, sig), out(1.0, sig)));
+          const node = await play(new SynthDef("session_drone", out(0.0, sig), out(1.0, sig)));
           return () => node.free();
         });
-        await heard("expression", () => {
+        await heard("expression", async () => {
           // A bare expression: no def, no name -- `play` wraps it in an
           // ephemeral one and sounds that.
-          const node = play(sine(240.0).mul(0.2));
+          const node = await play(sine(240.0).mul(0.2));
           return () => node.free();
         });
         await heard("Timeline", () => {
@@ -182,14 +181,14 @@
           // over a `Bpf`, so there is one node and nothing to map.
           const sweep = envGen(new Bpf([[0.0, 200.0], [1.0, 900.0]]));
           const sig = sine(sweep).mul(0.2);
-          const node = play(new SynthDef("session_swept", out(0.0, sig), out(1.0, sig)));
+          const node = await play(new SynthDef("session_swept", out(0.0, sig), out(1.0, sig)));
           return () => node.free();
         });
         await heard("Buffer", async () => {
           const buf = await Buffer.alloc(24_000, 1);
           await buf.gen("sine1", [["i", 7], ["f", 1.0]]);
           await buf.info();
-          play(buf, { controls: { amp: 0.3 } });
+          await play(buf, { controls: { amp: 0.3 } });
         });
 
         // Closing gives the default slots back and releases both engines.

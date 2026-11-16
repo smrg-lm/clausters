@@ -366,7 +366,7 @@ Four layers are in place.
 (`crates/clausters-core-web`, a thin wasm-bindgen shell over `clausters-core`,
 staged as `dist/core/` — byte-identical to the server and the Python client,
 held by committed parity vectors generated from the Python codec) and the
-**carrier seam** (`Connection`): `WsConnection` to a `--ws` server and
+**carrier seam** (`Connection`): `OscWsInterface` to a `--ws` server and
 `pageConnection()` over the in-page engine, one interface, so everything built
 above never names a transport.
 

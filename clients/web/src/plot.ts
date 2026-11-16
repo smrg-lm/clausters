@@ -228,12 +228,12 @@ export interface PatchViewOptions {
  *
  * @internal -- exported for the def classes' `plotDef`, which is the surface.
  */
-export async function openPatchView(
+export async function _openPatchView(
     model: { toWidget(): { boxes: Record<string, unknown>[]; cords: number[] } },
     options: PatchViewOptions = {},
 ): Promise<PatchWindow> {
     const { label, w = 1000, h = 700, title, host: explicitHost, element } = options;
-    const host = explicitHost ?? await resolveHost();
+    const host = explicitHost ?? await _resolveHost();
     const widgetId = host.allocId();
     const view = guidef.patch({ id: widgetId, ...model.toWidget(), label });
     const workspace = guidef.scroll({ id: host.allocId() }, view);
@@ -329,7 +329,7 @@ export async function plot(
         dur, controls, defs, n, sampleRate, channels,
     });
     const text = label ?? drawn.label;
-    const host = explicitHost ?? await resolveHost();
+    const host = explicitHost ?? await _resolveHost();
 
     // Widget ids live in the host's one namespace (every window, every script
     // on it), so each plot's widget takes a fresh one -- a repeated id would be
@@ -432,8 +432,10 @@ async function resolve(
  * worth comparing against the reference client: both render an envelope the
  * same way, so the drawn curve is comparable across clients rather than only
  * within one.
+ *
+ * @internal
  */
-export async function renderEnvSamples(
+export async function _renderEnvSamples(
     env: Env,
     sampleRate = 48_000.0,
 ): Promise<{ samples: Float32Array; channels: number }> {
@@ -563,7 +565,7 @@ function isRow(value: unknown): boolean {
  * resolves through the same ladder and shares this module's own host. The
  * Python client shares it the same way, as `plot._ambient_host`.
  */
-export async function resolveHost(server?: Server | null): Promise<GuiHost> {
+export async function _resolveHost(server?: Server | null): Promise<GuiHost> {
     const registered = ambientHost();
     if (registered) return registered;
     const session = main.currentSession as { guiHost?: GuiHost | null } | null;

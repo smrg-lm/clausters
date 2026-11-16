@@ -74,7 +74,7 @@ from .defs.node import Group, Synth
 from .log import LEVELS, render_line
 
 __all__ = ["render", "bounce_def", "RenderStats",
-           "render_to_file", "channels", "interleave", "MAX_BOUNCED_EVENTS"]
+           "channels", "interleave", "MAX_BOUNCED_EVENTS"]
 
 
 #: How many events -- or values -- a render takes before it decides its
@@ -214,7 +214,8 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             internal buses that reach no file, and raises.
         workers: renderer worker threads for the ``bytes`` score path.
         path: send the audio to this file instead of returning it; the
-            server writes it (see `render_to_file`).
+            offline renderer writes it, and the stats come back without the
+            samples.
         sample_format: the file's sample format beside a ``path``:
             ``"float"``, ``"int24"`` or ``"int16"``.
         seed: starting seed for the render's stochastic UGens. ``None`` draws
@@ -456,7 +457,7 @@ def render_score(score: bytes, sample_rate: float = 48_000.0, channels: int = 2,
                  workers: int = 0, path=None, seed: int | None = None,
                  sample_format: str = "float") -> RenderStats:
     """Render a binary score. Without `path` the samples come back in the
-    stats; with it the server writes the file (see `render_to_file`).
+    stats; with it the offline renderer writes the file.
 
     ``seed`` ``None`` renders a fresh take and reports the seed it drew in
     ``stats.seed``.
@@ -464,7 +465,7 @@ def render_score(score: bytes, sample_rate: float = 48_000.0, channels: int = 2,
     from . import ipc
 
     if path is not None:
-        return render_to_file(score, path, sample_rate, channels, workers,
+        return _render_to_file(score, path, sample_rate, channels, workers,
                               seed, sample_format)
     samples, frames, events, used = ipc.render(score, sample_rate=sample_rate,
                                                channels=channels,
@@ -475,7 +476,7 @@ def render_score(score: bytes, sample_rate: float = 48_000.0, channels: int = 2,
                        rms=rms, seed=used, samples=samples)
 
 
-def render_to_file(score: bytes, path, sample_rate: float, channels: int,
+def _render_to_file(score: bytes, path, sample_rate: float, channels: int,
                     workers: int, seed: int | None, sample_format: str,
                     progress=None):
     """Hand a binary score to the ``clausters --nrt`` renderer, which writes

@@ -57,7 +57,8 @@ the engine, the bends heard.</div>
       /examples/editors/edit-midi-file.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui, loadCore, opfs } from "../../dist/index.js";
+      import { Session, gui } from "../../dist/index.js";
+      import { loadCore, opfs } from "../../dist/page.js";
       import { Event, EventSequence } from "../../dist/seq/index.js";
 
       const $ = (id) => document.getElementById(id);

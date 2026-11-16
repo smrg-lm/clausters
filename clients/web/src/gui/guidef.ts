@@ -27,15 +27,20 @@
 // every id/index prop as an integer, so the tree means the same thing it does
 // from Python.
 
-import { Env, envToPoints, pointsToEnv, resolveCurve } from "../defs/ugens/index.ts";
+import { envToPoints, pointsToEnv } from "../defs/ugens/index.ts";
+import { resolveCurve } from "../defs/ugens/env.ts";
 import type { Curve } from "../defs/ugens/index.ts";
 import { samplesToBlob } from "../base/bulk.ts";
+import { readFileAt, writeFileAt } from "../base/files.ts";
+import { Peaks } from "../data/peaks.ts";
+import { stftCache } from "../data/stft.ts";
+import type { StftOptions } from "../data/stft.ts";
 import type { TempoMap } from "../base/time.ts";
 import type { GuiHost, PropValue, Stage } from "./host.ts";
 import type { WindowHandle } from "./handle.ts";
 import type { Page } from "../notation/engraver.ts";
 
-export { Env, envToPoints, pointsToEnv };
+export { envToPoints, pointsToEnv };
 export type { Curve };
 
 /**
@@ -630,7 +635,7 @@ export class View implements GuiNode {
             host,
         }: { id?: number; blobs?: readonly Uint8Array[]; host?: GuiHost } = {},
     ): Promise<WindowHandle> {
-        const target = host ?? (await (await import("../plot.ts")).resolveHost());
+        const target = host ?? (await (await import("../plot.ts"))._resolveHost());
         return target.open(this, { id, blobs, element });
     }
 }
@@ -3581,7 +3586,7 @@ export function score(
         // anything else is expanded here.
         ...(displayList instanceof Source
             ? { display_list: displayList }
-            : scorePage(displayList ?? {})),
+            : scoreProps(displayList ?? {})),
     });
 }
 
@@ -3841,7 +3846,7 @@ export const SCORE_PAGE = [
  * tells a grand staff from two systems; and `kinds`, what each id is, which
  * decides what a hand may do to it.
  */
-export function scorePage(displayList: Record<string, unknown>): Props {
+function scoreProps(displayList: Record<string, unknown>): Props {
     const dl = displayList ?? {};
     return drop(SCORE_PAGE.map((key) => [key, dl[key]]));
 }
@@ -3858,7 +3863,7 @@ const STRUCTURES: Record<string, { props: (v: unknown) => Props; slots: readonly
     boxes: { props: (v) => ({ boxes: [...(v as readonly unknown[])] }), slots: ["boxes"] },
     cords: { props: (v) => ({ cords: flatCords(v as readonly number[]) }), slots: ["cords"] },
     display_list: {
-        props: (v) => scorePage(v as Record<string, unknown>),
+        props: (v) => scoreProps(v as Record<string, unknown>),
         slots: SCORE_PAGE,
     },
 };
@@ -4076,3 +4081,155 @@ function stripNames(tree: GuiNode): GuiNode {
  * client follows.
  */
 export { samplesToBlob };
+
+// ---- the files a widget's `path` and `cache` name ----
+//
+// A `path` or a `cache` is a file the host reads without OSC, so a take of any
+// size reaches it: mapped natively, and in a page read from the page's own
+// storage (OPFS), where these write. Under node they write the disk. Each
+// answers the path once the file is there.
+
+/** The bytes as a fresh array, which is what the file layer writes. */
+function owned(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+    return new Uint8Array(bytes);
+}
+
+/**
+ * Writes `samples` to `path` as raw little-endian `f32` -- the **local shared
+ * resource** a `waveform({ path })` reads. Unlike {@link samplesToBlob}
+ * (which rides the `/gui_def` message and so must fit a datagram), a file has
+ * no size limit: this is how a multi-megabyte buffer reaches the host without
+ * OSC.
+ */
+export async function samplesToFile(samples: ArrayLike<number>, path: string): Promise<string> {
+    await writeFileAt(path, owned(samplesToBlob(samples)));
+    return path;
+}
+
+/**
+ * Builds the peak-pyramid cache for `samples` (the shared core's, so it is
+ * byte-identical to the host's own) and writes it to `path` -- the most
+ * compact bulk path, read by a `waveform({ cache })`. The host draws the
+ * overview without ever loading the raw samples. With `channels` over 1 the
+ * samples are interleaved frames and the file is the **multichannel** cache:
+ * one resource, a pyramid per channel.
+ */
+export async function peaksCacheFile(
+    samples: ArrayLike<number>,
+    path: string,
+    { baseBucket = 256, channels = 1 }: { baseBucket?: number; channels?: number } = {},
+): Promise<string> {
+    const peaks = Peaks.build(samples, { channels, baseBucket });
+    try {
+        await writeFileAt(path, owned(peaks.toBytes()));
+    } finally {
+        peaks.free();
+    }
+    return path;
+}
+
+/**
+ * Analyzes mono `samples` into the **spectrogram cache** (the shared core's,
+ * so it is byte-identical to the host's own analysis) and writes it to `path`
+ * -- what a `spectrogram({ cache })` reads. The host draws the take without
+ * loading its samples or analyzing them. One channel a file: de-interleave a
+ * multichannel take and write one per channel.
+ */
+export async function spectrogramCacheFile(
+    samples: ArrayLike<number>,
+    path: string,
+    options: StftOptions = {},
+): Promise<string> {
+    await writeFileAt(path, owned(stftCache(samples, options)));
+    return path;
+}
+
+/** The peak cache at `path`, read back, or a refusal that names the path. */
+async function peaksAt(path: string): Promise<Peaks> {
+    const peaks = Peaks.fromBytes(await readFileAt(path));
+    if (!peaks) throw new RangeError(`${path} is not a peak cache`);
+    return peaks;
+}
+
+/**
+ * Rewrites the part of the cache at `path` that a **frame span** touched,
+ * from `samples` (the whole interleaved buffer as it now stands) -- the
+ * owner's half of an edit, so the picture that reads this file follows
+ * without the take being summarized again.
+ *
+ * Throws a `RangeError` when the samples are not the buffer the cache
+ * describes, which is a length change and therefore a rebuild
+ * ({@link peaksCacheFile}).
+ */
+export async function peaksCacheUpdateFile(
+    path: string,
+    samples: ArrayLike<number>,
+    start: number,
+    frames: number,
+): Promise<string> {
+    const peaks = await peaksAt(path);
+    try {
+        if (!peaks.update(samples, start, frames)) {
+            throw new RangeError(
+                `${path}: the samples are not the buffer this cache describes -- rebuild it`,
+            );
+        }
+        await writeFileAt(path, owned(peaks.toBytes()));
+    } finally {
+        peaks.free();
+    }
+    return path;
+}
+
+/**
+ * Writes the cache of a take **allocated and not yet recorded into** to
+ * `path` -- `frames` frames of `channels` channels, every bucket a measured
+ * zero. The file a `waveform({ cache })` reads before the recording starts,
+ * grown from there by {@link peaksCacheStreamFile}.
+ */
+export async function peaksCacheEmptyFile(
+    path: string,
+    frames: number,
+    { channels = 1, baseBucket = 256 }: { channels?: number; baseBucket?: number } = {},
+): Promise<string> {
+    const peaks = Peaks.empty(frames, { channels, baseBucket });
+    try {
+        await writeFileAt(path, owned(peaks.toBytes()));
+    } finally {
+        peaks.free();
+    }
+    return path;
+}
+
+/**
+ * Folds a `/buffer_stream.reply` report into the cache at `path` -- the
+ * listener's half of a recording being drawn, for a client that hears about
+ * the samples rather than reading them.
+ *
+ * `stats` is the reply's blob, or the floats read from it, **bucket-major
+ * and channel-minor**: for each bucket of `bucket` frames in order, for each
+ * channel, `min`, `max` and mean square. `startFrame` is where the report
+ * begins on the buffer's own sample axis. Nothing is measured here -- the
+ * writer measured -- so a picture reading this file grows as the take does.
+ *
+ * Throws a `RangeError` when the report is on another grid than the cache (a
+ * different bucket size, a start off a bucket boundary, or a run that does
+ * not fit).
+ */
+export async function peaksCacheStreamFile(
+    path: string,
+    startFrame: number,
+    bucket: number,
+    stats: ArrayLike<number> | Uint8Array,
+): Promise<string> {
+    const peaks = await peaksAt(path);
+    try {
+        if (!peaks.writeBuckets(startFrame, bucket, stats)) {
+            throw new RangeError(`${path}: the report is on another grid than this cache`);
+        }
+        await writeFileAt(path, owned(peaks.toBytes()));
+    } finally {
+        peaks.free();
+    }
+    return path;
+}

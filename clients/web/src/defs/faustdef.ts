@@ -144,8 +144,8 @@ export class FaustDef {
      */
     async plotDef(options: PatchViewOptions = {}): Promise<PatchWindow> {
         const { DefPatch } = await import("./patch.ts");
-        const { openPatchView } = await import("../plot.ts");
-        return openPatchView(DefPatch.fromFaustdef(this), {
+        const { _openPatchView } = await import("../plot.ts");
+        return _openPatchView(DefPatch.fromFaustdef(this), {
             label: "faustdef",
             title: this.name,
             ...options,
@@ -173,7 +173,7 @@ export class FaustDef {
      * A `button`/`checkbox` is a 0/1 control and says so. The reserved
      * `in`/`out` bus controls are not included.
      */
-    controls(): ControlInfo[] {
+    get controls(): ControlInfo[] {
         const params: ControlInfo[] = [];
         if (this.kind !== "source") collectParams(this.payload, params);
         return params;
@@ -181,7 +181,7 @@ export class FaustDef {
 
     /** One control by name, as a `ControlInfo` -- `fd.control("cutoff")`. */
     control(name: string): ControlInfo {
-        for (const info of this.controls()) {
+        for (const info of this.controls) {
             if (info.name === name) return info;
         }
         throw new Error(

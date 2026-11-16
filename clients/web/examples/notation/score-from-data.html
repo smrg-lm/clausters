@@ -70,7 +70,8 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
       /examples/notation/score-from-data.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Event, Session, TempoMap, loadCore, notation, seq } from "../../dist/index.js";
+      import { Event, Session, TempoMap, notation, seq } from "../../dist/index.js";
+      import { loadCore } from "../../dist/page.js";
       import { button, panel, scoreView, view } from "../../dist/gui/index.js";
 
       const $ = (id) => document.getElementById(id);

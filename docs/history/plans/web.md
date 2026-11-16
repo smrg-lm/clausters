@@ -5337,3 +5337,119 @@ sound.
   `blobToSamples` and `render.channels`, the last two are `Buffer`'s own
   way in from a URL. The file writers a `path`/`cache` prop maps are a gap
   of their own ("A page's host reads a `path` or a `cache` only as a URL").
+
+- ✅ **A page's host reads a `path` or a `cache` only as a URL** *(found
+  2026-11-15, bringing the measurement surface to one shape)*. The browser
+  front resolves a widget's `path`/`cache` by fetching it against the page
+  origin (`crates/clausters-gui/src/host/web/bulk.rs`, whose header still says
+  the browser has no filesystem), so a file a page wrote to its own storage
+  (OPFS) cannot be drawn from by name, and the web client has none of the
+  Python client's file writers for those props (`samples_to_file`,
+  `peaks_cache_file`, `peaks_cache_update_file`, `peaks_cache_stream_file` in
+  `clausters.gui.guidef`). A page has a filesystem: the host's browser front
+  reads a path that is not a URL from OPFS, as its file commands already do
+  (`host/web/files.rs`), and the web client's `guidef` gains the four writers
+  over the same core calls, so the GUI chapter's Python-only paragraph about
+  them is one text.
+  **Fixed 2026-11-15.** The browser front reads a `path` or a `cache` from
+  the page's storage first (`host/web/files.rs`, `read_opfs`) and fetches
+  it only when the storage does not hold it or it is written as a URL, so a
+  file a page wrote is drawn by name as a mapped file is natively. The web
+  `guidef` has the six writers over the same core calls (`samplesToFile`,
+  `peaksCacheFile`, `spectrogramCacheFile`, `peaksCacheUpdateFile`,
+  `peaksCacheEmptyFile`, `peaksCacheStreamFile`), asynchronous and writing
+  the page's storage in a tab and the disk under node, and `Peaks.update`
+  re-summarizes an edited span in both clients. What the host still keeps
+  nowhere in a page, its named GuiDefs, is an entry of the GUI plan.
+
+- ✅ **The web client reads no configuration file** *(found 2026-11-15, the
+  same chapter)*. Python's `[client].clock` (and the rest of its
+  configuration chapter) has no web counterpart: a page or a worker passes
+  every option in code. A page has a filesystem (OPFS), so this is a gap of
+  the port and not of the platform; until it is decided, the shared chapters
+  say that the web client takes these options in code, and the web book
+  states that it has no Configuration chapter, with the reason.
+  **Decided 2026-11-15** (`docs/decisions.md`, "The configuration file and
+  the command line are a native install's"). The file configures a machine,
+  found by a home and a working directory, which a page does not have; the
+  web client takes these options in code in a page and under node, and
+  `clausters.config` is one of the modules only a native process has
+  (`clients/docs/names.toml`). The web book's platform chapter says so.
+
+- ✅ **The client-side command verbs have no web counterpart** *(found
+  2026-11-15, writing the web book's platform chapter for `W35`)*. The
+  Python wheel's `clausters` command adds `status`, `panic` and `stop`
+  against a server on a port. The npm package installs no command, since it
+  carries no native binary, but those three verbs are client calls a node
+  program could make: the port decides whether they become a `bin` of the
+  package or stay the Python client's, and says so in both books.
+  **Decided 2026-11-15**, in the same decision: the command is the native
+  install's front, launching the binary the wheel bundles, and its verbs
+  speak OSC over UDP, which the web client does not carry. A node program
+  makes the same calls in code; the web book's platform chapter says so.
+
+- ✅ **Calls whose arguments are shaped differently** *(found 2026-11-15,
+  writing the shared chapters' examples for `W35`)*. `Automation` takes
+  `(target, points)` in Python and one options object in the web client;
+  `EventPattern.play` takes `(clock, server, quant)` in Python and
+  `(destination, { clock, quant })` in the web client; the id share is
+  `share=` on `Server` and `GuiHost` in Python and an option of the session
+  factories in the web client; `SynthDef.controls` (the `ControlInfo` list)
+  is Python's alone; a transport's `span` is assigned in Python and set with
+  `setSpan()` in the web client, and its `end` and `playing` are properties
+  in one and methods in the other. Each is either an idiom, written in
+  `docs/bindings.md`, or brought to one shape.
+  **Fixed 2026-11-15.** `EventPattern.play` takes the Python client's
+  arguments in the web client too, `(clock, destination, quant)`, the
+  arguments of `Routine.play` with the server between them; a def's
+  `controls` is a getter of local state in the web client as it is a
+  property in Python; and the Python book's MIDI example, which passed the
+  destination as the clock, names it. What stays two shapes is written in
+  `docs/bindings.md` ("The client surface"): a constructor whose every
+  argument has a default takes one object (`Automation`, `Server({ share
+  })`, whose `share` both clients had), and the transport's `span`, `end`
+  and `playing` follow the rule for what asks the engine.
+
+- ✅ **Python-only editor surface** *(found 2026-11-15, the shared transport
+  chapter for `W35`)*. `PlayheadSync.resume()` (continue a frozen sound
+  rather than re-render) and `editor.locatable` (whether a seek means
+  anything) have no web counterpart; the shared chapter marks the text about
+  them for the Python book until the web client has them.
+  **Fixed 2026-11-15.** `PlayheadSync.resume()` was in the web client
+  already, and the transport chapter now says so in one text, with the row
+  in both tables; `editor.locatable` named an editor that no longer exists
+  (the property is a `form` element's, in both clients), and the row is
+  gone.
+
+- ✅ **`play(def)` waits in one client and not in the other** *(found
+  2026-11-15, the shared verbs chapter for `W35`)*. Python's `play(def)`
+  blocks until the def's `/done`; the web client's sends the def without
+  waiting and relies on the server running the two in order. The shared
+  chapter states each; which one is the behaviour, and whether the other
+  client needs an awaitable form, is to decide.
+  **Fixed 2026-11-15** (`docs/decisions.md`, "`play` makes a def's node
+  once the server has the def, in both clients"). The web client's way was
+  a bug: a Faust def compiles on a thread of its own, so its `/synth_new`
+  named a def the server did not have yet. In TypeScript `play(def)`,
+  `play(expression)` and `play(buffer)` answer a promise of the node, made
+  after the def's `/done`, and offline both go into the score at once, as
+  in Python.
+
+- ✅ **A module's names differ between the clients** *(found 2026-11-15,
+  when the web package's subpaths were made the Python package's modules)*.
+  The modules now have the same paths; what each exports does not yet
+  match. Read one against the other, the web client's modules export names
+  the Python module keeps private or does not have (`clausters/data`'s
+  `Peaks`, `decodeSamples`, `fetchAudio`, `stftCache`, `deinterleave`;
+  `clausters/render`'s `channel`; `clausters/document`'s format constants;
+  `clausters/gui/guidef`'s `flat*` helpers), and `sampleClockFor` answers
+  `null` where Python's `Server.sample_clock` always answers a tracker. Each
+  is a name to bring to both, to make private in one, or an idiom to write in
+  `docs/bindings.md`.
+  **Fixed 2026-11-15** (`docs/decisions.md`, "A module exports the same
+  names in both clients, and what only a platform has is a module of its
+  own"). Every public Python module declares `__all__` and every web
+  subpath exports the same names, held together by `tests/names.test.ts`
+  against `gen-names-vectors.py`'s vector; what only a page has is
+  `clausters/page`, and the decided differences are listed in
+  `clients/docs/names.toml` with their shapes in `docs/bindings.md`.

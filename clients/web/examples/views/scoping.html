@@ -64,7 +64,8 @@ socket.</div>
 
     <script type="module">
       import { Server, Synth, SynthDef, scope } from "../../dist/index.js";
-      import { control, lag, out, sine, sub } from "../../dist/defs/index.js";
+      import { control, lag, out, sine } from "../../dist/defs/index.js";
+      import { sub } from "../../dist/defs/ugens/index.js";
 
       const $ = (id) => document.getElementById(id);
       const wait = (secs) => new Promise((r) => setTimeout(r, secs * 1000));

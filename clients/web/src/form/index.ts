@@ -32,12 +32,8 @@ export {
     PUNCTUAL,
     RELATIVE,
     SEGMENT,
-    BufferSegments,
-    NoteSegments,
     Segment,
-    SegmentRun,
     Segments,
-    singleWindow,
     Sequence,
     Track,
     Vector,
@@ -63,7 +59,6 @@ export {
     CONCRETE,
     LOGICAL,
     MIXED,
-    Member,
     SIMULTANEOUS,
     SUCCESSIVE,
 } from "./aggregate.ts";
@@ -74,6 +69,7 @@ export type {
     BusRate,
     BusSpec,
     ChildSpec,
+    Member,
     PlacedMember,
     TemporalRelation,
 } from "./aggregate.ts";

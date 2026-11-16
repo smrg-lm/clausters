@@ -1,12 +1,16 @@
-//! Where a browser element's **bulk data** comes from: a URL, fetched.
+//! Where a browser element's **bulk data** comes from: the page's storage,
+//! or a URL.
 //!
 //! The native front resolves a `path`/`cache` by mapping the file
-//! (`mapfile::MmapLoader`, native-only); the browser has no filesystem, so
-//! the same two props are URLs fetched against the page origin, and a server
-//! `buffer` is pulled over the audio-server leg instead. This module is that
-//! resolution: what a tree asks for ([`collect_bulk`]), the fetch itself, and
-//! where the answer lands -- a GPU slot for a navigable heavy view, the tree
-//! for a take drawn into the mesh.
+//! (`mapfile::MmapLoader`, native-only). A page has a filesystem too, the
+//! origin private file system its file commands already read and write
+//! (`files.rs`), so the same two props name a file there first; one the
+//! storage does not hold, or one written as a URL (`http:`, `https:`,
+//! `blob:`, `data:`), is fetched against the page origin instead, which is
+//! how a page reaches a file it serves. A server `buffer` is pulled over the
+//! audio-server leg. This module is that resolution: what a tree asks for
+//! ([`collect_bulk`]), the read itself, and where the answer lands -- a GPU
+//! slot for a navigable heavy view, the tree for a take drawn into the mesh.
 //!
 //! The rule the whole path serves is the crate's: bulk moves as bulk. A
 //! minutes-long take reaches a clip as a peak pyramid over one fetch, never as
@@ -70,16 +74,17 @@ fn collect_bulk(
     }
 }
 
-/// Fetches one bulk URL and decodes it off the event loop, then hands the
-/// result back through the proxy as [`WebEvent::BulkReady`].
+/// Reads one bulk resource (the page's storage, else a fetch) and decodes it
+/// off the event loop, then hands the result back through the proxy as
+/// [`WebEvent::BulkReady`].
 pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, request: Bulk) {
-    // A declared resource is a local reference natively and a URL here: the
-    // page fetches what the tree named, which is the one platform difference in
-    // the whole bulk path.
+    // A declared resource is a file natively and here a file of the page's
+    // storage or a URL: which of the two is the one platform difference in the
+    // whole bulk path.
     let Some(url) = request.resource().map(|p| p.to_string_lossy().into_owned()) else {
         return; // a server buffer: the client leg's, not a fetch
     };
-    let bytes = match fetch_bytes(&url).await {
+    let bytes = match read_bytes(&url).await {
         Ok(bytes) => bytes,
         Err(e) => return log(&format!("bulk fetch {url}: {e}")),
     };
@@ -168,6 +173,19 @@ pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, reques
     }
 }
 
+/// The bytes a `path`/`cache` names: the file of that path in the page's
+/// storage, and failing that the URL, so a page reaches both the files it
+/// wrote and the ones it serves. A URL with a scheme is only ever fetched.
+async fn read_bytes(resource: &str) -> Result<Vec<u8>, String> {
+    const SCHEMES: [&str; 4] = ["http:", "https:", "blob:", "data:"];
+    if !SCHEMES.iter().any(|s| resource.starts_with(s))
+        && let Ok(bytes) = super::files::read_opfs(resource).await
+    {
+        return Ok(bytes);
+    }
+    fetch_bytes(resource).await
+}
+
 /// One `fetch` of `url` to raw bytes (an `ArrayBuffer`), erroring on a non-2xx
 /// status so a missing resource is visible instead of decoding garbage.
 async fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
@@ -195,7 +213,7 @@ fn decode_f32(bytes: &[u8]) -> Vec<f32> {
 impl WebApp {
     /// Starts the bulk loads of a freshly opened def: server-buffer fetches
     /// over the WS leg, and `fetch`es of every waveform/plot `path`/`cache`
-    /// (URLs against the page origin in the browser).
+    /// (the page's storage first in the browser, then the page origin).
     pub(super) fn start_bulk(&mut self, def: i32) -> Vec<(i32, i32, bool)> {
         self.bulk_pass(def, false)
     }

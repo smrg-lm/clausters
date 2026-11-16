@@ -267,12 +267,19 @@ __all__ = [
     "patch",
     "canvas",
     "to_json",
+    "CHOICE_VIEWS",
+    "INLINE_MAX",
+    "KEEP",
+    "SCORE_PAGE",
+    "SOURCE_PROPS",
+    "STRUCTURE_PROPS",
+    "peaks_cache_empty_file",
+    "peaks_cache_stream_file",
+    "peaks_cache_update_file",
     "samples_to_blob",
     "samples_to_file",
     "peaks_cache_file",
     "spectrogram_cache_file",
-    "correlation",
-    "lissajous",
 ]
 
 
@@ -3303,30 +3310,6 @@ def peaks_cache_stream_file(path: str, start_frame: int, bucket: int, stats) -> 
     with open(path, "wb") as f:
         f.write(updated)
     return path
-
-
-def correlation(left, right) -> float | None:
-    """The stereo **correlation** (Pearson's r) of two equal-length channels,
-    in ``[-1, 1]`` -- ``+1`` mono/in-phase, ``0`` decorrelated, ``-1`` anti-phase
-    -- via the shared native core, so a headless capture reads the identical
-    number the GUI phasescope draws. ``None`` when it is undefined (empty input
-    or a constant channel: silence/DC). Pair it with ``Server.stream_taps`` to
-    measure a live stereo signal without the GUI."""
-    from .._native import correlation as _correlation  # lazy: needs the cdylib
-
-    return _correlation(left, right)
-
-
-def lissajous(left, right) -> list:
-    """The **Lissajous / goniometer** coordinates of stereo pairs ``(left,
-    right)``: each maps to ``(x, y)`` with ``x`` the side ``(L - R)/sqrt(2)`` and
-    ``y`` the mid ``(L + R)/sqrt(2)`` -- the rotated stereo plane a goniometer draws.
-    The geometry lives once in the shared native core (the phasescope draws the
-    same points); useful for plotting or driving a stereo image in
-    electroacoustic work. Returns a list of ``(x, y)`` tuples."""
-    from .._native import lissajous as _lissajous  # lazy: needs the cdylib
-
-    return _lissajous(left, right)
 
 
 def _value(x, cast=float):

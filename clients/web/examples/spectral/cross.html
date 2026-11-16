@@ -57,9 +57,8 @@ between the stages; the spectral frames are synth-private scratch.</div>
       /examples/spectral/cross.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import {
-        Buffer, Routine, Server, Session, Synth, opfs, play,
-      } from "../../dist/index.js";
+      import { Buffer, Routine, Server, Session, Synth, play } from "../../dist/index.js";
+      import { opfs } from "../../dist/page.js";
       import {
         DoneAction, Env, SynthDef, control, envGen, fft, ifft, out, pvMagFreeze,
         pvMagMul, sine, whiteNoise,

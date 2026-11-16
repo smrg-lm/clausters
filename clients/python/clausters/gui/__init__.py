@@ -37,9 +37,9 @@ with ``Bus.watch``). A widget can also be *bound*
 (`clausters.gui.host.GuiHost.bind`) so its value flows straight to the audio
 server, bypassing this script. A ``canvas`` runs a script-supplied WGSL shader
 driven by OSC params and control buses. The stereo-field measurements the
-phasescope draws -- `correlation` and `lissajous` -- are also exposed as plain
-functions (shared with the native host through ``clausters-core``) for headless
-analysis. See the ``examples/gui_*.py`` family (``gui_skeleton`` for the
+phasescope draws -- `clausters.data.correlation` and
+`clausters.data.lissajous` -- are plain functions of the data layer (shared
+with the native host through ``clausters-core``) for headless analysis. See the ``examples/gui_*.py`` family (``gui_skeleton`` for the
 headless protocol, ``gui_window``/``gui_panel`` for windows and controls,
 ``gui_meters`` for the audio-server client paths, ``gui_bind`` for the bound
 low-latency control path, ``gui_nodetree`` for the live node tree, ``gui_plot``
@@ -50,14 +50,13 @@ oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
 ``gui_oscsend`` for the editable ``text`` field typing an OSC message live).
 """
 
-from . import guidef
+from . import editing, guidef
 from .editing import MEASURES, Editor, edit, measures
 from .guidef import (
     bpf,
     button,
     canvas,
     choice,
-    correlation,
     curve,
     dialog,
     entry,
@@ -70,7 +69,6 @@ from .guidef import (
     knob,
     label,
     layout,
-    lissajous,
     menu,
     meter,
     node,
@@ -175,6 +173,7 @@ def app_clock(host=None):
 
 
 __all__ = [
+    "editing",
     "guidef",
     "GuiHost",
     "WidgetInfo",
@@ -253,6 +252,4 @@ __all__ = [
     "peaks_cache_stream_file",
     "peaks_cache_update_file",
     "spectrogram_cache_file",
-    "correlation",
-    "lissajous",
 ]

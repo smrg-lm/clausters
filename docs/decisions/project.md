@@ -529,3 +529,57 @@ the layer stacks and the gestures that are not edits -- for
 `End` stays in the document: the editing crate's playback reads it too, and
 it is no window's state.
 
+
+## A module exports the same names in both clients, and what only a platform has is a module of its own (2026-11-15)
+
+The modules had the same paths in both clients and different contents. The
+web root alone exported some eighty names the Python root did not: the
+in-page engine and host, the OSC codec, the bundle mount, the custom
+elements, the clocks' tickers, OPFS, every class of `clausters.base`, and
+the `Node` and `Transport` of `defs`. `clausters/defs` exported every UGen
+flat where `clausters.defs` names a selection and keeps the catalogue in
+`clausters.defs.ugens`; `clausters/gui` re-exported all of `guidef`; and
+helpers each module shared with the package's others (`resolveHost`,
+`renderScore`, `editingIntake`, `TRIMMED`) were names a program could
+import, where Python keeps the same helpers under an underscore. A reader
+of one client's import line could not tell what the other's would be.
+
+**A module's surface is declared, and it is the same list in both
+clients.** Every public Python module declares `__all__`; the web module of
+the same path exports the same names, spelled for TypeScript.
+`clients/web/tests/names.test.ts` holds each web subpath to the vector
+`gen-names-vectors.py` writes from the Python modules, so a name added to
+one side fails until it is in the other or its difference is decided. A
+name a module shares only with the package's other modules starts with an
+underscore in both clients, and the check skips it.
+
+**What only one platform has is a module of its own**, and nothing outside
+it is the platform's alone: `clausters/page` (the engine and the GUI host
+in the tab and the links to them, the core's loader, the OSC codec the
+engine is spoken to with, the tickers that wake a clock in a tab, the
+browser's MIDI ports, where the engraver is loaded from, the bundle mount
+and its elements, and the page's storage) beside the Python client's
+`clausters.ipc`, `clausters.launch` and `clausters.config`. The root
+exports `page` as a namespace, as the Python root exports `ipc` and
+`launch`.
+
+**The differences that remain are listed in `clients/docs/names.toml`,
+each with its reason**, and the vector refuses an entry that names nothing:
+the platform's names inside a shared module (the Python transports over
+UDP, TCP and the embedded library, the errors of a native library and of
+the shared memory); the Python classes TypeScript writes as types (the
+records of a reply, `ServerOptions`, `Destination`); and the functions
+TypeScript has where Python has a method, an operator or `isinstance`
+(`formatNodeInfo` for a record's `__str__`, `tempoEnv` for
+`TempoMap.env`, `add` for an operator with the constant on the left,
+`isExpr`). The shapes are `docs/bindings.md`'s, "The client surface".
+
+Bringing the two to one list moved names, and every one went to where the
+Python client has it. Some had been in only one client and now are in both:
+`AllocationError` in Python, raised where an id space runs out, and
+`RenderError` in the web client, thrown where the engine refuses a render;
+the six file writers of `guidef` and `Peaks.update` in the web client;
+`log` as a module of both roots and `AppClock` in both `base` modules.
+`WsConnection` is `OscWsInterface`. And a page's host now reads a widget's
+`path` or `cache` from the page's storage before it fetches it, so a file
+the web client wrote there is drawn by name, as it is from a disk.

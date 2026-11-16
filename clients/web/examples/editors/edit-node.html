@@ -50,7 +50,8 @@ after a click.</div>
     </main>
     <script type="module">
       import { Session, Synth, SynthDef } from "../../dist/index.js";
-      import { control, lpf, out, pan2, saw, sine } from "../../dist/defs/index.js";
+      import { control, out, sine } from "../../dist/defs/index.js";
+      import { lpf, pan2, saw } from "../../dist/defs/ugens/index.js";
       import { edit } from "../../dist/gui/index.js";
 
       const $ = (id) => document.getElementById(id);

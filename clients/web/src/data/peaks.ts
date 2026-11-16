@@ -137,6 +137,20 @@ export class Peaks {
         return this.inner.writeBuckets(Math.trunc(startFrame), Math.trunc(bucket), flat);
     }
 
+    /**
+     * Re-summarizes the **frame span** an edit touched, from `samples` (the
+     * whole interleaved buffer as it now stands) -- the owner's half of an
+     * edit, so a picture of this cache follows it without the take being
+     * summarized again.
+     *
+     * Returns `false`, changing nothing, when the samples are not the buffer
+     * this cache describes: a length change is a rebuild (`build`).
+     */
+    update(samples: ArrayLike<number>, start: number, frames: number): boolean {
+        const flat = samples instanceof Float32Array ? samples : Float32Array.from(samples);
+        return this.inner.updateRange(flat, Math.trunc(start), Math.trunc(frames));
+    }
+
     /** This cache's bytes, in the format every client reads. */
     toBytes(): Uint8Array {
         return this.inner.toBytes();

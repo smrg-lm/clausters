@@ -181,7 +181,7 @@ export abstract class HostedEditor {
             this.leave();
             await this.queue;
         }
-        const resolved = host ?? (await (await import("../../plot.ts")).resolveHost());
+        const resolved = host ?? (await (await import("../../plot.ts"))._resolveHost());
         const held = this.heldBy();
         const beside = held.live();
         if (beside !== null && beside.host !== resolved) {

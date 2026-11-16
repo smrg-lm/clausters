@@ -34,7 +34,8 @@
       log.
     -->
     <script type="module">
-      import { Session, opfs, loadCore, Buffer } from "../dist/index.js";
+      import { Session, Buffer } from "../dist/index.js";
+      import { opfs, loadCore } from "../dist/page.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {

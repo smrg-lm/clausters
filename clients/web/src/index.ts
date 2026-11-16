@@ -25,90 +25,61 @@
 // is the ambient one everything falls back to -- which is what lets `play(...)`
 // and a bare `new Synth(...)` name no server at all.
 //
-// What this module exports flat is what you name while playing: the
-// hosts (`Server`, `GuiHost`), the server's resources, the three def formats,
-// the timing types and the verbs. Everything enumerative -- the UGen and signal
-// callables, the value patterns, the GUI builders -- is named through its
-// namespace (`defs.sine`, `seq.pbind`, `gui.knob`), the same criterion the
-// Python client applies: there are too many of them for a flat namespace to
-// stay readable.
+// What this module exports is the Python client's `clausters`, name for name
+// (`tests/names.test.ts` holds the two together): flat, what you name while
+// playing -- the hosts (`Server`, `GuiHost`), the server's resources, the
+// three def formats, the timing types and the verbs; through a namespace,
+// everything enumerative -- the UGen and signal callables, the value
+// patterns, the GUI builders (`defs.sine`, `seq.pbind`, `gui.knob`) -- and the
+// layers beneath (`base`). What only a page has is `clausters/page`, as what
+// only a native process has is the Python client's `ipc` and `launch`.
 //
 // Importing this module in a page registers the `<clausters-bundle>` and
 // `<clausters-power>` custom elements as a side effect; where there is no page
 // (a worker, node) it registers nothing and imports all the same. The
 // singletons stay lazy until first used.
 
-export { server, engine, ANY_PEER, DEFAULT_PEER } from "./engine/server.ts";
-export type { ClaustersServer, EngineLink, LinkMessage, ReplyListener } from "./engine/server.ts";
-export type { BootOptions, ClockAnchor } from "./engine/loader.ts";
-export { GuiHost, guiHost, newGuiHost, pageGuiConnection } from "./gui/host.ts";
-export type { GuiLink } from "./gui/page.ts";
-// Measuring an element against the display, which a page needs wherever it
-// sizes a canvas itself -- a component, an embedder's own element.
-export { canvasBox, onScaleChange } from "./gui/page.ts";
-export type { CanvasBox } from "./gui/page.ts";
-export type { ClaustersGui } from "./gui/host.ts";
-export type { GuiHostOptions, GuiTransportName } from "./gui/host.ts";
+import "./elements.ts";
+
+// the layers, for the names too many to spell out flat
+export * as base from "./base/index.ts";
+export * as builtins from "./base/builtins.ts";
+export * as data from "./data/index.ts";
+export * as defs from "./defs/index.ts";
+export * as document from "./document.ts";
+export * as errors from "./errors.ts";
+export * as form from "./form/index.ts";
 export * as gui from "./gui/index.ts";
-export { bootBundle, freeBundle, openBundle, startBundle } from "./bundle.ts";
-export type { BundleManifest, MountOptions, Mounted, ParamSpec } from "./bundle.ts";
-// Authoring one, the other direction: `write` is a node verb, `files` is the
-// same bundle in memory for a page to mount. Its own subpath as well
-// (`clausters/bundle`, the Python client's module), for a node script that
-// wants the writer alone.
-export { Bundle, DEFAULT_RUNTIME } from "./bundle-writer.ts";
-export type { Hole, ParamOptions, ParamType, WritableDef, WriteOptions } from "./bundle-writer.ts";
-export { ClaustersBundle, ClaustersPower, defineComponent, startPage } from "./elements.ts";
+export * as log from "./log.ts";
+export * as notation from "./notation/index.ts";
+export * as page from "./page.ts";
+export * as segments from "./segments.ts";
+export * as seq from "./seq/index.ts";
+// the hosts
 export { Session } from "./session.ts";
 export type { SessionOptions } from "./session.ts";
+export { Server } from "./defs/server/index.ts";
+export type { ServerOptions, ServerTransportName } from "./defs/server/index.ts";
+export { GuiHost } from "./gui/host.ts";
+export type { GuiHostOptions, GuiTransportName } from "./gui/host.ts";
 export { defaultSession, main } from "./base/main.ts";
 export type { Main, SessionLike } from "./base/main.ts";
-export { Environment, RandomContext } from "./base/environment.ts";
-// What the client did, said out loud. Importing the module arms `CLAUSTERS_LOG`,
-// the way `clausters.log` does on the Python side.
-export { ENV as LOG_ENV, area, unwatch, watch } from "./base/log.ts";
-export type { Area, LogSink } from "./base/log.ts";
-// The operator vocabulary as methods, exported the way the Python client
-// exports `AbstractObject` from `clausters.base`: what a subclass implements
-// to make one written expression compose a graph, a per-bin program or a value.
-export { AbstractObject } from "./base/absobject.ts";
-export type { Composed, Fan } from "./base/absobject.ts";
-export { play } from "./play.ts";
-export { panic } from "./panic.ts";
-export type { Playable, PlayOptions } from "./play.ts";
-export { plot, PatchWindow, PlotWindow } from "./plot.ts";
-export type { PatchViewOptions } from "./plot.ts";
-export type { Plottable, PlotOptions } from "./plot.ts";
-export { scope, ScopeWindow } from "./scope.ts";
-export type { ScopeOptions, ScopeView } from "./scope.ts";
-export { render } from "./render.ts";
-export type {
-    RenderOptions,
-    RenderStats,
-    RenderVerbOptions,
-    Renderable } from "./render.ts";
-export { loadRenderer } from "./engine/render.ts";
-export type { EngineModule } from "./engine/render.ts";
-export { ENGINE_SHAPE, newPools, pagePools } from "./base/pool.ts";
-export type { PoolShape } from "./base/pool.ts";
-export type { Pool, Pools } from "./base/pool.ts";
-export {
-    decodePacket,
-    decodePacketTimed,
-    encodeBundle,
-    encodeImmediateBundle,
-    encodeMessage } from "./base/osc.ts";
-export type { BundleMessage, OscArg, OscMessage, TimedOscMessage } from "./base/osc.ts";
-export {
-    TempoClock,
-    defaultTicker,
-    manualTicker,
-    timerTicker,
-    workerTicker } from "./base/clock.ts";
-export type {
-    ManualTicker, Schedulable, SetTempoOptions, TempoClockOptions, Ticker } from "./base/clock.ts";
-export { AppClock } from "./base/appclock.ts";
-export type { AppItem } from "./base/appclock.ts";
+// the server's resources: nodes, definitions, buses, buffers
+export { AddAction, Group, Synth, Voices } from "./defs/node.ts";
+export type { Controls, GroupOptions, NodeLike, Placement } from "./defs/node.ts";
+export { SynthDef } from "./defs/synthdef.ts";
+export { FaustDef } from "./defs/faustdef.ts";
+export { Plugin, PluginCatalog, PluginDef } from "./defs/plugindef.ts";
+export type { PluginQuery, PluginReference, PluginPortReference, PluginRoute } from "./defs/plugindef.ts";
+export { GraphDef } from "./defs/graphdef.ts";
+export { Bus } from "./defs/bus.ts";
+export { Buffer } from "./defs/buffer.ts";
+export type { BufferOptions } from "./defs/buffer.ts";
+// time
+export { TempoClock } from "./base/clock.ts";
+export type { Schedulable, SetTempoOptions, TempoClockOptions } from "./base/clock.ts";
+// A generated wasm class grows no method, so the map's `env` and `segments`
+// are functions taking it (`docs/bindings.md`, "The client surface").
 export {
     TempoMap,
     bar,
@@ -119,27 +90,33 @@ export {
     tempoEnv,
     tempoSegments } from "./base/time.ts";
 export type { CurveSpec, TempoChange, TempoEnvelope, TimeUnit } from "./base/time.ts";
-export {
-    LogicalTimebase,
-    ManualTimebase,
-    MonotonicTimebase,
-    SampleClockTimebase } from "./base/timebase.ts";
-export type { Timebase } from "./base/timebase.ts";
-export { FunctionStream, Routine, StopStream, Stream, YieldAndReset, resume } from "./base/stream.ts";
+export { Routine } from "./base/stream.ts";
 export type { RoutineFunc, RoutineState } from "./base/stream.ts";
-export { currentRoutine } from "./base/context.ts";
-export { Moment } from "./base/moment.ts";
-export { OscDestination } from "./base/destination.ts";
-export type { Destination } from "./base/destination.ts";
-export {
-    MidiFunc,
-    OscFunc,
-    defaultMidiReceiver,
-    defaultOscReceiver,
-    midifunc,
-    oscfunc,
-    setDefaultMidiReceiver,
-    setDefaultOscReceiver } from "./responders.ts";
+export { Event, rest } from "./seq/event.ts";
+export { Timeline } from "./seq/timeline.ts";
+export { EventSequence } from "./seq/sequence.ts";
+export type { Writing } from "./seq/sequence.ts";
+// the free verbs
+export { play } from "./play.ts";
+export type { Playable, PlayOptions } from "./play.ts";
+export { panic } from "./panic.ts";
+export { render } from "./render.ts";
+export type {
+    RenderOptions,
+    RenderStats,
+    RenderVerbOptions,
+    Renderable } from "./render.ts";
+export { plot } from "./plot.ts";
+// The windows the verbs answer, named for their signatures: the classes are
+// `clausters/plot`'s and `clausters/scope`'s, as in the Python client.
+export type { PatchViewOptions, PatchWindow, PlotWindow, Plottable, PlotOptions } from "./plot.ts";
+export { scope } from "./scope.ts";
+export type { ScopeOptions, ScopeView, ScopeWindow } from "./scope.ts";
+// audio files on the client side
+export { SoundFile } from "./soundfile.ts";
+export type { SoundFileFormat } from "./soundfile.ts";
+// incoming OSC and MIDI
+export { MidiFunc, OscFunc, midifunc, oscfunc } from "./responders.ts";
 export type {
     ArgMatcher,
     MidiCallback,
@@ -147,130 +124,13 @@ export type {
     OscCallback,
     OscValue,
     ResponderMessage } from "./responders.ts";
-export { OscReceiver } from "./base/receiver.ts";
-export type { OscHandler } from "./base/receiver.ts";
-// MIDI: the ports, the score, the destination and the receiving door. The
-// reference client keeps these in `clausters.base`; the flat facade is this
-// client's spelling of the same names.
-export {
-    MidiNrtInterface,
-    MidiReceiver,
-    MidiRtInterface,
-    MidiScore,
-    MidiServer,
-    parseMidi,
-    requestMidiPorts } from "./base/midi.ts";
-export type {
-    MidiHandler,
-    MidiInputPort,
-    MidiInterface,
-    MidiMessage,
-    MidiOutputPort,
-    MidiPortOptions,
-    MidiPorts,
-    MidiReceiverOptions,
-    MidiServerOptions,
-    MidiWriteOptions } from "./base/midi.ts";
+// the random context (one seedable source: `seed(n)` on the default session,
+// or `session.seed(n)` on a named one, and these draws from whichever stream
+// the context says, named as sclang names them)
 export {
     Rng, betarand, bilinrand, cauchy, choose, coin, currentRng, exprand, gauss, hprand, irand,
     irand2, irrand, linrand, lprand, meanrand, poisson, rand, rand2, rrand, scramble, seed,
     spawnRng, sputter, sum3rand, tablerand, wchoose,
 } from "./base/rand.ts";
-export * as builtins from "./base/builtins.ts";
-export * as seq from "./seq/index.ts";
-// The names a script types without a namespace, as the Python facade exports
-// them; the enumerative half (the value patterns) stays behind `seq`.
-export { Event, rest } from "./seq/event.ts";
-export { Timeline } from "./seq/timeline.ts";
-export { EventSequence, SeqAutomation, SeqEvent, SeqEvents } from "./seq/sequence.ts";
-export type { Writing } from "./seq/sequence.ts";
-export * as data from "./data/index.ts";
-// A client's id spaces on a server: the type `Server.ids` answers with.
-export { IdSpaces, loadCore } from "./base/core.ts";
-// The id share every constructor that allocates ids accepts, for the same
-// reason the options bags below are exported: a public signature names it.
-export type { IdShare } from "./base/ids.ts";
-export { WHOLE_SHARE, shareOf } from "./base/ids.ts";
-export { OscNrtInterface, OscScore, WsConnection, pageConnection, portConnection } from "./base/connection.ts";
-export type { Connection, PageConnection, SampleClock } from "./base/connection.ts";
-export * as defs from "./defs/index.ts";
-export { Server, Transport } from "./defs/server/index.ts";
-// The records the transport surface reports, for the same reason: a public
-// signature that names a type the reference cannot reach is a broken page.
-export type { TransportGrid, TransportState } from "./defs/server/index.ts";
-export type { MidiBinding, MidiBindOptions } from "./defs/server/index.ts";
-export type { ServerOptions, ServerTransportName } from "./defs/server/index.ts";
-export { AddAction, Group, Node, Synth, Voices } from "./defs/node.ts";
-// The options bags the node constructors take. Exported as types so the API
-// reference documents what those parameters accept: TypeDoc reports a public
-// signature that names a type it cannot reach, and an intersection like
-// GroupOptions is one it cannot inline away.
-export type { Controls, GroupOptions, NodeLike, Placement } from "./defs/node.ts";
-export { Bus } from "./defs/bus.ts";
-export { Buffer } from "./defs/buffer.ts";
-export { SoundFile } from "./soundfile.ts";
-export type { SoundFileFormat } from "./soundfile.ts";
-export type { BufferOptions } from "./defs/buffer.ts";
-export { SynthDef } from "./defs/synthdef.ts";
-export { FaustDef } from "./defs/faustdef.ts";
-export { GraphDef } from "./defs/graphdef.ts";
-export * as errors from "./errors.ts";
+// the root of every error this package raises; the leaves are in `errors`
 export { ClaustersError } from "./errors.ts";
-
-/**
- * A **frozen** algebra of elements placed in time, grouped and rendered. It
- * has no view and takes no new work. See `./form/index.ts`.
- */
-export * as form from "./form/index.ts";
-
-/**
- * A **window onto contents** and a run of windows read as one: what a join
- * assembles and a split takes apart, over samples (`BufferSegments`) or over a
- * timeline of events (`NoteSegments`). A window is about the contents, not
- * about where it sits in time, which is why it is here and not in the
- * document. See `./segments.ts`.
- */
-export * as segments from "./segments.ts";
-
-/**
- * The document: the structures every application edits (the multitrack, its
- * timeline, its session file) and the one place an edit is applied, by the
- * shared crate rather than by any client. See `./document.ts`.
- */
-export * as document from "./document.ts";
-
-/**
- * The symbolic score: notation as data, edited and engraved with no window.
- * See `./notation/index.ts`.
- */
-export * as notation from "./notation/index.ts";
-export type {
-    Against,
-    Applied,
-    ClaustersDocument,
-    Intent,
-    Leg,
-    NodeId,
-    Outcome,
-    RecordedLeg,
-    Redone,
-    RemainingLeg,
-    Resolved,
-    Selection,
-    Step,
-    Undone,
-    Walked } from "./document.ts";
-
-/**
- * The page's own filesystem (OPFS) -- where a soundfile a tab reads actually
- * lives.
- *
- * Not a client verb and not part of the surface the two clients share: it is
- * the platform's answer to "where is the file", the way a disk is a native
- * server's. `/buffer_allocRead "take.wav"` names the server's filesystem in a
- * window and this one in a tab, and the call is the same call either way.
- */
-export * as opfs from "./engine/opfs.ts";
-
-export { Plugin, PluginCatalog, PluginDef } from "./defs/plugindef.ts";
-export type { PluginQuery, PluginReference, PluginPortReference, PluginRoute } from "./defs/plugindef.ts";

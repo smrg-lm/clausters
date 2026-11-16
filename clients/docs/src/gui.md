@@ -56,7 +56,7 @@ win = v.open()
 ```
 
 ```ts
-import { loadCore } from "clausters";
+import { loadCore } from "clausters/page";
 import { button, choice, GuiHost, knob, label, panel, slider, view } from "clausters/gui";
 
 await loadCore();
@@ -1071,27 +1071,22 @@ megabyte over OSC if it does not have to. In the host's precedence order:
 
 | Prop | What it is |
 |---|---|
-| `cache` | a prebuilt peak-pyramid file the host {{alt maps || fetches}} and renders directly — the most compact path, and the raw samples are never loaded |
-| `path` | a file of raw little-endian `f32` the host {{alt maps || fetches, by URL}} |
+| `cache` | a prebuilt peak-pyramid file the host {{alt maps || reads}} and renders directly — the most compact path, and the raw samples are never loaded |
+| `path` | a file of raw little-endian `f32` the host {{alt maps || reads}} |
 | `buffer` | a server buffer number, pulled over the host's client leg |
 | `data` | a short list of numbers, inline in the JSON |
 | `blob` | a binary blob carried beside the JSON in the same message |
 
-<!-- python -->
-`samples_to_file` and `peaks_cache_file` write the first two from a Python
-sequence; `samples_to_blob` packs the last. A cache follows its samples rather
-than being rebuilt: `peaks_cache_update_file` re-summarizes the frame span an
-edit touched, and `peaks_cache_stream_file` folds a `/buffer_stream.reply`
+{{api samples_to_file}} and {{api peaks_cache_file}} write the first two from a
+sequence of samples{{alt  || , each answering a promise of the path}}; {{api samples_to_blob}} packs the last. A cache follows its samples rather
+than being rebuilt: {{api peaks_cache_update_file}} re-summarizes the frame span an
+edit touched, and {{api peaks_cache_stream_file}} folds a `/buffer_stream.reply`
 report into it — the overview of a take being recorded, measured by the writer
-and sent instead of the samples, so a picture mapping the file grows as the take
-does.
+and sent instead of the samples, so a picture reading the file grows as the take
+does.<!-- web --> In a page the files are the page's own storage, which is where the host reads a `path` or a `cache` from first; a name the storage does not hold, or a URL, the host fetches from the page's origin, which is how a page draws a file it serves. Under node they are the disk.<!-- /web -->
 
-Those two are the primitives, and they are the right call when what you want is
-the *file* a `cache=` prop maps.
-<!-- /python -->
-<!-- web -->
-**Bulk data is fetched, not mapped**: a `path` or a `cache` is a URL the host fetches rather than a file it maps, and a `data/Peaks` pyramid's `toBytes()` is the cache a page hands on. Everything else about the precedence is identical.
-<!-- /web -->
+Those are the primitives, and they are the right call when what you want is
+the *file* a `cache` prop names.
 To follow a take without a picture in it —
 a headless capture, a test, a read-out — `RecordingStream` owns
 the whole conversation: it subscribes, keeps one cache per take, and says how
@@ -1626,7 +1621,7 @@ b.write("./fm-voice")
 ```
 
 ```ts
-import { loadCore } from "clausters";
+import { loadCore } from "clausters/page";
 import { Bundle } from "clausters/bundle";
 import { knob, label, meter, panel, scope, toggle, view } from "clausters/gui";
 

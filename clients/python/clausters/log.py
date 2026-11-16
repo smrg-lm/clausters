@@ -38,6 +38,8 @@ under node the same `CLAUSTERS_LOG`.
 import logging
 import os
 
+__all__ = ["ENV", "unwatch", "watch"]
+
 #: The package's root logger. Every area is a child, so a handler here catches
 #: all of them and `logging.getLogger("clausters.gui")` reaches one.
 log = logging.getLogger("clausters")

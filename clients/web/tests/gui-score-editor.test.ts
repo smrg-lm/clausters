@@ -12,7 +12,8 @@ import { existsSync } from "node:fs";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { Score, setEngraverUrl } from "../src/notation/index.ts";
+import { Score } from "../src/notation/index.ts";
+import { setEngraverUrl } from "../src/page.ts";
 import { HostedTransport, ScoreEditor, edit } from "../src/gui/editing/index.ts";
 import type { GuiHost } from "../src/gui/host.ts";
 import { Event } from "../src/seq/event.ts";

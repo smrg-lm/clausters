@@ -56,12 +56,10 @@ import { bundle_validate } from "./core/clausters_core_web.js";
 import type { BundleManifest, ParamSpec } from "./bundle.ts";
 import type { GuiNode } from "./gui/guidef.ts";
 
-// The writer validates through the core, so whoever authors a bundle has to
-// load it -- and a node script cannot reach the package facade, which registers
-// custom elements a document has to exist for. Re-exported here so this
-// subpath is self-sufficient: `clausters/bundle-writer` plus `clausters/defs`
-// and `clausters/gui` is the whole authoring surface.
-export { loadCore } from "./base/core.ts";
+// The writer validates through the core, so whoever authors a bundle loads
+// it first: `loadCore` is the platform's (`clausters/page`), which a node
+// script imports as well, since it registers no element where there is no
+// page.
 
 /** Where a page serves the component run time from -- the page's business. */
 export const DEFAULT_RUNTIME = "/dist/runtime.js";

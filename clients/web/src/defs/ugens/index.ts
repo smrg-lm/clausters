@@ -57,8 +57,6 @@ import * as trig from "./trig.ts";
 export {
     ChannelList,
     Control,
-    SynthExpr,
-    SynthLeaf,
     Ugen,
     add,
     chans,
@@ -263,17 +261,16 @@ export {
     envShape,
     envGenArgs,
     envToPoints,
-    flatQuads,
     freeSelf,
     freeSelfWhenDone,
     line,
     pauseSelf,
     pointsToEnv,
     quads,
-    resolveCurve,
     xLine,
 } from "./env.ts";
 export type { Curve, Point, PointsLike, Quad } from "./env.ts";
+export type { SynthLeaf } from "./graph.ts";
 
 // ---- the inlet labels a patcher's Def view reads ----
 

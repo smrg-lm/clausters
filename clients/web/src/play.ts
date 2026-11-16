@@ -12,10 +12,13 @@
 // - a `Routine`/`Stream`, or a bare **generator** (object or function) ->
 //   scheduled on a clock;
 // - a **def** (`SynthDef` / `FaustDef` / `GraphDef`) -> sent and instanced on
-//   the server. Returns the node handle -- it plays until you free it;
+//   the server. Answers a promise of the node handle -- it plays until you
+//   free it -- since the node is made once the server has the def: at once in
+//   an offline score, after the def's `/done` on a live server, where a Faust
+//   def compiles on a thread of its own;
 // - a bare **expression** (a UGen graph, a `ChannelList`, a Faust `Signal`) ->
 //   the same, through the ephemeral-def coercion (`defs/asdef.ts`), so
-//   `play(sine(440).mul(0.5))` sounds a def it wrapped for you;
+//   `await play(sine(440).mul(0.5))` sounds a def it wrapped for you;
 // - a `Timeline` -> played on its own clock (`Timeline.play`), on the ambient
 //   server;
 // - an `EventSequence` -> loaded as an event lane on a transport of its own
@@ -26,7 +29,8 @@
 //   (`await auto.prepare(server)` first -- see below);
 // - a `Buffer` -> sounded through the stock playbuf instrument (a buffer
 //   sounds through an instrument; here the verb provides the default one --
-//   `rate`/`amp` controls, freed when the take ends);
+//   `rate`/`amp` controls, freed when the take ends), a promise of its node as
+//   for a def;
 // - anything else following the **timeline-item protocol**
 //   (`play(destination)` -- an `OscItem`, ...) -> dispatched to it with the
 //   ambient server.
@@ -109,9 +113,9 @@ export interface PlayOptions {
  * Returns something that knows how to end what just started: the completed
  * event for an event or object (`free()` / `release()`), the
  * `EventStreamPlayer` for a pattern (`stop()`), the routine for a routine, the
- * node handle for a def or a buffer (`free()`), the timeline itself
- * (`stop()`), and for a sequence a promise of the `Transport` it plays on
- * (`stop()`, `wait()`).
+ * node handle for a def or a buffer (`free()`), as a promise kept once the
+ * server has the def, the timeline itself (`stop()`), and for a sequence a
+ * promise of the `Transport` it plays on (`stop()`, `wait()`).
  */
 export function play(playable: EventPattern, options?: PlayOptions): EventStreamPlayer;
 export function play(playable: Pattern<unknown>, options?: PlayOptions): never;
@@ -120,10 +124,10 @@ export function play(
         | (() => Generator<number | undefined, unknown, unknown>),
     options?: PlayOptions,
 ): Stream;
-export function play(playable: SynthDef | FaustDef | GraphDef | Expr, options?: PlayOptions): Node;
+export function play(playable: SynthDef | FaustDef | GraphDef | Expr, options?: PlayOptions): Promise<Node>;
 export function play(playable: EventSequence, options?: PlayOptions): Promise<Transport>;
 export function play(playable: Timeline, options?: PlayOptions): Timeline;
-export function play(playable: Buffer, options?: PlayOptions): Synth;
+export function play(playable: Buffer, options?: PlayOptions): Promise<Synth>;
 export function play(playable: Event | Record<string, unknown>, options?: PlayOptions): Event;
 export function play(playable: Playable, options?: PlayOptions): unknown;
 export function play(playable: Playable, options: PlayOptions = {}): unknown {
@@ -136,7 +140,7 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
         return playable.play(main.playClock(clock), quant);
     }
     if (playable instanceof EventPattern) {
-        return playable.play(destinationFor(server), { clock, quant }) as EventStreamPlayer;
+        return playable.play(clock, destinationFor(server), quant) as EventStreamPlayer;
     }
     if (playable instanceof Pattern) {
         throw new TypeError(
@@ -226,17 +230,22 @@ function asRoutine(playable: unknown): Routine {
 
 /**
  * Sends `def` (any family) and instances it: `/graph_new` for a `GraphDef`,
- * `/synth_new` otherwise. Returns the node handle.
+ * `/synth_new` otherwise. Answers the node handle.
  *
- * The send is not awaited -- `play` is a synchronous verb -- but the carrier is
- * ordered, so the def is on its way before the creation that names it.
+ * The node is made once the server has the def, as the reference client's
+ * `play` does: a live server answers the send with `/done`, and a Faust def
+ * compiles on a thread of its own, so a creation sent before that names a def
+ * the server does not have yet. Offline nothing answers and the score is
+ * ordered, so both go into it at once, before this returns -- which is what
+ * keeps a `play` inside a routine at the routine's own time in a render.
  */
-function playDef(
+async function playDef(
     def: SynthDef | FaustDef | GraphDef,
     server: Server,
     controls?: Controls,
-): Node {
-    void def.send(server, { wait: false });
+): Promise<Node> {
+    const sent = def.send(server, { wait: !server.scoring });
+    if (!server.scoring) await sent;
     if (def instanceof GraphDef) {
         return Group.graph(def.name, controls, { server });
     }
@@ -247,15 +256,22 @@ function playDef(
  * A buffer sounds through an instrument (see `docs/decisions.md`); here the
  * verb provides the stock one -- one `playBuf` lane per channel, with `rate`
  * and `amp` controls -- and frees it when the take ends (the buffer's frames
- * over its rate). Returns the `Synth`.
+ * over its rate). Answers the `Synth`, made once the server has the def, as
+ * {@link playDef} says.
  */
-function playBuffer(buffer: Buffer, server: Server, controls?: Controls): Synth {
+function playBuffer(buffer: Buffer, server: Server, controls?: Controls): Promise<Synth> {
+    // Refused here, before the promise: a length nobody read is the caller's
+    // mistake, said where the call is.
     if (!buffer.frames) {
         throw new Error(
             "cannot play a buffer of unknown length; read its shape first "
                 + "(await buffer.info())",
         );
     }
+    return soundBuffer(buffer, server, controls);
+}
+
+async function soundBuffer(buffer: Buffer, server: Server, controls?: Controls): Promise<Synth> {
     const channels = Math.max(1, buffer.channels);
     const buf = control("buf", 0.0);
     // `rate` is a musical ratio: the def rescales it by the buffer's own
@@ -267,7 +283,8 @@ function playBuffer(buffer: Buffer, server: Server, controls?: Controls): Synth 
         ...Array.from({ length: channels }, (_, ch) =>
             out(ch, playBuf(buf, ch, rate).mul(amp))),
     );
-    void def.send(server, { wait: false });
+    const sent = def.send(server, { wait: !server.scoring });
+    if (!server.scoring) await sent;
     const given = controls ? Object.fromEntries(Object.entries(controls)) : {};
     const node = new Synth(def.name, { buf: buffer.bufnum, ...given }, { server });
     const fileRate = buffer.sampleRate || 48_000.0;

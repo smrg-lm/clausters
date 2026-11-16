@@ -50,8 +50,8 @@
       produced carry the same pitch the live engine just played.
     -->
     <script type="module">
-      import { Session, loadCore, FaustDef, Synth, Bus, Buffer, Routine, data }
-        from "../dist/index.js";
+      import { Session, FaustDef, Synth, Bus, Buffer, Routine, data } from "../dist/index.js";
+      import { loadCore } from "../dist/page.js";
       import { boxes, signals } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");

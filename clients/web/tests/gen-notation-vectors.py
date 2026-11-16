@@ -28,7 +28,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 
-from clausters.gui import notation  # noqa: E402
+from clausters import notation  # noqa: E402
 from clausters.seq import Event, rest  # noqa: E402
 from clausters.seq.timeline import Timeline  # noqa: E402
 

@@ -81,10 +81,11 @@
 
 import { fileURLToPath } from "node:url";
 
-import { Bundle, loadCore } from "../../../dist/bundle-writer.js";
+import { Bundle } from "../../../dist/bundle-writer.js";
 import {
     DoneAction, Env, SynthDef, control, envGen, out, outCtl, sine,
 } from "../../../dist/defs/index.js";
+import { loadCore } from "../../../dist/page.js";
 import { label, meter, piano, view } from "../../../dist/gui/index.js";
 
 /**

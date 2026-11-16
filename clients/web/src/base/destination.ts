@@ -12,7 +12,7 @@
 // the difference is the carrier, never the timing.
 
 import type { Connection } from "./connection.ts";
-import { WsConnection } from "./connection.ts";
+import { OscWsInterface } from "./connection.ts";
 import { Moment } from "./moment.ts";
 import { encodeBundle, encodeMessage, oscArg, toBundle } from "./osc.ts";
 import type { MsgArg, TimedMessage } from "./osc.ts";
@@ -66,7 +66,7 @@ export class OscDestination implements Destination {
      * leaves it running.
      */
     static async open(url: string): Promise<OscDestination> {
-        const dest = new OscDestination({ connection: await WsConnection.open(url) });
+        const dest = new OscDestination({ connection: await OscWsInterface.open(url) });
         dest.ownsConnection = true;
         return dest;
     }

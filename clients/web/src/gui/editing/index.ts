@@ -57,7 +57,7 @@
 
 export { Application, BASE_ID } from "./application.ts";
 export { AudioEditor, AudioTransport, readsInPlace } from "./audio.ts";
-export { ScoreEditor, isScore } from "./score.ts";
+export { ScoreEditor } from "./score.ts";
 export type {
     PageInfo, PageOptions, PageSetup, ScoreEditorOptions, TextOptions,
 } from "./score.ts";
@@ -68,7 +68,8 @@ export { NodeEditor } from "./controls.ts";
 export { edit } from "./edit.ts";
 export type { EditOptions } from "./edit.ts";
 export { NotesEditor } from "./events.ts";
-export { Held, HostedEditor, HostedTransport } from "./hosted.ts";
+export { HostedEditor, HostedTransport } from "./hosted.ts";
+export type { Held } from "./hosted.ts";
 export type { HostedEditorOptions } from "./hosted.ts";
 export type { NotesEditorOptions } from "./events.ts";
 export { MultitrackEditor, MultitrackTransport } from "./multitrack.ts";
@@ -84,7 +85,7 @@ export { MEASURES, measures } from "./samples.ts";
 export type { Measure } from "./samples.ts";
 export { Echo } from "./echo.ts";
 export type { Answer, Correction, Envelope, Turn } from "./echo.ts";
-export { Editor, notAnEdit, resolveEditorHost } from "./editor.ts";
+export { Editor, notAnEdit } from "./editor.ts";
 export type { ActionState, GenericEditorOptions, Leg } from "./editor.ts";
-export { log, watch } from "./trace.ts";
+export { watch } from "./trace.ts";
 export { View } from "./view.ts";

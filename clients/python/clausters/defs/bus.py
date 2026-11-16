@@ -21,6 +21,7 @@ counts can be read back with `query_info`.
 """
 
 from .. import _native
+from ..errors import AllocationError
 from ._wire import resolve as _resolve
 
 
@@ -178,7 +179,7 @@ class _Allocator:
         explicit failure, never an aliased index."""
         index = self._spaces.alloc(self.SPACE, channels)
         if index is None:
-            raise RuntimeError(f"out of {self.rate} buses")
+            raise AllocationError(f"out of {self.rate} buses")
         return Bus(index, channels, self.rate, server)
 
     def free(self, bus: Bus):
@@ -186,7 +187,7 @@ class _Allocator:
         allocator never handed out) raises -- losing track of a bus is a
         client bug, never absorbed silently."""
         if not self._spaces.release(self.SPACE, bus.index, bus.channels):
-            raise RuntimeError(
+            raise AllocationError(
                 f"double free of {self.rate} bus {bus.index} "
                 f"(channels={bus.channels}): not currently allocated here")
 
@@ -230,14 +231,14 @@ class EventBusAllocator:
         explicit failure, never an aliased index."""
         index = self._spaces.alloc(_native.IdSpaces.EVENTS, 1)
         if index is None:
-            raise RuntimeError("out of event buses: free one, or boot the server with "
+            raise AllocationError("out of event buses: free one, or boot the server with "
                                "more (--event-buses)")
         return index
 
     def free(self, bus: int):
         """Returns the bus to the pool. A double free raises."""
         if not self._spaces.release(_native.IdSpaces.EVENTS, int(bus), 1):
-            raise RuntimeError(f"double free of event bus {bus}: not currently allocated here")
+            raise AllocationError(f"double free of event bus {bus}: not currently allocated here")
 
     @property
     def in_use(self) -> int:

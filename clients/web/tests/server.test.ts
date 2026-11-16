@@ -26,7 +26,7 @@ import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
 
-import { WsConnection } from "../src/base/connection.ts";
+import { OscWsInterface } from "../src/base/connection.ts";
 import { loadCore } from "../src/base/core.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Buffer } from "../src/defs/buffer.ts";
@@ -64,12 +64,12 @@ await loadCore();
 async function withServer(body: (server: Server) => Promise<void>): Promise<void> {
     const child = spawnChild(serverBin, ["--port", String(udpPort), "--ws", String(wsPort),
         "--no-tcp", "--no-persist"]);
-    let connection: WsConnection | null = null;
+    let connection: OscWsInterface | null = null;
     let server: Server | null = null;
     try {
         // The server binds the WS listener during boot; retry until it is up.
         for (let i = 0; i < 50 && !connection; i++) {
-            connection = await WsConnection.open(`ws://127.0.0.1:${wsPort}`)
+            connection = await OscWsInterface.open(`ws://127.0.0.1:${wsPort}`)
                 .catch(() => null);
             if (!connection) await sleep(100);
         }

@@ -63,9 +63,8 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
       /examples/buffers/render-then-load.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import {
-        Buffer, Routine, Session, SoundFile, Synth, opfs,
-      } from "../../dist/index.js";
+      import { Buffer, Routine, Session, SoundFile, Synth } from "../../dist/index.js";
+      import { opfs } from "../../dist/page.js";
       import { channels } from "../../dist/render.js";
       import { SynthDef, control, out, playBuf } from "../../dist/defs/index.js";
       import { pbind, pseq, pwhite } from "../../dist/seq/index.js";

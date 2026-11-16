@@ -35,10 +35,9 @@
       Verdict beaconed as a fetch, read from the HTTP access log.
     -->
     <script type="module">
-      import {
-        SampleClockTimebase, Server, SynthDef, TempoClock, loadCore,
-        seq,
-      } from "../dist/index.js";
+      import { Server, SynthDef, TempoClock, seq } from "../dist/index.js";
+      import { SampleClockTimebase } from "../dist/base/index.js";
+      import { loadCore } from "../dist/page.js";
       import { control, out, sine } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
@@ -88,7 +87,7 @@
           degree: seq.pseq([0, 2, 4, 7]),
           dur: 0.25,
           legato: 4.0, // sustain 1 beat: the four notes overlap
-        }).play(server, { clock });
+        }).play(clock, server);
 
         await sleep(2600);
         clock.close();

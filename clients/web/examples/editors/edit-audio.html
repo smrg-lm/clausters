@@ -149,7 +149,8 @@ behind the dialog; in its name field it undoes the typing.
       http://localhost:8000/examples/editors/edit-audio.html
     -->
     <script type="module">
-      import { Session, SoundFile, gui, opfs } from "../../dist/index.js";
+      import { Session, SoundFile, gui } from "../../dist/index.js";
+      import { opfs } from "../../dist/page.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };

@@ -223,8 +223,8 @@ export class SynthDef {
      */
     async plotDef(options: PatchViewOptions = {}): Promise<PatchWindow> {
         const { DefPatch } = await import("./patch.ts");
-        const { openPatchView } = await import("../plot.ts");
-        return openPatchView(DefPatch.fromSynthdef(this), {
+        const { _openPatchView } = await import("../plot.ts");
+        return _openPatchView(DefPatch.fromSynthdef(this), {
             label: "synthdef",
             title: this.name,
             ...options,
@@ -242,13 +242,13 @@ export class SynthDef {
      * same way:
      *
      * ```ts
-     * await view({}, ...sd.controls().map((c) => knob(c))).open();
+     * await view({}, ...sd.controls.map((c) => knob(c))).open();
      * ```
      *
      * The range is the one a `control` declared; it is absent where nothing
      * did.
      */
-    controls(): ControlInfo[] {
+    get controls(): ControlInfo[] {
         return this.graphControls().map(controlInfo);
     }
 

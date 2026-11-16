@@ -38,8 +38,8 @@ let runtime: Promise<Runtime> | null = null;
 function bringUp(): Promise<Runtime> {
   runtime ??= (async () => {
     const clausters = await import(/* @vite-ignore */ new URL("dist/index.js", CLAUSTERS).href);
-    const engine = await clausters.server({ channels: 2 });
-    const gui = await clausters.guiHost();
+    const engine = await clausters.page.server({ channels: 2 });
+    const gui = await clausters.page.guiHost();
     // Asked again at every key and click until the audio runs: a browser may
     // not count the first one (Firefox does not count a modifier, the Shift
     // of Shift+Enter).

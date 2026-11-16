@@ -35,9 +35,8 @@
       Verdict beaconed as a fetch, read from the HTTP access log.
     -->
     <script type="module">
-      import {
-        Group, Server, Synth, SynthDef, TempoClock, loadCore, server as engine,
-      } from "../dist/index.js";
+      import { Group, Server, Synth, SynthDef, TempoClock } from "../dist/index.js";
+      import { loadCore, server as engine } from "../dist/page.js";
       import { control, out, sine } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");

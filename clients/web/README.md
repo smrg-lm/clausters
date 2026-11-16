@@ -83,7 +83,7 @@ element, and `tests/runtime-graph.test.ts` holds the line between them.
 The client seam (what the TypeScript client builds on):
 
 - `loadCore()` / `encodeMessage(addr, args)` / `decodePacket(bytes)` — the OSC codec through `clausters-core` compiled to wasm (the `dist/core/` bundle), byte-identical to the server and the Python client by construction; `tests/osc-vectors.json` (generated from the Python client's codec) holds the parity. Arguments are tagged pairs — `encodeMessage("/synth_new", [["s","sine"], ["i",1000], ["f",440]])` — so the int/float distinction stays explicit.
-- `Connection` — one duplex-OSC interface, two carriers: `WsConnection.open(url)` (a browser/node `WebSocket` to a `clausters --ws` server, default port 57120) and `pageConnection()` (the in-page engine, no process, no socket). Everything above the seam never names a transport.
+- `Connection` — one duplex-OSC interface, two carriers: `OscWsInterface.open(url)` (a browser/node `WebSocket` to a `clausters --ws` server, default port 57120) and `pageConnection()` (the in-page engine, no process, no socket). Everything above the seam never names a transport.
 
 The client proper (`src/defs/`, mirroring the Python client's `clausters/defs/`):
 
@@ -131,7 +131,7 @@ seq.pbind({
   instrument: "beep",
   degree: seq.pseq([0, 2, 4, 7], seq.INF),
   dur: seq.pseq([0.5, 0.25, 0.25]),
-}).play(server, { clock });
+}).play(clock, server);
 ```
 
 ```js

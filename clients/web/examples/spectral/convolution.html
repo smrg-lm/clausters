@@ -64,9 +64,8 @@ obvious.</div>
       /examples/spectral/convolution.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import {
-        Buffer, Routine, Server, Session, Synth, opfs, play,
-      } from "../../dist/index.js";
+      import { Buffer, Routine, Server, Session, Synth, play } from "../../dist/index.js";
+      import { opfs } from "../../dist/page.js";
       import {
         DoneAction, Env, SynthDef, control, conv, envGen, out, partconvFrames, sine,
       } from "../../dist/defs/index.js";

@@ -58,7 +58,8 @@ this directory and open the page.</div>
       <pre id="log"></pre>
     </main>
     <script type="module">
-      import { Server, guiHost, server } from "../../dist/index.js";
+      import { Server } from "../../dist/index.js";
+      import { guiHost, server } from "../../dist/page.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };

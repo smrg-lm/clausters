@@ -72,8 +72,9 @@ this directory and open the page.</div>
 
     <script type="module">
       import {
-        Event, Routine, Session, TempoClock, TempoMap, loadCore, rrand, tempoEnv,
+        Event, Routine, Session, TempoClock, TempoMap, rrand, tempoEnv,
       } from "../../dist/index.js";
+      import { loadCore } from "../../dist/page.js";
 
       // **The one line the script has no counterpart for.** The numeric core is
       // wasm here, and it has to be fetched before anything calls into it --

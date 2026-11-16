@@ -37,10 +37,8 @@
       tests/data-ws.test.ts.
     -->
     <script type="module">
-      import {
-        loadCore, server as engine, Server,
-        Bus, Buffer, Synth, SynthDef, data,
-      } from "../dist/index.js";
+      import { Server, Bus, Buffer, Synth, SynthDef, data } from "../dist/index.js";
+      import { loadCore, server as engine } from "../dist/page.js";
       import { control, out, outCtl, sine } from "../dist/defs/index.js";
       import { channels } from "../dist/render.js";
 

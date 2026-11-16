@@ -9,7 +9,7 @@
 // - `pageGuiConnection()` -- the **in-page host**: the `clausters-gui` wasm
 //   running on this page's canvas, reached through the `guiHost()` singleton's
 //   binding bridge (`feed` in, `poll` out). No process, no socket.
-// - `WsConnection.open("ws://host:57220")` -- a **native** `clausters-gui --ws`
+// - `OscWsInterface.open("ws://host:57220")` -- a **native** `clausters-gui --ws`
 //   host, the browser's path into a desktop window.
 //
 // Keep the split the Python client keeps: building the GuiDef tree (see
@@ -27,7 +27,7 @@ import { decodePacket, encodeMessage, oscArg } from "../base/osc.ts";
 import type { MsgArg, OscMessage } from "../base/osc.ts";
 import { encodeImmediateBundle } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
-import { WsConnection, portConnection } from "../base/connection.ts";
+import { OscWsInterface, portConnection } from "../base/connection.ts";
 import { defaultLinks } from "../base/links.ts";
 
 /**
@@ -440,7 +440,7 @@ export class GuiHost {
         if (this.conn) return this.conn;
         await loadCore();
         if (this.carrierKind === "ws") {
-            this.openOn(await WsConnection.open(this.carrierUrl));
+            this.openOn(await OscWsInterface.open(this.carrierUrl));
             return this.conn!;
         }
         const linked = this.instance ? null : workerGuiLink();

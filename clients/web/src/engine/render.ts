@@ -13,6 +13,7 @@
 // share an instance). The module is memoized, so the second render pays
 // nothing.
 
+import { RenderError } from "../errors.ts";
 import { compileFaustDefs } from "./faust-compiler.ts";
 import type { FaustJob } from "./faust-compiler.ts";
 import { linkFaustModule } from "./faust-link.ts";
@@ -148,12 +149,17 @@ export async function renderScoreBytes(
 ): Promise<RenderResult> {
     const engine = await loadRenderer();
     await prepareFaust(engine, score);
-    const samples = engine.render(
-        score,
-        sampleRate,
-        channels,
-        seed === undefined ? entropySeed() : BigInt(seed),
-    );
+    let samples: Float32Array;
+    try {
+        samples = engine.render(
+            score,
+            sampleRate,
+            channels,
+            seed === undefined ? entropySeed() : BigInt(seed),
+        );
+    } catch (error) {
+        throw new RenderError(error instanceof Error ? error.message : String(error));
+    }
     consoleRenderLog(engine.last_render_log());
     return { samples, seed: engine.last_render_seed(), events: engine.last_render_events() };
 }

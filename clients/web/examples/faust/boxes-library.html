@@ -68,9 +68,8 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
     </main>
 
     <script type="module">
-      import {
-        Buffer, FaustDef, Routine, Server, Session, Synth, opfs, play,
-      } from "../../dist/index.js";
+      import { Buffer, FaustDef, Routine, Server, Session, Synth, play } from "../../dist/index.js";
+      import { opfs } from "../../dist/page.js";
       import * as box from "../../dist/defs/boxes.js";
 
       const $ = (id) => document.getElementById(id);

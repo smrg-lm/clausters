@@ -56,8 +56,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadCore } from "../../dist/bundle-writer.js";
 import { SynthDef, control, out, sine } from "../../dist/defs/index.js";
+import { loadCore } from "../../dist/page.js";
 import { knob, view } from "../../dist/gui/index.js";
 
 /**

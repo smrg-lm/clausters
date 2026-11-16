@@ -31,7 +31,7 @@ The key design property is a single seam: the `Server` holds a {{alt communicati
 A page reaches a server in one of two ways, and **only one line of a program names which**:
 
 - **The in-page engine.** The server is a wasm build running in this tab's AudioWorklet: no process, no socket, no install. `pageConnection()` is that carrier.
-- **A `--ws` server.** A native `clausters --ws` (or `clausters-gui --ws`) elsewhere on the machine or the network, reached over a browser `WebSocket`. `WsConnection.open(url)` is that carrier.
+- **A `--ws` server.** A native `clausters --ws` (or `clausters-gui --ws`) elsewhere on the machine or the network, reached over a browser `WebSocket`. `OscWsInterface.open(url)` is that carrier.
 <!-- /web -->
 
 ## How to read this book

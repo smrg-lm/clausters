@@ -55,10 +55,10 @@ Everything below runs on the <b>in-page engine</b>: no server process.
       // same session, the same receiver, the same two responders and the same
       // self-demo. `?auto=1` runs it without the click, which is how it is
       // checked by hand under a headless browser.
-      import {
-        OscFunc, OscReceiver, Session, Synth, SynthDef,
-      } from "../../dist/index.js";
-      import { control, dust, sendReply } from "../../dist/defs/index.js";
+      import { OscFunc, Session, Synth, SynthDef } from "../../dist/index.js";
+      import { OscReceiver } from "../../dist/base/index.js";
+      import { control, sendReply } from "../../dist/defs/index.js";
+      import { dust } from "../../dist/defs/ugens/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => {

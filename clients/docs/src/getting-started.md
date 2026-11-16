@@ -131,8 +131,8 @@ import { sine } from "clausters/defs";
 await new Server().boot();      // brings up an engine and becomes the default session
 play(new Event({ degree: 0 })); // one note, now — or: new Event({ degree: 0 }).play()
 
-const node = play(sine(440.0).mul(0.2));   // a bare signal, sounding now...
-node.free();                               // ...until you free it
+const node = await play(sine(440.0).mul(0.2)); // a bare signal, sounding now...
+node.free();                                   // ...until you free it
 ```
 
 {{alt `Server().boot()` || `new Server().boot()`}} adopts the server it starts as the **default session**, so a bare {{alt `Event().play()` || `new Event().play()`}} (or the free-standing `play`, which plays anything — an event, a `pbind`, a routine, a bare signal expression like the `sine` above; see [The ambient verbs](verbs.md)) finds it with no wiring. A note played outside a clock sounds immediately and frees itself after its sustain. That is all you need for a quick sound; a `Session` (below) is for when you want to name and isolate an environment — several at once, offline next to live.

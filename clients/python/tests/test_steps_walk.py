@@ -58,16 +58,16 @@ def test_a_step_that_works_on_files_is_refused_and_does_nothing(tmp_path):
 
 
 def test_a_render_is_followed_as_it_goes(tmp_path):
-    from clausters.render import render_to_file
+    from clausters.render import _render_to_file
 
     seen = []
-    render_to_file(_score(), str(tmp_path / "tone.wav"), 48_000.0, 1, 0, None, "float",
+    _render_to_file(_score(), str(tmp_path / "tone.wav"), 48_000.0, 1, 0, None, "float",
                    progress=lambda done, total: seen.append((done, total)))
     assert seen and seen[-1] == (24_000, 24_000)
 
 
 def test_a_render_with_no_path_keeps_no_output_and_does_its_work(tmp_path):
-    from clausters.render import render_to_file
+    from clausters.render import _render_to_file
     from clausters.defs import disk_out
 
     written = tmp_path / "tone.wav"
@@ -78,7 +78,7 @@ def test_a_render_with_no_path_keeps_no_output_and_does_its_work(tmp_path):
     nrt.send_msg(None, "/synth_new", "recorded", 1000, 0, 0)
     nrt.send_bundle(None, 0.5, ("/node_free", 1000))
     # `--nrt`'s `-`: the render's work is what its synths write
-    render_to_file(nrt.score.bytes(), "-", 48_000.0, 1, 0, None, "float")
+    _render_to_file(nrt.score.bytes(), "-", 48_000.0, 1, 0, None, "float")
     assert written.read_bytes()[:4] == b"RIFF"
     # what the DiskOut wrote, and no rendered file
     assert sorted(tmp_path.iterdir()) == [written]

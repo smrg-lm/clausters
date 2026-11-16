@@ -342,8 +342,8 @@ test("a pattern plays to MIDI on the beat grid it plays to a server", async () =
     const clock = new TempoClock(1.0, { timebase, ticker }).start();
     const run = runner(clock, timebase, ticker);
 
-    pattern().play(oscLeg, { clock });
-    pattern().play(midi, { clock });
+    pattern().play(clock, oscLeg);
+    pattern().play(clock, midi);
     await run(4.0);
 
     // Four notes, at 0, 0.5, 1 and 2.
@@ -381,7 +381,7 @@ test("a zone puts each note on the member the reference client puts it on", asyn
         const run = runner(clock, timebase, ticker);
         pbind(Object.fromEntries(Object.entries(figure).map(
             ([key, value]) => [key, Array.isArray(value) ? pseq(value) : value],
-        ))).play(midi, { clock });
+        ))).play(clock, midi);
         await run(4.0);
         assert.deepEqual(
             midi.score!.sorted().map(([beat, bytes]) => [beat, [...bytes]]),

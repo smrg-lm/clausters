@@ -56,9 +56,8 @@ over HTTP (<code>python3 -m http.server</code>) and open
     </main>
 
     <script type="module">
-      import {
-        Buffer, Routine, Server, Session, opfs, play, seq,
-      } from "../../dist/index.js";
+      import { Buffer, Routine, Server, Session, play, seq } from "../../dist/index.js";
+      import { opfs } from "../../dist/page.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };

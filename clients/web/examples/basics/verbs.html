@@ -50,9 +50,9 @@ change. The tour ends on all three.
       it -- the same samples, evaluated rather than sounded.
     -->
     <script type="module">
-      import {
-        Automation, Buffer, Event, Session, SynthDef, opfs, play, render, seq,
-      } from "../../dist/index.js";
+      import { Buffer, Event, Session, SynthDef, play, render, seq } from "../../dist/index.js";
+      import { Automation } from "../../dist/document.js";
+      import { opfs } from "../../dist/page.js";
       import { Env, boxes as box, control, envGen, out, sine } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -97,12 +97,12 @@ change. The tour ends on all three.
         await wait(PAUSE + 1000);
 
         log("a bare UGen expression, sounding until freed");
-        let node = play(sine(330.0).mul(0.15));
+        let node = await play(sine(330.0).mul(0.15));
         await wait(PAUSE);
         node.free();
 
         log("a Faust box expression (os.osc from the Faust library)");
-        node = play(box.faust("os.osc")
+        node = await play(box.faust("os.osc")
           .call(box.hslider("freq", 440.0, 20.0, 2000.0, 0.01)).mul(0.15));
         await wait(PAUSE);
         node.free();
@@ -110,7 +110,7 @@ change. The tour ends on all three.
         log("a named def with controls; a long note, released early");
         const beep = new SynthDef("verbs_beep",
           out(0.0, sine(control("freq", 440.0)).mul(0.15)));
-        node = play(beep, { controls: { freq: 660.0 } });
+        node = await play(beep, { controls: { freq: 660.0 } });
         await wait(PAUSE);
         node.free();
         const longNote = play(new Event({ degree: 0, dur: 30.0 }));  // would sustain ~24 s...
@@ -118,7 +118,7 @@ change. The tour ends on all three.
         longNote.free();                                             // ...cut now
 
         log("a curve sweeping a node's freq from inside it, cut mid-sweep");
-        node = play(sine(envGen(new Env([440.0, 1760.0, 440.0], [1.5, 1.5]))).mul(0.15));
+        node = await play(sine(envGen(new Env([440.0, 1760.0, 440.0], [1.5, 1.5]))).mul(0.15));
         await wait(1500);
         node.free();           // cut at the top of the sweep
         await wait(500);
@@ -190,7 +190,7 @@ change. The tour ends on all three.
         // played through the stock playbuf instrument.
         log("playing the rendered take back as a buffer");
         const take = await Buffer.read(wav);
-        play(take, { controls: { amp: 0.8 } });
+        await play(take, { controls: { amp: 0.8 } });
         await wait(2000);
         log("done");
         $("tour").disabled = false;

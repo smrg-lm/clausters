@@ -86,6 +86,8 @@ from typing import Any
 
 from . import _native
 
+__all__ = ["Bundle", "DEFAULT_RUNTIME"]
+
 #: Where a page serves the component run time from. Not the bundle's business
 #: -- an argument of `Bundle.write`, defaulting to the package's own layout.
 DEFAULT_RUNTIME = "/dist/runtime.js"

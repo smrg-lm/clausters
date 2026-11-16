@@ -38,11 +38,11 @@ import types as _types
 from .. import _native
 from .absobject import AbstractObject as _AbstractObject
 
-BinaryOp = _native.BinaryOp
-UnaryOp = _native.UnaryOp
-BoundOp = _native.BoundOp
-MapOp = _native.MapOp
-Clip = _native.Clip
+_BinaryOp = _native.BinaryOp
+_UnaryOp = _native.UnaryOp
+_BoundOp = _native.BoundOp
+_MapOp = _native.MapOp
+_Clip = _native.Clip
 
 
 def _is_seq(x):
@@ -110,52 +110,52 @@ def _boundop(op, x, lo, hi):
 
 # ---- binary primitives (native, f32) ----
 
-def add(a, b): return _binop(BinaryOp.ADD, a, b)
-def sub(a, b): return _binop(BinaryOp.SUB, a, b)
-def mul(a, b): return _binop(BinaryOp.MUL, a, b)
-def div(a, b): return _binop(BinaryOp.DIV, a, b)
-def mod(a, b): return _binop(BinaryOp.MOD, a, b)
-def pow(a, b): return _binop(BinaryOp.POW, a, b)
-def min(a, b): return _binop(BinaryOp.MIN, a, b)
-def max(a, b): return _binop(BinaryOp.MAX, a, b)
-def atan2(a, b): return _binop(BinaryOp.ATAN2, a, b)
-def gt(a, b): return _binop(BinaryOp.GT, a, b)
-def lt(a, b): return _binop(BinaryOp.LT, a, b)
-def ge(a, b): return _binop(BinaryOp.GE, a, b)
-def le(a, b): return _binop(BinaryOp.LE, a, b)
-def eq(a, b): return _binop(BinaryOp.EQ, a, b)
-def ne(a, b): return _binop(BinaryOp.NE, a, b)
-def bitand(a, b): return _binop(BinaryOp.AND, a, b)
-def bitor(a, b): return _binop(BinaryOp.OR, a, b)
-def bitxor(a, b): return _binop(BinaryOp.XOR, a, b)
-def leftshift(a, b): return _binop(BinaryOp.LSH, a, b)
-def rightshift(a, b): return _binop(BinaryOp.RSH, a, b)
-def hypot(a, b): return _binop(BinaryOp.HYPOT, a, b)
-def ring1(a, b): return _binop(BinaryOp.RING1, a, b)
-def ring2(a, b): return _binop(BinaryOp.RING2, a, b)
-def ring3(a, b): return _binop(BinaryOp.RING3, a, b)
-def ring4(a, b): return _binop(BinaryOp.RING4, a, b)
-def sumsqr(a, b): return _binop(BinaryOp.SUMSQR, a, b)
-def difsqr(a, b): return _binop(BinaryOp.DIFSQR, a, b)
-def sqrsum(a, b): return _binop(BinaryOp.SQRSUM, a, b)
-def sqrdif(a, b): return _binop(BinaryOp.SQRDIF, a, b)
-def absdif(a, b): return _binop(BinaryOp.ABSDIF, a, b)
-def thresh(a, b): return _binop(BinaryOp.THRESH, a, b)
-def clip2(a, b): return _binop(BinaryOp.CLIP2, a, b)
-def excess(a, b): return _binop(BinaryOp.EXCESS, a, b)
-def round(a, b): return _binop(BinaryOp.ROUND, a, b)
-def trunc(a, b): return _binop(BinaryOp.TRUNC, a, b)
-def fold2(a, b): return _binop(BinaryOp.FOLD2, a, b)
-def wrap2(a, b): return _binop(BinaryOp.WRAP2, a, b)
-def gcd(a, b): return _binop(BinaryOp.GCD, a, b)
-def lcm(a, b): return _binop(BinaryOp.LCM, a, b)
-def hypotapx(a, b): return _binop(BinaryOp.HYPOT_APX, a, b)
-def idiv(a, b): return _binop(BinaryOp.IDIV, a, b)
-def roundup(a, b): return _binop(BinaryOp.ROUNDUP, a, b)
-def urshift(a, b): return _binop(BinaryOp.URSHIFT, a, b)
-def amclip(a, b): return _binop(BinaryOp.AMCLIP, a, b)
-def scaleneg(a, b): return _binop(BinaryOp.SCALENEG, a, b)
-def firstarg(a, b): return _binop(BinaryOp.FIRSTARG, a, b)
+def add(a, b): return _binop(_BinaryOp.ADD, a, b)
+def sub(a, b): return _binop(_BinaryOp.SUB, a, b)
+def mul(a, b): return _binop(_BinaryOp.MUL, a, b)
+def div(a, b): return _binop(_BinaryOp.DIV, a, b)
+def mod(a, b): return _binop(_BinaryOp.MOD, a, b)
+def pow(a, b): return _binop(_BinaryOp.POW, a, b)
+def min(a, b): return _binop(_BinaryOp.MIN, a, b)
+def max(a, b): return _binop(_BinaryOp.MAX, a, b)
+def atan2(a, b): return _binop(_BinaryOp.ATAN2, a, b)
+def gt(a, b): return _binop(_BinaryOp.GT, a, b)
+def lt(a, b): return _binop(_BinaryOp.LT, a, b)
+def ge(a, b): return _binop(_BinaryOp.GE, a, b)
+def le(a, b): return _binop(_BinaryOp.LE, a, b)
+def eq(a, b): return _binop(_BinaryOp.EQ, a, b)
+def ne(a, b): return _binop(_BinaryOp.NE, a, b)
+def bitand(a, b): return _binop(_BinaryOp.AND, a, b)
+def bitor(a, b): return _binop(_BinaryOp.OR, a, b)
+def bitxor(a, b): return _binop(_BinaryOp.XOR, a, b)
+def leftshift(a, b): return _binop(_BinaryOp.LSH, a, b)
+def rightshift(a, b): return _binop(_BinaryOp.RSH, a, b)
+def hypot(a, b): return _binop(_BinaryOp.HYPOT, a, b)
+def ring1(a, b): return _binop(_BinaryOp.RING1, a, b)
+def ring2(a, b): return _binop(_BinaryOp.RING2, a, b)
+def ring3(a, b): return _binop(_BinaryOp.RING3, a, b)
+def ring4(a, b): return _binop(_BinaryOp.RING4, a, b)
+def sumsqr(a, b): return _binop(_BinaryOp.SUMSQR, a, b)
+def difsqr(a, b): return _binop(_BinaryOp.DIFSQR, a, b)
+def sqrsum(a, b): return _binop(_BinaryOp.SQRSUM, a, b)
+def sqrdif(a, b): return _binop(_BinaryOp.SQRDIF, a, b)
+def absdif(a, b): return _binop(_BinaryOp.ABSDIF, a, b)
+def thresh(a, b): return _binop(_BinaryOp.THRESH, a, b)
+def clip2(a, b): return _binop(_BinaryOp.CLIP2, a, b)
+def excess(a, b): return _binop(_BinaryOp.EXCESS, a, b)
+def round(a, b): return _binop(_BinaryOp.ROUND, a, b)
+def trunc(a, b): return _binop(_BinaryOp.TRUNC, a, b)
+def fold2(a, b): return _binop(_BinaryOp.FOLD2, a, b)
+def wrap2(a, b): return _binop(_BinaryOp.WRAP2, a, b)
+def gcd(a, b): return _binop(_BinaryOp.GCD, a, b)
+def lcm(a, b): return _binop(_BinaryOp.LCM, a, b)
+def hypotapx(a, b): return _binop(_BinaryOp.HYPOT_APX, a, b)
+def idiv(a, b): return _binop(_BinaryOp.IDIV, a, b)
+def roundup(a, b): return _binop(_BinaryOp.ROUNDUP, a, b)
+def urshift(a, b): return _binop(_BinaryOp.URSHIFT, a, b)
+def amclip(a, b): return _binop(_BinaryOp.AMCLIP, a, b)
+def scaleneg(a, b): return _binop(_BinaryOp.SCALENEG, a, b)
+def firstarg(a, b): return _binop(_BinaryOp.FIRSTARG, a, b)
 
 
 # ---- two bounds (native, f32) ----
@@ -166,54 +166,54 @@ def firstarg(a, b): return _binop(BinaryOp.FIRSTARG, a, b)
 
 def clip(x, lo, hi):
     """`x` held inside ``lo..hi`` at the nearer bound."""
-    return _boundop(BoundOp.CLIP, x, lo, hi)
+    return _boundop(_BoundOp.CLIP, x, lo, hi)
 
 
 def wrap(x, lo, hi):
     """`x` wrapped into ``lo..hi`` -- taken modulo the range."""
-    return _boundop(BoundOp.WRAP, x, lo, hi)
+    return _boundop(_BoundOp.WRAP, x, lo, hi)
 
 
 def fold(x, lo, hi):
     """`x` folded into ``lo..hi`` -- reflected at the bounds, as many times
     as it takes."""
-    return _boundop(BoundOp.FOLD, x, lo, hi)
+    return _boundop(_BoundOp.FOLD, x, lo, hi)
 
 
 # ---- unary primitives (native, f32) ----
 
-def neg(x): return _unop(UnaryOp.NEG, x)
-def abs(x): return _unop(UnaryOp.ABS, x)
-def sin(x): return _unop(UnaryOp.SIN, x)
-def cos(x): return _unop(UnaryOp.COS, x)
-def tan(x): return _unop(UnaryOp.TAN, x)
-def asin(x): return _unop(UnaryOp.ASIN, x)
-def acos(x): return _unop(UnaryOp.ACOS, x)
-def atan(x): return _unop(UnaryOp.ATAN, x)
-def exp(x): return _unop(UnaryOp.EXP, x)
-def log(x): return _unop(UnaryOp.LOG, x)
-def log10(x): return _unop(UnaryOp.LOG10, x)
-def sqrt(x): return _unop(UnaryOp.SQRT, x)
-def floor(x): return _unop(UnaryOp.FLOOR, x)
-def ceil(x): return _unop(UnaryOp.CEIL, x)
-def rint(x): return _unop(UnaryOp.RINT, x)
-def asinteger(x): return _unop(UnaryOp.INTCAST, x)
-def asfloat(x): return _unop(UnaryOp.FLOATCAST, x)
-def squared(x): return _unop(UnaryOp.SQUARED, x)
-def cubed(x): return _unop(UnaryOp.CUBED, x)
-def reciprocal(x): return _unop(UnaryOp.RECIP, x)
-def frac(x): return _unop(UnaryOp.FRAC, x)
-def sign(x): return _unop(UnaryOp.SIGN, x)
-def log2(x): return _unop(UnaryOp.LOG2, x)
-def exp10(x): return _unop(UnaryOp.EXP10, x)
-def sinh(x): return _unop(UnaryOp.SINH, x)
-def cosh(x): return _unop(UnaryOp.COSH, x)
-def tanh(x): return _unop(UnaryOp.TANH, x)
-def distort(x): return _unop(UnaryOp.DISTORT, x)
-def softclip(x): return _unop(UnaryOp.SOFTCLIP, x)
-def bitnot(x): return _unop(UnaryOp.BITNOT, x)
-def ramp(x): return _unop(UnaryOp.RAMP, x)
-def scurve(x): return _unop(UnaryOp.SCURVE, x)
+def neg(x): return _unop(_UnaryOp.NEG, x)
+def abs(x): return _unop(_UnaryOp.ABS, x)
+def sin(x): return _unop(_UnaryOp.SIN, x)
+def cos(x): return _unop(_UnaryOp.COS, x)
+def tan(x): return _unop(_UnaryOp.TAN, x)
+def asin(x): return _unop(_UnaryOp.ASIN, x)
+def acos(x): return _unop(_UnaryOp.ACOS, x)
+def atan(x): return _unop(_UnaryOp.ATAN, x)
+def exp(x): return _unop(_UnaryOp.EXP, x)
+def log(x): return _unop(_UnaryOp.LOG, x)
+def log10(x): return _unop(_UnaryOp.LOG10, x)
+def sqrt(x): return _unop(_UnaryOp.SQRT, x)
+def floor(x): return _unop(_UnaryOp.FLOOR, x)
+def ceil(x): return _unop(_UnaryOp.CEIL, x)
+def rint(x): return _unop(_UnaryOp.RINT, x)
+def asinteger(x): return _unop(_UnaryOp.INTCAST, x)
+def asfloat(x): return _unop(_UnaryOp.FLOATCAST, x)
+def squared(x): return _unop(_UnaryOp.SQUARED, x)
+def cubed(x): return _unop(_UnaryOp.CUBED, x)
+def reciprocal(x): return _unop(_UnaryOp.RECIP, x)
+def frac(x): return _unop(_UnaryOp.FRAC, x)
+def sign(x): return _unop(_UnaryOp.SIGN, x)
+def log2(x): return _unop(_UnaryOp.LOG2, x)
+def exp10(x): return _unop(_UnaryOp.EXP10, x)
+def sinh(x): return _unop(_UnaryOp.SINH, x)
+def cosh(x): return _unop(_UnaryOp.COSH, x)
+def tanh(x): return _unop(_UnaryOp.TANH, x)
+def distort(x): return _unop(_UnaryOp.DISTORT, x)
+def softclip(x): return _unop(_UnaryOp.SOFTCLIP, x)
+def bitnot(x): return _unop(_UnaryOp.BITNOT, x)
+def ramp(x): return _unop(_UnaryOp.RAMP, x)
+def scurve(x): return _unop(_UnaryOp.SCURVE, x)
 
 
 # ---- windows over a phase (native, f32) ----
@@ -221,22 +221,22 @@ def scurve(x): return _unop(UnaryOp.SCURVE, x)
 # A window's shape read at one phase in ``0..1``, zero outside it -- the
 # operator, not an FFT frame (`clausters._native.window` fills one of those).
 
-def rectwindow(x): return _unop(UnaryOp.RECTWINDOW, x)
-def hanwindow(x): return _unop(UnaryOp.HANWINDOW, x)
-def welwindow(x): return _unop(UnaryOp.WELWINDOW, x)
-def triwindow(x): return _unop(UnaryOp.TRIWINDOW, x)
+def rectwindow(x): return _unop(_UnaryOp.RECTWINDOW, x)
+def hanwindow(x): return _unop(_UnaryOp.HANWINDOW, x)
+def welwindow(x): return _unop(_UnaryOp.WELWINDOW, x)
+def triwindow(x): return _unop(_UnaryOp.TRIWINDOW, x)
 
 
 # ---- music-theory conversions (native, f32 -- bit-identical to the server) ----
 
-def midicps(x): return _unop(UnaryOp.MIDICPS, x)
-def cpsmidi(x): return _unop(UnaryOp.CPSMIDI, x)
-def midiratio(x): return _unop(UnaryOp.MIDIRATIO, x)
-def ratiomidi(x): return _unop(UnaryOp.RATIOMIDI, x)
-def dbamp(x): return _unop(UnaryOp.DBAMP, x)
-def ampdb(x): return _unop(UnaryOp.AMPDB, x)
-def octcps(x): return _unop(UnaryOp.OCTCPS, x)
-def cpsoct(x): return _unop(UnaryOp.CPSOCT, x)
+def midicps(x): return _unop(_UnaryOp.MIDICPS, x)
+def cpsmidi(x): return _unop(_UnaryOp.CPSMIDI, x)
+def midiratio(x): return _unop(_UnaryOp.MIDIRATIO, x)
+def ratiomidi(x): return _unop(_UnaryOp.RATIOMIDI, x)
+def dbamp(x): return _unop(_UnaryOp.DBAMP, x)
+def ampdb(x): return _unop(_UnaryOp.AMPDB, x)
+def octcps(x): return _unop(_UnaryOp.OCTCPS, x)
+def cpsoct(x): return _unop(_UnaryOp.CPSOCT, x)
 
 
 # ---- perceptual frequency scales (native, f64 -- not UnaryOps) ----
@@ -279,8 +279,8 @@ def barkcps(x):
 # ``clausters_core::numeric``. Each takes a number or a sequence for its first
 # argument; the rest are plain numbers.
 
-Calc = _native.Calc
-ScaleCalc = _native.ScaleCalc
+_Calc = _native.Calc
+_ScaleCalc = _native.ScaleCalc
 
 
 def _calc(op, x, *args):
@@ -291,86 +291,86 @@ def _calc(op, x, *args):
 
 def degrad(x):
     """Degrees to radians."""
-    return _calc(Calc.DEGRAD, x)
+    return _calc(_Calc.DEGRAD, x)
 
 
 def raddeg(x):
     """Radians to degrees."""
-    return _calc(Calc.RADDEG, x)
+    return _calc(_Calc.RADDEG, x)
 
 
 def cbrt(x):
     """The real cube root."""
-    return _calc(Calc.CBRT, x)
+    return _calc(_Calc.CBRT, x)
 
 
 def log1p(x):
     """``log(1 + x)``, exact near zero."""
-    return _calc(Calc.LOG1P, x)
+    return _calc(_Calc.LOG1P, x)
 
 
 def expm1(x):
     """``exp(x) - 1``, exact near zero."""
-    return _calc(Calc.EXPM1, x)
+    return _calc(_Calc.EXPM1, x)
 
 
 def erf(x):
     """The error function."""
-    return _calc(Calc.ERF, x)
+    return _calc(_Calc.ERF, x)
 
 
 def erfc(x):
     """The complementary error function, ``1 - erf(x)``, exact in its tail."""
-    return _calc(Calc.ERFC, x)
+    return _calc(_Calc.ERFC, x)
 
 
 def tgamma(x):
     """The gamma function."""
-    return _calc(Calc.TGAMMA, x)
+    return _calc(_Calc.TGAMMA, x)
 
 
 def lgamma(x):
     """``log |gamma(x)|``."""
-    return _calc(Calc.LGAMMA, x)
+    return _calc(_Calc.LGAMMA, x)
 
 
 def zapgremlins(x):
     """`x`, or 0 where it is a denormal, an infinity, a NaN or past 1e15 --
     what keeps a feedback path from carrying one."""
-    return _calc(Calc.ZAPGREMLINS, x)
+    return _calc(_Calc.ZAPGREMLINS, x)
 
 
 def wrap1(x):
     """`x` wrapped into ``-1..1`` by one shift."""
-    return _calc(Calc.WRAP1, x)
+    return _calc(_Calc.WRAP1, x)
 
 
 def fold1(x):
     """`x` folded into ``-1..1`` by one reflection."""
-    return _calc(Calc.FOLD1, x)
+    return _calc(_Calc.FOLD1, x)
 
 
 def even(x):
     """Whether the whole part of `x` is even."""
-    r = _calc(Calc.EVEN, x)
+    r = _calc(_Calc.EVEN, x)
     return [v != 0.0 for v in r] if _is_seq(x) else r != 0.0
 
 
 def odd(x):
     """Whether the whole part of `x` is odd."""
-    r = _calc(Calc.ODD, x)
+    r = _calc(_Calc.ODD, x)
     return [v != 0.0 for v in r] if _is_seq(x) else r != 0.0
 
 
 def graycode(x):
     """The Gray code of the whole part of `x`: ``x ^ (x >> 1)``."""
-    r = _calc(Calc.GRAYCODE, x)
+    r = _calc(_Calc.GRAYCODE, x)
     return [int(v) for v in r] if _is_seq(x) else int(r)
 
 
 def nextpowerof(x, base):
     """The least power of `base` at or above `x` (a power maps to itself)."""
-    return _calc(Calc.NEXTPOWEROF, x, base)
+    return _calc(_Calc.NEXTPOWEROF, x, base)
 
 
 def nextpoweroftwo(x):
@@ -385,78 +385,78 @@ def nextpowerofthree(x):
 
 def previouspowerof(x, base):
     """The power of `base` below the one `nextpowerof` gives."""
-    return _calc(Calc.PREVIOUSPOWEROF, x, base)
+    return _calc(_Calc.PREVIOUSPOWEROF, x, base)
 
 
 def moddif(x, b=0.0, mod=1.0):
     """The distance from `x` to `b` on a circle of circumference `mod`:
     0.9 and 0.1 are 0.2 apart on the unit circle, not 0.8."""
-    return _calc(Calc.MODDIF, x, b, mod)
+    return _calc(_Calc.MODDIF, x, b, mod)
 
 
 def softround(x, resolution=1.0, margin=0.05, strength=1.0):
     """`x` pulled toward its nearest multiple of `resolution` by `strength`
     when it is **farther** than `margin` from it."""
-    return _calc(Calc.SOFTROUND, x, resolution, margin, strength)
+    return _calc(_Calc.SOFTROUND, x, resolution, margin, strength)
 
 
 def snap(x, resolution=1.0, margin=0.05, strength=1.0):
     """`x` pulled toward its nearest multiple of `resolution` by `strength`
     when it is **within** `margin` of it -- a magnet for the grid."""
-    return _calc(Calc.SNAP, x, resolution, margin, strength)
+    return _calc(_Calc.SNAP, x, resolution, margin, strength)
 
 
 def lcurve(x, a=1.0, m=0.0, n=1.0, tau=1.0):
     """The logistic curve ``a * (m*e^-x + 1) / (n*e^-x + 1)``."""
-    return _calc(Calc.LCURVE, x, a, m, n, tau)
+    return _calc(_Calc.LCURVE, x, a, m, n, tau)
 
 
 def gausscurve(x, a=1.0, b=0.0, c=1.0):
     """The Gaussian bell ``a * exp(-(x - b)^2 / (2 c^2))``."""
-    return _calc(Calc.GAUSSCURVE, x, a, b, c)
+    return _calc(_Calc.GAUSSCURVE, x, a, b, c)
 
 
 def lg3interp(x1, a, b, c, d):
     """Lagrange cubic interpolation at `x1` in ``0..1`` between `b` and `c`,
     with `a` and `d` their outer neighbours."""
-    return _calc(Calc.LG3INTERP, x1, a, b, c, d)
+    return _calc(_Calc.LG3INTERP, x1, a, b, c, d)
 
 
 def calcfeedback(delaytime, decaytime):
     """The feedback coefficient that decays a delay of `delaytime` by 60 dB
     in `decaytime` (a negative `decaytime` inverts it)."""
-    return _calc(Calc.CALCFEEDBACK, delaytime, decaytime)
+    return _calc(_Calc.CALCFEEDBACK, delaytime, decaytime)
 
 
 def _clip_number(clip):
-    return int(Clip[clip.upper()] if isinstance(clip, str) else Clip(clip))
+    return int(_Clip[clip.upper()] if isinstance(clip, str) else _Clip(clip))
 
 
 def bilin(x, in_center, in_lo, in_hi, out_center, out_lo, out_hi, clip="minmax"):
     """A linear map with a centre: `x` read off ``in_lo..in_center..in_hi``,
     each half mapped linearly onto its half of the output."""
-    return _calc(Calc.BILIN, x, in_center, in_lo, in_hi, out_center, out_lo,
+    return _calc(_Calc.BILIN, x, in_center, in_lo, in_hi, out_center, out_lo,
                  out_hi, _clip_number(clip))
 
 
 def biexp(x, in_center, in_lo, in_hi, out_center, out_lo, out_hi, clip="minmax"):
     """`bilin` read off an exponential input."""
-    return _calc(Calc.BIEXP, x, in_center, in_lo, in_hi, out_center, out_lo,
+    return _calc(_Calc.BIEXP, x, in_center, in_lo, in_hi, out_center, out_lo,
                  out_hi, _clip_number(clip))
 
 
 def besselj(n, x):
     """The Bessel function of the first kind, integer order `n`, at `x`."""
     if _is_seq(x):
-        return [_native.calc(Calc.BESSELJ, float(n), float(v)) for v in x]
-    return _native.calc(Calc.BESSELJ, float(n), float(x))
+        return [_native.calc(_Calc.BESSELJ, float(n), float(v)) for v in x]
+    return _native.calc(_Calc.BESSELJ, float(n), float(x))
 
 
 def bessely(n, x):
     """The Bessel function of the second kind, integer order `n`, at `x`."""
     if _is_seq(x):
-        return [_native.calc(Calc.BESSELY, float(n), float(v)) for v in x]
-    return _native.calc(Calc.BESSELY, float(n), float(x))
+        return [_native.calc(_Calc.BESSELY, float(n), float(v)) for v in x]
+    return _native.calc(_Calc.BESSELY, float(n), float(x))
 
 
 def blend(a, b, frac=0.5):
@@ -465,10 +465,10 @@ def blend(a, b, frac=0.5):
     args = (a, b, frac)
     seqs = [_is_seq(v) for v in args]
     if not _py.any(seqs):
-        return _native.calc(Calc.BLEND, float(a), float(b), float(frac))
+        return _native.calc(_Calc.BLEND, float(a), float(b), float(frac))
     n = _py.max(len(v) for v, q in zip(args, seqs) if q)
     cols = [_extend(v, n) if q else [v] * n for v, q in zip(args, seqs)]
-    return [_native.calc(Calc.BLEND, float(x), float(y), float(f))
+    return [_native.calc(_Calc.BLEND, float(x), float(y), float(f))
             for x, y, f in zip(*cols)]
 
 
@@ -485,23 +485,23 @@ def degkey(degree, scale, steps=12):
     """Scale degree to key: `degree` indexes `scale` (offsets within one octave
     of `steps`) with octave carry, and a fraction is an alteration as
     SuperCollider writes it -- ``1.1`` is degree 1 raised a semitone."""
-    return _scale_calc(ScaleCalc.DEGKEY, degree, scale, steps)
+    return _scale_calc(_ScaleCalc.DEGKEY, degree, scale, steps)
 
 
 def keydeg(key, scale, steps=12):
     """Key to scale degree, the inverse of `degkey`: a key between two degrees
     is a fractional degree, linearly between them."""
-    return _scale_calc(ScaleCalc.KEYDEG, key, scale, steps)
+    return _scale_calc(_ScaleCalc.KEYDEG, key, scale, steps)
 
 
 def nearestinscale(x, scale, steps=12):
     """The key of `scale` nearest to `x`, in `x`'s own octave of `steps`."""
-    return _scale_calc(ScaleCalc.NEARESTINSCALE, x, scale, steps)
+    return _scale_calc(_ScaleCalc.NEARESTINSCALE, x, scale, steps)
 
 
 def nearestinlist(x, values):
     """The value of the sorted list `values` nearest to `x`."""
-    return _scale_calc(ScaleCalc.NEARESTINLIST, x, values, 0.0)
+    return _scale_calc(_ScaleCalc.NEARESTINLIST, x, values, 0.0)
 
 
 def degree_to_midinote(degree, alter, octave, root, scale):
@@ -518,14 +518,14 @@ def degree_to_midinote(degree, alter, octave, root, scale):
 # (`tablerand`, `scramble`) are random values and live with the others in
 # `clausters.base.rand`.
 
-ListOp = _native.ListOp
+_ListOp = _native.ListOp
 
 
 def blendat(values, index, method="clip"):
     """`values` read at the fractional `index`, blended between the two values
     around it. `method` says what an index past either end reads: ``"clip"``
     (held at the end), ``"wrap"`` or ``"fold"``."""
-    m = int(BoundOp[method.upper()]) if isinstance(method, str) else int(method)
+    m = int(_BoundOp[method.upper()]) if isinstance(method, str) else int(method)
     if _is_seq(index):
         return [_native.blend_at(values, float(i), m) for i in index]
     return _native.blend_at(values, float(index), m)
@@ -533,52 +533,52 @@ def blendat(values, index, method="clip"):
 
 def normalize(values, lo=0.0, hi=1.0):
     """`values` mapped linearly from their own range onto ``lo..hi``."""
-    return _native.list_op(ListOp.NORMALIZE, values, lo, hi)
+    return _native.list_op(_ListOp.NORMALIZE, values, lo, hi)
 
 
 def normalizesum(values):
     """`values` divided by their sum, so they sum to 1 -- the weights
     `wchoose` reads, made explicit."""
-    return _native.list_op(ListOp.NORMALIZESUM, values)
+    return _native.list_op(_ListOp.NORMALIZESUM, values)
 
 
 def integrate(values):
     """The running sum of `values`."""
-    return _native.list_op(ListOp.INTEGRATE, values)
+    return _native.list_op(_ListOp.INTEGRATE, values)
 
 
 def differentiate(values):
     """Each value less the one before it (the first less 0)."""
-    return _native.list_op(ListOp.DIFFERENTIATE, values)
+    return _native.list_op(_ListOp.DIFFERENTIATE, values)
 
 
 def resamp0(values, size):
     """`values` resampled to `size` values by taking the nearest."""
-    return _native.list_op(ListOp.RESAMP0, values, size)
+    return _native.list_op(_ListOp.RESAMP0, values, size)
 
 
 def resamp1(values, size):
     """`values` resampled to `size` values by linear interpolation."""
-    return _native.list_op(ListOp.RESAMP1, values, size)
+    return _native.list_op(_ListOp.RESAMP1, values, size)
 
 
 def asrandomtable(values, size=None):
     """The table `clausters.tablerand` draws from, with `values` as the
     probability shape (higher is likelier), `size` entries long (the shape's
     own length unless given)."""
-    return _native.list_op(ListOp.ASRANDOMTABLE, values,
+    return _native.list_op(_ListOp.ASRANDOMTABLE, values,
                            len(values) if size is None else size)
 
 
 def indexinbetween(values, x):
     """The fractional index of `x` in the sorted list `values`."""
-    return _scale_calc(ScaleCalc.INDEXINBETWEEN, x, values, 0.0)
+    return _scale_calc(_ScaleCalc.INDEXINBETWEEN, x, values, 0.0)
 
 
 def indexofgreaterthan(values, x):
     """The first index of the sorted list `values` greater than `x`, or
     ``None`` where none is."""
-    i = _native.scale_calc(ScaleCalc.INDEXOFGREATERTHAN, float(x), [float(v) for v in values])
+    i = _native.scale_calc(_ScaleCalc.INDEXOFGREATERTHAN, float(x), [float(v) for v in values])
     return None if i < 0 else int(i)
 
 
@@ -594,29 +594,29 @@ def _reshape(op, values, a=0.0):
 
 def mirror(values):
     """The list and then back again, the last item once: ``1 2 3 2 1``."""
-    return _reshape(ListOp.MIRROR, values)
+    return _reshape(_ListOp.MIRROR, values)
 
 
 def mirror1(values):
     """The list and then back again, neither end repeated: ``1 2 3 2`` -- the
     form that loops."""
-    return _reshape(ListOp.MIRROR1, values)
+    return _reshape(_ListOp.MIRROR1, values)
 
 
 def mirror2(values):
     """The list and then reversed, both ends twice: ``1 2 3 3 2 1``."""
-    return _reshape(ListOp.MIRROR2, values)
+    return _reshape(_ListOp.MIRROR2, values)
 
 
 def stutter(values, n=2):
     """Every item ``n`` times in a row."""
-    return _reshape(ListOp.STUTTER, values, n)
+    return _reshape(_ListOp.STUTTER, values, n)
 
 
 def rotate(values, n=1):
     """The list rotated ``n`` places to the right (negative to the left),
     wrapping."""
-    return _reshape(ListOp.ROTATE, values, n)
+    return _reshape(_ListOp.ROTATE, values, n)
 
 
 def pyramid(values, pattern_type=1):
@@ -624,14 +624,14 @@ def pyramid(values, pattern_type=1):
     type 1 is every prefix (``1  1 2  1 2 3``), 2 every suffix, 3 and 4 the
     same shrinking, and 5 to 10 a run up and back down in their combinations
     -- sclang's ten pattern types."""
-    return _reshape(ListOp.PYRAMID, values, pattern_type)
+    return _reshape(_ListOp.PYRAMID, values, pattern_type)
 
 
 def pyramidg(values, pattern_type=1):
     """`pyramid` with each run its own list: ``[[1], [1, 2], [1, 2, 3]]``."""
     items = list(values)
     flat = pyramid(items, pattern_type)
-    sizes = _native.list_op(ListOp.PYRAMIDSIZES, [0.0] * len(items), pattern_type)
+    sizes = _native.list_op(_ListOp.PYRAMIDSIZES, [0.0] * len(items), pattern_type)
     groups, at = [], 0
     for size in sizes:
         groups.append(flat[at:at + int(size)])
@@ -651,7 +651,7 @@ def pyramidg(values, pattern_type=1):
 # ``"none"`` to extrapolate.
 
 def _map(op, x, in_lo, in_hi, out_lo, out_hi, curve=0.0, clip="minmax"):
-    mode = Clip[clip.upper()] if isinstance(clip, str) else Clip(clip)
+    mode = _Clip[clip.upper()] if isinstance(clip, str) else _Clip(clip)
     if _is_seq(x):
         x = [float(v) for v in x]
     return _native.map_range(op, mode, x, float(in_lo), float(in_hi),
@@ -660,25 +660,25 @@ def _map(op, x, in_lo, in_hi, out_lo, out_hi, curve=0.0, clip="minmax"):
 
 def linlin(x, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
     """`x` off a linear range onto a linear one."""
-    return _map(MapOp.LINLIN, x, in_lo, in_hi, out_lo, out_hi, clip=clip)
+    return _map(_MapOp.LINLIN, x, in_lo, in_hi, out_lo, out_hi, clip=clip)
 
 
 def linexp(x, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
     """`x` off a linear range onto an exponential one -- a fader position to a
     frequency. The output ends must not straddle zero; one *at* zero is nudged
     to the smallest same-signed value rather than giving a NaN."""
-    return _map(MapOp.LINEXP, x, in_lo, in_hi, out_lo, out_hi, clip=clip)
+    return _map(_MapOp.LINEXP, x, in_lo, in_hi, out_lo, out_hi, clip=clip)
 
 
 def explin(x, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
     """`x` off an exponential range onto a linear one -- a frequency to a fader
     position."""
-    return _map(MapOp.EXPLIN, x, in_lo, in_hi, out_lo, out_hi, clip=clip)
+    return _map(_MapOp.EXPLIN, x, in_lo, in_hi, out_lo, out_hi, clip=clip)
 
 
 def expexp(x, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
     """`x` off an exponential range onto another."""
-    return _map(MapOp.EXPEXP, x, in_lo, in_hi, out_lo, out_hi, clip=clip)
+    return _map(_MapOp.EXPEXP, x, in_lo, in_hi, out_lo, out_hi, clip=clip)
 
 
 def lincurve(x, in_lo, in_hi, out_lo, out_hi, curve=-4.0, clip="minmax"):
@@ -687,12 +687,12 @@ def lincurve(x, in_lo, in_hi, out_lo, out_hi, curve=-4.0, clip="minmax"):
     of the input -- and positive the reverse, which is the fine-at-the-bottom
     feel a frequency or an amplitude control wants. Unlike `linexp` the bend
     spans zero freely."""
-    return _map(MapOp.LINCURVE, x, in_lo, in_hi, out_lo, out_hi, curve, clip)
+    return _map(_MapOp.LINCURVE, x, in_lo, in_hi, out_lo, out_hi, curve, clip)
 
 
 def curvelin(x, in_lo, in_hi, out_lo, out_hi, curve=-4.0, clip="minmax"):
     """The inverse of `lincurve`: off a bent range onto a linear one."""
-    return _map(MapOp.CURVELIN, x, in_lo, in_hi, out_lo, out_hi, curve, clip)
+    return _map(_MapOp.CURVELIN, x, in_lo, in_hi, out_lo, out_hi, curve, clip)
 
 
 def range(x, lo=0.0, hi=1.0):
@@ -701,13 +701,13 @@ def range(x, lo=0.0, hi=1.0):
     Nothing is trimmed: a UGen knows its own signal range and a bare value does
     not, so an input past ``-1``..``1`` overshoots the output by the same
     proportion instead of being clipped to an assumption."""
-    return _map(MapOp.RANGE, x, -1.0, 1.0, lo, hi, clip="none")
+    return _map(_MapOp.RANGE, x, -1.0, 1.0, lo, hi, clip="none")
 
 
 def exprange(x, lo=0.01, hi=1.0):
     """A **bipolar** value onto ``lo``..``hi`` exponentially. Untrimmed, for the
     reason `range` gives."""
-    return _map(MapOp.EXPRANGE, x, -1.0, 1.0, lo, hi, clip="none")
+    return _map(_MapOp.EXPRANGE, x, -1.0, 1.0, lo, hi, clip="none")
 
 
 # Wire selector -> function, so AbstractObject value subclasses can dispatch by
@@ -757,7 +757,7 @@ DRAW = ("rand", "rand2", "linrand", "bilinrand", "sum3rand", "coin", "rrand",
 
 #: The functions that read a **whole list**. A pattern does not have them: a
 #: stream may not end, and these need its end (a minimum, a sum).
-LIST_FUNCTIONS = frozenset({
+_LIST_FUNCTIONS = frozenset({
     "blendat", "normalize", "normalizesum", "integrate", "differentiate",
     "resamp0", "resamp1", "asrandomtable", "indexinbetween",
     "indexofgreaterthan", "mirror", "mirror1", "mirror2", "stutter", "rotate",
@@ -826,7 +826,7 @@ def _refuse_streams(name, args, kwargs):
 
 def _lifted(fn):
     name = fn.__name__
-    guard = _refuse_streams if name in LIST_FUNCTIONS else _composed
+    guard = _refuse_streams if name in _LIST_FUNCTIONS else _composed
 
     @_functools.wraps(fn)
     def builtin(*args, **kwargs):
@@ -848,3 +848,10 @@ _ELEMENTWISE = {
 for _name, _fn in _ELEMENTWISE.items():
     globals()[_name] = _lifted(_fn)
 del _name, _fn
+
+
+#: Every public name above -- the functions, the operator tables and the
+#: constants -- since the list is too long to keep by hand and everything this
+#: module imports is bound under a private name.
+__all__ = sorted(name for name, value in dict(globals()).items()
+                 if not name.startswith("_") and not isinstance(value, _types.ModuleType))

@@ -31,6 +31,8 @@ want windows too, and not a destructive cut that throws the notes away.
 
 from ._native import BEATS, SECONDS
 
+__all__ = ["BufferSegments", "NoteSegments", "Segment", "SegmentRun"]
+
 
 class Segment:
     """One window: which source, from which position, for how long.

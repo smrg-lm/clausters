@@ -36,11 +36,10 @@
       resume, and gone after stop.
     -->
     <script type="module">
-      import {
-        loadCore, server as engine, Server,
-        Buffer, Synth, SynthDef, GuiHost, gui,
-      } from "../dist/index.js";
-      import { bufRateScale, bufRd, control, out, phasor, playBuf } from "../dist/defs/index.js";
+      import { Server, Buffer, Synth, SynthDef, GuiHost, gui } from "../dist/index.js";
+      import { loadCore, server as engine } from "../dist/page.js";
+      import { bufRateScale, bufRd, control, out, playBuf } from "../dist/defs/index.js";
+      import { phasor } from "../dist/defs/ugens/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {

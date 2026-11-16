@@ -60,7 +60,8 @@ middle of the first one and says which span changed
       import {
         Buffer, Session, Synth, SynthDef, gui,
       } from "../../dist/index.js";
-      import { control, line, out, recordBuf, sine } from "../../dist/defs/index.js";
+      import { control, out, recordBuf, sine } from "../../dist/defs/index.js";
+      import { line } from "../../dist/defs/ugens/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (text) => { $("log").textContent += text + "\n"; };

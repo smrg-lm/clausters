@@ -146,7 +146,8 @@ moves its first note an octave up: Ctrl+Z in either window takes it back.</div>
       http://localhost:8000/examples/editors/edit-multitrack.html
     -->
     <script type="module">
-      import { Session, SoundFile, opfs } from "../../dist/index.js";
+      import { Session, SoundFile } from "../../dist/index.js";
+      import { opfs } from "../../dist/page.js";
       import { gui } from "../../dist/index.js";
       import { Synth, SynthDef } from "../../dist/defs/index.js";
       import { line, out, pinkNoise, saw, sine, whiteNoise } from "../../dist/defs/ugens/index.js";

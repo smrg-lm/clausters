@@ -17,7 +17,7 @@ from array import array
 
 from .. import _native
 from ..base.bulk import blob_to_samples, samples_to_blob
-from ..errors import CommandError, CommandRingFull
+from ..errors import AllocationError, CommandError, CommandRingFull
 from .info import BufferInfo, parse_buffer_list
 from ._wire import resolve as _resolve
 
@@ -631,7 +631,7 @@ class BufferAllocator:
         """A free buffer index; raises when the pool is exhausted."""
         bufnum = self._spaces.alloc(_native.IdSpaces.BUFFERS)
         if bufnum is None:
-            raise RuntimeError("out of buffer slots")
+            raise AllocationError("out of buffer slots")
         return bufnum
 
     def free(self, bufnum: int):
@@ -639,7 +639,7 @@ class BufferAllocator:
         allocator never handed out) raises -- a lost buffer slot is a client
         bug, never absorbed silently."""
         if not self._spaces.release(_native.IdSpaces.BUFFERS, bufnum):
-            raise RuntimeError(
+            raise AllocationError(
                 f"double free of buffer {bufnum}: not currently allocated")
 
     @property

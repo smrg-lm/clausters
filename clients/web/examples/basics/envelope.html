@@ -62,9 +62,8 @@ a chosen attack, decay, sustain and release.</div>
       /examples/basics/envelope.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import {
-        Buffer, Routine, Server, Session, opfs, play, seq,
-      } from "../../dist/index.js";
+      import { Buffer, Routine, Server, Session, play, seq } from "../../dist/index.js";
+      import { opfs } from "../../dist/page.js";
       import {
         DoneAction, Env, SynthDef, control, envGen, out, sine,
       } from "../../dist/defs/index.js";

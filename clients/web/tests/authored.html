@@ -43,10 +43,11 @@
       (docs/decisions.md).
     -->
     <script type="module">
+      import { defs, gui } from "/dist/index.js";
+      import { Bundle } from "/dist/bundle-writer.js";
       import {
-        Bundle, defs, gui, openBundle, startBundle, freeBundle, startPage,
-        server, ANY_PEER, loadCore,
-      } from "/dist/index.js";
+        openBundle, startBundle, freeBundle, startPage, server, ANY_PEER, loadCore,
+      } from "/dist/page.js";
       import { decodePacket } from "/dist/base/osc.js";
 
       const verdict = (text) => {

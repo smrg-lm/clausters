@@ -42,9 +42,10 @@
       live engine goes on streaming the same file beside it.
     -->
     <script type="module">
-      import { Session, opfs, loadCore, SynthDef, Synth, Bus, Buffer, data,
-        OscNrtInterface } from "../dist/index.js";
-      import { renderScore } from "../dist/render.js";
+      import { Session, SynthDef, Synth, Bus, Buffer, data } from "../dist/index.js";
+      import { opfs, loadCore } from "../dist/page.js";
+      import { OscNrtInterface } from "../dist/base/index.js";
+      import { _renderScore } from "../dist/render.js";
       import { diskIn, diskOut, out, sine } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
@@ -226,7 +227,7 @@
           return top;
         };
         const before = await sounding();
-        const renderedStats = await renderScore(nrt.score.bytes(),
+        const renderedStats = await _renderScore(nrt.score.bytes(),
           { sampleRate: 48000, channels: 1, path: "takes/rendered.wav" });
         const livePeak = Math.min(before, await sounding());
         alongside.free();

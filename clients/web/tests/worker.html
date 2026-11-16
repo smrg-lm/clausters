@@ -31,7 +31,8 @@
       verdict is beaconed as a fetch and read from the access log.
     -->
     <script type="module">
-      import { Server, portConnection, server } from "../dist/index.js";
+      import { Server } from "../dist/index.js";
+      import { portConnection, server } from "../dist/page.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {

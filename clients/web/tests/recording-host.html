@@ -58,9 +58,8 @@
       };
       const saw = (needle) => seen.some((line) => line.includes(needle));
 
-      const {
-        loadCore, server: engine, Server,
-        Buffer, Synth, SynthDef, GuiHost, gui, } = await import("../dist/index.js");
+      const { Server, Buffer, Synth, SynthDef, GuiHost, gui } = await import("../dist/index.js");
+      const { loadCore, server: engine } = await import("../dist/page.js");
       const { control, out, recordBuf, sine } = await import("../dist/defs/index.js");
 
       const smoke = new URLSearchParams(location.search).has("smoke");

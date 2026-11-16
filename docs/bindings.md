@@ -742,6 +742,8 @@ Python property that reads becomes a method, a property that writes becomes a
   from the application, so in TypeScript they are methods too
   (`await t.span()`, `await t.looping()`), beside `setSpan`; and its
   `undo`, `redo`, `save` and every verb that edits answer a promise;
+- playing a def, a bare expression or a buffer: Python `play(def)` answers
+  the node once the server has the def; TypeScript answers a promise of it;
 - playing a sequence: Python `play(seq)` and `seq.play()` answer the
   `Transport`; TypeScript answers a promise of it;
 - the default session's server: Python `main.server_or_boot()`; TypeScript
@@ -771,7 +773,73 @@ configuration file and a worker the links its starter left at
 the same line in both.
 
 **Options are one object in TypeScript**, as everywhere in that client:
-Python `seq.play(at, server)`; TypeScript `seq.play({ at, server })`.
+Python `seq.play(at, server)`; TypeScript `seq.play({ at, server })`. A
+constructor whose every argument has a default takes one too: Python
+`Automation(target, points)` and `Server(share=share)`; TypeScript
+`new Automation({ target, points })` and `new Server({ share })`. Where the
+Python arguments are positional with nothing after them, so are the
+TypeScript ones, and an argument left out before a given one is
+`undefined`: Python `pattern.play(clock, server, quant)` and
+`pattern.play(server=midi)`; TypeScript `pattern.play(clock, server, quant)`
+and `pattern.play(undefined, midi)`, the arguments of `Routine.play` with the
+server between them, in both.
+
+**What a module exports is the same list in both clients**
+(`clients/web/tests/names.test.ts`, against the Python modules' `__all__`),
+and every difference is one of these shapes, listed name by name in
+`clients/docs/names.toml`:
+
+- **what only a platform has is a module of its own**: `clausters/page` (the
+  engine and the GUI host in the tab and the links to them, `loadCore`, the
+  OSC codec, the tickers that wake a clock in a tab, `requestMidiPorts`,
+  `setEngraverUrl`, the bundle mount and its elements, `opfs`), beside the
+  Python client's `clausters.ipc`, `clausters.launch` and
+  `clausters.config`; and inside a shared module, the transports and errors
+  only a native process has (`OscUdpInterface`, `OscTcpInterface`,
+  `OscEmbedInterface`, `NetAddr`, `LibraryError`, `SegmentError`,
+  `CommandRingFull`);
+- **a record of a reply is a type in TypeScript, and its line a function**:
+  Python's `NodeInfo`, `BufferInfo`, `DefInfo`, `ControlInfo`, `UgenInfo`,
+  `NodeMap`, `ServerInfo`, `ServerStatus`, `MidiBinding`, `WidgetInfo` and
+  `Load` are dataclasses that print themselves; TypeScript's are interfaces
+  over the reply's fields, so the line is `formatNodeInfo(info)` and its
+  siblings, and `Load.name` is `loadName(load)`. The text is the same
+  (`clients/web/tests/info-vectors.json`). The same holds for the other
+  Python classes TypeScript writes as types: `ServerOptions`, `Destination`,
+  `IdShare`, `Timebase`, `TakeShape`, `TapWindow`, and `OscInterface`, the
+  base class every carrier is, which is the type `Connection`;
+- **a generated wasm class grows no method**: Python `tempo_map.env(...)` and
+  `tempo_map.segments()`; TypeScript `tempoEnv(map, ...)` and
+  `tempoSegments(map)`;
+- **an operator is a method, and one with the constant on the left a
+  function**: Python `1.0 - mag` and `0.5 * sig`; TypeScript
+  `pvOp("sub", 1.0, mag)` (`clausters/defs/pv_expr`) and `mul(0.5, sig)`
+  (`add`, `sub`, `mul`, `div` in `clausters/defs/ugens`);
+- **`isinstance` against a union is a guard**: Python
+  `isinstance(x, Expr)`; TypeScript `isExpr(x)`, since `Expr` is the union of
+  the two families' expressions there;
+- **a keyword of the language takes the other's spelling**: Python
+  `notation.delete(...)`; TypeScript `notation.del(...)`;
+- **a carrier opens with `open`**: Python
+  `OscWsInterface(host, port, path)`; TypeScript
+  `await OscWsInterface.open(url)`;
+- **a window in a page is placed by the page**: an `edit`, an editor's
+  `open` or a GuiDef's `open` takes a `stage` in TypeScript, the element the
+  window's canvas takes the box of, and without one the host gives the
+  window a canvas of its own. A desktop places a native window, so the
+  Python call has no such argument, and an example that lays its windows out
+  in the page names the `stage` where its twin names nothing;
+- **a file is written asynchronously**: Python
+  `peaks_cache_file(samples, path)`; TypeScript
+  `await peaksCacheFile(samples, path, { baseBucket, channels })`, and the
+  same for `samples_to_file`, `spectrogram_cache_file` and the three that
+  rewrite a peak cache. In a page the file is the page's storage, which the
+  host reads a widget's `path` or `cache` from first.
+
+A name a module shares with the package's other modules and not with a
+program begins with an underscore in both (`_render_to_file` and
+`_renderScore`, `_open_patch_view` and `_openPatchView`), and the check
+skips it.
 
 
 The existing editing JSON door also carries audio gain curves: `envelope`

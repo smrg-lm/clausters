@@ -10,6 +10,8 @@
 "max_h" = "max_h"
 "min_w" = "min_w"
 "min_h" = "min_h"
+# `del` and `delete` are each a keyword of the other language.
+"delete" = "del"
 
 # The names one client's examples import and the other's never do, because
 # only that platform has them: a page loads the shared core before a model is
@@ -19,3 +21,53 @@
 [imports]
 web = ["loadCore", "requestMidiPorts"]
 python = []
+
+# What each module exports, held equal between the clients by
+# clients/web/tests/names.test.ts against the vector
+# clients/web/tests/gen-names-vectors.py writes from the Python modules'
+# `__all__`. A name is in both modules, spelled as [web] says, unless it is
+# below, and each entry says why (docs/bindings.md, "The client surface").
+
+# A module only one platform has: what a native process has (the processes a
+# script boots, the shared memory and the embedded library, the configuration
+# file of a machine) and what a page has (the engine and host in the tab, the
+# core's loader, the browser's MIDI ports, the page's storage).
+[modules]
+python = ["clausters.ipc", "clausters.launch", "clausters.config"]
+web = ["clausters.page", "clausters.runtime"]
+
+# Names of a module that only one platform has, by module (the Python
+# module's dotted name, which is the web subpath with dots).
+[platform.python]
+"clausters" = ["ipc", "launch"]
+"clausters.base" = ["NetAddr", "OscEmbedInterface", "OscTcpInterface", "OscUdpInterface"]
+"clausters.errors" = ["AbiMismatchError", "CommandRingFull", "LibraryError",
+                      "LibraryFeatureError", "LibraryNotFoundError", "SegmentError"]
+
+[platform.web]
+"clausters" = ["page"]
+
+# A Python class or alias that TypeScript writes as a type: a record of a
+# reply, a protocol, an options table. Present in both, but no value in
+# TypeScript, so the test does not see it there.
+[types]
+"clausters" = ["ServerOptions"]
+"clausters.base" = ["Destination", "IdShare", "OscInterface", "Timebase"]
+"clausters.data" = ["TakeShape", "TapWindow"]
+"clausters.defs" = ["BufferInfo", "ControlInfo", "DefInfo", "Expr", "Load", "MidiBinding",
+                    "NodeInfo", "NodeMap", "Profile", "ProfileRow", "ServerInfo",
+                    "ServerOptions", "ServerStatus", "UgenInfo", "UgenInput"]
+"clausters.gui" = ["WidgetInfo"]
+
+# The functions TypeScript has for what Python spells as a method, an
+# operator or `isinstance`, because a plain object has no methods, a
+# generated wasm class grows none and the language overloads no operator.
+[idiom.web]
+"clausters" = ["tempoEnv", "tempoSegments"]
+"clausters.defs" = ["formatBufferInfo", "formatControlInfo", "formatDefInfo",
+                    "formatMidiBinding", "formatNodeInfo", "formatNodeMap",
+                    "formatServerInfo", "formatServerStatus", "formatUgenInfo",
+                    "formatUgenInput", "isExpr", "loadName"]
+"clausters.defs.ugens" = ["add", "div", "mul", "sub"]
+"clausters.defs.pv_expr" = ["pvOp"]
+"clausters.gui" = ["formatWidgetInfo"]

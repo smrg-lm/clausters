@@ -91,7 +91,7 @@ export async function resolveEditorHost(
     server: Server | null = null,
 ): Promise<GuiHost> {
     if (host !== undefined) return host;
-    return (await import("../../plot.ts")).resolveHost(server);
+    return (await import("../../plot.ts"))._resolveHost(server);
 }
 
 /** What {@link Editor} is built with. */

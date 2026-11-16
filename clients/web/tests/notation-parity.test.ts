@@ -23,7 +23,8 @@ import { existsSync } from "node:fs";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { Score, setEngraverUrl } from "../src/notation/index.ts";
+import { Score } from "../src/notation/index.ts";
+import { setEngraverUrl } from "../src/page.ts";
 
 const here = new URL(".", import.meta.url);
 const engraver = new URL("../vendor/verovio/verovio.js", here);

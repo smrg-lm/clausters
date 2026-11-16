@@ -342,9 +342,9 @@ span it is zoomed into.)
 **To watch a take fill, name it**: a `waveform` widget with `fills` over the
 take's buffer follows the same frontier from the host's side, drawn to where the
 writer has got and no further. This class is for a script that wants the summary
-itself<!-- python -->; and when what you want is the *file* a picture maps rather than the bytes,
-`peaks_cache_stream_file` grows one on disk that a `waveform(cache=...)` reads as
-it fills<!-- /python -->.
+itself; and when what you want is the *file* a picture reads rather than the bytes,
+{{api peaks_cache_stream_file}} grows one that a {{alt `waveform(cache=...)` || `waveform({ cache })`}} reads as
+it fills.
 
 ## Buffer samples
 

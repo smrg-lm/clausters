@@ -3,6 +3,12 @@
 // A small hierarchy so callers catch *what* went wrong instead of matching on
 // message text. Everything derives from `ClaustersError`, so a broad
 // `catch (e) { if (e instanceof ClaustersError) ... }` still holds.
+//
+// What the Python module has and this one does not is a native process's:
+// the shared library that is missing, lacks a feature or speaks another ABI
+// (`LibraryError` and its leaves, `AbiMismatchError`), the shared-memory
+// segment (`SegmentError`) and its command ring (`CommandRingFull`). A page
+// loads the core as wasm and maps no segment.
 
 /** Base class for every error this library throws on purpose. */
 export class ClaustersError extends Error {
@@ -19,6 +25,9 @@ export class CommandError extends ClaustersError {}
  * The GUI host answered a window's capture with the reason it wrote no file.
  */
 export class CaptureError extends ClaustersError {}
+
+/** The offline render failed: the engine reported an error. */
+export class RenderError extends ClaustersError {}
 
 /** No reply arrived within the timeout. */
 export class ReplyTimeout extends ClaustersError {}

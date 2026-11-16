@@ -34,10 +34,8 @@
       tests/gui-host.test.ts.
     -->
     <script type="module">
-      import {
-        loadCore, server as engine, Server, Synth,
-        SynthDef, GuiHost, gui,
-      } from "../dist/index.js";
+      import { Server, Synth, SynthDef, GuiHost, gui } from "../dist/index.js";
+      import { loadCore, server as engine } from "../dist/page.js";
       import { control, out, sine } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");

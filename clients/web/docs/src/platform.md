@@ -156,12 +156,15 @@ of the Python book describe what this package does not have:
   a worker or a node program passes every option in code (`Session.embed`'s and
   `Session.live`'s options, a `Server`'s `sizing`, a host's), and the server
   book's Configuration chapter is what a native server launched beside a page
-  reads. A page has a filesystem, so this is a gap of the port and is recorded
-  as one, not a property of the platform.
+  reads. The file configures a machine (the server binary and its ports, the
+  audio device, the processes a script boots), found by a home and a working
+  directory; a page has neither, and a worker is configured by the page that
+  starts it.
 - **Command line.** The Python wheel bundles the native server and GUI host and
   puts them on the `PATH` as `clausters` and `clausters-gui`, with three
   client-side verbs added (`status`, `panic`, `stop`). This package carries the
   engine and the host as wasm and no native binary, so it installs no command;
   a native server's own command line is the server book's, and the three verbs
-  have no counterpart here yet, which is recorded as a gap too.
+  speak OSC over UDP, which this client does not carry: a node program makes
+  the same calls in code (`server.status()`, `panic()`).
 

@@ -312,7 +312,7 @@ def test_a_file_render_forwards_what_the_renderer_logged(tmp_path, monkeypatch, 
     monkeypatch.setattr(subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(
         argv, 0, stdout=json.dumps(stats) + "\n", stderr=stderr))
     with caplog.at_level(logging.DEBUG, logger="clausters"):
-        module.render_to_file(b"", tmp_path / "o.wav", 48000.0, 1, 0, None, "float")
+        module._render_to_file(b"", tmp_path / "o.wav", 48000.0, 1, 0, None, "float")
     assert [(r.name, r.levelno, r.getMessage()) for r in caplog.records] == [
         ("clausters.render", logging.WARNING,
          "nrt render rejected node 1000: the id is already a node")]

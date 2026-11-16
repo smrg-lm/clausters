@@ -454,7 +454,7 @@ export class Session extends Environment {
      * opens nothing -- the same way a `Server` is taken rather than opened when
      * the constructor is used. That is how a session drives a native
      * `clausters-gui --ws` host: `new Session(server, clock, await
-     * new GuiHost(await WsConnection.open(url)).attach())`.
+     * new GuiHost(await OscWsInterface.open(url)).attach())`.
      *
      * A session on the page's shared engine gets the page's host (canvas in
      * `<body>` included); one holding its own engine gets a host of its own,
@@ -712,7 +712,7 @@ export class Session extends Environment {
 const openSessions = new Set<WeakRef<Session>>();
 
 /** @internal The sessions not closed yet that are still held, oldest first. */
-export function liveSessions(): Session[] {
+export function _liveSessions(): Session[] {
     const live: Session[] = [];
     for (const ref of openSessions) {
         const session = ref.deref();

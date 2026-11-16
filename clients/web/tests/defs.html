@@ -31,10 +31,8 @@
       -- both def families against a native server -- is tests/server.test.ts.
     -->
     <script type="module">
-      import {
-        loadCore, server as engine, Server, Synth,
-        SynthDef,
-      } from "../dist/index.js";
+      import { Server, Synth, SynthDef } from "../dist/index.js";
+      import { loadCore, server as engine } from "../dist/page.js";
       import { DoneAction, Env, control, envGen, out, sine } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");

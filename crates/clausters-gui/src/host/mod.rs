@@ -379,8 +379,10 @@ impl Transport for ServerLink {
 
 /// On-disk (or otherwise persisted) GuiDefs: named-GuiDef auto-save and the
 /// `/gui_load` path. The native filesystem store ([`native::store::GuiStore`])
-/// implements it; a browser has no filesystem, so a wasm host simply runs
-/// without one. Behind the trait so the protocol dispatch saves and loads
+/// implements it. A page has a filesystem too (OPFS), but its calls are
+/// asynchronous and this trait is not, so a wasm host runs without a store
+/// for now -- a gap of the port, written in the GUI plan, not a property of
+/// the browser. Behind the trait so the protocol dispatch saves and loads
 /// without naming the filesystem store.
 pub trait DefStore: Send {
     /// Persists GuiDef `id` (its verbatim tree JSON) under `name`.

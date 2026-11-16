@@ -97,7 +97,8 @@ Both are refused quietly -- the ruler simply does not move.</div>
       /examples/views/tempo-ruler.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, TempoMap, gui, loadCore, tempoEnv } from "../../dist/index.js";
+      import { Session, TempoMap, gui, tempoEnv } from "../../dist/index.js";
+      import { loadCore } from "../../dist/page.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => {

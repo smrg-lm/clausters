@@ -4,7 +4,7 @@
 // `Connection` and never names a transport -- the same rule the Python client
 // keeps ("only a Server object knows the connection"). The two carriers:
 //
-// - `WsConnection` -- a browser `WebSocket` to a `--ws` clausters server
+// - `OscWsInterface` -- a browser `WebSocket` to a `--ws` clausters server
 //   (default port 57120): the remote/native-server carrier, one OSC packet
 //   per binary frame (the server's WS wire format). Also works under node,
 //   whose global `WebSocket` speaks the same standard API.
@@ -153,7 +153,7 @@ export interface Connection {
     ): Promise<void>;
 }
 
-export class WsConnection implements Connection {
+export class OscWsInterface implements Connection {
     private socket: WebSocket;
     private listeners = new Set<(packet: Uint8Array) => void>();
 
@@ -183,12 +183,12 @@ export class WsConnection implements Connection {
      * Opens a WebSocket to `url` (e.g. `ws://127.0.0.1:57120`), resolving
      * once the handshake completes (sends never race the handshake).
      */
-    static open(url: string): Promise<WsConnection> {
+    static open(url: string): Promise<OscWsInterface> {
         return new Promise((resolve, reject) => {
             const socket = new WebSocket(url);
             socket.binaryType = "arraybuffer";
             socket.addEventListener("open", () =>
-                resolve(new WsConnection(socket)));
+                resolve(new OscWsInterface(socket)));
             socket.addEventListener("error", () =>
                 reject(new Error(`cannot open ${url}`)));
         });

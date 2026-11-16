@@ -1502,7 +1502,7 @@ export class TimelinePlayer implements TreeDriver {
         }
         const destination = this.destination ?? (main.resolveServer() as unknown as PlayDestination);
         if (item instanceof EventPattern) {
-            item.play(destination, { clock });
+            item.play(clock, destination);
             return;
         }
         (item as TimelineItem).play(destination);

@@ -19,7 +19,10 @@
       Verdict beaconed as a fetch, read from the access log.
     -->
     <script type="module">
-      import { Bus, Session, SoundFile, Synth, SynthDef, data, gui, opfs, segments } from "../dist/index.js";
+      import {
+        Bus, Session, SoundFile, Synth, SynthDef, data, gui, segments,
+      } from "../dist/index.js";
+      import { opfs } from "../dist/page.js";
       import { out, sine } from "../dist/defs/index.js";
       const { Segment } = segments;
 

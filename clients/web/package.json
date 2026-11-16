@@ -30,6 +30,10 @@
       "types": "./dist/defs/index.d.ts",
       "default": "./dist/defs/index.js"
     },
+    "./defs/ugens": {
+      "types": "./dist/defs/ugens/index.d.ts",
+      "default": "./dist/defs/ugens/index.js"
+    },
     "./defs/pv_expr": {
       "types": "./dist/defs/pv_expr.d.ts",
       "default": "./dist/defs/pv_expr.js"
@@ -58,9 +62,17 @@
       "types": "./dist/gui/guidef.d.ts",
       "default": "./dist/gui/guidef.js"
     },
+    "./log": {
+      "types": "./dist/log.d.ts",
+      "default": "./dist/log.js"
+    },
     "./notation": {
       "types": "./dist/notation/index.d.ts",
       "default": "./dist/notation/index.js"
+    },
+    "./page": {
+      "types": "./dist/page.d.ts",
+      "default": "./dist/page.js"
     },
     "./panic": {
       "types": "./dist/panic.d.ts",

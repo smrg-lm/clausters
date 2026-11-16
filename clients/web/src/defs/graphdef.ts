@@ -287,7 +287,7 @@ export class GraphDef {
      * declares **no range**: like a control it is a name the server takes any
      * float for, and the range a knob is drawn over belongs to the knob.
      */
-    controls(): ControlInfo[] {
+    get controls(): ControlInfo[] {
         const out: ControlInfo[] = [];
         for (const [name, targets] of Object.entries(this.surface_)) {
             const info: ControlInfo = {
@@ -308,7 +308,7 @@ export class GraphDef {
 
     /** One surface port by name, as a `ControlInfo` -- `gd.control("mix")`. */
     control(name: string): ControlInfo {
-        for (const info of this.controls()) {
+        for (const info of this.controls) {
             if (info.name === name) return info;
         }
         const has = Object.keys(this.surface_).join(", ") || "none";
@@ -372,8 +372,8 @@ export class GraphDef {
         options: PatchViewOptions = {},
     ): Promise<PatchWindow> {
         const { GraphPatch } = await import("./patch.ts");
-        const { openPatchView } = await import("../plot.ts");
-        return openPatchView(GraphPatch.fromGraphdef(this, defs), {
+        const { _openPatchView } = await import("../plot.ts");
+        return _openPatchView(GraphPatch.fromGraphdef(this, defs), {
             label: "graphdef",
             title: this.name,
             ...options,

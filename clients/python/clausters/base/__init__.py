@@ -30,6 +30,7 @@ The base layer:
 """
 
 from .absobject import AbstractObject
+from .appclock import AppClock
 from .clock import TempoClock
 from .time import TempoMap
 from .destination import Destination, OscDestination
@@ -69,6 +70,7 @@ from ._oscinterface import (
 
 __all__ = [
     "AbstractObject",
+    "AppClock",
     "TempoClock",
     "TempoMap",
     "Timebase",

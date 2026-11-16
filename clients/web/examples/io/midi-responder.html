@@ -55,9 +55,9 @@ Everything below runs on the <b>in-page engine</b>: no server process.
       // Needs a MIDI input device and a browser with Web MIDI (Chrome, Edge;
       // Safari and Firefox behind a flag or not at all). The audio server is
       // the wasm engine in this page's AudioWorklet, so nothing else is needed.
-      import {
-        MidiFunc, MidiReceiver, Session, Synth, requestMidiPorts,
-      } from "../../dist/index.js";
+      import { MidiFunc, Session, Synth } from "../../dist/index.js";
+      import { MidiReceiver } from "../../dist/base/index.js";
+      import { requestMidiPorts } from "../../dist/page.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => {

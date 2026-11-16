@@ -35,8 +35,7 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
       fetch the runner reads from the HTTP access log.
     -->
     <script type="module">
-      import { server, bootBundle, loadCore, decodePacket, ANY_PEER }
-        from "../../dist/index.js";
+      import { server, bootBundle, loadCore, decodePacket, ANY_PEER } from "../../dist/page.js";
 
       const params = new URLSearchParams(location.search);
       const smoke = params.has("smoke");

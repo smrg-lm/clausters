@@ -67,9 +67,8 @@ and nothing to unlock until you ask to hear it.</div>
       /examples/spectral/chain.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import {
-        Buffer, Routine, Server, Session, Synth, SynthDef, opfs, play,
-      } from "../../dist/index.js";
+      import { Buffer, Routine, Server, Session, Synth, SynthDef, play } from "../../dist/index.js";
+      import { opfs } from "../../dist/page.js";
       import {
         DoneAction, Env, control, envGen, fft, ifft, out, pvBrickWall,
         whiteNoise,

@@ -8,7 +8,7 @@
 // key that stops the code stops the sound too.
 
 import { main } from "./base/main.ts";
-import { liveSessions } from "./session.ts";
+import { _liveSessions } from "./session.ts";
 
 /**
  * Panics every session not closed yet, and the default session -- each one's
@@ -18,7 +18,7 @@ import { liveSessions } from "./session.ts";
  */
 export function interrupt(): void {
     let failed: unknown;
-    for (const environment of [...liveSessions(), main]) {
+    for (const environment of [..._liveSessions(), main]) {
         try {
             environment.panic();
         } catch (error) {

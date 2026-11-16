@@ -11,7 +11,7 @@
  * rather than omissions:
  *
  * - **It does not read a gesture itself.** What a tag and a flat list of values
- *   *mean* is {@link editingIntake}, in the shared crate, for the same reason
+ *   *mean* is `_editingIntake`, in the shared crate, for the same reason
  *   the inverse is: sixteen small readers written twice, once per language, are
  *   sixteen chances for two clients to disagree about what a septuple says. What
  *   a domain adds is the **request** -- what that vocabulary needs beside the
@@ -28,7 +28,7 @@
  * @module
  */
 
-import { domainCoalesceKey, editingIntake, type Intake } from "../../document.ts";
+import { domainCoalesceKey, _editingIntake, type Intake } from "../../document.ts";
 
 /**
  * What one kind of structure is, to an editor.
@@ -68,7 +68,7 @@ export abstract class Domain<S = unknown> {
     protected taken: Intake = { payloads: [], label: "edit" };
 
     /**
-     * What this vocabulary needs beside the report, as {@link editingIntake}
+     * What this vocabulary needs beside the report, as `_editingIntake`
      * reads it.
      *
      * The default is the report alone, which is what the two stateless
@@ -91,7 +91,7 @@ export abstract class Domain<S = unknown> {
      */
     read(structure: S, tag: string, values: readonly unknown[]): Intake {
         if (this.ingested && this.name) {
-            this.taken = editingIntake(this.name, tag, this.request(structure, tag, values));
+            this.taken = _editingIntake(this.name, tag, this.request(structure, tag, values));
             return this.taken;
         }
         const payloads = this.payloads(structure, tag, values);

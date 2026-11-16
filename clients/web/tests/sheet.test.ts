@@ -63,7 +63,7 @@ import { Timeline } from "../src/seq/timeline.ts";
 import { EventSequence } from "../src/seq/sequence.ts";
 import * as notation from "../src/notation/index.ts";
 import { scoreView } from "../src/gui/guidef.ts";
-import { setEngraverUrl } from "../src/notation/index.ts";
+import { setEngraverUrl } from "../src/page.ts";
 
 
 await loadCore();

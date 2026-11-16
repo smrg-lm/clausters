@@ -66,7 +66,8 @@ server over a WebSocket. Everything after that line is the same code.</div>
         Server,
         Synth, SynthDef,
       } from "../../dist/index.js";
-      import { DoneAction, Env, control, envGen, out, rlpf, saw } from "../../dist/defs/index.js";
+      import { DoneAction, Env, control, envGen, out } from "../../dist/defs/index.js";
+      import { rlpf, saw } from "../../dist/defs/ugens/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };

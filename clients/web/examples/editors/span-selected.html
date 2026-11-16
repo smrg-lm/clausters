@@ -73,7 +73,8 @@ editors. Press the buttons in order; each step says what to look at.</div>
       http://localhost:8000/examples/editors/span-selected.html
     -->
     <script type="module">
-      import { Session, SoundFile, gui, loadCore, opfs } from "../../dist/index.js";
+      import { Session, SoundFile, gui } from "../../dist/index.js";
+      import { loadCore, opfs } from "../../dist/page.js";
       import { Content, Multitrack, Source } from "../../dist/document.js";
       import { MultitrackSession } from "../../dist/gui/editing/index.js";
       import { Segment } from "../../dist/segments.js";

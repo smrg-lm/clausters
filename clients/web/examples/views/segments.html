@@ -66,8 +66,10 @@ first (<code>dist/</code> is git-ignored); serve it over HTTP and open
       /examples/views/segments.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, Synth, SynthDef, gui, opfs } from "../../dist/index.js";
-      import { DoneAction, line, out, sine } from "../../dist/defs/index.js";
+      import { Session, Synth, SynthDef, gui } from "../../dist/index.js";
+      import { opfs } from "../../dist/page.js";
+      import { DoneAction, out, sine } from "../../dist/defs/index.js";
+      import { line } from "../../dist/defs/ugens/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (text) => { $("log").textContent += text + "\n"; };

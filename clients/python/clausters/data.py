@@ -654,6 +654,21 @@ class Peaks:
             return False
         return True
 
+    def update(self, samples, start: int, frames: int) -> bool:
+        """Re-summarizes the **frame span** an edit touched, from ``samples``
+        (the whole interleaved buffer as it now stands) -- the owner's half of
+        an edit, so a picture of this cache follows it without the take being
+        summarized again.
+
+        Returns ``False``, changing nothing, when the samples are not the
+        buffer this cache describes: a length change is a rebuild (`build`)."""
+        try:
+            self._bytes = _native.peaks_cache_update(
+                self._bytes, samples, int(start), int(frames))
+        except ValueError:
+            return False
+        return True
+
     def to_bytes(self) -> bytes:
         """This cache's bytes, in the format every client reads."""
         return self._bytes

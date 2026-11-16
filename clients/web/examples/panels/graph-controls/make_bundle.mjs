@@ -85,8 +85,10 @@
 
 import { fileURLToPath } from "node:url";
 
-import { Bundle, loadCore } from "../../../dist/bundle-writer.js";
-import { GraphDef, SynthDef, control, in_, out, outCtl, sine, sub } from "../../../dist/defs/index.js";
+import { Bundle } from "../../../dist/bundle-writer.js";
+import { GraphDef, SynthDef, control, in_, out, outCtl, sine } from "../../../dist/defs/index.js";
+import { sub } from "../../../dist/defs/ugens/index.js";
+import { loadCore } from "../../../dist/page.js";
 import { knob, label, meter, panel, scope, toggle, view } from "../../../dist/gui/index.js";
 
 /**

@@ -17,7 +17,7 @@
       Verdict beaconed as a fetch, read from the access log.
     -->
     <script type="module">
-      import { loadCore, newGuiHost } from "../dist/index.js";
+      import { loadCore, newGuiHost } from "../dist/page.js";
 
       const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
       const verdict = (text) => {

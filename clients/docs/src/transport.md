@@ -301,9 +301,9 @@ waiting. Unbinding thaws whatever the transport governed, and so does freeing
 the group — no frozen subtree is ever left with nobody to resume it.
 
 The clock follows too. A clock's beats come from a timebase that only decides how long to sleep before the next wake, so a client whose server froze would keep advancing beats and scheduling samples ahead — running away from a governed that is not moving. `TempoClock.freeze()` holds the beat where it is and
-`thaw()` picks it up there, shifting the pacing origin by the time spent frozen. The reaction does not have to be precise: between the server's stop and the call, a little look-ahead has already gone out, and it lands in the server's frozen queue to fire on the resume in its exact relative place.<!-- python --> `clausters.gui.PlayheadSync` does this for you, and its `resume()` is
+`thaw()` picks it up there, shifting the pacing origin by the time spent frozen. The reaction does not have to be precise: between the server's stop and the call, a little look-ahead has already gone out, and it lands in the server's frozen queue to fire on the resume in its exact relative place. {{alt `clausters.gui.PlayheadSync` || `PlayheadSync`, in `clausters/gui`,}} does this for you, and its `resume()` is
 deliberately **not** `play()` — play re-renders from a position, resume
-continues the frozen sound.<!-- /python -->
+continues the frozen sound.
 
 <!-- python -->
 | You want to… | Do this |
@@ -313,7 +313,6 @@ continues the frozen sound.<!-- /python -->
 | Freeze / carry on | `server.transport_stop()` / `server.transport_play()` |
 | Read the transport's own clock | `server.transport_state()["transport_sample"]` |
 | Continue rather than restart, client-side | `transport.resume()` (not `play()`) |
-| Ask whether a seek means anything | `editor.locatable` |
 <!-- /python -->
 <!-- web -->
 | You want to… | Do this |
@@ -322,6 +321,7 @@ continues the frozen sound.<!-- /python -->
 | Give it back | `await server.transportGroup(null)` (thaws what it governed) |
 | Freeze / carry on | `await server.transportStop()` / `await server.transportPlay()` |
 | Read the transport's own clock | `(await server.transportState()).transportSample` |
+| Continue rather than restart, client-side | `await transport.resume()` (not `play()`) |
 <!-- /web -->
 
 {{alt `freeze.py` || `freeze.html`}} in the examples freezes a generative texture and resumes

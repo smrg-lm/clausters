@@ -65,11 +65,11 @@ on every run and in both clients.</div>
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, Synth, SynthDef, builtins, exprand,
-        opfs, play, scramble, wchoose,
+        Buffer, Routine, Server, Session, Synth, SynthDef, builtins, exprand, play, scramble, wchoose,
       } from "../../dist/index.js";
-      import { DoneAction, Env, control, envGen, lfSaw, out, sine }
-        from "../../dist/defs/index.js";
+      import { opfs } from "../../dist/page.js";
+      import { DoneAction, Env, control, envGen, out, sine } from "../../dist/defs/index.js";
+      import { lfSaw } from "../../dist/defs/ugens/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };

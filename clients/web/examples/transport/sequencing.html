@@ -89,7 +89,8 @@ and a new tempo written there, which pins that instant for the same reason.</div
         Server, Session, SynthDef, TempoClock,
         seq,
       } from "../../dist/index.js";
-      import { DoneAction, Env, control, envGen, out, rlpf, saw } from "../../dist/defs/index.js";
+      import { DoneAction, Env, control, envGen, out } from "../../dist/defs/index.js";
+      import { rlpf, saw } from "../../dist/defs/ugens/index.js";
 
       const log = (line) => {
         document.getElementById("log").textContent += line + "\n";
@@ -163,7 +164,7 @@ and a new tempo written there, which pins that instant for the same reason.</div
           dur: seq.pseq([0.5, 0.25, 0.25]),
           cutoff: seq.pwhite(600, 3000),
           amp: 0.15,
-        }).play(server, { clock });
+        }).play(clock, server);
         log("pattern playing");
       }
 

@@ -1,5 +1,5 @@
 // `GuiHost` against a **native** GUI host: a real `clausters-gui --ws`
-// (headless), one node process, the whole client surface over `WsConnection` --
+// (headless), one node process, the whole client surface over `OscWsInterface` --
 // the browser's path into a desktop host, the same seam the audio-server test
 // drives (`server.test.ts`). The in-page half of the acceptance, where the
 // gestures and the bound path live, is `tests/gui.html`.
@@ -14,7 +14,7 @@ import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
 
-import { WsConnection } from "../src/base/connection.ts";
+import { OscWsInterface } from "../src/base/connection.ts";
 import type { Connection } from "../src/base/connection.ts";
 import { loadCore } from "../src/base/core.ts";
 import { decodePacket, encodeMessage } from "../src/base/osc.ts";
@@ -44,9 +44,9 @@ async function withHost(body: (gui: GuiHost) => Promise<void>): Promise<void> {
     ]);
     try {
         // The host binds the WS listener during boot; retry until it is up.
-        let connection: WsConnection | null = null;
+        let connection: OscWsInterface | null = null;
         for (let i = 0; i < 50 && !connection; i++) {
-            connection = await WsConnection.open(`ws://127.0.0.1:${wsPort}`)
+            connection = await OscWsInterface.open(`ws://127.0.0.1:${wsPort}`)
                 .catch(() => null);
             if (!connection) await sleep(100);
         }

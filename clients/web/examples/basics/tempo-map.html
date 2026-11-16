@@ -64,9 +64,8 @@ this directory and open the page.</div>
     </main>
 
     <script type="module">
-      import {
-        Event, Session, TempoMap, Timeline, loadCore, tempoSegments,
-      } from "../../dist/index.js";
+      import { Event, Session, TempoMap, Timeline, tempoSegments } from "../../dist/index.js";
+      import { loadCore } from "../../dist/page.js";
 
       // **The one line the script has no counterpart for.** The numeric core is
       // wasm here, and it has to be fetched before anything calls into it --

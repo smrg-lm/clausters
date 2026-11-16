@@ -24,7 +24,7 @@ import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
 
-import { WsConnection } from "../src/base/connection.ts";
+import { OscWsInterface } from "../src/base/connection.ts";
 import { loadCore } from "../src/base/core.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
@@ -49,11 +49,11 @@ await loadCore();
 async function withServer(body: (server: Server) => Promise<void>): Promise<void> {
     const child = spawnChild(serverBin, ["--port", String(udpPort), "--ws", String(wsPort),
         "--no-tcp", "--no-persist"]);
-    let connection: WsConnection | null = null;
+    let connection: OscWsInterface | null = null;
     let server: Server | null = null;
     try {
         for (let i = 0; i < 50 && !connection; i++) {
-            connection = await WsConnection.open(`ws://127.0.0.1:${wsPort}`)
+            connection = await OscWsInterface.open(`ws://127.0.0.1:${wsPort}`)
                 .catch(() => null);
             if (!connection) await sleep(100);
         }
@@ -147,7 +147,7 @@ test("a pattern played over WebSocket starts and ends its notes on time", {
             degree: pseq([0, 2, 4, 7]),
             dur: 0.25, // 250 ms apart
             legato: 4.0, // sustain 1 beat: the four overlap
-        }).play(server, { clock });
+        }).play(clock, server);
 
         await sleep(2500);
         // Each note lands at its beat plus the emission headroom.
@@ -192,7 +192,7 @@ test("the sample timebase anchors on the server's own clock", {
             degree: pseq([0, 4]),
             dur: 0.5,
             legato: 2.0, // sustain 1 beat
-        }).play(server, { clock });
+        }).play(clock, server);
 
         await sleep(2500);
         const t0 = clock.startTime! + server.latency;
@@ -244,11 +244,11 @@ test("two clocks join one grid and land on the same bar", {
         const log = noteLog(server);
         wall.start();
         pbind({ instrument: "ts_seq_beep", degree: pseq([0]), dur: 1 })
-            .play(server, { clock: wall, quant: 4 });
+            .play(wall, server, 4);
         await sleep(500);
         locked.start();
         pbind({ instrument: "ts_seq_beep", degree: pseq([7]), dur: 1 })
-            .play(server, { clock: locked, quant: 4 });
+            .play(locked, server, 4);
 
         await sleep(2600);
         assert.equal(log.started.length, 2, "both clients played their note");

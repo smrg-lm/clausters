@@ -118,4 +118,3 @@ export type {
     Transcription,
     TransposeOptions,
 } from "./sheet.ts";
-export { setEngraverUrl } from "./_verovio.ts";

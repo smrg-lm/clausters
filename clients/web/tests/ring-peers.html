@@ -31,10 +31,8 @@
     -->
     <pre id="log"></pre>
     <script type="module">
-      import {
-        loadCore, server as engine, Server,
-        Bus, Synth, SynthDef, GuiHost, gui, data, decodePacket, ANY_PEER,
-      } from "../dist/index.js";
+      import { Server, Bus, Synth, SynthDef, GuiHost, gui, data } from "../dist/index.js";
+      import { loadCore, server as engine, decodePacket, ANY_PEER } from "../dist/page.js";
       import { control, outCtl, sine } from "../dist/defs/index.js";
 
       const log = (line) => {

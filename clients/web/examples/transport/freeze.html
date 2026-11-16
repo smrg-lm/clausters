@@ -61,9 +61,8 @@ different runs.</div>
       import {
         Event, Group, Routine, Session, SynthDef,
       } from "../../dist/index.js";
-      import {
-        Env, control, envGen, out, pan2, rlpf, whiteNoise,
-      } from "../../dist/defs/index.js";
+      import { Env, control, envGen, out, whiteNoise } from "../../dist/defs/index.js";
+      import { pan2, rlpf } from "../../dist/defs/ugens/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };

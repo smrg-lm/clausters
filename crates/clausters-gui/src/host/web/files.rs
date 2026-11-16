@@ -105,6 +105,33 @@ pub(super) async fn list_opfs(path: &str) -> Result<Listing, String> {
     ))
 }
 
+/// **Reads `path`** from the page's storage: the bytes of the file, or why
+/// there are none (no storage, no such directory or file). What a widget's
+/// `path` or `cache` names in a tab, as a file command's path does.
+pub(super) async fn read_opfs(path: &str) -> Result<Vec<u8>, String> {
+    let mut segments = parts(path)?;
+    let Some(name) = segments.pop() else {
+        return Err("an empty path names no file".into());
+    };
+    let navigator = field(&js_sys::global(), "navigator");
+    let storage = field(&navigator, "storage");
+    if storage.is_undefined() {
+        return Err("this page has no storage to read".into());
+    }
+    let mut dir = call(&storage, "getDirectory", &[]).await?;
+    for segment in &segments {
+        dir = call(&dir, "getDirectoryHandle", &[JsValue::from_str(segment)])
+            .await
+            .map_err(|_| format!("{path}: no such directory"))?;
+    }
+    let handle = call(&dir, "getFileHandle", &[JsValue::from_str(&name)])
+        .await
+        .map_err(|_| format!("{path}: no such file"))?;
+    let file = call(&handle, "getFile", &[]).await?;
+    let buffer = call(&file, "arrayBuffer", &[]).await?;
+    Ok(js_sys::Uint8Array::new(&buffer).to_vec())
+}
+
 /// **Writes `bytes` as `path`** in the page's storage, replacing whatever was
 /// there and creating the directories above it -- what the web client's
 /// `writeFile` does, on the main thread the host runs on, where the writable

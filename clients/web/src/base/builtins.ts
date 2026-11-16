@@ -154,15 +154,6 @@ function binop(op: string, a: Num, b: Num): Num {
     return (b as readonly number[]).map((v) => coreBinary(op, a as number, v));
 }
 
-/**
- * One unary builtin by its core name -- the extensible door behind the named
- * exports below (`unary("midicps", 60)`).
- */
-export const unary = (op: string, x: Num): Num => unop(op, x);
-
-/** One binary builtin by its core name (`binary("clip2", 1.5, 1)`). */
-export const binary = (op: string, a: Num, b: Num): Num => binop(op, a, b);
-
 const un = (op: string): UnaryFn =>
     ((x: unknown) => (composes(x) ? x.composeOp("unary", op) : unop(op, x as Num))) as UnaryFn;
 const bin = (op: string): BinaryFn =>
@@ -763,7 +754,7 @@ export const NARY: Readonly<Record<string, (x: Num, ...args: never[]) => unknown
 };
 
 /** The n-ary operators whose last argument is a trim (`clip`). @internal */
-export const TRIMMED: ReadonlySet<string> = new Set([
+export const _TRIMMED: ReadonlySet<string> = new Set([
     "linlin", "linexp", "explin", "expexp", "lincurve", "curvelin", "bilin", "biexp",
 ]);
 

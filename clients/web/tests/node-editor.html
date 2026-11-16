@@ -20,7 +20,8 @@
       window is captured into the page's storage and read back.
     -->
     <script type="module">
-      import { loadCore, Server, Synth, SynthDef, GuiHost } from "../dist/index.js";
+      import { Server, Synth, SynthDef, GuiHost } from "../dist/index.js";
+      import { loadCore } from "../dist/page.js";
       import { control, out, sine } from "../dist/defs/index.js";
       import { edit } from "../dist/gui/index.js";
 

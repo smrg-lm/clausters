@@ -162,9 +162,9 @@
         // **Whose client the host is.** The session holds an engine of its
         // own and opened no host, so the verb opened one for that engine --
         // once, kept, and not the page's own, whose engine is another.
-        const { resolveHost } = await import("../dist/plot.js");
+        const { _resolveHost } = await import("../dist/plot.js");
         check(session.server.engine !== null, "the server names its engine");
-        check(phase.host === await resolveHost(session.server),
+        check(phase.host === await _resolveHost(session.server),
           "the scopes are on the host kept for the session's engine");
         check(spectrum.host === phase.host, "one host for that engine");
 

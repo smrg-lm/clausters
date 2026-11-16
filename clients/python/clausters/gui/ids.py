@@ -44,6 +44,7 @@ below 1000 never collide with assigned ones.
 """
 
 from .. import _native
+from ..errors import AllocationError
 from ..base.ids import share_of
 
 #: The first id the allocator hands out. Hand-picked ids below this never
@@ -82,11 +83,11 @@ class GuiIdAllocator:
 
     def alloc(self) -> int:
         """A fresh id, unique across everything this allocator names. Raises
-        `RuntimeError` if the whole window is live at once (a client bug --
+        `clausters.errors.AllocationError` if the whole window is live at once (a client bug --
         `CAPACITY` widgets never coexist in practice)."""
         wid = self._registry.alloc()
         if wid is None:
-            raise RuntimeError(
+            raise AllocationError(
                 "out of gui widget ids: the id window is fully in use "
                 "(freed widgets recycle their ids -- this many live at once "
                 "is a leak)")
@@ -103,12 +104,12 @@ class GuiIdAllocator:
         """The id ``owner`` draws ``(structure, role, key)`` with -- the **same**
         one for as long as that name keeps being drawn.
 
-        Raises `RuntimeError` on exhaustion, as `alloc` does and for the same
+        Raises `clausters.errors.AllocationError` on exhaustion, as `alloc` does and for the same
         reason: a name that cannot be given a number is a client bug, not a
         value to be handled."""
         wid = self._registry.id_for(owner, structure, role, key)
         if wid is None:
-            raise RuntimeError(
+            raise AllocationError(
                 "out of gui widget ids: the id window is fully in use "
                 "(freed widgets recycle their ids -- this many live at once "
                 "is a leak)")

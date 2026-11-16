@@ -29,6 +29,8 @@ from .base.environment import Environment
 from .base.main import main
 from .defs import Server
 
+__all__ = ["Session"]
+
 
 class Session(Environment):
     """One `Server` plus one `TempoClock`, bundled into a single handle.

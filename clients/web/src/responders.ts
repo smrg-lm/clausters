@@ -444,4 +444,3 @@ export function midifunc(
     return (func: MidiCallback) => new MidiFunc(func, midiMsg, options);
 }
 
-export { MidiReceiver, OscReceiver };

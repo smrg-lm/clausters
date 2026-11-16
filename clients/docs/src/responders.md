@@ -126,7 +126,7 @@ MidiFunc(note_off, "note_off", recv=recv)
 ```
 
 ```ts
-import { requestMidiPorts } from "clausters";
+import { requestMidiPorts } from "clausters/page";
 import { MidiReceiver } from "clausters/base";
 import { Synth } from "clausters/defs";
 import { MidiFunc } from "clausters/responders";
@@ -170,11 +170,11 @@ from clausters.base import MidiRtInterface, MidiServer
 from clausters.seq import pbind, pseq
 
 midi = MidiServer(interface=MidiRtInterface(port="clausters"), channel=0)
-pbind(midinote=pseq([60, 64, 67]), dur=0.5).play(midi)
+pbind(midinote=pseq([60, 64, 67]), dur=0.5).play(server=midi)
 ```
 
 ```ts
-import { requestMidiPorts } from "clausters";
+import { requestMidiPorts } from "clausters/page";
 import { MidiRtInterface, MidiServer } from "clausters/base";
 import { pbind, pseq } from "clausters/seq";
 
@@ -182,7 +182,7 @@ const midi = new MidiServer({
     interface: await MidiRtInterface.open({ access: await requestMidiPorts() }),
     channel: 0,
 });
-pbind({ midinote: pseq([60, 64, 67]), dur: 0.5 }).play(midi);
+pbind({ midinote: pseq([60, 64, 67]), dur: 0.5 }).play(undefined, midi);
 ```
 
 Each `Event` becomes a note on/off pair — the note from `midinote()`, the velocity from `velocity()`, the release at `sustain()` — and `MidiItem` makes an event of raw bytes for a `Timeline` the way `OscItem` makes one of a raw message. **Timing is best-effort by design** (see [Timing models](timing-models.md#midi-always-rides-osc-time))<!-- web -->, though the browser gives some of it back: `MIDIOutput.send` takes a `performance.now()` deadline, so a note-off two beats out is handed its deadline rather than slept to<!-- /web -->.

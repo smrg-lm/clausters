@@ -156,7 +156,7 @@ test("a pattern plays its events at the beats its deltas add up to", async () =>
     pbind({
         degree: pseq([0, 2, 4]),
         dur: pseq([0.5, 0.25, 1]),
-    }).play(destination, { clock });
+    }).play(clock, destination);
     await run(4);
 
     assert.deepEqual(
@@ -173,10 +173,7 @@ test("a pbind stops when any of its keys runs out", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     clock.start();
-    pbind({ degree: pseq([0, 1, 2, 3]), amp: pseq([0.1, 0.2]) }).play(
-        destination,
-        { clock },
-    );
+    pbind({ degree: pseq([0, 1, 2, 3]), amp: pseq([0.1, 0.2]) }).play(clock, destination);
     await run(8);
     assert.equal(destination.played.length, 2);
 });
@@ -185,9 +182,7 @@ test("stopping a player leaves the clock alone", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     clock.start();
-    const player = pbind({ degree: pseq([0], INF), dur: 1 }).play(destination, {
-        clock,
-    });
+    const player = pbind({ degree: pseq([0], INF), dur: 1 }).play(clock, destination);
     await run(2.5);
     assert.equal(destination.played.length, 3);
     player.stop();

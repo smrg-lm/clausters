@@ -53,8 +53,9 @@
         passthrough(...args);
       };
 
-      const { Server, Buffer, Synth, SynthDef, Bus, GuiHost, gui, opfs } =
+      const { Server, Buffer, Synth, SynthDef, Bus, GuiHost, gui } =
         await import("../dist/index.js");
+      const { opfs } = await import("../dist/page.js");
       const { diskOut, out, sine } = await import("../dist/defs/index.js");
 
       const smoke = new URLSearchParams(location.search).has("smoke");

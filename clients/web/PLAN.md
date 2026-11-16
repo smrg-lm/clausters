@@ -55,7 +55,7 @@ clients/web/
     base/                 #   the low-level seam (mirrors clausters/base)
       core.ts             #     the shared core's wasm: one load, the registry
       osc.ts              #     OSC encode/decode over the wasm core (mirrors _osclib)
-      connection.ts       #     the carrier seam: WsConnection | pageConnection()
+      connection.ts       #     the carrier seam: OscWsInterface | pageConnection()
       clock.ts timebase.ts builtins.ts
       environment.ts main.ts  #   the ambient environment + the default session
     errors.ts             #   the error hierarchy (mirrors errors.py)
@@ -196,69 +196,3 @@ finished work, where a pending item reads as done.
   runs of the case in a row pass locally. The entry stays open on the same
   terms: the next timeout's output names the step.
 
-- ⬜ **A page's host reads a `path` or a `cache` only as a URL** *(found
-  2026-11-15, bringing the measurement surface to one shape)*. The browser
-  front resolves a widget's `path`/`cache` by fetching it against the page
-  origin (`crates/clausters-gui/src/host/web/bulk.rs`, whose header still says
-  the browser has no filesystem), so a file a page wrote to its own storage
-  (OPFS) cannot be drawn from by name, and the web client has none of the
-  Python client's file writers for those props (`samples_to_file`,
-  `peaks_cache_file`, `peaks_cache_update_file`, `peaks_cache_stream_file` in
-  `clausters.gui.guidef`). A page has a filesystem: the host's browser front
-  reads a path that is not a URL from OPFS, as its file commands already do
-  (`host/web/files.rs`), and the web client's `guidef` gains the four writers
-  over the same core calls, so the GUI chapter's Python-only paragraph about
-  them is one text.
-
-- ⬜ **The web client reads no configuration file** *(found 2026-11-15, the
-  same chapter)*. Python's `[client].clock` (and the rest of its
-  configuration chapter) has no web counterpart: a page or a worker passes
-  every option in code. A page has a filesystem (OPFS), so this is a gap of
-  the port and not of the platform; until it is decided, the shared chapters
-  say that the web client takes these options in code, and the web book
-  states that it has no Configuration chapter, with the reason.
-
-- ⬜ **The client-side command verbs have no web counterpart** *(found
-  2026-11-15, writing the web book's platform chapter for `W35`)*. The
-  Python wheel's `clausters` command adds `status`, `panic` and `stop`
-  against a server on a port. The npm package installs no command, since it
-  carries no native binary, but those three verbs are client calls a node
-  program could make: the port decides whether they become a `bin` of the
-  package or stay the Python client's, and says so in both books.
-
-- ⬜ **Calls whose arguments are shaped differently** *(found 2026-11-15,
-  writing the shared chapters' examples for `W35`)*. `Automation` takes
-  `(target, points)` in Python and one options object in the web client;
-  `EventPattern.play` takes `(clock, server, quant)` in Python and
-  `(destination, { clock, quant })` in the web client; the id share is
-  `share=` on `Server` and `GuiHost` in Python and an option of the session
-  factories in the web client; `SynthDef.controls` (the `ControlInfo` list)
-  is Python's alone; a transport's `span` is assigned in Python and set with
-  `setSpan()` in the web client, and its `end` and `playing` are properties
-  in one and methods in the other. Each is either an idiom, written in
-  `docs/bindings.md`, or brought to one shape.
-
-- ⬜ **Python-only editor surface** *(found 2026-11-15, the shared transport
-  chapter for `W35`)*. `PlayheadSync.resume()` (continue a frozen sound
-  rather than re-render) and `editor.locatable` (whether a seek means
-  anything) have no web counterpart; the shared chapter marks the text about
-  them for the Python book until the web client has them.
-
-- ⬜ **`play(def)` waits in one client and not in the other** *(found
-  2026-11-15, the shared verbs chapter for `W35`)*. Python's `play(def)`
-  blocks until the def's `/done`; the web client's sends the def without
-  waiting and relies on the server running the two in order. The shared
-  chapter states each; which one is the behaviour, and whether the other
-  client needs an awaitable form, is to decide.
-
-- ⬜ **A module's names differ between the clients** *(found 2026-11-15,
-  when the web package's subpaths were made the Python package's modules)*.
-  The modules now have the same paths; what each exports does not yet
-  match. Read one against the other, the web client's modules export names
-  the Python module keeps private or does not have (`clausters/data`'s
-  `Peaks`, `decodeSamples`, `fetchAudio`, `stftCache`, `deinterleave`;
-  `clausters/render`'s `channel`; `clausters/document`'s format constants;
-  `clausters/gui/guidef`'s `flat*` helpers), and `sampleClockFor` answers
-  `null` where Python's `Server.sample_clock` always answers a tracker. Each
-  is a name to bring to both, to make private in one, or an idiom to write in
-  `docs/bindings.md`.

@@ -5,7 +5,8 @@ smoke (same-invocation rule), not here."""
 import pytest
 
 from clausters.base import OscNrtInterface, SampleClockTimebase
-from clausters.defs import SampleClockModel, Server
+from clausters.defs import Server
+from clausters.defs.clocksync import SampleClockModel
 
 
 def test_model_recovers_a_clean_line():

@@ -49,5 +49,5 @@ export function ambientHost(): GuiHost | null {
  */
 export async function appClock(host?: GuiHost): Promise<AppClock> {
     if (host !== undefined) return host.clock;
-    return (await import("../plot.ts")).resolveHost().then((h) => h.clock);
+    return (await import("../plot.ts"))._resolveHost().then((h) => h.clock);
 }

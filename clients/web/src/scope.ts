@@ -50,7 +50,7 @@ import { Bus } from "./defs/bus.ts";
 import type { Server } from "./defs/server/index.ts";
 import * as guidef from "./gui/guidef.ts";
 import type { GuiHost, PropValue, Stage } from "./gui/host.ts";
-import { resolveHost } from "./plot.ts";
+import { _resolveHost } from "./plot.ts";
 
 /** Which of the three views a scope window draws. */
 export type ScopeView = "signal" | "phase" | "spectrum";
@@ -248,7 +248,7 @@ export async function scope(
     }
 
     const server = main.resolveServer(explicitServer);
-    const host = explicitHost ?? await resolveHost(server as Server);
+    const host = explicitHost ?? await _resolveHost(server as Server);
     const index = bus instanceof Bus ? bus.index : Math.trunc(bus);
 
     const text = label ?? (

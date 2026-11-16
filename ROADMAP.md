@@ -276,6 +276,11 @@ its plan; the plan is where its acceptance is read.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Found running the
   notes editor's example; what is open is where the wait belongs.
 
+- ⬜ **A page's host keeps no named GuiDef**
+  *(`crates/clausters-gui/PLAN.md`, Found by use)*. Found wiring a widget's
+  files to the page's storage; what is open is how a synchronous store
+  answers over storage that answers with promises.
+
 - ⬜ **The transport's commands, applied where the transport is** *(`crates/clausters-server/PLAN.md`, Future directions)*. To evaluate, not scheduled: the one
   `match` has a value of its own.
 

@@ -60,6 +60,8 @@ import inspect
 from .base.main import main
 from .defs.node import Group, Synth
 
+__all__ = ["play"]
+
 
 def play(playable, *, server=None, clock=None, quant=None, controls=None):
     """Play ``playable`` against the ambient context.

@@ -26,18 +26,21 @@ A ``pbind(...).play(clock, server)`` runs live (RT) or builds an NRT score for
 """
 
 from .curves import CurveEmitter
-from .event import Event, rest
+from .event import DEFAULTS, NOTATION_KEYS, Event, rest
 from .eventstream import EventStreamPlayer
 from .timeline import (MidiItem, OscItem, Timeline, item_data,
                        item_from_data)
 from .sequence import EventSequence, SeqAutomation, SeqEvent, SeqEvents
-from .pattern import (INF, EventPattern, Pattern, PatternStream, embed,
-                      pattern)
+from .pattern import (INF, EventPattern, Pattern, PatternStream, as_pattern,
+                      embed, pattern)
 from .patterns import *  # noqa: F401,F403 -- the patterns, by family
 from .patterns import __all__ as _patterns
 
 __all__ = [
     "CurveEmitter",
+    "DEFAULTS",
+    "NOTATION_KEYS",
+    "as_pattern",
     "EventPattern",
     "Event",
     "rest",

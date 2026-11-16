@@ -142,6 +142,8 @@ quoted title lands here, on the link to the entry.
 - [A sound file is a client object, and a buffer is never one (2026-10-16)](decisions/clients.md#a-sound-file-is-a-client-object-and-a-buffer-is-never-one-2026-10-16)
 - [A worker's session attaches to its page's engine over a port (2026-11-15)](decisions/clients.md#a-workers-session-attaches-to-its-pages-engine-over-a-port-2026-11-15)
 - [clausters-editor runs as a page, its JavaScript session in a worker (2026-11-15)](decisions/clients.md#clausters-editor-runs-as-a-page-its-javascript-session-in-a-worker-2026-11-15)
+- [`play` makes a def's node once the server has the def, in both clients (2026-11-15)](decisions/clients.md#play-makes-a-defs-node-once-the-server-has-the-def-in-both-clients-2026-11-15)
+- [The configuration file and the command line are a native install's (2026-11-15)](decisions/clients.md#the-configuration-file-and-the-command-line-are-a-native-installs-2026-11-15)
 
 ## [The web client and the engine in a page](decisions/web.md)
 
@@ -338,3 +340,4 @@ quoted title lands here, on the link to the entry.
 - [The document's structures are one module, named for the document (2026-11-15)](decisions/project.md#the-documents-structures-are-one-module-named-for-the-document-2026-11-15)
 - [The symbolic score is `clausters.notation`'s, and the GUI keeps its views (2026-11-15)](decisions/project.md#the-symbolic-score-is-clausters-notations-and-the-gui-keeps-its-views-2026-11-15)
 - [A session file is an envelope, and an application's contents are its own (2026-11-15)](decisions/project.md#a-session-file-is-an-envelope-and-an-applications-contents-are-its-own-2026-11-15)
+- [A module exports the same names in both clients, and what only a platform has is a module of its own (2026-11-15)](decisions/project.md#a-module-exports-the-same-names-in-both-clients-and-what-only-a-platform-has-is-a-module-of-its-own-2026-11-15)

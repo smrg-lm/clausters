@@ -268,7 +268,7 @@ import { sine } from "clausters/defs";
 
 const session = await Session.live();
 session.use(() => {
-    play(sine(880).mul(0.1));
+    void play(sine(880).mul(0.1));
     panic();                // the session in force: this one
 });
 session.panic();            // the same, naming it
@@ -606,7 +606,7 @@ A page can run the code that plays in a **worker** and keep the engine itself. T
 
 ```js
 // the page
-import { server } from "clausters";
+import { server } from "clausters/page";
 
 const engine = await server();
 await engine.resume();
@@ -632,7 +632,7 @@ The page's **GUI host** is reached the same way, with a link of its own, and `se
 
 ```js
 // the page
-import { guiHost } from "clausters";
+import { guiHost } from "clausters/page";
 
 const host = await guiHost();
 const guiLink = host.link({ place: (window) => document.getElementById("panel") });
@@ -692,7 +692,7 @@ import { Server } from "clausters/defs";
 const server = await new Server({ transport: "ws", url: "ws://127.0.0.1:57120", latency: 0.1 }).attach();
 const clock = new TempoClock(2.0);
 
-phrase().play(server, { clock });   // what Session.play does for you
+phrase().play(clock, server);   // what Session.play does for you
 await clock.run(3.5);
 server.close();
 ```

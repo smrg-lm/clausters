@@ -677,3 +677,40 @@ engine, the GUI host and a filesystem already.
   staged by the Python package's own staging (`build_docs.stage_book`,
   `server_stage`), so the page's documentation viewer shows them beside the
   editor's, as the desktop's shows the wheel's.
+
+## `play` makes a def's node once the server has the def, in both clients (2026-11-15)
+
+`play(def)` in the Python client sent the def, waited for its `/done` and
+made the node; the web client sent both at once, relying on the server
+running them in order. A server runs a SynthDef or a GraphDef in order,
+since it installs one as it reads it, but compiles a Faust def on a thread
+of its own (`/def_send faust` answers when the compile is done), so on a
+live server the web client's `play(faustDef)` sent a `/synth_new` naming a
+def the server did not have yet.
+
+**The Python client's behavior is the verb's**: the node is made once the
+server has the def. In TypeScript `play` answers a promise of the node, as
+it already did of the `Transport` for a sequence, and so does
+`play(buffer)`, whose stock instrument is a def. Offline nothing answers and
+the score is ordered, so in both clients the def and the node go into the
+score at once, before `play` returns: a `play` inside a routine lands at the
+routine's own time in a render.
+
+## The configuration file and the command line are a native install's (2026-11-15)
+
+The Python client reads the configuration file the server and the GUI host
+read (`clausters.config`: the user's file, then the nearest `clausters.toml`
+above the working directory) and its wheel installs the `clausters`
+command, whose `status`, `panic` and `stop` speak to a server on a port.
+The web client had neither, and the question was whether that is a gap.
+
+**It is the platform's.** The file configures a machine: the server binary
+and its ports, the audio device, the processes a script boots, found by a
+home directory and a working directory. A page has neither, and a worker is
+configured by the page that starts it. The command is the native install's
+front: it launches the binary the wheel bundles, and its three verbs speak
+OSC over UDP, which the web client does not carry. The npm package carries
+no binary, and a node program that wants a status or a panic makes the call
+the command makes. So the web client takes these options in code, in a page
+and under node, and `clausters.config` is one of the modules only a native
+process has (`clients/docs/names.toml`).

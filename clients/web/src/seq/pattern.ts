@@ -45,7 +45,7 @@
 import { AbstractObject } from "../base/absobject.ts";
 import type { Composed, Fan } from "../base/absobject.ts";
 import { Stream, StopStream } from "../base/stream.ts";
-import { TRIMMED, valueOp } from "../base/builtins.ts";
+import { _TRIMMED, valueOp } from "../base/builtins.ts";
 import { main } from "../base/main.ts";
 import type { Event, EventDestination } from "./event.ts";
 import { EventStreamPlayer } from "./eventstream.ts";
@@ -239,7 +239,7 @@ export class Pattern<T = unknown> extends AbstractObject<Pattern<number>, unknow
 
     protected narop(selector: string, args: readonly unknown[], clip: string): Pattern<number> {
         refuseEvents(this, ...args);
-        return opPattern("pnarop", selector, [this, ...args, ...(TRIMMED.has(selector) ? [clip] : [])]);
+        return opPattern("pnarop", selector, [this, ...args, ...(_TRIMMED.has(selector) ? [clip] : [])]);
     }
 }
 
@@ -313,9 +313,11 @@ export function* applyOp(
  */
 export class EventPattern<T = Event> extends Pattern<T> {
     /**
-     * Plays this event pattern on `clock`, sending to `destination`.
+     * Plays this event pattern on `clock`, sending to `destination`, at the
+     * next multiple of `quant` -- the arguments of `Routine.play`, the server
+     * between them, as in the Python client.
      *
-     * Both are optional and resolve against the ambient context (the running
+     * All are optional and resolve against the ambient context (the running
      * session, else the active one, else the default session): an omitted
      * `destination` takes that environment's server, and an omitted `clock`
      * the running routine's or, outside one, the default session's -- created
@@ -323,11 +325,12 @@ export class EventPattern<T = Event> extends Pattern<T> {
      * opened somewhere and nothing else wired.
      */
     play(
-        destination?: EventDestination,
-        { clock, quant }: { clock?: TempoClock; quant?: number } = {},
+        clock?: TempoClock | null,
+        destination?: EventDestination | null,
+        quant?: number,
     ): EventStreamPlayer {
         const target = destination ?? (main.resolveServer() as unknown as EventDestination);
-        return new EventStreamPlayer(this as Pattern<unknown>, target).play(clock, quant);
+        return new EventStreamPlayer(this as Pattern<unknown>, target).play(clock ?? undefined, quant);
     }
 
     /**

@@ -29,7 +29,7 @@ import { requireCore } from "../../base/core.ts";
 import type { ControlInfo } from "../../defs/info.ts";
 import type { Node } from "../../defs/node.ts";
 import { resolveServer } from "../../defs/wire.ts";
-import { resolveHost } from "../../plot.ts";
+import { _resolveHost } from "../../plot.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { WindowHandle } from "../handle.ts";
 import type { GuiHost, Stage } from "../host.ts";
@@ -106,7 +106,7 @@ export class NodeEditor {
         this.controls = (await server.queryDefs([info.defname]))[0].controls;
         const tree = this.#generate().window;
         if (this.#title !== undefined) tree.title = this.#title;
-        this.host = host ?? await resolveHost(server);
+        this.host = host ?? await _resolveHost(server);
         this.window = this.host.open(tree, { element: stage });
         // A field reports its value, and also that it took the focus
         // (`"focus" 1`): only the value is a search.

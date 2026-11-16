@@ -50,7 +50,7 @@ const log = area("server");
 
 export type { TimedMessage } from "../../base/osc.ts";
 import type { Connection, PageConnection } from "../../base/connection.ts";
-import { pageConnection, portConnection, OscNrtInterface, WsConnection } from "../../base/connection.ts";
+import { pageConnection, portConnection, OscNrtInterface, OscWsInterface } from "../../base/connection.ts";
 import { defaultLinks } from "../../base/links.ts";
 
 /**
@@ -621,7 +621,7 @@ export class Server {
         await loadCore();
         const linked = this.carrierKind === "page" && !this.audio ? workerEngineLink() : null;
         if (this.carrierKind === "ws") {
-            this.conn = await WsConnection.open(this.carrierUrl);
+            this.conn = await OscWsInterface.open(this.carrierUrl);
         } else if (linked !== null) {
             // A worker's page engine, over the link its starter left.
             this.conn = await portConnection(linked);
@@ -1365,8 +1365,8 @@ export class Server {
                     + "(Session.nrt() builds one)",
             );
         }
-        const { renderScore } = await import("../../render.ts");
-        return renderScore(connection.score.bytes(), options);
+        const { _renderScore } = await import("../../render.ts");
+        return _renderScore(connection.score.bytes(), options);
     }
 
     // ---- definitions ----

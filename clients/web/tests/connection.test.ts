@@ -1,5 +1,5 @@
 // The WS carrier end to end: a real `clausters --ws` server, one node
-// process, one /server_status round trip through `WsConnection` (node's global
+// process, one /server_status round trip through `OscWsInterface` (node's global
 // `WebSocket` speaks the same standard API as the browser's).
 //
 // Needs the debug server built (`cargo build` at the workspace root); the
@@ -13,7 +13,7 @@ import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
 
-import { WsConnection } from "../src/base/connection.ts";
+import { OscWsInterface } from "../src/base/connection.ts";
 import { loadCore } from "../src/base/core.ts";
 import { encodeMessage, decodePacket } from "../src/base/osc.ts";
 
@@ -29,14 +29,14 @@ const hasServer = await access(serverBin).then(() => true, () => false);
 
 await loadCore();
 
-test("WsConnection: /server_status round trip", { skip: !hasServer }, async () => {
+test("OscWsInterface: /server_status round trip", { skip: !hasServer }, async () => {
     const server = spawnChild(serverBin, ["--port", String(udpPort), "--ws", String(wsPort),
         "--no-tcp", "--no-persist"]);
     try {
         // The server binds the WS listener during boot; retry until it is up.
-        let connection: WsConnection | null = null;
+        let connection: OscWsInterface | null = null;
         for (let i = 0; i < 50 && !connection; i++) {
-            connection = await WsConnection.open(
+            connection = await OscWsInterface.open(
                 `ws://127.0.0.1:${wsPort}`,
             ).catch(() => null);
             if (!connection) await sleep(100);

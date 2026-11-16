@@ -72,7 +72,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       Build it first: ./build.sh
     -->
     <script type="module">
-      import { Buffer, Session, SoundFile, Synth, SynthDef, gui, opfs, seq } from "../../dist/index.js";
+      import { Buffer, Session, SoundFile, Synth, SynthDef, gui, seq } from "../../dist/index.js";
+      import { opfs } from "../../dist/page.js";
       import { control, out, playBuf } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);

@@ -1274,12 +1274,12 @@ export function renderTimeline(timeline: Rendered, until?: number): Promise<Even
 
 /** `EventPattern.renderEvents`. @internal */
 export function renderPattern(
-    pattern: { play(destination: never, options: { clock: TempoClock }): { stop?: () => unknown } },
+    pattern: { play(clock: TempoClock, destination: never): { stop?: () => unknown } },
     until?: number,
 ): Promise<EventSequence> {
     return rendered(
         (recorder, clock) => {
-            const player = pattern.play(recorder as never, { clock });
+            const player = pattern.play(clock, recorder as never);
             return player.stop ? () => player.stop!() : null;
         },
         until,

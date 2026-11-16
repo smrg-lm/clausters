@@ -152,6 +152,7 @@ __all__ = [
     "gui",
     "ipc",
     "launch",
+    "log",
     "notation",
     "segments",
     "seq",

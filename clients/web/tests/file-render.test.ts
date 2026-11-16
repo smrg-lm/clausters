@@ -26,7 +26,7 @@ import { SynthDef } from "../src/defs/synthdef.ts";
 import { diskIn, diskOut, out, sine } from "../src/defs/ugens/index.ts";
 import { decodeSoundfile } from "../src/engine/codec.ts";
 import { loadRenderer } from "../src/engine/render.ts";
-import { renderScore } from "../src/render.ts";
+import { _renderScore } from "../src/render.ts";
 import { runSteps } from "../src/steps.ts";
 import { StepRunner } from "../src/core/clausters_core_web.js";
 import type { Server } from "../src/defs/server/index.ts";
@@ -90,8 +90,8 @@ test("a render to a file is the render in memory, sample for sample", async () =
             return nrt.score.bytes();
         };
         const path = join(dir, "tone.w64");
-        const inMemory = await renderScore(score(), { sampleRate: RATE, channels: 1, seed: 7 });
-        const written = await renderScore(score(), { sampleRate: RATE, channels: 1, seed: 7, path });
+        const inMemory = await _renderScore(score(), { sampleRate: RATE, channels: 1, seed: 7 });
+        const written = await _renderScore(score(), { sampleRate: RATE, channels: 1, seed: 7, path });
         assert.equal(written.samples, null);
         assert.equal(written.frames, inMemory.frames);
         const back = await decodeSoundfile(await readFile(path), path, 0, -1);
@@ -116,7 +116,7 @@ test("a file a render streams is read from its first frame", async () => {
         ]);
         nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
         const path = join(dir, "out.wav");
-        const stats = await renderScore(nrt.score.bytes(), { sampleRate: RATE, channels: 1, path });
+        const stats = await _renderScore(nrt.score.bytes(), { sampleRate: RATE, channels: 1, path });
         assert.equal(stats.frames, 24_000);
         const back = await decodeSoundfile(await readFile(path), path, 0, -1);
         const samples = [...back.samples];
@@ -140,7 +140,7 @@ test("a file a render streams is decoded when it is not a WAV", async () => {
         ]);
         nrt.addBundle(0.5, [{ addr: "/node_free", args: [i(1000)] }]);
         const path = join(dir, "out.wav");
-        const stats = await renderScore(nrt.score.bytes(), { sampleRate: RATE, channels: 1, path });
+        const stats = await _renderScore(nrt.score.bytes(), { sampleRate: RATE, channels: 1, path });
         assert.equal(stats.frames, 24_000);
         const back = await decodeSoundfile(await readFile(path), path, 0, -1);
         const samples = [...back.samples];

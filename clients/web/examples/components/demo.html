@@ -38,9 +38,9 @@ through the raw singleton -- the REPL surface a future TS client builds on.</div
       beaconed as a fetch, read from the HTTP access log.
     -->
     <script type="module">
-      import { server, startPage, loadCore, encodeMessage, decodePacket, ANY_PEER,
-               DEFAULT_PEER,
-      } from "../../dist/index.js";
+      import {
+        server, startPage, loadCore, encodeMessage, decodePacket, ANY_PEER, DEFAULT_PEER,
+      } from "../../dist/page.js";
 
       const params = new URLSearchParams(location.search);
       const smoke = params.has("smoke");

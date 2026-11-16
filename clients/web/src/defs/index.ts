@@ -56,18 +56,6 @@ export type {
     UgenInfo,
     UgenInput,
 } from "./info.ts";
-export {
-    DEFAULT_AUDIO_BUSES,
-    DEFAULT_CONTROL_BUSES,
-    DEFAULT_MAX_BUFFERS,
-    DEFAULT_MAX_NODES,
-    DEFAULT_SAMPLE_RATE,
-    DEFAULT_TAP_FRAMES,
-    DEFAULT_TAPS,
-    DEFAULT_TRANSPORTS,
-} from "./server/index.ts";
-
-export { EmbedSampleClock, WsSampleClock } from "./clocksync.ts";
 export type { Anchor, ServerSampleClock } from "./clocksync.ts";
 
 export { AddAction, Group, Node, NodeIdAllocator, ROOT_NODE_ID, Synth, Voices } from "./node.ts";
@@ -76,7 +64,7 @@ export type { Controls, NodeLike, Placement } from "./node.ts";
 export { AudioBusAllocator, Bus, ControlBusAllocator, EventBusAllocator } from "./bus.ts";
 export type { BusLike, BusRate } from "./bus.ts";
 
-export { Buffer, BufferAllocator, NUM_BUFFERS } from "./buffer.ts";
+export { Buffer, BufferAllocator } from "./buffer.ts";
 export type { BufferLike } from "./buffer.ts";
 
 export { SynthDef } from "./synthdef.ts";
@@ -89,14 +77,37 @@ export type { BoxInput, BoxNode, EvalArg, FaustOptions } from "./boxes.ts";
 
 export { FaustExpr } from "./expr.ts";
 
+// `Expr` is a union of the two families here and a base class in Python, so
+// `isExpr` is what a TypeScript caller asks in place of `isinstance`.
 export { asDef, exprChannels, isExpr } from "./asdef.ts";
 export type { Expr } from "./asdef.ts";
 
-export { GraphBusRef, GraphDef, MemberRef, PortTarget } from "./graphdef.ts";
+export { GraphDef } from "./graphdef.ts";
+export type { GraphBusRef, MemberRef, PortTarget } from "./graphdef.ts";
 export type { GraphDefSpec, MemberControlValue, MemberKind, MemberSpec } from "./graphdef.ts";
 
-export * from "./ugens/index.ts";
+// The UGens the Python client's `clausters.defs` names flat, by the same
+// names; the whole catalogue is `ugens` (`clausters/defs/ugens`), as there.
+export {
+    Bpf, ChannelList, Control, DoneAction, Env, Ugen, bufAllpassC,
+    bufAllpassL, bufAllpassN, bufChannels, bufCombC, bufCombL, bufCombN, bufDelayC,
+    bufDelayL, bufDelayN, bufDur, bufRateScale, bufRd, bufSampleRate, bufWr, chans,
+    clipCount, control, conv, dbrown, dbufrd, demand, dgeom, dibrown, diskIn,
+    diskOut, diwhite, drand, dseq, dseries, dshuf, dstutter, dswitch1, dup, duty,
+    dwhite, dxrand, envGen, envShape, fft, ifft, impulse, in_, inCtl, lag, localIn,
+    localOut, madd, meter, mix, osc, oscN, out, outCtl, partconvFrames, playBuf,
+    poll, pvAdd, pvBinShift, pvBrickWall, pvCopyPhase, pvKernel, pvMagAbove,
+    pvMagBelow, pvMagClip, pvMagFreeze, pvMagMul, pvMagShift, pvMagSmear, pvMax,
+    pvMin, pvMul, rand, recordBuf, replaceOut, sampleRate, sendReply, sendTrig,
+    shaper, sine, sum3, sum4, tduty, transportBufRd, transportDiskIn, transportFade,
+    transportPos, truePeak, varLag, vosc, whiteNoise,
+} from "./ugens/index.ts";
+export type * from "./ugens/index.ts";
+export * as ugens from "./ugens/index.ts";
+export { SynthExpr } from "./ugens/graph.ts";
 export * as signals from "./signals.ts";
+export { Signal } from "./signals.ts";
+export { IdSpaces } from "../base/core.ts";
 export * as boxes from "./boxes.ts";
 export * as pvExpr from "./pv_expr.ts";
 

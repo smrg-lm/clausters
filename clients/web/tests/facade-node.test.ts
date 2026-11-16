@@ -18,7 +18,7 @@ test("it imports with no document, and exports the session and its verbs", () =>
 });
 
 test("an element of a page is refused where there is no page", () => {
-    assert.throws(() => clausters.defineComponent("fm-voice", "file:///x/"), /element of a page/);
+    assert.throws(() => clausters.page.defineComponent("fm-voice", "file:///x/"), /element of a page/);
 });
 
 test("an offline session made through it plays a routine and panics", async () => {

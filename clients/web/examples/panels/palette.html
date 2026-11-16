@@ -61,7 +61,8 @@ stands in a cell larger than that (<code>anchor</code>).</div>
       Build it first: ./build.sh
     -->
     <script type="module">
-      import { GuiHost, gui, loadCore } from "../../dist/index.js";
+      import { GuiHost, gui } from "../../dist/index.js";
+      import { loadCore } from "../../dist/page.js";
 
       // The numeric core is wasm here and is fetched on demand, so a page
       // that boots a host of its own asks for it first. In Python the same

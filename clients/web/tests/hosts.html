@@ -64,9 +64,8 @@
       layer below that.
     -->
     <script type="module">
-      import {
-        loadCore, engine, Server, Synth, SynthDef,
-      } from "../dist/index.js";
+      import { Server, Synth, SynthDef } from "../dist/index.js";
+      import { loadCore, engine } from "../dist/page.js";
       import { control, out, sine } from "../dist/defs/index.js";
       import { decodePacket, encodeMessage } from "../dist/base/osc.js";
 

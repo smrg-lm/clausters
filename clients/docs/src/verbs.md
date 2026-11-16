@@ -23,7 +23,7 @@ import { Server, play, plot, render } from "clausters";
 import { sine } from "clausters/defs";
 
 await new Server().boot();
-const node = play(sine(440.0).mul(0.2));       // a bare expression, sounding now
+const node = await play(sine(440.0).mul(0.2)); // a bare expression, sounding now
 node.free();                                   // ...and gone
 await plot(sine(440.0).mul(0.2), { dur: 0.02 });   // the same signal, on screen
 const stats = await render(sine(440.0).mul(0.2), { dur: 2.0, path: "beep.wav" });
@@ -57,12 +57,12 @@ opening a host and running a render both wait and a page may not block.<!-- /web
 | an `Event`, or a plain {{alt **dict** || **object**}} of event keys | one note, now (timetagged at the logical beat inside a routine) | the **completed event** — the derived keys (`freq`, `sustain`, …) plus `node`/`server` written in; `.free()` cuts it, `.release()` ends it musically (gate 0 when it releases by gate) |
 | an event pattern (`EventPattern`: a `pbind`, or a `pseq`/`prand`/`pn` over event patterns only) | schedules it on a clock | the `EventStreamPlayer` — `.stop()` |
 | a `Routine` / `Stream`, or a bare **generator** | schedules it on a clock | the routine |
-| a **bare expression** — a `Ugen` graph, a `ChannelList` of them, a Faust `Signal` or `Box` | wraps it in an ephemeral def (adding the `out` if it lacks one; a channel list lands on buses 0, 1, …), sends and instances it; it sounds until you free it | the `Synth` — `.free()` |
-| a def — `SynthDef` / `FaustDef` / `GraphDef` | sends and instances it, with optional `controls` | the `Synth` (or instance `Group`) — `.free()` |
+| a **bare expression** — a `Ugen` graph, a `ChannelList` of them, a Faust `Signal` or `Box` | wraps it in an ephemeral def (adding the `out` if it lacks one; a channel list lands on buses 0, 1, …), sends and instances it once the server has it; it sounds until you free it | the `Synth`{{alt  || , through a promise}} — `.free()` |
+| a def — `SynthDef` / `FaustDef` / `GraphDef` | sends and instances it once the server has it, with optional `controls` | the `Synth` (or instance `Group`){{alt  || , through a promise}} — `.free()` |
 | an `Automation` | plays it as a **channel's curve**: it sets its control on the notes of its channel, on the clock it is played on | the curve — `.stop()` |
 | a `Timeline` | plays it on its own clock, on the ambient server | the timeline — `.stop()` (and `pause`/`locate`/`loop`) |
 | an `EventSequence` | loads it as an event lane on a transport of its own, its pass ending where its contents do; boots a server for the default session when there is none | the `Transport` it plays on{{alt  || , through a promise}} — `.stop()`, `.wait()` (and `pause`/`locate`/`loop`), in the sequence's beats, and `.free()` to give the transport back |
-| a `Buffer` | sounds it through the stock playbuf instrument (`rate`/`amp` controls, freed when the take ends) | the `Synth` — `.free()` cuts the take early |
+| a `Buffer` | sounds it through the stock playbuf instrument (`rate`/`amp` controls, freed when the take ends) | the `Synth`{{alt  || , through a promise}} — `.free()` cuts the take early |
 | anything with `play(destination)` (the timeline-item protocol: `OscItem`, `MidiItem`, …) | dispatches to it | whatever it returns |
 
 A **value pattern** (`pseq([1, 2, 3])`, `pwhite`, …) is not a playable: a
@@ -255,18 +255,14 @@ Nothing above the carrier changes: the same patterns, defs and routines play int
   `tail` is on `session.render`, which renders a session's score the same way;
   a def's length is its `dur`, and a binary score still ends on its own last
   bundle.
-<!-- python -->
-- **`play(def)` blocks until the server confirms** (the `/done` of the def
-  send). Fine interactively; inside a routine, send the def asynchronously
-  first (`d.send(server, wait=False)`) and instance it with
-  `Synth` — a routine must never block the clock thread.
-<!-- /python -->
-<!-- web -->
-- **`play(def)` sends the def and instances it without waiting**: the server
-  runs the two in order, so the note sounds once the def has loaded. Inside a
-  routine nothing may be awaited, so a def that has to be loaded before its
-  first note is sent before the routine starts (`await d.send(server)`).
-<!-- /web -->
+- **`play(def)` waits for the server to have the def** (the `/done` of the
+  def send) before it instances it, since a Faust def compiles on a thread of
+  its own and a node made before that names a def the server does not have
+  yet. {{alt It blocks || It answers a promise of the node}}; offline,
+  nothing answers and the score is ordered, so the def and its node go in at
+  once. Inside a routine on a live server, send the def before the routine
+  starts ({{alt `d.send(server)` || `await d.send(server)`}}) and instance it
+  with `Synth`, since a routine never waits on the server.
 - **`play(buffer)` needs the buffer's length.** On a live server it queries an
   unfilled handle; offline (NRT) the handle must carry `frames` up front.
 - **Beats read as seconds outside a clock.** An interactive `play(event)` (no

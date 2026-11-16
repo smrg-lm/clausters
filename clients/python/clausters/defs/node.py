@@ -16,6 +16,7 @@ from an id a responder or a query reported, use `Synth.from_id` /
 from enum import IntEnum
 
 from .. import _native
+from ..errors import AllocationError
 from .info import NodeInfo, parse_n_info
 from ._wire import resolve as _resolve
 
@@ -887,7 +888,7 @@ class NodeIdAllocator:
         flight -- allocation never wraps into ids that may still be alive."""
         node_id = self._spaces.alloc(_native.IdSpaces.NODES)
         if node_id is None:
-            raise RuntimeError(
+            raise AllocationError(
                 "out of node ids: the client range is fully in flight "
                 "(nodes are recycled when their /node_end arrives)")
         return node_id

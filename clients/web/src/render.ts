@@ -218,8 +218,10 @@ export function interleave(...chans: ArrayLike<number>[]): Float32Array {
  *
  * This is the one place samples are produced: every other path in this module
  * builds a score and ends here.
+ *
+ * @internal
  */
-export async function renderScore(
+export async function _renderScore(
     score: Uint8Array,
     { sampleRate = 48_000.0, channels = 2, seed, path, sampleFormat = "float" }: RenderOptions = {},
 ): Promise<RenderStats> {
@@ -344,7 +346,7 @@ export async function render(
         dur = 1.0, controls, defs = [], until, count, tail = 0, clock, ...cfg
     } = options;
 
-    if (obj instanceof Uint8Array) return renderScore(obj, cfg);
+    if (obj instanceof Uint8Array) return _renderScore(obj, cfg);
 
     if (
         obj instanceof SynthDef || obj instanceof FaustDef || obj instanceof GraphDef
@@ -364,7 +366,7 @@ export async function render(
 
     if (obj instanceof EventPattern) {
         return bounce(
-            (session, on) => obj.play(session.server, { clock: on }),
+            (session, on) => obj.play(on, session.server),
             { clock, until, tail, defs, guard: "event pattern", ...cfg },
         );
     }

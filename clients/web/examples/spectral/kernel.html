@@ -61,9 +61,8 @@ between bins, reading another chain -- stays with the dedicated
       /examples/spectral/kernel.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import {
-        Buffer, Routine, Server, Session, Synth, opfs, play,
-      } from "../../dist/index.js";
+      import { Buffer, Routine, Server, Session, Synth, play } from "../../dist/index.js";
+      import { opfs } from "../../dist/page.js";
       import {
         DoneAction, Env, SynthDef, control, envGen, fft, ifft, out, pvKernel,
         whiteNoise,

@@ -34,7 +34,7 @@
       leave the page. ?smoke=1 auto-runs; the verdict is beaconed as a fetch.
     -->
     <script type="module">
-      import { guiHost, server } from "../dist/index.js";
+      import { guiHost, server } from "../dist/page.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {

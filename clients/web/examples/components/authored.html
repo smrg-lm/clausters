@@ -79,9 +79,9 @@
       then open http://localhost:8000/examples/components/authored.html.
     -->
     <script type="module">
-      import {
-        Bundle, defs, gui, openBundle, startBundle, freeBundle, loadCore,
-      } from "/dist/index.js";
+      import { defs, gui } from "/dist/index.js";
+      import { Bundle } from "/dist/bundle-writer.js";
+      import { openBundle, startBundle, freeBundle, loadCore } from "/dist/page.js";
 
       /**
        * The instrument: a tone whose amplitude follows an LFO, with the LFO

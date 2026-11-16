@@ -20,7 +20,7 @@ gui = GuiHost().boot()
 ```
 
 ```ts
-import { loadCore } from "clausters";
+import { loadCore } from "clausters/page";
 import { GuiHost } from "clausters/gui";
 
 await loadCore();

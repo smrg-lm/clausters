@@ -119,12 +119,8 @@
       goes one layer down, to the binding surface the wasm exports.
     -->
     <script type="module">
-      import {
-        newGuiHost,
-        Server,
-        Synth,
-        SynthDef,
-      } from "../../dist/index.js";
+      import { Server, Synth, SynthDef } from "../../dist/index.js";
+      import { newGuiHost } from "../../dist/page.js";
       import { control, out, sine } from "../../dist/defs/index.js";
       import { encodeMessage } from "../../dist/base/osc.js";
 

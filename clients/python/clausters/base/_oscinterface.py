@@ -533,10 +533,10 @@ class OscNrtInterface(OscInterface):
         used comes back in ``stats.seed`` -- hand it back to replay that take.
         """
         from .. import ipc
-        from ..render import RenderStats, render_to_file
+        from ..render import RenderStats, _render_to_file
 
         if path is not None:
-            return render_to_file(self.score.bytes(), path, sample_rate,
+            return _render_to_file(self.score.bytes(), path, sample_rate,
                                   channels, workers, seed, sample_format)
         samples, frames, events, used = ipc.render(
             self.score.bytes(), sample_rate=sample_rate, channels=channels,

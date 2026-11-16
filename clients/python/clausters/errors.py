@@ -20,6 +20,22 @@ the leaves are named through this module:
         ...                                    # any other library failure
 """
 
+__all__ = [
+    "AbiMismatchError",
+    "AllocationError",
+    "CaptureError",
+    "ClaustersError",
+    "CommandError",
+    "CommandRingFull",
+    "LibraryError",
+    "LibraryFeatureError",
+    "LibraryNotFoundError",
+    "RenderError",
+    "ReplyTimeout",
+    "SegmentError",
+    "ServerError",
+]
+
 
 class ClaustersError(Exception):
     """Base class for every error this library raises on purpose."""
@@ -70,6 +86,12 @@ class AbiMismatchError(LibraryError, OSError):
 
 class RenderError(ClaustersError, RuntimeError):
     """The offline ``render`` call failed (the core reported an error)."""
+
+
+class AllocationError(ClaustersError, RuntimeError):
+    """A finite server resource (node ids, buses, buffers, widget ids) is
+    exhausted, or a handle was released twice -- the registry refuses either
+    rather than handing out an id that may still be alive."""
 
 
 class ServerError(ClaustersError, RuntimeError):

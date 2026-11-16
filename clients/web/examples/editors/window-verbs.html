@@ -78,7 +78,8 @@ the audio engine in the page, so the server a script would launch is
       <pre id="log"></pre>
     </main>
     <script type="module">
-      import { Session, gui, loadCore } from "../../dist/index.js";
+      import { Session, gui } from "../../dist/index.js";
+      import { loadCore } from "../../dist/page.js";
       import { Event, Timeline } from "../../dist/seq/index.js";
 
       const $ = (id) => document.getElementById(id);

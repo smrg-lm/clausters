@@ -83,7 +83,7 @@ const pieces: Record<string, (session: Session) => void> = {
             degree: pseq([0, 2, 4]),
             dur: 0.25,
             amp: 0.15,
-        }).play(session.server, { clock: session.clock });
+        }).play(session.clock, session.server);
     },
 };
 
@@ -223,8 +223,8 @@ test("a session renders the last note's release as the verb does", async () => {
     const take = async (options: { tail?: number }) => {
         const session = await Session.nrt();
         pbind({ instrument: "default", degree: pseq([0, 4, 7]), dur: 0.25 }).play(
+            session.clock,
             session.server as never,
-            { clock: session.clock },
         );
         return session.render(options);
     };
@@ -250,14 +250,14 @@ test("an envelope draws what an EnvGen plays, in both clients", async () => {
     // `plot(Env)` renders the curve through the engine's own `envGen` rather
     // than re-evaluating the break points here -- so this compares the drawn
     // curve itself against the Python client's, decimated to its shape.
-    const { renderEnvSamples } = await import("../src/plot.ts");
+    const { _renderEnvSamples } = await import("../src/plot.ts");
     const builders: Record<string, Env> = {
         adsr: Env.adsr(),
         perc: Env.perc(0.01, 0.5),
         triangle: new Env([0.0, 1.0, 0.0], [0.25, 0.25]),
     };
     for (const vector of envelopes) {
-        const drawn = await renderEnvSamples(builders[vector.name]!, vector.sample_rate);
+        const drawn = await _renderEnvSamples(builders[vector.name]!, vector.sample_rate);
         assert.equal(drawn.channels, vector.channels, `envelope ${vector.name}`);
         assert.equal(drawn.samples.length, vector.frames, `envelope ${vector.name}`);
         const step = Math.max(1, Math.floor(drawn.samples.length / vector.trace.length));

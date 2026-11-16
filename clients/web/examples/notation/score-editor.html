@@ -194,7 +194,8 @@ process, no socket.</div>
       /examples/notation/score-editor.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, loadCore, notation, opfs } from "../../dist/index.js";
+      import { Session, notation } from "../../dist/index.js";
+      import { loadCore, opfs } from "../../dist/page.js";
       import { edit } from "../../dist/gui/index.js";
 
       const el = (id) => document.getElementById(id);

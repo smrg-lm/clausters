@@ -39,10 +39,8 @@
       Verdict beaconed as a fetch, read from the HTTP access log.
     -->
     <script type="module">
-      import {
-        OscFunc, Server, Session, Synth, SynthDef, loadCore, oscfunc,
-        server as engine,
-      } from "../dist/index.js";
+      import { OscFunc, Server, Session, Synth, SynthDef, oscfunc } from "../dist/index.js";
+      import { loadCore, server as engine } from "../dist/page.js";
       import { impulse, out, sendReply, sendTrig, sine } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
