@@ -1174,13 +1174,73 @@ export class GuiHost {
         return this.app("/gui_app_call", [["i", window], JSON.stringify(call)], timeout);
     }
 
-    /** One request of the application door, and the value it answered. */
-    private async app(addr: string, args: MsgArg[], timeout: number | null): Promise<unknown> {
+    /**
+     * `/gui_dock`: **one call to the dock** -- the one surface every window
+     * opens in when the host was booted with `dock` -- and the dock as it
+     * stands after it.
+     *
+     * `call` names its `verb`: `{ verb: "layout" }` reads the dock;
+     * `{ verb: "restore", layout }` puts back a layout it answered;
+     * `{ verb: "select", pane }` shows a pane behind another's tab;
+     * `{ verb: "join", pane, of, at }` puts a pane among the tabs of
+     * another's group (`at` optional); `{ verb: "split", pane, side, of }`
+     * (`side` one of `"left"`, `"right"`, `"top"`, `"bottom"`) puts a pane
+     * beside another's group; `{ verb: "pointer", kind, x, y }` (`kind` one
+     * of `"press"`, `"move"`, `"release"`) plays a hand on the dock's
+     * surface, on its tabs and dividers or, through them, on a pane, in the
+     * surface's device pixels; `{ verb: "capture", path }` writes the dock's
+     * picture.
+     *
+     * The answer is the dock: `layout` (the layout as data, what `restore`
+     * takes), `size`, `panes` (each with its `id`, `title`, whether it is
+     * `shown`, its `rect` and its `tab` as `[x, y, w, h]`), `dividers` and
+     * `focus`. Rejects with a `RangeError` for a call it cannot read, a
+     * `CommandError` for a move it cannot make, an `Error` when the host has
+     * no dock open.
+     */
+    async dockCall(call: Record<string, unknown>, timeout = 5.0): Promise<Record<string, unknown>> {
+        const answer = await this.app("/gui_dock", [JSON.stringify(call)], timeout, "/gui_dock_reply");
+        return answer as Record<string, unknown>;
+    }
+
+    /**
+     * The dock's layout as data -- splits whose leaves are groups of tabs --
+     * which {@link GuiHost.dockRestore} puts back. See {@link GuiHost.dockCall}.
+     */
+    async dockLayout(timeout = 5.0): Promise<Record<string, unknown>> {
+        return (await this.dockCall({ verb: "layout" }, timeout)).layout as Record<string, unknown>;
+    }
+
+    /**
+     * Puts back a layout {@link GuiHost.dockLayout} answered: a pane it names
+     * that the dock does not hold is left out, and one it does not name is
+     * added as a column of its own. Answers the dock, as
+     * {@link GuiHost.dockCall} does.
+     */
+    async dockRestore(layout: Record<string, unknown>, timeout = 5.0): Promise<Record<string, unknown>> {
+        return this.dockCall({ verb: "restore", layout }, timeout);
+    }
+
+    /**
+     * Writes the dock's picture -- every shown pane, its tabs and its
+     * dividers -- to `path` as a PNG, and answers the path once the file is
+     * whole. A path means what it means to {@link GuiHost.capture}.
+     */
+    async dockCapture(path: string, timeout = 5.0): Promise<string> {
+        return String((await this.dockCall({ verb: "capture", path }, timeout)).path);
+    }
+
+    /**
+     * One request of the application door (or the dock's, which answers the
+     * same way), and the value it answered.
+     */
+    private async app(addr: string, args: MsgArg[], timeout: number | null,
+        answers = "/gui_app_reply"): Promise<unknown> {
         const seq = ++this.appSeq;
         const reply = this.awaitReply(
-            (msg) => msg.addr === "/gui_app_reply" && Number(msg.args[0]) === seq,
+            (msg) => msg.addr === answers && Number(msg.args[0]) === seq,
             timeout,
-            `/gui_app_reply ${seq}`,
+            `${answers} ${seq}`,
         );
         this.send(addr, ["i", seq], ...args);
         const answer = JSON.parse(String((await reply).args[1])) as {

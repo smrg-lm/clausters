@@ -518,6 +518,7 @@ impl App {
                     ) {
                         window.set_title(&title);
                     }
+                    self.retitle_pane(id);
                 }
                 HostEffect::Redraw(id) => {
                     if let Some(ws) = self.windows.get(&id) {
@@ -550,6 +551,7 @@ impl App {
                     self.host.performed(window);
                 }
                 HostEffect::Capture { window, path } => self.capture(window, path, from),
+                HostEffect::Dock { seq, call } => self.dock_call(from, seq, call),
             }
         }
     }

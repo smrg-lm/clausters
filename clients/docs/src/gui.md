@@ -155,6 +155,26 @@ const host = await new GuiHost().boot({ dock: element });
 
 {{alt The dock is a window the host opens for it || The dock is the canvas inside `element`, which follows the element's box and the page's `devicePixelRatio` as a view opened into an element does}}. A pane is a window in everything but its frame: it keeps its def, its handle, its events and its picture, a press or a key reaches the pane it lands in, and closing a pane gives its room to the others. So a script written for separate windows runs unchanged in a dock<!-- web -->, and a view opened with an element draws in its pane rather than in that element<!-- /web -->. `panels/dock` shows it.
 
+**Tabs and splits.** Every pane has a tab over it, named by its window's title. Drag a tab onto another pane — into its middle to join its tabs, near one of its edges to stand beside it, the place it would land shown while it moves — and drag the line between two panes to give one of them more room; a press on a tab shows its pane. A pane behind another's tab is not drawn and counts as not seen, as a covered window does, and keeps playing whatever it plays. The same moves are verbs a script calls, and the arrangement they leave is data it reads and puts back:
+
+```python
+gui.dock_call({"verb": "join", "pane": note, "of": tone})
+gui.dock_call({"verb": "split", "pane": level, "side": "bottom", "of": tone})
+layout = gui.dock_layout()
+gui.dock_restore(layout)
+gui.dock_capture("dock.png")
+```
+
+```ts
+await host.dockCall({ verb: "join", pane: note.id, of: tone.id });
+await host.dockCall({ verb: "split", pane: level.id, side: "bottom", of: tone.id });
+const layout = await host.dockLayout();
+await host.dockRestore(layout);
+await host.dockCapture("dock.png");
+```
+
+Every call answers the dock as it stands: the layout, and where each pane, its tab and each divider are, in the pixels a capture of the dock has — what a script points at with `{"verb": "pointer", ...}` to play a drag on the tabs as a hand would.
+
 ### A control widget is built from the control it drives
 
 A `knob`, `slider`, `number`, `toggle` or `button` takes a **def's control**

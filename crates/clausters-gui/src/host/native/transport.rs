@@ -173,6 +173,13 @@ fn perform(
                 from,
                 super::super::captured(window, &path, Some("this front draws nothing")),
             ),
+            HostEffect::Dock { seq, .. } => reply(
+                from,
+                super::super::dock::call::reply(
+                    seq,
+                    Err(("runtime".into(), "this front draws nothing".into())),
+                ),
+            ),
             // A verb needs no picture: performed with a context of no size,
             // and what it edits told to the client that asked.
             HostEffect::Perform { window, verb } => {

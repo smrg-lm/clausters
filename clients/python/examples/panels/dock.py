@@ -8,6 +8,11 @@ itself. A pane is a window in everything but its frame -- it keeps its def, its
 events and its picture -- so the script below is the one it would be without the
 dock, and a press or a key reaches the pane it lands in.
 
+Every pane has a tab. Drag a tab onto another pane -- into its middle to join
+its tabs, near one of its edges to stand beside it -- and drag the line between
+two panes to give one more room. The same moves are verbs a script calls, and
+the arrangement they leave is data it can read and put back.
+
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
 **runs out of the box**. Install once, from the repo root::
 
@@ -50,8 +55,28 @@ tone.widget("freq").on_event(lambda *payload: print("freq", *payload))
 level.widget("level").on_event(lambda *payload: print("level", *payload))
 
 # %% [markdown]
+# ## Tabs and splits
+# The moves a hand makes on the tabs, by name: ``note`` among ``tone``'s tabs
+# (and shown), then ``level`` under ``tone``.
+
+# %%
+host.dock_call({"verb": "join", "pane": note, "of": tone})
+host.dock_call({"verb": "split", "pane": level, "side": "bottom", "of": tone})
+
+# %% [markdown]
+# ## The arrangement is data
+# What ``dock_layout`` answers, ``dock_restore`` puts back: a press on
+# ``tone``'s tab shows it, and the layout read before shows ``note`` again.
+
+# %%
+layout = host.dock_layout()
+print(layout)
+host.dock_call({"verb": "select", "pane": tone})
+host.dock_restore(layout)
+
+# %% [markdown]
 # ## Closing a pane gives its room back
-# The two left share the width again.
+# ``tone`` is shown again in the group ``note`` leaves.
 
 # %%
 note.close()

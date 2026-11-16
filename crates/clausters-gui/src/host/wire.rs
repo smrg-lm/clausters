@@ -64,6 +64,7 @@ impl Host {
             GUI_CLIPBOARD => self.on_clipboard(&msg.args, from),
             GUI_APP_OPEN => self.on_app_open(&msg.args, from, effects),
             GUI_APP_CALL => self.on_app_call(&msg.args, from, effects),
+            GUI_DOCK => self.on_dock(&msg.args, from, effects),
             GUI_ACTIVITY => match int_arg(&msg.args, 0) {
                 Some(window) => effects.push(HostEffect::Reply(self.activity_reply(window))),
                 None => diag::warn!("{from}: {GUI_ACTIVITY} needs a window id"),
@@ -293,6 +294,31 @@ impl Host {
     /// `window` ([`GUI_CAPTURE`]). The host checks the window is there and
     /// hands the capture to the front, which holds the window's GPU; a window
     /// it does not have is answered at once, with the reason.
+    /// `/gui_dock <seq> <json>` ([`GUI_DOCK`]): the call read here, carried
+    /// out by the front that holds the dock.
+    pub(super) fn on_dock(
+        &mut self,
+        args: &[OscType],
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let (Some(seq), Some(json)) = (int_arg(args, 0), string_arg(args, 1)) else {
+            return diag::warn!("{from}: {GUI_DOCK} needs a seq and a JSON call");
+        };
+        if !self.dock {
+            let message = "this host has no dock: boot it with one".to_string();
+            effects.push(HostEffect::Reply(dock::call::reply(
+                seq,
+                Err(("runtime".into(), message)),
+            )));
+            return;
+        }
+        match dock::call::Call::read(json) {
+            Ok(call) => effects.push(HostEffect::Dock { seq, call }),
+            Err(e) => effects.push(HostEffect::Reply(dock::call::reply(seq, Err(e)))),
+        }
+    }
+
     pub(super) fn on_capture(
         &mut self,
         args: &[OscType],

@@ -352,8 +352,9 @@ Named, not enumerated: each is written where it belongs and is read there.
   `host-workspace` branch: a dock of panels, tabs and pages in the host, and
   the editor's code, post and documentation as host elements, so one window
   holds everything natively and in a page. It goes through three checkpoints,
-  each a decision on what was measured; the first (the dock alone, WS2-WS4
-  after the panes of WS1) is what may reach `main` on its own.
+  each a decision on what was measured; the first (the dock alone, WS3-WS4
+  after the panes, tabs and splits of WS1-WS2) is what may reach `main` on
+  its own.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the

@@ -15,6 +15,9 @@
       picture at the pane's size, and a press on the dock's canvas
       reaches the pane under it -- the slider of the first pane moves, the
       second's does not, and a press over the second moves only the second.
+      Then the dock's own door: the second pane put among the first's tabs
+      and shown, a press on the first's tab showing it again, a layout put
+      back as it was read, and the dock's picture written.
       Verdict beaconed as a fetch, read from the access log.
     -->
     <script type="module">
@@ -77,7 +80,9 @@
         const values = async () => [await a.widget("s").query(), await b.widget("s").query()];
         const read = (info) => Number(info.props.value);
         const width = canvas.width;
-        const y = 16 * (canvas.width / canvas.getBoundingClientRect().width);
+        const state = await host.dockCall({ verb: "layout" });
+        const rectOf = (st, id) => st.panes.find((p) => p.id === id).rect;
+        const y = rectOf(state, a.id)[1] + 16 * (canvas.width / canvas.getBoundingClientRect().width);
         click(canvas, 0.45 * width, y);
         await sleep(400);
         let [va, vb] = (await values()).map(read);
@@ -90,6 +95,24 @@
         [va, vb] = (await values()).map(read);
         log(`after a press over the second pane: ${va.toFixed(3)}, ${vb.toFixed(3)}`);
         if (!(vb < 0.2)) throw new Error(`the press did not reach the second pane: ${vb}`);
+
+        // the dock's door: b among a's tabs, shown; a press on a's tab
+        // shows a; the layout read back is the one put back
+        const saved = await host.dockLayout();
+        let st = await host.dockCall({ verb: "join", pane: b.id, of: a.id });
+        const shown = (st, id) => st.panes.find((p) => p.id === id).shown;
+        log(`joined: ${JSON.stringify(st.layout)}`);
+        if (!shown(st, b.id) || shown(st, a.id)) throw new Error("the joined pane is not the one shown");
+        const tab = st.panes.find((p) => p.id === a.id).tab;
+        click(canvas, tab[0] + tab[2] / 2, tab[1] + tab[3] / 2);
+        await sleep(300);
+        st = await host.dockCall({ verb: "layout" });
+        if (!shown(st, a.id) || shown(st, b.id)) throw new Error("a press on a tab did not show its pane");
+        st = await host.dockRestore(saved);
+        if (JSON.stringify(st.layout) !== JSON.stringify(saved)) {
+          throw new Error(`restored ${JSON.stringify(st.layout)} against ${JSON.stringify(saved)}`);
+        }
+        log(`dock capture: ${await host.dockCapture("dock_whole.png")}`);
         if (extra !== 0) throw new Error(`the panes left ${extra} canvases of their own on the page`);
         verdict("PASS dock");
       } catch (error) {

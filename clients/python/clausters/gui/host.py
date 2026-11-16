@@ -915,8 +915,54 @@ class GuiHost:
         return self._app_request("/gui_app_call", int(getattr(id, "id", id)), json.dumps(dict(call)),
                          timeout=timeout)
 
-    def _app_request(self, addr: str, *args, timeout: "float | None"):
-        """One request of the application door, and the value it answered."""
+    def dock_call(self, call: dict, timeout: float = 5.0):
+        """``/gui_dock``: **one call to the dock** -- the one window every
+        window opens in when the host was booted with ``dock=True`` -- and
+        the dock as it stands after it.
+
+        ``call`` names its ``verb``: ``{"verb": "layout"}`` reads the dock;
+        ``{"verb": "restore", "layout": ...}`` puts back a layout it answered;
+        ``{"verb": "select", "pane": id}`` shows a pane behind another's tab;
+        ``{"verb": "join", "pane": id, "of": id, "at": index}`` puts a pane
+        among the tabs of another's group (``at`` optional);
+        ``{"verb": "split", "pane": id, "side": "left" | "right" | "top" |
+        "bottom", "of": id}`` puts a pane beside another's group;
+        ``{"verb": "pointer", "kind": "press" | "move" | "release", "x": ...,
+        "y": ...}`` plays a hand on the dock's surface, on its tabs and
+        dividers or, through them, on a pane, in the surface's device pixels;
+        ``{"verb": "capture", "path": ...}`` writes the dock's picture.
+
+        The answer is the dock: ``layout`` (the layout as data, what
+        ``restore`` takes), ``size``, ``panes`` (each with its ``id``,
+        ``title``, whether it is ``shown``, its ``rect`` and its ``tab`` as
+        ``[x, y, w, h]``), ``dividers`` and ``focus``. Raises `ValueError`
+        for a call it cannot read, `clausters.errors.CommandError` for a move
+        it cannot make, `RuntimeError` when the host has no dock open.
+        """
+        return self._app_request("/gui_dock", json.dumps(dict(call)), timeout=timeout,
+                                 answers="/gui_dock_reply")
+
+    def dock_layout(self, timeout: float = 5.0) -> dict:
+        """The dock's layout as data -- splits whose leaves are groups of
+        tabs -- which `dock_restore` puts back. See `dock_call`."""
+        return self.dock_call({"verb": "layout"}, timeout)["layout"]
+
+    def dock_restore(self, layout: dict, timeout: float = 5.0) -> dict:
+        """Puts back a layout `dock_layout` answered: a pane it names that
+        the dock does not hold is left out, and one it does not name is added
+        as a column of its own. Answers the dock, as `dock_call` does."""
+        return self.dock_call({"verb": "restore", "layout": layout}, timeout)
+
+    def dock_capture(self, path, timeout: float = 5.0) -> str:
+        """Writes the dock's picture -- every shown pane, its tabs and its
+        dividers -- to ``path`` as a PNG, and answers the path once the file
+        is whole. A path means what it means to `capture`."""
+        return self.dock_call({"verb": "capture", "path": str(path)}, timeout)["path"]
+
+    def _app_request(self, addr: str, *args, timeout: "float | None",
+                     answers: str = "/gui_app_reply"):
+        """One request of the application door (or the dock's, which answers
+        the same way), and the value it answered."""
         if self._loop is not None and self._loop.is_current():
             raise RuntimeError(
                 f"{addr} from the event loop's own thread would wait for what "
@@ -925,7 +971,7 @@ class GuiHost:
         seq = self._app_seq
         self._send(addr, seq, *args)
         while True:
-            _, reply = self._answer("/gui_app_reply", timeout)
+            _, reply = self._answer(answers, timeout)
             # an answer to a request that timed out before it is nobody's
             if int(reply[0]) == seq:
                 break
@@ -1573,7 +1619,8 @@ class _HostSource:
 
     #: The addresses that answer a question somebody asked, rather than
     #: reporting something that happened.
-    REPLIES = ("/gui_info", "/gui_captured", "/gui_activity.reply", "/gui_app_reply")
+    REPLIES = ("/gui_info", "/gui_captured", "/gui_activity.reply", "/gui_app_reply",
+               "/gui_dock_reply")
 
     def __init__(self, host):
         self.host = host

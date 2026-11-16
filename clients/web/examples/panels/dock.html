@@ -12,7 +12,7 @@
              max-width: 62rem; }
       #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
       button { font: inherit; padding: 4px 10px; align-self: flex-start; }
-      #dock { height: 260px; }
+      #dock { height: 420px; }
       pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
             white-space: pre-wrap; }
     </style>
@@ -24,7 +24,11 @@ Booted with a <b>dock</b> it draws them all in <b>one</b>, and every window is a
 <b>pane</b> of it, side by side: the panes share its width, and a pane opened
 later makes room for itself. A pane is a window in everything but its frame --
 it keeps its def, its events and its picture -- so the code below is the one it
-would be without the dock, and a press reaches the pane it lands in.</div>
+would be without the dock, and a press reaches the pane it lands in.
+<br><br>Every pane has a tab. Drag a tab onto another pane -- into its middle to
+join its tabs, near one of its edges to stand beside it -- and drag the line
+between two panes to give one more room. The same moves are verbs the code
+calls, and the arrangement they leave is data it can read and put back.</div>
       <div id="dock"></div>
       <button id="close">close the third pane</button>
       <pre id="log"></pre>
@@ -33,7 +37,8 @@ would be without the dock, and a press reaches the pane it lands in.</div>
     <!--
       The web sibling of clients/python/examples/panels/dock.py, call for call:
       boot a host with a dock, open three windows on it, print what the slider
-      and the knob report, close the third pane.
+      and the knob report, put the third among the first's tabs and the second
+      under the first, read the layout and put it back, close the third pane.
 
       One difference, the platform's: the script's host opens a window of its
       own for the dock, and a page's draws in the canvas of the element named
@@ -68,6 +73,16 @@ would be without the dock, and a press reaches the pane it lands in.</div>
       // ---- each pane answers its own hand ----
       tone.widget("freq").onEvent((...payload) => log(`freq ${payload.join(" ")}`));
       level.widget("level").onEvent((...payload) => log(`level ${payload.join(" ")}`));
+
+      // ---- tabs and splits ----
+      await host.dockCall({ verb: "join", pane: note.id, of: tone.id });
+      await host.dockCall({ verb: "split", pane: level.id, side: "bottom", of: tone.id });
+
+      // ---- the arrangement is data ----
+      const layout = await host.dockLayout();
+      log(JSON.stringify(layout));
+      await host.dockCall({ verb: "select", pane: tone.id });
+      await host.dockRestore(layout);
 
       // ---- closing a pane gives its room back ----
       $("close").onclick = () => {

@@ -1778,9 +1778,9 @@ something reusable if the track stops there.
   each of two panes; `tests/dock.html` opens two panes in one canvas, leaves
   no canvas of their own on the page and reaches each pane with a press.
   `panels/dock` is the example in both clients. Left for `WS3`: the editor
-  page still places windows by `link({ place })`, and a capture of the dock as
-  a whole has no door on the wire.
-- ⬜ **WS2 — Panels, splits and tabs.** The dock's layout is a tree of
+  page still places windows by `link({ place })`. (A capture of the dock as a
+  whole, left here too, came with WS2's door.)
+- ✅ **WS2 — Panels, splits and tabs.** The dock's layout is a tree of
   splits (horizontal, vertical, with a ratio) whose leaves are tab groups of
   panels; a panel is a def or one of the editor's elements. The host draws the
   tab strips and the dividers (G40's split panes are the start, extended, not
@@ -1791,6 +1791,30 @@ something reusable if the track stops there.
   Acceptance: every gesture driven by script with a capture of each step; the
   layout round-trips through save and load; the behavior rules of
   `docs/app-behavior.md` hold with two applications open in one dock.
+  *Shipped:* the layout is `host::dock::tree` (n-ary splits with shares,
+  groups of tabs, kept in a normal form: no empty group, no split of one
+  part, no split inside one of its own axis), measured and held by `Dock`,
+  which also holds the hand (a divider dragged with G40's own
+  `chrome::split`, a tab pressed or dragged, the landing: the strip of a
+  group joins its tabs at a place, a quarter of a body from an edge splits
+  it, the middle joins it). A group's strip is drawn and hit as a `choice`'s
+  row of tabs; the composer draws the chrome over the panes in the same
+  pass. A pane behind a tab is occluded, natively and in a page, and the
+  dock's frame redraws only the panes that asked for one. The wire's door is
+  `/gui_dock seq json` (`layout`, `restore`, `select`, `join`, `split`,
+  `pointer`, `capture`), answered `/gui_dock_reply` with the dock's state
+  (the layout, every pane's body and tab, every divider), and both clients
+  call it (`dock_call`, `dock_layout`, `dock_restore`, `dock_capture`).
+  Checked: tests of the tree's moves and normal form, the JSON round trip,
+  the hand on a divider and on tabs, and the door; a headless host with three
+  panes driven through every gesture by `pointer` with a capture of each
+  step (a divider, a join, a tab shown, a split with its landing drawn, a
+  press reaching a pane, a restore, a close); two applications as panes and
+  as tabs of one group, each answering its own history, the one behind the
+  tab reported not visible; `tests/dock.html` joins, shows by a press on a
+  tab, restores and captures in a page. `panels/dock` in both clients makes
+  the moves by name. Left for WS3: a tab dragged out of the dock. The dock's
+  menu is the one entry of "Future directions" this left.
 - ⬜ **WS3 — Every window the host opens enters the dock.** `/gui_def`,
   `/gui_app_open` and a window a gesture opens (a box's roll) all become panels
   of the dock where there is one, and an OS window of their own (or a
@@ -1922,6 +1946,15 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 An entry that was done without becoming a milestone is ticked and moves whole
 to [`docs/history/plans/gui.md`](../../docs/history/plans/gui.md) ("Future directions: the entries that were done"), so this list
 holds what is open.
+
+- ⬜ **The dock's own menu** *(left by WS2, 2026-11-16)*. The dock's moves
+  are verbs on the wire (`/gui_dock`) and gestures on its tabs, and no menu
+  calls them yet: a tab's context menu (close, move to a new group on a
+  side, show the tabs gathered behind the last one as a list rather than one
+  after another, as a press on that tab does now) and the resize cursor over
+  a divider. The popup layer and the menus of a window (`host::popup`) are
+  per window, and the dock's chrome is drawn by the dock, so this is a menu
+  the dock opens over its own surface with that layer, not a second one.
 
 - ⬜ **A paste that needs tracks could make them** *(named 2026-09-12, with the fix above; **the refusal is the decided behaviour**, confirmed by the user the same day -- "if there are no more tracks it is a refuse" -- so this entry is an alternative somebody may want and not a defect waiting)*. A block taller than what is under the selected track is refused today, which is Pro Tools' and Cubase's answer and the honest one for a widget that owns no piece. **REAPER's** is the other: it creates the tracks the block needs and pastes whole. This widget already has the verb — a double click on a header adds a track — so what stands between it and this is not the capability but the **report**: adding tracks is a `lanes` payload and pasting is a `clips` one, and a paste that did both would be the first gesture here to leave two. That is a decision about the conversation and not about the multitrack: whether an owner may be handed a run of payloads from one gesture, in order, as one entry in the history. Worth taking with the audio editor's own paste, which will ask the same question about panes.
 

@@ -58,6 +58,9 @@ pub(super) struct CanvasSlot {
     /// canvases with three in view, and the browser's own compositing skip does
     /// not stop *us* from computing a frame or the server from streaming for it.
     pub(super) visible: bool,
+    /// Whether a frame was asked for since the last one: what a pane of the
+    /// dock is drawn for, since the dock's frame is asked by all of them.
+    pub(super) owed: Cell<bool>,
     /// **Where the pointer is on this canvas, or `None` when it is not over
     /// it** -- the page's half of the same invariant the desktop keeps
     /// (`gui::app::WindowState::cursor`), and an `Option` for the same reason:
@@ -190,6 +193,7 @@ impl CanvasSlot {
             min_px: None,
             pending_size: None,
             visible: true,
+            owed: Cell::new(true),
             cursor: None,
             buttons: Rc::new(Cell::new(0)),
             mods: Rc::new(Cell::new(0)),
@@ -239,6 +243,7 @@ impl CanvasSlot {
         if let Some(render) = &self.render {
             render.batches.want_whole();
         }
+        self.owed.set(true);
         self.window.request_redraw();
     }
 
@@ -249,6 +254,7 @@ impl CanvasSlot {
         if let Some(render) = &self.render {
             render.batches.want_live();
         }
+        self.owed.set(true);
         self.window.request_redraw();
     }
 

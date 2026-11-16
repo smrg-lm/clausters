@@ -216,10 +216,10 @@ enum WebEvent {
         ticket: u64,
         result: Result<crate::host::files::Listing, String>,
     },
-    /// A window's capture was written into the page's storage, or was not
-    /// (`capture`): what is left is to say so.
+    /// A window's capture, or the dock's, was written into the page's
+    /// storage, or was not (`capture`): what is left is to say so.
     Captured {
-        def_id: i32,
+        of: capture::CaptureOf,
         path: String,
         result: Result<(), String>,
     },
@@ -496,12 +496,14 @@ impl WebApp {
                 }
                 // a page's window has no title bar: its canvas is labelled
                 HostEffect::Retitle(id) => {
-                    if let (Some(canvas), Some(title)) = (
+                    if let (Some(canvas), Some(title), false) = (
                         self.canvases.get(&id).and_then(|s| s.window.canvas()),
                         self.host.window_title(id),
+                        self.is_pane(id),
                     ) {
                         let _ = canvas.set_attribute("aria-label", &title);
                     }
+                    self.retitle_pane(id);
                 }
                 HostEffect::Redraw(id) => {
                     if self.canvases.contains_key(&id) {
@@ -539,6 +541,7 @@ impl WebApp {
                     self.host.performed(window);
                 }
                 HostEffect::Capture { window, path } => self.capture(window, path),
+                HostEffect::Dock { seq, call } => self.dock_call(seq, call),
             }
         }
     }
@@ -1162,11 +1165,17 @@ impl WebApp {
                 ticket,
                 result,
             } => self.on_listed(def_id, widget_id, ticket, result),
-            WebEvent::Captured {
-                def_id,
-                path,
-                result,
-            } => self.queue(super::captured(def_id, &path, result.err().as_deref())),
+            WebEvent::Captured { of, path, result } => match of {
+                capture::CaptureOf::Window(def_id) => {
+                    self.queue(super::captured(def_id, &path, result.err().as_deref()))
+                }
+                capture::CaptureOf::Dock(seq) => self.queue(super::dock::call::reply(
+                    seq,
+                    result
+                        .map(|()| serde_json::json!({ "path": path }))
+                        .map_err(|e| ("runtime".to_string(), e)),
+                )),
+            },
             #[cfg(feature = "midi")]
             WebEvent::Midi(bytes) => self.on_midi(&bytes),
             #[cfg(feature = "midi")]

@@ -10,6 +10,14 @@ use crate::host::frame::Readback;
 use crate::host::replies::Front;
 use crate::host::{captured, png};
 
+/// What a picture is of: a window, or the whole dock (answered to the call
+/// with this `seq`).
+#[derive(Clone, Copy, Debug)]
+pub(super) enum CaptureOf {
+    Window(i32),
+    Dock(i32),
+}
+
 /// How long a capture waits for its canvas' picture to be read before it is
 /// written as it stands, in milliseconds.
 const CAPTURE_WAIT_MS: f64 = 10_000.0;
@@ -66,13 +74,25 @@ impl WebApp {
         else {
             return self.queue(captured(def, &path, Some("no canvas holds that window")));
         };
-        wasm_bindgen_futures::spawn_local(finish(self.id, def, path, readback, device));
+        wasm_bindgen_futures::spawn_local(finish(
+            self.id,
+            CaptureOf::Window(def),
+            path,
+            readback,
+            device,
+        ));
     }
 }
 
 /// Waits for the card to map the picture, writes it and hands the answer back
 /// through the proxy.
-async fn finish(host: HostId, def_id: i32, path: String, readback: Readback, device: wgpu::Device) {
+pub(super) async fn finish(
+    host: HostId,
+    of: CaptureOf,
+    path: String,
+    readback: Readback,
+    device: wgpu::Device,
+) {
     let result = loop {
         // A WebGL2 card answers only when it is polled; a WebGPU one on the
         // browser's loop, where this poll does nothing.
@@ -92,16 +112,9 @@ async fn finish(host: HostId, def_id: i32, path: String, readback: Readback, dev
         Err(e) => Err(e),
     };
     if let Err(e) = &result {
-        log(&format!("/gui_capture {def_id} {path}: {e}"));
+        log(&format!("capture of {of:?} at {path}: {e}"));
     }
     if let Some(proxy) = web_proxy() {
-        let _ = proxy.send_event(HostEvent::To(
-            host,
-            WebEvent::Captured {
-                def_id,
-                path,
-                result,
-            },
-        ));
+        let _ = proxy.send_event(HostEvent::To(host, WebEvent::Captured { of, path, result }));
     }
 }

@@ -747,6 +747,16 @@ pub const GUI_APP_RELEASED: &str = "/gui_app_released";
 /// `{"error": {"type", "message"}}` with the kind the application raised
 /// (`value`, `command`, `runtime`).
 pub const GUI_APP_REPLY: &str = "/gui_app_reply";
+/// `/gui_dock <seq> <json>`: **one call to the dock** ([`dock::call`]):
+/// its layout read (`{"verb": "layout"}`) or put back (`restore`), a pane
+/// shown, moved among another's tabs or beside it (`select`, `join`,
+/// `split`), a hand on its surface (`pointer`) or its picture (`capture`).
+/// Answered by [`GUI_DOCK_REPLY`]; a host with no dock answers an error.
+pub const GUI_DOCK: &str = "/gui_dock";
+/// `/gui_dock_reply <seq> <json>`: the answer to a [`GUI_DOCK`] with the
+/// same `seq`: `{"ok": state}`, the dock as it stands after the call, or
+/// `{"error": {"type", "message"}}`.
+pub const GUI_DOCK_REPLY: &str = "/gui_dock_reply";
 
 /// What handling a packet asks the host's *front* to do, beyond mutating the
 /// host's own state. The protocol logic stays transport- and GPU-agnostic and
@@ -813,6 +823,9 @@ pub enum HostEffect {
     /// at `path`: the front draws a whole frame of it offscreen, writes the
     /// PNG and answers [`GUI_CAPTURED`] to the client that asked.
     Capture { window: i32, path: String },
+    /// `/gui_dock` called the dock: the front, which holds it, carries the
+    /// call out and answers [`GUI_DOCK_REPLY`] to the client that asked.
+    Dock { seq: i32, call: dock::call::Call },
 }
 
 /// What a scripted pointer event is ([`GUI_POINTER`]).
