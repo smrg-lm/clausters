@@ -39,16 +39,18 @@ use clausters_gui_draw::theme::Theme;
 use crate::gpu::Gpu;
 use crate::host::frame::Copier;
 use crate::host::frame::{Readback, read_back, read_target};
-use crate::host::graphics::choice::{self, Part};
+use crate::host::graphics::choice::Part;
 use crate::host::widget::size::control_box;
 use crate::painter::Painter;
 use crate::view::Target;
 
+mod bar;
 pub mod call;
 mod chrome;
 mod pages;
 pub mod tree;
 
+pub use bar::BarPart;
 pub use tree::{Group, Node, Path, Side};
 
 /// **The color between two panes**: the theme's `separator` role, what the
@@ -96,7 +98,7 @@ pub struct Motion {
 }
 
 /// What changed in the dock since a front last asked ([`Dock::take_dirty`]).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Dirty {
     /// Where the panes are, or which of them are shown: every pane is put at
     /// its place again, and the dock is drawn.
@@ -104,9 +106,13 @@ pub struct Dirty {
     /// Only the dock's own chrome (a tab lit under the pointer, where a
     /// dragged tab would land): the dock is drawn, and no pane.
     pub chrome: bool,
-    /// A pane whose tab was dragged out of the dock and let go there: the
-    /// front gives it a window of its own ([`Landing::Out`]).
-    pub out: Option<i32>,
+    /// Panes dragged out of the dock and let go there: the front gives each
+    /// a window of its own ([`Landing::Out`]), or picked out of it in a
+    /// panel's menu.
+    pub out: Vec<i32>,
+    /// Panes a hand closed (a tab's close mark, the panel's, its menu): the
+    /// front closes each window as its own close mark would.
+    pub close: Vec<i32>,
 }
 
 /// A group of tabs as measured: its tab strip and the body its shown pane
@@ -159,9 +165,11 @@ enum Grip {
     /// stands between that long.
     Divider { place: DividerPlace, from: f64 },
     /// A tab, pressed at `from`; dragged once it has moved past a few
-    /// pixels, with where it would land.
+    /// pixels, with where it would land. `group` when the panel's grip (or
+    /// its title) was pressed: the whole group moves, `pane` its shown one.
     Tab {
         pane: i32,
+        group: bool,
         from: (f64, f64),
         dragging: bool,
         landing: Option<(Landing, Rect)>,
@@ -171,7 +179,8 @@ enum Grip {
 /// What the pointer is over that the chrome lights.
 #[derive(Clone, Debug, PartialEq)]
 enum Hot {
-    Tab(Path, Part),
+    /// A part of a panel's bar.
+    Bar(Path, bar::BarPart),
     Divider(usize),
     /// A part of the page strip.
     Page(Part),
@@ -219,6 +228,8 @@ pub struct Dock {
     hot: Option<Hot>,
     /// The pane the keyboard goes to: the one last pressed in.
     focus: Option<i32>,
+    /// **The menu open over the dock**: a panel's or a page's.
+    menu: Option<bar::DockMenu>,
     dirty: Dirty,
 }
 
@@ -241,6 +252,7 @@ impl Dock {
             grip: None,
             hot: None,
             focus: None,
+            menu: None,
             dirty: Dirty::default(),
         }
     }
@@ -450,46 +462,48 @@ impl Dock {
         }
     }
 
-    /// The divider lit: under the pointer, or dragged.
+    /// The divider lit: under the pointer, or dragged -- where it is now,
+    /// which a drag moves.
     pub fn lit_divider(&self) -> Option<&DividerPlace> {
         match (&self.grip, &self.hot) {
-            (Some(Grip::Divider { place, .. }), _) => Some(place),
+            (Some(Grip::Divider { place, .. }), _) => self
+                .dividers
+                .iter()
+                .find(|d| d.split == place.split && d.before == place.before),
             (None, Some(Hot::Divider(i))) => self.dividers.get(*i),
             _ => None,
         }
     }
 
-    /// The part of group `path`'s strip lit under the pointer.
-    pub fn lit_tab(&self, path: &[usize]) -> Option<Part> {
-        match (&self.grip, &self.hot) {
-            (None, Some(Hot::Tab(at, part))) if at == path => Some(*part),
+    /// The part of group `path`'s bar lit under the pointer.
+    pub fn lit_bar(&self, path: &[usize]) -> Option<BarPart> {
+        match (&self.grip, &self.hot, &self.menu) {
+            (None, Some(Hot::Bar(at, part)), None) if at == path => Some(*part),
             _ => None,
         }
     }
 
-    /// The text size of the tabs.
+    /// The text size of the bars and the tabs.
     pub fn text_size(&self) -> f32 {
         self.metrics.text_scale
-    }
-
-    /// The tabs of a group, as the strip's parts lay them out.
-    pub fn tab_parts(&self, group: &GroupPlace) -> Vec<(Part, Rect)> {
-        let titles: Vec<String> = group.panes.iter().map(|&p| self.title(p)).collect();
-        choice::parts(
-            choice::View::Tabs,
-            &titles,
-            group.strip,
-            self.text_size(),
-            &self.metrics,
-        )
     }
 
     /// **The pointer moved to `(x, y)`**: the pane a press holds, if one
     /// does, else the pane under it -- and the pane it left, which hears it
     /// left, as a window hears the pointer leave it. A divider or a tab the
-    /// press holds moves instead, and no pane hears it.
+    /// press holds moves instead, and an open menu lights its rows; no pane
+    /// hears either.
     pub fn moved(&mut self, x: f64, y: f64) -> Motion {
         self.at = Some((x, y));
+        if self.menu.is_some() {
+            if self.menu_moved(x, y) {
+                self.dirty.chrome = true;
+            }
+            return Motion {
+                to: None,
+                left: self.pointer.take(),
+            };
+        }
         match self.grip.clone() {
             Some(Grip::Pane(held)) => {
                 return Motion {
@@ -506,13 +520,14 @@ impl Dock {
             }
             Some(Grip::Tab {
                 pane,
+                group,
                 from,
                 dragging,
                 landing,
             }) => {
                 let dragging = dragging || (x - from.0).hypot(y - from.1) > DRAG_PX;
                 let now = if dragging {
-                    self.landing_at(pane, x, y)
+                    self.landing_at(pane, group, x, y)
                 } else {
                     None
                 };
@@ -521,6 +536,7 @@ impl Dock {
                 }
                 self.grip = Some(Grip::Tab {
                     pane,
+                    group,
                     from,
                     dragging,
                     landing: now,
@@ -545,13 +561,21 @@ impl Dock {
     }
 
     /// **A button went down** where the pointer is: a pane under it takes it
-    /// and the keyboard with it, and the answer is that pane; a tab shows its
-    /// pane and may be dragged, a divider is dragged, and no pane hears it.
+    /// and the keyboard with it, and the answer is that pane. Everything
+    /// else is the dock's and no pane hears it: an open menu takes the press
+    /// (a row is picked, a press off it closes the menu), a page's tab shows
+    /// its page, a divider is dragged, and a panel's bar is pressed -- its
+    /// grip or its title to drag the panel, a tab to show its pane and drag
+    /// it, a close mark, the menu button.
     pub fn pressed(&mut self) -> Option<i32> {
         if let Some(Grip::Pane(p)) = self.grip {
             return Some(p);
         }
         let (x, y) = self.at?;
+        if self.menu.is_some() {
+            self.menu_pressed(x, y);
+            return None;
+        }
         if let Some(part) = self.page_at(x, y) {
             self.press_page(part);
             return None;
@@ -563,30 +587,8 @@ impl Dock {
             self.dirty.chrome = true;
             return None;
         }
-        if let Some((group, part)) = self.tab_at(x, y) {
-            let panes = &self.groups[group].panes;
-            let active = self.groups[group].active;
-            let pane = match part {
-                Part::Option(i) => panes.get(i).copied(),
-                // the tabs that did not fit are shown one after another
-                Part::More(from) => panes
-                    .get(if active >= from { active + 1 } else { from })
-                    .or_else(|| panes.get(from))
-                    .copied(),
-                _ => None,
-            }?;
-            if self.tree.select(pane) {
-                self.arrange();
-            }
-            self.focus = Some(pane);
-            if matches!(part, Part::Option(_)) {
-                self.grip = Some(Grip::Tab {
-                    pane,
-                    from: (x, y),
-                    dragging: false,
-                    landing: None,
-                });
-            }
+        if let Some((group, part)) = self.bar_at(x, y) {
+            self.press_bar(group, part, (x, y));
             self.dirty.chrome = true;
             return None;
         }
@@ -596,32 +598,80 @@ impl Dock {
         Some(pane)
     }
 
+    /// **The secondary button went down**: on a panel's bar or a page's tab
+    /// it opens that one's menu at the pointer, and answers `true` -- the
+    /// dock took it; anywhere else it is a pane's, and the answer is `false`.
+    pub fn context_pressed(&mut self) -> bool {
+        let Some((x, y)) = self.at else {
+            return false;
+        };
+        if self.menu.is_some() {
+            self.close_menu();
+            return true;
+        }
+        if self.grip.is_some() {
+            return false;
+        }
+        if let Some(part) = self.page_at(x, y) {
+            if let Part::Option(i) = part
+                && i < self.page_names().len()
+            {
+                self.open_page_menu(i, (x as f32, y as f32));
+            }
+            return true;
+        }
+        if let Some((group, part)) = self.bar_at(x, y) {
+            let pane = match part {
+                BarPart::Tab(i) | BarPart::TabClose(i) => self.groups[group].panes[i],
+                _ => self.groups[group].panes[self.groups[group].active],
+            };
+            self.open_pane_menu(pane, bar::MenuAt::Point(x as f32, y as f32));
+            return true;
+        }
+        false
+    }
+
+    /// **Escape**: an open menu closes, and the answer says the dock took
+    /// the key; otherwise it is the focused pane's.
+    pub fn escape(&mut self) -> bool {
+        self.close_menu()
+    }
+
     /// **The button came up**: answers the pane the press held, which hears
-    /// the release wherever the pointer is. A tab dragged somewhere lands
-    /// there; a divider stays where it was left.
+    /// the release wherever the pointer is. A tab or a panel dragged
+    /// somewhere lands there; a divider stays where it was left.
     pub fn released(&mut self) -> Option<i32> {
         match self.grip.take() {
             Some(Grip::Pane(p)) => Some(p),
             Some(Grip::Tab {
                 pane,
+                group,
                 landing: Some((landing, _)),
                 dragging: true,
                 ..
             }) => {
-                if landing == Landing::Out {
-                    self.dirty.out = Some(pane);
-                    self.dirty.chrome = true;
-                } else if let Landing::Page(to) = landing {
-                    self.move_to_page(pane, to);
+                let panes = if group {
+                    self.groups
+                        .iter()
+                        .find(|g| g.panes.contains(&pane))
+                        .map(|g| g.panes.clone())
+                        .unwrap_or_else(|| vec![pane])
                 } else {
-                    let _ = self.land(pane, landing);
+                    vec![pane]
+                };
+                if landing == Landing::Out {
+                    self.dirty.out.extend(panes);
+                } else {
+                    let _ = self.land_all(&panes, pane, landing);
                 }
+                self.dirty.chrome = true;
                 None
             }
             Some(_) => {
                 self.dirty.chrome = true;
                 None
             }
+            None if self.menu.is_some() => None,
             None => self.pointer,
         }
     }
@@ -649,6 +699,32 @@ impl Dock {
             self.arrange();
         }
         self.focus = Some(def_id);
+        Ok(())
+    }
+
+    /// **Moves `panes` -- a panel's, `shown` the one it shows -- where its
+    /// grip would land**: the first goes there and the others join it, in
+    /// their order, `shown` shown.
+    pub fn land_all(&mut self, panes: &[i32], shown: i32, landing: Landing) -> Result<(), String> {
+        let Some((&first, rest)) = panes.split_first() else {
+            return Ok(());
+        };
+        if let Landing::Page(to) = landing {
+            for &p in panes {
+                self.move_to_page(p, to);
+            }
+            return Ok(());
+        }
+        self.land(first, landing)?;
+        for &p in rest {
+            match landing {
+                Landing::Join { of, .. } => self.tree.join(p, of, None)?,
+                _ => self.tree.join(p, first, None)?,
+            }
+        }
+        self.tree.select(shown);
+        self.focus = Some(shown);
+        self.arrange();
         Ok(())
     }
 
@@ -696,13 +772,6 @@ impl Dock {
         })
     }
 
-    /// The group whose strip holds `(x, y)`, and the part of it there.
-    fn tab_at(&self, x: f64, y: f64) -> Option<(usize, Part)> {
-        let at = self.groups.iter().position(|g| g.strip.contains(x, y))?;
-        let parts = self.tab_parts(&self.groups[at]);
-        choice::part_at(&parts, x, y).map(|part| (at, part))
-    }
-
     /// What the chrome lights at `(x, y)`.
     fn hot_at(&self, x: f64, y: f64) -> Option<Hot> {
         if let Some(part) = self.page_at(x, y) {
@@ -711,8 +780,8 @@ impl Dock {
         if let Some(i) = self.divider_at(x, y) {
             return Some(Hot::Divider(i));
         }
-        self.tab_at(x, y)
-            .map(|(g, part)| Hot::Tab(self.groups[g].path.clone(), part))
+        self.bar_at(x, y)
+            .map(|(g, part)| Hot::Bar(self.groups[g].path.clone(), part))
     }
 
     /// **The divider pressed at `from` moved to `(x, y)`**: the two parts
@@ -739,7 +808,7 @@ impl Dock {
     /// body, on the side whose edge is near (a new group there) or among its
     /// tabs from the middle; past the dock's edge, out of it, the pane it
     /// leaves lit. Nowhere when the move would change nothing.
-    fn landing_at(&self, pane: i32, x: f64, y: f64) -> Option<(Landing, Rect)> {
+    fn landing_at(&self, pane: i32, group: bool, x: f64, y: f64) -> Option<(Landing, Rect)> {
         let source = self.groups.iter().find(|g| g.panes.contains(&pane))?;
         let (w, h) = self.size;
         if x < 0.0 || y < 0.0 || x >= f64::from(w) || y >= f64::from(h) {
@@ -748,7 +817,8 @@ impl Dock {
         if self.page_strip().contains(x, y) {
             return self.page_landing(x, y);
         }
-        let alone = source.panes.len() == 1;
+        // a whole panel dragged by its grip leaves nothing behind
+        let alone = group || source.panes.len() == 1;
         let group = self
             .groups
             .iter()
@@ -757,8 +827,9 @@ impl Dock {
         let same = group.path == source.path;
         if group.strip.contains(x, y) {
             let at = self
-                .tab_parts(group)
+                .bar_parts(group)
                 .iter()
+                .filter(|(part, _)| matches!(part, BarPart::Tab(_)))
                 .position(|(_, r)| x < f64::from(r.x + r.w * 0.5));
             if same && alone {
                 return None;
@@ -807,13 +878,13 @@ impl Dock {
         let mut groups = Vec::new();
         let mut dividers = Vec::new();
         let (w, h) = self.size;
-        // the page strip along the top, the page's layout under it
-        let top = self.strip_h().min(h.saturating_sub(1));
+        // the page's layout, over the page strip along the bottom
+        let strip = self.strip_h().min(h.saturating_sub(1));
         let whole = PaneRect {
             x: 0,
-            y: top,
+            y: 0,
             w,
-            h: h - top,
+            h: h - strip,
         };
         let divider = (self.metrics.divider_w.round() as u32).max(1);
         measure(
@@ -854,6 +925,8 @@ fn measure(
     dividers: &mut Vec<DividerPlace>,
 ) {
     match node {
+        // an empty dock (or page) has no panel, and so no bar to draw
+        Node::Tabs(g) if g.panes.is_empty() => {}
         Node::Tabs(g) => {
             let strip = strip_h.min(rect.h.saturating_sub(1));
             groups.push(GroupPlace {

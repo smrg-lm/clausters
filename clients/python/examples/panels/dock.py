@@ -8,12 +8,14 @@ itself. A pane is a window in everything but its frame -- it keeps its def, its
 events and its picture -- so the script below is the one it would be without the
 dock, and a press or a key reaches the pane it lands in.
 
-Every pane has a tab. Drag a tab onto another pane -- into its middle to join
-its tabs, near one of its edges to stand beside it -- and drag the line between
-two panes to give one more room. The same moves are verbs a script calls, and
-the arrangement they leave is data it can read and put back.
+Every pane is a panel with a bar: a grip, its title, a menu and a close mark.
+Drag a panel by its grip onto another -- into its middle to put the two in one
+panel, which then shows a tab for each, near one of its edges to stand beside
+it -- and drag the line between two panels to give one more room. The panel's
+menu splits, moves and closes its window. The same moves are verbs a script
+calls, and the arrangement they leave is data it can read and put back.
 
-Along the dock's top is a strip of **pages**, each an arrangement of its own: a
+Along the dock's bottom is a strip of **pages**, each an arrangement of its own: a
 window can name the page it opens on, the strip switches them, and a tab
 dropped on a page's tab moves its pane there. Switching a page frees nothing.
 

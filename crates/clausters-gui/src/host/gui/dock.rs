@@ -22,6 +22,7 @@ use tracing::{info, warn};
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
+use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::gpu::Gpu;
@@ -164,10 +165,13 @@ impl App {
     /// again whole), a pane behind another's tab told it is not seen and one
     /// shown again told it is, and the dock drawn if anything of it moved.
     ///
-    /// Answers the pane a hand dragged out of the dock, for the caller to
-    /// give a window of its own ([`App::move_window`]).
-    fn settle_dock(&mut self) -> Option<i32> {
-        let shell = self.dock.as_mut()?;
+    /// Answers what a hand asked of the windows themselves -- the panes
+    /// taken out of the dock and those closed -- for the caller to carry out
+    /// ([`App::hand_over`]).
+    fn settle_dock(&mut self) -> (Vec<i32>, Vec<i32>) {
+        let Some(shell) = self.dock.as_mut() else {
+            return Default::default();
+        };
         let dirty = shell.layout.take_dirty();
         if dirty.layout {
             for id in shell.layout.panes() {
@@ -197,7 +201,21 @@ impl App {
         if dirty.layout || dirty.chrome {
             shell.gpu.request_redraw();
         }
-        dirty.out
+        (dirty.out, dirty.close)
+    }
+
+    /// **What a hand asked of the windows of the dock**: each pane taken out
+    /// gets a window of its own, and each one closed closes as its own close
+    /// mark would close it (its owner asked first where it asks).
+    fn hand_over(&mut self, lp: Loop, (out, close): (Vec<i32>, Vec<i32>)) {
+        for id in out {
+            if let Err(e) = self.move_window(lp, id, false) {
+                warn!("dock: {e}");
+            }
+        }
+        for id in close {
+            self.user_close(id, lp);
+        }
     }
 
     /// **What the platform said of the dock's window**, handed to the
@@ -277,22 +295,37 @@ impl App {
                 let pane = match (state, button) {
                     (ElementState::Pressed, MouseButton::Left) => shell.layout.pressed(),
                     (ElementState::Released, MouseButton::Left) => shell.layout.released(),
+                    // a panel's bar or a page's tab opens its menu
+                    (ElementState::Pressed, MouseButton::Right)
+                        if shell.layout.context_pressed() =>
+                    {
+                        None
+                    }
                     _ => shell.layout.pointer(),
                 };
                 if let Some(id) = pane {
                     self.def_event(event_loop, id, event);
                 }
-                // a tab let go out of the dock: a window of its own
-                if let Some(id) = self.settle_dock()
-                    && let Err(e) = self.move_window(Loop::Shown(event_loop), id, false)
-                {
-                    warn!("dock: {e}");
-                }
+                let handed = self.settle_dock();
+                self.hand_over(Loop::Shown(event_loop), handed);
             }
             WindowEvent::MouseWheel { .. } => {
                 if let Some(id) = shell.layout.pointer() {
                     self.def_event(event_loop, id, event);
                 }
+            }
+            // Escape takes down the dock's open menu before any pane hears it
+            WindowEvent::KeyboardInput {
+                event:
+                    winit::event::KeyEvent {
+                        logical_key: Key::Named(NamedKey::Escape),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } if shell.layout.menu().is_some() => {
+                shell.layout.escape();
+                self.settle_dock();
             }
             WindowEvent::KeyboardInput { .. } | WindowEvent::Ime(_) => {
                 if let Some(id) = shell.layout.focus() {
@@ -396,11 +429,8 @@ impl App {
                 "the dock is not open: it opens with its first pane".to_string(),
             )),
             (true, Call::Pointer { kind, x, y }) => {
-                if let Some(id) = self.dock_pointer(kind, x, y)
-                    && let Err(e) = self.move_window(lp, id, false)
-                {
-                    warn!("dock: {e}");
-                }
+                let handed = self.dock_pointer(kind, x, y);
+                self.hand_over(lp, handed);
                 Ok(self.dock_state())
             }
             (true, Call::Capture(path)) => self
@@ -434,9 +464,11 @@ impl App {
     /// pixels, through the window's scripted pointer -- the hand the
     /// platform's pointer is.
     ///
-    /// Answers a pane the hand dragged out of the dock.
-    fn dock_pointer(&mut self, kind: PointerKind, x: f64, y: f64) -> Option<i32> {
-        let shell = self.dock.as_mut()?;
+    /// Answers what the hand asked of the windows ([`App::hand_over`]).
+    fn dock_pointer(&mut self, kind: PointerKind, x: f64, y: f64) -> (Vec<i32>, Vec<i32>) {
+        let Some(shell) = self.dock.as_mut() else {
+            return Default::default();
+        };
         let layout = &mut shell.layout;
         let motion = layout.moved(x, y);
         let to = match kind {

@@ -152,7 +152,7 @@ fn report_pick(
                 .and_then(|w| w.context.as_mut())
                 .and_then(|m| menu::pick(m, path)),
         ),
-        Owner::Element(_) | Owner::Edit(_) | Owner::Own(_) | Owner::Keys => return,
+        Owner::Element(_) | Owner::Edit(_) | Owner::Own(_) | Owner::Keys | Owner::Dock => return,
     };
     let Some(picked) = picked else {
         return;
@@ -235,8 +235,9 @@ fn pick(host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>, path: V
                 edit_pick(host, ctx, out, id, &verb);
             }
         }
-        // a sheet is read, and nothing on it is picked
-        Owner::Keys => {}
+        // a sheet is read, and nothing on it is picked; the dock's menu is
+        // never a window's
+        Owner::Keys | Owner::Dock => {}
     }
 }
 

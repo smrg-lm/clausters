@@ -1,6 +1,6 @@
 //! **The dock's pages**: one arrangement per kind of work. A page is a name
 //! and a layout of its own ([`Node`]); the dock shows one at a time, and a
-//! strip of page tabs along its top switches them. A pane may be on several
+//! strip of page tabs along its bottom switches them. A pane may be on several
 //! pages, at a place of each's, or on none; switching a page moves panes and
 //! hides those it does not name, and frees nothing -- a pane on no page shown
 //! keeps its def and whatever it plays, as a pane behind a tab does.
@@ -184,10 +184,11 @@ impl Dock {
         }
     }
 
-    /// The strip of page tabs, along the dock's top.
+    /// The strip of page tabs, along the dock's bottom -- apart from the
+    /// panels' bars, which run along each panel's top.
     pub fn page_strip(&self) -> Rect {
         let h = self.strip_h().min(self.size.1.saturating_sub(1));
-        Rect::new(0.0, 0.0, self.size.0 as f32, h as f32)
+        Rect::new(0.0, (self.size.1 - h) as f32, self.size.0 as f32, h as f32)
     }
 
     /// The page strip's tabs: every page, then the new page's.

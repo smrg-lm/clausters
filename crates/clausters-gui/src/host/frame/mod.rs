@@ -36,7 +36,7 @@ pub(crate) use underlay::Copier;
 use crate::host::diag;
 use clausters_core::spectra;
 use draw::*;
-pub(crate) use draw::{draw_time_ruler, marker_at, ruler_strip, ruler_strip_body};
+pub(crate) use draw::{draw_list, draw_time_ruler, marker_at, ruler_strip, ruler_strip_body};
 // The arrow's width is the drawing's own business; a gesture asks `marker_at`
 // what was hit. The test that pins the reach to it is the one exception.
 use items::*;

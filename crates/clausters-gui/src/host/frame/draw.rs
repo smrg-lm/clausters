@@ -1206,7 +1206,7 @@ pub(super) fn draw_menu_bar(
 
 /// One list of the popup layer: its ground, its rows cut to it, and the marks
 /// that say there is more above or below.
-fn draw_list(
+pub(crate) fn draw_list(
     over: &mut Mesh,
     level: &popup::Level,
     at: &popup::Placed,

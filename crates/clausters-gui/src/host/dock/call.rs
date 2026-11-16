@@ -191,22 +191,60 @@ impl Dock {
     pub fn state(&self) -> Value {
         let rect = |r: super::Rect| json!([r.x, r.y, r.w, r.h]);
         let mut panes = Vec::new();
+        let mut bars = Vec::new();
         for group in self.groups() {
-            let tabs = self.tab_parts(group);
-            for (i, &pane) in group.panes.iter().enumerate() {
-                let tab = tabs
+            let parts = self.bar_parts(group);
+            let part = |want: super::BarPart| {
+                parts
                     .iter()
-                    .find(|(part, _)| *part == super::Part::Option(i))
-                    .map(|(_, r)| rect(*r));
+                    .find(|(p, _)| *p == want)
+                    .map_or(Value::Null, |(_, r)| rect(*r))
+            };
+            for (i, &pane) in group.panes.iter().enumerate() {
+                // what a hand drags the pane by: its tab, or the title of a
+                // panel of one window
+                let tab = if group.panes.len() > 1 {
+                    part(super::BarPart::Tab(i))
+                } else {
+                    part(super::BarPart::Title)
+                };
                 panes.push(json!({
                     "id": pane,
                     "title": self.title(pane),
                     "shown": i == group.active,
                     "rect": rect(group.body.rect()),
                     "tab": tab,
+                    "tab_close": part(super::BarPart::TabClose(i)),
                 }));
             }
+            bars.push(json!({
+                "panes": group.panes,
+                "bar": rect(group.strip),
+                "grip": part(super::BarPart::Grip),
+                "menu": part(super::BarPart::Menu),
+                "close": part(super::BarPart::Close),
+            }));
         }
+        // the open menu's rows, list by list, where a hand picks them
+        let menu: Vec<Value> = match self.menu() {
+            Some(open) => open
+                .stack
+                .levels
+                .iter()
+                .zip(self.menu_placed())
+                .map(|(level, placed)| {
+                    let rows: Vec<Value> = level
+                        .entries
+                        .iter()
+                        .zip(&placed.rows)
+                        .filter(|(e, _)| !e.is_separator())
+                        .map(|(e, r)| json!({"label": e.label, "enabled": e.enabled, "rect": rect(*r)}))
+                        .collect();
+                    json!(rows)
+                })
+                .collect(),
+            None => Vec::new(),
+        };
         let dividers: Vec<Value> = self.dividers().iter().map(|d| rect(d.rect)).collect();
         // the page strip's tabs, the pages' and then the new page's
         let parts = self.page_parts();
@@ -225,6 +263,8 @@ impl Dock {
             "page_tabs": page_tabs,
             "size": [self.size().0, self.size().1],
             "panes": panes,
+            "bars": bars,
+            "menu": menu,
             "dividers": dividers,
             "focus": self.focus(),
         })
@@ -241,6 +281,8 @@ pub fn closed_state() -> Value {
         "page_tabs": [],
         "size": [0, 0],
         "panes": [],
+        "bars": [],
+        "menu": [],
         "dividers": [],
         "focus": null,
     })

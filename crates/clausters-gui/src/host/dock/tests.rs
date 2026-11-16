@@ -25,6 +25,25 @@ fn dock(size: (u32, u32), divider: f32, panes: &[i32]) -> Dock {
     d
 }
 
+/// Where part `want` of group `group`'s bar is.
+fn part(d: &Dock, group: usize, want: BarPart) -> Rect {
+    d.bar_parts(&d.groups()[group].clone())
+        .into_iter()
+        .find(|(p, _)| *p == want)
+        .map(|(_, r)| r)
+        .expect("the bar has it")
+}
+
+/// What a hand drags group `group`'s first window by: its tab, or the title
+/// of a panel of one window.
+fn handle(d: &Dock, group: usize) -> Rect {
+    if d.groups()[group].panes.len() > 1 {
+        part(d, group, BarPart::Tab(0))
+    } else {
+        part(d, group, BarPart::Title)
+    }
+}
+
 /// The height of a tab strip in these tests.
 fn strip(d: &Dock) -> u32 {
     d.groups()[0].body.y
@@ -44,7 +63,7 @@ fn panes_are_equal_columns_and_share_a_removed_panes_room() {
             x: 0,
             y: s,
             w: 403,
-            h: 100 - s
+            h: 100 - 2 * s
         })
     );
     ws.add(2);
@@ -156,8 +175,7 @@ fn a_tab_pressed_shows_its_pane() {
     assert_eq!(ws.tree().to_json(), json!({"tabs": [1, 2], "active": 2}));
     assert!(ws.shown(2) && !ws.shown(1));
     assert!(ws.take_dirty().layout);
-    let tabs = ws.tab_parts(&ws.groups()[0].clone());
-    let (_, first) = tabs[0];
+    let first = part(&ws, 0, BarPart::Tab(0));
     ws.moved(f64::from(first.x + 2.0), f64::from(first.y + 2.0));
     assert_eq!(ws.pressed(), None, "a press on a tab is the dock's");
     assert_eq!(ws.released(), None);
@@ -178,7 +196,7 @@ fn a_tab_pressed_shows_its_pane() {
 fn a_dragged_tab_lands_where_it_is_let_go() {
     let mut ws = dock((400, 300), 4.0, &[1, 2, 3]);
     // pane 3's tab, dragged into the middle of pane 1's body: joins it
-    let tab = ws.tab_parts(&ws.groups()[2].clone())[0].1;
+    let tab = handle(&ws, 2);
     let (tx, ty) = (f64::from(tab.x + tab.w * 0.5), f64::from(tab.y + 3.0));
     ws.moved(tx, ty);
     ws.pressed();
@@ -199,7 +217,7 @@ fn a_dragged_tab_lands_where_it_is_let_go() {
     assert_eq!(ws.groups()[0].panes, [1, 3]);
     assert!(ws.shown(3));
     // pane 2's tab, dragged near pane 3's bottom edge: a group under it
-    let tab = ws.tab_parts(&ws.groups()[1].clone())[0].1;
+    let tab = handle(&ws, 1);
     ws.moved(f64::from(tab.x + tab.w * 0.5), f64::from(tab.y + 3.0));
     ws.pressed();
     let body = ws.rect(3).expect("placed");
@@ -230,7 +248,7 @@ fn a_dragged_tab_lands_where_it_is_let_go() {
 #[test]
 fn a_tab_dragged_out_of_the_dock_is_told_to_the_front() {
     let mut ws = dock((400, 300), 4.0, &[1, 2]);
-    let tab = ws.tab_parts(&ws.groups()[1].clone())[0].1;
+    let tab = handle(&ws, 1);
     ws.moved(f64::from(tab.x + tab.w * 0.5), f64::from(tab.y + 3.0));
     ws.pressed();
     ws.moved(450.0, 100.0);
@@ -243,7 +261,7 @@ fn a_tab_dragged_out_of_the_dock_is_told_to_the_front() {
     );
     ws.take_dirty();
     assert_eq!(ws.released(), None);
-    assert_eq!(ws.take_dirty().out, Some(2));
+    assert_eq!(ws.take_dirty().out, [2]);
     assert_eq!(ws.tree().panes(), [1, 2], "the front takes it out");
     assert!(ws.land(2, Landing::Out).is_err());
     assert_eq!(
@@ -320,7 +338,7 @@ fn the_page_strip_switches_and_takes_a_dragged_tab() {
     press(&mut ws, first);
     assert_eq!(ws.page_name(), FIRST_PAGE);
     // pane 2's tab dragged onto Page 2's tab: it leaves this page
-    let tab = ws.tab_parts(&ws.groups()[1].clone())[0].1;
+    let tab = handle(&ws, 1);
     ws.moved(f64::from(tab.x + tab.w * 0.5), f64::from(tab.y + 3.0));
     ws.pressed();
     let to = ws.page_parts()[1].1;
@@ -359,12 +377,160 @@ fn the_pages_round_trip() {
     assert_eq!(state["page_tabs"].as_array().map(Vec::len), Some(3));
 }
 
+/// **The divider lit while it is dragged is where it is now**, not where
+/// the press found it -- the line used to stay behind, drawn at the press.
+#[test]
+fn the_dragged_divider_is_lit_where_it_is() {
+    let mut ws = dock((404, 200), 4.0, &[1, 2]);
+    let s = f64::from(strip(&ws));
+    ws.moved(202.0, s + 50.0);
+    ws.pressed();
+    ws.moved(252.0, s + 50.0);
+    let lit = ws.lit_divider().expect("lit").rect;
+    assert_eq!(lit, ws.dividers()[0].rect);
+    assert_eq!(lit.x, 250.0, "it followed the hand");
+    ws.released();
+}
+
+/// **An empty dock has no panel**: nothing measured, nothing to draw or to
+/// press -- a page's dock keeps its canvas after its last pane goes.
+#[test]
+fn an_empty_dock_has_no_panel() {
+    let mut ws = dock((400, 300), 4.0, &[1]);
+    ws.remove(1);
+    assert!(ws.groups().is_empty());
+    let mut mesh = Mesh::new();
+    let m = *ws.metrics();
+    ws.draw(&mut clausters_gui_draw::draw::Draw::new(
+        &mut mesh,
+        &m,
+        &Theme::default(),
+    ));
+    ws.moved(10.0, 5.0);
+    assert_eq!(ws.pressed(), None);
+    assert_eq!(ws.state()["panes"], json!([]));
+}
+
+/// **A panel of one window shows its title, not a tab**, with a grip, a
+/// menu button and a close mark; a panel of several shows a tab each, with a
+/// close mark each, and no close mark of its own.
+#[test]
+fn a_panel_shows_tabs_only_when_it_holds_several() {
+    let mut ws = dock((600, 300), 4.0, &[1, 2]);
+    let kinds = |ws: &Dock, g: usize| -> Vec<BarPart> {
+        ws.bar_parts(&ws.groups()[g].clone())
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect()
+    };
+    assert_eq!(
+        kinds(&ws, 0),
+        [BarPart::Grip, BarPart::Title, BarPart::Menu, BarPart::Close]
+    );
+    ws.land(2, Landing::Join { of: 1, at: None })
+        .expect("joins");
+    assert_eq!(
+        kinds(&ws, 0),
+        [
+            BarPart::Grip,
+            BarPart::TabClose(0),
+            BarPart::Tab(0),
+            BarPart::TabClose(1),
+            BarPart::Tab(1),
+            BarPart::Menu
+        ]
+    );
+    // a tab's close mark and the panel's close the window, through the front
+    let close = part(&ws, 0, BarPart::TabClose(0));
+    ws.moved(f64::from(close.x + 2.0), f64::from(close.y + 2.0));
+    ws.take_dirty();
+    assert_eq!(ws.pressed(), None);
+    ws.released();
+    assert_eq!(ws.take_dirty().close, [1]);
+    assert!(ws.holds(1), "the front closes it, not the dock");
+}
+
+/// **A panel's grip drags the whole panel**: every window of it lands where
+/// it is let go, the one shown still shown.
+#[test]
+fn a_panels_grip_drags_all_its_windows() {
+    let mut ws = dock((600, 300), 4.0, &[1, 2, 3]);
+    ws.land(2, Landing::Join { of: 1, at: None })
+        .expect("joins");
+    let grip = part(&ws, 0, BarPart::Grip);
+    ws.moved(f64::from(grip.x + 2.0), f64::from(grip.y + 3.0));
+    ws.pressed();
+    let body = ws.rect(3).expect("placed");
+    let (cx, cy) = (
+        f64::from(body.x + body.w / 2),
+        f64::from(body.y + body.h / 2),
+    );
+    ws.moved(cx - 10.0, cy);
+    ws.moved(cx, cy);
+    assert_eq!(
+        ws.landing().map(|l| l.0),
+        Some(Landing::Join { of: 3, at: None })
+    );
+    ws.released();
+    assert_eq!(ws.tree().to_json(), json!({"tabs": [3, 1, 2], "active": 2}));
+}
+
+/// **A panel's menu** opens under its button and acts on its window: split
+/// right, move to a new page, close -- and a press off it takes it down.
+#[test]
+fn a_panels_menu_moves_and_closes_its_window() {
+    let mut ws = dock((800, 400), 4.0, &[1, 2]);
+    ws.land(2, Landing::Join { of: 1, at: None })
+        .expect("joins");
+    let pick = |ws: &mut Dock, label: &str| {
+        let button = part(ws, 0, BarPart::Menu);
+        ws.moved(f64::from(button.x + 2.0), f64::from(button.y + 2.0));
+        ws.pressed();
+        ws.released();
+        let placed = ws.menu_placed();
+        let menu = ws.menu().expect("open").clone();
+        let row = menu.stack.levels[0]
+            .entries
+            .iter()
+            .position(|e| e.label == label)
+            .expect("listed");
+        let r = placed[0].rows[row];
+        ws.moved(f64::from(r.x + 4.0), f64::from(r.y + r.h * 0.5));
+        ws.pressed();
+        ws.released();
+        assert!(ws.menu().is_none(), "a pick takes the menu down");
+    };
+    pick(&mut ws, "Split right");
+    assert_eq!(ws.tree().panes(), [1, 2], "2 beside 1, its own panel");
+    assert_eq!(ws.groups().len(), 2);
+    // open, then press off it: down, and nothing else happens
+    let button = part(&ws, 0, BarPart::Menu);
+    ws.moved(f64::from(button.x + 2.0), f64::from(button.y + 2.0));
+    ws.pressed();
+    ws.released();
+    assert!(ws.menu().is_some());
+    ws.moved(5.0, 390.0 - f64::from(strip(&ws)));
+    assert_eq!(ws.pressed(), None);
+    assert!(ws.menu().is_none());
+    // Escape takes it down too
+    ws.open_pane_menu(1, super::bar::MenuAt::Point(10.0, 10.0));
+    assert!(ws.escape());
+    assert!(ws.menu().is_none());
+    ws.take_dirty();
+    ws.open_pane_menu(1, super::bar::MenuAt::Point(10.0, 10.0));
+    ws.picked(super::bar::Target::Pane(1), "close");
+    assert_eq!(ws.take_dirty().close, [1]);
+    ws.picked(super::bar::Target::Pane(2), "page:new");
+    assert_eq!(ws.page_names().len(), 2);
+    assert_eq!(ws.tree().panes(), [2], "2 on the new page, shown");
+}
+
 /// **A tab alone in its group dragged onto its own group lands nowhere**:
 /// the move would change nothing.
 #[test]
 fn a_lone_tab_over_its_own_group_lands_nowhere() {
     let mut ws = dock((400, 300), 4.0, &[1, 2]);
-    let tab = ws.tab_parts(&ws.groups()[0].clone())[0].1;
+    let tab = handle(&ws, 0);
     ws.moved(f64::from(tab.x + tab.w * 0.5), f64::from(tab.y + 3.0));
     ws.pressed();
     let body = ws.rect(1).expect("placed");
@@ -536,7 +702,8 @@ fn the_composed_picture_is_each_panes_own_picture() {
     let strip = ws.groups()[0].body.y;
     for (id, _) in defs {
         let rect = ws.rect(id).expect("placed");
-        assert_eq!((rect.w, rect.h), (w, h - strip));
+        // the panel's bar over it, the page strip under the dock
+        assert_eq!((rect.w, rect.h), (w, h - 2 * strip));
         let mut gpu = Gpu::pane(&dock, rect.w, rect.h);
         let mut renderers = Renderers::new(&gpu.device, gpu.target());
         let mut batches = Batches::new(&gpu.device, gpu.target());
@@ -614,7 +781,7 @@ fn the_composed_picture_is_each_panes_own_picture() {
     }
     let bg = [clear.r, clear.g, clear.b].map(|c| (c * 255.0).round() as i32);
     let x = w + gap / 2;
-    for y in [strip, h / 2, h - 1] {
+    for y in [strip, h / 2, h - strip - 1] {
         let at = ((y * cw + x) * 4) as usize;
         let px: Vec<i32> = composed[at..at + 3].iter().map(|&c| i32::from(c)).collect();
         assert!(

@@ -58,6 +58,10 @@ pub enum Owner {
     /// window under a title strip with a close mark, and only that mark and
     /// Escape take it down -- a press anywhere else is swallowed.
     Keys,
+    /// **The dock's own menu** -- a panel's or a page's -- opened over the
+    /// dock's surface rather than a window's, and answered by the dock
+    /// ([`crate::host::dock`]).
+    Dock,
 }
 
 /// Where the first list of a stack hangs.
@@ -137,7 +141,7 @@ impl Stack {
             | Owner::Button(id)
             | Owner::Edit(id)
             | Owner::Own(id) => Some(id),
-            Owner::Bar(_) | Owner::Keys => None,
+            Owner::Bar(_) | Owner::Keys | Owner::Dock => None,
         }
     }
 
@@ -361,7 +365,7 @@ pub fn owner_rect(
             .iter()
             .find(|p| p.widget.id == Some(id))
             .map(|p| p.rect),
-        Owner::Keys => None,
+        Owner::Keys | Owner::Dock => None,
     }
 }
 

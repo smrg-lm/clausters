@@ -267,10 +267,13 @@ impl WebApp {
     /// again whole), a pane behind another's tab not seen and one shown again
     /// seen, and the dock drawn if anything of it moved.
     ///
-    /// Answers the pane a hand dragged out of the dock, for the caller to
-    /// give a canvas of its own ([`WebApp::move_window`]).
-    fn settle_dock(&mut self) -> Option<i32> {
-        let shell = self.dock.as_mut()?;
+    /// Answers what a hand asked of the windows themselves -- the panes
+    /// taken out of the dock and those closed -- for the caller to carry out
+    /// ([`WebApp::hand_over`]).
+    fn settle_dock(&mut self) -> (Vec<i32>, Vec<i32>) {
+        let Some(shell) = self.dock.as_mut() else {
+            return Default::default();
+        };
         let dirty = shell.layout.take_dirty();
         if dirty.layout {
             for def in shell.layout.panes() {
@@ -303,7 +306,54 @@ impl WebApp {
         {
             shell.window.request_redraw();
         }
-        dirty.out
+        (dirty.out, dirty.close)
+    }
+
+    /// **What a hand asked of the windows of the dock**: each pane taken out
+    /// gets a canvas of its own, and each one closed closes as a window's own
+    /// close mark would close it (its owner asked first where it asks).
+    fn hand_over(&mut self, event_loop: &ActiveEventLoop, (out, close): (Vec<i32>, Vec<i32>)) {
+        for def in out {
+            if let Err(e) = self.move_window(event_loop, def, false) {
+                log(&format!("dock: {e}"));
+            }
+        }
+        for def in close {
+            self.close_by_hand(def);
+        }
+    }
+
+    /// **Window `def` closed by a hand**: its owner, asked first where it
+    /// asks (`ask_close`), or told it closed -- and the windows that depend
+    /// on it close with it.
+    fn close_by_hand(&mut self, def: i32) {
+        if let Some(ctx) = self.window_ctx(def)
+            && let Some(slot) = self.canvases.get_mut(&def)
+            && let Some(effects) = slot.gestures.close(&mut self.host, &ctx)
+        {
+            self.apply_gesture_effects(effects);
+            return;
+        }
+        // the windows that depend on it close with it -- the applications'
+        #[cfg(feature = "apps")]
+        for dependent in self.host.take_dependents(def) {
+            self.closed_by_hand(dependent);
+        }
+        self.closed_by_hand(def);
+    }
+
+    fn closed_by_hand(&mut self, def: i32) {
+        self.queue(OscMessage {
+            addr: crate::host::GUI_CLOSED.into(),
+            args: vec![OscType::Int(def)],
+        });
+        // an application's window is the application's to let go
+        #[cfg(feature = "apps")]
+        self.host.closed_by_user(def);
+        self.drop_own(def);
+        self.undocked.remove(&def);
+        self.fetches.drop_def(def);
+        self.on_tree_changed();
     }
 
     /// **Window `def` moves into the dock (`into`) or out of it** into a
@@ -430,17 +480,19 @@ impl WebApp {
                 let pane = match (state, button) {
                     (ElementState::Pressed, MouseButton::Left) => shell.layout.pressed(),
                     (ElementState::Released, MouseButton::Left) => shell.layout.released(),
+                    // a panel's bar or a page's tab opens its menu
+                    (ElementState::Pressed, MouseButton::Right)
+                        if shell.layout.context_pressed() =>
+                    {
+                        None
+                    }
                     _ => shell.layout.pointer(),
                 };
                 if let Some(def) = pane {
                     self.on_def_event(def, event);
                 }
-                // a tab let go out of the dock: a canvas of its own
-                if let Some(def) = self.settle_dock()
-                    && let Err(e) = self.move_window(event_loop, def, false)
-                {
-                    log(&format!("dock: {e}"));
-                }
+                let handed = self.settle_dock();
+                self.hand_over(event_loop, handed);
             }
             WindowEvent::Touch(mut touch) => {
                 // a finger goes where a pointer would: its pane, its pixels
@@ -459,16 +511,26 @@ impl WebApp {
                     touch.location = winit::dpi::PhysicalPosition::new(lx, ly);
                     self.on_def_event(def, WindowEvent::Touch(touch));
                 }
-                if let Some(def) = self.settle_dock()
-                    && let Err(e) = self.move_window(event_loop, def, false)
-                {
-                    log(&format!("dock: {e}"));
-                }
+                let handed = self.settle_dock();
+                self.hand_over(event_loop, handed);
             }
             WindowEvent::MouseWheel { .. } => {
                 if let Some(def) = shell.layout.pointer() {
                     self.on_def_event(def, event);
                 }
+            }
+            // Escape takes down the dock's open menu before any pane hears it
+            WindowEvent::KeyboardInput {
+                event:
+                    winit::event::KeyEvent {
+                        logical_key: winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } if shell.layout.menu().is_some() => {
+                shell.layout.escape();
+                self.settle_dock();
             }
             WindowEvent::KeyboardInput { .. } => {
                 if let Some(def) = shell.layout.focus() {
@@ -554,11 +616,8 @@ impl WebApp {
                 "the dock is not open: the page has not handed it a canvas".to_string(),
             )),
             (true, Call::Pointer { kind, x, y }) => {
-                if let Some(def) = self.dock_pointer(kind, x, y)
-                    && let Err(e) = self.move_window(event_loop, def, false)
-                {
-                    log(&format!("dock: {e}"));
-                }
+                let handed = self.dock_pointer(kind, x, y);
+                self.hand_over(event_loop, handed);
                 Ok(self.dock_state())
             }
             (true, Call::Capture(path)) => match self.dock_capture(seq, path) {
@@ -591,9 +650,11 @@ impl WebApp {
     /// chrome takes what lands on it, and a pane what lands in it, at its own
     /// pixels, through the canvas' scripted pointer.
     ///
-    /// Answers a pane the hand dragged out of the dock.
-    fn dock_pointer(&mut self, kind: PointerKind, x: f64, y: f64) -> Option<i32> {
-        let shell = self.dock.as_mut()?;
+    /// Answers what the hand asked of the windows ([`WebApp::hand_over`]).
+    fn dock_pointer(&mut self, kind: PointerKind, x: f64, y: f64) -> (Vec<i32>, Vec<i32>) {
+        let Some(shell) = self.dock.as_mut() else {
+            return Default::default();
+        };
         let layout = &mut shell.layout;
         let motion = layout.moved(x, y);
         let to = match kind {

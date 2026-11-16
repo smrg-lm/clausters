@@ -3691,6 +3691,20 @@ Section added 2026-07-19; **reconceived 2026-07-22.** G23 gave the logical group
   Code moved as it was and no assertion was edited: the crate has the 1,412
   tests it had.
 
+- ✅ **The dock's own menu** *(left by WS2, 2026-11-16; done the same
+  day, after an eye pass on the native dock)*. The dock's moves were verbs
+  on the wire and gestures on its tabs, and no menu called them. A panel's
+  menu now opens from the button at the end of its bar, or the secondary
+  button on its bar or on a tab: the tabs of the panel as a list (which
+  also reaches the tabs past the bar's end), split right and down, move to
+  a page or a new one, move to its own window, close the other tabs, close.
+  A page's opens from the secondary button on its tab: show, copy, new,
+  close. Both are lists of the popup layer (`popup::Stack`, an owner of
+  their own, `Owner::Dock`), placed by its one layout and drawn by the
+  frame's list painter over the dock's surface, so the dock has no second
+  menu. The resize cursor and a hand's way back into the dock stay open in
+  the plan.
+
 ## Found by use: the entries that were fixed
 
 - ✅ **A capture of the multitrack example's window never answers, headless**
