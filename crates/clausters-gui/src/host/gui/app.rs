@@ -910,6 +910,7 @@ impl App {
                 let effects = self.host.handle_packet(packet, ClientId::Local);
                 self.apply(lp, ClientId::Local, effects);
             }
+            UserEvent::LocalQuit => lp.exit(),
         }
     }
 

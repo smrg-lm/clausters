@@ -111,8 +111,11 @@ fn form(win: i32) -> closing::Ids {
 }
 
 /// How long the closes a window's own close sends (one per pane) are
-/// gathered before they are read as one.
-const CLOSE_BURST: Duration = Duration::from_millis(60);
+/// gathered before they are read as one, counted from the last. A desktop's
+/// window draws each pane as its close is told, so the closes of one window
+/// arrive tens of milliseconds apart; 60 ms split them, and the window's close
+/// was read as a tab's.
+const CLOSE_BURST: Duration = Duration::from_millis(400);
 
 /// One open file: a window of the dock holding a `code` element.
 struct File {
@@ -476,6 +479,9 @@ impl App {
 
     fn on_closed(&mut self, id: i32) {
         match id {
+            // the post window is freed by nobody but the quit: gone, it is the
+            // dock's window closed over what was asked, and the editor ends
+            POST_WIN => return self.quit_now(),
             DOCS_WIN => self.docs_shown = false,
             PREFS_WIN => self.prefs_open = false,
             ENVS_WIN => self.envs_open = false,
@@ -526,6 +532,10 @@ impl App {
             return;
         };
         let Some(state) = reply.get("ok") else {
+            // a dock that answered nothing does not keep the editor open
+            if matches!(purpose, DockFor::Quit) {
+                self.quit_now();
+            }
             return;
         };
         if let (Some(size), Some(scale)) = (state.get("size"), state.get("scale")) {
@@ -995,10 +1005,14 @@ impl App {
         self.dock_calls.insert(i32::MAX, DockFor::Quit);
     }
 
+    /// **The editor ends**: what it remembers is written, the session is
+    /// stopped and the host's loop is asked to end, which ends the program on
+    /// the thread that holds the windows. Ending it from this thread instead
+    /// left a desktop's process alive after its window had gone.
     fn quit_now(&mut self) {
         self.settings.save();
         self.session.kill();
-        std::process::exit(0);
+        self.link.quit();
     }
 
     fn remember_files(&mut self) {

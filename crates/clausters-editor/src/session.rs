@@ -101,13 +101,29 @@ impl Session {
         std::fs::write(&driver, DRIVER).map_err(|e| e.to_string())?;
 
         let (exe, env) = python_exe();
-        let mut child = Command::new(&exe)
+        let mut command = Command::new(&exe);
+        command
             .arg("-u")
             .arg(&driver)
             .env("PYTHONIOENCODING", "utf-8")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        // **The session goes with the editor**, however the editor ends: a
+        // process killed or crashed never reaches `kill`, and its session
+        // would run on with nothing to talk to.
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::process::CommandExt;
+            // SAFETY: `prctl` is async-signal-safe and touches only the child.
+            unsafe {
+                command.pre_exec(|| {
+                    libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                    Ok(())
+                });
+            }
+        }
+        let mut child = command
             .spawn()
             .map_err(|e| format!("Could not start '{exe}': {e}"))?;
 

@@ -50,6 +50,11 @@ impl Link {
         self.send("/gui_set", args);
     }
 
+    /// Ends the host's loop: the program ends once the windows are down.
+    pub fn quit(&self) {
+        self.local.quit();
+    }
+
     /// `/gui_free id`: a window freed is closed.
     pub fn free(&self, id: i32) {
         self.send("/gui_free", vec![OscType::Int(id)]);

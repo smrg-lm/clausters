@@ -100,6 +100,9 @@ pub enum UserEvent {
     /// **A packet from the application in the process** ([`LocalLink`]),
     /// as it was built: there are no bytes to decode.
     Local(clausters_core::osc::OscPacket),
+    /// **The application in the process is done**: the loop ends, and
+    /// [`run_local`] returns on the thread that called it.
+    LocalQuit,
 }
 
 /// **What the host says to the application in its process**: called on the
@@ -116,6 +119,13 @@ pub struct LocalLink {
 }
 
 impl LocalLink {
+    /// **Ends the host's loop**: its windows go with it and [`run_local`]
+    /// returns, so the program ends on the thread that runs the windows --
+    /// never from another thread while they are still up.
+    pub fn quit(&self) -> bool {
+        self.proxy.send_event(UserEvent::LocalQuit).is_ok()
+    }
+
     /// Hands `msg` to the host's loop; `false` once the loop has gone.
     pub fn send(&self, msg: clausters_core::osc::OscMessage) -> bool {
         self.proxy
