@@ -2501,7 +2501,7 @@ same state, at the same window size and scale, in light and dark, taken by
 script with the headless host, and by the eye of the user after them. The
 first four are the order the user set; the components come after.
 
-- ⬜ **ST1: The application bar belongs to the application.** A band along
+- ✅ **ST1: The application bar belongs to the application.** A band along
   the dock's top, outside every pane, holding the application's menu and its
   tools; a split editor shows one. The editor's tools are its four buttons
   (drawn with the symbols there are until `ST6`), each a `verb` with its key
@@ -2512,6 +2512,29 @@ first four are the order the user set; the components come after.
   joins the bar while its pane has the keyboard. Absorbs the "Found by use"
   entry on a menu bar per half of a split editor and the buttons half of the
   one on run buttons.
+  *Shipped:* a window's `dock_edge` (`top` or `bottom`, both clients'
+  `view`) puts it along that edge of the dock (`host::dock::edges`): across
+  the dock, on every page, outside the panels, at the height it declares,
+  with a divider between it and the panels; the page strip sits over the
+  bottom ones. A press on it leaves the keyboard where it was. Its `menu`
+  shares the row with its tree (the titles first), so the editor's bar
+  (`clausters-editor-host`, window 5) is one row of menu titles and the four
+  tools, each a `button` with the `verb` its menu entry has and its key in
+  its tip; the file windows carry no menu. **A pane's popups float over the
+  dock**: its front gives each pane the whole dock as the area its lists,
+  tips and notes are placed in (`Host::popup_area`), its frame draws them
+  into a batch of their own (`Batches::float`) rather than its texture, and
+  the dock draws every pane's over its chrome in a batch of its own
+  (`Dock::picture`), keeping what each covers so the pointer there reaches
+  that pane in its own pixels; while a list is open its keys go to it, and a
+  press elsewhere takes it down (`Dirty::dismiss`). Decided: a docked
+  GuiDef's own `menu` stays a band of its pane, since a script's window is
+  not the application. Checked: the dock's tests (edge places, the page
+  strip over a footer, the keyboard left in place, a list routed and
+  dismissed), and headlessly against the binary: the bar across the top,
+  File's list over the editor and its submenu beside it reaching the next
+  pane, a tool's tip with its key, the evaluate tool printing its result in
+  the post window, and a press in the editor taking the list down.
 - ⬜ **ST2: Text at the right size, drawn as well.** The code at the size
   the user set, measured as the current editor measures it (14 is 14 px
   of em, a line pitch of 1.5), and the chrome's text from the type scale.

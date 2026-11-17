@@ -565,6 +565,7 @@ impl WebApp {
             grab: slot.gestures.grab(),
             status: statuses.get(&def),
             popups: self.host.popups(def),
+            float: self.host.floating_area(def),
         };
         let Some(render) = slot.render.as_mut() else {
             return capture.then(|| Err("the canvas has no GPU yet".into()));

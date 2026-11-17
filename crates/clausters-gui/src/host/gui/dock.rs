@@ -20,7 +20,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::paint::Mesh;
 use serde_json::{Value, json};
 use tracing::{info, warn};
@@ -96,8 +95,17 @@ impl App {
         }
         let title = self.host.window_title(id);
         let page = self.host.window_dock_page(id);
+        let edge = self.host.window_dock_edge(id);
         let shell = self.dock.as_mut()?;
-        shell.layout.add_on(id, page.as_deref());
+        match edge {
+            // the application's bar or footer, along an edge
+            Some((edge, h)) => {
+                shell.layout.add_edge(id, edge, px(h, shell.scale));
+            }
+            None => {
+                shell.layout.add_on(id, page.as_deref());
+            }
+        }
         if let Some(title) = title {
             shell.layout.set_title(id, title);
         }
@@ -167,6 +175,7 @@ impl App {
             return;
         }
         shell.hidden.remove(&id);
+        self.host.set_popup_area(id, None);
         if shell.layout.panes().is_empty() {
             self.dock = None;
             return;
@@ -256,6 +265,7 @@ impl App {
             dock,
             floats,
             windows,
+            host,
             ..
         } = self;
         let mut handed = Handed::default();
@@ -263,6 +273,8 @@ impl App {
             let dirty = shell.layout.take_dirty();
             if dirty.layout {
                 for id in shell.layout.panes() {
+                    // its popups go anywhere over the shell
+                    host.set_popup_area(id, shell.layout.popup_area(id));
                     let shown = shell.layout.shown(id);
                     let rect = shell.layout.rect(id);
                     let Some(ws) = windows.get_mut(&id) else {
@@ -307,6 +319,13 @@ impl App {
     /// one closed closes as its own close mark would close it (its owner
     /// asked first where it asks).
     fn hand_over(&mut self, lp: Loop, handed: Handed) {
+        for id in handed.dismiss {
+            if self.host.close_popup(id)
+                && let Some(ws) = self.windows.get(&id)
+            {
+                ws.repaint();
+            }
+        }
         for (ids, into) in [(handed.out, false), (handed.back, true)] {
             for id in ids {
                 if let Err(e) = self.move_window(lp, id, into) {
@@ -361,6 +380,9 @@ impl App {
                     .layout
                     .set_metrics(self.host.metrics.resolved(shell.scale));
                 for &id in &panes {
+                    if let Some((edge, h)) = self.host.window_dock_edge(id) {
+                        shell.layout.add_edge(id, edge, px(h, shell.scale));
+                    }
                     self.host.set_ui_scale(id, scale_factor as f32);
                     if let Some(ws) = self.windows.get(&id) {
                         ws.repaint();
@@ -498,7 +520,7 @@ impl App {
         let target = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let chrome = chrome_mesh(&shell.layout, &host.theme);
+        let chrome = picture(&mut shell.layout, windows, host);
         let views: Vec<_> = shell
             .layout
             .placed()
@@ -658,7 +680,7 @@ impl App {
             Which::Float(id) => floats.get_mut(&id),
         };
         let shell = shell.ok_or("the dock closed")?;
-        let chrome = chrome_mesh(&shell.layout, &host.theme);
+        let chrome = picture(&mut shell.layout, windows, host);
         let views: Vec<_> = shell
             .layout
             .placed()
@@ -676,12 +698,27 @@ impl App {
     }
 }
 
-/// The dock's chrome as one batch, drawn at its own size roles.
-fn chrome_mesh(layout: &Dock, theme: &clausters_gui_draw::theme::Theme) -> Mesh {
-    let mut mesh = Mesh::new();
-    let metrics = *layout.metrics();
-    layout.draw(&mut Draw::new(&mut mesh, &metrics, theme));
-    mesh
+/// **What a shell draws over its panes**: its chrome, then the popups of
+/// each shown pane, which float over the whole shell.
+fn picture(
+    layout: &mut Dock,
+    windows: &std::collections::HashMap<i32, super::app::WindowState>,
+    host: &crate::host::Host,
+) -> crate::host::dock::Overlay {
+    let shown: Vec<i32> = layout.placed().map(|(id, _)| id).collect();
+    let floats: Vec<(i32, &Mesh, bool)> = shown
+        .into_iter()
+        .filter_map(|id| {
+            let ws = windows.get(&id)?;
+            Some((id, &ws.batches.float, host.popup(id).is_some()))
+        })
+        .collect();
+    layout.picture(&host.theme, &floats)
+}
+
+/// A window's declared height, in logical pixels, at the shell's scale.
+fn px(logical: u32, scale: f32) -> u32 {
+    (logical as f32 * scale).round().max(1.0) as u32
 }
 
 /// The platform's cursor for [`Dock::resize_cursor`]: a resize arrow

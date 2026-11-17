@@ -1619,6 +1619,16 @@ export function view(
      */
     dockPage?: string;
     /**
+     * **The edge of the dock the window stands along**, `"top"` or
+     * `"bottom"`: across the dock's width, on every page and outside the
+     * panels, at the height `h` it declares -- an application's bar or its
+     * footer, which no hand drags and a press on which leaves the keyboard
+     * where it was. Its `menu` then shares the row with its children, the
+     * titles first. With none the window is a panel; a host with no dock
+     * reads nothing in it.
+     */
+    dockEdge?: "top" | "bottom";
+    /**
      * **The owner is told when the window comes back** -- it gains or loses
      * the platform's focus, or its page is shown or hidden -- as the window's
      * `activated` verb, `1` or `0`. Off by default.
@@ -1671,7 +1681,7 @@ export function view(
 ): View {
     const {
         title, flow, layout, margin, gap, cols, hug, status, plays, keys, verbs, askClose,
-        history, dockPage, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs,
+        history, dockPage, dockEdge, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs,
         ...rest
     } = options;
     return node("window", {
@@ -1695,6 +1705,7 @@ export function view(
             ["ask_close", flag(askClose)],
             ["history", flag(history)],
             ["dock_page", dockPage],
+            ["dock_edge", dockEdge],
             ["activation", flag(activation)],
             ["progress", progress],
             ["progress_label", progressLabel],

@@ -3,6 +3,8 @@
 
 use serde_json::json;
 
+use clausters_gui_draw::paint::Mesh;
+
 use super::call::Call;
 use super::*;
 
@@ -846,7 +848,15 @@ fn the_composed_picture_is_each_panes_own_picture() {
         .collect();
     let mut composer = Composer::new(&dock.device, dock.config.format);
     let readback = composer
-        .capture(&dock, clear, &views, &Mesh::new())
+        .capture(
+            &dock,
+            clear,
+            &views,
+            &super::Overlay {
+                chrome: Mesh::new(),
+                floats: Mesh::new(),
+            },
+        )
         .expect("reads back");
     readback.wait(&dock.device).expect("mapped");
     let (cw, ch, composed) = readback.pixels();
@@ -880,4 +890,71 @@ fn the_composed_picture_is_each_panes_own_picture() {
             "the divider is the clear color at y={y}: {px:?} against {bg:?}"
         );
     }
+}
+
+/// **A window along an edge is no panel**: the bar spans the top, the footer
+/// the bottom under the page strip, the panels take what is between, and
+/// neither edge pane has a tab, a bar or a place on a page.
+#[test]
+fn edge_panes_span_the_dock_outside_the_panels() {
+    let mut d = dock((400, 300), 1.0, &[1, 2]);
+    assert!(d.add_edge(10, Edge::Top, 40));
+    assert!(d.add_edge(11, Edge::Bottom, 20));
+    let bar = d.rect(10).expect("placed");
+    let foot = d.rect(11).expect("placed");
+    assert_eq!((bar.x, bar.y, bar.w, bar.h), (0, 0, 400, 40));
+    assert_eq!((foot.y, foot.h), (280, 20));
+    let strip = d.page_strip();
+    assert_eq!(
+        strip.y + strip.h,
+        279.0,
+        "the page strip sits over the footer"
+    );
+    for g in d.groups() {
+        assert!(
+            g.strip.y >= 41.0,
+            "a panel starts under the bar: {:?}",
+            g.strip
+        );
+        assert!(g.body.y + g.body.h <= strip.y as u32);
+        assert!(!g.panes.contains(&10) && !g.panes.contains(&11));
+    }
+    assert!(d.shown(10) && d.holds(11));
+    assert_eq!(d.at(5.0, 5.0).map(|(id, _)| id), Some(10));
+    // a press on the bar leaves the keyboard on the panel it was in
+    let focus = d.focus();
+    d.moved(5.0, 5.0);
+    assert_eq!(d.pressed(), Some(10));
+    d.released();
+    assert_eq!(d.focus(), focus);
+    assert!(d.remove(10));
+    assert_eq!(d.groups()[0].strip.y, 0.0, "the panels take the bar's room");
+}
+
+/// **A pane's list floats over the dock**: it may go anywhere over it, the
+/// pointer over it reaches the pane that opened it in that pane's pixels, it
+/// takes the keys while it is open, and a press elsewhere takes it down.
+#[test]
+fn a_list_a_pane_opens_floats_over_the_dock() {
+    let mut d = dock((400, 300), 1.0, &[1, 2]);
+    d.add_edge(10, Edge::Top, 40);
+    d.take_dirty();
+    let area = d.popup_area(10).expect("placed");
+    assert_eq!((area.x, area.y, area.w, area.h), (0.0, 0.0, 400.0, 300.0));
+    let right = d.rect(2).expect("placed");
+    let area = d.popup_area(2).expect("placed");
+    assert_eq!((area.x, area.y), (-(right.x as f32), -(right.y as f32)));
+    // the bar's list hangs below it, over pane 1
+    let mut list = Mesh::new();
+    list.rect(Rect::new(0.0, 40.0, 120.0, 100.0), [1.0, 1.0, 1.0, 1.0]);
+    let floats = [(10, &list, true)];
+    let over = d.picture(&Theme::default(), &floats);
+    assert!(!over.floats.is_empty());
+    assert_eq!(d.at(50.0, 100.0), Some((10, (50.0, 100.0))));
+    assert_eq!(d.focus(), Some(10), "the open list takes the keys");
+    // a press on pane 2 goes to it, and takes the bar's list down
+    d.moved(300.0, 200.0);
+    assert_eq!(d.pressed(), Some(2));
+    assert_eq!(d.take_dirty().dismiss, vec![10]);
+    assert_eq!(d.focus(), Some(2));
 }

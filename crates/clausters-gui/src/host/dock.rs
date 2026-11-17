@@ -32,7 +32,6 @@
 use std::collections::HashMap;
 
 use clausters_gui_draw::metrics::Metrics;
-use clausters_gui_draw::paint::Mesh;
 use clausters_gui_draw::rect::Rect;
 use clausters_gui_draw::theme::Theme;
 
@@ -47,10 +46,12 @@ use crate::view::Target;
 mod bar;
 pub mod call;
 mod chrome;
+mod edges;
 mod pages;
 pub mod tree;
 
 pub use bar::BarPart;
+pub use edges::{Edge, Overlay};
 pub use tree::{Group, Node, Path, Side};
 
 /// **The color between two panes**: the theme's `separator` role, what the
@@ -116,6 +117,9 @@ pub struct Dirty {
     /// Panes a floating panel's menu asked back into the dock
     /// ([`Dock::floating`]): the front moves each back.
     pub back: Vec<i32>,
+    /// Panes whose open list a press elsewhere took down: the front closes
+    /// each one's popups, as a press beside a list does in a window.
+    pub dismiss: Vec<i32>,
 }
 
 /// **Which shell** a front means: the dock's, or the floating panel of a
@@ -134,6 +138,7 @@ pub struct Handed {
     pub out: Vec<i32>,
     pub close: Vec<i32>,
     pub back: Vec<i32>,
+    pub dismiss: Vec<i32>,
 }
 
 impl Handed {
@@ -142,6 +147,7 @@ impl Handed {
         self.out.extend(dirty.out);
         self.close.extend(dirty.close);
         self.back.extend(dirty.back);
+        self.dismiss.extend(dirty.dismiss);
     }
 }
 
@@ -263,6 +269,16 @@ pub struct Dock {
     /// A floating panel's: one window taken out of the dock, with its bar
     /// and no pages ([`Dock::floating`]).
     floating: bool,
+    /// **The panes along the dock's edges** ([`Edge`]), in the order they
+    /// came, each with its height in device pixels: on every page, outside
+    /// the panels, no bar of their own.
+    edges: Vec<(i32, Edge, u32)>,
+    /// Where the edge panes are, as measured.
+    edge_places: Vec<(i32, PaneRect)>,
+    /// **What the panes draw over the dock** past their own rectangles --
+    /// their open lists, their tips -- as the last picture placed it
+    /// ([`edges::Float`]).
+    overlays: Vec<edges::Float>,
     dirty: Dirty,
 }
 
@@ -287,6 +303,9 @@ impl Dock {
             focus: None,
             menu: None,
             floating: false,
+            edges: Vec::new(),
+            edge_places: Vec::new(),
+            overlays: Vec::new(),
             dirty: Dirty::default(),
         }
     }
@@ -317,19 +336,23 @@ impl Dock {
     /// Every pane the dock holds, in the order they came: shown, behind a
     /// tab, or on another page.
     pub fn panes(&self) -> Vec<i32> {
-        self.members.clone()
+        let edges = self.edges.iter().map(|&(id, ..)| id);
+        self.members.iter().copied().chain(edges).collect()
     }
 
     /// Whether `def_id` is a pane here.
     pub fn holds(&self, def_id: i32) -> bool {
-        self.members.contains(&def_id)
+        self.members.contains(&def_id) || self.edge_of(def_id).is_some()
     }
 
-    /// Whether pane `def_id` is shown: the chosen tab of its group.
+    /// Whether pane `def_id` is shown: the chosen tab of its group, or a
+    /// pane along an edge.
     pub fn shown(&self, def_id: i32) -> bool {
-        self.groups
-            .iter()
-            .any(|g| g.panes.get(g.active) == Some(&def_id))
+        self.edge_of(def_id).is_some()
+            || self
+                .groups
+                .iter()
+                .any(|g| g.panes.get(g.active) == Some(&def_id))
     }
 
     /// The surface's size.
@@ -409,6 +432,8 @@ impl Dock {
             return false;
         }
         self.members.retain(|&p| p != def_id);
+        self.edges.retain(|&(p, ..)| p != def_id);
+        self.overlays.retain(|o| o.pane != def_id);
         self.tree.remove(def_id);
         for (_, tree) in &mut self.pages {
             tree.remove(def_id);
@@ -463,20 +488,26 @@ impl Dock {
             .iter()
             .find(|g| g.panes.contains(&def_id))
             .map(|g| g.body)
+            .or_else(|| self.edge_rect(def_id))
     }
 
-    /// Every shown pane with its rectangle, in layout order.
+    /// Every shown pane with its rectangle: the panels' in layout order,
+    /// then those along the edges.
     pub fn placed(&self) -> impl Iterator<Item = (i32, PaneRect)> + '_ {
         self.groups
             .iter()
             .filter_map(|g| g.panes.get(g.active).map(|&p| (p, g.body)))
+            .chain(self.edge_places.iter().copied())
     }
 
     /// The shown pane under the point `(x, y)` of the surface, and the point
-    /// in its own pixels. A divider and a tab strip are in no pane.
+    /// in its own pixels. A divider and a tab strip are in no pane; what a
+    /// pane draws over the dock past its rectangle (an open list) is that
+    /// pane's, wherever it lies.
     pub fn at(&self, x: f64, y: f64) -> Option<(i32, (f64, f64))> {
-        self.placed()
-            .find(|(_, r)| r.contains(x, y))
+        let over = self.overlay_at(x, y);
+        over.and_then(|id| self.rect(id).map(|r| (id, r)))
+            .or_else(|| self.placed().find(|(_, r)| r.contains(x, y)))
             .map(|(id, r)| (id, (x - f64::from(r.x), y - f64::from(r.y))))
     }
 
@@ -487,9 +518,14 @@ impl Dock {
             .map(|r| (x - f64::from(r.x), y - f64::from(r.y)))
     }
 
-    /// The pane the keyboard goes to.
+    /// The pane the keyboard goes to: one whose list is open over the dock,
+    /// which its keys walk, else the one last pressed in.
     pub fn focus(&self) -> Option<i32> {
-        self.focus
+        self.overlays
+            .iter()
+            .find(|o| o.keys)
+            .map(|o| o.pane)
+            .or(self.focus)
     }
 
     /// The pane the pointer is over, or the one a press holds.
@@ -645,10 +681,12 @@ impl Dock {
             return None;
         }
         if let Some(part) = self.page_at(x, y) {
+            self.dismiss_lists(None);
             self.press_page(part);
             return None;
         }
         if let Some(i) = self.divider_at(x, y) {
+            self.dismiss_lists(None);
             let place = self.dividers[i].clone();
             let from = if place.row { x } else { y };
             self.grip = Some(Grip::Divider { place, from });
@@ -656,13 +694,20 @@ impl Dock {
             return None;
         }
         if let Some((group, part)) = self.bar_at(x, y) {
+            self.dismiss_lists(None);
             self.press_bar(group, part, (x, y));
             self.dirty.chrome = true;
             return None;
         }
-        let pane = self.pointer?;
+        let pane = self.pointer;
+        self.dismiss_lists(pane);
+        let pane = pane?;
         self.grip = Some(Grip::Pane(pane));
-        self.focus = Some(pane);
+        // a pane along an edge is the application's bar or footer: a press
+        // on it leaves the keyboard where the work is
+        if self.edge_of(pane).is_none() {
+            self.focus = Some(pane);
+        }
         Some(pane)
     }
 
@@ -951,15 +996,17 @@ impl Dock {
         let mut groups = Vec::new();
         let mut dividers = Vec::new();
         let (w, h) = self.size;
-        // the page's layout, over the page strip along the bottom
-        let strip = self.page_strip_h().min(h.saturating_sub(1));
+        let divider = (self.metrics.divider_w.round() as u32).max(1);
+        // the panes along the edges first, then the page's layout between
+        // them, over the page strip
+        let (top, bottom) = self.place_edges(divider);
+        let strip = self.page_strip_h().min(h.saturating_sub(1 + top + bottom));
         let whole = PaneRect {
             x: 0,
-            y: 0,
+            y: top,
             w,
-            h: h - strip,
+            h: h.saturating_sub(top + bottom + strip),
         };
-        let divider = (self.metrics.divider_w.round() as u32).max(1);
         measure(
             &self.tree,
             whole,
@@ -1086,24 +1133,30 @@ pub(crate) struct Composer {
     shifts: Vec<wgpu::Buffer>,
     /// The dock's own chrome, drawn over the panes.
     chrome: Painter,
+    /// What the panes draw over the dock, drawn over the chrome: a batch of
+    /// its own, since a batch draws its glyphs after all of its shapes, and
+    /// the chrome's letters must not show through a list.
+    floats: Painter,
 }
 
 impl Composer {
     /// A composer drawing into a single-sampled target of `format`.
     pub(crate) fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let target = Target::new(format);
+        let chrome = Painter::new(device, target);
         Self {
             copier: Copier::new(device, target),
             shifts: Vec::new(),
-            chrome: Painter::new(device, target),
+            floats: Painter::sharing(device, target, &chrome),
+            chrome,
         }
     }
 
     /// **Encodes the copy of `panes` into `target`**, the dock's
     /// surface or a texture of its size, cleared to `clear` first: each
-    /// pane's texture into its rectangle, one texel to one pixel, and
-    /// `chrome` over them. `dock` is the dock's GPU, whose configuration
-    /// is the surface's size.
+    /// pane's texture into its rectangle, one texel to one pixel, and the
+    /// shell's picture over them ([`Overlay`]). `dock` is the dock's GPU,
+    /// whose configuration is the surface's size.
     pub(crate) fn compose(
         &mut self,
         dock: &Gpu,
@@ -1111,12 +1164,14 @@ impl Composer {
         target: &wgpu::TextureView,
         clear: wgpu::Color,
         panes: &[(PaneRect, &wgpu::TextureView)],
-        chrome: &Mesh,
+        over: &Overlay,
     ) {
         let (device, queue) = (&dock.device, &dock.queue);
         let size = (dock.config.width, dock.config.height);
         self.chrome
-            .upload(device, queue, chrome, size.0.max(1), size.1.max(1));
+            .upload(device, queue, &over.chrome, size.0.max(1), size.1.max(1));
+        self.floats
+            .upload(device, queue, &over.floats, size.0.max(1), size.1.max(1));
         while self.shifts.len() < panes.len() {
             self.shifts
                 .push(device.create_buffer(&wgpu::BufferDescriptor {
@@ -1173,6 +1228,7 @@ impl Composer {
         pass.set_viewport(0.0, 0.0, sw as f32, sh as f32, 0.0, 1.0);
         pass.set_scissor_rect(0, 0, sw, sh);
         self.chrome.draw(&mut pass);
+        self.floats.draw(&mut pass);
     }
 
     /// **The dock's picture, read back**: the panes composed into a
@@ -1184,7 +1240,7 @@ impl Composer {
         dock: &Gpu,
         clear: wgpu::Color,
         panes: &[(PaneRect, &wgpu::TextureView)],
-        chrome: &Mesh,
+        over: &Overlay,
     ) -> Result<Readback, String> {
         let size = (dock.config.width, dock.config.height);
         let texture = read_target(&dock.device, dock.config.format, size)?;
@@ -1194,7 +1250,7 @@ impl Composer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("dock capture"),
             });
-        self.compose(dock, &mut encoder, &view, clear, panes, chrome);
+        self.compose(dock, &mut encoder, &view, clear, panes, over);
         Ok(read_back(&dock.device, &dock.queue, encoder, &texture))
     }
 }

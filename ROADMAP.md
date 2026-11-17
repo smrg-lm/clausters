@@ -362,9 +362,8 @@ Named, not enumerated: each is written where it belongs and is read there.
 - **The host's look, the `ST` track** *(`crates/clausters-gui/PLAN.md`, ST
   track)*. Taken now, before `WS13`: one design system as the specification
   of every application's general components, with the current editor as the
-  measured reference. `ST1`-`ST4` first, in the order the user set (the
-  application bar out of the panes, text size and rendering, one header per
-  panel, the status footer), then the tokens (`ST5`), the icons and the
+  measured reference. `ST2`-`ST4` next, in the order the user set (text
+  size and rendering, one header per panel, the status footer), then the tokens (`ST5`), the icons and the
   components, and the review that closes checkpoint 3 (`ST13`).
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that

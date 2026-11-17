@@ -50,6 +50,10 @@ pub(super) fn build_kind(
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty())
                 .map(str::to_string),
+            dock_edge: props
+                .get("dock_edge")
+                .and_then(Value::as_str)
+                .and_then(crate::host::dock::Edge::parse),
         },
         // A container with no axes. `stack` -- one child at a time, the one
         // `index` names -- is one of the arrangements rather than a type of its

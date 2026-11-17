@@ -150,6 +150,13 @@ pub enum WidgetKind {
         /// window opens on the page shown. A host with no dock reads nothing
         /// in it.
         dock_page: Option<String>,
+        /// The `dock_edge` prop, `"top"` or `"bottom"`: **the window stands
+        /// along that edge of the dock** ([`crate::host::dock::Edge`]), across
+        /// its width, on every page and outside the panels, at the height it
+        /// declares -- an application's bar or its footer. Its menu then
+        /// shares the row with its tree: the titles first, the tree after
+        /// them. None by default: the window is a panel.
+        dock_edge: Option<crate::host::dock::Edge>,
     },
     /// A nestable container.
     Panel {

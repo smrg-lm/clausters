@@ -987,7 +987,7 @@ impl super::Host {
         let stack = self.popup(def_id)?;
         let tree = self.window_def(def_id)?;
         let m = self.metrics_for(def_id);
-        let work = self.content_area(def_id, fb_w, fb_h);
+        let work = self.popup_area(def_id, fb_w, fb_h);
         let window = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
         let placed = self.layout_window(def_id, fb_w, fb_h)?;
         let owner = owner_rect(stack, tree, &placed, window, m);

@@ -428,7 +428,7 @@ impl Gestures {
         cy: f64,
         out: &mut Vec<GestureEffect>,
     ) -> bool {
-        let work = host.content_area(ctx.def_id, ctx.fb_w, ctx.fb_h);
+        let work = host.popup_area(ctx.def_id, ctx.fb_w, ctx.fb_h);
         let m = *host.metrics_for(ctx.def_id);
         let hit = {
             let Some(placed) = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h) else {

@@ -760,6 +760,7 @@ impl App {
                 .map_or(frame::Grab::None, |w| w.gestures.grab()),
             status: statuses.get(&def_id),
             popups: self.host.popups(def_id),
+            float: self.host.floating_area(def_id),
         };
         let ws = self.windows.get_mut(&def_id)?;
         if capture {

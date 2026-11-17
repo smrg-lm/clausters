@@ -147,6 +147,29 @@ impl Mesh {
         self.glyphs.extend_from_slice(&other.glyphs);
     }
 
+    /// What [`append`](Self::append) adds, moved by `(dx, dy)` device pixels:
+    /// a batch drawn in one surface's pixels joining another's, as the
+    /// popups of a pane join the dock's picture.
+    pub fn append_shifted(&mut self, other: &Mesh, dx: f32, dy: f32) {
+        fn shifted(into: &mut Vec<f32>, verts: &[f32], stride: usize, dx: f32, dy: f32) {
+            into.reserve(verts.len());
+            for v in verts.chunks_exact(stride) {
+                into.push(v[0] + dx);
+                into.push(v[1] + dy);
+                into.extend_from_slice(&v[2..]);
+            }
+        }
+        shifted(&mut self.verts, &other.verts, FLOATS_PER_VERTEX, dx, dy);
+        #[cfg(feature = "font-atlas")]
+        shifted(
+            &mut self.glyphs,
+            &other.glyphs,
+            FLOATS_PER_GLYPH_VERTEX,
+            dx,
+            dy,
+        );
+    }
+
     pub fn is_empty(&self) -> bool {
         #[cfg(feature = "font-atlas")]
         if !self.glyphs.is_empty() {
@@ -856,6 +879,24 @@ impl<K: PartialEq> KeptParts<K> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A batch joined with a shift lands moved, its colors untouched.
+    #[test]
+    fn a_shifted_append_moves_the_geometry_only() {
+        use super::*;
+        let mut pane = Mesh::new();
+        pane.rect(
+            crate::rect::Rect::new(0.0, 0.0, 10.0, 10.0),
+            [1.0, 0.0, 0.0, 1.0],
+        );
+        let mut dock = Mesh::new();
+        dock.append_shifted(&pane, 100.0, 50.0);
+        let b = dock.triangle_bounds();
+        let x0 = b.iter().map(|t| t[0]).fold(f32::MAX, f32::min);
+        let y1 = b.iter().map(|t| t[3]).fold(f32::MIN, f32::max);
+        assert_eq!((x0, y1), (100.0, 60.0));
+        assert!(dock.colors_by_y().all(|(_, c)| c == [1.0, 0.0, 0.0, 1.0]));
+    }
 
     /// **A gradient is one quad, and a clip cuts it at its own colour.** Two
     /// triangles with the top colour above and the bottom colour below, and a

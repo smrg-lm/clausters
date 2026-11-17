@@ -187,6 +187,12 @@ pub(crate) struct FrameInputs<'a> {
     /// Whether the view this window's actions address holds a selection
     /// ([`super::Host::window_selected`]), for the tools that need one.
     pub(crate) selected: Option<bool>,
+    /// **Where this window's popups float**, in its own pixels, when it is a
+    /// pane of a dock ([`super::Host::floating_area`]): they are placed
+    /// there and drawn into a batch of their own ([`Batches::float`]), which
+    /// the dock draws over every pane. `None` draws them into the window's
+    /// own picture, inside its content area.
+    pub(crate) float: Option<Rect>,
 }
 
 impl Default for FrameInputs<'_> {
@@ -203,6 +209,7 @@ impl Default for FrameInputs<'_> {
             popups: None,
             clipboard: None,
             selected: None,
+            float: None,
         }
     }
 }
@@ -341,6 +348,10 @@ pub(crate) struct Batches {
     asked: Asked,
     /// What the last frame cost, phase by phase ([`FrameCost`]).
     cost: FrameCost,
+    /// **The popups of a pane**, in its own pixels, drawn apart from its
+    /// picture so the dock can draw them over every pane
+    /// ([`FrameInputs::float`]). Empty for a window of its own.
+    pub(crate) float: Mesh,
 }
 
 /// **What one frame cost, by phase** -- read by the front after each frame
@@ -436,6 +447,7 @@ impl Batches {
             one_pass: false,
             asked: Asked::default(),
             cost: FrameCost::default(),
+            float: Mesh::new(),
         }
     }
 
@@ -1253,6 +1265,7 @@ fn draw_whole(
         over,
     };
     batches.underlay.fresh = false;
+    batches.float = std::mem::take(&mut picture.float);
 }
 
 /// A whole frame as triangles and snapshots, before any of it reaches a card.
@@ -1261,6 +1274,8 @@ struct Picture {
     over: Mesh,
     live: Mesh,
     top: Mesh,
+    /// The popups, when they float over a dock ([`FrameInputs::float`]).
+    float: Mesh,
     /// The heavy views of the window and, with a dialog up, of the dialog.
     collected: Collected,
     inside: Option<Collected>,
@@ -1433,11 +1448,26 @@ fn picture(
     if let Some(band) = menu_bar {
         draw_menu_bar(&mut top, tree, band, inputs, theme);
     }
-    draw_own_popups(&mut top, &placed, area, inputs, theme);
+    // A pane's float over the dock, placed against all of it.
+    let mut float = Mesh::new();
+    let (popups_into, popup_area) = match inputs.float {
+        Some(dock) => (&mut float, dock),
+        None => (&mut top, area),
+    };
+    draw_own_popups(popups_into, &placed, popup_area, inputs, theme);
     if let Some(popups) = inputs.popups {
-        draw_popups(&mut top, popups, tree, &placed, window, area, inputs, theme);
+        draw_popups(
+            popups_into,
+            popups,
+            tree,
+            &placed,
+            window,
+            popup_area,
+            inputs,
+            theme,
+        );
     }
-    for mesh in [&mut mesh, &mut over, &mut live, &mut top] {
+    for mesh in [&mut mesh, &mut over, &mut live, &mut top, &mut float] {
         mesh.set_clip(None);
         mesh.set_ink(Ink::default());
     }
@@ -1446,6 +1476,7 @@ fn picture(
         over,
         live,
         top,
+        float,
         kept: inside.is_none() && places.is_some(),
         places: places.unwrap_or_default(),
         collected,

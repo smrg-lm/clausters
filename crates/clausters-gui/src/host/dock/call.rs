@@ -264,6 +264,10 @@ impl Dock {
             None => Vec::new(),
         };
         let dividers: Vec<Value> = self.dividers().iter().map(|d| rect(d.rect)).collect();
+        let edges: Vec<Value> = self
+            .edge_placed()
+            .map(|(id, edge, r)| json!({"id": id, "edge": edge.name(), "rect": rect(r.rect())}))
+            .collect();
         // the page strip's tabs, the pages' and then the new page's
         let parts = self.page_parts();
         let page_tabs: Vec<Value> = (0..self.page_options().len())
@@ -285,6 +289,7 @@ impl Dock {
             "bars": bars,
             "menu": menu,
             "dividers": dividers,
+            "edges": edges,
             "focus": self.focus(),
         })
     }
@@ -304,6 +309,7 @@ pub fn closed_state() -> Value {
         "bars": [],
         "menu": [],
         "dividers": [],
+        "edges": [],
         "focus": null,
     })
 }

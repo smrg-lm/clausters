@@ -309,6 +309,7 @@ impl Host {
             // window reopened on the same id starts with nothing to say.
             self.status.borrow_mut().remove(&id);
             self.popups.remove(&id);
+            self.popup_areas.remove(&id);
             effects.push(HostEffect::CloseWindow(id));
         }
         self.sync_subscriptions();

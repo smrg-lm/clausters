@@ -62,6 +62,10 @@ const POST_WIN: i32 = 1;
 const POST: i32 = 2;
 const DOCS_WIN: i32 = 3;
 const DOCS: i32 = 4;
+/// The application's bar, along the dock's top: the menu and the tools.
+const BAR_WIN: i32 = 5;
+/// The bar's height, in logical pixels.
+const BAR_H: i32 = 40;
 
 const PREFS_WIN: i32 = 20;
 const PREFS_REOPEN: i32 = 22;
@@ -282,6 +286,7 @@ impl App {
         self.apply_theme();
         desktop::follow_color_scheme(&self.tx);
         self.read_docs();
+        self.open_bar();
         self.open_post();
         self.open_docs();
         // the files of the last run, then the ones the command line names,
@@ -483,6 +488,8 @@ impl App {
             // the post window is freed by nobody but the quit: gone, it is the
             // dock's window closed over what was asked, and the editor ends
             POST_WIN => return self.quit_now(),
+            // the bar goes with the dock's window, as the post window does
+            BAR_WIN => return,
             DOCS_WIN => self.docs_shown = false,
             PREFS_WIN => self.prefs_open = false,
             ENVS_WIN => self.envs_open = false,
@@ -505,6 +512,7 @@ impl App {
         let closes = std::mem::take(&mut self.closes.0);
         self.closes.1 = None;
         let mut panes: HashSet<i32> = self.files.iter().map(|f| f.win).collect();
+        panes.insert(BAR_WIN);
         panes.insert(POST_WIN);
         for (shown, win) in [
             (self.docs_shown, DOCS_WIN),
@@ -521,8 +529,9 @@ impl App {
         }
         for win in closes {
             match win {
-                // the post window stays: it is where the session speaks
-                POST_WIN => {}
+                // the post window stays: it is where the session speaks; the
+                // bar is the application's, and goes only with it
+                BAR_WIN | POST_WIN => {}
                 DOCS_WIN | PREFS_WIN | ENVS_WIN => self.link.free(win),
                 win => self.close_tab(Some(win)),
             }
@@ -802,8 +811,8 @@ impl App {
         tree
     }
 
-    /// A window of the editor's: its title, its keys and, on a file's, the
-    /// menu bar -- one over the editor rather than one over every panel.
+    /// A window of the editor's: its title, its keys and, on the
+    /// application's bar, the menu -- the application's, over every panel.
     fn window(&self, id: i32, title: &str) -> Value {
         let mut window = json!({
             "id": id,
@@ -818,7 +827,7 @@ impl App {
             )]),
             "margin": 0,
         });
-        if id >= FILE_BASE {
+        if id == BAR_WIN {
             window["menu"] = self.menu();
         }
         window
@@ -1140,11 +1149,35 @@ impl App {
     }
 
     fn is_window(&self, id: i32) -> bool {
-        matches!(id, POST_WIN | DOCS_WIN | PREFS_WIN | ENVS_WIN)
+        matches!(id, BAR_WIN | POST_WIN | DOCS_WIN | PREFS_WIN | ENVS_WIN)
             || self.files.iter().any(|f| f.win == id)
     }
 
-    // -- the post window and the documentation
+    // -- the application's bar, the post window and the documentation
+
+    /// **The application's bar**: a window along the dock's top, across it,
+    /// holding the menu and the tools -- the application's, never a
+    /// panel's. A tool performs the verb its menu entry does, and its tip
+    /// says the key.
+    fn open_bar(&mut self) {
+        let mut tree = self.window(BAR_WIN, "Editor");
+        tree["dock_edge"] = json!("top");
+        tree["h"] = json!(BAR_H);
+        let tool = |id: i32, symbol: char, verb: &str, tip: &str| {
+            json!({"id": id, "type": "button", "label": symbol.to_string(), "flat": 1,
+                "verb": verb, "tip": tip})
+        };
+        tree["children"] = json!([{
+            "id": BAR_WIN + 1, "type": "layout", "flow": "row", "pack": 1,
+            "margin": 4, "gap": 2, "children": [
+                tool(BAR_WIN + 2, '\u{25B6}', "evaluate_line", "Evaluate line or selection"),
+                tool(BAR_WIN + 3, '\u{2193}', "evaluate_block", "Evaluate block"),
+                tool(BAR_WIN + 4, '\u{25A0}', "interrupt", "Interrupt"),
+                tool(BAR_WIN + 5, '\u{21BB}', "restart", "Restart the session"),
+            ],
+        }]);
+        self.link.def(BAR_WIN, &tree);
+    }
 
     fn open_post(&mut self) {
         let mut tree = self.window(POST_WIN, "Post window");
@@ -1558,12 +1591,9 @@ impl App {
         self.split
     }
 
-    /// Every file window's menu, as the state now reads.
+    /// The application's menu, as the state now reads.
     fn menus(&self) {
-        let menu = self.menu();
-        for f in &self.files {
-            self.link.set(f.win, &[("menu", menu.clone())]);
-        }
+        self.link.set(BAR_WIN, &[("menu", self.menu())]);
     }
 
     // -- the preferences, a panel of the dock

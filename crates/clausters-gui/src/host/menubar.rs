@@ -27,25 +27,51 @@ pub fn entries(tree: &Widget) -> Option<&[Entry]> {
     }
 }
 
-/// The height the bar costs a window -- zero when it has none.
+/// The height the bar costs a window -- zero when it has none, or when it
+/// shares the row with the tree.
 pub fn bar_h(tree: &Widget, m: &Metrics) -> f32 {
-    if entries(tree).is_some() {
+    if entries(tree).is_some() && !inline(tree) {
         popup::row_h(m.text_scale, m)
     } else {
         0.0
     }
 }
 
+/// **Whether the bar shares its row with the tree**: in a window along a
+/// dock's edge (an application's bar), the titles come first and the tree
+/// after them, as one row, rather than a band over the tree.
+fn inline(tree: &Widget) -> bool {
+    matches!(
+        tree.kind,
+        WidgetKind::Window {
+            dock_edge: Some(_),
+            ..
+        }
+    )
+}
+
 /// The band the bar occupies inside `area`, or `None` for a window with no
-/// menu.
+/// menu: along its top, or -- sharing the row with the tree -- its start.
 pub fn bar(tree: &Widget, area: Rect, m: &Metrics) -> Option<Rect> {
+    if inline(tree) {
+        let entries = entries(tree)?;
+        let full = Rect::new(area.x, area.y, area.w, area.h);
+        let w = titles(entries, full, m)
+            .last()
+            .map_or(0.0, |(_, r)| r.x + r.w - area.x);
+        return (w > 0.0).then(|| Rect::new(area.x, area.y, w, area.h));
+    }
     let h = bar_h(tree, m).min(area.h);
     (h > 0.0).then(|| Rect::new(area.x, area.y, area.w, h))
 }
 
-/// `area` with the bar's band taken off its top -- where the tree is laid out.
+/// `area` with the bar's band taken off its top -- or off its start, for a
+/// bar that shares the row -- where the tree is laid out.
 pub fn content(tree: &Widget, area: Rect, m: &Metrics) -> Rect {
     match bar(tree, area, m) {
+        Some(band) if inline(tree) => {
+            Rect::new(area.x + band.w, area.y, (area.w - band.w).max(0.0), area.h)
+        }
         Some(band) => Rect::new(area.x, area.y + band.h, area.w, (area.h - band.h).max(0.0)),
         None => area,
     }

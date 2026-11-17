@@ -11,7 +11,7 @@
 
 use serde_json::{Value, json};
 
-use super::{Dock, FIRST_PAGE, Landing, Node, Part, Rect};
+use super::{Dock, Edge, FIRST_PAGE, Landing, Node, Part, Rect};
 use crate::host::graphics::choice;
 
 /// The page strip's last tab: a new page, a copy of the one shown.
@@ -187,8 +187,12 @@ impl Dock {
     /// The strip of page tabs, along the dock's bottom -- apart from the
     /// panels' bars, which run along each panel's top.
     pub fn page_strip(&self) -> Rect {
-        let h = self.page_strip_h().min(self.size.1.saturating_sub(1));
-        Rect::new(0.0, (self.size.1 - h) as f32, self.size.0 as f32, h as f32)
+        let bottom = self.edges_h(Edge::Bottom);
+        let h = self
+            .page_strip_h()
+            .min(self.size.1.saturating_sub(1 + bottom));
+        let y = self.size.1.saturating_sub(bottom + h);
+        Rect::new(0.0, y as f32, self.size.0 as f32, h as f32)
     }
 
     /// The page strip's tabs: every page, then the new page's.

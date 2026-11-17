@@ -1030,6 +1030,11 @@ pub struct Host {
     /// layer, per def id (see [`popup`]). The host's and not an element's,
     /// because a menu bar and a context menu have no element to live in.
     popups: HashMap<i32, popup::Popups>,
+    /// **Where each pane's popups may go**, in its own pixels, set by the
+    /// front that docks it ([`Dock::popup_area`](dock::Dock::popup_area)): the
+    /// whole dock. A window with none places them in its own content area,
+    /// and draws them into its own picture.
+    popup_areas: HashMap<i32, clausters_gui_draw::rect::Rect>,
     /// **The windows whose owner was asked to close them and has not answered
     /// since** ([`close_request`](Self::close_request)): a second request
     /// while one is unanswered closes the window, so an owner that stopped
@@ -1220,6 +1225,7 @@ impl Host {
             outbox: Default::default(),
             status: Default::default(),
             popups: HashMap::new(),
+            popup_areas: HashMap::new(),
             close_asked: Default::default(),
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             dependents: HashMap::new(),
@@ -1488,6 +1494,19 @@ impl Host {
     pub fn window_dock_page(&self, id: i32) -> Option<String> {
         match &self.window_def(id)?.kind {
             WidgetKind::Window { dock_page, .. } => dock_page.clone(),
+            _ => None,
+        }
+    }
+
+    /// **The dock edge window `id` stands along** (its `dock_edge`), with
+    /// the height it declares, in logical pixels.
+    pub fn window_dock_edge(&self, id: i32) -> Option<(dock::Edge, u32)> {
+        match &self.window_def(id)?.kind {
+            WidgetKind::Window {
+                dock_edge: Some(edge),
+                height,
+                ..
+            } => Some((*edge, *height)),
             _ => None,
         }
     }
@@ -1782,6 +1801,40 @@ impl Host {
         // and the menu bar along the top.
         let area = status::content(tree, self.status.borrow().get(&def_id), area, m);
         menubar::content(tree, area, m)
+    }
+
+    /// **Where window `def_id`'s popups may go**: the area its front gave
+    /// it as a pane of a dock, else its content area.
+    pub(crate) fn popup_area(
+        &self,
+        def_id: i32,
+        fb_w: u32,
+        fb_h: u32,
+    ) -> clausters_gui_draw::rect::Rect {
+        self.popup_areas
+            .get(&def_id)
+            .copied()
+            .unwrap_or_else(|| self.content_area(def_id, fb_w, fb_h))
+    }
+
+    /// The area pane `def_id`'s popups may go (`None`: its own content
+    /// area), as a front that docks it measures it.
+    pub(crate) fn set_popup_area(
+        &mut self,
+        def_id: i32,
+        area: Option<clausters_gui_draw::rect::Rect>,
+    ) -> bool {
+        let was = match area {
+            Some(a) => self.popup_areas.insert(def_id, a),
+            None => self.popup_areas.remove(&def_id),
+        };
+        was != area
+    }
+
+    /// The area pane `def_id`'s popups float in, for its frame: set only
+    /// for a pane of a dock.
+    pub(crate) fn floating_area(&self, def_id: i32) -> Option<clausters_gui_draw::rect::Rect> {
+        self.popup_areas.get(&def_id).copied()
     }
 
     /// The status bar's band in window `def_id`'s framebuffer, when it has one

@@ -1116,6 +1116,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          keys: list | str | None = None, verbs: dict | None = None,
          ask_close: bool | None = None, activation: bool | None = None,
          history: bool | None = None, dock_page: str | None = None,
+         dock_edge: str | None = None,
          progress: float | None = None, progress_label: str | None = None,
          split: bool | None = None, menu: list | None = None,
          main: int | None = None, glyphs: dict | None = None,
@@ -1205,6 +1206,14 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     With none the window opens on the page shown; a host with no dock reads
     nothing in it.
 
+    ``dock_edge`` (``"top"`` or ``"bottom"``) puts the window **along that
+    edge of the dock**, across its width, on every page and outside the
+    panels, at the height ``h`` it declares: an application's bar or its
+    footer, which no hand drags and a press on which leaves the keyboard
+    where it was. Its ``menu`` then shares the row with its children, the
+    titles first. With none the window is a panel; a host with no dock reads
+    nothing in it.
+
     ``progress`` is **work the owner is doing for the window**, a fraction in
     ``0..1`` with ``progress_label`` naming it, drawn at the right end of the
     status bar while it is set; a negative value takes it away. An owner sets
@@ -1259,6 +1268,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
         extra["history"] = 1 if history else 0
     if dock_page is not None:
         extra["dock_page"] = dock_page
+    if dock_edge is not None:
+        extra["dock_edge"] = dock_edge
     if progress is not None:
         extra["progress"] = float(progress)
     if progress_label is not None:

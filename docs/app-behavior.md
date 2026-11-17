@@ -125,6 +125,13 @@ code that keeps it lives.
   adapter draws nothing, and its applications still open and answer their
   verbs: an application's answers wake the loop that serves the protocol, as
   they wake a windowed one.
+- **An application's menu and tools are the application's, never a
+  panel's.** In a dock they stand along its top, in a window of the
+  application's that names the edge (`dock_edge`), once however its panels are
+  split; a pane keeps a menu of its own only when it is a script's window
+  rather than an application's. A list a pane opens is placed against the
+  whole dock, never shut inside the pane: a submenu opens beside its list, a
+  bar's list hangs over the panels.
 
 ## Views and layers
 
