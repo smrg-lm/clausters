@@ -233,12 +233,12 @@ fn shape_with(atlas: &Atlas, s: &str, scale: f32, family: Family) -> Shaped {
     if s.is_empty() || atlas.faces() == 0 {
         return out;
     }
-    let data: Vec<std::sync::Arc<[u8]>> =
-        (0..atlas.faces()).filter_map(|i| atlas.data(i)).collect();
-    let parsed: Vec<Option<rustybuzz::Face<'_>>> = data
-        .iter()
-        .map(|bytes| rustybuzz::Face::from_slice(bytes, 0))
-        .collect();
+    // **A face is read only where a piece is drawn with it**: reading one
+    // reads its substitution tables, which is most of what a short run costs,
+    // and the atlas may hold half a dozen faces of which a run uses one.
+    let data: Vec<Option<std::sync::Arc<[u8]>>> =
+        (0..atlas.faces()).map(|i| atlas.data(i)).collect();
+    let mut parsed: Vec<Option<Option<rustybuzz::Face<'_>>>> = vec![None; data.len()];
     let info = BidiInfo::new(s, None);
     let mut pen = 0.0f32;
     for paragraph in &info.paragraphs {
@@ -278,7 +278,15 @@ fn shape_with(atlas: &Atlas, s: &str, scale: f32, family: Family) -> Shaped {
                         pen += advance;
                     }
                     Piece::Face(face) => {
-                        let Some(Some(rb)) = parsed.get(face) else {
+                        let Some(slot) = parsed.get_mut(face) else {
+                            continue;
+                        };
+                        let rb = slot.get_or_insert_with(|| {
+                            data[face]
+                                .as_deref()
+                                .and_then(|bytes| rustybuzz::Face::from_slice(bytes, 0))
+                        });
+                        let Some(rb) = rb.as_ref() else {
                             continue;
                         };
                         let to_px = atlas.units_to_px(face, scale);
