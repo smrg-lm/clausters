@@ -372,6 +372,46 @@
         log("an editor of code typed, cut, pasted, undid, indented, paired, commented, replaced, evaluated and completed");
         codeWin.close();
 
+        // **A documentation panel goes to a document by its link, finds in
+        // it and searches every document**, in a page as natively.
+        const docsWin = host.open(gui.view(
+          { title: "docs", w: 560, h: 400 },
+          gui.docs({
+            name: "docs",
+            books: [{ prefix: "", title: "Book", parts: [{ title: null, chapters: [
+              { title: "One", path: "one.md", children: [] },
+              { title: "Two", path: "two.md", children: [] },
+            ] }] }],
+            documents: {
+              "one.md": "# One\n\nSee [two](two.md#later).\n",
+              "two.md": "# Two\n\nA buffer.\n\n## Later\n\nAnother buffer.\n",
+            },
+          }),
+        ));
+        await sleep(300);
+        const docsInfo = async () => (await docsWin.widget("docs").query()).props;
+        docsWin.widget("docs").set({ open: "one.md" });
+        docsWin.widget("docs").set({ help: { name: "Later" } });
+        let docsPage = (await docsInfo()).page;
+        if (docsPage !== "doc:two.md#later") throw new Error(`docs: help went to ${docsPage}`);
+        host.pressKey(docsWin, "Tab");
+        host.pressKey(docsWin, "f", "ctrl");
+        host.typeText(docsWin, "buffer");
+        let found = 0;
+        for (let i = 0; i < 40 && found < 2; i++) {
+          await sleep(50);
+          found = (await docsInfo()).found;
+        }
+        if (found < 2) throw new Error(`docs: found ${found} in the page`);
+        host.pressKey(docsWin, "f", "ctrl+shift");
+        for (let i = 0; i < 40 && !docsPage.startsWith("search:"); i++) {
+          await sleep(50);
+          docsPage = (await docsInfo()).page;
+        }
+        if ((await docsInfo()).results !== 2) throw new Error(`docs: ${JSON.stringify(await docsInfo())}`);
+        log("a documentation panel opened help, found in its page and searched every document");
+        docsWin.close();
+
         // **A roll that listens paints what is played, in a page as on the
         // desktop.** The host reads the bytes of a MIDI message into a note
         // and hands it to every element that declared it reads live MIDI --

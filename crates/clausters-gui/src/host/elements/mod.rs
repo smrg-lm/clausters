@@ -49,6 +49,7 @@ mod choice;
 mod code;
 mod control;
 pub(crate) mod curve;
+mod docs;
 mod files;
 pub(crate) mod keys;
 mod knob;
@@ -84,6 +85,7 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         "choice" => choice::build,
         "code" => code::build,
         "curve" => curve::build,
+        "docs" => docs::build,
         "keys" => keys::build,
         "knob" => knob::build,
         "label" => label::build,

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a documentation panel</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             max-width: 62rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A <b>docs</b> element is given the books it shows
+(<code>books</code>, each one's table of contents) and their documents
+(<code>documents</code>, the Markdown of each by its path), and draws them: a
+start page listing every book, a book's contents, a document with its headings,
+lists, a table, a quote and a code block in the colors of its syntax, with a
+button that copies it. Click a chapter to open it, a link to go on to another
+document at its heading, and the arrows at the top left to go back and forward;
+the strip says which book and chapter the page is. <b>Ctrl+F</b> finds in the
+page (Enter for the next match) and <b>Ctrl+Shift+F</b> searches every
+document.
+<br><br>A link out of the documentation is reported to this page
+(<code>"link"</code>), which writes it below; a program would open it. Help on a
+name is one set: <code>docs.set({ help: { name } })</code> opens the section
+that is it.</div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/docs.py, call for call:
+      boot a host, open a window holding a documentation panel given a small
+      book of two documents, listen to it and ask it for help on a name.
+
+      One difference, the platform's: the script's window is a window of the
+      platform, and the page's is a canvas the host appends to the page; what
+      the script prints, the page writes under the note.
+
+      Serve clients/web (the package root) and open /examples/panels/docs.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui } from "../../dist/index.js";
+      import { loadCore } from "../../dist/page.js";
+
+      // The one line the script has no counterpart for: the numeric core is
+      // wasm here and is fetched on demand.
+      await loadCore();
+
+      const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
+
+      // ---- the book ----
+      const BOOKS = [{
+        prefix: "",
+        title: "A small book",
+        parts: [{ title: null, chapters: [
+          { title: "Getting started", path: "start.md", children: [
+            { title: "Buffers", path: "buffers.md", children: [] },
+          ] },
+        ] }],
+      }];
+
+      const DOCUMENTS = {
+        "start.md": `# Getting started
+
+A **session** boots a server and plays *what you write*. Read about
+[buffers](buffers.md#reading) next, or visit [the site](https://example.org).
+
+1. Boot it
+2. Play a note
+   - softly
+   - loudly
+
+| Verb | What it does |
+|---|---|
+| \`boot\` | starts the server |
+| \`quit\` | stops it |
+
+> A quote reads quieter than the text around it.
+`,
+        "buffers.md": `# Buffers
+
+A buffer holds samples.
+
+## Reading
+
+Read a file into one:
+
+\`\`\`python
+from clausters import Buffer
+
+b = Buffer.read("a.wav")  # the whole file
+print(b.frames)
+\`\`\`
+`,
+      };
+
+      const host = await new GuiHost().boot();
+      const window = await gui.view(
+        { title: "docs", w: 640, h: 560 },
+        gui.docs({ books: BOOKS, documents: DOCUMENTS, name: "docs" }),
+      ).open(null, { host });
+      const panel = window.widget("docs");
+
+      // ---- a link out, and help on a name ----
+      panel.onEvent((...payload) => log(`docs ${payload.join(" ")}`));
+      panel.set({ help: { name: "Reading" } });
+    </script>
+  </body>
+</html>

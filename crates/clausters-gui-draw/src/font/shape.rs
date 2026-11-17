@@ -119,7 +119,10 @@ pub fn shape_in(family: Family, s: &str, scale: f32) -> Rc<Shaped> {
     if let Some(shaped) = kept {
         return shaped;
     }
-    let shaped = Rc::new(atlas::with(|a| shape_with(a, s, scale, family)));
+    let shaped = Rc::new(atlas::with(|a| {
+        a.ensure(family);
+        shape_with(a, s, scale, family)
+    }));
     SHAPED.with(|kept| {
         let mut kept = kept.borrow_mut();
         if kept.1 >= KEPT {
@@ -324,16 +327,13 @@ fn piece_of(atlas: &Atlas, grapheme: &str, family: Family) -> Piece {
     }
     // the joiners and selectors a face need not have do not decide it
     let decides = |c: char| !matches!(c, '\u{200C}' | '\u{200D}' | '\u{FE00}'..='\u{FE0F}');
-    // code tries the monospaced face first; the interface never falls back
-    // to it
-    let mono = atlas.mono();
-    let order: Vec<usize> = match family {
-        Family::Mono => mono.into_iter().collect(),
-        Family::Ui => Vec::new(),
-    }
-    .into_iter()
-    .chain((0..atlas.faces()).filter(|&face| Some(face) != mono))
-    .collect();
+    // a family with a face of its own tries it first (code, the
+    // documentation); the interface never falls back to one
+    let order: Vec<usize> = atlas
+        .face_of(family)
+        .into_iter()
+        .chain((0..atlas.faces()).filter(|&face| !atlas.is_named(face)))
+        .collect();
     order
         .iter()
         .copied()

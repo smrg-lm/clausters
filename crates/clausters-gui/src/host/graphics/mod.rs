@@ -27,6 +27,7 @@ pub mod bpf;
 pub mod choice;
 pub mod code;
 pub mod controls;
+pub mod docs;
 pub mod meters;
 pub mod multitrack;
 pub mod nodetree;

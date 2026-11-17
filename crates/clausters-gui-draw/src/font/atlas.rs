@@ -28,6 +28,8 @@ use std::collections::HashMap;
 
 use fontdue::{Font, FontSettings};
 
+use super::Family;
+
 use super::GLYPH_H;
 
 /// The width of the atlas sheet, in texels, and the most rows it grows to:
@@ -91,9 +93,11 @@ struct Face {
     /// and the monospaced face's own, so a capital of code stands as tall
     /// as a capital of the interface.
     caps: Vec<f32>,
-    /// Which of `faces` is the monospaced one ([`MONO`]), the face of
-    /// [`Family::Mono`](super::Family) and no fallback of the interface's.
-    mono: Option<usize>,
+    /// Which of `faces` draws each family that has a face of its own (code's,
+    /// [`MONO`], and the documentation's, [`PROSE`] and its weights): none of
+    /// them is a fallback of the interface's. The documentation's are loaded
+    /// the first time their family is asked for ([`Atlas::ensure`]).
+    named: Vec<(Family, usize)>,
     /// The advance of a digit per pixel size -- the *nominal* cell, for the size
     /// roles that reserve room for N characters.
     digit: f32,
@@ -112,8 +116,13 @@ impl Face {
         self.faces
             .iter()
             .enumerate()
-            .position(|(i, f)| Some(i) != self.mono && f.font.has_glyph(c))
+            .position(|(i, f)| !self.is_named(i) && f.font.has_glyph(c))
             .unwrap_or(0)
+    }
+
+    /// Whether face `i` is a family's own rather than the interface's.
+    fn is_named(&self, i: usize) -> bool {
+        self.named.iter().any(|&(_, at)| at == i)
     }
 }
 
@@ -205,7 +214,7 @@ impl Atlas {
             faces,
             cap,
             caps,
-            mono,
+            named: mono.map(|at| (Family::Mono, at)).into_iter().collect(),
             digit,
         });
         self.reset();
@@ -250,14 +259,59 @@ impl Atlas {
 
     /// Which face is the monospaced one, when one is loaded.
     pub fn mono(&self) -> Option<usize> {
-        self.face.as_ref()?.mono
+        self.face_of(Family::Mono)
+    }
+
+    /// Which face draws `family`, when it has one of its own and it is
+    /// loaded.
+    pub fn face_of(&self, family: Family) -> Option<usize> {
+        let face = self.face.as_ref()?;
+        face.named
+            .iter()
+            .find(|(f, _)| *f == family)
+            .map(|&(_, at)| at)
+    }
+
+    /// Whether face `i` is a family's own, which the interface never falls
+    /// back to.
+    pub fn is_named(&self, i: usize) -> bool {
+        self.face.as_ref().is_some_and(|f| f.is_named(i))
+    }
+
+    /// **`family`'s own face loaded, the first time it is asked for**: the
+    /// documentation's faces are a megabyte and a half, read only by a host
+    /// that draws documentation. Its capitals stand as tall as the
+    /// interface's.
+    pub fn ensure(&mut self, family: Family) {
+        let Some(bytes) = family_bytes(family) else {
+            return;
+        };
+        let Some(face) = self.face.as_mut() else {
+            return;
+        };
+        if face.named.iter().any(|(f, _)| *f == family) {
+            return;
+        }
+        let settings = FontSettings {
+            scale: REF_PX,
+            ..Default::default()
+        };
+        let Ok(font) = Font::from_bytes(bytes, settings) else {
+            return;
+        };
+        face.caps.push(cap_of(&font));
+        face.faces.push(Loaded {
+            font,
+            data: std::sync::Arc::from(bytes),
+        });
+        face.named.push((family, face.faces.len() - 1));
     }
 
     /// The monospaced face's cell at `scale`: its advance, every
     /// character's.
     pub fn mono_advance(&self, scale: f32) -> Option<f32> {
+        let at = self.mono()?;
         let face = self.face.as_ref()?;
-        let at = face.mono?;
         Some(
             face.faces[at]
                 .font
@@ -518,6 +572,31 @@ pub const DEVANAGARI: &[u8] = include_bytes!("../../assets/fonts/NotoSansDevanag
 /// loaded with whichever face the interface is drawn with
 /// ([`Family::Mono`](super::Family)).
 pub const MONO: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMono.ttf");
+
+/// **The face the host draws documentation with**: Inter, whole, the face
+/// the editor writes its documentation in, its regular weight. Compiled in,
+/// read the first time documentation is drawn ([`Atlas::ensure`]).
+pub const PROSE: &[u8] = include_bytes!("../../assets/fonts/Inter-Regular.ttf");
+
+/// Inter's semibold weight: a strong word, a small heading, a table's head.
+pub const PROSE_STRONG: &[u8] = include_bytes!("../../assets/fonts/Inter-SemiBold.ttf");
+
+/// Inter's bold weight: the large headings.
+pub const PROSE_BOLD: &[u8] = include_bytes!("../../assets/fonts/Inter-Bold.ttf");
+
+/// Inter's italic.
+pub const PROSE_ITALIC: &[u8] = include_bytes!("../../assets/fonts/Inter-Italic.ttf");
+
+/// The bytes of `family`'s own face, for one loaded when it is asked for.
+fn family_bytes(family: Family) -> Option<&'static [u8]> {
+    match family {
+        Family::Prose => Some(PROSE),
+        Family::ProseStrong => Some(PROSE_STRONG),
+        Family::ProseBold => Some(PROSE_BOLD),
+        Family::ProseItalic => Some(PROSE_ITALIC),
+        Family::Ui | Family::Mono => None,
+    }
+}
 
 /// The cap height of `font` per pixel size: how tall it draws a capital at
 /// the reference size. Falling back to the ascent covers a face whose 'H'

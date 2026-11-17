@@ -2097,7 +2097,7 @@ something reusable if the track stops there.
   its marked parameter, the help, the rest), headlessly by script with
   captures (the list, the note over a call and over a name, a row pressed,
   a rest), and in a page (`gui.html` completes a word).
-- ⬜ **WS11 — The documentation panel.** Markdown read once (pulldown-cmark)
+- ✅ **WS11 — The documentation panel.** Markdown read once (pulldown-cmark)
   into a laid-out document the host draws: headings, paragraphs, emphasis,
   inline code, links, lists, tables, code blocks highlighted by WS7's
   highlighter with a copy button, images where the book has them. Navigation
@@ -2106,6 +2106,44 @@ something reusable if the track stops there.
   The books it reads are the ones the current application finds
   (`books.rs`, `pkgdocs.rs`); the `pydoc` fallback stays the session's; the
   editor's `docIndex.test.ts` is ported to the Rust index.
+
+  **What shipped (2026-11-17).** A `docs` widget a GuiDef names, with its
+  builder in both clients and its row in the protocol: the open decision
+  below is taken for it. **What it reads is given to it**: the owner sets
+  `books` (the tables of contents `books.rs` and `pkgdocs.rs` make) and
+  `documents` (each document's Markdown by its path), natively and in a
+  page alike, so a search and help are answered at once with nothing asked
+  back; the editor's application reads the books when it moves in (WS12,
+  WS13). The model is `host/graphics/docs/`: `markdown.rs` reads a document
+  once into blocks (pulldown-cmark, with tables, strikethrough and task
+  lists; raw HTML is not drawn but an `<a id>` anchor is kept),
+  `layout.rs` lays them out at the panel's width in the current editor's
+  look (headings, paragraphs in runs of a style, links, nested lists,
+  tables with columns narrowed together, quotes, rules, code blocks colored
+  by WS7's highlighter with a Copy button), and `index.rs` is the search:
+  the sections holding every word of a query, matched exactly, by prefix
+  or within an edit or two, a heading weighing three times its text, as
+  MiniSearch scored them, and help's search for a name as the editor's
+  `search_docs` ranks it. `docIndex.test.ts` is ported case by case. The
+  element (`host/elements/docs/`) has the strip (back, forward, the start
+  page, the trail with the book a press from its contents, Find), the find
+  bar (in the page with its count, or every document), the history kept
+  where each page was scrolled, links followed relative to the document or
+  reported out (`"link"`), `open` and `help` (the entry that is the name, a
+  document named after it, the section that says it most, else the
+  session's text sent with it). **The faces**: Inter 4.1 whole, its
+  regular, semibold, bold and italic, joined the drawing base as
+  `Family::Prose` and its weights, each loaded the first time it is drawn,
+  so a host that draws no documentation reads none of them. Checked by the
+  model's tests (the blocks, the layout's places and wrapping, the index's
+  cases), the element's (pages gone to and back, finding in the page and
+  everywhere, help, a copy), headlessly by script with captures of each
+  page, and in a page (`gui.html` opens help, finds and searches). Not
+  done: an image is drawn as its description (the books' images need the
+  owner to hand their bytes over), a code block's long line is cut at the
+  page's edge rather than scrolled, and the text is not selected or copied
+  by hand. Opening the panel at a name from the code element's Ctrl+D is
+  the application's, which moves in at WS12.
 - ⬜ **WS12 — The native application.** One binary: the host, the dock
   and the editor's application, with the current application's non-drawing
   Rust moved in. Menus as the host's menu bar, the dialogs (preferences,
@@ -2153,7 +2191,8 @@ something reusable if the track stops there.
   both clients' builders and the protocol reference come with them. **Taken
   for `post` at WS5 (2026-11-16): a widget**, since a running output is
   useful to any script and costs the catalog one row; **and for `code` at
-  WS6, the same way**. The documentation is still open, taken at WS11.
+  WS6, the same way**; **and for the documentation at WS11 (`docs`),
+  given its books and documents by the owner**.
 - **Nesting.** An application's window as a panel is the first step of "An
   application inside another" (`crates/clausters-document/PLAN.md`, Future
   directions); the dock must not decide that question by accident -- a
@@ -2313,6 +2352,19 @@ open, and that file is where a search for a fixed one ends.
 Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
+
+- ⬜ **A documentation page draws an image as its description**
+  *(2026-11-17, WS11; the bar's "should": images in a page)*. The `docs`
+  panel is given each document's Markdown, not the files beside it, so an
+  image has no bytes to draw. The owner would hand an image's bytes over
+  as it hands a document's (a set the host decodes, or a path it reads
+  through the bulk loader natively and from the page's storage), and the
+  layout would give it a box at its natural size, narrowed to the page.
+
+- ⬜ **A documentation page's long code line is cut at the page's edge**
+  *(2026-11-17, WS11)*. The current editor scrolls a code block across;
+  the panel draws the line up to its width. A block wider than the page
+  wants a horizontal scroll of its own, or the page's.
 
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** (2026-10-21, the user, browser). Playback was

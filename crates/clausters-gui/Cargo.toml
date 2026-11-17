@@ -153,6 +153,9 @@ bytemuck = { version = "1.25.0", features = ["derive"] }
 # so the score renderer runs natively and in the browser through one pipeline.
 lyon = { version = "1.0", optional = true }
 pollster = "0.4.0"
+# The documentation element's reader: Markdown into blocks the host lays
+# out and draws. Pure Rust, wasm-safe; no HTML is written.
+pulldown-cmark = { version = "0.13.6", default-features = false }
 # What the `code` element's find bar searches with: a query typed as a
 # regular expression, and a plain one escaped into one. A default build
 # links it already, for the notation model and the parser.

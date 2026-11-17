@@ -244,6 +244,7 @@ __all__ = [
     "progress",
     "post",
     "code",
+    "docs",
     "tabs",
     "pager",
     "toolbar",
@@ -2043,6 +2044,35 @@ def code(text: str = "", *, language: str | None = None,
     if paragraph is not None:
         extra["paragraph"] = 1 if paragraph else 0
     return node("code", id=id, **extra, **props)
+
+
+def docs(*, books=None, documents=None, text_size: float | None = None,
+         id: int | None = None, **props) -> View:
+    """A ``docs`` panel: the documentation of a set of books, read as an
+    editor's documentation panel reads it.
+
+    ``books`` are their tables of contents, each
+    ``{"prefix", "title", "parts": [{"title", "chapters": [...]}]}`` with a
+    chapter ``{"title", "path", "children"}``, and ``documents`` the Markdown
+    of each document by its path (a set of ``documents`` adds to those held,
+    a path set to ``None`` takes one away). The panel draws it all: a start
+    page listing every book, a book's contents, a document with its headings,
+    lists, tables and code (Python and JavaScript in the colors of their
+    syntax, each block with a copy button), back and forward along a strip
+    that says where the page is.
+
+    Ctrl+F finds in the page and Ctrl+Shift+F searches every document. A
+    link to another document opens it, at its heading; a link out of the
+    documentation is reported as the event ``"link"`` with its address, for
+    the program to open. ``set(open="path#anchor")`` goes to a document
+    (``""`` to the start page), and ``set(help={"name", "qualname",
+    "fullname", "text", "source"})`` opens the section that is the name
+    asked about, a document named after it, or the section that says it
+    most; else ``text``, a session's own help for it. Its query reports the
+    ``page`` shown, a search's ``results`` and the matches ``found`` in the
+    page."""
+    extra = _drop_none(books=books, documents=documents, text_size=text_size)
+    return node("docs", id=id, **extra, **props)
 
 
 def post(*, keep: int | None = None, wrap: bool | None = None,

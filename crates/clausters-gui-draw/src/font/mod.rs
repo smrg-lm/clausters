@@ -650,15 +650,24 @@ pub fn width(s: &str, scale: f32) -> f32 {
     width_in(Family::Ui, s, scale)
 }
 
-/// **The faces a text is drawn with**: the interface's, or code's, whose
-/// face is monospaced. Every measurement and drawing below has a form that
-/// takes one (`_in`); the bare form is the interface's. With no face loaded
-/// both are the bitmap, which is fixed-pitch already.
+/// **The faces a text is drawn with**: the interface's, code's, whose face
+/// is monospaced, or the documentation's in its weights. Every measurement
+/// and drawing below has a form that takes one (`_in`); the bare form is the
+/// interface's. With no face loaded every one is the bitmap, which is
+/// fixed-pitch already.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Family {
     #[default]
     Ui,
     Mono,
+    /// The documentation's text.
+    Prose,
+    /// Its strong words, small headings and table heads.
+    ProseStrong,
+    /// Its large headings.
+    ProseBold,
+    /// Its emphasis.
+    ProseItalic,
 }
 
 /// [`width`] in `family`.

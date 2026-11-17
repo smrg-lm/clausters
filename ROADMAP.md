@@ -353,8 +353,12 @@ Named, not enumerated: each is written where it belongs and is read there.
   holds everything natively and in a page. Checkpoint 1 passed and the dock
   is on `main`, and the post panel and the code element (its text base, its
   incremental highlighting, find and replace and the rest of editing,
-  evaluation, language help) are done; next is `WS11`, the documentation
-  panel, with checkpoints 2 and 3 taken together after it.
+  evaluation, language help) and the documentation panel are done; next
+  are checkpoints 2 and 3, taken together: the eye checks, the comparative
+  style review and the bar checked item by item, then `WS12`. The panel's two
+  gaps in the plan's "Found by use" ("A documentation page draws an image
+  as its description", "A documentation page's long code line is cut at the
+  page's edge") are weighed at that checkpoint.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the

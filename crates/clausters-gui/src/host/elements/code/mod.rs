@@ -1060,7 +1060,7 @@ impl CodeView {
 }
 
 /// The color a kind of code is drawn in: its theme role.
-fn role(theme: &Theme, kind: Kind) -> Color {
+pub(crate) fn role(theme: &Theme, kind: Kind) -> Color {
     match kind {
         Kind::Keyword => theme.syntax_keyword,
         Kind::Control => theme.syntax_control,

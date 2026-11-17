@@ -2749,6 +2749,47 @@ export function code(
 }
 
 /**
+ * A `docs` panel: the documentation of a set of books, read as an editor's
+ * documentation panel reads it.
+ *
+ * `books` are their tables of contents, each
+ * `{ prefix, title, parts: [{ title, chapters: [...] }] }` with a chapter
+ * `{ title, path, children }`, and `documents` the Markdown of each document
+ * by its path (a set of `documents` adds to those held, a path set to `null`
+ * takes one away). The panel draws it all: a start page listing every book, a
+ * book's contents, a document with its headings, lists, tables and code
+ * (Python and JavaScript in the colors of their syntax, each block with a copy
+ * button), back and forward along a strip that says where the page is.
+ *
+ * Ctrl+F finds in the page and Ctrl+Shift+F searches every document. A link
+ * to another document opens it, at its heading; a link out of the
+ * documentation is reported as the event `"link"` with its address, for the
+ * page to open. `set({ open: "path#anchor" })` goes to a document (`""` to the
+ * start page), and `set({ help: { name, qualname, fullname, text, source } })`
+ * opens the section that is the name asked about, a document named after it,
+ * or the section that says it most; else `text`, a session's own help for it.
+ * Its query reports the `page` shown, a search's `results` and the matches
+ * `found` in the page.
+ */
+export function docs(
+    options: WidgetOptions & {
+        books?: unknown[];
+        documents?: Record<string, string | null>;
+        textSize?: number;
+    } = {},
+): View {
+    const { books, documents, textSize, ...rest } = options;
+    return node("docs", {
+        ...rest,
+        ...drop([
+            ["books", books],
+            ["documents", documents],
+            ["text_size", textSize],
+        ]),
+    });
+}
+
+/**
  * A `post` window: the lines a session writes, as it writes them.
  *
  * Written to by a set of its kind -- `set({ out: text })` for output, `err`
