@@ -382,6 +382,7 @@ impl App {
         if self.is_window(id) {
             return match tag {
                 "close" => {
+                    tracing::debug!("close asked of window {id}");
                     self.closes.0.insert(id);
                     self.closes.1 = Some(Instant::now());
                 }
@@ -514,6 +515,7 @@ impl App {
                 panes.insert(win);
             }
         }
+        tracing::debug!("closes {closes:?} of the panes {panes:?}");
         if panes.is_subset(&closes) {
             return self.quit();
         }
@@ -971,6 +973,7 @@ impl App {
     // -- quitting
 
     fn quit(&mut self) {
+        tracing::debug!("quit asked");
         let unsaved: Vec<&File> = self.files.iter().filter(|f| f.dirty).collect();
         let Some(first) = unsaved.first() else {
             return self.quit_saved();
@@ -1010,6 +1013,7 @@ impl App {
     /// the thread that holds the windows. Ending it from this thread instead
     /// left a desktop's process alive after its window had gone.
     fn quit_now(&mut self) {
+        tracing::debug!("quitting");
         self.settings.save();
         self.session.kill();
         self.link.quit();
