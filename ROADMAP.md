@@ -66,6 +66,7 @@ Where the work lives:
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
 | `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux`, `Jx` | `crates/clausters-server/PLAN.md` | the server, its engine in the browser (`Bx`), and third-party plugins (`Jx`) |
+| `WSx`, `STx` | `crates/clausters-gui/PLAN.md` (WS and ST tracks) | the dock as the application's one window, and the host's look specified from one design system |
 | `APx` | `crates/clausters-gui/PLAN.md` (AP track) | the application scope: the window set, the derived widget id, the reconcile, one undo order |
 | `Qx` | `crates/clausters-notate/PLAN.md` | from a performance to a page: beats, quantization, meter, voices, spelling |
 
@@ -350,15 +351,21 @@ Named, not enumerated: each is written where it belongs and is read there.
 - **The host as the application's one window, the `WS` track**
   *(`crates/clausters-gui/PLAN.md`, WS track)*. Experimental: the editor's
   code, post and documentation as host elements in the dock, so one window
-  holds everything natively and in a page. Next are checkpoints 2 and 3,
-  taken together, now with the native application (`clausters-editor-host`)
-  running beside the webview one: the eye checks, the comparative style
-  review of the two side by side and the bar checked item by item, then
-  `WS13`. The gaps the plan's "Found by use" holds from WS11 and WS12 (an
-  image in a documentation page, a long code line, the code font, the dock's
-  arrangement and the window's place between runs, the run buttons and the
-  status footer, a menu bar per half of a split editor, the session's own
-  windows outside the editor's dock) are weighed at that checkpoint.
+  holds everything natively and in a page. The native application
+  (`clausters-editor-host`) runs beside the webview one, and putting the two
+  side by side opened the `ST` track below; checkpoint 3 is decided at its
+  end, and `WS13` comes after it. The gaps the plan's "Found by use" holds
+  from WS11 and WS12 (an image in a documentation page, a long code line, the
+  code font, the dock's arrangement and the window's place between runs, the
+  session's own windows outside the editor's dock, a close from the window
+  manager that once did nothing) are weighed along the way.
+- **The host's look, the `ST` track** *(`crates/clausters-gui/PLAN.md`, ST
+  track)*. Taken now, before `WS13`: one design system as the specification
+  of every application's general components, with the current editor as the
+  measured reference. `ST1`-`ST4` first, in the order the user set (the
+  application bar out of the panes, text size and rendering, one header per
+  panel, the status footer), then the tokens (`ST5`), the icons and the
+  components, and the review that closes checkpoint 3 (`ST13`).
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the

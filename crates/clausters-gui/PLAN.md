@@ -1787,6 +1787,10 @@ something reusable if the track stops there.
   against the current editor done: whether the current application is
   retired (WS12-WS14) or the track stops with the dock and the elements as
   parts the current application does not use.
+- **The two applications were first put side by side on 2026-11-17**, after
+  WS12, and the look was found behind in almost every place a user looks.
+  The style review became a track of its own, the ST track below, specified
+  from one design system; checkpoint 3 is decided at its last milestone.
 
 ### The milestones
 
@@ -2246,6 +2250,329 @@ something reusable if the track stops there.
   panel holds a whole window, it does not nest one application's widgets in
   another's tree.
 
+## ST track: the look, specified from one design system
+
+*Opened 2026-11-17, at the user's request, after the native editor
+(`WS12`) and the webview editor were put side by side.* The comparison found
+the new one behind in almost every place a user looks: the application's menu
+drawn inside a panel (one per half when the editor is split), popups shut
+inside the pane that opened them (a submenu drawn over its own parent), text
+smaller and drawn worse, with other spacing, shape and color, a hover note
+that vanishes when the pointer moves toward it, a post window that can be
+closed and not opened again, two headers stacked over each panel, a page
+strip with one page in it, no tool buttons and no status footer, and dialogs
+that are a few rows of controls where the current ones are composed cards.
+The user's diagnosis was that the defect is of method, not of detail: the
+host's chrome follows no design system, so each piece was drawn by whoever
+needed it, and the applications already built did not set the rule either.
+
+### The decision: one design system as the specification
+
+- **shadcn/ui is the specification of the host's look, for the whole host**
+  (`docs/decisions.md`, "The host's look is specified from one design system,
+  not drawn piece by piece"). It is HTML and CSS and is never run or ported as
+  code: it gives **values** (the tokens: colors, radii, spacing, type sizes,
+  shadows) and the **anatomy** of each component (which parts a dialog has,
+  their spacing, which states a button shows). **Behavior** is taken from the
+  primitives it is built on (Radix) and from the WAI-ARIA Authoring Practices
+  they follow: how a menu walks by keyboard, when a submenu opens and closes,
+  where focus goes in a dialog.
+- **The general components follow it in every application**: the
+  application bar, menus and submenus, dialogs, buttons, fields, checkboxes,
+  selects, tabs, tooltips and hover cards, lists, scrollbars, the dock's
+  chrome and the status footer.
+- **Domain views take only the tokens.** A waveform, a spectrogram, a roll, a
+  score, a meter or a multitrack keeps the conventions of its field (how such
+  a view is drawn and measured is researched, not invented) and takes from
+  the specification only its colors, type and spacing, so it sits in the same
+  window without looking foreign.
+- **Density is a token**, decided later: audio editors are denser than forms,
+  and the metrics table's one `scale` already regenerates every size.
+- **The exact values come from the current editor**, which is that design
+  system as generated (`clausters-editor/src/app.css`, the "Neutral" theme
+  with one change; `clausters-editor/src/lib/components/ui/`, whose utility
+  classes carry every measure, color, shadow and state). Until `WS14` retires
+  it, the current editor is the reference each milestone is captured against.
+
+### What the style system keeps, and what it lacks
+
+**It keeps its shape.** Every color is a role of one table
+(`clausters_gui_draw::theme`) and every size a role of another
+(`clausters_gui_draw::metrics`); no paint site names a number or an RGBA, both
+tables change live (`/gui_theme`, `/gui_metrics`) or from the configuration,
+and a look is changed by changing tables. The track extends those tables and
+loads the specification's values into them; it does not add a second place
+where style lives.
+
+**It lacks the expressiveness the specification needs:**
+
+- **Radii on components.** `Ink` gives a mesh's boxes a corner radius, and only
+  points and text plates use it; buttons, menus, fields and dialogs are square.
+- **Elevation.** No shadow: nothing lifts a menu or a dialog off the window.
+- **A type scale.** One text scale and smaller label scales, all of one face
+  and one weight. The specification has four sizes, each with its line
+  height, and two weights.
+- **States per component.** Hover exists as one role; pressed, focus-visible,
+  disabled, open and invalid are not drawn consistently or not at all.
+- **Icons.** A dozen hand-drawn symbols; the specification uses an icon set
+  (Lucide), drawn as strokes.
+- **Spacing per component.** Almost every inset is the one `pad`.
+- **Motion.** Nothing fades or scales in. Optional, and never a frame at rest.
+
+### The inventory: the current editor, measured
+
+What the current editor draws, with its measure, against what the host draws
+today. Sizes are CSS pixels (the host's logical pixels); a Tailwind step is
+4 px. "Host" is `clausters-editor-host` at `3f134e8ce`.
+
+**The window.** A column: the application bar, the panels, the footer.
+
+| Part | Current editor | Host |
+|---|---|---|
+| Application bar | 40 high, `secondary` fill, bottom border, 6 inset. The menu titles, a vertical separator (20 high, 6 each side), then four ghost icon buttons of 32 with 16 icons: evaluate (play), evaluate block (list with a play mark), interrupt (square), restart (rotate). | The menu bar is a file window's band, drawn in its pane; split, each half has one. No buttons. |
+| Status footer | 24 high, `secondary` fill, top border, 12 inset, 12 text `muted-foreground`. An 8 dot: `destructive` when the session is down, `warning` while it is busy, `success` otherwise; then `Python 3.x \| environment "name" \| state`. | None; the session's state is the post window's title. |
+| Panel header | One per panel, 36 high, `secondary` fill, bottom border: a grip (20 wide, a 16 grip icon, `muted-foreground`, `foreground` on hover) and the panel's own tools. The editor's header *is* its tab strip. | The dock's tab strip, and under it the element's own bar: two headers. The page strip ("Main +") is shown with one page. |
+| Splits | A 1 line in `border`, with a 4 band to grab. Minimum 15 % of the width, 10 % of a column. | The dock's dividers (`chrome::split`). |
+| Dragging a panel | Drop zones: a 2 dashed border, 8 radius, inset 6, the zone's name in 14 medium; the one under the pointer in `ring` at 20 %. | The dock's own landing marks. |
+
+**Tabs** (the editor's). Each at most 224 wide, 14 text, 12 left and 4 right
+of the name, a right border. The active one: `background` fill, `foreground`
+text, a 2 line along its top in `ring` when its group has the keyboard and in
+`border` otherwise. The others `muted-foreground`, `foreground` on hover. A 24
+ghost close button with a 12 cross: hidden on inactive tabs until hover; on a
+modified tab an 8 dot in its place that turns into the cross on hover. A
+middle click closes; the tab's tip is its path.
+
+**Menus.** Titles 14 medium, 8 by 4 inset, 6 radius, `muted` fill on hover and
+while open. A list: `popover` fill, a 1 ring of `foreground` at 10 %, 8
+radius, 4 inset, the medium shadow, at least 144 wide. An entry: 14 text, 8 by
+6 inset, 6 radius, `accent` fill under the pointer or the keyboard; its key
+right-aligned in 12 `muted-foreground` with wide letter spacing; a disabled
+one at half opacity. Check and radio entries indent their text 32 for the
+mark. A separator: 1 of `border`, 4 above and below, full width. A submenu's
+title shows an open state (`accent`) and a chevron; its list opens beside it,
+with the large shadow, at least 128 wide. Labels in Title Case. Open Recent:
+each entry the file's name, then 16 further its folder in 12
+`muted-foreground`, cut with an ellipsis, the list at most 576 wide; "No
+Recent Files" disabled when empty; "Clear Recent Files" after a separator.
+The font list scrolls past 320. *Host:* square lists with no shadow, placed
+inside the pane, the submenu over its parent, recent files as whole paths,
+sentence case.
+
+**Tooltips and hover cards.** A tool's tip is the platform's (the `title`
+attribute). The code's help on a name: after the pointer rests 350 ms, a card
+at most 768 wide (90 % of the window), 6 radius, a `border` edge, `popover`
+fill, 12 by 8 inset, the medium shadow, its text 0.9 of the code's size: the
+signature in the code face, medium; under it, 6 lower, the documentation in
+`muted-foreground`, wrapped, scrolling past 240. The pointer can move into it,
+and it stays while the pointer is over it, so it can be scrolled and its text
+selected. Signature help marks the current parameter bold and underlined.
+*Host:* the note goes as soon as the pointer leaves the name.
+
+**The post window.** Header: grip, a clear button (eraser), and an autoscroll
+toggle (an arrow to a line; `muted` fill when on). The text: the code face at
+the code's size, 12 by 8 inset, wrapped; errors in `destructive`, results in
+`success`, info and the session's own lines in `muted-foreground`, links
+underlined. It cannot be closed. *Host:* closable, and once closed there is no
+way back.
+
+**The code.** JetBrains Mono at 14, line height 1.5; the gutter on
+`background`, its numbers `muted-foreground` and the current line's
+`foreground`; the evaluated region flashed in `ring` at 25 %; a cell marker is
+a top border. Size: Ctrl+wheel (scroll accumulated, a step per 40 units, so a
+touchpad does not jump), Ctrl+plus, Ctrl+minus, Ctrl+0, from 9 to 32, kept
+between runs; the post window and the documentation follow it. *Host:* the
+same size is drawn smaller (`Settings::text_size` fits the cap height), the
+glyphs coarser, the line pitch other; no Ctrl+wheel.
+
+**The documentation.** Header: grip, back, forward and home as icon buttons
+(disabled at half opacity), the place as a breadcrumb (the book as a small
+ghost button, a chevron in `muted-foreground`, the chapter), then find, the
+folder, and close, as icon buttons. The find bar, 36 high: a 28 field with a
+placeholder, the count in 12 tabular figures, previous and next, a segmented
+choice of two (bordered, 6 radius, 2 inset, the chosen one in `secondary`),
+close. The page: body text at the code's size with the typographic plugin's
+small scale (headings 1.5, 1.25 and 1.1 of it), 20 by 16 inset; code blocks
+on `muted` with a copy button at their top right; find matches in yellow at
+40 %, the current one in orange at 70 %. *Host:* words in place of icons.
+
+**Dialogs.** The window behind dimmed (black at 10 %) and blurred a little.
+The card centered: `popover` fill, a 1 ring of `foreground` at 10 %, 14
+radius, 24 inset, 24 between its parts, at most 448 wide (576 for the
+preferences and the environments), 14 text, a close cross at 16 from the top
+right. Header: the title (medium, line height 1) and under it, 8 lower, a
+description in 14 `muted-foreground`. Footer: the buttons in a row, at the
+right, 8 apart. The confirmation is the alert form: at most 512 wide, the
+title 18, Cancel (outline) and the action (destructive). Inside: sections in
+a 1 border, 8 radius, 16 inset; a field's label 14 medium over it, its help
+under it in 12 `muted-foreground`; lists of rows 44 high divided by lines; a
+badge for the environment in use. *Host:* the shared close form and panels of
+rows, square, no overlay, no title anatomy.
+
+**Controls.**
+
+| Control | Current editor |
+|---|---|
+| Button | 36 high (32 small, 24 extra small, 40 large), 10 inset, 6 between icon and text, 8 radius, 14 medium, 16 icons; square icon buttons of 36, 32 and 24. Variants: default (`primary` fill, 80 % on hover), outline (`border` edge, `background` fill, the extra small shadow; dark: `input` at 30 %), secondary, ghost (fill only on hover, `muted`), destructive (`destructive` text on its 10 % fill), link. Focus-visible: a 3 ring of `ring` at 50 % and the edge in `ring`. Disabled: half opacity. Pressed: down by 1. |
+| Field | 36 high, 8 radius, 1 `input` edge, 10 by 4 inset, 14 text, the extra small shadow, the placeholder `muted-foreground`; dark: `input` at 30 % fill; focus as a button's; invalid: the edge and ring in `destructive`. A text area is the same, at least 64 high, 8 vertical inset. |
+| Select | A field with a chevron (36 or 32 high); its list a menu's list, scrolling; an item 8 left, 32 right for the check mark. |
+| Toggle | A ghost button whose on state is a `muted` fill. |
+| Checkbox | 16, the platform's, tinted `primary`. |
+| Label | 14 medium, line height 1, 8 to its control. Help text 12 `muted-foreground`. |
+| Badge | 20 high, round, 8 inset, 12 medium, `secondary`. |
+| Separator | 1 of `border`. |
+| Scrollbar | 10 wide, no track, the thumb in `muted-foreground` at 40 %, 6 radius, 2 clear of its edges. |
+
+**Tokens.** Neutral, from the specification (oklch; the hex is the
+equivalent step of the neutral scale):
+
+| Token | Light | Dark |
+|---|---|---|
+| `background` | 1 0 0 (#ffffff) | #1e1e1e (the one change) |
+| `foreground` | 0.145 (#0a0a0a) | 0.985 (#fafafa) |
+| `card`, `popover` | 1 (#ffffff) | 0.205 (#171717) |
+| `primary` / its text | 0.205 (#171717) / 0.985 | 0.922 (#e5e5e5) / 0.205 |
+| `secondary`, `muted`, `accent` | 0.97 (#f5f5f5) | 0.269 (#262626) |
+| `muted-foreground` | 0.556 (#737373) | 0.708 (#a3a3a3) |
+| `border` | 0.922 (#e5e5e5) | white at 10 % |
+| `input` | 0.922 (#e5e5e5) | white at 15 % |
+| `ring` | 0.708 (#a3a3a3) | 0.556 (#737373) |
+| `destructive` | 0.577 0.245 27.3 | 0.704 0.191 22.2 |
+| `success` / `warning` | green 600 / amber 600 | green 400 / amber 400 |
+
+Radius 10, and its steps: 6, 8, 10, 14. Spacing on a 4 grid. Type: Inter
+(variable, 400 and 500 used) at 12/16, 14/20, 16/24 and 18/28 (size/line);
+JetBrains Mono 500 for code at the user's size and line height 1.5.
+Shadows: extra small `0 1 2 0` black 5 %; medium `0 4 6 -1` and `0 2 4 -2`
+black 10 %; large `0 10 15 -3` and `0 4 6 -4` black 10 % (x, y, blur,
+spread). Motion: 100 ms, fading in and scaling from 95 %, a list sliding 8
+from the side it opens on.
+
+### The specification: what the host gains
+
+- **Color roles: the specification's semantic set** (`background`,
+  `foreground`, `card`, `popover`, `primary`, `secondary`, `muted`, `accent`,
+  each with its text color where it has one, `destructive`, `border`,
+  `input`, `ring`, `success`, `warning`). The host's chrome roles are mapped
+  onto it (`text` is `foreground`, `text_dim` and `label_dim` are
+  `muted-foreground`, `popup` is `popover`, `separator` is `border`, `hover`
+  is `accent`, `focus` is `ring`, `status_bar` is `secondary`), renamed or
+  derived as the milestone decides, and an old name a configuration may use
+  keeps working. The domain roles (traces, meters, keys, syntax, notes) stay
+  and take their neutrals from the set.
+- **Radius roles** (small, medium, large, extra large), drawn through `Ink`.
+- **Elevation roles**: a shadow as offsets, blur, spread and opacity, drawn
+  the same by both fronts from the same Rust (a soft-edged rounded rectangle;
+  whether it is a ramp of the triangle batch or a pass of its own is the
+  milestone's measurement).
+- **A type scale**: four sizes with their line heights and two weights,
+  Inter for the chrome and the documentation, JetBrains Mono for code. The
+  atlas rasterizes static instances, so the weights the scale names are
+  carried as faces.
+- **States**: hover, pressed, focus-visible (drawn only after keyboard
+  input), disabled, open, selected and invalid, for every component, from
+  the roles above.
+- **Spacing per component**: each component's insets and gaps as roles of the
+  metrics table, generated on the 4 grid so `scale` still sets the density.
+- **Icons**: the subset of Lucide the components use, as strokes at 16 and
+  12, and an `icon` on the elements that show one (`button`, `toggle`, a menu
+  entry). Lucide's license is checked and its notice carried.
+- **Motion**: optional; frames are drawn only while something moves.
+
+Each component is then its anatomy and its behavior: the **application bar**
+(menu titles, tools, separators), the **menu** (Radix's menubar: arrows walk
+it, Home and End, type-ahead, Right opens a submenu and Left closes it, Esc
+closes one level, a pointer crossing toward an open submenu does not close it),
+the **tooltip** (a delay, then the tip; none while a menu is open) and the
+**hover card** (the pointer may enter it; it stays while the pointer is on
+the name or the card, and goes a moment after it leaves both or on Esc), the
+**dialog** and the **alert dialog** (the overlay, the card, header,
+description, body, footer, the close cross; focus kept inside, the first
+field or the default button focused, Esc and the overlay close, focus back
+to what opened it), the **button**, **toggle**, **toggle group**, **field**,
+**text area**, **select**, **checkbox**, **label** with its help, **badge**,
+**separator**, **tabs**, the **split handle**, the **scrollbar** and the
+**status footer**.
+
+### The milestones
+
+Each is accepted by captures of the host against the current editor in the
+same state, at the same window size and scale, in light and dark, taken by
+script with the headless host, and by the eye of the user after them. The
+first four are the order the user set; the components come after.
+
+- ⬜ **ST1: The application bar belongs to the application.** A band along
+  the dock's top, outside every pane, holding the application's menu and its
+  tools; a split editor shows one. The editor's tools are its four buttons
+  (drawn with the symbols there are until `ST6`), each a `verb` with its key
+  in its tip. Popups are placed against the dock's window, not the pane that
+  opened them, so a list may cross into the next pane and a submenu opens
+  beside its parent. Decided here: whether a docked GuiDef's own `menu`
+  stays a band of its pane (a script's window is not the application) or
+  joins the bar while its pane has the keyboard. Absorbs the "Found by use"
+  entry on a menu bar per half of a split editor and the buttons half of the
+  one on run buttons.
+- ⬜ **ST2: Text at the right size, drawn as well.** The code at the size
+  the user set, measured as the current editor measures it (14 is 14 px
+  of em, a line pitch of 1.5), and the chrome's text from the type scale.
+  The glyphs compared at 1x and 2x against the current editor's and brought
+  to its quality: fractional sizes, positions finer than a pixel, coverage
+  blended as the browser blends it. Ctrl+wheel changes the size (a step per
+  40 units of scroll), kept between runs, followed by the post window and the
+  documentation. Accepted by the line pitch and a line's width equal within
+  one pixel, and captures of the same file side by side.
+- ⬜ **ST3: One header per panel.** The dock's tab strip is a panel's only
+  header: an element's bar is folded into it (its tools at the strip's right)
+  rather than drawn under it; the page strip is hidden while there is one
+  page. The editor's tabs as the inventory says (width, the top line, the dot
+  that turns into a cross, the middle click, the path as tip). A panel's
+  owner says whether it may be closed, and the post window may not.
+- ⬜ **ST4: The status footer.** A band along the dock's bottom, the
+  application's: the dot and the line of the inventory, set by the
+  application with a verb. The post window's title goes back to its name.
+  Absorbs the footer half of the "Found by use" entry on run buttons.
+- ⬜ **ST5: The tokens.** The theme and metrics tables gain the roles of
+  "What the host gains" (semantic colors, radii, elevation, the type scale
+  with its faces, states, per-component spacing), loaded with the inventory's
+  values for light and dark as the host's default look, and the editor's
+  `/gui_theme` tables shrink to what is the editor's own. `/gui_theme`,
+  `/gui_metrics` and the configuration keep working, old role names
+  included. `docs/gui-protocol.md` lists the roles. Every application
+  (audio, multitrack, notes, score) captured before and after, so a domain
+  view that changed did so on purpose.
+- ⬜ **ST6: Icons.** The Lucide subset as strokes, `icon` on `button`,
+  `toggle` and menu entries, in both clients' builders and the protocol
+  reference; the editor's and the documentation's tools drawn with them.
+- ⬜ **ST7: Menus.** The anatomy and the keyboard of the inventory: lists
+  with radius, ring and shadow, entries with their insets and keys, check and
+  radio marks, the submenu chevron and its open state, the pointer's path to
+  a submenu, a scrolling list, Recent files as a name and a dimmed folder.
+  Labels in Title Case, for every application's menus, as the current editor
+  and the desktop's guidelines write them (header capitalization); a
+  description or a help text stays in sentence case.
+- ⬜ **ST8: Tooltips and hover cards.** A tool's tip after a delay, with its
+  key. The code's help as a hover card: entered, scrolled, selected, kept
+  while the pointer is on it, gone after it leaves or on Esc; signature help
+  with the current parameter marked as the inventory says.
+- ⬜ **ST9: Dialogs.** The dialog and the alert dialog as components of the
+  host, their anatomy and their focus rules; the shared close form
+  (`clausters_apps::closing`) drawn as an alert dialog, and the editor's
+  preferences and environments as dialogs rather than panels. Every
+  application's dialogs (`clausters-apps` `dialogs` modules) move to them.
+- ⬜ **ST10: Controls.** Button (variants and sizes), toggle, toggle group,
+  field, text area, select, checkbox, label with help text, badge and
+  separator with every state of the inventory, in every application that
+  shows them.
+- ⬜ **ST11: The rest of the chrome.** Scrollbars, split handles, the drop
+  zones of a dragged panel, the find bar's segmented choice, list rows.
+- ⬜ **ST12: Motion.** The specification's fades and scales, at 100 ms,
+  with no frame drawn at rest. Optional: taken if the captures and the
+  budgets say it costs nothing a user feels.
+- ⬜ **ST13: The review closes.** The WS track's comparative style review,
+  done against the bar item by item in both themes with every difference
+  matched or named as the user's choice; then checkpoint 3's decision. `WS13`
+  is taken after it, so the page application starts from the finished look.
+
 ## Definition of done (per milestone)
 
 Following the project rule: code + tests, a clear commit message (the record of *what* shipped) and this file's checkbox updated; developer/user docs where the feature touches them; a commented example when the feature is user-facing — the example is also how new human-visible behavior gets checked by eye; and a `docs/decisions.md` note only when a choice has non-obvious context.
@@ -2415,25 +2742,20 @@ finished work, where a pending item reads as done.
 - ⬜ **The editor keeps its window's size and not its place** *(2026-11-17,
   WS12)*. The current editor restores both on the desktops that let it.
 
-- ⬜ **The editor has no run buttons and no status footer** *(2026-11-17,
-  WS12)*. The current editor's header has evaluate, evaluate block,
-  interrupt and restart as buttons, and a footer with the session's state;
-  the new one has the menu and the keys, and says the session's state in the
-  post window's title. A row of tools along the editor (the host's `button`
-  with a `verb`) is the shape, weighed in the style review.
-
-- ⬜ **With the editor split, each half has a menu bar** *(2026-11-17, WS12)*.
-  The menu bar is a window's, and every file window carries one so the bar
-  is over the editor wherever it goes; split, both halves show it. A bar
-  along the dock's top, the menu of the window the keyboard is in, is the
-  shape to weigh, and it would change what a docked application shows today.
-
 - ⬜ **The session's own windows do not open in the editor's dock**
   *(2026-11-17, WS12)*. A script run in the editor that opens a GuiDef
   boots a host of its own, as it does under the current editor. The track's
   aim is one window for everything: the session would be told the editor's
   host (an address in its environment) and both clients would attach to it
   rather than boot one, which is a client change made in both at once.
+
+- ⬜ **A close from the window manager once did nothing and asked
+  nothing** *(2026-11-17, WS12)*. With files modified, the window's close
+  button left the editor running and no close form appeared. Closing the dock
+  asks every pane to close and gathers the asks for 400 ms; a run with the
+  close logged (`RUST_LOG=clausters_editor=debug`) got all of them and quit,
+  so what differed is not known. The next time it happens, the log says which
+  asks arrived.
 
 - ⬜ **A documentation page draws an image as its description**
   *(2026-11-17, WS11; the bar's "should": images in a page)*. The `docs`

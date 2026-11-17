@@ -3316,3 +3316,32 @@ Its windows are panes of the host's dock (`host.dock`), opened at the size
 and with the title the application gives the host before the loop starts
 (`Host::dock_opens`); the dock's state reports the scale its device pixels
 are at, so the application keeps the window's size in logical pixels.
+
+## The host's look is specified from one design system, not drawn piece by piece (2026-11-17)
+
+*Taken opening the ST track (`crates/clausters-gui/PLAN.md`).* Put side by
+side with the webview editor, the native one was behind in almost every place
+a user looks, and not by one defect: the host's chrome followed no design
+system, so each menu, dialog, field and tip had been drawn by whatever needed
+it first, with the sizes and states that need happened to require. Fixing the
+differences one by one would have left the method that produced them.
+
+So the host takes **shadcn/ui as the specification of its look**, for every
+application and the dock alike: its tokens (colors by role, radii, spacing on
+a 4-pixel grid, a type scale, shadows) and the anatomy of each general
+component, with the behavior of the primitives it is built on (Radix) and of
+the WAI-ARIA Authoring Practices they follow. It is a specification and
+never code: it is HTML and CSS, which the host neither runs nor ports. Its
+values are loaded into the tables the host already had (`theme`, `metrics`),
+extended with what they could not express (radii on components, elevation,
+the type scale, states, icons, per-component spacing), so a look is still
+changed by changing tables, live or from the configuration.
+
+Two limits keep it from reaching where it does not belong. **Domain views**
+(waveform, spectrogram, roll, score, meters, multitrack) keep the conventions
+of their field and take only the tokens. **Density** is one token, decided
+apart, since an audio editor is denser than a form.
+
+The choice of this system over another is the editor's: the webview editor
+was already built from it, so its generated components carry every value as a
+reviewable measure, and the user had judged that look the bar to reach.
