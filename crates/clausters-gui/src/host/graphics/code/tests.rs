@@ -153,7 +153,7 @@ fn home_is_smart_and_a_page_moves_by_rows() {
 fn a_difference_is_one_change() {
     assert_eq!(diff("abcdef", "abXYef"), (2, "cd", "XY"));
     assert_eq!(diff("aaa", "aaaa"), (3, "", "a"));
-    assert_eq!(diff("é", "è"), (0, "é", "è"));
+    assert_eq!(diff("\u{e9}", "\u{e8}"), (0, "\u{e9}", "\u{e8}"));
 }
 
 /// **An edit of a long file costs what it changes**: a key in a file of
