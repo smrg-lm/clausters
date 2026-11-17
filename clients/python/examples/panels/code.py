@@ -20,6 +20,12 @@ the bottom to find and replace: Enter finds the next match, Shift+Enter the
 previous, Tab goes to the replacement, and Escape closes it; F3 goes on
 finding with it closed. **Ctrl+Alt+G** goes to a line.
 
+**Shift+Enter** evaluates the line (or the selection) and **Ctrl+Enter** the
+block, the whole ``def`` or ``with`` under the caret, moving past it: the
+editor runs nothing, it tells whoever owns it, and here that is this script,
+which writes what it was asked to evaluate to the post window. Ctrl+. asks
+for an interrupt.
+
 Under it is a ``post`` window with what a session might have printed; drag the
 divider between the two to give one more room. The editor reports when its
 text stops being the one last saved (``"dirty"``), printed here, and marking
@@ -79,12 +85,22 @@ out.set(out="[60, 64, 67]\n")
 out.set(result="None")
 
 # %% [markdown]
-# ## Edited, and saved
-# The editor says when its text is no longer the one saved; type in it to see
-# the event, and mark it saved with one set.
+# ## Evaluated, edited, and saved
+# The editor asks to evaluate a line or a block; a session would run it, and
+# this writes it to the post. It also says when its text is no longer the one
+# saved; type in it to see the event, and mark it saved with one set.
 
 # %%
-editor.on_event(lambda *payload: print("code", *payload))
+def on_code(tag, *payload):
+    if tag == "evaluate":
+        source, line = payload
+        out.set(info=f"evaluate, from line {line}\n")
+        out.set(out=source + "\n")
+    else:
+        print("code", tag, *payload)
+
+
+editor.on_event(on_code)
 editor.set(saved=1)
 
 # %% [markdown]

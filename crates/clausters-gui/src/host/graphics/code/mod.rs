@@ -45,6 +45,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use super::textedit::{self, Caret, Unit};
 
 pub mod find;
+pub mod regions;
 pub mod syntax;
 
 use find::Finder;

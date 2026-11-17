@@ -492,6 +492,19 @@ mod tree {
             Some(Bracket::Code(found.flatten()))
         }
 
+        /// **The root's children**, as byte ranges: a file's top-level
+        /// statements and comments. None when there is no tree.
+        pub fn top_level(&self) -> Option<Vec<(usize, usize)>> {
+            let tree = self.tree.as_ref()?;
+            let root = tree.root_node();
+            let mut cursor = root.walk();
+            Some(
+                root.children(&mut cursor)
+                    .map(|n| (n.start_byte(), n.end_byte()))
+                    .collect(),
+            )
+        }
+
         /// **Whether byte `at` is inside a string or a comment**, by the
         /// tree; none when it cannot say. A place just after a string's
         /// closing quote is outside it.
@@ -573,6 +586,10 @@ mod tree {
         }
 
         pub fn in_text(&self, _text: &str, _at: usize) -> Option<bool> {
+            None
+        }
+
+        pub fn top_level(&self) -> Option<Vec<(usize, usize)>> {
             None
         }
     }

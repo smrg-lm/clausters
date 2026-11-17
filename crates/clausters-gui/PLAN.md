@@ -1779,6 +1779,9 @@ something reusable if the track stops there.
   reach every "must" of editing, evaluation and language help. Decided here, by
   side-by-side captures, the budgets and an hour of real use: whether text
   quality and editing feel are acceptable.
+- **Checkpoints 2 and 3 are taken together** *(decided 2026-11-17, at the
+  user's request)*: WS9-WS11 are built first, and the eye checks and the
+  decisions of both come after WS11, in one sitting.
 - **Checkpoint 3 -- after WS11.** The documentation panel. Decided here, with
   the bar above checked item by item and the comparative style review
   against the current editor done: whether the current application is
@@ -2034,12 +2037,31 @@ something reusable if the track stops there.
   its 2,000 matches, take 2.2 ms in a release build. Not done, as the list
   above has it "later": several cursors, which the current editor's
   selection of every match and its next occurrence need.
-- ⬜ **WS9 — Evaluation.** The verbs of evaluation on the code element: the
+- ✅ **WS9 — Evaluation.** The verbs of evaluation on the code element: the
   selection or line, the block (top-level statement, cell, paragraph), the
   move past it, the flash, interrupt and restart. The region logic is Rust,
   once, and the editor's `regions.test.ts` and `indent.test.ts` are ported to
   it case by case. The verbs reach the session through the application, never through the
   element.
+
+  **What shipped (2026-11-17).** The regions are the model's
+  (`host/graphics/code/regions.rs`): the line or the selection, the
+  top-level statement read as a child of the syntax tree's root, the
+  paragraph of statements no blank line separates, the cell between
+  markers, the block Ctrl+Enter takes and the caret past it, as
+  `regions.ts` finds them; the two test files are ported case by case
+  (`regions_*` and `indent_*` in the model's tests). The element runs
+  nothing: Shift+Enter, Ctrl+Enter, Ctrl+. and the commands
+  `evaluate_line`, `evaluate_block`, `interrupt` and `restart` report
+  `"evaluate" code line`, `"interrupt"` and `"restart"` to whoever owns the
+  window, which is the application when the editor's moves in (WS12,
+  WS13) and the script in the example, which writes them to its post
+  window. A new prop, `paragraph`, is the "contiguous lines as a block"
+  preference, in both clients' builders. What was evaluated flashes for a
+  quarter of a second (the element's tick takes it away), and a rule
+  stands above each cell's marker. Checked by the model's and the
+  element's tests, headlessly by script with a capture, and in a page
+  (`gui.html` evaluates a line).
 - ⬜ **WS10 — Language help.** A completion list, signature help and hover
   help as popups of the host's popup layer, filled by whoever answers for the
   session: the Python session's queries as today, the page's TypeScript

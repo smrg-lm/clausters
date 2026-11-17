@@ -2699,6 +2699,15 @@ export function progress(
  * `replace_all`, `go_to_line` and `toggle_comment` do the same for a menu or a
  * verb.
  *
+ * It evaluates by telling whoever owns the window, which runs the code:
+ * Shift+Enter reports the line or the selection and Ctrl+Enter the block
+ * (the cell between `// %%` markers, else the top-level statement under the
+ * caret, or with `paragraph: true` the statements no blank line separates),
+ * moving the caret past it, each as the event `"evaluate"` with the code and
+ * its first line (from 1); what was evaluated flashes. Ctrl+. reports
+ * `"interrupt"`; the commands `evaluate_line`, `evaluate_block`, `interrupt`
+ * and `restart` report the same for a menu or a verb.
+ *
  * Its text is reported by `query` (`text`, with `line`, `column`, `selected`,
  * `dirty`, the bar's query `find` and how many matches it has, `found`), and the event `"dirty"` with `1` or `0` says when the text
  * stops or starts again being the one last marked saved -- by
@@ -2710,10 +2719,11 @@ export function code(
         language?: string;
         indent?: number | "tab";
         lineNumbers?: boolean;
+        paragraph?: boolean;
         textSize?: number;
     } = {},
 ): View {
-    const { language, indent, lineNumbers, textSize, ...rest } = options;
+    const { language, indent, lineNumbers, paragraph, textSize, ...rest } = options;
     return node("code", {
         ...rest,
         ...drop([
@@ -2721,6 +2731,7 @@ export function code(
             ["language", language],
             ["indent", indent],
             ["line_numbers", flag(lineNumbers)],
+            ["paragraph", flag(paragraph)],
             ["text_size", textSize],
         ]),
     });

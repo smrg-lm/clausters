@@ -352,8 +352,9 @@ Named, not enumerated: each is written where it belongs and is read there.
   code, post and documentation as host elements in the dock, so one window
   holds everything natively and in a page. Checkpoint 1 passed and the dock
   is on `main`, and the post panel and the code element (its text base, its
-  incremental highlighting, find and replace and the rest of editing) are
-  done; next is `WS9`, evaluation, toward checkpoint 2.
+  incremental highlighting, find and replace and the rest of editing,
+  evaluation) are done; next is `WS10`, language help, then `WS11`, with
+  checkpoints 2 and 3 taken together after it.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the

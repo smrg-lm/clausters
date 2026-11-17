@@ -343,7 +343,17 @@
         host.pressKey(codeWin, "Enter");
         await expectText("def f():\n    return 2\n    # x = (a)", "replaced");
         host.pressKey(codeWin, "Escape");
-        log("an editor of code typed, cut, pasted, undid, indented, paired, commented and replaced");
+        // Shift+Enter tells the page to evaluate the caret's line
+        const evaluated = [];
+        codeWin.widget("code").onEvent((tag, ...payload) => {
+          if (tag === "evaluate") evaluated.push(payload);
+        });
+        host.pressKey(codeWin, "Enter", "shift");
+        for (let i = 0; i < 40 && !evaluated.length; i++) await sleep(50);
+        if (JSON.stringify(evaluated[0]) !== JSON.stringify(["    return 2", 2])) {
+          throw new Error(`code, evaluated: ${JSON.stringify(evaluated)}`);
+        }
+        log("an editor of code typed, cut, pasted, undid, indented, paired, commented, replaced and evaluated");
         codeWin.close();
 
         // **A roll that listens paints what is played, in a page as on the

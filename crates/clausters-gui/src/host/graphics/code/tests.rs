@@ -622,3 +622,165 @@ fn the_bracket_by_the_caret_is_paired() {
         assert_eq!(c.bracket_pair(), Some((0, Some(2))));
     }
 }
+
+// -- the current editor's region and indentation tests, ported case by case
+
+/// `text` with the caret at the `|`, read as `language` and parsed.
+fn read_as(text: &str, language: Language) -> Code {
+    let mut c = at(text);
+    c.set_language(language);
+    c.parse(None);
+    c
+}
+
+fn slice(c: &Code, r: Option<std::ops::Range<usize>>) -> Option<&str> {
+    r.map(|r| &c.text()[r])
+}
+
+/// The line under the caret, or nothing on a blank one.
+#[test]
+fn regions_the_line_under_the_caret() {
+    let c = read_as("a = 1\nb = |2\n", Language::Python);
+    assert_eq!(slice(&c, c.line_or_selection()), Some("b = 2"));
+    let c = read_as("a = 1\n|\nb = 2", Language::Python);
+    assert_eq!(c.line_or_selection(), None);
+}
+
+/// A selection starts at its line when only indentation precedes it.
+#[test]
+fn regions_a_selection_starts_at_its_line() {
+    let text = "def f():\n    x = 1\n    return x\n";
+    let mut c = Code::new(text);
+    let from = text.find("x = 1").unwrap();
+    let to = text[from + 5..].find("x\n").unwrap() + from + 5 + 1;
+    c.select(from, to);
+    assert_eq!(
+        slice(&c, c.line_or_selection()),
+        Some("    x = 1\n    return x")
+    );
+}
+
+/// The top-level statement holds the whole def the caret is in.
+#[cfg(feature = "highlight")]
+#[test]
+fn regions_the_top_level_statement() {
+    let c = read_as(
+        "import os\n\ndef f():\n    a = 1\n\n    return |a\n\nprint(f())\n",
+        Language::Python,
+    );
+    assert_eq!(
+        slice(&c, c.top_level_block()),
+        Some("def f():\n    a = 1\n\n    return a")
+    );
+}
+
+/// Contiguous statements run until a blank line, and a def stays whole.
+#[cfg(feature = "highlight")]
+#[test]
+fn regions_contiguous_statements() {
+    let c = read_as("x = 1\ny = |2\nz = 3\n\nw = 4\n", Language::Python);
+    assert_eq!(slice(&c, c.paragraph_block()), Some("x = 1\ny = 2\nz = 3"));
+    let c = read_as(
+        "def f():\n    a = 1\n\n    return a\ng = |f()\n\nh = 0\n",
+        Language::Python,
+    );
+    assert_eq!(
+        slice(&c, c.paragraph_block()),
+        Some("def f():\n    a = 1\n\n    return a\ng = f()")
+    );
+}
+
+/// A cell marker is a comment that starts with %%, with or without a title.
+#[test]
+fn regions_a_cell_marker() {
+    use regions::is_cell_marker;
+    assert!(is_cell_marker("# %%"));
+    assert!(is_cell_marker("#%% Setup"));
+    assert!(is_cell_marker("# %% [markdown]"));
+    assert!(!is_cell_marker("x = 1  # %%"));
+    assert!(!is_cell_marker("# % not a cell"));
+    assert!(is_cell_marker("// %% Setup"));
+    assert!(is_cell_marker("//%%"));
+    assert!(!is_cell_marker("x = 1 // %%"));
+}
+
+/// In JavaScript, the top-level statement and the cell are read the same
+/// way.
+#[cfg(feature = "highlight")]
+#[test]
+fn regions_in_javascript() {
+    let c = read_as(
+        "const a = 1;\nfunction f(x) {\n  return |x;\n}\nf(a);\n",
+        Language::JavaScript,
+    );
+    assert_eq!(
+        slice(&c, c.top_level_block()),
+        Some("function f(x) {\n  return x;\n}")
+    );
+    let c = read_as(
+        "// %% one\nconst a = 1;\n\n// %% two\nconst |b = 2;\nb * a\n",
+        Language::JavaScript,
+    );
+    assert_eq!(
+        slice(&c, c.cell_at(&c.cell_markers())),
+        Some("const b = 2;\nb * a")
+    );
+}
+
+/// The cell under the caret, without the blank lines at its edges.
+#[test]
+fn regions_the_cell_under_the_caret() {
+    let c = read_as(
+        "# %% one\na = 1\n\n# %% two\n\nb = |2\nc = 3\n\n# %% three\nd = 4\n",
+        Language::Python,
+    );
+    assert_eq!(c.cell_markers(), vec![0, 3, 8]);
+    assert_eq!(
+        slice(&c, c.cell_at(&c.cell_markers())),
+        Some("b = 2\nc = 3")
+    );
+    let c = read_as("# %% one\n|\n# %% two\nx = 1\n", Language::Python);
+    assert_eq!(c.cell_at(&c.cell_markers()), None);
+}
+
+/// **A block moves the caret past it**: to the next line, or past the next
+/// cell's marker; with no tree the statement is the line.
+#[test]
+fn regions_a_block_and_the_caret_past_it() {
+    let mut c = read_as("# %% one\na = |1\n\n# %% two\nb = 2\n", Language::Python);
+    let (r, cell) = c.block(regions::Block::Statement).unwrap();
+    assert!(cell);
+    assert_eq!(&c.text()[r.clone()], "a = 1");
+    c.advance(&r, cell);
+    assert_eq!(c.line_col(), (4, 0), "past the next marker");
+    let mut c = read_as("x = |1\ny = 2\n", Language::Plain);
+    let (r, cell) = c.block(regions::Block::Statement).unwrap();
+    assert_eq!((&c.text()[r.clone()], cell), ("x = 1", false));
+    c.advance(&r, cell);
+    assert_eq!(c.line_col(), (1, 0));
+}
+
+/// A level is the unit the preference names.
+#[test]
+fn indent_a_level_is_the_unit_named() {
+    let unit = |v: serde_json::Value| Indent::parse(&v).unwrap().unit();
+    assert_eq!(unit(serde_json::json!("tab")), "\t");
+    assert_eq!(unit(serde_json::json!(2)), "  ");
+    assert_eq!(unit(serde_json::json!("4")), "    ");
+}
+
+/// Tab with spaces reaches the next stop, not a whole level more; with
+/// tabs it inserts one tab character.
+#[test]
+fn indent_tab_reaches_the_next_stop() {
+    let tabbed = |text: &str, indent: Indent| {
+        let mut c = at(text);
+        c.indent = indent;
+        assert!(c.indent_more());
+        c.text().to_string()
+    };
+    assert_eq!(tabbed("|x", Indent::Spaces(4)), "    x");
+    assert_eq!(tabbed("  |x", Indent::Spaces(4)), "    x");
+    assert_eq!(tabbed("ab|c", Indent::Spaces(4)), "ab  c");
+    assert_eq!(tabbed("  |x", Indent::Tab), "  \tx");
+}

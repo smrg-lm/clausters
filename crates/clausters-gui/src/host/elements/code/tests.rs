@@ -528,3 +528,62 @@ fn the_marks_are_drawn() {
     v.code.place(2, false);
     assert!(fills(&frame(&v, true), theme.bracket_mismatch));
 }
+
+/// The message `e` reports, its arguments as text and numbers.
+fn message(e: &Events) -> Vec<String> {
+    e.clone()
+        .into_messages()
+        .into_iter()
+        .next()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|a| match a {
+            OscType::String(s) => s,
+            OscType::Int(i) => i.to_string(),
+            other => format!("{other:?}"),
+        })
+        .collect()
+}
+
+/// **Shift+Enter tells the owner the line, Ctrl+Enter the block and moves
+/// past it**, Ctrl+. asks for an interrupt, and what was evaluated flashes
+/// until the tick takes it away.
+#[test]
+fn the_keys_evaluate_by_telling_the_owner() {
+    let mut v =
+        view(r#"{"language": "python", "text": "a = 1\n\ndef f():\n    return a\n\nf()\n"}"#);
+    let mut clip = Clip::default();
+    let e = press(&mut v, &mut clip, SHIFT, &[Key::Enter]).unwrap();
+    assert_eq!(message(&e), ["evaluate", "a = 1", "1"]);
+    assert_eq!(
+        v.code.text(),
+        "a = 1\n\ndef f():\n    return a\n\nf()\n",
+        "no line broken"
+    );
+    v.code.place(v.code.line(3).unwrap().0 + 4, false);
+    let e = press(&mut v, &mut clip, CTRL, &[Key::Enter]).unwrap();
+    #[cfg(feature = "highlight")]
+    assert_eq!(message(&e), ["evaluate", "def f():\n    return a", "3"]);
+    #[cfg(not(feature = "highlight"))]
+    assert_eq!(message(&e), ["evaluate", "    return a", "4"]);
+    assert_eq!(v.code.line_col(), (4, 0), "past the block");
+    assert!(v.needs().animated, "it flashes");
+    let e = press(&mut v, &mut clip, CTRL, &[Key::Char('.')]).unwrap();
+    assert_eq!(message(&e), ["interrupt"]);
+    std::thread::sleep(FLASH);
+    let live = Live {
+        bus: None,
+        sample_rate: 0.0,
+        dt: 0.016,
+        histories: &Default::default(),
+    };
+    assert!(v.tick(&live), "the flash goes");
+    assert!(!v.needs().animated);
+    // with `paragraph`, the statements no blank line separates
+    let mut v =
+        view(r#"{"language": "python", "paragraph": 1, "text": "x = 1\ny = 2\n\nz = 3\n"}"#);
+    let e = press(&mut v, &mut clip, CTRL, &[Key::Enter]).unwrap();
+    #[cfg(feature = "highlight")]
+    assert_eq!(message(&e), ["evaluate", "x = 1\ny = 2", "1"]);
+    let _ = e;
+}

@@ -32,6 +32,15 @@
 //! Ctrl+Alt+G to go to a line, Escape closes it; F3 and Ctrl+G find the
 //! next match and with Shift the previous, the bar open or not, and Ctrl+/
 //! puts a line comment on the lines selected or takes it off.
+//!
+//! **It evaluates by telling its owner**: Shift+Enter reports the line or
+//! the selection, Ctrl+Enter the block (the cell, the top-level statement,
+//! or with `paragraph` the statements no blank line separates) and moves
+//! the caret past it, as `"evaluate" code line`; Ctrl+. reports
+//! `"interrupt"`. What was evaluated flashes for [`FLASH`]. The element
+//! runs nothing: the session is whoever owns the window
+//! ([`crate::host::graphics::code::regions`]). A cell's marker has a rule
+//! above it.
 
 use std::cell::Cell;
 
@@ -44,6 +53,7 @@ use clausters_editing::verbs::{self, ActionState, ActionTarget, Verb as ActionVe
 use serde_json::{Map, Value};
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::host::graphics::code::regions::{Block, is_cell_marker};
 use crate::host::graphics::code::syntax::Kind;
 use crate::host::graphics::code::{Code, Indent, Language};
 use crate::host::graphics::textedit::{self, Caret, Unit};
@@ -58,6 +68,9 @@ use clausters_gui_draw::font::{self, Family};
 use clausters_gui_draw::metrics::Metrics;
 use clausters_gui_draw::rect::Rect;
 use clausters_gui_draw::theme::{Color, Theme, with_alpha};
+
+/// How long what was evaluated stays marked.
+const FLASH: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// How many rows a step of the wheel scrolls.
 const WHEEL_ROWS: f32 = 3.0;
@@ -98,6 +111,10 @@ pub struct CodeView {
     was_dirty: bool,
     /// Find and replace, and going to a line.
     bar: Bar,
+    /// What a block is when nothing is selected and there are no cells.
+    block: Block,
+    /// The lines last evaluated, while they flash, and since when.
+    flash: Option<(usize, usize, web_time::Instant)>,
 }
 
 /// Where the parts of the element are, at the scale it is drawn at.
@@ -133,6 +150,8 @@ impl CodeView {
             held: None,
             was_dirty: false,
             bar: Bar::default(),
+            block: Block::default(),
+            flash: None,
         };
         for (key, value) in props {
             view.set(key, value);
@@ -319,6 +338,41 @@ impl CodeView {
         } else {
             Events::none()
         }
+    }
+
+    // -- evaluation ----------------------------------------------------------
+
+    /// **`region` told to the owner to evaluate**, as `"evaluate" code
+    /// line`, the line from 1; its lines flash.
+    fn evaluate(&mut self, region: std::ops::Range<usize>) -> Events {
+        let code = self.code.text()[region.clone()].to_string();
+        let first = self.code.line_of(region.start);
+        let last = self.code.line_of(region.end);
+        self.flash = Some((first, last, web_time::Instant::now()));
+        Events::message(vec![
+            OscType::String("evaluate".into()),
+            OscType::String(code),
+            OscType::Int(first as i32 + 1),
+        ])
+    }
+
+    /// Shift+Enter: the selection or the caret's line.
+    fn evaluate_line(&mut self) -> Events {
+        match self.code.line_or_selection() {
+            Some(region) => self.evaluate(region),
+            None => Events::none(),
+        }
+    }
+
+    /// Ctrl+Enter: the block, and the caret past it.
+    fn evaluate_block(&mut self) -> Events {
+        let Some((region, cell)) = self.code.block(self.block) else {
+            return Events::none();
+        };
+        let events = self.evaluate(region.clone());
+        self.code.advance(&region, cell);
+        self.reveal.set(true);
+        events
     }
 
     // -- the bar -------------------------------------------------------------
@@ -509,6 +563,30 @@ impl CodeView {
                 };
                 (to > from).then_some((from, to))
             };
+            // what was just evaluated, across the text
+            if self.flash.is_some_and(|(a, b, _)| (a..=b).contains(&n)) {
+                mesh.rect(
+                    Rect::new(
+                        g.text.x - ctx.metrics.pad,
+                        y,
+                        g.text.w + ctx.metrics.pad,
+                        g.row_h,
+                    ),
+                    with_alpha(theme.selection, 0.25),
+                );
+            }
+            // a rule above a cell's marker
+            if is_cell_marker(line) {
+                mesh.rect(
+                    Rect::new(
+                        g.text.x - ctx.metrics.pad,
+                        y,
+                        g.text.w + ctx.metrics.pad,
+                        ctx.metrics.divider_w,
+                    ),
+                    theme.separator,
+                );
+            }
             if let Some((from, to)) = sel.and_then(|(a, b)| across(a, b)) {
                 mesh.rect(Rect::new(left + from, y, to - from, g.row_h), sel_color);
             }
@@ -713,6 +791,15 @@ impl Element for CodeView {
                 .is_some(),
             "indent" => Indent::parse(v).map(|i| self.code.indent = i).is_some(),
             "line_numbers" => parse::truthy(v).map(|b| self.line_numbers = b).is_some(),
+            "paragraph" => parse::truthy(v)
+                .map(|b| {
+                    self.block = if b {
+                        Block::Paragraph
+                    } else {
+                        Block::Statement
+                    }
+                })
+                .is_some(),
             "text_size" => v
                 .as_f64()
                 .filter(|n| *n > 0.0)
@@ -742,14 +829,21 @@ impl Element for CodeView {
     /// The frame tick while a parse is behind the text.
     fn needs(&self) -> Needs {
         Needs {
-            animated: self.code.parsing(),
+            animated: self.code.parsing() || self.flash.is_some(),
             ..Needs::default()
         }
     }
 
     /// A slice of the parse that is behind; the colors change when it ends.
     fn tick(&mut self, _live: &Live) -> bool {
-        self.code.parsing() && self.code.parse(Some(TICK_SLICE))
+        let over = self
+            .flash
+            .is_some_and(|(_, _, since)| since.elapsed() >= FLASH);
+        if over {
+            self.flash = None;
+        }
+        let parsed = self.code.parsing() && self.code.parse(Some(TICK_SLICE));
+        over || parsed
     }
 
     fn info(&self) -> Vec<(String, Value)> {
@@ -913,6 +1007,7 @@ impl Element for CodeView {
                     self.code.select_all();
                     Events::none()
                 }
+                '.' if !mods.alt => Events::message(vec![OscType::String("interrupt".into())]),
                 '/' if !mods.alt => {
                     if self.code.toggle_comment() {
                         self.changed()
@@ -934,6 +1029,8 @@ impl Element for CodeView {
                     self.changed()
                 }
             }
+            Key::Enter if mods.ctrl => self.evaluate_block(),
+            Key::Enter if shift => self.evaluate_line(),
             Key::Enter => {
                 self.code.newline();
                 self.changed()
@@ -1087,6 +1184,9 @@ impl Element for CodeView {
                 self.bar.open_line();
                 Events::none()
             }
+            "evaluate_line" => self.evaluate_line(),
+            "evaluate_block" => self.evaluate_block(),
+            "interrupt" | "restart" => Events::message(vec![OscType::String(name.into())]),
             "toggle_comment" => {
                 if self.code.toggle_comment() {
                     self.changed()
