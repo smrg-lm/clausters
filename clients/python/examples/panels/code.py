@@ -12,6 +12,14 @@ at the caret, or every line selected -- and Shift+Tab takes a level off; Enter
 keeps the line's indentation and adds one after a line that opens a block, as
 ``def`` does here. Tab stays in the editor: Ctrl+Tab moves on.
 
+It types code as code is typed: a bracket or a quote brings the one that
+closes it, which you then type over, and Ctrl+/ comments the lines selected
+(again, uncomments them). Put the caret by a bracket to see its pair marked,
+and select a word to see where else it stands. **Ctrl+F** opens a bar along
+the bottom to find and replace: Enter finds the next match, Shift+Enter the
+previous, Tab goes to the replacement, and Escape closes it; F3 goes on
+finding with it closed. **Ctrl+Alt+G** goes to a line.
+
 Under it is a ``post`` window with what a session might have printed; drag the
 divider between the two to give one more room. The editor reports when its
 text stops being the one last saved (``"dirty"``), printed here, and marking

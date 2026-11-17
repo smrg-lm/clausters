@@ -612,6 +612,7 @@ dependencies = [
  "libc",
  "lyon",
  "pollster",
+ "regex",
  "serde",
  "serde_json",
  "tracing",

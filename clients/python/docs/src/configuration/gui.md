@@ -77,7 +77,7 @@ A host running in a browser tab has no config file, so the page sends the same
 table over the wire, `GuiHost.theme` (and its sizing sibling `GuiHost.metrics`)
 — see the [web client book](https://clausters-web.readthedocs.io/).
 
-The 93 roles, named by **function** rather than by widget, so one entry restyles
+The 97 roles, named by **function** rather than by widget, so one entry restyles
 everything that means the same thing by it. The defaults are written here as the
 hex a file would use; the host holds them as floats, so a value copied back is
 the same color to within the 8 bits of the notation:
@@ -177,11 +177,16 @@ the same color to within the 8 bits of the notation:
 | `syntax_regexp` | `#d16969` | A regular expression written as a literal. |
 | `syntax_comment` | `#6a9955` | A comment. |
 | `syntax_operator` | `#d4d4d4` | An operator, punctuation, an escape inside a string. |
+| `find_match` | `#00ffff8a` | A match of a code editor's find bar, under the text. |
+| `find_current` | `#ff00ff8a` | The match of the find bar that is selected. |
+| `bracket_match` | `#328c8252` | The bracket by a code editor's caret and the one it pairs with. |
+| `bracket_mismatch` | `#bb555544` | A bracket by the caret that nothing closes. |
 
-**Code follows the ground.** The `syntax_` roles' defaults are for the dark
-ground the host draws on. A table that turns `background` light (and back) and
-names none of them also puts the set for the new ground in them, so a light
-theme reads its code without ten more entries:
+**Code follows the ground.** The code's roles (the `syntax_` ones and its
+marks, `find_match` to `bracket_mismatch`) have defaults for the dark ground
+the host draws on. A table that turns `background` light (and back) and names
+none of them also puts the set for the new ground in them, so a light theme
+reads its code without fourteen more entries:
 
 | Role | On a light ground |
 | --- | --- |
@@ -195,6 +200,10 @@ theme reads its code without ten more entries:
 | `syntax_regexp` | `#af00db` |
 | `syntax_comment` | `#008000` |
 | `syntax_operator` | `#383a42` |
+| `find_match` | `#ffff0054` |
+| `find_current` | `#ff6a0054` |
+| `bracket_match` | `#328c8252` |
+| `bracket_mismatch` | `#bb555544` |
 
 A table that names any of them keeps what it named.
 

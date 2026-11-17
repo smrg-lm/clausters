@@ -338,12 +338,21 @@ theme_roles! {
     syntax_comment = [0.416, 0.600, 0.333, 1.0];
     /// An operator, punctuation, an escape inside a string.
     syntax_operator = [0.831, 0.831, 0.831, 1.0];
+    /// A match of the find bar's query, under the text.
+    find_match = [0.0, 1.0, 1.0, 0.541];
+    /// The match of the find bar's query that is selected.
+    find_current = [1.0, 0.0, 1.0, 0.541];
+    /// The bracket by the caret and the one it pairs with.
+    bracket_match = [0.196, 0.549, 0.510, 0.322];
+    /// A bracket by the caret that nothing closes.
+    bracket_mismatch = [0.733, 0.333, 0.333, 0.267];
 }
 
-/// **The syntax roles on a light ground**: what [`Theme::overlay`] puts in
-/// them when a table turns the background light and names none of them.
-/// The roles' defaults are their values on the dark ground.
-pub const SYNTAX_LIGHT: &[(&str, Color)] = &[
+/// **The code's roles on a light ground**, its syntax and its marks: what
+/// [`Theme::overlay`] puts in them when a table turns the background light
+/// and names none of them. The roles' defaults are their values on the dark
+/// ground.
+pub const CODE_LIGHT: &[(&str, Color)] = &[
     ("syntax_keyword", [0.000, 0.000, 1.000, 1.0]),
     ("syntax_control", [0.686, 0.000, 0.859, 1.0]),
     ("syntax_name", [0.000, 0.439, 0.757, 1.0]),
@@ -354,10 +363,14 @@ pub const SYNTAX_LIGHT: &[(&str, Color)] = &[
     ("syntax_regexp", [0.686, 0.000, 0.859, 1.0]),
     ("syntax_comment", [0.000, 0.502, 0.000, 1.0]),
     ("syntax_operator", [0.220, 0.227, 0.259, 1.0]),
+    ("find_match", [1.0, 1.0, 0.0, 0.329]),
+    ("find_current", [1.0, 0.416, 0.0, 0.329]),
+    ("bracket_match", [0.196, 0.549, 0.510, 0.322]),
+    ("bracket_mismatch", [0.733, 0.333, 0.333, 0.267]),
 ];
 
-/// The syntax roles on the dark ground: their defaults.
-const SYNTAX_DARK: &[(&str, Color)] = &[
+/// The code's roles on the dark ground: their defaults.
+const CODE_DARK: &[(&str, Color)] = &[
     ("syntax_keyword", [0.337, 0.612, 0.839, 1.0]),
     ("syntax_control", [0.773, 0.525, 0.753, 1.0]),
     ("syntax_name", [0.612, 0.863, 0.996, 1.0]),
@@ -368,6 +381,10 @@ const SYNTAX_DARK: &[(&str, Color)] = &[
     ("syntax_regexp", [0.820, 0.412, 0.412, 1.0]),
     ("syntax_comment", [0.416, 0.600, 0.333, 1.0]),
     ("syntax_operator", [0.831, 0.831, 0.831, 1.0]),
+    ("find_match", [0.0, 1.0, 1.0, 0.541]),
+    ("find_current", [1.0, 0.0, 1.0, 0.541]),
+    ("bracket_match", [0.196, 0.549, 0.510, 0.322]),
+    ("bracket_mismatch", [0.733, 0.333, 0.333, 0.267]),
 ];
 
 impl Theme {
@@ -381,19 +398,19 @@ impl Theme {
     /// stale theme file degrades to the default look, never to an error.
     ///
     /// **Code follows the ground.** A table that takes the background from
-    /// dark to light, or back, and names no `syntax_` role, also puts the
-    /// syntax roles' set for the new ground in them ([`SYNTAX_LIGHT`]): a
-    /// light theme reads its code without naming ten more colors, and one
-    /// that names any of them keeps what it named.
+    /// dark to light, or back, and names none of the code's roles (its
+    /// syntax and its marks), also puts their set for the new ground in them
+    /// ([`CODE_LIGHT`]): a light theme reads its code without naming fourteen
+    /// more colors, and one that names any of them keeps what it named.
     pub fn overlay<'a, I>(&mut self, entries: I) -> Vec<String>
     where
         I: IntoIterator<Item = (&'a str, &'a str)>,
     {
         let was_light = self.is_light();
-        let mut names_syntax = false;
+        let mut names_code = false;
         let mut warnings = Vec::new();
         for (role, hex) in entries {
-            names_syntax |= role.starts_with("syntax_");
+            names_code |= CODE_LIGHT.iter().any(|(r, _)| *r == role);
             match parse_hex(hex) {
                 Some(color) => {
                     if !self.set(role, color) {
@@ -404,8 +421,8 @@ impl Theme {
             }
         }
         let light = self.is_light();
-        if light != was_light && !names_syntax {
-            for (role, color) in if light { SYNTAX_LIGHT } else { SYNTAX_DARK } {
+        if light != was_light && !names_code {
+            for (role, color) in if light { CODE_LIGHT } else { CODE_DARK } {
                 self.set(role, *color);
             }
         }
@@ -581,23 +598,39 @@ mod tests {
 
     #[test]
     fn code_follows_the_ground_unless_a_table_names_its_colors() {
-        let light = |role: &str| SYNTAX_LIGHT.iter().find(|(r, _)| *r == role).unwrap().1;
+        let light = |role: &str| CODE_LIGHT.iter().find(|(r, _)| *r == role).unwrap().1;
         let mut t = Theme::default();
         assert!(!t.is_light());
         t.overlay([("background", "#ffffff")]);
         assert!(t.is_light());
         assert_eq!(t.syntax_keyword, light("syntax_keyword"));
         assert_eq!(t.syntax_comment, light("syntax_comment"));
+        assert_eq!(t.find_match, light("find_match"));
         // a second light table changes nothing it does not name
         t.overlay([("text", "#000000")]);
         assert_eq!(t.syntax_keyword, light("syntax_keyword"));
         // back to dark, the defaults
         t.overlay([("background", "#101010")]);
         assert_eq!(t.syntax_keyword, Theme::default().syntax_keyword);
+        assert_eq!(t.find_match, Theme::default().find_match);
         // a table that names one keeps what it named and changes no other
         t.overlay([("background", "#ffffff"), ("syntax_string", "#112233")]);
         assert_eq!(t.syntax_string, parse_hex("#112233").unwrap());
         assert_eq!(t.syntax_keyword, Theme::default().syntax_keyword);
+    }
+
+    /// The two grounds name the same roles, every one a role, and the dark
+    /// one is the defaults.
+    #[test]
+    fn the_code_sets_name_the_same_roles() {
+        fn names(set: &[(&'static str, Color)]) -> Vec<&'static str> {
+            set.iter().map(|(r, _)| *r).collect()
+        }
+        assert_eq!(names(CODE_LIGHT), names(CODE_DARK));
+        let t = Theme::default();
+        for (role, color) in CODE_DARK {
+            assert_eq!(t.get(role), Some(*color), "{role}");
+        }
     }
 
     #[test]

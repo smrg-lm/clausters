@@ -176,8 +176,9 @@ fn a_frame_draws_the_rows_in_view() {
 
 /// **A key and the frame after it, in 5,000 lines of Python**: the edit
 /// told to the tree, the rows in view parsed again and highlighted, and
-/// drawn. The first frame parses the whole file and is timed apart. The
-/// budget is 4 ms a key; a release build is held to it.
+/// drawn, with the find bar open on two thousand matches. The first frame
+/// parses the whole file and is timed apart. The budget is 4 ms a key; a
+/// release build is held to it.
 #[test]
 fn a_key_and_its_frame_in_five_thousand_lines_of_python() {
     let m = Metrics::default();
@@ -218,6 +219,10 @@ fn a_key_and_its_frame_in_five_thousand_lines_of_python() {
     let started = std::time::Instant::now();
     let first = frame(&v);
     eprintln!("the first frame, the file parsed: {:?}", started.elapsed());
+    // the find bar open on a word of every function, the keys the text's:
+    // its matches are found again after every key
+    v.bar.open_find(Some("return"));
+    v.bar.unfocus();
     let mut worst = std::time::Duration::ZERO;
     let mut keys = typed("if (y): z = 'q' # w\n");
     keys.extend(std::iter::repeat_n(Key::Backspace, 6));
@@ -300,4 +305,226 @@ fn cells_count_a_tab_to_its_stop() {
     assert_eq!(cells("a\tb"), TAB_COLS + 1);
     assert_eq!(cells("\u{e9}\tb"), TAB_COLS + 1);
     assert_eq!(cells("abcd\t"), 2 * TAB_COLS);
+}
+
+const CTRL_ALT: Mods = Mods {
+    shift: false,
+    ctrl: true,
+    alt: true,
+};
+
+/// One frame of `v` in `RECT`, focused or not.
+fn frame(v: &CodeView, focused: bool) -> Mesh {
+    let m = Metrics::default();
+    let theme = Theme::default();
+    let world = World::default();
+    let ctx = Ctx {
+        world: &world,
+        metrics: &m,
+        rect: RECT,
+        indent: 0.0,
+        clip: None,
+        scale: 1.0,
+        time: None,
+        focused,
+        hovered: false,
+        clock: 0.0,
+        text_fit: 1.0,
+    };
+    let mut mesh = Mesh::new();
+    v.draw(&mut Draw::new(&mut mesh, &m, &theme), &ctx);
+    mesh
+}
+
+/// Whether `mesh` fills something in `color`.
+fn fills(mesh: &Mesh, color: Color) -> bool {
+    mesh.colors_by_y().any(|(_, c)| c == color)
+}
+
+fn found(v: &CodeView) -> Value {
+    v.info()
+        .into_iter()
+        .find(|(k, _)| k == "found")
+        .map(|(_, v)| v)
+        .unwrap()
+}
+
+/// **Ctrl+F opens the bar on the text selected; Enter finds the next match
+/// and Shift+Enter the previous**, round past either end; Escape closes
+/// it, and F3 goes on finding with it closed.
+#[test]
+fn the_bar_finds() {
+    let mut v = view(r#"{"text": "one two one\nthree one"}"#);
+    let mut clip = Clip::default();
+    v.code.select(0, 3);
+    press(&mut v, &mut clip, CTRL, &[Key::Char('f')]);
+    assert_eq!(v.bar.mode(), Some(Mode::Find));
+    assert_eq!(v.bar.finder().query().text, "one");
+    assert_eq!(found(&v), 3);
+    press(&mut v, &mut clip, Mods::default(), &[Key::Enter]);
+    assert_eq!(v.code.caret().selection(), Some((8, 11)));
+    press(&mut v, &mut clip, Mods::default(), &[Key::Enter]);
+    assert_eq!(v.code.caret().selection(), Some((18, 21)));
+    press(&mut v, &mut clip, Mods::default(), &[Key::Enter]);
+    assert_eq!(
+        v.code.caret().selection(),
+        Some((0, 3)),
+        "round past the end"
+    );
+    press(&mut v, &mut clip, SHIFT, &[Key::Enter]);
+    assert_eq!(v.code.caret().selection(), Some((18, 21)));
+    press(&mut v, &mut clip, Mods::default(), &[Key::Escape]);
+    assert_eq!(v.bar.mode(), None);
+    press(&mut v, &mut clip, Mods::default(), &[Key::F(3)]);
+    assert_eq!(
+        v.code.caret().selection(),
+        Some((0, 3)),
+        "F3, the bar closed"
+    );
+    press(&mut v, &mut clip, SHIFT, &[Key::F(3)]);
+    assert_eq!(v.code.caret().selection(), Some((18, 21)));
+    // the keys back to the text: typing replaces the selection
+    press(&mut v, &mut clip, Mods::default(), &typed("1"));
+    assert_eq!(v.code.text(), "one two one\nthree 1");
+}
+
+/// **Replace and All**: Tab moves to the replacement, Enter replaces the
+/// match selected and selects the next, All replaces the rest as one step.
+#[test]
+fn the_bar_replaces() {
+    let mut v = view(r#"{"text": "a1 a2 a3"}"#);
+    let mut clip = Clip::default();
+    let none = Mods::default();
+    press(&mut v, &mut clip, CTRL, &[Key::Char('f')]);
+    press(&mut v, &mut clip, none, &typed("a"));
+    press(&mut v, &mut clip, none, &[Key::Enter]);
+    assert_eq!(v.code.caret().selection(), Some((0, 1)));
+    press(&mut v, &mut clip, none, &[Key::Tab]);
+    press(&mut v, &mut clip, none, &typed("b"));
+    let e = press(&mut v, &mut clip, none, &[Key::Enter]).unwrap();
+    assert!(!e.is_empty(), "the text went dirty");
+    assert_eq!(v.code.text(), "b1 a2 a3");
+    assert_eq!(
+        v.code.caret().selection(),
+        Some((3, 4)),
+        "the next selected"
+    );
+    let mut input = KeyInput {
+        mods: none,
+        clipboard: &mut clip,
+        cursor: None,
+    };
+    v.command("replace_all", &mut input);
+    assert_eq!(v.code.text(), "b1 b2 b3");
+    assert_eq!(found(&v), 0);
+    // the field's keys while it has them; the text's once the bar closes
+    press(&mut v, &mut clip, CTRL, &[Key::Char('z')]);
+    assert_eq!(v.code.text(), "b1 b2 b3");
+    press(&mut v, &mut clip, none, &[Key::Escape]);
+    press(&mut v, &mut clip, CTRL, &[Key::Char('z')]);
+    assert_eq!(v.code.text(), "b1 a2 a3", "All was one step");
+}
+
+/// **Ctrl+Alt+G goes to a line**: the line typed, Enter, the caret there
+/// and the bar gone.
+#[test]
+fn the_bar_goes_to_a_line() {
+    let text: String = (1..=100).map(|n| format!("line {n}\n")).collect();
+    let mut v = view("{}");
+    v.set("text", &Value::from(text));
+    let mut clip = Clip::default();
+    press(&mut v, &mut clip, CTRL_ALT, &[Key::Char('g')]);
+    assert_eq!(v.bar.mode(), Some(Mode::Line));
+    press(&mut v, &mut clip, Mods::default(), &typed("60:2"));
+    press(&mut v, &mut clip, Mods::default(), &[Key::Enter]);
+    assert_eq!(v.code.line_col(), (59, 2));
+    assert_eq!(v.bar.mode(), None);
+    frame(&v, true);
+    let g = v.geometry(RECT, 1.0, &Metrics::default());
+    let (_, sy) = v.scroll.get();
+    let middle = sy + g.text.h * 0.5;
+    assert!(
+        (middle - 59.5 * g.row_h).abs() < g.row_h,
+        "the line in the middle of the view"
+    );
+}
+
+/// **The bar answers the hand**: a press on its field gives it the keys,
+/// on a switch turns it, on the next match finds it; a press on the text
+/// gives the text the keys back.
+#[test]
+fn the_bar_is_pressed() {
+    let m = Metrics::default();
+    let mut v = view(r#"{"text": "Ab ab AB"}"#);
+    let mut clip = Clip::default();
+    press(&mut v, &mut clip, CTRL, &[Key::Char('f')]);
+    let layout = v.bar.layout(RECT, 1.0, &m).unwrap();
+    let centre = |part: Part| {
+        let r = layout.rect_of(part).unwrap();
+        (f64::from(r.x + r.w * 0.5), f64::from(r.y + r.h * 0.5))
+    };
+    press(&mut v, &mut clip, Mods::default(), &[Key::Escape]);
+    press(&mut v, &mut clip, CTRL, &[Key::Char('f')]);
+    v.press(centre(Part::Field(Field::Find)), &input(&m, 1));
+    press(&mut v, &mut clip, Mods::default(), &typed("ab"));
+    assert_eq!(found(&v), 3, "case does not count");
+    v.press(centre(Part::Case), &input(&m, 1));
+    assert_eq!(found(&v), 1, "it does now");
+    v.press(centre(Part::Next), &input(&m, 1));
+    assert_eq!(v.code.caret().selection(), Some((3, 5)));
+    let g = v.geometry(RECT, 1.0, &m);
+    let on_text = (f64::from(g.text.x + 1.0), f64::from(g.text.y + 1.0));
+    v.press(on_text, &input(&m, 1));
+    v.release(on_text, true, &input(&m, 1));
+    press(&mut v, &mut clip, Mods::default(), &typed("x"));
+    assert_eq!(v.code.text(), "xAb ab AB", "the text's keys");
+    v.press(centre(Part::Close), &input(&m, 1));
+    assert_eq!(v.bar.mode(), None);
+}
+
+/// **Code is typed as code**: a bracket brings its closer and is typed
+/// over, and Ctrl+/ comments the line and uncomments it.
+#[test]
+fn the_keys_type_code() {
+    let mut v = view(r#"{"language": "python"}"#);
+    let mut clip = Clip::default();
+    let none = Mods::default();
+    press(&mut v, &mut clip, none, &typed("f("));
+    assert_eq!(v.code.text(), "f()");
+    press(&mut v, &mut clip, none, &typed("x)"));
+    assert_eq!(v.code.text(), "f(x)");
+    assert_eq!(v.code.caret().pos, 4);
+    press(&mut v, &mut clip, CTRL, &[Key::Char('/')]);
+    assert_eq!(v.code.text(), "# f(x)");
+    press(&mut v, &mut clip, CTRL, &[Key::Char('/')]);
+    assert_eq!(v.code.text(), "f(x)");
+}
+
+/// **The marks are drawn**: the matches in their color and the selected
+/// one in its own, the other places the selected text stands, the bracket
+/// by the caret with its pair (or alone, in its own color), and that
+/// only while the element has the keys.
+#[test]
+fn the_marks_are_drawn() {
+    let theme = Theme::default();
+    let mut clip = Clip::default();
+    let mut v = view(r#"{"text": "f(x) + x\nx", "language": "python"}"#);
+    v.code.select(2, 3);
+    let mesh = frame(&v, true);
+    assert!(fills(&mesh, with_alpha(theme.selection, 0.2)), "the others");
+    press(&mut v, &mut clip, CTRL, &[Key::Char('f')]);
+    press(&mut v, &mut clip, Mods::default(), &[Key::Enter]);
+    let mesh = frame(&v, true);
+    assert!(fills(&mesh, theme.find_match));
+    assert!(fills(&mesh, theme.find_current));
+    press(&mut v, &mut clip, Mods::default(), &[Key::Escape]);
+    v.code.place(4, false);
+    assert!(fills(&frame(&v, true), theme.bracket_match));
+    assert!(
+        !fills(&frame(&v, false), theme.bracket_match),
+        "not focused"
+    );
+    let mut v = view(r#"{"text": "f(x", "language": "python"}"#);
+    v.code.place(2, false);
+    assert!(fills(&frame(&v, true), theme.bracket_mismatch));
 }

@@ -2689,8 +2689,18 @@ export function progress(
  * editor; Ctrl+Tab moves the focus on. `lineNumbers: false` takes the numbers
  * away.
  *
- * Its text is reported by `query` (`text`, with `line`, `column`, `selected`
- * and `dirty`), and the event `"dirty"` with `1` or `0` says when the text
+ * It types code as code is typed: a bracket or a quote brings the one that
+ * closes it, which is typed over, and Ctrl+/ comments the lines selected or
+ * uncomments them. The bracket by the caret is marked with its pair, and the
+ * other places the selected text stands are marked too. Ctrl+F opens a bar to
+ * find and replace (case, a regular expression, a whole word), Ctrl+Alt+G one
+ * to go to a line, and F3 or Ctrl+G finds the next match, with Shift the
+ * previous; the editor's commands `find`, `find_next`, `find_previous`,
+ * `replace_all`, `go_to_line` and `toggle_comment` do the same for a menu or a
+ * verb.
+ *
+ * Its text is reported by `query` (`text`, with `line`, `column`, `selected`,
+ * `dirty`, the bar's query `find` and how many matches it has, `found`), and the event `"dirty"` with `1` or `0` says when the text
  * stops or starts again being the one last marked saved -- by
  * `set({ saved: 1 })`, or by a `set({ text })` that replaces it.
  */

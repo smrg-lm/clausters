@@ -361,3 +361,264 @@ fn a_parse_out_of_time_is_carried_on() {
     fresh.parse(None);
     assert_eq!(c.spans(0..c.lines()), fresh.spans(0..fresh.lines()));
 }
+
+/// `text` with the selection from the `[` to the `]` in it, which are
+/// taken out, the caret at the `]`.
+fn selecting(text: &str) -> Code {
+    let a = text.find('[').expect("a start");
+    let b = text.find(']').expect("an end") - 1;
+    let mut code = Code::new(&text.replace(['[', ']'], ""));
+    code.select(a, b);
+    code
+}
+
+fn python(mut c: Code) -> Code {
+    c.set_language(Language::Python);
+    c.parse(None);
+    c
+}
+
+fn type_all(c: &mut Code, s: &str) {
+    for ch in s.chars() {
+        c.type_char(ch);
+        c.parse(None);
+    }
+}
+
+/// **A bracket typed brings its closer, which is typed over**, and the
+/// run is one step of the history; Backspace between the two takes both.
+/// Before a word the bracket comes alone, and a closer is not typed over
+/// once the caret has left its line.
+#[test]
+fn brackets_typed_close_and_are_typed_over() {
+    let mut c = python(at("|"));
+    type_all(&mut c, "print(x");
+    assert_eq!(shown(&c), "print(x|)");
+    type_all(&mut c, ")");
+    assert_eq!(shown(&c), "print(x)|", "typed over");
+    assert!(c.step(false));
+    assert_eq!(c.text(), "", "one run of typing");
+    let mut c = python(at("|"));
+    type_all(&mut c, "[");
+    assert_eq!(shown(&c), "[|]");
+    c.backspace(false);
+    assert_eq!(shown(&c), "|", "both go");
+    let mut c = python(at("|abc"));
+    type_all(&mut c, "(");
+    assert_eq!(shown(&c), "(|abc", "a word follows");
+    let mut c = python(at("a|\nb"));
+    type_all(&mut c, "(");
+    assert_eq!(shown(&c), "a(|)\nb");
+    c.set_caret(Caret {
+        pos: 5,
+        anchor: None,
+    });
+    c.set_caret(Caret {
+        pos: 2,
+        anchor: None,
+    });
+    type_all(&mut c, ")");
+    assert_eq!(shown(&c), "a()|)\nb", "the line was left");
+}
+
+/// **A quote opens a string where one may start**: after a word it is an
+/// apostrophe, after a prefix it opens one, inside a string it closes it,
+/// and in Python three of them open three that close.
+#[test]
+fn quotes_typed_close_where_a_string_starts() {
+    let mut c = python(at("x = |"));
+    type_all(&mut c, "\"ab");
+    assert_eq!(shown(&c), "x = \"ab|\"");
+    type_all(&mut c, "\"");
+    assert_eq!(shown(&c), "x = \"ab\"|");
+    let mut c = python(at("# don|"));
+    type_all(&mut c, "'");
+    assert_eq!(shown(&c), "# don'|");
+    let mut c = python(at("x = f|"));
+    type_all(&mut c, "'");
+    assert_eq!(shown(&c), "x = f'|'");
+    let mut c = python(at("x = \"a | b\""));
+    type_all(&mut c, "\"");
+    assert_eq!(shown(&c), "x = \"a \"| b\"", "inside a string, one quote");
+    let mut c = python(at("|"));
+    type_all(&mut c, "\"\"\"");
+    assert_eq!(shown(&c), "\"\"\"|\"\"\"");
+    type_all(&mut c, "doc\"");
+    assert_eq!(shown(&c), "\"\"\"doc\"\"\"|", "the three typed over");
+    let mut c = at("|");
+    c.set_language(Language::JavaScript);
+    type_all(&mut c, "`");
+    assert_eq!(shown(&c), "`|`");
+}
+
+/// **A selection typed over with a bracket or a quote is put between the
+/// two**, and stays selected.
+#[test]
+fn a_selection_is_put_between_a_pair() {
+    let mut c = python(selecting("x = [a + b]"));
+    type_all(&mut c, "(");
+    assert_eq!(c.text(), "x = (a + b)");
+    assert_eq!(c.selected(), Some("a + b"));
+    type_all(&mut c, "\"");
+    assert_eq!(c.text(), "x = (\"a + b\")");
+    assert_eq!(c.selected(), Some("a + b"));
+}
+
+/// **A comment goes on in one column and comes off again**: the least
+/// indentation of the lines that have text, empty lines left alone; a line
+/// already commented among others that are not is commented again.
+#[test]
+fn a_comment_is_toggled_on_the_lines_selected() {
+    let text = "def f():\n    x = 1\n\n    y = 2\n";
+    let mut c = python(Code::new(text));
+    c.select(0, text.len() - 1);
+    assert!(c.toggle_comment());
+    assert_eq!(c.text(), "# def f():\n#     x = 1\n\n#     y = 2\n");
+    assert!(c.toggle_comment());
+    assert_eq!(c.text(), text);
+    let mut c = python(at("def f():\n    x = |1\n\n    y = 2\n"));
+    c.toggle_comment();
+    assert_eq!(
+        shown(&c),
+        "def f():\n    # x = |1\n\n    y = 2\n",
+        "the caret stays"
+    );
+    let mut c = python(selecting("[    # a\n    b]\n"));
+    c.toggle_comment();
+    assert_eq!(c.text(), "    # # a\n    # b\n");
+    let mut c = at("|x");
+    c.set_language(Language::JavaScript);
+    c.toggle_comment();
+    assert_eq!(c.text(), "// x");
+    assert!(!at("|x").toggle_comment(), "plain text has none");
+}
+
+fn finder(text: &str) -> Finder {
+    Finder::new(&find::Query {
+        text: text.into(),
+        ..Default::default()
+    })
+}
+
+/// **The next and the previous match, round past either end**: case does
+/// not count unless asked, a whole word is one, and a line end is
+/// written `\n`.
+#[test]
+fn find_goes_to_the_next_and_previous_match() {
+    let mut c = at("|Alpha alphabet\nalpha");
+    let f = finder("alpha");
+    assert!(c.find(&f, true));
+    assert_eq!(c.caret().selection(), Some((0, 5)));
+    c.find(&f, true);
+    assert_eq!(c.caret().selection(), Some((6, 11)));
+    c.find(&f, true);
+    c.find(&f, true);
+    assert_eq!(c.caret().selection(), Some((0, 5)), "round past the end");
+    c.find(&f, false);
+    assert_eq!(
+        c.caret().selection(),
+        Some((15, 20)),
+        "round past the start"
+    );
+    let word = Finder::new(&find::Query {
+        text: "alpha".into(),
+        case: true,
+        word: true,
+        ..Default::default()
+    });
+    assert_eq!(word.within(c.text(), 0, c.text().len()), vec![(15, 20)]);
+    assert_eq!(finder("bet\\nal").within(c.text(), 0, 99), vec![(11, 17)]);
+    assert!(
+        Finder::new(&find::Query {
+            text: "(".into(),
+            regexp: true,
+            ..Default::default()
+        })
+        .error()
+        .is_some()
+    );
+    assert!(finder("").error().is_none() && !finder("").ready());
+}
+
+/// **A replacement replaces the match selected and selects the next**;
+/// with none selected it only finds. All of them are one step, and a
+/// regular expression's groups are read into the replacement.
+#[test]
+fn matches_are_replaced_one_or_all() {
+    let mut c = at("|a1 b2 a3");
+    let f = finder("a");
+    assert!(c.replace(&f, "x"));
+    assert_eq!(c.text(), "a1 b2 a3", "the first replace finds");
+    c.replace(&f, "xy");
+    assert_eq!(c.text(), "xy1 b2 a3");
+    assert_eq!(c.caret().selection(), Some((7, 8)), "the next selected");
+    let re = Finder::new(&find::Query {
+        text: "([a-z])(\\d)".into(),
+        regexp: true,
+        ..Default::default()
+    });
+    let mut c = at("|a1 b2 a3");
+    assert_eq!(c.replace_all(&re, "$2$1$$"), 3);
+    assert_eq!(c.text(), "1a$ 2b$ 3a$");
+    assert!(c.step(false));
+    assert_eq!(c.text(), "a1 b2 a3", "one step");
+    let mut c = at("|a b");
+    c.replace_all(&finder(" "), "\\n");
+    assert_eq!(c.text(), "a\nb");
+}
+
+/// **A line is gone to by its number**, on or back from the caret's, as a
+/// share of the text, and with a column.
+#[test]
+fn go_to_a_line() {
+    let text: String = (1..=10).map(|n| format!("line {n}\n")).collect();
+    let mut c = Code::new(&text);
+    assert!(c.go_to("3"));
+    assert_eq!(c.line_col(), (2, 0));
+    c.go_to("+4");
+    assert_eq!(c.line_col(), (6, 0));
+    c.go_to("-2:3");
+    assert_eq!(c.line_col(), (4, 3));
+    c.go_to("50%");
+    assert_eq!(c.line_col(), (5, 0), "half of eleven lines, rounded");
+    c.go_to("99");
+    assert_eq!(c.line_col(), (10, 0), "the last");
+    assert!(!c.go_to("x"));
+    assert!(!c.go_to("3:x"));
+}
+
+/// **The other places the selected text stands**, the selection left out.
+#[test]
+fn the_other_occurrences_of_the_selection() {
+    let c = selecting("[x] = x + y\nx");
+    assert_eq!(c.occurrences(0..2), vec![(4, 5), (10, 11)]);
+    assert_eq!(c.occurrences(1..2), vec![(10, 11)], "the lines asked");
+    assert!(at("|x x").occurrences(0..1).is_empty(), "nothing selected");
+    assert!(selecting("[ ] x").occurrences(0..1).is_empty(), "blank");
+}
+
+/// **The bracket by the caret is paired**: the one before it first, the
+/// nested ones counted, none when nothing closes it; and, read by the
+/// tree, one inside a string is not a bracket.
+#[test]
+fn the_bracket_by_the_caret_is_paired() {
+    let c = python(at("f(a[1]|)"));
+    assert_eq!(c.bracket_pair(), Some((5, Some(3))));
+    let c = python(at("f|(a[1])"));
+    assert_eq!(c.bracket_pair(), Some((1, Some(6))));
+    let c = python(at("f(a|"));
+    assert_eq!(c.bracket_pair(), None);
+    let c = python(at("f(|a"));
+    assert_eq!(c.bracket_pair(), Some((1, None)));
+    let c = at("(a]|");
+    assert_eq!(c.bracket_pair(), Some((2, None)), "another kind closes");
+    let c = at("{[(|)]}");
+    assert_eq!(c.bracket_pair(), Some((2, Some(3))));
+    #[cfg(feature = "highlight")]
+    {
+        let c = python(at("s = \"(|\" + f(x)"));
+        assert_eq!(c.bracket_pair(), None, "in a string");
+        let c = python(at("|(x)  # )"));
+        assert_eq!(c.bracket_pair(), Some((0, Some(2))));
+    }
+}

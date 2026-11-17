@@ -23,8 +23,21 @@
 //!
 //! **Tab is the element's** ([`Element::takes_tab`]): it indents, and
 //! Ctrl+Tab leaves for the next element.
+//!
+//! **What the current editor marks, it marks**: the matches of the find
+//! bar's query, the one selected among them, the other places the selected
+//! text stands, and (while the element has the keys) the bracket by the
+//! caret with the one it pairs with, or alone when nothing closes it. The
+//! bar ([`bar`]) is the element's own: Ctrl+F opens it to find and replace,
+//! Ctrl+Alt+G to go to a line, Escape closes it; F3 and Ctrl+G find the
+//! next match and with Shift the previous, the bar open or not, and Ctrl+/
+//! puts a line comment on the lines selected or takes it off.
 
 use std::cell::Cell;
+
+mod bar;
+
+use bar::{Bar, Field, Mode, Part};
 
 use clausters_core::osc::OscType;
 use clausters_editing::verbs::{self, ActionState, ActionTarget, Verb as ActionVerb};
@@ -44,7 +57,7 @@ use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::font::{self, Family};
 use clausters_gui_draw::metrics::Metrics;
 use clausters_gui_draw::rect::Rect;
-use clausters_gui_draw::theme::{Color, Theme};
+use clausters_gui_draw::theme::{Color, Theme, with_alpha};
 
 /// How many rows a step of the wheel scrolls.
 const WHEEL_ROWS: f32 = 3.0;
@@ -72,6 +85,9 @@ pub struct CodeView {
     scroll: Cell<(f32, f32)>,
     /// Whether the caret is to be brought into view at the next frame.
     reveal: Cell<bool>,
+    /// Whether it is to be brought to the middle of the view, rather than
+    /// only into it: a line gone to.
+    center: Cell<bool>,
     /// The rows the text area showed at the last frame: a page.
     page: Cell<usize>,
     /// The widest line, in cells, while the text has not changed.
@@ -80,6 +96,8 @@ pub struct CodeView {
     held: Option<((usize, usize), Unit)>,
     /// Whether the text was dirty when last reported.
     was_dirty: bool,
+    /// Find and replace, and going to a line.
+    bar: Bar,
 }
 
 /// Where the parts of the element are, at the scale it is drawn at.
@@ -90,7 +108,8 @@ struct Geometry {
     row_h: f32,
     cell: f32,
     size: f32,
-    bar: f32,
+    /// How thick a scroll bar is.
+    thumb: f32,
 }
 
 pub(super) fn build(
@@ -108,10 +127,12 @@ impl CodeView {
             line_numbers: true,
             scroll: Cell::new((0.0, 0.0)),
             reveal: Cell::new(false),
+            center: Cell::new(false),
             page: Cell::new(20),
             widest: Cell::new(None),
             held: None,
             was_dirty: false,
+            bar: Bar::default(),
         };
         for (key, value) in props {
             view.set(key, value);
@@ -119,7 +140,13 @@ impl CodeView {
         view
     }
 
+    /// Where the text and its gutter are: the element's rect, above the
+    /// bar while it is open.
     fn geometry(&self, rect: Rect, scale: f32, m: &Metrics) -> Geometry {
+        let rect = match self.bar.layout(rect, scale, m) {
+            Some(l) => Rect::new(rect.x, rect.y, rect.w, (l.strip.y - rect.y).max(1.0)),
+            None => rect,
+        };
         let size = self.text_size * scale;
         let cell = font::cell_in(Family::Mono, size).max(1.0);
         let digits = self.code.lines().to_string().len().max(3) as f32;
@@ -128,19 +155,19 @@ impl CodeView {
         } else {
             0.0
         };
-        let bar = (m.pad * 0.75).max(3.0 * scale).round();
+        let thumb = (m.pad * 0.75).max(3.0 * scale).round();
         Geometry {
             gutter: Rect::new(rect.x, rect.y, gutter_w, rect.h),
             text: Rect::new(
                 rect.x + gutter_w + m.pad,
                 rect.y + m.pad * 0.5,
-                (rect.w - gutter_w - m.pad - bar).max(1.0),
-                (rect.h - m.pad * 0.5 - bar).max(1.0),
+                (rect.w - gutter_w - m.pad - thumb).max(1.0),
+                (rect.h - m.pad * 0.5 - thumb).max(1.0),
             ),
             row_h: font::line_advance(size).max(1.0),
             cell,
             size,
-            bar,
+            thumb,
         }
     }
 
@@ -200,7 +227,9 @@ impl CodeView {
         if self.reveal.replace(false) {
             let (line, _) = self.code.line_col();
             let top = line as f32 * g.row_h;
-            if top < sy {
+            if self.center.replace(false) {
+                sy = top - ((g.text.h - g.row_h) * 0.5).max(0.0);
+            } else if top < sy {
                 sy = top;
             } else if top + g.row_h > sy + g.text.h {
                 sy = top + g.row_h - g.text.h;
@@ -292,6 +321,112 @@ impl CodeView {
         }
     }
 
+    // -- the bar -------------------------------------------------------------
+
+    /// **Find**: the bar opened, the text selected as its query.
+    fn open_find(&mut self) -> Events {
+        let seed = self.code.selected().map(str::to_string);
+        self.bar.open_find(seed.as_deref());
+        Events::none()
+    }
+
+    /// **The next match, or the previous**, the bar open or not: with no
+    /// query yet the bar opens for one.
+    fn find(&mut self, forward: bool) -> Events {
+        if !self.bar.finder().ready() {
+            return self.open_find();
+        }
+        if self.code.find(self.bar.finder(), forward) {
+            self.reveal.set(true);
+        }
+        Events::none()
+    }
+
+    /// The match selected replaced, and the next one selected.
+    fn replace(&mut self) -> Events {
+        let (finder, with) = (
+            self.bar.finder().clone(),
+            self.bar.replacement().to_string(),
+        );
+        let before = self.code.revision();
+        if !self.code.replace(&finder, &with) {
+            return Events::none();
+        }
+        if self.code.revision() == before {
+            return self.moved();
+        }
+        self.changed()
+    }
+
+    /// Every match replaced, as one step.
+    fn replace_all(&mut self) -> Events {
+        let (finder, with) = (
+            self.bar.finder().clone(),
+            self.bar.replacement().to_string(),
+        );
+        if self.code.replace_all(&finder, &with) > 0 {
+            self.changed()
+        } else {
+            Events::none()
+        }
+    }
+
+    /// **The line the bar names gone to**, in the middle of the view, the
+    /// bar closed and the keys back to the text.
+    fn go(&mut self) -> Events {
+        let spec = self.bar.line_spec().to_string();
+        if self.code.go_to(&spec) {
+            self.bar.close();
+            self.center.set(true);
+            return self.moved();
+        }
+        Events::none()
+    }
+
+    /// What a press on a part of the bar does.
+    fn bar_part(&mut self, part: Part) -> Events {
+        match part {
+            Part::Field(_) => Events::none(),
+            Part::Next => self.find(true),
+            Part::Previous => self.find(false),
+            Part::Case | Part::Regexp | Part::Word => {
+                self.bar.switch(part);
+                Events::none()
+            }
+            Part::Replace => self.replace(),
+            Part::All => self.replace_all(),
+            Part::Go => self.go(),
+            Part::Close => {
+                self.bar.close();
+                Events::none()
+            }
+        }
+    }
+
+    /// **The keys that hold wherever the keys go**, the text or the bar:
+    /// opening the bar, the next and the previous match, closing it.
+    fn bar_key(&mut self, key: &Key, input: &KeyInput) -> Option<Events> {
+        let mods = input.mods;
+        Some(match key {
+            Key::Char(c) if mods.ctrl && mods.alt && c.eq_ignore_ascii_case(&'g') => {
+                self.bar.open_line();
+                Events::none()
+            }
+            Key::Char(c) if mods.ctrl && !mods.alt && c.eq_ignore_ascii_case(&'f') => {
+                self.open_find()
+            }
+            Key::Char(c) if mods.ctrl && !mods.alt && c.eq_ignore_ascii_case(&'g') => {
+                self.find(!mods.shift)
+            }
+            Key::F(3) => self.find(!mods.shift),
+            Key::Escape if self.bar.mode().is_some() => {
+                self.bar.close();
+                Events::none()
+            }
+            _ => return None,
+        })
+    }
+
     fn paint(&self, d: &mut Draw, ctx: &Ctx) {
         let g = self.geometry(ctx.rect, ctx.scale, ctx.metrics);
         let (sx, sy) = self.settle(&g);
@@ -313,8 +448,10 @@ impl CodeView {
         let shown = first..(first + rows).min(self.code.lines());
         let spans = self.code.spans(shown.clone());
         let mut next_span = 0;
-        let [sr, sg, sb, _] = theme.selection;
-        let sel_color = [sr, sg, sb, if ctx.focused { 0.35 } else { 0.2 }];
+        // the keys are the text's, not the bar's
+        let keys_here = ctx.focused && self.bar.focus().is_none();
+        let sel_color = with_alpha(theme.selection, if keys_here { 0.35 } else { 0.2 });
+        let marks = self.marks(theme, shown.clone(), keys_here);
         for n in shown {
             let Some((start, line)) = self.code.line(n) else {
                 break;
@@ -357,18 +494,27 @@ impl CodeView {
             }
             mesh.set_clip(Some(clip(g.text)));
             let left = g.text.x - sx;
-            if let Some((a, b)) = sel {
+            // a range of the text on this row: from where to where it is
+            // drawn, past the line's end when it runs on into the next
+            let across = |a: usize, b: usize| -> Option<(f32, f32)> {
                 let end = start + line.len();
-                if a <= end && b >= start {
-                    let from = Self::x_of(line, a.max(start) - start, &g);
-                    let to = if b > end {
-                        Self::x_of(line, line.len(), &g) + g.cell * 0.5
-                    } else {
-                        Self::x_of(line, b - start, &g)
-                    };
-                    if to > from {
-                        mesh.rect(Rect::new(left + from, y, to - from, g.row_h), sel_color);
-                    }
+                if a > end || b < start {
+                    return None;
+                }
+                let from = Self::x_of(line, a.max(start) - start, &g);
+                let to = if b > end {
+                    Self::x_of(line, line.len(), &g) + g.cell * 0.5
+                } else {
+                    Self::x_of(line, b - start, &g)
+                };
+                (to > from).then_some((from, to))
+            };
+            if let Some((from, to)) = sel.and_then(|(a, b)| across(a, b)) {
+                mesh.rect(Rect::new(left + from, y, to - from, g.row_h), sel_color);
+            }
+            for &(a, b, color) in &marks {
+                if let Some((from, to)) = across(a, b) {
+                    mesh.rect(Rect::new(left + from, y, to - from, g.row_h), color);
                 }
             }
             // the text, a run of one color at a time, a tab reaching to its
@@ -401,7 +547,7 @@ impl CodeView {
                 x += font::width_in(Family::Mono, piece, g.size);
                 at = end;
             }
-            if n == caret_line && ctx.focused {
+            if n == caret_line && keys_here {
                 let cx = left + Self::x_of(line, caret.pos - start, &g);
                 let w = (1.5 * ctx.scale).round().max(1.0);
                 mesh.rect(Rect::new(cx.round(), y, w, g.row_h), theme.text);
@@ -414,7 +560,7 @@ impl CodeView {
             let h = (g.text.h * g.text.h / total_h).max(g.row_h);
             let y = g.text.y + (g.text.h - h) * (sy / (total_h - g.text.h)).min(1.0);
             mesh.rect(
-                Rect::new(area.x + area.w - g.bar, y, g.bar, h),
+                Rect::new(area.x + area.w - g.thumb, y, g.thumb, h),
                 theme.separator,
             );
         }
@@ -423,11 +569,72 @@ impl CodeView {
             let w = (g.text.w * g.text.w / total_w).max(g.cell);
             let x = g.text.x + (g.text.w - w) * (sx / (total_w - g.text.w)).min(1.0);
             mesh.rect(
-                Rect::new(x, area.y + area.h - g.bar, w, g.bar),
+                Rect::new(x, g.text.y + g.text.h, w, g.thumb),
                 theme.separator,
             );
         }
         mesh.set_clip(kept);
+        if let Some(layout) = self.bar.layout(area, ctx.scale, ctx.metrics) {
+            let note = self.bar.note(
+                self.code.text(),
+                self.code.revision(),
+                self.code.caret().selection(),
+            );
+            d.mesh.set_clip(Some(clip(area)));
+            self.bar.draw(d, &layout, ctx.focused, note);
+            d.mesh.set_clip(kept);
+        }
+    }
+
+    /// **What is marked on rows `shown`**, in the order it is painted: the
+    /// other places the selected text stands; the matches of the bar's
+    /// query, the one selected among them apart; and, while the keys are
+    /// the text's, the bracket by the caret and its pair, or it alone
+    /// when nothing closes it.
+    fn marks(
+        &self,
+        theme: &Theme,
+        shown: std::ops::Range<usize>,
+        keys_here: bool,
+    ) -> Vec<(usize, usize, Color)> {
+        let mut marks: Vec<(usize, usize, Color)> = self
+            .code
+            .occurrences(shown.clone())
+            .into_iter()
+            .map(|(a, b)| (a, b, with_alpha(theme.selection, 0.2)))
+            .collect();
+        if self.bar.mode() == Some(Mode::Find) && self.bar.finder().ready() {
+            let from = self.code.line(shown.start).map_or(0, |l| l.0);
+            let to = shown
+                .end
+                .checked_sub(1)
+                .and_then(|n| self.code.line(n))
+                .map_or(from, |(s, l)| s + l.len());
+            let sel = self.code.caret().selection();
+            self.bar
+                .with_matches(self.code.text(), self.code.revision(), |all| {
+                    let i = all.partition_point(|m| m.1 <= from);
+                    for &(a, b) in all[i..].iter().take_while(|m| m.0 <= to) {
+                        let color = if sel == Some((a, b)) {
+                            theme.find_current
+                        } else {
+                            theme.find_match
+                        };
+                        marks.push((a, b, color));
+                    }
+                });
+        }
+        if keys_here {
+            match self.code.bracket_pair() {
+                Some((a, Some(b))) => {
+                    marks.push((a, a + 1, theme.bracket_match));
+                    marks.push((b, b + 1, theme.bracket_match));
+                }
+                Some((a, None)) => marks.push((a, a + 1, theme.bracket_mismatch)),
+                None => {}
+            }
+        }
+        marks
     }
 }
 
@@ -557,6 +764,18 @@ impl Element for CodeView {
                 "selected".into(),
                 Value::from(self.code.selected().unwrap_or_default()),
             ),
+            (
+                "find".into(),
+                Value::from(self.bar.finder().query().text.clone()),
+            ),
+            (
+                "found".into(),
+                Value::from(self.bar.with_matches(
+                    self.code.text(),
+                    self.code.revision(),
+                    <[(usize, usize)]>::len,
+                )),
+            ),
         ]
     }
 
@@ -575,6 +794,19 @@ impl Element for CodeView {
     /// One click places the caret, two select a word, three a line; Shift
     /// extends; a press on a line's number selects the line.
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
+        if let Some(layout) = self.bar.layout(input.rect, input.scale, input.metrics)
+            && layout.strip.contains(at.0, at.1)
+        {
+            let part = self
+                .bar
+                .press(&layout, at, input.clicks, input.mods.shift, input.metrics);
+            return match part {
+                Some(part) => Claim::events(self.bar_part(part)),
+                None => Claim::take(),
+            };
+        }
+        // a press on the text gives it the keys back
+        self.bar.unfocus();
         let g = self.geometry(input.rect, input.scale, input.metrics);
         let pos = self.pos_at(at, &g);
         if self.line_numbers && g.gutter.contains(at.0, at.1) {
@@ -605,6 +837,11 @@ impl Element for CodeView {
     }
 
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
+        if let Some(layout) = self.bar.layout(input.rect, input.scale, input.metrics)
+            && self.bar.drag(&layout, at, input.metrics)
+        {
+            return Events::none();
+        }
         let Some((span, unit)) = self.held else {
             return Events::none();
         };
@@ -626,6 +863,7 @@ impl Element for CodeView {
 
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         self.held = None;
+        self.bar.release();
         Events::none()
     }
 
@@ -646,6 +884,18 @@ impl Element for CodeView {
     }
 
     fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
+        if let Some(events) = self.bar_key(key, input) {
+            return Some(events);
+        }
+        // a field of the bar has the keys
+        if self.bar.focus().is_some() {
+            return match self.bar.key(key, input)? {
+                Ok(()) => Some(Events::none()),
+                Err(Field::Find) => Some(self.find(!input.mods.shift)),
+                Err(Field::Replace) => Some(self.replace()),
+                Err(Field::Line) => Some(self.go()),
+            };
+        }
         let mods = input.mods;
         let shift = mods.shift;
         Some(match key {
@@ -663,15 +913,25 @@ impl Element for CodeView {
                     self.code.select_all();
                     Events::none()
                 }
+                '/' if !mods.alt => {
+                    if self.code.toggle_comment() {
+                        self.changed()
+                    } else {
+                        Events::none()
+                    }
+                }
                 _ => return None,
             },
             Key::Char(_) if mods.alt => return None,
             Key::Char(c) => {
-                let mut buf = [0u8; 4];
-                if self.code.insert(c.encode_utf8(&mut buf)) {
-                    self.changed()
-                } else {
+                let before = self.code.revision();
+                if !self.code.type_char(*c) {
                     Events::none()
+                } else if self.code.revision() == before {
+                    // a closer typed over: the caret moved, nothing changed
+                    self.moved()
+                } else {
+                    self.changed()
                 }
             }
             Key::Enter => {
@@ -813,12 +1073,29 @@ impl Element for CodeView {
         })
     }
 
+    /// The code's own commands, for a menu, a key a program binds or a
+    /// client's verb: undo and redo, the bar's, and the comment.
     fn command(&mut self, name: &str, _input: &mut KeyInput) -> Option<Events> {
-        match name {
-            "undo" => Some(self.undo(false)),
-            "redo" => Some(self.undo(true)),
-            _ => None,
-        }
+        Some(match name {
+            "undo" => self.undo(false),
+            "redo" => self.undo(true),
+            "find" => self.open_find(),
+            "find_next" => self.find(true),
+            "find_previous" => self.find(false),
+            "replace_all" => self.replace_all(),
+            "go_to_line" => {
+                self.bar.open_line();
+                Events::none()
+            }
+            "toggle_comment" => {
+                if self.code.toggle_comment() {
+                    self.changed()
+                } else {
+                    Events::none()
+                }
+            }
+            _ => return None,
+        })
     }
 
     fn context_menu(&mut self, _at: (f64, f64), _input: &Input) -> Option<Vec<Entry>> {

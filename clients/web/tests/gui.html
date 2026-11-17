@@ -327,7 +327,23 @@
         host.pressKey(codeWin, "Home");
         host.pressKey(codeWin, "Tab");
         await expectText("def f():\n    return 1", "indented");
-        log("an editor of code typed, cut, pasted, undid and indented");
+        // a bracket brings its closer and is typed over; Ctrl+/ comments
+        // the line; the find bar finds and replaces
+        host.pressKey(codeWin, "End");
+        host.typeText(codeWin, "\nx = (a");
+        await expectText("def f():\n    return 1\n    x = (a)", "a pair");
+        host.typeText(codeWin, ")");
+        host.pressKey(codeWin, "/", "ctrl");
+        await expectText("def f():\n    return 1\n    # x = (a)", "commented");
+        host.pressKey(codeWin, "f", "ctrl");
+        host.typeText(codeWin, "1");
+        host.pressKey(codeWin, "Enter");
+        host.pressKey(codeWin, "Tab");
+        host.typeText(codeWin, "2");
+        host.pressKey(codeWin, "Enter");
+        await expectText("def f():\n    return 2\n    # x = (a)", "replaced");
+        host.pressKey(codeWin, "Escape");
+        log("an editor of code typed, cut, pasted, undid, indented, paired, commented and replaced");
         codeWin.close();
 
         // **A roll that listens paints what is played, in a page as on the

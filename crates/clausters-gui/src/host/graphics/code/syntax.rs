@@ -90,6 +90,24 @@ pub struct Span {
     pub kind: Kind,
 }
 
+/// **What the tree says of a bracket**: whether it is the code's, and the
+/// one it pairs with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Bracket {
+    /// Punctuation of the code, paired with the bracket at this byte, or
+    /// with none.
+    Code(Option<usize>),
+    /// A character of a string, a comment or a pattern: not a bracket.
+    Text,
+}
+
+/// Whether `kind`, a node's, is text rather than code: a string, a part of
+/// one, a comment.
+#[cfg_attr(not(feature = "highlight"), allow(dead_code))]
+fn is_text_node(kind: &str) -> bool {
+    kind.contains("string") || kind.contains("comment")
+}
+
 /// Whether keyword `word` moves control or brings a module in: the keywords
 /// the grammars name as one, told apart by what they say.
 #[cfg_attr(not(feature = "highlight"), allow(dead_code))]
@@ -156,7 +174,7 @@ mod tree {
     };
     use web_time::Instant;
 
-    use super::{Kind, Language, Span, control};
+    use super::{Bracket, Kind, Language, Span, control, is_text_node};
 
     /// A grammar's highlighting query and the kind each of its names is.
     struct Highlights {
@@ -402,6 +420,95 @@ mod tree {
             }
             out
         }
+
+        /// The tree, when it is the text's: none while an edit is still to
+        /// be parsed, since what was just typed is not in it.
+        fn fresh(&self) -> Option<&Tree> {
+            if self.stale {
+                return None;
+            }
+            self.tree.as_ref()
+        }
+
+        /// **The bracket at byte `at`, by the tree**: the code's, with the
+        /// one it pairs with, or a character of a string or a comment. None
+        /// when the tree cannot say: there is none, or it is behind the text.
+        ///
+        /// A bracket pairs with the first of its closing kind among the
+        /// nodes beside it, the nested pairs counted: a pair is the start
+        /// and the end of one node's children.
+        pub fn bracket(&self, text: &str, at: usize) -> Option<Bracket> {
+            let tree = self.fresh()?;
+            let c = *text.as_bytes().get(at)?;
+            let node = tree.root_node().descendant_for_byte_range(at, at + 1)?;
+            if node.is_named() || node.start_byte() != at || node.end_byte() != at + 1 {
+                return Some(Bracket::Text);
+            }
+            let (open, close, forward) = match c {
+                b'(' => (b'(', b')', true),
+                b'[' => (b'[', b']', true),
+                b'{' => (b'{', b'}', true),
+                b')' => (b'(', b')', false),
+                b']' => (b'[', b']', false),
+                b'}' => (b'{', b'}', false),
+                _ => return Some(Bracket::Text),
+            };
+            let Some(parent) = node.parent() else {
+                return Some(Bracket::Code(None));
+            };
+            let mut cursor = parent.walk();
+            let children: Vec<_> = parent.children(&mut cursor).collect();
+            let Some(i) = children.iter().position(|n| n.id() == node.id()) else {
+                return Some(Bracket::Code(None));
+            };
+            let kind_of = |n: &tree_sitter::Node| {
+                (!n.is_named() && !n.is_missing() && n.end_byte() == n.start_byte() + 1)
+                    .then(|| text.as_bytes()[n.start_byte()])
+            };
+            let (same, other) = if forward {
+                (open, close)
+            } else {
+                (close, open)
+            };
+            let mut depth = 0usize;
+            let mut step = |n: &tree_sitter::Node| -> Option<Option<usize>> {
+                match kind_of(n) {
+                    Some(k) if k == same => depth += 1,
+                    Some(k) if k == other => {
+                        if depth == 0 {
+                            return Some(Some(n.start_byte()));
+                        }
+                        depth -= 1;
+                    }
+                    _ => {}
+                }
+                None
+            };
+            let found = if forward {
+                children[i + 1..].iter().find_map(&mut step)
+            } else {
+                children[..i].iter().rev().find_map(&mut step)
+            };
+            Some(Bracket::Code(found.flatten()))
+        }
+
+        /// **Whether byte `at` is inside a string or a comment**, by the
+        /// tree; none when it cannot say. A place just after a string's
+        /// closing quote is outside it.
+        pub fn in_text(&self, text: &str, at: usize) -> Option<bool> {
+            let tree = self.fresh()?;
+            let at = at.min(text.len());
+            let mut node = tree
+                .root_node()
+                .descendant_for_byte_range(at.saturating_sub(1), at);
+            while let Some(n) = node {
+                if is_text_node(n.kind()) && n.start_byte() < at && at < n.end_byte() {
+                    return Some(true);
+                }
+                node = n.parent();
+            }
+            Some(false)
+        }
     }
 
     /// A copy holds the same tree, and a parser of its own.
@@ -428,7 +535,7 @@ mod tree {
 
 #[cfg(not(feature = "highlight"))]
 mod tree {
-    use super::{Language, Span};
+    use super::{Bracket, Language, Span};
 
     /// Without the parser, a language and nothing more.
     #[derive(Clone, Debug)]
@@ -459,6 +566,14 @@ mod tree {
 
         pub fn spans(&self, _text: &str, _from: usize, _to: usize) -> Vec<Span> {
             Vec::new()
+        }
+
+        pub fn bracket(&self, _text: &str, _at: usize) -> Option<Bracket> {
+            None
+        }
+
+        pub fn in_text(&self, _text: &str, _at: usize) -> Option<bool> {
+            None
         }
     }
 }

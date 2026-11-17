@@ -2000,9 +2000,40 @@ something reusable if the track stops there.
   edit, a parse out of time carried on), the element's (the budget, the
   colors drawn), headlessly by script natively, and in a page by a CPU trace
   against the same file as plain text.
-- ⬜ **WS8 — Find and replace, and the "should" of editing.** Find and replace
+- ✅ **WS8 — Find and replace, and the "should" of editing.** Find and replace
   in the file with its bar, go to line, bracket matching, closing pairs, the
   other occurrences of the selection, toggling a comment.
+
+  **What shipped (2026-11-17).** Each is the current editor's behavior, read
+  from its editor's own rules rather than reinvented. The model
+  (`host/graphics/code/`) gained the typing of pairs (a bracket closes where
+  nothing is written after the caret, a quote where a string may start, a
+  prefix in Python and three after two, and a closer just put is typed over
+  until the caret leaves its line, Backspace between two takes both, a
+  selection typed over is put between them), the line comment toggled in the
+  column of the least indented line, going to a line (a number, `+n`, `-n`,
+  a share, a column), the other occurrences of the selection, and the
+  bracket by the caret paired off the syntax tree (so one in a string is not
+  one) or, without a fresh tree, by a scan of the text. `find.rs` searches a
+  query as one expression (`regex`, already in a default build): a plain one
+  escaped into it, case, a regular expression and a whole word as switches,
+  the next and the previous match round past the ends, a replacement with
+  `$&` and `$1`, all of them as one step. The element's bar
+  (`host/elements/code/bar.rs`) is its own space along its bottom, its
+  fields the `text` field's keys and drawing; Ctrl+F (the selection as the
+  query), F3 and Ctrl+G with or without Shift, Ctrl+Alt+G, Ctrl+/ and
+  Escape, and the same as the element's commands (`find`, `find_next`,
+  `find_previous`, `replace_all`, `go_to_line`, `toggle_comment`) for a
+  menu or a verb; the count and the selected match are said in the bar.
+  Four theme roles mark the matches, the selected one and a bracket paired
+  or alone, in the current editor's colors, and follow the ground with the
+  syntax roles. Checked by the model's and the element's tests (every rule
+  above, the bar by keys and by the hand, the marks drawn), headlessly by
+  script with captures, and in a page (`gui.html` pairs, comments, finds
+  and replaces). A key and its frame in the 5,000-line file, the bar open on
+  its 2,000 matches, take 2.2 ms in a release build. Not done, as the list
+  above has it "later": several cursors, which the current editor's
+  selection of every match and its next occurrence need.
 - ⬜ **WS9 — Evaluation.** The verbs of evaluation on the code element: the
   selection or line, the block (top-level statement, cell, paragraph), the
   move past it, the flash, interrupt and restart. The region logic is Rust,
