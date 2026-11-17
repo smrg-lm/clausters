@@ -1967,12 +1967,39 @@ something reusable if the track stops there.
   and in a page (`gui.html`). An example in each client puts the editor
   over a post window.
 
-- ⬜ **WS7 — Highlighting, incremental.** tree-sitter kept as a tree: an edit
+- ✅ **WS7 — Highlighting, incremental.** tree-sitter kept as a tree: an edit
   is applied to it and the text re-parsed incrementally, and only the visible
   lines are highlighted and re-shaped. Python and JavaScript; syntax colors as
   theme roles, light and dark. The grammars' wasm build passes tree-sitter's
   libc headers from a build script, not by hand. Acceptance: the key budget on
   a 5,000-line file, measured, natively and in a page.
+
+  **What shipped (2026-11-16).** Recorded in `docs/decisions.md` ("Code is
+  colored from a syntax tree its edits keep, parsed within a time") with the
+  numbers. The model keeps the tree (`host/graphics/code/syntax.rs`): every
+  change the history records, an undo's and a redo's included, is told to it,
+  and the element asks the published grammars' own highlighting queries only
+  over the rows in view, drawing ten kinds in ten theme roles (`syntax_keyword`
+  ... `syntax_operator`), the current editor's colors; a table that turns the
+  background light and names none of them puts their light set in them. **A
+  parse runs within a time**: re-parsing after a key costs every top-level
+  statement of the file and, for a text a half-typed line leaves broken, the
+  parser's recovery -- up to 15 ms natively in the test file -- so a key
+  parses for 1.5 ms and a parse still behind goes on in the element's tick
+  (which a page's input path now starts when a gesture leaves something to
+  tick), the text keeping its colors until it catches up. The worst key and
+  its frame take 2.1 ms natively and 7.6 ms in a page after its first key;
+  the page's host grows by 627 KB gzip. **The headers** are handed over by
+  the repository's `.cargo/config.toml`, not a build script: the grammar
+  crates' scripts read no headers and a dependent's script cannot reach their
+  compiler, so the config names a compiler script for the target
+  (`third_party/tree-sitter-wasm/`), which also gives the build with shared
+  memory the atomics its objects need. A build without the `highlight`
+  feature draws code in one color. Checked by the model's tests (the kinds of
+  each language, an edited tree reading as a fresh one after every kind of
+  edit, a parse out of time carried on), the element's (the budget, the
+  colors drawn), headlessly by script natively, and in a page by a CPU trace
+  against the same file as plain text.
 - ⬜ **WS8 — Find and replace, and the "should" of editing.** Find and replace
   in the file with its bar, go to line, bracket matching, closing pairs, the
   other occurrences of the selection, toggling a comment.

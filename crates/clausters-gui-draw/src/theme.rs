@@ -316,7 +316,59 @@ theme_roles! {
     series_3 = [0.45, 0.65, 0.95, 1.0];
     /// Channel 4 of the series palette.
     series_4 = [0.90, 0.45, 0.60, 1.0];
+
+    // -- Code (the `code` element's highlighting) --
+    /// A keyword, and a constant the language names (`None`, `true`).
+    syntax_keyword = [0.337, 0.612, 0.839, 1.0];
+    /// A keyword that moves control or brings a module in (`if`, `return`, `import`).
+    syntax_control = [0.773, 0.525, 0.753, 1.0];
+    /// A name: a variable, a property, a parameter.
+    syntax_name = [0.612, 0.863, 0.996, 1.0];
+    /// A function's name, where it is defined and where it is called.
+    syntax_function = [0.863, 0.863, 0.667, 1.0];
+    /// A type, and a name that starts with a capital (a class).
+    syntax_type = [0.306, 0.788, 0.690, 1.0];
+    /// A number.
+    syntax_number = [0.710, 0.808, 0.659, 1.0];
+    /// A string.
+    syntax_string = [0.808, 0.569, 0.471, 1.0];
+    /// A regular expression written as a literal.
+    syntax_regexp = [0.820, 0.412, 0.412, 1.0];
+    /// A comment.
+    syntax_comment = [0.416, 0.600, 0.333, 1.0];
+    /// An operator, punctuation, an escape inside a string.
+    syntax_operator = [0.831, 0.831, 0.831, 1.0];
 }
+
+/// **The syntax roles on a light ground**: what [`Theme::overlay`] puts in
+/// them when a table turns the background light and names none of them.
+/// The roles' defaults are their values on the dark ground.
+pub const SYNTAX_LIGHT: &[(&str, Color)] = &[
+    ("syntax_keyword", [0.000, 0.000, 1.000, 1.0]),
+    ("syntax_control", [0.686, 0.000, 0.859, 1.0]),
+    ("syntax_name", [0.000, 0.439, 0.757, 1.0]),
+    ("syntax_function", [0.475, 0.369, 0.149, 1.0]),
+    ("syntax_type", [0.149, 0.498, 0.600, 1.0]),
+    ("syntax_number", [0.035, 0.525, 0.345, 1.0]),
+    ("syntax_string", [0.639, 0.082, 0.082, 1.0]),
+    ("syntax_regexp", [0.686, 0.000, 0.859, 1.0]),
+    ("syntax_comment", [0.000, 0.502, 0.000, 1.0]),
+    ("syntax_operator", [0.220, 0.227, 0.259, 1.0]),
+];
+
+/// The syntax roles on the dark ground: their defaults.
+const SYNTAX_DARK: &[(&str, Color)] = &[
+    ("syntax_keyword", [0.337, 0.612, 0.839, 1.0]),
+    ("syntax_control", [0.773, 0.525, 0.753, 1.0]),
+    ("syntax_name", [0.612, 0.863, 0.996, 1.0]),
+    ("syntax_function", [0.863, 0.863, 0.667, 1.0]),
+    ("syntax_type", [0.306, 0.788, 0.690, 1.0]),
+    ("syntax_number", [0.710, 0.808, 0.659, 1.0]),
+    ("syntax_string", [0.808, 0.569, 0.471, 1.0]),
+    ("syntax_regexp", [0.820, 0.412, 0.412, 1.0]),
+    ("syntax_comment", [0.416, 0.600, 0.333, 1.0]),
+    ("syntax_operator", [0.831, 0.831, 0.831, 1.0]),
+];
 
 impl Theme {
     /// The series palette color for channel `ch`, cycled.
@@ -327,12 +379,21 @@ impl Theme {
     /// Overlays `(role, "#rrggbb[aa]")` pairs onto this theme. Unknown roles
     /// and unparsable colors are skipped and reported back as warnings, so a
     /// stale theme file degrades to the default look, never to an error.
+    ///
+    /// **Code follows the ground.** A table that takes the background from
+    /// dark to light, or back, and names no `syntax_` role, also puts the
+    /// syntax roles' set for the new ground in them ([`SYNTAX_LIGHT`]): a
+    /// light theme reads its code without naming ten more colors, and one
+    /// that names any of them keeps what it named.
     pub fn overlay<'a, I>(&mut self, entries: I) -> Vec<String>
     where
         I: IntoIterator<Item = (&'a str, &'a str)>,
     {
+        let was_light = self.is_light();
+        let mut names_syntax = false;
         let mut warnings = Vec::new();
         for (role, hex) in entries {
+            names_syntax |= role.starts_with("syntax_");
             match parse_hex(hex) {
                 Some(color) => {
                     if !self.set(role, color) {
@@ -342,7 +403,19 @@ impl Theme {
                 None => warnings.push(format!("theme: bad color '{hex}' for role '{role}'")),
             }
         }
+        let light = self.is_light();
+        if light != was_light && !names_syntax {
+            for (role, color) in if light { SYNTAX_LIGHT } else { SYNTAX_DARK } {
+                self.set(role, *color);
+            }
+        }
         warnings
+    }
+
+    /// Whether the theme's ground is light: a background nearer white than
+    /// black.
+    pub fn is_light(&self) -> bool {
+        luminance(self.background) > 0.18
     }
 }
 
@@ -505,6 +578,27 @@ pub fn to_hex(c: Color) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn code_follows_the_ground_unless_a_table_names_its_colors() {
+        let light = |role: &str| SYNTAX_LIGHT.iter().find(|(r, _)| *r == role).unwrap().1;
+        let mut t = Theme::default();
+        assert!(!t.is_light());
+        t.overlay([("background", "#ffffff")]);
+        assert!(t.is_light());
+        assert_eq!(t.syntax_keyword, light("syntax_keyword"));
+        assert_eq!(t.syntax_comment, light("syntax_comment"));
+        // a second light table changes nothing it does not name
+        t.overlay([("text", "#000000")]);
+        assert_eq!(t.syntax_keyword, light("syntax_keyword"));
+        // back to dark, the defaults
+        t.overlay([("background", "#101010")]);
+        assert_eq!(t.syntax_keyword, Theme::default().syntax_keyword);
+        // a table that names one keeps what it named and changes no other
+        t.overlay([("background", "#ffffff"), ("syntax_string", "#112233")]);
+        assert_eq!(t.syntax_string, parse_hex("#112233").unwrap());
+        assert_eq!(t.syntax_keyword, Theme::default().syntax_keyword);
+    }
 
     #[test]
     fn text_on_a_light_fill_turns_dark_and_on_a_dark_one_stays_light() {

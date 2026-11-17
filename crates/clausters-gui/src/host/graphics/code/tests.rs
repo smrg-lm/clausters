@@ -54,15 +54,15 @@ fn a_run_of_typing_is_one_step_and_undo_makes_it_clean() {
 #[test]
 fn enter_keeps_and_opens_indentation() {
     let mut c = at("    x = 1|");
-    c.language = Language::Python;
+    c.set_language(Language::Python);
     c.newline();
     assert_eq!(shown(&c), "    x = 1\n    |");
     let mut c = at("def f():  # a comment|");
-    c.language = Language::Python;
+    c.set_language(Language::Python);
     c.newline();
     assert_eq!(shown(&c), "def f():  # a comment\n    |");
     let mut c = at("s = '#:'|");
-    c.language = Language::Python;
+    c.set_language(Language::Python);
     c.newline();
     assert_eq!(
         shown(&c),
@@ -70,7 +70,7 @@ fn enter_keeps_and_opens_indentation() {
         "a colon in a string opens nothing"
     );
     let mut c = at("  if (a) {|}");
-    c.language = Language::JavaScript;
+    c.set_language(Language::JavaScript);
     c.indent = Indent::Spaces(2);
     c.newline();
     assert_eq!(shown(&c), "  if (a) {\n    |\n  }");
@@ -178,4 +178,186 @@ fn a_key_in_five_thousand_lines() {
     eprintln!("a key in 5000 lines: {each:?}");
     c.step(false);
     assert_eq!(c.text(), text, "the run undone");
+}
+
+/// The kinds of `code`'s text, each with the text it covers.
+#[cfg(feature = "highlight")]
+fn kinds(code: &Code) -> Vec<(String, syntax::Kind)> {
+    assert!(code.parse(None));
+    code.spans(0..code.lines())
+        .into_iter()
+        .map(|s| (code.text()[s.start..s.end].to_string(), s.kind))
+        .collect()
+}
+
+/// **Python, by kind**: a definition's keyword and name, a parameter, a
+/// keyword that returns, a string with an escape in it, a number, a
+/// comment, a constant the language names.
+#[cfg(feature = "highlight")]
+#[test]
+fn python_is_read_by_kind() {
+    use syntax::Kind::*;
+    let mut c = Code::new("def f(x):\n    return \"a\\n\" + 1  # one\nNone\n");
+    c.set_language(Language::Python);
+    let k = kinds(&c);
+    let has = |text: &str, kind| k.iter().any(|(t, k)| t == text && *k == kind);
+    assert!(has("def", Keyword), "{k:?}");
+    assert!(has("f", Function), "{k:?}");
+    assert!(has("x", Name), "{k:?}");
+    assert!(has("return", Control), "{k:?}");
+    assert!(has("\\n", Operator), "the escape inside the string: {k:?}");
+    assert!(has("\"a", String), "{k:?}");
+    assert!(has("1", Number), "{k:?}");
+    assert!(has("# one", Comment), "{k:?}");
+    assert!(has("None", Keyword), "{k:?}");
+}
+
+/// **JavaScript, by kind**: a regular expression, a keyword that branches,
+/// a call, a name with a capital.
+#[cfg(feature = "highlight")]
+#[test]
+fn javascript_is_read_by_kind() {
+    use syntax::Kind::*;
+    let mut c = Code::new("const re = /a+/;\nif (re) { run(new Thing()); }\n");
+    c.set_language(Language::JavaScript);
+    let k = kinds(&c);
+    let has = |text: &str, kind| k.iter().any(|(t, k)| t == text && *k == kind);
+    assert!(has("const", Keyword), "{k:?}");
+    assert!(has("/a+/", Regexp), "{k:?}");
+    assert!(has("if", Control), "{k:?}");
+    assert!(has("run", Function), "{k:?}");
+    assert!(has("Thing", Type), "{k:?}");
+}
+
+/// **Plain text has no kinds**, and a language set later reads the text.
+#[cfg(feature = "highlight")]
+#[test]
+fn plain_text_has_no_kinds() {
+    let mut c = Code::new("def f(): pass\n");
+    assert!(kinds(&c).is_empty());
+    c.set_language(Language::Python);
+    assert!(!kinds(&c).is_empty());
+}
+
+/// **Only the lines asked about are read**, and a string that opened above
+/// them is still a string in them.
+#[cfg(feature = "highlight")]
+#[test]
+fn only_the_lines_asked_about_are_read() {
+    let mut c = Code::new("x = 1\ns = \"\"\"one\ntwo\nthree\"\"\"\ny = 2\n");
+    c.set_language(Language::Python);
+    c.parse(None);
+    let (start, _) = c.line(2).unwrap();
+    let (end, three) = c.line(3).unwrap();
+    let spans = c.spans(2..4);
+    assert!(
+        spans
+            .iter()
+            .all(|s| s.start >= start && s.end <= end + three.len())
+    );
+    assert_eq!(spans.len(), 1, "{spans:?}");
+    assert_eq!(spans[0].kind, syntax::Kind::String);
+    assert_eq!((spans[0].start, spans[0].end), (start, end + three.len()));
+}
+
+/// **The tree an edit is told to reads as a fresh one does**: after every
+/// kind of edit -- typing, a new line, deleting across lines, pasting,
+/// indenting, undoing and redoing -- the kinds of the whole text are the
+/// ones a text parsed from nothing has.
+#[cfg(feature = "highlight")]
+#[test]
+fn an_edited_tree_reads_as_a_fresh_one() {
+    let mut c = at("def f(x):\n    return x|\n\nclass A:\n    pass\n");
+    c.set_language(Language::Python);
+    let check = |c: &Code, what: &str| {
+        c.parse(None);
+        let mut fresh = Code::new(c.text());
+        fresh.set_language(Language::Python);
+        fresh.parse(None);
+        assert_eq!(
+            c.spans(0..c.lines()),
+            fresh.spans(0..fresh.lines()),
+            "after {what}: {:?}",
+            c.text()
+        );
+    };
+    check(&c, "nothing");
+    for ch in [" ", "+", " ", "\"", "s", "\""] {
+        c.insert(ch);
+        check(&c, "typing");
+    }
+    c.newline();
+    check(&c, "a new line");
+    c.insert("# note");
+    check(&c, "a comment");
+    c.set_caret(Caret {
+        pos: 4,
+        anchor: Some(20),
+    });
+    c.backspace(false);
+    check(&c, "deleting across lines");
+    c.paste("g(y):\n    '''doc\n    '''\n    return ");
+    check(&c, "a paste");
+    c.select_all();
+    c.indent_more();
+    check(&c, "indenting every line");
+    c.indent_less();
+    check(&c, "taking the level back");
+    while c.step(false) {
+        check(&c, "an undo");
+    }
+    while c.step(true) {
+        check(&c, "a redo");
+    }
+    c.set_text("x = 'new'\n");
+    check(&c, "a text set whole");
+}
+
+/// **A parse given no time stops, and the next carries it on**: with no
+/// time at all each call reads a little, the tree meanwhile the one before
+/// with its places moved, and when it catches up it reads as a fresh one --
+/// also when an edit comes between two calls and the parse starts again.
+#[cfg(feature = "highlight")]
+#[test]
+fn a_parse_out_of_time_is_carried_on() {
+    let text: String = (0..300)
+        .map(|i| format!("def f{i}(x):\n    return x + {i}  # c\n"))
+        .collect();
+    let mut c = Code::new(&text);
+    c.set_language(Language::Python);
+    assert!(c.parse(None));
+    let before = c.spans(0..2);
+    c.set_caret(Caret {
+        pos: 0,
+        anchor: None,
+    });
+    c.insert("'");
+    assert!(c.parsing());
+    let none = std::time::Duration::ZERO;
+    assert!(!c.parse(Some(none)), "no time, not done");
+    // the tree before, moved by the quote: the definition one byte on
+    let moved: Vec<_> = c
+        .spans(0..2)
+        .iter()
+        .map(|s| (s.start - 1, s.end - 1, s.kind))
+        .collect();
+    let was: Vec<_> = before.iter().map(|s| (s.start, s.end, s.kind)).collect();
+    assert_eq!(moved, was);
+    for _ in 0..3 {
+        c.parse(Some(none));
+    }
+    // an edit between two calls: the parse starts again
+    c.backspace(false);
+    c.insert("#");
+    let mut calls = 0;
+    while !c.parse(Some(none)) {
+        calls += 1;
+        assert!(calls < 100_000, "the parse goes on");
+    }
+    assert!(calls > 1, "{calls} calls");
+    assert!(!c.parsing());
+    let mut fresh = Code::new(c.text());
+    fresh.set_language(Language::Python);
+    fresh.parse(None);
+    assert_eq!(c.spans(0..c.lines()), fresh.spans(0..fresh.lines()));
 }

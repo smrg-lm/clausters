@@ -11,8 +11,10 @@
 #
 # One-time setup: rustup target add wasm32-unknown-unknown, the nightly the
 # applications' host is built with (crates/clausters-gui/wasm-apps-toolchain, with
-# rust-src), and cargo install wasm-bindgen-cli at Cargo.lock's wasm-bindgen
-# version.
+# rust-src), cargo install wasm-bindgen-cli at Cargo.lock's wasm-bindgen
+# version, and clang, which compiles the GUI host's grammars for wasm32
+# (third_party/tree-sitter-wasm/cc, named by the repository's
+# .cargo/config.toml).
 #
 # From clients/web/:  ./build.sh   (release; pass `debug` for faster builds).
 # Serve and open the demo:  python3 -m http.server  -> /examples/components/demo.html

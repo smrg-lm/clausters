@@ -172,11 +172,13 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/rust
       # crates/clausters-gui links ALSA through midir (clausters-midi); the native
-      # `cargo test` below needs libasound2-dev. The wasm gates need nothing.
+      # `cargo test` below needs libasound2-dev. The wasm gate compiles the code
+      # element's grammars, which are C, with clang aimed at wasm32
+      # (third_party/tree-sitter-wasm/cc, named by .cargo/config.toml).
       - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev
+          sudo apt-get install -y pkg-config libasound2-dev clang
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p clausters-gui
       # Browser-readiness gate: the agnostic host core must keep
@@ -218,6 +220,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: web-wasm
+      # The GUI host's code element compiles its grammars, which are C, with
+      # clang aimed at wasm32 (third_party/tree-sitter-wasm/cc).
+      - name: System deps
+        run: sudo apt-get update && sudo apt-get install -y clang
       # The same pinned CLI the release workflow stages, and for the same
       # reason: the glue wasm-bindgen exchanges with the crate is a private
       # format, so the versions must agree exactly.

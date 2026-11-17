@@ -16,7 +16,7 @@ crate-type = ["cdylib", "rlib"]
 # headless GUI host `clausters-gui`).
 
 [features]
-default = ["midi", "notation", "patcher", "font-atlas"]
+default = ["midi", "notation", "patcher", "font-atlas", "highlight"]
 # Live MIDI input painting piano-roll notes: a `midi_in` roll opens the
 # host's input -- a virtual port other apps and devices route into on the
 # desktop, the browser's own MIDI inputs in a page. On by default -- the host
@@ -69,6 +69,12 @@ notation = [
 # shape as `notation` -- on by default, and a build without it reads a patcher
 # node as the ordinary scroll workspace the `plane` name otherwise means.
 patcher = []
+# The `code` element's highlighting: the text kept as a syntax tree, parsed
+# again only where an edit touched it, and the grammars of Python and
+# JavaScript. On by default, like the element families; a build without it
+# draws code in one color. In a page the grammars' C compiles against the
+# headers `.cargo/config.toml` hands it (`third_party/tree-sitter-wasm`).
+highlight = ["dep:tree-sitter", "dep:tree-sitter-python", "dep:tree-sitter-javascript"]
 # A real (outline) typeface behind a glyph atlas, instead of the 5x7 bitmap --
 # the drawing base's (`clausters-gui-draw`, which carries the face the host
 # draws with when nobody names another). On by default: text is most of what
@@ -149,6 +155,12 @@ lyon = { version = "1.0", optional = true }
 pollster = "0.4.0"
 wgpu = "29.0.3"
 winit = "0.30.13"
+# The parser of the `code` element's highlighting (the `highlight`
+# feature): a tree an edit is applied to and parsed again incrementally, the
+# queries that name what each part of it is, and the two grammars.
+tree-sitter = { version = "0.27.2", optional = true }
+tree-sitter-python = { version = "0.25.0", optional = true }
+tree-sitter-javascript = { version = "0.25.0", optional = true }
 # Grapheme clusters: what a caret steps over and what text is cut at, with
 # or without a face -- one user-perceived character, however many code
 # points it is written with.

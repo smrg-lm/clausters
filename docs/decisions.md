@@ -242,6 +242,7 @@ quoted title lands here, on the link to the entry.
 - [A list's spectrogram is analyzed where it is looked at (2026-10-22)](decisions/gui.md#a-lists-spectrogram-is-analyzed-where-it-is-looked-at-2026-10-22)
 - [The host ships the faces it shapes (2026-11-08)](decisions/gui.md#the-host-ships-the-faces-it-shapes-2026-11-08)
 - [Code is edited on the host's own text base (2026-11-16)](decisions/gui.md#code-is-edited-on-the-hosts-own-text-base-2026-11-16)
+- [Code is colored from a syntax tree its edits keep, parsed within a time (2026-11-16)](decisions/gui.md#code-is-colored-from-a-syntax-tree-its-edits-keep-parsed-within-a-time-2026-11-16)
 
 ## [The document and the applications](decisions/apps.md)
 

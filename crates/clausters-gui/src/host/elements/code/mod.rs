@@ -13,6 +13,14 @@
 //! the longest line is a count of cells. Only the rows in view are shaped
 //! and drawn.
 //!
+//! **In the colors of its syntax**: the model says what each part of the
+//! rows in view is ([`Code::spans`]), and each kind is drawn in its theme
+//! role (`syntax_keyword`, ...); what nothing names is `text`. A text set
+//! whole is parsed whole; an edit is parsed again for [`PARSE_SLICE`] at
+//! most, and a parse that needs longer asks for the frame tick and goes on
+//! in the element's [`tick`](Element::tick), [`TICK_SLICE`] a tick, the
+//! text keeping its colors meanwhile.
+//!
 //! **Tab is the element's** ([`Element::takes_tab`]): it indents, and
 //! Ctrl+Tab leaves for the next element.
 
@@ -23,22 +31,36 @@ use clausters_editing::verbs::{self, ActionState, ActionTarget, Verb as ActionVe
 use serde_json::{Map, Value};
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::host::graphics::code::syntax::Kind;
 use crate::host::graphics::code::{Code, Indent, Language};
 use crate::host::graphics::textedit::{self, Caret, Unit};
 use crate::host::menu::Entry;
-use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyInput, Verb};
+use crate::host::widget::element::{
+    Claim, Ctx, Element, Events, Input, Key, KeyInput, Live, Needs, Verb,
+};
 use crate::host::widget::parse;
 use crate::host::widget::size::Natural;
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::font::{self, Family};
 use clausters_gui_draw::metrics::Metrics;
 use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::{Color, Theme};
 
 /// How many rows a step of the wheel scrolls.
 const WHEEL_ROWS: f32 = 3.0;
 
 /// The columns a tab reaches to: the next multiple of these.
 const TAB_COLS: usize = 4;
+
+/// How long a parse may take in a key's handling: what is left of a key's
+/// budget once it is handled and its frame drawn.
+const PARSE_SLICE: std::time::Duration = std::time::Duration::from_micros(1500);
+
+/// How long a parse that is behind may take in a tick, which draws a frame
+/// but handles no key. In a page a parse is two or three times slower and
+/// the tick a third as frequent, so a slice of a key's would leave the
+/// colors behind for a second after a long file is edited.
+const TICK_SLICE: std::time::Duration = std::time::Duration::from_micros(2500);
 
 /// An editor of code.
 #[derive(Debug, Clone)]
@@ -212,6 +234,7 @@ impl CodeView {
 
     /// What a change reports: the text going dirty or clean.
     fn changed(&mut self) -> Events {
+        self.code.parse(Some(PARSE_SLICE));
         self.widest.set(None);
         self.reveal.set(true);
         let dirty = self.code.dirty();
@@ -287,9 +310,12 @@ impl CodeView {
         let sel = caret.selection();
         let first = (sy / g.row_h).floor() as usize;
         let rows = (g.text.h / g.row_h).ceil() as usize + 1;
+        let shown = first..(first + rows).min(self.code.lines());
+        let spans = self.code.spans(shown.clone());
+        let mut next_span = 0;
         let [sr, sg, sb, _] = theme.selection;
         let sel_color = [sr, sg, sb, if ctx.focused { 0.35 } else { 0.2 }];
-        for n in first..(first + rows).min(self.code.lines()) {
+        for n in shown {
             let Some((start, line)) = self.code.line(n) else {
                 break;
             };
@@ -345,21 +371,35 @@ impl CodeView {
                     }
                 }
             }
-            // the text, a piece between tabs at a time
+            // the text, a run of one color at a time, a tab reaching to its
+            // stop
             let mut x = 0.0;
-            let mut from = 0;
-            let pieces = line
-                .match_indices('\t')
-                .map(|(i, _)| i)
-                .chain(std::iter::once(line.len()));
-            for end in pieces {
-                let piece = &line[from..end];
-                if !piece.is_empty() {
-                    font::text_in(mesh, Family::Mono, piece, left + x, ty, g.size, theme.text);
-                    x += font::width_in(Family::Mono, piece, g.size);
+            let mut at = 0;
+            while at < line.len() {
+                if line.as_bytes()[at] == b'\t' {
+                    x = next_stop(x, g.cell);
+                    at += 1;
+                    continue;
                 }
-                x = next_stop(x, g.cell);
-                from = end + 1;
+                let abs = start + at;
+                while spans.get(next_span).is_some_and(|s| s.end <= abs) {
+                    next_span += 1;
+                }
+                let (color, edge) = match spans.get(next_span) {
+                    Some(s) if s.start <= abs => (role(theme, s.kind), s.end - start),
+                    Some(s) => (theme.text, s.start - start),
+                    None => (theme.text, line.len()),
+                };
+                // a tree behind the text could name a place inside a letter
+                let mut edge = edge.min(line.len());
+                while !line.is_char_boundary(edge) {
+                    edge += 1;
+                }
+                let end = line[at..edge].find('\t').map_or(edge, |i| at + i);
+                let piece = &line[at..end];
+                font::text_in(mesh, Family::Mono, piece, left + x, ty, g.size, color);
+                x += font::width_in(Family::Mono, piece, g.size);
+                at = end;
             }
             if n == caret_line && ctx.focused {
                 let cx = left + Self::x_of(line, caret.pos - start, &g);
@@ -391,14 +431,44 @@ impl CodeView {
     }
 }
 
+/// The color a kind of code is drawn in: its theme role.
+fn role(theme: &Theme, kind: Kind) -> Color {
+    match kind {
+        Kind::Keyword => theme.syntax_keyword,
+        Kind::Control => theme.syntax_control,
+        Kind::Name => theme.syntax_name,
+        Kind::Function => theme.syntax_function,
+        Kind::Type => theme.syntax_type,
+        Kind::Number => theme.syntax_number,
+        Kind::String => theme.syntax_string,
+        Kind::Regexp => theme.syntax_regexp,
+        Kind::Comment => theme.syntax_comment,
+        Kind::Operator => theme.syntax_operator,
+    }
+}
+
 /// The next tab stop after `x`, `cell` wide columns.
 fn next_stop(x: f32, cell: f32) -> f32 {
     let col = (x / cell + 0.01).floor() as usize;
     ((col / TAB_COLS + 1) * TAB_COLS) as f32 * cell
 }
 
-/// How many cells `line` takes: a grapheme each, a tab to its stop.
+/// How many cells `line` takes: a grapheme each, a tab to its stop. Every
+/// line is asked after every edit, so a line of ASCII, most of any code,
+/// is counted by its bytes.
 fn cells(line: &str) -> usize {
+    if line.is_ascii() {
+        if !line.contains('\t') {
+            return line.len();
+        }
+        return line.bytes().fold(0, |n, b| {
+            if b == b'\t' {
+                (n / TAB_COLS + 1) * TAB_COLS
+            } else {
+                n + 1
+            }
+        });
+    }
     let mut n = 0;
     for g in line.graphemes(true) {
         n = if g == "\t" {
@@ -417,6 +487,7 @@ impl Element for CodeView {
                 .as_str()
                 .map(|s| {
                     self.code.set_text(s);
+                    self.code.parse(None);
                     self.was_dirty = false;
                     self.widest.set(None);
                 })
@@ -428,7 +499,10 @@ impl Element for CodeView {
             }
             "language" => v
                 .as_str()
-                .map(|s| self.code.language = Language::named(s))
+                .map(|s| {
+                    self.code.set_language(Language::named(s));
+                    self.code.parse(None);
+                })
                 .is_some(),
             "indent" => Indent::parse(v).map(|i| self.code.indent = i).is_some(),
             "line_numbers" => parse::truthy(v).map(|b| self.line_numbers = b).is_some(),
@@ -456,6 +530,19 @@ impl Element for CodeView {
 
     fn value(&self) -> Option<OscType> {
         None
+    }
+
+    /// The frame tick while a parse is behind the text.
+    fn needs(&self) -> Needs {
+        Needs {
+            animated: self.code.parsing(),
+            ..Needs::default()
+        }
+    }
+
+    /// A slice of the parse that is behind; the colors change when it ends.
+    fn tick(&mut self, _live: &Live) -> bool {
+        self.code.parsing() && self.code.parse(Some(TICK_SLICE))
     }
 
     fn info(&self) -> Vec<(String, Value)> {

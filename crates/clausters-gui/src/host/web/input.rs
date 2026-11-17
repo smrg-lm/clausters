@@ -102,6 +102,7 @@ impl WebApp {
     pub(super) fn apply_gesture_effects(&mut self, effects: Vec<GestureEffect>) {
         // A gesture may have sent a chooser into another directory.
         self.start_listings();
+        let any = !effects.is_empty();
         for effect in effects {
             match effect {
                 GestureEffect::Emit {
@@ -133,6 +134,12 @@ impl WebApp {
                 // is a worse regression than having no keyboard at all.
                 GestureEffect::FocusOut(def_id) => self.blur(def_id),
             }
+        }
+        // A gesture may have left an element with work for the tick (a code
+        // element's parse behind its text); the tick stops itself once the
+        // page is settled, so this only ever starts it.
+        if any && self.tick.is_none() && self.tick_wanted() {
+            self.ensure_tick(true);
         }
     }
 

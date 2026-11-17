@@ -1,0 +1,11 @@
+#!/bin/sh
+# The C compiler for wasm32-unknown-unknown: clang (or $WASM_CLANG) aimed at
+# that target, with the C library headers beside this script and -- in a
+# build with shared memory -- the features its objects must be compiled with
+# to link into it. The target is named here and not left to the caller, who
+# also runs this to ask which compiler it is. See README.md.
+here=$(dirname "$0")
+case ",$CARGO_CFG_TARGET_FEATURE," in
+*,atomics,*) set -- -matomics -mbulk-memory "$@" ;;
+esac
+exec "${WASM_CLANG:-clang}" --target=wasm32-unknown-unknown -isystem "$here/include" "$@"

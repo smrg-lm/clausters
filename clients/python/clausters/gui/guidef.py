@@ -1993,7 +1993,9 @@ def code(text: str = "", *, language: str | None = None,
     lines selected, Shift+Tab takes one off, Backspace in a line's leading
     spaces goes back one, and Enter keeps the line's indentation, a level
     more after a line that opens a block in ``language`` (``"python"`` or
-    ``"javascript"``). Tab stays in the editor; Ctrl+Tab moves the focus on.
+    ``"javascript"``), which also colors the text by its syntax, in the
+    theme's ``syntax_`` roles. Tab stays in the editor; Ctrl+Tab moves the
+    focus on.
     ``line_numbers=False`` takes the numbers away.
 
     Its text is reported by `query` (``text``, with ``line``, ``column``,

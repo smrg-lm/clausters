@@ -351,8 +351,9 @@ Named, not enumerated: each is written where it belongs and is read there.
   *(`crates/clausters-gui/PLAN.md`, WS track)*. Experimental: the editor's
   code, post and documentation as host elements in the dock, so one window
   holds everything natively and in a page. Checkpoint 1 passed and the dock
-  is on `main`, and the post panel and the code element's text base are
-  done; next is `WS7`, incremental highlighting, toward checkpoint 2.
+  is on `main`, and the post panel, the code element's text base and its
+  incremental highlighting are done; next is `WS8`, find and replace and the
+  rest of editing, toward checkpoint 2.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the

@@ -27,8 +27,9 @@ sudo apt install patchelf
 - `pkg-config` locates the ALSA and PipeWire libraries at build time; without
   it `cargo build` / `cargo test` fail in the `alsa-sys` / `pipewire-sys`
   build scripts.
-- `clang` is only used at build time by bindgen (it parses the PipeWire C
-  headers); the toolchain itself stays `rustc` + `gcc`.
+- `clang` is only used at build time: by bindgen (it parses the PipeWire C
+  headers), and to compile the GUI host's code grammars, which are C, for the
+  browser target; the native toolchain itself stays `rustc` + `gcc`.
 - The engine core builds and tests **with no system audio library at all** if
   you disable the default features (see below).
 
@@ -118,6 +119,13 @@ nightly pinned in `crates/clausters-gui/wasm-apps-toolchain`; nothing else does:
 rustup toolchain install "$(cat crates/clausters-gui/wasm-apps-toolchain)" \
     --profile minimal -c rust-src -t wasm32-unknown-unknown
 ```
+
+Both builds compile C: the grammars the code element highlights with. A
+browser target has no C library, so the repository's `.cargo/config.toml`
+names the compiler for it, `third_party/tree-sitter-wasm/cc` -- `clang` aimed
+at `wasm32-unknown-unknown` with the C library headers beside it (its README
+says why they are there). It needs nothing but `clang` on the path, or
+`WASM_CLANG` naming another.
 
 ### The `faust` feature (default)
 

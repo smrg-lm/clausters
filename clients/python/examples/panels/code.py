@@ -2,7 +2,9 @@
 """An editor of code over a post window: the two halves of an editor.
 
 A ``code`` element holds a text drawn in the monospaced face, with its line
-numbers and the line the caret is on, and edits it as a code editor does:
+numbers and the line the caret is on, colored by its syntax (``language``
+names it: keywords, names, strings and comments each in a color of the
+theme, kept as you type), and edits it as a code editor does:
 click to place the caret (two clicks a word, three a line, a press on a line's
 number the whole line), drag or Shift and an arrow to select, Ctrl+X, Ctrl+C
 and Ctrl+V, Ctrl+Z to undo a run of typing at once. **Tab indents** -- a level

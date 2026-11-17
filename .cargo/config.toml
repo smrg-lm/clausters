@@ -10,3 +10,10 @@
 # `CARGO_INCREMENTAL=1` still turns it on for one command.
 [build]
 incremental = false
+
+# The C compiler for the browser target: clang with the C library headers
+# the code element's grammars compile against in a page
+# (`third_party/tree-sitter-wasm`, which says why). Only a build for that
+# target reads the variable, and one already set in the environment wins.
+[env]
+CC_wasm32_unknown_unknown = { value = "third_party/tree-sitter-wasm/cc", relative = true }

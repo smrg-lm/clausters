@@ -3235,3 +3235,55 @@ which at the budget's size is tens of microseconds, and it keeps one model of
 a caret for the field and the code. A file whose size makes that copy matter
 is the point at which the buffer under `Code` changes, behind the same
 methods.
+
+## Code is colored from a syntax tree its edits keep, parsed within a time (2026-11-16)
+
+*Taken in `WS7` (`crates/clausters-gui/PLAN.md`).* The code element colors
+its text from a tree-sitter tree: the text is parsed once, every change the
+model records is told to the tree (where it was, what it removed, what it
+inserted), and the next parse reads again only what the change touched. The
+grammars are the published Python and JavaScript ones, and what each part of
+the text is comes from their own highlighting queries, asked only over the
+rows in view; the query's names become ten kinds, each a theme role
+(`syntax_keyword` ... `syntax_operator`), with the current editor's colors on
+the dark ground and on the light one. A parser written for the host was not
+weighed: the grammars and their queries exist and are maintained, and
+tree-sitter is the parser editors share for exactly this.
+
+**A parse is given a time and carried on.** An edit costs more to parse again
+than the lines it touched. Measured in a release build on a 5,000-line Python
+file of 1,000 functions: one character typed inside a name takes 1.6 ms,
+because the parser walks past every statement at the top of the file to reuse
+it (about 1.6 microseconds each; 0.7 for JavaScript, whose scanner keeps no
+indentation); the same file as 50 classes of 20 methods takes 0.47 ms; and a
+character that leaves the text broken -- an open quote, a half-typed
+condition -- takes 10 to 15 ms, the parser searching for the reading that
+recovers. In a page every figure is two or three times that. Typing breaks
+the text on most keys, so a parse that had to finish inside the key would not
+fit the budget. So a parse stops when its time is up and the next call carries
+it on where it stopped (tree-sitter keeps the place; an edit in between starts
+it again): a key parses for 1.5 ms at most, and a parse still behind asks for
+the frame tick, whose element `tick` parses for 2.5 ms more each time until it
+catches up. Meanwhile the tree is the one before, its places moved by the
+edits, so the text keeps the colors it had. A text set whole is parsed whole,
+once, as it is opened.
+
+The numbers that close it. Natively, the worst key and its frame in that file,
+highlighted, take 2.1 ms in a release build (the test holds them under 4 ms),
+and a tick with its frame 0.75 ms. In a page (headless Chrome, a release
+build), a key handled and its frame drawn take 5.5 ms at the median and 7.6 ms
+at the worst after the first key, against 5.4 ms at the worst for the same file
+as plain text; the parse catches up 65 to 165 ms after the last key. The
+grammars, the parser and the regular expressions the queries match names with
+add 627 KB gzip (2.4 MB raw) to the page's host.
+
+**The grammars' C in a page.** `wasm32-unknown-unknown` has no C library. The
+`tree-sitter` crate compiles the subset it needs and finds its headers by
+itself, but the grammar crates' build scripts do not look for them, and
+nothing a dependent's build script does reaches another crate's compiler. So
+the repository's `.cargo/config.toml` names the C compiler for that target, a
+script beside the headers (`third_party/tree-sitter-wasm/cc`): clang aimed at
+the target, with the headers, and with the atomics features in the build with
+shared memory, whose objects must have them to link. Native builds do not
+read it, and a build for the target from anywhere in the repository gets it
+without a step.

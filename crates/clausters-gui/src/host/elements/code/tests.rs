@@ -174,9 +174,130 @@ fn a_frame_draws_the_rows_in_view() {
     );
 }
 
+/// **A key and the frame after it, in 5,000 lines of Python**: the edit
+/// told to the tree, the rows in view parsed again and highlighted, and
+/// drawn. The first frame parses the whole file and is timed apart. The
+/// budget is 4 ms a key; a release build is held to it.
+#[test]
+fn a_key_and_its_frame_in_five_thousand_lines_of_python() {
+    let m = Metrics::default();
+    let text: String = (0..1000)
+        .map(|i| {
+            format!(
+                "def step_{i}(x, y=None):\n    \"\"\"Doc {i}.\"\"\"\n    if x > {i}:\n        return f\"{{x}}\" + 'a\\n'  # note\n    return compute(x, [1, 2.5])\n"
+            )
+        })
+        .collect();
+    let mut v = view(r#"{"language": "python"}"#);
+    v.set("text", &Value::from(text));
+    assert_eq!(v.code.lines(), 5001);
+    let mut clip = Clip::default();
+    // the caret in the middle of the file, in view
+    v.code.place(v.code.line(2502).unwrap().0 + 8, false);
+    v.reveal.set(true);
+    let theme = Theme::default();
+    let world = World::default();
+    let ctx = Ctx {
+        world: &world,
+        metrics: &m,
+        rect: RECT,
+        indent: 0.0,
+        clip: None,
+        scale: 1.0,
+        time: None,
+        focused: true,
+        hovered: false,
+        clock: 0.0,
+        text_fit: 1.0,
+    };
+    let frame = |v: &CodeView| {
+        let mut mesh = Mesh::new();
+        v.draw(&mut Draw::new(&mut mesh, &m, &theme), &ctx);
+        mesh
+    };
+    let started = std::time::Instant::now();
+    let first = frame(&v);
+    eprintln!("the first frame, the file parsed: {:?}", started.elapsed());
+    let mut worst = std::time::Duration::ZERO;
+    let mut keys = typed("if (y): z = 'q' # w\n");
+    keys.extend(std::iter::repeat_n(Key::Backspace, 6));
+    for k in &keys {
+        let started = std::time::Instant::now();
+        press(&mut v, &mut clip, Mods::default(), std::slice::from_ref(k));
+        frame(&v);
+        worst = worst.max(started.elapsed());
+    }
+    eprintln!("the worst key and its frame in 5000 lines: {worst:?}");
+    #[cfg(not(debug_assertions))]
+    assert!(
+        worst < std::time::Duration::from_millis(4),
+        "{worst:?} a key"
+    );
+    // a parse left behind asks for the tick, and its ticks catch it up
+    let live = Live {
+        bus: None,
+        sample_rate: 0.0,
+        dt: 0.016,
+        histories: &Default::default(),
+    };
+    let mut ticks = 0;
+    let mut worst_tick = std::time::Duration::ZERO;
+    while v.needs().animated {
+        let started = std::time::Instant::now();
+        v.tick(&live);
+        frame(&v);
+        worst_tick = worst_tick.max(started.elapsed());
+        ticks += 1;
+        assert!(ticks < 1000, "the parse catches up");
+    }
+    eprintln!("caught up in {ticks} ticks, the worst with its frame {worst_tick:?}");
+    #[cfg(not(debug_assertions))]
+    assert!(
+        worst_tick < std::time::Duration::from_millis(4),
+        "{worst_tick:?} a tick"
+    );
+    let mut fresh = Code::new(v.code.text());
+    fresh.set_language(Language::Python);
+    fresh.parse(None);
+    assert_eq!(v.code.spans(0..5001), fresh.spans(0..5001));
+    // the rows in view are drawn in more than one color
+    let mut colors: std::collections::HashSet<[u32; 4]> = first
+        .colors_by_y()
+        .map(|(_, c)| c.map(f32::to_bits))
+        .collect();
+    #[cfg(feature = "font-atlas")]
+    colors.extend(
+        first
+            .glyph_vertices()
+            .chunks(8)
+            .map(|v| [v[4], v[5], v[6], v[7]].map(f32::to_bits)),
+    );
+    for role in [
+        theme.syntax_keyword,
+        theme.syntax_string,
+        theme.syntax_comment,
+    ] {
+        assert_eq!(
+            colors.contains(&role.map(f32::to_bits)),
+            cfg!(feature = "highlight"),
+            "{role:?} drawn with highlighting and only then"
+        );
+    }
+}
+
 /// **Tab is the element's**, so the focus ring leaves it on Ctrl+Tab.
 #[test]
 fn tab_is_kept() {
     let v = view("{}");
     assert!(v.takes_tab());
+}
+
+/// **A line's cells are counted the same by its bytes and by its
+/// graphemes**: a tab to its stop either way.
+#[test]
+fn cells_count_a_tab_to_its_stop() {
+    assert_eq!(cells("abc"), 3);
+    assert_eq!(cells("a\tb"), TAB_COLS + 1);
+    assert_eq!(cells("\u{e9}\tb"), TAB_COLS + 1);
+    assert_eq!(cells("abcd\t"), 2 * TAB_COLS);
 }

@@ -333,6 +333,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: web-wasm
+      # The GUI host's code element compiles its grammars, which are C, with
+      # clang aimed at wasm32 (third_party/tree-sitter-wasm/cc).
+      - name: System deps
+        run: sudo apt-get update && sudo apt-get install -y clang
       # The three wasm bundles are staged by a wasm-bindgen CLI that must be the
       # exact version the lockfiles pin (the glue they exchange is a private
       # format). Taken as the prebuilt release binary rather than

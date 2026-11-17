@@ -77,7 +77,7 @@ A host running in a browser tab has no config file, so the page sends the same
 table over the wire, `GuiHost.theme` (and its sizing sibling `GuiHost.metrics`)
 — see the [web client book](https://clausters-web.readthedocs.io/).
 
-The 70 roles, named by **function** rather than by widget, so one entry restyles
+The 93 roles, named by **function** rather than by widget, so one entry restyles
 everything that means the same thing by it. The defaults are written here as the
 hex a file would use; the host holds them as floats, so a value copied back is
 the same color to within the 8 bits of the notation:
@@ -102,6 +102,9 @@ the same color to within the 8 bits of the notation:
 | `trace` | `#66d99e` | A drawn signal or curve (scope trace, bpf curve, automation curve). |
 | `trace_bright` | `#73e6a8` | The brighter trace of the phase scope's beam. |
 | `trace_body` | `#d9f0b39e` | The measured body drawn inside a signal's envelope (an RMS layer). Translucent by role: a body is read *against* the peaks it sits in. |
+| `trace_signal` | `#fa8c59f2` | **The reconstruction** drawn over a signal's samples (the `signal` measure): the band-limited waveform between them. An ink of its own because it is read *against* the samples it is drawn over, the analog waveform in a colour apart from the digital samples, and warm so it does not read as another channel. |
+| `trace_loudness` | `#8cc7faf2` | **The loudness curve** drawn over a signal (the `momentary` and `short` measures): what a meter would have read at each point of the take. An ink of its own, and cool where the reconstruction is warm, because it is the one layer that does *not* measure the same axis as the picture under it -- it is read against its own LU scale and against the target line, not against the samples it crosses. |
+| `trace_guide` | `#7394b88c` | **The loudness target and the edges of its scale**: the line a delivery specification names (EBU R 128's -23 LUFS) and the bounds of the strip the curve is drawn in. Quiet, because a guide is read *behind* the curve it is a reference for. |
 | `point` | `#e6edf2` | A curve's grabbable break-point. |
 | `frame` | `#4c576b` | The neutral frame of the editor views (piano roll, tracks, patch). |
 | `view_frame` | `#407361` | The frame of the timeline views (waveform, spectrogram). |
@@ -164,6 +167,36 @@ the same color to within the 8 bits of the notation:
 | `series_2` | `#f2b840` | Channel 2 of the series palette. |
 | `series_3` | `#73a6f2` | Channel 3 of the series palette. |
 | `series_4` | `#e67399` | Channel 4 of the series palette. |
+| `syntax_keyword` | `#569cd6` | A keyword, and a constant the language names (`None`, `true`). |
+| `syntax_control` | `#c586c0` | A keyword that moves control or brings a module in (`if`, `return`, `import`). |
+| `syntax_name` | `#9cdcfe` | A name: a variable, a property, a parameter. |
+| `syntax_function` | `#dcdcaa` | A function's name, where it is defined and where it is called. |
+| `syntax_type` | `#4ec9b0` | A type, and a name that starts with a capital (a class). |
+| `syntax_number` | `#b5cea8` | A number. |
+| `syntax_string` | `#ce9178` | A string. |
+| `syntax_regexp` | `#d16969` | A regular expression written as a literal. |
+| `syntax_comment` | `#6a9955` | A comment. |
+| `syntax_operator` | `#d4d4d4` | An operator, punctuation, an escape inside a string. |
+
+**Code follows the ground.** The `syntax_` roles' defaults are for the dark
+ground the host draws on. A table that turns `background` light (and back) and
+names none of them also puts the set for the new ground in them, so a light
+theme reads its code without ten more entries:
+
+| Role | On a light ground |
+| --- | --- |
+| `syntax_keyword` | `#0000ff` |
+| `syntax_control` | `#af00db` |
+| `syntax_name` | `#0070c1` |
+| `syntax_function` | `#795e26` |
+| `syntax_type` | `#267f99` |
+| `syntax_number` | `#098658` |
+| `syntax_string` | `#a31515` |
+| `syntax_regexp` | `#af00db` |
+| `syntax_comment` | `#008000` |
+| `syntax_operator` | `#383a42` |
+
+A table that names any of them keeps what it named.
 
 ## `[gui.metrics]`
 

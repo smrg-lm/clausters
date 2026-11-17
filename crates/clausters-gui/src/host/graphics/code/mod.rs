@@ -20,14 +20,24 @@
 //!   indents the lines selected, Shift+Tab takes one off, Backspace in a
 //!   line's leading spaces takes a level back, Enter keeps the line's
 //!   indentation and adds a level after a line that opens a block
-//!   ([`Language`]).
+//!   ([`Language`]);
+//! - **its syntax** ([`syntax`]): every change is told to the tree as it is
+//!   made, [`Code::parse`] reads again what was touched, within a time if
+//!   asked, and [`Code::spans`] says what each part of a range of the text
+//!   is.
 //!
 //! No window, no device, no wire: what a key does to the text is tested
 //! here as text.
 
+use std::cell::RefCell;
+
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::textedit::{self, Caret, Unit};
+
+pub mod syntax;
+
+use syntax::{Span, Syntax};
 
 /// **One level of indentation**: a tab, or a number of spaces.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -161,7 +171,9 @@ pub struct Code {
     /// The revision the text was set at, where undoing everything returns.
     base: u64,
     pub indent: Indent,
-    pub language: Language,
+    /// The tree of the text, in its language. In a cell because a parse is
+    /// carried on by whoever asks, a view's tick included.
+    syntax: RefCell<Syntax>,
 }
 
 impl Default for Code {
@@ -185,7 +197,7 @@ impl Code {
             saved: 0,
             base: 0,
             indent: Indent::default(),
-            language: Language::default(),
+            syntax: RefCell::new(Syntax::new(Language::default())),
         };
         code.set_text(text);
         code
@@ -204,7 +216,46 @@ impl Code {
         self.next_rev += 1;
         self.saved = self.rev;
         self.base = self.rev;
+        self.syntax.get_mut().reset();
         self.reindex();
+    }
+
+    /// The language the text is written in.
+    pub fn language(&self) -> Language {
+        self.syntax.borrow().language()
+    }
+
+    /// The text read as `language` from now on.
+    pub fn set_language(&mut self, language: Language) {
+        if language != self.language() {
+            self.syntax = RefCell::new(Syntax::new(language));
+        }
+    }
+
+    /// **The tree brought up to the text**, within `budget` if one is
+    /// given: answers whether it is, or whether the parse stopped at its time
+    /// and is to be carried on by the next call.
+    pub fn parse(&self, budget: Option<std::time::Duration>) -> bool {
+        self.syntax.borrow_mut().parse(&self.text, budget)
+    }
+
+    /// Whether the tree is behind the text.
+    pub fn parsing(&self) -> bool {
+        self.syntax.borrow().parsing()
+    }
+
+    /// **What each part of lines `lines` is**, by the tree as it stands:
+    /// runs of one kind, in order and apart, absolute in the text; what
+    /// nothing names is left out.
+    pub fn spans(&self, lines: std::ops::Range<usize>) -> Vec<Span> {
+        let Some(&from) = self.starts.get(lines.start) else {
+            return Vec::new();
+        };
+        let to = self
+            .starts
+            .get(lines.end)
+            .map_or(self.text.len(), |next| next - 1);
+        self.syntax.borrow().spans(&self.text, from, to)
     }
 
     pub fn text(&self) -> &str {
@@ -300,6 +351,9 @@ impl Code {
             return false;
         }
         let (at, removed, inserted) = diff(&before_text, &self.text);
+        self.syntax
+            .get_mut()
+            .edit(&before_text, at, removed, inserted);
         let change = Change {
             at,
             removed: removed.to_string(),
@@ -338,6 +392,9 @@ impl Code {
         };
         if redo {
             for c in &step.changes {
+                self.syntax
+                    .get_mut()
+                    .edit(&self.text, c.at, &c.removed, &c.inserted);
                 self.text
                     .replace_range(c.at..c.at + c.removed.len(), &c.inserted);
             }
@@ -346,6 +403,9 @@ impl Code {
             self.undo.push(step);
         } else {
             for c in step.changes.iter().rev() {
+                self.syntax
+                    .get_mut()
+                    .edit(&self.text, c.at, &c.inserted, &c.removed);
                 self.text
                     .replace_range(c.at..c.at + c.inserted.len(), &c.removed);
             }
@@ -378,7 +438,7 @@ impl Code {
     /// and the one that closes it, the closing one on a line of its own.
     pub fn newline(&mut self) -> bool {
         let indent = self.indent;
-        let language = self.language;
+        let language = self.language();
         self.edit(false, |text, caret| {
             textedit::delete_selection(text, caret);
             let start = textedit::line_start(text, caret.pos);
