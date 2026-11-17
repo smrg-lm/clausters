@@ -223,3 +223,28 @@ The verdict is one of three:
 | `note_entry` | `value_whole` | `ScoreEditor.value` | `ScoreEditor.value` | **api** — `value = (1, 1)` |
 | `note_entry` | `dot` | `ScoreEditor.dotted` | `ScoreEditor.dotted` | **api** |
 | `note_entry` | `enter_rest` | `ScoreEditor.enter_rest` | `ScoreEditor.enterRest` | **api** |
+| `editor` | `new_file` | — | — | **n/a** — the code editor's own, in the windows of its application, which no client opens |
+| `editor` | `open_file` | — | — | **n/a** |
+| `editor` | `save_as` | — | — | **n/a** |
+| `editor` | `close_tab` | — | — | **n/a** |
+| `editor` | `quit` | — | — | **n/a** |
+| `editor` | `preferences` | — | — | **n/a** |
+| `editor` | `evaluate_line` | — | — | **n/a** |
+| `editor` | `evaluate_block` | — | — | **n/a** |
+| `editor` | `eval_paragraph` | — | — | **n/a** |
+| `editor` | `interrupt` | — | — | **n/a** |
+| `editor` | `restart` | — | — | **n/a** |
+| `editor` | `environments` | — | — | **n/a** |
+| `editor` | `clear_post` | — | — | **n/a** |
+| `editor` | `show_docs` | — | — | **n/a** |
+| `editor` | `split_editor` | — | — | **n/a** |
+| `editor` | `move_tab` | — | — | **n/a** |
+| `editor` | `theme_light` | — | — | **n/a** |
+| `editor` | `theme_dark` | — | — | **n/a** |
+| `editor` | `theme_system` | — | — | **n/a** |
+| `editor` | `zoom_in` | — | — | **n/a** |
+| `editor` | `zoom_out` | — | — | **n/a** |
+| `editor` | `zoom_reset` | — | — | **n/a** |
+| `editor` | `docs` | — | — | **n/a** |
+| `editor` | `search_docs` | — | — | **n/a** |
+| `editor` | `docs_folder` | — | — | **n/a** |

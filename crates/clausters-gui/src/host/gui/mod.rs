@@ -97,6 +97,33 @@ pub enum UserEvent {
     /// An application's thread has said something: the loop's next turn
     /// takes the host's effects (`Host::take_effects`).
     AppSaid,
+    /// **A packet from the application in the process** ([`LocalLink`]),
+    /// as it was built: there are no bytes to decode.
+    Local(clausters_core::osc::OscPacket),
+}
+
+/// **What the host says to the application in its process**: called on the
+/// loop's thread with each message the host sends it, so it hands the
+/// message on (to a channel) and returns.
+pub type LocalReplies = Box<dyn Fn(clausters_core::osc::OscPacket)>;
+
+/// **The application's end of the link** ([`run_local`]): what it asks the
+/// host, from any thread, as a script asks it -- `/gui_def`, `/gui_set`,
+/// `/gui_dock` -- with no socket between the two.
+#[derive(Clone)]
+pub struct LocalLink {
+    proxy: Proxy,
+}
+
+impl LocalLink {
+    /// Hands `msg` to the host's loop; `false` once the loop has gone.
+    pub fn send(&self, msg: clausters_core::osc::OscMessage) -> bool {
+        self.proxy
+            .send_event(UserEvent::Local(clausters_core::osc::OscPacket::Message(
+                msg,
+            )))
+            .is_ok()
+    }
 }
 
 /// **Where the windows live**: winit's loop, which opens them on the screen,
@@ -197,7 +224,13 @@ pub fn run_headless(
     // applications' wake; this one would keep the channel open after the
     // threads are gone.
     drop(proxy);
-    let mut app = App::new(host, socket, bus, inflight, true);
+    let app = App::new(host, socket, bus, inflight, true);
+    headless_loop(app, events)
+}
+
+/// **The headless front's loop**: the host's turns, driven by the events the
+/// threads send, until the host ends or every sender has gone.
+fn headless_loop(mut app: App, events: std::sync::mpsc::Receiver<UserEvent>) -> Result<(), String> {
     let exit = std::cell::Cell::new(false);
     app.start(Loop::Headless(&exit));
     loop {
@@ -222,6 +255,47 @@ pub fn run_headless(
             app.on_event(Loop::Headless(&exit), event);
         }
     }
+}
+
+/// **Runs the host with an application in its process**, linked to it
+/// natively: `link` is handed the application's end ([`LocalLink`]) before
+/// the loop starts and gives back where the host's answers go
+/// ([`LocalReplies`]), and the application is then a client of the host as a
+/// script is, by the same protocol, with no socket between the two
+/// ([`ClientId::Local`]). The script front still listens on `socket`, so a
+/// script may drive the same host beside it. `headless` draws the windows
+/// offscreen, as [`run_headless`] does, which is how the application is
+/// checked by script.
+pub fn run_local(
+    host: Host,
+    socket: Arc<UdpSocket>,
+    headless: bool,
+    link: impl FnOnce(LocalLink) -> LocalReplies,
+) -> Result<(), String> {
+    let mut host = host;
+    if headless {
+        let (sender, events) = std::sync::mpsc::channel();
+        let proxy = Proxy::Channel(sender);
+        spawn_disk(&mut host, &proxy)?;
+        set_app_wake(&mut host, &proxy);
+        let inflight = spawn_fronts(&host, &socket, &proxy, None, None)?;
+        let replies = link(LocalLink { proxy });
+        let mut app = App::new(host, socket, None, inflight, true);
+        app.local = Some(replies);
+        return headless_loop(app, events);
+    }
+    let event_loop = EventLoop::<UserEvent>::with_user_event()
+        .build()
+        .map_err(|e| format!("cannot create the window event loop ({e})"))?;
+    event_loop.set_control_flow(ControlFlow::Wait);
+    let proxy = Proxy::Winit(event_loop.create_proxy());
+    spawn_disk(&mut host, &proxy)?;
+    set_app_wake(&mut host, &proxy);
+    let inflight = spawn_fronts(&host, &socket, &proxy, None, None)?;
+    let replies = link(LocalLink { proxy });
+    let mut app = App::new(host, socket, None, inflight, false);
+    app.local = Some(replies);
+    event_loop.run_app(&mut app).map_err(|e| e.to_string())
 }
 
 /// **An application's thread wakes the loop** when it has said something,

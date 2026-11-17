@@ -87,8 +87,12 @@ impl App {
     /// make room for it.
     pub(super) fn open_pane(&mut self, lp: Loop, id: i32) -> Option<Gpu> {
         if self.dock.is_none() {
-            let size = (OPENS_AT.0, OPENS_AT.1);
-            self.dock = Some(self.open_shell(lp, "clausters", size, false)?);
+            let (title, size) = self
+                .host
+                .dock_opens
+                .clone()
+                .unwrap_or_else(|| ("clausters".into(), OPENS_AT));
+            self.dock = Some(self.open_shell(lp, &title, size, false)?);
         }
         let title = self.host.window_title(id);
         let page = self.host.window_dock_page(id);

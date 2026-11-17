@@ -441,6 +441,48 @@ pub const NOTES: &[Verb] = &[
     verb("dynamic_none", &[], "No dynamic"),
 ];
 
+/// The code editor's scope, in force in every window of its application.
+pub const EDITOR_SCOPE: &str = "editor";
+
+/// **What the code editor adds**: its files, its session, its panels and
+/// its size. Evaluating is the `code` element's own, and these name it for
+/// the menu and for a panel the element is not in.
+pub const EDITOR: &[Verb] = &[
+    verb("new_file", &["Ctrl+N"], "New"),
+    verb("open_file", &["Ctrl+O"], "Open..."),
+    verb("save_as", &["Ctrl+Shift+S"], "Save as..."),
+    verb("close_tab", &["Ctrl+W"], "Close tab"),
+    verb("quit", &["Ctrl+Q"], "Quit"),
+    verb("preferences", &["Ctrl+,"], "Preferences..."),
+    verb(
+        "evaluate_line",
+        &["Shift+Enter"],
+        "Evaluate line or selection",
+    ),
+    verb("evaluate_block", &["Ctrl+Enter"], "Evaluate block"),
+    toggle(
+        "eval_paragraph",
+        &[],
+        "Evaluate contiguous lines as a block",
+    ),
+    verb("interrupt", &["Ctrl+."], "Interrupt"),
+    verb("restart", &[], "Restart session"),
+    verb("environments", &[], "Python environments..."),
+    verb("clear_post", &["Ctrl+Shift+P"], "Clear post window"),
+    toggle("show_docs", &[], "Documentation"),
+    toggle("split_editor", &[], "Split editor"),
+    verb("move_tab", &[], "Move tab to other editor"),
+    choice("theme", "theme_light", &[], "Light"),
+    choice("theme", "theme_dark", &[], "Dark"),
+    choice("theme", "theme_system", &[], "System"),
+    verb("zoom_in", &["Ctrl++", "Ctrl+="], "Increase size"),
+    verb("zoom_out", &["Ctrl+-"], "Decrease size"),
+    verb("zoom_reset", &["Ctrl+0"], "Default size"),
+    verb("docs", &["F1"], "Documentation"),
+    verb("search_docs", &["Ctrl+Shift+F"], "Search the documentation"),
+    verb("docs_folder", &[], "Documentation folder..."),
+];
+
 /// The score window's own scope, in force whenever it is open.
 pub const SCORE_SCOPE: &str = "score";
 
@@ -571,7 +613,7 @@ mod tests {
     /// A scope names each verb once, with words of its own.
     #[test]
     fn every_scope_names_each_verb_once_with_its_words() {
-        for rows in [WINDOW, AUDIO, MULTITRACK, NOTES, SCORE, NOTE_ENTRY] {
+        for rows in [WINDOW, AUDIO, MULTITRACK, NOTES, SCORE, NOTE_ENTRY, EDITOR] {
             for (i, v) in rows.iter().enumerate() {
                 assert!(!v.label.is_empty(), "{} has no words", v.name);
                 assert!(
@@ -588,7 +630,7 @@ mod tests {
     /// words never end in one.
     #[test]
     fn a_switch_or_a_choice_never_ends_in_an_ellipsis() {
-        for rows in [WINDOW, AUDIO, MULTITRACK, NOTES, SCORE, NOTE_ENTRY] {
+        for rows in [WINDOW, AUDIO, MULTITRACK, NOTES, SCORE, NOTE_ENTRY, EDITOR] {
             for v in rows.iter().filter(|v| v.kind != ActionKind::Command) {
                 assert!(!v.label.ends_with("..."), "{} acts at once", v.name);
             }

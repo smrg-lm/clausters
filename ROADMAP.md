@@ -350,15 +350,15 @@ Named, not enumerated: each is written where it belongs and is read there.
 - **The host as the application's one window, the `WS` track**
   *(`crates/clausters-gui/PLAN.md`, WS track)*. Experimental: the editor's
   code, post and documentation as host elements in the dock, so one window
-  holds everything natively and in a page. Checkpoint 1 passed and the dock
-  is on `main`, and the post panel and the code element (its text base, its
-  incremental highlighting, find and replace and the rest of editing,
-  evaluation, language help) and the documentation panel are done; next
-  are checkpoints 2 and 3, taken together: the eye checks, the comparative
-  style review and the bar checked item by item, then `WS12`. The panel's two
-  gaps in the plan's "Found by use" ("A documentation page draws an image
-  as its description", "A documentation page's long code line is cut at the
-  page's edge") are weighed at that checkpoint.
+  holds everything natively and in a page. Next are checkpoints 2 and 3,
+  taken together, now with the native application (`clausters-editor-host`)
+  running beside the webview one: the eye checks, the comparative style
+  review of the two side by side and the bar checked item by item, then
+  `WS13`. The gaps the plan's "Found by use" holds from WS11 and WS12 (an
+  image in a documentation page, a long code line, the code font, the dock's
+  arrangement and the window's place between runs, the run buttons and the
+  status footer, a menu bar per half of a split editor, the session's own
+  windows outside the editor's dock) are weighed at that checkpoint.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the

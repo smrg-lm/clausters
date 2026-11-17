@@ -33,7 +33,7 @@ sys.path.insert(0, str(ROOT / "clients/python"))
 
 #: Each scope of the table, by the constant that holds its rows.
 SCOPES = {"AUDIO": "audio", "WINDOW": "window", "MULTITRACK": "multitrack", "NOTES": "notes",
-          "SCORE": "score", "NOTE_ENTRY": "note_entry"}
+          "SCORE": "score", "NOTE_ENTRY": "note_entry", "EDITOR": "editor"}
 
 #: Where each class a row may name lives, in each client.
 CLASSES = {

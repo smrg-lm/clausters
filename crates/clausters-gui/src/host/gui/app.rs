@@ -225,6 +225,9 @@ pub(super) struct App {
     /// WebSocket reply handles by connection id; registered on `WsConnected`,
     /// pruned on `WsDisconnected`.
     pub(super) ws_conns: HashMap<u64, WsConn>,
+    /// **Where what the host says to an application in its process goes**
+    /// ([`ClientId::Local`]), when one is linked ([`super::run_local`]).
+    pub(super) local: Option<super::LocalReplies>,
     /// The script front's frames in flight: each `Osc`, `TcpOsc` and `WsOsc`
     /// event releases its place here as it is handled.
     pub(super) inflight: Arc<Inflight>,
@@ -327,6 +330,7 @@ impl App {
             by_winit: HashMap::new(),
             tcp_conns: HashMap::new(),
             ws_conns: HashMap::new(),
+            local: None,
             inflight,
             pending: Vec::new(),
             pending_asks: Vec::new(),
@@ -571,6 +575,14 @@ impl App {
 
     /// Encodes and sends one message to `to`, over the transport it belongs to.
     pub(super) fn send(&self, to: ClientId, msg: OscMessage) {
+        // An application in the process is handed the message as it was
+        // built: no bytes cross between the two.
+        if to == ClientId::Local {
+            return match &self.local {
+                Some(local) => local(OscPacket::Message(msg)),
+                None => warn!("reply {} to a local application with none linked", msg.addr),
+            };
+        }
         let addr = msg.addr.clone();
         let bytes = match encode(&OscPacket::Message(msg)) {
             Ok(bytes) => bytes,
@@ -604,6 +616,8 @@ impl App {
             }
             // The wasm front never reaches the native event loop.
             ClientId::Web => warn!("reply {addr} to a web client on the native front"),
+            // taken before the encoding, above
+            ClientId::Local => {}
         }
     }
 
@@ -889,6 +903,13 @@ impl App {
             },
             // the turn after this event takes what the application said
             UserEvent::AppSaid => {}
+            // **What the application in the process asks**: a packet as it
+            // was built, with no bytes between the two and so nothing to
+            // decode -- the same handling a script's packet gets.
+            UserEvent::Local(packet) => {
+                let effects = self.host.handle_packet(packet, ClientId::Local);
+                self.apply(lp, ClientId::Local, effects);
+            }
         }
     }
 

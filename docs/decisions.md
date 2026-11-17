@@ -243,6 +243,7 @@ quoted title lands here, on the link to the entry.
 - [The host ships the faces it shapes (2026-11-08)](decisions/gui.md#the-host-ships-the-faces-it-shapes-2026-11-08)
 - [Code is edited on the host's own text base (2026-11-16)](decisions/gui.md#code-is-edited-on-the-hosts-own-text-base-2026-11-16)
 - [Code is colored from a syntax tree its edits keep, parsed within a time (2026-11-16)](decisions/gui.md#code-is-colored-from-a-syntax-tree-its-edits-keep-parsed-within-a-time-2026-11-16)
+- [The editor's application is a client of its host, linked in the host's process (2026-11-17)](decisions/gui.md#the-editors-application-is-a-client-of-its-host-linked-in-the-hosts-process-2026-11-17)
 
 ## [The document and the applications](decisions/apps.md)
 

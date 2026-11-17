@@ -2144,13 +2144,60 @@ something reusable if the track stops there.
   page's edge rather than scrolled, and the text is not selected or copied
   by hand. Opening the panel at a name from the code element's Ctrl+D is
   the application's, which moves in at WS12.
-- ⬜ **WS12 — The native application.** One binary: the host, the dock
+- ✅ **WS12 — The native application.** One binary: the host, the dock
   and the editor's application, with the current application's non-drawing
   Rust moved in. Menus as the host's menu bar, the dialogs (preferences,
   environments, confirmations) as host windows, the file dialogs as the
   platform's own (a portal natively), recent files, files from the command
   line, the window state, following the desktop's light or dark theme. The
   Python session, its environments and its interrupt hooks unchanged.
+  *Built before the eye checks of checkpoints 2 and 3 (decided 2026-11-17,
+  at the user's request), with the webview application kept beside it so
+  the two can be compared.*
+  *Shipped:* the crate `crates/clausters-editor` (level 7), binary
+  `clausters-editor-host`. Its application is a **client of the host in the
+  host's process**: the native front runs a host with an application linked
+  to it (`gui::run_local`, `ClientId::Local`), which speaks the protocol a
+  script speaks with no socket between the two (`docs/decisions.md`, "The
+  editor's application is a client of its host, linked in the host's
+  process"). Every open file is a window of the dock holding a `code`
+  element, opened as a tab of the editor's group; the post window and the
+  documentation are panes beside it, arranged as the current editor's
+  (the editor on the left, the documentation over the post window on the
+  right). The session is the current application's driver, run unchanged
+  (evaluation, `KeyboardInterrupt` and the interrupt hooks, Jedi's
+  completions, signatures and descriptions answered to the `code` element,
+  Ctrl+D's help opening the `docs` panel at the name or at pydoc's text);
+  the environments, the configuration, the package books and the books'
+  tables of contents are its Rust, moved without Tauri, and read and write
+  the current application's folders, so the two share one configuration and
+  one set of environments. The verbs are a scope of the verb table
+  (`editor`: new, open, save as, close tab, quit, preferences, the
+  evaluation, interrupt, restart, the theme, the size, the panels), so a
+  menu, a key and a panel without the code all reach them. The menu bar is
+  the file windows' (one over the editor, two with the editor split), a
+  close asks in the close form every application asks in
+  (`clausters_apps::closing`: Don't save, Cancel, Save, then the close or
+  the quit), and the preferences and the environments are panels of the
+  dock opened as tabs of the editor's group. The file dialogs are the
+  desktop portal's (`rfd`); the light or dark preference is read from the
+  settings portal and followed as it changes; the look is the current
+  editor's palette given to the host as two `/gui_theme` tables. The dock's
+  window opens at the size it was left at (`Host::dock_opens`; the dock's
+  state now reports its `scale`). Checked headlessly by script against the
+  binary (`--headless --port`): the arrangement, an evaluation and its
+  traceback in the post window, Jedi's completions under a name begun,
+  help opening the documentation, a save and the file on disk, a new tab, the
+  close form, a split and its join, the dark look, the preferences and the
+  environments panels, and a quit through the form's Save, which wrote the
+  file and ended the process. Finding it turned up the shaper reading every
+  face for every run (fixed on its own, before this). Not done, each an
+  entry of "Found by use": a font other than the bundled one, the dock's
+  arrangement between runs, the window's place, the header's run buttons
+  and the status footer (the session's state is the post window's title),
+  and the session's own windows docking into the editor. The portal's
+  dialogs, a link opened in the browser and the theme followed live need a
+  desktop and are the eye pass's.
 - ⬜ **WS13 — The page application.** The editor page becomes the host's
   dock full-window, with the JavaScript session and the TypeScript
   service feeding it, and the file dialog over the page's storage as a host
@@ -2352,6 +2399,41 @@ open, and that file is where a search for a fixed one ends.
 Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
+
+- ⬜ **The editor's code font is the bundled one only** *(2026-11-17,
+  WS12)*. The current editor lists the system's monospaced faces (View >
+  Font); the host draws code in JetBrains Mono, which it carries. Choosing
+  another means loading its file into the host as the code's face, by a
+  family name the application resolves to a path.
+
+- ⬜ **The editor's dock arrangement is not kept between runs** *(2026-11-17,
+  WS12)*. The window's size is; where the panels were is not, so a run opens
+  in the first arrangement. The layout the dock answers names panes by id,
+  and a file's window gets another id next time, so keeping it means naming
+  the panes by role (a file by its path) and translating back on start.
+
+- ⬜ **The editor keeps its window's size and not its place** *(2026-11-17,
+  WS12)*. The current editor restores both on the desktops that let it.
+
+- ⬜ **The editor has no run buttons and no status footer** *(2026-11-17,
+  WS12)*. The current editor's header has evaluate, evaluate block,
+  interrupt and restart as buttons, and a footer with the session's state;
+  the new one has the menu and the keys, and says the session's state in the
+  post window's title. A row of tools along the editor (the host's `button`
+  with a `verb`) is the shape, weighed in the style review.
+
+- ⬜ **With the editor split, each half has a menu bar** *(2026-11-17, WS12)*.
+  The menu bar is a window's, and every file window carries one so the bar
+  is over the editor wherever it goes; split, both halves show it. A bar
+  along the dock's top, the menu of the window the keyboard is in, is the
+  shape to weigh, and it would change what a docked application shows today.
+
+- ⬜ **The session's own windows do not open in the editor's dock**
+  *(2026-11-17, WS12)*. A script run in the editor that opens a GuiDef
+  boots a host of its own, as it does under the current editor. The track's
+  aim is one window for everything: the session would be told the editor's
+  host (an address in its environment) and both clients would attach to it
+  rather than boot one, which is a client change made in both at once.
 
 - ⬜ **A documentation page draws an image as its description**
   *(2026-11-17, WS11; the bar's "should": images in a page)*. The `docs`

@@ -1,0 +1,42 @@
+[package]
+name = "clausters-editor"
+version.workspace = true
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "A Python editor with an interactive session, drawn by the Clausters GUI host."
+# An application, not a library: never published to a registry.
+publish = false
+
+[[bin]]
+name = "clausters-editor-host"
+path = "src/main.rs"
+
+[dependencies]
+# The host it links, drawn in one dock: the windows, the elements (code, post,
+# docs) and the GPU are its, and this crate is an application of it, linked
+# in the process (`gui::run_local`).
+clausters-gui = { path = "../clausters-gui" }
+clausters-core = { path = "../clausters-core" }
+clausters-gui-draw = { path = "../clausters-gui-draw", default-features = false }
+clausters-editing = { path = "../clausters-editing" }
+# The close form every application asks in.
+clausters-apps = { path = "../clausters-apps" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4.6.7", features = ["derive"] }
+shell-words = "1.1.1"
+# The platform's own file dialogs: the desktop portal natively, so the
+# application links no toolkit.
+rfd = { version = "0.16.0", default-features = false, features = ["xdg-portal", "async-std"] }
+# The folders an application keeps its configuration and data in.
+dirs = "6.0.0"
+# The desktop's light or dark preference and its changes, asked of the
+# settings portal (the one rfd's dialogs already speak to).
+ashpd = { version = "0.11.1", default-features = false, features = ["async-std"] }
+pollster = "0.4.0"
+futures-util = "0.3"
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }

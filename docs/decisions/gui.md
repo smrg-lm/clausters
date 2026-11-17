@@ -3287,3 +3287,32 @@ the target, with the headers, and with the atomics features in the build with
 shared memory, whose objects must have them to link. Native builds do not
 read it, and a build for the target from anywhere in the repository gets it
 without a step.
+
+## The editor's application is a client of its host, linked in the host's process (2026-11-17)
+
+*Taken in `WS12` (`crates/clausters-gui/PLAN.md`).* The native code editor is
+one program that links the GUI host, and its application -- files, session,
+menus, dialogs -- talks to the host **through the protocol a script speaks**:
+it defines windows with `/gui_def`, sets props with `/gui_set`, calls the dock
+with `/gui_dock` and reads `/gui_event` back, over a link that carries packets
+inside the process (`gui::run_local`, `ClientId::Local`) instead of a socket.
+It does not reach into `Host` and call its methods.
+
+The other shape was an application inside the host, as the audio editor is
+(`host::audio_app`): code in the host's crate answering its windows' events
+directly. That fits an application whose picture is a document the host
+draws from the shared crates; the editor's work is the opposite -- a process
+of Python beside it, files, environments, a portal's dialogs -- none of which
+the host has any business knowing about, and all of which would have pulled
+the host's crate into an editor's concerns. As a client it needs nothing the
+protocol does not already give a script: the `code`, `post` and `docs`
+elements were built as widgets a GuiDef names (WS5, WS6, WS11) for exactly
+this, so what the editor does with them a script can do too, and the
+editor's page (WS13) can drive the same host in a tab the same way. The
+link costs nothing a socket would: a message is handed over as it was built,
+with no bytes in between, and the replies come back the same way.
+
+Its windows are panes of the host's dock (`host.dock`), opened at the size
+and with the title the application gives the host before the loop starts
+(`Host::dock_opens`); the dock's state reports the scale its device pixels
+are at, so the application keeps the window's size in logical pixels.

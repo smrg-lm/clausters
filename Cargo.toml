@@ -9,6 +9,7 @@ members = [
     "crates/clausters-core",
     "crates/clausters-core-web",
     "crates/clausters-document",
+    "crates/clausters-editor",
     "crates/clausters-editing",
     "crates/clausters-ffi",
     "crates/clausters-gui",

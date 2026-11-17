@@ -233,7 +233,9 @@ fn send_reply(
                 hub.reply(id, &bytes);
             }
         }
-        // The wasm front never reaches the native serve loop.
+        // The wasm front never reaches the native serve loop, and an
+        // application in the process is linked only to a front that draws.
         ClientId::Web => diag::warn!("reply {addr} to a web client on the native front"),
+        ClientId::Local => diag::warn!("reply {addr} to a local application with none linked"),
     }
 }

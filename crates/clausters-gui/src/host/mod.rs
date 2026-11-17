@@ -238,6 +238,10 @@ pub enum ClientId {
     /// The browser's in-page binding surface (the wasm front feeds OSC packets
     /// in and drains events out through it; there is no socket address).
     Web,
+    /// **An application in the host's own process**, linked to it natively
+    /// (`gui::run_local`): the editor's application, which speaks the protocol
+    /// a script speaks, with no socket between the two.
+    Local,
 }
 
 impl std::fmt::Display for ClientId {
@@ -247,6 +251,7 @@ impl std::fmt::Display for ClientId {
             ClientId::Tcp(id) => write!(f, "tcp client {id}"),
             ClientId::Ws(id) => write!(f, "ws client {id}"),
             ClientId::Web => write!(f, "web"),
+            ClientId::Local => write!(f, "local application"),
         }
     }
 }
@@ -1083,6 +1088,10 @@ pub struct Host {
     /// platform each. One setting per host that the shell consumes, as
     /// [`msaa`](Self::msaa) is.
     pub dock: bool,
+    /// **What the dock's window opens as**: its title and its size in
+    /// logical pixels -- an application's name and the size it was left at,
+    /// where an application set them, and the host's own otherwise.
+    pub dock_opens: Option<(String, (u32, u32))>,
     /// **How much recorded audio a picture waits for** before it re-reads
     /// its summary, in seconds (`--follow-block`, default `0` -- every frame).
     ///
@@ -1226,6 +1235,7 @@ impl Host {
             clipboard: clipboard::Clip::default(),
             msaa: DEFAULT_MSAA,
             dock: false,
+            dock_opens: None,
             follow_block: 0.0,
             resolved_metrics: HashMap::new(),
             focused: None,

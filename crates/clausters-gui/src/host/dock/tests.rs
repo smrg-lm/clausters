@@ -352,6 +352,18 @@ fn the_page_strip_switches_and_takes_a_dragged_tab() {
     assert_eq!(ws.tree().panes(), [1, 2]);
 }
 
+/// **The state says the scale its device pixels are at**, so an owner reads
+/// the window's size in logical pixels -- what it opens at next time.
+#[test]
+fn the_state_says_its_scale() {
+    let mut m = metrics(4.0);
+    m.ui_scale = 2.0;
+    let d = Dock::new((1200, 800), m);
+    let state = d.state();
+    assert_eq!(state["size"], json!([1200, 800]));
+    assert_eq!(state["scale"], json!(2.0));
+}
+
 /// **The pages round-trip through their JSON**, and a pane no page names
 /// after a restore goes on the page shown.
 #[test]
