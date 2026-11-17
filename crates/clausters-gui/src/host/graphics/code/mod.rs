@@ -519,6 +519,68 @@ impl Code {
         true
     }
 
+    /// **Byte `at` as a session's code intelligence reads a place**: a line
+    /// from 1 and a column from 0, in characters.
+    pub fn position(&self, at: usize) -> (usize, usize) {
+        let line = self.line_of(at);
+        let start = self.starts[line];
+        (
+            line + 1,
+            self.text[start..at.min(self.text.len())].chars().count(),
+        )
+    }
+
+    /// The byte a line from 1 and a column from 0, in characters, name:
+    /// held to the text and to the line.
+    pub fn at_position(&self, line: usize, column: usize) -> usize {
+        let (start, text) = self
+            .line(line.clamp(1, self.lines()) - 1)
+            .unwrap_or((0, ""));
+        start
+            + text
+                .char_indices()
+                .nth(column)
+                .map_or(text.len(), |(i, _)| i)
+    }
+
+    /// The word byte `at` is in or just after: its bytes, a name's
+    /// characters (`$` too, as JavaScript writes names).
+    pub fn word_at(&self, at: usize) -> Option<(usize, usize)> {
+        let named = |c: char| find::is_word(c) || c == '$';
+        let at = at.min(self.text.len());
+        let start = self.text[..at]
+            .char_indices()
+            .rev()
+            .take_while(|(_, c)| named(*c))
+            .last()
+            .map_or(at, |(i, _)| i);
+        let end = at
+            + self.text[at..]
+                .char_indices()
+                .find(|(_, c)| !named(*c))
+                .map_or(self.text.len() - at, |(i, _)| i);
+        (end > start).then_some((start, end))
+    }
+
+    /// Whether byte `at` is inside a string or a comment, by the tree; no
+    /// when there is none to say.
+    pub fn in_text(&self, at: usize) -> bool {
+        self.syntax
+            .borrow()
+            .in_text(&self.text, at)
+            .unwrap_or(false)
+    }
+
+    /// **Bytes `from` to `to` replaced by `with`**, as one step, the caret
+    /// after it.
+    pub fn replace_range(&mut self, from: usize, to: usize, with: &str) -> bool {
+        let done = self.apply(vec![(from, to - from, with.to_string())], true);
+        if done {
+            self.select(from + with.len(), from + with.len());
+        }
+        done
+    }
+
     /// The text's revision: two that are equal are the same text.
     pub fn revision(&self) -> u64 {
         self.rev

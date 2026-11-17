@@ -1433,6 +1433,7 @@ fn picture(
     if let Some(band) = menu_bar {
         draw_menu_bar(&mut top, tree, band, inputs, theme);
     }
+    draw_own_popups(&mut top, &placed, area, inputs, theme);
     if let Some(popups) = inputs.popups {
         draw_popups(&mut top, popups, tree, &placed, window, area, inputs, theme);
     }

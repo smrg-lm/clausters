@@ -2161,6 +2161,40 @@ pub trait Element: fmt::Debug {
     /// ([`Events::and_popup`]).
     fn draw_over(&self, _d: &mut Draw, _ctx: &Ctx) {}
 
+    /// **What this element shows in the popup layer of its own accord**,
+    /// placed at `rect` at `scale`: a list its own keys walk and a note
+    /// ([`Own`](crate::host::popup::Own)): a code editor's completions and
+    /// the parameters of the call being typed. Asked at every frame, so what
+    /// the element holds is what shows; nothing by default.
+    fn own_popups(
+        &self,
+        _rect: Rect,
+        _scale: f32,
+        _m: &Metrics,
+    ) -> Option<crate::host::popup::Own> {
+        None
+    }
+
+    /// Whether this element is told where the pointer **rests** on it
+    /// ([`rest`](Element::rest)): a code editor, which asks what the name
+    /// there is. `false` by default.
+    fn takes_rests(&self) -> bool {
+        false
+    }
+
+    /// **The pointer rested at `at`** on this element, or (with `None`)
+    /// moved on after it had: what the element makes of it, reported as a
+    /// key's answer is.
+    fn rest(&mut self, _at: Option<(f64, f64)>, _input: &Input) -> Option<Events> {
+        None
+    }
+
+    /// **A press on row `row` of the list [`own_popups`](Element::own_popups)
+    /// shows**: what picking it does, reported as a key's answer is.
+    fn pick_own(&mut self, _row: usize) -> Option<Events> {
+        None
+    }
+
     /// What this element draws **from what moves**: the line a clock sweeps,
     /// the bar a level fills, a reading that is set many times a second. Into
     /// the window's live mesh, over its pictures and under the host's own

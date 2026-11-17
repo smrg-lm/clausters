@@ -587,3 +587,138 @@ fn the_keys_evaluate_by_telling_the_owner() {
     assert_eq!(message(&e), ["evaluate", "x = 1\ny = 2", "1"]);
     let _ = e;
 }
+
+const CTRL_SHIFT: Mods = Mods {
+    shift: true,
+    ctrl: true,
+    alt: false,
+};
+
+/// **A name begun asks the owner for completions, once**: what arrives is
+/// shown under the word, filtered as it goes on, walked by the keys and
+/// taken by Enter in place of what was typed.
+#[test]
+fn completions_are_asked_once_filtered_and_taken() {
+    let mut v = view(r#"{"language": "python"}"#);
+    let mut clip = Clip::default();
+    let none = Mods::default();
+    let e = press(&mut v, &mut clip, none, &typed("x = p")).unwrap();
+    assert_eq!(message(&e), ["complete", "x = p", "1", "5", "0"]);
+    v.set(
+        "completions",
+        &Value::from(
+            r#"[{"name": "print", "kind": "function", "typed": 1},
+                {"name": "property", "kind": "class", "typed": 1},
+                {"name": "pow", "kind": "function", "typed": 1}]"#,
+        ),
+    );
+    let m = Metrics::default();
+    let own = v.own_popups(RECT, 1.0, &m).expect("a list");
+    let list = own.list.unwrap();
+    assert_eq!(list.entries.len(), 3);
+    assert_eq!(list.entries[0].key.as_deref(), Some("function"));
+    let e = press(&mut v, &mut clip, none, &typed("r")).unwrap();
+    assert!(message(&e).is_empty(), "filtered, not asked again");
+    let names: Vec<_> = v
+        .own_popups(RECT, 1.0, &m)
+        .unwrap()
+        .list
+        .unwrap()
+        .entries
+        .into_iter()
+        .map(|e| e.label)
+        .collect();
+    assert_eq!(names, ["print", "property"]);
+    press(&mut v, &mut clip, none, &[Key::Down, Key::Enter]);
+    assert_eq!(v.code.text(), "x = property");
+    assert!(v.own_popups(RECT, 1.0, &m).is_none(), "taken, gone");
+    // Ctrl+Space asks wherever the caret is; an answer after the caret
+    // left the word is let go
+    let e = press(&mut v, &mut clip, CTRL, &[Key::Char(' ')]).unwrap();
+    assert_eq!(message(&e)[4], "1", "explicit");
+    press(&mut v, &mut clip, none, &[Key::Home]);
+    v.set(
+        "completions",
+        &Value::from(r#"[{"name": "property", "kind": "class", "typed": 8}]"#),
+    );
+    assert!(v.own_popups(RECT, 1.0, &m).is_none());
+    // a press on a row takes it; the answer counts from where it was
+    // asked, the typing that went on since filtering it
+    let mut v = view(r#"{"language": "python"}"#);
+    press(&mut v, &mut clip, none, &typed("pr"));
+    v.set(
+        "completions",
+        &Value::from(r#"[{"name": "print", "kind": "", "typed": 1}, {"name": "property", "kind": "", "typed": 1}]"#),
+    );
+    v.pick_own(1);
+    assert_eq!(v.code.text(), "property");
+}
+
+/// **A call is followed from its bracket**: the owner is asked at every
+/// change while the caret is in it, its answer is a note with the current
+/// parameter marked, and Escape takes it down.
+#[test]
+fn the_call_is_followed_and_noted() {
+    let mut v = view(r#"{"language": "python"}"#);
+    let mut clip = Clip::default();
+    let none = Mods::default();
+    let e = press(&mut v, &mut clip, none, &typed("f(")).unwrap();
+    assert_eq!(message(&e)[0], "signatures");
+    v.set(
+        "signature",
+        &Value::from(r#"{"name": "f", "params": ["a", "b=1"], "index": 0, "bracket": [1, 1], "doc": "Adds."}"#),
+    );
+    let note = v
+        .own_popups(RECT, 1.0, &Metrics::default())
+        .unwrap()
+        .note
+        .unwrap();
+    let marked: Vec<_> = note
+        .head
+        .iter()
+        .filter(|r| r.1)
+        .map(|r| r.0.as_str())
+        .collect();
+    assert_eq!(marked, ["a"]);
+    assert_eq!(note.doc, "Adds.");
+    let e = press(&mut v, &mut clip, none, &typed("1,")).unwrap();
+    assert_eq!(message(&e)[0], "signatures", "asked again");
+    press(&mut v, &mut clip, none, &[Key::Escape]);
+    assert!(v.own_popups(RECT, 1.0, &Metrics::default()).is_none());
+    let e = press(&mut v, &mut clip, CTRL_SHIFT, &[Key::Char(' ')]).unwrap();
+    assert_eq!(message(&e)[0], "signatures", "asked for by hand");
+    v.set("signature", &Value::from(""));
+    assert!(!v.help.calling, "an answer of none ends it");
+}
+
+/// **Ctrl+D asks for help on the name at the caret**, and the pointer
+/// resting on a name asks what it is, noted until it moves on.
+#[test]
+fn help_and_what_a_name_is() {
+    let m = Metrics::default();
+    let mut v = view(r#"{"language": "python", "text": "import math\nmath.sqrt(2)\n"}"#);
+    let mut clip = Clip::default();
+    v.code.place(14, false);
+    let e = press(&mut v, &mut clip, CTRL, &[Key::Char('d')]).unwrap();
+    assert_eq!(
+        message(&e),
+        ["help", "math", "import math\nmath.sqrt(2)\n", "2", "4"]
+    );
+    let g = v.geometry(RECT, 1.0, &m);
+    let over = (
+        f64::from(g.text.x + 6.5 * g.cell),
+        f64::from(g.text.y + 1.5 * g.row_h),
+    );
+    let e = v.rest(Some(over), &input(&m, 1)).unwrap();
+    assert_eq!(message(&e)[0], "inspect");
+    assert_eq!(message(&e)[2..], ["2", "9"], "at the end of sqrt");
+    v.set(
+        "inspected",
+        &Value::from(r#"{"name": "sqrt", "kind": "function", "signature": "sqrt(x, /)", "doc": "Return the square root of x."}"#),
+    );
+    let note = v.own_popups(RECT, 1.0, &m).unwrap().note.unwrap();
+    assert_eq!(note.head[0].0, "sqrt(x, /)");
+    assert_eq!(note.aside, "function");
+    v.rest(None, &input(&m, 1));
+    assert!(v.own_popups(RECT, 1.0, &m).is_none());
+}

@@ -2062,12 +2062,41 @@ something reusable if the track stops there.
   stands above each cell's marker. Checked by the model's and the
   element's tests, headlessly by script with a capture, and in a page
   (`gui.html` evaluates a line).
-- ⬜ **WS10 — Language help.** A completion list, signature help and hover
+- ✅ **WS10 — Language help.** A completion list, signature help and hover
   help as popups of the host's popup layer, filled by whoever answers for the
   session: the Python session's queries as today, the page's TypeScript
   service in a page. Ctrl+D opens the documentation panel at the name.
   Acceptance: tests of the popups' contents and of what a choice inserts --
   the current application has none for completion, so these are new.
+
+  **What shipped (2026-11-17).** The element asks and its owner answers,
+  as for evaluation: `"complete"`, `"signatures"`, `"inspect"` and
+  `"help"` carry the text and the place (a line from 1, a column from 0 in
+  characters, as the sessions read one), and sets of `completions`,
+  `signature` and `inspected` answer, kept in no document. Completions are
+  asked once a word (a name begun, a dot, Ctrl+Space) and filtered while it
+  goes on, as the current editor asks; an answer that arrives after the
+  caret left the word is let go. The call is followed from a `(` or a `,`
+  (or Ctrl+Shift+Space) at every change until Escape or an answer of none;
+  the pointer resting on a name asks what it is. **The popup layer gained
+  what an element shows of its own accord** (`popup::Own`: a list its own
+  keys walk and a note), asked of the element at every frame and placed
+  against the work area as every popup is, so a list keeps up with the
+  typing that filters it with nothing opened or closed on the host; a
+  press on one of its rows is the element's (`Gestures::own_press`), and an
+  element can be told where the pointer rests and when it moves on
+  (`Element::rest`, after 350 ms as the current editor). The list is the
+  host's list drawing (with a row cap, `Stack::max_rows`); the note writes
+  its head in the code's face with the current parameter underlined, a
+  word beside it and the documentation wrapped under it. Ctrl+D reports
+  `"help"`; opening the documentation panel at the name is the
+  application's, once the panel exists (WS11) and the application moves in
+  (WS12, WS13). The examples answer completions from the names the text
+  holds, the same way in both clients. Checked by the element's tests (the
+  asking, the filtering, what Enter and a press insert, the call's note and
+  its marked parameter, the help, the rest), headlessly by script with
+  captures (the list, the note over a call and over a name, a row pressed,
+  a rest), and in a page (`gui.html` completes a word).
 - ⬜ **WS11 — The documentation panel.** Markdown read once (pulldown-cmark)
   into a laid-out document the host draws: headings, paragraphs, emphasis,
   inline code, links, lists, tables, code blocks highlighted by WS7's

@@ -356,6 +356,9 @@ pub struct Gestures {
     repeat: Option<(f64, f64, f64, u32)>,
     /// A tip waiting for the pointer to have rested ([`hover`]).
     rest: Option<hover::Rest>,
+    /// The element the pointer rests on, for one told where it rests
+    /// ([`hover`]).
+    rest_on: Option<hover::RestOn>,
     /// A press held still, waiting to become a context request ([`hover`]).
     hold: Option<hover::Hold>,
 }

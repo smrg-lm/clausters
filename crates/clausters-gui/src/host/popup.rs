@@ -117,6 +117,9 @@ pub struct Stack {
     pub origin: Option<(f32, f32)>,
     /// The least a list may be wide -- a chooser's list is at least its field.
     pub min_w: f32,
+    /// The most rows the first list shows, the rest scrolled; all of them
+    /// when none.
+    pub max_rows: Option<usize>,
     pub text_size: f32,
     pub levels: Vec<Level>,
 }
@@ -128,6 +131,7 @@ impl Stack {
             anchor,
             origin: None,
             min_w: 0.0,
+            max_rows: None,
             text_size,
             levels: vec![Level::new(Vec::new(), entries)],
         }
@@ -323,6 +327,127 @@ pub struct Tip {
     pub text: String,
     /// Where the pointer rested.
     pub at: (f32, f32),
+}
+
+/// **What an element shows over the window of its own accord**: a list its
+/// own keys walk (a code editor's completions) and a note (the parameters of
+/// a call, what a name is). Neither is opened on the host: the element holds
+/// both and is asked for them at every frame
+/// ([`Element::own_popups`](super::widget::Element::own_popups)), and the
+/// frame places them against the work area as it places every popup, so a
+/// list keeps up with the typing that filters it, with no message to open or
+/// close it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Own {
+    pub list: Option<OwnList>,
+    pub note: Option<Note>,
+}
+
+/// A list an element shows and walks itself.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OwnList {
+    pub entries: Vec<Entry>,
+    /// The row the keys are on.
+    pub hover: Option<usize>,
+    /// What it hangs under: the text it completes.
+    pub anchor: Rect,
+    pub text_size: f32,
+    /// The most rows it shows.
+    pub rows: usize,
+}
+
+impl OwnList {
+    /// The list as a stack of one level, which the layout places and the
+    /// frame draws as it does every list.
+    pub fn stack(&self, id: i32) -> Stack {
+        let mut stack = Stack::new(
+            Owner::Element(id),
+            self.entries.clone(),
+            Anchor::Below(self.anchor),
+            self.text_size,
+        );
+        stack.max_rows = Some(self.rows);
+        stack.levels[0].hover = self.hover;
+        stack.levels[0].reveal = true;
+        stack
+    }
+}
+
+/// **A note over the text**: a head line in the code's face with parts of it
+/// marked (a call's current parameter), a word beside it (what a name is),
+/// and the documentation under it, cut to a number of lines.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Note {
+    /// What it stands over, or under where there is no room over it.
+    pub anchor: Rect,
+    /// The head line, in runs, the marked ones drawn apart.
+    pub head: Vec<(String, bool)>,
+    /// The word after the head.
+    pub aside: String,
+    pub doc: String,
+    /// The most lines of the documentation shown.
+    pub doc_lines: usize,
+    /// The size the head is written at, in the code's face.
+    pub code_size: f32,
+    /// The size the documentation is written at.
+    pub text_size: f32,
+}
+
+/// The widest a note is, in the documentation's characters.
+const NOTE_CHARS: f32 = 72.0;
+
+/// **Where a note goes, and the lines of its documentation**: over its
+/// anchor where it fits, under it otherwise, held inside the work area.
+pub fn place_note(note: &Note, work: Rect, m: &Metrics) -> (Rect, Vec<String>) {
+    let head: String = note.head.iter().map(|(t, _)| t.as_str()).collect();
+    let head_w = font::width_in(font::Family::Mono, &head, note.code_size)
+        + if note.aside.is_empty() {
+            0.0
+        } else {
+            2.0 * m.pad + font::width(&note.aside, note.text_size)
+        };
+    let most = (NOTE_CHARS * font::width("0", note.text_size))
+        .min(work.w - 2.0 * m.pad)
+        .max(1.0);
+    let mut lines = Vec::new();
+    for line in note.doc.trim().lines() {
+        if line.trim().is_empty() {
+            lines.push(String::new());
+        } else {
+            lines.extend(font::wrap(line, most, note.text_size));
+        }
+        if lines.len() >= note.doc_lines {
+            break;
+        }
+    }
+    lines.truncate(note.doc_lines);
+    let doc_w = lines
+        .iter()
+        .map(|l| font::width(l, note.text_size))
+        .fold(0.0f32, f32::max);
+    let w = head_w.max(doc_w).min(most) + 2.0 * m.pad;
+    let line_h = font::line_advance(note.text_size);
+    let head_h = font::line_advance(note.code_size);
+    let h = head_h
+        + if lines.is_empty() {
+            0.0
+        } else {
+            m.pad + lines.len() as f32 * line_h
+        }
+        + 2.0 * m.pad;
+    let a = note.anchor;
+    let y = if a.y - h >= work.y {
+        a.y - h
+    } else {
+        a.y + a.h
+    };
+    let rect = Rect::new(
+        hold_x(a.x, w.min(work.w), work),
+        hold_y(y, h.min(work.h), work),
+        w.min(work.w),
+        h.min(work.h),
+    );
+    (rect, lines)
 }
 
 /// What is open over one window.
@@ -597,7 +722,11 @@ pub fn layout(stack: &Stack, owner: Option<Rect>, work: Rect, m: &Metrics) -> Ve
         } else {
             w
         };
-        let want = (if i == 0 { w.max(stack.min_w) } else { w }, h + strip_h);
+        let shown = match stack.max_rows {
+            Some(rows) if i == 0 => h.min(rows as f32 * row_h(size, m)),
+            _ => h,
+        };
+        let want = (if i == 0 { w.max(stack.min_w) } else { w }, shown + strip_h);
         let rect = match (i, anchor) {
             (0, Anchor::Below(a)) => place_below(
                 Rect::new(a.x + shift.0, a.y + shift.1, a.w, a.h),

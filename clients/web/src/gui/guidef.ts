@@ -2708,6 +2708,17 @@ export function progress(
  * `"interrupt"`; the commands `evaluate_line`, `evaluate_block`, `interrupt`
  * and `restart` report the same for a menu or a verb.
  *
+ * Its language help is asked of the owner the same way and drawn over the
+ * window: a name begun, a dot or Ctrl+Space reports `"complete"` with the
+ * text, a line (from 1) and a column (from 0), answered by
+ * `set({ completions: [{ name, kind, typed }, ...] })`, a list walked by Up and
+ * Down and taken by Enter; a `(` or a `,` reports `"signatures"` while the
+ * call is followed, answered by
+ * `set({ signature: { name, params, index, bracket, doc } })`; the pointer
+ * resting on a name reports `"inspect"`, answered by
+ * `set({ inspected: { name, kind, signature, doc } })`; Ctrl+D reports `"help"`
+ * with the name.
+ *
  * Its text is reported by `query` (`text`, with `line`, `column`, `selected`,
  * `dirty`, the bar's query `find` and how many matches it has, `found`), and the event `"dirty"` with `1` or `0` says when the text
  * stops or starts again being the one last marked saved -- by

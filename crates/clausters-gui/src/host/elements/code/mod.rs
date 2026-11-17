@@ -45,21 +45,25 @@
 use std::cell::Cell;
 
 mod bar;
+mod help;
 
 use bar::{Bar, Field, Mode, Part};
+use help::{Completing, Help, call_head};
 
 use clausters_core::osc::OscType;
 use clausters_editing::verbs::{self, ActionState, ActionTarget, Verb as ActionVerb};
 use serde_json::{Map, Value};
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::host::graphics::code::find::is_word;
 use crate::host::graphics::code::regions::{Block, is_cell_marker};
 use crate::host::graphics::code::syntax::Kind;
 use crate::host::graphics::code::{Code, Indent, Language};
 use crate::host::graphics::textedit::{self, Caret, Unit};
 use crate::host::menu::Entry;
+use crate::host::popup::{Note, Own, OwnList};
 use crate::host::widget::element::{
-    Claim, Ctx, Element, Events, Input, Key, KeyInput, Live, Needs, Verb,
+    Claim, Ctx, Element, Events, Input, Key, KeyInput, Live, Mods, Needs, Verb,
 };
 use crate::host::widget::parse;
 use crate::host::widget::size::Natural;
@@ -71,6 +75,9 @@ use clausters_gui_draw::theme::{Color, Theme, with_alpha};
 
 /// How long what was evaluated stays marked.
 const FLASH: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// The most rows a list of completions shows.
+const LIST_ROWS: usize = 10;
 
 /// How many rows a step of the wheel scrolls.
 const WHEEL_ROWS: f32 = 3.0;
@@ -115,6 +122,8 @@ pub struct CodeView {
     block: Block,
     /// The lines last evaluated, while they flash, and since when.
     flash: Option<(usize, usize, web_time::Instant)>,
+    /// Completions, the call's parameters and what a name is.
+    help: Help,
 }
 
 /// Where the parts of the element are, at the scale it is drawn at.
@@ -152,6 +161,7 @@ impl CodeView {
             bar: Bar::default(),
             block: Block::default(),
             flash: None,
+            help: Help::default(),
         };
         for (key, value) in props {
             view.set(key, value);
@@ -373,6 +383,339 @@ impl CodeView {
         self.code.advance(&region, cell);
         self.reveal.set(true);
         events
+    }
+
+    // -- language help -------------------------------------------------------
+
+    /// **Completions asked of the owner** at the caret, as `"complete"
+    /// source line column explicit`; nothing in a string or a comment.
+    fn ask_complete(&mut self, explicit: bool) -> Events {
+        let pos = self.code.caret().pos;
+        if self.code.caret().selection().is_some() || self.code.in_text(pos) {
+            self.help.completing = None;
+            return Events::none();
+        }
+        self.help.completing = Some(Completing::asked_at(pos));
+        let (line, column) = self.code.position(pos);
+        Events::message(vec![
+            OscType::String("complete".into()),
+            OscType::String(self.code.text().to_string()),
+            OscType::Int(line as i32),
+            OscType::Int(column as i32),
+            OscType::Int(i32::from(explicit)),
+        ])
+    }
+
+    /// **The call the caret is in asked of the owner**, as `"signatures"
+    /// source line column`; with a selection, or in a string, the call is
+    /// no longer followed.
+    fn ask_signature(&mut self) -> Events {
+        let pos = self.code.caret().pos;
+        if self.code.caret().selection().is_some() || self.code.in_text(pos) {
+            self.help.calling = false;
+            self.help.signature = None;
+            return Events::none();
+        }
+        let (line, column) = self.code.position(pos);
+        Events::message(vec![
+            OscType::String("signatures".into()),
+            OscType::String(self.code.text().to_string()),
+            OscType::Int(line as i32),
+            OscType::Int(column as i32),
+        ])
+    }
+
+    /// **Help asked for** (Ctrl+D): on the text selected, or on the name at
+    /// the caret, as `"help" text source line column`, the place the end of
+    /// the name.
+    fn ask_help(&mut self) -> Events {
+        let (subject, at) = match self.code.caret().selection() {
+            Some((a, b)) => (self.code.text()[a..b].trim().to_string(), b),
+            None => match self.code.word_at(self.code.caret().pos) {
+                Some((a, b)) => (self.code.text()[a..b].to_string(), b),
+                None => return Events::none(),
+            },
+        };
+        if subject.is_empty() {
+            return Events::none();
+        }
+        let (line, column) = self.code.position(at);
+        Events::message(vec![
+            OscType::String("help".into()),
+            OscType::String(subject),
+            OscType::String(self.code.text().to_string()),
+            OscType::Int(line as i32),
+            OscType::Int(column as i32),
+        ])
+    }
+
+    /// The completion the keys are on, put in place of the word typed.
+    fn accept(&mut self) -> Events {
+        let Some(c) = self.help.completing.take() else {
+            return Events::none();
+        };
+        let (Some(from), Some(offer)) = (c.from, c.chosen().cloned()) else {
+            return Events::none();
+        };
+        let pos = self.code.caret().pos;
+        if self.code.replace_range(from, pos, &offer.name) {
+            self.changed()
+        } else {
+            Events::none()
+        }
+    }
+
+    /// **The keys the help takes before the editing**: Ctrl+Space asks for
+    /// completions, Ctrl+Shift+Space for the call, Ctrl+D for help; a list
+    /// shown is walked by Up, Down and the pages, taken by Enter or Tab and
+    /// closed by Escape; Escape takes a call's note down.
+    fn help_key(&mut self, key: &Key, input: &KeyInput) -> Option<Events> {
+        if self.bar.focus().is_some() {
+            return None;
+        }
+        let mods = input.mods;
+        match key {
+            Key::Char(' ') if mods.ctrl && mods.shift => {
+                self.help.calling = true;
+                return Some(self.ask_signature());
+            }
+            Key::Char(' ') if mods.ctrl => return Some(self.ask_complete(true)),
+            Key::Char(c) if mods.ctrl && !mods.alt && c.eq_ignore_ascii_case(&'d') => {
+                return Some(self.ask_help());
+            }
+            _ => {}
+        }
+        if !mods.ctrl
+            && !mods.alt
+            && let Some(c) = self.help.completing.as_mut().filter(|c| c.showing())
+        {
+            let page = LIST_ROWS as isize;
+            match key {
+                Key::Up => c.walk(-1),
+                Key::Down => c.walk(1),
+                Key::PageUp => c.walk(-page),
+                Key::PageDown => c.walk(page),
+                Key::Enter | Key::Tab if !mods.shift => return Some(self.accept()),
+                Key::Escape => self.help.completing = None,
+                _ => return None,
+            }
+            return Some(Events::none());
+        }
+        if *key == Key::Escape && self.help.calling {
+            self.help.calling = false;
+            self.help.signature = None;
+            return Some(Events::none());
+        }
+        None
+    }
+
+    /// **What the help makes of a key the editing took**: a name begun or
+    /// a dot asks for completions, a name going on filters them, anything
+    /// else lets them go; a `(` or a `,` starts following the call, and
+    /// while it is followed every change asks for it again.
+    fn after_key(&mut self, key: &Key, mods: Mods, before: (u64, Caret)) -> Events {
+        if self.bar.focus().is_some() {
+            return Events::none();
+        }
+        let named = |c: char| is_word(c) || c == '$';
+        let pos = self.code.caret().pos;
+        let mut out = Events::none();
+        match key {
+            Key::Char(ch) if !mods.ctrl && !mods.alt => {
+                if named(*ch) {
+                    match self.help.completing.as_mut() {
+                        Some(c) if c.from.is_some() => {
+                            c.filter(&self.code);
+                            if c.shown.is_empty() {
+                                self.help.completing = None;
+                            }
+                        }
+                        Some(_) => {}
+                        None => {
+                            let prev = self.code.text()[..pos].chars().rev().nth(1);
+                            if !prev.is_some_and(named) {
+                                out = self.ask_complete(false);
+                            }
+                        }
+                    }
+                } else if *ch == '.' {
+                    out = self.ask_complete(false);
+                } else {
+                    self.help.completing = None;
+                }
+                if *ch == '(' || *ch == ',' {
+                    self.help.calling = true;
+                }
+            }
+            Key::Backspace => {
+                if let Some(c) = self.help.completing.as_mut() {
+                    match c.from {
+                        Some(from) if pos >= from => {
+                            c.filter(&self.code);
+                            if c.shown.is_empty() {
+                                self.help.completing = None;
+                            }
+                        }
+                        Some(_) => self.help.completing = None,
+                        None => {}
+                    }
+                }
+            }
+            _ => self.help.completing = None,
+        }
+        if self.help.calling && (self.code.revision(), self.code.caret()) != before {
+            out = out.chain(self.ask_signature());
+        }
+        out
+    }
+
+    /// Where byte `at` is drawn in `rect`, a cell wide and a row tall; none
+    /// when its row is out of view.
+    fn spot(&self, at: usize, g: &Geometry) -> Option<Rect> {
+        let (sx, sy) = self.scroll.get();
+        let line = self.code.line_of(at);
+        let (start, text) = self.code.line(line)?;
+        let y = g.text.y + line as f32 * g.row_h - sy;
+        if y + g.row_h < g.text.y || y > g.text.y + g.text.h {
+            return None;
+        }
+        let x = g.text.x - sx + Self::x_of(text, at - start, g);
+        Some(Rect::new(
+            x.clamp(g.text.x, g.text.x + g.text.w),
+            y,
+            g.cell,
+            g.row_h,
+        ))
+    }
+
+    /// A key's editing: the bar's, the text's.
+    fn edit_key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
+        if let Some(events) = self.bar_key(key, input) {
+            return Some(events);
+        }
+        // a field of the bar has the keys
+        if self.bar.focus().is_some() {
+            return match self.bar.key(key, input)? {
+                Ok(()) => Some(Events::none()),
+                Err(Field::Find) => Some(self.find(!input.mods.shift)),
+                Err(Field::Replace) => Some(self.replace()),
+                Err(Field::Line) => Some(self.go()),
+            };
+        }
+        let mods = input.mods;
+        let shift = mods.shift;
+        Some(match key {
+            Key::Char(c) if mods.ctrl => match c.to_ascii_lowercase() {
+                'z' if shift => self.undo(true),
+                'z' => self.undo(false),
+                'y' => self.undo(true),
+                'c' => {
+                    self.copy(input);
+                    Events::none()
+                }
+                'x' => self.cut(input),
+                'v' => self.paste(input),
+                'a' => {
+                    self.code.select_all();
+                    Events::none()
+                }
+                '.' if !mods.alt => Events::message(vec![OscType::String("interrupt".into())]),
+                '/' if !mods.alt => {
+                    if self.code.toggle_comment() {
+                        self.changed()
+                    } else {
+                        Events::none()
+                    }
+                }
+                _ => return None,
+            },
+            Key::Char(_) if mods.alt => return None,
+            Key::Char(c) => {
+                let before = self.code.revision();
+                if !self.code.type_char(*c) {
+                    Events::none()
+                } else if self.code.revision() == before {
+                    // a closer typed over: the caret moved, nothing changed
+                    self.moved()
+                } else {
+                    self.changed()
+                }
+            }
+            Key::Enter if mods.ctrl => self.evaluate_block(),
+            Key::Enter if shift => self.evaluate_line(),
+            Key::Enter => {
+                self.code.newline();
+                self.changed()
+            }
+            Key::Tab => {
+                if shift {
+                    self.code.indent_less();
+                } else {
+                    self.code.indent_more();
+                }
+                self.changed()
+            }
+            Key::Backspace => {
+                self.code.backspace(mods.ctrl);
+                self.changed()
+            }
+            Key::Delete => {
+                self.code.delete(mods.ctrl);
+                self.changed()
+            }
+            Key::Left if mods.ctrl => {
+                self.code
+                    .motion(|t, c| textedit::move_word_left(t, c, shift));
+                self.moved()
+            }
+            Key::Right if mods.ctrl => {
+                self.code
+                    .motion(|t, c| textedit::move_word_right(t, c, shift));
+                self.moved()
+            }
+            Key::Left => {
+                self.code.motion(|t, c| textedit::move_left(t, c, shift));
+                self.moved()
+            }
+            Key::Right => {
+                self.code.motion(|t, c| textedit::move_right(t, c, shift));
+                self.moved()
+            }
+            Key::Up => {
+                self.code.rows(-1, shift);
+                self.moved()
+            }
+            Key::Down => {
+                self.code.rows(1, shift);
+                self.moved()
+            }
+            Key::PageUp => {
+                self.code.rows(-(self.page.get() as isize), shift);
+                self.moved()
+            }
+            Key::PageDown => {
+                self.code.rows(self.page.get() as isize, shift);
+                self.moved()
+            }
+            Key::Home if mods.ctrl => {
+                self.code.place(0, shift);
+                self.moved()
+            }
+            Key::End if mods.ctrl => {
+                let end = self.code.text().len();
+                self.code.place(end, shift);
+                self.moved()
+            }
+            Key::Home => {
+                self.code.home(shift);
+                self.moved()
+            }
+            Key::End => {
+                self.code.motion(|t, c| textedit::move_end(t, c, shift));
+                self.moved()
+            }
+            Key::Escape | Key::F(_) => return None,
+        })
     }
 
     // -- the bar -------------------------------------------------------------
@@ -777,6 +1120,18 @@ impl Element for CodeView {
                     self.widest.set(None);
                 })
                 .is_some(),
+            "completions" => {
+                self.help.completions(&self.code, v);
+                true
+            }
+            "signature" => {
+                self.help.signature(v);
+                true
+            }
+            "inspected" => {
+                self.help.inspected(v);
+                true
+            }
             "saved" => {
                 self.code.mark_saved();
                 self.was_dirty = false;
@@ -810,8 +1165,10 @@ impl Element for CodeView {
         }
     }
 
+    /// What a set writes rather than keeps: the text marked saved, and the
+    /// owner's answers to the help.
     fn writes(&self, key: &str) -> bool {
-        key == "saved"
+        matches!(key, "saved" | "completions" | "signature" | "inspected")
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
@@ -899,8 +1256,10 @@ impl Element for CodeView {
                 None => Claim::take(),
             };
         }
-        // a press on the text gives it the keys back
+        // a press on the text gives it the keys back, and lets the
+        // completions go
         self.bar.unfocus();
+        self.help.completing = None;
         let g = self.geometry(input.rect, input.scale, input.metrics);
         let pos = self.pos_at(at, &g);
         if self.line_numbers && g.gutter.contains(at.0, at.1) {
@@ -977,133 +1336,15 @@ impl Element for CodeView {
         (self.settle(&g) != before).then(Events::none)
     }
 
+    /// The help's keys first (a list shown walks, Ctrl+Space asks), then
+    /// the editing, and after it what the help asks of the owner.
     fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
-        if let Some(events) = self.bar_key(key, input) {
+        if let Some(events) = self.help_key(key, input) {
             return Some(events);
         }
-        // a field of the bar has the keys
-        if self.bar.focus().is_some() {
-            return match self.bar.key(key, input)? {
-                Ok(()) => Some(Events::none()),
-                Err(Field::Find) => Some(self.find(!input.mods.shift)),
-                Err(Field::Replace) => Some(self.replace()),
-                Err(Field::Line) => Some(self.go()),
-            };
-        }
-        let mods = input.mods;
-        let shift = mods.shift;
-        Some(match key {
-            Key::Char(c) if mods.ctrl => match c.to_ascii_lowercase() {
-                'z' if shift => self.undo(true),
-                'z' => self.undo(false),
-                'y' => self.undo(true),
-                'c' => {
-                    self.copy(input);
-                    Events::none()
-                }
-                'x' => self.cut(input),
-                'v' => self.paste(input),
-                'a' => {
-                    self.code.select_all();
-                    Events::none()
-                }
-                '.' if !mods.alt => Events::message(vec![OscType::String("interrupt".into())]),
-                '/' if !mods.alt => {
-                    if self.code.toggle_comment() {
-                        self.changed()
-                    } else {
-                        Events::none()
-                    }
-                }
-                _ => return None,
-            },
-            Key::Char(_) if mods.alt => return None,
-            Key::Char(c) => {
-                let before = self.code.revision();
-                if !self.code.type_char(*c) {
-                    Events::none()
-                } else if self.code.revision() == before {
-                    // a closer typed over: the caret moved, nothing changed
-                    self.moved()
-                } else {
-                    self.changed()
-                }
-            }
-            Key::Enter if mods.ctrl => self.evaluate_block(),
-            Key::Enter if shift => self.evaluate_line(),
-            Key::Enter => {
-                self.code.newline();
-                self.changed()
-            }
-            Key::Tab => {
-                if shift {
-                    self.code.indent_less();
-                } else {
-                    self.code.indent_more();
-                }
-                self.changed()
-            }
-            Key::Backspace => {
-                self.code.backspace(mods.ctrl);
-                self.changed()
-            }
-            Key::Delete => {
-                self.code.delete(mods.ctrl);
-                self.changed()
-            }
-            Key::Left if mods.ctrl => {
-                self.code
-                    .motion(|t, c| textedit::move_word_left(t, c, shift));
-                self.moved()
-            }
-            Key::Right if mods.ctrl => {
-                self.code
-                    .motion(|t, c| textedit::move_word_right(t, c, shift));
-                self.moved()
-            }
-            Key::Left => {
-                self.code.motion(|t, c| textedit::move_left(t, c, shift));
-                self.moved()
-            }
-            Key::Right => {
-                self.code.motion(|t, c| textedit::move_right(t, c, shift));
-                self.moved()
-            }
-            Key::Up => {
-                self.code.rows(-1, shift);
-                self.moved()
-            }
-            Key::Down => {
-                self.code.rows(1, shift);
-                self.moved()
-            }
-            Key::PageUp => {
-                self.code.rows(-(self.page.get() as isize), shift);
-                self.moved()
-            }
-            Key::PageDown => {
-                self.code.rows(self.page.get() as isize, shift);
-                self.moved()
-            }
-            Key::Home if mods.ctrl => {
-                self.code.place(0, shift);
-                self.moved()
-            }
-            Key::End if mods.ctrl => {
-                let end = self.code.text().len();
-                self.code.place(end, shift);
-                self.moved()
-            }
-            Key::Home => {
-                self.code.home(shift);
-                self.moved()
-            }
-            Key::End => {
-                self.code.motion(|t, c| textedit::move_end(t, c, shift));
-                self.moved()
-            }
-            Key::Escape | Key::F(_) => return None,
-        })
+        let before = (self.code.revision(), self.code.caret());
+        let events = self.edit_key(key, input)?;
+        Some(events.chain(self.after_key(key, input.mods, before)))
     }
 
     fn selected_text(&self) -> Option<String> {
@@ -1215,6 +1456,102 @@ impl Element for CodeView {
 
     fn clone_box(&self) -> Box<dyn Element> {
         Box::new(self.clone())
+    }
+
+    /// The help goes with the keys.
+    fn blur(&mut self) -> Events {
+        self.help.clear();
+        Events::none()
+    }
+
+    /// **The completions, and a note**: the parameters of the call while it
+    /// is followed, else what the name the pointer rests on is.
+    fn own_popups(&self, rect: Rect, scale: f32, m: &Metrics) -> Option<Own> {
+        let g = self.geometry(rect, scale, m);
+        let list = self
+            .help
+            .completing
+            .as_ref()
+            .filter(|c| c.showing())
+            .and_then(|c| {
+                Some(OwnList {
+                    entries: c.entries(),
+                    hover: Some(c.hover),
+                    anchor: self.spot(c.from?, &g)?,
+                    text_size: g.size,
+                    rows: LIST_ROWS,
+                })
+            });
+        let note_size = (g.size * 0.9).max(1.0);
+        let note = match (&self.help.signature, &self.help.resting) {
+            (Some(sig), _) if self.help.calling => {
+                let at = self.code.at_position(sig.bracket.0, sig.bracket.1);
+                self.spot(at, &g).map(|anchor| Note {
+                    anchor,
+                    head: call_head(sig),
+                    aside: String::new(),
+                    doc: sig.doc.clone(),
+                    doc_lines: 3,
+                    code_size: note_size,
+                    text_size: note_size,
+                })
+            }
+            (_, Some((a, _, Some(info)))) => self.spot(*a, &g).map(|anchor| Note {
+                anchor,
+                head: vec![(
+                    if info.signature.is_empty() {
+                        info.name.clone()
+                    } else {
+                        info.signature.clone()
+                    },
+                    false,
+                )],
+                aside: info.kind.clone(),
+                doc: info.doc.clone(),
+                doc_lines: 15,
+                code_size: note_size,
+                text_size: note_size,
+            }),
+            _ => None,
+        };
+        (list.is_some() || note.is_some()).then_some(Own { list, note })
+    }
+
+    /// A completion pressed is taken.
+    fn pick_own(&mut self, row: usize) -> Option<Events> {
+        let c = self.help.completing.as_mut()?;
+        c.hover = row.min(c.shown.len().saturating_sub(1));
+        Some(self.accept())
+    }
+
+    fn takes_rests(&self) -> bool {
+        true
+    }
+
+    /// **The pointer rested on a name**: what it is asked of the owner, as
+    /// `"inspect" source line column`, the place the end of the name; it
+    /// moving on takes the note down.
+    fn rest(&mut self, at: Option<(f64, f64)>, input: &Input) -> Option<Events> {
+        let Some(at) = at else {
+            return self.help.resting.take().map(|_| Events::none());
+        };
+        let g = self.geometry(input.rect, input.scale, input.metrics);
+        if !g.text.contains(at.0, at.1) {
+            return None;
+        }
+        let pos = self.pos_at(at, &g);
+        let (a, b) = self.code.word_at(pos)?;
+        if self.code.in_text(a) {
+            return None;
+        }
+        self.help.resting = Some((a, b, None));
+        let (line, column) = self.code.position(b);
+        Some(Events::message(vec![
+            OscType::String("inspect".into()),
+            OscType::String(self.code.text().to_string()),
+            OscType::Int(line as i32),
+            OscType::Int(column as i32),
+        ]))
     }
 }
 

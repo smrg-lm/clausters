@@ -37,6 +37,12 @@ with it closed. <b>Ctrl+Alt+G</b> goes to a line.
 under the caret, moving past it: the editor runs nothing, it tells whoever owns
 it, and here that is this page, which writes what it was asked to evaluate to
 the post window. Ctrl+. asks for an interrupt.
+<br><br><b>Language help</b> is asked of the owner too: a name begun (or
+Ctrl+Space) asks for completions, which this page answers with the names the
+text already holds, so typing <code>ch</code> offers <code>chord</code>; walk
+them with Up and Down and take one with Enter. A session would answer from what
+it holds, and answer <code>signature</code> and <code>inspected</code> as well
+(the parameters of a call, what a name is); this one leaves those unanswered.
 <br><br>Under it is a <b>post</b> window with what a session might have printed;
 drag the divider between the two to give one more room.</div>
       <pre id="log"></pre>
@@ -46,8 +52,8 @@ drag the divider between the two to give one more room.</div>
       The web sibling of clients/python/examples/panels/code.py, call for call:
       boot a host, open a window split between a code editor holding a short
       program and a post window, write a notice, output and a result to the
-      post, write what the editor asks to evaluate to the post, and mark its
-      text saved.
+      post, write what the editor asks to evaluate to the post, answer its
+      completions from the names in the text, and mark its text saved.
 
       One difference, the platform's: the script's window is a window of the
       platform, and the page's is a canvas the host appends to the page; what
@@ -95,12 +101,24 @@ with Session() as s:
       out.set({ out: "[60, 64, 67]\n" });
       out.set({ result: "None" });
 
-      // ---- evaluated, edited, and saved ----
+      // ---- evaluated, completed, edited, and saved ----
+      // The names the text holds that start with the word before the caret.
+      function completions(source, line, column) {
+        const typed = source.split("\n")[line - 1].slice(0, column).match(/\w*$/)[0];
+        const names = [...new Set(source.match(/[A-Za-z_]\w*/g))].filter((n) => n !== typed).sort();
+        return names
+          .filter((n) => n.startsWith(typed))
+          .map((n) => ({ name: n, kind: "name", typed: typed.length }));
+      }
+
       function onCode(tag, ...payload) {
         if (tag === "evaluate") {
           const [source, line] = payload;
           out.set({ info: `evaluate, from line ${line}\n` });
           out.set({ out: source + "\n" });
+        } else if (tag === "complete") {
+          const [source, line, column] = payload;
+          editor.set({ completions: completions(source, line, column) });
         } else {
           log(`code ${[tag, ...payload].join(" ")}`);
         }

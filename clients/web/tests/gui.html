@@ -353,7 +353,23 @@
         if (JSON.stringify(evaluated[0]) !== JSON.stringify(["    return 2", 2])) {
           throw new Error(`code, evaluated: ${JSON.stringify(evaluated)}`);
         }
-        log("an editor of code typed, cut, pasted, undid, indented, paired, commented, replaced and evaluated");
+        // a name begun asks for completions; the page's answer is taken by
+        // Enter
+        const asked = [];
+        codeWin.widget("code").onEvent((tag, ...payload) => {
+          if (tag === "complete") asked.push(payload);
+        });
+        host.pressKey(codeWin, "End", "ctrl");
+        host.typeText(codeWin, "\nre");
+        for (let i = 0; i < 40 && !asked.length; i++) await sleep(50);
+        if (!asked.length) throw new Error("code: no completions were asked for");
+        codeWin.widget("code").set({
+          completions: [{ name: "return", kind: "keyword", typed: 1 }, { name: "repr", kind: "function", typed: 1 }],
+        });
+        host.pressKey(codeWin, "Down");
+        host.pressKey(codeWin, "Enter");
+        await expectText("def f():\n    return 2\n    # x = (a)\n    repr", "completed");
+        log("an editor of code typed, cut, pasted, undid, indented, paired, commented, replaced, evaluated and completed");
         codeWin.close();
 
         // **A roll that listens paints what is played, in a page as on the

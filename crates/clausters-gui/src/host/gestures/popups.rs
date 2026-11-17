@@ -415,6 +415,51 @@ impl Gestures {
             .is_some_and(|band| band.contains(cx, cy))
     }
 
+    /// **A press on a list an element shows of its own accord** (a code
+    /// editor's completions): a row is picked by the element; a press on the
+    /// list off its rows is swallowed. Returns whether the press was on one.
+    /// The focus stays where it was, since the list is the focused
+    /// element's and the keys go on to it.
+    pub(super) fn own_press(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        cx: f64,
+        cy: f64,
+        out: &mut Vec<GestureEffect>,
+    ) -> bool {
+        let work = host.content_area(ctx.def_id, ctx.fb_w, ctx.fb_h);
+        let m = *host.metrics_for(ctx.def_id);
+        let hit = {
+            let Some(placed) = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h) else {
+                return false;
+            };
+            placed.iter().find_map(|p| {
+                let id = p.widget.id?;
+                let list = p
+                    .widget
+                    .kind
+                    .as_element()?
+                    .own_popups(p.rect, p.scale, &p.metrics)?
+                    .list?;
+                let stack = list.stack(id);
+                let lists = popup::layout(&stack, None, work, &m);
+                let (_, row) = popup::hit(&stack, &lists, cx, cy)?;
+                Some((element::At::widget(id, p.rect, p.scale, p.indent), id, row))
+            })
+        };
+        let Some((at, id, row)) = hit else {
+            return false;
+        };
+        out.push(GestureEffect::Redraw(ctx.def_id));
+        if let Some(row) = row
+            && let Some(Some(events)) = element::with(host, ctx, at, |el, _| el.pick_own(row))
+        {
+            element::report(host, out, ctx, id, events);
+        }
+        true
+    }
+
     /// **The pointer moved with no button held.** The popup layer's half of
     /// it: the row under the pointer lights up and a submenu's row opens its
     /// list, and with a bar's list open, the pointer crossing another title

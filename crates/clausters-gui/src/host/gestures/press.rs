@@ -130,6 +130,9 @@ impl Gestures {
         if self.popup_press(host, ctx, cx, cy, &mut out) {
             return out;
         }
+        if self.own_press(host, ctx, cx, cy, &mut out) {
+            return out;
+        }
         // **The work-in-progress panel's button calls the work off**: chrome
         // like the status bar, over the tree, and the owner's to stop.
         if host

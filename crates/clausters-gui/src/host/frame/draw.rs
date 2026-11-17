@@ -1153,6 +1153,97 @@ pub(super) fn draw_popups(
     over.set_clip(None);
 }
 
+/// Draws **what elements show in the popup layer of their own accord**
+/// ([`Element::own_popups`](crate::host::widget::Element::own_popups)): a
+/// list, as every list is drawn and placed, and a note.
+pub(super) fn draw_own_popups(
+    over: &mut Mesh,
+    placed: &[layout::Placed],
+    work: Rect,
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
+    let m = inputs.metrics;
+    for p in placed {
+        let (Some(id), Some(el)) = (p.widget.id, p.widget.kind.as_element()) else {
+            continue;
+        };
+        let Some(own) = el.own_popups(p.rect, p.scale, &p.metrics) else {
+            continue;
+        };
+        let th = p.widget.theme.as_deref().unwrap_or(theme);
+        over.set_ink(Ink::default());
+        if let Some(note) = &own.note {
+            draw_note(over, note, work, m, th);
+        }
+        if let Some(list) = &own.list {
+            let stack = list.stack(id);
+            for (level, at) in stack
+                .levels
+                .iter()
+                .zip(&popup::layout(&stack, None, work, m))
+            {
+                draw_list(over, level, at, stack.text_size, m, th);
+            }
+        }
+    }
+    over.set_clip(None);
+}
+
+/// A note over the text: its head in the code's face, the marked runs
+/// underlined, the word beside it and the lines of its documentation.
+fn draw_note(over: &mut Mesh, note: &popup::Note, work: Rect, m: &Metrics, theme: &Theme) {
+    let (rect, lines) = popup::place_note(note, work, m);
+    over.set_clip(None);
+    over.rect(rect, theme.popup);
+    over.border(rect, m.divider_w, theme.frame);
+    over.set_clip(Some(rect));
+    let head_h = font::line_advance(note.code_size);
+    let mut x = rect.x + m.pad;
+    let y = rect.y + m.pad + (head_h - font::height(note.code_size)) * 0.5;
+    for (run, marked) in &note.head {
+        let w = font::width_in(font::Family::Mono, run, note.code_size);
+        font::text_in(
+            over,
+            font::Family::Mono,
+            run,
+            x,
+            y,
+            note.code_size,
+            theme.text,
+        );
+        if *marked {
+            let under = y + font::height(note.code_size) + m.divider_w;
+            over.rect(Rect::new(x, under, w, m.divider_w.max(1.0)), theme.accent);
+        }
+        x += w;
+    }
+    if !note.aside.is_empty() {
+        let ty = rect.y + m.pad + (head_h - font::height(note.text_size)) * 0.5;
+        font::text(
+            over,
+            &note.aside,
+            x + 2.0 * m.pad,
+            ty,
+            note.text_size,
+            theme.text_dim,
+        );
+    }
+    let line_h = font::line_advance(note.text_size);
+    let mut y = rect.y + m.pad + head_h + m.pad;
+    for line in &lines {
+        font::text(
+            over,
+            line,
+            rect.x + m.pad,
+            y,
+            note.text_size,
+            theme.text_dim,
+        );
+        y += line_h;
+    }
+}
+
 /// Draws the **menu bar** into `band`: the titles of the window's menu, the
 /// open one and the one under the pointer lifted off the band.
 pub(super) fn draw_menu_bar(

@@ -19,6 +19,11 @@ use super::{GestureCtx, GestureEffect, Gestures, element};
 /// milliseconds.
 const REST_MS: f64 = 600.0;
 
+/// How long the pointer rests on an element told of it before it is told,
+/// in milliseconds: a code editor's help over a name, as the current
+/// editor's.
+const REST_ON_MS: f64 = 350.0;
+
 /// How long a press is held still before it is a request for a context menu,
 /// in milliseconds.
 const HOLD_MS: f64 = 500.0;
@@ -30,6 +35,16 @@ pub(super) struct Rest {
     text: String,
     at: (f64, f64),
     since: f64,
+}
+
+/// **The pointer over an element told where it rests**: where, since when,
+/// and whether the element was told.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct RestOn {
+    widget: i32,
+    at: (f64, f64),
+    since: f64,
+    told: bool,
 }
 
 /// A press held still, waiting to become a context request.
@@ -56,6 +71,7 @@ impl Gestures {
         let mut out = Vec::new();
         let over = at.and_then(|(x, y)| hovered(host, ctx, x, y));
         let mut changed = host.set_hover(def_id, over);
+        self.rest_moved(host, ctx, at, &mut out);
         if at.is_none() {
             changed |= host.set_bar_hover(def_id, None);
         }
@@ -108,7 +124,74 @@ impl Gestures {
     /// Whether a timer is armed, so the front must keep ticking
     /// ([`Self::elapsed`]) though nothing on screen is moving.
     pub fn pending(&self) -> bool {
-        self.rest.is_some() || self.hold.is_some()
+        self.rest.is_some() || self.hold.is_some() || self.rest_on.is_some_and(|r| !r.told)
+    }
+
+    /// **The pointer moved to `at`** (or off the window): an element told of
+    /// rests and told of one hears the pointer moved on, and one under the
+    /// new place starts waiting.
+    fn rest_moved(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        at: Option<(f64, f64)>,
+        out: &mut Vec<GestureEffect>,
+    ) {
+        if let (Some(r), Some(at)) = (self.rest_on, at)
+            && r.at == at
+        {
+            return;
+        }
+        self.end_rest(host, ctx, out);
+        let Some((x, y)) = at else {
+            return;
+        };
+        let Some(found) = hit(host, ctx, x, y) else {
+            return;
+        };
+        if let WidgetKind::Custom(el) = &found.kind
+            && el.takes_rests()
+        {
+            self.rest_on = Some(RestOn {
+                widget: found.id,
+                at: (x, y),
+                since: ctx.now_ms,
+                told: false,
+            });
+        }
+    }
+
+    /// The rest is over: an element told of it hears the pointer moved on.
+    fn end_rest(&mut self, host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>) {
+        let Some(r) = self.rest_on.take().filter(|r| r.told) else {
+            return;
+        };
+        self.tell_rest(host, ctx, r.widget, None, out);
+    }
+
+    /// Element `widget` told the pointer rests at `at`, or moved on.
+    fn tell_rest(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        widget: i32,
+        at: Option<(f64, f64)>,
+        out: &mut Vec<GestureEffect>,
+    ) {
+        let Some(placed) = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h) else {
+            return;
+        };
+        let Some(spot) = placed
+            .iter()
+            .find(|p| p.widget.id == Some(widget))
+            .map(|p| element::At::widget(widget, p.rect, p.scale, p.indent))
+        else {
+            return;
+        };
+        if let Some(Some(events)) = element::with(host, ctx, spot, |el, input| el.rest(at, input)) {
+            element::report(host, out, ctx, widget, events);
+            out.push(GestureEffect::Redraw(ctx.def_id));
+        }
     }
 
     /// One tick of the front's clock: a rest long enough shows its tip, and a
@@ -126,6 +209,15 @@ impl Gestures {
             )
         {
             out.push(GestureEffect::Redraw(ctx.def_id));
+        }
+        if let Some(r) = self
+            .rest_on
+            .as_mut()
+            .filter(|r| !r.told && ctx.now_ms - r.since >= REST_ON_MS)
+        {
+            r.told = true;
+            let (widget, at) = (r.widget, r.at);
+            self.tell_rest(host, ctx, widget, Some(at), &mut out);
         }
         if let Some(hold) = self.hold.take_if(|h| ctx.now_ms - h.since >= HOLD_MS) {
             out.extend(self.held(host, ctx, hold.at));
@@ -172,6 +264,7 @@ impl Gestures {
         out: &mut Vec<GestureEffect>,
     ) {
         self.rest = None;
+        self.end_rest(host, ctx, out);
         if host.set_tip(ctx.def_id, None) {
             out.push(GestureEffect::Redraw(ctx.def_id));
         }
@@ -202,11 +295,12 @@ impl Gestures {
     /// still has to take the tip down.
     pub fn key_began(&mut self, host: &mut Host, ctx: &GestureCtx) -> Vec<GestureEffect> {
         self.rest = None;
+        let mut out = Vec::new();
+        self.end_rest(host, ctx, &mut out);
         if host.set_tip(ctx.def_id, None) {
-            vec![GestureEffect::Redraw(ctx.def_id)]
-        } else {
-            Vec::new()
+            out.push(GestureEffect::Redraw(ctx.def_id));
         }
+        out
     }
 }
 

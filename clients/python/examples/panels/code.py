@@ -26,6 +26,13 @@ editor runs nothing, it tells whoever owns it, and here that is this script,
 which writes what it was asked to evaluate to the post window. Ctrl+. asks
 for an interrupt.
 
+**Language help** is asked of the owner too: a name begun (or Ctrl+Space)
+asks for completions, which this script answers with the names the text
+already holds, so typing ``ch`` offers ``chord``; walk them with Up and Down
+and take one with Enter. A session would answer from what it holds, and
+answer ``signature`` and ``inspected`` as well (the parameters of a call,
+what a name is); this one leaves those unanswered.
+
 Under it is a ``post`` window with what a session might have printed; drag the
 divider between the two to give one more room. The editor reports when its
 text stops being the one last saved (``"dirty"``), printed here, and marking
@@ -43,6 +50,7 @@ involved, so this boots only the GUI host. Needs a display and a GPU adapter.
 """
 
 # %%
+import re
 import sys
 
 from clausters.gui import GuiHost, code, post, view
@@ -85,17 +93,29 @@ out.set(out="[60, 64, 67]\n")
 out.set(result="None")
 
 # %% [markdown]
-# ## Evaluated, edited, and saved
+# ## Evaluated, completed, edited, and saved
 # The editor asks to evaluate a line or a block; a session would run it, and
-# this writes it to the post. It also says when its text is no longer the one
-# saved; type in it to see the event, and mark it saved with one set.
+# this writes it to the post. It asks for completions, answered here from the
+# names in the text. It also says when its text is no longer the one saved;
+# type in it to see the event, and mark it saved with one set.
 
 # %%
+def completions(source, line, column):
+    """The names the text holds that start with the word before the caret."""
+    typed = re.search(r"\w*$", source.split("\n")[line - 1][:column]).group()
+    names = sorted(set(re.findall(r"[A-Za-z_]\w*", source)) - {typed})
+    return [{"name": n, "kind": "name", "typed": len(typed)}
+            for n in names if n.startswith(typed)]
+
+
 def on_code(tag, *payload):
     if tag == "evaluate":
         source, line = payload
         out.set(info=f"evaluate, from line {line}\n")
         out.set(out=source + "\n")
+    elif tag == "complete":
+        source, line, column, _explicit = payload
+        editor.set(completions=completions(source, line, column))
     else:
         print("code", tag, *payload)
 
