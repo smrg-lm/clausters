@@ -17,7 +17,6 @@
 
 use std::collections::HashSet;
 
-use clausters_gui_draw::paint::Mesh;
 use serde_json::Value;
 
 use super::canvas::{PointerListener, watch_buttons};
@@ -968,11 +967,16 @@ fn picture(
     host: &Host,
 ) -> crate::host::dock::Overlay {
     let shown: Vec<i32> = layout.placed().map(|(def, _)| def).collect();
-    let floats: Vec<(i32, &Mesh, bool)> = shown
+    let floats: Vec<crate::host::dock::PaneFloat<'_>> = shown
         .into_iter()
         .filter_map(|def| {
             let render = canvases.get(&def)?.render.as_ref()?;
-            Some((def, &render.batches.float, host.popup(def).is_some()))
+            Some(crate::host::dock::PaneFloat {
+                pane: def,
+                layers: &render.batches.float,
+                keys: host.popup(def).is_some(),
+                dialog: host.dialog(def).is_some(),
+            })
         })
         .collect();
     layout.picture(&host.theme, &floats)

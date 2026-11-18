@@ -1931,6 +1931,21 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **How tall it is at width `w`**, for an element whose height follows
+    /// its width (a wrapped label's lines): what a column fitted to its
+    /// content asks once it knows how wide it is. `None` for one whose
+    /// height its width does not change.
+    fn height_for(&self, _w: f32, _m: &Metrics, _scale: f32) -> Option<f32> {
+        None
+    }
+
+    /// Whether it is the **default action** of the dialog it stands in (a
+    /// button's `default`), which takes the keyboard as the dialog comes up
+    /// when no field does.
+    fn is_default(&self) -> bool {
+        false
+    }
+
     /// Whether a **press** moves the focus here, for an element that takes it.
     /// `false` keeps the element a stop on the tab ring while a hand that
     /// reaches it leaves the keys where they were.

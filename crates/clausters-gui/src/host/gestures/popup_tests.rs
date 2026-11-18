@@ -1693,3 +1693,172 @@ fn a_hover_card_scrolls_and_its_text_is_selected_and_copied() {
     assert_eq!(host.clipboard.text(), "sqrt(x, /)");
     assert!(card_rect(&host, &ctx).is_some());
 }
+
+/// The placement of dialog `id` in window 1.
+fn dialog_place(
+    host: &Host,
+    ctx: &GestureCtx,
+    id: i32,
+) -> (Rect, Option<Rect>, crate::host::chrome::Head) {
+    let placed = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h).unwrap();
+    let p = placed.iter().find(|p| p.widget.id == Some(id)).expect("up");
+    (
+        p.rect,
+        crate::host::chrome::close_mark(p),
+        crate::host::chrome::head(p).expect("a dialog has a header"),
+    )
+}
+
+/// **A dialog is the specification's card**: centred, no wider than a
+/// dialog grows, its title and description inside its inset with the body
+/// the dialog's gap under them, and its close button at the corner. An
+/// alert dialog grows wider, sets its title larger and has no close button.
+#[test]
+fn a_dialog_is_a_card_with_a_header_and_an_alert_has_no_close_button() {
+    let m = clausters_gui_draw::metrics::Metrics::default();
+    let ctx = ctx();
+    let host = host_from(
+        r#"{"type":"window","margin":0,"status":false,"children":[
+            {"id":5,"type":"layout","modal":1,"title":"Rename","hug":1,
+             "description":"The new name of the take, as the list of takes shows it to everyone who reads the session.",
+             "children":[{"id":6,"type":"text","value":"take 1"}]}]}"#,
+    );
+    let (card, close, head) = dialog_place(&host, &ctx, 5);
+    assert_eq!(
+        card.w, m.dialog_w,
+        "the card takes the width a dialog takes"
+    );
+    assert_eq!(card.x, ((600.0 - card.w) * 0.5).round());
+    let title = head.title.expect("titled");
+    assert_eq!(
+        (title.x, title.y),
+        (card.x + m.dialog_inset, card.y + m.dialog_inset)
+    );
+    assert_eq!(title.h, m.type_sm, "the title is set solid");
+    assert!(head.lines.len() >= 2, "the description wraps to the card");
+    assert_eq!(head.lines[0].1.y, title.y + title.h + m.dialog_title_gap);
+    let field = rect_of(&host, &ctx, 6);
+    assert_eq!(
+        field.y,
+        title.y + head.h,
+        "the body stands the gap under it"
+    );
+    assert_eq!(field.x, card.x + m.dialog_inset);
+    let close = close.expect("a dialog has a close button");
+    assert_eq!(
+        (close.x + close.w, close.y),
+        (card.x + card.w - m.dialog_close, card.y + m.dialog_close)
+    );
+
+    let host = host_from(
+        r#"{"type":"window","margin":0,"status":false,"children":[
+            {"id":5,"type":"layout","modal":1,"alert":1,"title":"Save the session?","hug":1,
+             "children":[{"id":6,"type":"label","text":"x"}]}]}"#,
+    );
+    let (card, close, head) = dialog_place(&host, &ctx, 5);
+    assert_eq!(card.w, m.alert_w);
+    assert_eq!(close, None, "an alert dialog is answered by its buttons");
+    assert_eq!(head.title.expect("titled").h, m.line_lg);
+}
+
+/// **A press on the scrim asks a dialog to go**, as Escape does; an alert
+/// dialog stays, answered by its buttons alone. Either way nothing behind it
+/// hears the press.
+#[test]
+fn a_press_on_the_scrim_asks_a_dialog_to_go_and_an_alert_stays() {
+    let ctx = ctx();
+    for (alert, said) in [(0, true), (1, false)] {
+        let mut host = host_from(&format!(
+            r#"{{"type":"window","margin":0,"flow":"col","status":false,"children":[
+                {{"id":2,"type":"button","label":"behind","h":32}},
+                {{"id":5,"type":"layout","modal":1,"alert":{alert},"w":200,"h":100,"children":[
+                    {{"id":6,"type":"label","text":"x"}}]}}]}}"#
+        ));
+        let mut g = Gestures::default();
+        let e = click(&mut g, &mut host, &ctx, (5.0, 5.0));
+        let cancel = vec![vec![OscType::String("cancel".into())]];
+        assert_eq!(emitted(&e, 5) == cancel, said, "alert {alert}");
+        assert!(emitted(&e, 2).is_empty(), "nothing behind it is reached");
+    }
+}
+
+/// **A dialog takes the keys as it comes up and gives them back as it
+/// goes**: to its first field, else to its default button; back to what had
+/// them, which a page of a stack turning shows as well as a definition.
+#[test]
+fn a_dialog_takes_the_keys_as_it_comes_up_and_gives_them_back() {
+    let dialog = |field: bool| {
+        let first = if field {
+            r#"{"id":11,"type":"text","value":""},"#
+        } else {
+            ""
+        };
+        format!(
+            r#"{{"type":"window","margin":0,"flow":"col","status":false,"children":[
+                {{"id":2,"type":"text","value":"behind"}},
+                {{"id":3,"type":"layout","flow":"stack","index":0,"h":0,"margin":0,"children":[
+                    {{"type":"layout"}},
+                    {{"type":"layout","children":[
+                        {{"id":10,"type":"layout","modal":1,"w":300,"h":200,"children":[
+                            {first}
+                            {{"id":12,"type":"button","label":"Cancel"}},
+                            {{"id":13,"type":"button","label":"OK","default":1}}]}}]}}]}}]}}"#
+        )
+    };
+    let set = |host: &mut Host, id: i32, key: &str, v: i32| {
+        let mut effects = Vec::new();
+        host.set_props(id, vec![(key.into(), serde_json::json!(v))], &mut effects);
+    };
+    for (field, stop) in [(true, 11), (false, 13)] {
+        let mut host = host_from(&dialog(field));
+        set(&mut host, 2, "focus", 1);
+        assert_eq!(host.focused(), Some((1, 2)));
+        set(&mut host, 3, "index", 1);
+        assert_eq!(host.focused(), Some((1, stop)), "field {field}");
+        // Tab comes round inside it, never behind it
+        let mut g = Gestures::default();
+        for _ in 0..4 {
+            press_key(&mut g, &mut host, &ctx(), Key::Tab);
+            let (_, at) = host.focused().expect("the dialog keeps the keys");
+            assert!([11, 12, 13].contains(&at), "on {at}");
+        }
+        set(&mut host, 3, "index", 0);
+        assert_eq!(host.focused(), Some((1, 2)), "given back");
+    }
+}
+
+/// **A pane's dialog stands over the whole dock**, centred in the area its
+/// front gave it, as its lists do.
+#[test]
+fn a_panes_dialog_is_centred_over_the_dock() {
+    let ctx = ctx();
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"status":false,"children":[
+            {"id":5,"type":"layout","modal":1,"w":200,"h":100,"children":[
+                {"id":6,"type":"label","text":"x"}]}]}"#,
+    );
+    let dock = Rect::new(-300.0, -50.0, 1200.0, 800.0);
+    host.set_popup_area(1, Some(dock));
+    let (card, ..) = dialog_place(&host, &ctx, 5);
+    assert_eq!((card.x, card.y), (200.0, 300.0));
+}
+
+/// **A wrapped label in a dialog stands as tall as its lines**: its height
+/// follows the card's width, so a help text under a field is not cut to one
+/// line, and the button under it stays inside the card.
+#[test]
+fn a_wrapped_label_in_a_dialog_is_as_tall_as_its_lines() {
+    let ctx = ctx();
+    let host = host_from(
+        r#"{"type":"window","margin":0,"status":false,"children":[
+            {"id":5,"type":"layout","modal":1,"hug":1,"title":"Help","children":[
+                {"id":6,"type":"label","wrap":1,"text":"Runs every time the session starts: when it is first needed, when it is restarted or when its environment changes, and is shown in the post window."},
+                {"id":7,"type":"button","label":"Close"}]}]}"#,
+    );
+    let card = rect_of(&host, &ctx, 5);
+    let help = rect_of(&host, &ctx, 6);
+    let close = rect_of(&host, &ctx, 7);
+    assert!(help.h >= 2.0 * 16.0, "{} high", help.h);
+    assert!(close.y >= help.y + help.h);
+    assert!(close.y + close.h <= card.y + card.h);
+}

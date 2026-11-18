@@ -126,6 +126,9 @@ theme_roles! {
     /// What a raised surface casts on the window: the ink of every
     /// elevation's shadow, its alpha the strongest layer's.
     shadow = [0.0, 0.0, 0.0, 0.1];
+    /// What a dialog lays over the window behind it, which is out of reach
+    /// while it is up.
+    scrim = [0.0, 0.0, 0.0, 0.1];
 
     // -- Controls --
     /// A control's body fill (slider, knob, scope field).

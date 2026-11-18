@@ -530,6 +530,12 @@ code that keeps it lives.
 - **A dialog is modal for verbs as for the pointer.** While one is up, a key,
   a menu entry or a tool reaches only the element focused inside it -- a
   field's undo is the field's -- and never the object behind it.
+- **A dialog takes the keys as it comes up and gives them back.** Its first
+  field has them, else its default button; Tab comes round inside it; as it
+  goes they return to what had them. Escape, its close button and a press
+  beside it ask it to go; an alert dialog (the close form) is answered only
+  by Escape and its buttons. In a dock a dialog stands over the whole dock,
+  whichever pane it belongs to.
 - **A text field keeps its own history.** Ctrl+Z undoes its last change (a
   run of typing is one step), Ctrl+Shift+Z or Ctrl+Y redoes it, and the
   document behind it is not reached while it holds the focus.

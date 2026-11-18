@@ -976,12 +976,27 @@ pub fn text_ellipsis(
     scale: f32,
     color: Color,
 ) {
-    if width(s, scale) <= max_w {
-        text(mesh, s, x, y, scale, color);
+    text_ellipsis_in(mesh, Family::Ui, s, x, y, max_w, scale, color);
+}
+
+/// [`text_ellipsis`] in `family`.
+#[allow(clippy::too_many_arguments)] // text_ellipsis's, and the face
+pub fn text_ellipsis_in(
+    mesh: &mut Mesh,
+    family: Family,
+    s: &str,
+    x: f32,
+    y: f32,
+    max_w: f32,
+    scale: f32,
+    color: Color,
+) {
+    if width_in(family, s, scale) <= max_w {
+        text_in(mesh, family, s, x, y, scale, color);
         return;
     }
-    if let Some(cut) = ellipsized(s, max_w, scale) {
-        text(mesh, &cut, x, y, scale, color);
+    if let Some(cut) = ellipsized_in(family, s, max_w, scale) {
+        text_in(mesh, family, &cut, x, y, scale, color);
     }
 }
 
@@ -990,7 +1005,13 @@ pub fn text_ellipsis(
 /// without its base -- and measured as drawn: the longest start of `s` that,
 /// with the ellipsis after it, is no wider than `max_w`.
 pub fn ellipsized(s: &str, max_w: f32, scale: f32) -> Option<String> {
+    ellipsized_in(Family::Ui, s, max_w, scale)
+}
+
+/// [`ellipsized`] in `family`.
+pub fn ellipsized_in(family: Family, s: &str, max_w: f32, scale: f32) -> Option<String> {
     use unicode_segmentation::UnicodeSegmentation;
+    let width = |s: &str, scale: f32| width_in(family, s, scale);
     let ellipsis = '\u{2026}';
     if width(&ellipsis.to_string(), scale) > max_w {
         return None;

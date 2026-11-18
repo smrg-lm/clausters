@@ -146,6 +146,10 @@ const CAPTION_W: f64 = 170.0;
 /// How wide a field is: a title, a path, a line of a footnote.
 const FIELD_W: f64 = 340.0;
 
+/// Between the fields of a form, in logical pixels: the specification's
+/// gap inside a dialog's body.
+const BODY_GAP: f64 = 16.0;
+
 /// One form as a dialog: a row per field, and `Cancel` and `OK` under them --
 /// or, closing, the close form every application asks in
 /// ([`crate::closing::dialog`]).
@@ -223,24 +227,34 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
         .collect();
     let spring = json!({"type": "separator", "weight": 1, "line": false});
     let cancel = json!({"type": "button", "id": id("cancel"), "label": "Cancel"});
-    let children = json!([spring, cancel, {"type": "button", "id": id("ok"), "label": "OK"}]);
+    let ok = json!({"type": "button", "id": id("ok"), "label": "OK", "default": true});
     let buttons = json!({
         "type": "layout",
         "flow": "row",
         "hug": true,
         "pack": true,
         "margin": 0,
-        "children": children,
+        "gap": crate::closing::FOOTER_GAP,
+        "children": [spring, cancel, ok],
+    });
+    // the fields are the dialog's body, closer to each other than the
+    // dialog's parts are
+    let body = json!({
+        "type": "layout",
+        "flow": "col",
+        "hug": true,
+        "margin": 0,
+        "gap": BODY_GAP,
+        "children": rows,
     });
     json!({
         "type": "layout",
         "id": ids.get(prefix),
         "modal": true,
-        "frame": true,
         "hug": true,
         "title": form.title(),
         "flow": "col",
-        "children": rows.into_iter().chain([buttons]).collect::<Vec<_>>(),
+        "children": [body, buttons],
     })
 }
 
@@ -800,7 +814,10 @@ mod tests {
         assert_eq!(stack["index"], 1);
         let dialog = find(&stack, d.ids["asked"]).unwrap();
         assert_eq!(dialog["title"], "Second");
-        assert_eq!(dialog["children"][0]["children"][0]["text"], "Two");
+        assert_eq!(
+            dialog["children"][0]["children"][0]["children"][0]["text"],
+            "Two"
+        );
         assert_eq!(
             find(&stack, d.ids["asked:value"]).unwrap()["value"],
             "typed"

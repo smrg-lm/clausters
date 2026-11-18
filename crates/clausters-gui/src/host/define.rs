@@ -260,6 +260,7 @@ impl Host {
         self.sync_lists();
         self.sync_subscriptions();
         self.sync_timeline_groups(Some(window));
+        self.settle_dialog(window, effects);
         effects.push(HostEffect::OpenWindow(window));
     }
 
@@ -311,6 +312,7 @@ impl Host {
             self.popups.remove(&id);
             self.popup_areas.remove(&id);
             self.header_bands.remove(&id);
+            self.dialogs_up.remove(&id);
             effects.push(HostEffect::CloseWindow(id));
         }
         self.sync_subscriptions();

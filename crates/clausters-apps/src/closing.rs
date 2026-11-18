@@ -110,11 +110,18 @@ pub enum Leaving {
     File(FileChange),
 }
 
-/// **The close form as a dialog**: the question, and `Don't save` apart from
-/// `Cancel` and `Save`. `id` numbers a button by its name ([`SAVE`],
-/// [`DISCARD`], [`CANCEL`]); the dialog itself is `dialog_id`.
+/// **What the close form asks**: its title, over what the window says of
+/// its work.
+pub const TITLE: &str = "Save changes?";
+
+/// **The close form as a dialog**: an alert dialog, which asks before
+/// anything is lost and is answered by its buttons alone -- titled with the
+/// question ([`TITLE`]), `says` (what is not saved) under it, and `Don't
+/// save` apart from `Cancel` and `Save`, which has the keys as it comes up.
+/// `id` numbers a button by its name ([`SAVE`], [`DISCARD`], [`CANCEL`]);
+/// the dialog itself is `dialog_id`.
 #[must_use]
-pub fn dialog(dialog_id: Option<i32>, question: &str, id: impl Fn(&str) -> Option<i32>) -> Value {
+pub fn dialog(dialog_id: Option<i32>, says: &str, id: impl Fn(&str) -> Option<i32>) -> Value {
     let spring = json!({"type": "separator", "weight": 1, "line": false});
     let buttons = json!({
         "type": "layout",
@@ -122,24 +129,30 @@ pub fn dialog(dialog_id: Option<i32>, question: &str, id: impl Fn(&str) -> Optio
         "hug": true,
         "pack": true,
         "margin": 0,
+        "gap": FOOTER_GAP,
         "children": [
             {"type": "button", "id": id(DISCARD), "label": "Don't save"},
             spring,
             {"type": "button", "id": id(CANCEL), "label": "Cancel"},
-            {"type": "button", "id": id(SAVE), "label": "Save"},
+            {"type": "button", "id": id(SAVE), "label": "Save", "default": true},
         ],
     });
     json!({
         "type": "layout",
         "id": dialog_id,
         "modal": true,
-        "frame": true,
+        "alert": true,
         "hug": true,
-        "title": "Close",
+        "title": TITLE,
+        "description": says,
         "flow": "col",
-        "children": [{"type": "label", "text": question}, buttons],
+        "children": [buttons],
     })
 }
+
+/// Between the buttons of a dialog's footer, in logical pixels: the
+/// specification's.
+pub const FOOTER_GAP: f64 = 8.0;
 
 /// **The close form's widgets, numbered by the window's holder**: the
 /// stack it is a page of, the dialog, and its three buttons. An application
@@ -201,8 +214,8 @@ impl Ids {
 /// 0 empty and page 1 the form -- in the window from the start, so asking is
 /// a correction of the stack's `index` ([`shown`]) and nothing is defined.
 #[must_use]
-pub fn stack(ids: &Ids, question: &str) -> Value {
-    let form = dialog(Some(ids.dialog), question, |name| match name {
+pub fn stack(ids: &Ids, says: &str) -> Value {
+    let form = dialog(Some(ids.dialog), says, |name| match name {
         SAVE => Some(ids.save),
         DISCARD => Some(ids.discard),
         CANCEL => Some(ids.cancel),
@@ -381,10 +394,18 @@ mod tests {
         };
         let form = dialog(Some(9), "Unsaved.", ids);
         assert_eq!(form["id"], 9);
-        assert_eq!(form["modal"], true);
-        let buttons = form["children"][1]["children"].as_array().unwrap();
+        assert_eq!(
+            (&form["modal"], &form["alert"]),
+            (&json!(true), &json!(true))
+        );
+        assert_eq!(
+            (&form["title"], &form["description"]),
+            (&json!(TITLE), &json!("Unsaved."))
+        );
+        let buttons = form["children"][0]["children"].as_array().unwrap();
         let labels: Vec<&str> = buttons.iter().filter_map(|b| b["label"].as_str()).collect();
         assert_eq!(labels, ["Don't save", "Cancel", "Save"]);
+        assert_eq!(buttons[3]["default"], true, "Save has the keys");
         assert_eq!(choice("ok"), Some(Choice::Save));
         assert_eq!(choice("discard"), Some(Choice::Discard));
         assert_eq!(choice("cancel"), Some(Choice::Cancel));

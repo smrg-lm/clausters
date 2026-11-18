@@ -77,7 +77,13 @@ const FOOT_H: i32 = 24;
 /// (Inter, whose capital is 0.727 of the em, over the 7-pixel cell).
 const FOOT_TEXT: f64 = 12.0 * 0.727 / 7.0;
 
-const PREFS_WIN: i32 = 20;
+/// The line between the bar's menu titles and its tools.
+const BAR_LINE: i32 = 18;
+/// Where the bar holds the dialog that is up: the preferences or the
+/// environments, over the whole dock.
+const DIALOG_HOLD: i32 = 19;
+/// The preferences' dialog.
+const PREFS_DIALOG: i32 = 20;
 const PREFS_REOPEN: i32 = 22;
 const PREFS_INDENT: i32 = 23;
 const PREFS_THEME: i32 = 24;
@@ -89,7 +95,8 @@ const PREFS_SAVE: i32 = 32;
 const PREFS_SAVE_RESTART: i32 = 33;
 const PREFS_CLOSE: i32 = 35;
 
-const ENVS_WIN: i32 = 40;
+/// The environments' dialog.
+const ENVS_DIALOG: i32 = 40;
 const ENVS_LIST: i32 = 42;
 const ENVS_SOURCE: i32 = 71;
 const ENVS_NAME: i32 = 72;
@@ -98,8 +105,8 @@ const ENVS_STATUS: i32 = 74;
 const ENVS_CLOSE: i32 = 75;
 /// The rows of the list, redefined whole: ten ids a row from here.
 const ENVS_ROWS: i32 = 300;
-/// Where the nodes of the two panels with no role of their own are numbered
-/// from.
+/// Where the nodes of the two dialogs with no role of their own are
+/// numbered from.
 const PREFS_SPARE: i32 = 100;
 const ENVS_SPARE: i32 = 150;
 
@@ -441,18 +448,20 @@ impl App {
             PREFS_THEME => {
                 let verb = ["theme_light", "theme_dark", "theme_system"]
                     [wire::int(args, 0).clamp(0, 2) as usize];
-                self.verb(PREFS_WIN, verb, true);
+                self.verb(BAR_WIN, verb, true);
             }
             PREFS_DOCS_CHOOSE if tag == "click" => self.choose_docs_folder(),
             PREFS_DOCS_BUNDLED if tag == "click" => self.set_docs_dir(None),
             PREFS_SAVE if tag == "click" => self.ask_startup_code(false),
             PREFS_SAVE_RESTART if tag == "click" => self.ask_startup_code(true),
-            PREFS_CLOSE if tag == "click" => self.link.free(PREFS_WIN),
+            PREFS_CLOSE if tag == "click" => self.close_dialog(),
+            // the close button, Escape and the scrim ask a dialog to go
+            PREFS_DIALOG | ENVS_DIALOG if tag == "cancel" => self.close_dialog(),
             ENVS_SOURCE | ENVS_NAME if tag.is_empty() => {
                 self.fields.insert(id, wire::text(args, 0));
             }
             ENVS_CREATE if tag == "click" => self.envs_create(),
-            ENVS_CLOSE if tag == "click" => self.link.free(ENVS_WIN),
+            ENVS_CLOSE if tag == "click" => self.close_dialog(),
             id if (ENVS_ROWS..ENVS_ROWS + 500).contains(&id) && tag == "click" => self.envs_row(id),
             id if id >= FILE_BASE => self.on_file_event(id, tag, args),
             _ => {}
@@ -515,8 +524,6 @@ impl App {
             // window does
             BAR_WIN | FOOT_WIN => return,
             DOCS_WIN => self.docs_shown = false,
-            PREFS_WIN => self.prefs_open = false,
-            ENVS_WIN => self.envs_open = false,
             _ => {
                 if let Some(i) = self.files.iter().position(|f| f.win == id) {
                     self.files.remove(i);
@@ -539,14 +546,8 @@ impl App {
         panes.insert(BAR_WIN);
         panes.insert(FOOT_WIN);
         panes.insert(POST_WIN);
-        for (shown, win) in [
-            (self.docs_shown, DOCS_WIN),
-            (self.prefs_open, PREFS_WIN),
-            (self.envs_open, ENVS_WIN),
-        ] {
-            if shown {
-                panes.insert(win);
-            }
+        if self.docs_shown {
+            panes.insert(DOCS_WIN);
         }
         tracing::debug!("closes {closes:?} of the panes {panes:?}");
         if panes.is_subset(&closes) {
@@ -557,7 +558,7 @@ impl App {
                 // the post window stays: it is where the session speaks; the
                 // bar is the application's, and goes only with it
                 BAR_WIN | FOOT_WIN | POST_WIN => {}
-                DOCS_WIN | PREFS_WIN | ENVS_WIN => self.link.free(win),
+                DOCS_WIN => self.link.free(win),
                 win => self.close_tab(Some(win)),
             }
         }
@@ -938,8 +939,8 @@ impl App {
         };
         if file.dirty {
             let (win, name) = (file.win, file.name.clone());
-            let question = format!("Save \"{name}\"?");
-            return self.ask(win, Ask::CloseTab(win), &question);
+            let says = format!("\"{name}\" has changes that are not saved.");
+            return self.ask(win, Ask::CloseTab(win), &says);
         }
         self.close_now(file.win);
     }
@@ -953,13 +954,13 @@ impl App {
 
     // -- questions, in a file window's close form
 
-    /// The close form up in window `win`, asking `question`: the form's
-    /// stack defined again around the question, shown.
-    fn ask(&mut self, win: i32, what: Ask, question: &str) {
+    /// The close form up in window `win`, saying `says` of what is not
+    /// saved: the form's stack defined again around it, shown.
+    fn ask(&mut self, win: i32, what: Ask, says: &str) {
         self.asking = Some((win, what));
         self.show_file(win);
         let ids = form(win);
-        let mut stack = closing::stack(&ids, question);
+        let mut stack = closing::stack(&ids, says);
         stack["index"] = json!(1);
         number(&mut stack, win + FILE_SPARE);
         self.link.def(ids.stack, &stack);
@@ -1017,14 +1018,14 @@ impl App {
         let Some(first) = unsaved.first() else {
             return self.quit_saved();
         };
-        let question = if unsaved.len() == 1 {
-            format!("Save \"{}\"?", first.name)
+        let says = if unsaved.len() == 1 {
+            format!("\"{}\" has changes that are not saved.", first.name)
         } else {
             let names: Vec<String> = unsaved.iter().map(|f| format!("\"{}\"", f.name)).collect();
-            format!("Save {}?", names.join(", "))
+            format!("{} have changes that are not saved.", names.join(", "))
         };
         let win = first.win;
-        self.ask(win, Ask::Quit, &question);
+        self.ask(win, Ask::Quit, &says);
     }
 
     /// Quits once the window's size is read, to open at it next time.
@@ -1179,10 +1180,8 @@ impl App {
     }
 
     fn is_window(&self, id: i32) -> bool {
-        matches!(
-            id,
-            BAR_WIN | FOOT_WIN | POST_WIN | DOCS_WIN | PREFS_WIN | ENVS_WIN
-        ) || self.files.iter().any(|f| f.win == id)
+        matches!(id, BAR_WIN | FOOT_WIN | POST_WIN | DOCS_WIN)
+            || self.files.iter().any(|f| f.win == id)
     }
 
     // -- the application's bar, the post window and the documentation
@@ -1204,11 +1203,13 @@ impl App {
             "id": BAR_WIN + 1, "type": "layout", "flow": "row", "pack": 1,
             "margin": 4, "gap": 0, "children": [
                 // the line between the menu's titles and the tools
-                {"type": "separator"},
+                {"id": BAR_LINE, "type": "separator"},
                 tool(BAR_WIN + 2, "play", "evaluate_line", "Evaluate line or selection"),
                 tool(BAR_WIN + 3, "list-video", "evaluate_block", "Evaluate block"),
                 tool(BAR_WIN + 4, "square", "interrupt", "Interrupt"),
                 tool(BAR_WIN + 5, "rotate-ccw", "restart", "Restart the session"),
+                // where a dialog of the application's is defined, over the dock
+                {"id": DIALOG_HOLD, "type": "layout", "w": 0, "h": 0, "margin": 0},
             ],
         }]);
         self.link.def(BAR_WIN, &tree);
@@ -1668,11 +1669,31 @@ impl App {
         self.link.set(BAR_WIN, &[("menu", self.menu())]);
     }
 
-    // -- the preferences, a panel of the dock
+    // -- the application's dialogs: the preferences and the environments
+
+    /// **A dialog of the application's goes up**, over the whole dock: the
+    /// bar holds it, so it is the application's rather than a panel's. One
+    /// at a time, as a dialog takes everything behind it.
+    fn show_dialog(&mut self, dialog: Value, spare: i32) {
+        let mut hold = json!({"type": "layout", "w": 0, "h": 0, "margin": 0, "children": [dialog]});
+        number(&mut hold, spare);
+        self.link.def(DIALOG_HOLD, &hold);
+        self.menus();
+    }
+
+    /// The dialog that is up goes.
+    fn close_dialog(&mut self) {
+        self.prefs_open = false;
+        self.envs_open = false;
+        self.link.def(
+            DIALOG_HOLD,
+            &json!({"type": "layout", "w": 0, "h": 0, "margin": 0}),
+        );
+        self.menus();
+    }
 
     fn open_prefs(&mut self) {
-        if self.prefs_open {
-            self.dock(json!({"verb": "select", "pane": PREFS_WIN}), DockFor::Look);
+        if self.prefs_open || self.envs_open {
             return;
         }
         let config = config::get();
@@ -1685,56 +1706,50 @@ impl App {
             ThemePref::Dark => 1,
             ThemePref::System => 2,
         };
-        let hint = |text: &str| json!({"type": "label", "text": text, "wrap": 1});
-        let mut tree = self.window(PREFS_WIN, "Preferences");
-        tree["children"] = json!([{
-            "id": 21, "type": "layout", "flow": "col", "margin": 12, "gap": 8,
+        let dialog = json!({
+            "id": PREFS_DIALOG, "type": "layout", "modal": 1, "wide": 1, "hug": 1,
+            "title": "Preferences", "flow": "col",
             "children": [
                 {"id": PREFS_REOPEN, "type": "toggle",
                     "label": "Open the last session's files at startup",
                     "value": i32::from(self.settings.reopen_files)},
-                {"id": PREFS_THEME, "type": "choice", "label": "Theme",
-                    "options": ["Light", "Dark", "System"], "index": theme},
-                {"id": PREFS_INDENT, "type": "choice", "label": "Indentation",
-                    "options": ["Tab character", "2 spaces", "4 spaces"], "index": indent},
-                hint("What Tab inserts at the caret, and one level of indentation for the selected lines."),
-                {"type": "label", "text": "Documentation folder (.md files)"},
-                {"id": PREFS_DOCS_DIR, "type": "label", "text": docs_dir_text(&config)},
-                {"id": 26, "type": "layout", "flow": "row", "pack": 1, "children": [
-                    {"id": PREFS_DOCS_CHOOSE, "type": "button", "label": "Choose folder..."},
-                    {"id": PREFS_DOCS_BUNDLED, "type": "button", "label": "Use the one that comes with the editor"},
-                ]},
-                {"type": "label", "text": "Startup code"},
-                {"id": PREFS_STARTUP, "type": "code", "text": config.startup_code,
-                    "language": "python", "h": 140, "line_numbers": 0,
-                    "indent": self.settings.indent_prop(),
-                    "text_size": self.settings.text_size()},
-                hint("Runs every time the session starts (when it is first needed, when it is restarted or when its environment changes) and is shown in the post window."),
-                {"id": 31, "type": "layout", "flow": "row", "pack": 1, "children": [
-                    {"id": PREFS_SAVE, "type": "button", "label": "Save"},
-                    {"id": PREFS_SAVE_RESTART, "type": "button", "label": "Save and restart the session"},
-                ]},
-                {"type": "separator", "weight": 1, "line": 0},
-                {"id": 34, "type": "layout", "flow": "row", "pack": 1, "children": [
-                    {"type": "separator", "weight": 1, "line": 0},
-                    {"id": PREFS_CLOSE, "type": "button", "label": "Close"},
-                ]},
+                field(&[
+                    caption("Theme"),
+                    json!({"id": PREFS_THEME, "type": "choice",
+                        "options": ["Light", "Dark", "System"], "index": theme, "w": 176}),
+                ]),
+                field(&[
+                    caption("Indentation"),
+                    json!({"id": PREFS_INDENT, "type": "choice",
+                        "options": ["Tab character", "2 spaces", "4 spaces"], "index": indent,
+                        "w": 176}),
+                    help("What Tab inserts at the caret, and one level of indentation for the selected lines."),
+                ]),
+                field(&[
+                    caption("Documentation folder (.md files)"),
+                    json!({"id": PREFS_DOCS_DIR, "type": "label", "text": docs_dir_text(&config)}),
+                    buttons(&[
+                        json!({"id": PREFS_DOCS_CHOOSE, "type": "button", "label": "Choose folder..."}),
+                        json!({"id": PREFS_DOCS_BUNDLED, "type": "button", "label": "Use the bundled one"}),
+                    ]),
+                ]),
+                field(&[
+                    caption("Startup code"),
+                    json!({"id": PREFS_STARTUP, "type": "code", "text": config.startup_code,
+                        "language": "python", "h": 112, "line_numbers": 0,
+                        "indent": self.settings.indent_prop(),
+                        "text_size": self.settings.text_size()}),
+                    help("Runs every time the session starts (when it is first needed, when it is restarted or when its environment changes) and is shown in the post window."),
+                    buttons(&[
+                        json!({"id": PREFS_SAVE, "type": "button", "label": "Save"}),
+                        json!({"id": PREFS_SAVE_RESTART, "type": "button", "label": "Save and restart the session"}),
+                    ]),
+                ]),
+                footer(json!({"id": PREFS_CLOSE, "type": "button", "label": "Close", "default": 1})),
             ]
-        }]);
-        number(&mut tree, PREFS_SPARE);
-        self.link.def(PREFS_WIN, &tree);
+        });
         self.prefs_open = true;
-        self.beside_editor(PREFS_WIN);
-        self.menus();
-    }
-
-    /// A panel opened from the editor, as a tab of the editor's group.
-    fn beside_editor(&mut self, win: i32) {
-        if let Some(of) = self.file_win(0) {
-            self.link
-                .dock(&json!({"verb": "join", "pane": win, "of": of}));
-        }
-        self.dock(json!({"verb": "select", "pane": win}), DockFor::Look);
+        self.show_dialog(dialog, PREFS_SPARE);
     }
 
     /// The startup code is read back from its editor, then saved.
@@ -1743,43 +1758,42 @@ impl App {
         self.link.query(PREFS_STARTUP);
     }
 
-    // -- the environments, a panel of the dock
-
     fn open_envs(&mut self) {
-        if self.envs_open {
-            self.dock(json!({"verb": "select", "pane": ENVS_WIN}), DockFor::Look);
+        if self.prefs_open || self.envs_open {
             return;
         }
-        let hint = |text: &str| json!({"type": "label", "text": text, "wrap": 1});
-        let mut tree = self.window(ENVS_WIN, "Python environments");
-        tree["children"] = json!([{
-            "id": 41, "type": "layout", "flow": "col", "margin": 12, "gap": 8,
+        let dialog = json!({
+            "id": ENVS_DIALOG, "type": "layout", "modal": 1, "wide": 1, "hug": 1,
+            "title": "Python Environments",
+            "description": "They are kept in the editor's data folder. The session uses the marked environment, also after reopening the editor.",
+            "flow": "col",
             "children": [
-                {"type": "label", "text": "Environments"},
-                self.envs_list(),
-                {"type": "label", "text": "Create a new environment"},
-                {"id": ENVS_SOURCE, "type": "text", "label": "1. Install source",
-                    "value": self.fields.get(&ENVS_SOURCE).cloned().unwrap_or_default()},
-                hint("What pip installs in it: a package name, a path or a URL, with any pip options."),
-                {"id": ENVS_NAME, "type": "text", "label": "2. Environment name",
-                    "value": self.fields.get(&ENVS_NAME).cloned().unwrap_or_default()},
-                hint("A short name: letters, digits, \".\", \"_\" or \"-\"."),
-                {"id": 76, "type": "layout", "flow": "row", "pack": 1, "children": [
-                    {"id": ENVS_CREATE, "type": "button", "label": "Create"},
+                field(&[caption("Environments"), self.envs_list()]),
+                {"type": "layout", "flow": "col", "hug": 1, "margin": 16, "gap": 16, "frame": 1,
+                    "children": [
+                    caption("Create a new environment"),
+                    field(&[
+                        caption("1. Install source"),
+                        json!({"id": ENVS_SOURCE, "type": "text",
+                            "value": self.fields.get(&ENVS_SOURCE).cloned().unwrap_or_default()}),
+                        help("What pip installs in it: a package name, a path or a URL, with any pip options."),
+                    ]),
+                    field(&[
+                        caption("2. Environment name"),
+                        buttons(&[
+                            json!({"id": ENVS_NAME, "type": "text", "weight": 1,
+                                "value": self.fields.get(&ENVS_NAME).cloned().unwrap_or_default()}),
+                            json!({"id": ENVS_CREATE, "type": "button", "label": "Create"}),
+                        ]),
+                        help("A short name: letters, digits, \".\", \"_\" or \"-\"."),
+                    ]),
                 ]},
-                {"id": ENVS_STATUS, "type": "label", "text": "", "wrap": 1},
-                {"type": "separator", "weight": 1, "line": 0},
-                {"id": 77, "type": "layout", "flow": "row", "pack": 1, "children": [
-                    {"type": "separator", "weight": 1, "line": 0},
-                    {"id": ENVS_CLOSE, "type": "button", "label": "Close"},
-                ]},
+                {"id": ENVS_STATUS, "type": "label", "text": "", "wrap": 1, "muted": 1},
+                footer(json!({"id": ENVS_CLOSE, "type": "button", "label": "Close", "default": 1})),
             ]
-        }]);
-        number(&mut tree, ENVS_SPARE);
-        self.link.def(ENVS_WIN, &tree);
+        });
         self.envs_open = true;
-        self.beside_editor(ENVS_WIN);
-        self.menus();
+        self.show_dialog(dialog, ENVS_SPARE);
     }
 
     /// The list of environments, a row each, the system's Python first.
@@ -1887,6 +1901,34 @@ impl App {
             self.link.set(ENVS_STATUS, &[("text", json!(e))]);
         }
     }
+}
+
+/// **A field of a dialog**: its caption, its control and what helps with
+/// it, set close together.
+fn field(children: &[Value]) -> Value {
+    json!({"type": "layout", "flow": "col", "hug": 1, "margin": 0, "gap": 8, "children": children})
+}
+
+/// A field's caption.
+fn caption(text: &str) -> Value {
+    json!({"type": "label", "text": text})
+}
+
+/// The sentence under a field that says what it is for, quieter.
+fn help(text: &str) -> Value {
+    json!({"type": "label", "text": text, "wrap": 1, "muted": 1})
+}
+
+/// A row of buttons, as wide as what they say.
+fn buttons(children: &[Value]) -> Value {
+    json!({"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0, "gap": 8,
+        "children": children})
+}
+
+/// **A dialog's footer**: its buttons at its right.
+fn footer(button: Value) -> Value {
+    json!({"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0, "gap": 8,
+        "children": [{"type": "separator", "weight": 1, "line": 0}, button]})
 }
 
 /// **Gives every node of `tree` that has none an id**, counting from

@@ -61,7 +61,7 @@
 //! as pure over the metrics as the wanted size, and an elastic child needs no
 //! floor because sharing the leftover already takes it to nothing.
 
-use super::{Flow, Layout, Widget, WidgetKind};
+use super::{Flow, Group, Layout, Widget, WidgetKind};
 use clausters_gui_draw::font;
 use clausters_gui_draw::metrics::{Metrics, snap_px};
 
@@ -256,7 +256,15 @@ impl Widget {
                     (0.0, strip)
                 } else {
                     let (w, h) = compose_min(&self.flow_children(), *layout, *flow, m, scale);
-                    (w, h + strip)
+                    // a dialog's header is part of what it cannot do without,
+                    // as short as it stands in the widest card: its height at
+                    // the card's own width is the card's ([`Widget::card_h`])
+                    let head = if group.modal {
+                        card_head(group, flow, card_w(group, flow, None, m, scale), m, scale)
+                    } else {
+                        0.0
+                    };
+                    (w, h + strip + head)
                 }
             }
             WidgetKind::Stack { margin, .. } => {
@@ -417,6 +425,13 @@ impl Widget {
                 ..
             } => {
                 let (w, h) = compose(&self.flow_children(), *layout, *flow, m, scale, want);
+                if group.modal {
+                    let card_w = card_w(group, flow, w, m, scale);
+                    return (
+                        Some(card_w),
+                        h.map(|h| h + card_head(group, flow, card_w, m, scale)),
+                    );
+                }
                 let strip = group.strip_h(m);
                 if group.folded() {
                     (w, Some(strip))
@@ -466,6 +481,161 @@ impl Widget {
     }
 }
 
+/// **How wide a dialog's card is**: the width a dialog takes -- an alert
+/// dialog's own, or a wide one's -- as the specification's card fills it
+/// whatever it holds, or what its content wants (`content`, its inset
+/// included) or its title with room for the close button, where either is
+/// wider. The window it stands over narrows it still ([`layout`]).
+///
+/// [`layout`]: crate::host::layout
+pub(crate) fn card_w(
+    group: &Group,
+    flow: &Flow,
+    content: Option<f32>,
+    m: &Metrics,
+    scale: f32,
+) -> f32 {
+    let widest = if group.alert {
+        m.alert_w
+    } else if group.wide {
+        m.dialog_wide_w
+    } else {
+        m.dialog_w
+    };
+    let inset = crate::host::chrome::card_inset(flow, m, scale);
+    let close = if group.alert {
+        inset
+    } else {
+        m.dialog_close + m.button_sm_h
+    };
+    let titled = crate::host::chrome::title_w(group, m) + inset + close;
+    content.map_or(widest, |w| w.max(titled).max(widest))
+}
+
+/// How tall a dialog's header stands in a card `card_w` wide.
+fn card_head(group: &Group, flow: &Flow, card_w: f32, m: &Metrics, scale: f32) -> f32 {
+    let inset = crate::host::chrome::card_inset(flow, m, scale);
+    let card = clausters_gui_draw::rect::Rect::new(0.0, 0.0, card_w, 0.0);
+    crate::host::chrome::head_of(group, card, inset, m).h
+}
+
+impl Widget {
+    /// **How tall a dialog's card is at width `w`**: what its content wants
+    /// at that width and its header, whose description wraps to it. `None`
+    /// for anything but a dialog, and for a dialog whose content leaves its
+    /// height to the layout.
+    pub(crate) fn card_h(&self, w: f32, m: &Metrics, scale: f32) -> Option<f32> {
+        if !self.kind.is_modal() {
+            return None;
+        }
+        self.height_for(w, m, scale)
+    }
+
+    /// **How tall this widget wants to be at width `w`**: what a column
+    /// fitted to its content asks once its width is known, so a wrapped
+    /// label stands as tall as its lines. A leaf answers from what it holds
+    /// ([`Element::height_for`](super::Element::height_for)), else from its
+    /// content; a column adds up its children at its inner width, its gaps
+    /// and its margin, and a dialog its header; a row takes its tallest child
+    /// as that child wants to be. `None` where the height is the layout's.
+    pub(crate) fn height_for(&self, w: f32, m: &Metrics, scale: f32) -> Option<f32> {
+        if let Some(h) = self.place.h {
+            return Some(snap_px(h, scale));
+        }
+        match &self.kind {
+            WidgetKind::Window { layout, flow, .. } => {
+                column_for(&self.flow_children(), *layout, flow, w, 0.0, m, scale)
+            }
+            WidgetKind::Panel {
+                layout,
+                flow,
+                group,
+                ..
+            } if !group.folded() => {
+                let head = if group.modal {
+                    card_head(group, flow, w, m, scale)
+                } else {
+                    group.strip_h(m)
+                };
+                column_for(&self.flow_children(), *layout, flow, w, head, m, scale)
+            }
+            WidgetKind::Custom(el) => el
+                .height_for(w, m, scale)
+                .or_else(|| self.hug_size(m, scale).1),
+            _ => self.hug_size(m, scale).1,
+        }
+    }
+}
+
+impl Widget {
+    /// **Whether this widget's height follows its width**: an element that
+    /// says so (a wrapped label), or a column holding one -- what a column
+    /// asks [`Widget::height_for`] of, and nothing else, so a surface keeps
+    /// sharing what is left.
+    pub(crate) fn follows_width(&self, m: &Metrics, scale: f32) -> bool {
+        if self.place.h.is_some() || self.place.weight.is_some() {
+            return false;
+        }
+        match &self.kind {
+            WidgetKind::Custom(el) => el.height_for(1000.0, m, scale).is_some(),
+            WidgetKind::Window { layout, .. } | WidgetKind::Panel { layout, .. } => {
+                *layout == Layout::Col
+                    && self
+                        .flow_children()
+                        .iter()
+                        .any(|c| c.follows_width(m, scale))
+            }
+            _ => false,
+        }
+    }
+}
+
+/// [`Widget::height_for`] of a container's `children` strung by `layout` in
+/// a box `w` wide that takes `head` off its top: a column at its inner
+/// width, a row by its tallest child, anything else by what it wants.
+fn column_for(
+    children: &[&Widget],
+    layout: Layout,
+    flow: &Flow,
+    w: f32,
+    head: f32,
+    m: &Metrics,
+    scale: f32,
+) -> Option<f32> {
+    let pad = flow
+        .margin
+        .map_or(flow.default_margin(m), |v| snap_px(v, scale))
+        .max(0.0);
+    let gap = flow
+        .gap
+        .map_or(flow.default_gap(m), |v| snap_px(v, scale))
+        .max(0.0);
+    let inner = (w - 2.0 * pad).max(0.0);
+    let body = match layout {
+        Layout::Col => {
+            let mut sum = gap * (children.len().max(1) - 1) as f32;
+            for c in children {
+                sum += c.height_for(inner, m, scale)?;
+            }
+            sum
+        }
+        Layout::Row => {
+            let mut most = 0.0f32;
+            for c in children {
+                let h = c
+                    .place
+                    .h
+                    .map(|h| snap_px(h, scale))
+                    .or_else(|| c.hug_size(m, scale).1)?;
+                most = most.max(h);
+            }
+            most
+        }
+        _ => return None,
+    };
+    Some(body + 2.0 * pad + head)
+}
+
 /// Which end of a widget's range a fitting walk is asking for.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Want {
@@ -501,8 +671,15 @@ fn compose(
     scale: f32,
     want: Want,
 ) -> Natural {
-    let pad = 2.0 * flow.margin.map_or(m.margin, |v| snap_px(v, scale)).max(0.0);
-    let gap = flow.gap.map_or(m.gap, |v| snap_px(v, scale)).max(0.0);
+    let pad = 2.0
+        * flow
+            .margin
+            .map_or(flow.default_margin(m), |v| snap_px(v, scale))
+            .max(0.0);
+    let gap = flow
+        .gap
+        .map_or(flow.default_gap(m), |v| snap_px(v, scale))
+        .max(0.0);
     let gaps = gap * (children.len().max(1) - 1) as f32;
     // **A size a child declares is the size it takes**, on either axis, so it
     // is what it adds to the container. Asking only for what its content
@@ -591,8 +768,15 @@ fn compose_min(
     if children.is_empty() {
         return (0.0, 0.0);
     }
-    let pad = 2.0 * flow.margin.map_or(m.margin, |v| snap_px(v, scale)).max(0.0);
-    let gap = flow.gap.map_or(m.gap, |v| snap_px(v, scale)).max(0.0);
+    let pad = 2.0
+        * flow
+            .margin
+            .map_or(flow.default_margin(m), |v| snap_px(v, scale))
+            .max(0.0);
+    let gap = flow
+        .gap
+        .map_or(flow.default_gap(m), |v| snap_px(v, scale))
+        .max(0.0);
     let gaps = gap * (children.len() - 1) as f32;
     let floors: Vec<(f32, f32)> = children.iter().map(|c| c.min_size(m, scale)).collect();
     let widest = floors.iter().map(|f| f.0).fold(0.0f32, f32::max);

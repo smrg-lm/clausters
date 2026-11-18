@@ -188,12 +188,19 @@ pub(super) fn step(host: &mut Host, ctx: &GestureCtx, back: bool) -> Vec<Gesture
         .focused()
         .filter(|(d, _)| *d == ctx.def_id)
         .and_then(|(_, id)| ring.iter().position(|r| *r == id));
+    // **A dialog keeps the keys**: past its last stop Tab comes round to
+    // its first, as the design system's dialog traps the focus -- what is
+    // behind it cannot be reached, so there is nothing to leave to.
+    let trapped = host.dialog(ctx.def_id).is_some();
+    let last = ring.len() - 1;
     let next = match (current, back) {
         (None, false) => Some(0),
-        (None, true) => Some(ring.len() - 1),
+        (None, true) => Some(last),
+        (Some(0), true) if trapped => Some(last),
         (Some(0), true) => None,
         (Some(i), true) => Some(i - 1),
-        (Some(i), false) if i + 1 < ring.len() => Some(i + 1),
+        (Some(i), false) if i < last => Some(i + 1),
+        (Some(_), false) if trapped => Some(0),
         (Some(_), false) => None,
     };
     match next {

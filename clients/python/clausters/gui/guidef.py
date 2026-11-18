@@ -1635,7 +1635,7 @@ def number(control=None, *, label: str | None = None, min: float | None = None,
 def button(control=None, *, label: str | None = None, mode: str | None = None,
            on: float | None = None, off: float | None = None,
            icon: str | None = None, flat: bool | None = None, menu: list | None = None,
-           verb: str | None = None,
+           verb: str | None = None, default: bool | None = None,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A push ``button``, whose **press is the event**. ``text_size`` scales its
@@ -1688,7 +1688,11 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
     key bound to it would -- ``"cut"``, ``"play"``, ``"select_all"`` -- on
     what the window's focus is on, or on the view the window names as its
     ``main``, and the window's owner hears it where the host performs no such
-    verb. A tool reports nothing of its own and takes no focus."""
+    verb. A tool reports nothing of its own and takes no focus.
+
+    ``default`` marks the **default action** of the dialog the button is in:
+    the keys go to it as the dialog comes up, when the dialog has no field to
+    give them to."""
     if mode is not None and mode not in ("gate", "press"):
         raise ValueError(
             f"unknown button mode {mode!r}; use \"gate\" (on while held) or "
@@ -1697,6 +1701,8 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
                        verb=verb, text_size=text_size, color=color)
     if flat is not None:
         extra["flat"] = 1 if flat else 0
+    if default is not None:
+        extra["default"] = 1 if default else 0
     if control is not None:
         if mode == "press" and getattr(control, "rate", None) not in ("tr", "trigger"):
             raise ValueError(
@@ -2201,20 +2207,36 @@ def toolbar(*children, id: int | None = None, **props) -> View:
     return panel(*children, flow="row", hug=True, pack=True, id=id, **props)
 
 
-def dialog(*children, title: str | None = None, flow: str | None = None,
-           id: int | None = None, **props) -> View:
+def dialog(*children, title: str | None = None, description: str | None = None,
+           alert: bool | None = None, wide: bool | None = None,
+           flow: str | None = None, id: int | None = None, **props) -> View:
     """A **dialog**: a `layout` that stands over the window and takes every
     press while it exists.
 
-    It is placed centred over the window rather than by its parent's flow, as
-    big as ``w``/``h`` say or as its content wants, with the window dimmed
-    behind it; nothing behind it can be reached, by the pointer or by Tab. It
-    is up from the moment it is defined until it is **freed** -- which is how it
-    is closed (`clausters.gui.handle.WidgetHandle.free`). Escape, and the close
-    mark at the end of a titled dialog's strip, ask it to go: the dialog
-    reports ``("cancel",)``, and freeing it is yours."""
-    return layout(*children, title=title, flow=flow, modal=True, frame=True, hug=True,
-                  id=id, **props)
+    It is drawn as a card centred over the window -- over the whole dock, for
+    a window docked in one -- rather than placed by its parent's flow, as
+    wide as a dialog is (``wide`` for one of settings, which is wider) or as
+    its content needs, and as tall as its content, with the window dimmed
+    behind it; nothing behind it can be reached, by the pointer or by Tab,
+    which comes round inside it. ``title`` heads it, and ``description`` is a
+    sentence under the title, quieter. As it comes up the keys go to its
+    first field, or else to its button marked ``default``; as it goes they
+    go back to what had them.
+
+    It is up from the moment it is defined until it is **freed** -- which is
+    how it is closed (`clausters.gui.handle.WidgetHandle.free`). Escape, its
+    close button and a press beside it ask it to go: the dialog reports
+    ``("cancel",)``, and freeing it is yours. ``alert`` makes it an **alert
+    dialog**, which asks before something is done: it has no close button,
+    a press beside it does nothing, and only Escape and its own buttons
+    answer it."""
+    extra = _drop_none(description=description)
+    if alert is not None:
+        extra["alert"] = 1 if alert else 0
+    if wide is not None:
+        extra["wide"] = 1 if wide else 0
+    return layout(*children, title=title, flow=flow, modal=True, hug=True,
+                  id=id, **extra, **props)
 
 
 def waveform(*, autofit: bool | None = None,

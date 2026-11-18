@@ -357,12 +357,18 @@ metrics_roles! {
     dialog_inset: grid,
     /// Between a dialog's parts: its header, its body, its footer.
     dialog_gap: grid,
-    /// The widest a dialog grows.
+    /// The width a dialog takes.
     dialog_w: grid,
-    /// The widest a dialog of settings grows.
+    /// The width a dialog of settings takes.
     dialog_wide_w: grid,
-    /// The widest an alert dialog grows.
+    /// The width an alert dialog takes.
     alert_w: grid,
+    /// Between a dialog's title and its description.
+    dialog_title_gap: grid,
+    /// Between an alert dialog's title and its description.
+    alert_title_gap: grid,
+    /// How far a dialog's close button stands from its top right corner.
+    dialog_close: grid,
     /// A bordered section's inset, inside a dialog.
     section_inset: grid,
     /// A row of a list inside a dialog.
@@ -531,6 +537,9 @@ impl Metrics {
             dialog_w: spec(448.0),
             dialog_wide_w: spec(576.0),
             alert_w: spec(512.0),
+            dialog_title_gap: spec(8.0),
+            alert_title_gap: spec(6.0),
+            dialog_close: spec(16.0),
             section_inset: spec(16.0),
             list_row_h: spec(44.0),
             button_h: spec(36.0),

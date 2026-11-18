@@ -126,9 +126,11 @@ impl Gestures {
         // closes -- and a title of the menu bar opens its list. The bar is
         // chrome, like the status bar below, and under no part of the tree.
         // **Nothing behind a dialog can be reached.** With one up and no list
-        // open, a press off it is swallowed: not the bar, not the status log,
-        // not a widget.
+        // open, a press off it reaches not the bar, not the status log, not a
+        // widget: it asks the dialog to go, as Escape does -- all but an alert
+        // dialog, which is answered by its buttons alone.
         if host.popup(ctx.def_id).is_none() && self.behind_dialog(host, ctx, cx, cy) {
+            self.press_on_scrim(host, ctx, &mut out);
             return out;
         }
         if self.popup_press(host, ctx, cx, cy, &mut out) {

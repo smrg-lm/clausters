@@ -2732,11 +2732,49 @@ first four are the order the user set; the components come after.
   rest, the skip and the card's stay, leave and Escape through the gesture
   machine, and the editor headless: Evaluate's tip with Shift+Enter, and
   `print`'s card, its wrapped signature, a selection and its going.
-- ⬜ **ST9: Dialogs.** The dialog and the alert dialog as components of the
+- ✅ **ST9: Dialogs.** The dialog and the alert dialog as components of the
   host, their anatomy and their focus rules; the shared close form
   (`clausters_apps::closing`) drawn as an alert dialog, and the editor's
   preferences and environments as dialogs rather than panels. Every
   application's dialogs (`clausters-apps` `dialogs` modules) move to them.
+  *Shipped:* a `modal` layout is the specification's card
+  (`frame::items::draw_card`): `popup` ground, `radius_xl`, a ring of the
+  text at a tenth and the large shadow, inset and spaced by `dialog_inset`
+  and `dialog_gap` (a dialog's flow takes them where it names no margin or
+  gap, `Flow::card`), as wide as a dialog is (`dialog_w`, `wide` for one of
+  settings, an alert's `alert_w`) unless its content needs more, as tall as
+  its content at that width. Its header (`chrome::Head`) is the title in
+  the medium weight, set solid, and a new `description` under it in the
+  quiet text, wrapped; the close button stands `dialog_close` from the
+  corner. `alert` makes the alert dialog: the title at `type_lg`, no close
+  button, a press beside it doing nothing. The window behind is under the
+  new `scrim` role (black at a tenth; the specification's slight blur is
+  not drawn, since it needs a pass reading the frame), a press on it asks a
+  dialog to go (`"cancel"`, as Escape and the close button), Tab comes
+  round inside it, and as it comes up the keyboard goes to its first field
+  or else to the button marked with the new `default` prop, and back to
+  what had it as it goes (`host::dialogs`, settled on every change that can
+  bring one up). **A docked pane's dialog stands over the whole dock**:
+  placed in the area its lists float in and drawn into the pane's float, now
+  three batches (the dialog, what its elements draw over it, the popups),
+  so the dock covers every pane with it and routes every press and key to
+  it. A column now asks a wrapped label how tall it is at its width
+  (`Element::height_for`), so a help text in a dialog keeps its lines. The
+  close form is an alert titled "Save changes?" over what the window says
+  is not saved, Save its default; the forms (`clausters_apps::forms`) set
+  their fields in a body 16 apart and the footer's buttons 8 apart, OK the
+  default; the editor's preferences and environments are dialogs held by
+  its bar (`DIALOG_HOLD`), wide, their fields as caption, control and help,
+  and its close questions say which files are not saved. Both clients'
+  `dialog` take `description`, `alert` and `wide`, and `button` takes
+  `default`. The size roles gained `dialog_title_gap`, `alert_title_gap`
+  and `dialog_close`. Checked: the card, its header and an alert's, the
+  scrim press, the focus coming, trapped and given back, a docked dialog's
+  place and a wrapped help's height by tests, and the editor headless: the
+  preferences and the environments over the dock, Escape and a press on
+  the scrim taking them down, and the close form as an alert. The controls
+  inside (the checkbox, the fields' look, the buttons' variants) are
+  `ST10`'s.
 - ⬜ **ST10: Controls.** Button (variants and sizes), toggle, toggle group,
   field, text area, select, checkbox, label with help text, badge and
   separator with every state of the inventory, in every application that

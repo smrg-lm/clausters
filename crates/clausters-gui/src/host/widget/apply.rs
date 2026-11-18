@@ -73,10 +73,15 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         // What a `layout` shows of itself -- its title, its frame, whether it
         // is folded or a dialog -- is the layout's alone, answered before the
         // arm it shares with the window.
-        WidgetKind::Panel { group, .. }
-            if matches!(key, "title" | "frame" | "collapsed" | "modal") =>
+        WidgetKind::Panel { group, flow, .. }
+            if matches!(
+                key,
+                "title" | "frame" | "collapsed" | "modal" | "description" | "alert" | "wide"
+            ) =>
         {
-            group.apply(key, v)
+            let applied = group.apply(key, v);
+            flow.card = group.modal;
+            applied
         }
         WidgetKind::Window {
             layout, flow, hug, ..

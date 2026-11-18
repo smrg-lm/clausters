@@ -117,6 +117,7 @@ the notation:
 | `hover_text` | `#fafafa` | `#171717` | The text on `hover`: an entry of a list under the pointer or the keyboard. |
 | `input` | `#ffffff26` | `#e5e5e5` | The edge of a field the hand types in. |
 | `shadow` | `#0000001a` | `#0000001a` | What a raised surface casts on the window: the ink of every elevation's shadow, its alpha the strongest layer's. |
+| `scrim` | `#0000001a` | `#0000001a` | What a dialog lays over the window behind it, which is out of reach while it is up. |
 | `field` | `#171717` | `#ffffff` | A control's body fill (slider, knob, scope field). |
 | `track` | `#171717` | `#fafafa` | The inset groove/body under a control's value (a slider's track), and the body of the static info views (node tree, plot). |
 | `accent` | `#4ade80` | `#16a34a` | The color that carries a widget's function: a slider's fill, a knob's pointer, a meter's bar, the live views' frame. |
@@ -244,7 +245,7 @@ scale = 0.9              # a compact host, every role regenerated
 control_h = 26           # ...except this one, set outright
 ```
 
-The 104 roles, with the value each takes at `scale = 1.0`:
+The 107 roles, with the value each takes at `scale = 1.0`:
 
 | Role | Default | What it sizes |
 | --- | --- | --- |
@@ -327,9 +328,12 @@ The 104 roles, with the value each takes at `scale = 1.0`:
 | `kbd_x` | 4 | A key cap's inset across. |
 | `dialog_inset` | 24 | A dialog's inset. |
 | `dialog_gap` | 24 | Between a dialog's parts: its header, its body, its footer. |
-| `dialog_w` | 448 | The widest a dialog grows. |
-| `dialog_wide_w` | 576 | The widest a dialog of settings grows. |
-| `alert_w` | 512 | The widest an alert dialog grows. |
+| `dialog_w` | 448 | The width a dialog takes. |
+| `dialog_wide_w` | 576 | The width a dialog of settings takes. |
+| `alert_w` | 512 | The width an alert dialog takes. |
+| `dialog_title_gap` | 8 | Between a dialog's title and its description. |
+| `alert_title_gap` | 6 | Between an alert dialog's title and its description. |
+| `dialog_close` | 16 | How far a dialog's close button stands from its top right corner. |
 | `section_inset` | 16 | A bordered section's inset, inside a dialog. |
 | `list_row_h` | 44 | A row of a list inside a dialog. |
 | `button_h` | 36 | A button's height. |

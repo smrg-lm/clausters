@@ -155,6 +155,7 @@ mod audio_app;
 mod audio_editor;
 mod clocks;
 mod define;
+mod dialogs;
 #[cfg(test)]
 mod monitor_tests;
 mod scripted;
@@ -1037,6 +1038,9 @@ pub struct Host {
     /// whole dock. A window with none places them in its own content area,
     /// and draws them into its own picture.
     popup_areas: HashMap<i32, clausters_gui_draw::rect::Rect>,
+    /// **The dialog up in each window** and what had the keyboard before it
+    /// came up, so it is given back as the dialog goes ([`dialogs`]).
+    dialogs_up: HashMap<i32, dialogs::Up>,
     /// **Each pane's header band**, as the front that docks it measures it
     /// ([`Dock::band`](dock::Dock::band)): under its panel's bar, with the
     /// room the bar keeps at each end. A window with none and a header has
@@ -1243,6 +1247,7 @@ impl Host {
             status: Default::default(),
             popups: HashMap::new(),
             popup_areas: HashMap::new(),
+            dialogs_up: HashMap::new(),
             header_bands: HashMap::new(),
             close_asked: Default::default(),
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
@@ -1819,7 +1824,12 @@ impl Host {
         let tree = self.window_def(def_id)?;
         let metrics = self.metrics_for(def_id);
         let area = self.content_area(def_id, fb_w, fb_h);
-        Some(layout::layout_on(area, tree, metrics))
+        Some(layout::layout_over(
+            area,
+            self.floating_area(def_id),
+            tree,
+            metrics,
+        ))
     }
 
     /// The framebuffer of window `def_id` **minus the host's bands** -- its

@@ -11,8 +11,9 @@
 
 use super::layout::{self, Placed};
 use super::scroll;
-use super::widget::{Axis, Layout, WidgetKind};
-use clausters_gui_draw::metrics::Metrics;
+use super::widget::{Axis, Flow, Group, Layout, WidgetKind};
+use clausters_gui_draw::font::{self, Family};
+use clausters_gui_draw::metrics::{Metrics, snap_px};
 use clausters_gui_draw::rect::Rect;
 
 /// The title strip of a group: the top of its rectangle, one line of control
@@ -25,18 +26,129 @@ pub fn title_strip(p: &Placed) -> Option<Rect> {
     (h > 0.0).then(|| Rect::new(p.rect.x, p.rect.y, p.rect.w, h))
 }
 
-/// The **close mark** of a dialog: a square at the right end of its title
-/// strip. `None` for anything that is not a titled dialog.
+/// The **close mark** of a dialog: its close button at the top right corner
+/// of its card, or the square ending a titled group's strip. `None` for
+/// anything that is not a dialog, and for an alert dialog, which is answered
+/// by its buttons alone.
 pub fn close_mark(p: &Placed) -> Option<Rect> {
     let WidgetKind::Panel { group, .. } = &p.widget.kind else {
         return None;
     };
-    if !group.modal {
+    if !group.modal || group.alert {
         return None;
     }
-    let strip = title_strip(p)?;
-    let side = strip.h.min(strip.w);
-    Some(Rect::new(strip.x + strip.w - side, strip.y, side, side))
+    Some(close_button(p.rect, &p.metrics))
+}
+
+/// Where a dialog's close button stands in its card `card`.
+fn close_button(card: Rect, m: &Metrics) -> Rect {
+    let side = m.button_sm_h;
+    Rect::new(
+        card.x + card.w - m.dialog_close - side,
+        card.y + m.dialog_close,
+        side,
+        side,
+    )
+}
+
+/// **A dialog's header**, at the top of its card inside its inset: the title
+/// in the interface's medium weight (an alert dialog's larger), the
+/// description under it, quieter and wrapped to the card, and the close
+/// button at the corner. The body starts the dialog's gap under it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Head {
+    /// The title's line, when the dialog has one.
+    pub title: Option<Rect>,
+    /// The scale the title is drawn at, in [`Family::UiMedium`].
+    pub title_scale: f32,
+    /// The description's lines, each on the line it is set on.
+    pub lines: Vec<(String, Rect)>,
+    /// The scale the description is drawn at, in [`Family::Ui`].
+    pub line_scale: f32,
+    /// The close button, which an alert dialog has none of.
+    pub close: Option<Rect>,
+    /// How much of the card the header takes, the gap under it included;
+    /// nothing for a dialog with neither a title nor a description.
+    pub h: f32,
+}
+
+/// A dialog's inset: its `margin`, else the dialog's own.
+pub(crate) fn card_inset(flow: &Flow, m: &Metrics, unit: f32) -> f32 {
+    flow.margin
+        .map_or(flow.default_margin(m), |v| snap_px(v, unit))
+        .max(0.0)
+}
+
+/// **The header of a dialog** whose card is `card` and whose content stands
+/// inside it by `inset`, measured at `m`.
+pub fn head_of(group: &Group, card: Rect, inset: f32, m: &Metrics) -> Head {
+    let (title_px, title_line, gap) = if group.alert {
+        (m.type_lg, m.line_lg, m.alert_title_gap)
+    } else {
+        // the dialog's title is set solid: its line is its size
+        (m.type_sm, m.type_sm, m.dialog_title_gap)
+    };
+    let title_scale = font::em_scale(Family::UiMedium, title_px);
+    let line_scale = font::em_scale(Family::Ui, m.type_sm);
+    let close = (group.modal && !group.alert).then(|| close_button(card, m));
+    let inner = Rect::new(
+        card.x + inset,
+        card.y + inset,
+        (card.w - 2.0 * inset).max(0.0),
+        (card.h - 2.0 * inset).max(0.0),
+    );
+    let mut y = inner.y;
+    let title = group.title.as_ref().map(|_| {
+        let r = Rect::new(inner.x, y, inner.w, title_line);
+        y += title_line;
+        r
+    });
+    let lines: Vec<(String, Rect)> = group
+        .description
+        .as_deref()
+        .filter(|d| !d.is_empty())
+        .map(|d| {
+            if title.is_some() {
+                y += gap;
+            }
+            font::wrap_in(Family::Ui, d, inner.w.max(1.0), line_scale)
+                .into_iter()
+                .map(|line| {
+                    let r = Rect::new(inner.x, y, inner.w, m.line_sm);
+                    y += m.line_sm;
+                    (line, r)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let said = y - inner.y;
+    Head {
+        title,
+        title_scale,
+        lines,
+        line_scale,
+        close,
+        h: if said > 0.0 { said + m.dialog_gap } else { 0.0 },
+    }
+}
+
+/// The header of the dialog placed as `p`, or `None` for anything else.
+pub fn head(p: &Placed) -> Option<Head> {
+    let WidgetKind::Panel { group, flow, .. } = &p.widget.kind else {
+        return None;
+    };
+    group.modal.then(|| {
+        let inset = card_inset(flow, &p.metrics, p.scale);
+        head_of(group, p.rect, inset, &p.metrics)
+    })
+}
+
+/// How wide a dialog's title wants its card's content to be, at `m`.
+pub(crate) fn title_w(group: &Group, m: &Metrics) -> f32 {
+    let px = if group.alert { m.type_lg } else { m.type_sm };
+    group.title.as_deref().map_or(0.0, |t| {
+        font::width_in(Family::UiMedium, t, font::em_scale(Family::UiMedium, px))
+    })
 }
 
 /// The dialog whose close mark is under `(x, y)`.

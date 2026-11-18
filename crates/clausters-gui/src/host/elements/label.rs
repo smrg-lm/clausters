@@ -13,6 +13,7 @@ use crate::host::widget::element::{Ctx, Element, Needs};
 use crate::host::widget::size::{Natural, ellipsis_w, line_box, text_box};
 use crate::host::widget::{Align, parse};
 use clausters_gui_draw::draw::Draw;
+use clausters_gui_draw::font;
 use clausters_gui_draw::metrics::Metrics;
 
 /// Static text. `wrap` word-wraps it on the font's advance (off, a single line
@@ -157,6 +158,21 @@ impl Element for Label {
             (!self.wrap && !self.live).then(|| text_box(&self.text, size, m)),
             self.natural(m, scale).1,
         )
+    }
+
+    /// A wrapped label is as tall as the lines its text wraps into at `w`,
+    /// inside the inset it draws its text in -- and never less than a line.
+    fn height_for(&self, w: f32, m: &Metrics, scale: f32) -> Option<f32> {
+        if !self.wrap || self.live {
+            return None;
+        }
+        let size = self.text_size * scale;
+        let mut avail = (w - 2.0 * m.pad).max(1.0);
+        if self.dot.is_some() {
+            avail = (avail - 2.0 * (font::height(size) * 0.4).max(1.0) - m.pad).max(1.0);
+        }
+        let lines = font::wrap(&self.text, avail, size).len().max(1) as f32;
+        Some((lines * font::line_advance(size)).max(line_box(size, m)))
     }
 
     fn value(&self) -> Option<OscType> {

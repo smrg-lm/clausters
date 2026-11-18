@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(pages[1]["children"][0]["title"], "New file");
         assert_eq!(pages[2]["children"][0]["title"], "Save as");
         assert_eq!(pages[3]["children"][0]["title"], "Open file");
-        let chooser = &pages[3]["children"][0]["children"][0]["children"][1];
+        let chooser = &pages[3]["children"][0]["children"][0]["children"][0]["children"][1];
         assert_eq!(chooser["type"], "files", "the host's chooser");
         assert_eq!(chooser["id"], ids["open:path"]);
         assert_eq!(chooser["multiple"], true);

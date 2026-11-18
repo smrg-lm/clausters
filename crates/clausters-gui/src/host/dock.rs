@@ -51,7 +51,7 @@ mod pages;
 pub mod tree;
 
 pub use bar::BarPart;
-pub use edges::{Edge, Overlay};
+pub use edges::{Edge, Overlay, PaneFloat};
 pub use tree::{Group, Node, Path, Side};
 
 /// **The color between two panes**: the theme's `separator` role, what the
@@ -790,6 +790,7 @@ impl Dock {
         self.overlays
             .iter()
             .find(|o| o.keys)
+            .or_else(|| self.overlays.iter().find(|o| o.dialog))
             .map(|o| o.pane)
             .or(self.focus)
     }
@@ -1426,10 +1427,12 @@ pub(crate) struct Composer {
     shifts: Vec<wgpu::Buffer>,
     /// The dock's own chrome, drawn over the panes.
     chrome: Painter,
-    /// What the panes draw over the dock, drawn over the chrome: a batch of
-    /// its own, since a batch draws its glyphs after all of its shapes, and
-    /// the chrome's letters must not show through a list.
-    floats: Painter,
+    /// What the panes draw over the dock, drawn over the chrome: a batch a
+    /// layer, since a batch draws its glyphs after all of its shapes, and
+    /// the chrome's letters must not show through a list, nor a dialog's
+    /// through a list opened from it.
+    floats: Vec<Painter>,
+    target: Target,
 }
 
 impl Composer {
@@ -1440,8 +1443,9 @@ impl Composer {
         Self {
             copier: Copier::new(device, target),
             shifts: Vec::new(),
-            floats: Painter::sharing(device, target, &chrome),
+            floats: Vec::new(),
             chrome,
+            target,
         }
     }
 
@@ -1463,8 +1467,13 @@ impl Composer {
         let size = (dock.config.width, dock.config.height);
         self.chrome
             .upload(device, queue, &over.chrome, size.0.max(1), size.1.max(1));
-        self.floats
-            .upload(device, queue, &over.floats, size.0.max(1), size.1.max(1));
+        while self.floats.len() < over.floats.len() {
+            let painter = Painter::sharing(device, self.target, &self.chrome);
+            self.floats.push(painter);
+        }
+        for (painter, mesh) in self.floats.iter_mut().zip(&over.floats) {
+            painter.upload(device, queue, mesh, size.0.max(1), size.1.max(1));
+        }
         while self.shifts.len() < panes.len() {
             self.shifts
                 .push(device.create_buffer(&wgpu::BufferDescriptor {
@@ -1521,7 +1530,9 @@ impl Composer {
         pass.set_viewport(0.0, 0.0, sw as f32, sh as f32, 0.0, 1.0);
         pass.set_scissor_rect(0, 0, sw, sh);
         self.chrome.draw(&mut pass);
-        self.floats.draw(&mut pass);
+        for painter in self.floats.iter().take(over.floats.len()) {
+            painter.draw(&mut pass);
+        }
     }
 
     /// **The dock's picture, read back**: the panes composed into a

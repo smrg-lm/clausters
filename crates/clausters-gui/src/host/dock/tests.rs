@@ -873,7 +873,7 @@ fn the_composed_picture_is_each_panes_own_picture() {
             &views,
             &super::Overlay {
                 chrome: Mesh::new(),
-                floats: Mesh::new(),
+                floats: Vec::new(),
             },
         )
         .expect("reads back");
@@ -966,9 +966,15 @@ fn a_list_a_pane_opens_floats_over_the_dock() {
     // the bar's list hangs below it, over pane 1
     let mut list = Mesh::new();
     list.rect(Rect::new(0.0, 40.0, 120.0, 100.0), [1.0, 1.0, 1.0, 1.0]);
-    let floats = [(10, &list, true)];
+    let layers = [list];
+    let floats = [super::PaneFloat {
+        pane: 10,
+        layers: &layers,
+        keys: true,
+        dialog: false,
+    }];
     let over = d.picture(&Theme::default(), &floats);
-    assert!(!over.floats.is_empty());
+    assert!(!over.floats[0].is_empty());
     assert_eq!(d.at(50.0, 100.0), Some((10, (50.0, 100.0))));
     assert_eq!(d.focus(), Some(10), "the open list takes the keys");
     // a press on pane 2 goes to it, and takes the bar's list down

@@ -2241,6 +2241,12 @@ export interface ButtonOptions extends WidgetOptions {
      * tool reports nothing of its own and takes no focus.
      */
     verb?: string;
+    /**
+     * Marks the **default action** of the dialog the button is in: the keys
+     * go to it as the dialog comes up, when the dialog has no field to give
+     * them to.
+     */
+    default?: boolean;
     textSize?: number;
 }
 
@@ -2280,7 +2286,10 @@ export function button(
     options?: ButtonOptions,
 ): View {
     const [source_, opts] = controlArgs<ButtonOptions>(control, options);
-    const { label: text, mode, on, off, icon, flat, menu: list, verb, textSize, ...rest } = opts;
+    const {
+        label: text, mode, on, off, icon, flat, menu: list, verb, default: isDefault, textSize,
+        ...rest
+    } = opts;
     if (mode !== undefined && mode !== "gate" && mode !== "press") {
         throw new Error(
             `unknown button mode '${mode}'; use "gate" (on while held) or ` +
@@ -2290,7 +2299,7 @@ export function button(
     const props = drop([
         ["label", text], ["mode", mode], ["on", on], ["off", off],
         ["icon", icon], ["menu", list === undefined ? undefined : [...list]], ["verb", verb],
-        ["text_size", textSize], ["flat", flag(flat)],
+        ["text_size", textSize], ["flat", flag(flat)], ["default", flag(isDefault)],
     ]);
     let built;
     if (source_ === null) {
@@ -2939,23 +2948,48 @@ export function toolbar(options: GroupOptions = {}, ...children: GuiNode[]): Vie
     return panel({ ...options, flow: "row", hug: true, pack: true }, ...children);
 }
 
+/** A {@link dialog}'s own options, beside a group's. */
+export interface DialogOptions extends GroupOptions {
+    flow?: string;
+    /** A sentence under the title, quieter. */
+    description?: string;
+    /**
+     * Makes it an **alert dialog**, which asks before something is done: no
+     * close button, and a press beside it does nothing.
+     */
+    alert?: boolean;
+    /** A dialog of settings, which is wider. */
+    wide?: boolean;
+}
+
 /**
  * A **dialog**: a {@link layout} that stands over the window and takes every
  * press while it exists.
  *
- * It is placed centred over the window rather than by its parent's flow, as
- * big as `w`/`h` say or as its content wants, with the window dimmed behind
- * it; nothing behind it can be reached, by the pointer or by Tab. It is up
- * from the moment it is defined until it is **freed** -- which is how it is
- * closed (`WidgetHandle.free`). Escape, and the close mark at the end of a
- * titled dialog's strip, ask it to go: the dialog reports `"cancel"`, and
- * freeing it is yours.
+ * It is drawn as a card centred over the window -- over the whole dock, for a
+ * window docked in one -- rather than placed by its parent's flow, as wide as
+ * a dialog is (`wide` for one of settings, which is wider) or as its content
+ * needs, and as tall as its content, with the window dimmed behind it;
+ * nothing behind it can be reached, by the pointer or by Tab, which comes
+ * round inside it. `title` heads it, and `description` is a sentence under
+ * the title, quieter. As it comes up the keys go to its first field, or else
+ * to its button marked `default`; as it goes they go back to what had them.
+ *
+ * It is up from the moment it is defined until it is **freed** -- which is how
+ * it is closed (`WidgetHandle.free`). Escape, its close button and a press
+ * beside it ask it to go: the dialog reports `"cancel"`, and freeing it is
+ * yours. `alert` makes it an **alert dialog**, which asks before something is
+ * done: it has no close button, a press beside it does nothing, and only
+ * Escape and its own buttons answer it.
  */
-export function dialog(
-    options: GroupOptions & { flow?: string } = {},
-    ...children: GuiNode[]
-): View {
-    return layout({ ...options, modal: true, frame: true, hug: true }, ...children);
+export function dialog(options: DialogOptions = {}, ...children: GuiNode[]): View {
+    const { description, alert, wide, ...rest } = options;
+    const own = drop([
+        ["description", description],
+        ["alert", flag(alert)],
+        ["wide", flag(wide)],
+    ]);
+    return layout({ ...rest, ...own, modal: true, hug: true }, ...children);
 }
 
 // ---- the heavy views ----

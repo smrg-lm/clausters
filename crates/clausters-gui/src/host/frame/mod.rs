@@ -358,11 +358,19 @@ pub(crate) struct Batches {
     asked: Asked,
     /// What the last frame cost, phase by phase ([`FrameCost`]).
     cost: FrameCost,
-    /// **The popups of a pane**, in its own pixels, drawn apart from its
-    /// picture so the dock can draw them over every pane
-    /// ([`FrameInputs::float`]). Empty for a window of its own.
-    pub(crate) float: Mesh,
+    /// **What a pane draws over the dock**, in its own pixels, apart from
+    /// its picture so the dock can draw it over every pane
+    /// ([`FrameInputs::float`]): its dialog with the scrim under it, what
+    /// the dialog's elements draw over themselves, and its popups, one batch
+    /// each in that order ([`FLOAT_LAYERS`]). Empty for a window of its own.
+    pub(crate) float: [Mesh; FLOAT_LAYERS],
 }
+
+/// **The batches a pane floats over the dock**, drawn in this order: a
+/// batch draws all of its shapes before its glyphs, so a list opened from a
+/// dialog needs a batch over the dialog's, or the dialog's text would read
+/// through it.
+pub(crate) const FLOAT_LAYERS: usize = 3;
 
 /// **What one frame cost, by phase** -- read by the front after each frame
 /// and counted against the window (`/gui_activity`), so a profile says where
@@ -457,7 +465,7 @@ impl Batches {
             one_pass: false,
             asked: Asked::default(),
             cost: FrameCost::default(),
-            float: Mesh::new(),
+            float: Default::default(),
         }
     }
 
@@ -1288,8 +1296,8 @@ struct Picture {
     over: Mesh,
     live: Mesh,
     top: Mesh,
-    /// The popups, when they float over a dock ([`FrameInputs::float`]).
-    float: Mesh,
+    /// What floats over a dock ([`FrameInputs::float`], [`FLOAT_LAYERS`]).
+    float: [Mesh; FLOAT_LAYERS],
     /// The heavy views of the window and, with a dialog up, of the dialog.
     collected: Collected,
     inside: Option<Collected>,
@@ -1329,12 +1337,13 @@ fn picture(
     // The lanes' clips are placed on the axis their group currently stands at,
     // so the layout of a multitrack follows the zoom and the pan.
     let laying = web_time::Instant::now();
-    let placed = layout::layout_on(area, tree, inputs.metrics);
+    let placed = layout::layout_over(area, inputs.float, tree, inputs.metrics);
     let layout_time = laying.elapsed();
     let mut mesh = Mesh::new();
     let mut over = Mesh::new();
     let mut live = Mesh::new();
     let mut top = Mesh::new();
+    let mut float: [Mesh; FLOAT_LAYERS] = Default::default();
     // **A dialog is the tail of the placements** (`layout` places it last), and
     // it is drawn apart: everything before it is the window as it always was,
     // and the dialog goes over all of that, in the overlay.
@@ -1446,11 +1455,22 @@ fn picture(
             inputs,
             theme,
         );
-        live.set_clip(None);
-        live.set_ink(Ink::default());
-        live.rect(area, with_alpha(theme.background, 0.6));
-        live.append(&under);
-        top.append(&above);
+        // A pane's dialog stands over the whole dock, the scrim with it.
+        match inputs.float {
+            Some(dock) => {
+                let [dialog, over_dialog, _] = &mut float;
+                dialog.rect(dock, theme.scrim);
+                dialog.append(&under);
+                over_dialog.append(&above);
+            }
+            None => {
+                live.set_clip(None);
+                live.set_ink(Ink::default());
+                live.rect(area, theme.scrim);
+                live.append(&under);
+                top.append(&above);
+            }
+        }
         Some(inside)
     };
 
@@ -1479,9 +1499,8 @@ fn picture(
         draw_menu_bar(&mut top, tree, band, inputs, theme);
     }
     // A pane's float over the dock, placed against all of it.
-    let mut float = Mesh::new();
     let (popups_into, popup_area) = match inputs.float {
-        Some(dock) => (&mut float, dock),
+        Some(dock) => (&mut float[FLOAT_LAYERS - 1], dock),
         None => (&mut top, area),
     };
     draw_own_popups(popups_into, &placed, popup_area, inputs, theme);
@@ -1497,7 +1516,10 @@ fn picture(
             theme,
         );
     }
-    for mesh in [&mut mesh, &mut over, &mut live, &mut top, &mut float] {
+    for mesh in [&mut mesh, &mut over, &mut live, &mut top]
+        .into_iter()
+        .chain(float.iter_mut())
+    {
         mesh.set_clip(None);
         mesh.set_ink(Ink::default());
     }

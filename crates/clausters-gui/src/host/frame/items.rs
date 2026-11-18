@@ -135,6 +135,9 @@ pub(super) fn collect_widgets(
     let mut timeline_items: Vec<TimelineItem> = Vec::new();
     let mut ruler_items: Vec<RulerItem> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
+    // a dialog is drawn on its own, its card first: what is in it stands on
+    // the card
+    let in_card = placed.first().is_some_and(|p| p.widget.kind.is_modal());
     for p in placed {
         // Everything a scrolled widget paints clips to its container's area...
         mesh.set_clip(p.clip);
@@ -152,7 +155,7 @@ pub(super) fn collect_widgets(
         // accent), resolved at mutation points -- one reference per widget.
         let th = p.widget.theme.as_deref().unwrap_or(theme);
         match &p.widget.kind {
-            WidgetKind::Panel { group, .. } => draw_group(mesh, p, group, m, th),
+            WidgetKind::Panel { group, .. } => draw_group(mesh, p, group, in_card, m, th),
             WidgetKind::Scroll { .. } | WidgetKind::Stack { .. } => mesh.rect(p.rect, th.panel),
             WidgetKind::TimeRuler { editor, .. } | WidgetKind::Pane { editor, .. } => {
                 let body = match &p.widget.kind {
@@ -367,16 +370,30 @@ pub(super) fn collect_widgets(
 /// Draws a `layout`'s own picture: its ground, and what it shows of itself --
 /// a title strip with the mark that says whether it is folded, and a frame.
 ///
-/// A dialog's ground is the popup layer's rather than a panel's translucent
-/// wash: it stands over the window, so it has to cover it.
+/// A dialog is its card ([`draw_card`]), and a group inside one stands on
+/// the card with no wash of its own: a framed one is a section, its edge
+/// rounded.
 fn draw_group(
     mesh: &mut Mesh,
     p: &layout::Placed<'_>,
     group: &crate::host::widget::Group,
+    in_card: bool,
     m: &Metrics,
     th: &Theme,
 ) {
-    mesh.rect(p.rect, if group.modal { th.popup } else { th.panel });
+    if group.modal {
+        return draw_card(mesh, p, group, m, th);
+    }
+    if in_card {
+        if group.frame {
+            mesh.round_border(p.rect, m.divider_w, m.radius_md, th.separator);
+        }
+        if group.title.is_none() {
+            return;
+        }
+    } else {
+        mesh.rect(p.rect, th.panel);
+    }
     if let (Some(title), Some(strip)) = (&group.title, chrome::title_strip(p)) {
         let size = m.text_scale;
         mesh.rect(strip, th.header);
@@ -409,7 +426,62 @@ fn draw_group(
             font::text_centered(mesh, &font::symbol::CLOSE.to_string(), c, size, th.text_dim);
         }
     }
-    if group.frame || group.modal {
+    if group.frame && !in_card {
         mesh.border(p.rect, m.divider_w, th.separator);
+    }
+}
+
+/// **A dialog's card**, as the specification draws one: lifted off the
+/// window by the large shadow, on the popover's ground with the extra large
+/// corner and a faint ring; at its top, inside its inset, the title in the
+/// medium weight and the description under it in the quiet text, and the
+/// close button's cross at the corner, a little quieter than the text.
+fn draw_card(
+    mesh: &mut Mesh,
+    p: &layout::Placed<'_>,
+    group: &crate::host::widget::Group,
+    m: &Metrics,
+    th: &Theme,
+) {
+    let rect = p.rect;
+    let radius = m.radius_xl;
+    Draw::new(mesh, m, th).shadow(rect, radius, clausters_gui_draw::metrics::Elevation::Lg);
+    mesh.round_rect(rect, radius, th.popup);
+    mesh.round_border(rect, m.divider_w, radius, with_alpha(th.text, 0.1));
+    let Some(head) = chrome::head(p) else {
+        return;
+    };
+    if let (Some(title), Some(line)) = (&group.title, head.title) {
+        let end = head
+            .close
+            .map_or(line.x + line.w, |c| c.x.min(line.x + line.w));
+        let ty = line.y + (line.h - font::height(head.title_scale)) * 0.5;
+        font::text_ellipsis_in(
+            mesh,
+            font::Family::UiMedium,
+            title,
+            line.x,
+            ty,
+            (end - line.x).max(0.0),
+            head.title_scale,
+            th.text,
+        );
+    }
+    for (text, line) in &head.lines {
+        let ty = line.y + (line.h - font::height(head.line_scale)) * 0.5;
+        font::text_in(
+            mesh,
+            font::Family::Ui,
+            text,
+            line.x,
+            ty,
+            head.line_scale,
+            th.text_dim,
+        );
+    }
+    if let Some(c) = head.close {
+        let cross = crate::host::graphics::controls::icon("x", font::symbol::CLOSE).to_string();
+        let scale = font::em_scale(font::Family::Ui, m.type_sm);
+        font::text_centered(mesh, &cross, c, scale, with_alpha(th.text, 0.7));
     }
 }

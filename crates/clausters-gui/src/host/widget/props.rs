@@ -854,6 +854,11 @@ pub struct Flow {
     /// the children with no size of their own share the strip evenly, which is
     /// right for a row of work surfaces and wrong for a row of tools.
     pub pack: bool,
+    /// **The flow of a dialog's card**: with no `margin` or `gap` of its own
+    /// it is inset by the dialog's inset and its parts stand the dialog's gap
+    /// apart, where any other container takes the window's. Set with the
+    /// `modal` prop, never on the wire.
+    pub card: bool,
 }
 
 /// What a `layout` shows of itself: a title strip, a frame, whether it is
@@ -875,6 +880,16 @@ pub struct Group {
     /// The `modal` prop: a **dialog**. It is placed over the window instead of
     /// in its parent's flow, and takes every press while it exists.
     pub modal: bool,
+    /// A dialog's `description`: a sentence under its title, quieter, wrapped
+    /// to the card.
+    pub description: Option<String>,
+    /// A dialog's `alert` prop: the **alert dialog**, which asks before
+    /// something is done -- narrower, its title larger, no close button, and
+    /// a press off it does not close it.
+    pub alert: bool,
+    /// A dialog's `wide` prop: a dialog of settings, which grows wider than
+    /// one that asks a question.
+    pub wide: bool,
 }
 
 impl Group {
@@ -887,6 +902,12 @@ impl Group {
             frame: props.get("frame").and_then(truthy).unwrap_or(false),
             collapsed: props.get("collapsed").and_then(truthy),
             modal: props.get("modal").and_then(truthy).unwrap_or(false),
+            description: props
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            alert: props.get("alert").and_then(truthy).unwrap_or(false),
+            wide: props.get("wide").and_then(truthy).unwrap_or(false),
         }
     }
 
@@ -903,14 +924,21 @@ impl Group {
                 true
             }
             "modal" => truthy(v).map(|b| self.modal = b).is_some(),
+            "description" => {
+                self.description = v.as_str().map(str::to_string);
+                true
+            }
+            "alert" => truthy(v).map(|b| self.alert = b).is_some(),
+            "wide" => truthy(v).map(|b| self.wide = b).is_some(),
             _ => false,
         }
     }
 
     /// The height of the title strip -- one line of control -- or zero for a
-    /// group with no title.
+    /// group with no title. A dialog has none: its title is part of its
+    /// header, inside its card ([`crate::host::chrome::Head`]).
     pub fn strip_h(&self, m: &clausters_gui_draw::metrics::Metrics) -> f32 {
-        if self.title.is_some() {
+        if self.title.is_some() && !self.modal {
             m.control_h
         } else {
             0.0
@@ -930,6 +958,18 @@ impl Group {
 }
 
 impl Flow {
+    /// The inset a container takes when it names no `margin`: a dialog's
+    /// card its own, any other the window's.
+    pub fn default_margin(&self, m: &clausters_gui_draw::metrics::Metrics) -> f32 {
+        if self.card { m.dialog_inset } else { m.margin }
+    }
+
+    /// The gap a container takes when it names no `gap`: a dialog's card its
+    /// own, any other the window's.
+    pub fn default_gap(&self, m: &clausters_gui_draw::metrics::Metrics) -> f32 {
+        if self.card { m.dialog_gap } else { m.gap }
+    }
+
     pub(super) fn parse(props: &serde_json::Map<String, Value>) -> Flow {
         let f = |k: &str| props.get(k).and_then(Value::as_f64).map(|v| v as f32);
         Flow {
@@ -941,6 +981,7 @@ impl Flow {
                 .map(|n| (n as u32).max(1)),
             split: props.get("split").and_then(truthy).unwrap_or(false),
             pack: props.get("pack").and_then(truthy).unwrap_or(false),
+            card: props.get("modal").and_then(truthy).unwrap_or(false),
         }
     }
 

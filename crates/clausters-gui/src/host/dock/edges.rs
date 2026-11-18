@@ -56,7 +56,20 @@ impl Edge {
 /// the panes float over it, as two batches.
 pub struct Overlay {
     pub chrome: Mesh,
-    pub floats: Mesh,
+    /// What the panes float over the dock, one batch a layer
+    /// ([`FLOAT_LAYERS`](crate::host::frame::FLOAT_LAYERS)), every pane's
+    /// in each.
+    pub floats: Vec<Mesh>,
+}
+
+/// **What one pane floats over the dock**: its layers in its own pixels,
+/// whether a list the keyboard walks is open in it, and whether a dialog is
+/// up in it.
+pub struct PaneFloat<'a> {
+    pub pane: i32,
+    pub layers: &'a [Mesh],
+    pub keys: bool,
+    pub dialog: bool,
 }
 
 /// What one pane draws over the dock, as the last picture placed it.
@@ -69,6 +82,9 @@ pub(super) struct Float {
     /// takes the keys and is taken down by a press elsewhere -- a tip or a
     /// note does neither.
     pub keys: bool,
+    /// Whether it is a dialog, which takes the keys and every press over
+    /// the dock while it is up, and which a press does not take down.
+    pub dialog: bool,
 }
 
 impl Dock {
@@ -175,7 +191,8 @@ impl Dock {
     pub(super) fn overlay_at(&self, x: f64, y: f64) -> Option<i32> {
         let mut over = self.overlays.iter().filter(|o| o.rect.contains(x, y));
         let first = over.clone().find(|o| o.keys);
-        first.or_else(|| over.next()).map(|o| o.pane)
+        let dialog = over.clone().find(|o| o.dialog);
+        first.or(dialog).or_else(|| over.next()).map(|o| o.pane)
     }
 
     /// **A press that went to `to`** (a pane, or the dock's chrome with
@@ -200,21 +217,26 @@ impl Dock {
     /// own pixels, and whether a list the keyboard walks is open in it),
     /// moved to where the pane is. What each covers is kept, so the hand
     /// finds it where it was drawn.
-    pub fn picture(&mut self, theme: &Theme, floats: &[(i32, &Mesh, bool)]) -> Overlay {
+    pub fn picture(&mut self, theme: &Theme, floats: &[PaneFloat<'_>]) -> Overlay {
         let mut chrome = Mesh::new();
         let metrics = *self.metrics();
         self.draw(&mut Draw::new(&mut chrome, &metrics, theme));
-        let mut mesh = Mesh::new();
+        let layers = floats.iter().map(|f| f.layers.len()).max().unwrap_or(0);
+        let mut meshes: Vec<Mesh> = (0..layers).map(|_| Mesh::new()).collect();
         let mut overlays = Vec::new();
-        for &(pane, float, keys) in floats {
-            if float.is_empty() || !self.shown(pane) {
+        for float in floats {
+            if float.layers.iter().all(Mesh::is_empty) || !self.shown(float.pane) {
                 continue;
             }
-            let Some(r) = self.rect(pane) else {
+            let Some(r) = self.rect(float.pane) else {
                 continue;
             };
             let (dx, dy) = (r.x as f32, r.y as f32);
-            let bounds = float.triangle_bounds();
+            let bounds: Vec<[f32; 4]> = float
+                .layers
+                .iter()
+                .flat_map(|l| l.triangle_bounds())
+                .collect();
             let x0 = bounds.iter().map(|b| b[0]).fold(f32::MAX, f32::min);
             let y0 = bounds.iter().map(|b| b[1]).fold(f32::MAX, f32::min);
             let x1 = bounds.iter().map(|b| b[2]).fold(f32::MIN, f32::max);
@@ -222,17 +244,20 @@ impl Dock {
             if x1 <= x0 || y1 <= y0 {
                 continue;
             }
-            mesh.append_shifted(float, dx, dy);
+            for (into, layer) in meshes.iter_mut().zip(float.layers) {
+                into.append_shifted(layer, dx, dy);
+            }
             overlays.push(Float {
-                pane,
+                pane: float.pane,
                 rect: Rect::new(x0 + dx, y0 + dy, x1 - x0, y1 - y0),
-                keys,
+                keys: float.keys,
+                dialog: float.dialog,
             });
         }
         self.overlays = overlays;
         Overlay {
             chrome,
-            floats: mesh,
+            floats: meshes,
         }
     }
 }

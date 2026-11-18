@@ -99,6 +99,10 @@ pub struct Button {
     /// takes no focus, and a press on it leaves the focus where it was: what
     /// it acts on is what the focus is on.
     pub verb: Option<String>,
+    /// The `default` prop: the **default action** of the dialog it is in,
+    /// which has the keyboard when the dialog comes up and has no field to
+    /// give it to.
+    pub default: bool,
     /// Whether it is being held right now -- drawn pressed.
     held: bool,
 }
@@ -135,6 +139,10 @@ fn from_props(props: &Map<String, Value>) -> Button {
         icon: props.get("icon").and_then(crate::host::menu::icon_of),
         flat: props.get("flat").and_then(parse::truthy).unwrap_or(false),
         verb: verb_of(props.get("verb")),
+        default: props
+            .get("default")
+            .and_then(parse::truthy)
+            .unwrap_or(false),
         held: false,
     }
 }
@@ -156,8 +164,13 @@ impl Element for Button {
                 self.verb = verb_of(Some(v));
                 true
             }
+            "default" => parse::truthy(v).map(|b| self.default = b).is_some(),
             _ => false,
         }
+    }
+
+    fn is_default(&self) -> bool {
+        self.default
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {

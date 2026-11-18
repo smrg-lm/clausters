@@ -187,6 +187,34 @@ impl Gestures {
             .is_some_and(|dialog| !dialog.contains(cx, cy))
     }
 
+    /// **A press on the scrim** behind window `ctx`'s dialog: reported from
+    /// the dialog as `"cancel"`, for whoever defined it to take it down,
+    /// unless it is an alert dialog.
+    pub(super) fn press_on_scrim(
+        &mut self,
+        host: &Host,
+        ctx: &GestureCtx,
+        out: &mut Vec<GestureEffect>,
+    ) {
+        let Some(dialog) = host.dialog(ctx.def_id) else {
+            return;
+        };
+        let alert = matches!(
+            &dialog.kind,
+            super::super::widget::WidgetKind::Panel { group, .. } if group.alert
+        );
+        if let (false, Some(id)) = (alert, dialog.id) {
+            emit(
+                host,
+                out,
+                ctx.def_id,
+                id,
+                vec![OscType::String(CANCEL.into())],
+            );
+            out.push(GestureEffect::Redraw(ctx.def_id));
+        }
+    }
+
     /// A press on a container's own chrome: a title strip that folds, a scroll
     /// bar, a divider. Returns whether it was one -- the tree then never sees
     /// the press.

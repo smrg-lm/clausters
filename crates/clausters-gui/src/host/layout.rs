@@ -190,15 +190,26 @@ pub fn layout<'a>(area: Rect, root: &'a Widget, metrics: &Metrics) -> Vec<Placed
 /// form the renderer and the hit-test call, so a clip lands on the same pixels
 /// for drawing and for dragging.
 pub fn layout_on<'a>(area: Rect, root: &'a Widget, metrics: &Metrics) -> Vec<Placed<'a>> {
+    layout_over(area, None, root, metrics)
+}
+
+/// [`layout_on`] with the area its dialogs stand over, when that is not the
+/// window's own: a pane of a dock puts its dialog over the whole dock.
+pub fn layout_over<'a>(
+    area: Rect,
+    over: Option<Rect>,
+    root: &'a Widget,
+    metrics: &Metrics,
+) -> Vec<Placed<'a>> {
     let floor = timeline::group_indents(root, metrics);
-    let out = place_all(area, root, metrics, floor.clone());
+    let out = place_all(area, over, root, metrics, floor.clone());
     // A value ruler's labels are a property of the data, so the width one needs
     // is only known once its member has a height. That is one pass too late, so
     // the members are measured and the pass is taken again -- but only when the
     // measure asks for more than the roles reserved, which an ordinary window
     // never does.
     match timeline::measured_indents(&out, &floor) {
-        Some(indents) => place_all(area, root, metrics, indents),
+        Some(indents) => place_all(area, over, root, metrics, indents),
         None => out,
     }
 }
@@ -206,6 +217,7 @@ pub fn layout_on<'a>(area: Rect, root: &'a Widget, metrics: &Metrics) -> Vec<Pla
 /// One layout pass with a settled gutter table.
 fn place_all<'a>(
     area: Rect,
+    over: Option<Rect>,
     root: &'a Widget,
     metrics: &Metrics,
     indents: HashMap<GroupKey, f32>,
@@ -232,35 +244,38 @@ fn place_all<'a>(
         &mut modals,
     );
     // **The dialogs, after everything else.** A `layout` carrying `modal` is
-    // not placed by its parent's flow: it stands over the window, centred in
-    // it, and it is placed last so that it is the last thing drawn and the
-    // first thing hit. Its size is the one it declares, else what its content
-    // wants, else half the window.
+    // not placed by its parent's flow: it stands over the window -- or over
+    // the whole dock, for a pane of one (`over`) -- centred in it, and it is
+    // placed last so that it is the last thing drawn and the first thing hit.
+    // Its size is the one it declares, else what its content wants up to the
+    // widest a dialog grows ([`Widget::card_h`]), else half the area.
+    let over = over.unwrap_or(area);
     let mut next = 0;
     while next < modals.len() {
         let (widget, parent): (&Widget, usize) = modals[next];
         next += 1;
-        let (want_w, want_h) = widget.hug_size(&space.metrics, space.unit);
+        let (want_w, _) = widget.hug_size(&space.metrics, space.unit);
         let (floor_w, floor_h) = widget.min_size(&space.metrics, space.unit);
         let w = widget
             .place
             .w
             .map(|w| space.px(w))
             .or(want_w)
-            .unwrap_or(area.w * 0.5)
-            .min(area.w)
+            .unwrap_or(over.w * 0.5)
+            .min(over.w)
             .max(floor_w);
+        // its height once its width is known, since its description wraps
         let h = widget
             .place
             .h
             .map(|h| space.px(h))
-            .or(want_h)
-            .unwrap_or(area.h * 0.5)
-            .min(area.h)
+            .or_else(|| widget.card_h(w, &space.metrics, space.unit))
+            .unwrap_or(over.h * 0.5)
+            .min(over.h)
             .max(floor_h);
         let rect = Rect::new(
-            (area.x + (area.w - w) * 0.5).round(),
-            (area.y + (area.h - h) * 0.5).round(),
+            (over.x + (over.w - w) * 0.5).round(),
+            (over.y + (over.h - h) * 0.5).round(),
             w.round(),
             h.round(),
         );
@@ -394,7 +409,16 @@ fn place<'a>(
         _ => return, // leaves have no children to place
     };
     let under = Rect::new(area.x, area.y + strip, area.w, (area.h - strip).max(0.0));
-    let inner = under.inset(margin(flow, space));
+    let mut inner = under.inset(margin(flow, space));
+    // A dialog's header stands at the top of its card, inside its inset.
+    if let Some(head) = super::chrome::head(&out[me]).filter(|h| h.h > 0.0) {
+        inner = Rect::new(
+            inner.x,
+            inner.y + head.h,
+            inner.w,
+            (inner.h - head.h).max(0.0),
+        );
+    }
     let kids = flow_children(widget, me, modals);
     let rects = child_rects(inner, &kids, layout, flow, space);
     let fit = symbol_fit(&kids, &rects, space);
@@ -438,7 +462,7 @@ fn symbol_fit<'w>(
 /// `margin` when it names one, else the space's resolved role.
 fn margin(flow: Flow, space: Space) -> f32 {
     flow.margin
-        .map_or(space.metrics.margin, |m| space.px(m))
+        .map_or(flow.default_margin(&space.metrics), |m| space.px(m))
         .max(0.0)
 }
 
@@ -592,7 +616,10 @@ fn child_rects(
     if children.is_empty() {
         return Vec::new();
     }
-    let gap = flow.gap.map_or(space.metrics.gap, |g| space.px(g)).max(0.0);
+    let gap = flow
+        .gap
+        .map_or(flow.default_gap(&space.metrics), |g| space.px(g))
+        .max(0.0);
     match layout {
         Layout::Free => children
             .iter()
@@ -725,8 +752,15 @@ fn strip(
             // will draw at -- one table, one scale. A **packed** strip asks a
             // child with no natural size what its content wants, the question
             // a hugging container asks: a button as wide as what it says.
+            // And a column asks one whose height follows its width (a
+            // wrapped label, a column of them) how tall it is that wide.
             let wanted = axis(c.natural_size(m, unit))
-                .or_else(|| pack.then(|| axis(c.hug_size(m, unit))).flatten());
+                .or_else(|| pack.then(|| axis(c.hug_size(m, unit))).flatten())
+                .or_else(|| {
+                    (!horizontal && c.follows_width(m, unit))
+                        .then(|| c.height_for(inner.w, m, unit))
+                        .flatten()
+                });
             match wanted {
                 Some(want) => {
                     let want = c.sized(horizontal, want.max(0.0), floor, unit);

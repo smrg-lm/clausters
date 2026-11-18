@@ -739,6 +739,10 @@ def test_the_container_chrome_rides_as_flags_and_a_dialog_is_a_modal_layout():
     assert guidef.scroll(bars=True)["bars"] == 1
     box = guidef.dialog(guidef.label("Discard the take?"), title="Confirm")
     assert (box["type"], box["modal"], box["title"]) == ("layout", 1, "Confirm")
+    ask = guidef.dialog(guidef.button(label="Save", default=True), title="Save changes?",
+                        description="The take is not saved.", alert=True, wide=False)
+    assert (ask["description"], ask["alert"], ask["wide"]) == ("The take is not saved.", 1, 0)
+    assert ask["children"][0]["default"] == 1
     bar = guidef.toolbar(guidef.button(icon=guidef.ICON.play, flat=True),
                          guidef.separator(), guidef.separator(weight=1, line=False))
     assert (bar["flow"], bar["hug"], bar["pack"]) == ("row", 1, 1)

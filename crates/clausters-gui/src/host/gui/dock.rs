@@ -20,7 +20,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use clausters_gui_draw::paint::Mesh;
 use serde_json::{Value, json};
 use tracing::{info, warn};
 use winit::dpi::{LogicalSize, PhysicalPosition};
@@ -741,11 +740,16 @@ fn picture(
     host: &crate::host::Host,
 ) -> crate::host::dock::Overlay {
     let shown: Vec<i32> = layout.placed().map(|(id, _)| id).collect();
-    let floats: Vec<(i32, &Mesh, bool)> = shown
+    let floats: Vec<crate::host::dock::PaneFloat<'_>> = shown
         .into_iter()
         .filter_map(|id| {
             let ws = windows.get(&id)?;
-            Some((id, &ws.batches.float, host.popup(id).is_some()))
+            Some(crate::host::dock::PaneFloat {
+                pane: id,
+                layers: &ws.batches.float,
+                keys: host.popup(id).is_some(),
+                dialog: host.dialog(id).is_some(),
+            })
         })
         .collect();
     layout.picture(&host.theme, &floats)
