@@ -145,6 +145,9 @@ the same color to within the 8 bits of the notation:
 | `flag` | `#f2bf73` | A marker flag (an OSC marker, an overview's pressed key). |
 | `trigger` | `#d9cc6666` | The oscilloscope's trigger-level line. |
 | `warn` | `#d96b6b` | The negative/warning readout (the phase scope's anti-correlation). |
+| `success` | `#4ade80` | **Up and well**: a session ready, a thing that worked. |
+| `warning` | `#fbbf24` | **Under way, or a caution**: a session running code. |
+| `destructive` | `#ff6467` | **Down, or failed**: a session stopped, an action that destroys. |
 | `meter_field` | `#0a0a0d` | The well a meter's column stands in: darker than any panel it sits on, because a column is read against its own empty space. |
 | `meter_low` | `#3dc770` | A meter's column below the alignment level (-18 dBFS): the level a mix works at. |
 | `meter_mid` | `#f2cc40` | Its column from the alignment level to the hot end (-6 dBFS): headroom being used. Reached at -12 dBFS and held, so a column using its headroom reads amber rather than green with a cast on it. |

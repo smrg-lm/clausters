@@ -66,6 +66,14 @@ const DOCS: i32 = 4;
 const BAR_WIN: i32 = 5;
 /// The bar's height, in logical pixels.
 const BAR_H: i32 = 40;
+/// The application's footer, along the dock's bottom: the session's state.
+const FOOT_WIN: i32 = 11;
+const FOOT: i32 = 12;
+/// The footer's height, in logical pixels.
+const FOOT_H: i32 = 24;
+/// The footer's text size: 12 pixels to the em of the interface's face
+/// (its capital is 0.729 of the em, over the 7-pixel cell).
+const FOOT_TEXT: f64 = 12.0 * 0.729 / 7.0;
 
 const PREFS_WIN: i32 = 20;
 const PREFS_REOPEN: i32 = 22;
@@ -296,6 +304,7 @@ impl App {
         desktop::follow_color_scheme(&self.tx);
         self.read_docs();
         self.open_bar();
+        self.open_footer();
         self.open_post();
         self.open_docs();
         // the files of the last run, then the ones the command line names,
@@ -500,8 +509,9 @@ impl App {
             // the post window is freed by nobody but the quit: gone, it is the
             // dock's window closed over what was asked, and the editor ends
             POST_WIN => return self.quit_now(),
-            // the bar goes with the dock's window, as the post window does
-            BAR_WIN => return,
+            // the bar and the footer go with the dock's window, as the post
+            // window does
+            BAR_WIN | FOOT_WIN => return,
             DOCS_WIN => self.docs_shown = false,
             PREFS_WIN => self.prefs_open = false,
             ENVS_WIN => self.envs_open = false,
@@ -525,6 +535,7 @@ impl App {
         self.closes.1 = None;
         let mut panes: HashSet<i32> = self.files.iter().map(|f| f.win).collect();
         panes.insert(BAR_WIN);
+        panes.insert(FOOT_WIN);
         panes.insert(POST_WIN);
         for (shown, win) in [
             (self.docs_shown, DOCS_WIN),
@@ -543,7 +554,7 @@ impl App {
             match win {
                 // the post window stays: it is where the session speaks; the
                 // bar is the application's, and goes only with it
-                BAR_WIN | POST_WIN => {}
+                BAR_WIN | FOOT_WIN | POST_WIN => {}
                 DOCS_WIN | PREFS_WIN | ENVS_WIN => self.link.free(win),
                 win => self.close_tab(Some(win)),
             }
@@ -1166,8 +1177,10 @@ impl App {
     }
 
     fn is_window(&self, id: i32) -> bool {
-        matches!(id, BAR_WIN | POST_WIN | DOCS_WIN | PREFS_WIN | ENVS_WIN)
-            || self.files.iter().any(|f| f.win == id)
+        matches!(
+            id,
+            BAR_WIN | FOOT_WIN | POST_WIN | DOCS_WIN | PREFS_WIN | ENVS_WIN
+        ) || self.files.iter().any(|f| f.win == id)
     }
 
     // -- the application's bar, the post window and the documentation
@@ -1194,6 +1207,21 @@ impl App {
             ],
         }]);
         self.link.def(BAR_WIN, &tree);
+    }
+
+    /// **The application's footer**: a window along the dock's bottom, across
+    /// it, saying the session's state -- a dot in its state's color and the
+    /// interpreter, the environment and what it is doing.
+    fn open_footer(&mut self) {
+        let mut tree = self.window(FOOT_WIN, "Status");
+        tree["dock_edge"] = json!("bottom");
+        tree["h"] = json!(FOOT_H);
+        tree["theme"] = self.footer_theme();
+        tree["children"] = json!([{
+            "id": FOOT, "type": "label", "text": "Python", "text_size": FOOT_TEXT,
+            "muted": 1, "dot": "destructive",
+        }]);
+        self.link.def(FOOT_WIN, &tree);
     }
 
     fn open_post(&mut self) {
@@ -1462,7 +1490,8 @@ impl App {
         }
     }
 
-    /// The session's state, in the post window's title.
+    /// **The session's state, in the footer**: its dot (stopped, running,
+    /// ready) and `Python <version> | <environment> | <state>`.
     fn say_session(&self) {
         let state = if !self.py.alive {
             "stopped".to_string()
@@ -1475,12 +1504,21 @@ impl App {
             Some(name) => format!("environment \"{name}\""),
             None => "system".into(),
         };
-        let title = if self.py.version.is_empty() {
-            format!("Post window: Python, {env}, {state}")
+        let dot = if !self.py.alive {
+            "destructive"
+        } else if self.py.busy.is_empty() {
+            "success"
         } else {
-            format!("Post window: Python {}, {env}, {state}", self.py.version)
+            "warning"
         };
-        self.link.set(POST_WIN, &[("title", json!(title))]);
+        let python = if self.py.version.is_empty() {
+            "Python".to_string()
+        } else {
+            format!("Python {}", self.py.version)
+        };
+        let line = format!("{python} | {env} | {state}");
+        self.link
+            .set(FOOT, &[("text", json!(line)), ("dot", json!(dot))]);
     }
 
     // -- the look
@@ -1494,12 +1532,24 @@ impl App {
     }
 
     fn apply_theme(&self) {
-        let table = if self.dark() {
+        self.link.theme(&self.look());
+        // the footer stands on the chrome's ground, which is the look's
+        self.link.set(FOOT_WIN, &[("theme", self.footer_theme())]);
+    }
+
+    /// The look in use: its table of roles.
+    fn look(&self) -> Value {
+        if self.dark() {
             theme::dark()
         } else {
             theme::light()
-        };
-        self.link.theme(&table);
+        }
+    }
+
+    /// **The footer's ground**: the chrome's (`status_bar`), as a bar's is,
+    /// where a window stands on the panels' background.
+    fn footer_theme(&self) -> Value {
+        json!({"background": self.look()["status_bar"]})
     }
 
     fn zoom(&mut self, delta: Option<f32>) {

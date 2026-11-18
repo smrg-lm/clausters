@@ -32,6 +32,9 @@ pub fn light() -> Value {
         "accent_dim": "#e5e5e5",
         "hilite": "#16a34a",
         "warn": "#e7000b",
+        "success": "#16a34a",
+        "warning": "#d97706",
+        "destructive": "#e7000b",
     })
 }
 
@@ -62,6 +65,9 @@ pub fn dark() -> Value {
         "accent_dim": "#404040",
         "hilite": "#4ade80",
         "warn": "#ff6467",
+        "success": "#4ade80",
+        "warning": "#fbbf24",
+        "destructive": "#ff6467",
     })
 }
 

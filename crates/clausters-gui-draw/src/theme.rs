@@ -251,6 +251,14 @@ theme_roles! {
     /// The negative/warning readout (the phase scope's anti-correlation).
     warn = [0.85, 0.42, 0.42, 1.0];
 
+    // -- States --
+    /// **Up and well**: a session ready, a thing that worked.
+    success = [0.29, 0.87, 0.50, 1.0];
+    /// **Under way, or a caution**: a session running code.
+    warning = [0.98, 0.75, 0.14, 1.0];
+    /// **Down, or failed**: a session stopped, an action that destroys.
+    destructive = [1.0, 0.39, 0.40, 1.0];
+
     // -- Meters --
     /// The well a meter's column stands in: darker than any panel it sits on,
     /// because a column is read against its own empty space and a well that

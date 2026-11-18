@@ -1937,9 +1937,16 @@ export function label(
         wrap?: boolean;
         align?: string;
         live?: boolean;
+        /**
+         * A dot before the text in a role of the theme -- a state: `"success"`,
+         * `"warning"` or `"destructive"`.
+         */
+        dot?: string;
+        /** The text in the dimmed role, as a status line's is. */
+        muted?: boolean;
     } = {},
 ): View {
-    const { textSize, wrap, align, live, ...rest } = options;
+    const { textSize, wrap, align, live, dot, muted, ...rest } = options;
     return node("label", {
         ...rest,
         text,
@@ -1948,6 +1955,8 @@ export function label(
             ["wrap", flag(wrap)],
             ["align", align],
             ["live", flag(live)],
+            ["dot", dot],
+            ["muted", flag(muted)],
         ]),
     });
 }

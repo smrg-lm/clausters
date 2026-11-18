@@ -30,6 +30,11 @@ pub struct Label {
     pub wrap: bool,
     pub align: Align,
     pub live: bool,
+    /// The `dot` prop: a role of the theme a dot before the text is drawn
+    /// in -- a state, as a status line shows one.
+    pub dot: Option<String>,
+    /// The `muted` prop: the text in the theme's dimmed role.
+    pub muted: bool,
 }
 
 pub(super) fn build(
@@ -52,18 +57,29 @@ fn from_props(props: &Map<String, Value>) -> Label {
         wrap: props.get("wrap").and_then(parse::truthy).unwrap_or(false),
         align: Align::parse(props),
         live: props.get("live").and_then(parse::truthy).unwrap_or(false),
+        dot: props
+            .get("dot")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        muted: props.get("muted").and_then(parse::truthy).unwrap_or(false),
     }
 }
 
 impl Label {
     fn paint(&self, d: &mut Draw, ctx: &Ctx) {
-        controls::draw_label(
+        let look = controls::LabelLook {
+            dot: self.dot.as_deref().and_then(|role| d.theme.get(role)),
+            muted: self.muted,
+        };
+        controls::draw_label_as(
             d,
             &self.text,
             ctx.rect,
             self.text_size * ctx.scale,
             self.wrap,
             self.align,
+            look,
         );
     }
 }
@@ -79,6 +95,11 @@ impl Element for Label {
                 .is_some(),
             "wrap" => parse::truthy(v).map(|b| self.wrap = b).is_some(),
             "live" => parse::truthy(v).map(|b| self.live = b).is_some(),
+            "dot" => {
+                self.dot = v.as_str().filter(|s| !s.is_empty()).map(str::to_string);
+                true
+            }
+            "muted" => parse::truthy(v).map(|b| self.muted = b).is_some(),
             "align" => v
                 .as_str()
                 .and_then(Align::from_str)
@@ -237,6 +258,49 @@ mod tests {
         assert!(reading.live_prop("text") && reading.needs().live);
         assert!(!reading.live_prop("text_size"), "its size is the picture's");
         assert!(reading.hug(&m, 1.0).0.is_none(), "it sizes nothing");
+    }
+
+    /// **A status line's label**: a dot before the text in its state's role,
+    /// and the text muted -- the dot's role set again as the state moves.
+    #[test]
+    fn a_label_with_a_dot_draws_it_in_its_role_and_mutes_its_text() {
+        use crate::host::world::World;
+        use clausters_gui_draw::paint::Mesh;
+        use clausters_gui_draw::rect::Rect;
+        use clausters_gui_draw::theme::Theme;
+
+        let m = Metrics::default();
+        let theme = Theme::default();
+        let world = World::default();
+        let ctx = Ctx {
+            world: &world,
+            metrics: &m,
+            rect: Rect::new(0.0, 0.0, 300.0, 24.0),
+            indent: 0.0,
+            clip: None,
+            scale: 1.0,
+            time: None,
+            focused: false,
+            hovered: false,
+            clock: 0.0,
+            text_fit: 1.0,
+            header: None,
+        };
+        let colors = |label: &Label| {
+            let mut mesh = Mesh::new();
+            label.draw(&mut Draw::new(&mut mesh, &m, &theme), &ctx);
+            mesh.colors_by_y().map(|(_, c)| c).collect::<Vec<_>>()
+        };
+        let mut l = from_props(&props(
+            r#"{"text":"Python | system | ready","dot":"success","muted":1}"#,
+        ));
+        let drawn = colors(&l);
+        assert!(drawn.contains(&theme.success), "the dot");
+        assert!(!drawn.contains(&theme.text), "no text at full strength");
+        assert!(l.set("dot", &Value::from("warning")));
+        assert!(colors(&l).contains(&theme.warning));
+        assert!(l.set("dot", &Value::from("")));
+        assert!(!colors(&l).contains(&theme.warning), "no dot");
     }
 
     /// A wrapped label's line count follows its string, which is data -- so it

@@ -1508,6 +1508,7 @@ def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> di
 
 def label(text: str = "", *, text_size: float | None = None, wrap: bool | None = None,
           align: str | None = None, live: bool | None = None, color: str | None = None,
+          dot: str | None = None, muted: bool | None = None,
           id: int | None = None, **props) -> View:
     """Static ``label`` text, passed positionally: ``label("hello")``.
 
@@ -1524,8 +1525,14 @@ def label(text: str = "", *, text_size: float | None = None, wrap: bool | None =
     the window's kept picture, so a ``set`` of its text redraws the label and
     not the window. A live label sizes nothing: give it a ``w`` or a
     ``weight``, since a container fitted to its content does not follow it.
+
+    ``dot`` draws a dot before the text in a role of the theme -- a state:
+    ``"success"``, ``"warning"`` or ``"destructive"`` -- and ``muted=True``
+    the text in the dimmed role, as a status line's is.
     """
-    extra = _drop_none(text_size=text_size, align=align, color=color)
+    extra = _drop_none(text_size=text_size, align=align, color=color, dot=dot)
+    if muted is not None:
+        extra["muted"] = 1 if muted else 0
     if wrap is not None:
         extra["wrap"] = 1 if wrap else 0
     if live is not None:

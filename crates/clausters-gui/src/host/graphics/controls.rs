@@ -365,9 +365,45 @@ pub fn number(d: &mut Draw, r: &Range, rect: Rect, size: f32, stepper: bool, typ
 /// fixed advance and lines past the rect's bottom are dropped; without it the
 /// single line clips with an ellipsis instead of bleeding into a neighbor.
 pub fn draw_label(d: &mut Draw, text: &str, rect: Rect, size: f32, wrap: bool, align: Align) {
+    draw_label_as(d, text, rect, size, wrap, align, LabelLook::default());
+}
+
+/// **How a label reads besides its text**: a dot before it in a role of the
+/// theme (a state: `success`, `warning`, `destructive`), and the text
+/// muted, as a status line's is.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LabelLook {
+    pub dot: Option<clausters_gui_draw::theme::Color>,
+    pub muted: bool,
+}
+
+/// [`draw_label`], with its [`LabelLook`]: the dot, the size of a lower
+/// case letter, stands at the line's start and the text after it.
+pub fn draw_label_as(
+    d: &mut Draw,
+    text: &str,
+    rect: Rect,
+    size: f32,
+    wrap: bool,
+    align: Align,
+    look: LabelLook,
+) {
     let (mesh, m, theme) = d.parts();
-    let left = rect.x + m.pad;
-    let avail = (rect.w - 2.0 * m.pad).max(0.0);
+    let mut left = rect.x + m.pad;
+    let mut avail = (rect.w - 2.0 * m.pad).max(0.0);
+    if let Some(color) = look.dot {
+        let r = (font::height(size) * 0.4).max(1.0);
+        let cy = rect.y + rect.h * 0.5;
+        mesh.disc(left + r, cy, r, color);
+        let taken = 2.0 * r + m.pad;
+        left += taken;
+        avail = (avail - taken).max(0.0);
+    }
+    let ink = if look.muted {
+        theme.text_dim
+    } else {
+        theme.text
+    };
     if wrap {
         let lines = font::wrap(text, avail, size);
         let advance = font::line_advance(size);
@@ -379,13 +415,13 @@ pub fn draw_label(d: &mut Draw, text: &str, rect: Rect, size: f32, wrap: bool, a
                 break;
             }
             let x = align_x(align, left, avail, font::width(line, size));
-            font::text(mesh, line, x, y, size, theme.text);
+            font::text(mesh, line, x, y, size, ink);
             y += advance;
         }
     } else {
         let y = (rect.y + (rect.h - font::height(size)) * 0.5).max(rect.y);
         let x = align_x(align, left, avail, font::width(text, size).min(avail));
-        font::text_ellipsis(mesh, text, x, y, avail, size, theme.text);
+        font::text_ellipsis(mesh, text, x, y, avail, size, ink);
     }
 }
 

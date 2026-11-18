@@ -2588,10 +2588,26 @@ first four are the order the user set; the components come after.
   page strip), the header's place, a press on the post's clear tool through
   the header, and the editor headless: the editor's tabs, the
   documentation's and the post window's tools in their bars, no page strip.
-- ⬜ **ST4: The status footer.** A band along the dock's bottom, the
+- ✅ **ST4: The status footer.** A band along the dock's bottom, the
   application's: the dot and the line of the inventory, set by the
   application with a verb. The post window's title goes back to its name.
   Absorbs the footer half of the "Found by use" entry on run buttons.
+  *Shipped:* the footer is a window of the application's along the dock's
+  bottom (`dock_edge` `bottom`, 24 high: `clausters-editor-host`, window 11),
+  on the chrome's ground (its `theme`'s background, the look's
+  `status_bar`), holding one `label` the application sets as the session
+  moves -- set as any widget is, so no new address. The `label` gained
+  `dot` (a dot before the text in a role of the theme) and `muted` (the
+  text dimmed), in both clients' builders; the theme gained the
+  specification's three states, `success`, `warning` and `destructive`,
+  ahead of `ST5`. The editor's footer reads `Python <version> |
+  <environment> | <state>` after a dot in `destructive` when the session is
+  stopped, `warning` while it runs code and `success` when ready, and the
+  post window's title is its name again. The "Found by use" entry had
+  already left the list with `ST1`. Checked: the label's dot and muted text
+  by test, and the editor headless: the footer across the bottom, its dot
+  and line once the session is ready. Its 12 inset waits for `ST5`'s
+  spacing per component (the label's own inset is the host's `pad`).
 - ⬜ **ST5: The tokens.** The theme and metrics tables gain the roles of
   "What the host gains" (semantic colors, radii, elevation, the type scale
   with its faces, states, per-component spacing), loaded with the inventory's

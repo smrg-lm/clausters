@@ -131,7 +131,9 @@ code that keeps it lives.
   split; a pane keeps a menu of its own only when it is a script's window
   rather than an application's. A list a pane opens is placed against the
   whole dock, never shut inside the pane: a submenu opens beside its list, a
-  bar's list hangs over the panels.
+  bar's list hangs over the panels. The application's state (a session up,
+  busy or down) is said the same way, in a footer of the application's
+  along the dock's bottom, never in a panel's title.
 - **A panel has one header.** Its bar is the only strip over it: the grip
   and the panel's buttons at the ends, and in the middle the tabs of its
   documents (`dock_tab`), the strip of tools its window names (`header`), or
