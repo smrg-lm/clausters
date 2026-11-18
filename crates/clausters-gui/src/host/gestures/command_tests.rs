@@ -165,6 +165,41 @@ fn ctrl_and_the_wheel_over_code_size_its_text() {
     );
 }
 
+/// **A window's header is its element's strip**: the post window's tools
+/// stand in a band along the window's top, the post laid out under it, and
+/// a press on the clear tool there reaches the post -- which clears and
+/// says so.
+#[test]
+fn a_press_in_the_header_reaches_the_element_whose_strip_it_is() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"header":5,"children":[
+            {"id":5,"type":"post","tools":1}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    let header = host
+        .header_place(1, ctx.fb_w, ctx.fb_h)
+        .expect("the window has a header");
+    assert_eq!(header.id, 5);
+    assert_eq!(
+        rect_of(&host, &ctx, 5).y,
+        header.band.h,
+        "the post under it"
+    );
+    // the clear tool is the strip's first, at its start
+    let at = (
+        f64::from(header.slot.x + 4.0),
+        f64::from(header.slot.y + header.slot.h * 0.5),
+    );
+    let effects = click(&mut g, &mut host, &ctx, at);
+    assert!(
+        emitted(&effects)
+            .iter()
+            .any(|(id, args)| *id == 5 && args.first() == Some(&OscType::String("clear".into()))),
+        "{effects:?}"
+    );
+}
+
 /// **The ring shows where the keyboard moved the focus, not where a hand
 /// put it**: a press focuses a field with no ring, Tab rings the next stop,
 /// and the next press hides it again.

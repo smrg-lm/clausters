@@ -182,6 +182,10 @@ metrics_roles! {
     ruler_w,
     /// The width of a row's header column (a lane's name and controls).
     header_w,
+    /// The height of a **panel's header**: the one strip along a panel's
+    /// top, which a dock's panel draws its grip, its tabs or its tools and
+    /// its buttons in, and a window that names a `header` its tools in.
+    panel_h,
     /// A hairline: a divider between lanes, a box edge.
     divider_w,
     /// The weight of the ring around the widget holding the keyboard focus.
@@ -263,6 +267,8 @@ impl Metrics {
             ruler_w: grid(5.0 * font::advance(caption_scale)),
             // Eight characters of header text wide.
             header_w: grid(8.0 * font::advance(text_scale)),
+            // the specification's 36 at the host's own density
+            panel_h: grid(cell * 36.0 / CELL),
             divider_w: hairline(k),
             focus_ring: hairline(2.0 * k),
             trace_w: (1.5 * k).max(0.5),
@@ -323,6 +329,7 @@ impl Metrics {
             status_h: grid(self.status_h * k),
             ruler_w: grid(self.ruler_w * k),
             header_w: grid(self.header_w * k),
+            panel_h: grid(self.panel_h * k),
             divider_w: hairline(self.divider_w * k),
             focus_ring: hairline(self.focus_ring * k),
             trace_w: (self.trace_w * k).max(0.5),

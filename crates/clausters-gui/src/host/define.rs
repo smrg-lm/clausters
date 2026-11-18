@@ -310,6 +310,7 @@ impl Host {
             self.status.borrow_mut().remove(&id);
             self.popups.remove(&id);
             self.popup_areas.remove(&id);
+            self.header_bands.remove(&id);
             effects.push(HostEffect::CloseWindow(id));
         }
         self.sync_subscriptions();

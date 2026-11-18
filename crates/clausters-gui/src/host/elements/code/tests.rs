@@ -113,6 +113,7 @@ fn input<'a>(m: &'a Metrics, clicks: u32) -> Input<'a> {
         viewport: (480.0, 240.0),
         clicks,
         time: None,
+        header: None,
     }
 }
 
@@ -161,6 +162,7 @@ fn a_frame_draws_the_rows_in_view() {
         hovered: false,
         clock: 0.0,
         text_fit: 1.0,
+        header: None,
     };
     let started = std::time::Instant::now();
     let mut mesh = Mesh::new();
@@ -210,6 +212,7 @@ fn a_key_and_its_frame_in_five_thousand_lines_of_python() {
         hovered: false,
         clock: 0.0,
         text_fit: 1.0,
+        header: None,
     };
     let frame = |v: &CodeView| {
         let mut mesh = Mesh::new();
@@ -330,6 +333,7 @@ fn frame(v: &CodeView, focused: bool) -> Mesh {
         hovered: false,
         clock: 0.0,
         text_fit: 1.0,
+        header: None,
     };
     let mut mesh = Mesh::new();
     v.draw(&mut Draw::new(&mut mesh, &m, &theme), &ctx);

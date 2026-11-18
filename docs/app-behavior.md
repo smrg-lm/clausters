@@ -132,6 +132,13 @@ code that keeps it lives.
   rather than an application's. A list a pane opens is placed against the
   whole dock, never shut inside the pane: a submenu opens beside its list, a
   bar's list hangs over the panels.
+- **A panel has one header.** Its bar is the only strip over it: the grip
+  and the panel's buttons at the ends, and in the middle the tabs of its
+  documents (`dock_tab`), the strip of tools its window names (`header`), or
+  the window's title -- never a title row with a bar of tools under it. A
+  window whose loss nothing could undo (an editor's post window) says it may
+  not be closed (`closable`), rather than offering a close mark it would have
+  to refuse.
 
 ## Views and layers
 

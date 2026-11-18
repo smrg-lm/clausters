@@ -1635,6 +1635,19 @@ export function view(
      * tool's panel does, and tabs appear when the panel holds several.
      */
     dockTab?: boolean;
+    /** What its tab says under a resting pointer in a dock: a file's path. */
+    dockTip?: string;
+    /**
+     * **The child whose strip of tools is the window's header** -- a `docs`
+     * element's way back and find, a `post` with `tools` -- drawn in a band
+     * along the window's top rather than along the child's, and in a dock in
+     * its panel's bar, so a panel has one header.
+     */
+    header?: number;
+    /** `false`: a hand may not close the window (in a dock, no close mark). */
+    closable?: boolean;
+    /** Its work has changes not kept (in a dock, a dot on its tab). */
+    modified?: boolean;
     /**
      * **The owner is told when the window comes back** -- it gains or loses
      * the platform's focus, or its page is shown or hidden -- as the window's
@@ -1688,7 +1701,7 @@ export function view(
 ): View {
     const {
         title, flow, layout, margin, gap, cols, hug, status, plays, keys, verbs, askClose,
-        history, dockPage, dockEdge, dockTab, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs,
+        history, dockPage, dockEdge, dockTab, dockTip, header, closable, modified, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs,
         ...rest
     } = options;
     return node("window", {
@@ -1714,6 +1727,10 @@ export function view(
             ["dock_page", dockPage],
             ["dock_edge", dockEdge],
             ["dock_tab", flag(dockTab)],
+            ["dock_tip", dockTip],
+            ["header", header],
+            ["closable", flag(closable)],
+            ["modified", flag(modified)],
             ["activation", flag(activation)],
             ["progress", progress],
             ["progress_label", progressLabel],
@@ -2825,22 +2842,29 @@ export function docs(
  * dragging (two clicks a word, three a line) and copies with the platform's
  * key; its menu copies, selects all, clears and switches the autoscroll. Only
  * the rows seen are measured and drawn, so a large write costs the write.
+ *
+ * `tools: true` gives it a strip of tools along its top: clear (which reports
+ * `"clear"`) and autoscroll (which reports `"autoscroll" 1` or `0`). A window
+ * that names it as its `header` draws that strip in its header, in a dock its
+ * panel's bar.
  */
 export function post(
     options: WidgetOptions & {
         keep?: number;
         wrap?: boolean;
         autoscroll?: boolean;
+        tools?: boolean;
         textSize?: number;
     } = {},
 ): View {
-    const { keep, wrap, autoscroll, textSize, ...rest } = options;
+    const { keep, wrap, autoscroll, tools, textSize, ...rest } = options;
     return node("post", {
         ...rest,
         ...drop([
             ["keep", keep],
             ["wrap", flag(wrap)],
             ["autoscroll", flag(autoscroll)],
+            ["tools", flag(tools)],
             ["text_size", textSize],
         ]),
     });

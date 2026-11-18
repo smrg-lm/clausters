@@ -268,6 +268,7 @@ mod tests {
             viewport: (400.0, 300.0),
             clicks: 1,
             time: None,
+            header: None,
         };
         n.press((40.0, 12.0), &input);
         n.drag((40.0, -8.0), &input);
@@ -292,6 +293,7 @@ mod tests {
             viewport: (400.0, 300.0),
             clicks: 1,
             time: None,
+            header: None,
         };
         n.press((40.0, 12.0), &input);
         n.drag((40.0, 2.0), &input);

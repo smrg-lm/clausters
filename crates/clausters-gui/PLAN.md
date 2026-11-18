@@ -2561,16 +2561,33 @@ first four are the order the user set; the components come after.
   chrome's sizes moved to `ST5`, since a size of the type scale means
   nothing without its face. Subpixel (LCD) antialiasing is left as a
   future direction.
-- ⬜ **ST3: One header per panel.** The dock's tab strip is a panel's only
+- ✅ **ST3: One header per panel.** The dock's tab strip is a panel's only
   header: an element's bar is folded into it (its tools at the strip's right)
   rather than drawn under it; the page strip is hidden while there is one
   page. The editor's tabs as the inventory says (width, the top line, the dot
   that turns into a cross, the middle click, the path as tip). A panel's
-  owner says whether it may be closed, and the post window may not. A window
-  that is a document (`dock_tab`, the editor's files) already shows as its
-  panel's tab even alone, while a tool's panel (the post window, the
-  documentation) shows a bar with its title as the current editor's do;
-  each tab is at most 28 characters of title (the inventory's 224 at 14).
+  owner says whether it may be closed, and the post window may not.
+  *Shipped:* a panel's bar is its one header, 36 high (the `panel_h` size
+  role): the grip and the panel's buttons at its ends, and in the middle the
+  tabs of a document (`dock_tab`, a tab even alone), the strip of tools of
+  the child a window names as its `header` (`host::header`), or the title.
+  An element that carries a strip (`Element::strip`: the documentation's
+  way back, where the page is and find; a `post` with `tools`, clear and
+  autoscroll) draws it along its own top, or in its window's header band
+  when named; a docked pane with a header is drawn over its whole panel and
+  told the middle of the bar as its band (`Dock::band`), the press there
+  reaching the element, so nothing is drawn twice and nothing under. The
+  page strip shows only with two pages or more. Tabs: at most 28 characters
+  of title, a dot for a window's `modified` in place of the close mark (the
+  mark under the hand), the middle button closing one, its window's
+  `dock_tip` (the file's path) after a rest of 600 ms. `closable` off takes
+  a pane's close marks and its menu's Close away; the post window is not
+  closable. A window's look in a dock is read as one `PaneLook` and handed
+  over whole by both fronts. Checked: the dock's tests (the band and the
+  pointer in it, no close mark, the dot and the tip, the middle button, the
+  page strip), the header's place, a press on the post's clear tool through
+  the header, and the editor headless: the editor's tabs, the
+  documentation's and the post window's tools in their bars, no page strip.
 - ⬜ **ST4: The status footer.** A band along the dock's bottom, the
   application's: the dot and the line of the inventory, set by the
   application with a verb. The post window's title goes back to its name.

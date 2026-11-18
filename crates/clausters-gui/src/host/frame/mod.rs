@@ -36,7 +36,9 @@ pub(crate) use underlay::Copier;
 use crate::host::diag;
 use clausters_core::spectra;
 use draw::*;
-pub(crate) use draw::{draw_list, draw_time_ruler, marker_at, ruler_strip, ruler_strip_body};
+pub(crate) use draw::{
+    draw_list, draw_time_ruler, draw_tip, marker_at, ruler_strip, ruler_strip_body,
+};
 // The arrow's width is the drawing's own business; a gesture asks `marker_at`
 // what was hit. The test that pins the reach to it is the one exception.
 use items::*;
@@ -172,6 +174,9 @@ pub(crate) struct FrameInputs<'a> {
     /// The widget the frame rings: the focused one when the keyboard moved
     /// the focus there, none after a press ([`super::Host::focus_ring`]).
     pub(crate) ring: Option<i32>,
+    /// **Where the window's header is** ([`super::header`]): its band, the
+    /// slot its element draws its strip in, and which element that is.
+    pub(crate) header: Option<super::header::Place>,
     /// What a drag is holding right now (see [`Grab`]).
     pub(crate) grab: Grab,
     /// **This window's status bar**: what it has said and whether it is open
@@ -208,6 +213,7 @@ impl Default for FrameInputs<'_> {
             world: World::default(),
             focused: None,
             ring: None,
+            header: None,
             grab: Grab::None,
             status: None,
             popups: None,
@@ -653,6 +659,10 @@ fn draw_live_places(
             clock: inputs.world.clocks.at(widget.id),
             // the live layer draws what moves, never a caption
             text_fit: 1.0,
+            header: inputs
+                .header
+                .filter(|h| widget.id == Some(h.id))
+                .map(|h| h.slot),
         };
         el.draw_live(&mut Draw::new(mesh, m, th), &ctx);
         // **The focus ring stays over what moves.** It is drawn with the
@@ -1306,13 +1316,15 @@ fn picture(
     (fb_w, fb_h): (u32, u32),
 ) -> Picture {
     let window = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-    // The status band comes off the top of the frame, before anything is
-    // placed: the same call the hit test makes (`Host::content_area`), so the
-    // pixels a press lands on are the pixels the tree was drawn on.
+    // The header's band comes off the top first, then the status band off
+    // the bottom, before anything is placed: the same calls the hit test
+    // makes (`Host::content_area`), so the pixels a press lands on are the
+    // pixels the tree was drawn on.
+    let headed = super::header::content(inputs.header.as_ref(), window);
     let bar = status::bar(tree, inputs.status, window, inputs.metrics);
-    let area = status::content(tree, inputs.status, window, inputs.metrics);
+    let area = status::content(tree, inputs.status, headed, inputs.metrics);
     // ...and the menu bar's off the top, by the same rule.
-    let menu_bar = super::menubar::bar(tree, window, inputs.metrics);
+    let menu_bar = super::menubar::bar(tree, headed, inputs.metrics);
     let area = super::menubar::content(tree, area, inputs.metrics);
     // The lanes' clips are placed on the axis their group currently stands at,
     // so the layout of a multitrack follows the zoom and the pan.
@@ -1327,6 +1339,20 @@ fn picture(
     // it is drawn apart: everything before it is the window as it always was,
     // and the dialog goes over all of that, in the overlay.
     let (base, dialog) = placed.split_at(chrome::modal_start(&placed).unwrap_or(placed.len()));
+    // **The header's ground**, under the strip its element draws in the slot,
+    // and the line under it as under a panel's bar -- the bar's own, when a
+    // dock's bar is over it.
+    if let Some(header) = &inputs.header {
+        let band = header.band;
+        mesh.rect(band, theme.header);
+        if header.own {
+            let line = inputs.metrics.divider_w;
+            mesh.rect(
+                Rect::new(band.x, band.y + band.h - line, band.w, line),
+                theme.separator,
+            );
+        }
+    }
     let collected = collect_widgets(base, &mut mesh, inputs, theme);
     draw_dividers(&mut mesh, &placed, 0..base.len(), inputs, theme);
 

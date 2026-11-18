@@ -44,6 +44,26 @@ pub(crate) fn hit(
     // With a dialog up, only the dialog is in reach: it is the tail of the
     // placements, so the walk starts where it does.
     let from = crate::host::chrome::modal_start(&placed).unwrap_or(0);
+    // **The header's slot is its element's**: the strip drawn there is the
+    // element's own, placed outside its rect -- out of reach behind a dialog
+    // as the rest of the window is.
+    if from == 0
+        && let Some(header) = host.header_place(def_id, fb_w, fb_h)
+        && header.slot.contains(x, y)
+    {
+        let i = placed
+            .iter()
+            .position(|p| p.widget.id == Some(header.id) && p.widget.live)?;
+        let p = placed[i];
+        return Some(Hit {
+            id: header.id,
+            rect: p.rect,
+            scale: p.scale,
+            indent: p.indent,
+            kind: p.widget.kind.clone(),
+            chain: chain_of(host, def_id, &placed, i, y, rows),
+        });
+    }
     for (i, p) in placed.iter().enumerate().skip(from) {
         if p.rect.contains(x, y)
             && p.clip.is_none_or(|c| c.contains(x, y))

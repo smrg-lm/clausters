@@ -25,12 +25,13 @@ use std::collections::HashMap;
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
+use crate::host::graphics::controls::{self, ButtonLook, ToggleView};
 use crate::host::graphics::post::{self, Kind, Pos, Post};
 use crate::host::graphics::textedit::Unit;
 use crate::host::menu::Entry;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyInput, Verb};
 use crate::host::widget::parse;
-use crate::host::widget::size::Natural;
+use crate::host::widget::size::{Natural, control_box};
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::font::{self, Family};
 use clausters_gui_draw::metrics::Metrics;
@@ -40,6 +41,9 @@ use clausters_gui_draw::theme::{Color, Theme};
 /// How many rows a step of the wheel scrolls.
 const WHEEL_ROWS: f64 = 3.0;
 
+/// The clear tool's symbol: erase to the left.
+const CLEAR: char = '\u{232B}';
+
 /// A post window: what it holds, how it is drawn, where it is scrolled to
 /// and what a hand selected.
 #[derive(Debug, Clone)]
@@ -48,6 +52,9 @@ pub struct PostView {
     text_size: f32,
     wrap: bool,
     autoscroll: bool,
+    /// Whether it carries its strip of tools (`tools`): clear and
+    /// autoscroll, along its top or in its window's header.
+    tools: bool,
     /// Whether the newest line is in view and a write keeps it there.
     follow: bool,
     /// The first row seen, while not following: a line and a row of it.
@@ -78,6 +85,19 @@ struct Geometry {
     bar: Rect,
     row_h: f32,
     size: f32,
+    /// The strip of tools, when it carries one: along its top, or the slot
+    /// of its window's header.
+    strip: Option<Strip>,
+}
+
+/// The strip's tools, where they are.
+#[derive(Clone, Copy, Debug)]
+struct Strip {
+    rect: Rect,
+    clear: Rect,
+    autoscroll: Rect,
+    /// The host's text size, which the tools are drawn at.
+    ui: f32,
 }
 
 pub(super) fn build(
@@ -95,6 +115,7 @@ impl PostView {
             text_size: parse::text_size(props),
             wrap: true,
             autoscroll: true,
+            tools: false,
             follow: true,
             top: (0, 0),
             sel: None,
@@ -108,11 +129,39 @@ impl PostView {
         view
     }
 
-    fn geometry(&self, rect: Rect, scale: f32, m: &Metrics) -> Geometry {
+    /// Where its parts are in `rect`; its strip of tools along its top, or
+    /// in `header`, the slot of its window's header.
+    fn geometry(&self, rect: Rect, scale: f32, m: &Metrics, header: Option<Rect>) -> Geometry {
         let size = self.text_size * scale;
         let bar_w = (m.pad * 1.5).max(4.0 * scale).round();
         let pad = m.pad;
+        let ui = font::DEFAULT_SIZE * scale;
+        let row = control_box(ui, m);
+        let (strip, rect) = match (self.tools, header) {
+            (false, _) => (None, rect),
+            (true, Some(slot)) => (Some(slot), rect),
+            (true, None) => {
+                let strip = Rect::new(rect.x, rect.y, rect.w, row.min(rect.h));
+                let below = Rect::new(
+                    rect.x,
+                    rect.y + strip.h,
+                    rect.w,
+                    (rect.h - strip.h).max(1.0),
+                );
+                (Some(strip), below)
+            }
+        };
+        let strip = strip.map(|s| {
+            let y = s.y + ((s.h - row) * 0.5).max(0.0);
+            Strip {
+                rect: s,
+                clear: Rect::new(s.x, y, row, row),
+                autoscroll: Rect::new(s.x + row, y, row, row),
+                ui,
+            }
+        });
         Geometry {
+            strip,
             text: Rect::new(
                 rect.x + pad,
                 rect.y + pad * 0.5,
@@ -333,6 +382,17 @@ impl PostView {
     }
 
     /// The scroll bar pressed or dragged at `y`: the line there at the top.
+    /// Autoscroll turned the other way, and the owner told
+    /// (`"autoscroll" <0|1>`), so it keeps what the reader chose.
+    fn toggle_autoscroll(&mut self) -> Events {
+        self.autoscroll = !self.autoscroll;
+        self.follow = self.autoscroll;
+        Events::message(vec![
+            OscType::String("autoscroll".into()),
+            OscType::Int(i32::from(self.autoscroll)),
+        ])
+    }
+
     fn scroll_to(&mut self, y: f64, g: &Geometry) {
         let frac = ((y as f32 - g.bar.y) / g.bar.h.max(1.0)).clamp(0.0, 1.0);
         let n = self.post.first() + (frac * self.post.len() as f32) as u64;
@@ -345,11 +405,58 @@ impl PostView {
         }
     }
 
+    /// **Its strip of tools**: clear and autoscroll, on the strip's ground
+    /// along its top, or in its window's header, whose ground the header
+    /// draws.
+    fn paint_strip(&self, d: &mut Draw, ctx: &Ctx, s: &Strip) {
+        let kept = d.mesh.clip();
+        d.mesh
+            .set_clip(Some(kept.map_or(s.rect, |k| k.intersect(s.rect))));
+        if ctx.header.is_none() {
+            let (mesh, m, theme) = d.parts();
+            mesh.rect(s.rect, theme.status_bar);
+            let r = s.rect;
+            mesh.rect(
+                Rect::new(r.x, r.y + r.h - m.divider_w, r.w, m.divider_w),
+                theme.separator,
+            );
+        }
+        let inset = (d.m.pad * 0.5).round();
+        let flat = ButtonLook {
+            flat: true,
+            ..ButtonLook::default()
+        };
+        controls::button(d, None, Some(CLEAR), s.clear.inset(inset), flat, s.ui);
+        controls::toggle(
+            d,
+            self.autoscroll,
+            None,
+            Some(font::symbol::DOWN),
+            s.autoscroll.inset(inset),
+            ToggleView::Button,
+            false,
+            s.ui,
+        );
+        d.mesh.set_clip(kept);
+    }
+
     fn paint(&self, d: &mut Draw, ctx: &Ctx) {
-        let g = self.geometry(ctx.rect, ctx.scale, ctx.metrics);
+        let g = self.geometry(ctx.rect, ctx.scale, ctx.metrics, ctx.header);
+        if let Some(s) = &g.strip {
+            self.paint_strip(d, ctx, s);
+        }
         let (mesh, _, theme) = d.parts();
         let kept = mesh.clip();
-        let area = Rect::new(ctx.rect.x, ctx.rect.y, ctx.rect.w, ctx.rect.h);
+        let area = match (&g.strip, ctx.header) {
+            // the strip along its top is drawn; the rest is the text's
+            (Some(s), None) => Rect::new(
+                ctx.rect.x,
+                s.rect.y + s.rect.h,
+                ctx.rect.w,
+                (ctx.rect.h - s.rect.h).max(0.0),
+            ),
+            _ => ctx.rect,
+        };
         mesh.set_clip(Some(kept.map_or(area, |k| k.intersect(area))));
         mesh.rect(area, theme.view_field);
         let glyph = font::height(g.size);
@@ -461,6 +568,7 @@ impl Element for PostView {
             }
             "keep" => v.as_u64().map(|n| self.post.set_keep(n as usize)).is_some(),
             "wrap" => parse::truthy(v).map(|b| self.wrap = b).is_some(),
+            "tools" => parse::truthy(v).map(|b| self.tools = b).is_some(),
             "autoscroll" => parse::truthy(v)
                 .map(|b| {
                     self.autoscroll = b;
@@ -515,10 +623,28 @@ impl Element for PostView {
         true
     }
 
+    /// Clear and autoscroll, with `tools`: a strip a window may take as its
+    /// header.
+    fn strip(&self) -> bool {
+        self.tools
+    }
+
     /// One click places nothing but clears the selection, two select a
     /// word, three a line; Shift extends; the bar scrolls.
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
-        let g = self.geometry(input.rect, input.scale, input.metrics);
+        let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
+        if let Some(s) = g.strip {
+            if s.clear.contains(at.0, at.1) {
+                self.clear();
+                return Claim::events(Events::message(vec![OscType::String("clear".into())]));
+            }
+            if s.autoscroll.contains(at.0, at.1) {
+                return Claim::events(self.toggle_autoscroll());
+            }
+            if s.rect.contains(at.0, at.1) {
+                return Claim::take();
+            }
+        }
         if g.bar.contains(at.0, at.1) && self.thumb_rect(&g).is_some() {
             self.thumb = true;
             self.scroll_to(at.1, &g);
@@ -541,7 +667,7 @@ impl Element for PostView {
     }
 
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
-        let g = self.geometry(input.rect, input.scale, input.metrics);
+        let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
         if self.thumb {
             self.scroll_to(at.1, &g);
             return Events::none();
@@ -572,7 +698,7 @@ impl Element for PostView {
         if input.mods.ctrl {
             return None;
         }
-        let g = self.geometry(input.rect, input.scale, input.metrics);
+        let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
         let rows = (-delta.1 * WHEEL_ROWS).round() as i64;
         if rows == 0 {
             return None;
@@ -640,11 +766,7 @@ impl Element for PostView {
                 self.clear();
                 Some(Events::none())
             }
-            "autoscroll" => {
-                self.autoscroll = !self.autoscroll;
-                self.follow = self.autoscroll;
-                Some(Events::none())
-            }
+            "autoscroll" => Some(self.toggle_autoscroll()),
             _ => None,
         }
     }

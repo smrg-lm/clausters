@@ -316,6 +316,7 @@ mod tests {
             viewport: (400.0, 400.0),
             clicks: 1,
             time: None,
+            header: None,
         }
     }
 

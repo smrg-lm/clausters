@@ -545,6 +545,8 @@ impl WebApp {
         let statuses = self.host.statuses();
         let theme = &self.host.theme;
         let tree = self.host.window_def(def)?;
+        let (fb_w, fb_h) = self.canvases.get(&def)?.fb();
+        let header = self.host.header_place(def, fb_w, fb_h);
         let slot = self.canvases.get_mut(&def)?;
         let inputs = frame::FrameInputs {
             clipboard: Some(&self.host.clipboard),
@@ -561,6 +563,7 @@ impl WebApp {
             },
             focused,
             ring: self.host.focus_ring(def),
+            header,
             // The page draws what the desktop draws: a held clip keeps its
             // grip and nothing else lights up, whichever front is driving.
             grab: slot.gestures.grab(),

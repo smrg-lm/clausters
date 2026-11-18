@@ -163,6 +163,24 @@ pub enum WidgetKind {
         /// bar with its title, as a tool's panel does, and tabs appear when
         /// it holds several.
         dock_tab: bool,
+        /// The `header` prop: **the element whose strip of tools is the
+        /// window's header** ([`crate::host::header`]), drawn in a band along
+        /// the window's top -- in a dock, in its panel's bar -- rather than
+        /// along the element's own top. Only an element that carries a strip
+        /// can be named; None by default.
+        header: Option<i32>,
+        /// The `closable` prop: **whether a hand may close the window** --
+        /// in a dock, its tab's close mark, its bar's and its menu's Close.
+        /// On by default; an editor's post window is not, since nothing
+        /// would open it again.
+        closable: bool,
+        /// The `modified` prop: **the window's work has changes not kept**,
+        /// shown in a dock as a dot on its tab in place of the close mark,
+        /// which turns into the mark under the hand. Off by default.
+        modified: bool,
+        /// The `dock_tip` prop: **what its tab says under a resting
+        /// pointer** in a dock -- an editor's file's path. None by default.
+        dock_tip: Option<String>,
     },
     /// A nestable container.
     Panel {

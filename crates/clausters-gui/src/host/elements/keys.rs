@@ -377,6 +377,7 @@ mod tests {
             viewport: (rect.w, rect.h),
             clicks: 1,
             time: None,
+            header: None,
         }
     }
 

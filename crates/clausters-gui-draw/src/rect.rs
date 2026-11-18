@@ -45,6 +45,14 @@ impl Rect {
         px >= self.x && px < self.x + self.w && py >= self.y && py < self.y + self.h
     }
 
+    /// The smallest rectangle holding both.
+    pub fn union(&self, other: Rect) -> Rect {
+        let (x0, y0) = (self.x.min(other.x), self.y.min(other.y));
+        let x1 = (self.x + self.w).max(other.x + other.w);
+        let y1 = (self.y + self.h).max(other.y + other.h);
+        Rect::new(x0, y0, x1 - x0, y1 - y0)
+    }
+
     /// The intersection with `other` (zero-sized when they do not overlap).
     pub fn intersect(&self, other: Rect) -> Rect {
         let x = self.x.max(other.x);

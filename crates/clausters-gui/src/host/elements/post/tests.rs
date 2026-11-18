@@ -33,11 +33,12 @@ fn input<'a>(m: &'a Metrics, clicks: u32, shift: bool) -> Input<'a> {
         viewport: (400.0, 200.0),
         clicks,
         time: None,
+        header: None,
     }
 }
 
 fn geometry(v: &PostView, m: &Metrics) -> Geometry {
-    v.geometry(RECT, 1.0, m)
+    v.geometry(RECT, 1.0, m, None)
 }
 
 /// The text of each row seen, top down.
@@ -152,6 +153,7 @@ fn ten_thousand_lines_at_once_measure_only_the_rows_seen() {
         hovered: false,
         clock: 0.0,
         text_fit: 1.0,
+        header: None,
     };
     let mut mesh = Mesh::new();
     v.draw(&mut Draw::new(&mut mesh, &m, &theme), &ctx);

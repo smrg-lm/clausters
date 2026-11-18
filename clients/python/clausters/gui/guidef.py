@@ -1117,6 +1117,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          ask_close: bool | None = None, activation: bool | None = None,
          history: bool | None = None, dock_page: str | None = None,
          dock_edge: str | None = None, dock_tab: bool | None = None,
+         dock_tip: str | None = None, header: int | None = None,
+         closable: bool | None = None, modified: bool | None = None,
          progress: float | None = None, progress_label: str | None = None,
          split: bool | None = None, menu: list | None = None,
          main: int | None = None, glyphs: dict | None = None,
@@ -1218,7 +1220,17 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     tab even when it is the panel's only window, as an editor shows a single
     file. Without it a panel of one window shows a bar with the window's
     title, as a tool's panel does, and tabs appear when the panel holds
-    several.
+    several. ``dock_tip`` is what its tab says under a resting pointer (a
+    file's path).
+
+    ``header`` names the child whose **strip of tools is the window's
+    header** -- a ``docs`` element's way back and find, a ``post`` with
+    ``tools`` -- drawn in a band along the window's top rather than along
+    the child's, and in a dock in its panel's bar, so a panel has one header.
+
+    ``closable=False`` says a hand may not close the window (in a dock, no
+    close mark on its tab or its bar), and ``modified`` that its work has
+    changes not kept (in a dock, a dot on its tab).
 
     ``progress`` is **work the owner is doing for the window**, a fraction in
     ``0..1`` with ``progress_label`` naming it, drawn at the right end of the
@@ -1278,6 +1290,14 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
         extra["dock_edge"] = dock_edge
     if dock_tab is not None:
         extra["dock_tab"] = 1 if dock_tab else 0
+    if dock_tip is not None:
+        extra["dock_tip"] = dock_tip
+    if header is not None:
+        extra["header"] = header
+    if closable is not None:
+        extra["closable"] = 1 if closable else 0
+    if modified is not None:
+        extra["modified"] = 1 if modified else 0
     if progress is not None:
         extra["progress"] = float(progress)
     if progress_label is not None:
@@ -2095,7 +2115,8 @@ def docs(*, books=None, documents=None, text_size: float | None = None,
 
 
 def post(*, keep: int | None = None, wrap: bool | None = None,
-         autoscroll: bool | None = None, text_size: float | None = None,
+         autoscroll: bool | None = None, tools: bool | None = None,
+         text_size: float | None = None,
          id: int | None = None, **props) -> View:
     """A ``post`` window: the lines a session writes, as it writes them.
 
@@ -2113,12 +2134,19 @@ def post(*, keep: int | None = None, wrap: bool | None = None,
     selects by dragging (two clicks a word, three a line) and copies with
     the platform's key; its menu copies, selects all, clears and switches
     the autoscroll. Only the rows seen are measured and drawn, so a large
-    write costs the write."""
+    write costs the write.
+
+    ``tools=True`` gives it a strip of tools along its top: clear (which
+    reports ``"clear"``) and autoscroll (which reports ``"autoscroll" 1``
+    or ``0``). A window that names it as its ``header`` draws that strip in
+    its header, in a dock its panel's bar."""
     extra = _drop_none(keep=keep, text_size=text_size)
     if wrap is not None:
         extra["wrap"] = 1 if wrap else 0
     if autoscroll is not None:
         extra["autoscroll"] = 1 if autoscroll else 0
+    if tools is not None:
+        extra["tools"] = 1 if tools else 0
     return node("post", id=id, **extra, **props)
 
 

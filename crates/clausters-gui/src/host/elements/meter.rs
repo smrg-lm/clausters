@@ -856,6 +856,7 @@ mod tests {
             viewport: (400.0, 300.0),
             clicks: 1,
             time: None,
+            header: None,
         };
         assert_eq!(m.press((0.0, 0.0), &input), Claim::take());
         assert!(m.reads()[0].clipped.is_none());

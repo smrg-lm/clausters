@@ -1038,6 +1038,10 @@ pub(super) fn draw_element_overlays(
             hovered: p.widget.id.is_some() && p.widget.id == inputs.popups.and_then(|o| o.hover),
             clock: inputs.world.clocks.at(p.widget.id),
             text_fit: p.text_fit,
+            header: inputs
+                .header
+                .filter(|h| p.widget.id == Some(h.id))
+                .map(|h| h.slot),
         };
         if p.pane(placed).is_some() && el.slotted().is_none() {
             el.draw(&mut Draw::new(over, &p.metrics, th), &ctx);
@@ -1136,21 +1140,27 @@ pub(super) fn draw_popups(
         }
     }
     if let Some(tip) = &popups.tip {
-        let size = m.text_scale;
-        let rect = popup::place_tip(tip, size, work, m);
-        over.set_clip(None);
-        over.rect(rect, theme.popup);
-        over.border(rect, m.divider_w, theme.frame);
-        font::text(
-            over,
-            &tip.text,
-            rect.x + m.pad,
-            rect.y + m.pad,
-            size,
-            theme.text,
-        );
+        draw_tip(over, tip, work, m, theme);
     }
     over.set_clip(None);
+}
+
+/// **A tip**, placed by the popup layer's one rule ([`popup::place_tip`])
+/// inside `work`: a pane's, and a dock's tab's.
+pub(crate) fn draw_tip(over: &mut Mesh, tip: &popup::Tip, work: Rect, m: &Metrics, theme: &Theme) {
+    let size = m.text_scale;
+    let rect = popup::place_tip(tip, size, work, m);
+    over.set_clip(None);
+    over.rect(rect, theme.popup);
+    over.border(rect, m.divider_w, theme.frame);
+    font::text(
+        over,
+        &tip.text,
+        rect.x + m.pad,
+        rect.y + m.pad,
+        size,
+        theme.text,
+    );
 }
 
 /// Draws **what elements show in the popup layer of their own accord**

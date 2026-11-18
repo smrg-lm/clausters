@@ -126,6 +126,7 @@ pub mod world;
 // What opens over a window's tree, and the tree of entries a menu is.
 pub mod chrome;
 pub mod files;
+pub mod header;
 pub mod menu;
 pub mod menubar;
 pub mod popup;
@@ -790,8 +791,9 @@ pub enum HostEffect {
     /// asked to be opened again is the window that already holds it.
     Raise(i32),
     /// **The title of the window rooted at this id was set** (its `title`
-    /// prop): the front writes it where the window shows one -- a desktop
-    /// window's title bar, a page's canvas label.
+    /// prop, or what a dock shows of it on its tab: `modified`, `closable`,
+    /// `dock_tip`): the front writes it where the window shows one -- a
+    /// desktop window's title bar, a page's canvas label, a dock's tab.
     Retitle(i32),
     /// A live `/gui_set` changed a widget in the window rooted at this id; the
     /// front should repaint it (the typed tree is already updated in place).
@@ -1035,6 +1037,11 @@ pub struct Host {
     /// whole dock. A window with none places them in its own content area,
     /// and draws them into its own picture.
     popup_areas: HashMap<i32, clausters_gui_draw::rect::Rect>,
+    /// **Each pane's header band**, as the front that docks it measures it
+    /// ([`Dock::band`](dock::Dock::band)): under its panel's bar, with the
+    /// room the bar keeps at each end. A window with none and a header has
+    /// a band of its own ([`header::place`]).
+    header_bands: HashMap<i32, dock::Band>,
     /// **The windows whose owner was asked to close them and has not answered
     /// since** ([`close_request`](Self::close_request)): a second request
     /// while one is unanswered closes the window, so an owner that stopped
@@ -1236,6 +1243,7 @@ impl Host {
             status: Default::default(),
             popups: HashMap::new(),
             popup_areas: HashMap::new(),
+            header_bands: HashMap::new(),
             close_asked: Default::default(),
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             dependents: HashMap::new(),
@@ -1835,10 +1843,65 @@ impl Host {
             return area;
         };
         let m = self.metrics_for(def_id);
-        // Both of the host's bands come off: the status bar along the bottom
-        // and the menu bar along the top.
+        // The host's bands come off: the header along the top, the status bar
+        // along the bottom and the menu bar under the header.
+        let header = header::place(tree, self.header_bands.get(&def_id).copied(), area, m);
+        let area = header::content(header.as_ref(), area);
         let area = status::content(tree, self.status.borrow().get(&def_id), area, m);
         menubar::content(tree, area, m)
+    }
+
+    /// **Where window `def_id`'s header is** ([`header`]), when it names an
+    /// element whose strip is its header.
+    pub(crate) fn header_place(&self, def_id: i32, fb_w: u32, fb_h: u32) -> Option<header::Place> {
+        let area = clausters_gui_draw::rect::Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+        header::place(
+            self.window_def(def_id)?,
+            self.header_bands.get(&def_id).copied(),
+            area,
+            self.metrics_for(def_id),
+        )
+    }
+
+    /// **What a dock shows of window `def_id`** on its panel
+    /// ([`dock::PaneLook`]): read of its props.
+    pub fn pane_look(&self, def_id: i32) -> dock::PaneLook {
+        let mut look = dock::PaneLook {
+            title: self.window_title(def_id),
+            header: self.window_header(def_id),
+            closable: true,
+            ..Default::default()
+        };
+        if let Some(WidgetKind::Window {
+            dock_tab,
+            closable,
+            modified,
+            dock_tip,
+            ..
+        }) = self.window_def(def_id).map(|tree| &tree.kind)
+        {
+            look.tab = *dock_tab;
+            look.closable = *closable;
+            look.modified = *modified;
+            look.tip = dock_tip.clone();
+        }
+        look
+    }
+
+    /// Whether window `def_id` names a header ([`header::element`]): what a
+    /// dock fills its panel's bar with.
+    pub fn window_header(&self, def_id: i32) -> bool {
+        self.window_def(def_id).and_then(header::element).is_some()
+    }
+
+    /// Pane `def_id`'s header band as its dock measures it (`None`: a band
+    /// of its own, if it names a header). Answers whether it changed.
+    pub(crate) fn set_header_band(&mut self, def_id: i32, band: Option<dock::Band>) -> bool {
+        let was = match band {
+            Some(b) => self.header_bands.insert(def_id, b),
+            None => self.header_bands.remove(&def_id),
+        };
+        was != band
     }
 
     /// **Where window `def_id`'s popups may go**: the area its front gave

@@ -498,6 +498,7 @@ mod tests {
             hovered: false,
             clock: 0.0,
             text_fit: 1.0,
+            header: None,
         };
         score.draw(&mut Draw::new(&mut mesh, &m, &theme), &ctx);
         mesh
@@ -871,6 +872,7 @@ mod tests {
             viewport: (600.0, 400.0),
             clicks: 1,
             time: None,
+            header: None,
         }
     }
 

@@ -215,6 +215,7 @@ mod tests {
             hovered: false,
             clock: 0.0,
             text_fit: 1.0,
+            header: None,
         };
         let drawn = |label: &Label, live: bool| {
             let mut mesh = Mesh::new();

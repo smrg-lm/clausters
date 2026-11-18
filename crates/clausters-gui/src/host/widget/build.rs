@@ -55,6 +55,17 @@ pub(super) fn build_kind(
                 .and_then(Value::as_str)
                 .and_then(crate::host::dock::Edge::parse),
             dock_tab: props.get("dock_tab").and_then(truthy).unwrap_or(false),
+            header: props
+                .get("header")
+                .and_then(Value::as_i64)
+                .and_then(|id| i32::try_from(id).ok()),
+            closable: props.get("closable").and_then(truthy).unwrap_or(true),
+            modified: props.get("modified").and_then(truthy).unwrap_or(false),
+            dock_tip: props
+                .get("dock_tip")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
         },
         // A container with no axes. `stack` -- one child at a time, the one
         // `index` names -- is one of the arrangements rather than a type of its

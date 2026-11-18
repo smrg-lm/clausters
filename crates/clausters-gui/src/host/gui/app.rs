@@ -753,6 +753,10 @@ impl App {
                 .filter(|(d, _)| *d == def_id)
                 .map(|(_, id)| id),
             ring: self.host.focus_ring(def_id),
+            header: {
+                let (fb_w, fb_h) = self.fb(def_id);
+                self.host.header_place(def_id, fb_w, fb_h)
+            },
             // What this window's drag is holding: while one is in flight the
             // grips are its own and nothing else lights up.
             grab: self
@@ -1032,7 +1036,7 @@ impl App {
         // sends an event when its time comes, so the loop has to come back and
         // ask.
         self.advance_timers();
-        let mut timing = false;
+        let mut timing = self.advance_dock_timers();
         for (id, ws) in &self.windows {
             if ws.gestures.pending() {
                 timing = true;

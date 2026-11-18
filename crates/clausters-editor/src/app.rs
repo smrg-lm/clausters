@@ -133,12 +133,21 @@ impl File {
     fn code(&self) -> i32 {
         self.win + CODE
     }
-    fn title(&self) -> String {
-        if self.dirty {
-            format!("*{}", self.name)
-        } else {
-            self.name.clone()
-        }
+    /// What its tab says of it: its name, its changes not kept (a dot on
+    /// the tab) and its path (the tab's tip).
+    fn tab(&self) -> [(&'static str, Value); 3] {
+        [
+            ("title", json!(self.name)),
+            ("modified", json!(i32::from(self.dirty))),
+            (
+                "dock_tip",
+                json!(
+                    self.path
+                        .as_ref()
+                        .map_or(String::new(), |p| p.to_string_lossy().into_owned())
+                ),
+            ),
+        ]
     }
 }
 
@@ -398,11 +407,15 @@ impl App {
             };
         }
         match id {
-            POST | DOCS => {
-                if tag == "link" {
-                    open_url(&wire::text(args, 0));
+            POST | DOCS => match tag {
+                "link" => open_url(&wire::text(args, 0)),
+                // the post window's own tool, kept between runs
+                "autoscroll" => {
+                    self.settings.autoscroll = args.first().is_some_and(on);
+                    self.settings.save();
                 }
-            }
+                _ => {}
+            },
             PREFS_REOPEN => {
                 self.settings.reopen_files = args.first().is_some_and(on);
                 self.settings.save();
@@ -447,8 +460,7 @@ impl App {
                 let dirty = args.first().is_some_and(on);
                 if let Some(f) = self.files.iter_mut().find(|f| f.win == win) {
                     f.dirty = dirty;
-                    let title = f.title();
-                    self.link.set(win, &[("title", json!(title))]);
+                    self.link.set(win, &f.tab());
                 }
             }
             (CODE, "evaluate") => {
@@ -600,8 +612,7 @@ impl App {
                     f.name = file_name(&path);
                     f.path = Some(path.clone());
                     f.dirty = false;
-                    let title = f.title();
-                    self.link.set(win, &[("title", json!(title))]);
+                    self.link.set(win, &f.tab());
                 }
                 self.settings.add_recent(&path.to_string_lossy());
                 self.remember_files();
@@ -792,9 +803,13 @@ impl App {
 
     fn file_tree(&self, file: &File, text: &str) -> Value {
         let win = file.win;
-        let mut tree = self.window(win, &file.title());
-        // a file is a document: its panel shows it as its tab, even alone
+        let mut tree = self.window(win, &file.name);
+        // a file is a document: its panel shows it as its tab, even alone,
+        // with its changes not kept and its path
         tree["dock_tab"] = json!(1);
+        for (key, value) in file.tab() {
+            tree[key] = value;
+        }
         tree["main"] = json!(win + CODE);
         tree["children"] = json!([{
             "id": win + 1, "type": "layout", "flow": "col", "margin": 0, "gap": 0,
@@ -1183,9 +1198,13 @@ impl App {
 
     fn open_post(&mut self) {
         let mut tree = self.window(POST_WIN, "Post window");
+        // its tools (clear, autoscroll) are its panel's header, and nothing
+        // could open it again once closed
+        tree["header"] = json!(POST);
+        tree["closable"] = json!(0);
         tree["children"] = json!([{
             "id": POST, "type": "post", "autoscroll": self.settings.autoscroll,
-            "text_size": self.settings.text_size(),
+            "tools": 1, "text_size": self.settings.text_size(),
         }]);
         self.link.def(POST_WIN, &tree);
     }
@@ -1196,6 +1215,8 @@ impl App {
 
     fn open_docs(&mut self) {
         let mut tree = self.window(DOCS_WIN, "Documentation");
+        // its way back, where the page is and find are its panel's header
+        tree["header"] = json!(DOCS);
         tree["children"] = json!([{
             "id": DOCS, "type": "docs", "text_size": self.settings.text_size(),
         }]);

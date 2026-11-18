@@ -934,6 +934,9 @@ impl super::Host {
     /// The menu bar's band in window `def_id`'s framebuffer, when it has one.
     pub(crate) fn menu_bar_rect(&self, def_id: i32, fb_w: u32, fb_h: u32) -> Option<Rect> {
         let window = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+        // under the window's header, when it has one
+        let header = self.header_place(def_id, fb_w, fb_h);
+        let window = super::header::content(header.as_ref(), window);
         menubar::bar(self.window_def(def_id)?, window, self.metrics_for(def_id))
     }
 

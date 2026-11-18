@@ -95,7 +95,16 @@ pub(super) fn input<'a>(
         viewport: (ctx.fb_w as f32, ctx.fb_h as f32),
         clicks: at.clicks,
         time,
+        header: None,
     }
+}
+
+/// **The slot of the window's header**, when element `id` is the one whose
+/// strip it is ([`crate::host::header`]).
+pub(super) fn header_slot(host: &Host, ctx: &GestureCtx, id: i32) -> Option<Rect> {
+    host.header_place(ctx.def_id, ctx.fb_w, ctx.fb_h)
+        .filter(|h| h.id == id)
+        .map(|h| h.slot)
 }
 
 /// The coordinate system this address stands on: a container's axis for a body
@@ -124,7 +133,8 @@ pub(super) fn with<R>(
 ) -> Option<R> {
     let metrics = host.metrics_for(ctx.def_id).at(at.scale);
     let time = time_of(host, ctx, at);
-    let input = input(&metrics, ctx, at, time);
+    let mut input = input(&metrics, ctx, at, time);
+    input.header = header_slot(host, ctx, at.id);
     let widget = host.window_def_mut(ctx.def_id)?.find_mut(at.id)?;
     let before = widget.kind.content_span();
     let kind = match at.layer {

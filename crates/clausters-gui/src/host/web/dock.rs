@@ -229,12 +229,7 @@ impl WebApp {
                 shell.layout.add_on(def_id, page.as_deref());
             }
         }
-        if let Some(title) = self.host.window_title(def_id) {
-            shell.layout.set_title(def_id, title);
-        }
-        shell
-            .layout
-            .set_tab(def_id, self.host.window_dock_tab(def_id));
+        shell.layout.describe(def_id, self.host.pane_look(def_id));
         self.host.set_ui_scale(def_id, shell.scale);
         let mut slot = CanvasSlot::new(shell.window.clone());
         slot.buttons = shell.buttons.clone();
@@ -248,25 +243,36 @@ impl WebApp {
         window.request_redraw();
     }
 
-    /// **Pane `def`'s title changed**: its tab says it -- and whether it is
-    /// a document, which a redefinition may have changed.
-    pub(super) fn retitle_pane(&mut self, def: i32) {
-        let tab = self.host.window_dock_tab(def);
-        if let Some(shell) = self.dock.as_mut()
-            && shell.layout.holds(def)
-        {
-            shell.layout.set_tab(def, tab);
+    /// Whether a tab's tip is waiting for its time in a shell of this page.
+    pub(super) fn dock_waiting(&self) -> bool {
+        self.dock
+            .iter()
+            .chain(self.floats.values())
+            .any(|shell| shell.layout.waiting())
+    }
+
+    /// **The dock's clock**, on the page's tick: a tab rested on long
+    /// enough shows its tip.
+    pub(super) fn advance_dock_timers(&mut self) {
+        let now = js_sys::Date::now();
+        for shell in self.dock.iter_mut().chain(self.floats.values_mut()) {
+            if shell.layout.waiting() && shell.layout.elapsed(now) {
+                shell.window.request_redraw();
+            }
         }
-        let Some(title) = self.host.window_title(def) else {
-            self.settle_dock();
-            return;
-        };
+    }
+
+    /// **What the dock shows of pane `def` changed** (its title, whether it
+    /// may be closed, its changes not kept, its tab's tip -- or anything a
+    /// redefinition moved): its panel says it.
+    pub(super) fn retitle_pane(&mut self, def: i32) {
+        let look = self.host.pane_look(def);
         if let Some(shell) = self.floats.get_mut(&def) {
-            shell.layout.set_title(def, title);
+            shell.layout.describe(def, look);
         } else if let Some(shell) = self.dock.as_mut()
             && shell.layout.holds(def)
         {
-            shell.layout.set_title(def, title);
+            shell.layout.describe(def, look);
         }
         self.settle_dock();
     }
@@ -327,6 +333,7 @@ impl WebApp {
         if shell.layout.remove(def) {
             shell.hidden.remove(&def);
             self.host.set_popup_area(def, None);
+            self.host.set_header_band(def, None);
             shell.window.request_redraw();
             self.settle_dock();
         }
@@ -438,6 +445,15 @@ impl WebApp {
                 }
             }
             if dirty.layout || dirty.chrome {
+                // a pane filling its panel's header is told where the bar
+                // leaves it room, which its tabs and its title move
+                for def in shell.layout.panes() {
+                    if host.set_header_band(def, shell.layout.band(def))
+                        && let Some(slot) = canvases.get_mut(&def)
+                    {
+                        slot.request_redraw();
+                    }
+                }
                 shell.window.request_redraw();
             }
             // a divider under the pointer, or in the hand, says it is dragged
@@ -633,6 +649,10 @@ impl WebApp {
                     );
                 }
                 self.settle_dock();
+                // a tab rested on waits for its tip on the page's tick
+                if self.dock_waiting() {
+                    self.ensure_tick(true);
+                }
             }
             WindowEvent::CursorLeft { device_id } => {
                 if let Some(def) = shell.layout.left() {
@@ -647,6 +667,12 @@ impl WebApp {
                     // a panel's bar or a page's tab opens its menu
                     (ElementState::Pressed, MouseButton::Right)
                         if shell.layout.context_pressed() =>
+                    {
+                        None
+                    }
+                    // the middle button on a tab closes its window
+                    (ElementState::Pressed, MouseButton::Middle)
+                        if shell.layout.middle_pressed() =>
                     {
                         None
                     }

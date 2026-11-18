@@ -222,6 +222,10 @@ pub(super) fn collect_widgets(
                         && p.widget.id == inputs.popups.and_then(|o| o.hover),
                     clock: inputs.world.clocks.at(p.widget.id),
                     text_fit: p.text_fit,
+                    header: inputs
+                        .header
+                        .filter(|h| p.widget.id == Some(h.id))
+                        .map(|h| h.slot),
                 };
                 // Curves above a sampled body draw in the overlay pass, so
                 // a texture never paints over the annotation.

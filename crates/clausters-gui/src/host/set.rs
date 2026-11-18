@@ -234,7 +234,11 @@ impl Host {
                 } else {
                     HostEffect::Redraw(root)
                 });
-                if id == root && keys.iter().any(|k| *k == "title") {
+                if id == root
+                    && keys.iter().any(|k| {
+                        matches!(k.as_str(), "title" | "modified" | "closable" | "dock_tip")
+                    })
+                {
                     effects.push(HostEffect::Retitle(root));
                 }
             }

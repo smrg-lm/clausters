@@ -946,6 +946,7 @@ impl WebApp {
         }
         self.advance_edge_scroll();
         self.advance_timers();
+        self.advance_dock_timers();
         // **A tick that found the page settled stops itself**: a meter that
         // fell, a transport that stood still after its push.
         self.ensure_tick(self.tick_wanted());
@@ -957,6 +958,7 @@ impl WebApp {
     /// edge.
     fn tick_wanted(&self) -> bool {
         self.demand().animated
+            || self.dock_waiting()
             || self.canvases.values().any(|slot| {
                 slot.gestures.pending()
                     || slot

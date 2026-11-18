@@ -95,15 +95,28 @@ impl Dock {
         }
         // a floating panel is a window of its own: its title, no tabs
         let single = self.floating || !self.shows_tabs(&group.panes);
+        // a pane that fills the header has the middle: no title over it
+        let headed = group
+            .panes
+            .get(group.active)
+            .is_some_and(|&p| self.is_headed(p));
         let buttons = if single { 2.0 } else { 1.0 };
         let end = (r.x + r.w - buttons * h).max(r.x + grip_w);
         if single {
-            out.push((
-                BarPart::Title,
-                Rect::new(r.x + grip_w, r.y, end - r.x - grip_w, h),
-            ));
-            out.push((BarPart::Menu, Rect::new(end, r.y, h, h)));
-            out.push((BarPart::Close, Rect::new(end + h, r.y, h, h)));
+            if !headed {
+                out.push((
+                    BarPart::Title,
+                    Rect::new(r.x + grip_w, r.y, end - r.x - grip_w, h),
+                ));
+            }
+            let shown = group.panes.get(group.active).copied();
+            if shown.is_some_and(|p| self.closable(p)) {
+                out.push((BarPart::Menu, Rect::new(end, r.y, h, h)));
+                out.push((BarPart::Close, Rect::new(end + h, r.y, h, h)));
+            } else {
+                // no close mark: the menu button at the bar's end
+                out.push((BarPart::Menu, Rect::new(end + h, r.y, h, h)));
+            }
             return out;
         }
         let close = (h * 0.7).round();
@@ -115,30 +128,62 @@ impl Dock {
             .map(|&p| font::width(&self.title(p), size).min(most) + 3.0 * m.pad + close)
             .collect();
         let room = (end - r.x - grip_w).max(0.0);
+        // a pane filling the header keeps half the bar for its tools
+        let room = if headed { room * 0.5 } else { room };
         let least = close + 2.0 * m.pad + font::width("\u{2026}", size);
         let total: f32 = natural.iter().sum();
         let each = (room / natural.len() as f32).max(least);
         let mut x = r.x + grip_w;
         for (i, w) in natural.iter().enumerate() {
             let w = if total <= room { *w } else { w.min(each) };
-            if x + w > end + 0.5 {
+            if x + w > r.x + grip_w + room + 0.5 {
                 break;
             }
             let tab = Rect::new(x, r.y, w, h);
-            out.push((
-                BarPart::TabClose(i),
-                Rect::new(
-                    x + w - close - m.pad * 0.5,
-                    r.y + (h - close) * 0.5,
-                    close,
-                    close,
-                ),
-            ));
+            if self.closable(group.panes[i]) {
+                out.push((
+                    BarPart::TabClose(i),
+                    Rect::new(
+                        x + w - close - m.pad * 0.5,
+                        r.y + (h - close) * 0.5,
+                        close,
+                        close,
+                    ),
+                ));
+            }
             out.push((BarPart::Tab(i), tab));
             x += w;
         }
         out.push((BarPart::Menu, Rect::new(end, r.y, h, h)));
         out
+    }
+
+    /// Where pane `pane`'s tab is, when its panel shows tabs.
+    pub(super) fn tab_rect(&self, pane: i32) -> Option<Rect> {
+        let group = self.groups.iter().find(|g| g.panes.contains(&pane))?;
+        let i = group.panes.iter().position(|&p| p == pane)?;
+        self.bar_parts(group)
+            .into_iter()
+            .find(|(p, _)| *p == BarPart::Tab(i))
+            .map(|(_, r)| r)
+    }
+
+    /// **The middle of `group`'s bar**, from where its start's parts end (the
+    /// grip, the tabs) to where its end's begin (the buttons), as x: what a
+    /// pane filling the header draws its tools in.
+    pub(super) fn slot(&self, group: &GroupPlace) -> (f32, f32) {
+        let parts = self.bar_parts(group);
+        let to = parts
+            .iter()
+            .filter(|(p, _)| matches!(p, BarPart::Menu | BarPart::Close))
+            .map(|(_, r)| r.x)
+            .fold(group.strip.x + group.strip.w, f32::min);
+        let from = parts
+            .iter()
+            .filter(|(p, _)| matches!(p, BarPart::Grip | BarPart::Tab(_)))
+            .map(|(_, r)| r.x + r.w)
+            .fold(group.strip.x, f32::max);
+        (from, to.max(from))
     }
 
     /// The panel whose bar holds `(x, y)`, and the part of it there.
@@ -222,11 +267,11 @@ impl Dock {
             return;
         };
         if self.floating {
-            let entries = vec![
-                Entry::action("Back into the dock", "dock"),
-                Entry::separator(),
-                Entry::action("Close", "close"),
-            ];
+            let mut entries = vec![Entry::action("Back into the dock", "dock")];
+            if self.closable(pane) {
+                entries.push(Entry::separator());
+                entries.push(Entry::action("Close", "close"));
+            }
             return self.open_menu(entries, at, Target::Pane(pane));
         }
         let several = g.panes.len() > 1;
@@ -263,8 +308,11 @@ impl Dock {
         entries.push(Entry::action("Move to its own window", "undock"));
         entries.push(Entry::separator());
         let others = Entry::action("Close the other tabs", "close_others");
-        entries.push(if several { others } else { others.disabled() });
-        entries.push(Entry::action("Close", "close"));
+        let any = g.panes.iter().any(|&p| p != pane && self.closable(p));
+        entries.push(if any { others } else { others.disabled() });
+        if self.closable(pane) {
+            entries.push(Entry::action("Close", "close"));
+        }
         self.open_menu(entries, at, Target::Pane(pane));
     }
 
@@ -362,11 +410,15 @@ impl Dock {
                     .unwrap_or_default();
                 let other = group.iter().copied().find(|&p| p != pane);
                 match verb {
-                    "close" => self.dirty.close.push(pane),
-                    "close_others" => self
-                        .dirty
-                        .close
-                        .extend(group.iter().filter(|&&p| p != pane)),
+                    "close" if self.closable(pane) => self.dirty.close.push(pane),
+                    "close_others" => {
+                        let others: Vec<i32> = group
+                            .iter()
+                            .copied()
+                            .filter(|&p| p != pane && self.closable(p))
+                            .collect();
+                        self.dirty.close.extend(others);
+                    }
                     "undock" => self.dirty.out.push(pane),
                     "dock" => self.dirty.back.push(pane),
                     "split:right" | "split:bottom" => {

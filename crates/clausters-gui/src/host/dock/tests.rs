@@ -65,7 +65,7 @@ fn panes_are_equal_columns_and_share_a_removed_panes_room() {
             x: 0,
             y: s,
             w: 403,
-            h: 100 - 2 * s
+            h: 100 - s
         })
     );
     ws.add(2);
@@ -322,7 +322,8 @@ fn a_page_keeps_its_own_arrangement() {
 }
 
 /// **The page strip switches pages**, its last tab makes a copy of the page
-/// shown, and a tab dropped on another page's tab moves its pane there.
+/// shown, and a tab dropped on another page's tab moves its pane there. It
+/// shows only while there are two pages to choose from.
 #[test]
 fn the_page_strip_switches_and_takes_a_dragged_tab() {
     let mut ws = dock((600, 400), 4.0, &[1, 2]);
@@ -331,11 +332,16 @@ fn the_page_strip_switches_and_takes_a_dragged_tab() {
         ws.pressed();
         ws.released();
     };
-    let plus = ws.page_parts()[1].1;
-    press(&mut ws, plus);
+    assert_eq!(ws.page_strip().h, 0.0, "no strip for one page");
+    assert_eq!(ws.groups()[0].body.y + ws.groups()[0].body.h, 400);
+    ws.new_page(None, true).expect("a copy");
+    assert!(ws.page_strip().h > 0.0, "a strip for two");
     assert_eq!(ws.page_names(), [FIRST_PAGE, "Page 2"]);
     assert_eq!(ws.page_name(), "Page 2");
     assert_eq!(ws.tree().panes(), [1, 2], "a copy of the page shown");
+    let plus = ws.page_parts()[2].1;
+    press(&mut ws, plus);
+    assert_eq!(ws.page_names(), [FIRST_PAGE, "Page 2", "Page 3"]);
     let first = ws.page_parts()[0].1;
     press(&mut ws, first);
     assert_eq!(ws.page_name(), FIRST_PAGE);
@@ -808,8 +814,8 @@ fn the_composed_picture_is_each_panes_own_picture() {
     let strip = ws.groups()[0].body.y;
     for (id, _) in defs {
         let rect = ws.rect(id).expect("placed");
-        // the panel's bar over it, the page strip under the dock
-        assert_eq!((rect.w, rect.h), (w, h - 2 * strip));
+        // the panel's bar over it, and no page strip for one page
+        assert_eq!((rect.w, rect.h), (w, h - strip));
         let mut gpu = Gpu::pane(&dock, rect.w, rect.h);
         let mut renderers = Renderers::new(&gpu.device, gpu.target());
         let mut batches = Batches::new(&gpu.device, gpu.target());
@@ -970,4 +976,125 @@ fn a_list_a_pane_opens_floats_over_the_dock() {
     assert_eq!(d.pressed(), Some(2));
     assert_eq!(d.take_dirty().dismiss, vec![10]);
     assert_eq!(d.focus(), Some(2));
+}
+
+/// **A pane that fills its panel's header is drawn under the bar**: its
+/// rectangle is the whole panel, the bar keeps the grip at its start and
+/// its buttons at its end and shows no title, and the middle between them
+/// is the pane's -- told to it as its band, reached by the pointer in the
+/// pane's own pixels -- while the grip stays the dock's.
+#[test]
+fn a_pane_with_a_header_fills_its_panels_bar() {
+    let mut ws = dock((600, 300), 1.0, &[1]);
+    let s = strip(&ws);
+    ws.set_header(1, true);
+    assert_eq!(
+        ws.rect(1),
+        Some(PaneRect {
+            x: 0,
+            y: 0,
+            w: 600,
+            h: 300
+        }),
+        "the whole panel"
+    );
+    let g = ws.groups()[0].clone();
+    let kinds: Vec<BarPart> = ws.bar_parts(&g).into_iter().map(|(p, _)| p).collect();
+    assert_eq!(kinds, [BarPart::Grip, BarPart::Menu, BarPart::Close]);
+    let grip = part(&ws, 0, BarPart::Grip);
+    let menu = part(&ws, 0, BarPart::Menu);
+    let band = ws.band(1).expect("a band");
+    assert_eq!(band.h, s as f32);
+    assert_eq!(band.left, grip.x + grip.w);
+    assert_eq!(band.right, 600.0 - menu.x);
+    // the middle is the pane's, in its own pixels; the grip is the dock's
+    let (x, y) = (f64::from(band.left + 10.0), 5.0);
+    assert_eq!(ws.at(x, y), Some((1, (x, y))));
+    assert_eq!(ws.at(f64::from(grip.x + 2.0), 5.0), None);
+    ws.set_header(1, false);
+    assert_eq!(ws.rect(1).map(|r| r.y), Some(s), "under the bar again");
+    assert!(ws.band(1).is_none());
+}
+
+/// **A pane its owner says may not be closed has no close mark**, on its
+/// bar or its tab, and no Close in its panel's menu; Close the other tabs
+/// leaves it open.
+#[test]
+fn a_pane_that_may_not_be_closed_has_no_close_mark() {
+    let mut ws = dock((600, 300), 1.0, &[1, 2]);
+    ws.set_closable(1, false);
+    let kinds = |ws: &Dock, g: usize| -> Vec<BarPart> {
+        ws.bar_parts(&ws.groups()[g].clone())
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect()
+    };
+    assert_eq!(
+        kinds(&ws, 0),
+        [BarPart::Grip, BarPart::Title, BarPart::Menu]
+    );
+    ws.land(2, Landing::Join { of: 1, at: None })
+        .expect("joins");
+    assert!(
+        !kinds(&ws, 0).contains(&BarPart::TabClose(0)),
+        "no mark on its tab"
+    );
+    assert!(kinds(&ws, 0).contains(&BarPart::TabClose(1)));
+    ws.open_pane_menu(1, bar::MenuAt::Point(10.0, 10.0));
+    let labels: Vec<String> = ws.menu().unwrap().stack.levels[0]
+        .entries
+        .iter()
+        .map(|e| e.label.clone())
+        .collect();
+    assert!(!labels.iter().any(|l| l == "Close"), "{labels:?}");
+    ws.close_menu();
+    ws.take_dirty();
+    ws.picked(bar::Target::Pane(2), "close_others");
+    assert!(ws.take_dirty().close.is_empty(), "the post window stays");
+}
+
+/// **A document's tab says what its window says**: a dot for changes not
+/// kept in place of its close mark, the close mark again under the hand,
+/// and its tip once the pointer has rested on it -- gone as it leaves.
+#[test]
+fn a_documents_tab_shows_its_changes_and_its_tip() {
+    let mut ws = dock((600, 300), 1.0, &[1]);
+    ws.describe(
+        1,
+        PaneLook {
+            title: Some("a.py".into()),
+            tab: true,
+            closable: true,
+            modified: true,
+            tip: Some("/home/a.py".into()),
+            ..Default::default()
+        },
+    );
+    assert!(ws.is_modified(1));
+    let tab = part(&ws, 0, BarPart::Tab(0));
+    ws.moved(f64::from(tab.x + 4.0), f64::from(tab.y + 4.0));
+    assert!(ws.waiting(), "a tip waits");
+    assert!(!ws.elapsed(1000.0), "the clock starts");
+    assert!(!ws.elapsed(1300.0));
+    assert!(ws.elapsed(1700.0), "rested long enough");
+    assert_eq!(ws.shown_tip(), Some((1, "/home/a.py")));
+    assert!(!ws.waiting());
+    ws.moved(300.0, 200.0);
+    assert_eq!(ws.shown_tip(), None, "gone as the pointer leaves");
+}
+
+/// **The middle button on a tab closes its window**, and anywhere else is
+/// a pane's.
+#[test]
+fn the_middle_button_closes_a_tab() {
+    let mut ws = dock((600, 300), 1.0, &[1, 2]);
+    ws.land(2, Landing::Join { of: 1, at: None })
+        .expect("joins");
+    ws.take_dirty();
+    let tab = part(&ws, 0, BarPart::Tab(1));
+    ws.moved(f64::from(tab.x + 4.0), f64::from(tab.y + 4.0));
+    assert!(ws.middle_pressed());
+    assert_eq!(ws.take_dirty().close, [2]);
+    ws.moved(300.0, 200.0);
+    assert!(!ws.middle_pressed(), "over a pane");
 }

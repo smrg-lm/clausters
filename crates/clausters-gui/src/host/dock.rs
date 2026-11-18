@@ -158,8 +158,37 @@ pub struct GroupPlace {
     pub path: Path,
     pub strip: Rect,
     pub body: PaneRect,
+    /// The strip and the body together: where a pane that fills its
+    /// panel's header with its own tools ([`Dock::set_header`]) is drawn.
+    pub whole: PaneRect,
     pub panes: Vec<i32>,
     pub active: usize,
+}
+
+/// **What a dock shows of a window on its panel**: its title, whether it is
+/// a document (a tab even alone), whether it fills its panel's header with
+/// tools of its own, whether it may be closed, whether its work has changes
+/// not kept, and its tab's tip. A front reads it of the window
+/// ([`crate::host::Host::pane_look`]) as the pane opens and whenever the
+/// window says any of it changed, and hands it over whole
+/// ([`Dock::describe`]).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PaneLook {
+    pub title: Option<String>,
+    pub tab: bool,
+    pub header: bool,
+    pub closable: bool,
+    pub modified: bool,
+    pub tip: Option<String>,
+}
+
+/// **A pane's header band** ([`Dock::band`]): its height, and the room the
+/// panel's bar keeps at each end of it, in device pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Band {
+    pub h: f32,
+    pub left: f32,
+    pub right: f32,
 }
 
 /// A divider as measured: the gap between part `before` and the next of the
@@ -225,6 +254,10 @@ enum Hot {
 /// How far a pressed tab moves before it is dragged rather than chosen.
 const DRAG_PX: f64 = 6.0;
 
+/// How long the pointer rests on a tab before its tip shows: a pane's own
+/// tips' wait.
+const TIP_MS: f64 = 600.0;
+
 /// The share of a group's body, from each edge, where a dragged tab splits it
 /// rather than joining it.
 const EDGE: f32 = 0.25;
@@ -256,6 +289,20 @@ pub struct Dock {
     /// The panes that are documents, shown as a tab even alone
     /// ([`Dock::set_tab`]).
     tabbed: HashSet<i32>,
+    /// The panes that fill their panel's header with tools of their own
+    /// ([`Dock::set_header`]).
+    headed: HashSet<i32>,
+    /// The panes their owner says may not be closed ([`Dock::set_closable`]).
+    fixed: HashSet<i32>,
+    /// The panes whose work has changes not kept: a dot on the tab.
+    modified: HashSet<i32>,
+    /// Each pane's tab tip.
+    tips: HashMap<i32, String>,
+    /// The tab the pointer rests on, and since when (the front's clock,
+    /// unread until its first tick): its tip shows once it has rested.
+    rest: Option<(i32, Option<f64>)>,
+    /// The tab whose tip shows.
+    tip: Option<i32>,
     /// Where the pointer is, in the surface's pixels.
     at: Option<(f64, f64)>,
     /// The pane the pointer is over, with no button held.
@@ -300,6 +347,12 @@ impl Dock {
             metrics,
             titles: HashMap::new(),
             tabbed: HashSet::new(),
+            headed: HashSet::new(),
+            fixed: HashSet::new(),
+            modified: HashSet::new(),
+            tips: HashMap::new(),
+            rest: None,
+            tip: None,
             at: None,
             pointer: None,
             grip: None,
@@ -414,10 +467,174 @@ impl Dock {
         }
     }
 
+    /// **Says whether pane `def_id` fills its panel's header with tools of
+    /// its own** (`header`): the pane is then drawn over its panel's whole
+    /// rectangle, its header band under the bar, and the bar leaves it the
+    /// middle -- the dock draws the grip, the tabs if any and its buttons,
+    /// and the pane its tools between them ([`Dock::band`]).
+    pub fn set_header(&mut self, def_id: i32, header: bool) {
+        let changed = if header {
+            self.headed.insert(def_id)
+        } else {
+            self.headed.remove(&def_id)
+        };
+        if changed {
+            self.dirty.layout = true;
+        }
+    }
+
+    /// **Hands over what the dock shows of pane `def_id`** ([`PaneLook`]).
+    pub fn describe(&mut self, def_id: i32, look: PaneLook) {
+        if let Some(title) = look.title {
+            self.set_title(def_id, title);
+        }
+        self.set_tab(def_id, look.tab);
+        self.set_header(def_id, look.header);
+        self.set_closable(def_id, look.closable);
+        let modified = if look.modified {
+            self.modified.insert(def_id)
+        } else {
+            self.modified.remove(&def_id)
+        };
+        let tip = match look.tip {
+            Some(t) => self.tips.insert(def_id, t.clone()).as_ref() != Some(&t),
+            None => self.tips.remove(&def_id).is_some(),
+        };
+        if modified || tip {
+            self.dirty.chrome = true;
+        }
+    }
+
+    /// Whether pane `def_id`'s work has changes not kept.
+    pub(super) fn is_modified(&self, def_id: i32) -> bool {
+        self.modified.contains(&def_id)
+    }
+
+    /// **Says whether pane `def_id` may be closed** (`closable`): its owner's
+    /// say. One that may not has no close mark on its tab or its bar, no
+    /// Close in its panel's menu, and is left open by Close the other tabs
+    /// -- the post window of an editor, which nothing could open again.
+    pub fn set_closable(&mut self, def_id: i32, closable: bool) {
+        let changed = if closable {
+            self.fixed.remove(&def_id)
+        } else {
+            self.fixed.insert(def_id)
+        };
+        if changed {
+            self.dirty.chrome = true;
+        }
+    }
+
+    /// Whether pane `def_id` may be closed ([`Dock::set_closable`]).
+    pub fn closable(&self, def_id: i32) -> bool {
+        !self.fixed.contains(&def_id)
+    }
+
+    /// Whether pane `def_id` fills its panel's header ([`Dock::set_header`]).
+    pub(super) fn is_headed(&self, def_id: i32) -> bool {
+        self.headed.contains(&def_id)
+    }
+
+    /// **Where pane `def_id`'s header band is, and what of it is its own**:
+    /// the band's height and, in the pane's pixels, the room the bar keeps
+    /// at its start (the grip and the tabs) and at its end (the buttons).
+    /// `None` for a pane that fills no header, or that no panel shows.
+    pub fn band(&self, def_id: i32) -> Option<Band> {
+        if !self.is_headed(def_id) {
+            return None;
+        }
+        let group = self
+            .groups
+            .iter()
+            .find(|g| g.panes.get(g.active) == Some(&def_id))?;
+        let (from, to) = self.slot(group);
+        Some(Band {
+            h: group.strip.h,
+            left: from - group.strip.x,
+            right: group.strip.x + group.strip.w - to,
+        })
+    }
+
     /// Whether a panel holding `panes` shows them as tabs: several, or one
     /// that is a document.
     pub(super) fn shows_tabs(&self, panes: &[i32]) -> bool {
         panes.len() > 1 || panes.iter().any(|p| self.tabbed.contains(p))
+    }
+
+    /// The pane whose tab is under `(x, y)`, its close mark included.
+    fn tab_at(&self, x: f64, y: f64) -> Option<i32> {
+        match self.bar_at(x, y)? {
+            (g, BarPart::Tab(i) | BarPart::TabClose(i)) => self.groups[g].panes.get(i).copied(),
+            _ => None,
+        }
+    }
+
+    /// **The pointer rests on `pane`'s tab, or on none**: a tab moved onto
+    /// starts its wait, and the tip shown goes as the pointer leaves it.
+    fn rest_on(&mut self, pane: Option<i32>) {
+        if self.rest.map(|(p, _)| p) == pane {
+            return;
+        }
+        self.rest = pane.map(|p| (p, None));
+        if self.tip.take().is_some() {
+            self.dirty.chrome = true;
+        }
+    }
+
+    /// **Whether a tab's tip is waiting for its time** -- what keeps a
+    /// front's clock coming back ([`Dock::elapsed`]).
+    pub fn waiting(&self) -> bool {
+        self.tip.is_none() && self.rest.is_some_and(|(p, _)| self.tips.contains_key(&p))
+    }
+
+    /// **The front's clock, at `now_ms`**: a tab rested on long enough shows
+    /// its tip -- the wait a pane's own tips have. Answers whether it showed
+    /// one now, for the front to draw.
+    pub fn elapsed(&mut self, now_ms: f64) -> bool {
+        if !self.waiting() {
+            return false;
+        }
+        let Some((pane, since)) = self.rest else {
+            return false;
+        };
+        match since {
+            None => {
+                self.rest = Some((pane, Some(now_ms)));
+                false
+            }
+            Some(t) if now_ms - t >= TIP_MS => {
+                self.tip = Some(pane);
+                true
+            }
+            Some(_) => false,
+        }
+    }
+
+    /// The tab whose tip shows, and what it says.
+    pub(super) fn shown_tip(&self) -> Option<(i32, &str)> {
+        let pane = self.tip?;
+        self.tips.get(&pane).map(|t| (pane, t.as_str()))
+    }
+
+    /// **The middle button went down**: on a tab it closes that tab's
+    /// window, as its close mark would, and answers `true`; anywhere else
+    /// the press is a pane's.
+    pub fn middle_pressed(&mut self) -> bool {
+        let Some((x, y)) = self.at else {
+            return false;
+        };
+        if self.menu.is_some() || self.grip.is_some() {
+            return false;
+        }
+        match self.tab_at(x, y) {
+            Some(pane) => {
+                if self.closable(pane) {
+                    self.dirty.close.push(pane);
+                }
+                true
+            }
+            None => false,
+        }
     }
 
     /// **What changed since the last time**, and nothing from then on.
@@ -464,6 +681,13 @@ impl Dock {
         }
         self.titles.remove(&def_id);
         self.tabbed.remove(&def_id);
+        self.headed.remove(&def_id);
+        self.fixed.remove(&def_id);
+        self.modified.remove(&def_id);
+        self.tips.remove(&def_id);
+        if self.tip == Some(def_id) {
+            self.tip = None;
+        }
         if self.pointer == Some(def_id) {
             self.pointer = None;
         }
@@ -512,8 +736,18 @@ impl Dock {
         self.groups
             .iter()
             .find(|g| g.panes.contains(&def_id))
-            .map(|g| g.body)
+            .map(|g| self.pane_rect(g, def_id))
             .or_else(|| self.edge_rect(def_id))
+    }
+
+    /// Where pane `def_id` of `group` is drawn: its panel's body, or the
+    /// whole panel for one that fills its header.
+    fn pane_rect(&self, group: &GroupPlace, def_id: i32) -> PaneRect {
+        if self.is_headed(def_id) {
+            group.whole
+        } else {
+            group.body
+        }
     }
 
     /// Every shown pane with its rectangle: the panels' in layout order,
@@ -521,7 +755,7 @@ impl Dock {
     pub fn placed(&self) -> impl Iterator<Item = (i32, PaneRect)> + '_ {
         self.groups
             .iter()
-            .filter_map(|g| g.panes.get(g.active).map(|&p| (p, g.body)))
+            .filter_map(|g| g.panes.get(g.active).map(|&p| (p, self.pane_rect(g, p))))
             .chain(self.edge_places.iter().copied())
     }
 
@@ -532,7 +766,14 @@ impl Dock {
     pub fn at(&self, x: f64, y: f64) -> Option<(i32, (f64, f64))> {
         let over = self.overlay_at(x, y);
         over.and_then(|id| self.rect(id).map(|r| (id, r)))
-            .or_else(|| self.placed().find(|(_, r)| r.contains(x, y)))
+            .or_else(|| {
+                // the bar's own parts are the dock's, over a pane drawn
+                // under its panel's header
+                if self.bar_at(x, y).is_some() {
+                    return None;
+                }
+                self.placed().find(|(_, r)| r.contains(x, y))
+            })
             .map(|(id, r)| (id, (x - f64::from(r.x), y - f64::from(r.y))))
     }
 
@@ -682,6 +923,7 @@ impl Dock {
             self.hot = hot;
             self.dirty.chrome = true;
         }
+        self.rest_on(self.tab_at(x, y));
         let to = self.at(x, y);
         let now = to.map(|(id, _)| id);
         let left = self.pointer.filter(|&was| Some(was) != now);
@@ -699,6 +941,11 @@ impl Dock {
     pub fn pressed(&mut self) -> Option<i32> {
         if let Some(Grip::Pane(p)) = self.grip {
             return Some(p);
+        }
+        // a press is not a rest: a tab's tip goes, and waits again
+        self.rest = None;
+        if self.tip.take().is_some() {
+            self.dirty.chrome = true;
         }
         let (x, y) = self.at?;
         if self.menu.is_some() {
@@ -1005,14 +1252,25 @@ impl Dock {
         Some((Landing::Join { of, at: None }, body))
     }
 
-    /// The height of a group's tab strip, and of the page strip.
+    /// The height of a panel's bar: the panel header's role, never less
+    /// than a line of control.
     fn strip_h(&self) -> u32 {
-        control_box(self.text_size(), &self.metrics).round() as u32
+        self.metrics
+            .panel_h
+            .max(control_box(self.text_size(), &self.metrics))
+            .round() as u32
     }
 
-    /// The height of the page strip: none in a floating panel.
+    /// **The height of the page strip**: a line of control, and none while
+    /// there is one page to show -- a strip that offers no choice is a
+    /// band of dead room -- or in a floating panel. A second page is made
+    /// from a panel's menu, and the strip appears with it.
     pub(super) fn page_strip_h(&self) -> u32 {
-        if self.floating { 0 } else { self.strip_h() }
+        if self.floating || self.pages.len() <= 1 {
+            0
+        } else {
+            control_box(self.text_size(), &self.metrics).round() as u32
+        }
     }
 
     /// **The layout measured at this size**: every group's strip and body,
@@ -1082,6 +1340,12 @@ fn measure(
                     y: rect.y + strip,
                     w: rect.w.max(1),
                     h: (rect.h - strip).max(1),
+                },
+                whole: PaneRect {
+                    x: rect.x,
+                    y: rect.y,
+                    w: rect.w.max(1),
+                    h: rect.h.max(1),
                 },
                 panes: g.panes.clone(),
                 active: g.active,

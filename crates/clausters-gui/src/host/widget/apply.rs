@@ -59,6 +59,17 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             *title = v.as_str().map(str::to_string);
             true
         }
+        // what a dock shows of the window on its tab
+        WidgetKind::Window { modified, .. } if key == "modified" => {
+            super::parse::truthy(v).map(|b| *modified = b).is_some()
+        }
+        WidgetKind::Window { closable, .. } if key == "closable" => {
+            super::parse::truthy(v).map(|b| *closable = b).is_some()
+        }
+        WidgetKind::Window { dock_tip, .. } if key == "dock_tip" => {
+            *dock_tip = v.as_str().filter(|s| !s.is_empty()).map(str::to_string);
+            true
+        }
         // What a `layout` shows of itself -- its title, its frame, whether it
         // is folded or a dialog -- is the layout's alone, answered before the
         // arm it shares with the window.

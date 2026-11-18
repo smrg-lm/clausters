@@ -16,8 +16,9 @@ use clausters_gui_draw::rect::Rect;
 use clausters_gui_draw::theme::{Color, Theme};
 
 use super::{BarPart, Dock, GroupPlace};
-use crate::host::frame::draw_list;
+use crate::host::frame::{draw_list, draw_tip};
 use crate::host::graphics::choice;
+use crate::host::popup::Tip;
 
 impl Dock {
     /// **The dock's chrome**, into `d`.
@@ -27,7 +28,7 @@ impl Dock {
             self.draw_bar(d, group);
         }
         // the pages, along the bottom; a floating panel has none
-        if !self.is_floating() {
+        if self.page_strip_h() > 0 {
             let strip = self.page_strip();
             d.mesh.rect(strip, d.theme.status_bar);
             choice::draw(
@@ -57,21 +58,50 @@ impl Dock {
             }
             mesh.set_clip(None);
         }
+        // a tab's tip, under the tab it was rested on
+        if let Some((pane, text)) = self.shown_tip()
+            && let Some(tab) = self.tab_rect(pane)
+        {
+            let tip = Tip {
+                widget: pane,
+                text: text.to_string(),
+                at: (tab.x, tab.y + tab.h),
+            };
+            let work = Rect::new(0.0, 0.0, self.size.0 as f32, self.size.1 as f32);
+            let (mesh, m, theme) = d.parts();
+            draw_tip(mesh, &tip, work, m, theme);
+        }
     }
 
     /// **One panel's bar**: its ground and the line under it, the grip, the
-    /// title or the tabs, the buttons.
+    /// title or the tabs, the buttons. Over a pane that fills the header
+    /// ([`Dock::set_header`]) the middle is the pane's: its ground and its
+    /// tools are drawn by the pane, under this.
     fn draw_bar(&self, d: &mut Draw, group: &GroupPlace) {
         let size = self.text_size();
         let lit = self.lit_bar(&group.path);
-        let focused = self
-            .focus()
-            .is_some_and(|f| group.panes.get(group.active) == Some(&f));
+        let shown = group.panes.get(group.active).copied();
+        let focused = self.focus().is_some_and(|f| shown == Some(f));
+        let headed = shown.is_some_and(|p| self.is_headed(p));
+        let (from, to) = if headed {
+            self.slot(group)
+        } else {
+            (group.strip.x, group.strip.x)
+        };
         let parts = self.bar_parts(group);
         let (mesh, m, theme) = d.parts();
         let bar = group.strip;
         mesh.set_clip(Some(bar));
-        mesh.rect(bar, theme.header);
+        // the ground at the bar's ends, and under a middle that is not a pane's
+        if headed {
+            mesh.rect(Rect::new(bar.x, bar.y, from - bar.x, bar.h), theme.header);
+            mesh.rect(
+                Rect::new(to, bar.y, bar.x + bar.w - to, bar.h),
+                theme.header,
+            );
+        } else {
+            mesh.rect(bar, theme.header);
+        }
         let glyph = font::height(size);
         // the close marks last, over the tabs they stand on
         let (marks, parts): (Vec<_>, Vec<_>) = parts
@@ -130,12 +160,15 @@ impl Dock {
                         if shown { theme.text } else { theme.text_dim },
                     );
                 }
-                // a tab's close mark shows on the tab shown and under the hand
+                // a tab's close mark shows on the tab shown and under the
+                // hand; a tab whose work has changes not kept shows a dot in
+                // its place, which turns into the mark under the hand
                 BarPart::TabClose(i) => {
-                    let on_tab = i == group.active
-                        || lit == Some(BarPart::Tab(i))
-                        || lit == Some(BarPart::TabClose(i));
-                    if on_tab {
+                    let under = lit == Some(BarPart::Tab(i)) || lit == Some(BarPart::TabClose(i));
+                    if !under && self.is_modified(group.panes[i]) {
+                        let dot = (r.h * 0.18).max(2.0 * m.divider_w);
+                        mesh.disc(r.x + r.w * 0.5, r.y + r.h * 0.5, dot, theme.text);
+                    } else if under || i == group.active {
                         button(mesh, r, symbol::CLOSE, hot, size, theme);
                     }
                 }

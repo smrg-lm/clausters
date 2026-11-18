@@ -130,6 +130,7 @@ fn input<'a>(m: &'a Metrics, rect: Rect, time: Option<TimeSpace>) -> Input<'a> {
         viewport: (rect.w, rect.h),
         clicks: 1,
         time,
+        header: None,
     }
 }
 

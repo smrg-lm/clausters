@@ -535,29 +535,39 @@ impl DocsView {
         laid
     }
 
-    fn geometry(&self, rect: Rect, scale: f32, m: &Metrics) -> Geometry {
+    /// Where the parts are in `rect`, the strip along its top -- or in
+    /// `header`, the slot of its window's header, when its window took the
+    /// strip as its header ([`crate::host::header`]).
+    fn geometry(&self, rect: Rect, scale: f32, m: &Metrics, header: Option<Rect>) -> Geometry {
         let ui = font::DEFAULT_SIZE * scale;
         let size = self.text_size * scale;
         let row = control_box(ui, m);
-        let strip = Rect::new(rect.x, rect.y, rect.w, row.min(rect.h));
+        let (strip, mut top) = match header {
+            Some(slot) => (slot, rect.y),
+            None => {
+                let strip = Rect::new(rect.x, rect.y, rect.w, row.min(rect.h));
+                (strip, strip.y + strip.h)
+            }
+        };
+        // the strip's controls, a line of control centred in it
+        let sy = strip.y + ((strip.h - row) * 0.5).max(0.0);
         let mut parts = Vec::new();
         let square = row;
-        let mut x = rect.x;
+        let mut x = strip.x;
         for part in [Part::Back, Part::Forward, Part::Home] {
-            parts.push((part, Rect::new(x, rect.y, square, row)));
+            parts.push((part, Rect::new(x, sy, square, row)));
             x += square;
         }
         let find_w = text_box("Find", ui, m) + m.pad;
-        let find = Rect::new(rect.x + rect.w - find_w, rect.y, find_w, row);
+        let find = Rect::new(strip.x + strip.w - find_w, sy, find_w, row);
         parts.push((Part::Find, find));
         let (book, _) = self.trail();
         let trail_x = x + m.pad;
         if let Some(b) = &book {
             let w = (font::width(b, ui) + 2.0 * m.pad).min((find.x - trail_x).max(0.0));
-            parts.push((Part::Book, Rect::new(trail_x, rect.y, w, row)));
+            parts.push((Part::Book, Rect::new(trail_x, sy, w, row)));
         }
-        let trail = Rect::new(trail_x, rect.y, (find.x - trail_x - m.pad).max(0.0), row);
-        let mut top = strip.y + strip.h;
+        let trail = Rect::new(trail_x, sy, (find.x - trail_x - m.pad).max(0.0), row);
         let mut count = None;
         let bar = self.find_open.then(|| {
             let bar = Rect::new(
@@ -844,10 +854,12 @@ impl DocsView {
     }
 
     fn paint(&self, d: &mut Draw, ctx: &Ctx) {
-        let g = self.geometry(ctx.rect, ctx.scale, ctx.metrics);
+        let g = self.geometry(ctx.rect, ctx.scale, ctx.metrics, ctx.header);
         let (scroll, laid) = self.settle(&g);
         let kept = d.mesh.clip();
         let clip = |r: Rect| kept.map_or(r, |k| k.intersect(r));
+        // what the strip may draw on: its own rect, and the header's slot
+        let strip_clip = ctx.header.map_or(ctx.rect, |h| h.union(ctx.rect));
         {
             let (mesh, m, theme) = d.parts();
             mesh.set_clip(Some(clip(ctx.rect)));
@@ -909,20 +921,23 @@ impl DocsView {
                     theme.separator,
                 );
             }
-            // the strip along the top
-            mesh.set_clip(Some(clip(ctx.rect)));
-            mesh.rect(g.strip, theme.status_bar);
-            mesh.rect(
-                Rect::new(
-                    g.strip.x,
-                    g.strip.y + g.strip.h - m.divider_w,
-                    g.strip.w,
-                    m.divider_w,
-                ),
-                theme.separator,
-            );
+            // the strip along the top, or in the window's header, whose
+            // ground and line the header draws
+            mesh.set_clip(Some(clip(strip_clip)));
+            if ctx.header.is_none() {
+                mesh.rect(g.strip, theme.status_bar);
+                mesh.rect(
+                    Rect::new(
+                        g.strip.x,
+                        g.strip.y + g.strip.h - m.divider_w,
+                        g.strip.w,
+                        m.divider_w,
+                    ),
+                    theme.separator,
+                );
+            }
             let (book, label) = self.trail();
-            let ty = g.strip.y + (g.strip.h - font::height(g.ui)) * 0.5;
+            let ty = g.trail.y + (g.trail.h - font::height(g.ui)) * 0.5;
             let mut x = g.trail.x + m.pad;
             if let Some(b) = &book {
                 let w = font::width(b, g.ui);
@@ -965,7 +980,7 @@ impl DocsView {
                     mesh,
                     &text,
                     r.x + (r.w - w) * 0.5,
-                    ty + (r.y - g.strip.y),
+                    r.y + (r.h - font::height(g.ui)) * 0.5,
                     g.ui,
                     theme.text_dim,
                 );
@@ -976,6 +991,7 @@ impl DocsView {
             hovered: false,
             flat: true,
         };
+        d.mesh.set_clip(Some(clip(strip_clip)));
         for (part, r) in &g.parts {
             let inset = |r: &Rect| {
                 let p = (d.m.pad * 0.5).round();
@@ -1147,6 +1163,12 @@ impl Element for DocsView {
         ]
     }
 
+    /// Its way back, its start page, where the page is and find: a strip a
+    /// window may take as its header.
+    fn strip(&self) -> bool {
+        true
+    }
+
     fn accepts_focus(&self) -> bool {
         true
     }
@@ -1156,7 +1178,7 @@ impl Element for DocsView {
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
-        let g = self.geometry(input.rect, input.scale, input.metrics);
+        let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
         if let Some(&(part, r)) = g.parts.iter().find(|(_, r)| r.contains(at.0, at.1)) {
             self.find_focus = part == Part::Field;
             match part {
@@ -1231,7 +1253,7 @@ impl Element for DocsView {
         if input.mods.ctrl {
             return None;
         }
-        let g = self.geometry(input.rect, input.scale, input.metrics);
+        let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
         let line = font::line_advance(g.size) * 1.4;
         let before = self.scroll.get();
         self.scroll

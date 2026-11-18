@@ -170,6 +170,13 @@ pub struct Ctx<'a> {
     /// what such an element multiplies its text size by, and never goes
     /// under the host's text size for.
     pub text_fit: f32,
+    /// **Where this element draws its strip, when its window took that strip
+    /// as its header** ([`Element::strip`]): the middle of the header band
+    /// along the window's top, outside the element's own rect -- in a dock,
+    /// the middle of its panel's bar. `None` for every other element, and
+    /// for this one when its window names no header: it then draws its strip
+    /// along its own top, as it always did.
+    pub header: Option<Rect>,
 }
 
 /// **How a body that draws through a texture slot samples it**: the dB window
@@ -1031,6 +1038,9 @@ pub struct Input<'a> {
     /// that opens something on a double click tests for `>= 2` and needs no
     /// state of its own.
     pub clicks: u32,
+    /// Where this element's strip stands as its window's header (see
+    /// [`Ctx::header`]), so a press lands on the parts that were painted.
+    pub header: Option<Rect>,
 }
 
 /// The modifier keys a gesture was made with.
@@ -1823,7 +1833,8 @@ pub trait Element: fmt::Debug {
     /// was hit -- that stays in [`press`](Element::press), where the element has
     /// its own geometry.
     fn hit_area(&self, input: &Input) -> HitArea {
-        HitArea::Rect(input.rect)
+        // a strip drawn as the window's header is the element's too
+        HitArea::Rect(input.header.map_or(input.rect, |h| h.union(input.rect)))
     }
 
     /// Whether the pointer at `at` is on this element's **own samples** -- the
@@ -2087,6 +2098,15 @@ pub trait Element: fmt::Debug {
         _input: &Input,
     ) -> Option<Vec<crate::host::menu::Entry>> {
         None
+    }
+
+    /// **Whether this element carries a strip of tools along its top** (the
+    /// documentation's way back and where the page is, the post window's
+    /// clear and autoscroll), which its window may take as its header
+    /// ([`crate::host::header`]): drawn then in the slot [`Ctx::header`]
+    /// names rather than in its own rect.
+    fn strip(&self) -> bool {
+        false
     }
 
     /// **The verb this element performs when it is used**, for a tool: a

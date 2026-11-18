@@ -251,6 +251,7 @@ mod tests {
             viewport: (400.0, 300.0),
             clicks: 1,
             time: None,
+            header: None,
         };
         let mut t = from_props(&props(r#"{"value":1}"#));
         assert_eq!(t.value(), Some(OscType::Int(1)));

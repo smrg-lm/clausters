@@ -52,6 +52,7 @@ fn input(m: &Metrics) -> Input<'_> {
         viewport: (600.0, 400.0),
         clicks: 1,
         time: None,
+        header: None,
     }
 }
 
@@ -69,7 +70,7 @@ fn keys(v: &mut DocsView, clip: &mut Clip, mods: Mods, keys: &[Key]) {
 /// The press that lands on the link `href` of the page on screen.
 fn on_link(v: &DocsView, href: &str) -> (f64, f64) {
     let m = Metrics::default();
-    let g = v.geometry(RECT, 1.0, &m);
+    let g = v.geometry(RECT, 1.0, &m, None);
     let (scroll, laid) = v.settle(&g);
     let (r, _) = laid
         .links
@@ -96,7 +97,7 @@ fn pages_are_gone_to_and_back() {
     let at = on_link(&v, "buffers.md#reading");
     v.press(at, &input(&m));
     assert_eq!(page(&v), "doc:buffers.md#reading");
-    let g = v.geometry(RECT, 1.0, &m);
+    let g = v.geometry(RECT, 1.0, &m, None);
     let (scroll, laid) = v.settle(&g);
     // toward the heading, as far as a short page scrolls
     let most = (laid.height - g.text.h * 0.5).max(0.0);
@@ -161,6 +162,7 @@ fn finding_in_the_page_and_everywhere() {
         hovered: false,
         clock: 0.0,
         text_fit: 1.0,
+        header: None,
     };
     v.draw(&mut Draw::new(&mut mesh, &m, &theme), &ctx);
     assert!(v.match_count() >= 3, "{} in the page", v.match_count());
@@ -217,7 +219,7 @@ fn a_code_block_is_copied() {
     let m = Metrics::default();
     let mut v = panel();
     v.set("open", &Value::from("buffers.md"));
-    let g = v.geometry(RECT, 1.0, &m);
+    let g = v.geometry(RECT, 1.0, &m, None);
     let (scroll, laid) = v.settle(&g);
     let (r, code) = laid.copies[0].clone();
     let at = (

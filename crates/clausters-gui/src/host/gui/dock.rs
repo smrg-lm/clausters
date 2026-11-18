@@ -93,7 +93,7 @@ impl App {
                 .unwrap_or_else(|| ("clausters".into(), OPENS_AT));
             self.dock = Some(self.open_shell(lp, &title, size, false)?);
         }
-        let title = self.host.window_title(id);
+        let look = self.host.pane_look(id);
         let page = self.host.window_dock_page(id);
         let edge = self.host.window_dock_edge(id);
         let shell = self.dock.as_mut()?;
@@ -106,10 +106,7 @@ impl App {
                 shell.layout.add_on(id, page.as_deref());
             }
         }
-        if let Some(title) = title {
-            shell.layout.set_title(id, title);
-        }
-        shell.layout.set_tab(id, self.host.window_dock_tab(id));
+        shell.layout.describe(id, look);
         self.host.set_ui_scale(id, shell.scale);
         let rect = shell.layout.rect(id)?;
         let gpu = Gpu::pane(&shell.gpu, rect.w, rect.h);
@@ -132,9 +129,7 @@ impl App {
             let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(pw, ph + bar));
         }
         shell.layout.add(id);
-        if !title.is_empty() {
-            shell.layout.set_title(id, title);
-        }
+        shell.layout.describe(id, self.host.pane_look(id));
         let rect = shell.layout.rect(id)?;
         let gpu = Gpu::pane(&shell.gpu, rect.w, rect.h);
         shell.gpu.request_redraw();
@@ -143,29 +138,39 @@ impl App {
         Some(gpu)
     }
 
-    /// **Pane `id`'s title changed**: its tab says it, and a floating
-    /// panel's window too -- and whether it is a document, which a
-    /// redefinition may have changed.
-    pub(super) fn retitle_pane(&mut self, id: i32) {
-        let tab = self.host.window_dock_tab(id);
-        if let Some(shell) = self.dock.as_mut()
-            && shell.layout.holds(id)
-        {
-            shell.layout.set_tab(id, tab);
-        }
-        let Some(title) = self.host.window_title(id) else {
-            self.settle_dock();
-            return;
-        };
-        if let Some(shell) = self.floats.get_mut(&id) {
-            if let Some(window) = shell.gpu.window() {
-                window.set_title(&title);
+    /// **The dock's clock**: a tab rested on long enough shows its tip.
+    /// Answers whether one is still waiting, which keeps the loop coming
+    /// back.
+    pub(super) fn advance_dock_timers(&mut self) -> bool {
+        let now = self.started.elapsed().as_secs_f64() * 1000.0;
+        let mut waiting = false;
+        for shell in self.dock.iter_mut().chain(self.floats.values_mut()) {
+            if shell.layout.waiting() {
+                // a tip that came due is drawn
+                if shell.layout.elapsed(now) {
+                    shell.gpu.request_redraw();
+                }
+                waiting |= shell.layout.waiting();
             }
-            shell.layout.set_title(id, title);
+        }
+        waiting
+    }
+
+    /// **What the dock shows of pane `id` changed** (its title, whether it
+    /// may be closed, its changes not kept, its tab's tip -- or anything a
+    /// redefinition moved): its panel says it, and a floating panel's
+    /// window its title too.
+    pub(super) fn retitle_pane(&mut self, id: i32) {
+        let look = self.host.pane_look(id);
+        if let Some(shell) = self.floats.get_mut(&id) {
+            if let (Some(window), Some(title)) = (shell.gpu.window(), &look.title) {
+                window.set_title(title);
+            }
+            shell.layout.describe(id, look);
         } else if let Some(shell) = self.dock.as_mut()
             && shell.layout.holds(id)
         {
-            shell.layout.set_title(id, title);
+            shell.layout.describe(id, look);
         }
         self.settle_dock();
     }
@@ -185,6 +190,7 @@ impl App {
         }
         shell.hidden.remove(&id);
         self.host.set_popup_area(id, None);
+        self.host.set_header_band(id, None);
         if shell.layout.panes().is_empty() {
             self.dock = None;
             return;
@@ -313,6 +319,15 @@ impl App {
                 }
             }
             if dirty.layout || dirty.chrome {
+                // a pane filling its panel's header is told where the bar
+                // leaves it room, which its tabs and its title move
+                for id in shell.layout.panes() {
+                    if host.set_header_band(id, shell.layout.band(id))
+                        && let Some(ws) = windows.get(&id)
+                    {
+                        ws.repaint();
+                    }
+                }
                 shell.gpu.request_redraw();
             }
             // a divider under the pointer, or in the hand, says it is dragged
@@ -446,6 +461,12 @@ impl App {
                     // a panel's bar or a page's tab opens its menu
                     (ElementState::Pressed, MouseButton::Right)
                         if shell.layout.context_pressed() =>
+                    {
+                        None
+                    }
+                    // the middle button on a tab closes its window
+                    (ElementState::Pressed, MouseButton::Middle)
+                        if shell.layout.middle_pressed() =>
                     {
                         None
                     }
