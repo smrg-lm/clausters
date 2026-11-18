@@ -571,7 +571,7 @@ fn a_panels_menu_moves_and_closes_its_window() {
         ws.released();
         assert!(ws.menu().is_none(), "a pick takes the menu down");
     };
-    pick(&mut ws, "Split right");
+    pick(&mut ws, "Split Right");
     assert_eq!(ws.tree().panes(), [1, 2], "2 beside 1, its own panel");
     assert_eq!(ws.groups().len(), 2);
     // open, then press off it: down, and nothing else happens
@@ -623,7 +623,7 @@ fn a_floating_panel_has_a_bar_and_a_way_back() {
     ws.pressed();
     ws.released();
     let menu = ws.menu().expect("open").clone();
-    assert_eq!(menu.stack.levels[0].entries[0].label, "Back into the dock");
+    assert_eq!(menu.stack.levels[0].entries[0].label, "Back into the Dock");
     ws.close_menu();
     ws.picked(super::bar::Target::Pane(7), "dock");
     assert_eq!(ws.take_dirty().back, [7]);

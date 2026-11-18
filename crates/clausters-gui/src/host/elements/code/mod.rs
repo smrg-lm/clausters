@@ -1455,7 +1455,7 @@ impl Element for CodeView {
             on(Entry::action("Copy", "copy"), selected),
             Entry::action("Paste", "paste"),
             Entry::separator(),
-            Entry::action("Select all", "select_all"),
+            Entry::action("Select All", "select_all"),
         ])
     }
 

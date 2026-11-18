@@ -1910,7 +1910,8 @@ def choice(options=(), *, index: int | None = None, label: str | None = None,
 
 def entry(label: str, verb: str | None = None, *, checked: bool | None = None,
           group: str | None = None, enabled: bool | None = None,
-          icon: str | None = None, menu: list | None = None) -> dict:
+          icon: str | None = None, aside: str | None = None,
+          menu: list | None = None) -> dict:
     """One entry of a `menu`.
 
     ``verb`` is what a pick reports -- the entry's ``label`` when it names none.
@@ -1926,6 +1927,8 @@ def entry(label: str, verb: str | None = None, *, checked: bool | None = None,
 
     ``enabled=False`` leaves the entry in its list and out of reach. ``icon`` is
     an icon's name or one character drawn before the label, as on `button`.
+    ``aside`` is what the entry says beside its label, smaller and quieter and
+    cut first: a recent file's folder after its name.
 
     The state an entry holds is a prop like any other: the host flips it where
     it is drawn, reports it, and a query reads it back -- it is whoever owns the
@@ -1941,6 +1944,8 @@ def entry(label: str, verb: str | None = None, *, checked: bool | None = None,
         out["enabled"] = bool(enabled)
     if icon is not None:
         out["icon"] = str(icon)
+    if aside is not None:
+        out["aside"] = str(aside)
     if menu is not None:
         out["menu"] = list(menu)
     return out

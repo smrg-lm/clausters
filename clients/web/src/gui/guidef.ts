@@ -2608,6 +2608,8 @@ export function choice(
  *
  * `enabled: false` leaves the entry in its list and out of reach. `icon` is
  * an icon's name or one character drawn before the label, as on {@link button}.
+ * `aside` is what the entry says beside its label, smaller and quieter and cut
+ * first: a recent file's folder after its name.
  *
  * The state an entry holds is a prop like any other: the host flips it where
  * it is drawn, reports it, and a query reads it back -- it is whoever owns the
@@ -2621,6 +2623,7 @@ export function entry(
         group?: string;
         enabled?: boolean;
         icon?: string;
+        aside?: string;
         menu?: MenuTree;
     } = {},
 ): Record<string, unknown> {
@@ -2630,6 +2633,7 @@ export function entry(
     if (options.group !== undefined) out.group = options.group;
     if (options.enabled !== undefined) out.enabled = options.enabled;
     if (options.icon !== undefined) out.icon = options.icon;
+    if (options.aside !== undefined) out.aside = options.aside;
     if (options.menu !== undefined) out.menu = [...options.menu];
     return out;
 }

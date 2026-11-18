@@ -10,11 +10,13 @@
 
 use super::*;
 use crate::host::chrome;
+use crate::host::graphics::controls;
 use crate::host::graphics::selection;
 use crate::host::graphics::signal::layers::{Domain, Paint};
 use crate::host::menubar;
 use crate::host::popup;
 use crate::host::widget::{Marker, Naming, RulerDir};
+use clausters_gui_draw::metrics::Elevation;
 
 /// A position line on a time axis, shared by panes and standalone views.
 fn draw_time_line(d: &mut Draw, body: Rect, nav: &View, pos: Option<f64>, color: [f32; 4]) {
@@ -1135,9 +1137,7 @@ pub(super) fn draw_popups(
             .unwrap_or(theme);
         let owner = popup::owner_rect(stack, tree, placed, window, m);
         let lists = popup::layout(stack, owner, work, m);
-        for (level, at) in stack.levels.iter().zip(&lists) {
-            draw_list(over, level, at, stack.text_size, m, th);
-        }
+        draw_stack(over, stack, &lists, m, th);
     }
     if let Some(tip) = &popups.tip {
         draw_tip(over, tip, work, m, theme);
@@ -1188,13 +1188,7 @@ pub(super) fn draw_own_popups(
         }
         if let Some(list) = &own.list {
             let stack = list.stack(id);
-            for (level, at) in stack
-                .levels
-                .iter()
-                .zip(&popup::layout(&stack, None, work, m))
-            {
-                draw_list(over, level, at, stack.text_size, m, th);
-            }
+            draw_stack(over, &stack, &popup::layout(&stack, None, work, m), m, th);
         }
     }
     over.set_clip(None);
@@ -1291,8 +1285,11 @@ pub(super) fn draw_menu_bar(
     let hover = inputs.popups.and_then(|p| p.bar_hover);
     for (title, rect) in menubar::titles(entries, band, m) {
         let live = menubar::live(entries, title);
+        // under the hand or open: a rounded fill a line and its inset high
         if live && (open == Some(title) || hover == Some(title)) {
-            over.rect(rect, theme.hover);
+            let h = (m.line_sm + 2.0 * m.menu_title_y).min(rect.h);
+            let lift = Rect::new(rect.x, rect.y + (rect.h - h) * 0.5, rect.w, h);
+            over.round_rect(lift, m.radius_sm, theme.hover);
         }
         let label = menubar::label(entries, title);
         let w = font::width_in(menubar::TITLE_FACE, &label, size);
@@ -1321,148 +1318,181 @@ pub(super) fn draw_menu_bar(
     );
 }
 
-/// One list of the popup layer: its ground, its rows cut to it, and the marks
-/// that say there is more above or below.
-pub(crate) fn draw_list(
+/// **Every list of a stack**, first to last: the first raised as a menu is,
+/// a submenu (or a list standing on its own) raised further, and the row
+/// whose submenu is open shown open.
+pub(crate) fn draw_stack(
+    over: &mut Mesh,
+    stack: &popup::Stack,
+    lists: &[popup::Placed],
+    m: &Metrics,
+    theme: &Theme,
+) {
+    for (i, (level, at)) in stack.levels.iter().zip(lists).enumerate() {
+        let raised = if i > 0 || stack.anchor == popup::Anchor::Centre {
+            Elevation::Lg
+        } else {
+            Elevation::Md
+        };
+        let open = stack
+            .levels
+            .get(i + 1)
+            .and_then(|next| next.path.last().copied());
+        draw_list(over, level, at, stack.text_size, open, raised, m, theme);
+    }
+    over.set_clip(None);
+}
+
+/// **One list of the popup layer**, as the specification draws a menu: a
+/// card of the popover's ground with rounded corners, a faint ring and the
+/// shadow of its `raised`; its rows inside an inset, the one under the hand
+/// (or whose submenu is `open`) on a rounded fill; a mark or an icon in the
+/// left gutter, the label, its aside quieter after it, the key at the right
+/// in the small size spaced wide, and a submenu's chevron; a disabled row
+/// at half strength; a separator across the whole list. A list cut to its
+/// place says so at the edge it was cut on.
+#[allow(clippy::too_many_arguments)] // one list's parts, and the stack's state of it
+fn draw_list(
     over: &mut Mesh,
     level: &popup::Level,
     at: &popup::Placed,
     size: f32,
+    open: Option<usize>,
+    raised: Elevation,
     m: &Metrics,
     theme: &Theme,
 ) {
     let rect = at.rect;
+    let radius = m.radius_md;
     over.set_clip(None);
-    over.rect(rect, theme.popup);
+    Draw::new(over, m, theme).shadow(rect, radius, raised);
+    over.round_rect(rect, radius, theme.popup);
     let glyph = font::height(size);
     // A list standing on its own says what it is on a strip, which ends in
     // its close mark -- a dialog's, drawn the same way.
     if let Some(strip) = at.strip {
         over.set_clip(Some(strip));
-        over.rect(strip, theme.header);
         let ty = strip.y + (strip.h - glyph) * 0.5;
         let close = at.close();
         let end = close.map_or(strip.x + strip.w, |c| c.x);
         font::text_ellipsis(
             over,
             popup::KEYS_TITLE,
-            strip.x + m.pad,
+            strip.x + m.menu_item_x + m.menu_inset,
             ty,
-            (end - m.pad - strip.x - m.pad).max(0.0),
+            (end - strip.x - 2.0 * m.menu_item_x).max(0.0),
             size,
             theme.text,
         );
         if let Some(c) = close {
-            font::text_centered(
-                over,
-                &font::symbol::CLOSE.to_string(),
-                c,
-                size,
-                theme.text_dim,
-            );
+            let x = controls::icon("x", font::symbol::CLOSE);
+            font::text_centered(over, &x.to_string(), c, size, theme.text_dim);
         }
+        over.rect(
+            Rect::new(
+                strip.x,
+                strip.y + strip.h - m.divider_w,
+                strip.w,
+                m.divider_w,
+            ),
+            theme.separator,
+        );
     }
     // the rows, cut to where they are seen: under the strip
-    let rect = at.body();
-    over.set_clip(Some(rect));
-    let gutter = popup::gutter(size, m);
-    let left = if level
-        .entries
-        .iter()
-        .any(|e| e.icon.is_some() || e.can_mark())
-    {
-        gutter
-    } else {
-        0.0
-    };
-    let right = if level.entries.iter().any(|e| e.submenu().is_some()) {
-        gutter
-    } else {
-        0.0
-    };
+    let body = at.body();
+    over.set_clip(Some(body));
+    let right = popup::chevrons(&level.entries, size, m);
     let keys = popup::key_column(&level.entries, size, m);
+    let small = popup::small_size(size, m);
+    let chevron = controls::icon("chevron-right", font::symbol::POINT_RIGHT);
     for (i, (entry, row)) in level.entries.iter().zip(&at.rows).enumerate() {
-        if row.y + row.h < rect.y || row.y > rect.y + rect.h {
+        if row.y + row.h < body.y || row.y > body.y + body.h {
             continue; // scrolled out
         }
         if entry.is_separator() {
             let y = row.y + (row.h - m.divider_w) * 0.5;
-            over.rect(
-                Rect::new(
-                    row.x + m.pad,
-                    y,
-                    (row.w - 2.0 * m.pad).max(0.0),
-                    m.divider_w,
-                ),
-                theme.separator,
-            );
+            over.rect(Rect::new(rect.x, y, rect.w, m.divider_w), theme.separator);
             continue;
         }
-        if level.hover == Some(i) && entry.pickable() {
-            over.rect(*row, theme.hover);
+        let lit = (level.hover == Some(i) || open == Some(i)) && entry.pickable();
+        if lit {
+            over.round_rect(*row, m.radius_sm, theme.hover);
         }
-        let ink = if !entry.enabled {
-            theme.text_disabled
-        } else if matches!(entry.kind, crate::host::menu::EntryKind::Heading) {
-            // a section's name reads apart from the rows it names
-            theme.accent
+        let heading = matches!(entry.kind, crate::host::menu::EntryKind::Heading);
+        let ink = if !entry.enabled && !heading {
+            with_alpha(theme.text, 0.5)
+        } else if lit {
+            theme.hover_text
         } else {
             theme.text
         };
-        let cy = row.y + row.h * 0.5;
         let ty = row.y + (row.h - glyph) * 0.5;
-        if let Some(icon) = entry.icon {
-            font::text(over, &icon.to_string(), row.x + m.pad, ty, size, ink);
-        } else if entry.marked() {
-            font::text(
+        let x = row.x + m.menu_item_x;
+        let left = popup::indent(entry, size, m);
+        // the mark or the icon, in the left gutter
+        let mark = entry.icon.or_else(|| {
+            entry
+                .marked()
+                .then(|| controls::icon("check", font::symbol::CHECK))
+        });
+        if let Some(mark) = mark {
+            font::text(over, &mark.to_string(), x, ty, size, ink);
+        }
+        if heading {
+            // a section's name, in the medium weight, over the rows it names
+            font::text_in(
                 over,
-                &font::symbol::CHECK.to_string(),
-                row.x + m.pad,
+                font::Family::UiMedium,
+                &entry.label,
+                x + left,
                 ty,
                 size,
-                if entry.enabled { theme.accent } else { ink },
+                ink,
             );
-        }
-        if matches!(entry.kind, crate::host::menu::EntryKind::Heading) {
-            // a section's name stands over the rows it names, centred
-            font::text_centered(over, &entry.label, *row, size, ink);
             continue;
         }
-        font::text_ellipsis(
-            over,
-            &entry.label,
-            row.x + m.pad + left,
-            ty,
-            (row.w - 2.0 * m.pad - left - right - keys).max(0.0),
-            size,
-            ink,
-        );
-        // The chord bound to the entry's verb, flush right before the arrow's
-        // gutter and quieter than the label: it is a hint, not the command.
+        let avail = (row.w - 2.0 * m.menu_item_x - left - right - keys).max(0.0);
+        let label_w = font::width(&entry.label, size).min(avail);
+        font::text_ellipsis(over, &entry.label, x + left, ty, avail, size, ink);
+        // what it says beside its label: quieter and smaller, cut first
+        if let Some(aside) = &entry.aside {
+            let ax = x + left + label_w + m.menu_aside;
+            let room = (x + left + avail - ax).max(0.0);
+            let ay = row.y + (row.h - font::height(small)) * 0.5;
+            font::text_ellipsis(over, aside, ax, ay, room, small, theme.text_dim);
+        }
+        // The chord bound to the entry's verb, flush right before the
+        // chevron's gutter, small and spaced wide: a hint, not the command.
         if let Some(key) = &entry.key {
-            let x = row.x + row.w - m.pad - right - font::width(key, size);
-            font::text(over, key, x, ty, size, theme.text_disabled);
+            let ky = row.y + (row.h - font::height(small)) * 0.5;
+            let mut kx = row.x + row.w - m.menu_item_x - right - popup::key_width(key, small);
+            let step = popup::key_tracking(small);
+            for c in key.chars() {
+                let s = c.to_string();
+                font::text(over, &s, kx, ky, small, theme.text_dim);
+                kx += font::width(&s, small) + step;
+            }
         }
         if entry.submenu().is_some() {
-            let s = (glyph * 0.3).max(2.0);
-            let x = row.x + row.w - m.pad - s;
-            over.tri([x - s, cy - s], [x - s, cy + s], [x + s * 0.5, cy], ink);
+            let cw = font::width(&chevron.to_string(), size);
+            let cx = row.x + row.w - m.menu_item_x - cw;
+            font::text(over, &chevron.to_string(), cx, ty, size, ink);
         }
     }
     // More above, more below: a list cut to its place says so at the edge it
     // was cut on.
     let s = (glyph * 0.3).max(2.0);
-    let x = rect.x + rect.w * 0.5;
+    let x = body.x + body.w * 0.5;
     if at.scroll > 0.5 {
-        let y = rect.y + m.pad * 0.5;
-        over.tri([x - s, y + s], [x + s, y + s], [x, y], theme.accent);
+        let y = body.y + m.pad * 0.5;
+        over.tri([x - s, y + s], [x + s, y + s], [x, y], theme.text_dim);
     }
     if at.scroll < at.max_scroll - 0.5 {
-        let y = rect.y + rect.h - m.pad * 0.5;
-        over.tri([x - s, y - s], [x + s, y - s], [x, y], theme.accent);
+        let y = body.y + body.h - m.pad * 0.5;
+        over.tri([x - s, y - s], [x + s, y - s], [x, y], theme.text_dim);
     }
     over.set_clip(None);
-    over.border(at.rect, m.divider_w, theme.frame);
+    over.round_border(rect, m.divider_w, radius, with_alpha(theme.text, 0.1));
 }
 
 /// Draws the **status bar** into `band`: the window's newest line, or -- open --

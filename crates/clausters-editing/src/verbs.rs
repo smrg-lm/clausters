@@ -583,6 +583,77 @@ pub fn words(name: &str) -> String {
     }
 }
 
+/// The words a title leaves small where they are not its first or its last
+/// (or the first after a comma or a colon): articles, conjunctions and the
+/// short prepositions.
+const SMALL: &[&str] = &[
+    "a", "an", "the", "and", "but", "or", "nor", "as", "at", "by", "for", "in", "of", "on", "to",
+    "via", "per", "vs", "into", "onto",
+];
+
+/// **A label as a menu writes it**: in header capitalization, as the
+/// desktop's guidelines and the specification's editor write a menu -- every
+/// word starting with a capital but the small ones ([`SMALL`]) inside the
+/// label, each part of a hyphenated word too. A word with a capital past its
+/// first letter (`MIDI`) is left as it is, and so is what follows a word
+/// (`...`, a comma). A description or a help text stays in sentence case,
+/// so this is for a menu's entries and nothing else.
+#[must_use]
+pub fn title_case(label: &str) -> String {
+    let words: Vec<&str> = label.split(' ').collect();
+    let last = words
+        .iter()
+        .rposition(|w| w.chars().any(char::is_alphanumeric))
+        .unwrap_or(0);
+    let mut fresh = true;
+    let mut out = Vec::with_capacity(words.len());
+    for (i, word) in words.iter().enumerate() {
+        let bare: String = word
+            .trim_end_matches(|c: char| !c.is_alphanumeric())
+            .to_string();
+        let small = !fresh && i != last && SMALL.contains(&bare.as_str());
+        // a capital past the first letter is a name's own (`MIDI`, `MPE`)
+        let named = word.chars().skip(1).any(char::is_uppercase);
+        let titled = if small || named {
+            (*word).to_string()
+        } else {
+            word.split('-')
+                .map(|part| {
+                    let mut chars = part.chars();
+                    chars.next().map_or_else(String::new, |first| {
+                        first.to_uppercase().chain(chars).collect()
+                    })
+                })
+                .collect::<Vec<_>>()
+                .join("-")
+        };
+        // the word after a comma or a colon starts a phrase of its own
+        fresh = word.ends_with([',', ':']);
+        out.push(titled);
+    }
+    out.join(" ")
+}
+
+/// **A menu with every label in header capitalization** ([`title_case`]):
+/// its entries, its submenus' and theirs, as a window's `menu` holds them.
+#[must_use]
+pub fn titled(menu: Value) -> Value {
+    match menu {
+        Value::Array(entries) => Value::Array(entries.into_iter().map(titled).collect()),
+        Value::Object(mut o) => {
+            if let Some(Value::String(label)) = o.get("label") {
+                let label = title_case(label);
+                o.insert("label".into(), Value::from(label));
+            }
+            if let Some(sub) = o.remove("menu") {
+                o.insert("menu".into(), titled(sub));
+            }
+            Value::Object(o)
+        }
+        other => other,
+    }
+}
+
 /// **A window's `verbs` prop**: each scope to its verbs, each verb to its
 /// default chords (`keys`) and its words (`label`) -- what the host lays into
 /// its key table under whatever the user bound.
@@ -609,6 +680,33 @@ pub fn declaration(scopes: &[(&str, &[Verb])]) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A menu's label in header capitalization**: the words capitalized,
+    /// the small ones inside it left small, the first after a comma a word
+    /// of its own, the last always, a hyphenated word in each part, and a
+    /// word that holds a capital as it is.
+    #[test]
+    fn a_menu_label_is_in_header_capitalization() {
+        for (label, titled) in [
+            ("Save as...", "Save As..."),
+            ("Open file...", "Open File..."),
+            ("Up an octave", "Up an Octave"),
+            ("Go to start", "Go to Start"),
+            ("Snap to grid, on or off", "Snap to Grid, On or Off"),
+            ("Sixty-fourth note", "Sixty-Fourth Note"),
+            ("Convert to MIDI 2.0", "Convert to MIDI 2.0"),
+            ("Evaluate line or selection", "Evaluate Line or Selection"),
+            ("Close", "Close"),
+            ("Evaluate lines as a block", "Evaluate Lines as a Block"),
+        ] {
+            assert_eq!(title_case(label), titled, "{label}");
+        }
+        let menu = titled(json!([{"label": "File", "menu": [{"label": "Open recent",
+            "menu": [{"label": "clear recent files"}]}, "-"]}]));
+        assert_eq!(menu[0]["menu"][0]["label"], "Open Recent");
+        assert_eq!(menu[0]["menu"][0]["menu"][0]["label"], "Clear Recent Files");
+        assert_eq!(menu[0]["menu"][1], "-");
+    }
 
     /// A scope names each verb once, with words of its own.
     #[test]

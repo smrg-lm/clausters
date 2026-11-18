@@ -46,10 +46,10 @@ impl Multitrack {
             out.push(Entry::separator());
         }
         let at = track.map_or(self.tracks.len(), |i| i + 1);
-        out.push(Entry::action("Add track", &format!("{ADD_TRACK}:{at}")));
+        out.push(Entry::action("Add Track", &format!("{ADD_TRACK}:{at}")));
         out.push(Entry::separator());
-        out.push(Entry::action("Reset track heights", RESET_HEIGHTS));
-        out.push(Entry::action("Compact tracks", COMPACT));
+        out.push(Entry::action("Reset Track Heights", RESET_HEIGHTS));
+        out.push(Entry::action("Compact Tracks", COMPACT));
         out
     }
 

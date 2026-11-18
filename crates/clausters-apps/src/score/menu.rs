@@ -78,9 +78,15 @@ fn sub(label: &str, entries: Vec<Value>) -> Value {
     json!({"label": label, "menu": entries})
 }
 
-/// **The menu bar**, as the window's `menu` value.
+/// **The menu bar**, as the window's `menu` value, its labels in header
+/// capitalization.
 #[must_use]
 pub fn menu(state: &State<'_>) -> Value {
+    clausters_editing::verbs::titled(entries(state))
+}
+
+/// The menu bar's entries, as the editor words them.
+fn entries(state: &State<'_>) -> Value {
     let sep = || json!("-");
     if !state.document {
         return json!([sub(

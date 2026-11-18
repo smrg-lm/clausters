@@ -16,7 +16,7 @@ use clausters_gui_draw::rect::Rect;
 use clausters_gui_draw::theme::{Color, Theme};
 
 use super::{BarPart, Dock, GroupPlace};
-use crate::host::frame::{draw_list, draw_tip};
+use crate::host::frame::{draw_stack, draw_tip};
 use crate::host::graphics::choice;
 use crate::host::graphics::controls::icon;
 use crate::host::popup::Tip;
@@ -54,10 +54,7 @@ impl Dock {
         }
         if let Some(menu) = self.menu() {
             let (mesh, m, theme) = d.parts();
-            for (level, placed) in menu.stack.levels.iter().zip(self.menu_placed()) {
-                draw_list(mesh, level, &placed, menu.stack.text_size, m, theme);
-            }
-            mesh.set_clip(None);
+            draw_stack(mesh, &menu.stack, &self.menu_placed(), m, theme);
         }
         // a tab's tip, under the tab it was rested on
         if let Some((pane, text)) = self.shown_tip()

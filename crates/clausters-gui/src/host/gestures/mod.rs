@@ -364,6 +364,10 @@ pub struct Gestures {
     /// The Ctrl+wheel gathered towards the next step of the text's size
     /// ([`wheel`]), in notches.
     sizing: f64,
+    /// Where the pointer last stood over an open list, and since when it
+    /// has been on its way to an open submenu across other rows
+    /// ([`popup::aiming`]).
+    menu_path: (Option<(f64, f64)>, Option<f64>),
 }
 
 impl Gestures {

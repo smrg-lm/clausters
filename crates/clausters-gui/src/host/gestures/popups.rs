@@ -493,10 +493,20 @@ impl Gestures {
         let target = host
             .popup(def_id)
             .and_then(|stack| popup::hit(stack, &placed, cx, cy));
+        let was = self.menu_path.0.replace((cx, cy));
         match target {
             Some((level, row)) => {
                 let stack = host.popup_mut(def_id).expect("the stack is open");
-                if stack.point(level, row) {
+                // on its way to an open submenu, the rows it crosses wait
+                let aiming = popup::aiming(stack, &placed, level, row, was, (cx, cy));
+                let hold = if aiming {
+                    let since = *self.menu_path.1.get_or_insert(ctx.now_ms);
+                    ctx.now_ms - since < popup::AIM_MS
+                } else {
+                    self.menu_path.1 = None;
+                    false
+                };
+                if !hold && stack.point(level, row) {
                     out.push(GestureEffect::Redraw(def_id));
                 }
             }
@@ -597,6 +607,17 @@ impl Gestures {
             .unwrap_or(0.0);
         let stack = host.popup_mut(def_id)?;
         let mut out = vec![GestureEffect::Redraw(def_id)];
+        // a letter finds the entry its label starts with
+        if let Key::Char(c) = key
+            && !c.is_whitespace()
+            && stack.owner != Owner::Keys
+        {
+            return Some(if stack.type_ahead(*c, ctx.now_ms) {
+                out
+            } else {
+                Vec::new()
+            });
+        }
         let Some(key) = walk(key) else {
             return Some(Vec::new());
         };

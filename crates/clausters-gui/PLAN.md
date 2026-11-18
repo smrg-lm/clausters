@@ -2667,13 +2667,39 @@ first four are the order the user set; the components come after.
   button are icons too, a tab's cross at 12. Checked: the names, the
   aliases, a square's stroked size and the editor's bar, post and
   documentation headless.
-- ⬜ **ST7: Menus.** The anatomy and the keyboard of the inventory: lists
+- ✅ **ST7: Menus.** The anatomy and the keyboard of the inventory: lists
   with radius, ring and shadow, entries with their insets and keys, check and
   radio marks, the submenu chevron and its open state, the pointer's path to
   a submenu, a scrolling list, Recent files as a name and a dimmed folder.
   Labels in Title Case, for every application's menus, as the current editor
   and the desktop's guidelines write them (header capitalization); a
   description or a help text stays in sentence case.
+  *Shipped:* every popup list is drawn as the specification's menu
+  (`frame::draw_stack`): a card of `popup` with `radius_md`, a ring of the
+  text at a tenth and the `shadow_md` (`shadow_lg` for a submenu or the key
+  sheet); its rows inside `menu_inset`, each `line_sm` and its inset high,
+  under the hand or open on a rounded `hover` fill in `hover_text`; a check
+  or radio entry, or one with an icon, indented to `menu_mark` with Lucide's
+  check; a disabled entry at half strength; the key in `type_xs`, spaced a
+  tenth of its em, in `text_dim`; a submenu's chevron icon; a separator
+  across the list with the inset over and under it; a list between
+  `menu_w` (a submenu `submenu_w`) and `menu_max_w`, its submenu's first
+  row level with the opener. A menu entry gained `aside` (both clients'
+  `entry`), drawn smaller and dimmed after the label and cut first: the
+  editor's Open Recent is each file's name and its folder, then a separator
+  and Clear Recent Files, No Recent Files when there are none. The menu
+  bar's titles light on a rounded fill. A letter typed on a list goes to
+  the next entry it starts (a word within a second finds the entry it
+  spells, `Stack::type_ahead`); a pointer crossing other rows toward an open
+  submenu keeps it for 300 ms (`popup::aiming`). The keys already walked
+  as a menu bar does (arrows, Home and End, Enter and Space, Escape a level
+  at a time). Header capitalization is `verbs::title_case`, laid over every
+  application's bar by `verbs::titled` (the multitrack's, the audio,
+  notes, points and score editors'); the editor and the host's own menus
+  (the dock's, the post window's, the code's, the multitrack's context
+  menu) are written in it. Checked: the layout, the typing, the aim and
+  the capitalization by tests, and the editor's File, Open Recent and
+  Session menus headless.
 - ⬜ **ST8: Tooltips and hover cards.** A tool's tip after a delay, with its
   key. The code's help as a hover card: entered, scrolled, selected, kept
   while the pointer is on it, gone after it leaves or on Esc; signature help

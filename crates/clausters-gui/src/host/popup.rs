@@ -122,6 +122,9 @@ pub struct Stack {
     pub max_rows: Option<usize>,
     pub text_size: f32,
     pub levels: Vec<Level>,
+    /// What has been typed to find an entry by its name, and when the last
+    /// letter came: letters a second apart start a new search.
+    pub typed: (String, f64),
 }
 
 impl Stack {
@@ -134,6 +137,7 @@ impl Stack {
             max_rows: None,
             text_size,
             levels: vec![Level::new(Vec::new(), entries)],
+            typed: (String::new(), f64::NEG_INFINITY),
         }
     }
 
@@ -206,6 +210,98 @@ impl Stack {
         }
         changed
     }
+}
+
+/// How long letters typed to find an entry keep adding to one search, in
+/// milliseconds.
+const TYPED_MS: f64 = 1000.0;
+
+/// How long the pointer may cross other rows on its way to an open submenu
+/// before they take it, in milliseconds.
+pub const AIM_MS: f64 = 300.0;
+
+impl Stack {
+    /// **A letter typed on the deepest list**: the hover goes to the next
+    /// entry whose label starts with what was typed in the last second.
+    /// One letter typed again steps through the entries starting with it.
+    /// Answers whether the hover moved.
+    pub fn type_ahead(&mut self, c: char, now_ms: f64) -> bool {
+        if now_ms - self.typed.1 > TYPED_MS {
+            self.typed.0.clear();
+        }
+        self.typed.1 = now_ms;
+        self.typed.0.extend(c.to_lowercase());
+        let first = self.typed.0.chars().next().unwrap_or(c);
+        let same = self.typed.0.chars().all(|x| x == first);
+        let needle = if same {
+            first.to_string()
+        } else {
+            self.typed.0.clone()
+        };
+        let top = self.levels.len() - 1;
+        let level = &mut self.levels[top];
+        let n = level.entries.len();
+        // a new letter starts the search after the hover; a word goes on
+        // from it, so the row it already found stays found
+        let start = match level.hover {
+            Some(h) if same => h + 1,
+            Some(h) => h,
+            None => 0,
+        };
+        let found = (0..n).map(|k| (start + k) % n).find(|&i| {
+            let e = &level.entries[i];
+            e.pickable() && e.label.to_lowercase().starts_with(&needle)
+        });
+        if let Some(i) = found {
+            level.hover = Some(i);
+            level.reveal = true;
+        }
+        found.is_some()
+    }
+}
+
+/// **Whether the pointer is on its way to an open submenu**: it moved from
+/// `from` to `to` over a row of list `level` other than the one whose
+/// submenu is open, inside the triangle from where it was to the near edge
+/// of that submenu. Such a crossing does not take the rows it passes over.
+pub fn aiming(
+    stack: &Stack,
+    placed: &[Placed],
+    level: usize,
+    row: Option<usize>,
+    from: Option<(f64, f64)>,
+    to: (f64, f64),
+) -> bool {
+    let (Some(from), Some(child)) = (from, placed.get(level + 1)) else {
+        return false;
+    };
+    let opener = stack
+        .levels
+        .get(level + 1)
+        .and_then(|next| next.path.last().copied());
+    if row.is_some() && row == opener {
+        return false;
+    }
+    let r = child.rect;
+    let near = if f64::from(r.x) >= from.0 {
+        f64::from(r.x)
+    } else {
+        f64::from(r.x + r.w)
+    };
+    let (top, bottom) = (f64::from(r.y), f64::from(r.y + r.h));
+    let tri = [from, (near, top), (near, bottom)];
+    let side = |a: (f64, f64), b: (f64, f64), p: (f64, f64)| {
+        (b.0 - a.0) * (p.1 - a.1) - (b.1 - a.1) * (p.0 - a.0)
+    };
+    let d = [
+        side(tri[0], tri[1], to),
+        side(tri[1], tri[2], to),
+        side(tri[2], tri[0], to),
+    ];
+    let neg = d.iter().any(|&v| v < 0.0);
+    let pos = d.iter().any(|&v| v > 0.0);
+    // moving at all, and toward it
+    to != from && !(neg && pos)
 }
 
 /// What a key did to an open stack.
@@ -508,20 +604,49 @@ pub fn tip_size(m: &Metrics) -> f32 {
     font::em_scale(font::Family::Ui, m.type_xs)
 }
 
-/// The height of one row of a list.
+/// **The size an entry's key and aside are drawn at**: the smallest of the
+/// type scale, in step with the list's own size.
+pub fn small_size(text_size: f32, m: &Metrics) -> f32 {
+    text_size * m.type_xs / m.type_sm.max(1.0)
+}
+
+/// The height of one row of a list: a line of the interface's text and an
+/// entry's inset over and under it, and never less than a control's.
 pub fn row_h(text_size: f32, m: &Metrics) -> f32 {
-    (font::height(text_size) + 2.0 * m.pad).max(m.control_h)
+    (font::height(text_size) + 2.0 * m.pad)
+        .max(m.control_h)
+        .max(m.line_sm + 2.0 * m.menu_item_y)
 }
 
-/// The height a separator takes: a hairline with a pad over and under it.
+/// The height a separator takes: a hairline with the list's inset over and
+/// under it.
 pub fn separator_h(m: &Metrics) -> f32 {
-    2.0 * m.pad + m.divider_w
+    2.0 * m.menu_inset + m.divider_w
 }
 
-/// The gutter a list reserves at its left for a mark or an icon, and at its
-/// right for a submenu's arrow: one glyph and a pad.
-pub fn gutter(text_size: f32, m: &Metrics) -> f32 {
-    font::height(text_size) + m.pad
+/// The gutter a list reserves at its left for a mark or an icon: what puts
+/// a checkable entry's text at the specification's indent ([`Metrics::menu_mark`])
+/// from the row's edge.
+pub fn gutter(_text_size: f32, m: &Metrics) -> f32 {
+    (m.menu_mark - m.menu_item_x).max(0.0)
+}
+
+/// The gutter a list reserves at its right for a submenu's chevron: the
+/// icon and the gap before it.
+pub fn chevron_gutter(text_size: f32, m: &Metrics) -> f32 {
+    font::advance(text_size) + m.menu_item_x
+}
+
+/// **The letter spacing of a key**: a tenth of its em, as the specification
+/// sets a shortcut (`tracking-widest`).
+pub fn key_tracking(size: f32) -> f32 {
+    0.1 * font::height(size) / 0.727
+}
+
+/// The width of a key written at `size` with its letter spacing.
+pub fn key_width(key: &str, size: f32) -> f32 {
+    let n = key.chars().count() as f32;
+    font::width(key, size) + (n - 1.0).max(0.0) * key_tracking(size)
 }
 
 fn entry_h(e: &Entry, text_size: f32, m: &Metrics) -> f32 {
@@ -532,47 +657,66 @@ fn entry_h(e: &Entry, text_size: f32, m: &Metrics) -> f32 {
     }
 }
 
-/// The widest an entry's label stands, in the list's characters: a longer
-/// one (a recent file's folder, a long name) is cut with an ellipsis rather
-/// than stretching the list across the window.
-const LABEL_CHARS: f32 = 64.0;
+/// **The gutter an entry keeps at the left of its text**: a check or a
+/// radio entry's, or one with an icon, puts the text at the specification's
+/// indent; any other entry's text stands at the row's own inset.
+pub fn indent(e: &Entry, text_size: f32, m: &Metrics) -> f32 {
+    if e.icon.is_some() || e.can_mark() {
+        gutter(text_size, m)
+    } else {
+        0.0
+    }
+}
 
-/// How big a list wants to be: as wide as its widest entry with the gutters it
-/// needs, at most [`LABEL_CHARS`] of label, and as tall as its rows.
+/// The gutter a list keeps at the right of its entries' text for a
+/// submenu's chevron, when any entry opens one.
+pub fn chevrons(entries: &[Entry], text_size: f32, m: &Metrics) -> f32 {
+    if entries.iter().any(|e| e.submenu().is_some()) {
+        chevron_gutter(text_size, m)
+    } else {
+        0.0
+    }
+}
+
+/// **How big a list wants to be**: as wide as its widest entry with the
+/// gutters and insets it needs, and as tall as its rows and its inset. The
+/// width is held between the list's least and the widest a list grows
+/// ([`Metrics::menu_max_w`]), past which an entry is cut with an ellipsis,
+/// its aside first.
 ///
 /// The entries are props, so this is a size read out of props -- nothing a
 /// stream of values can move.
 pub fn natural(entries: &[Entry], text_size: f32, m: &Metrics) -> (f32, f32) {
-    let left = if entries.iter().any(|e| e.icon.is_some() || e.can_mark()) {
-        gutter(text_size, m)
-    } else {
-        0.0
-    };
-    let right = if entries.iter().any(|e| e.submenu().is_some()) {
-        gutter(text_size, m)
-    } else {
-        0.0
-    };
-    let label = entries
+    let right = chevrons(entries, text_size, m);
+    let small = small_size(text_size, m);
+    let text = entries
         .iter()
-        .map(|e| font::width(&e.label, text_size))
-        .fold(0.0f32, f32::max)
-        .min(LABEL_CHARS * font::width("0", text_size));
-    let h = entries.iter().map(|e| entry_h(e, text_size, m)).sum();
-    (
-        left + label + key_column(entries, text_size, m) + right + 2.0 * m.pad,
-        h,
-    )
+        .map(|e| {
+            indent(e, text_size, m)
+                + font::width(&e.label, text_size)
+                + e.aside
+                    .as_deref()
+                    .map_or(0.0, |a| m.menu_aside + font::width(a, small))
+        })
+        .fold(0.0f32, f32::max);
+    let h = entries
+        .iter()
+        .map(|e| entry_h(e, text_size, m))
+        .sum::<f32>()
+        + 2.0 * m.menu_inset;
+    let w = 2.0 * (m.menu_inset + m.menu_item_x) + text + key_column(entries, text_size, m) + right;
+    (w.min(m.menu_max_w), h)
 }
 
 /// The column a list keeps at the right of its labels for the chords its
 /// entries are bound to: the widest chord and a gap before it, or nothing when
 /// no entry has one.
 pub fn key_column(entries: &[Entry], text_size: f32, m: &Metrics) -> f32 {
+    let small = small_size(text_size, m);
     entries
         .iter()
         .filter_map(|e| e.key.as_deref())
-        .map(|k| font::width(k, text_size) + 4.0 * m.pad)
+        .map(|k| key_width(k, small) + 2.0 * m.menu_item_x)
         .fold(0.0f32, f32::max)
 }
 
@@ -740,10 +884,17 @@ pub fn layout(stack: &Stack, owner: Option<Rect>, work: Rect, m: &Metrics) -> Ve
             w
         };
         let shown = match stack.max_rows {
-            Some(rows) if i == 0 => h.min(rows as f32 * row_h(size, m)),
+            Some(rows) if i == 0 => h.min(rows as f32 * row_h(size, m) + 2.0 * m.menu_inset),
             _ => h,
         };
-        let want = (if i == 0 { w.max(stack.min_w) } else { w }, shown + strip_h);
+        // a menu is at least the specification's width, a submenu a little
+        // less; a chooser's list is at least its field
+        let least = match (i, &stack.owner) {
+            (0, Owner::Element(_) | Owner::Keys) => stack.min_w,
+            (0, _) => stack.min_w.max(m.menu_w),
+            _ => m.submenu_w,
+        };
+        let want = (w.max(least), shown + strip_h);
         let rect = match (i, anchor) {
             (0, Anchor::Below(a)) => place_below(
                 Rect::new(a.x + shift.0, a.y + shift.1, a.w, a.h),
@@ -763,7 +914,7 @@ pub fn layout(stack: &Stack, owner: Option<Rect>, work: Rect, m: &Metrics) -> Ve
                     .copied()
                     .unwrap_or(parent.rect);
                 // Level with the row while the row is on screen.
-                let row = Rect::new(parent.rect.x, row.y, parent.rect.w, row.h);
+                let row = Rect::new(parent.rect.x, row.y - m.menu_inset, parent.rect.w, row.h);
                 place_beside(row, want, work)
             }
         };
@@ -774,10 +925,11 @@ pub fn layout(stack: &Stack, owner: Option<Rect>, work: Rect, m: &Metrics) -> Ve
         if level.reveal
             && let Some(row) = level.hover
         {
-            let top: f32 = level.entries[..row]
-                .iter()
-                .map(|e| entry_h(e, size, m))
-                .sum();
+            let top: f32 = m.menu_inset
+                + level.entries[..row]
+                    .iter()
+                    .map(|e| entry_h(e, size, m))
+                    .sum::<f32>();
             let bottom = top + entry_h(&level.entries[row], size, m);
             if top < scroll {
                 scroll = top;
@@ -786,13 +938,18 @@ pub fn layout(stack: &Stack, owner: Option<Rect>, work: Rect, m: &Metrics) -> Ve
             }
             scroll = scroll.clamp(0.0, max_scroll);
         }
-        let mut y = rect.y + strip_h - scroll;
+        // the rows inside the list's inset
+        let mut y = rect.y + strip_h + m.menu_inset - scroll;
+        let (x, w) = (
+            rect.x + m.menu_inset,
+            (rect.w - 2.0 * m.menu_inset).max(0.0),
+        );
         let rows = level
             .entries
             .iter()
             .map(|e| {
                 let eh = entry_h(e, size, m);
-                let r = Rect::new(rect.x, y, rect.w, eh);
+                let r = Rect::new(x, y, w, eh);
                 y += eh;
                 r
             })
@@ -1032,16 +1189,101 @@ mod tests {
     }
 
     /// A label longer than the list's most is cut, not followed: the list
-    /// stops at [`LABEL_CHARS`] of label however long the entry.
+    /// stops at the widest a list grows however long the entry.
     #[test]
     fn a_long_label_does_not_widen_the_list_past_its_most() {
         let m = Metrics::default();
         let long = "x".repeat(300);
         let (w, _) = natural(&[Entry::option(&long, false)], 1.0, &m);
-        let (most, _) = natural(&[Entry::option(&"0".repeat(64), false)], 1.0, &m);
-        assert!(w <= most + 0.5, "{w} past {most}");
+        assert_eq!(w, m.menu_max_w);
         let (short, _) = natural(&options(2), 1.0, &m);
-        assert!(short < most, "a short list keeps its own width");
+        assert!(short < m.menu_max_w, "a short list keeps its own width");
+    }
+
+    /// **A menu as the specification lays it out**: its rows inside the
+    /// list's inset, each a line and an entry's inset high, a separator the
+    /// inset over and under a hairline, a menu at least its least width and
+    /// a submenu its own, level with the row that opened it.
+    #[test]
+    fn a_menu_is_laid_out_as_the_specification_says() {
+        let m = Metrics::default();
+        let size = list_size(&m);
+        let entries = crate::host::menu::parse(&json!([
+            "New", "-", {"label": "Recent", "menu": ["one", "two"]}
+        ]));
+        let mut stack = Stack::new(
+            Owner::Bar(crate::host::menubar::Title::Entry(0)),
+            entries,
+            Anchor::Below(Rect::new(10.0, 0.0, 40.0, 30.0)),
+            size,
+        );
+        let placed = layout(&stack, None, work(), &m);
+        let list = &placed[0];
+        assert!(list.rect.w >= m.menu_w, "{}", list.rect.w);
+        let rows = &list.rows;
+        assert_eq!(rows[0].x, list.rect.x + m.menu_inset);
+        assert_eq!(rows[0].y, list.rect.y + m.menu_inset);
+        assert_eq!(rows[0].h, m.line_sm + 2.0 * m.menu_item_y);
+        assert_eq!(rows[1].h, 2.0 * m.menu_inset + m.divider_w);
+        assert_eq!(
+            list.rect.h,
+            rows.iter().map(|r| r.h).sum::<f32>() + 2.0 * m.menu_inset
+        );
+        assert!(stack.open_child(0, 2));
+        let placed = layout(&stack, None, work(), &m);
+        let sub = &placed[1];
+        assert!(sub.rect.w >= m.submenu_w);
+        assert_eq!(
+            sub.rows[0].y, placed[0].rows[2].y,
+            "its first row level with the opener"
+        );
+    }
+
+    /// **A letter finds an entry**: the first whose label starts with it,
+    /// the same letter again the next one, a word typed within a second
+    /// the entry it spells, and a pause starts over.
+    #[test]
+    fn typing_finds_an_entry_by_its_name() {
+        let entries = crate::host::menu::parse(&json!(["Save", "Save As", "Select All", "Close"]));
+        let mut stack = Stack::new(Owner::Context(1), entries, Anchor::At(0.0, 0.0), 1.0);
+        let hover = |s: &Stack| s.levels[0].hover;
+        assert!(stack.type_ahead('s', 0.0));
+        assert_eq!(hover(&stack), Some(0));
+        assert!(stack.type_ahead('s', 100.0));
+        assert_eq!(hover(&stack), Some(1), "the same letter steps on");
+        assert!(stack.type_ahead('S', 2000.0));
+        assert_eq!(hover(&stack), Some(2));
+        assert!(stack.type_ahead('e', 2100.0) && stack.type_ahead('l', 2200.0));
+        assert_eq!(hover(&stack), Some(2), "a word stays on the row it found");
+        assert!(stack.type_ahead('c', 5000.0));
+        assert_eq!(hover(&stack), Some(3), "a pause starts over");
+        assert!(!stack.type_ahead('z', 6000.0));
+        assert_eq!(hover(&stack), Some(3));
+    }
+
+    /// **On its way to a submenu, the pointer crosses rows without taking
+    /// them**: a move from the opener toward the open submenu is aiming at
+    /// it, a move away is not, and the opener itself never is.
+    #[test]
+    fn a_pointer_on_its_way_to_a_submenu_is_aiming() {
+        let m = Metrics::default();
+        let entries = crate::host::menu::parse(&json!([
+            {"label": "Recent", "menu": ["one", "two", "three"]}, "Save", "Close"
+        ]));
+        let mut stack = Stack::new(Owner::Context(1), entries, Anchor::At(10.0, 10.0), 1.0);
+        stack.open_child(0, 0);
+        let placed = layout(&stack, None, work(), &m);
+        let (opener, below) = (placed[0].rows[0], placed[0].rows[1]);
+        let from = (
+            f64::from(opener.x + opener.w - 4.0),
+            f64::from(opener.y + opener.h * 0.5),
+        );
+        let toward = (from.0 + 3.0, f64::from(below.y + 2.0));
+        let away = (from.0 - 30.0, f64::from(below.y + below.h * 0.5));
+        assert!(aiming(&stack, &placed, 0, Some(1), Some(from), toward));
+        assert!(!aiming(&stack, &placed, 0, Some(1), Some(from), away));
+        assert!(!aiming(&stack, &placed, 0, Some(0), Some(from), toward));
+        assert!(!aiming(&stack, &placed, 0, Some(1), None, toward));
     }
 
     #[test]

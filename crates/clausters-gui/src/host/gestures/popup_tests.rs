@@ -1171,7 +1171,7 @@ fn a_field_has_the_standard_edit_menu_and_a_pick_edits() {
             ("Copy", true),
             ("Paste", true),
             ("Delete", true),
-            ("Select all", true)
+            ("Select All", true)
         ]
     );
     let placed = host.popup_placed(1, ctx.fb_w, ctx.fb_h).unwrap();

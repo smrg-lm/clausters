@@ -106,8 +106,10 @@
         const shown = (st, id) => st.panes.find((p) => p.id === id).shown;
         log(`joined: ${JSON.stringify(st.layout)}`);
         if (!shown(st, b.id) || shown(st, a.id)) throw new Error("the joined pane is not the one shown");
-        const tab = st.panes.find((p) => p.id === a.id).tab;
-        click(canvas, tab[0] + tab[2] / 2, tab[1] + tab[3] / 2);
+        // on the tab's name, clear of its close mark
+        const { tab, tab_close: mark } = st.panes.find((p) => p.id === a.id);
+        const end = mark ? mark[0] : tab[0] + tab[2];
+        click(canvas, (tab[0] + end) / 2, tab[1] + tab[3] / 2);
         await sleep(300);
         st = await host.dockCall({ verb: "layout" });
         if (!shown(st, a.id) || shown(st, b.id)) throw new Error("a press on a tab did not show its pane");

@@ -1569,19 +1569,22 @@ impl App {
     /// now.
     fn menu(&self) -> Value {
         let recent: Vec<Value> = if self.settings.recent.is_empty() {
-            vec![json!({"label": "No recent files", "enabled": false})]
+            vec![json!({"label": "No Recent Files", "enabled": false})]
         } else {
             self.settings
                 .recent
                 .iter()
                 .enumerate()
-                .map(|(i, p)| json!({"label": recent_label(p), "verb": format!("recent_{i}")}))
+                .map(|(i, p)| {
+                    let (name, folder) = recent_label(p);
+                    json!({"label": name, "aside": folder, "verb": format!("recent_{i}")})
+                })
                 .collect()
         };
         let mut recent = recent;
         recent.push(json!("-"));
         recent.push(
-            json!({"label": "Clear recent files", "verb": "clear_recent",
+            json!({"label": "Clear Recent Files", "verb": "clear_recent",
             "enabled": !self.settings.recent.is_empty()}),
         );
         let theme = |verb: &str, label: &str, pref: ThemePref| {
@@ -1593,12 +1596,12 @@ impl App {
             {"label": "File", "menu": [
                 {"label": "New", "verb": "new_file"},
                 {"label": "Open...", "verb": "open_file"},
-                {"label": "Open recent", "menu": recent},
+                {"label": "Open Recent", "menu": recent},
                 "-",
                 {"label": "Save", "verb": "save"},
-                {"label": "Save as...", "verb": "save_as"},
+                {"label": "Save As...", "verb": "save_as"},
                 "-",
-                {"label": "Close tab", "verb": "close_tab"},
+                {"label": "Close Tab", "verb": "close_tab"},
                 "-",
                 {"label": "Preferences...", "verb": "preferences"},
                 "-",
@@ -1611,24 +1614,24 @@ impl App {
                 {"label": "Cut", "verb": "cut"},
                 {"label": "Copy", "verb": "copy"},
                 {"label": "Paste", "verb": "paste"},
-                {"label": "Select all", "verb": "select_all"},
+                {"label": "Select All", "verb": "select_all"},
                 "-",
-                {"label": "Find and replace", "verb": "find"},
-                {"label": "Find next", "verb": "find_next"},
-                {"label": "Go to line", "verb": "go_to_line"},
-                {"label": "Toggle comment", "verb": "toggle_comment"},
+                {"label": "Find and Replace", "verb": "find"},
+                {"label": "Find Next", "verb": "find_next"},
+                {"label": "Go to Line", "verb": "go_to_line"},
+                {"label": "Toggle Comment", "verb": "toggle_comment"},
             ]},
             {"label": "Session", "menu": [
-                {"label": "Evaluate line or selection", "verb": "evaluate_line"},
-                {"label": "Evaluate block", "verb": "evaluate_block"},
-                {"label": "Evaluate contiguous lines as a block", "verb": "eval_paragraph",
+                {"label": "Evaluate Line or Selection", "verb": "evaluate_line"},
+                {"label": "Evaluate Block", "verb": "evaluate_block"},
+                {"label": "Evaluate Contiguous Lines as a Block", "verb": "eval_paragraph",
                     "checked": self.settings.eval_paragraph},
                 "-",
                 {"label": "Interrupt", "verb": "interrupt"},
-                {"label": "Restart session", "verb": "restart"},
-                {"label": "Python environments...", "verb": "environments"},
+                {"label": "Restart Session", "verb": "restart"},
+                {"label": "Python Environments...", "verb": "environments"},
                 "-",
-                {"label": "Clear post window", "verb": "clear_post"},
+                {"label": "Clear Post Window", "verb": "clear_post"},
             ]},
             {"label": "View", "menu": [
                 {"label": "Theme", "menu": [
@@ -1638,19 +1641,19 @@ impl App {
                 ]},
                 "-",
                 {"label": "Documentation", "verb": "show_docs", "checked": self.docs_shown},
-                {"label": "Split editor", "verb": "split_editor", "checked": split},
-                {"label": "Move tab to other editor", "verb": "move_tab", "enabled": split},
+                {"label": "Split Editor", "verb": "split_editor", "checked": split},
+                {"label": "Move Tab to Other Editor", "verb": "move_tab", "enabled": split},
                 "-",
-                {"label": "Increase size", "verb": "zoom_in"},
-                {"label": "Decrease size", "verb": "zoom_out"},
-                {"label": "Default size", "verb": "zoom_reset"},
+                {"label": "Increase Size", "verb": "zoom_in"},
+                {"label": "Decrease Size", "verb": "zoom_out"},
+                {"label": "Default Size", "verb": "zoom_reset"},
             ]},
             {"label": "Help", "menu": [
                 {"label": "Documentation", "verb": "docs"},
-                {"label": "Search the documentation", "verb": "search_docs"},
-                {"label": "Documentation folder...", "verb": "docs_folder"},
+                {"label": "Search the Documentation", "verb": "search_docs"},
+                {"label": "Documentation Folder...", "verb": "docs_folder"},
                 "-",
-                {"label": "Keyboard shortcuts", "verb": "keys"},
+                {"label": "Keyboard Shortcuts", "verb": "keys"},
             ]},
         ])
     }
@@ -1951,7 +1954,7 @@ fn home() -> PathBuf {
 
 /// A recent file as a menu lists it: its name, then its folder, written
 /// from `~` under the home folder.
-fn recent_label(path: &str) -> String {
+fn recent_label(path: &str) -> (String, String) {
     let p = Path::new(path);
     let dir = p
         .parent()
@@ -1962,7 +1965,7 @@ fn recent_label(path: &str) -> String {
         Some(rest) if !home.is_empty() => format!("~{rest}"),
         _ => dir,
     };
-    format!("{}    {dir}", file_name(p))
+    (file_name(p), dir)
 }
 
 fn docs_dir_text(config: &config::Config) -> String {

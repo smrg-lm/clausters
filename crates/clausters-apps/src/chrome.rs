@@ -146,10 +146,16 @@ fn sep() -> Value {
     json!("-")
 }
 
-/// **The menu bar**, as the window's `menu` value. `saves` says whether the
-/// window writes its work itself -- File has Save then.
+/// **The menu bar**, as the window's `menu` value, its labels in header
+/// capitalization (`verbs::titled`). `saves` says whether the window writes
+/// its work itself -- File has Save then.
 #[must_use]
 pub fn menu(app: App, saves: bool) -> Value {
+    verbs::titled(entries(app, saves))
+}
+
+/// The menu bar's entries, in the verb table's words.
+fn entries(app: App, saves: bool) -> Value {
     // a curve is drawn and walked through, and nothing else: what the bar
     // would offer of the others' is refused where it is asked (`actions`)
     if app == App::Points {

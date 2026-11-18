@@ -780,7 +780,7 @@ impl Element for PostView {
             } else {
                 copy.disabled()
             },
-            Entry::action("Select all", "select_all"),
+            Entry::action("Select All", "select_all"),
             Entry::separator(),
             Entry::action("Clear", "clear"),
             Entry::check("Autoscroll", "autoscroll", self.autoscroll),

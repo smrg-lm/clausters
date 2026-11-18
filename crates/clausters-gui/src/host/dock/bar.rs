@@ -261,7 +261,7 @@ impl Dock {
             return;
         };
         if self.floating {
-            let mut entries = vec![Entry::action("Back into the dock", "dock")];
+            let mut entries = vec![Entry::action("Back into the Dock", "dock")];
             if self.closable(pane) {
                 entries.push(Entry::separator());
                 entries.push(Entry::action("Close", "close"));
@@ -285,8 +285,8 @@ impl Dock {
             let e = Entry::action(label, verb);
             if several { e } else { e.disabled() }
         };
-        entries.push(split("Split right", "split:right"));
-        entries.push(split("Split down", "split:bottom"));
+        entries.push(split("Split Right", "split:right"));
+        entries.push(split("Split Down", "split:bottom"));
         let mut pages: Vec<Entry> = self
             .page_names()
             .iter()
@@ -297,11 +297,11 @@ impl Dock {
         if !pages.is_empty() {
             pages.push(Entry::separator());
         }
-        pages.push(Entry::action("New page", "page:new"));
-        entries.push(submenu("Move to page", pages));
-        entries.push(Entry::action("Move to its own window", "undock"));
+        pages.push(Entry::action("New Page", "page:new"));
+        entries.push(submenu("Move to Page", pages));
+        entries.push(Entry::action("Move to Its Own Window", "undock"));
         entries.push(Entry::separator());
-        let others = Entry::action("Close the other tabs", "close_others");
+        let others = Entry::action("Close the Other Tabs", "close_others");
         let any = g.panes.iter().any(|&p| p != pane && self.closable(p));
         entries.push(if any { others } else { others.disabled() });
         if self.closable(pane) {
@@ -313,11 +313,11 @@ impl Dock {
     /// **Opens the menu of the page at `page`**, at `point`.
     pub fn open_page_menu(&mut self, page: usize, (x, y): (f32, f32)) {
         let last = self.page_names().len() == 1;
-        let close = Entry::action("Close page", "page_close");
+        let close = Entry::action("Close Page", "page_close");
         let entries = vec![
             Entry::action("Show", "page_show"),
-            Entry::action("Copy page", "page_copy"),
-            Entry::action("New page", "page_new"),
+            Entry::action("Copy Page", "page_copy"),
+            Entry::action("New Page", "page_new"),
             Entry::separator(),
             if last { close.disabled() } else { close },
         ];
@@ -472,5 +472,6 @@ fn submenu(label: &str, entries: Vec<Entry>) -> Entry {
         enabled: true,
         icon: None,
         key: None,
+        aside: None,
     }
 }

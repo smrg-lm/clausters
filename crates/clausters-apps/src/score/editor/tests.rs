@@ -1224,7 +1224,7 @@ fn the_window_holds_its_dialogs_and_the_bar_opens_them_only_where_there_are() {
             .cloned()
             .unwrap()
     };
-    assert_eq!(entry(&bare, "Page text...")["enabled"], false);
+    assert_eq!(entry(&bare, "Page Text...")["enabled"], false);
     let tree = editor.window(
         IDS,
         Chrome {
@@ -1239,7 +1239,7 @@ fn the_window_holds_its_dialogs_and_the_bar_opens_them_only_where_there_are() {
         "the scroll, the status line, the dialogs"
     );
     assert_eq!(children[2]["flow"], "stack");
-    assert_eq!(entry(&tree, "Page text...")["enabled"], true);
+    assert_eq!(entry(&tree, "Page Text...")["enabled"], true);
     // the door names them for a caller to number
     let names: Value =
         serde_json::from_str(&call_json(&mut editor, r#"{"verb": "dialogs"}"#)).unwrap();

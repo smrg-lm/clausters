@@ -10,7 +10,8 @@
 //! to.
 //!
 //! **The wire.** An entry is a JSON object -- `label`, `verb` (the label when
-//! it names none), `enabled`, `icon`, and one of: `checked` (a check),
+//! it names none), `enabled`, `icon`, `aside` (what it says beside its
+//! label, quieter: a recent file's folder), and one of: `checked` (a check),
 //! `group` with `checked` (one of several: the entries of a list that share a
 //! group), `menu` (a submenu holding entries of its own). The string `"-"` is
 //! a separator. On the scalar wire (`/gui_set`) the whole list rides as its
@@ -50,6 +51,9 @@ pub struct Entry {
     pub enabled: bool,
     /// A glyph of the font drawn before the label (see `host::font`).
     pub icon: Option<char>,
+    /// **What the entry says beside its label**, quieter and cut first: a
+    /// recent file's folder after its name. The `aside` prop.
+    pub aside: Option<String>,
     /// The chord bound to this entry's verb, drawn at the right of its row.
     /// Not a prop: the host writes it from its key table when the list opens
     /// ([`show_keys`]), so a list shows the keys of the moment it opened.
@@ -70,6 +74,7 @@ impl Entry {
             enabled: true,
             icon: None,
             key: None,
+            aside: None,
         }
     }
 
@@ -82,6 +87,7 @@ impl Entry {
             enabled: true,
             icon: None,
             key: None,
+            aside: None,
         }
     }
 
@@ -94,6 +100,7 @@ impl Entry {
             enabled: true,
             icon: None,
             key: Some(key.to_string()),
+            aside: None,
         }
     }
 
@@ -106,6 +113,7 @@ impl Entry {
             enabled: true,
             icon: None,
             key: None,
+            aside: None,
         }
     }
 
@@ -135,6 +143,7 @@ impl Entry {
             enabled: false,
             icon: None,
             key: None,
+            aside: None,
         }
     }
 
@@ -185,6 +194,7 @@ impl Entry {
                 enabled: true,
                 icon: None,
                 key: None,
+                aside: None,
             }),
             Value::Object(o) => Entry::from_object(o),
             _ => None,
@@ -220,6 +230,11 @@ impl Entry {
             enabled: o.get("enabled").and_then(truthy).unwrap_or(true),
             icon: o.get("icon").and_then(icon_of),
             key: None,
+            aside: o
+                .get("aside")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
         })
     }
 
@@ -250,6 +265,9 @@ impl Entry {
         }
         if let Some(icon) = self.icon {
             o.insert("icon".into(), Value::from(icon.to_string()));
+        }
+        if let Some(aside) = &self.aside {
+            o.insert("aside".into(), Value::from(aside.clone()));
         }
         Value::Object(o)
     }
@@ -330,6 +348,7 @@ pub fn edit_entries(selected: bool, has_text: bool) -> Vec<Entry> {
         enabled,
         icon: None,
         key: None,
+        aside: None,
     };
     vec![
         entry("Cut", "cut", selected),
@@ -337,7 +356,7 @@ pub fn edit_entries(selected: bool, has_text: bool) -> Vec<Entry> {
         entry("Paste", "paste", true),
         entry("Delete", "delete", selected),
         Entry::separator(),
-        entry("Select all", "select_all", has_text),
+        entry("Select All", "select_all", has_text),
     ]
 }
 

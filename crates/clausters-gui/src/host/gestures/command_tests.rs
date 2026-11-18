@@ -324,10 +324,10 @@ fn a_track_s_context_menu_shows_its_curves_one_at_a_time() {
             "gain",
             "pan",
             "",
-            "Add track",
+            "Add Track",
             "",
-            "Reset track heights",
-            "Compact tracks"
+            "Reset Track Heights",
+            "Compact Tracks"
         ]
     );
     assert!(stack.levels[0].entries[0].marked(), "gain is shown");
