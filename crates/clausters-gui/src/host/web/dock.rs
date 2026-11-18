@@ -232,6 +232,9 @@ impl WebApp {
         if let Some(title) = self.host.window_title(def_id) {
             shell.layout.set_title(def_id, title);
         }
+        shell
+            .layout
+            .set_tab(def_id, self.host.window_dock_tab(def_id));
         self.host.set_ui_scale(def_id, shell.scale);
         let mut slot = CanvasSlot::new(shell.window.clone());
         slot.buttons = shell.buttons.clone();
@@ -245,9 +248,17 @@ impl WebApp {
         window.request_redraw();
     }
 
-    /// **Pane `def`'s title changed**: its tab says it.
+    /// **Pane `def`'s title changed**: its tab says it -- and whether it is
+    /// a document, which a redefinition may have changed.
     pub(super) fn retitle_pane(&mut self, def: i32) {
+        let tab = self.host.window_dock_tab(def);
+        if let Some(shell) = self.dock.as_mut()
+            && shell.layout.holds(def)
+        {
+            shell.layout.set_tab(def, tab);
+        }
         let Some(title) = self.host.window_title(def) else {
+            self.settle_dock();
             return;
         };
         if let Some(shell) = self.floats.get_mut(&def) {

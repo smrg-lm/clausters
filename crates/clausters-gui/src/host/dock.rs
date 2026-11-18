@@ -29,7 +29,7 @@
 //! A pane behind another's tab is not drawn and is told it is not seen, as a
 //! covered window is; it keeps its def, its state and whatever it plays.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use clausters_gui_draw::metrics::Metrics;
 use clausters_gui_draw::rect::Rect;
@@ -253,6 +253,9 @@ pub struct Dock {
     metrics: Metrics,
     /// Each pane's tab title.
     titles: HashMap<i32, String>,
+    /// The panes that are documents, shown as a tab even alone
+    /// ([`Dock::set_tab`]).
+    tabbed: HashSet<i32>,
     /// Where the pointer is, in the surface's pixels.
     at: Option<(f64, f64)>,
     /// The pane the pointer is over, with no button held.
@@ -296,6 +299,7 @@ impl Dock {
             size,
             metrics,
             titles: HashMap::new(),
+            tabbed: HashSet::new(),
             at: None,
             pointer: None,
             grip: None,
@@ -396,6 +400,26 @@ impl Dock {
         }
     }
 
+    /// **Says whether pane `def_id` is a document** (`tab`): its panel shows
+    /// it as a tab even when it is the panel's only window, where a panel
+    /// of one window that is not shows a bar with its title.
+    pub fn set_tab(&mut self, def_id: i32, tab: bool) {
+        let changed = if tab {
+            self.tabbed.insert(def_id)
+        } else {
+            self.tabbed.remove(&def_id)
+        };
+        if changed {
+            self.dirty.chrome = true;
+        }
+    }
+
+    /// Whether a panel holding `panes` shows them as tabs: several, or one
+    /// that is a document.
+    pub(super) fn shows_tabs(&self, panes: &[i32]) -> bool {
+        panes.len() > 1 || panes.iter().any(|p| self.tabbed.contains(p))
+    }
+
     /// **What changed since the last time**, and nothing from then on.
     pub fn take_dirty(&mut self) -> Dirty {
         std::mem::take(&mut self.dirty)
@@ -439,6 +463,7 @@ impl Dock {
             tree.remove(def_id);
         }
         self.titles.remove(&def_id);
+        self.tabbed.remove(&def_id);
         if self.pointer == Some(def_id) {
             self.pointer = None;
         }

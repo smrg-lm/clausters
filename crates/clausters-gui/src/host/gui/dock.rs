@@ -109,6 +109,7 @@ impl App {
         if let Some(title) = title {
             shell.layout.set_title(id, title);
         }
+        shell.layout.set_tab(id, self.host.window_dock_tab(id));
         self.host.set_ui_scale(id, shell.scale);
         let rect = shell.layout.rect(id)?;
         let gpu = Gpu::pane(&shell.gpu, rect.w, rect.h);
@@ -143,9 +144,17 @@ impl App {
     }
 
     /// **Pane `id`'s title changed**: its tab says it, and a floating
-    /// panel's window too.
+    /// panel's window too -- and whether it is a document, which a
+    /// redefinition may have changed.
     pub(super) fn retitle_pane(&mut self, id: i32) {
+        let tab = self.host.window_dock_tab(id);
+        if let Some(shell) = self.dock.as_mut()
+            && shell.layout.holds(id)
+        {
+            shell.layout.set_tab(id, tab);
+        }
         let Some(title) = self.host.window_title(id) else {
+            self.settle_dock();
             return;
         };
         if let Some(shell) = self.floats.get_mut(&id) {

@@ -3,10 +3,10 @@
 //! dragged tab would land, and an open menu. Drawn over the panes, in the
 //! dock's surface.
 //!
-//! A panel's bar reads as an editor's panel does: a grip at its start, a tab
-//! for each window, the one shown standing out on the ground of the panel
-//! with a line along its top, and its menu button at the end (a floating
-//! panel's bar shows its window's title instead). The page strip is a `choice`'s row of tabs
+//! A panel's bar reads as an editor's panel does: a grip at its start, the
+//! window's title -- or, for a panel of several windows or of a document,
+//! their tabs, the one shown standing out on the ground of the panel with a
+//! line along its top -- and its buttons at the end. The page strip is a `choice`'s row of tabs
 //! ([`choice::draw`]); a menu is the popup layer's list ([`draw_list`]).
 
 use clausters_gui_draw::draw::Draw;

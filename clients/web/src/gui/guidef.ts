@@ -1629,6 +1629,13 @@ export function view(
      */
     dockEdge?: "top" | "bottom";
     /**
+     * **The window is a document**: its panel shows it as a tab even when it
+     * is the panel's only window, as an editor shows a single file. Without
+     * it a panel of one window shows a bar with the window's title, as a
+     * tool's panel does, and tabs appear when the panel holds several.
+     */
+    dockTab?: boolean;
+    /**
      * **The owner is told when the window comes back** -- it gains or loses
      * the platform's focus, or its page is shown or hidden -- as the window's
      * `activated` verb, `1` or `0`. Off by default.
@@ -1681,7 +1688,7 @@ export function view(
 ): View {
     const {
         title, flow, layout, margin, gap, cols, hug, status, plays, keys, verbs, askClose,
-        history, dockPage, dockEdge, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs,
+        history, dockPage, dockEdge, dockTab, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs,
         ...rest
     } = options;
     return node("window", {
@@ -1706,6 +1713,7 @@ export function view(
             ["history", flag(history)],
             ["dock_page", dockPage],
             ["dock_edge", dockEdge],
+            ["dock_tab", flag(dockTab)],
             ["activation", flag(activation)],
             ["progress", progress],
             ["progress_label", progressLabel],

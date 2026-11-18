@@ -36,9 +36,14 @@ fn part(d: &Dock, group: usize, want: BarPart) -> Rect {
         .expect("the bar has it")
 }
 
-/// What a hand drags group `group`'s first window by: its tab.
+/// What a hand drags group `group`'s first window by: its tab, or the title
+/// of a panel showing no tabs.
 fn handle(d: &Dock, group: usize) -> Rect {
-    part(d, group, BarPart::Tab(0))
+    if d.shows_tabs(&d.groups()[group].panes) {
+        part(d, group, BarPart::Tab(0))
+    } else {
+        part(d, group, BarPart::Title)
+    }
 }
 
 /// The height of a tab strip in these tests.
@@ -458,11 +463,12 @@ fn an_empty_dock_has_no_panel() {
     assert_eq!(ws.state()["panes"], json!([]));
 }
 
-/// **A panel's bar is its tab strip**: a grip, a tab for each window with
-/// a close mark each -- one tab for one window -- and the menu button, with
-/// no title row and no close mark of the panel's own.
+/// **A panel of one window shows its title, not a tab**, with a grip, a
+/// menu button and a close mark -- unless that window is a document, which
+/// is its tab as an editor's single file is; a panel of several shows a tab
+/// each, with a close mark each, and no close mark of its own.
 #[test]
-fn a_panel_shows_a_tab_for_each_window_even_one() {
+fn a_panel_shows_tabs_for_several_windows_or_a_document() {
     let mut ws = dock((600, 300), 4.0, &[1, 2]);
     let kinds = |ws: &Dock, g: usize| -> Vec<BarPart> {
         ws.bar_parts(&ws.groups()[g].clone())
@@ -472,13 +478,20 @@ fn a_panel_shows_a_tab_for_each_window_even_one() {
     };
     assert_eq!(
         kinds(&ws, 0),
+        [BarPart::Grip, BarPart::Title, BarPart::Menu, BarPart::Close]
+    );
+    ws.set_tab(1, true);
+    assert_eq!(
+        kinds(&ws, 0),
         [
             BarPart::Grip,
             BarPart::TabClose(0),
             BarPart::Tab(0),
             BarPart::Menu
-        ]
+        ],
+        "a document is its tab"
     );
+    ws.set_tab(1, false);
     ws.land(2, Landing::Join { of: 1, at: None })
         .expect("joins");
     assert_eq!(

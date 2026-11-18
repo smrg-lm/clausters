@@ -1116,7 +1116,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          keys: list | str | None = None, verbs: dict | None = None,
          ask_close: bool | None = None, activation: bool | None = None,
          history: bool | None = None, dock_page: str | None = None,
-         dock_edge: str | None = None,
+         dock_edge: str | None = None, dock_tab: bool | None = None,
          progress: float | None = None, progress_label: str | None = None,
          split: bool | None = None, menu: list | None = None,
          main: int | None = None, glyphs: dict | None = None,
@@ -1214,6 +1214,12 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     titles first. With none the window is a panel; a host with no dock reads
     nothing in it.
 
+    ``dock_tab`` says the window is **a document**: its panel shows it as a
+    tab even when it is the panel's only window, as an editor shows a single
+    file. Without it a panel of one window shows a bar with the window's
+    title, as a tool's panel does, and tabs appear when the panel holds
+    several.
+
     ``progress`` is **work the owner is doing for the window**, a fraction in
     ``0..1`` with ``progress_label`` naming it, drawn at the right end of the
     status bar while it is set; a negative value takes it away. An owner sets
@@ -1270,6 +1276,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
         extra["dock_page"] = dock_page
     if dock_edge is not None:
         extra["dock_edge"] = dock_edge
+    if dock_tab is not None:
+        extra["dock_tab"] = 1 if dock_tab else 0
     if progress is not None:
         extra["progress"] = float(progress)
     if progress_label is not None:

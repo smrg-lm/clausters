@@ -1542,6 +1542,13 @@ impl Host {
         }
     }
 
+    /// Whether window `id` is a document its panel shows as a tab even
+    /// alone (its `dock_tab`).
+    pub fn window_dock_tab(&self, id: i32) -> bool {
+        self.window_def(id)
+            .is_some_and(|tree| matches!(tree.kind, WidgetKind::Window { dock_tab: true, .. }))
+    }
+
     pub fn window_title(&self, id: i32) -> Option<String> {
         match &self.window_def(id)?.kind {
             WidgetKind::Window { title, .. } => Some(

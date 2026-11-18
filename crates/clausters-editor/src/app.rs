@@ -793,6 +793,8 @@ impl App {
     fn file_tree(&self, file: &File, text: &str) -> Value {
         let win = file.win;
         let mut tree = self.window(win, &file.title());
+        // a file is a document: its panel shows it as its tab, even alone
+        tree["dock_tab"] = json!(1);
         tree["main"] = json!(win + CODE);
         tree["children"] = json!([{
             "id": win + 1, "type": "layout", "flow": "col", "margin": 0, "gap": 0,

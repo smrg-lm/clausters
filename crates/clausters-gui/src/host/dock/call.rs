@@ -219,9 +219,9 @@ impl Dock {
                     .map_or(Value::Null, |(_, r)| rect(*r))
             };
             for (i, &pane) in group.panes.iter().enumerate() {
-                // what a hand drags the pane by: its tab, or a floating
-                // panel's title
-                let tab = if self.floating {
+                // what a hand drags the pane by: its tab, or the title of a
+                // panel showing no tabs
+                let tab = if self.floating || !self.shows_tabs(&group.panes) {
                     part(super::BarPart::Title)
                 } else {
                     part(super::BarPart::Tab(i))

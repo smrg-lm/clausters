@@ -2566,9 +2566,11 @@ first four are the order the user set; the components come after.
   rather than drawn under it; the page strip is hidden while there is one
   page. The editor's tabs as the inventory says (width, the top line, the dot
   that turns into a cross, the middle click, the path as tip). A panel's
-  owner says whether it may be closed, and the post window may not. A panel
-  of one window already shows its one tab rather than a title row, each tab
-  at most 28 characters of title (the inventory's 224 at 14).
+  owner says whether it may be closed, and the post window may not. A window
+  that is a document (`dock_tab`, the editor's files) already shows as its
+  panel's tab even alone, while a tool's panel (the post window, the
+  documentation) shows a bar with its title as the current editor's do;
+  each tab is at most 28 characters of title (the inventory's 224 at 14).
 - ⬜ **ST4: The status footer.** A band along the dock's bottom, the
   application's: the dot and the line of the inventory, set by the
   application with a verb. The post window's title goes back to its name.
