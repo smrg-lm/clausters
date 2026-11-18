@@ -43,6 +43,84 @@ use super::{GLYPH_H, GLYPH_W};
 use crate::paint::Mesh;
 use crate::theme::Color;
 
+/// **The host's icons are outlines it carries**: the subset of Lucide in
+/// `lucide.rs`, each at a private-use codepoint of its own from here, in
+/// that table's order. A name becomes its character ([`icon`]), and from then
+/// on it is drawn wherever text is, as a window's outlines are.
+const ICON_BASE: u32 = 0xF0000;
+
+/// How wide an icon's box of 24 is, in font units: 16 pixels where the
+/// interface's text is 14 to the em, as the specification sizes an icon
+/// beside its text -- the em drawn [`EM_PER_CELL`] body boxes tall, the body
+/// box the face's capital, 0.727 of Inter's em.
+const ICON_UNITS: f32 = 1000.0 * (16.0 / 14.0) / (EM_PER_CELL * 0.727);
+
+/// The width an icon's lines are stroked at in its box of 24: Lucide's.
+const ICON_STROKE: f32 = 2.0;
+
+/// The names an icon is also called by: a name of one character is the
+/// character on the wire, so Lucide's `x` is `close` there too.
+const ICON_ALIASES: &[(&str, &str)] = &[("close", "x")];
+
+/// **The character that draws the icon `name`**, a Lucide name the host
+/// carries (or an alias of one), or `None`. The first call puts every icon
+/// in the table.
+pub fn icon(name: &str) -> Option<char> {
+    let name = ICON_ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == name)
+        .map_or(name, |&(_, to)| to);
+    let at = super::lucide::ICONS.iter().position(|(n, _)| *n == name)?;
+    icons_in().then(|| char::from_u32(ICON_BASE + at as u32))?
+}
+
+/// The names of the icons the host carries.
+pub fn icon_names() -> impl Iterator<Item = &'static str> {
+    super::lucide::ICONS.iter().map(|(name, _)| *name)
+}
+
+/// Puts the icons in the table, once: whether they are there (a build that
+/// cannot stroke a path has none).
+fn icons_in() -> bool {
+    static DONE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *DONE.get_or_init(|| {
+        let shapes: Vec<(char, Shape)> = super::lucide::ICONS
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (_, d))| Some((char::from_u32(ICON_BASE + i as u32)?, stroke(d)?)))
+            .collect();
+        if shapes.is_empty() {
+            return false;
+        }
+        let mut table = TABLE.write().unwrap_or_else(|e| e.into_inner());
+        table.extend(shapes);
+        FILLED.store(true, Ordering::Relaxed);
+        GENERATION.fetch_add(1, Ordering::Relaxed);
+        true
+    })
+}
+
+/// An icon's shape: the path `d` in Lucide's box of 24, `y` downward,
+/// stroked, in font units about the box's centre and as wide as the box.
+#[cfg(feature = "path")]
+fn stroke(d: &str) -> Option<Shape> {
+    let k = ICON_UNITS / 24.0;
+    let fill: Vec<[f32; 2]> = crate::path::stroke_triangles(d, ICON_STROKE, 0.02)
+        .into_iter()
+        .map(|p| [(p[0] - 12.0) * k, (12.0 - p[1]) * k])
+        .collect();
+    (!fill.is_empty()).then_some(Shape {
+        fill,
+        edges: Vec::new(),
+        width: ICON_UNITS,
+    })
+}
+
+#[cfg(not(feature = "path"))]
+fn stroke(_d: &str) -> Option<Shape> {
+    None
+}
+
 /// The units of an outline's coordinates to the em: SMuFL's, and every music
 /// font's that follows it.
 pub const UNITS_PER_EM: f32 = 1000.0;
@@ -60,7 +138,7 @@ const THIN: f32 = 17.0;
 const HINT: f32 = 1.1;
 
 /// One character's shape, in font units with `y` upward, about the centre of
-/// its own bounding box.
+/// its own bounding box (an icon's: of its box of 24).
 struct Shape {
     /// The fill: triangle corners, three to a triangle.
     fill: Vec<[f32; 2]>,
@@ -324,6 +402,38 @@ mod tests {
         assert!(((left + right) * 0.5 - (10.0 + (step - scale) * 0.5)).abs() <= 0.5);
         // and one without is left to the face
         assert!(draw(&mut mesh, 'a', 0.0, 0.0, 2.0, [1.0; 4]).is_none());
+    }
+
+    /// **An icon is a character of its own**: a Lucide name the host
+    /// carries is a private-use character drawn as its stroked shape, 16
+    /// pixels wide where the interface's text is 14 to the em, centred on
+    /// the line; an unknown name is none, and `close` is `x`.
+    #[test]
+    fn a_named_icon_is_drawn_as_its_stroked_shape() {
+        let eraser = icon("eraser").expect("the host carries it");
+        assert!(has(eraser));
+        assert_eq!(icon("close"), icon("x"));
+        assert!(icon("x").is_some() && icon("no-such-icon").is_none());
+        assert!(icon_names().any(|n| n == "grip-vertical"));
+        // the interface's 14 to the em: Inter's capital fills the body box
+        let scale = 14.0 * 0.727 / GLYPH_H as f32;
+        let box_px = ICON_UNITS * pixels(scale);
+        assert!((box_px - 16.0).abs() < 0.05, "{box_px}");
+        let mut mesh = Mesh::new();
+        draw(
+            &mut mesh,
+            icon("square").unwrap(),
+            0.0,
+            0.0,
+            scale,
+            [1.0; 4],
+        )
+        .unwrap();
+        // a square of 18 in the box of 24, stroked 2 wide: 20 of 24
+        let [left, top, right, bottom] = bounds(&mesh);
+        let side = 20.0 / 24.0 * box_px;
+        assert!((right - left - side).abs() < 0.2, "{}", right - left);
+        assert!((bottom - top - side).abs() < 0.2, "{}", bottom - top);
     }
 
     /// **Its advance is its own**: the width of the shape and a bearing, and

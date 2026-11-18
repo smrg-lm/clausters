@@ -558,8 +558,7 @@ impl DocsView {
             parts.push((part, Rect::new(x, sy, square, row)));
             x += square;
         }
-        let find_w = text_box("Find", ui, m) + m.pad;
-        let find = Rect::new(strip.x + strip.w - find_w, sy, find_w, row);
+        let find = Rect::new(strip.x + strip.w - square, sy, square, row);
         parts.push((Part::Find, find));
         let (book, _) = self.trail();
         let trail_x = x + m.pad;
@@ -1003,20 +1002,27 @@ impl DocsView {
                 )
             };
             match part {
-                Part::Find => controls::button(d, Some("Find"), None, inset(r), flat, g.ui),
                 Part::Back
+                | Part::Find
                 | Part::Forward
                 | Part::Home
                 | Part::Previous
                 | Part::Next
                 | Part::Close => {
                     let (symbol, live) = match part {
-                        Part::Back => (font::symbol::LEFT, self.pos > 0),
-                        Part::Forward => (font::symbol::RIGHT, self.pos + 1 < self.history.len()),
-                        Part::Home => ('\u{2302}', true),
-                        Part::Previous => (font::symbol::UP, true),
-                        Part::Next => (font::symbol::DOWN, true),
-                        _ => (font::symbol::CLOSE, true),
+                        Part::Back => (
+                            controls::icon("arrow-left", font::symbol::LEFT),
+                            self.pos > 0,
+                        ),
+                        Part::Forward => (
+                            controls::icon("arrow-right", font::symbol::RIGHT),
+                            self.pos + 1 < self.history.len(),
+                        ),
+                        Part::Home => (controls::icon("house", '\u{2302}'), true),
+                        Part::Find => (controls::icon("search", '?'), true),
+                        Part::Previous => (controls::icon("chevron-up", font::symbol::UP), true),
+                        Part::Next => (controls::icon("chevron-down", font::symbol::DOWN), true),
+                        _ => (controls::icon("x", font::symbol::CLOSE), true),
                     };
                     if live {
                         controls::button(d, None, Some(symbol), inset(r), flat, g.ui);

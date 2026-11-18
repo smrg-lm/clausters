@@ -46,6 +46,7 @@ use crate::theme::Color;
 
 #[cfg(feature = "font-atlas")]
 pub mod atlas;
+mod lucide;
 pub mod outline;
 #[cfg(feature = "font-atlas")]
 pub mod shape;

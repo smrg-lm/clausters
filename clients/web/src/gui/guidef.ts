@@ -2219,9 +2219,11 @@ export interface ButtonOptions extends WidgetOptions {
     on?: number;
     off?: number;
     /**
-     * One character drawn before the label, or in its place when there is
-     * none: there are no icons in the host and there are fonts, so an icon is
-     * a glyph ({@link ICON} names the ones the host's own face draws).
+     * Drawn before the label, or in its place when there is none: the name of
+     * an icon the host carries (a Lucide name: `"play"`, `"eraser"`,
+     * `"chevron-right"`; the widget protocol lists them), or else one
+     * character, a glyph ({@link ICON} names the ones the host's own face
+     * draws).
      */
     icon?: string;
     /** No box until the pointer is over the button -- what a row of tools wants; like a tool, it takes no focus. */
@@ -2326,7 +2328,7 @@ export interface ToggleOptions extends WidgetOptions {
      * other) or `"button"` (a button that stays pressed).
      */
     view?: "check" | "switch" | "button";
-    /** One character drawn with the label, as on {@link button}. */
+    /** An icon's name or one character drawn with the label, as on {@link button}. */
     icon?: string;
     textSize?: number;
 }
@@ -2605,7 +2607,7 @@ export function choice(
  * - `menu` -- a **submenu**: a menu of its own, opened beside the entry.
  *
  * `enabled: false` leaves the entry in its list and out of reach. `icon` is
- * one character drawn before the label.
+ * an icon's name or one character drawn before the label, as on {@link button}.
  *
  * The state an entry holds is a prop like any other: the host flips it where
  * it is drawn, reports it, and a query reads it back -- it is whoever owns the

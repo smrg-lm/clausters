@@ -18,6 +18,7 @@ use clausters_gui_draw::theme::{Color, Theme};
 use super::{BarPart, Dock, GroupPlace};
 use crate::host::frame::{draw_list, draw_tip};
 use crate::host::graphics::choice;
+use crate::host::graphics::controls::icon;
 use crate::host::popup::Tip;
 
 impl Dock {
@@ -113,6 +114,7 @@ impl Dock {
                 BarPart::Grip => grip(
                     mesh,
                     r,
+                    size,
                     if hot { theme.text } else { theme.text_dim },
                     m.divider_w,
                 ),
@@ -169,11 +171,12 @@ impl Dock {
                         let dot = (r.h * 0.18).max(2.0 * m.divider_w);
                         mesh.disc(r.x + r.w * 0.5, r.y + r.h * 0.5, dot, theme.text);
                     } else if under || i == group.active {
-                        button(mesh, r, symbol::CLOSE, hot, size, theme);
+                        // the specification's 12 of a tab's cross, where a tool's icon is 16
+                        button(mesh, r, icon("x", symbol::CLOSE), hot, size * 0.75, theme);
                     }
                 }
-                BarPart::Menu => button(mesh, r, symbol::MENU, hot, size, theme),
-                BarPart::Close => button(mesh, r, symbol::CLOSE, hot, size, theme),
+                BarPart::Menu => button(mesh, r, icon("menu", symbol::MENU), hot, size, theme),
+                BarPart::Close => button(mesh, r, icon("x", symbol::CLOSE), hot, size, theme),
             }
         }
         mesh.set_clip(None);
@@ -199,8 +202,12 @@ fn button(mesh: &mut Mesh, r: Rect, glyph: char, hot: bool, size: f32, theme: &T
     );
 }
 
-/// The grip: two columns of three dots, what a handle to drag by looks like.
-fn grip(mesh: &mut Mesh, r: Rect, color: Color, unit: f32) {
+/// The grip: two columns of three dots, what a handle to drag by looks like
+/// -- the icon, or the dots drawn where the host carries no icons.
+fn grip(mesh: &mut Mesh, r: Rect, size: f32, color: Color, unit: f32) {
+    if let Some(icon) = font::outline::icon("grip-vertical") {
+        return font::text_centered(mesh, &icon.to_string(), r, size, color);
+    }
     let dot = (1.5 * unit).max(1.0);
     let step = 4.0 * unit.max(1.0);
     let (cx, cy) = (r.x + r.w * 0.5, r.y + r.h * 0.5);

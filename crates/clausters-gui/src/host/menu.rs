@@ -255,9 +255,19 @@ impl Entry {
     }
 }
 
-/// The `icon` prop's value: the first character of a string.
+/// **The `icon` prop's value**: the name of an icon the host carries (a
+/// Lucide name, `"eraser"`, `"chevron-right"`), drawn as its stroked shape,
+/// or else the first character of the string, drawn as text is.
 pub fn icon_of(v: &Value) -> Option<char> {
-    v.as_str()?.chars().next()
+    let s = v.as_str()?;
+    let mut chars = s.chars();
+    let first = chars.next()?;
+    if chars.next().is_some()
+        && let Some(icon) = clausters_gui_draw::font::outline::icon(s)
+    {
+        return Some(icon);
+    }
+    Some(first)
 }
 
 fn truthy(v: &Value) -> Option<bool> {
@@ -417,6 +427,22 @@ pub fn pick(entries: &mut Vec<Entry>, path: &[usize]) -> Option<Pick> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **An icon is named or written**: a name the host carries is its
+    /// stroked shape, a single character is itself, and a string that names
+    /// nothing is its first character, as it always was.
+    #[test]
+    fn an_icon_is_a_carried_name_or_a_character() {
+        use clausters_gui_draw::font::outline;
+        let of = |s: &str| icon_of(&Value::from(s));
+        assert_eq!(of("eraser"), outline::icon("eraser"));
+        assert!(of("eraser").is_some_and(outline::has));
+        assert_eq!(of("x"), Some('x'));
+        assert_eq!(of("close"), outline::icon("x"));
+        assert_eq!(of("\u{25B6}"), Some('\u{25B6}'));
+        assert_eq!(of("hello"), Some('h'));
+        assert_eq!(of(""), None);
+    }
     use serde_json::json;
 
     /// A verb is found at any depth, and a disabled list makes everything in

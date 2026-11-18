@@ -426,12 +426,13 @@ impl PostView {
             flat: true,
             ..ButtonLook::default()
         };
-        controls::button(d, None, Some(CLEAR), s.clear.inset(inset), flat, s.ui);
+        let clear = controls::icon("eraser", CLEAR);
+        controls::button(d, None, Some(clear), s.clear.inset(inset), flat, s.ui);
         controls::toggle(
             d,
             self.autoscroll,
             None,
-            Some(font::symbol::DOWN),
+            Some(controls::icon("arrow-down-to-line", font::symbol::DOWN)),
             s.autoscroll.inset(inset),
             ToggleView::Button,
             false,

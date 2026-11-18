@@ -2646,9 +2646,27 @@ first four are the order the user set; the components come after.
   the info views' body, darker than the ground) and the editor. Left to the components that draw them:
   radii, shadows and states on menus (`ST7`), tooltips (`ST8`), dialogs
   (`ST9`) and controls (`ST10`), which read the roles shipped here.
-- ⬜ **ST6: Icons.** The Lucide subset as strokes, `icon` on `button`,
+- ✅ **ST6: Icons.** The Lucide subset as strokes, `icon` on `button`,
   `toggle` and menu entries, in both clients' builders and the protocol
   reference; the editor's and the documentation's tools drawn with them.
+  *Shipped:* 33 icons of Lucide 1.47.0, written by
+  `assets/icons/lucide.py` as paths of moves, lines and cubics (an arc
+  becomes its cubics) into `font/lucide.rs`, with Lucide's license beside
+  the script. Each is an outline character of the host's own at a
+  private-use codepoint (`font::outline::icon`), its lines stroked 2 of 24
+  with round caps and joins (`path::stroke_triangles`), 16 pixels where the
+  interface's text is 14, so it is drawn, measured and cut wherever text is
+  with nothing new in the elements: the `icon` prop of a `button`, a
+  `toggle` and a menu entry now takes an icon's name and is one character
+  otherwise, as before (`close` is Lucide's `x`, a one-character name being
+  the character). The editor's bar is its four tools as ghost buttons of 32
+  (play, list-video, square, rotate-ccw) after a separator; the post
+  window's tools are eraser and arrow-down-to-line, the documentation's
+  arrow-left, arrow-right, house, search (in place of the word Find),
+  chevron-up, chevron-down and x; the dock's grip, close marks and menu
+  button are icons too, a tab's cross at 12. Checked: the names, the
+  aliases, a square's stroked size and the editor's bar, post and
+  documentation headless.
 - ⬜ **ST7: Menus.** The anatomy and the keyboard of the inventory: lists
   with radius, ring and shadow, entries with their insets and keys, check and
   radio marks, the submenu chevron and its open state, the pointer's path to

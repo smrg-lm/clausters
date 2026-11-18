@@ -1674,10 +1674,11 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
     Press and release are the primitives, and a **click** -- a press and a
     release that landed inside -- is a composed gesture rather than a mode.
 
-    ``icon`` is one character drawn before the label, or in its place when
-    there is none: there are no icons in the host and there are fonts, so an
-    icon is a glyph (`clausters.gui.guidef.ICON` names the ones the host's own
-    face draws). ``flat`` draws no box until the pointer is over the button --
+    ``icon`` is drawn before the label, or in its place when there is none:
+    the name of an icon the host carries (a Lucide name: ``"play"``,
+    ``"eraser"``, ``"chevron-right"``; the widget protocol lists them), or
+    else one character, a glyph (`clausters.gui.guidef.ICON` names the ones
+    the host's own face draws). ``flat`` draws no box until the pointer is over the button --
     the look a row of tools wants, and like a tool it takes no focus. ``menu``
     is a `menu` tree: the button then
     opens it under itself instead of firing, and what it reports is the entry
@@ -1734,8 +1735,8 @@ def toggle(control=None, *, label: str | None = None, value: bool | None = None,
 
     ``view`` is the picture, over the same state: ``"check"`` (the default, a
     box that is filled or empty), ``"switch"`` (a track with a knob at one end
-    or the other) or ``"button"`` (a button that stays pressed). ``icon`` is one
-    character drawn with the label, as on `button`."""
+    or the other) or ``"button"`` (a button that stays pressed). ``icon`` is an
+    icon's name or one character drawn with the label, as on `button`."""
     if view is not None and view not in ("check", "switch", "button"):
         raise ValueError(
             f"unknown toggle view {view!r}; use \"check\", \"switch\" or \"button\"")
@@ -1924,7 +1925,7 @@ def entry(label: str, verb: str | None = None, *, checked: bool | None = None,
     - ``menu`` -- a **submenu**: a `menu` of its own, opened beside the entry.
 
     ``enabled=False`` leaves the entry in its list and out of reach. ``icon`` is
-    one character drawn before the label.
+    an icon's name or one character drawn before the label, as on `button`.
 
     The state an entry holds is a prop like any other: the host flips it where
     it is drawn, reports it, and a query reads it back -- it is whoever owns the

@@ -66,6 +66,8 @@ const DOCS: i32 = 4;
 const BAR_WIN: i32 = 5;
 /// The bar's height, in logical pixels.
 const BAR_H: i32 = 40;
+/// The side of one of the bar's tools, in logical pixels.
+const TOOL: i32 = 32;
 /// The application's footer, along the dock's bottom: the session's state.
 const FOOT_WIN: i32 = 11;
 const FOOT: i32 = 12;
@@ -1193,17 +1195,20 @@ impl App {
         let mut tree = self.window(BAR_WIN, "Editor");
         tree["dock_edge"] = json!("top");
         tree["h"] = json!(BAR_H);
-        let tool = |id: i32, symbol: char, verb: &str, tip: &str| {
-            json!({"id": id, "type": "button", "label": symbol.to_string(), "flat": 1,
+        // a tool: a ghost button of 32 with its icon, as the webview's
+        let tool = |id: i32, icon: &str, verb: &str, tip: &str| {
+            json!({"id": id, "type": "button", "icon": icon, "flat": 1, "w": TOOL, "h": TOOL,
                 "verb": verb, "tip": tip})
         };
         tree["children"] = json!([{
             "id": BAR_WIN + 1, "type": "layout", "flow": "row", "pack": 1,
-            "margin": 4, "gap": 2, "children": [
-                tool(BAR_WIN + 2, '\u{25B6}', "evaluate_line", "Evaluate line or selection"),
-                tool(BAR_WIN + 3, '\u{2193}', "evaluate_block", "Evaluate block"),
-                tool(BAR_WIN + 4, '\u{25A0}', "interrupt", "Interrupt"),
-                tool(BAR_WIN + 5, '\u{21BB}', "restart", "Restart the session"),
+            "margin": 4, "gap": 0, "children": [
+                // the line between the menu's titles and the tools
+                {"type": "separator"},
+                tool(BAR_WIN + 2, "play", "evaluate_line", "Evaluate line or selection"),
+                tool(BAR_WIN + 3, "list-video", "evaluate_block", "Evaluate block"),
+                tool(BAR_WIN + 4, "square", "interrupt", "Interrupt"),
+                tool(BAR_WIN + 5, "rotate-ccw", "restart", "Restart the session"),
             ],
         }]);
         self.link.def(BAR_WIN, &tree);

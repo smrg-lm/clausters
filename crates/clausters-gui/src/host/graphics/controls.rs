@@ -455,6 +455,13 @@ pub struct ButtonLook {
     pub flat: bool,
 }
 
+/// **The character of the icon `name`** the host carries, or `fallback`
+/// where it carries none (a build that strokes no path): what a tool of the
+/// host's own chrome is drawn with.
+pub fn icon(name: &str, fallback: char) -> char {
+    font::outline::icon(name).unwrap_or(fallback)
+}
+
 /// The text a button shows: its icon, its label, or the two with a space
 /// between them. A button given neither says `BUTTON`, as it always has.
 pub fn button_text(label: Option<&str>, icon: Option<char>) -> String {

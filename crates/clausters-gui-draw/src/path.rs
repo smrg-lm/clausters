@@ -17,7 +17,8 @@
 use lyon::math::point;
 use lyon::path::Path as LyonPath;
 use lyon::tessellation::{
-    BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers,
+    BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, LineCap, LineJoin,
+    StrokeOptions, StrokeTessellator, StrokeVertex, VertexBuffers,
 };
 
 /// Build a lyon [`LyonPath`] from an SVG path `d`. Supports the subset verovio
@@ -255,6 +256,37 @@ pub fn triangles(d: &str, tol: f32) -> Vec<[f32; 2]> {
         }),
     );
     if filled.is_err() {
+        return Vec::new();
+    }
+    buffers
+        .indices
+        .iter()
+        .map(|&i| buffers.vertices[i as usize])
+        .collect()
+}
+
+/// **The stroke of the path `d`, as triangle corners**: every contour drawn
+/// `width` wide with round caps and joins, as an icon's lines are -- in the
+/// path's own coordinates, three to a triangle, at tolerance `tol` in its
+/// units. Nothing for a path that draws nothing.
+pub fn stroke_triangles(d: &str, width: f32, tol: f32) -> Vec<[f32; 2]> {
+    let Some(path) = build_path(d) else {
+        return Vec::new();
+    };
+    let mut buffers: VertexBuffers<[f32; 2], u32> = VertexBuffers::new();
+    let opts = StrokeOptions::tolerance(tol.max(f32::MIN_POSITIVE))
+        .with_line_width(width)
+        .with_line_cap(LineCap::Round)
+        .with_line_join(LineJoin::Round);
+    let stroked = StrokeTessellator::new().tessellate_path(
+        &path,
+        &opts,
+        &mut BuffersBuilder::new(&mut buffers, |v: StrokeVertex| {
+            let p = v.position();
+            [p.x, p.y]
+        }),
+    );
+    if stroked.is_err() {
         return Vec::new();
     }
     buffers
