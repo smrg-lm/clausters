@@ -756,6 +756,10 @@ pub const DEVANAGARI: &[u8] = include_bytes!("../../assets/fonts/NotoSansDevanag
 /// ([`Family::Mono`](super::Family)).
 pub const MONO: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMono.ttf");
 
+/// JetBrains Mono's bold weight, read the first time a call's help marks a
+/// parameter with it ([`Family::MonoBold`](super::Family)).
+pub const MONO_BOLD: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMono-Bold.ttf");
+
 /// **The face the host draws documentation with**: the interface's, Inter
 /// in its regular weight, read as a family of its own the first time
 /// documentation is drawn ([`Atlas::ensure`]), beside its other weights.
@@ -774,6 +778,7 @@ pub const PROSE_ITALIC: &[u8] = include_bytes!("../../assets/fonts/Inter-Italic.
 fn family_bytes(family: Family) -> Option<&'static [u8]> {
     match family {
         Family::UiMedium => Some(INTERFACE_MEDIUM),
+        Family::MonoBold => Some(MONO_BOLD),
         Family::Prose => Some(PROSE),
         Family::ProseStrong => Some(PROSE_STRONG),
         Family::ProseBold => Some(PROSE_BOLD),

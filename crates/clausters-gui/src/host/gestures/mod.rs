@@ -165,6 +165,9 @@ enum Drag {
     /// is the group's to pan and not the element's
     /// ([`Take::edge_scroll`](super::widget::element::Take::edge_scroll)).
     Element { at: element::At, edge: bool },
+    /// **Selecting the text of a hover card**: the card is `owner`'s note,
+    /// and the selection is the host's ([`card`]).
+    Card { owner: i32 },
     /// **The marquee**: the objects a rectangle covers -- a patcher's boxes, a
     /// multitrack's clips -- and nothing else.
     ///
@@ -356,6 +359,9 @@ pub struct Gestures {
     repeat: Option<(f64, f64, f64, u32)>,
     /// A tip waiting for the pointer to have rested ([`hover`]).
     rest: Option<hover::Rest>,
+    /// When a tip last went for the pointer leaving it: another shows at
+    /// once for a while after ([`hover`]).
+    tip_gone: Option<f64>,
     /// The element the pointer rests on, for one told where it rests
     /// ([`hover`]).
     rest_on: Option<hover::RestOn>,
@@ -472,6 +478,7 @@ impl Gestures {
     }
 }
 
+mod card;
 mod chrome;
 mod drag;
 mod effects;

@@ -56,14 +56,15 @@ impl Dock {
             let (mesh, m, theme) = d.parts();
             draw_stack(mesh, &menu.stack, &self.menu_placed(), m, theme);
         }
-        // a tab's tip, under the tab it was rested on
+        // a tab's tip, at the tab it was rested on
         if let Some((pane, text)) = self.shown_tip()
             && let Some(tab) = self.tab_rect(pane)
         {
             let tip = Tip {
                 widget: pane,
                 text: text.to_string(),
-                at: (tab.x, tab.y + tab.h),
+                key: None,
+                anchor: tab,
             };
             let work = Rect::new(0.0, 0.0, self.size.0 as f32, self.size.1 as f32);
             let (mesh, m, theme) = d.parts();

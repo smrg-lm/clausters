@@ -203,6 +203,11 @@ impl Gestures {
         // tracking. Only a chord is -- Ctrl or Alt held, or a function key --
         // since a bare letter, the arrows, Enter and Escape are the open
         // list's to walk, pick and dismiss with.
+        // **A hover card that is up hears the key first**: it copies, or it
+        // goes, and a key that is no Escape goes on.
+        if let Some(out) = self.card_key(host, ctx, &key, mods, clipboard) {
+            return Some(out);
+        }
         let mut out = Vec::new();
         let command = mods.ctrl || mods.alt || matches!(key, Key::F(_));
         let scopes = host.window_keys(ctx.def_id);

@@ -115,6 +115,10 @@ impl Gestures {
         // **A press anywhere gives the name being typed**, as a field loses
         // its edit to a click elsewhere; the press then goes on.
         super::naming::commit(host, &mut out, ctx.def_id);
+        // **A press on a hover card selects in it**, and the card stays.
+        if self.card_press(host, ctx, cx, cy, &mut out) {
+            return out;
+        }
         // A press ends a rest: the tip that was up, or waiting, goes.
         self.press_began(host, ctx, (cx, cy), &mut out);
         // **The popup layer is modal**, so it is asked before the tree: an

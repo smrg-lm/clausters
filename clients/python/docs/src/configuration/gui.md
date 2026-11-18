@@ -244,7 +244,7 @@ scale = 0.9              # a compact host, every role regenerated
 control_h = 26           # ...except this one, set outright
 ```
 
-The 94 roles, with the value each takes at `scale = 1.0`:
+The 104 roles, with the value each takes at `scale = 1.0`:
 
 | Role | Default | What it sizes |
 | --- | --- | --- |
@@ -315,6 +315,16 @@ The 94 roles, with the value each takes at `scale = 1.0`:
 | `card_x` | 12 | A hover card's inset across. |
 | `card_y` | 8 | A hover card's inset down. |
 | `card_w` | 768 | The widest a hover card grows. |
+| `card_gap` | 6 | Between a hover card's head and the documentation under it. |
+| `card_doc_h` | 240 | The tallest a hover card's documentation stands before it scrolls. |
+| `tip_x` | 12 | A tooltip's inset across. |
+| `tip_y` | 6 | A tooltip's inset down. |
+| `tip_end` | 6 | A tooltip's inset after the key it ends in. |
+| `tip_offset` | 10 | How far a tooltip stands from what it is the tip of. |
+| `tip_arrow` | 5 | How far a tooltip's arrow reaches out of it, toward what it is the tip of. |
+| `tip_key_gap` | 8 | Between a tooltip's text and its key. |
+| `kbd_h` | 20 | The height of a key drawn as a key cap (a tooltip's). |
+| `kbd_x` | 4 | A key cap's inset across. |
 | `dialog_inset` | 24 | A dialog's inset. |
 | `dialog_gap` | 24 | Between a dialog's parts: its header, its body, its footer. |
 | `dialog_w` | 448 | The widest a dialog grows. |

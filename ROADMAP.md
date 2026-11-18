@@ -368,9 +368,8 @@ Named, not enumerated: each is written where it belongs and is read there.
 - **The host's look, the `ST` track** *(`crates/clausters-gui/PLAN.md`, ST
   track)*. Taken now, before `WS13`: one design system as the specification
   of every application's general components, with the current editor as the
-  measured reference. The tooltips and hover cards next (`ST8`), then the
-  dialogs and the other components, and the review that closes checkpoint 3
-  (`ST13`).
+  measured reference. The dialogs next (`ST9`), then the other components,
+  and the review that closes checkpoint 3 (`ST13`).
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the

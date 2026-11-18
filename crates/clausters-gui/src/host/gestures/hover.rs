@@ -13,7 +13,7 @@ use super::super::Host;
 use super::super::popup::Tip;
 use super::super::widget::WidgetKind;
 use super::nav::hit;
-use super::{GestureCtx, GestureEffect, Gestures, element};
+use super::{GestureCtx, GestureEffect, Gestures, card, element};
 
 /// How long the pointer rests on a widget before its tip shows, in
 /// milliseconds.
@@ -24,6 +24,10 @@ const REST_MS: f64 = 600.0;
 /// editor's.
 const REST_ON_MS: f64 = 350.0;
 
+/// **How long after a tip went another shows at once**, in milliseconds: a
+/// pointer crossing the gap between two tools reads them as a row.
+const SKIP_MS: f64 = 300.0;
+
 /// How long a press is held still before it is a request for a context menu,
 /// in milliseconds.
 const HOLD_MS: f64 = 500.0;
@@ -31,9 +35,7 @@ const HOLD_MS: f64 = 500.0;
 /// A tip waiting for the pointer to have rested long enough.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Rest {
-    widget: i32,
-    text: String,
-    at: (f64, f64),
+    tip: Tip,
     since: f64,
 }
 
@@ -41,10 +43,13 @@ pub(super) struct Rest {
 /// and whether the element was told.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct RestOn {
-    widget: i32,
+    pub(super) widget: i32,
     at: (f64, f64),
     since: f64,
-    told: bool,
+    pub(super) told: bool,
+    /// Since when the pointer has been off the hover card the element
+    /// shows and off what it explains ([`card`]).
+    leaving: Option<f64>,
 }
 
 /// A press held still, waiting to become a context request.
@@ -69,48 +74,46 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let def_id = ctx.def_id;
         let mut out = Vec::new();
-        let over = at.and_then(|(x, y)| hovered(host, ctx, x, y));
+        // a hover card covers what is under it
+        let at_tree = at.filter(|&(x, y)| !card::on_card(host, ctx, x, y));
+        let over = at_tree.and_then(|(x, y)| hovered(host, ctx, x, y));
         let mut changed = host.set_hover(def_id, over);
         self.rest_moved(host, ctx, at, &mut out);
         if at.is_none() {
             changed |= host.set_bar_hover(def_id, None);
         }
-        let tip = at.and_then(|(x, y)| {
-            host.tip_at(def_id, ctx.fb_w, ctx.fb_h, x, y)
-                .map(|(widget, text)| (widget, text, (x, y)))
-        });
+        // **No tip while a list is open**: the list is what is read.
+        let tip = at_tree
+            .filter(|_| host.popup(def_id).is_none())
+            .and_then(|(x, y)| host.tip_at(def_id, ctx.fb_w, ctx.fb_h, x, y));
         let showing = host
             .popups(def_id)
             .and_then(|p| p.tip.as_ref())
             .map(|t| t.widget);
+        let skipping = self.tip_gone.is_some_and(|t| ctx.now_ms - t < SKIP_MS);
         match (tip, showing) {
             // Off every widget that has one: nothing waits and nothing shows.
-            (None, _) => {
+            (None, shown) => {
                 self.rest = None;
+                if shown.is_some() {
+                    self.tip_gone = Some(ctx.now_ms);
+                }
                 changed |= host.set_tip(def_id, None);
             }
-            // Still on the widget whose tip is up: it stays where it rested.
-            (Some((widget, ..)), Some(shown)) if widget == shown => {}
-            // From one tipped widget onto another while a tip is up: the next
-            // one shows at once, which is how a row of tools is read.
-            (Some((widget, text, at)), Some(_)) => {
+            // Still on the widget whose tip is up: it stays where it is.
+            (Some(tip), Some(shown)) if tip.widget == shown => {}
+            // From one tipped widget onto another while a tip is up, or just
+            // after one went: the next one shows at once, which is how a row
+            // of tools is read.
+            (Some(tip), shown) if shown.is_some() || skipping => {
                 self.rest = None;
-                changed |= host.set_tip(
-                    def_id,
-                    Some(Tip {
-                        widget,
-                        text,
-                        at: (at.0 as f32, at.1 as f32),
-                    }),
-                );
+                changed |= host.set_tip(def_id, Some(tip));
             }
             // Nothing showing: the wait starts over at every move, since a
             // pointer that is moving has not rested.
-            (Some((widget, text, at)), None) => {
+            (Some(tip), _) => {
                 self.rest = Some(Rest {
-                    widget,
-                    text,
-                    at,
+                    tip,
                     since: ctx.now_ms,
                 });
             }
@@ -124,7 +127,9 @@ impl Gestures {
     /// Whether a timer is armed, so the front must keep ticking
     /// ([`Self::elapsed`]) though nothing on screen is moving.
     pub fn pending(&self) -> bool {
-        self.rest.is_some() || self.hold.is_some() || self.rest_on.is_some_and(|r| !r.told)
+        self.rest.is_some()
+            || self.hold.is_some()
+            || self.rest_on.is_some_and(|r| !r.told || r.leaving.is_some())
     }
 
     /// **The pointer moved to `at`** (or off the window): an element told of
@@ -142,6 +147,19 @@ impl Gestures {
         {
             return;
         }
+        // **A hover card stays while the pointer is on it or on what it
+        // explains**, and once it is off both it goes a moment later
+        // (`elapsed`), so the pointer can cross into it.
+        if let Some(r) = self.rest_on.as_mut().filter(|r| r.told)
+            && let Some(keeps) = card::keeps(host, ctx, r.widget, at)
+        {
+            if keeps {
+                r.leaving = None;
+            } else if r.leaving.is_none() {
+                r.leaving = Some(ctx.now_ms);
+            }
+            return;
+        }
         self.end_rest(host, ctx, out);
         let Some((x, y)) = at else {
             return;
@@ -157,16 +175,26 @@ impl Gestures {
                 at: (x, y),
                 since: ctx.now_ms,
                 told: false,
+                leaving: None,
             });
         }
     }
 
-    /// The rest is over: an element told of it hears the pointer moved on.
-    fn end_rest(&mut self, host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>) {
+    /// The rest is over: an element told of it hears the pointer moved on,
+    /// and the hover card it showed goes with its scroll and selection.
+    pub(super) fn end_rest(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        out: &mut Vec<GestureEffect>,
+    ) {
         let Some(r) = self.rest_on.take().filter(|r| r.told) else {
             return;
         };
         self.tell_rest(host, ctx, r.widget, None, out);
+        if host.drop_card(ctx.def_id) {
+            out.push(GestureEffect::Redraw(ctx.def_id));
+        }
     }
 
     /// Element `widget` told the pointer rests at `at`, or moved on.
@@ -199,16 +227,15 @@ impl Gestures {
     pub fn elapsed(&mut self, host: &mut Host, ctx: &GestureCtx) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         if let Some(rest) = self.rest.take_if(|r| ctx.now_ms - r.since >= REST_MS)
-            && host.set_tip(
-                ctx.def_id,
-                Some(Tip {
-                    widget: rest.widget,
-                    text: rest.text,
-                    at: (rest.at.0 as f32, rest.at.1 as f32),
-                }),
-            )
+            && host.set_tip(ctx.def_id, Some(rest.tip))
         {
             out.push(GestureEffect::Redraw(ctx.def_id));
+        }
+        if self
+            .rest_on
+            .is_some_and(|r| r.leaving.is_some_and(|t| ctx.now_ms - t >= card::LEAVE_MS))
+        {
+            self.close_card(host, ctx, &mut out);
         }
         if let Some(r) = self
             .rest_on
@@ -239,13 +266,8 @@ impl Gestures {
             out.extend(self.context(host, ctx, at.0, at.1).unwrap_or_default());
             return out;
         }
-        let Some((widget, text)) = host.tip_at(def_id, ctx.fb_w, ctx.fb_h, at.0, at.1) else {
+        let Some(tip) = host.tip_at(def_id, ctx.fb_w, ctx.fb_h, at.0, at.1) else {
             return Vec::new();
-        };
-        let tip = Tip {
-            widget,
-            text,
-            at: (at.0 as f32, at.1 as f32),
         };
         if host.set_tip(def_id, Some(tip)) {
             vec![GestureEffect::Redraw(def_id)]
@@ -264,6 +286,7 @@ impl Gestures {
         out: &mut Vec<GestureEffect>,
     ) {
         self.rest = None;
+        self.tip_gone = None;
         self.end_rest(host, ctx, out);
         if host.set_tip(ctx.def_id, None) {
             out.push(GestureEffect::Redraw(ctx.def_id));
@@ -292,11 +315,18 @@ impl Gestures {
 
     /// **A key was pressed**: a tip goes, the way it goes on a press. The front
     /// calls it before it routes the key, since a key that nothing consumes
-    /// still has to take the tip down.
+    /// still has to take the tip down. A hover card that is up is the key's
+    /// to answer ([`card`]): the copy key copies from it.
     pub fn key_began(&mut self, host: &mut Host, ctx: &GestureCtx) -> Vec<GestureEffect> {
         self.rest = None;
+        self.tip_gone = None;
         let mut out = Vec::new();
-        self.end_rest(host, ctx, &mut out);
+        let card_up = self
+            .rest_on
+            .is_some_and(|r| r.told && card::keeps(host, ctx, r.widget, None).is_some());
+        if !card_up {
+            self.end_rest(host, ctx, &mut out);
+        }
         if host.set_tip(ctx.def_id, None) {
             out.push(GestureEffect::Redraw(ctx.def_id));
         }

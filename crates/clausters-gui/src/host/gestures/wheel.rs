@@ -145,6 +145,10 @@ impl Gestures {
         if let Some(out) = self.popup_wheel(host, ctx, cx, cy, steps) {
             return out;
         }
+        // A hover card scrolls its documentation, and what it covers does not.
+        if let Some(out) = self.card_wheel(host, ctx, cx, cy, steps) {
+            return out;
+        }
         let mut out = Vec::new();
         let def_id = ctx.def_id;
         // **The open status log scrolls under the wheel**, and it is tested

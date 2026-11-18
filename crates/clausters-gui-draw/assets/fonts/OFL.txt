@@ -11,11 +11,11 @@ Inter-Italic.ttf beside this file, are Inter 4.1
 Copyright (c) 2016 The Inter Project Authors. They are distributed under the
 SIL Open Font License, Version 1.1, which follows.
 
-The monospaced face the GUI host draws code with, JetBrainsMono.ttf beside
-this file, is JetBrains Mono 2.304, Medium
-(https://github.com/JetBrains/JetBrainsMono), whole and unmodified. Copyright
-2020 The JetBrains Mono Project Authors. It is distributed under the SIL Open
-Font License, Version 1.1, which follows.
+The monospaced faces the GUI host draws code with, JetBrainsMono.ttf and
+JetBrainsMono-Bold.ttf beside this file, are JetBrains Mono 2.304, Medium and
+Bold (https://github.com/JetBrains/JetBrainsMono), whole and unmodified.
+Copyright 2020 The JetBrains Mono Project Authors. They are distributed under
+the SIL Open Font License, Version 1.1, which follows.
 
 SIL OPEN FONT LICENSE
 

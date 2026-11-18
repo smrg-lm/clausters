@@ -1145,22 +1145,50 @@ pub(super) fn draw_popups(
     over.set_clip(None);
 }
 
-/// **A tip**, placed by the popup layer's one rule ([`popup::place_tip`])
-/// inside `work`: a pane's, and a dock's tab's.
+/// **A tooltip**, placed by the popup layer's one rule ([`popup::place_tip`])
+/// inside `work`: a pane's, and a dock's tab's. The specification's: the
+/// text's own color as its fill and the ground's as its text, rounded, an
+/// arrow toward what it is the tip of, and the key as a key cap at its end.
 pub(crate) fn draw_tip(over: &mut Mesh, tip: &popup::Tip, work: Rect, m: &Metrics, theme: &Theme) {
     let size = popup::tip_size(m);
-    let rect = popup::place_tip(tip, size, work, m);
+    let place = popup::place_tip(tip, size, work, m);
+    let rect = place.rect;
     over.set_clip(None);
-    over.rect(rect, theme.popup);
-    over.border(rect, m.divider_w, theme.frame);
-    font::text(
+    over.round_rect(rect, m.radius_md, theme.text);
+    let (ax, ay) = place.arrow;
+    let base = if place.above {
+        rect.y + rect.h - m.divider_w
+    } else {
+        rect.y + m.divider_w
+    };
+    let half = m.tip_arrow + m.divider_w;
+    over.tri([ax - half, base], [ax + half, base], [ax, ay], theme.text);
+    let glyph = font::height(size);
+    let end = place
+        .key
+        .map_or(rect.x + rect.w - m.tip_x, |k| k.x - m.tip_key_gap);
+    font::text_ellipsis(
         over,
         &tip.text,
-        rect.x + m.pad,
-        rect.y + m.pad,
+        rect.x + m.tip_x,
+        rect.y + (rect.h - glyph) * 0.5,
+        (end - rect.x - m.tip_x).max(0.0),
         size,
-        theme.text,
+        theme.background,
     );
+    if let (Some(k), Some(key)) = (place.key, tip.key.as_deref()) {
+        over.round_rect(k, m.radius_sm, with_alpha(theme.background, 0.2));
+        let w = font::width_in(font::Family::UiMedium, key, size);
+        font::text_in(
+            over,
+            font::Family::UiMedium,
+            key,
+            k.x + (k.w - w) * 0.5,
+            k.y + (k.h - glyph) * 0.5,
+            size,
+            theme.background,
+        );
+    }
 }
 
 /// Draws **what elements show in the popup layer of their own accord**
@@ -1184,7 +1212,11 @@ pub(super) fn draw_own_popups(
         let th = p.widget.theme.as_deref().unwrap_or(theme);
         over.set_ink(Ink::default());
         if let Some(note) = &own.note {
-            draw_note(over, note, work, m, th);
+            let card = inputs
+                .popups
+                .and_then(|p| p.card.as_ref())
+                .filter(|c| note.card && c.owner == id);
+            draw_note(over, note, card, work, m, th);
         }
         if let Some(list) = &own.list {
             let stack = list.stack(id);
@@ -1194,57 +1226,113 @@ pub(super) fn draw_own_popups(
     over.set_clip(None);
 }
 
-/// A note over the text: its head in the code's face, the marked runs
-/// underlined, the word beside it and the lines of its documentation.
-fn draw_note(over: &mut Mesh, note: &popup::Note, work: Rect, m: &Metrics, theme: &Theme) {
-    let (rect, lines) = popup::place_note(note, work, m);
+/// **A note over the text, as a hover card**: lifted, rounded and edged, its
+/// head in the code's face with the marked runs bold and underlined, the
+/// word beside it, and its documentation dimmed under it, scrolled and
+/// selected as `card` says.
+fn draw_note(
+    over: &mut Mesh,
+    note: &popup::Note,
+    card: Option<&popup::Card>,
+    work: Rect,
+    m: &Metrics,
+    theme: &Theme,
+) {
+    let place = popup::place_note(note, work, m);
+    let rect = place.rect;
     over.set_clip(None);
-    over.rect(rect, theme.popup);
-    over.border(rect, m.divider_w, theme.frame);
-    over.set_clip(Some(rect));
-    let head_h = font::line_advance(note.code_size);
-    let mut x = rect.x + m.pad;
-    let y = rect.y + m.pad + (head_h - font::height(note.code_size)) * 0.5;
-    for (run, marked) in &note.head {
-        let w = font::width_in(font::Family::Mono, run, note.code_size);
-        font::text_in(
-            over,
-            font::Family::Mono,
-            run,
-            x,
-            y,
-            note.code_size,
-            theme.text,
-        );
-        if *marked {
-            let under = y + font::height(note.code_size) + m.divider_w;
-            over.rect(Rect::new(x, under, w, m.divider_w.max(1.0)), theme.accent);
+    Draw::new(over, m, theme).shadow(rect, m.radius_sm, Elevation::Md);
+    over.round_rect(rect, m.radius_sm, theme.popup);
+    over.round_border(rect, m.divider_w, m.radius_sm, theme.separator);
+    let scroll = card.map_or(0.0, |c| c.scroll.min(place.max_scroll()));
+    // the selection, under the text it selects
+    if let Some((a, b)) = card.and_then(|c| c.select).filter(|(a, b)| a != b) {
+        let (a, b) = if a <= b { (a, b) } else { (b, a) };
+        let fill = with_alpha(theme.selection, 0.35);
+        for i in a.0..=b.0 {
+            let from = if i == a.0 { a.1 } else { 0 };
+            let to = if i == b.0 {
+                b.1
+            } else {
+                note.line_len(&place, i)
+            };
+            let x0 = note.x_of(&place, i, from);
+            let mut x1 = note.x_of(&place, i, to);
+            if i < b.0 {
+                x1 += font::width(" ", note.text_size);
+            }
+            let (y, h) = place.line_top(i, scroll);
+            let in_head = i < place.heads.len();
+            over.set_clip(Some(if in_head { place.head } else { place.doc }));
+            over.rect(Rect::new(place.head.x + x0, y, (x1 - x0).max(0.0), h), fill);
         }
-        x += w;
+    }
+    over.set_clip(Some(rect));
+    let line = place.head_line;
+    let code_glyph = font::height(note.code_size);
+    // one line: its runs, the marked ones bold and underlined; a card's
+    // wrapped signature: its lines
+    let mut x = place.head.x;
+    if place.heads.len() == 1 {
+        let y = place.head.y + (line - code_glyph) * 0.5;
+        for (run, marked) in &note.head {
+            let family = if *marked {
+                font::Family::MonoBold
+            } else {
+                font::Family::Mono
+            };
+            let w = font::width_in(family, run, note.code_size);
+            font::text_in(over, family, run, x, y, note.code_size, theme.text);
+            if *marked {
+                let under = y + code_glyph + m.divider_w;
+                over.rect(Rect::new(x, under, w, m.divider_w.max(1.0)), theme.text);
+            }
+            x += w;
+        }
+    } else {
+        for (i, l) in place.heads.iter().enumerate() {
+            let (top, _) = place.line_top(i, 0.0);
+            font::text_in(
+                over,
+                font::Family::Mono,
+                &l.text,
+                place.head.x,
+                top + (line - code_glyph) * 0.5,
+                note.code_size,
+                theme.text,
+            );
+        }
+        if let Some(last) = place.heads.last() {
+            x += font::width_in(font::Family::Mono, &last.text, note.code_size);
+        }
     }
     if !note.aside.is_empty() {
-        let ty = rect.y + m.pad + (head_h - font::height(note.text_size)) * 0.5;
+        let (top, _) = place.line_top(place.heads.len().saturating_sub(1), 0.0);
+        let ty = top + (line - font::height(note.text_size)) * 0.5;
         font::text(
             over,
             &note.aside,
-            x + 2.0 * m.pad,
+            x + m.card_x,
             ty,
             note.text_size,
             theme.text_dim,
         );
     }
-    let line_h = font::line_advance(note.text_size);
-    let mut y = rect.y + m.pad + head_h + m.pad;
-    for line in &lines {
+    over.set_clip(Some(place.doc));
+    let glyph = font::height(note.text_size);
+    for (i, line) in place.lines.iter().enumerate() {
+        let top = place.doc.y + i as f32 * place.line_h - scroll;
+        if top + place.line_h < place.doc.y || top > place.doc.y + place.doc.h {
+            continue;
+        }
         font::text(
             over,
-            line,
-            rect.x + m.pad,
-            y,
+            &line.text,
+            place.doc.x,
+            top + (place.line_h - glyph) * 0.5,
             note.text_size,
             theme.text_dim,
         );
-        y += line_h;
     }
 }
 

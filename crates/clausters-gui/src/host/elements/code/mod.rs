@@ -588,6 +588,19 @@ impl CodeView {
         ))
     }
 
+    /// **Where the name from byte `a` to byte `b` is drawn**: what a hover
+    /// card explains, and so where the pointer keeps it up.
+    fn word_spot(&self, a: usize, b: usize, g: &Geometry) -> Option<Rect> {
+        let first = self.spot(a, g)?;
+        let x1 = self.spot(b, g).map_or(first.x + first.w, |r| r.x);
+        Some(Rect::new(
+            first.x,
+            first.y,
+            (x1 - first.x).max(first.w),
+            first.h,
+        ))
+    }
+
     /// A key's editing: the bar's, the text's.
     fn edit_key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
         if let Some(events) = self.bar_key(key, input) {
@@ -1499,9 +1512,10 @@ impl Element for CodeView {
                     doc_lines: 3,
                     code_size: note_size,
                     text_size: note_size,
+                    card: false,
                 })
             }
-            (_, Some((a, _, Some(info)))) => self.spot(*a, &g).map(|anchor| Note {
+            (_, Some((a, b, Some(info)))) => self.word_spot(*a, *b, &g).map(|anchor| Note {
                 anchor,
                 head: vec![(
                     if info.signature.is_empty() {
@@ -1513,9 +1527,10 @@ impl Element for CodeView {
                 )],
                 aside: info.kind.clone(),
                 doc: info.doc.clone(),
-                doc_lines: 15,
+                doc_lines: 0,
                 code_size: note_size,
                 text_size: note_size,
+                card: true,
             }),
             _ => None,
         };

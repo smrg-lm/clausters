@@ -750,10 +750,10 @@ export interface WidgetOptions {
      */
     enabled?: boolean;
     /**
-     * A short text shown beside the pointer once it has rested on the widget.
+     * A short text shown over the widget once the pointer has rested on it.
      * It goes when the pointer leaves, on a press and on a key. On a button
-     * that performs a `verb` the host adds the key bound to that verb, in
-     * parentheses, so a tip never states a key itself.
+     * that performs a `verb` the host adds the key bound to that verb after
+     * the text, so a tip never states a key itself.
      */
     tip?: string;
     /**

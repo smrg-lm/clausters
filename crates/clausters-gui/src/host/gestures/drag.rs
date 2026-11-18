@@ -81,6 +81,7 @@ impl Gestures {
             return out;
         };
         match drag {
+            Drag::Card { owner } => return self.card_drag(host, ctx, owner, cx, cy),
             // **The marquee, wherever a hand sweeps one over a plane**: the
             // machine holds the anchor and the frame draws the rectangle; the
             // element only says what fell inside it.
@@ -442,6 +443,11 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
+        if let Some(Drag::Card { owner }) = self.drag {
+            self.drag = None;
+            self.card_release(host, ctx, owner);
+            return out;
+        }
         // **One arm**, which is what the port left behind: every other drag the
         // machine holds is a container's navigation, and a plan acts along the
         // way rather than at the end.

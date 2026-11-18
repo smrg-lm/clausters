@@ -332,6 +332,27 @@ metrics_roles! {
     card_y: grid,
     /// The widest a hover card grows.
     card_w: grid,
+    /// Between a hover card's head and the documentation under it.
+    card_gap: grid,
+    /// The tallest a hover card's documentation stands before it scrolls.
+    card_doc_h: grid,
+    /// A tooltip's inset across.
+    tip_x: grid,
+    /// A tooltip's inset down.
+    tip_y: grid,
+    /// A tooltip's inset after the key it ends in.
+    tip_end: grid,
+    /// How far a tooltip stands from what it is the tip of.
+    tip_offset: grid,
+    /// How far a tooltip's arrow reaches out of it, toward what it is the
+    /// tip of.
+    tip_arrow: grid,
+    /// Between a tooltip's text and its key.
+    tip_key_gap: grid,
+    /// The height of a key drawn as a key cap (a tooltip's).
+    kbd_h: grid,
+    /// A key cap's inset across.
+    kbd_x: grid,
     /// A dialog's inset.
     dialog_inset: grid,
     /// Between a dialog's parts: its header, its body, its footer.
@@ -495,6 +516,16 @@ impl Metrics {
             card_x: spec(12.0),
             card_y: spec(8.0),
             card_w: spec(768.0),
+            card_gap: spec(6.0),
+            card_doc_h: spec(240.0),
+            tip_x: spec(12.0),
+            tip_y: spec(6.0),
+            tip_end: spec(6.0),
+            tip_offset: spec(10.0),
+            tip_arrow: spec(5.0),
+            tip_key_gap: spec(8.0),
+            kbd_h: spec(20.0),
+            kbd_x: spec(4.0),
             dialog_inset: spec(24.0),
             dialog_gap: spec(24.0),
             dialog_w: spec(448.0),

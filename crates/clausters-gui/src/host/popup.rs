@@ -415,14 +415,17 @@ impl Stack {
     }
 }
 
-/// A tip: a short text beside the pointer.
+/// **A tooltip**: a short text over what it is the tip of, with the key that
+/// does the same, when one does.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tip {
     /// The widget whose tip this is.
     pub widget: i32,
     pub text: String,
-    /// Where the pointer rested.
-    pub at: (f32, f32),
+    /// The chord bound to what the widget does, drawn as a key cap.
+    pub key: Option<String>,
+    /// What it is the tip of: the widget's rectangle, as far as it shows.
+    pub anchor: Rect,
 }
 
 /// **What an element shows over the window of its own accord**: a list its
@@ -471,79 +474,313 @@ impl OwnList {
 
 /// **A note over the text**: a head line in the code's face with parts of it
 /// marked (a call's current parameter), a word beside it (what a name is),
-/// and the documentation under it, cut to a number of lines.
+/// and the documentation under it.
+///
+/// A note the pointer may enter is a **hover card** (`card`): it stays while
+/// the pointer is on what it explains or on it, its documentation scrolls
+/// past [`Metrics::card_doc_h`] and its text can be selected and copied
+/// ([`Card`]). One that may not (a call's parameters, which follow the
+/// caret) shows its first lines.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Note {
-    /// What it stands over, or under where there is no room over it.
+    /// What it explains: it stands over it, or under it where there is no
+    /// room over it.
     pub anchor: Rect,
-    /// The head line, in runs, the marked ones drawn apart.
+    /// The head line, in runs, the marked ones drawn bold and underlined.
     pub head: Vec<(String, bool)>,
     /// The word after the head.
     pub aside: String,
     pub doc: String,
-    /// The most lines of the documentation shown.
+    /// The most lines of the documentation shown, where it is no card.
     pub doc_lines: usize,
     /// The size the head is written at, in the code's face.
     pub code_size: f32,
     /// The size the documentation is written at.
     pub text_size: f32,
+    /// Whether the pointer may enter it.
+    pub card: bool,
 }
 
-/// The widest a note is, in the documentation's characters.
+/// One line of a note's documentation as drawn, and whether the text it
+/// was wrapped out of ends with it (a copy joins it to the next with a line
+/// break, else with a space).
+#[derive(Debug, Clone, PartialEq)]
+pub struct NoteLine {
+    pub text: String,
+    pub ends: bool,
+}
+
+/// **A note, placed**: its card, the band of its head and the lines it is
+/// written on, the window its documentation is read through and the lines
+/// of it, all of them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NotePlace {
+    pub rect: Rect,
+    pub head: Rect,
+    /// The head's lines: one, or a card's long signature wrapped.
+    pub heads: Vec<NoteLine>,
+    pub head_line: f32,
+    /// Where the documentation shows: its lines scroll through it.
+    pub doc: Rect,
+    pub lines: Vec<NoteLine>,
+    pub line_h: f32,
+}
+
+impl NotePlace {
+    /// The furthest the documentation scrolls.
+    pub fn max_scroll(&self) -> f32 {
+        (self.lines.len() as f32 * self.line_h - self.doc.h).max(0.0)
+    }
+
+    /// Every line a selection walks: the head's, then the documentation's.
+    pub fn count(&self) -> usize {
+        self.heads.len() + self.lines.len()
+    }
+
+    /// Line `i` of them, and whether it is the head's.
+    pub fn line(&self, i: usize) -> Option<(&NoteLine, bool)> {
+        match self.heads.get(i) {
+            Some(l) => Some((l, true)),
+            None => self.lines.get(i - self.heads.len()).map(|l| (l, false)),
+        }
+    }
+
+    /// Where line `i` is drawn, with the documentation scrolled by `scroll`:
+    /// its top and its height.
+    pub fn line_top(&self, i: usize, scroll: f32) -> (f32, f32) {
+        if i < self.heads.len() {
+            (self.head.y + i as f32 * self.head_line, self.head_line)
+        } else {
+            let row = (i - self.heads.len()) as f32;
+            (self.doc.y + row * self.line_h - scroll, self.line_h)
+        }
+    }
+}
+
+/// **Where in a note's text**: a line (the head's lines first, the
+/// documentation's after them) and a byte in it.
+pub type NotePos = (usize, usize);
+
+/// **A hover card's own state**, the host's, since the element only says what
+/// it shows: how far its documentation is scrolled and what of its text is
+/// selected, from the press to where the drag is.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Card {
+    /// The element whose note it is.
+    pub owner: i32,
+    pub scroll: f32,
+    pub select: Option<(NotePos, NotePos)>,
+}
+
+/// The widest a note is that is no card, in the documentation's characters.
 const NOTE_CHARS: f32 = 72.0;
 
+/// The share of the work area's width a hover card may take.
+const CARD_SHARE: f32 = 0.9;
+
+/// `text` wrapped to `w` in `family`, each line saying whether the text
+/// ends with it.
+fn wrapped(family: font::Family, text: &str, w: f32, size: f32) -> Vec<NoteLine> {
+    let lines = font::wrap_in(family, text, w, size);
+    let n = lines.len();
+    lines
+        .into_iter()
+        .enumerate()
+        .map(|(i, text)| NoteLine {
+            text,
+            ends: i + 1 == n,
+        })
+        .collect()
+}
+
 /// **Where a note goes, and the lines of its documentation**: over its
-/// anchor where it fits, under it otherwise, held inside the work area.
-pub fn place_note(note: &Note, work: Rect, m: &Metrics) -> (Rect, Vec<String>) {
-    let head: String = note.head.iter().map(|(t, _)| t.as_str()).collect();
-    let head_w = font::width_in(font::Family::Mono, &head, note.code_size)
-        + if note.aside.is_empty() {
-            0.0
-        } else {
-            2.0 * m.pad + font::width(&note.aside, note.text_size)
-        };
-    let most = (NOTE_CHARS * font::width("0", note.text_size))
-        .min(work.w - 2.0 * m.pad)
-        .max(1.0);
-    let mut lines = Vec::new();
+/// anchor where it fits, under it otherwise, held inside the work area. Its
+/// anatomy is the hover card's: an inset of [`Metrics::card_x`] by
+/// [`Metrics::card_y`], the head, [`Metrics::card_gap`] and the
+/// documentation, at most [`Metrics::card_w`] wide. A card's head wraps as
+/// its documentation does; a note's that is no card is one line.
+pub fn place_note(note: &Note, work: Rect, m: &Metrics) -> NotePlace {
+    let head = note.head_text();
+    let aside_w = if note.aside.is_empty() {
+        0.0
+    } else {
+        m.card_x + font::width(&note.aside, note.text_size)
+    };
+    // the widest it is, its insets included
+    let most = if note.card {
+        m.card_w.min(work.w * CARD_SHARE)
+    } else {
+        NOTE_CHARS * font::width("0", note.text_size) + 2.0 * m.card_x
+    }
+    .min(work.w)
+    .max(1.0);
+    let wrap_w = (most - 2.0 * m.card_x).max(1.0);
+    let heads = if note.card {
+        wrapped(
+            font::Family::Mono,
+            &head,
+            (wrap_w - aside_w).max(1.0),
+            note.code_size,
+        )
+    } else {
+        vec![NoteLine {
+            text: head.clone(),
+            ends: true,
+        }]
+    };
+    let head_w = heads
+        .iter()
+        .map(|l| font::width_in(font::Family::Mono, &l.text, note.code_size))
+        .fold(0.0f32, f32::max)
+        + aside_w;
+    let mut lines: Vec<NoteLine> = Vec::new();
     for line in note.doc.trim().lines() {
         if line.trim().is_empty() {
-            lines.push(String::new());
+            lines.push(NoteLine {
+                text: String::new(),
+                ends: true,
+            });
         } else {
-            lines.extend(font::wrap(line, most, note.text_size));
+            lines.extend(wrapped(font::Family::Ui, line, wrap_w, note.text_size));
         }
-        if lines.len() >= note.doc_lines {
+        if !note.card && lines.len() >= note.doc_lines {
             break;
         }
     }
-    lines.truncate(note.doc_lines);
+    if !note.card {
+        lines.truncate(note.doc_lines);
+    }
     let doc_w = lines
         .iter()
-        .map(|l| font::width(l, note.text_size))
+        .map(|l| font::width(&l.text, note.text_size))
         .fold(0.0f32, f32::max);
-    let w = head_w.max(doc_w).min(most) + 2.0 * m.pad;
+    let w = (head_w.max(doc_w) + 2.0 * m.card_x).min(most);
     let line_h = font::line_advance(note.text_size);
-    let head_h = font::line_advance(note.code_size);
+    let head_line = font::line_advance(note.code_size);
+    let head_h = heads.len().max(1) as f32 * head_line;
+    let all = lines.len() as f32 * line_h;
+    let doc_h = if note.card {
+        all.min(m.card_doc_h)
+    } else {
+        all
+    };
     let h = head_h
         + if lines.is_empty() {
             0.0
         } else {
-            m.pad + lines.len() as f32 * line_h
+            m.card_gap + doc_h
         }
-        + 2.0 * m.pad;
+        + 2.0 * m.card_y;
+    let (w, h) = (w.min(work.w), h.min(work.h));
     let a = note.anchor;
     let y = if a.y - h >= work.y {
         a.y - h
     } else {
         a.y + a.h
     };
-    let rect = Rect::new(
-        hold_x(a.x, w.min(work.w), work),
-        hold_y(y, h.min(work.h), work),
-        w.min(work.w),
-        h.min(work.h),
+    let rect = Rect::new(hold_x(a.x, w, work), hold_y(y, h, work), w, h);
+    let head = Rect::new(
+        rect.x + m.card_x,
+        rect.y + m.card_y,
+        w - 2.0 * m.card_x,
+        head_h,
     );
-    (rect, lines)
+    let top = head.y + head_h + m.card_gap;
+    let doc = Rect::new(
+        head.x,
+        top,
+        head.w,
+        doc_h.min((rect.y + rect.h - m.card_y - top).max(0.0)),
+    );
+    NotePlace {
+        rect,
+        head,
+        heads,
+        head_line,
+        doc,
+        lines,
+        line_h,
+    }
+}
+
+impl Note {
+    /// The head as one line, the runs joined.
+    pub fn head_text(&self) -> String {
+        self.head.iter().map(|(t, _)| t.as_str()).collect()
+    }
+
+    /// Line `i` of the text a selection walks, its family and size.
+    fn line<'a>(&self, place: &'a NotePlace, i: usize) -> (&'a str, font::Family, f32) {
+        match place.line(i) {
+            Some((l, true)) => (l.text.as_str(), font::Family::Mono, self.code_size),
+            Some((l, false)) => (l.text.as_str(), font::Family::Ui, self.text_size),
+            None => ("", font::Family::Ui, self.text_size),
+        }
+    }
+
+    /// **The place in the text at `(x, y)`**, with the documentation scrolled
+    /// by `scroll`: above the documentation is the head, past either end of a
+    /// line is its end.
+    pub fn pos_at(&self, place: &NotePlace, scroll: f32, x: f32, y: f32) -> NotePos {
+        let heads = place.heads.len();
+        let line = if y < place.doc.y || place.lines.is_empty() {
+            let row = ((y - place.head.y) / place.head_line.max(1.0))
+                .floor()
+                .max(0.0) as usize;
+            row.min(heads.saturating_sub(1))
+        } else {
+            let row = ((y - place.doc.y + scroll) / place.line_h.max(1.0))
+                .floor()
+                .max(0.0) as usize;
+            heads + row.min(place.lines.len() - 1)
+        };
+        let (text, family, size) = self.line(place, line);
+        let dx = x - place.head.x;
+        let mut at = text.len();
+        for (i, c) in text.char_indices() {
+            let left = font::width_in(family, &text[..i], size);
+            let w = font::width_in(family, &text[i..i + c.len_utf8()], size);
+            if dx < left + w * 0.5 {
+                at = i;
+                break;
+            }
+        }
+        (line, at)
+    }
+
+    /// The x of byte `at` of line `i`, from the text's left.
+    pub fn x_of(&self, place: &NotePlace, i: usize, at: usize) -> f32 {
+        let (text, family, size) = self.line(place, i);
+        font::width_in(family, &text[..at.min(text.len())], size)
+    }
+
+    /// The length of line `i`.
+    pub fn line_len(&self, place: &NotePlace, i: usize) -> usize {
+        self.line(place, i).0.len()
+    }
+
+    /// **The text from `a` to `b`**, in either order: the head and the
+    /// documentation on lines of their own, the lines either was wrapped
+    /// into joined back with a space.
+    pub fn text_between(&self, place: &NotePlace, a: NotePos, b: NotePos) -> String {
+        let (a, b) = if a <= b { (a, b) } else { (b, a) };
+        let mut out = String::new();
+        for i in a.0..=b.0 {
+            let (text, ..) = self.line(place, i);
+            let from = if i == a.0 { a.1.min(text.len()) } else { 0 };
+            let to = if i == b.0 {
+                b.1.min(text.len())
+            } else {
+                text.len()
+            };
+            out.push_str(text.get(from..to.max(from)).unwrap_or_default());
+            if i < b.0 {
+                let ends = place.line(i).is_none_or(|(l, _)| l.ends);
+                out.push(if ends { '\n' } else { ' ' });
+            }
+        }
+        out
+    }
 }
 
 /// What is open over one window.
@@ -551,6 +788,8 @@ pub fn place_note(note: &Note, work: Rect, m: &Metrics) -> (Rect, Vec<String>) {
 pub struct Popups {
     pub stack: Option<Stack>,
     pub tip: Option<Tip>,
+    /// The hover card over the window: its scroll and its selection.
+    pub card: Option<Card>,
     /// The title of the menu bar the pointer is over, with no list open.
     pub bar_hover: Option<Title>,
     /// The widget the pointer is over, when it is one a hand can act on -- what
@@ -977,25 +1216,69 @@ pub fn hit(stack: &Stack, placed: &[Placed], x: f64, y: f64) -> Option<(usize, O
         .map(|(i, p)| (i, p.row_at(&stack.levels[i].entries, x, y)))
 }
 
-/// **Where a tip goes**: under the pointer and a little to its right, turned
-/// to the other side where it would leave the work area.
-pub fn place_tip(tip: &Tip, text_size: f32, work: Rect, m: &Metrics) -> Rect {
-    let w = font::width(&tip.text, text_size) + 2.0 * m.pad;
-    let h = font::height(text_size) + font::descent(text_size) + 2.0 * m.pad;
-    // Clear of the pointer itself, which a tip under it would hide behind:
-    // one line below it, or -- where the area ends first -- just over it.
-    let offset = m.pad + font::height(text_size);
-    let y = if tip.at.1 + offset + h <= work.y + work.h {
-        tip.at.1 + offset
+/// **A tooltip, placed**: its card, the point its arrow reaches to, and
+/// where its key cap stands.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TipPlace {
+    pub rect: Rect,
+    /// The arrow's tip, on the edge of what the tooltip is the tip of.
+    pub arrow: (f32, f32),
+    /// Whether it stands over what it is the tip of (its arrow under it).
+    pub above: bool,
+    pub key: Option<Rect>,
+}
+
+/// **Where a tooltip goes**: centered over what it is the tip of, a little
+/// off it, and under it where the work area has no room over it, held
+/// inside the area across, its arrow pointing at the middle of the anchor.
+/// Its text is the smallest of the type scale; its key, after it, a key
+/// cap ([`Metrics::kbd_h`]).
+pub fn place_tip(tip: &Tip, text_size: f32, work: Rect, m: &Metrics) -> TipPlace {
+    let text_w = font::width(&tip.text, text_size);
+    let kbd_w = tip
+        .key
+        .as_deref()
+        .map(|k| font::width_in(font::Family::UiMedium, k, text_size) + 2.0 * m.kbd_x);
+    let w =
+        m.tip_x + text_w + kbd_w.map_or(m.tip_x, |k| m.tip_key_gap + k.max(m.kbd_h) + m.tip_end);
+    let inner = m.line_xs.max(if kbd_w.is_some() { m.kbd_h } else { 0.0 });
+    let h = inner + 2.0 * m.tip_y;
+    let (w, h) = (w.min(work.w), h.min(work.h));
+    let a = tip.anchor;
+    let mid = a.x + a.w * 0.5;
+    let above = a.y - m.tip_offset - h >= work.y || a.y + a.h + m.tip_offset + h > work.y + work.h;
+    let y = if above {
+        a.y - m.tip_offset - h
     } else {
-        tip.at.1 - m.pad - h
+        a.y + a.h + m.tip_offset
     };
-    Rect::new(
-        hold_x(tip.at.0 + m.pad, w.min(work.w), work),
-        hold_y(y, h.min(work.h), work),
-        w.min(work.w),
-        h.min(work.h),
-    )
+    let rect = Rect::new(hold_x(mid - w * 0.5, w, work), hold_y(y, h, work), w, h);
+    // the arrow stays clear of the card's rounded corners
+    let corner = m.radius_md + m.tip_arrow;
+    let ax = mid.clamp(
+        rect.x + corner,
+        (rect.x + rect.w - corner).max(rect.x + corner),
+    );
+    let arrow = if above {
+        (ax, rect.y + rect.h + m.tip_arrow)
+    } else {
+        (ax, rect.y - m.tip_arrow)
+    };
+    let key = kbd_w.map(|k| {
+        let k = k.max(m.kbd_h);
+        Rect::new(
+            rect.x + rect.w - m.tip_end - k,
+            rect.y + (rect.h - m.kbd_h) * 0.5,
+            k,
+            m.kbd_h,
+        )
+    });
+    TipPlace {
+        rect,
+        arrow,
+        above,
+        key,
+    }
 }
 
 impl super::Host {
@@ -1060,14 +1343,7 @@ impl super::Host {
     /// **Whose tip shows at `(x, y)`**: the widget under the point that
     /// carries one, or the nearest ancestor that does -- the rule a context
     /// menu is found by ([`Self::context_at`]).
-    pub(crate) fn tip_at(
-        &self,
-        def_id: i32,
-        fb_w: u32,
-        fb_h: u32,
-        x: f64,
-        y: f64,
-    ) -> Option<(i32, String)> {
+    pub(crate) fn tip_at(&self, def_id: i32, fb_w: u32, fb_h: u32, x: f64, y: f64) -> Option<Tip> {
         let placed = self.layout_window(def_id, fb_w, fb_h)?;
         let from = super::chrome::modal_start(&placed).unwrap_or(0);
         placed[from..]
@@ -1075,7 +1351,7 @@ impl super::Host {
             .filter(|p| p.rect.contains(x, y) && p.clip.is_none_or(|c| c.contains(x, y)))
             .rev()
             .find_map(|p| {
-                let (id, tip) = (p.widget.id?, p.widget.tip.clone()?);
+                let (id, text) = (p.widget.id?, p.widget.tip.clone()?);
                 // **A tool's tip shows its key**: a button that performs a
                 // verb is pressed by the chord the key table binds to it, so
                 // the tip names that chord as a menu entry does -- read from
@@ -1089,13 +1365,12 @@ impl super::Host {
                     .and_then(|el| el.tool_verb())
                     .or(p.widget.shortcut.as_deref())
                     .and_then(|verb| self.keys.label(verb));
-                Some((
-                    id,
-                    match key {
-                        Some(key) => format!("{tip} ({key})"),
-                        None => tip,
-                    },
-                ))
+                Some(Tip {
+                    widget: id,
+                    text,
+                    key,
+                    anchor: p.clip.map_or(p.rect, |c| c.intersect(p.rect)),
+                })
             })
     }
 
@@ -1156,6 +1431,54 @@ impl super::Host {
         }
         popups.tip = tip;
         true
+    }
+
+    /// **The hover card over window `def_id`**, as it stands on screen: the
+    /// element whose note it is, the note, and where it is placed, by the
+    /// function the frame draws it with.
+    pub(crate) fn card_place(
+        &self,
+        def_id: i32,
+        fb_w: u32,
+        fb_h: u32,
+    ) -> Option<(i32, Note, NotePlace)> {
+        let work = self.popup_area(def_id, fb_w, fb_h);
+        let m = *self.metrics_for(def_id);
+        let placed = self.layout_window(def_id, fb_w, fb_h)?;
+        placed.iter().find_map(|p| {
+            let id = p.widget.id?;
+            let note = p
+                .widget
+                .kind
+                .as_element()?
+                .own_popups(p.rect, p.scale, &p.metrics)?
+                .note
+                .filter(|n| n.card)?;
+            let place = place_note(&note, work, &m);
+            Some((id, note, place))
+        })
+    }
+
+    /// The hover card's state over window `def_id`, for `owner`'s note: a
+    /// note of another element's starts with none.
+    pub(crate) fn card_mut(&mut self, def_id: i32, owner: i32) -> &mut Card {
+        let popups = self.popups.entry(def_id).or_default();
+        let card = popups.card.get_or_insert_with(Card::default);
+        if card.owner != owner {
+            *card = Card {
+                owner,
+                ..Card::default()
+            };
+        }
+        card
+    }
+
+    /// The hover card's state goes with its note. Answers whether there was
+    /// one.
+    pub(crate) fn drop_card(&mut self, def_id: i32) -> bool {
+        self.popups
+            .get_mut(&def_id)
+            .is_some_and(|p| p.card.take().is_some())
     }
 
     /// The open stack of window `def_id` as it stands on screen: every list
@@ -1473,16 +1796,122 @@ mod tests {
         assert_eq!(stack.key(Walk::Left), Keyed::Step(-1));
     }
 
+    /// **A tooltip stands over what it is the tip of**, centered, its arrow
+    /// reaching toward it; under it where there is no room over it; its key
+    /// a cap at its end.
     #[test]
-    fn a_tip_turns_over_the_pointer_where_there_is_no_room_under_it() {
+    fn a_tooltip_stands_over_its_tool_and_turns_under_it_at_the_top() {
         let m = Metrics::default();
-        let tip = Tip {
+        let size = tip_size(&m);
+        let mut tip = Tip {
             widget: 1,
-            text: "what it is".into(),
-            at: (100.0, 295.0),
+            text: "Evaluate".into(),
+            key: None,
+            anchor: Rect::new(180.0, 200.0, 32.0, 32.0),
         };
-        let r = place_tip(&tip, 2.0, work(), &m);
-        assert!(r.y + r.h <= 295.0, "over the pointer: {r:?}");
-        assert!(!r.contains(100.0, 295.0));
+        let p = place_tip(&tip, size, work(), &m);
+        let mid = 196.0;
+        assert!(
+            (p.rect.x + p.rect.w * 0.5 - mid).abs() < 0.5,
+            "centered: {p:?}"
+        );
+        assert_eq!(p.rect.y + p.rect.h + m.tip_offset, 200.0, "over it");
+        assert!(p.above);
+        assert_eq!(p.arrow, (mid, 200.0 - m.tip_offset + m.tip_arrow));
+        assert_eq!(p.rect.h, m.line_xs + 2.0 * m.tip_y);
+        // at the top of the area: under it
+        tip.anchor.y = 4.0;
+        let p = place_tip(&tip, size, work(), &m);
+        assert!(!p.above);
+        assert_eq!(p.rect.y, 4.0 + 32.0 + m.tip_offset);
+        // a key: a cap at the end, the inset after it the narrower one
+        tip.key = Some("Ctrl+Enter".into());
+        let with_key = place_tip(&tip, size, work(), &m);
+        let k = with_key.key.expect("a key cap");
+        assert_eq!(k.h, m.kbd_h);
+        assert_eq!(k.x + k.w + m.tip_end, with_key.rect.x + with_key.rect.w);
+        assert_eq!(with_key.rect.h, m.kbd_h + 2.0 * m.tip_y);
+        assert!(with_key.rect.w > p.rect.w);
+    }
+
+    fn card(doc: &str) -> Note {
+        Note {
+            anchor: Rect::new(40.0, 200.0, 30.0, 20.0),
+            head: vec![
+                ("print(".into(), false),
+                ("value".into(), true),
+                (")".into(), false),
+            ],
+            aside: "function".into(),
+            doc: doc.into(),
+            doc_lines: 0,
+            code_size: 2.0,
+            text_size: 2.0,
+            card: true,
+        }
+    }
+
+    /// **A hover card's documentation is all there, and scrolls past its
+    /// most**: no line is dropped, the window it shows through stops at
+    /// `card_doc_h`, and the card is held inside the work area.
+    #[test]
+    fn a_hover_card_keeps_every_line_and_scrolls_past_its_height() {
+        let m = Metrics::default();
+        let long: String = (0..60)
+            .map(|i| format!("Line {i} of the help.\n"))
+            .collect();
+        let note = card(&long);
+        let area = Rect::new(0.0, 0.0, 1000.0, 800.0);
+        let p = place_note(&note, area, &m);
+        assert_eq!(p.lines.len(), 60, "every line is kept");
+        assert_eq!(p.doc.h, m.card_doc_h);
+        assert!(p.max_scroll() > 0.0);
+        assert!(p.rect.w <= m.card_w);
+        assert_eq!(p.head.x, p.rect.x + m.card_x);
+        assert_eq!(p.head.y, p.rect.y + m.card_y);
+        assert_eq!(p.doc.y, p.head.y + p.head.h + m.card_gap);
+        // a long signature wraps inside the card, and copies whole
+        let mut long_head = card("Short.");
+        long_head.head = vec![("f(".to_string() + &"argument, ".repeat(40) + ")", false)];
+        let p = place_note(&long_head, area, &m);
+        assert!(p.heads.len() > 1, "the head wraps");
+        assert!(p.rect.w <= m.card_w);
+        let whole = long_head.text_between(&p, (0, 0), (p.heads.len() - 1, usize::MAX));
+        assert_eq!(whole, long_head.head_text().trim_end());
+        // a short one does not scroll
+        let p = place_note(&card("Short."), area, &m);
+        assert_eq!(p.max_scroll(), 0.0);
+        // no wider than nine tenths of a narrow area
+        let narrow = Rect::new(0.0, 0.0, 300.0, 800.0);
+        let wide: String = "word ".repeat(200);
+        assert!(place_note(&card(&wide), narrow, &m).rect.w <= 270.0 + 0.01);
+    }
+
+    /// **What is selected in a card is copied as its text**: the head on a
+    /// line of its own, and the lines the documentation was wrapped into
+    /// joined back with a space.
+    #[test]
+    fn a_card_s_selection_is_its_text_unwrapped() {
+        let m = Metrics::default();
+        let words: String = "alpha beta gamma delta ".repeat(20);
+        let note = card(&format!("{}\nNext.", words.trim()));
+        let area = Rect::new(0.0, 0.0, 400.0, 800.0);
+        let p = place_note(&note, area, &m);
+        assert!(p.lines.len() > 2, "it wraps: {:?}", p.lines);
+        let last = p.count() - 1;
+        let all = note.text_between(&p, (0, 0), (last, p.lines[p.lines.len() - 1].text.len()));
+        assert_eq!(all, format!("print(value)\n{}\nNext.", words.trim()));
+        // backwards is the same
+        let back = note.text_between(&p, (last, 5), (0, 6));
+        assert_eq!(back, note.text_between(&p, (0, 6), (last, 5)));
+        assert!(back.starts_with("value)\n"));
+        // a point finds its place: the head's first character, a line's end
+        let head = note.pos_at(&p, 0.0, p.head.x + 0.1, p.head.y + 1.0);
+        assert_eq!(head, (0, 0));
+        let end = note.pos_at(&p, 0.0, p.rect.x + p.rect.w + 50.0, p.doc.y + 1.0);
+        assert_eq!(end, (1, p.lines[0].text.len()));
+        // the scroll moves which line a point is on
+        let scrolled = note.pos_at(&p, p.line_h, p.head.x, p.doc.y + 1.0);
+        assert_eq!(scrolled.0, 2);
     }
 }

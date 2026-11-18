@@ -155,10 +155,10 @@ strip) are that same widget configured down.
 - ``enabled`` -- ``False`` takes the widget out of the hand's reach: it draws in
   quieter roles, takes no press and is no stop on the tab ring. On a container
   it disables the whole subtree.
-- ``tip`` -- a short text shown beside the pointer once it has rested on the
-  widget. It goes when the pointer leaves, on a press and on a key. On a
-  button that performs a ``verb`` the host adds the key bound to that verb, in
-  parentheses, so a tip never states a key itself.
+- ``tip`` -- a short text shown over the widget once the pointer has rested
+  on it. It goes when the pointer leaves, on a press and on a key. On a
+  button that performs a ``verb`` the host adds the key bound to that verb
+  after the text, so a tip never states a key itself.
 - ``shortcut`` -- the verb whose key the tip shows, for a widget a key presses
   that is no tool: a ``toggle`` that latches a state, a button read by its
   click. The host performs nothing for it; it only reads the key.

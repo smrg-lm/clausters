@@ -2700,10 +2700,38 @@ first four are the order the user set; the components come after.
   menu) are written in it. Checked: the layout, the typing, the aim and
   the capitalization by tests, and the editor's File, Open Recent and
   Session menus headless.
-- ⬜ **ST8: Tooltips and hover cards.** A tool's tip after a delay, with its
+- ✅ **ST8: Tooltips and hover cards.** A tool's tip after a delay, with its
   key. The code's help as a hover card: entered, scrolled, selected, kept
   while the pointer is on it, gone after it leaves or on Esc; signature help
   with the current parameter marked as the inventory says.
+  *Shipped:* a tip is the specification's tooltip (`popup::place_tip`):
+  centered over the widget it is the tip of, under it where the work area
+  has no room over it, 10 off it with an arrow reaching 5 toward it, the
+  `text` role as its fill and `background` as its text at `type_xs`, 12 by
+  6 inset, `radius_md`; a tool's key is a key cap after the text (20 high,
+  the medium weight, the ground at a fifth), in place of the parentheses.
+  It shows after the rest of 600 ms, at once within 300 ms of another
+  going (a row of tools read across its gaps), and never while a list is
+  open. A dock's tab tip is the same tooltip at its tab. The code's help on
+  a name is a **hover card** (`Note::card`): `popover` with a `separator`
+  edge, `radius_sm` and the medium shadow, 12 by 8 inset, at most 768 wide
+  or nine tenths of the area, the signature in the code's face wrapped as
+  it needs, the kind beside it, 6 lower the documentation in `text_dim`,
+  all of it, scrolling past 240. The pointer may cross into it: it stays
+  while the pointer is on the name or the card and goes 300 ms after it
+  leaves both (`gestures::card`), on Escape, on a press elsewhere or on a
+  key that goes on to the text; over it the wheel scrolls it (three lines a
+  notch) and a drag selects its text (the primary selection), which the
+  copy key copies, the wrapped lines joined back. Its scroll and selection
+  are the host's (`popup::Card`). Signature help marks the current
+  parameter in JetBrains Mono Bold (`Family::MonoBold`, carried beside the
+  medium face with its license) and underlined. The size roles gained
+  `card_gap`, `card_doc_h`, `tip_x`, `tip_y`, `tip_end`, `tip_offset`,
+  `tip_arrow`, `tip_key_gap`, `kbd_h` and `kbd_x`. Checked: placement, the
+  key cap, the card's lines, scroll, selection and copy by tests, the
+  rest, the skip and the card's stay, leave and Escape through the gesture
+  machine, and the editor headless: Evaluate's tip with Shift+Enter, and
+  `print`'s card, its wrapped signature, a selection and its going.
 - ⬜ **ST9: Dialogs.** The dialog and the alert dialog as components of the
   host, their anatomy and their focus rules; the shared close form
   (`clausters_apps::closing`) drawn as an alert dialog, and the editor's

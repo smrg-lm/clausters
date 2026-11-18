@@ -731,21 +731,19 @@ fn a_tool_s_tip_shows_the_key_of_its_verb() {
     let ctx = ctx();
     let tip = |host: &Host, id: i32| {
         let at = mid(rect_of(host, &ctx, id));
-        host.tip_at(1, ctx.fb_w, ctx.fb_h, at.0, at.1).map(|t| t.1)
+        host.tip_at(1, ctx.fb_w, ctx.fb_h, at.0, at.1)
+            .map(|t| (t.text, t.key))
     };
-    assert_eq!(tip(&host, 5).as_deref(), Some("Loop (L)"));
-    assert_eq!(
-        tip(&host, 6).as_deref(),
-        Some("Export"),
-        "no key performs it"
-    );
-    assert_eq!(tip(&host, 7).as_deref(), Some("a plain button"));
+    let pair = |text: &str, key: Option<&str>| Some((text.to_string(), key.map(str::to_string)));
+    assert_eq!(tip(&host, 5), pair("Loop", Some("L")));
+    assert_eq!(tip(&host, 6), pair("Export", None), "no key performs it");
+    assert_eq!(tip(&host, 7), pair("a plain button", None));
     // a latch is no tool: it names the verb whose key presses it
-    assert_eq!(tip(&host, 8).as_deref(), Some("Loop the score (L)"));
+    assert_eq!(tip(&host, 8), pair("Loop the score", Some("L")));
     let table = serde_json::json!({"loop": "Ctrl+L", "export": "F9"});
     host.keys.overlay_json(table.as_object().unwrap());
-    assert_eq!(tip(&host, 5).as_deref(), Some("Loop (Ctrl+L)"));
-    assert_eq!(tip(&host, 6).as_deref(), Some("Export (F9)"));
+    assert_eq!(tip(&host, 5), pair("Loop", Some("Ctrl+L")));
+    assert_eq!(tip(&host, 6), pair("Export", Some("F9")));
 }
 
 #[test]
@@ -1495,4 +1493,203 @@ fn a_window_that_asks_is_told_when_it_is_activated() {
     );
     let mut quiet = host_from(r#"{"type":"window","children":[]}"#);
     assert!(g.activated(&mut quiet, &ctx, true).is_none());
+}
+
+/// **A row of tools is read across its gaps**: just after a tip went for
+/// the pointer leaving its tool, the next tool's shows at once; later, it
+/// waits again.
+#[test]
+fn tips_show_at_once_just_after_one_went() {
+    let mut host = host_from(TIPS);
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    let (a, b, c) = (
+        mid(rect_of(&host, &ctx, 5)),
+        mid(rect_of(&host, &ctx, 6)),
+        mid(rect_of(&host, &ctx, 7)),
+    );
+    ctx.now_ms = 1000.0;
+    g.motion(&mut host, &ctx, a.0, a.1);
+    ctx.now_ms = 1700.0;
+    g.elapsed(&mut host, &ctx);
+    assert_eq!(tip_of(&host).as_deref(), Some("the first tool"));
+    // off it, onto a widget with none: it goes
+    g.motion(&mut host, &ctx, c.0, c.1);
+    assert_eq!(tip_of(&host), None);
+    // back within the moment: at once
+    ctx.now_ms = 1900.0;
+    g.motion(&mut host, &ctx, b.0, b.1);
+    assert_eq!(tip_of(&host).as_deref(), Some("the second tool"));
+    g.motion(&mut host, &ctx, c.0, c.1);
+    // long after: it waits
+    ctx.now_ms = 2500.0;
+    g.motion(&mut host, &ctx, a.0, a.1);
+    assert_eq!(tip_of(&host), None);
+    assert!(g.pending());
+}
+
+/// **No tip while a list is open**: the list is what is read.
+#[test]
+fn no_tip_shows_while_a_list_is_open() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","children":[
+        {"id":5,"type":"button","label":"A","w":60,"tip":"the first tool"},
+        {"id":6,"type":"label","text":"filler","weight":1},
+        {"id":7,"type":"choice","label":"View","w":200,"h":48,
+         "options":["one","two","three"]}]}"#,
+    );
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    let chooser = mid(rect_of(&host, &ctx, 7));
+    click(&mut g, &mut host, &ctx, chooser);
+    assert!(host.popup(1).is_some(), "the list is open");
+    let a = mid(rect_of(&host, &ctx, 5));
+    ctx.now_ms = 1000.0;
+    g.motion(&mut host, &ctx, a.0, a.1);
+    ctx.now_ms = 3000.0;
+    g.elapsed(&mut host, &ctx);
+    assert_eq!(tip_of(&host), None);
+}
+
+const CODE: &str = r#"{"type":"window","margin":0,"flow":"col","children":[
+    {"id":9,"type":"code","weight":1,"text":"import math\nmath.sqrt(2)\n"}]}"#;
+
+/// **Rests the pointer on a name of the code** and has the owner answer
+/// what it is with `doc`: the point it rested at.
+fn rest_on_a_name(
+    g: &mut Gestures,
+    host: &mut Host,
+    ctx: &mut GestureCtx,
+    doc: &str,
+) -> (f64, f64) {
+    let r = rect_of(host, ctx, 9);
+    let mut found = None;
+    'scan: for dy in (2..60).step_by(4) {
+        for dx in (2..300).step_by(4) {
+            let at = (f64::from(r.x) + dx as f64, f64::from(r.y) + dy as f64);
+            ctx.now_ms += 1000.0;
+            g.motion(host, ctx, at.0, at.1);
+            ctx.now_ms += 400.0;
+            let out = g.elapsed(host, ctx);
+            if emitted(&out, 9)
+                .iter()
+                .any(|a| a.first() == Some(&OscType::String("inspect".into())))
+            {
+                found = Some(at);
+                break 'scan;
+            }
+        }
+    }
+    let at = found.expect("a name to rest on");
+    let answer = serde_json::json!({
+        "name": "sqrt", "kind": "function", "signature": "sqrt(x, /)", "doc": doc,
+    });
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: super::super::GUI_SET.into(),
+            args: vec![
+                OscType::Int(9),
+                OscType::String("inspected".into()),
+                OscType::String(answer.to_string()),
+            ],
+        }),
+        from(),
+    );
+    at
+}
+
+fn card_rect(host: &Host, ctx: &GestureCtx) -> Option<Rect> {
+    host.card_place(ctx.def_id, ctx.fb_w, ctx.fb_h)
+        .map(|(.., place)| place.rect)
+}
+
+/// **The code's help on a name is a hover card**: the pointer can cross into
+/// it and it stays; it goes a moment after the pointer leaves both, and
+/// Escape takes it down at once.
+#[test]
+fn a_hover_card_stays_while_the_pointer_is_on_it_and_goes_after_it_leaves() {
+    let mut host = host_from(CODE);
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    let at = rest_on_a_name(&mut g, &mut host, &mut ctx, "Return the square root of x.");
+    let card = card_rect(&host, &ctx).expect("the card is up");
+    // into the card: it stays, however long
+    let inside = mid(card);
+    g.motion(&mut host, &ctx, inside.0, inside.1);
+    ctx.now_ms += 5000.0;
+    g.elapsed(&mut host, &ctx);
+    assert!(card_rect(&host, &ctx).is_some(), "on the card it stays");
+    // back on the name: it stays
+    g.motion(&mut host, &ctx, at.0, at.1);
+    ctx.now_ms += 5000.0;
+    g.elapsed(&mut host, &ctx);
+    assert!(card_rect(&host, &ctx).is_some(), "on the name it stays");
+    // off both: a moment, then it goes
+    let away = (f64::from(card.x + card.w) + 40.0, at.1 + 120.0);
+    g.motion(&mut host, &ctx, away.0, away.1);
+    assert!(card_rect(&host, &ctx).is_some(), "not at once");
+    assert!(g.pending(), "the leave is timed");
+    ctx.now_ms += 100.0;
+    g.elapsed(&mut host, &ctx);
+    assert!(card_rect(&host, &ctx).is_some());
+    ctx.now_ms += 300.0;
+    assert!(redraws(&g.elapsed(&mut host, &ctx)));
+    assert!(card_rect(&host, &ctx).is_none(), "gone after it left both");
+    // Escape takes it down at once, and is spent on it
+    rest_on_a_name(&mut g, &mut host, &mut ctx, "Return the square root of x.");
+    assert!(card_rect(&host, &ctx).is_some());
+    g.key_began(&mut host, &ctx);
+    assert!(
+        card_rect(&host, &ctx).is_some(),
+        "a key is the card's to answer"
+    );
+    assert!(g.press_key(&mut host, &ctx, Key::Escape, None).is_some());
+    assert!(card_rect(&host, &ctx).is_none());
+}
+
+/// **A hover card scrolls and its text is selected and copied**: the wheel
+/// over it scrolls its documentation and nothing under it; a drag selects;
+/// the copy key copies what is selected and leaves the card up.
+#[test]
+fn a_hover_card_scrolls_and_its_text_is_selected_and_copied() {
+    let mut host = host_from(CODE);
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    let doc: String = (0..80)
+        .map(|i| format!("Line {i} of the help.\n"))
+        .collect();
+    rest_on_a_name(&mut g, &mut host, &mut ctx, &doc);
+    let (_, note, place) = host.card_place(1, ctx.fb_w, ctx.fb_h).expect("a card");
+    assert!(place.max_scroll() > 0.0, "a long help scrolls");
+    let inside = mid(place.doc);
+    g.motion(&mut host, &ctx, inside.0, inside.1);
+    assert!(redraws(&g.wheel(&mut host, &ctx, inside.0, inside.1, -1.0)));
+    let scroll = host
+        .popups(1)
+        .and_then(|p| p.card.as_ref())
+        .map(|c| c.scroll);
+    assert!(scroll.is_some_and(|s| s > 0.0), "scrolled: {scroll:?}");
+    // a drag over the head selects it
+    let (y, x0, x1) = (
+        f64::from(place.head.y + place.head.h * 0.5),
+        f64::from(place.head.x) + 0.1,
+        f64::from(place.head.x + place.head.w),
+    );
+    g.press(&mut host, &ctx, x0, y);
+    assert!(g.dragging(), "the press on the card selects");
+    g.drag_to(&mut host, &ctx, x1, y);
+    g.release(&mut host, &ctx, x1, y);
+    assert!(card_rect(&host, &ctx).is_some(), "the press kept it up");
+    let sel = host
+        .popups(1)
+        .and_then(|p| p.card.as_ref())
+        .and_then(|c| c.select)
+        .expect("a selection");
+    assert_eq!(note.text_between(&place, sel.0, sel.1), "sqrt(x, /)");
+    // the copy key copies it, and the card stays
+    ctx.ctrl = true;
+    g.key_began(&mut host, &ctx);
+    g.press_key(&mut host, &ctx, Key::Char('c'), None);
+    assert_eq!(host.clipboard.text(), "sqrt(x, /)");
+    assert!(card_rect(&host, &ctx).is_some());
 }

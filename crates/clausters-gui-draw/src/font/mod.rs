@@ -666,6 +666,8 @@ pub enum Family {
     UiMedium,
     /// Code.
     Mono,
+    /// Code in its bold weight: the parameter a call's help marks.
+    MonoBold,
     /// The documentation's text.
     Prose,
     /// Its strong words, small headings and table heads.
@@ -1023,7 +1025,14 @@ pub fn ellipsized(s: &str, max_w: f32, scale: f32) -> Option<String> {
 /// hard-breaks mid-word, at a grapheme cluster). Each line is measured as it
 /// is drawn ([`width`]), so a wrap and the drawing cannot disagree.
 pub fn wrap(s: &str, max_w: f32, scale: f32) -> Vec<String> {
+    wrap_in(Family::Ui, s, max_w, scale)
+}
+
+/// [`wrap`] in `family`: a signature in the code's face, wrapped in a hover
+/// card.
+pub fn wrap_in(family: Family, s: &str, max_w: f32, scale: f32) -> Vec<String> {
     use unicode_segmentation::UnicodeSegmentation;
+    let width = |s: &str, scale: f32| width_in(family, s, scale);
     let max_w = max_w.max(advance(scale));
     let mut lines = Vec::new();
     let mut line = String::new();
