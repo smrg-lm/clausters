@@ -127,6 +127,12 @@ already carry it.
 - ⬜ **`faust_compiler` failed once in a parallel workspace run** *(`crates/clausters-server/PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
+- ⬜ **Quitting the application is not an act: the dock's close is guessed
+  from its panes' closes** *(`crates/clausters-gui/PLAN.md`, Found by use)*.
+  The dock's close closes the editor's panels in batches instead of quitting.
+  The host says the quit once, one rule beside `closing` asks about all the
+  unsaved work together, and the editor's 400 ms guess goes.
+
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and
@@ -357,8 +363,8 @@ Named, not enumerated: each is written where it belongs and is read there.
   end, and `WS13` comes after it. The gaps the plan's "Found by use" holds
   from WS11 and WS12 (an image in a documentation page, a long code line, the
   code font, the dock's arrangement and the window's place between runs, the
-  session's own windows outside the editor's dock, a close from the window
-  manager that once did nothing) are weighed along the way.
+  session's own windows outside the editor's dock) are weighed along the
+  way.
 - **The host's look, the `ST` track** *(`crates/clausters-gui/PLAN.md`, ST
   track)*. Taken now, before `WS13`: one design system as the specification
   of every application's general components, with the current editor as the

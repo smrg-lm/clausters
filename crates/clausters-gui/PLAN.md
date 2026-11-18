@@ -2837,13 +2837,65 @@ finished work, where a pending item reads as done.
   host (an address in its environment) and both clients would attach to it
   rather than boot one, which is a client change made in both at once.
 
-- ⬜ **A close from the window manager once did nothing and asked
-  nothing** *(2026-11-17, WS12)*. With files modified, the window's close
-  button left the editor running and no close form appeared. Closing the dock
-  asks every pane to close and gathers the asks for 400 ms; a run with the
-  close logged (`RUST_LOG=clausters_editor=debug`) got all of them and quit,
-  so what differed is not known. The next time it happens, the log says which
-  asks arrived.
+- ⬜ **Quitting the application is not an act: the dock's close is
+  guessed from its panes' closes** *(2026-11-17, WS12; seen again
+  2026-11-18 after ST4)*. The window manager's close on the dock's window
+  closes the editor's panels a few at a time, one more batch per press,
+  instead of quitting; once, with files modified, it did nothing and asked
+  nothing.
+
+  **Why.** The host has no message that says the application's window was
+  closed. Its close on the dock's window (`gui/dock.rs`, `CloseRequested`) is
+  repeated as one `ask_close` request per pane, and each owner answers for
+  its own window. The editor rebuilds the quit from that: `closed_burst`
+  gathers the `"close"` asks for 400 ms and quits only if every pane it
+  counts (files, bar, footer, post, the documentation and the open forms)
+  is among them; otherwise it treats them as separate closes, keeps the
+  bar, the footer and the post window, and the next press closes those
+  without asking (a second close while the owner has answered nothing).
+  So the quit depends on a timer and on a list every new pane has to
+  join (ST1 added the bar to it, ST4 the footer). The applications in
+  `clausters-apps` do not rebuild it at all. `closing` decides a close
+  **per window** (`Converse::unsaved`, its form). Several applications in
+  one dock are asked one window at a time, each with its own form, and
+  nothing looks at all the unsaved work together. The only place that does
+  is the editor's own `quit()`, reached from its File menu's Quit or from the
+  guess.
+
+  **The shape.**
+  - **The host says it once.** The close of the dock's window, and the Quit
+    a host-drawn menu offers, become one request to the application, a
+    `"quit"` addressed to the dock rather than one `"close"` per pane. A
+    floating panel's own close stays a close of the windows in it. The
+    application answers it or does not: as `ask_close` does for a window, the
+    host keeps the dock up until it is answered, and a second close while
+    nothing has been answered ends it anyway, so an owner that stopped
+    answering cannot keep it open. A host with no owner that asked (a
+    script's windows, no dock) closes as it does today.
+  - **One rule decides it, written once beside `closing`** in
+    `clausters-apps`. It asks every open document whether it holds work
+    its file does not, and gathers the answers into one question (Don't
+    save, Cancel, Save all) in the form `closing` already builds. Save all
+    goes through each document's Save and waits for it (`Leaving`), and the
+    application ends only when nothing is left to lose. Cancel keeps
+    everything open, the panes included. Only documents whose window is the
+    work's only holder are asked (`Converse::asks_to_close`); work a client
+    holds loses nothing by a quit.
+  - **The editor uses that rule.** Its `quit()` becomes a caller of it, the
+    burst, its timer and its list of panes go, and a pane's close from its
+    own tab or menu stays that pane's.
+  - **The protocol and both clients** gain the request where a client
+    drives a dock (the reference in `docs/gui-protocol.md`, the handlers'
+    answer in Python and TypeScript), and `docs/app-behavior.md` gains the
+    rule: quitting is the application's act, asked once over all its
+    unsaved work.
+
+  **Done when** the dock's close quits the editor at the first press with
+  nothing modified, asks one question naming every modified file when there
+  is one, keeps everything on Cancel, and saves then quits on Save all, with
+  two files open; the same for two applications of `clausters-apps` in one
+  dock; and a test of the host's request and of the shared rule beside them,
+  headless.
 
 - ⬜ **A documentation page draws an image as its description**
   *(2026-11-17, WS11; the bar's "should": images in a page)*. The `docs`
