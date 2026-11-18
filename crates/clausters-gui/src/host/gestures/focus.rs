@@ -113,6 +113,12 @@ pub(super) fn on_press(
     ctx: &GestureCtx,
     hit: Option<(i32, &WidgetKind)>,
 ) {
+    // A press hides the ring, wherever the focus goes or stays.
+    let shown = host.focus_ring_shown();
+    host.set_focus_visible(false);
+    if let Some((def, _)) = host.focused().filter(|_| shown) {
+        out.push(GestureEffect::Redraw(def));
+    }
     let to = hit
         .filter(|(_, kind)| {
             kind.accepts_focus() && kind.as_element().is_none_or(|el| el.press_takes_focus())
@@ -170,6 +176,8 @@ fn rules_the_focused(host: &Host, ctx: &GestureCtx, hit: Option<(i32, &WidgetKin
 /// land on the first field rather than on the second.
 pub(super) fn step(host: &mut Host, ctx: &GestureCtx, back: bool) -> Vec<GestureEffect> {
     let mut out = Vec::new();
+    // The keyboard moved the focus: its ring shows from here on.
+    host.set_focus_visible(true);
     let ring = ring(host, ctx);
     if ring.is_empty() {
         // Nothing here reads the keyboard, so Tab was never ours.

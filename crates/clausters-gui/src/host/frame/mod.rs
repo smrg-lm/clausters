@@ -169,6 +169,9 @@ pub(crate) struct FrameInputs<'a> {
     /// the frame rings it, and the element draws whatever else being focused
     /// means to it (a field's caret and selection).
     pub(crate) focused: Option<i32>,
+    /// The widget the frame rings: the focused one when the keyboard moved
+    /// the focus there, none after a press ([`super::Host::focus_ring`]).
+    pub(crate) ring: Option<i32>,
     /// What a drag is holding right now (see [`Grab`]).
     pub(crate) grab: Grab,
     /// **This window's status bar**: what it has said and whether it is open
@@ -204,6 +207,7 @@ impl Default for FrameInputs<'_> {
             metrics: METRICS.get_or_init(Metrics::default),
             world: World::default(),
             focused: None,
+            ring: None,
             grab: Grab::None,
             status: None,
             popups: None,
@@ -656,7 +660,7 @@ fn draw_live_places(
         // a multitrack's meters at rest, a column the height of its track --
         // painted over the ring wherever they met. Drawn again here, it is the
         // last thing of the element, as it is in the picture.
-        if ctx.focused {
+        if ctx.focused && widget.id == inputs.ring {
             mesh.set_clip(place.clip);
             mesh.set_ink(Ink::default());
             mesh.border(place.rect, m.focus_ring, th.focus);

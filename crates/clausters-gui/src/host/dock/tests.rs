@@ -36,14 +36,9 @@ fn part(d: &Dock, group: usize, want: BarPart) -> Rect {
         .expect("the bar has it")
 }
 
-/// What a hand drags group `group`'s first window by: its tab, or the title
-/// of a panel of one window.
+/// What a hand drags group `group`'s first window by: its tab.
 fn handle(d: &Dock, group: usize) -> Rect {
-    if d.groups()[group].panes.len() > 1 {
-        part(d, group, BarPart::Tab(0))
-    } else {
-        part(d, group, BarPart::Title)
-    }
+    part(d, group, BarPart::Tab(0))
 }
 
 /// The height of a tab strip in these tests.
@@ -463,11 +458,11 @@ fn an_empty_dock_has_no_panel() {
     assert_eq!(ws.state()["panes"], json!([]));
 }
 
-/// **A panel of one window shows its title, not a tab**, with a grip, a
-/// menu button and a close mark; a panel of several shows a tab each, with a
-/// close mark each, and no close mark of its own.
+/// **A panel's bar is its tab strip**: a grip, a tab for each window with
+/// a close mark each -- one tab for one window -- and the menu button, with
+/// no title row and no close mark of the panel's own.
 #[test]
-fn a_panel_shows_tabs_only_when_it_holds_several() {
+fn a_panel_shows_a_tab_for_each_window_even_one() {
     let mut ws = dock((600, 300), 4.0, &[1, 2]);
     let kinds = |ws: &Dock, g: usize| -> Vec<BarPart> {
         ws.bar_parts(&ws.groups()[g].clone())
@@ -477,7 +472,12 @@ fn a_panel_shows_tabs_only_when_it_holds_several() {
     };
     assert_eq!(
         kinds(&ws, 0),
-        [BarPart::Grip, BarPart::Title, BarPart::Menu, BarPart::Close]
+        [
+            BarPart::Grip,
+            BarPart::TabClose(0),
+            BarPart::Tab(0),
+            BarPart::Menu
+        ]
     );
     ws.land(2, Landing::Join { of: 1, at: None })
         .expect("joins");

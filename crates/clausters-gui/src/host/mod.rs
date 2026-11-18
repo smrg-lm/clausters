@@ -1131,6 +1131,11 @@ pub struct Host {
     /// [`Element::key`](widget::Element::key) and only falls through to the
     /// key table when the element does not answer it.
     focused: Option<(i32, i32)>,
+    /// **Whether the focus is shown with its ring** (focus-visible): only
+    /// after the keyboard moved it (Tab), never after a press -- a press
+    /// says where the hand is already looking, so a ring there is noise
+    /// around whatever was clicked, a code editor's whole panel included.
+    focus_visible: bool,
     /// The counter a playhead is drawn from where nothing names one: the
     /// launch-time `--clock`. See [`HeadClock`].
     head_clock: HeadClock,
@@ -1245,6 +1250,7 @@ impl Host {
             follow_block: 0.0,
             resolved_metrics: HashMap::new(),
             focused: None,
+            focus_visible: false,
             pending_effects: Vec::new(),
             scripted: Default::default(),
             activity: Default::default(),
@@ -1278,6 +1284,25 @@ impl Host {
     /// widget_id)`.
     pub fn focused(&self) -> Option<(i32, i32)> {
         self.focused
+    }
+
+    /// The widget whose focus ring window `def_id` draws: the focused one,
+    /// when the keyboard moved the focus there (see `focus_visible`).
+    pub fn focus_ring(&self, def_id: i32) -> Option<i32> {
+        self.focused
+            .filter(|(d, _)| self.focus_visible && *d == def_id)
+            .map(|(_, id)| id)
+    }
+
+    /// Says how the focus last moved: by the keyboard (`true`, the ring
+    /// shows) or by a press (`false`).
+    pub(crate) fn set_focus_visible(&mut self, visible: bool) {
+        self.focus_visible = visible;
+    }
+
+    /// Whether a ring shows now: something is focused, by the keyboard.
+    pub(crate) fn focus_ring_shown(&self) -> bool {
+        self.focus_visible && self.focused.is_some()
     }
 
     /// Whether the focus in `def_id` is on a widget that **takes typed text**

@@ -479,10 +479,12 @@ impl Gestures {
         let title = bar_titles(host, ctx)
             .into_iter()
             .find(|(_, r)| r.contains(cx, cy));
+        // The title under the pointer is lit whether or not a list is open:
+        // one left lit while a list moved to another title read as two open.
+        if host.set_bar_hover(def_id, title.map(|(t, _)| t)) {
+            out.push(GestureEffect::Redraw(def_id));
+        }
         let Some(owner) = host.popup(def_id).map(|s| s.owner.clone()) else {
-            if host.set_bar_hover(def_id, title.map(|(t, _)| t)) {
-                out.push(GestureEffect::Redraw(def_id));
-            }
             return title.is_some().then_some(out);
         };
         let placed = host

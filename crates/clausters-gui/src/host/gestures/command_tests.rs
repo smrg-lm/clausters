@@ -129,6 +129,29 @@ fn a_press_on_a_tool_leaves_the_focus_where_it_was() {
     assert_eq!(host.focused(), focused);
 }
 
+/// **The ring shows where the keyboard moved the focus, not where a hand
+/// put it**: a press focuses a field with no ring, Tab rings the next stop,
+/// and the next press hides it again.
+#[test]
+fn the_focus_ring_shows_after_tab_and_not_after_a_press() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","children":[
+            {"id":5,"type":"text","h":32},
+            {"id":6,"type":"text","h":32}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    let at = mid(rect_of(&host, &ctx, 5));
+    click(&mut g, &mut host, &ctx, at);
+    assert_eq!(host.focused(), Some((1, 5)));
+    assert_eq!(host.focus_ring(1), None, "no ring after a press");
+    g.press_key(&mut host, &ctx, Key::Tab, None);
+    assert_eq!(host.focus_ring(1), Some(6), "the ring after Tab");
+    let at = mid(rect_of(&host, &ctx, 5));
+    click(&mut g, &mut host, &ctx, at);
+    assert_eq!(host.focus_ring(1), None, "and gone at the next press");
+}
+
 /// A combobox picked by hand keeps the keys off it the same way, and Tab still
 /// reaches it: a space bar after a pick plays instead of opening its list.
 #[test]

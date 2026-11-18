@@ -347,7 +347,7 @@ pub(super) fn collect_widgets(
         // where the keyboard points, which is a window's answer rather than a
         // widget's. What being focused means *inside* an element (a field's
         // caret) is the element's, and reaches it as `Ctx::focused`.
-        if p.widget.id.is_some() && p.widget.id == inputs.focused {
+        if p.widget.id.is_some() && p.widget.id == inputs.ring {
             mesh.set_clip(p.clip);
             mesh.border(p.rect, m.focus_ring, th.focus);
         }

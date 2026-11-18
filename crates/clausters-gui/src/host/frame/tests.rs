@@ -805,6 +805,7 @@ fn the_focus_ring_is_drawn_over_the_live_layer() {
         let inputs = FrameInputs {
             metrics: host.metrics_for(1),
             focused,
+            ring: focused,
             ..FrameInputs::default()
         };
         picture(tree, &inputs, &host.theme, &none.0, &none.1, (800, 600))

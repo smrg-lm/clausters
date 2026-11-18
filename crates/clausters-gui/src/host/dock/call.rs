@@ -219,12 +219,12 @@ impl Dock {
                     .map_or(Value::Null, |(_, r)| rect(*r))
             };
             for (i, &pane) in group.panes.iter().enumerate() {
-                // what a hand drags the pane by: its tab, or the title of a
-                // panel of one window
-                let tab = if group.panes.len() > 1 {
-                    part(super::BarPart::Tab(i))
-                } else {
+                // what a hand drags the pane by: its tab, or a floating
+                // panel's title
+                let tab = if self.floating {
                     part(super::BarPart::Title)
+                } else {
+                    part(super::BarPart::Tab(i))
                 };
                 panes.push(json!({
                     "id": pane,

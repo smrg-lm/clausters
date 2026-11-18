@@ -556,6 +556,26 @@ fn with_a_menu_open_the_pointer_crossing_another_title_moves_it_there() {
     assert_eq!(host.popup(1).unwrap().levels[0].entries[0].label, "Open");
 }
 
+/// **Only the title under the pointer is lit**: a title pressed and then
+/// left for another, the list following, does not stay lit beside it.
+#[test]
+fn with_a_menu_open_the_title_left_behind_is_not_lit() {
+    let mut host = host_from(BAR);
+    let mut g = Gestures::default();
+    let ctx = ctx();
+    let (x, y) = bar_title(&host, &ctx, 0);
+    g.motion(&mut host, &ctx, x, y);
+    click(&mut g, &mut host, &ctx, (x, y));
+    let (x, y) = bar_title(&host, &ctx, 1);
+    g.motion(&mut host, &ctx, x, y);
+    let lit = host.popups(1).and_then(|p| p.bar_hover);
+    let open = match host.popup(1).unwrap().owner {
+        Owner::Bar(title) => title,
+        _ => panic!("a bar's list"),
+    };
+    assert_eq!(lit, Some(open), "the lit title is the open one");
+}
+
 #[test]
 fn with_a_menu_open_crossing_a_plain_title_closes_it_and_picks_nothing() {
     let mut host = host_from(BAR);

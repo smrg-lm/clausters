@@ -1,11 +1,10 @@
 //! **A panel's bar, and the dock's menus.**
 //!
 //! Every group of the dock is a **panel** with a bar along its top: a grip to
-//! drag the panel by, what it shows, a button that opens its menu and -- for a
-//! panel of one window -- a close mark. A panel of one window shows that
-//! window's title; tabs appear only when the panel holds several, each with
-//! its own close mark, as an editor's group of files does. So a tab means a
-//! choice between the windows of one panel, and nothing else.
+//! drag the panel by, a tab for each of its windows -- one tab for one window,
+//! as an editor's group of files shows a single file -- each with its own
+//! close mark, and a button that opens its menu. The bar *is* the tab strip:
+//! a panel has no title row above its tabs.
 //!
 //! A panel's **menu** (its button, or the secondary button on its bar or on a
 //! tab) and a page's (the secondary button on its tab) are lists of the popup
@@ -25,20 +24,24 @@ use super::{Dock, Grip, GroupPlace, Landing, Side};
 use crate::host::menu::{Entry, EntryKind};
 use crate::host::popup::{self, Anchor, Owner, Stack};
 
+/// The widest a tab's title stands, in characters of the bar's text.
+const TAB_CHARS: f32 = 28.0;
+
 /// One thing a hand can land on in a panel's bar.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BarPart {
     /// The handle the panel is dragged by.
     Grip,
-    /// What a panel of one window shows: its title. Dragged as the grip is.
+    /// What a floating panel shows: its window's title. Dragged as the grip
+    /// is.
     Title,
-    /// The tab of the panel's window at this index, in a panel of several.
+    /// The tab of the panel's window at this index.
     Tab(usize),
     /// That tab's close mark.
     TabClose(usize),
     /// The button that opens the panel's menu.
     Menu,
-    /// The close mark of a panel of one window.
+    /// The close mark of a floating panel.
     Close,
 }
 
@@ -67,9 +70,9 @@ pub struct DockMenu {
 
 impl Dock {
     /// **The parts of a panel's bar**, each with the rectangle it is drawn
-    /// in: the grip, the title or the tabs (each tab's close mark before the
-    /// tab, so it is hit first), the menu button and, for one window, the
-    /// close mark. Tabs that do not fit are cut to an ellipsis down to a
+    /// in: the grip, the tabs (each tab's close mark before the tab, so it is
+    /// hit first) and the menu button; a floating panel's title, menu button
+    /// and close mark. Tabs that do not fit are cut to an ellipsis down to a
     /// least, and those past the bar's end are left out -- the menu lists
     /// them all.
     pub fn bar_parts(&self, group: &GroupPlace) -> Vec<(BarPart, Rect)> {
@@ -87,7 +90,8 @@ impl Dock {
         if !self.floating {
             out.push((BarPart::Grip, Rect::new(r.x, r.y, grip_w, h)));
         }
-        let single = group.panes.len() <= 1;
+        // a floating panel is a window of its own: its title, no tabs
+        let single = self.floating;
         let buttons = if single { 2.0 } else { 1.0 };
         let end = (r.x + r.w - buttons * h).max(r.x + grip_w);
         if single {
@@ -100,10 +104,12 @@ impl Dock {
             return out;
         }
         let close = (h * 0.7).round();
+        // a long title is cut, not followed: a tab is at most TAB_CHARS wide
+        let most = TAB_CHARS * font::width("0", size);
         let natural: Vec<f32> = group
             .panes
             .iter()
-            .map(|&p| font::width(&self.title(p), size) + 3.0 * m.pad + close)
+            .map(|&p| font::width(&self.title(p), size).min(most) + 3.0 * m.pad + close)
             .collect();
         let room = (end - r.x - grip_w).max(0.0);
         let least = close + 2.0 * m.pad + font::width("\u{2026}", size);

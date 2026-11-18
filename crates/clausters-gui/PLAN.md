@@ -2355,9 +2355,9 @@ with the large shadow, at least 128 wide. Labels in Title Case. Open Recent:
 each entry the file's name, then 16 further its folder in 12
 `muted-foreground`, cut with an ellipsis, the list at most 576 wide; "No
 Recent Files" disabled when empty; "Clear Recent Files" after a separator.
-The font list scrolls past 320. *Host:* square lists with no shadow, placed
-inside the pane, the submenu over its parent, recent files as whole paths,
-sentence case.
+The font list scrolls past 320. *Host:* square lists with no shadow,
+recent files as the name and the folder in one color, cut at a widest
+label, sentence case.
 
 **Tooltips and hover cards.** A tool's tip is the platform's (the `title`
 attribute). The code's help on a name: after the pointer rests 350 ms, a card
@@ -2470,8 +2470,8 @@ from the side it opens on.
   atlas rasterizes static instances, so the weights the scale names are
   carried as faces.
 - **States**: hover, pressed, focus-visible (drawn only after keyboard
-  input), disabled, open, selected and invalid, for every component, from
-  the roles above.
+  input; the host's ring already follows that rule), disabled, open,
+  selected and invalid, for every component, from the roles above.
 - **Spacing per component**: each component's insets and gaps as roles of the
   metrics table, generated on the 4 grid so `scale` still sets the density.
 - **Icons**: the subset of Lucide the components use, as strokes at 16 and
@@ -2549,7 +2549,9 @@ first four are the order the user set; the components come after.
   rather than drawn under it; the page strip is hidden while there is one
   page. The editor's tabs as the inventory says (width, the top line, the dot
   that turns into a cross, the middle click, the path as tip). A panel's
-  owner says whether it may be closed, and the post window may not.
+  owner says whether it may be closed, and the post window may not. A panel
+  of one window already shows its one tab rather than a title row, each tab
+  at most 28 characters of title (the inventory's 224 at 14).
 - ⬜ **ST4: The status footer.** A band along the dock's bottom, the
   application's: the dot and the line of the inventory, set by the
   application with a verb. The post window's title goes back to its name.

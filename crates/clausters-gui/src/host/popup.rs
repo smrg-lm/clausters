@@ -521,8 +521,13 @@ fn entry_h(e: &Entry, text_size: f32, m: &Metrics) -> f32 {
     }
 }
 
+/// The widest an entry's label stands, in the list's characters: a longer
+/// one (a recent file's folder, a long name) is cut with an ellipsis rather
+/// than stretching the list across the window.
+const LABEL_CHARS: f32 = 64.0;
+
 /// How big a list wants to be: as wide as its widest entry with the gutters it
-/// needs, and as tall as its rows.
+/// needs, at most [`LABEL_CHARS`] of label, and as tall as its rows.
 ///
 /// The entries are props, so this is a size read out of props -- nothing a
 /// stream of values can move.
@@ -540,7 +545,8 @@ pub fn natural(entries: &[Entry], text_size: f32, m: &Metrics) -> (f32, f32) {
     let label = entries
         .iter()
         .map(|e| font::width(&e.label, text_size))
-        .fold(0.0f32, f32::max);
+        .fold(0.0f32, f32::max)
+        .min(LABEL_CHARS * font::width("0", text_size));
     let h = entries.iter().map(|e| entry_h(e, text_size, m)).sum();
     (
         left + label + key_column(entries, text_size, m) + right + 2.0 * m.pad,
@@ -1009,6 +1015,19 @@ mod tests {
         (0..n)
             .map(|i| Entry::option(&format!("option {i}"), i == 0))
             .collect()
+    }
+
+    /// A label longer than the list's most is cut, not followed: the list
+    /// stops at [`LABEL_CHARS`] of label however long the entry.
+    #[test]
+    fn a_long_label_does_not_widen_the_list_past_its_most() {
+        let m = Metrics::default();
+        let long = "x".repeat(300);
+        let (w, _) = natural(&[Entry::option(&long, false)], 1.0, &m);
+        let (most, _) = natural(&[Entry::option(&"0".repeat(64), false)], 1.0, &m);
+        assert!(w <= most + 0.5, "{w} past {most}");
+        let (short, _) = natural(&options(2), 1.0, &m);
+        assert!(short < most, "a short list keeps its own width");
     }
 
     #[test]

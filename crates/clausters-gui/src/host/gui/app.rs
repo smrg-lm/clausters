@@ -752,6 +752,7 @@ impl App {
                 .focused()
                 .filter(|(d, _)| *d == def_id)
                 .map(|(_, id)| id),
+            ring: self.host.focus_ring(def_id),
             // What this window's drag is holding: while one is in flight the
             // grips are its own and nothing else lights up.
             grab: self

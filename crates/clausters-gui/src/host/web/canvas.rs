@@ -560,6 +560,7 @@ impl WebApp {
                 node_trees: self.host.node_trees(),
             },
             focused,
+            ring: self.host.focus_ring(def),
             // The page draws what the desktop draws: a held clip keeps its
             // grip and nothing else lights up, whichever front is driving.
             grab: slot.gestures.grab(),
