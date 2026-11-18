@@ -361,6 +361,9 @@ pub struct Gestures {
     rest_on: Option<hover::RestOn>,
     /// A press held still, waiting to become a context request ([`hover`]).
     hold: Option<hover::Hold>,
+    /// The Ctrl+wheel gathered towards the next step of the text's size
+    /// ([`wheel`]), in notches.
+    sizing: f64,
 }
 
 impl Gestures {

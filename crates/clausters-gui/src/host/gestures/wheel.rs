@@ -303,20 +303,59 @@ impl Gestures {
         // asked above and declined). The press path shares the mechanism and
         // means it differently -- Shift+drag pans the axis from anywhere at all,
         // over any element -- so the question is asked here and not there.
-        if !kind.is_bare_surface() {
-            return out;
-        }
-        if let Some(sole) =
+        let sole = |host: &Host| {
             interact::sole_time_axis(host, def_id, ctx.fb_w, ctx.fb_h, &|id, kind| {
                 ctx.rows(id, kind)
             })
-        {
+        };
+        // **Ctrl+wheel that nothing here took is the size of the text**: the
+        // window's `zoom_in` and `zoom_out`, as its keys are, where no time
+        // axis claims the empty pixels.
+        if ctx.ctrl && sole(host).is_none() {
+            return self.size_by_wheel(host, ctx, steps);
+        }
+        if !kind.is_bare_surface() {
+            return out;
+        }
+        if let Some(sole) = sole(host) {
             let factor = 0.85f64.powf(steps);
             zoom_timeline(host, &mut out, def_id, sole.id, sole.axis.body, cx, factor);
         }
         out
     }
+
+    /// **A Ctrl+wheel towards the text's size**: gathered until it makes
+    /// [`SIZE_STEP`] of a notch, then one step of `zoom_in` (up) or
+    /// `zoom_out` (down) and the rest let go -- a wheel's notch is a step,
+    /// and a touchpad's stream of small deltas is a step per stretch rather
+    /// than one per event.
+    fn size_by_wheel(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        steps: f64,
+    ) -> Vec<GestureEffect> {
+        if self.sizing.signum() != steps.signum() {
+            self.sizing = 0.0;
+        }
+        self.sizing += steps;
+        if self.sizing.abs() < SIZE_STEP {
+            return Vec::new();
+        }
+        let verb = if self.sizing > 0.0 {
+            "zoom_in"
+        } else {
+            "zoom_out"
+        };
+        self.sizing = 0.0;
+        self.command(host, ctx, verb)
+    }
 }
+
+/// How much of a wheel's notch makes a step of the text's size: 40 pixels of
+/// scroll, as a page that sizes its text by the wheel takes them, over the
+/// 50 a notch is ([`Wheel::NATIVE`]).
+const SIZE_STEP: f64 = 0.8;
 
 #[cfg(test)]
 mod wheel_tests {

@@ -49,6 +49,10 @@ struct Cli {
     /// The UDP port a script reaches the host on (any free one by default).
     #[arg(long, hide = true)]
     port: Option<u16>,
+    /// The device pixels to a logical one the headless dock is drawn at
+    /// (`2` draws what a display at twice the density shows).
+    #[arg(long, hide = true, default_value_t = 1.0)]
+    scale: f32,
 }
 
 /// A `FILE` argument, made absolute against the directory the command runs
@@ -104,6 +108,7 @@ fn run(cli: Cli) -> Result<(), String> {
         tracing::warn!("{w}");
     }
     host.load_default_face();
+    host.headless_scale = cli.scale;
     let bind = SocketAddr::from((Ipv4Addr::LOCALHOST, cli.port.unwrap_or(0)));
     let socket = UdpSocket::bind(bind).map_err(|e| format!("cannot bind {bind}: {e}"))?;
     if cli.headless {

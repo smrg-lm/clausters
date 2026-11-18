@@ -1226,6 +1226,11 @@ impl Element for DocsView {
     }
 
     fn wheel(&mut self, _at: (f64, f64), delta: (f64, f64), input: &Input) -> Option<Events> {
+        // Ctrl+wheel is the size of the text, not a scroll: declined, the
+        // window's own zoom takes it.
+        if input.mods.ctrl {
+            return None;
+        }
         let g = self.geometry(input.rect, input.scale, input.metrics);
         let line = font::line_advance(g.size) * 1.4;
         let before = self.scroll.get();

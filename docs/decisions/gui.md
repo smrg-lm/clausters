@@ -3345,3 +3345,39 @@ apart, since an audio editor is denser than a form.
 The choice of this system over another is the editor's: the webview editor
 was already built from it, so its generated components carry every value as a
 reviewable measure, and the user had judged that look the bar to reach.
+
+## Text is drawn as a browser draws it: fractional sizes, quarter pixels, corrected coverage (2026-11-17)
+
+*Taken in `ST2` (`crates/clausters-gui/PLAN.md`).* The native editor's code
+measured as the webview's (the same face, the same size, a line as wide to
+the pixel) and still read thinner, greyer and unevenly spaced. Put against a
+browser's capture of the same lines, in white on black and black on white,
+at 1x and 2x, the difference had three parts, each measured as the error of
+the host's picture against the browser's:
+
+- **Positions.** The rasterizer drew each glyph on a whole pixel, so letters
+  of code whose advance is 8.4 pixels moved by up to half a pixel each. A
+  browser rounds the pen to a quarter of a pixel and rasterizes the glyph for
+  that quarter. Exact positions took the error from 0.075 to 0.047, quarter
+  pixels rounded to 0.040 (four bins floored did worse, 0.054).
+- **Coverage.** Exact area coverage blended over the window's colors makes a
+  light letter on a dark ground thin and a dark one on a light ground grey.
+  A browser corrects each coverage for the ink's luminance, against a ground
+  guessed as its opposite, with a gamma and a contrast. That formula, with a
+  gamma of 1.3 and a contrast of 0.4, drew the browser's amount of ink in both
+  directions (0.97 and 0.96 of it, where uncorrected coverage drew 0.88 and
+  0.94); the numbers are fitted, the formula is the browser's.
+- **Sizes.** A rasterization at a whole pixel size put code asked for at 14
+  pixels to the em at whatever whole size its cap height rounded to. Outlines
+  are drawn at any size, so the size is kept fractional.
+
+Hinting was measured too and left out: a light, vertical-only autohinting
+did no better than none once positions were fractional. Subpixel (LCD)
+antialiasing, which the desktop the webview ran on also applies, was left
+out for now: it needs a blend per color channel that a page's WebGL2 does
+not have, and one host draws one picture on both fronts.
+
+So the atlas reads faces with skrifa and fills outlines with
+ab_glyph_rasterizer (both pure Rust, wasm-safe) in place of fontdue, which
+rasterizes only at a whole pixel's origin, and the glyph shader applies the
+correction. Every text of every application moved with it, on purpose.

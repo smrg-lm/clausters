@@ -143,10 +143,12 @@ impl App {
                         gpu
                     }
                     // **A window drawn and never shown**: the size it declared,
-                    // at a scale of one, since there is no display to measure
-                    // it by -- and a capture of it is the window's own pixels.
+                    // at the headless scale (one, unless told otherwise),
+                    // since there is no display to measure it by -- and a
+                    // capture of it is the window's own pixels.
                     Loop::Headless(_) => {
-                        self.host.set_ui_scale(id, 1.0);
+                        self.host
+                            .set_ui_scale(id, self.host.headless_scale.max(0.5));
                         let (w, h) = self.host.window_size_px(id).unwrap_or((width, height));
                         match pollster::block_on(Gpu::offscreen(w, h, self.host.msaa)) {
                             Ok(gpu) => gpu,

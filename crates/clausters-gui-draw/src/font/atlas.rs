@@ -26,7 +26,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use fontdue::{Font, FontSettings};
+use ab_glyph_rasterizer::{Point, Rasterizer, point};
+use skrifa::instance::{LocationRef, Size};
+use skrifa::outline::{DrawSettings, OutlinePen};
+use skrifa::{FontRef, GlyphId, MetadataProvider};
 
 use super::Family;
 
@@ -52,6 +55,21 @@ const PAD: u32 = 1;
 /// scale linearly, so one measurement answers every size.
 const REF_PX: f32 = 100.0;
 
+/// **How many places between two pixels a glyph is drawn at**: its pen is
+/// rounded to a quarter of a pixel and the glyph rasterized for that
+/// quarter, as a browser places text. A glyph held to whole pixels moves its
+/// letters by up to half a pixel each, which is what makes a line of a
+/// proportional face, or of code at a size whose advance is not whole, read
+/// as unevenly spaced; four places are as close to the exact positions as a
+/// capture tells apart, and four copies of a glyph at most.
+pub const SUBPIXEL: f32 = 4.0;
+
+/// The size key of a rasterization: sizes are fractional, kept to a 64th
+/// of a pixel, which no eye tells apart and no cache is flooded by.
+fn size_key(px: f32) -> u32 {
+    (px * 64.0).round() as u32
+}
+
 /// One rasterized glyph, placed relative to the pen and the baseline.
 #[derive(Clone, Copy)]
 pub struct Glyph {
@@ -72,11 +90,184 @@ pub struct Glyph {
     pub advance: f32,
 }
 
-/// One loaded typeface: the rasterizer's reading of it, and its bytes, which
-/// the shaper reads its layout tables from.
+/// One loaded typeface: its bytes, which the outlines, the metrics and the
+/// shaper's layout tables are all read from as they are asked for.
 struct Loaded {
-    font: Font,
     data: std::sync::Arc<[u8]>,
+}
+
+impl Loaded {
+    /// `bytes` as a face: `None` when they are not a font, or a font none
+    /// of whose first characters has an outline to draw.
+    fn new(bytes: &[u8]) -> Option<Self> {
+        let font = FontRef::new(bytes).ok()?;
+        let outlines = font.outline_glyphs();
+        font.charmap()
+            .mappings()
+            .take(64)
+            .any(|(_, g)| outlines.get(g).is_some())
+            .then(|| Self {
+                data: std::sync::Arc::from(bytes),
+            })
+    }
+
+    /// The face read from its bytes: a table directory, which costs next to
+    /// nothing to read again.
+    fn font(&self) -> FontRef<'_> {
+        FontRef::new(&self.data).expect("read when it was loaded")
+    }
+
+    /// The glyph that draws `c`, if the face has one.
+    fn glyph_of(&self, c: char) -> Option<GlyphId> {
+        self.font().charmap().map(c)
+    }
+
+    fn has_glyph(&self, c: char) -> bool {
+        self.glyph_of(c).is_some()
+    }
+
+    /// How far the pen steps over glyph `id` at `px` pixels to the em.
+    fn advance(&self, id: GlyphId, px: f32) -> f32 {
+        self.font()
+            .glyph_metrics(Size::new(px), LocationRef::default())
+            .advance_width(id)
+            .unwrap_or(0.0)
+    }
+
+    /// The face's line at `px` pixels to the em: ascent, descent and gap.
+    fn line(&self, px: f32) -> f32 {
+        let m = self.font().metrics(Size::new(px), LocationRef::default());
+        m.ascent - m.descent + m.leading
+    }
+
+    fn units_per_em(&self) -> f32 {
+        f32::from(
+            self.font()
+                .metrics(Size::unscaled(), LocationRef::default())
+                .units_per_em,
+        )
+    }
+
+    /// **Glyph `id` at `px` pixels to the em**, its pen `x` pixels right of
+    /// a whole pixel (a fraction of one): its coverage, one byte a texel,
+    /// rows top first, and where that box stands from the whole pixel and
+    /// the baseline, `(left, top, w, h)` with `top` above the baseline
+    /// negative. `None` for a glyph that inks nothing.
+    fn rasterize(&self, id: GlyphId, px: f32, x: f32) -> Option<(i32, i32, u32, u32, Vec<u8>)> {
+        let font = self.font();
+        let outline = font.outline_glyphs().get(id)?;
+        let settings = DrawSettings::unhinted(Size::new(px), LocationRef::default());
+        let mut path = Path::default();
+        outline.draw(settings, &mut path).ok()?;
+        let [x0, y0, x1, y1] = path.bounds()?;
+        // the box on whole pixels, y down from the top of the ink
+        let left = (x0 + x).floor();
+        let top = y1.ceil();
+        let (w, h) = ((x1 + x).ceil() - left, top - y0.floor());
+        if w < 1.0 || h < 1.0 {
+            return None;
+        }
+        let (w, h) = (w as u32, h as u32);
+        let mut r = Rasterizer::new(w as usize, h as usize);
+        let at = |(px_, py): (f32, f32)| point(px_ + x - left, top - py);
+        path.fill(&mut r, at);
+        let mut coverage = vec![0u8; (w * h) as usize];
+        r.for_each_pixel(|i, a| coverage[i] = (a.abs().min(1.0) * 255.0).round() as u8);
+        Some((left as i32, -(top as i32), w, h, coverage))
+    }
+
+    /// How tall a capital stands per pixel to the em: the outline of 'H',
+    /// or the ascent for a face whose 'H' has none (a symbol face).
+    fn cap(&self) -> f32 {
+        let font = self.font();
+        let from_h = self.glyph_of('H').and_then(|id| {
+            let outline = font.outline_glyphs().get(id)?;
+            let mut path = Path::default();
+            outline
+                .draw(
+                    DrawSettings::unhinted(Size::new(REF_PX), LocationRef::default()),
+                    &mut path,
+                )
+                .ok()?;
+            let [_, y0, _, y1] = path.bounds()?;
+            (y1 - y0 > 0.0).then_some(y1 - y0)
+        });
+        from_h.unwrap_or_else(|| {
+            font.metrics(Size::new(REF_PX), LocationRef::default())
+                .ascent
+        }) / REF_PX
+    }
+}
+
+/// An outline as the face draws it, in pixels with y up: what a glyph's box
+/// is measured from and then filled from.
+#[derive(Default)]
+struct Path {
+    segments: Vec<Segment>,
+    start: (f32, f32),
+    last: (f32, f32),
+}
+
+enum Segment {
+    Line((f32, f32), (f32, f32)),
+    Quad((f32, f32), (f32, f32), (f32, f32)),
+    Cubic((f32, f32), (f32, f32), (f32, f32), (f32, f32)),
+}
+
+impl Path {
+    /// The box every point stands in, control points included, as
+    /// `[x0, y0, x1, y1]`: a curve never leaves the hull of its points, so
+    /// the box holds the ink.
+    fn bounds(&self) -> Option<[f32; 4]> {
+        let mut points = self.segments.iter().flat_map(|s| match *s {
+            Segment::Line(a, b) => vec![a, b],
+            Segment::Quad(a, b, c) => vec![a, b, c],
+            Segment::Cubic(a, b, c, d) => vec![a, b, c, d],
+        });
+        let first = points.next()?;
+        Some(points.fold(
+            [first.0, first.1, first.0, first.1],
+            |[x0, y0, x1, y1], (x, y)| [x0.min(x), y0.min(y), x1.max(x), y1.max(y)],
+        ))
+    }
+
+    /// Fills the outline into `r`, each point placed by `at`.
+    fn fill(&self, r: &mut Rasterizer, at: impl Fn((f32, f32)) -> Point) {
+        for s in &self.segments {
+            match *s {
+                Segment::Line(a, b) => r.draw_line(at(a), at(b)),
+                Segment::Quad(a, b, c) => r.draw_quad(at(a), at(b), at(c)),
+                Segment::Cubic(a, b, c, d) => r.draw_cubic(at(a), at(b), at(c), at(d)),
+            }
+        }
+    }
+}
+
+impl OutlinePen for Path {
+    fn move_to(&mut self, x: f32, y: f32) {
+        self.start = (x, y);
+        self.last = (x, y);
+    }
+    fn line_to(&mut self, x: f32, y: f32) {
+        self.segments.push(Segment::Line(self.last, (x, y)));
+        self.last = (x, y);
+    }
+    fn quad_to(&mut self, cx: f32, cy: f32, x: f32, y: f32) {
+        self.segments
+            .push(Segment::Quad(self.last, (cx, cy), (x, y)));
+        self.last = (x, y);
+    }
+    fn curve_to(&mut self, c0x: f32, c0y: f32, c1x: f32, c1y: f32, x: f32, y: f32) {
+        self.segments
+            .push(Segment::Cubic(self.last, (c0x, c0y), (c1x, c1y), (x, y)));
+        self.last = (x, y);
+    }
+    fn close(&mut self) {
+        if self.last != self.start {
+            self.segments.push(Segment::Line(self.last, self.start));
+        }
+        self.last = self.start;
+    }
 }
 
 /// **The faces text is drawn with**: the host's face first, and after it the
@@ -105,8 +296,8 @@ struct Face {
 
 impl Face {
     /// The host's face.
-    fn first(&self) -> &Font {
-        &self.faces[0].font
+    fn first(&self) -> &Loaded {
+        &self.faces[0]
     }
 
     /// **The face that draws `c`**: the first that has a glyph for it, or the
@@ -116,7 +307,7 @@ impl Face {
         self.faces
             .iter()
             .enumerate()
-            .position(|(i, f)| !self.is_named(i) && f.font.has_glyph(c))
+            .position(|(i, f)| !self.is_named(i) && f.has_glyph(c))
             .unwrap_or(0)
     }
 
@@ -137,7 +328,9 @@ pub struct Atlas {
     pen_x: u32,
     shelf_y: u32,
     shelf_h: u32,
-    map: HashMap<(u8, u16, u32), Glyph>,
+    /// By face, glyph, size key ([`size_key`]) and the quarter of a pixel
+    /// its pen stands at ([`SUBPIXEL`]).
+    map: HashMap<(u8, u16, u32, u8), Glyph>,
     version: u64,
     epoch: u64,
 }
@@ -167,48 +360,30 @@ impl Atlas {
     /// emptying the cache. `false` (and nothing changed) if the bytes are not a
     /// font this rasterizer reads.
     pub fn set_face(&mut self, bytes: &[u8]) -> bool {
-        let settings = FontSettings {
-            scale: REF_PX,
-            ..Default::default()
-        };
-        let Ok(font) = Font::from_bytes(bytes, settings) else {
+        let Some(first) = Loaded::new(bytes) else {
             return false;
         };
         // the faces it falls back to: the embedded one, unless it is the one
         // loaded, and the Devanagari one
-        let mut faces = vec![Loaded {
-            font,
-            data: std::sync::Arc::from(bytes),
-        }];
+        let mut faces = vec![first];
         for fallback in [EMBEDDED, DEVANAGARI] {
             if fallback == bytes {
                 continue;
             }
-            if let Ok(font) = Font::from_bytes(fallback, settings) {
-                faces.push(Loaded {
-                    font,
-                    data: std::sync::Arc::from(fallback),
-                });
-            }
+            faces.extend(Loaded::new(fallback));
         }
         // the monospaced face, which code is drawn with whatever the host's is
-        let mono = Font::from_bytes(MONO, settings).ok().map(|font| {
-            faces.push(Loaded {
-                font,
-                data: std::sync::Arc::from(MONO),
-            });
+        let mono = Loaded::new(MONO).map(|face| {
+            faces.push(face);
             faces.len() - 1
         });
-        let cap = cap_of(&faces[0].font);
-        let digit = faces[0].font.metrics('0', REF_PX).advance_width / REF_PX;
+        let cap = faces[0].cap();
+        let digit = faces[0]
+            .glyph_of('0')
+            .map_or(0.0, |id| faces[0].advance(id, REF_PX))
+            / REF_PX;
         let caps = (0..faces.len())
-            .map(|i| {
-                if Some(i) == mono {
-                    cap_of(&faces[i].font)
-                } else {
-                    cap
-                }
-            })
+            .map(|i| if Some(i) == mono { faces[i].cap() } else { cap })
             .collect();
         self.face = Some(Face {
             faces,
@@ -236,12 +411,25 @@ impl Atlas {
     }
 
     /// The pixel size `scale` rasterizes at: the size whose cap height is the
-    /// body box the bitmap face draws at that scale. Whole pixels, because a
-    /// rasterization is -- which is a far finer grid than the half-steps a
-    /// bitmap glyph needs, and why `text_size` is continuous here.
+    /// body box the bitmap face draws at that scale. **Fractional**, as a
+    /// browser's sizes are: an outline is drawn at any size, so code asked
+    /// for at 14 pixels to the em is drawn at 14 and not at the whole size
+    /// its cap height rounds to.
     pub fn px(&self, scale: f32) -> f32 {
         let cap = self.face.as_ref().map_or(1.0, |f| f.cap).max(0.01);
-        (GLYPH_H as f32 * scale / cap).round().max(1.0)
+        (GLYPH_H as f32 * scale / cap).max(1.0)
+    }
+
+    /// The scale at which `family` draws `px` pixels to the em: the inverse
+    /// of [`px_of`](Self::px_of), for a size given as a browser gives one.
+    pub fn scale_for_em(&self, family: Family, px: f32) -> f32 {
+        let face = self.face_of(family).unwrap_or(0);
+        let cap = self
+            .face
+            .as_ref()
+            .and_then(|f| f.caps.get(face).copied())
+            .unwrap_or(1.0);
+        px * cap / GLYPH_H as f32
     }
 
     /// The pixel size face `face`'s glyphs rasterize at for `scale`: the
@@ -254,7 +442,7 @@ impl Atlas {
             .and_then(|f| f.caps.get(face).copied())
             .unwrap_or(1.0)
             .max(0.01);
-        (GLYPH_H as f32 * scale / cap).round().max(1.0)
+        (GLYPH_H as f32 * scale / cap).max(1.0)
     }
 
     /// Which face is the monospaced one, when one is loaded.
@@ -292,18 +480,11 @@ impl Atlas {
         if face.named.iter().any(|(f, _)| *f == family) {
             return;
         }
-        let settings = FontSettings {
-            scale: REF_PX,
-            ..Default::default()
-        };
-        let Ok(font) = Font::from_bytes(bytes, settings) else {
+        let Some(loaded) = Loaded::new(bytes) else {
             return;
         };
-        face.caps.push(cap_of(&font));
-        face.faces.push(Loaded {
-            font,
-            data: std::sync::Arc::from(bytes),
-        });
+        face.caps.push(loaded.cap());
+        face.faces.push(loaded);
         face.named.push((family, face.faces.len() - 1));
     }
 
@@ -311,13 +492,8 @@ impl Atlas {
     /// character's.
     pub fn mono_advance(&self, scale: f32) -> Option<f32> {
         let at = self.mono()?;
-        let face = self.face.as_ref()?;
-        Some(
-            face.faces[at]
-                .font
-                .metrics('0', self.px_of(at, scale))
-                .advance_width,
-        )
+        let face = &self.face.as_ref()?.faces[at];
+        Some(face.advance(face.glyph_of('0')?, self.px_of(at, scale)))
     }
 
     /// The nominal advance at `scale` -- a digit's, since the roles that ask are
@@ -332,10 +508,9 @@ impl Atlas {
     /// the face that draws it.
     pub fn advance_of(&self, c: char, scale: f32) -> f32 {
         self.face.as_ref().map_or(0.0, |f| {
-            f.faces[f.of(c)]
-                .font
-                .metrics(c, self.px(scale))
-                .advance_width
+            let face = &f.faces[f.of(c)];
+            face.glyph_of(c)
+                .map_or(0.0, |id| face.advance(id, self.px(scale)))
         })
     }
 
@@ -354,7 +529,7 @@ impl Atlas {
         self.face
             .as_ref()
             .and_then(|f| f.faces.get(face))
-            .is_some_and(|f| f.font.has_glyph(c))
+            .is_some_and(|f| f.has_glyph(c))
     }
 
     /// Pixels per font unit of face `face` at `scale`: what turns the
@@ -365,7 +540,7 @@ impl Atlas {
             .face
             .as_ref()
             .and_then(|f| f.faces.get(face))
-            .map_or(1.0, |f| f.font.units_per_em());
+            .map_or(1.0, Loaded::units_per_em);
         self.px_of(face, scale) / units.max(1.0)
     }
 
@@ -384,10 +559,7 @@ impl Atlas {
     /// relayouts nothing.
     pub fn line_advance(&self, scale: f32) -> f32 {
         let px = self.px(scale);
-        self.face
-            .as_ref()
-            .and_then(|f| f.first().horizontal_line_metrics(px))
-            .map_or(0.0, |m| m.ascent - m.descent + m.line_gap)
+        self.face.as_ref().map_or(0.0, |f| f.first().line(px))
     }
 
     /// `c` at `scale`, in the face that draws it, rasterized into the texture
@@ -395,52 +567,53 @@ impl Atlas {
     pub fn glyph(&mut self, c: char, scale: f32) -> Option<Glyph> {
         let face = self.face.as_ref()?;
         let at = face.of(c);
-        let id = face.faces[at].font.lookup_glyph_index(c);
-        self.glyph_id(at, id, scale)
+        let id = face.faces[at].glyph_of(c).map_or(0, |g| g.to_u32() as u16);
+        self.glyph_id(at, id, scale, 0)
     }
 
     /// **Glyph `id` of face `face`** at `scale` -- what the shaper names, which
     /// a ligature, a contextual form or a mark is and a character is not --
-    /// rasterized into the texture if it is not there yet. `None` when no
-    /// face is loaded or there is no such face.
-    pub fn glyph_id(&mut self, face: usize, id: u16, scale: f32) -> Option<Glyph> {
+    /// with its pen `quarter` quarters of a pixel right of a whole one
+    /// ([`SUBPIXEL`]), rasterized into the texture if it is not there yet.
+    /// `None` when no face is loaded or there is no such face.
+    pub fn glyph_id(&mut self, face: usize, id: u16, scale: f32, quarter: u8) -> Option<Glyph> {
         let px = self.px_of(face, scale);
-        let key = (face as u8, id, px as u32);
+        let key = (face as u8, id, size_key(px), quarter);
         if let Some(g) = self.map.get(&key) {
             return Some(*g);
         }
-        let font = &self.face.as_ref()?.faces.get(face)?.font;
-        let (metrics, coverage) = font.rasterize_indexed(id, px);
-        let (w, h) = (metrics.width as u32, metrics.height as u32);
-        let glyph = if w == 0 || h == 0 {
+        let loaded = self.face.as_ref()?.faces.get(face)?;
+        let gid = GlyphId::new(u32::from(id));
+        let advance = loaded.advance(gid, px);
+        let shift = f32::from(quarter) / SUBPIXEL;
+        let glyph = match loaded.rasterize(gid, px, shift) {
             // A space (or any inked-nothing): it advances and draws no quad.
-            Glyph {
+            None => Glyph {
                 dx: 0.0,
                 dy: 0.0,
                 w: 0.0,
                 h: 0.0,
                 uv: [0.0; 4],
-                advance: metrics.advance_width,
-            }
-        } else {
-            let (ox, oy) = self.fit(w, h)?;
-            // Rows arrive top-first, one coverage byte per texel.
-            for row in 0..h {
-                let src = (row * w) as usize;
-                let dst = ((oy + row) * SIDE + ox) as usize;
-                self.pixels[dst..dst + w as usize]
-                    .copy_from_slice(&coverage[src..src + w as usize]);
-            }
-            self.version += 1;
-            Glyph {
-                dx: metrics.xmin as f32,
-                // `ymin` is the bottom of the ink above the baseline, y up; the
-                // quad's top is the whole box above that, y down.
-                dy: -(metrics.ymin as f32) - h as f32,
-                w: w as f32,
-                h: h as f32,
-                uv: [ox as f32, oy as f32, (ox + w) as f32, (oy + h) as f32],
-                advance: metrics.advance_width,
+                advance,
+            },
+            Some((left, top, w, h, coverage)) => {
+                let (ox, oy) = self.fit(w, h)?;
+                // Rows arrive top-first, one coverage byte per texel.
+                for row in 0..h {
+                    let src = (row * w) as usize;
+                    let dst = ((oy + row) * SIDE + ox) as usize;
+                    self.pixels[dst..dst + w as usize]
+                        .copy_from_slice(&coverage[src..src + w as usize]);
+                }
+                self.version += 1;
+                Glyph {
+                    dx: left as f32,
+                    dy: top as f32,
+                    w: w as f32,
+                    h: h as f32,
+                    uv: [ox as f32, oy as f32, (ox + w) as f32, (oy + h) as f32],
+                    advance,
+                }
             }
         };
         self.map.insert(key, glyph);
@@ -598,18 +771,6 @@ fn family_bytes(family: Family) -> Option<&'static [u8]> {
     }
 }
 
-/// The cap height of `font` per pixel size: how tall it draws a capital at
-/// the reference size. Falling back to the ascent covers a face whose 'H'
-/// has no outline (a symbol face), which still measures and still draws.
-fn cap_of(font: &Font) -> f32 {
-    (match font.metrics('H', REF_PX).height as f32 {
-        h if h > 0.0 => h,
-        _ => font
-            .horizontal_line_metrics(REF_PX)
-            .map_or(REF_PX * 0.7, |m| m.ascent),
-    }) / REF_PX
-}
-
 /// Loads [`EMBEDDED`] as the host's typeface, where none is loaded: a second
 /// host of one page finds the first one's face, or the one a client handed
 /// over, and leaves it.
@@ -643,17 +804,16 @@ mod tests {
     fn the_embedded_face_writes_the_scripts_an_interface_uses() {
         let mut a = Atlas::new();
         assert!(a.set_face(EMBEDDED));
-        let missing = a
-            .face
-            .as_ref()
-            .unwrap()
-            .first()
-            .lookup_glyph_index('\u{10FFFF}');
+        let missing = a.face.as_ref().unwrap().first().glyph_of('\u{10FFFF}');
         for c in [
             'A', 'g', '7', '\u{F1}', '\u{E9}', '\u{3A9}', '\u{416}', '\u{2192}', '\u{266F}',
         ] {
-            let index = a.face.as_ref().unwrap().first().lookup_glyph_index(c);
-            assert_ne!(index, missing, "U+{:04X} is in the face", c as u32);
+            let index = a.face.as_ref().unwrap().first().glyph_of(c);
+            assert!(
+                index.is_some() && index != missing,
+                "U+{:04X} is in the face",
+                c as u32
+            );
             let g = a.glyph(c, 2.0).unwrap();
             assert!(g.w > 0.0 && g.advance > 0.0, "U+{:04X} has ink", c as u32);
         }

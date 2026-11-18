@@ -129,6 +129,42 @@ fn a_press_on_a_tool_leaves_the_focus_where_it_was() {
     assert_eq!(host.focused(), focused);
 }
 
+/// **Ctrl+wheel over code is the size of the text**, as Ctrl+plus is: the
+/// code does not scroll, and the window's owner is told `zoom_in` for a
+/// notch up and `zoom_out` for one down. A touchpad's small deltas gather
+/// into a step rather than making one each.
+#[test]
+fn ctrl_and_the_wheel_over_code_size_its_text() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","children":[
+            {"id":5,"type":"code","h":200,"text":"a\nb\nc"}]}"#,
+    );
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    ctx.ctrl = true;
+    let (x, y) = mid(rect_of(&host, &ctx, 5));
+    let verbs = |effects: &[GestureEffect]| -> Vec<String> {
+        emitted(effects)
+            .into_iter()
+            .filter_map(|(_, args)| match args.first() {
+                Some(OscType::String(s)) => Some(s.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(verbs(&g.wheel(&mut host, &ctx, x, y, 1.0)), ["zoom_in"]);
+    assert_eq!(verbs(&g.wheel(&mut host, &ctx, x, y, -1.0)), ["zoom_out"]);
+    // a touchpad: a fifth of a notch at a time
+    let steps: Vec<Vec<String>> = (0..4)
+        .map(|_| verbs(&g.wheel(&mut host, &ctx, x, y, 0.2)))
+        .collect();
+    assert_eq!(
+        steps.iter().filter(|v| !v.is_empty()).count(),
+        1,
+        "{steps:?}"
+    );
+}
+
 /// **The ring shows where the keyboard moved the focus, not where a hand
 /// put it**: a press focuses a field with no ring, Tab rings the next stop,
 /// and the next press hides it again.

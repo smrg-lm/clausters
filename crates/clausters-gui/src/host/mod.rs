@@ -1087,6 +1087,11 @@ pub struct Host {
     /// comes up, and a window already open keeps the pass it was built with,
     /// since every pipeline in a pass agrees on the count.
     pub msaa: u32,
+    /// **The device pixels to a logical one of a window drawn and never
+    /// shown** (a headless host): `1` unless told otherwise, since there is
+    /// no display to measure, and `2` to check what a display at twice the
+    /// density draws.
+    pub headless_scale: f32,
     /// **Whether the windows open as panes of one dock** (`--dock`):
     /// one window of the platform, or one canvas, holding every window the
     /// host opens side by side ([`dock`]), instead of a window of the
@@ -1245,6 +1250,7 @@ impl Host {
             keys: keymap::Keymap::default(),
             clipboard: clipboard::Clip::default(),
             msaa: DEFAULT_MSAA,
+            headless_scale: 1.0,
             dock: false,
             dock_opens: None,
             follow_block: 0.0,

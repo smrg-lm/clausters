@@ -860,16 +860,21 @@ pub fn text_in(mesh: &mut Mesh, family: Family, s: &str, x: f32, y: f32, scale: 
                         }
                     }
                     shape::Kind::Glyph { face, id } => {
-                        let Some(g) = a.glyph_id(face as usize, id, scale) else {
+                        // **The pen to a quarter of a pixel**: the glyph is
+                        // rasterized for the quarter it stands at, and its
+                        // quad goes on the whole pixel left of it, so the
+                        // texels are still sampled one to one.
+                        let quarters = ((pen + item.offset[0]) * atlas::SUBPIXEL).round();
+                        let whole = (quarters / atlas::SUBPIXEL).floor();
+                        let quarter = (quarters - whole * atlas::SUBPIXEL) as u8;
+                        let Some(g) = a.glyph_id(face as usize, id, scale, quarter) else {
                             continue;
                         };
                         if g.w > 0.0 {
-                            // Whole pixels: the glyph was rasterized at this
-                            // size, so a quad on the pixel grid samples its
-                            // texels one to one. The shaper's offset is up.
+                            // The shaper's offset is up.
                             let quad = Rect::new(
-                                (pen + item.offset[0] + g.dx).round(),
-                                (baseline - item.offset[1] + g.dy).round(),
+                                whole + g.dx,
+                                (baseline - item.offset[1]).round() + g.dy,
                                 g.w,
                                 g.h,
                             );
@@ -1032,6 +1037,18 @@ pub fn wrap(s: &str, max_w: f32, scale: f32) -> Vec<String> {
         lines.push(line);
     }
     lines
+}
+
+/// **The pitch of a line of code** at `scale`: one and a half of the
+/// monospaced face's em, the line height an editor sets code at (and a
+/// page's text, whose `line-height` is 1.5). Without a face, the bitmap's
+/// line ([`line_advance`]).
+pub fn code_line(scale: f32) -> f32 {
+    #[cfg(feature = "font-atlas")]
+    if atlas::has_face() {
+        return atlas::with(|a| 1.5 * a.px_of(a.mono().unwrap_or(0), scale));
+    }
+    line_advance(scale)
 }
 
 /// The vertical advance from one wrapped line's top to the next: the whole

@@ -215,8 +215,13 @@ impl App {
                 }
             }
             Loop::Headless(_) => {
-                match pollster::block_on(Gpu::offscreen(size.0, size.1, self.host.msaa)) {
-                    Ok(gpu) => (gpu, 1.0),
+                let scale = self.host.headless_scale.max(0.5);
+                let (w, h) = (
+                    (size.0 as f32 * scale).round() as u32,
+                    (size.1 as f32 * scale).round() as u32,
+                );
+                match pollster::block_on(Gpu::offscreen(w, h, self.host.msaa)) {
+                    Ok(gpu) => (gpu, scale),
                     Err(e) => {
                         warn!("dock: cannot start the GPU: {e}");
                         return None;

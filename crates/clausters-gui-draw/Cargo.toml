@@ -11,7 +11,7 @@ default = ["font-atlas", "path"]
 # the rasterizer, the shaper, and the face drawn with when nobody names another
 # (`assets/fonts/`, a quarter of a megabyte). The bitmap stays the floor under
 # every build: what a host with no face loaded draws with.
-font-atlas = ["dep:fontdue", "dep:rustybuzz", "dep:unicode-bidi"]
+font-atlas = ["dep:skrifa", "dep:ab_glyph_rasterizer", "dep:rustybuzz", "dep:unicode-bidi"]
 # An outline's SVG path, scanned, filled and flattened (`lyon`): the score's
 # glyphs and the symbols a client sends as outlines.
 path = ["dep:lyon"]
@@ -31,13 +31,17 @@ unicode-segmentation = "1.12"
 # Fill tessellation: an outline's bezier path into the triangles the batch
 # draws. Pure Rust and wasm-safe.
 lyon = { version = "1.0", optional = true }
-# The glyph rasterizer of the `font-atlas` feature: pure Rust, `no_std` by
-# default (hashbrown + simd, no `parallel`), so it compiles for wasm32 with no
-# system dependency and no C toolchain -- which is the whole reason it is this
-# crate rather than a FreeType binding.
-fontdue = { version = "0.9", optional = true }
+# The `font-atlas` feature's reading of a face: its outlines and metrics, at
+# any size and any fraction of a pixel. Pure Rust, the reader the browser's
+# own text stack is moving to, so it compiles for wasm32 with no system
+# dependency and no C toolchain -- the reason it is this and not a FreeType
+# binding.
+skrifa = { version = "0.44", optional = true }
+# What fills an outline into coverage: a scanline accumulator with exact
+# area coverage, pure Rust and `no_std`.
+ab_glyph_rasterizer = { version = "0.1", optional = true }
 # The `font-atlas` feature's shaper: a pure-Rust port of the standard shaping
-# engine, over the same font parser fontdue reads with, so it compiles for
+# engine, over a font parser of its own, so it compiles for
 # wasm32 with nothing else. It turns a run of text into glyph ids and
 # positions: ligatures, contextual forms, marks over their bases.
 rustybuzz = { version = "0.20", optional = true }

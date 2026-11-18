@@ -193,7 +193,7 @@ impl CodeView {
                 (rect.w - gutter_w - m.pad - thumb).max(1.0),
                 (rect.h - m.pad * 0.5 - thumb).max(1.0),
             ),
-            row_h: font::line_advance(size).max(1.0),
+            row_h: font::code_line(size).max(1.0),
             cell,
             size,
             thumb,
@@ -1321,6 +1321,11 @@ impl Element for CodeView {
     }
 
     fn wheel(&mut self, _at: (f64, f64), delta: (f64, f64), input: &Input) -> Option<Events> {
+        // Ctrl+wheel is the size of the text, not a scroll: declined, the
+        // window's own zoom takes it.
+        if input.mods.ctrl {
+            return None;
+        }
         let g = self.geometry(input.rect, input.scale, input.metrics);
         let (sx, sy) = self.scroll.get();
         let (dx, dy) = if input.mods.shift && delta.0 == 0.0 {

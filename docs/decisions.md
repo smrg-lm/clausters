@@ -245,6 +245,7 @@ quoted title lands here, on the link to the entry.
 - [Code is colored from a syntax tree its edits keep, parsed within a time (2026-11-16)](decisions/gui.md#code-is-colored-from-a-syntax-tree-its-edits-keep-parsed-within-a-time-2026-11-16)
 - [The editor's application is a client of its host, linked in the host's process (2026-11-17)](decisions/gui.md#the-editors-application-is-a-client-of-its-host-linked-in-the-hosts-process-2026-11-17)
 - [The host's look is specified from one design system, not drawn piece by piece (2026-11-17)](decisions/gui.md#the-hosts-look-is-specified-from-one-design-system-not-drawn-piece-by-piece-2026-11-17)
+- [Text is drawn as a browser draws it: fractional sizes, quarter pixels, corrected coverage (2026-11-17)](decisions/gui.md#text-is-drawn-as-a-browser-draws-it-fractional-sizes-quarter-pixels-corrected-coverage-2026-11-17)
 
 ## [The document and the applications](decisions/apps.md)
 

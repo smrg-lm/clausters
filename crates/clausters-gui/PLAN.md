@@ -2535,7 +2535,7 @@ first four are the order the user set; the components come after.
   File's list over the editor and its submenu beside it reaching the next
   pane, a tool's tip with its key, the evaluate tool printing its result in
   the post window, and a press in the editor taking the list down.
-- ⬜ **ST2: Text at the right size, drawn as well.** The code at the size
+- ✅ **ST2: Text at the right size, drawn as well.** The code at the size
   the user set, measured as the current editor measures it (14 is 14 px
   of em, a line pitch of 1.5), and the chrome's text from the type scale.
   The glyphs compared at 1x and 2x against the current editor's and brought
@@ -2544,6 +2544,23 @@ first four are the order the user set; the components come after.
   40 units of scroll), kept between runs, followed by the post window and the
   documentation. Accepted by the line pitch and a line's width equal within
   one pixel, and captures of the same file side by side.
+  *Shipped:* the atlas reads faces with skrifa and fills outlines with
+  ab_glyph_rasterizer in place of fontdue: sizes are fractional (a 64th of
+  a pixel), glyphs are placed to a quarter of a pixel and rasterized for it,
+  and the glyph shader corrects each coverage for the ink's luminance with
+  the browser's formula (`docs/decisions.md`, "Text is drawn as a browser
+  draws it"). Measured against a browser's capture of the same lines, the
+  error fell from 0.076 to 0.040 and the ink came within 4 % in both
+  directions. Code and the post window set their lines 1.5 em of the
+  monospaced face apart (`font::code_line`); the editor's 14 is 14 px of em.
+  Ctrl+wheel that nothing under the pointer takes performs the window's
+  `zoom_in`/`zoom_out`, gathered to a step per 0.8 of a notch; the size was
+  already kept and followed. A headless dock draws at `--scale`, so 2x is
+  captured too. Checked: the editor's file against the browser's at 1x and
+  2x, its pitch 21 and a 50-character line 356 px wide against 357. The
+  chrome's sizes moved to `ST5`, since a size of the type scale means
+  nothing without its face. Subpixel (LCD) antialiasing is left as a
+  future direction.
 - ⬜ **ST3: One header per panel.** The dock's tab strip is a panel's only
   header: an element's bar is folded into it (its tools at the strip's right)
   rather than drawn under it; the page strip is hidden while there is one
@@ -2560,7 +2577,8 @@ first four are the order the user set; the components come after.
   "What the host gains" (semantic colors, radii, elevation, the type scale
   with its faces, states, per-component spacing), loaded with the inventory's
   values for light and dark as the host's default look, and the editor's
-  `/gui_theme` tables shrink to what is the editor's own. `/gui_theme`,
+  `/gui_theme` tables shrink to what is the editor's own. The chrome's text
+  takes the type scale's sizes with its faces (from `ST2`). `/gui_theme`,
   `/gui_metrics` and the configuration keep working, old role names
   included. `docs/gui-protocol.md` lists the roles. Every application
   (audio, multitrack, notes, score) captured before and after, so a domain
@@ -2612,6 +2630,16 @@ An entry that was done without becoming a milestone is ticked and moves whole
 to [`docs/history/plans/gui.md`](../../docs/history/plans/gui.md) ("Future directions: the entries that were done"), so this list
 holds what is open.
 
+- ⬜ **Subpixel (LCD) antialiasing of text, where the desktop asks for
+  it** *(found 2026-11-17, in `ST2`)*. The webview editor's text is drawn
+  with a color per subpixel on a desktop whose font settings say so (an RGB
+  order and the default filter, as the user's does); the host draws
+  grayscale coverage, corrected as a browser's grayscale is. Doing it
+  needs the platform's subpixel order, a coverage per channel in the atlas
+  and a blend per channel, which dual-source blending gives natively and a
+  page's WebGL2 does not have, so it is a divergence between the fronts to
+  decide on, not a fix: whether the page draws grayscale while the native
+  window does not, or neither does.
 - ⬜ **The pointer says what a press will do: a cursor per element, and per
   part of it** *(named 2026-11-16, by the user, when the dock's dividers got
   their resize cursor)*. The host sets no cursor anywhere but over the dock's
