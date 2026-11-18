@@ -633,6 +633,10 @@ class GuiHost:
         window and redraws them. A group overlays what it *inherits*, so moving
         the base moves what a group means.
 
+        The reserved ``"look"`` key picks one of the host's two looks,
+        ``"dark"`` (the default) or ``"light"``, before the roles the table
+        names apply: ``theme({"look": "light"})`` is the light look whole.
+
         Unknown roles and unreadable colors are logged by the host and skipped;
         nothing here is refused. The launch-time spelling is the host's own
         ``--theme <file.toml>`` (``[gui.theme]`` in the shared config), for a

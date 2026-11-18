@@ -380,7 +380,7 @@ mod tests {
     }
 
     fn id_of(face: usize, c: char) -> u16 {
-        let bytes = [atlas::EMBEDDED, atlas::DEVANAGARI][face];
+        let bytes = [atlas::INTERFACE, atlas::EMBEDDED, atlas::DEVANAGARI][face];
         let parsed = rustybuzz::Face::from_slice(bytes, 0).expect("a face");
         parsed.glyph_index(c).expect("the face draws it").0
     }
@@ -423,13 +423,24 @@ mod tests {
         assert!(faces(&shape("ab", 2.0)).iter().all(|&f| f as usize != mono));
     }
 
-    /// **A ligature is one glyph**: `fi` in the host's face is the face's own
-    /// ligature, and it is measured as that one glyph.
+    /// **A face's substitutions are its own glyphs**: the interface's face
+    /// turns `->` into its arrow by its contextual alternates, and the pair
+    /// is measured as what it became.
     #[test]
-    fn a_ligature_is_the_face_s_one_glyph() {
-        let run = shaped("fi");
-        assert_eq!(glyphs(&run), vec![(0, id_of(0, '\u{FB01}'))]);
-        assert_eq!(run.width, run.items[0].advance);
+    fn a_contextual_form_is_the_face_s_glyph() {
+        let run = shaped("->");
+        let ids = glyphs(&run);
+        assert!(
+            ids.iter().all(|&(face, _)| face == 0),
+            "the interface's face: {ids:?}"
+        );
+        assert_ne!(
+            ids,
+            vec![(0, id_of(0, '-')), (0, id_of(0, '>'))],
+            "substituted"
+        );
+        let advances: f32 = run.items.iter().map(|i| i.advance).sum();
+        assert_eq!(run.width, advances);
     }
 
     /// **Arabic joins**: the three letters of a word take their initial,
@@ -442,7 +453,10 @@ mod tests {
         let run = shaped(word);
         let ids: Vec<u16> = glyphs(&run).into_iter().map(|(_, id)| id).collect();
         assert_eq!(ids.len(), 3, "{run:?}");
-        let alone: Vec<u16> = word.chars().map(|c| id_of(0, c)).collect();
+        // drawn by the face the host falls back to, the interface's having
+        // no Arabic
+        assert!(glyphs(&run).iter().all(|&(face, _)| face == 1), "{run:?}");
+        let alone: Vec<u16> = word.chars().map(|c| id_of(1, c)).collect();
         for id in &ids {
             assert!(
                 !alone.contains(id),
@@ -486,12 +500,13 @@ mod tests {
     fn a_devanagari_vowel_sign_is_drawn_before_its_consonant() {
         let run = shaped("\u{0915}\u{093F}");
         let faces: Vec<u8> = glyphs(&run).iter().map(|(face, _)| *face).collect();
-        // the faces are the host's, the Devanagari one, the monospaced one
-        assert!(faces.iter().all(|&face| face == 1), "{faces:?}");
+        // the faces are the interface's, the one it falls back to, the
+        // Devanagari one, the monospaced one
+        assert!(faces.iter().all(|&face| face == 2), "{faces:?}");
         let ids: Vec<u16> = glyphs(&run).into_iter().map(|(_, id)| id).collect();
         assert_eq!(ids.len(), 2, "{run:?}");
-        assert_eq!(ids[1], id_of(1, '\u{0915}'), "the consonant second");
-        assert_ne!(ids[0], id_of(1, '\u{0915}'), "the sign first");
+        assert_eq!(ids[1], id_of(2, '\u{0915}'), "the consonant second");
+        assert_ne!(ids[0], id_of(2, '\u{0915}'), "the sign first");
     }
 
     /// **A mixed line is in visual order**: Latin, then a Hebrew word read

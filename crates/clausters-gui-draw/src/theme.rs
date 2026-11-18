@@ -1,14 +1,28 @@
 //! The theme: every chrome color as a named **role**, in one table.
 //!
 //! No paint site names an RGBA literal -- it names a role of this struct, so
-//! the host has exactly one look, replaceable as a whole. The default theme
-//! reproduces the colors the widgets always had; a partial overlay (the
-//! `[gui.theme]` config table, a `--theme` TOML file, or -- later -- a theme
-//! group on a container) renames only the roles it lists, in `"#rrggbb[aa]"`
-//! form. Roles are colors and only colors: a widget's parts are named by
-//! function here, never addressed individually, and anything particular to
-//! one visualization (the spectrogram's colormap) stays that widget's own
-//! prop.
+//! the host has exactly one look, replaceable as a whole. A partial overlay
+//! (the `[gui.theme]` config table, a `--theme` TOML file, `/gui_theme`, a
+//! container's `theme` prop) renames only the roles it lists, in
+//! `"#rrggbb[aa]"` form. Roles are colors and only colors: a widget's parts
+//! are named by function here, never addressed individually, and anything
+//! particular to one visualization (the spectrogram's colormap) stays that
+//! widget's own prop.
+//!
+//! **Two looks, from one specification.** The roles' values are the design
+//! system the host's look is specified from (`docs/decisions.md`, "The
+//! host's look is specified from one design system, not drawn piece by
+//! piece"): its neutral set, dark ([`Theme::dark`], the default) and light
+//! ([`Theme::light`]), which the reserved key [`LOOK`] of a table picks
+//! before the roles it names apply. The chrome's roles are that set's
+//! semantic colors, and each also answers to the specification's own name
+//! ([`ALIASES`]: `foreground` is [`text`](Theme::text), `popover` is
+//! [`popup`](Theme::popup), `border` is [`separator`](Theme::separator),
+//! `ring` is [`focus`](Theme::focus)); the one it cannot take is `accent`,
+//! which here carries a widget's function (a slider's fill, a meter's bar),
+//! so the specification's accent, what is under the hand, is
+//! [`hover`](Theme::hover). A domain view (a trace, a meter, the keys, the
+//! code) keeps the colors of its field and takes its neutrals from the set.
 //!
 //! Where one rgb serves several alphas (a selection's fill vs. its edge), the
 //! role stores the opaque color and the paint site derives with
@@ -33,9 +47,17 @@ macro_rules! theme_roles {
             $( $(#[$doc])* pub $name: Color, )+
         }
 
+        impl Theme {
+            /// **The dark look**: the specification's dark neutrals, and the
+            /// default.
+            pub fn dark() -> Self {
+                Self { $( $name: [$r, $g, $b, $a], )+ }
+            }
+        }
+
         impl Default for Theme {
             fn default() -> Self {
-                Self { $( $name: [$r, $g, $b, $a], )+ }
+                Self::dark()
             }
         }
 
@@ -43,17 +65,18 @@ macro_rules! theme_roles {
             /// Every role name, in declaration order.
             pub const NAMES: &'static [&'static str] = &[$(stringify!($name),)+];
 
-            /// Sets one role by name. `false` if no such role exists.
+            /// Sets one role by name, or by the specification's name for it
+            /// ([`ALIASES`]). `false` if no such role exists.
             pub fn set(&mut self, name: &str, color: Color) -> bool {
-                match name {
+                match canonical(name) {
                     $( stringify!($name) => { self.$name = color; true } )+
                     _ => false,
                 }
             }
 
-            /// Reads one role by name.
+            /// Reads one role by name, or by the specification's name for it.
             pub fn get(&self, name: &str) -> Option<Color> {
-                match name {
+                match canonical(name) {
                     $( stringify!($name) => Some(self.$name), )+
                     _ => None,
                 }
@@ -65,45 +88,70 @@ macro_rules! theme_roles {
 theme_roles! {
     // -- Window chrome --
     /// The window clear color, the backdrop under everything.
-    background = [0.05, 0.05, 0.07, 1.0];
+    background = [0.118, 0.118, 0.118, 1.0];
     /// A panel's translucent fill over the backdrop.
-    panel = [0.10, 0.11, 0.14, 0.55];
+    panel = [0.149, 0.149, 0.149, 1.0];
     /// Primary text: labels, values, readouts.
-    text = [0.85, 0.87, 0.90, 1.0];
+    text = [0.98, 0.98, 0.98, 1.0];
     /// De-emphasized text (the node tree's parameter lines).
-    text_dim = [0.55, 0.60, 0.66, 1.0];
+    text_dim = [0.631, 0.631, 0.631, 1.0];
     /// De-emphasized in-view labels (a lane's name tag).
-    label_dim = [0.60, 0.63, 0.70, 1.0];
+    label_dim = [0.631, 0.631, 0.631, 1.0];
     /// The **status bar**'s band along the window's bottom edge
     /// (`host::status`): a shade off the backdrop, so the strip reads as a
     /// place the window talks rather than as a panel holding something.
-    status_bar = [0.08, 0.09, 0.11, 1.0];
+    status_bar = [0.149, 0.149, 0.149, 1.0];
+
+    // -- Surfaces --
+    /// A **card**'s ground: a dialog's, a hover card's, a section raised off
+    /// the window.
+    card = [0.090, 0.090, 0.090, 1.0];
+    /// The **primary** fill: the button that does what a form is for.
+    primary = [0.898, 0.898, 0.898, 1.0];
+    /// The text on [`primary`](Theme::primary).
+    primary_text = [0.090, 0.090, 0.090, 1.0];
+    /// The **secondary** fill: a bar's ground, a secondary button, a chosen
+    /// segment.
+    secondary = [0.149, 0.149, 0.149, 1.0];
+    /// The text on [`secondary`](Theme::secondary).
+    secondary_text = [0.980, 0.980, 0.980, 1.0];
+    /// The **muted** fill: a toggle that is on, a ghost button under the
+    /// pointer, a block of code in a page.
+    muted = [0.149, 0.149, 0.149, 1.0];
+    /// The text on [`hover`](Theme::hover): an entry of a list under the
+    /// pointer or the keyboard.
+    hover_text = [0.980, 0.980, 0.980, 1.0];
+    /// The edge of a field the hand types in.
+    input = [1.0, 1.0, 1.0, 0.149];
+    /// What a raised surface casts on the window: the ink of every
+    /// elevation's shadow, its alpha the strongest layer's.
+    shadow = [0.0, 0.0, 0.0, 0.1];
 
     // -- Controls --
     /// A control's body fill (slider, knob, scope field).
-    field = [0.14, 0.15, 0.19, 1.0];
+    field = [0.09, 0.09, 0.09, 1.0];
     /// The inset groove/body under a control's value (a slider's track), and
     /// the body of the static info views (node tree, plot).
-    track = [0.10, 0.11, 0.14, 1.0];
+    track = [0.090, 0.090, 0.090, 1.0];
     /// The color that carries a widget's function: a slider's fill, a knob's
     /// pointer, a meter's bar, the live views' frame.
-    accent = [0.30, 0.78, 0.55, 1.0];
+    accent = [0.29, 0.871, 0.502, 1.0];
     /// The accent's quiet form (an unlit toggle, a knob's arc).
-    accent_dim = [0.22, 0.50, 0.40, 1.0];
+    accent_dim = [0.251, 0.251, 0.251, 1.0];
     /// The accent's lit form (a pressed control, a window's edge marker).
-    hilite = [0.40, 0.85, 0.62, 1.0];
+    hilite = [0.29, 0.871, 0.502, 1.0];
     /// What the pointer is over: a row of an open list, a flat button, a
     /// tab. A quiet lift off the ground it sits on, so it reads as *under the
     /// hand* without competing with what is chosen.
-    hover = [0.22, 0.25, 0.32, 1.0];
+    hover = [0.18, 0.18, 0.18, 1.0];
     /// The text of something that cannot be acted on now: a disabled control,
     /// a disabled entry of a menu.
-    text_disabled = [0.40, 0.43, 0.48, 1.0];
+    text_disabled = [0.451, 0.451, 0.451, 1.0];
     /// The ground of what opens over the window: a list, a menu, a tip.
     /// Opaque, since it covers whatever it opened over.
-    popup = [0.12, 0.13, 0.17, 1.0];
+    popup = [0.09, 0.09, 0.09, 1.0];
     /// A line between groups: a menu's separator, a toolbar's, a group's frame.
-    separator = [0.28, 0.31, 0.37, 1.0];
+    separator = [1.0, 1.0, 1.0, 0.102];
 
     // -- Data traces --
     /// A drawn signal or curve (scope trace, bpf curve, automation curve).
@@ -136,11 +184,11 @@ theme_roles! {
     /// curve it is a reference for.
     trace_guide = [0.45, 0.58, 0.72, 0.55];
     /// A curve's grabbable break-point.
-    point = [0.90, 0.93, 0.95, 1.0];
+    point = [0.98, 0.98, 0.98, 1.0];
 
     // -- Frames --
     /// The neutral frame of the editor views (piano roll, tracks, patch).
-    frame = [0.30, 0.34, 0.42, 1.0];
+    frame = [1.0, 1.0, 1.0, 0.149];
     /// The frame of the timeline views (waveform, spectrogram).
     view_frame = [0.25, 0.45, 0.38, 1.0];
     /// The frame of the live info view (the node tree).
@@ -150,38 +198,38 @@ theme_roles! {
 
     // -- View fields, lanes and grids --
     /// The dark body of the heavy views (waveform, spectrogram, patch).
-    view_field = [0.08, 0.09, 0.11, 1.0];
+    view_field = [0.118, 0.118, 0.118, 1.0];
     /// A lane's background: the piano roll's grid.
-    lane = [0.09, 0.10, 0.13, 1.0];
+    lane = [0.118, 0.118, 0.118, 1.0];
     /// A track's header strip.
-    header = [0.14, 0.16, 0.20, 1.0];
+    header = [0.149, 0.149, 0.149, 1.0];
     /// The alternate, darker lane: the roll's black-key rows, and the gutter
     /// a roll in hertz draws its ruler in.
-    lane_alt = [0.07, 0.08, 0.10, 1.0];
+    lane_alt = [0.098, 0.098, 0.098, 1.0];
     /// The divider line between stacked channels (a multichannel view's
     /// rows, never a track's lanes).
-    channel_divider = [0.30, 0.33, 0.38, 0.8];
+    channel_divider = [1.0, 1.0, 1.0, 0.149];
     /// A view's reference grid (the phase scope's cross and square).
-    grid = [0.30, 0.34, 0.40, 0.6];
+    grid = [1.0, 1.0, 1.0, 0.149];
     /// A fine grid line (the piano roll's row lines).
-    grid_line = [0.16, 0.18, 0.22, 1.0];
+    grid_line = [0.165, 0.165, 0.165, 1.0];
     /// The zero baseline of a value axis.
-    baseline = [0.28, 0.32, 0.38, 1.0];
+    baseline = [0.251, 0.251, 0.251, 1.0];
     /// The ground a **text plate** lays under a caption drawn over a picture: a
     /// translucent dark box, so a name over a waveform, a spectrogram or a roll
     /// reads without hiding what it is written on. Its alpha is the whole role
     /// -- an opaque plate would be a label with a background, which is a
     /// different thing.
-    plate = [0.04, 0.05, 0.07, 0.62];
+    plate = [0.039, 0.039, 0.039, 0.62];
 
     /// The ring around the widget holding the keyboard focus. Its own role
     /// rather than the accent: what is focused and what is *active* are two
     /// different questions, and a window answers both at once.
-    focus = [0.45, 0.70, 1.00, 0.9];
+    focus = [0.451, 0.451, 0.451, 1.0];
 
     // -- Navigation chrome --
     /// The selection color; fills and edges derive by alpha.
-    selection = [0.55, 0.75, 0.95, 1.0];
+    selection = [0.376, 0.647, 0.98, 1.0];
     /// The playhead line -- the one that **sweeps**, whose position is the
     /// engine's.
     playhead = [0.95, 0.55, 0.30, 0.9];
@@ -190,11 +238,11 @@ theme_roles! {
     /// playhead's warm line, because the two are on screen at once and the eye
     /// has to tell "where I put it" from "where the music is" without reading
     /// either twice.
-    cursor = [0.62, 0.80, 0.95, 0.85];
+    cursor = [0.898, 0.898, 0.898, 1.0];
     /// Ruler tick labels.
-    ruler_text = [0.65, 0.68, 0.72, 1.0];
+    ruler_text = [0.631, 0.631, 0.631, 1.0];
     /// Ruler tick lines.
-    ruler_line = [0.45, 0.48, 0.52, 1.0];
+    ruler_line = [0.451, 0.451, 0.451, 1.0];
 
     // -- Placed objects (clips, patch boxes) --
     /// A placed object's fill (a clip's body, a patch member box).
@@ -216,7 +264,7 @@ theme_roles! {
     value_fill = [0.98, 0.94, 0.80, 1.0];
     /// A patch box's port strips (top inlets and bottom outlets, one color) --
     /// dark grey, framing the white middle band ([`box_fill`](Theme::box_fill)).
-    port_strip = [0.15, 0.16, 0.18, 1.0];
+    port_strip = [0.149, 0.149, 0.149, 1.0];
     /// A patch box's wiring port (the cell a cord connects to: its edge and pin).
     port = [0.75, 0.82, 0.92, 1.0];
     /// A patch **audio** (`ar`) cord -- the signal path. The rate reads by
@@ -243,28 +291,28 @@ theme_roles! {
     /// A velocity bar.
     velocity = [0.70, 0.55, 0.90, 1.0];
     /// The OSC markers' background.
-    osc_markers = [0.10, 0.09, 0.13, 1.0];
+    osc_markers = [0.09, 0.09, 0.09, 1.0];
     /// A marker flag (an OSC marker, an overview's pressed key).
     flag = [0.95, 0.75, 0.45, 1.0];
     /// The oscilloscope's trigger-level line.
     trigger = [0.85, 0.80, 0.40, 0.4];
     /// The negative/warning readout (the phase scope's anti-correlation).
-    warn = [0.85, 0.42, 0.42, 1.0];
+    warn = [1.0, 0.392, 0.404, 1.0];
 
     // -- States --
     /// **Up and well**: a session ready, a thing that worked.
-    success = [0.29, 0.87, 0.50, 1.0];
+    success = [0.29, 0.871, 0.502, 1.0];
     /// **Under way, or a caution**: a session running code.
-    warning = [0.98, 0.75, 0.14, 1.0];
+    warning = [0.984, 0.749, 0.141, 1.0];
     /// **Down, or failed**: a session stopped, an action that destroys.
-    destructive = [1.0, 0.39, 0.40, 1.0];
+    destructive = [1.0, 0.392, 0.404, 1.0];
 
     // -- Meters --
     /// The well a meter's column stands in: darker than any panel it sits on,
     /// because a column is read against its own empty space and a well that
     /// matched the header would leave one track's meter indistinguishable from
     /// the next.
-    meter_field = [0.04, 0.04, 0.05, 1.0];
+    meter_field = [0.078, 0.078, 0.078, 1.0];
     /// A meter's column below the alignment level
     /// (`clausters_core::measure::METER_WARN_DB`): the level a mix works at.
     meter_low = [0.24, 0.78, 0.44, 1.0];
@@ -289,11 +337,11 @@ theme_roles! {
 
     // -- The keyboard --
     /// A playable white key.
-    key_white = [0.86, 0.87, 0.90, 1.0];
+    key_white = [0.898, 0.898, 0.898, 1.0];
     /// The piano roll's dimmer white key.
-    key_white_dim = [0.82, 0.84, 0.88, 1.0];
+    key_white_dim = [0.831, 0.831, 0.831, 1.0];
     /// A black key.
-    key_black = [0.10, 0.11, 0.14, 1.0];
+    key_black = [0.11, 0.11, 0.11, 1.0];
     /// A pressed white key.
     key_pressed = [0.45, 0.80, 0.60, 1.0];
     /// A pressed black key.
@@ -303,17 +351,17 @@ theme_roles! {
     /// An inactive black key.
     key_inactive_black = [0.24, 0.25, 0.28, 1.0];
     /// The gap/edge line between keys.
-    key_gap = [0.05, 0.06, 0.08, 1.0];
+    key_gap = [0.051, 0.051, 0.051, 1.0];
     /// The octave label on a playable key.
-    key_label = [0.35, 0.37, 0.42, 1.0];
+    key_label = [0.349, 0.349, 0.349, 1.0];
     /// The octave label in the piano roll's key gutter.
-    key_label_dim = [0.30, 0.32, 0.38, 1.0];
+    key_label_dim = [0.302, 0.302, 0.302, 1.0];
     /// The keyboard overview strip's background.
-    key_overview = [0.07, 0.08, 0.10, 1.0];
+    key_overview = [0.09, 0.09, 0.09, 1.0];
     /// The overview's active-range band.
-    key_overview_active = [0.16, 0.18, 0.22, 1.0];
+    key_overview_active = [0.149, 0.149, 0.149, 1.0];
     /// The overview's black-key marks.
-    key_overview_black = [0.04, 0.05, 0.06, 1.0];
+    key_overview_black = [0.039, 0.039, 0.039, 1.0];
 
     // -- The series palette (multichannel traces, cycled) --
     /// Channel 1 of the series palette (the classic mono trace).
@@ -395,7 +443,134 @@ const CODE_DARK: &[(&str, Color)] = &[
     ("bracket_mismatch", [0.733, 0.333, 0.333, 0.267]),
 ];
 
+/// **The specification's names for the host's roles**, which a table may
+/// write instead: `(its name, the role)`. Its `accent` is not among them,
+/// since the host's [`accent`](Theme::accent) carries a widget's function;
+/// what the specification calls accent, the fill under the hand, is
+/// [`hover`](Theme::hover).
+pub const ALIASES: &[(&str, &str)] = &[
+    ("foreground", "text"),
+    ("card_foreground", "text"),
+    ("popover", "popup"),
+    ("popover_foreground", "text"),
+    ("primary_foreground", "primary_text"),
+    ("secondary_foreground", "secondary_text"),
+    ("muted_foreground", "text_dim"),
+    ("accent_foreground", "hover_text"),
+    ("border", "separator"),
+    ("ring", "focus"),
+];
+
+/// The role `name` names: itself, or the one its specification's name is.
+fn canonical(name: &str) -> &str {
+    ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == name)
+        .map_or(name, |&(_, role)| role)
+}
+
+/// **The reserved key of a table that picks the look** (`"dark"` or
+/// `"light"`): the whole theme is put back to that look before any role the
+/// table names applies, whatever order the entries come in -- what
+/// `scale` is to the size roles.
+pub const LOOK: &str = "look";
+
+/// **The light look's roles that differ from the dark one's**: the
+/// specification's light neutrals, and the domain colors that would not
+/// read on a white ground. The code's are [`CODE_LIGHT`].
+const LIGHT: &[(&str, &str)] = &[
+    ("background", "#ffffff"),
+    ("panel", "#f5f5f5"),
+    ("text", "#0a0a0a"),
+    ("text_dim", "#737373"),
+    ("label_dim", "#737373"),
+    ("status_bar", "#f5f5f5"),
+    ("card", "#ffffff"),
+    ("primary", "#171717"),
+    ("primary_text", "#fafafa"),
+    ("secondary", "#f5f5f5"),
+    ("secondary_text", "#171717"),
+    ("muted", "#f5f5f5"),
+    ("hover_text", "#171717"),
+    ("input", "#e5e5e5"),
+    ("field", "#ffffff"),
+    ("track", "#fafafa"),
+    ("accent", "#16a34a"),
+    ("accent_dim", "#e5e5e5"),
+    ("hilite", "#16a34a"),
+    ("hover", "#ececec"),
+    ("text_disabled", "#a1a1a1"),
+    ("popup", "#ffffff"),
+    ("separator", "#e5e5e5"),
+    ("trace", "#16a34a"),
+    ("trace_bright", "#22c55e"),
+    ("trace_body", "#16a34a59"),
+    ("point", "#0a0a0a"),
+    ("frame", "#e5e5e5"),
+    ("view_field", "#ffffff"),
+    ("lane", "#ffffff"),
+    ("header", "#f5f5f5"),
+    ("lane_alt", "#f5f5f5"),
+    ("channel_divider", "#e5e5e5"),
+    ("grid", "#0000001a"),
+    ("grid_line", "#ececec"),
+    ("baseline", "#d4d4d4"),
+    ("plate", "#ffffffb3"),
+    ("focus", "#a1a1a1"),
+    ("selection", "#3b82f6"),
+    ("cursor", "#171717"),
+    ("ruler_text", "#737373"),
+    ("ruler_line", "#a1a1a1"),
+    ("object_fill", "#dbeafe"),
+    ("object_edge", "#3b82f6"),
+    ("port_strip", "#e5e5e5"),
+    ("port", "#737373"),
+    ("note_edge", "#16a34a"),
+    ("selected_edge", "#171717"),
+    ("osc_markers", "#f5f5f5"),
+    ("warn", "#e7000b"),
+    ("success", "#16a34a"),
+    ("warning", "#d97706"),
+    ("destructive", "#e7000b"),
+    ("meter_field", "#e5e5e5"),
+    ("key_white", "#ffffff"),
+    ("key_white_dim", "#fafafa"),
+    ("key_black", "#262626"),
+    ("key_inactive", "#d4d4d4"),
+    ("key_inactive_black", "#a1a1a1"),
+    ("key_gap", "#a1a1a1"),
+    ("key_label", "#a1a1a1"),
+    ("key_label_dim", "#a1a1a1"),
+    ("key_overview", "#f5f5f5"),
+    ("key_overview_active", "#e5e5e5"),
+    ("key_overview_black", "#737373"),
+    ("series_1", "#16a34a"),
+];
+
 impl Theme {
+    /// **The light look**: the specification's light neutrals, with the
+    /// code's colors for a light ground ([`CODE_LIGHT`]).
+    pub fn light() -> Self {
+        let mut t = Self::dark();
+        for (role, hex) in LIGHT {
+            let set = parse_hex(hex).is_some_and(|c| t.set(role, c));
+            debug_assert!(set, "the light look names {role} as {hex}");
+        }
+        for (role, color) in CODE_LIGHT {
+            t.set(role, *color);
+        }
+        t
+    }
+
+    /// The look `name` names (`"dark"` or `"light"`).
+    pub fn look(name: &str) -> Option<Self> {
+        match name {
+            "dark" => Some(Self::dark()),
+            "light" => Some(Self::light()),
+            _ => None,
+        }
+    }
+
     /// The series palette color for channel `ch`, cycled.
     pub fn series(&self, ch: usize) -> Color {
         [self.series_1, self.series_2, self.series_3, self.series_4][ch % 4]
@@ -410,14 +585,24 @@ impl Theme {
     /// syntax and its marks), also puts their set for the new ground in them
     /// ([`CODE_LIGHT`]): a light theme reads its code without naming fourteen
     /// more colors, and one that names any of them keeps what it named.
+    ///
+    /// The reserved key [`LOOK`] comes first, whatever its place: it puts
+    /// the whole theme back to that look, and the roles named apply over it.
     pub fn overlay<'a, I>(&mut self, entries: I) -> Vec<String>
     where
         I: IntoIterator<Item = (&'a str, &'a str)>,
     {
+        let entries: Vec<(&str, &str)> = entries.into_iter().collect();
+        let mut warnings = Vec::new();
+        for (_, name) in entries.iter().filter(|(role, _)| *role == LOOK) {
+            match Self::look(name) {
+                Some(look) => *self = look,
+                None => warnings.push(format!("theme: unknown look '{name}'")),
+            }
+        }
         let was_light = self.is_light();
         let mut names_code = false;
-        let mut warnings = Vec::new();
-        for (role, hex) in entries {
+        for (role, hex) in entries.into_iter().filter(|(role, _)| *role != LOOK) {
             names_code |= CODE_LIGHT.iter().any(|(r, _)| *r == role);
             match parse_hex(hex) {
                 Some(color) => {
@@ -753,5 +938,56 @@ mod tests {
             1,
             "a non-string value warns like a bad color"
         );
+    }
+
+    /// **Two looks, picked by a key that comes first**: a table that says
+    /// `look` is laid over that look whatever its order, the light one is
+    /// the specification's neutrals with the code on a light ground, and an
+    /// unknown look warns and changes nothing.
+    #[test]
+    fn a_look_is_picked_before_the_roles_a_table_names() {
+        let light = Theme::light();
+        assert!(light.is_light() && !Theme::dark().is_light());
+        assert_eq!(light.background, parse_hex("#ffffff").unwrap());
+        assert_eq!(light.text, parse_hex("#0a0a0a").unwrap());
+        let code = |role: &str| CODE_LIGHT.iter().find(|(r, _)| *r == role).unwrap().1;
+        assert_eq!(light.syntax_keyword, code("syntax_keyword"));
+
+        let mut t = Theme::default();
+        let warnings = t.overlay([("selection", "#112233"), ("look", "light")]);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            t.selection,
+            parse_hex("#112233").unwrap(),
+            "the role over the look"
+        );
+        assert_eq!(t.background, light.background);
+        // back to dark: every role of the light one is gone
+        t.overlay([("look", "dark")]);
+        assert_eq!(t, Theme::dark());
+        assert_eq!(t.overlay([("look", "sepia")]).len(), 1);
+        assert_eq!(t, Theme::dark());
+    }
+
+    /// **The specification's names reach the host's roles**, both ways, and
+    /// its `accent` is not one of them.
+    #[test]
+    fn the_specification_names_its_roles() {
+        let mut t = Theme::default();
+        assert!(
+            t.overlay([("foreground", "#010203"), ("border", "#040506")])
+                .is_empty()
+        );
+        assert_eq!(t.text, parse_hex("#010203").unwrap());
+        assert_eq!(t.get("border"), Some(t.separator));
+        assert_eq!(t.get("muted_foreground"), Some(t.text_dim));
+        for (alias, role) in ALIASES {
+            assert!(Theme::NAMES.contains(role), "{alias} names {role}");
+            assert!(
+                !Theme::NAMES.contains(alias),
+                "{alias} is a role of its own"
+            );
+        }
+        assert_eq!(t.get("accent"), Some(t.accent), "the host's own accent");
     }
 }

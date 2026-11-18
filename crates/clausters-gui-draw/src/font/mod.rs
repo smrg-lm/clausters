@@ -657,8 +657,13 @@ pub fn width(s: &str, scale: f32) -> f32 {
 /// fixed-pitch already.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Family {
+    /// The interface's text, in its regular weight.
     #[default]
     Ui,
+    /// The interface's medium weight: a menu bar's titles, a label over
+    /// its field, a button's text.
+    UiMedium,
+    /// Code.
     Mono,
     /// The documentation's text.
     Prose,
@@ -691,6 +696,22 @@ pub fn cell_in(family: Family, scale: f32) -> f32 {
     }
     let _ = family;
     advance(scale)
+}
+
+/// **The scale at which `family` draws `px` pixels to the em**: a size of
+/// the type scale (the `type_` roles), given as a browser gives one, in the
+/// scale every drawing here takes. Without a face, the bitmap's, whose
+/// capital is three quarters of its em ([`DEFAULT_SIZE`]).
+pub fn em_scale(family: Family, px: f32) -> f32 {
+    #[cfg(feature = "font-atlas")]
+    if atlas::has_face() {
+        return atlas::with(|a| {
+            a.ensure(family);
+            a.scale_for_em(family, px)
+        });
+    }
+    let _ = family;
+    px * 0.75 / GLYPH_H as f32
 }
 
 /// The width of the first `cols` characters of `s` -- where a caret sits, and

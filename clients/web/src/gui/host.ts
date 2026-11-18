@@ -844,6 +844,10 @@ export class GuiHost {
      * redraws them. A group overlays what it *inherits*, so moving the base
      * moves what a group means.
      *
+     * The reserved `"look"` key picks one of the host's two looks, `"dark"`
+     * (the default) or `"light"`, before the roles the table names apply:
+     * `theme({ look: "light" })` is the light look whole.
+     *
      * Unknown roles and unreadable colors are logged by the host and skipped;
      * nothing here is refused. The native launch-time spelling is `--theme
      * <file.toml>`, which a page has no counterpart for -- this verb is how a

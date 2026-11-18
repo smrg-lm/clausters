@@ -1148,7 +1148,7 @@ pub(super) fn draw_popups(
 /// **A tip**, placed by the popup layer's one rule ([`popup::place_tip`])
 /// inside `work`: a pane's, and a dock's tab's.
 pub(crate) fn draw_tip(over: &mut Mesh, tip: &popup::Tip, work: Rect, m: &Metrics, theme: &Theme) {
-    let size = m.text_scale;
+    let size = popup::tip_size(m);
     let rect = popup::place_tip(tip, size, work, m);
     over.set_clip(None);
     over.rect(rect, theme.popup);
@@ -1268,10 +1268,19 @@ pub(super) fn draw_menu_bar(
     };
     let m = inputs.metrics;
     let theme = tree.theme.as_deref().unwrap_or(theme);
-    let size = m.text_scale;
+    let size = menubar::title_size(m);
+    // a bar sharing its row with the tree stands on the window's ground
+    let inline = menubar::inline(tree);
     over.set_clip(None);
     over.set_ink(Ink::default());
-    over.rect(band, theme.popup);
+    over.rect(
+        band,
+        if inline {
+            theme.background
+        } else {
+            theme.popup
+        },
+    );
     let open = inputs
         .popups
         .and_then(|p| p.stack.as_ref())
@@ -1285,10 +1294,14 @@ pub(super) fn draw_menu_bar(
         if live && (open == Some(title) || hover == Some(title)) {
             over.rect(rect, theme.hover);
         }
-        font::text_centered(
+        let label = menubar::label(entries, title);
+        let w = font::width_in(menubar::TITLE_FACE, &label, size);
+        font::text_in(
             over,
-            &menubar::label(entries, title),
-            rect,
+            menubar::TITLE_FACE,
+            &label,
+            rect.x + ((rect.w - w) * 0.5).max(0.0),
+            rect.y + (rect.h - font::height(size)) * 0.5,
             size,
             if live {
                 theme.text
@@ -1298,7 +1311,10 @@ pub(super) fn draw_menu_bar(
         );
     }
     // A hairline under the band, so it reads as a strip and not as the top of
-    // whatever is laid out under it.
+    // whatever is laid out under it; a bar sharing the row has none.
+    if inline {
+        return;
+    }
     over.rect(
         Rect::new(band.x, band.y + band.h - m.divider_w, band.w, m.divider_w),
         theme.separator,
@@ -1474,7 +1490,7 @@ pub(crate) fn draw_status(
     over.rect(band, theme.status_bar);
     // The edge that separates the bar from the work above it.
     over.rect(Rect::new(band.x, band.y, band.w, m.divider_w), theme.frame);
-    let size = m.caption_scale;
+    let size = status::text_size(m);
     // **The owner's work in progress**, at the right end of the band's first
     // line: its name, then a bar filled to the fraction done. What it takes
     // the log's line gives up.

@@ -1,7 +1,7 @@
 #!/bin/sh
-# Rebuilds the two faces the GUI host draws its text with, with no hinting
-# and the layout tables kept, since the host shapes text before it
-# rasterizes it:
+# Rebuilds the two faces the GUI host falls back to for what its interface's
+# face (Inter, whole) does not draw, with no hinting and the layout tables
+# kept, since the host shapes text before it rasterizes it:
 #
 # - DejaVuSans.ttf, from an upstream DejaVu Sans (2.37): the writing systems
 #   an interface is written in -- Latin, Greek, Cyrillic, Arabic and Hebrew --

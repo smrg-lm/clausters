@@ -365,7 +365,7 @@ impl Status {
     /// a clamp that allowed one line more than the band draws would scroll to
     /// a position that looks like the end of the log and is not.
     pub fn visible_lines(band: Rect, m: &Metrics) -> usize {
-        let advance = font::line_advance(m.caption_scale).max(1.0);
+        let advance = font::line_advance(text_size(m)).max(1.0);
         (((band.h - m.pad) / advance).floor().max(1.0)) as usize
     }
 
@@ -385,6 +385,12 @@ impl Status {
 /// `status: false`.
 pub fn shown(tree: &Widget) -> bool {
     matches!(tree.kind, WidgetKind::Window { status: true, .. })
+}
+
+/// **The size the bar's lines are drawn at**: the smallest of the type
+/// scale, a status line's.
+pub fn text_size(m: &Metrics) -> f32 {
+    font::em_scale(font::Family::Ui, m.type_xs)
 }
 
 /// The band the status bar occupies inside `area`, or `None` when this window

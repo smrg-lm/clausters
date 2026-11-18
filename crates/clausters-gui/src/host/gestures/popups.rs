@@ -94,7 +94,7 @@ fn open_title(
     }
     match menubar::list(&entries, title) {
         Some(list) => {
-            let size = host.metrics_for(ctx.def_id).text_scale;
+            let size = popup::list_size(host.metrics_for(ctx.def_id));
             let mut stack = Stack::new(Owner::Bar(title), list, Anchor::Below(rect), size);
             if walked {
                 stack.key(Walk::Down);
@@ -292,7 +292,7 @@ pub(super) fn open_keys(host: &mut Host, ctx: &GestureCtx) -> Vec<GestureEffect>
                 .map(|(what, keys)| Entry::note(what, keys)),
         );
     }
-    let size = host.metrics_for(ctx.def_id).text_scale;
+    let size = popup::list_size(host.metrics_for(ctx.def_id));
     host.open_popup(
         ctx.def_id,
         Stack::new(Owner::Keys, entries, Anchor::Centre, size),
@@ -670,7 +670,7 @@ impl Gestures {
         if let Owner::Edit(id) = owner {
             super::focus::set(host, &mut out, ctx, Some(id));
         }
-        let size = host.metrics_for(def_id).text_scale;
+        let size = popup::list_size(host.metrics_for(def_id));
         host.open_popup(
             def_id,
             Stack::new(owner, entries, Anchor::At(cx as f32, cy as f32), size),
@@ -698,7 +698,7 @@ impl Gestures {
         else {
             return false;
         };
-        let size = host.metrics_for(ctx.def_id).text_scale;
+        let size = popup::list_size(host.metrics_for(ctx.def_id));
         let mut stack = Stack::new(Owner::Button(id), entries, Anchor::Below(rect), size);
         stack.origin = Some((rect.x, rect.y));
         host.open_popup(ctx.def_id, stack);

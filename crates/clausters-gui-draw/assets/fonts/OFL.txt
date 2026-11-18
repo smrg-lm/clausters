@@ -4,9 +4,10 @@ beside this file, is a subset of Noto Sans Devanagari 2.001
 All Rights Reserved. It is distributed under the SIL Open Font License,
 Version 1.1, which follows.
 
-The faces the GUI host draws documentation with, Inter-Regular.ttf,
-Inter-SemiBold.ttf, Inter-Bold.ttf and Inter-Italic.ttf beside this file,
-are Inter 4.1 (https://github.com/rsms/inter), whole and unmodified.
+The faces the GUI host draws its interface and documentation with,
+Inter-Regular.ttf, Inter-Medium.ttf, Inter-SemiBold.ttf, Inter-Bold.ttf and
+Inter-Italic.ttf beside this file, are Inter 4.1
+(https://github.com/rsms/inter), whole and unmodified.
 Copyright (c) 2016 The Inter Project Authors. They are distributed under the
 SIL Open Font License, Version 1.1, which follows.
 

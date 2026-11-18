@@ -72,8 +72,8 @@ const FOOT: i32 = 12;
 /// The footer's height, in logical pixels.
 const FOOT_H: i32 = 24;
 /// The footer's text size: 12 pixels to the em of the interface's face
-/// (its capital is 0.729 of the em, over the 7-pixel cell).
-const FOOT_TEXT: f64 = 12.0 * 0.729 / 7.0;
+/// (Inter, whose capital is 0.727 of the em, over the 7-pixel cell).
+const FOOT_TEXT: f64 = 12.0 * 0.727 / 7.0;
 
 const PREFS_WIN: i32 = 20;
 const PREFS_REOPEN: i32 = 22;
@@ -1216,7 +1216,6 @@ impl App {
         let mut tree = self.window(FOOT_WIN, "Status");
         tree["dock_edge"] = json!("bottom");
         tree["h"] = json!(FOOT_H);
-        tree["theme"] = self.footer_theme();
         tree["children"] = json!([{
             "id": FOOT, "type": "label", "text": "Python", "text_size": FOOT_TEXT,
             "muted": 1, "dot": "destructive",
@@ -1533,8 +1532,6 @@ impl App {
 
     fn apply_theme(&self) {
         self.link.theme(&self.look());
-        // the footer stands on the chrome's ground, which is the look's
-        self.link.set(FOOT_WIN, &[("theme", self.footer_theme())]);
     }
 
     /// The look in use: its table of roles.
@@ -1544,12 +1541,6 @@ impl App {
         } else {
             theme::light()
         }
-    }
-
-    /// **The footer's ground**: the chrome's (`status_bar`), as a bar's is,
-    /// where a window stands on the panels' background.
-    fn footer_theme(&self) -> Value {
-        json!({"background": self.look()["status_bar"]})
     }
 
     fn zoom(&mut self, delta: Option<f32>) {

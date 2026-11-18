@@ -149,13 +149,13 @@ impl Dock {
                         Rect::new(r.x + r.w - m.divider_w, r.y, m.divider_w, r.h),
                         theme.separator,
                     );
-                    let close = (r.h * 0.7).round();
+                    let after = 2.0 * m.tab_end + m.tab_close;
                     font::text_ellipsis(
                         mesh,
                         &self.title(group.panes[i]),
-                        r.x + m.pad * 1.5,
+                        r.x + m.tab_inset,
                         r.y + (r.h - glyph) * 0.5,
-                        (r.w - 2.0 * m.pad - close).max(0.0),
+                        (r.w - m.tab_inset - after).max(0.0),
                         size,
                         if shown { theme.text } else { theme.text_dim },
                     );

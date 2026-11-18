@@ -246,6 +246,7 @@ quoted title lands here, on the link to the entry.
 - [The editor's application is a client of its host, linked in the host's process (2026-11-17)](decisions/gui.md#the-editors-application-is-a-client-of-its-host-linked-in-the-hosts-process-2026-11-17)
 - [The host's look is specified from one design system, not drawn piece by piece (2026-11-17)](decisions/gui.md#the-hosts-look-is-specified-from-one-design-system-not-drawn-piece-by-piece-2026-11-17)
 - [Text is drawn as a browser draws it: fractional sizes, quarter pixels, corrected coverage (2026-11-17)](decisions/gui.md#text-is-drawn-as-a-browser-draws-it-fractional-sizes-quarter-pixels-corrected-coverage-2026-11-17)
+- [The specification's tokens answer to the host's roles, and two looks are the host's (2026-11-18)](decisions/gui.md#the-specifications-tokens-answer-to-the-hosts-roles-and-two-looks-are-the-hosts-2026-11-18)
 
 ## [The document and the applications](decisions/apps.md)
 

@@ -494,6 +494,18 @@ fn resolve_style_under(
         }
         None => base.clone(),
     };
+    // **A window along a dock's edge is the application's bar or its
+    // footer**, which stand on the chrome's secondary ground
+    let group = match widget.kind {
+        WidgetKind::Window {
+            dock_edge: Some(_), ..
+        } => {
+            let mut t = (*group).clone();
+            t.background = t.secondary;
+            Arc::new(t)
+        }
+        _ => group,
+    };
     let own = match widget.color {
         Some(c) => Arc::new(clausters_gui_draw::theme::Theme::accent_seeded(&group, c)),
         None => group.clone(),

@@ -3381,3 +3381,50 @@ So the atlas reads faces with skrifa and fills outlines with
 ab_glyph_rasterizer (both pure Rust, wasm-safe) in place of fontdue, which
 rasterizes only at a whole pixel's origin, and the glyph shader applies the
 correction. Every text of every application moved with it, on purpose.
+
+## The specification's tokens answer to the host's roles, and two looks are the host's (2026-11-18)
+
+The host's look is specified from one design system (the decision above it,
+"The host's look is specified from one design system, not drawn piece by
+piece"), whose tokens are named otherwise than the host's color roles had
+been for years: `foreground` where the host says `text`, `popover` for
+`popup`, `border` for `separator`, `ring` for `focus`. Renaming the roles
+would have moved hundreds of paint sites and broken every theme file a user
+wrote, for a word. So the host's names stay, and the specification's are
+**aliases** a table may write, each setting the role it names. Its `accent`
+is the one that cannot be one: the host's `accent` has always been the color
+that carries a widget's function (a slider's fill, a meter's bar), and the
+specification's accent is the fill under the hand, which the host calls
+`hover`. The roles the host lacked (`card`, `primary`, `secondary`, `muted`,
+`input`, the texts on them, `shadow`) were added under the specification's
+names.
+
+**The looks moved into the host.** The editor used to hand the host a table
+of 27 colors for each of its two looks, the specification's neutrals mapped
+onto the host's roles; every other application drew in the host's own
+bluish dark theme. The two looks are now the host's (`Theme::dark`, the
+default, and `Theme::light`), picked by a reserved key of any table, `look`,
+which puts the whole theme back to that look before the roles it names
+apply, as `scale` regenerates the sizes. So every application draws in the
+specification's neutrals, a domain view keeps its field's colors and takes
+its neutrals from the set, and the editor's tables are `{"look": "dark"}`
+and `{"look": "light"}`.
+
+**Inter is the interface's face**, as the specification sets it, and DejaVu
+Sans, which drew the interface before, is its fallback for what Inter does
+not write (Arabic, Hebrew, the symbols). The medium weight (500) is a family
+of its own, `Family::UiMedium`, read the first time it is drawn, since the
+atlas rasterizes static instances. A size of the type scale is a role in
+pixels to the em (`type_sm` is 14) and becomes the scale every drawing takes
+through the face's own cap height (`font::em_scale`), so the table stays
+declared and the face is fitted to it.
+
+**A shadow is drawn in the triangle batch.** The specification's shadows are
+CSS box shadows: offsets, a blur, a spread, an opacity, two layers under a
+list or a dialog. A pass of its own (a blurred texture) would have been a
+second pipeline on both fronts; a rounded rectangle whose edge fades over the
+blur is five contours of the shape with the gaussian's coverage at each,
+interpolated by the rasterizer, which is the browser's falloff to within a
+few hundredths and costs a few dozen triangles a surface. Each level's
+layers are the specification's per pixel of its lift (`shadow_md` is 4), so
+a lift set by hand deepens its level whole.

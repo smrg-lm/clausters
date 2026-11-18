@@ -497,6 +497,17 @@ pub fn owner_rect(
 /// What the key sheet's title strip says.
 pub const KEYS_TITLE: &str = "Keys";
 
+/// **The size a list's entries are drawn at**: the interface's size of the
+/// type scale, the menus' and every list's.
+pub fn list_size(m: &Metrics) -> f32 {
+    font::em_scale(font::Family::Ui, m.type_sm)
+}
+
+/// **The size a tip is drawn at**: the smallest of the type scale.
+pub fn tip_size(m: &Metrics) -> f32 {
+    font::em_scale(font::Family::Ui, m.type_xs)
+}
+
 /// The height of one row of a list.
 pub fn row_h(text_size: f32, m: &Metrics) -> f32 {
     (font::height(text_size) + 2.0 * m.pad).max(m.control_h)

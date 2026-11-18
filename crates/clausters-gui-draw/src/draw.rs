@@ -7,9 +7,10 @@
 //! the size roles are measured by the face, so neither can be the module that
 //! names the other.
 
-use crate::metrics::Metrics;
+use crate::metrics::{Elevation, Metrics};
 use crate::paint::Mesh;
-use crate::theme::Theme;
+use crate::rect::Rect;
+use crate::theme::{Theme, with_alpha};
 
 /// What a paint site draws with: the batch it emits into, plus the **size
 /// roles** and the **color roles** it reads them from.
@@ -44,5 +45,22 @@ impl<'a> Draw<'a> {
     /// The context's three parts, for a leaf that paints with them directly.
     pub fn parts(&mut self) -> (&mut Mesh, &Metrics, &Theme) {
         (self.mesh, self.m, self.theme)
+    }
+
+    /// **The shadow a surface at `level` casts**, under the surface `r`
+    /// with `radius` corners, drawn before it: each layer of the level
+    /// ([`Metrics::shadow`]) in the theme's `shadow`.
+    pub fn shadow(&mut self, r: Rect, radius: f32, level: Elevation) {
+        for layer in self.m.shadow(level) {
+            let grown = Rect::new(
+                r.x - layer.spread,
+                r.y + layer.y - layer.spread,
+                r.w + 2.0 * layer.spread,
+                r.h + 2.0 * layer.spread,
+            );
+            let ink = with_alpha(self.theme.shadow, layer.alpha);
+            self.mesh
+                .soft_rect(grown, (radius + layer.spread).max(0.0), layer.blur, ink);
+        }
     }
 }

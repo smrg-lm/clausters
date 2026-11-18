@@ -56,15 +56,23 @@ look, the sizing, the data directory.
 ## `[gui.theme]`
 
 A **partial** table of `role = "#rrggbb"` or `"#rrggbbaa"`: listed roles are
-overlaid on the built-in dark theme, unlisted ones keep it. An unknown role or
-an unparseable color warns and is skipped — a style file written for a newer
-host still loads.
+overlaid on the host's look, unlisted ones keep it. An unknown role or an
+unparseable color warns and is skipped — a style file written for a newer host
+still loads.
+
+The host has **two looks**, dark (the default) and light, both from the
+design system its look is specified from: its neutral set, and the domain
+colors (traces, meters, keys, code) chosen to read on each ground. One
+reserved key picks one:
+
+| Key | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `look` | `"dark"` or `"light"` | `"dark"` | Puts the whole theme back to that look before any role the table names applies, whatever order the entries are written in — what `scale` is to the sizes |
 
 ```toml
 [gui.theme]
+look = "light"
 accent = "#ff8c40"       # the color that carries a widget's function
-background = "#101014"
-text = "#e8e8ec"
 ```
 
 `--theme <path>` reads the same flat table from a free-standing file (no
@@ -77,143 +85,144 @@ A host running in a browser tab has no config file, so the page sends the same
 table over the wire, `GuiHost.theme` (and its sizing sibling `GuiHost.metrics`)
 — see the [web client book](https://clausters-web.readthedocs.io/).
 
-The 97 roles, named by **function** rather than by widget, so one entry restyles
-everything that means the same thing by it. The defaults are written here as the
-hex a file would use; the host holds them as floats, so a value copied back is
-the same color to within the 8 bits of the notation:
+The roles are named by **function** rather than by widget, so one entry
+restyles everything that means the same thing by it. The specification's own
+names are accepted too and set the role they name: `foreground`,
+`card_foreground` and `popover_foreground` are `text`, `popover` is
+`popup`, `muted_foreground` is `text_dim`, `border` is `separator`,
+`ring` is `focus`, `accent_foreground` is `hover_text`, and
+`primary_foreground` and `secondary_foreground` are `primary_text` and
+`secondary_text`. The one it cannot take is `accent`: here it is the color
+that carries a widget's function (a slider's fill, a meter's bar), so what
+the specification calls accent, the fill under the hand, is `hover`.
 
-| Role | Default | What it colors |
-| --- | --- | --- |
-| `background` | `#0d0d12` | The window clear color, the backdrop under everything. |
-| `panel` | `#1a1c248c` | A panel's translucent fill over the backdrop. |
-| `text` | `#d9dee6` | Primary text: labels, values, readouts. |
-| `text_dim` | `#8c99a8` | De-emphasized text (the node tree's parameter lines). |
-| `label_dim` | `#99a1b2` | De-emphasized in-view labels (a lane's name tag). |
-| `status_bar` | `#14171c` | The **status bar**'s band along the window's bottom edge: a shade off the backdrop, so the strip reads as a place the window talks rather than as a panel holding something. |
-| `field` | `#242630` | A control's body fill (slider, knob, scope field). |
-| `track` | `#1a1c24` | The inset groove/body under a control's value (a slider's track), and the body of the static info views (node tree, plot). |
-| `accent` | `#4cc78c` | The color that carries a widget's function: a slider's fill, a knob's pointer, a meter's bar, the live views' frame. |
-| `accent_dim` | `#388066` | The accent's quiet form (an unlit toggle, a knob's arc). |
-| `hilite` | `#66d99e` | The accent's lit form (a pressed control, a window's edge marker). |
-| `hover` | `#384052` | What the pointer is over: a row of an open list, a flat button, a tab. |
-| `text_disabled` | `#666e7a` | The text of something that cannot be acted on now: a disabled control, a disabled entry of a menu. |
-| `popup` | `#1f212b` | The ground of what opens over the window: a list, a menu, a tip. Opaque, since it covers what it opened over. |
-| `separator` | `#474f5e` | A line between groups: a menu's separator, a toolbar's, a group's frame. |
-| `trace` | `#66d99e` | A drawn signal or curve (scope trace, bpf curve, automation curve). |
-| `trace_bright` | `#73e6a8` | The brighter trace of the phase scope's beam. |
-| `trace_body` | `#d9f0b39e` | The measured body drawn inside a signal's envelope (an RMS layer). Translucent by role: a body is read *against* the peaks it sits in. |
-| `trace_signal` | `#fa8c59f2` | **The reconstruction** drawn over a signal's samples (the `signal` measure): the band-limited waveform between them. An ink of its own because it is read *against* the samples it is drawn over, the analog waveform in a colour apart from the digital samples, and warm so it does not read as another channel. |
-| `trace_loudness` | `#8cc7faf2` | **The loudness curve** drawn over a signal (the `momentary` and `short` measures): what a meter would have read at each point of the take. An ink of its own, and cool where the reconstruction is warm, because it is the one layer that does *not* measure the same axis as the picture under it -- it is read against its own LU scale and against the target line, not against the samples it crosses. |
-| `trace_guide` | `#7394b88c` | **The loudness target and the edges of its scale**: the line a delivery specification names (EBU R 128's -23 LUFS) and the bounds of the strip the curve is drawn in. Quiet, because a guide is read *behind* the curve it is a reference for. |
-| `point` | `#e6edf2` | A curve's grabbable break-point. |
-| `frame` | `#4c576b` | The neutral frame of the editor views (piano roll, tracks, patch). |
-| `view_frame` | `#407361` | The frame of the timeline views (waveform, spectrogram). |
-| `frame_info` | `#4c7399` | The frame of the live info view (the node tree). |
-| `frame_plot` | `#738cb2` | The frame of the measuring plot. |
-| `view_field` | `#14171c` | The dark body of the heavy views (waveform, spectrogram, patch). |
-| `lane` | `#171a21` | A lane's background (a track lane, the piano roll's grid). |
-| `header` | `#242933` | A track's header strip. |
-| `lane_alt` | `#12141a` | The alternate, darker lane (black-key rows, the velocity lane). |
-| `channel_divider` | `#4c5461cc` | The divider line between stacked channels. |
-| `grid` | `#4c576699` | A view's reference grid (the phase scope's cross and square). |
-| `grid_line` | `#292e38` | A fine grid line (the piano roll's row lines). |
-| `baseline` | `#475261` | The zero baseline of a value axis. |
-| `plate` | `#0a0d129e` | The ground a **text plate** lays under a caption drawn over a picture (a clip's name over its take, a roll's cursor read-out): a translucent dark box, so the text reads without hiding what it is written on. Its alpha is the whole role. |
-| `focus` | `#73b2ffe6` | The ring around the widget holding the keyboard focus. Its own role rather than the accent: what is focused and what is *active* are two different questions, and a window answers both at once. |
-| `selection` | `#8cbff2` | The selection color; fills and edges derive by alpha. |
-| `playhead` | `#f28c4ce6` | The playhead line — the one that **sweeps**, whose position is the engine's. |
-| `cursor` | `#9eccf2d9` | The **position cursor**: the line a click on the ruler places, where a playback starts and a paste lands. |
-| `ruler_text` | `#a6adb8` | Ruler tick labels. |
-| `ruler_line` | `#737a85` | Ruler tick lines. |
-| `object_fill` | `#293852` | A placed object's fill (a clip's body, a patch member box). |
-| `object_edge` | `#7399d9` | A placed object's edge. |
-| `box_fill` | `#f2f5f7` | A patch box's central band (the def-name band): **white**, so the name reads as black text on white (`box_text`) and the box stands out on the dark canvas. Distinct from `object_fill` (a clip's body) — a patch box is its own thing. |
-| `box_text` | `#171a1f` | A patch box's central-band text (the def name) — near-black, for the white `box_fill` band. |
-| `value_fill` | `#faf0cc` | A patch **value** box's central band (a `const` literal / parameter box, set apart from the white UGen boxes so a data box reads as data): a pale cream, still black-text (`box_text`). |
-| `port_strip` | `#26292e` | A patch box's port strips (top inlets and bottom outlets, one color) — dark grey, framing the white middle band (`box_fill`). |
-| `port` | `#bfd1eb` | A patch box's wiring port (the cell a cord connects to: its edge and pin). |
-| `cord` | `#f25752` | A patch **audio** (`ar`) cord — the signal path. The rate reads by **colour** (all cords share one weight): the three are contrasting primaries — audio **red**, control **blue**, init **yellow** — legible against each other and the dark field. |
-| `cord_control` | `#478ffa` | A patch **control** (`kr`) cord (blue). |
-| `cord_init` | `#fac733` | A patch **init** (`ir`) cord — a scalar wire, also drawn dashed (yellow). |
-| `live` | `#f2b840` | The live/rendered marker (a sounding patch wire). |
-| `note_fill` | `#8ccc9e` | A note's fill in the piano roll. |
-| `note_edge` | `#c7f2d1` | A note's edge. |
-| `selected_fill` | `#cce6fa` | A selected note's fill. |
-| `selected_edge` | `#ffffff` | A selected note's edge. |
-| `velocity` | `#b28ce6` | A velocity bar. |
-| `osc_markers` | `#1a1721` | The OSC markers' background. |
-| `flag` | `#f2bf73` | A marker flag (an OSC marker, an overview's pressed key). |
-| `trigger` | `#d9cc6666` | The oscilloscope's trigger-level line. |
-| `warn` | `#d96b6b` | The negative/warning readout (the phase scope's anti-correlation). |
-| `success` | `#4ade80` | **Up and well**: a session ready, a thing that worked. |
-| `warning` | `#fbbf24` | **Under way, or a caution**: a session running code. |
-| `destructive` | `#ff6467` | **Down, or failed**: a session stopped, an action that destroys. |
-| `meter_field` | `#0a0a0d` | The well a meter's column stands in: darker than any panel it sits on, because a column is read against its own empty space. |
-| `meter_low` | `#3dc770` | A meter's column below the alignment level (-18 dBFS): the level a mix works at. |
-| `meter_mid` | `#f2cc40` | Its column from the alignment level to the hot end (-6 dBFS): headroom being used. Reached at -12 dBFS and held, so a column using its headroom reads amber rather than green with a cast on it. |
-| `meter_high` | `#eb4738` | Its column from the hot end (-6 dBFS) to the top: the last decibels, where a peak that grows any further clips. A band and not a ramp, or the column would read amber at -6 and red only at full scale. |
-| `meter_clip` | `#ff382e` | The lamp above a meter's column: lit once the signal was flattened and left lit until a hand puts it out. Brighter and flatter than `meter_high`, because it is a latched statement about the past and not another band of the level. |
-| `key_white` | `#dbdee6` | A playable white key. |
-| `key_white_dim` | `#d1d6e0` | The piano roll's dimmer white key. |
-| `key_black` | `#1a1c24` | A black key. |
-| `key_pressed` | `#73cc99` | A pressed white key. |
-| `key_pressed_black` | `#40996b` | A pressed black key. |
-| `key_inactive` | `#6b6e75` | An inactive (out-of-range) white key. |
-| `key_inactive_black` | `#3d4047` | An inactive black key. |
-| `key_gap` | `#0d0f14` | The gap/edge line between keys. |
-| `key_label` | `#595e6b` | The octave label on a playable key. |
-| `key_label_dim` | `#4c5261` | The octave label in the piano roll's key gutter. |
-| `key_overview` | `#12141a` | The keyboard overview strip's background. |
-| `key_overview_active` | `#292e38` | The overview's active-range band. |
-| `key_overview_black` | `#0a0d0f` | The overview's black-key marks. |
-| `series_1` | `#4cc78c` | Channel 1 of the series palette (the classic mono trace). |
-| `series_2` | `#f2b840` | Channel 2 of the series palette. |
-| `series_3` | `#73a6f2` | Channel 3 of the series palette. |
-| `series_4` | `#e67399` | Channel 4 of the series palette. |
-| `syntax_keyword` | `#569cd6` | A keyword, and a constant the language names (`None`, `true`). |
-| `syntax_control` | `#c586c0` | A keyword that moves control or brings a module in (`if`, `return`, `import`). |
-| `syntax_name` | `#9cdcfe` | A name: a variable, a property, a parameter. |
-| `syntax_function` | `#dcdcaa` | A function's name, where it is defined and where it is called. |
-| `syntax_type` | `#4ec9b0` | A type, and a name that starts with a capital (a class). |
-| `syntax_number` | `#b5cea8` | A number. |
-| `syntax_string` | `#ce9178` | A string. |
-| `syntax_regexp` | `#d16969` | A regular expression written as a literal. |
-| `syntax_comment` | `#6a9955` | A comment. |
-| `syntax_operator` | `#d4d4d4` | An operator, punctuation, an escape inside a string. |
-| `find_match` | `#00ffff8a` | A match of a code editor's find bar, under the text. |
-| `find_current` | `#ff00ff8a` | The match of the find bar that is selected. |
-| `bracket_match` | `#328c8252` | The bracket by a code editor's caret and the one it pairs with. |
-| `bracket_mismatch` | `#bb555544` | A bracket by the caret that nothing closes. |
+The values are written here as the hex a file would use; the host holds them
+as floats, so a value copied back is the same color to within the 8 bits of
+the notation:
 
-**Code follows the ground.** The code's roles (the `syntax_` ones and its
-marks, `find_match` to `bracket_mismatch`) have defaults for the dark ground
-the host draws on. A table that turns `background` light (and back) and names
-none of them also puts the set for the new ground in them, so a light theme
-reads its code without fourteen more entries:
+| Role | Dark | Light | What it colors |
+| --- | --- | --- | --- |
+| `background` | `#1e1e1e` | `#ffffff` | The window clear color, the backdrop under everything. |
+| `panel` | `#262626` | `#f5f5f5` | A panel's translucent fill over the backdrop. |
+| `text` | `#fafafa` | `#0a0a0a` | Primary text: labels, values, readouts. |
+| `text_dim` | `#a1a1a1` | `#737373` | De-emphasized text (the node tree's parameter lines). |
+| `label_dim` | `#a1a1a1` | `#737373` | De-emphasized in-view labels (a lane's name tag). |
+| `status_bar` | `#262626` | `#f5f5f5` | The **status bar**'s band along the window's bottom edge: a shade off the backdrop, so the strip reads as a place the window talks rather than as a panel holding something. |
+| `card` | `#171717` | `#ffffff` | A **card**'s ground: a dialog's, a hover card's, a section raised off the window. |
+| `primary` | `#e5e5e5` | `#171717` | The **primary** fill: the button that does what a form is for. |
+| `primary_text` | `#171717` | `#fafafa` | The text on `primary`. |
+| `secondary` | `#262626` | `#f5f5f5` | The **secondary** fill: a bar's ground, a secondary button, a chosen segment. |
+| `secondary_text` | `#fafafa` | `#171717` | The text on `secondary`. |
+| `muted` | `#262626` | `#f5f5f5` | The **muted** fill: a toggle that is on, a ghost button under the pointer, a block of code in a page. |
+| `hover_text` | `#fafafa` | `#171717` | The text on `hover`: an entry of a list under the pointer or the keyboard. |
+| `input` | `#ffffff26` | `#e5e5e5` | The edge of a field the hand types in. |
+| `shadow` | `#0000001a` | `#0000001a` | What a raised surface casts on the window: the ink of every elevation's shadow, its alpha the strongest layer's. |
+| `field` | `#171717` | `#ffffff` | A control's body fill (slider, knob, scope field). |
+| `track` | `#171717` | `#fafafa` | The inset groove/body under a control's value (a slider's track), and the body of the static info views (node tree, plot). |
+| `accent` | `#4ade80` | `#16a34a` | The color that carries a widget's function: a slider's fill, a knob's pointer, a meter's bar, the live views' frame. |
+| `accent_dim` | `#404040` | `#e5e5e5` | The accent's quiet form (an unlit toggle, a knob's arc). |
+| `hilite` | `#4ade80` | `#16a34a` | The accent's lit form (a pressed control, a window's edge marker). |
+| `hover` | `#2e2e2e` | `#ececec` | What the pointer is over: a row of an open list, a flat button, a tab. |
+| `text_disabled` | `#737373` | `#a1a1a1` | The text of something that cannot be acted on now: a disabled control, a disabled entry of a menu. |
+| `popup` | `#171717` | `#ffffff` | The ground of what opens over the window: a list, a menu, a tip. Opaque, since it covers what it opened over. |
+| `separator` | `#ffffff1a` | `#e5e5e5` | A line between groups: a menu's separator, a toolbar's, a group's frame. |
+| `trace` | `#66d99e` | `#16a34a` | A drawn signal or curve (scope trace, bpf curve, automation curve). |
+| `trace_bright` | `#73e6a8` | `#22c55e` | The brighter trace of the phase scope's beam. |
+| `trace_body` | `#d9f0b29e` | `#16a34a59` | The measured body drawn inside a signal's envelope (an RMS layer). Translucent by role: a body is read *against* the peaks it sits in. |
+| `trace_signal` | `#fa8c59f2` | `#fa8c59f2` | **The reconstruction** drawn over a signal's samples (the `signal` measure): the band-limited waveform between them. An ink of its own because it is read *against* the samples it is drawn over, the analog waveform in a colour apart from the digital samples, and warm so it does not read as another channel. |
+| `trace_loudness` | `#8cc7faf2` | `#8cc7faf2` | **The loudness curve** drawn over a signal (the `momentary` and `short` measures): what a meter would have read at each point of the take. An ink of its own, and cool where the reconstruction is warm, because it is the one layer that does *not* measure the same axis as the picture under it -- it is read against its own LU scale and against the target line, not against the samples it crosses. |
+| `trace_guide` | `#7394b88c` | `#7394b88c` | **The loudness target and the edges of its scale**: the line a delivery specification names (EBU R 128's -23 LUFS) and the bounds of the strip the curve is drawn in. Quiet, because a guide is read *behind* the curve it is a reference for. |
+| `point` | `#fafafa` | `#0a0a0a` | A curve's grabbable break-point. |
+| `frame` | `#ffffff26` | `#e5e5e5` | The neutral frame of the editor views (piano roll, tracks, patch). |
+| `view_frame` | `#407361` | `#407361` | The frame of the timeline views (waveform, spectrogram). |
+| `frame_info` | `#4c7399` | `#4c7399` | The frame of the live info view (the node tree). |
+| `frame_plot` | `#738cb2` | `#738cb2` | The frame of the measuring plot. |
+| `view_field` | `#1e1e1e` | `#ffffff` | The dark body of the heavy views (waveform, spectrogram, patch). |
+| `lane` | `#1e1e1e` | `#ffffff` | A lane's background (a track lane, the piano roll's grid). |
+| `header` | `#262626` | `#f5f5f5` | A track's header strip. |
+| `lane_alt` | `#191919` | `#f5f5f5` | The alternate, darker lane (black-key rows, the velocity lane). |
+| `channel_divider` | `#ffffff26` | `#e5e5e5` | The divider line between stacked channels. |
+| `grid` | `#ffffff26` | `#0000001a` | A view's reference grid (the phase scope's cross and square). |
+| `grid_line` | `#2a2a2a` | `#ececec` | A fine grid line (the piano roll's row lines). |
+| `baseline` | `#404040` | `#d4d4d4` | The zero baseline of a value axis. |
+| `plate` | `#0a0a0a9e` | `#ffffffb3` | The ground a **text plate** lays under a caption drawn over a picture (a clip's name over its take, a roll's cursor read-out): a translucent dark box, so the text reads without hiding what it is written on. Its alpha is the whole role. |
+| `focus` | `#737373` | `#a1a1a1` | The ring around the widget holding the keyboard focus. Its own role rather than the accent: what is focused and what is *active* are two different questions, and a window answers both at once. |
+| `selection` | `#60a5fa` | `#3b82f6` | The selection color; fills and edges derive by alpha. |
+| `playhead` | `#f28c4ce6` | `#f28c4ce6` | The playhead line — the one that **sweeps**, whose position is the engine's. |
+| `cursor` | `#e5e5e5` | `#171717` | The **position cursor**: the line a click on the ruler places, where a playback starts and a paste lands. |
+| `ruler_text` | `#a1a1a1` | `#737373` | Ruler tick labels. |
+| `ruler_line` | `#737373` | `#a1a1a1` | Ruler tick lines. |
+| `object_fill` | `#293852` | `#dbeafe` | A placed object's fill (a clip's body, a patch member box). |
+| `object_edge` | `#7399d9` | `#3b82f6` | A placed object's edge. |
+| `box_fill` | `#f2f5f7` | `#f2f5f7` | A patch box's central band (the def-name band): **white**, so the name reads as black text on white (`box_text`) and the box stands out on the dark canvas. Distinct from `object_fill` (a clip's body) — a patch box is its own thing. |
+| `box_text` | `#171a1f` | `#171a1f` | A patch box's central-band text (the def name) — near-black, for the white `box_fill` band. |
+| `value_fill` | `#faf0cc` | `#faf0cc` | A patch **value** box's central band (a `const` literal / parameter box, set apart from the white UGen boxes so a data box reads as data): a pale cream, still black-text (`box_text`). |
+| `port_strip` | `#262626` | `#e5e5e5` | A patch box's port strips (top inlets and bottom outlets, one color) — dark grey, framing the white middle band (`box_fill`). |
+| `port` | `#bfd1eb` | `#737373` | A patch box's wiring port (the cell a cord connects to: its edge and pin). |
+| `cord` | `#f25752` | `#f25752` | A patch **audio** (`ar`) cord — the signal path. The rate reads by **colour** (all cords share one weight): the three are contrasting primaries — audio **red**, control **blue**, init **yellow** — legible against each other and the dark field. |
+| `cord_control` | `#478ffa` | `#478ffa` | A patch **control** (`kr`) cord (blue). |
+| `cord_init` | `#fac733` | `#fac733` | A patch **init** (`ir`) cord — a scalar wire, also drawn dashed (yellow). |
+| `live` | `#f2b840` | `#f2b840` | The live/rendered marker (a sounding patch wire). |
+| `note_fill` | `#8ccc9e` | `#8ccc9e` | A note's fill in the piano roll. |
+| `note_edge` | `#c7f2d1` | `#16a34a` | A note's edge. |
+| `selected_fill` | `#cce6fa` | `#cce6fa` | A selected note's fill. |
+| `selected_edge` | `#ffffff` | `#171717` | A selected note's edge. |
+| `velocity` | `#b28ce6` | `#b28ce6` | A velocity bar. |
+| `osc_markers` | `#171717` | `#f5f5f5` | The OSC markers' background. |
+| `flag` | `#f2bf73` | `#f2bf73` | A marker flag (an OSC marker, an overview's pressed key). |
+| `trigger` | `#d9cc6666` | `#d9cc6666` | The oscilloscope's trigger-level line. |
+| `warn` | `#ff6467` | `#e7000b` | The negative/warning readout (the phase scope's anti-correlation). |
+| `success` | `#4ade80` | `#16a34a` | **Up and well**: a session ready, a thing that worked. |
+| `warning` | `#fbbf24` | `#d97706` | **Under way, or a caution**: a session running code. |
+| `destructive` | `#ff6467` | `#e7000b` | **Down, or failed**: a session stopped, an action that destroys. |
+| `meter_field` | `#141414` | `#e5e5e5` | The well a meter's column stands in: darker than any panel it sits on, because a column is read against its own empty space. |
+| `meter_low` | `#3dc770` | `#3dc770` | A meter's column below the alignment level (-18 dBFS): the level a mix works at. |
+| `meter_mid` | `#f2cc40` | `#f2cc40` | Its column from the alignment level to the hot end (-6 dBFS): headroom being used. Reached at -12 dBFS and held, so a column using its headroom reads amber rather than green with a cast on it. |
+| `meter_high` | `#eb4738` | `#eb4738` | Its column from the hot end (-6 dBFS) to the top: the last decibels, where a peak that grows any further clips. A band and not a ramp, or the column would read amber at -6 and red only at full scale. |
+| `meter_clip` | `#ff382e` | `#ff382e` | The lamp above a meter's column: lit once the signal was flattened and left lit until a hand puts it out. Brighter and flatter than `meter_high`, because it is a latched statement about the past and not another band of the level. |
+| `key_white` | `#e5e5e5` | `#ffffff` | A playable white key. |
+| `key_white_dim` | `#d4d4d4` | `#fafafa` | The piano roll's dimmer white key. |
+| `key_black` | `#1c1c1c` | `#262626` | A black key. |
+| `key_pressed` | `#73cc99` | `#73cc99` | A pressed white key. |
+| `key_pressed_black` | `#40996b` | `#40996b` | A pressed black key. |
+| `key_inactive` | `#6b6e75` | `#d4d4d4` | An inactive (out-of-range) white key. |
+| `key_inactive_black` | `#3d4047` | `#a1a1a1` | An inactive black key. |
+| `key_gap` | `#0d0d0d` | `#a1a1a1` | The gap/edge line between keys. |
+| `key_label` | `#595959` | `#a1a1a1` | The octave label on a playable key. |
+| `key_label_dim` | `#4d4d4d` | `#a1a1a1` | The octave label in the piano roll's key gutter. |
+| `key_overview` | `#171717` | `#f5f5f5` | The keyboard overview strip's background. |
+| `key_overview_active` | `#262626` | `#e5e5e5` | The overview's active-range band. |
+| `key_overview_black` | `#0a0a0a` | `#737373` | The overview's black-key marks. |
+| `series_1` | `#4cc78c` | `#16a34a` | Channel 1 of the series palette (the classic mono trace). |
+| `series_2` | `#f2b840` | `#f2b840` | Channel 2 of the series palette. |
+| `series_3` | `#73a6f2` | `#73a6f2` | Channel 3 of the series palette. |
+| `series_4` | `#e67399` | `#e67399` | Channel 4 of the series palette. |
+| `syntax_keyword` | `#569cd6` | `#0000ff` | A keyword, and a constant the language names (`None`, `true`). |
+| `syntax_control` | `#c586c0` | `#af00db` | A keyword that moves control or brings a module in (`if`, `return`, `import`). |
+| `syntax_name` | `#9cdcfe` | `#0070c1` | A name: a variable, a property, a parameter. |
+| `syntax_function` | `#dcdcaa` | `#795e26` | A function's name, where it is defined and where it is called. |
+| `syntax_type` | `#4ec9b0` | `#267f99` | A type, and a name that starts with a capital (a class). |
+| `syntax_number` | `#b5cea8` | `#098658` | A number. |
+| `syntax_string` | `#ce9178` | `#a31515` | A string. |
+| `syntax_regexp` | `#d16969` | `#af00db` | A regular expression written as a literal. |
+| `syntax_comment` | `#6a9955` | `#008000` | A comment. |
+| `syntax_operator` | `#d4d4d4` | `#383a42` | An operator, punctuation, an escape inside a string. |
+| `find_match` | `#00ffff8a` | `#ffff0054` | A match of a code editor's find bar, under the text. |
+| `find_current` | `#ff00ff8a` | `#ff6a0054` | The match of the find bar that is selected. |
+| `bracket_match` | `#328c8252` | `#328c8252` | The bracket by a code editor's caret and the one it pairs with. |
+| `bracket_mismatch` | `#bb555544` | `#bb555544` | A bracket by the caret that nothing closes. |
 
-| Role | On a light ground |
-| --- | --- |
-| `syntax_keyword` | `#0000ff` |
-| `syntax_control` | `#af00db` |
-| `syntax_name` | `#0070c1` |
-| `syntax_function` | `#795e26` |
-| `syntax_type` | `#267f99` |
-| `syntax_number` | `#098658` |
-| `syntax_string` | `#a31515` |
-| `syntax_regexp` | `#af00db` |
-| `syntax_comment` | `#008000` |
-| `syntax_operator` | `#383a42` |
-| `find_match` | `#ffff0054` |
-| `find_current` | `#ff6a0054` |
-| `bracket_match` | `#328c8252` |
-| `bracket_mismatch` | `#bb555544` |
-
-A table that names any of them keeps what it named.
+**Code follows the ground.** A table that turns `background` light (and back)
+without a `look` and names none of the code's roles (the `syntax_` ones and
+its marks, `find_match` to `bracket_mismatch`) also puts the light look's
+set (or the dark one's) in them, so a light theme reads its code without
+fourteen more entries. A table that names any of them keeps what it named.
 
 ## `[gui.metrics]`
 
 The sizing counterpart, with the same partial-overlay semantics: `role = number`
-in **logical** pixels (glyph scales for the text roles), unlisted roles keep
+in **logical** pixels (glyph scales for the `_scale` text roles, pixels to
+the em for the type scale's `type_` ones), unlisted roles keep
 their generated default, and an unknown role or an unusable number warns and is
 skipped.
 
@@ -235,7 +244,7 @@ scale = 0.9              # a compact host, every role regenerated
 control_h = 26           # ...except this one, set outright
 ```
 
-The 24 roles, with the value each takes at `scale = 1.0`:
+The 94 roles, with the value each takes at `scale = 1.0`:
 
 | Role | Default | What it sizes |
 | --- | --- | --- |
@@ -253,7 +262,7 @@ The 24 roles, with the value each takes at `scale = 1.0`:
 | `ruler_h` | 18 | The height of a ruler strip along a horizontal axis. |
 | `status_h` | 18 | The height of **one line of the status bar** along the window's bottom edge. A ruler's height rather than a control's: the bar is a strip of chrome with a line written on it, which is what a ruler is. |
 | `ruler_w` | 46 | The width of a ruler strip beside a vertical axis (sized for its widest labels). |
-| `header_w` | 96 | The width of a row's header column (a lane's name and controls). |
+| `header_w` | 72 | The width of a row's header column (a lane's name and controls). |
 | `panel_h` | 36 | The height of a **panel's header**: the one strip along a panel's top, which a dock's panel draws its grip, its tabs or its tools and its buttons in, and a window that names a `header` its tools in. |
 | `divider_w` | 1 | A hairline: a divider between lanes, a box edge. |
 | `focus_ring` | 2 | The weight of the ring around the widget holding the keyboard focus. Heavier than a hairline on purpose: it has to read *over* the edge a control already draws. |
@@ -264,10 +273,75 @@ The 24 roles, with the value each takes at `scale = 1.0`:
 | `grip_w` | 12 | The width of an **edge grip**: the strip at each end of a placed object that resizes it (a clip's ends), drawn where it can be grabbed. |
 | `label_gap` | 14 | The smallest gap between two ruler labels before the ladder steps up. |
 | `tick_gap` | 7 | The smallest gap between two ruler ticks before the ladder steps up. |
-| `text_scale` | 2 | Primary text: control labels, values, readouts. |
-| `label_scale` | 2 | In-view labels drawn over a surface (a lane's name tag). |
+| `text_scale` | 1.5 | Primary text: control labels, values, readouts. |
+| `label_scale` | 1.5 | In-view labels drawn over a surface (a lane's name tag). |
 | `caption_scale` | 1.5 | Reduced text: ruler labels, a clip's caption. |
 | `micro_scale` | 1 | The densest legible mark (a key's octave label). |
+| `type_xs` | 12 | The smallest size: a key beside its entry, help under a field, the status footer, a count. |
+| `type_sm` | 14 | The interface's size: menus, tabs, buttons, fields, a dialog's text. |
+| `type_base` | 16 | A page's body. |
+| `type_lg` | 18 | An alert's title. |
+| `line_xs` | 16 | The line `type_xs` is set on. |
+| `line_sm` | 20 | The line `type_sm` is set on. |
+| `line_base` | 24 | The line `type_base` is set on. |
+| `line_lg` | 28 | The line `type_lg` is set on. |
+| `radius_sm` | 6 | The small corner: a menu's entry, a menu bar's title, a tooltip. |
+| `radius_md` | 8 | The medium corner: a button, a field, a menu's list, a section. |
+| `radius_lg` | 10 | The large corner: the specification's base radius. |
+| `radius_xl` | 14 | The extra large corner: a dialog's card. |
+| `shadow_xs` | 1 | The extra small lift: a field, an outlined button. |
+| `shadow_md` | 4 | The medium lift: a menu's list, a hover card. |
+| `shadow_lg` | 10 | The large lift: a submenu's list, a dialog. |
+| `press_shift` | 1 | How far a pressed button goes down. |
+| `bar_h` | 40 | The application bar's height. |
+| `bar_inset` | 6 | The application bar's inset at its ends. |
+| `footer_h` | 24 | The status footer's height. |
+| `footer_inset` | 12 | The status footer's inset at its ends. |
+| `panel_grip` | 20 | The width of a panel's grip, at the start of its header. |
+| `tab_w` | 224 | The widest a tab grows. |
+| `tab_inset` | 12 | A tab's inset before its name. |
+| `tab_end` | 4 | A tab's inset after its close mark. |
+| `tab_close` | 24 | The side of a tab's close mark, and of the small tools of a header. |
+| `menu_title_x` | 8 | A menu bar title's inset across. |
+| `menu_title_y` | 4 | A menu bar title's inset down. |
+| `menu_inset` | 4 | A menu's list, from its edge to its entries. |
+| `menu_item_x` | 8 | An entry's inset across. |
+| `menu_item_y` | 6 | An entry's inset down. |
+| `menu_w` | 144 | The narrowest a menu's list is. |
+| `submenu_w` | 128 | The narrowest a submenu's list is. |
+| `menu_mark` | 32 | The indent a check or a radio entry gives its text, for the mark. |
+| `menu_max_w` | 576 | The widest a menu's list grows (a list of recent files). |
+| `menu_aside` | 16 | The gap between an entry's text and its aside (a recent file's folder). |
+| `card_x` | 12 | A hover card's inset across. |
+| `card_y` | 8 | A hover card's inset down. |
+| `card_w` | 768 | The widest a hover card grows. |
+| `dialog_inset` | 24 | A dialog's inset. |
+| `dialog_gap` | 24 | Between a dialog's parts: its header, its body, its footer. |
+| `dialog_w` | 448 | The widest a dialog grows. |
+| `dialog_wide_w` | 576 | The widest a dialog of settings grows. |
+| `alert_w` | 512 | The widest an alert dialog grows. |
+| `section_inset` | 16 | A bordered section's inset, inside a dialog. |
+| `list_row_h` | 44 | A row of a list inside a dialog. |
+| `button_h` | 36 | A button's height. |
+| `button_sm_h` | 32 | A small button's height. |
+| `button_xs_h` | 24 | An extra small button's height. |
+| `button_lg_h` | 40 | A large button's height. |
+| `button_x` | 10 | A button's inset across. |
+| `button_gap` | 6 | Between a button's icon and its text. |
+| `field_h` | 36 | A field's height. |
+| `field_x` | 10 | A field's inset across. |
+| `field_y` | 4 | A field's inset down. |
+| `text_area_h` | 64 | The least a text area is high. |
+| `label_to_field` | 8 | Between a label and the control it names. |
+| `badge_h` | 20 | A badge's height. |
+| `badge_x` | 8 | A badge's inset across. |
+| `scrollbar_w` | 10 | A scrollbar's width. |
+| `scrollbar_inset` | 2 | How far a scrollbar's thumb keeps off its edges. |
+| `split_grab` | 4 | The band a split's line is grabbed in. |
+| `icon` | 16 | An icon's side. |
+| `icon_sm` | 12 | A small icon's side. |
+| `find_h` | 36 | The find bar's height. |
+| `find_field_h` | 28 | The find bar's field's height. |
 
 Sizes here are the host's **shared vocabulary**, not every number it draws: a
 widget's own interlocking geometry (the patcher's box and port series, the piano

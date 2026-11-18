@@ -1,6 +1,6 @@
-The face the GUI host draws its text with, DejaVuSans.ttf beside this file,
-is a subset of DejaVu Sans 2.37 (https://dejavu-fonts.github.io/), made by
-subset.sh. It is distributed under the license of the DejaVu fonts, which
+The face the GUI host falls back to for a character its interface's face
+does not draw, DejaVuSans.ttf beside this file, is a subset of DejaVu Sans
+2.37 (https://dejavu-fonts.github.io/), made by subset.sh. It is distributed under the license of the DejaVu fonts, which
 follows as the font itself carries it.
 
 Fonts are (c) Bitstream (see below). DejaVu changes are in public domain. Glyphs imported from Arev fonts are (c) Tavmjung Bah (see below)

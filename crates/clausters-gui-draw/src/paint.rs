@@ -102,6 +102,36 @@ fn corners(r: Rect, radius: f32) -> [(f32, f32, f32); 4] {
     ]
 }
 
+/// **The outline of `r` with `radius` corners, grown by `d`** (shrunk when
+/// it is negative, never past its middle), clockwise from the top-left
+/// corner's start: the same number of points whatever the radius, so two
+/// contours of one shape pair point by point. Shrunk past its radius, a
+/// corner is a point that keeps moving in.
+fn contour(r: Rect, radius: f32, d: f32) -> Vec<[f32; 2]> {
+    const SEGMENTS: usize = 6;
+    let radius = radius.min(r.w * 0.5).min(r.h * 0.5).max(0.0);
+    let d = d.max(-0.5 * r.w.min(r.h));
+    // the contour's corner radius, or how far past its corner it has moved
+    let e = radius + d;
+    let mut points = Vec::with_capacity(4 * (SEGMENTS + 1));
+    for (cx, cy, from) in corners(r, radius) {
+        let to = from + std::f32::consts::FRAC_PI_2;
+        // the corner's outward diagonal, one unit along each axis
+        let (ox, oy) = (from.cos() + to.cos(), from.sin() + to.sin());
+        let (cx, cy) = if e < 0.0 {
+            (cx + e * ox, cy + e * oy)
+        } else {
+            (cx, cy)
+        };
+        let rad = e.max(0.0);
+        for i in 0..=SEGMENTS {
+            let a = from + std::f32::consts::FRAC_PI_2 * i as f32 / SEGMENTS as f32;
+            points.push([cx + rad * a.cos(), cy + rad * a.sin()]);
+        }
+    }
+    points
+}
+
 /// A batch of flat-colored triangles in device-pixel space.
 #[derive(Default)]
 pub struct Mesh {
@@ -646,6 +676,101 @@ impl Mesh {
         }
     }
 
+    /// **A rounded rectangle whose edge fades over `blur`**: what a surface
+    /// casts on the window, drawn as a browser draws a box's shadow -- the
+    /// edge's coverage falls as a gaussian whose deviation is half the blur,
+    /// from whole at `blur` inside the edge to nothing at `blur` outside it.
+    ///
+    /// Five contours of the shape, grown and shrunk across the blur, carry
+    /// the coverage at their offset (one deviation apart), and the batch's
+    /// colors are interpolated between them: rings of triangles with a color
+    /// per vertex and a fan inside the innermost, in this same batch.
+    pub fn soft_rect(&mut self, r: Rect, radius: f32, blur: f32, color: Color) {
+        if r.w <= 0.0 || r.h <= 0.0 {
+            return;
+        }
+        if blur < 0.5 {
+            return self.round_rect(r, radius, color);
+        }
+        /// `(offset in blurs, coverage)` from inside the edge outwards.
+        const RAMP: [(f32, f32); 5] = [
+            (-1.0, 1.0),
+            (-0.5, 0.841),
+            (0.0, 0.5),
+            (0.5, 0.159),
+            (1.0, 0.0),
+        ];
+        let rings: Vec<(Vec<[f32; 2]>, Color)> = RAMP
+            .iter()
+            .map(|&(at, coverage)| {
+                let d = at * blur;
+                let mut c = color;
+                c[3] *= coverage;
+                (contour(r, radius, d), c)
+            })
+            .collect();
+        // the inside, flat, as a fan from the middle
+        let (core, c) = (&rings[0].0, rings[0].1);
+        let mid = [r.x + r.w * 0.5, r.y + r.h * 0.5];
+        for i in 0..core.len() {
+            let j = (i + 1) % core.len();
+            self.tri_shaded([mid, core[i], core[j]], [c, c, c]);
+        }
+        // and each ring between two contours
+        for pair in rings.windows(2) {
+            let ((a, ca), (b, cb)) = (&pair[0], &pair[1]);
+            for i in 0..a.len() {
+                let j = (i + 1) % a.len();
+                self.tri_shaded([a[i], b[i], b[j]], [*ca, *cb, *cb]);
+                self.tri_shaded([a[i], b[j], a[j]], [*ca, *cb, *ca]);
+            }
+        }
+    }
+
+    /// A triangle with a color per corner, which the rasterizer interpolates
+    /// -- clipped as [`tri`](Self::tri) clips, the colors taken where a cut
+    /// falls.
+    fn tri_shaded(&mut self, p: [[f32; 2]; 3], c: [Color; 3]) {
+        let Some(clip) = self.clip else {
+            for i in 0..3 {
+                self.vertex(p[i], c[i]);
+            }
+            return;
+        };
+        let mut poly: Vec<([f32; 2], Color)> = p.iter().copied().zip(c).collect();
+        for edge in 0..4 {
+            let side = |q: [f32; 2]| match edge {
+                0 => q[0] - clip.x,
+                1 => clip.x + clip.w - q[0],
+                2 => q[1] - clip.y,
+                _ => clip.y + clip.h - q[1],
+            };
+            let mut next = Vec::with_capacity(poly.len() + 1);
+            for i in 0..poly.len() {
+                let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+                let (sa, sb) = (side(a.0), side(b.0));
+                if sa >= 0.0 {
+                    next.push(a);
+                }
+                if (sa >= 0.0) != (sb >= 0.0) {
+                    let t = sa / (sa - sb);
+                    let at: [f32; 2] = std::array::from_fn(|k| a.0[k] + (b.0[k] - a.0[k]) * t);
+                    let col: Color = std::array::from_fn(|k| a.1[k] + (b.1[k] - a.1[k]) * t);
+                    next.push((at, col));
+                }
+            }
+            poly = next;
+            if poly.len() < 3 {
+                return;
+            }
+        }
+        for i in 1..poly.len() - 1 {
+            for v in [poly[0], poly[i], poly[i + 1]] {
+                self.vertex(v.0, v.1);
+            }
+        }
+    }
+
     /// One corner's arc as a strip between an outer and an inner radius (a fan
     /// when `inner` is zero) -- the multitrack both the filled box and the frame are
     /// built from, so a rounded border follows exactly the edge its fill drew.
@@ -879,6 +1004,42 @@ impl<K: PartialEq> KeptParts<K> {
 
 #[cfg(test)]
 mod tests {
+
+    /// **A shadow fades across its blur**: whole inside it, half at the
+    /// edge, nothing past it, so the surface's shape with no line around
+    /// it; and with no blur it is the rounded box itself.
+    #[test]
+    fn a_soft_rect_fades_from_inside_its_edge_to_past_it() {
+        let r = Rect::new(20.0, 20.0, 60.0, 40.0);
+        let mut m = Mesh::new();
+        m.soft_rect(r, 8.0, 6.0, [0.0, 0.0, 0.0, 0.2]);
+        let e = m.extent().unwrap();
+        assert!(
+            (e.x - 14.0).abs() < 0.01 && (e.w - 72.0).abs() < 0.01,
+            "{e:?}"
+        );
+        let alphas: Vec<f32> = m.alphas().collect();
+        let most = alphas.iter().copied().fold(0.0, f32::max);
+        let least = alphas.iter().copied().fold(1.0, f32::min);
+        assert!((most - 0.2).abs() < 1e-6 && least == 0.0, "{most} {least}");
+        assert!(
+            alphas.iter().any(|a| (a - 0.1).abs() < 1e-6),
+            "half at the edge"
+        );
+
+        let mut sharp = Mesh::new();
+        sharp.soft_rect(r, 8.0, 0.0, [0.0, 0.0, 0.0, 0.2]);
+        let mut round = Mesh::new();
+        round.round_rect(r, 8.0, [0.0, 0.0, 0.0, 0.2]);
+        assert_eq!(sharp.flat_vertices(), round.flat_vertices());
+
+        // clipped, the colors are taken where the cut falls
+        let mut cut = Mesh::new();
+        cut.set_clip(Some(Rect::new(0.0, 0.0, 50.0, 100.0)));
+        cut.soft_rect(r, 8.0, 6.0, [0.0, 0.0, 0.0, 0.2]);
+        let e = cut.extent().unwrap();
+        assert!(e.x + e.w <= 50.0 + 1e-3, "{e:?}");
+    }
 
     /// A batch joined with a shift lands moved, its colors untouched.
     #[test]

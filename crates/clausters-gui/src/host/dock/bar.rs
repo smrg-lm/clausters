@@ -27,9 +27,6 @@ use super::{Dock, Grip, GroupPlace, Landing, Side};
 use crate::host::menu::{Entry, EntryKind};
 use crate::host::popup::{self, Anchor, Owner, Stack};
 
-/// The widest a tab's title stands, in characters of the bar's text.
-const TAB_CHARS: f32 = 28.0;
-
 /// One thing a hand can land on in a panel's bar.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BarPart {
@@ -84,11 +81,7 @@ impl Dock {
         let h = r.h;
         let size = self.text_size();
         // a floating panel has nowhere to be dragged to, so no grip
-        let grip_w = if self.floating {
-            0.0
-        } else {
-            (h * 0.75).round()
-        };
+        let grip_w = if self.floating { 0.0 } else { m.panel_grip };
         let mut out = Vec::new();
         if !self.floating {
             out.push((BarPart::Grip, Rect::new(r.x, r.y, grip_w, h)));
@@ -119,18 +112,19 @@ impl Dock {
             }
             return out;
         }
-        let close = (h * 0.7).round();
-        // a long title is cut, not followed: a tab is at most TAB_CHARS wide
-        let most = TAB_CHARS * font::width("0", size);
+        // a tab: its inset, its name, a gap, its close mark and a gap -- a
+        // long name is cut, not followed, at the widest a tab grows
+        let close = m.tab_close;
+        let around = m.tab_inset + 2.0 * m.tab_end + close;
         let natural: Vec<f32> = group
             .panes
             .iter()
-            .map(|&p| font::width(&self.title(p), size).min(most) + 3.0 * m.pad + close)
+            .map(|&p| (font::width(&self.title(p), size) + around).min(m.tab_w))
             .collect();
         let room = (end - r.x - grip_w).max(0.0);
         // a pane filling the header keeps half the bar for its tools
         let room = if headed { room * 0.5 } else { room };
-        let least = close + 2.0 * m.pad + font::width("\u{2026}", size);
+        let least = around + font::width("\u{2026}", size);
         let total: f32 = natural.iter().sum();
         let each = (room / natural.len() as f32).max(least);
         let mut x = r.x + grip_w;
@@ -144,7 +138,7 @@ impl Dock {
                 out.push((
                     BarPart::TabClose(i),
                     Rect::new(
-                        x + w - close - m.pad * 0.5,
+                        x + w - close - m.tab_end,
                         r.y + (h - close) * 0.5,
                         close,
                         close,

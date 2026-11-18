@@ -2608,7 +2608,7 @@ first four are the order the user set; the components come after.
   by test, and the editor headless: the footer across the bottom, its dot
   and line once the session is ready. Its 12 inset waits for `ST5`'s
   spacing per component (the label's own inset is the host's `pad`).
-- ⬜ **ST5: The tokens.** The theme and metrics tables gain the roles of
+- ✅ **ST5: The tokens.** The theme and metrics tables gain the roles of
   "What the host gains" (semantic colors, radii, elevation, the type scale
   with its faces, states, per-component spacing), loaded with the inventory's
   values for light and dark as the host's default look, and the editor's
@@ -2618,6 +2618,34 @@ first four are the order the user set; the components come after.
   included. `docs/gui-protocol.md` lists the roles. Every application
   (audio, multitrack, notes, score) captured before and after, so a domain
   view that changed did so on purpose.
+  *Shipped:* the theme has two looks, `Theme::dark` (the default) and
+  `Theme::light`, the specification's neutrals with the domain colors
+  chosen to read on each ground, picked by a table's reserved `look` key
+  before the roles it names apply; the roles it lacked joined it (`card`,
+  `primary`, `secondary`, `muted`, `input`, the texts on them, `shadow`),
+  and the specification's names are aliases of the host's roles
+  (`foreground` is `text`, `border` is `separator`), all but its `accent`,
+  which is the host's `hover` (`docs/decisions.md`, "The specification's
+  tokens answer to the host's roles"). The size table gained the type scale
+  (`type_xs`..`type_lg` in pixels to the em, with their lines), four radii,
+  three lifts of elevation whose layers are the specification's shadows
+  (`Metrics::shadow`, drawn in the batch by `Draw::shadow` as soft-edged
+  rounded rectangles), `press_shift`, and each component's insets and
+  extents (`bar_inset`, `footer_inset`, `tab_w`, `menu_item_x`,
+  `button_h`, `dialog_inset`, ...), every one generated at the density. Inter
+  is the interface's face, DejaVu Sans its fallback, and Inter Medium a
+  family of its own (`Family::UiMedium`); `font::em_scale` turns a size of
+  the type scale into the scale a drawing takes. The chrome's text took the
+  scale: menus, lists and the dock's tabs at `type_sm`, the menu bar's titles
+  in the medium weight, tips and the status bar at `type_xs`; the tabs and
+  the grip their roles; a window along a dock's edge stands on `secondary`
+  and comes in by `bar_inset` or `footer_inset`, so the footer's text is at
+  12. The editor's look tables are `{"look": ...}`. Captured before and
+  after: the audio, multitrack, notes and score editors (neutral greys for
+  the bluish ones, Inter, the menu titles' weight; `track`, the lanes' and
+  the info views' body, darker than the ground) and the editor. Left to the components that draw them:
+  radii, shadows and states on menus (`ST7`), tooltips (`ST8`), dialogs
+  (`ST9`) and controls (`ST10`), which read the roles shipped here.
 - ⬜ **ST6: Icons.** The Lucide subset as strokes, `icon` on `button`,
   `toggle` and menu entries, in both clients' builders and the protocol
   reference; the editor's and the documentation's tools drawn with them.

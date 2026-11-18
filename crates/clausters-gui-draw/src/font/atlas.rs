@@ -727,12 +727,22 @@ pub fn has_face() -> bool {
     with(|a| a.has_face())
 }
 
-/// **The face the host draws with when nobody names another**: a subset of
-/// DejaVu Sans -- Latin, Greek, Cyrillic, Arabic and Hebrew, and the
-/// punctuation, arrows and symbols an interface writes, with its layout tables
-/// for the shaper -- compiled into the host, so a native window and a page
-/// draw the same text with nothing to find and nothing to fetch.
-/// `assets/fonts/` holds it, its license and the script that makes it.
+/// **The face the host draws its interface with when nobody names
+/// another**: Inter, whole, the face the specification of the host's look
+/// sets the interface in, its regular weight -- compiled into the host, so a
+/// native window and a page draw the same text with nothing to find and
+/// nothing to fetch. It is also the documentation's ([`PROSE`]).
+pub const INTERFACE: &[u8] = include_bytes!("../../assets/fonts/Inter-Regular.ttf");
+
+/// Inter's medium weight: a menu bar's titles, a label over its field, a
+/// button's text ([`Family::UiMedium`](super::Family)).
+pub const INTERFACE_MEDIUM: &[u8] = include_bytes!("../../assets/fonts/Inter-Medium.ttf");
+
+/// **The face the host falls back to** for a character the interface's face
+/// does not draw: a subset of DejaVu Sans -- Latin, Greek, Cyrillic, Arabic
+/// and Hebrew, and the punctuation, arrows and symbols an interface writes,
+/// with its layout tables for the shaper. `assets/fonts/` holds it, its
+/// license and the script that makes it.
 pub const EMBEDDED: &[u8] = include_bytes!("../../assets/fonts/DejaVuSans.ttf");
 
 /// **The face the host draws Devanagari with**, which [`EMBEDDED`] does not
@@ -746,10 +756,10 @@ pub const DEVANAGARI: &[u8] = include_bytes!("../../assets/fonts/NotoSansDevanag
 /// ([`Family::Mono`](super::Family)).
 pub const MONO: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMono.ttf");
 
-/// **The face the host draws documentation with**: Inter, whole, the face
-/// the editor writes its documentation in, its regular weight. Compiled in,
-/// read the first time documentation is drawn ([`Atlas::ensure`]).
-pub const PROSE: &[u8] = include_bytes!("../../assets/fonts/Inter-Regular.ttf");
+/// **The face the host draws documentation with**: the interface's, Inter
+/// in its regular weight, read as a family of its own the first time
+/// documentation is drawn ([`Atlas::ensure`]), beside its other weights.
+pub const PROSE: &[u8] = INTERFACE;
 
 /// Inter's semibold weight: a strong word, a small heading, a table's head.
 pub const PROSE_STRONG: &[u8] = include_bytes!("../../assets/fonts/Inter-SemiBold.ttf");
@@ -763,6 +773,7 @@ pub const PROSE_ITALIC: &[u8] = include_bytes!("../../assets/fonts/Inter-Italic.
 /// The bytes of `family`'s own face, for one loaded when it is asked for.
 fn family_bytes(family: Family) -> Option<&'static [u8]> {
     match family {
+        Family::UiMedium => Some(INTERFACE_MEDIUM),
         Family::Prose => Some(PROSE),
         Family::ProseStrong => Some(PROSE_STRONG),
         Family::ProseBold => Some(PROSE_BOLD),
@@ -771,18 +782,18 @@ fn family_bytes(family: Family) -> Option<&'static [u8]> {
     }
 }
 
-/// Loads [`EMBEDDED`] as the host's typeface, where none is loaded: a second
-/// host of one page finds the first one's face, or the one a client handed
-/// over, and leaves it.
+/// Loads [`INTERFACE`] as the host's typeface, where none is loaded: a
+/// second host of one page finds the first one's face, or the one a client
+/// handed over, and leaves it.
 pub fn set_embedded() -> bool {
-    has_face() || set_face(EMBEDDED)
+    has_face() || set_face(INTERFACE)
 }
 
 /// The face the tests of this module and of [`super`] draw with: the one the
 /// host embeds, so none of them depends on what a machine has installed.
 #[cfg(any(test, feature = "probe"))]
 pub fn system_face() -> Option<Vec<u8>> {
-    Some(EMBEDDED.to_vec())
+    Some(INTERFACE.to_vec())
 }
 
 #[cfg(test)]

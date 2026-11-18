@@ -12,6 +12,7 @@
 //! do not fit the window gather under a last one, whose list holds them as
 //! submenus -- so a narrow window loses no entry.
 
+use super::dock::Edge;
 use super::menu::{Entry, EntryKind};
 use super::popup;
 use super::widget::{Widget, WidgetKind};
@@ -31,7 +32,7 @@ pub fn entries(tree: &Widget) -> Option<&[Entry]> {
 /// shares the row with the tree.
 pub fn bar_h(tree: &Widget, m: &Metrics) -> f32 {
     if entries(tree).is_some() && !inline(tree) {
-        popup::row_h(m.text_scale, m)
+        popup::row_h(title_size(m), m)
     } else {
         0.0
     }
@@ -40,7 +41,7 @@ pub fn bar_h(tree: &Widget, m: &Metrics) -> f32 {
 /// **Whether the bar shares its row with the tree**: in a window along a
 /// dock's edge (an application's bar), the titles come first and the tree
 /// after them, as one row, rather than a band over the tree.
-fn inline(tree: &Widget) -> bool {
+pub fn inline(tree: &Widget) -> bool {
     matches!(
         tree.kind,
         WidgetKind::Window {
@@ -50,10 +51,41 @@ fn inline(tree: &Widget) -> bool {
     )
 }
 
+/// **`area` brought in across by its component's inset**, for a window
+/// along a dock's edge: the application's bar along the top
+/// ([`Metrics::bar_inset`]) and its footer along the bottom
+/// ([`Metrics::footer_inset`]). Any other window's area is its own.
+///
+/// `tree` says the area is the elements', each of which keeps the pad
+/// inside its own rect: the inset is then the component's less that pad, so
+/// what the elements draw stands at the component's inset.
+fn edge_area(tree: &Widget, area: Rect, m: &Metrics, elements: bool) -> Rect {
+    let inset = match tree.kind {
+        WidgetKind::Window {
+            dock_edge: Some(Edge::Top),
+            ..
+        } => m.bar_inset,
+        WidgetKind::Window {
+            dock_edge: Some(Edge::Bottom),
+            ..
+        } => m.footer_inset,
+        _ => return area,
+    };
+    let inset = if elements { inset - m.pad } else { inset };
+    let inset = inset.clamp(0.0, area.w * 0.25);
+    Rect::new(
+        area.x + inset,
+        area.y,
+        (area.w - 2.0 * inset).max(0.0),
+        area.h,
+    )
+}
+
 /// The band the bar occupies inside `area`, or `None` for a window with no
 /// menu: along its top, or -- sharing the row with the tree -- its start.
 pub fn bar(tree: &Widget, area: Rect, m: &Metrics) -> Option<Rect> {
     if inline(tree) {
+        let area = edge_area(tree, area, m, false);
         let entries = entries(tree)?;
         let full = Rect::new(area.x, area.y, area.w, area.h);
         let w = titles(entries, full, m)
@@ -68,10 +100,15 @@ pub fn bar(tree: &Widget, area: Rect, m: &Metrics) -> Option<Rect> {
 /// `area` with the bar's band taken off its top -- or off its start, for a
 /// bar that shares the row -- where the tree is laid out.
 pub fn content(tree: &Widget, area: Rect, m: &Metrics) -> Rect {
-    match bar(tree, area, m) {
-        Some(band) if inline(tree) => {
-            Rect::new(area.x + band.w, area.y, (area.w - band.w).max(0.0), area.h)
-        }
+    let band = bar(tree, area, m);
+    let area = edge_area(tree, area, m, true);
+    match band {
+        Some(band) if inline(tree) => Rect::new(
+            band.x + band.w,
+            area.y,
+            (area.x + area.w - band.x - band.w).max(0.0),
+            area.h,
+        ),
         Some(band) => Rect::new(area.x, area.y + band.h, area.w, (area.h - band.h).max(0.0)),
         None => area,
     }
@@ -88,11 +125,19 @@ pub enum Title {
     More(usize),
 }
 
+/// The face a title is drawn in: the interface's medium weight.
+pub const TITLE_FACE: font::Family = font::Family::UiMedium;
+
+/// The size a title is drawn at: the interface's size of the type scale.
+pub fn title_size(m: &Metrics) -> f32 {
+    font::em_scale(TITLE_FACE, m.type_sm)
+}
+
 /// The titles as they stand on the bar, left to right, each with its
 /// rectangle.
 pub fn titles(entries: &[Entry], band: Rect, m: &Metrics) -> Vec<(Title, Rect)> {
-    let size = m.text_scale;
-    let width = |label: &str| font::width(label, size) + 4.0 * m.pad;
+    let size = title_size(m);
+    let width = |label: &str| font::width_in(TITLE_FACE, label, size) + 2.0 * m.menu_title_x;
     let more_w = width(&symbol::MENU.to_string());
     let widths: Vec<f32> = entries.iter().map(|e| width(&e.label)).collect();
     // How many fit: all of them, or as many as leave room for the title that
@@ -191,6 +236,49 @@ mod tests {
             {"label": "View", "menu": ["Zoom"]},
             {"label": "Help", "verb": "help"},
         ]))
+    }
+
+    /// **A window along a dock's edge is its application's bar or footer**:
+    /// the bar's titles start at the bar's inset and its tree after them,
+    /// the footer's elements draw at the footer's inset (their own pad
+    /// within it), and both stand on the chrome's secondary ground.
+    #[test]
+    fn an_edge_window_takes_its_component_s_inset_and_ground() {
+        use crate::host::guidef::GuiNode;
+        let m = Metrics::default();
+        let window = |edge: &str, menu: bool| {
+            let mut tree = json!({"type": "window", "dock_edge": edge, "h": 40, "margin": 0,
+                "children": [{"id": 2, "type": "label", "text": "a"}]});
+            if menu {
+                tree["menu"] = json!([{"label": "File", "menu": ["New"]}]);
+            }
+            let mut w = Widget::from_node(
+                1,
+                &GuiNode::parse(tree.to_string().as_bytes()).unwrap(),
+                &[],
+            )
+            .unwrap();
+            crate::host::widget::resolve_style(&mut w, &std::sync::Arc::default());
+            w
+        };
+        let area = Rect::new(0.0, 0.0, 800.0, 40.0);
+        let bar_window = window("top", true);
+        let band = bar(&bar_window, area, &m).unwrap();
+        assert_eq!(band.x, m.bar_inset, "the titles at the bar's inset");
+        let rest = content(&bar_window, area, &m);
+        assert_eq!(rest.x, band.x + band.w, "the tree after the titles");
+        assert_eq!(rest.x + rest.w, 800.0 - (m.bar_inset - m.pad));
+
+        let footer = window("bottom", false);
+        let rest = content(&footer, area, &m);
+        assert_eq!(
+            rest.x + m.pad,
+            m.footer_inset,
+            "its text at the footer's inset"
+        );
+        assert_eq!(rest.w, 800.0 - 2.0 * (m.footer_inset - m.pad));
+        let theme = footer.theme.as_deref().expect("a window's theme");
+        assert_eq!(theme.background, theme.secondary);
     }
 
     #[test]
