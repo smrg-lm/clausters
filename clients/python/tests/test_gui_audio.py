@@ -9,7 +9,7 @@ does to the take is the crate's.
 
 import pytest
 
-from clausters.gui import edit
+from clausters.gui import edit, open_app
 from clausters.gui.editing import AudioEditor, reads_in_place
 from clausters.segments import Segment
 from clausters.soundfile import SoundFile
@@ -94,18 +94,27 @@ def a_file(path="/takes/take.wav", codec="wav") -> SoundFile:
 
 def opened(host=None, **answers):
     host = host or FakeHost(answers)
-    editor = edit(a_file(), host=host)
-    assert isinstance(editor, AudioEditor)
-    return editor, host
+    opened = open_app(a_file(), host=host)
+    assert isinstance(opened, AudioEditor)
+    return opened, host
 
 
-def test_edit_opens_the_hosts_application_on_the_file():
-    editor, host = opened()
+def test_open_app_opens_the_hosts_application_on_the_file():
+    application, host = opened()
     assert host.calls[0] == ("open", "audio", {"title": "Audio", "path": "/takes/take.wav"})
-    assert editor.window == 7 and not editor.closed
-    # a second edit of the same file is the editor already open
-    assert edit(a_file(), host=host) is editor
+    assert application.window == 7 and not application.closed
+    # a second call over the same file is the editor already open
+    assert open_app(a_file(), host=host) is application
     assert len([c for c in host.calls if c[0] == "open"]) == 1
+
+
+def test_edit_opens_the_take_alone_beside_the_application():
+    host = FakeHost()
+    view = edit(a_file(), host=host)
+    assert host.calls[0] == ("open", "audio", {"title": "Audio", "path": "/takes/take.wav",
+                                               "chrome": False})
+    assert edit(a_file(), host=host) is view
+    assert open_app(a_file(), host=host) is not view, "the application is another window"
 
 
 def test_a_title_and_layers_are_the_opens():
@@ -129,7 +138,7 @@ def test_a_buffer_is_not_edited():
 
 def test_silence_not_on_disk_opens_as_a_new_file_and_a_compressed_one_opens():
     host = FakeHost()
-    edit(SoundFile.empty(2, 100, SR), host=host)
+    open_app(SoundFile.empty(2, 100, SR), host=host)
     assert host.calls[0] == ("open", "audio", {"title": "Audio"})
     assert host.calls[-1][2] == {"do": {"verb": "newFile", "shape": {
         "channels": 2, "frames": 100, "rate": SR}}}

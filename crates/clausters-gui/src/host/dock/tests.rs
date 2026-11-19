@@ -276,16 +276,17 @@ fn a_tab_dragged_out_of_the_dock_is_told_to_the_front() {
     );
 }
 
-/// **A page is a layout of its own**: a window naming a page opens on it,
-/// made and shown; switching pages hides what the shown page does not name
-/// and frees nothing; every page keeps its arrangement.
+/// **A page is a layout of its own**: a page of panels is made and shown;
+/// switching pages hides what the shown page does not name and frees
+/// nothing; every page keeps its arrangement.
 #[test]
 fn a_page_keeps_its_own_arrangement() {
     let mut ws = dock((600, 400), 4.0, &[1, 2]);
     assert_eq!(ws.page_names(), [FIRST_PAGE]);
     ws.take_dirty();
-    ws.add_on(3, Some("Multitrack"));
-    assert_eq!(ws.page_name(), "Multitrack");
+    ws.show_page("Mix");
+    ws.add(3);
+    assert_eq!(ws.page_name(), "Mix");
     assert!(ws.take_dirty().layout);
     assert_eq!(ws.placed().map(|(id, _)| id).collect::<Vec<_>>(), [3]);
     assert!(
@@ -301,11 +302,11 @@ fn a_page_keeps_its_own_arrangement() {
             side: Side::Bottom,
         },
     )
-    .expect("under the multitrack");
+    .expect("under the other");
     let here = ws.tree().to_json();
     assert!(ws.show_page(FIRST_PAGE));
     assert_eq!(ws.tree().panes(), [1, 2], "the first page as it was left");
-    assert!(ws.show_page("Multitrack"));
+    assert!(ws.show_page("Mix"));
     assert_eq!(ws.tree().to_json(), here, "and this one as it was left");
     // a pane freed leaves every page
     ws.remove(1);
@@ -315,7 +316,7 @@ fn a_page_keeps_its_own_arrangement() {
     // the page tabs are a panel's: their strip is a panel's bar
     assert_eq!(ws.page_strip_h(), ws.strip_h());
     // a page closed: its arrangement goes, its panes stay
-    ws.close_page("Multitrack").expect("closes");
+    ws.close_page("Mix").expect("closes");
     assert!(ws.holds(3) && !ws.shown(3));
     // one page left: the strip goes and the page takes its room
     let whole = ws.groups()[0].whole;
@@ -326,9 +327,10 @@ fn a_page_keeps_its_own_arrangement() {
     );
 }
 
-/// **The page strip switches pages**, its last tab makes a copy of the page
-/// shown, and a tab dropped on another page's tab moves its pane there. It
-/// shows only while there are two pages to choose from.
+/// **The page strip switches pages**, a page's cross closes it (the
+/// first page has none), its tabs open no menu, and a tab dropped on another
+/// page's tab moves its pane there. It shows only while there are two pages
+/// to choose from.
 #[test]
 fn the_page_strip_switches_and_takes_a_dragged_tab() {
     let mut ws = dock((600, 400), 4.0, &[1, 2]);
@@ -344,25 +346,91 @@ fn the_page_strip_switches_and_takes_a_dragged_tab() {
     assert_eq!(ws.page_names(), [FIRST_PAGE, "Page 2"]);
     assert_eq!(ws.page_name(), "Page 2");
     assert_eq!(ws.tree().panes(), [1, 2], "a copy of the page shown");
-    let plus = ws.page_parts()[2].1;
-    press(&mut ws, plus);
-    assert_eq!(ws.page_names(), [FIRST_PAGE, "Page 2", "Page 3"]);
-    let first = ws.page_parts()[0].1;
+    ws.new_page(None, false).expect("a page");
+    let parts = ws.page_parts();
+    assert!(
+        !parts.iter().any(|(p, _)| *p == PagePart::Close(0)),
+        "the first page has no cross"
+    );
+    assert_eq!(parts.len(), 5, "three tabs, two crosses, no new page's tab");
+    let first = ws.page_tab(0).expect("a tab");
+    ws.moved(f64::from(first.x + 4.0), f64::from(first.y + first.h * 0.5));
+    assert!(ws.context_pressed(), "the dock takes the press");
+    assert!(ws.menu().is_none(), "and opens no menu");
     press(&mut ws, first);
     assert_eq!(ws.page_name(), FIRST_PAGE);
+    // Page 3's cross closes it
+    let cross = parts
+        .iter()
+        .find(|(p, _)| *p == PagePart::Close(2))
+        .expect("a cross")
+        .1;
+    press(&mut ws, cross);
+    assert_eq!(ws.page_names(), [FIRST_PAGE, "Page 2"]);
     // pane 2's tab dragged onto Page 2's tab: it leaves this page
     let tab = handle(&ws, 1);
     ws.moved(f64::from(tab.x + tab.w * 0.5), f64::from(tab.y + 3.0));
     ws.pressed();
-    let to = ws.page_parts()[1].1;
+    let to = ws.page_tab(1).expect("a tab");
     ws.moved(f64::from(to.x + 2.0), f64::from(to.y + to.h * 0.5));
-    ws.moved(f64::from(to.x + to.w * 0.5), f64::from(to.y + to.h * 0.5));
+    ws.moved(f64::from(to.x + 4.0), f64::from(to.y + to.h * 0.5));
     assert_eq!(ws.landing().map(|l| l.0), Some(Landing::Page(1)));
     ws.released();
     assert_eq!(ws.tree().panes(), [1]);
     assert!(ws.holds(2));
     ws.show_page("Page 2");
     assert_eq!(ws.tree().panes(), [1, 2]);
+}
+
+/// **An application is a page**: a window naming a page opens on a new
+/// one of its own (named after it, numbered when taken) with no panel's bar
+/// over it; a panel opened meanwhile goes to a page that is not an
+/// application's; no pane is dragged, placed or moved onto an application's
+/// page, nor the application off it; its cross closes the application, and
+/// the application's going takes its page.
+#[test]
+fn an_application_is_alone_on_a_page_of_its_own() {
+    let mut ws = dock((600, 400), 4.0, &[1]);
+    assert!(ws.add_on(7, Some("Score")));
+    assert_eq!(ws.page_names(), [FIRST_PAGE, "Score"]);
+    assert_eq!(ws.page_name(), "Score");
+    assert!(ws.is_app(7) && ws.page_app(1) == Some(7));
+    let g = &ws.groups()[0];
+    assert_eq!(g.strip.h, 0.0, "no panel's bar over an application");
+    assert_eq!(g.body, g.whole);
+    assert!(ws.add_on(8, Some("Score")));
+    assert_eq!(ws.page_names(), [FIRST_PAGE, "Score", "Score 2"]);
+    // a panel opened while an application is shown goes to the first page
+    assert!(ws.add_on(9, None));
+    assert_eq!(ws.page_name(), FIRST_PAGE);
+    assert_eq!(ws.tree().panes(), [1, 9]);
+    assert!(ws.groups()[0].strip.h > 0.0, "a panel keeps its bar");
+    // nothing joins an application, nor leaves it
+    assert!(ws.land(9, Landing::Page(1)).is_err());
+    assert!(ws.land(1, Landing::Join { of: 7, at: None }).is_err());
+    assert!(ws.place(7).is_err(), "an application stays on its page");
+    ws.show_page("Score");
+    assert!(ws.place(1).is_err(), "a panel stays off it");
+    assert_eq!(ws.tree().panes(), [7]);
+    // its page is no new page's copy
+    let copy = ws.new_page(None, true).expect("a page");
+    assert!(ws.tree().panes().is_empty());
+    ws.close_page(&copy).expect("closed");
+    // its cross asks the application to close; its going takes the page
+    ws.close_page("Score").expect("closed");
+    assert_eq!(ws.take_dirty().close, [7]);
+    assert!(ws.remove(7));
+    assert_eq!(ws.page_names(), [FIRST_PAGE, "Score 2"]);
+}
+
+/// **An application opened on an empty dock takes its one page**, named
+/// after it, and leaves no empty page beside it.
+#[test]
+fn an_application_on_an_empty_dock_takes_its_page() {
+    let mut ws = Dock::new((600, 400), metrics(4.0));
+    assert!(ws.add_on(7, Some("Multitrack")));
+    assert_eq!(ws.page_names(), ["Multitrack"]);
+    assert_eq!(ws.page_strip().h, 0.0);
 }
 
 /// **The state says the scale its device pixels are at**, so an owner reads
@@ -399,7 +467,7 @@ fn the_pages_round_trip() {
     let call = Call::read(r#"{"verb": "page", "name": "B"}"#).expect("reads");
     let state = other.apply(&call).expect("shows");
     assert_eq!(state["page"], json!("B"));
-    assert_eq!(state["page_tabs"].as_array().map(Vec::len), Some(3));
+    assert_eq!(state["page_tabs"].as_array().map(Vec::len), Some(2));
 }
 
 /// **The divider lit while it is dragged is where it is now**, not where

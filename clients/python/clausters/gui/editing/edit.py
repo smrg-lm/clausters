@@ -1,4 +1,13 @@
-"""`edit(x)`: the verb, and what it opens.
+"""`edit(x)` and `open_app(x)`: the verbs, and what they open.
+
+**`edit` opens the view; `open_app` opens the application.** `edit(x)` shows
+what is edited -- the multitrack, the page, the roll, the take, the curve --
+with none of its application's chrome: no menu bar, no toolbar, no status
+line, the keys kept. In a dock it is a panel beside the code, and the code
+goes on working with the structure, which is the edited one. `open_app(x)`
+opens the application over it, chrome and all, which in a dock is a page of
+its own with its menu in the dock's bar; `open_app(app="multitrack")` opens one
+over nothing. Both answer the same handle.
 
 **One call opens a window**, the way `clausters.plot` and `clausters.scope` do:
 the ambient host is resolved here, the editor is opened on it and its event loop
@@ -75,7 +84,9 @@ def edit(structure, *, sample_rate: float = 0.0, host=None,
 
 def edit(structure, *, sample_rate: float = 0.0,
          host=None, open: bool = True, **options):
-    """Open ``structure`` in an editor of its own kind.
+    """**Open ``structure``'s view**, in an editor of its own kind, with none
+    of its application's chrome: in a dock, a panel beside the code.
+    `open_app` opens the application instead.
 
     Args:
         structure: what to edit: a `clausters.SoundFile` (in the audio
@@ -112,11 +123,9 @@ def edit(structure, *, sample_rate: float = 0.0,
             `clausters.gui.editing.Editor.window`), and ``context`` for a view
             that joins an editing context the caller already has (which is what
             makes a composed window undo across several structures in one
-            order), and ``chrome``: ``False`` opens what is edited with none
-            of the application's chrome around it, the keys kept
-            (`clausters.gui.editing.Editor`). What the host's applications open
-            (a sequence, a score) takes ``title``, ``width``, ``height`` and
-            ``chrome`` of these, their window being the application's. A curve
+            order). What the host's applications open (a sequence, a score)
+            takes ``title``, ``width`` and ``height`` of these, their window
+            being the application's. A curve
             also takes ``min``/``max`` and ``start``/``end``,
             the ranges its values and its times are kept in
             (`clausters.gui.editing.PointsEditor`). A
@@ -155,6 +164,8 @@ def edit(structure, *, sample_rate: float = 0.0,
     """
     if isinstance(structure, Node):
         return _node_editor(structure, host, open, options)
+    # **the view alone**, unless the caller (`open_app`) asks for the chrome
+    options.setdefault("chrome", False)
     if open:
         opened = _already_open(structure, host, options)
         if opened is not None:
@@ -291,10 +302,13 @@ def _already_open(structure, host, options):
     Found among the views of the structure's editing context, since every
     editor attaches there when it opens. A timeline is rendered into a new
     sequence by each call, so it never finds one."""
+    # the view and the application over one structure are two windows
+    chrome = bool(options.get("chrome", True))
     if isinstance(structure, SoundFile):
         _open_audio[:] = [e for e in _open_audio if not e.closed]
         return next((e for e in _open_audio
                      if e._file is not None and e._file.path == structure.path
+                     and e.chrome == chrome
                      and (host is None or e.host is host)), None)
     if _is_saved_session(structure) or is_multitrack(structure):
         _open_multitracks[:] = [e for e in _open_multitracks if not e.closed]
@@ -302,6 +316,7 @@ def _already_open(structure, host, options):
                      if (e.multitrack is structure or (
                          _is_saved_session(structure) and structure.path is not None
                          and e.path == str(structure.path)))
+                     and e.chrome == chrome
                      and (host is None or e.host is host)), None)
     if is_events(structure) or is_score(structure):
         if isinstance(structure, Timeline):
@@ -314,16 +329,98 @@ def _already_open(structure, host, options):
                      if e.structure is structure
                      and isinstance(e, ScoreEditor) == page
                      and (page or e.y_axis == axis)
+                     and e.chrome == chrome
                      and (host is None or e.host is host)), None)
     if not is_curve(structure):
         return None
     context = options.get("context") or Editing.of(structure)
     for view in context.views():
         if (type(view) is PointsEditor and view.structure is structure
+                and view.chrome == chrome
                 and view.window is not None
                 and (host is None or view._host is host)):
             return view
     return None
+
+
+#: **The applications `open_app` opens over nothing**, by name: what each
+#: opens over -- an empty sequence for the roll, no document for the score
+#: editor, no file for the audio editor, no session for the multitrack.
+APPS = ("multitrack", "score", "notes", "audio")
+
+
+@overload
+def open_app(structure: SoundFile, *, app: None = None, sample_rate: float = 0.0,
+             host=None, open: bool = True, **options) -> AudioEditor: ...
+
+
+@overload
+def open_app(structure: "MultitrackSession | Multitrack", *, app: None = None,
+             sample_rate: float = 0.0, host=None, open: bool = True,
+             **options) -> MultitrackEditor: ...
+
+
+@overload
+def open_app(structure=None, *, app: "str | None" = None, sample_rate: float = 0.0,
+             host=None, open: bool = True, **options): ...
+
+
+def open_app(structure=None, *, app: "str | None" = None, sample_rate: float = 0.0,
+           host=None, open: bool = True, **options):
+    """**Open the application over ``structure``**, chrome and all: its menu
+    bar, its toolbar, its status line. In a dock it is a page of its own,
+    its menu in the dock's bar while that page is shown. `edit` opens the
+    view alone.
+
+    Args:
+        structure: what to edit, as `edit` takes it: a sound file, a
+            multitrack or a saved session, a sequence or a timeline (``view``
+            choosing the roll or the page), a symbolic score or a curve.
+            ``None`` opens the application ``app`` names over nothing.
+        app: with no ``structure``, which application: ``"multitrack"``,
+            ``"score"``, ``"notes"`` (over an empty sequence, the editor's
+            ``structure``) or ``"audio"``.
+        sample_rate, host, open, options: as `edit` takes them.
+
+    Returns:
+        The editor, open, as `edit` answers it.
+
+    Raises:
+        TypeError: for a running node, whose controls have no application
+            (`edit` opens them), and for what `edit` refuses.
+        ValueError: for an ``app`` that names no application, or for both
+            ``structure`` and ``app``.
+    """
+    if structure is not None and app is not None:
+        raise ValueError("`open_app` opens a structure or an application, not both: "
+                         "the structure says which application edits it")
+    if structure is None:
+        if app not in APPS:
+            raise ValueError(f"no application named {app!r}: `open_app` opens "
+                             + ", ".join(repr(name) for name in APPS))
+        options["chrome"] = True
+        if app == "multitrack":
+            made = MultitrackEditor(None, **options)
+            if open:
+                made.open(host)
+                _open_multitracks.append(made)
+            return made
+        if app == "audio":
+            made = AudioEditor(None, **options)
+            if open:
+                made.open(host)
+                _open_audio.append(made)
+            return made
+        if app == "score":
+            return _hosted(ScoreEditor(None, **options), host, open)
+        from ...seq import EventSequence
+
+        return _hosted(NotesEditor(EventSequence(), **options), host, open)
+    if isinstance(structure, Node):
+        raise TypeError("a running node's controls have no application: "
+                        "`edit(node)` opens them")
+    options["chrome"] = True
+    return edit(structure, sample_rate=sample_rate, host=host, open=open, **options)
 
 
 def _ambient_rate() -> float:

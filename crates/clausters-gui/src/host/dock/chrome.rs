@@ -6,16 +6,18 @@
 //! A panel's bar reads as an editor's panel does: a grip at its start, the
 //! window's title -- or, for a panel of several windows or of a document,
 //! their tabs, the one shown standing out on the ground of the panel with a
-//! line along its top -- and its buttons at the end. The page strip is a `choice`'s row of tabs
-//! ([`choice::draw`]); a menu is the popup layer's list ([`draw_list`]).
+//! line along its top -- and its buttons at the end. The page strip is a row
+//! of the same tabs, mirrored, each page's with its cross but the first's; a
+//! menu is the popup layer's list ([`draw_stack`]).
 
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::font::{self, symbol};
+use clausters_gui_draw::metrics::Metrics;
 use clausters_gui_draw::paint::Mesh;
 use clausters_gui_draw::rect::Rect;
 use clausters_gui_draw::theme::{Color, Theme};
 
-use super::{BarPart, Dock, GroupPlace, Landing, Side};
+use super::{BarPart, Dock, GroupPlace, Landing, PagePart, Side};
 use crate::host::frame::{draw_stack, draw_tip};
 use crate::host::graphics::choice;
 use crate::host::graphics::controls::icon;
@@ -24,26 +26,13 @@ use crate::host::popup::Tip;
 impl Dock {
     /// **The dock's chrome**, into `d`.
     pub fn draw(&self, d: &mut Draw) {
-        let size = self.text_size();
-        for group in self.groups() {
+        // an application's page has no panel's bar
+        for group in self.groups().iter().filter(|g| g.strip.h > 0.0) {
             self.draw_bar(d, group);
         }
         // the pages, along the bottom; a floating panel has none
         if self.page_strip_h() > 0 {
-            let strip = self.page_strip();
-            d.mesh.rect(strip, d.theme.status_bar);
-            // the tabs of a panel's bar, mirrored: the strip is under the pages
-            choice::draw_at(
-                d,
-                choice::View::Tabs,
-                &self.page_options(),
-                self.page_index(),
-                None,
-                strip,
-                size,
-                self.lit_page(),
-                choice::TabEdge::Bottom,
-            );
+            self.draw_pages(d);
         }
         // the divider under the hand, in the ring's role
         if let Some(divider) = self.lit_divider() {
@@ -113,7 +102,7 @@ impl Dock {
             .to_string(),
             Landing::Join { .. } => "Tabs".to_string(),
             Landing::Out => "New window".to_string(),
-            Landing::Page(i) => self.page_options().get(i).cloned().unwrap_or_default(),
+            Landing::Page(i) => self.page_names().get(i).cloned().unwrap_or_default(),
         }
     }
 
@@ -183,16 +172,19 @@ impl Dock {
                         theme.separator
                     });
                     let hot = hot || lit == Some(BarPart::TabClose(i));
-                    choice::tab_ground(mesh, m, theme, r, mark, hot, choice::TabEdge::Top);
-                    let after = 2.0 * m.tab_end + m.tab_close;
-                    font::text_ellipsis(
+                    let title = self.title(group.panes[i]);
+                    let closes = self.closable(group.panes[i]);
+                    tab(
                         mesh,
-                        &self.title(group.panes[i]),
-                        r.x + m.tab_inset,
-                        r.y + (r.h - glyph) * 0.5,
-                        (r.w - m.tab_inset - after).max(0.0),
+                        m,
+                        theme,
+                        r,
+                        &title,
+                        mark,
+                        hot,
+                        closes,
+                        choice::TabEdge::Top,
                         size,
-                        if shown { theme.text } else { theme.text_dim },
                     );
                 }
                 // a tab's close mark shows on the tab shown and under the
@@ -204,8 +196,7 @@ impl Dock {
                         let dot = (r.h * 0.18).max(2.0 * m.divider_w);
                         mesh.disc(r.x + r.w * 0.5, r.y + r.h * 0.5, dot, theme.text);
                     } else if under || i == group.active {
-                        // the specification's 12 of a tab's cross, where a tool's icon is 16
-                        button(mesh, r, icon("x", symbol::CLOSE), hot, size * 0.75, theme);
+                        tab_cross(mesh, r, hot, size, theme);
                     }
                 }
                 BarPart::Menu => button(mesh, r, icon("menu", symbol::MENU), hot, size, theme),
@@ -219,6 +210,107 @@ impl Dock {
             theme.separator,
         );
     }
+}
+
+impl Dock {
+    /// **The page strip**: a panel's tabs, mirrored, since the strip is
+    /// under the pages -- the line along its top, the page shown on the
+    /// panel's ground with its line along the bottom, and each tab's cross
+    /// on the page shown and under the hand.
+    fn draw_pages(&self, d: &mut Draw) {
+        let size = self.text_size();
+        let strip = self.page_strip();
+        let lit = self.lit_page();
+        let names = self.page_names();
+        let shown = self.page_index();
+        let (mesh, m, theme) = d.parts();
+        mesh.rect(strip, theme.status_bar);
+        mesh.rect(
+            Rect::new(strip.x, strip.y, strip.w, m.divider_w),
+            theme.separator,
+        );
+        let parts = self.page_parts();
+        let (marks, tabs): (Vec<_>, Vec<_>) = parts
+            .into_iter()
+            .partition(|(part, _)| matches!(part, PagePart::Close(_)));
+        for (part, r) in tabs.into_iter().chain(marks) {
+            let hot = lit == Some(part);
+            match part {
+                PagePart::Tab(i) => {
+                    let mark = (i == shown).then_some(theme.separator);
+                    let hot = hot || lit == Some(PagePart::Close(i));
+                    let closes = self.page_closable(i);
+                    tab(
+                        mesh,
+                        m,
+                        theme,
+                        r,
+                        &names[i],
+                        mark,
+                        hot,
+                        closes,
+                        choice::TabEdge::Bottom,
+                        size,
+                    );
+                }
+                PagePart::Close(i) => {
+                    let under = lit == Some(PagePart::Tab(i)) || hot;
+                    if under || i == shown {
+                        tab_cross(mesh, r, hot, size, theme);
+                    }
+                }
+                PagePart::More(from) => {
+                    let mark = (shown >= from).then_some(theme.separator);
+                    choice::tab_ground(mesh, m, theme, r, mark, hot, choice::TabEdge::Bottom);
+                    font::text_centered(mesh, &symbol::MENU.to_string(), r, size, theme.text_dim);
+                }
+            }
+        }
+    }
+}
+
+/// **A tab**, as a panel's bar and the page strip draw one: its ground,
+/// marked when `mark` says it is the one shown, and its name from its inset,
+/// cut to leave room for its cross when it has one (`closes`).
+#[allow(clippy::too_many_arguments)] // one tab: its place, its name, its state
+fn tab(
+    mesh: &mut Mesh,
+    m: &Metrics,
+    theme: &Theme,
+    r: Rect,
+    name: &str,
+    mark: Option<Color>,
+    hot: bool,
+    closes: bool,
+    edge: choice::TabEdge,
+    size: f32,
+) {
+    choice::tab_ground(mesh, m, theme, r, mark, hot, edge);
+    let after = if closes {
+        2.0 * m.tab_end + m.tab_close
+    } else {
+        m.tab_inset
+    };
+    let glyph = font::height(size);
+    font::text_ellipsis(
+        mesh,
+        name,
+        r.x + m.tab_inset,
+        r.y + (r.h - glyph) * 0.5,
+        (r.w - m.tab_inset - after).max(0.0),
+        size,
+        if mark.is_some() {
+            theme.text
+        } else {
+            theme.text_dim
+        },
+    );
+}
+
+/// **A tab's cross**: the specification's 12 of it, where a tool's icon is
+/// 16.
+fn tab_cross(mesh: &mut Mesh, r: Rect, hot: bool, size: f32, theme: &Theme) {
+    button(mesh, r, icon("x", symbol::CLOSE), hot, size * 0.75, theme);
 }
 
 /// A button of a bar: its glyph, on the hover ground under the hand.

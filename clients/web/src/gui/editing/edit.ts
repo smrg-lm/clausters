@@ -1,5 +1,14 @@
 /**
- * `edit(x)`: the verb, and what it opens.
+ * `edit(x)` and `openApp(x)`: the verbs, and what they open.
+ *
+ * **`edit` opens the view; `openApp` opens the application.** `edit(x)` shows
+ * what is edited -- the multitrack, the page, the roll, the take, the curve --
+ * with none of its application's chrome: no menu bar, no toolbar, no status
+ * line, the keys kept. In a dock it is a panel beside the code, and the code
+ * goes on working with the structure, which is the edited one. `openApp(x)`
+ * opens the application over it, chrome and all, which in a dock is a page of
+ * its own with its menu in the dock's bar; `openApp(null, { app: "multitrack" })`
+ * opens one over nothing. Both answer the same handle.
  *
  * One call over the fundamental structures -- a buffer's samples, a break-point
  * curve, a timeline of events, and a **multitrack** -- each of which is an
@@ -32,7 +41,7 @@ import type { Editor } from "./editor.ts";
 import type { GuiHost, Stage } from "../host.ts";
 import { NotesEditor, isEvents } from "./events.ts";
 import { Timeline } from "../../seq/timeline.ts";
-import type { EventSequence } from "../../seq/sequence.ts";
+import { EventSequence } from "../../seq/sequence.ts";
 import { MultitrackEditor, isMultitrack } from "./multitrack.ts";
 import type { Server } from "../../defs/server/index.ts";
 import { PointsEditor, isCurve } from "./points.ts";
@@ -70,8 +79,9 @@ export interface EditOptions {
      */
     extra?: GenericEditorOptions<never>["extra"];
     /**
-     * `false` opens what is edited with none of the application's chrome
-     * around it, the keys kept ({@link GenericEditorOptions.chrome}).
+     * Whether the window carries the application's chrome: `false` for
+     * `edit`, the view alone, and `true` for {@link openApp}, which a caller
+     * of `edit` leaves alone ({@link GenericEditorOptions.chrome}).
      */
     chrome?: boolean;
     /**
@@ -249,6 +259,8 @@ export async function edit(
     options: EditOptions = {},
 ): Promise<Editor<never> | NodeEditor | AudioEditor | MultitrackEditor | NotesEditor | ScoreEditor> {
     if (structure instanceof Node) return nodeEditor(structure, options);
+    // **the view alone**, unless the caller (`openApp`) asks for the chrome
+    options = { ...options, chrome: options.chrome ?? false };
     if (structure instanceof SoundFile) return audioEditor(structure, options);
     if (structure instanceof MultitrackSession || isMultitrack(structure)) {
         return multitrackEditor(structure, options);
@@ -292,10 +304,13 @@ async function audioEditor(file: SoundFile, options: EditOptions): Promise<Audio
     if (options.open !== false) {
         const current = openAudio.find((editor) =>
             editor.opening?.path === file.path &&
+            editor.chrome === (options.chrome ?? true) &&
             (options.host === undefined || editor.host === options.host));
         if (current !== undefined) return current;
     }
-    const editor = new AudioEditor(file, { title: options.title, layers: options.layers });
+    const editor = new AudioEditor(file, {
+        title: options.title, layers: options.layers, chrome: options.chrome,
+    });
     if (options.open !== false) {
         await editor.open(options.host, { stage: options.stage });
         openAudio.push(editor);
@@ -325,10 +340,11 @@ async function multitrackEditor(
             (editor.multitrack === structure ||
                 (structure instanceof MultitrackSession && structure.path !== null &&
                     editor.path === String(structure.path))) &&
+            editor.chrome === (options.chrome ?? true) &&
             (options.host === undefined || editor.host === options.host));
         if (current !== undefined) return current;
     }
-    const editor = new MultitrackEditor(structure, { title: options.title });
+    const editor = new MultitrackEditor(structure, { title: options.title, chrome: options.chrome });
     if (options.open !== false) {
         await editor.open(options.host, { stage: options.stage });
         openMultitracks.push(editor);
@@ -393,6 +409,7 @@ function alreadyOpen(structure: unknown, options: EditOptions): Editor<never> | 
             editor.structure === structure &&
             (editor instanceof ScoreEditor) === page &&
             (page || (editor as NotesEditor).yAxis === axis) &&
+            editor.chrome === (options.chrome ?? true) &&
             (options.host === undefined || editor.host === options.host)) ?? null;
     }
     if (!isCurve(structure)) return null;
@@ -401,6 +418,7 @@ function alreadyOpen(structure: unknown, options: EditOptions): Editor<never> | 
         if (
             view instanceof PointsEditor &&
             view.structure === structure &&
+            view.chrome === (options.chrome ?? true) &&
             view.window !== null &&
             (options.host === undefined || view.app.host === options.host)
         ) {
@@ -408,6 +426,90 @@ function alreadyOpen(structure: unknown, options: EditOptions): Editor<never> | 
         }
     }
     return null;
+}
+
+/**
+ * **The applications {@link openApp} opens over nothing**, by name: what each
+ * opens over -- an empty sequence for the roll, no document for the score
+ * editor, no file for the audio editor, no session for the multitrack.
+ */
+export const APPS = ["multitrack", "score", "notes", "audio"] as const;
+
+/** What {@link openApp} takes: what {@link edit} does, `app` naming an application. */
+export interface OpenAppOptions extends Omit<EditOptions, "app" | "chrome"> {
+    /**
+     * With no structure, which application: `"multitrack"`, `"score"`,
+     * `"notes"` (over an empty sequence, the editor's `structure`) or
+     * `"audio"`.
+     */
+    app?: (typeof APPS)[number];
+}
+
+/**
+ * **Opens the application over `structure`**, chrome and all: its menu bar,
+ * its toolbar, its status line. In a dock it is a page of its own, its menu
+ * in the dock's bar while that page is shown. {@link edit} opens the view
+ * alone.
+ *
+ * `structure` is what {@link edit} takes; `null` opens the application
+ * `options.app` names over nothing. Answers the editor, open, as `edit`
+ * answers it. Throws a `TypeError` for a running node, whose controls have no
+ * application (`edit` opens them), and a `RangeError` for an `app` that names
+ * none, or for both a structure and an `app`.
+ */
+export async function openApp(structure: Node, options?: OpenAppOptions): Promise<never>;
+export async function openApp(structure: SoundFile, options?: OpenAppOptions): Promise<AudioEditor>;
+export async function openApp(structure: MultitrackSession | Multitrack, options?: OpenAppOptions): Promise<MultitrackEditor>;
+export async function openApp(structure: unknown, options?: OpenAppOptions): Promise<any>;
+export async function openApp(
+    structure: unknown = null,
+    options: OpenAppOptions = {},
+): Promise<Editor<never> | NodeEditor | AudioEditor | MultitrackEditor | NotesEditor | ScoreEditor> {
+    const { app, ...rest } = options;
+    if (structure !== null && structure !== undefined && app !== undefined) {
+        throw new RangeError(
+            "`openApp` opens a structure or an application, not both: " +
+                "the structure says which application edits it",
+        );
+    }
+    if (structure === null || structure === undefined) {
+        if (app === undefined || !APPS.includes(app)) {
+            throw new RangeError(
+                `no application named ${JSON.stringify(app)}: \`openApp\` opens ` +
+                    APPS.map((name) => `"${name}"`).join(", "),
+            );
+        }
+        const window = { title: rest.title, chrome: true };
+        const open = rest.open !== false;
+        if (app === "multitrack") {
+            const made = new MultitrackEditor(null, window);
+            if (open) {
+                await made.open(rest.host, { stage: rest.stage });
+                openMultitracks.push(made);
+            }
+            return made;
+        }
+        if (app === "audio") {
+            const made = new AudioEditor(null, window);
+            if (open) {
+                await made.open(rest.host, { stage: rest.stage });
+                openAudio.push(made);
+            }
+            return made;
+        }
+        const made = app === "score"
+            ? new ScoreEditor(null, { ...window, width: rest.width, height: rest.height })
+            : new NotesEditor(new EventSequence(), { ...window, width: rest.width, height: rest.height });
+        if (open) {
+            await made.open(rest.host, { stage: rest.stage });
+            openHosted.push(made);
+        }
+        return made;
+    }
+    if (structure instanceof Node) {
+        throw new TypeError("a running node's controls have no application: `edit(node)` opens them");
+    }
+    return edit(structure, { ...rest, chrome: true });
 }
 
 /**

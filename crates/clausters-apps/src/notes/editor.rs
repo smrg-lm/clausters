@@ -950,6 +950,7 @@ impl NotesEditor {
             use crate::chrome::{self, App};
             chrome::dress(
                 &mut window,
+                App::Notes,
                 chrome::menu(App::Notes, self.asks),
                 chrome::toolbar(App::Notes, None),
                 widget,

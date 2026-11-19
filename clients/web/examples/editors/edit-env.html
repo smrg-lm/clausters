@@ -19,7 +19,7 @@
   </head>
   <body>
     <main>
-      <div id="note"><code>edit(env)</code>: draw an envelope and hear the
+      <div id="note"><code>openApp(env)</code>: draw an envelope and hear the
 server play it.
 
 An <code>Env</code> is a <b>curve</b>, so <code>edit</code> opens it -- one
@@ -94,7 +94,7 @@ bar</b> plays it, as the <b>play</b> button under the curve does.
         // row under the curve, beside the segment shape menu -- they are the
         // page's, and the editor never touches their ids -- and `editor.window`
         // resolves them by name.
-        editor = await gui.edit(env, {
+        editor = await gui.openApp(env, {
           sampleRate: 48_000, title: "amp env -> EnvGen", stage: $("stage"),
           // **The ranges are rules.** An amplitude envelope means something at
           // its ends: its values are kept from 0 to 1 and its times within two

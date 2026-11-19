@@ -1,51 +1,48 @@
-// Applications as pages of the editor's window.
+// Applications as pages of the editor's window, and views beside the code.
 //
 // Upload it in the editor's page (File > Open > Upload...) and evaluate it a
 // cell at a time (Ctrl+Enter). The twin of
 // clients/python/examples/panels/applications.py.
 //
-// The session draws in the page's own host: each application on a page of
-// its own, in the windows panel. The page's editor is not the host's dock yet,
-// so an application keeps its own menu bar there.
+// `openApp(x)` opens the application that edits `x`; `openApp(null, { app })`
+// opens one over nothing. `edit(x)` opens the view alone. The page's editor is
+// not the host's dock yet, so here each opens in the windows panel and an
+// application keeps its own menu bar.
 
 // %%
 import { Session, play, scope } from "clausters";
-import { edit } from "clausters/gui";
+import { edit, openApp } from "clausters/gui";
 import { INF, EventSequence, pbind, pseq } from "clausters/seq";
 
 const s = (await Session.live()).activate();
-const g = await s.gui();   // the page's host: nothing is opened
-
-(await g.dockCall({ verb: "layout" })).panes.map((p) => p.title);
-
-// %% a sequence in the score editor, on a page of its own
 const a = EventSequence.fromRows([[60, 1], [62, 0.5], [64, 0.5], [67, 1], [72, 1]]);
-const q = await edit(a, { view: "score", title: "a" });
-(await g.dockCall({ verb: "layout" })).page;
 
-// %% the multitrack, on another page
-const mt = await g.openApp("multitrack");
-(await g.dockCall({ verb: "layout" })).pages.map((p) => p.name);
+// %% the score editor over the sequence, on a page of its own
+const q = await openApp(a, { view: "score", title: "a" });
 
-// %% back to the first page
-(await g.dockCall({ verb: "page", name: "Main" })).page;
+// %% an empty multitrack, on another page
+const mt = await openApp(null, { app: "multitrack" });
 
-// %% a scope of the session's server
+// %% the roll over the same sequence, beside the code: no menu, no toolbar
+const r = await edit(a, { title: "a" });
+
+// %% what the roll and the page left in the sequence: drag a note first
+a.toRows(["midinote", "dur"]);
+
+// %% a scope of the session's server, beside the code
 const p = play(pbind({ instrument: "default", degree: pseq([0, 2, 4, 7], INF), dur: 0.25 }));
 const w = await scope(0);
 
 // %%
 p.stop();
 w.close();
+r.close();
 
 // %%
 s.close();
 
 /*
-- The page tabs under the windows switch between the score and the
-  multitrack.
-- On the score's page, Measures > Insert After says "select a note first"
-  under the score: the pick is the score editor's. Click a note and pick it
-  again.
+- Measures > Insert After on the score's window says "select a note first"
+  with nothing selected: the pick is the score editor's.
 - Restart takes the session's windows away with it.
 */

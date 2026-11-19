@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""``edit(env)``: draw an envelope and hear the server play it.
+"""``open_app(env)``: draw an envelope and hear the server play it.
 
 An `clausters.defs.Env` is a **curve**, so ``edit`` opens it -- one ``bpf``
 widget, the ``points`` vocabulary, and the editing history that comes with the
@@ -43,7 +43,7 @@ import sys
 
 from clausters import Session, Synth
 from clausters.defs import DoneAction, Env, SynthDef, env_gen, out, sine
-from clausters.gui import ICON, button, edit
+from clausters.gui import ICON, button, open_app
 
 # %% [markdown]
 # ## Launch the server and the GUI
@@ -92,7 +92,7 @@ def play():
 
 
 # %%
-editor = edit(
+editor = open_app(
     env, sample_rate=48_000.0, title="amp env -> EnvGen",
     # **The ranges are rules.** An amplitude envelope means something at its
     # ends: its values are kept from 0 to 1 and its times within two seconds,

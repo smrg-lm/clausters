@@ -123,6 +123,8 @@ pub enum Said {
     Closed(i32),
     /// `/gui_dock_reply seq json`.
     Dock { seq: i32, reply: Value },
+    /// `/gui_app_reply seq json`: an application opened, or why not.
+    App { reply: Value },
     /// `/gui_info id type key value ...`: what a widget is now.
     Info {
         id: i32,
@@ -178,6 +180,13 @@ impl Said {
                     _ => Value::Null,
                 };
                 Said::Dock { seq, reply }
+            }
+            "/gui_app_reply" => {
+                let reply = match m.args.get(1) {
+                    Some(OscType::String(s)) => serde_json::from_str(s).unwrap_or(Value::Null),
+                    _ => Value::Null,
+                };
+                Said::App { reply }
             }
             "/gui_info" => {
                 let Some(id) = int(0) else {

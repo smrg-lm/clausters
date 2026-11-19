@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>clausters: edit(file)</title>
+    <title>clausters: openApp(file)</title>
     <link rel="icon" href="data:," />
     <style>
       html, body { margin: 0; min-height: 100%; background: #0d0d12;
@@ -19,7 +19,7 @@
   </head>
   <body>
     <main>
-      <div id="note"><code>edit(file)</code>: a take in the audio editor, edited
+      <div id="note"><code>openApp(file)</code>: a take in the audio editor, edited
 as a list of parts.
 
 A <code>SoundFile</code> opens in the audio editor, an application the GUI host
@@ -183,7 +183,7 @@ behind the dialog; in its name field it undoes the typing.
         // is. The file is not written while you edit -- every edit is a new
         // list of parts over it and over the files the edits rendered -- until
         // you save.
-        const editor = await gui.edit(take, { title: "take", stage: $("stage") });
+        const editor = await gui.openApp(take, { title: "take", stage: $("stage") });
 
         // Two views of the same take: waveform and spectrogram replace each
         // other in the take's lane, and both stacks them in two lanes.
@@ -230,7 +230,7 @@ behind the dialog; in its name field it undoes the typing.
                 Math.sin(2 * Math.PI * 440.0 * (1 + c / 4) * i / rate);
             }
           }
-          const wide = await gui.edit(
+          const wide = await gui.openApp(
             await SoundFile.write("out/edit_audio_8ch.wav", tones, 8, rate, { sampleFormat: "float" }),
             { title: "eight channels" },
           );
@@ -240,7 +240,7 @@ behind the dialog; in its name field it undoes the typing.
 
         // A new file is silence of a shape, added to this editor and written
         // nowhere yet: its first save -- Ctrl+S, or File -> Save as... --
-        // asks where it goes. `edit(SoundFile.empty(2, frames, rate))` opens
+        // asks where it goes. `openApp(SoundFile.empty(2, frames, rate))` opens
         // the same in a window of its own.
         $("new-file").disabled = false;
         $("new-file").onclick = () =>

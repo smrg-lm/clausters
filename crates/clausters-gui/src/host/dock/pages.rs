@@ -5,17 +5,33 @@
 //! hides those it does not name, and frees nothing -- a pane on no page shown
 //! keeps its def and whatever it plays, as a pane behind a tab does.
 //!
-//! A window may name the page it opens on (its `dock_page`), which is how an
-//! application gives its kind of work a page of its own: the page is made the
-//! first time and shown as the window opens.
+//! **An application is a page.** A window that names a page (its
+//! `dock_page`) is an application's, and opens on a new page of its own,
+//! named after it, which holds it alone: no panel goes there, no panel's bar
+//! is drawn over it (its menu is the dock's bar), and it goes on no other
+//! page. Closing that page closes the application, and the application
+//! closing takes its page. Panels -- every other window -- stay on the pages
+//! that are not an application's.
+//!
+//! A page's tab is shown by a click and closed by its cross; the first page
+//! has none, since it is the dock's own.
 
+use clausters_gui_draw::font;
 use serde_json::{Value, json};
 
-use super::{Dock, Edge, FIRST_PAGE, Landing, Node, Part, Rect};
-use crate::host::graphics::choice;
+use super::{Dock, Edge, FIRST_PAGE, Landing, Node, Rect};
 
-/// The page strip's last tab: a new page, a copy of the one shown.
-const NEW_PAGE: &str = "+";
+/// One thing a hand can land on in the page strip.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PagePart {
+    /// The tab of the page at this index.
+    Tab(usize),
+    /// That tab's cross.
+    Close(usize),
+    /// The tabs from this index on, which did not fit: a press shows them
+    /// one after another.
+    More(usize),
+}
 
 impl Dock {
     /// The pages' names, in the order of their tabs.
@@ -56,7 +72,7 @@ impl Dock {
                 .find(|n| !self.pages.iter().any(|(p, _)| p == n))
                 .unwrap_or_default(),
         };
-        let layout = if copy {
+        let layout = if copy && self.page_app(self.page).is_none() {
             self.tree.clone()
         } else {
             Node::default()
@@ -86,6 +102,8 @@ impl Dock {
 
     /// **Closes page `name`**: its arrangement goes, its panes stay (on the
     /// other pages that name them, or on none). The last page is not closed.
+    /// An application's page closes by closing the application, which its
+    /// front asks it first ([`super::Dirty::close`]): its page goes with it.
     pub fn close_page(&mut self, name: &str) -> Result<(), String> {
         let at = self
             .pages
@@ -94,6 +112,20 @@ impl Dock {
             .ok_or_else(|| format!("no page {name:?}"))?;
         if self.pages.len() == 1 {
             return Err("the dock keeps one page".into());
+        }
+        if let Some(app) = self.page_app(at) {
+            self.dirty.close.push(app);
+            return Ok(());
+        }
+        self.drop_page(at);
+        Ok(())
+    }
+
+    /// **Page `at` goes**, the one before it shown if it was: what its
+    /// tree holds stays a pane, on no page.
+    pub(super) fn drop_page(&mut self, at: usize) {
+        if self.pages.len() == 1 || at >= self.pages.len() {
+            return;
         }
         if at == self.page {
             self.switch_to(if at == 0 { 1 } else { at - 1 });
@@ -104,8 +136,70 @@ impl Dock {
         }
         // one page left: the strip goes, and the page takes its room
         self.arrange();
+        self.dirty.layout = true;
         self.dirty.chrome = true;
-        Ok(())
+    }
+
+    /// The layout of page `at`: the shown one's as it stands.
+    fn page_tree(&self, at: usize) -> Option<&Node> {
+        if at == self.page {
+            Some(&self.tree)
+        } else {
+            self.pages.get(at).map(|(_, tree)| tree)
+        }
+    }
+
+    /// **The application page `at` holds**, if it is an application's.
+    pub fn page_app(&self, at: usize) -> Option<i32> {
+        let tree = self.page_tree(at)?;
+        tree.panes().into_iter().find(|p| self.apps.contains(p))
+    }
+
+    /// The page pane `pane` is on (the first, for a panel on several).
+    pub(super) fn page_of(&self, pane: i32) -> Option<usize> {
+        (0..self.pages.len()).find(|&i| {
+            self.page_tree(i)
+                .is_some_and(|tree| tree.group_of(pane).is_some())
+        })
+    }
+
+    /// Whether pane `pane` is an application ([`Dock::add_on`]).
+    pub fn is_app(&self, pane: i32) -> bool {
+        self.apps.contains(&pane)
+    }
+
+    /// **A new page for an application, named `name`** (or `name 2`, and
+    /// on), shown: the dock's one page instead, renamed, while it holds
+    /// nothing.
+    pub(super) fn open_app_page(&mut self, name: &str) {
+        let free = std::iter::once(name.to_string())
+            .chain((2..).map(|n| format!("{name} {n}")))
+            .find(|n| !self.pages.iter().any(|(p, _)| p == n))
+            .unwrap_or_default();
+        if self.pages.len() == 1 && self.tree.panes().is_empty() {
+            self.pages[0].0 = free;
+            self.dirty.chrome = true;
+            return;
+        }
+        self.pages.push((free, Node::default()));
+        self.switch_to(self.pages.len() - 1);
+    }
+
+    /// **A panel never opens on an application's page**: with one shown,
+    /// the first page that is not an application's is shown instead, made
+    /// when there is none.
+    pub(super) fn leave_app_page(&mut self) {
+        if self.page_app(self.page).is_none() {
+            return;
+        }
+        match (0..self.pages.len()).find(|&i| self.page_app(i).is_none()) {
+            Some(at) => {
+                self.switch_to(at);
+            }
+            None => {
+                let _ = self.new_page(Some(FIRST_PAGE), false);
+            }
+        }
     }
 
     /// **Puts pane `pane` on the page shown**, as a column of its own, if
@@ -113,6 +207,11 @@ impl Dock {
     pub fn place(&mut self, pane: i32) -> Result<(), String> {
         if !self.holds(pane) {
             return Err(format!("no pane {pane}"));
+        }
+        if self.tree.group_of(pane).is_none()
+            && (self.apps.contains(&pane) || self.page_app(self.page).is_some())
+        {
+            return Err("an application is alone on its page".into());
         }
         if self.tree.group_of(pane).is_none() {
             self.tree.add(pane);
@@ -137,7 +236,7 @@ impl Dock {
     /// Pane `pane` leaves the page shown for page `to` (a new one past the
     /// last), as a column of its own there.
     pub(super) fn move_to_page(&mut self, pane: i32, to: usize) {
-        if to == self.page {
+        if to == self.page || self.apps.contains(&pane) || self.page_app(to).is_some() {
             return;
         }
         self.tree.remove(pane);
@@ -197,22 +296,79 @@ impl Dock {
         Rect::new(0.0, y as f32, self.size.0 as f32, h as f32)
     }
 
-    /// The page strip's tabs: every page, then the new page's.
-    pub fn page_options(&self) -> Vec<String> {
-        let mut options = self.page_names();
-        options.push(NEW_PAGE.to_string());
-        options
+    /// Whether page `at`'s tab has a cross: every page's but the first,
+    /// which is the dock's own.
+    pub(super) fn page_closable(&self, at: usize) -> bool {
+        at > 0
     }
 
-    /// The page strip's tabs as laid out.
-    pub fn page_parts(&self) -> Vec<(Part, Rect)> {
-        choice::parts(
-            choice::View::Tabs,
-            &self.page_options(),
-            self.page_strip(),
-            self.text_size(),
-            self.metrics(),
-        )
+    /// **The page strip's parts**, each with its rectangle: every page's tab
+    /// (its cross before it, so it is hit first), as a panel's tabs are laid
+    /// out -- its inset, its name, and for a tab with a cross a gap, the
+    /// cross and a gap -- and, past the strip's end, one tab holding the
+    /// rest.
+    pub fn page_parts(&self) -> Vec<(PagePart, Rect)> {
+        let r = self.page_strip();
+        let m = self.metrics();
+        let size = self.text_size();
+        let names = self.page_names();
+        let close = m.tab_close;
+        let widths: Vec<f32> = names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                let around = if self.page_closable(i) {
+                    m.tab_inset + 2.0 * m.tab_end + close
+                } else {
+                    2.0 * m.tab_inset
+                };
+                (font::width(name, size) + around).min(m.tab_w)
+            })
+            .collect();
+        let more = font::width(&font::symbol::MENU.to_string(), size) + 2.0 * m.tab_inset;
+        let total: f32 = widths.iter().sum();
+        let fit = if total <= r.w {
+            names.len()
+        } else {
+            let mut used = 0.0;
+            widths
+                .iter()
+                .take_while(|w| {
+                    used += **w;
+                    used + more <= r.w
+                })
+                .count()
+        };
+        let mut out = Vec::new();
+        let mut x = r.x;
+        for (i, w) in widths[..fit].iter().enumerate() {
+            if self.page_closable(i) {
+                out.push((
+                    PagePart::Close(i),
+                    Rect::new(
+                        x + w - close - m.tab_end,
+                        r.y + (r.h - close) * 0.5,
+                        close,
+                        close,
+                    ),
+                ));
+            }
+            out.push((PagePart::Tab(i), Rect::new(x, r.y, *w, r.h)));
+            x += w;
+        }
+        if fit < names.len() {
+            let w = more.min((r.x + r.w - x).max(0.0));
+            out.push((PagePart::More(fit), Rect::new(x, r.y, w, r.h)));
+        }
+        out
+    }
+
+    /// Where page `at`'s tab is, when the strip shows it.
+    pub fn page_tab(&self, at: usize) -> Option<Rect> {
+        self.page_parts()
+            .into_iter()
+            .find(|(part, _)| *part == PagePart::Tab(at))
+            .map(|(_, r)| r)
     }
 
     /// The page shown's index.
@@ -221,7 +377,7 @@ impl Dock {
     }
 
     /// The part of the page strip lit under the pointer.
-    pub fn lit_page(&self) -> Option<Part> {
+    pub fn lit_page(&self) -> Option<PagePart> {
         match (&self.grip, &self.hot) {
             (None, Some(super::Hot::Page(part))) => Some(*part),
             _ => None,
@@ -229,26 +385,31 @@ impl Dock {
     }
 
     /// The part of the page strip at `(x, y)`.
-    pub(super) fn page_at(&self, x: f64, y: f64) -> Option<Part> {
+    pub(super) fn page_at(&self, x: f64, y: f64) -> Option<PagePart> {
         if !self.page_strip().contains(x, y) {
             return None;
         }
-        choice::part_at(&self.page_parts(), x, y)
+        self.page_parts()
+            .into_iter()
+            .find(|(_, r)| r.contains(x, y))
+            .map(|(part, _)| part)
     }
 
-    /// **A press on the page strip**: a page's tab shows it, the last tab
-    /// makes a page copying the one shown, and the tab the others gather
+    /// **A press on the page strip**: a page's tab shows it, its cross
+    /// closes it ([`Dock::close_page`]), and the tab the others gather
     /// behind shows them one after another.
-    pub(super) fn press_page(&mut self, part: Part) {
+    pub(super) fn press_page(&mut self, part: PagePart) {
         let n = self.pages.len();
         match part {
-            Part::Option(i) if i < n => {
+            PagePart::Tab(i) => {
                 self.switch_to(i);
             }
-            Part::Option(_) => {
-                let _ = self.new_page(None, true);
+            PagePart::Close(i) => {
+                if let Some(name) = self.page_names().get(i).cloned() {
+                    let _ = self.close_page(&name);
+                }
             }
-            Part::More(from) => {
+            PagePart::More(from) => {
                 let next = if self.page >= from {
                     self.page + 1
                 } else {
@@ -256,18 +417,19 @@ impl Dock {
                 };
                 self.switch_to(if next < n { next } else { from });
             }
-            _ => {}
         }
         self.dirty.chrome = true;
     }
 
     /// **Where a tab dragged onto the page strip lands**: on another page's
-    /// tab, that page; on the last tab, a new page.
+    /// tab, that page -- never an application's, which holds it alone.
     pub(super) fn page_landing(&self, x: f64, y: f64) -> Option<(Landing, Rect)> {
-        let parts = self.page_parts();
-        let (part, rect) = parts.iter().find(|(_, r)| r.contains(x, y))?;
-        match *part {
-            Part::Option(i) if i != self.page => Some((Landing::Page(i), *rect)),
+        match self.page_at(x, y)? {
+            PagePart::Tab(i) | PagePart::Close(i)
+                if i != self.page && self.page_app(i).is_none() =>
+            {
+                Some((Landing::Page(i), self.page_tab(i)?))
+            }
             _ => None,
         }
     }

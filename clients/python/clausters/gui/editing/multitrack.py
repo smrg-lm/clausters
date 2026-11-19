@@ -64,12 +64,16 @@ class MultitrackEditor(Marking, HostedEditor):
             first `save` names its file.
         title: the window's title; the session file's name when not given,
             ``"Untitled"`` for a multitrack.
+        chrome: ``False`` opens the multitrack alone, with none of the
+            application's chrome around it (its transport row kept under it),
+            the keys kept.
 
     Raises:
         ValueError: a session with no file: save it first.
     """
 
-    def __init__(self, structure=None, *, title: "str | None" = None):
+    def __init__(self, structure=None, *, title: "str | None" = None,
+                 chrome: bool = True):
         from ...document import Multitrack
 
         if structure is None:
@@ -92,7 +96,8 @@ class MultitrackEditor(Marking, HostedEditor):
             self._multitrack = structure.multitrack
             self._path = str(path)
             default = os.path.basename(self._path)
-        HostedEditor.__init__(self, title=str(title) if title is not None else default)
+        HostedEditor.__init__(self, title=str(title) if title is not None else default,
+                              chrome=chrome)
         self._local = None
         self._holders = _Held()
         self._snapshot = _snapshots.get(self._multitrack) if self._multitrack is not None else None

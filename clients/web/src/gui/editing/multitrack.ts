@@ -49,6 +49,11 @@ export { MultitrackTransport };
 export interface MultitrackEditorOptions {
     /** The window's title; the session file's name when not given, `"Untitled"` for a multitrack. */
     title?: string;
+    /**
+     * `false` opens the multitrack alone, with none of the application's
+     * chrome around it (its transport row kept under it), the keys kept.
+     */
+    chrome?: boolean;
 }
 
 /** A session as a window hands it back, and as `/gui_app_open` takes it again: its contents, its file, its last save. */
@@ -96,7 +101,10 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
     private snapshot: Snapshot | null = null;
     private readonly holders = new Held();
 
-    constructor(structure: MultitrackSession | Multitrack | null = null, { title }: MultitrackEditorOptions = {}) {
+    constructor(
+        structure: MultitrackSession | Multitrack | null = null,
+        { title, chrome }: MultitrackEditorOptions = {},
+    ) {
         if (structure !== null && !(structure instanceof Multitrack)
             && (structure.path === null || structure.path === undefined)) {
             throw new RangeError(
@@ -107,7 +115,7 @@ export class MultitrackEditor extends HostedEditor implements WindowOver {
         const filed = structure === null || structure instanceof Multitrack ? null : String(structure.path);
         const fallback = structure === null ? "Multitrack"
             : filed === null ? "Untitled" : filed.split("/").pop()!;
-        super(fallback, { title });
+        super(fallback, { title, chrome });
         this.filed = filed;
         if (structure === null) {
             this.session = null;

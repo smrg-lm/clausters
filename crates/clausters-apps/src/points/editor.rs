@@ -215,6 +215,7 @@ impl PointsEditor {
             use crate::chrome::{self, App};
             chrome::dress(
                 &mut window,
+                App::Points,
                 chrome::menu(App::Points, false),
                 Value::Null,
                 ids.curve,

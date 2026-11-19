@@ -55,7 +55,7 @@ import os
 import sys
 
 from clausters import Session
-from clausters.gui import edit
+from clausters.gui import open_app
 from clausters.seq import Timeline
 from clausters.seq.event import Event
 
@@ -81,7 +81,7 @@ timeline = Timeline([
 session = Session.live().activate()
 session.gui()
 notes = timeline.render_events()
-editor = edit(notes,
+editor = open_app(notes,
               sample_rate=session.server.query_info().nominal_sample_rate,
               title="window verbs")
 

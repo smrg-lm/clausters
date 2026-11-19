@@ -45,7 +45,7 @@ system break, a slur, a crescendo and two dynamics are written into the model
 the same way. These are the page's edits, made through the score before the
 window opens; the same operators are the window's Transform menu.
 
-<b><code>edit(score)</code> opens the editor over the very score the page
+<b><code>openApp(score)</code> opens the editor over the very score the page
 holds.</b> It returns the editor, as <code>edit</code> does for every
 structure; the edited data is read on the score passed in, which <i>is</i> the
 edited one.
@@ -138,7 +138,7 @@ a clip.
 editor's entries and the page's alike.
 
 <b>The chrome is optional, and the keys are not chrome.</b> <b>page alone</b>
-opens the same score with <code>chrome: false</code>: the page in its scroll
+opens the same score with <code>edit</code>, which has no chrome: the page in its scroll
 over the status line, and nothing else composed around it -- the light window
 of a page that edits through the handle. The keys stay, and F1 shows them all
 on a sheet its close mark or Escape takes down. What a hand writes there is
@@ -196,7 +196,7 @@ process, no socket.</div>
     <script type="module">
       import { Session, notation } from "../../dist/index.js";
       import { loadCore, opfs } from "../../dist/page.js";
-      import { edit } from "../../dist/gui/index.js";
+      import { edit, openApp } from "../../dist/gui/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
@@ -225,12 +225,12 @@ B c d e | f2 e d | c B A B | G4 |
       // plays, and this opens it in the notes editor -- where what is done to
       // it stays in that sequence.
       const roll = () =>
-        edit(score.renderEvents(), { title: "The score, rendered", stage: el("roll") });
+        openApp(score.renderEvents(), { title: "The score, rendered", stage: el("roll") });
 
       // The page alone, and the notes back in the page's code. The chrome is
       // how a hand reaches what the editor does when nothing else can: a
       // standalone host has only the window. A page has the handle, so it can
-      // open the same score with none of it -- `chrome: false` is the page in
+      // open the same score with none of it -- `edit` is the page in
       // its scroll over the status line, with nothing else composed around it
       // and so nothing to send or to keep current. The keys are not chrome and
       // stay: N and the letters write, the arrows and Delete act on the
@@ -241,13 +241,13 @@ B c d e | f2 e d | c B A B | G4 |
       // of the sequence it renders into (`separate`) as rows of
       // `[midinote, dur]` played back to back (`toRows`): a chord is a list,
       // a silence `null`. The whole window is closed
-      // first: `edit` over a score with an editor open on it hands that one
+      // first: `openApp` over a score with an editor open on it hands that one
       // back, since a second window over the score would draw on the first
       // one's widgets.
       const alone = async () => {
         await editor.close();
         const page = await edit(score, {
-          chrome: false, title: "The page alone", width: 900, height: 600,
+          title: "The page alone", width: 900, height: 600,
           stage: el("alone"),
         });
         page.onChange = () => log(JSON.stringify(
@@ -308,7 +308,7 @@ B c d e | f2 e d | c B A B | G4 |
         const session = (await Session.embed()).activate();
         await session.gui();   // the host the editor opens on
 
-        editor = await edit(score, {
+        editor = await openApp(score, {
           title: "Score editor (a document, and its model)",
           width: 1100, height: 800, stage: el("stage"),
         });

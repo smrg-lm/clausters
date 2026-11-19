@@ -21,7 +21,7 @@ What it shows, in the order it does it:
   model the same way. These are the script's edits, made through the score
   before the window opens; the same operators are the window's Transform
   menu.
-* **`edit(score)` opens the editor over the very score the script holds.**
+* **`open_app(score)` opens the editor over the very score the script holds.**
   It returns the editor, as `edit` does for every structure; the edited data is
   read on the score passed in, which *is* the edited one.
 * **The window is the application's.** Nothing in it is this script's:
@@ -97,7 +97,7 @@ What it shows, in the order it does it:
 * **One undo order.** Ctrl+Z and Ctrl+Shift+Z over the window walk the
   editor's entries and the script's alike.
 * **The chrome is optional, and the keys are not chrome.** `alone()` opens
-  the same score with ``chrome=False``: the page in its scroll over the
+  the same score with `edit`, which has no chrome: the page in its scroll over the
   status line, and nothing else composed around it -- the light window of a
   script that edits through the handle. The keys stay, and F1 shows them all
   on a sheet its close mark or Escape takes down. What a hand writes there is
@@ -142,7 +142,7 @@ import sys
 
 from clausters import Session
 from clausters import notation
-from clausters.gui import edit
+from clausters.gui import edit, open_app
 
 # Eight bars in ABC -- a score as it usually arrives: typed by somebody else, in
 # a format that is not ours. `M:` is the meter, `L:` the length a bare letter
@@ -224,7 +224,7 @@ score.apply({"op": "set_marks", "id": top[7],
 session = Session.live().activate()
 session.gui()          # the host the editor opens on
 
-editor = edit(score, title="Score editor (a document, and its model)",
+editor = open_app(score, title="Score editor (a document, and its model)",
               width=1100, height=800)
 editor.value = (1, 8)          # note entry writes eighths
 
@@ -267,14 +267,14 @@ print("click a note to select it (Ctrl adds, Shift extends), drag one up or "
 # %%
 def roll():
     """The score as it stands, rendered and opened as a roll."""
-    return edit(score.render_events(), title="The score, rendered")
+    return open_app(score.render_events(), title="The score, rendered")
 
 
 # %% [markdown]
 # ## The page alone, and the notes back in the script
 # The chrome is how a hand reaches what the editor does when nothing else can:
 # a standalone host has only the window. A script has the handle, so it can
-# open the same score with none of it -- `chrome=False` is the page in its
+# open the same score with none of it -- `edit` is the page in its
 # scroll over the status line, with nothing else composed around it and so
 # nothing to send or to keep current. The keys are not chrome and stay: N and
 # the letters write, the arrows and Delete act on the selection, the space bar
@@ -283,7 +283,7 @@ def roll():
 # code would take it on -- each voice of the sequence it renders into
 # (`separate`) as rows of `(midinote, dur)` played back to back (`to_rows`): a
 # chord is a list, a silence `None`.
-# The whole window is closed first: `edit` over a score with an editor open on
+# The whole window is closed first: `open_app` over a score with an editor open on
 # it hands that one back, since a second window over the score would draw on
 # the first one's widgets.
 
@@ -292,7 +292,7 @@ def alone():
     """The same score in a window with no chrome, which prints the rows it
     renders into, a voice at a time, after each gesture."""
     editor.close()
-    page = edit(score, chrome=False, title="The page alone", width=900, height=600)
+    page = edit(score, title="The page alone", width=900, height=600)
 
     def rows():
         voices = score.render_events().separate("voice")

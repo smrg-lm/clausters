@@ -92,7 +92,7 @@ same origin, which saves <code>out/edit_multitrack.json</code> and its takes.</d
         // folder the session was opened from.
         const session = await Session.embed();
         await session.gui();   // the host, which holds the multitrack
-        const editor = await gui.edit(saved, { title: "reopened", stage: $("stage") });
+        const editor = await gui.openApp(saved, { title: "reopened", stage: $("stage") });
 
         // ---- reopen the view over the same object ----
         // Closing a client-held view loses no contents: the page still holds

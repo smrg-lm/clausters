@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""``edit(session)``: a multitrack of audio and notes, drawn, edited and played.
+"""``open_app(session)``: a multitrack of audio and notes, drawn, edited and played.
 
 The fourth structure, and the one that holds the other three: a
 `clausters.document.Multitrack` -- the document the three applications share --
@@ -117,7 +117,7 @@ import sys
 from clausters import Session, SoundFile, Synth
 from clausters.defs import SynthDef, out
 from clausters.defs.ugens import line, pink_noise, saw, sine, white_noise
-from clausters.gui import edit
+from clausters.gui import open_app
 from clausters.document import Content, Multitrack, Source
 from clausters.gui.editing import MultitrackSession
 from clausters.seq import EventSequence
@@ -270,7 +270,7 @@ print(f"wrote {saved.save(os.path.join(OUT, 'edit_multitrack.json'))}")
 # %%
 session = Session.live()
 session.gui()          # the host, which holds the multitrack
-editor = edit(saved, title="multitrack")
+editor = open_app(saved, title="multitrack")
 
 # %% [markdown]
 # ## The script's multitrack is the window's

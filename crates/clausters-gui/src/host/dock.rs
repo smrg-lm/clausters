@@ -38,7 +38,6 @@ use clausters_gui_draw::theme::Theme;
 use crate::gpu::Gpu;
 use crate::host::frame::Copier;
 use crate::host::frame::{Readback, read_back, read_target};
-use crate::host::graphics::choice::Part;
 use crate::host::widget::size::control_box;
 use crate::painter::Painter;
 use crate::view::Target;
@@ -52,6 +51,7 @@ pub mod tree;
 
 pub use bar::BarPart;
 pub use edges::{Edge, Overlay, PaneFloat};
+pub use pages::PagePart;
 pub use tree::{Group, Node, Path, Side};
 
 /// **The color between two panes**: the theme's `separator` role, what the
@@ -248,7 +248,7 @@ enum Hot {
     Bar(Path, bar::BarPart),
     Divider(usize),
     /// A part of the page strip.
-    Page(Part),
+    Page(PagePart),
 }
 
 /// How far a pressed tab moves before it is dragged rather than chosen.
@@ -272,6 +272,9 @@ pub struct Dock {
     pages: Vec<(String, Node)>,
     /// Which page is shown.
     page: usize,
+    /// **The panes that are applications** (their window names a
+    /// `dock_page`): each on a page of its own, which holds it alone.
+    apps: HashSet<i32>,
     /// Every pane the dock holds, in the order they came: on the shown page,
     /// on another, or on none -- a pane no page names is kept, and shown
     /// again by putting it on one.
@@ -340,6 +343,7 @@ impl Dock {
             tree: Node::default(),
             pages: vec![(FIRST_PAGE.to_string(), Node::default())],
             page: 0,
+            apps: HashSet::new(),
             members: Vec::new(),
             groups: Vec::new(),
             dividers: Vec::new(),
@@ -648,17 +652,24 @@ impl Dock {
         self.add_on(def_id, None)
     }
 
-    /// **Adds `def_id` on page `page`** -- made if there is none of that
-    /// name, and shown -- or on the page shown with none, as a column of its
-    /// own at the right, and gives it the keyboard. Answers whether it was
-    /// not a pane already.
+    /// **Adds `def_id`**, and gives it the keyboard. With a `page`, it is an
+    /// **application**: it opens on a new page of its own, named `page` (or
+    /// `page 2`, and on, when that name is taken), which holds it alone and
+    /// is shown -- the dock's one page when that is empty. With none, it is a
+    /// panel, a column of its own at the right of the page shown, or of the
+    /// first page that is not an application's when the page shown is one.
+    /// Answers whether it was not a pane already.
     pub fn add_on(&mut self, def_id: i32, page: Option<&str>) -> bool {
         if self.holds(def_id) {
             return false;
         }
         self.members.push(def_id);
-        if let Some(name) = page {
-            self.show_page(name);
+        match page {
+            Some(name) => {
+                self.apps.insert(def_id);
+                self.open_app_page(name);
+            }
+            None => self.leave_app_page(),
         }
         self.tree.add(def_id);
         self.focus = Some(def_id);
@@ -671,6 +682,12 @@ impl Dock {
     pub fn remove(&mut self, def_id: i32) -> bool {
         if !self.holds(def_id) {
             return false;
+        }
+        // an application's page goes with it
+        if self.apps.remove(&def_id)
+            && let Some(at) = self.page_of(def_id)
+        {
+            self.drop_page(at);
         }
         self.members.retain(|&p| p != def_id);
         self.edges.retain(|&(p, ..)| p != def_id);
@@ -1017,12 +1034,9 @@ impl Dock {
         if self.grip.is_some() || self.overlay_at(x, y).is_some() {
             return false;
         }
-        if let Some(part) = self.page_at(x, y) {
-            if let Part::Option(i) = part
-                && i < self.page_names().len()
-            {
-                self.open_page_menu(i, (x as f32, y as f32));
-            }
+        // a page's tab has no menu: it is shown by a click and closed by its
+        // cross
+        if self.page_at(x, y).is_some() {
             return true;
         }
         if let Some((group, part)) = self.bar_at(x, y) {
@@ -1135,11 +1149,20 @@ impl Dock {
 
     /// **Moves pane `pane`** where a dragged tab would land.
     pub fn land(&mut self, pane: i32, landing: Landing) -> Result<(), String> {
+        let app = |p: i32| self.apps.contains(&p);
+        if let Landing::Join { of, .. } | Landing::Split { of, .. } = landing
+            && (app(pane) || app(of))
+        {
+            return Err("an application is alone on its page".into());
+        }
         match landing {
             Landing::Join { of, at } => self.tree.join(pane, of, at)?,
             Landing::Split { of, side } => self.tree.split(pane, side, of)?,
             Landing::Out => return Err("a pane is taken out by the front that holds it".into()),
             Landing::Page(to) => {
+                if self.apps.contains(&pane) || self.page_app(to).is_some() {
+                    return Err("an application is alone on its page".into());
+                }
                 self.move_to_page(pane, to);
                 return Ok(());
             }
@@ -1288,8 +1311,8 @@ impl Dock {
     /// **The height of the page strip**: a panel's bar, so its tabs are the
     /// size of a panel's, and none while there is one page to show -- a
     /// strip that offers no choice is a band of dead room -- or in a
-    /// floating panel. A second page is made from a panel's menu, and the
-    /// strip appears with it.
+    /// floating panel. A second page comes with an application, or from a
+    /// panel's menu, and the strip appears with it.
     pub(super) fn page_strip_h(&self) -> u32 {
         if self.floating || self.pages.len() <= 1 {
             0
@@ -1315,11 +1338,18 @@ impl Dock {
             w,
             h: h.saturating_sub(top + bottom + strip),
         };
+        // an application's page shows it with no panel's bar over it: its
+        // menu is the dock's bar
+        let bar = if self.page_app(self.page).is_some() {
+            0
+        } else {
+            self.strip_h()
+        };
         measure(
             &self.tree,
             whole,
             divider,
-            self.strip_h(),
+            bar,
             &mut Vec::new(),
             &mut groups,
             &mut dividers,

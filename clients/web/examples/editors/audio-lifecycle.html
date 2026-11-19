@@ -152,10 +152,10 @@ for nothing.</div>
         // Two windows: both are windows of the audio editor the GUI host
         // holds, and every file in them keeps an undo order of its own.
         await session.gui();
-        const first = await gui.edit(a, { title: "first", stage: $("first") });
+        const first = await gui.openApp(a, { title: "first", stage: $("first") });
         await first.openFile([b.path, c.path]);
         await first.focusFile(0);
-        const second = await gui.edit(d, { title: "second", stage: $("second") });
+        const second = await gui.openApp(d, { title: "second", stage: $("second") });
 
         // What each window holds: its files, and the one in focus.
         const status = async () => {

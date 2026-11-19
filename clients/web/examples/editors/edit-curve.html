@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>clausters: edit(curve)</title>
+    <title>clausters: openApp(curve)</title>
     <link rel="icon" href="data:," />
     <style>
       html, body { margin: 0; min-height: 100%; background: #0d0d12;
@@ -19,7 +19,7 @@
   </head>
   <body>
     <main>
-      <div id="note"><code>edit(curve)</code>: a break-point curve in a window of
+      <div id="note"><code>openApp(curve)</code>: a break-point curve in a window of
 its own.
 
 The smallest of the three structures <code>edit</code> opens, and the one that
@@ -91,7 +91,7 @@ lands.</div>
 
       /** Open a second view of the same curve. Edit in one, undo in the other. */
       function secondWindow() {
-        return gui.edit(curve, {
+        return gui.openApp(curve, {
           sampleRate: 48_000, title: "cutoff (again)", stage: $("other"),
         });
       }
@@ -117,7 +117,7 @@ lands.</div>
         // the field's floor at -180 Hz, where a point dragged down crosses
         // zero and the exponential segment above it reads linearly, having no
         // ratio between its ends.
-        const editor = await gui.edit(curve, {
+        const editor = await gui.openApp(curve, {
           sampleRate: 48_000, title: "cutoff", stage: $("stage"),
           min: 20.0, max: 5000.0,
         });

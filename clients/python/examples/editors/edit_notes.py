@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""``edit(timeline)``: a timeline's events on a roll, edited note by note.
+"""``open_app(timeline)``: a timeline's events on a roll, edited note by note.
 
 A `clausters.seq.Timeline` is code -- events, patterns, routines, other
 timelines -- and a roll edits data. So ``edit`` renders the timeline first
@@ -81,7 +81,7 @@ written with follows, and the first window redraws it between the keys. An
 edit in either window is one history.
 
 **``page()`` opens the same notes on a page** -- the sequence read into a
-score, in the score editor (``edit(notes, view="score")``). Reading changes
+score, in the score editor (``open_app(notes, view="score")``). Reading changes
 nothing: the notes keep the beats they were written at, and the page writes
 each on the nearest eighth. An edit there -- select a note and press a letter,
 drag it along the staff, pick an articulation from the palette -- changes in
@@ -179,7 +179,7 @@ It self-launches the audio server and the GUI host: this one plays.
 import sys
 
 from clausters import Session
-from clausters.gui import edit
+from clausters.gui import open_app
 from clausters.seq import OscItem, Timeline
 from clausters.seq.event import Event
 
@@ -203,7 +203,7 @@ timeline = Timeline([
 # %% [markdown]
 # ## One verb, spelled out
 #
-# `edit(timeline)` renders the timeline into the events it plays and opens
+# `open_app(timeline)` renders the timeline into the events it plays and opens
 # them as a `clausters.gui.editing.NotesEditor`: one roll, each note with its
 # id. Here the render is its own line, so the sequence gets its curves before
 # it opens: a level curve on the first channel, and a bend on its first note that
@@ -221,7 +221,7 @@ level = notes.automation.add({"control": "amp", "channel": 0}, [(0.0, 0.02), (4.
                              name="level")
 first = notes.events[0]            # the first note, as an object
 first.automation.add({"bend": True}, [(0.0, 0.0), (0.8, 2.0), (1.2, 1.0)])
-editor = edit(notes, title="notes", midi_in=True)
+editor = open_app(notes, title="notes", midi_in=True)
 
 # %% [markdown]
 # ## The same notes, in hertz
@@ -230,7 +230,7 @@ editor = edit(notes, title="notes", midi_in=True)
 # frequency: the same pitch in another coordinate.
 
 # %%
-hertz = edit(notes, y_axis="hz", title="notes in hertz")
+hertz = open_app(notes, y_axis="hz", title="notes in hertz")
 
 
 # %% [markdown]
@@ -246,7 +246,7 @@ hertz = edit(notes, y_axis="hz", title="notes in hertz")
 # %%
 def page():
     """The same notes on a page, in the score editor."""
-    return edit(notes, view="score", division=8, title="notes on a page")
+    return open_app(notes, view="score", division=8, title="notes on a page")
 
 
 # %% [markdown]
@@ -264,7 +264,7 @@ def page():
 def notation():
     """A copy of the notes written as notation, on a roll in notation mode."""
     written = editor.to_notation(meter="4/4", division=8)
-    return edit(written, title="notes as notation")
+    return open_app(written, title="notes as notation")
 
 
 # %% [markdown]
@@ -285,8 +285,8 @@ def phrase():
     """Accent the first two notes, a breath after the second, mf on the first."""
     global phrased
     written = editor.to_notation(meter="4/4", division=8)
-    roll = edit(written, title="a phrase")
-    edit(written, view="score", division=8, title="the phrase on a page")
+    roll = open_app(written, title="a phrase")
+    open_app(written, view="score", division=8, title="the phrase on a page")
     first, second = written.events[0], written.events[1]
     roll.select([first, second])
     roll.accent()

@@ -102,7 +102,7 @@ the audio engine in the page, so the server a script would launch is
         const session = (await Session.embed()).activate();
         await session.gui();
         const notes = await timeline.renderEvents();
-        const editor = await gui.edit(notes, {
+        const editor = await gui.openApp(notes, {
           sampleRate: (await session.server.queryInfo()).nominalSampleRate,
           title: "window verbs",
           stage: $("stage"),

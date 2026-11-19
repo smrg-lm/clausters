@@ -10,7 +10,7 @@
 //! windows of one panel.
 //!
 //! A panel's **menu** (its button, or the secondary button on its bar or on a
-//! tab) and a page's (the secondary button on its tab) are lists of the popup
+//! tab) is a list of the popup
 //! layer ([`popup::Stack`]), placed by its one [`popup::layout`] and drawn by
 //! the frame's own list painter, over the dock's surface rather than over a
 //! window's. A pick is a move the dock makes, or -- closing a window, taking
@@ -57,8 +57,6 @@ pub enum MenuAt {
 pub enum Target {
     /// A pane: its panel's menu, about that pane.
     Pane(i32),
-    /// The page at this index.
-    Page(usize),
 }
 
 /// The menu open over the dock.
@@ -291,7 +289,7 @@ impl Dock {
             .page_names()
             .iter()
             .enumerate()
-            .filter(|(i, _)| *i != self.page_index())
+            .filter(|(i, _)| *i != self.page_index() && self.page_app(*i).is_none())
             .map(|(i, name)| Entry::action(name, &format!("page:{i}")))
             .collect();
         if !pages.is_empty() {
@@ -308,20 +306,6 @@ impl Dock {
             entries.push(Entry::action("Close", "close"));
         }
         self.open_menu(entries, at, Target::Pane(pane));
-    }
-
-    /// **Opens the menu of the page at `page`**, at `point`.
-    pub fn open_page_menu(&mut self, page: usize, (x, y): (f32, f32)) {
-        let last = self.page_names().len() == 1;
-        let close = Entry::action("Close Page", "page_close");
-        let entries = vec![
-            Entry::action("Show", "page_show"),
-            Entry::action("Copy Page", "page_copy"),
-            Entry::action("New Page", "page_new"),
-            Entry::separator(),
-            if last { close.disabled() } else { close },
-        ];
-        self.open_menu(entries, MenuAt::Point(x, y), Target::Page(page));
     }
 
     fn open_menu(&mut self, entries: Vec<Entry>, at: MenuAt, target: Target) {
@@ -440,24 +424,6 @@ impl Dock {
                     }
                 }
             }
-            Target::Page(page) => match verb {
-                "page_show" => {
-                    self.switch_to(page);
-                }
-                "page_copy" => {
-                    self.switch_to(page);
-                    let _ = self.new_page(None, true);
-                }
-                "page_new" => {
-                    let _ = self.new_page(None, false);
-                }
-                "page_close" => {
-                    if let Some(name) = self.page_names().get(page).cloned() {
-                        let _ = self.close_page(&name);
-                    }
-                }
-                _ => {}
-            },
         }
         self.dirty.chrome = true;
     }

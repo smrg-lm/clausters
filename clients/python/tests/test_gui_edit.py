@@ -13,7 +13,7 @@ import pytest
 
 from clausters import TempoMap
 
-from clausters.gui import edit
+from clausters.gui import edit, open_app
 from clausters.document import Editing
 from clausters.gui.editing import (AudioEditor, Marking, NotesEditor,
                                    PointsEditor)
@@ -644,11 +644,15 @@ def test_a_curve_window_has_its_menu_and_says_what_it_does_not_do():
     host = FakeHost()
     set_props = []
     host.set = lambda wid, **props: set_props.append((wid, props))  # pyright: ignore[reportAttributeAccessIssue]
-    editor = edit(a_curve(), sample_rate=SR, host=host)
+    opened = open_app(a_curve(), sample_rate=SR, host=host)
     assert [title["label"] for title in host.trees[-1]["menu"]] == ["File", "Edit", "Help"]
-    assert set_props[-1][0] == int(editor.window)
+    assert host.trees[-1]["dock_page"] == "Points", "the application's own page"
+    assert set_props[-1][0] == int(opened.window)
     assert set_props[-1][1]["actions"]["undo"]["enabled"] is False
-    assert "clipboard" in editor.actions["paste"]["reason"]
-    assert "does not play" in editor.actions["play"]["reason"]
+    assert "clipboard" in opened.actions["paste"]["reason"]
+    assert "does not play" in opened.actions["play"]["reason"]
+    # `edit` draws the curve alone, a panel
+    view = edit(a_curve(), sample_rate=SR, host=FakeHost())
+    assert not view.chrome
     bare = PointsEditor(a_curve(), sample_rate=SR, chrome=False)
     assert "menu" not in bare.draw()

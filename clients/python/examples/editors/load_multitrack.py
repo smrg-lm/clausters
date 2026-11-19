@@ -38,7 +38,7 @@ step through the cells::
 import sys
 
 from clausters import Session
-from clausters.gui import edit
+from clausters.gui import open_app
 from clausters.gui.editing import MultitrackSession
 
 # %% [markdown]
@@ -64,7 +64,7 @@ for id, sequence in saved.sequences().items():
 # %%
 session = Session.live()
 session.gui()          # the host, which holds the multitrack
-editor = edit(saved, title="reopened")
+editor = open_app(saved, title="reopened")
 
 # %% [markdown]
 # ## Reopen the view over the same object

@@ -134,12 +134,15 @@ class AudioEditor(HostedEditor):
         title: the window's title.
         layers: what the picture measures, innermost last; the application's
             own when not given.
+        chrome: ``False`` opens the take alone, with none of the
+            application's chrome around it, the keys kept.
     """
 
     _app = "audio"
 
-    def __init__(self, file=None, *, title: str = "Audio", layers=None):
-        super().__init__(title=title)
+    def __init__(self, file=None, *, title: str = "Audio", layers=None,
+                 chrome: bool = True):
+        super().__init__(title=title, chrome=chrome)
         self._file = file
         self._layers = layers
         self._holders = _Held()

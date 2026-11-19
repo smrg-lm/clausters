@@ -239,8 +239,6 @@ pub fn window(w: Window<'_>) -> Value {
         "w": size.0,
         "h": size.1,
         "flow": "col",
-        // **Its kind of work has a page of its own** in a dock
-        "dock_page": "Score",
         // **The space bar is the application's**: it plays the score through
         // the editor's own playback, so the host's monitor stays out.
         "plays": true,
@@ -256,8 +254,11 @@ pub fn window(w: Window<'_>) -> Value {
         "ask_close": ask_close,
         "children": children,
     });
+    // **With its menu it is the application**, alone on a page of its own
+    // in a dock; with none, a view among the panels
     if let (Some(menu), Some(map)) = (menu, window.as_object_mut()) {
         map.insert("menu".into(), menu);
+        map.insert("dock_page".into(), json!("Score"));
     }
     if let (false, Some(map)) = (glyphs.is_empty(), window.as_object_mut()) {
         map.insert("glyphs".into(), json!(glyphs));

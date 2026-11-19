@@ -71,7 +71,7 @@ import sys
 
 from clausters import Session, SoundFile
 from clausters.errors import CommandError
-from clausters.gui import edit
+from clausters.gui import open_app
 from clausters.segments import Segment
 
 SECONDS = 2.0
@@ -113,10 +113,10 @@ d = tone("d.wav", 550.0, 1)
 
 # %%
 session.gui()
-first = edit(a, title="first")
+first = open_app(a, title="first")
 first.open_file([b.path, c.path])
 first.focus_file(0)
-second = edit(d, title="second")
+second = open_app(d, title="second")
 
 
 def status():

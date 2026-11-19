@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""``edit(curve)``: a break-point curve in a window of its own.
+"""``open_app(curve)``: a break-point curve in a window of its own.
 
 The smallest of the three structures `clausters.gui.edit` opens, and the one
 that shows what the verb is for. There is **no multitrack here** -- no
@@ -45,7 +45,7 @@ import sys
 
 from clausters import Session
 from clausters.base import MonotonicTimebase
-from clausters.gui import edit
+from clausters.gui import open_app
 
 # %% [markdown]
 # ## A curve, built the ordinary way
@@ -81,7 +81,7 @@ session = Session.live(boot=False, timebase=MonotonicTimebase())
 # with a tenth of headroom -- which here puts the field's floor at -180 Hz,
 # where a point dragged down crosses zero and the exponential segment above it
 # reads linearly, having no ratio between its ends.
-editor = edit(curve, sample_rate=48_000.0, title="cutoff", min=20.0, max=5000.0)
+editor = open_app(curve, sample_rate=48_000.0, title="cutoff", min=20.0, max=5000.0)
 
 # %% [markdown]
 # ## Two windows, one stack
@@ -93,7 +93,7 @@ editor = edit(curve, sample_rate=48_000.0, title="cutoff", min=20.0, max=5000.0)
 # %%
 def second_window():
     """Open a second view of the same curve. Edit in one, undo in the other."""
-    return edit(curve, sample_rate=48_000.0, title="cutoff (again)")
+    return open_app(curve, sample_rate=48_000.0, title="cutoff (again)")
 
 
 # %% [markdown]

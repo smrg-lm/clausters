@@ -13,7 +13,7 @@ import time
 import pytest
 
 from clausters import _native
-from clausters.gui import edit
+from clausters.gui import edit, open_app
 from clausters.gui.editing import MultitrackEditor
 from clausters.document import Multitrack, Region
 from clausters.gui.editing import MultitrackSession
@@ -147,14 +147,30 @@ def a_session(path="/songs/song.json") -> MultitrackSession:
     return session
 
 
-def test_edit_opens_a_saved_session_in_the_multitrack_application():
+def test_open_app_opens_a_saved_session_in_the_multitrack_application():
     host = FakeHost()
-    editor = edit(a_session(), host=host)
-    assert isinstance(editor, MultitrackEditor)
+    application = open_app(a_session(), host=host)
+    assert isinstance(application, MultitrackEditor)
     assert host.calls[0] == ("open", "multitrack",
                              {"title": "song.json", "path": "/songs/song.json"})
-    assert editor.window is not None and not editor.closed
-    assert edit(a_session(), host=host) is editor, "a second edit finds it"
+    assert application.window is not None and not application.closed
+    assert open_app(a_session(), host=host) is application, "a second call finds it"
+
+
+def test_open_app_opens_an_application_over_nothing_and_edit_the_view():
+    host = FakeHost()
+    empty = open_app(app="multitrack", host=host)
+    assert isinstance(empty, MultitrackEditor)
+    assert host.calls[-1] == ("open", "multitrack", {"title": "Multitrack"})
+    with pytest.raises(ValueError, match="no application"):
+        open_app(app="spreadsheet", host=host)
+    with pytest.raises(ValueError, match="not both"):
+        open_app(a_session(), app="multitrack", host=host)
+    view = edit(a_session(), host=host)
+    assert host.calls[-1] == ("open", "multitrack", {"title": "song.json",
+                                                     "path": "/songs/song.json",
+                                                     "chrome": False})
+    assert not view.chrome
 
 
 def test_a_session_with_no_file_is_refused():

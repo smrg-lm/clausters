@@ -34,7 +34,7 @@ import pathlib
 import sys
 
 from clausters import Session
-from clausters.gui import edit
+from clausters.gui import open_app
 from clausters.seq import EventSequence
 from clausters.seq.event import Event
 
@@ -101,7 +101,7 @@ print(f"{clip.name}: {native.midi}, {len(native)} notes")
 # %%
 session = Session.live().activate()
 session.gui()
-editor = edit(notes, title="mpe chord")
+editor = open_app(notes, title="mpe chord")
 
 
 # %% [markdown]

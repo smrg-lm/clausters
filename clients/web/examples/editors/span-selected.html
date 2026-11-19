@@ -108,7 +108,7 @@ editors. Press the buttons in order; each step says what to look at.</div>
       step("notes1", ["notes2"], async () => {
         notes = new EventSequence([[0, 72], [1, 76], [2, 79], [3, 84]].map(
           ([b, m]) => [b, new Event({ midinote: m, dur: 0.5, amp: 0.2 })]));
-        n = await gui.edit(notes, { title: "notes", stage: $("notes") });
+        n = await gui.openApp(notes, { title: "notes", stage: $("notes") });
         t = n.transport;
         await t.play();           // sounds the four notes, the roll's line moves
       });
@@ -165,7 +165,7 @@ editors. Press the buttons in order; each step says what to look at.</div>
         saved.sources.set(1, Source.file("span_selected-660.wav").shaped(1, frames, rate));
         saved.sources.set(2, Source.file("span_selected-990.wav").shaped(1, frames, rate));
         await saved.save("out/span_selected.json");
-        m = await gui.edit(saved, { title: "multitrack", stage: $("multitrack") });
+        m = await gui.openApp(saved, { title: "multitrack", stage: $("multitrack") });
         mtt = m.transport;
         await mtt.play();         // 660 then 990, the line moves
       });
@@ -188,7 +188,7 @@ editors. Press the buttons in order; each step says what to look at.</div>
         take = await SoundFile.write("out/span_selected.wav", Float32Array.from({ length: frames },
           (_, i) => Math.exp(-1.5 * i / frames) * 0.5
             * Math.sin(2 * Math.PI * 880.0 * i / rate)), 1, rate, { sampleFormat: "float" });
-        e = await gui.edit(take, { title: "take", stage: $("take") });
+        e = await gui.openApp(take, { title: "take", stage: $("take") });
         at = e.transport;
         await at.play();          // the whole take
       });

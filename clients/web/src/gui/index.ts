@@ -35,7 +35,7 @@ export { WidgetHandle, WindowHandle } from "./handle.ts";
 export type { EventArgs } from "./handle.ts";
 
 
-export { Editor, MEASURES, edit, measures } from "./editing/index.ts";
+export { Editor, MEASURES, edit, measures, openApp } from "./editing/index.ts";
 export type { Measure } from "./editing/index.ts";
 // The collaborators live under their own name, which is also how the Python
 // client reaches them (`clausters.gui.editing`): `View` here is the picture of a

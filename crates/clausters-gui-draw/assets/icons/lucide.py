@@ -23,15 +23,17 @@ import sys
 from pathlib import Path
 
 # The icons the host carries, by Lucide's name: the editor's tools and its
-# components', the host's chrome, and the transport an application's
-# toolbar shows.
+# components', the host's chrome, the transport an application's toolbar
+# shows, and the applications a bar opens (audio-waveform, keyboard-music,
+# layers, music).
 SUBSET = [
-    "arrow-down-to-line", "arrow-left", "arrow-right", "check",
-    "chevron-down", "chevron-left", "chevron-right", "chevron-up", "circle",
-    "copy", "download", "ellipsis-vertical", "eraser", "file-text", "folder",
-    "folder-open", "grip-vertical", "house", "list-video", "menu", "minus",
-    "pause", "play", "plus", "refresh-cw", "repeat", "rotate-ccw", "search",
-    "skip-back", "skip-forward", "square", "trash", "x",
+    "arrow-down-to-line", "arrow-left", "arrow-right", "audio-waveform",
+    "check", "chevron-down", "chevron-left", "chevron-right", "chevron-up",
+    "circle", "copy", "download", "ellipsis-vertical", "eraser", "file-text",
+    "folder", "folder-open", "grip-vertical", "house", "keyboard-music",
+    "layers", "list-video", "menu", "minus", "music", "pause", "play",
+    "plus", "refresh-cw", "repeat", "rotate-ccw", "search", "skip-back",
+    "skip-forward", "square", "trash", "x",
 ]
 
 TOKEN = re.compile(r"[MmLlHhVvCcSsQqTtAaZz]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?")

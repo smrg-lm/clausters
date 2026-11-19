@@ -84,6 +84,17 @@ const FOOT_TEXT: f64 = 12.0 * 0.727 / 7.0;
 
 /// The line between the bar's menu titles and its tools.
 const BAR_LINE: i32 = IDS + 18;
+/// The room that pushes the applications' buttons to the bar's end.
+const BAR_SPACE: i32 = IDS + 13;
+/// **The applications the bar opens**, one button each at its end, each a
+/// new page holding a new, empty one: the button's id, the application's
+/// name as the host opens it (`/gui_app_open`), its icon and its tip.
+const APPS: [(i32, &str, &str, &str); 4] = [
+    (IDS + 14, "multitrack", "layers", "New multitrack"),
+    (IDS + 15, "score", "music", "New score"),
+    (IDS + 16, "notes", "keyboard-music", "New notes"),
+    (IDS + 17, "audio", "audio-waveform", "New audio"),
+];
 /// Where the bar holds the dialog that is up: the preferences or the
 /// environments, over the whole dock.
 const DIALOG_HOLD: i32 = IDS + 19;
@@ -412,6 +423,12 @@ impl App {
             Said::Event { id, tag, args } => self.on_event(id, &tag, &args),
             Said::Closed(id) => self.on_closed(id),
             Said::Dock { seq, reply } => self.on_dock(seq, &reply),
+            // an application the bar could not open says why
+            Said::App { reply } => {
+                if let Some(message) = reply["error"]["message"].as_str() {
+                    self.post("info", &format!("{message}\n"));
+                }
+            }
             Said::Info { id, props } => self.on_info(id, &props),
             Said::Other => {}
         }
@@ -703,6 +720,7 @@ impl App {
                 self.menus();
             }
             "interrupt" => self.interrupt(),
+            _ if verb.starts_with("app:") => self.open_app(verb.trim_start_matches("app:")),
             "restart" => self.restart(),
             "environments" => self.open_envs(),
             "clear_post" => self.link.set(POST, &[("clear", json!(1))]),
@@ -1224,7 +1242,9 @@ impl App {
     /// **The application's bar**: a window along the dock's top, across it,
     /// holding the menu and the tools -- the application's, never a
     /// panel's. A tool performs the verb its menu entry does, and its tip
-    /// says the key.
+    /// says the key. At its end, one button per application opens a new
+    /// one on a page of its own; the bar's tree stays whichever menu it
+    /// shows, so they are there on every page.
     fn open_bar(&mut self) {
         let mut tree = self.window(BAR_WIN, "Editor");
         tree["dock_edge"] = json!("top");
@@ -1243,6 +1263,12 @@ impl App {
                 tool(BAR_WIN + 3, "list-video", "evaluate_block", "Evaluate block"),
                 tool(BAR_WIN + 4, "square", "interrupt", "Interrupt"),
                 tool(BAR_WIN + 5, "rotate-ccw", "restart", "Restart the session"),
+                // the applications, at the bar's end
+                {"id": BAR_SPACE, "type": "layout", "weight": 1, "margin": 0},
+                tool(APPS[0].0, APPS[0].2, &format!("app:{}", APPS[0].1), APPS[0].3),
+                tool(APPS[1].0, APPS[1].2, &format!("app:{}", APPS[1].1), APPS[1].3),
+                tool(APPS[2].0, APPS[2].2, &format!("app:{}", APPS[2].1), APPS[2].3),
+                tool(APPS[3].0, APPS[3].2, &format!("app:{}", APPS[3].1), APPS[3].3),
                 // where a dialog of the application's is defined, over the dock
                 {"id": DIALOG_HOLD, "type": "layout", "w": 0, "h": 0, "margin": 0},
             ],
@@ -1519,6 +1545,20 @@ impl App {
         self.post("info", "Startup code (Python):\n");
         self.post("out", &format!("{}\n", code.trim_end()));
         self.eval(&code, "<startup code>", 1);
+    }
+
+    /// **A new, empty application of `kind`**, which the host opens on a
+    /// page of its own (`/gui_app_open`): the host's to hold, the editor's
+    /// session none of its business.
+    fn open_app(&mut self, kind: &str) {
+        self.link.send(
+            "/gui_app_open",
+            vec![
+                OscType::Int(0),
+                OscType::String(kind.into()),
+                OscType::String("{}".into()),
+            ],
+        );
     }
 
     fn interrupt(&mut self) {

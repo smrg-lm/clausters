@@ -115,7 +115,7 @@ the engine, the bends heard.</div>
         // under the grid.
         const session = (await Session.embed()).activate();
         await session.gui();
-        const editor = await gui.edit(notes, {
+        const editor = await gui.openApp(notes, {
           title: "mpe chord",
           stage: $("stage"),
         });

@@ -268,15 +268,9 @@ impl Dock {
             .edge_placed()
             .map(|(id, edge, r)| json!({"id": id, "edge": edge.name(), "rect": rect(r.rect())}))
             .collect();
-        // the page strip's tabs, the pages' and then the new page's
-        let parts = self.page_parts();
-        let page_tabs: Vec<Value> = (0..self.page_options().len())
-            .map(|i| {
-                parts
-                    .iter()
-                    .find(|(part, _)| *part == super::Part::Option(i))
-                    .map_or(Value::Null, |(_, r)| rect(*r))
-            })
+        // the page strip's tabs, one per page
+        let page_tabs: Vec<Value> = (0..self.page_names().len())
+            .map(|i| self.page_tab(i).map_or(Value::Null, rect))
             .collect();
         json!({
             "layout": self.tree().to_json(),

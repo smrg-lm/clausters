@@ -24,9 +24,10 @@ shared time axis, a box drawing a take or a piano-roll and carrying editable
 automation curves) and a ``patch`` **patcher** of a
 directed, typed signal graph (drag an outlet onto an inlet to wire it);
 live updates flow through ``/gui_set`` and interactions come back as
-``/gui_event``/``/gui_closed``. `clausters.gui.edit` opens an editor over a
-structure -- a buffer, a curve, a timeline, a `Multitrack` -- and the edit-backs
-land on that structure, never on the widget tree.
+``/gui_event``/``/gui_closed``. `clausters.gui.edit` opens the view of a
+structure -- a sound file, a curve, a timeline, a `Multitrack` -- and
+`clausters.gui.open_app` its application; the edit-backs land on that
+structure, never on the widget tree.
 `clausters.gui.playhead_sync.PlayheadSync` is the play/pause/stop/locate machinery
 every time view shares: it keeps the views' playhead line in step with what
 plays (a `clausters.seq.Timeline`, or the server's transport), whatever the view is -- a multitrack, a piano-roll, an engraved
@@ -52,6 +53,7 @@ oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
 
 from . import editing, guidef
 from .editing import MEASURES, Editor, edit, measures
+from .editing.edit import open_app
 from .guidef import (
     bpf,
     button,
@@ -189,6 +191,7 @@ __all__ = [
     "MEASURES",
     "edit",
     "measures",
+    "open_app",
     "PlayheadSync",
     "WidgetHandle",
     "WindowHandle",

@@ -169,6 +169,8 @@ export interface AudioEditorOptions {
     title?: string;
     /** What the picture measures, innermost last; the application's own when not given. */
     layers?: readonly unknown[];
+    /** `false` opens the take alone, with none of the application's chrome around it, the keys kept. */
+    chrome?: boolean;
 }
 
 /**
@@ -196,8 +198,8 @@ export class AudioEditor extends HostedEditor {
     private readonly openLayers: readonly unknown[] | null;
     private readonly holders = new Held();
 
-    constructor(file: SoundFile | null = null, { title = "Audio", layers }: AudioEditorOptions = {}) {
-        super("Audio", { title });
+    constructor(file: SoundFile | null = null, { title = "Audio", layers, chrome }: AudioEditorOptions = {}) {
+        super("Audio", { title, chrome });
         this.opening = file;
         this.openLayers = layers ?? null;
     }

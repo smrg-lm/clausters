@@ -100,9 +100,19 @@ impl Host {
     ) {
         let path = options["path"].as_str();
         let title = options["title"].as_str().unwrap_or("Audio");
+        let chrome = options["chrome"].as_bool().unwrap_or(true);
         // answered once the application opened the file, or could not
         let reply = super::audio_app::Reply::Client(from, seq);
-        if let Err(message) = self.open_audio_for(path, title, Some(reply)) {
+        let opened = self.open_app_dressed(
+            super::audio_app::AppKind::Audio,
+            path,
+            None,
+            title,
+            Some(reply),
+            None,
+            chrome,
+        );
+        if let Err(message) = opened {
             effects.push(HostEffect::Reply(app_reply(
                 seq,
                 Err(("value".into(), message)),
@@ -123,26 +133,36 @@ impl Host {
     ) {
         let path = options["path"].as_str();
         let title = options["title"].as_str().unwrap_or("Multitrack");
+        let chrome = options["chrome"].as_bool().unwrap_or(true);
         let reply = super::audio_app::Reply::Client(from, seq);
+        use super::audio_app::{AppData, AppKind};
         // a multitrack handed over whole is an untitled session; a path, the
         // session at it
-        let opened = if let Some(snapshot) = options.get("snapshot") {
-            serde_json::from_value(snapshot.clone())
-                .map_err(|e| e.to_string())
-                .and_then(|snapshot| self.open_multitrack_retained(snapshot, title, Some(reply)))
+        let data = if let Some(snapshot) = options.get("snapshot") {
+            match serde_json::from_value(snapshot.clone()) {
+                Ok(snapshot) => Ok(Some(AppData::Snapshot(Box::new(snapshot)))),
+                Err(e) => Err(e.to_string()),
+            }
         } else {
             match (&options["multitrack"], path) {
                 (Value::Object(_), None) => {
-                    self.open_multitrack_over(options["multitrack"].clone(), title, Some(reply))
+                    Ok(Some(AppData::Contents(options["multitrack"].clone())))
                 }
-                _ => self.open_app_for(
-                    super::audio_app::AppKind::Multitrack,
-                    path,
-                    title,
-                    Some(reply),
-                ),
+                _ => Ok(None),
             }
         };
+        let opened = data.and_then(|data| {
+            let path = if data.is_some() { None } else { path };
+            self.open_app_dressed(
+                AppKind::Multitrack,
+                path,
+                data,
+                title,
+                Some(reply),
+                None,
+                chrome,
+            )
+        });
         if let Err(message) = opened {
             effects.push(HostEffect::Reply(app_reply(
                 seq,

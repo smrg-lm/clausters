@@ -552,10 +552,28 @@ pub fn channel_entries(menu: &mut Value, channels: u32) {
     ]);
 }
 
-pub fn dress(window: &mut Value, menu: Value, toolbar: Value, main: i32) {
+impl App {
+    /// **The page an application's window opens on in a dock**: a window
+    /// with the application's chrome is the application, alone on a page of
+    /// its own; one with none is a view, a panel among others.
+    pub fn page(self) -> &'static str {
+        match self {
+            App::Audio => "Audio",
+            App::Multitrack => "Multitrack",
+            App::Notes => "Notes",
+            App::Points => "Points",
+        }
+    }
+}
+
+/// **A window dressed as `app`**: its menu bar, its toolbar on top, the
+/// view the menu acts on (`main`), the chrome's symbols, and the page of its
+/// own it opens on in a dock ([`App::page`]).
+pub fn dress(window: &mut Value, app: App, menu: Value, toolbar: Value, main: i32) {
     let Some(map) = window.as_object_mut() else {
         return;
     };
+    map.insert("dock_page".into(), json!(app.page()));
     map.insert("menu".into(), menu);
     map.insert("main".into(), json!(main));
     map.insert("glyphs".into(), glyphs());
@@ -707,11 +725,13 @@ mod tests {
         let mut window = json!({"type": "window", "children": [{"type": "notes", "id": 4}]});
         dress(
             &mut window,
+            App::Notes,
             menu(App::Notes, false),
             toolbar(App::Notes, None),
             4,
         );
         assert_eq!(window["main"], 4);
+        assert_eq!(window["dock_page"], "Notes");
         assert_eq!(window["children"][0]["type"], "layout");
         assert_eq!(window["children"][1]["id"], 4);
         assert!(window["glyphs"][TO_START].is_string());

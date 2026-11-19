@@ -63,7 +63,7 @@ import struct
 import sys
 import wave
 
-from clausters.gui import edit
+from clausters.gui import open_app
 from clausters.document import Content, Multitrack, Source, Span, Tempo
 from clausters.gui.editing import MultitrackView, MultitrackSession
 
@@ -253,7 +253,7 @@ def run() -> None:
     #: The multitrack reads the take from the file beside the session, relative
     #: to its folder, and plays it: the regions of the first track name one
     #: source, and one take is read behind them.
-    editor = edit(reopened, title="session")
+    editor = open_app(reopened, title="session")
     editor.transport.play()
     editor.wait()
 

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>clausters: edit(timeline)</title>
+    <title>clausters: openApp(timeline)</title>
     <link rel="icon" href="data:," />
     <style>
       html, body { margin: 0; min-height: 100%; background: #0d0d12;
@@ -19,7 +19,7 @@
   </head>
   <body>
     <main>
-      <div id="note"><code>edit(timeline)</code>: a timeline's events on a
+      <div id="note"><code>openApp(timeline)</code>: a timeline's events on a
 roll, edited note by note.
 
 A <code>Timeline</code> is code -- events, patterns, routines, other timelines
@@ -104,7 +104,7 @@ was written with follows, and the first roll redraws it between the keys. An
 edit in either roll is one history.
 
 <b>page opens the same notes on a page</b> -- the sequence read into a score,
-in the score editor (<code>edit(notes, { view: "score" })</code>). Reading
+in the score editor (<code>openApp(notes, { view: "score" })</code>). Reading
 changes nothing: the notes keep the beats they were written at, and the page
 writes each on the nearest eighth. An edit there -- select a note and press a
 letter, drag it along the staff, pick an articulation from the palette --
@@ -287,7 +287,7 @@ leaves every other note its own.</div>
         session = (await Session.embed()).activate();
         await session.gui();
 
-        // One verb, spelled out. `edit(timeline)` renders the timeline into
+        // One verb, spelled out. `openApp(timeline)` renders the timeline into
         // the events it plays and opens them as a NotesEditor: one roll, each
         // note with its id. Here the render is its own line, so the sequence
         // gets its curves before it opens: a level curve on the first channel,
@@ -298,7 +298,7 @@ leaves every other note its own.</div>
         let level = notes.automation.add({ control: "amp", channel: 0 }, { points: [[0.0, 0.02], [4.0, 0.4]], name: "level" });
         const first = notes.events.item(0); // the first note, as an object
         first.automation.add({ bend: true }, { points: [[0.0, 0.0], [0.8, 2.0], [1.2, 1.0]] });
-        const editor = await gui.edit(notes, {
+        const editor = await gui.openApp(notes, {
           title: "notes",
           midiIn: true,
           stage: $("stage"),
@@ -307,7 +307,7 @@ leaves every other note its own.</div>
         // The same notes, in hertz: a second editor over the very same
         // sequence, whose vertical axis is the frequency -- the same pitch in
         // another coordinate.
-        const hertz = await gui.edit(notes, {
+        const hertz = await gui.openApp(notes, {
           yAxis: "hz",
           title: "notes in hertz",
           stage: $("hertz"),
@@ -323,7 +323,7 @@ leaves every other note its own.</div>
         // nothing else, as one entry of the same history the rolls record in.
         $("page").disabled = false;
         $("page").onclick = () =>
-          gui.edit(notes, {
+          gui.openApp(notes, {
             view: "score", division: 8, title: "notes on a page", stage: $("score"),
           });
 
@@ -337,7 +337,7 @@ leaves every other note its own.</div>
         $("notation").disabled = false;
         $("notation").onclick = async () => {
           const written = editor.toNotation({ meter: "4/4", division: 8 });
-          await gui.edit(written, { title: "notes as notation", stage: $("written") });
+          await gui.openApp(written, { title: "notes as notation", stage: $("written") });
         };
 
         // A phrase marked as a page marks it: a copy written as notation
@@ -350,8 +350,8 @@ leaves every other note its own.</div>
         let phrased = null;
         const phrase = async () => {
           const written = editor.toNotation({ meter: "4/4", division: 8 });
-          const roll = await gui.edit(written, { title: "a phrase", stage: $("phrased") });
-          await gui.edit(written, {
+          const roll = await gui.openApp(written, { title: "a phrase", stage: $("phrased") });
+          await gui.openApp(written, {
             view: "score", division: 8, title: "the phrase on a page", stage: $("phrasepage"),
           });
           const [first, second] = [written.events.item(0), written.events.item(1)];

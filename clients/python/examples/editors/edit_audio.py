@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""``edit(file)``: a take in the audio editor, edited as a list of parts.
+"""``open_app(file)``: a take in the audio editor, edited as a list of parts.
 
 A `clausters.SoundFile` opens in the audio editor, an application the GUI
 host holds, in a window of the host's and on an engine of its own; what
@@ -99,7 +99,7 @@ import pathlib
 import sys
 
 from clausters import Session, SoundFile
-from clausters.gui import edit
+from clausters.gui import open_app
 
 SECONDS = 2.0
 
@@ -135,7 +135,7 @@ take = SoundFile.write(OUT / "edit_audio.wav", samples, 1, rate, sample_format="
 
 # %%
 session.gui()          # the host, which holds the audio editor
-editor = edit(take, title="take")
+editor = open_app(take, title="take")
 
 # %% [markdown]
 # ## Two views of the same take
@@ -219,7 +219,7 @@ def many_channels():
     """Open eight channels, each its own tone, with the second and fifth folded."""
     tones = [math.exp(-3.0 * i / frames) * 0.5 * math.sin(2 * math.pi * 440.0 * (1 + c / 4) * i / rate)
              for i in range(frames) for c in range(8)]
-    wide = edit(SoundFile.write(OUT / "edit_audio_8ch.wav", tones, 8, rate, sample_format="float"),
+    wide = open_app(SoundFile.write(OUT / "edit_audio_8ch.wav", tones, 8, rate, sample_format="float"),
                 title="eight channels")
     wide.fold_channel(1)
     wide.fold_channel(4)
@@ -231,7 +231,7 @@ def many_channels():
 #
 # A new file is silence of a shape, added to this editor and written nowhere
 # yet: its first save -- Ctrl+S, or File -> Save as... -- asks where it goes.
-# `edit(SoundFile.empty(2, frames, rate))` opens the same in a window of its own.
+# `open_app(SoundFile.empty(2, frames, rate))` opens the same in a window of its own.
 
 # %%
 def new_file():

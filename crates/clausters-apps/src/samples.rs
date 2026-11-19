@@ -280,8 +280,6 @@ fn dressed(w: &Window<'_>, body: Vec<Value>) -> Value {
         "w": w.size.0,
         "h": w.size.1,
         "flow": "col",
-        // **Its kind of work has a page of its own** in a dock
-        "dock_page": "Audio",
         // **The space bar and `L` are the application's**: it plays its own
         // take through its own playback, so the host's monitor stays out.
         "plays": true,
@@ -299,6 +297,7 @@ fn dressed(w: &Window<'_>, body: Vec<Value>) -> Value {
         crate::chrome::channel_entries(&mut menu, w.channels);
         crate::chrome::dress(
             &mut window,
+            crate::chrome::App::Audio,
             menu,
             crate::chrome::toolbar(crate::chrome::App::Audio, None),
             w.widget,

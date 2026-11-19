@@ -211,6 +211,10 @@ pub(super) enum ToApp {
         /// Where a multitrack's Save writes, when the host that opened it
         /// said: `Some(None)` writes nowhere.
         save_to: Option<Option<String>>,
+        /// Whether the window carries the application's chrome: an audio
+        /// editor's and a multitrack's (a score and a roll say it in their
+        /// request).
+        chrome: bool,
         reply: Option<Reply>,
     },
     /// The window's widget ids, every dialog's included, which its tree is
@@ -504,6 +508,7 @@ impl App {
                 path,
                 data,
                 save_to,
+                chrome,
                 reply,
             } => {
                 // **a session open in a window is not opened twice**: an open
@@ -552,9 +557,9 @@ impl App {
                     );
                 }
                 let outcome = match kind {
-                    AppKind::Audio => self.open(def_id, &key, &title, path.as_deref()),
+                    AppKind::Audio => self.open(def_id, &key, &title, path.as_deref(), chrome),
                     AppKind::Multitrack => {
-                        self.open_multitrack(def_id, &key, &title, path, data, save_to)
+                        self.open_multitrack(def_id, &key, &title, path, data, save_to, chrome)
                     }
                     AppKind::Roll { source, parent } => {
                         self.open_roll(def_id, &title, source, parent)
@@ -688,6 +693,7 @@ impl App {
         key: &str,
         title: &str,
         path: Option<&str>,
+        chrome: bool,
     ) -> Result<Vec<String>, String> {
         // On disk under the user's cache, never the temporary directory: a
         // reverse of a day writes tens of gigabytes, and the temporary
@@ -695,7 +701,8 @@ impl App {
         let workspace = clausters_core::workspace::Workspace::create("audio")
             .map_err(|e| format!("the working folder: {e}"))?;
         let mut request = json!({"verb": "openAudio", "key": key,
-            "workspace": workspace.path().to_string_lossy(), "title": title});
+            "workspace": workspace.path().to_string_lossy(), "title": title,
+            "chrome": chrome});
         match path {
             Some(path) => {
                 let info = clausters_app_engine::probe_audio(path)?;
@@ -742,6 +749,7 @@ impl App {
 
     /// **The multitrack opened**, in its working folder, over no session
     /// yet: the session at `path` is opened once the window is bound.
+    #[allow(clippy::too_many_arguments)] // one opening: what, over what, how
     fn open_multitrack(
         &mut self,
         def_id: i32,
@@ -750,6 +758,7 @@ impl App {
         path: Option<String>,
         data: Option<AppData>,
         save_to: Option<Option<String>>,
+        chrome: bool,
     ) -> Result<Vec<String>, String> {
         let workspace = clausters_core::workspace::Workspace::create("multitrack")
             .map_err(|e| format!("the working folder: {e}"))?;
@@ -773,7 +782,7 @@ impl App {
             &mut self.editing,
             &json!({"verb": "openMultitrack", "key": key,
                 "multitrack": multitrack, "empty": empty,
-                "rate": rate, "title": title, "transport": true,
+                "rate": rate, "title": title, "transport": true, "chrome": chrome,
                 "w": MULTITRACK_SIZE.0, "h": MULTITRACK_SIZE.1}),
         );
         let member = opened["member"]

@@ -10,7 +10,7 @@ import math
 import pathlib
 
 from clausters import Session, SoundFile
-from clausters.gui import edit
+from clausters.gui import open_app
 from clausters.document import Content, Multitrack, Source
 from clausters.gui.editing import MultitrackSession
 from clausters.segments import Segment
@@ -25,7 +25,7 @@ rate = server.query_info().nominal_sample_rate
 # %% NOTES 1: open a roll and take its transport
 notes = EventSequence([(b, Event(midinote=m, dur=0.5, amp=0.2))
                        for b, m in [(0, 72), (1, 76), (2, 79), (3, 84)]])
-n = edit(notes, title="notes")
+n = open_app(notes, title="notes")
 t = n.transport
 t.play()                  # sounds the four notes, the roll's line moves
 
@@ -71,7 +71,7 @@ saved = MultitrackSession(multitrack=mt)
 saved.sources[1] = Source.file("span_selected-660.wav").shaped(1, frames, rate)
 saved.sources[2] = Source.file("span_selected-990.wav").shaped(1, frames, rate)
 saved.save(out / "span_selected.json")
-m = edit(saved, title="multitrack")
+m = open_app(saved, title="multitrack")
 mtt = m.transport
 mtt.play()                # 660 then 990, the line moves
 
@@ -89,7 +89,7 @@ take = SoundFile.write(out / "span_selected.wav",
                        [math.exp(-1.5 * i / frames) * 0.5
                         * math.sin(2 * math.pi * 880.0 * i / rate)
                         for i in range(frames)], 1, rate, sample_format="float")
-e = edit(take, title="take")
+e = open_app(take, title="take")
 at = e.transport
 at.play()                 # the whole take
 

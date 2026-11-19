@@ -365,6 +365,7 @@ impl Host {
 
     /// **The multitrack opened over `multitrack`**, the document's JSON, as
     /// an untitled session: no file behind it, its first save naming one.
+    #[cfg(test)]
     pub(super) fn open_multitrack_over(
         &mut self,
         multitrack: Value,
@@ -381,22 +382,6 @@ impl Host {
         )
     }
 
-    pub(super) fn open_multitrack_retained(
-        &mut self,
-        snapshot: clausters_apps::multitrack::operations::Snapshot,
-        title: &str,
-        reply: Option<Reply>,
-    ) -> Result<i32, String> {
-        self.open_app_saving(
-            AppKind::Multitrack,
-            None,
-            Some(super::audio_app::AppData::Snapshot(Box::new(snapshot))),
-            title,
-            reply,
-            None,
-        )
-    }
-
     fn open_app_saving(
         &mut self,
         kind: AppKind,
@@ -405,6 +390,24 @@ impl Host {
         title: &str,
         reply: Option<Reply>,
         save_to: Option<Option<String>>,
+    ) -> Result<i32, String> {
+        self.open_app_dressed(kind, path, data, title, reply, save_to, true)
+    }
+
+    /// [`Host::open_app_saving`], with the application's chrome or with
+    /// none (`chrome`): with none the window is its view alone, a panel
+    /// among others in a dock rather than a page of its own. A score and a
+    /// roll say it in their request instead.
+    #[allow(clippy::too_many_arguments)] // one opening: what, over what, how
+    pub(super) fn open_app_dressed(
+        &mut self,
+        kind: AppKind,
+        path: Option<&str>,
+        data: Option<super::audio_app::AppData>,
+        title: &str,
+        reply: Option<Reply>,
+        save_to: Option<Option<String>>,
+        chrome: bool,
     ) -> Result<i32, String> {
         let structure = {
             let audio = self.audio_host();
@@ -434,6 +437,7 @@ impl Host {
         );
         let asked = audio.ask(ToApp::Open {
             save_to,
+            chrome,
             def_id,
             kind,
             key: format!("audio:{structure}"),
