@@ -3257,10 +3257,3 @@ finished work, where a pending item reads as done.
 - ⬜ **The documentation's tooltips draw plain text** *(2026-11-19, new)*.
   A docstring is Markdown; the tooltip could draw it as the documentation
   panel does.
-
-- ⬜ **Text is drawn thinner natively than in the webview editor**
-  *(2026-11-19, captures of the documentation side by side)*. The same
-  face reads lighter in the host's documentation than in the current
-  editor's. The host's rasterization (gamma, hinting, coverage, subpixel
-  positioning) is to follow the rules the webview's text renderer applies,
-  looked up rather than tuned by eye.

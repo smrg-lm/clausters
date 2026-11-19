@@ -8120,3 +8120,13 @@ module of its own.
   them through `font::text`, which is the interface's, so the native one
   read in a proportional face. It draws in `Family::Mono` now, as its own
   module says it does.
+
+- ✅ **Text was drawn thinner natively than in the webview editor**
+  *(2026-11-19, captures of the documentation side by side)*. The host's
+  rasterization followed a browser's capture with no hinting (ST2); the
+  webview draws with the desktop's `hintslight` and subpixel antialiasing.
+  The atlas hints lightly now (the automatic hinter at FreeType's light
+  target, vertical only, advances kept), so stems land on whole pixels and
+  read as dark; subpixel antialiasing stays out, since one host draws one
+  picture on both fronts and a page has no per-channel blend. The record is
+  in `docs/decisions/gui.md`, "Text is drawn as a browser draws it".

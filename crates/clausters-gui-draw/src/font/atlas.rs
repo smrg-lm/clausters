@@ -28,7 +28,10 @@ use std::collections::HashMap;
 
 use ab_glyph_rasterizer::{Point, Rasterizer, point};
 use skrifa::instance::{LocationRef, Size};
-use skrifa::outline::{DrawSettings, OutlinePen};
+use skrifa::outline::{
+    DrawSettings, Engine, GlyphStyles, HintingInstance, HintingOptions, OutlinePen, SmoothMode,
+    Target,
+};
 use skrifa::{FontRef, GlyphId, MetadataProvider};
 
 use super::Family;
@@ -94,6 +97,13 @@ pub struct Glyph {
 /// shaper's layout tables are all read from as they are asked for.
 struct Loaded {
     data: std::sync::Arc<[u8]>,
+    /// **The hinter at each size it drew at** (by the size's bits), made at
+    /// the first glyph of that size: `None` where it could not be made, and
+    /// the outline is drawn as it is.
+    hints: RefCell<HashMap<u32, Option<HintingInstance>>>,
+    /// The face's glyph styles, which the automatic hinter reads at every
+    /// size: worked out once.
+    styles: RefCell<Option<GlyphStyles>>,
 }
 
 impl Loaded {
@@ -108,6 +118,8 @@ impl Loaded {
             .any(|(_, g)| outlines.get(g).is_some())
             .then(|| Self {
                 data: std::sync::Arc::from(bytes),
+                hints: RefCell::new(HashMap::new()),
+                styles: RefCell::new(None),
             })
     }
 
@@ -155,10 +167,39 @@ impl Loaded {
     /// negative. `None` for a glyph that inks nothing.
     fn rasterize(&self, id: GlyphId, px: f32, x: f32) -> Option<(i32, i32, u32, u32, Vec<u8>)> {
         let font = self.font();
-        let outline = font.outline_glyphs().get(id)?;
-        let settings = DrawSettings::unhinted(Size::new(px), LocationRef::default());
+        let outlines = font.outline_glyphs();
+        let outline = outlines.get(id)?;
         let mut path = Path::default();
-        outline.draw(settings, &mut path).ok()?;
+        // **Hinted lightly**, as the desktop's text is (FreeType's light
+        // target, fontconfig's `hintslight`, what GNOME and its webview
+        // draw with): the automatic hinter moves edges up and down onto
+        // whole pixels and nothing across, so a line keeps its advances and
+        // its stems stand sharp instead of greyed over two pixels.
+        let mut hints = self.hints.borrow_mut();
+        let hinter = hints.entry(px.to_bits()).or_insert_with(|| {
+            let styles = self
+                .styles
+                .borrow_mut()
+                .get_or_insert_with(|| GlyphStyles::new(&outlines))
+                .clone();
+            let options = HintingOptions {
+                engine: Engine::Auto(Some(styles)),
+                target: Target::Smooth {
+                    mode: SmoothMode::Light,
+                    symmetric_rendering: true,
+                    preserve_linear_metrics: true,
+                },
+            };
+            HintingInstance::new(&outlines, Size::new(px), LocationRef::default(), options).ok()
+        });
+        let drawn = match hinter {
+            Some(hinter) => outline.draw(DrawSettings::hinted(hinter, false), &mut path),
+            None => outline.draw(
+                DrawSettings::unhinted(Size::new(px), LocationRef::default()),
+                &mut path,
+            ),
+        };
+        drawn.ok()?;
         let [x0, y0, x1, y1] = path.bounds()?;
         // the box on whole pixels, y down from the top of the ink
         let left = (x0 + x).floor();

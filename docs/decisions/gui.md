@@ -3382,6 +3382,18 @@ ab_glyph_rasterizer (both pure Rust, wasm-safe) in place of fontdue, which
 rasterizes only at a whole pixel's origin, and the glyph shader applies the
 correction. Every text of every application moved with it, on purpose.
 
+*Revised 2026-11-19: hinted lightly after all.* The reference the measure
+above was fitted against was a browser's capture, which drew with no
+hinting; the webview editor the user reads beside the host draws with the
+desktop's settings, and on this desktop those are fontconfig's `hintslight`
+with subpixel antialiasing (GNOME's `font-hinting` `slight`,
+`font-antialiasing` `rgba`). Put side by side, the host's documentation read
+thinner than the webview's. The atlas now hints every outline with the
+automatic hinter at FreeType's light target (vertical only, advances kept,
+`preserve_linear_metrics`), which is the half of that setting the host can
+draw on both fronts: horizontal stems land on whole pixels and read as dark
+as the webview's. Subpixel antialiasing stays out, for the reason above.
+
 ## The specification's tokens answer to the host's roles, and two looks are the host's (2026-11-18)
 
 The host's look is specified from one design system (the decision above it,
