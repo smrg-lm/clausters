@@ -1285,15 +1285,16 @@ impl Dock {
             .round() as u32
     }
 
-    /// **The height of the page strip**: a line of control, and none while
-    /// there is one page to show -- a strip that offers no choice is a
-    /// band of dead room -- or in a floating panel. A second page is made
-    /// from a panel's menu, and the strip appears with it.
+    /// **The height of the page strip**: a panel's bar, so its tabs are the
+    /// size of a panel's, and none while there is one page to show -- a
+    /// strip that offers no choice is a band of dead room -- or in a
+    /// floating panel. A second page is made from a panel's menu, and the
+    /// strip appears with it.
     pub(super) fn page_strip_h(&self) -> u32 {
         if self.floating || self.pages.len() <= 1 {
             0
         } else {
-            control_box(self.text_size(), &self.metrics).round() as u32
+            self.strip_h()
         }
     }
 

@@ -312,6 +312,8 @@ fn a_page_keeps_its_own_arrangement() {
     assert_eq!(ws.tree().panes(), [3]);
     ws.show_page(FIRST_PAGE);
     assert_eq!(ws.tree().panes(), [2]);
+    // the page tabs are a panel's: their strip is a panel's bar
+    assert_eq!(ws.page_strip_h(), ws.strip_h());
     // a page closed: its arrangement goes, its panes stay
     ws.close_page("Multitrack").expect("closes");
     assert!(ws.holds(3) && !ws.shown(3));
