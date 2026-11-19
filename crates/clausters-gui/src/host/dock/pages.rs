@@ -102,6 +102,8 @@ impl Dock {
         if at < self.page {
             self.page -= 1;
         }
+        // one page left: the strip goes, and the page takes its room
+        self.arrange();
         self.dirty.chrome = true;
         Ok(())
     }

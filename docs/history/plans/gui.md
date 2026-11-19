@@ -8023,3 +8023,14 @@ module of its own.
   resize cursor says it can be dragged. The dock answers the cursor it wants
   (`Dock::resize_cursor`: over a divider or while one is dragged, sideways
   or up and down by how it stands) and each front sets it on its window.
+
+- ✅ **The page strip's tabs, and the room it leaves** *(found using the
+  editor, 2026-11-18; done the same day)*. The dock's page tabs set their
+  names tighter than a panel's tabs: a `choice` drawn `tabs` gave each tab
+  its name and a pad and a half either side, where a panel's tab has its
+  `tab_inset`. Every row of tabs now spaces its names with that inset. And
+  closing the next to last page took the strip away without measuring the
+  dock again, so the page kept a blank band where the strip had been until
+  something else measured it; closing a page now measures the dock
+  (`a_page_keeps_its_own_arrangement`). Both were the host's, not the
+  editor's: any `choice` of tabs and any dock with pages.

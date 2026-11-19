@@ -315,6 +315,9 @@ fn a_page_keeps_its_own_arrangement() {
     // a page closed: its arrangement goes, its panes stay
     ws.close_page("Multitrack").expect("closes");
     assert!(ws.holds(3) && !ws.shown(3));
+    // one page left: the strip goes and the page takes its room
+    let whole = ws.groups()[0].whole;
+    assert_eq!(whole.y + whole.h, ws.size.1, "{whole:?}");
     assert!(
         ws.close_page(FIRST_PAGE).is_err(),
         "the dock keeps one page"
