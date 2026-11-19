@@ -426,6 +426,47 @@ fn a_typeface_the_host_cannot_read_leaves_it_drawing() {
     );
 }
 
+/// **Code takes a face of its own**: a `family` on `/gui_font` hands the
+/// face to code's weights rather than to the interface, every window
+/// redraws, an empty blob gives code the host's face back, and a family no
+/// face is handed over for changes nothing.
+#[cfg(feature = "font-atlas")]
+#[test]
+fn a_face_handed_over_for_code_draws_code() {
+    let font = |args: Vec<OscType>| {
+        OscPacket::Message(OscMessage {
+            addr: GUI_FONT.into(),
+            args,
+        })
+    };
+    let mut host = Host::new();
+    host.handle_packet(def_msg(1, TREE), from());
+    let face = clausters_gui_draw::font::atlas::EMBEDDED.to_vec();
+    let redraws =
+        |effects: &[HostEffect]| effects.iter().any(|e| matches!(e, HostEffect::Redraw(1)));
+    let effects = host.handle_packet(
+        font(vec![
+            OscType::Blob(face.clone()),
+            OscType::String("mono".into()),
+        ]),
+        from(),
+    );
+    assert!(redraws(&effects), "{effects:?}");
+    let effects = host.handle_packet(
+        font(vec![OscType::Blob(face), OscType::String("prose".into())]),
+        from(),
+    );
+    assert!(effects.is_empty(), "no such family: {effects:?}");
+    let effects = host.handle_packet(
+        font(vec![
+            OscType::Blob(Vec::new()),
+            OscType::String("mono".into()),
+        ]),
+        from(),
+    );
+    assert!(redraws(&effects), "the host's own face again: {effects:?}");
+}
+
 /// The two host-wide tables are verbs, not launch flags: a client hands one
 /// over after the windows are up, and every window redraws -- which is the
 /// half `--theme` could never do and the browser could only do by reaching

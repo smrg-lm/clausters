@@ -46,6 +46,8 @@ dirs = "6.0.0"
 # settings portal (the one rfd's dialogs already speak to).
 ashpd = { version = "0.11.1", default-features = false, features = ["async-std"] }
 pollster = "0.4.0"
+# The system's monospaced faces, for the code's font (View > Font).
+fontdb = "0.24.0"
 futures-util = "0.3"
 
 [target.'cfg(unix)'.dependencies]

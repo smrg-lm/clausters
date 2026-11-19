@@ -831,7 +831,7 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_font <blob>` -- draw text with this typeface from now on.
+     * `/gui_font <blob> [family]` -- draw text with this typeface from now on.
      *
      * `face` is a raw TrueType/OpenType file (the host's rasterizer does not
      * decompress WOFF2, so a Google Fonts CSS URL is not one), served with CORS
@@ -853,9 +853,18 @@ export class GuiHost {
      * read are logged and leave it on the face it had, and so does a host
      * built without a rasterizer, which draws with its embedded bitmap face.
      * Neither is an error here.
+     *
+     * With a `family` the face draws that family instead of the interface:
+     * `"mono"` is code's face and `"mono_bold"` its bold weight, which the
+     * host otherwise draws in the JetBrains Mono it carries. An empty `face`
+     * gives that family the host's own face back.
      */
-    font(face: Uint8Array): void {
-        this.send("/gui_font", face);
+    font(face: Uint8Array, family?: "mono" | "mono_bold"): void {
+        if (family === undefined) {
+            this.send("/gui_font", face);
+        } else {
+            this.send("/gui_font", face, family);
+        }
     }
 
     /**

@@ -374,11 +374,16 @@ pub struct Atlas {
     map: HashMap<(u8, u16, u32, u8), Glyph>,
     version: u64,
     epoch: u64,
+    /// The faces code is drawn with when another was handed over for it
+    /// ([`set_family_face`](Self::set_family_face)): its regular weight and
+    /// its bold, each in place of the one the host carries.
+    code: [Option<std::sync::Arc<[u8]>>; 2],
 }
 
 impl Atlas {
     fn new() -> Self {
         Self {
+            code: [None, None],
             face: None,
             pixels: Vec::new(),
             rows: 0,
@@ -414,7 +419,7 @@ impl Atlas {
             faces.extend(Loaded::new(fallback));
         }
         // the monospaced face, which code is drawn with whatever the host's is
-        let mono = Loaded::new(MONO).map(|face| {
+        let mono = self.code_face(Family::Mono).map(|face| {
             faces.push(face);
             faces.len() - 1
         });
@@ -435,6 +440,56 @@ impl Atlas {
         });
         self.reset();
         true
+    }
+
+    /// **Draws `family` with `bytes` from now on**, or with the face the host
+    /// carries again when `bytes` is `None`: code's two weights
+    /// ([`Family::Mono`], [`Family::MonoBold`]) are the families a typeface
+    /// may be handed over for, since the interface's is
+    /// [`set_face`](Self::set_face)'s. `false`, and nothing changed, for
+    /// another family or for bytes that are not a face.
+    pub fn set_family_face(&mut self, family: Family, bytes: Option<&[u8]>) -> bool {
+        let slot = match family {
+            Family::Mono => 0,
+            Family::MonoBold => 1,
+            _ => return false,
+        };
+        let data: Option<std::sync::Arc<[u8]>> = match bytes {
+            Some(bytes) => {
+                if Loaded::new(bytes).is_none() {
+                    return false;
+                }
+                Some(std::sync::Arc::from(bytes))
+            }
+            None => None,
+        };
+        self.code[slot] = data;
+        // the face loaded in the family's place, if it was loaded
+        let Some(loaded) = self.code_face(family) else {
+            return false;
+        };
+        if let Some(face) = self.face.as_mut()
+            && let Some(&(_, at)) = face.named.iter().find(|(f, _)| *f == family)
+        {
+            face.caps[at] = loaded.cap();
+            face.faces[at] = loaded;
+        }
+        self.reset();
+        true
+    }
+
+    /// The face `family` is drawn with, read: the one handed over for it,
+    /// or the host's own.
+    fn code_face(&self, family: Family) -> Option<Loaded> {
+        let slot = match family {
+            Family::Mono => 0,
+            Family::MonoBold => 1,
+            _ => return family_bytes(family).and_then(Loaded::new),
+        };
+        match &self.code[slot] {
+            Some(bytes) => Loaded::new(bytes),
+            None => Loaded::new(if slot == 0 { MONO } else { MONO_BOLD }),
+        }
     }
 
     /// Empties the cache and the texture, bumping the version so every window's
@@ -512,16 +567,20 @@ impl Atlas {
     /// that draws documentation. Its capitals stand as tall as the
     /// interface's.
     pub fn ensure(&mut self, family: Family) {
-        let Some(bytes) = family_bytes(family) else {
+        if family_bytes(family).is_none() {
+            return;
+        }
+        if self
+            .face
+            .as_ref()
+            .is_none_or(|face| face.named.iter().any(|(f, _)| *f == family))
+        {
+            return;
+        }
+        let Some(loaded) = self.code_face(family) else {
             return;
         };
         let Some(face) = self.face.as_mut() else {
-            return;
-        };
-        if face.named.iter().any(|(f, _)| *f == family) {
-            return;
-        }
-        let Some(loaded) = Loaded::new(bytes) else {
             return;
         };
         face.caps.push(loaded.cap());
@@ -762,6 +821,12 @@ pub fn set_face(bytes: &[u8]) -> bool {
     with(|a| a.set_face(bytes))
 }
 
+/// Draws `family` with `bytes`, or with the host's own face again
+/// ([`Atlas::set_family_face`]).
+pub fn set_family_face(family: Family, bytes: Option<&[u8]>) -> bool {
+    with(|a| a.set_family_face(family, bytes))
+}
+
 /// Whether a face is loaded (and therefore whether text draws through the
 /// atlas).
 pub fn has_face() -> bool {
@@ -851,6 +916,36 @@ mod tests {
     fn loaded() -> Option<Atlas> {
         let mut a = Atlas::new();
         a.set_face(&system_face()?).then_some(a)
+    }
+
+    /// **Code is drawn with the face handed over for it, and with the
+    /// host's own again when it is taken back**; a face loaded later for
+    /// the interface keeps it, and the interface's text never falls back
+    /// to it.
+    #[test]
+    fn code_takes_the_face_handed_over_for_it() {
+        let Some(mut a) = loaded() else { return };
+        let own = a.mono_advance(1.5).unwrap();
+        let epoch = a.epoch();
+        assert!(a.set_family_face(Family::Mono, Some(EMBEDDED)));
+        assert!(a.epoch() > epoch, "what was packed is packed again");
+        let other = a.mono_advance(1.5).unwrap();
+        assert!((other - own).abs() > 0.01, "{other} against {own}");
+        // a face for the interface keeps code's
+        assert!(a.set_face(INTERFACE));
+        assert!((a.mono_advance(1.5).unwrap() - other).abs() < 1e-4);
+        assert!(!a.is_named(a.face.as_ref().unwrap().of('A')));
+        // the bold weight too, read when it is first asked for
+        assert!(a.set_family_face(Family::MonoBold, Some(EMBEDDED)));
+        a.ensure(Family::MonoBold);
+        let bold = a.face_of(Family::MonoBold).unwrap();
+        assert_eq!(&*a.face.as_ref().unwrap().faces[bold].data, EMBEDDED);
+        // and back
+        assert!(a.set_family_face(Family::Mono, None));
+        assert!((a.mono_advance(1.5).unwrap() - own).abs() < 1e-4);
+        // not a face, or not a family a face is handed over for
+        assert!(!a.set_family_face(Family::Mono, Some(b"no")));
+        assert!(!a.set_family_face(Family::Prose, Some(EMBEDDED)));
     }
 
     /// **The face the host carries is a face, and writes what an interface

@@ -3136,12 +3136,6 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **The editor's code font is the bundled one only** *(2026-11-17,
-  WS12)*. The current editor lists the system's monospaced faces (View >
-  Font); the host draws code in JetBrains Mono, which it carries. Choosing
-  another means loading its file into the host as the code's face, by a
-  family name the application resolves to a path.
-
 - ⬜ **The editor's dock arrangement is not kept between runs** *(2026-11-17,
   WS12)*. The window's size is; where the panels were is not, so a run opens
   in the first arrangement. The layout the dock answers names panes by id,

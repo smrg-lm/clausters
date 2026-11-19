@@ -13,6 +13,7 @@ mod config;
 mod desktop;
 mod docs;
 mod envs;
+mod fonts;
 mod paths;
 mod pkgdocs;
 mod session;

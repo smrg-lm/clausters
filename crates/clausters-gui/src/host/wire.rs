@@ -145,13 +145,17 @@ impl Host {
         );
     }
 
-    /// `/gui_font <blob>` -- draw text with this typeface from now on.
+    /// `/gui_font <blob> [family]` -- draw text with this typeface from now
+    /// on.
     ///
     /// The bytes are a raw TrueType/OpenType file. Loading one relayouts
     /// nothing (the size table never followed the face), so every open window
     /// redraws and comes up the same size. A build without a rasterizer (the
     /// `font-atlas` feature) says so and keeps drawing with its embedded bitmap
-    /// face, which is what a refused face does too.
+    /// face, which is what a refused face does too. With a `family` --
+    /// `"mono"` or `"mono_bold"`, code's two weights -- the face draws that
+    /// family instead of the interface, and an empty blob gives it the face
+    /// the host carries back.
     pub(super) fn on_font(
         &mut self,
         args: &[OscType],
@@ -163,6 +167,33 @@ impl Host {
                 "{from}: {GUI_FONT} needs a blob argument (a TrueType/OpenType file)"
             );
         };
+        let family = match args.get(1) {
+            None => None,
+            Some(OscType::String(f)) if f == "ui" => None,
+            Some(OscType::String(f)) if f == "mono" => Some(clausters_gui_draw::font::Family::Mono),
+            Some(OscType::String(f)) if f == "mono_bold" => {
+                Some(clausters_gui_draw::font::Family::MonoBold)
+            }
+            Some(other) => {
+                return diag::warn!(
+                    "{from}: {GUI_FONT}: no family {other:?} takes a face (ui, mono, mono_bold)"
+                );
+            }
+        };
+        #[cfg(feature = "font-atlas")]
+        if let Some(family) = family {
+            let bytes = (!bytes.is_empty()).then_some(bytes);
+            if !clausters_gui_draw::font::atlas::set_family_face(family, bytes) {
+                return diag::warn!(
+                    "{from}: {GUI_FONT}: those {} bytes are not a typeface this host can read",
+                    bytes.map_or(0, <[u8]>::len)
+                );
+            }
+            for id in self.window_def_ids() {
+                effects.push(HostEffect::Redraw(id));
+            }
+            return;
+        }
         #[cfg(feature = "font-atlas")]
         {
             struct WireFace<'a>(&'a [u8]);
@@ -184,7 +215,7 @@ impl Host {
         }
         #[cfg(not(feature = "font-atlas"))]
         {
-            let _ = (bytes, effects);
+            let _ = (bytes, effects, family);
             diag::warn!(
                 "{from}: {GUI_FONT}: this host was built without a rasterizer (the `font-atlas` \
                  feature); drawing with the embedded bitmap face"

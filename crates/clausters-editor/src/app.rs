@@ -51,6 +51,8 @@ pub enum Msg {
     SystemDark(bool),
     /// Time to ask the dock again whether every pane has arrived.
     Arrange,
+    /// The system's monospaced families, found.
+    Fonts(Vec<crate::fonts::MonoFamily>),
 }
 
 /// Every book and every document.
@@ -273,6 +275,8 @@ pub struct App {
     saving_startup: Option<bool>,
     /// Whether the files are in more than one group, as the dock last said.
     split: bool,
+    /// The system's monospaced families, once found.
+    fonts: Vec<crate::fonts::MonoFamily>,
 }
 
 impl App {
@@ -306,6 +310,7 @@ impl App {
             quitting: false,
             saving_startup: None,
             split: false,
+            fonts: Vec::new(),
         }
     }
 
@@ -332,6 +337,7 @@ impl App {
 
     fn start(&mut self, cli: Vec<PathBuf>) {
         self.apply_theme();
+        self.find_fonts();
         desktop::follow_color_scheme(&self.tx);
         self.read_docs();
         self.open_bar();
@@ -411,6 +417,13 @@ impl App {
             Msg::Docs(Err(e)) => self.post("info", &format!("{e}\n")),
             Msg::Chosen { purpose, path } => self.chosen(purpose, path),
             Msg::Arrange => self.dock(json!({"verb": "layout"}), DockFor::Arrange),
+            Msg::Fonts(fonts) => {
+                self.fonts = fonts;
+                if self.settings.font.is_some() {
+                    self.apply_font();
+                }
+                self.menus();
+            }
             Msg::SystemDark(dark) => {
                 self.system_dark = dark;
                 if self.settings.theme == ThemePref::System {
@@ -754,6 +767,13 @@ impl App {
                 };
                 self.settings.save();
                 self.apply_theme();
+                self.menus();
+            }
+            font if font.starts_with("font:") => {
+                let name = &font["font:".len()..];
+                self.settings.font = (name != crate::fonts::BUNDLED).then(|| name.to_string());
+                self.settings.save();
+                self.apply_font();
                 self.menus();
             }
             "zoom_in" => self.zoom(Some(1.0)),
@@ -1646,6 +1666,41 @@ impl App {
         }
     }
 
+    /// Finds the system's monospaced families, off the editor's turn.
+    fn find_fonts(&self) {
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(Msg::Fonts(crate::fonts::system_mono()));
+        });
+    }
+
+    /// **Code drawn in the chosen family**: its two weights handed to the
+    /// host, or the host's own face again for the bundled one -- and for a
+    /// family no longer installed, which is how the current editor falls
+    /// back too.
+    fn apply_font(&self) {
+        let family = self
+            .settings
+            .font
+            .as_ref()
+            .and_then(|name| self.fonts.iter().find(|f| &f.name == name));
+        let read =
+            |path: Option<&PathBuf>| path.and_then(|p| std::fs::read(p).ok()).unwrap_or_default();
+        let regular = read(family.map(|f| &f.regular));
+        // a family with no bold draws its bold as its regular, not as the
+        // host's own
+        let bold = match family.and_then(|f| f.bold.as_ref()) {
+            Some(path) => read(Some(path)),
+            None => regular.clone(),
+        };
+        for (bytes, weight) in [(regular, "mono"), (bold, "mono_bold")] {
+            self.link.send(
+                "/gui_font",
+                vec![OscType::Blob(bytes), OscType::String(weight.into())],
+            );
+        }
+    }
+
     fn zoom(&mut self, delta: Option<f32>) {
         self.settings.zoom(delta);
         self.settings.save();
@@ -1741,6 +1796,7 @@ impl App {
                 {"label": "Documentation", "verb": "show_docs", "checked": self.docs_shown},
                 {"label": "Split Editor", "verb": "split_editor", "checked": split},
                 {"label": "Move Tab to Other Editor", "verb": "move_tab", "enabled": split},
+                {"label": "Font", "menu": self.font_menu()},
                 "-",
                 {"label": "Increase Size", "verb": "zoom_in"},
                 {"label": "Decrease Size", "verb": "zoom_out"},
@@ -1754,6 +1810,29 @@ impl App {
                 {"label": "Keyboard Shortcuts", "verb": "keys"},
             ]},
         ])
+    }
+
+    /// View > Font: the bundled face, then the system's monospaced
+    /// families, the one in use checked.
+    fn font_menu(&self) -> Value {
+        let chosen = self
+            .settings
+            .font
+            .as_deref()
+            .unwrap_or(crate::fonts::BUNDLED);
+        let entry = |name: &str, label: String| {
+            json!({"label": label, "verb": format!("font:{name}"), "group": "font",
+                "checked": name == chosen})
+        };
+        let mut entries = vec![entry(
+            crate::fonts::BUNDLED,
+            format!("{} (bundled)", crate::fonts::BUNDLED),
+        )];
+        if !self.fonts.is_empty() {
+            entries.push(json!("-"));
+        }
+        entries.extend(self.fonts.iter().map(|f| entry(&f.name, f.name.clone())));
+        Value::Array(entries)
     }
 
     /// Whether the files are in more than one group, as last seen.

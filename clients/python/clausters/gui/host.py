@@ -638,8 +638,8 @@ class GuiHost:
         """
         self._send("/gui_load", name)
 
-    def font(self, face: bytes):
-        """``/gui_font <blob>`` -- draw text with this typeface from now on.
+    def font(self, face: bytes, family: str | None = None):
+        """``/gui_font <blob> [family]`` -- draw text with this typeface from now on.
 
         ``face`` is a raw TrueType/OpenType file (the host's rasterizer does not
         decompress WOFF2). A face is a property of the **host**, not of a
@@ -661,8 +661,17 @@ class GuiHost:
         `clausters.launch.GuiProcess`'s
         ``font=`` (the host's ``--font``), for a face that should be in place
         before the first window opens.
+
+        With a ``family`` the face draws that family instead of the
+        interface: ``"mono"`` is code's face and ``"mono_bold"`` its bold
+        weight, which the host otherwise draws in the JetBrains Mono it
+        carries. An empty ``face`` gives that family the host's own face
+        back.
         """
-        self._send("/gui_font", bytes(face))
+        if family is None:
+            self._send("/gui_font", bytes(face))
+        else:
+            self._send("/gui_font", bytes(face), family)
 
     def theme(self, table: dict):
         """``/gui_theme <json>`` -- draw the chrome from these colors from now on.

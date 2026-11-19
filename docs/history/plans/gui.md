@@ -8138,3 +8138,16 @@ module of its own.
   drawing, factored out to serve both (`draw_items`); what a selection
   walks is its rows of text, each in its runs (`NoteLine::runs`), so a
   drag still selects and the copy key copies the words across faces.
+
+- ✅ **The editor's code font is the bundled one only** *(2026-11-17,
+  WS12)*. The current editor lists the system's monospaced faces (View >
+  Font); the host draws code in JetBrains Mono, which it carries. Choosing
+  another means loading its file into the host as the code's face, by a
+  family name the application resolves to a path.
+  *(Fixed 2026-11-19: `/gui_font` takes a family after the blob, `mono` or
+  `mono_bold`, which the atlas draws code's two weights with in place of the
+  faces it carries, kept across a later interface face; an empty blob gives
+  them back. The editor finds the system's monospaced families with fontdb
+  on a thread at start, as the webview editor does, lists them in View >
+  Font beside the bundled face and keeps the choice in its settings; a
+  family no longer installed falls back to the bundled face.)*
