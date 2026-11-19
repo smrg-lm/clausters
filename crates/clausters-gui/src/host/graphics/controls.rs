@@ -813,6 +813,23 @@ fn button_face(
     (start, x)
 }
 
+/// **A scroll bar's thumb**, as the design system draws one: no track,
+/// the thumb `thumb` (as thick as `scrollbar_w`) kept `scrollbar_inset`
+/// off its edges, a pill of the quiet text at two fifths. Every scroll bar
+/// the host draws is this one.
+pub fn scroll_thumb(
+    mesh: &mut Mesh,
+    thumb: Rect,
+    m: &Metrics,
+    theme: &clausters_gui_draw::theme::Theme,
+) {
+    let r = thumb.inset(m.scrollbar_inset);
+    if r.w <= 0.0 || r.h <= 0.0 {
+        return;
+    }
+    mesh.round_rect(r, r.w.min(r.h) * 0.5, with_alpha(theme.text_dim, 0.4));
+}
+
 /// `c` at `alpha` of its own strength.
 fn with_alpha(c: Color, alpha: f32) -> Color {
     [c[0], c[1], c[2], c[3] * alpha]
@@ -990,7 +1007,11 @@ pub fn choice(d: &mut Draw, current: &str, label: Option<&str>, rect: Rect, size
     let m = d.m;
     let body = field_box(rect, label.is_some(), size, m);
     let chevron_w = m.icon + m.field_x;
-    field_with(d, current, label, rect, size, false, None, chevron_w, false);
+    let look = FieldLook {
+        end: chevron_w,
+        ..FieldLook::default()
+    };
+    field_with(d, current, label, rect, size, false, None, look);
     let (mesh, m, theme) = d.parts();
     let chevron = icon("chevron-down", font::symbol::POINT_DOWN);
     let cell = Rect::new(body.x + body.w - chevron_w, body.y, m.icon, body.h);
@@ -1044,11 +1065,29 @@ pub fn field(
     multiline: bool,
     caret: Option<textedit::Caret>,
 ) {
-    field_with(d, value, label, rect, size, multiline, caret, 0.0, false);
+    field_with(
+        d,
+        value,
+        label,
+        rect,
+        size,
+        multiline,
+        caret,
+        FieldLook::default(),
+    );
 }
 
-/// [`field`], keeping `end` pixels free at its right (a select's chevron),
-/// and drawn `invalid`.
+/// **What a field's owner adds to its look**: room kept free at its right
+/// (a select's chevron), its edge in the destructive role (`invalid`), and
+/// the words it shows quieter while it holds none (`placeholder`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FieldLook<'a> {
+    pub end: f32,
+    pub invalid: bool,
+    pub placeholder: Option<&'a str>,
+}
+
+/// [`field`], with what its owner adds to it ([`FieldLook`]).
 #[allow(clippy::too_many_arguments)] // the field, and what its owner adds to it
 pub fn field_with(
     d: &mut Draw,
@@ -1058,9 +1097,9 @@ pub fn field_with(
     size: f32,
     multiline: bool,
     caret: Option<textedit::Caret>,
-    end: f32,
-    invalid: bool,
+    look: FieldLook,
 ) {
+    let (end, invalid) = (look.end, look.invalid);
     label_strip(d, label, rect, size);
     let m = d.m;
     let body = field_box(rect, label.is_some(), size, m);
@@ -1096,6 +1135,9 @@ pub fn field_with(
         // an ellipsis (the label/choice look); focused, it scrolls to the caret.
         let ty = (body.y + (body.h - font::height(size)) * 0.5).max(body.y);
         let first = value.split('\n').next().unwrap_or("");
+        if let (true, Some(words)) = (value.is_empty(), look.placeholder) {
+            font::text_ellipsis(d.mesh, words, text_x, ty, text_w, size, d.theme.text_dim);
+        }
         if caret.is_none() {
             font::text_ellipsis(d.mesh, first, text_x, ty, text_w, size, d.theme.text);
             return;
@@ -1213,7 +1255,7 @@ fn draw_line(
         let cx = x + font::caret_x(visible, caret.pos - from, size);
         mesh.rect(
             Rect::new(cx, y, size.max(1.0), font::height(size)),
-            theme.accent,
+            theme.text,
         );
     }
 }

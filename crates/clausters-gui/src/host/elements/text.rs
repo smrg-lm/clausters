@@ -55,6 +55,9 @@ pub struct Text {
     /// The `invalid` prop: what it holds is refused, and its edge says so in
     /// the destructive role.
     pub invalid: bool,
+    /// The `placeholder` prop: the words it shows, quieter, while it holds
+    /// none.
+    pub placeholder: Option<String>,
     /// **View state**, never parsed from or sent over the wire: the insertion
     /// point and the selection, meaningful only while the field is focused.
     caret: Caret,
@@ -129,6 +132,11 @@ fn from_props(props: &Map<String, Value>) -> Text {
             .get("invalid")
             .and_then(parse::truthy)
             .unwrap_or(false),
+        placeholder: props
+            .get("placeholder")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
         caret: Caret::default(),
         held: None,
         history: History::default(),
@@ -276,6 +284,10 @@ impl Element for Text {
             "text_size" => parse::set_size(&mut self.text_size, v),
             "multiline" => parse::truthy(v).map(|b| self.multiline = b).is_some(),
             "invalid" => parse::truthy(v).map(|b| self.invalid = b).is_some(),
+            "placeholder" => {
+                self.placeholder = v.as_str().filter(|s| !s.is_empty()).map(str::to_string);
+                true
+            }
             _ => false,
         }
     }
@@ -291,8 +303,11 @@ impl Element for Text {
             // The caret and the selection are drawn only while the field is
             // focused: unfocused, the value is text like any other.
             ctx.focused.then_some(self.caret),
-            0.0,
-            self.invalid,
+            controls::FieldLook {
+                invalid: self.invalid,
+                placeholder: self.placeholder.as_deref(),
+                ..controls::FieldLook::default()
+            },
         );
     }
 

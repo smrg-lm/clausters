@@ -811,6 +811,12 @@ export interface GroupOptions extends ContainerOptions {
      * work surfaces and wrong for a row of tools (see {@link toolbar}).
      */
     pack?: boolean;
+    /**
+     * On a `col`: a **list of rows**, a line between each two, every row at
+     * least a list row tall and no gap of their own -- with `frame`, the
+     * design system's bordered list.
+     */
+    divide?: boolean;
 }
 
 /**
@@ -1190,6 +1196,7 @@ function group(
     modal: boolean | undefined,
     split: boolean | undefined,
     pack: boolean | undefined,
+    divide?: boolean,
 ): (readonly [string, unknown])[] {
     return [
         ["title", title],
@@ -1198,6 +1205,7 @@ function group(
         ["modal", flag(modal)],
         ["split", flag(split)],
         ["pack", flag(pack)],
+        ["divide", flag(divide)],
     ];
 }
 
@@ -1227,7 +1235,7 @@ export function layout(
 ): View {
     const {
         flow, index, layout: arrangement, margin, gap, cols, hug, theme,
-        title, frame, collapsed, modal, split, pack, ...rest
+        title, frame, collapsed, modal, split, pack, divide, ...rest
     } = options;
     return node("layout", {
         ...rest,
@@ -1239,7 +1247,7 @@ export function layout(
             ["cols", cols],
             ["theme", theme],
             ["hug", flag(hug)],
-            ...group(title, frame, collapsed, modal, split, pack),
+            ...group(title, frame, collapsed, modal, split, pack, divide),
         ]),
         children: [...(options.children ?? []), ...children],
     });
@@ -1777,7 +1785,7 @@ export function panel(
 ): View {
     const {
         flow, layout, margin, gap, cols, hug, theme,
-        title, frame, collapsed, modal, split, pack, ...rest
+        title, frame, collapsed, modal, split, pack, divide, ...rest
     } = options;
     return node("layout", {
         ...rest,
@@ -1788,7 +1796,7 @@ export function panel(
             ["cols", cols],
             ["theme", theme],
             ["hug", flag(hug)],
-            ...group(title, frame, collapsed, modal, split, pack),
+            ...group(title, frame, collapsed, modal, split, pack, divide),
         ]),
         children: [...(options.children ?? []), ...children],
     });
@@ -2407,10 +2415,12 @@ export function text(
         label?: string;
         multiline?: boolean;
         invalid?: boolean;
+        /** What the field shows, quieter, while it holds nothing. */
+        placeholder?: string;
         textSize?: number;
     } = {},
 ): View {
-    const { value, label: name, multiline, invalid, textSize, ...rest } = options;
+    const { value, label: name, multiline, invalid, placeholder, textSize, ...rest } = options;
     return node("text", {
         ...rest,
         ...drop([
@@ -2420,6 +2430,7 @@ export function text(
             // both forms, and these two props have always ridden as bools.
             ["multiline", multiline],
             ["invalid", flag(invalid)],
+            ["placeholder", placeholder],
             ["text_size", textSize],
         ]),
     });

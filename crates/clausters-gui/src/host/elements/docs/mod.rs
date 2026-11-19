@@ -33,7 +33,7 @@ use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
 use crate::host::elements::text::edit_key;
-use crate::host::graphics::controls::{self, ButtonLook, ToggleView};
+use crate::host::graphics::controls::{self, ButtonLook};
 use crate::host::graphics::docs::index::{Hit, Index, talking_about};
 use crate::host::graphics::docs::layout::{Ink, Item, Laid, lay};
 use crate::host::graphics::docs::markdown::{Block, Run, parse, slugify};
@@ -568,33 +568,42 @@ impl DocsView {
         }
         let trail = Rect::new(trail_x, sy, (find.x - trail_x - m.pad).max(0.0), row);
         let mut count = None;
+        // **The find bar**, as the reference's: `find_h` high, its field and
+        // its controls `find_field_h` high in its middle, a gap between them
         let bar = self.find_open.then(|| {
             let bar = Rect::new(
                 rect.x,
                 top,
                 rect.w,
-                row.min((rect.y + rect.h - top).max(0.0)),
+                m.find_h.min((rect.y + rect.h - top).max(0.0)),
             );
-            let close = Rect::new(bar.x + bar.w - square, bar.y, square, row);
+            let row = m.find_field_h.min(bar.h);
+            let y = bar.y + ((bar.h - row) * 0.5).max(0.0);
+            let square = row;
+            let gap = m.pad;
+            let close = Rect::new(bar.x + bar.w - m.pad - square, y, square, row);
             let all_w = text_box("All documents", ui, m) + m.pad;
             let page_w = text_box("Page", ui, m) + m.pad;
-            let mut right = close.x - all_w;
-            parts.push((Part::Everywhere, Rect::new(right, bar.y, all_w, row)));
+            let mut right = close.x - gap - all_w;
+            parts.push((Part::Everywhere, Rect::new(right, y, all_w, row)));
             right -= page_w;
-            parts.push((Part::InPage, Rect::new(right, bar.y, page_w, row)));
+            parts.push((Part::InPage, Rect::new(right, y, page_w, row)));
+            right -= gap;
             if self.scope == Scope::Page {
                 right -= square;
-                parts.push((Part::Next, Rect::new(right, bar.y, square, row)));
+                parts.push((Part::Next, Rect::new(right, y, square, row)));
                 right -= square;
-                parts.push((Part::Previous, Rect::new(right, bar.y, square, row)));
+                parts.push((Part::Previous, Rect::new(right, y, square, row)));
                 let count_w = text_box("000/000", ui, m);
                 right -= count_w;
-                count = Some(Rect::new(right, bar.y, count_w, row));
+                count = Some(Rect::new(right, y, count_w, row));
+                right -= gap;
             }
             parts.push((Part::Close, close));
+            let left = bar.x + m.pad;
             parts.push((
                 Part::Field,
-                Rect::new(bar.x, bar.y, (right - bar.x).max(1.0), row),
+                Rect::new(left, y, (right - left).max(1.0), row),
             ));
             top += bar.h;
             bar
@@ -912,12 +921,14 @@ impl DocsView {
             // the scroll bar, where there is more than is seen
             let total = laid.height + g.text.h * 0.5;
             if total > g.text.h + 0.5 {
-                let bar = (m.pad * 0.75).max(3.0 * ctx.scale).round();
+                let bar = m.scrollbar_w;
                 let h = (g.page.h * g.text.h / total).max(m.pad * 2.0);
                 let y = g.page.y + (g.page.h - h) * (scroll / (total - g.text.h)).min(1.0);
-                mesh.rect(
+                controls::scroll_thumb(
+                    mesh,
                     Rect::new(g.page.x + g.page.w - bar, y, bar, h),
-                    theme.separator,
+                    m,
+                    theme,
                 );
             }
             // the strip along the top, or in the window's header, whose
@@ -1036,26 +1047,53 @@ impl DocsView {
                         );
                     }
                 }
-                Part::InPage | Part::Everywhere => {
-                    let (on, label) = if *part == Part::InPage {
-                        (self.scope == Scope::Page, "Page")
-                    } else {
-                        (self.scope == Scope::All, "All documents")
-                    };
-                    controls::toggle(
-                        d,
-                        on,
-                        Some(label),
+                // where to look, as one toggle group of two: drawn once, at
+                // its first segment
+                Part::InPage => {
+                    let all = g
+                        .parts
+                        .iter()
+                        .find(|(p, _)| *p == Part::Everywhere)
+                        .map_or(*r, |(_, a)| *a);
+                    let (page, all) = (inset(r), inset(&all));
+                    let well = Rect::new(
+                        page.x.min(all.x),
+                        page.y,
+                        (page.x + page.w).max(all.x + all.w) - page.x.min(all.x),
+                        page.h,
+                    );
+                    let (mesh, m, theme) = d.parts();
+                    crate::host::graphics::choice::draw_segments(
+                        mesh,
+                        m,
+                        theme,
+                        well,
+                        &[("Page", page), ("All documents", all)],
+                        usize::from(self.scope == Scope::All),
                         None,
-                        inset(r),
-                        ToggleView::Button,
-                        false,
                         g.ui,
                     );
                 }
+                Part::Everywhere => {}
                 Part::Field => {
                     let caret = (ctx.focused && self.find_focus).then_some(self.caret);
-                    controls::field(d, &self.find, None, *r, g.ui, false, caret);
+                    let placeholder = match self.scope {
+                        Scope::Page => "Find in this page",
+                        Scope::All => "Search every document (Enter)",
+                    };
+                    controls::field_with(
+                        d,
+                        &self.find,
+                        None,
+                        *r,
+                        g.ui,
+                        false,
+                        caret,
+                        controls::FieldLook {
+                            placeholder: Some(placeholder),
+                            ..controls::FieldLook::default()
+                        },
+                    );
                 }
                 Part::Book => {}
             }

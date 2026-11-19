@@ -1862,3 +1862,48 @@ fn a_wrapped_label_in_a_dialog_is_as_tall_as_its_lines() {
     assert!(close.y >= help.y + help.h);
     assert!(close.y + close.h <= card.y + card.h);
 }
+
+/// **A divided list** stands each row at least a list row tall, with a
+/// line between each two of them across the whole list.
+#[test]
+fn a_divided_list_has_rows_a_row_tall_and_a_line_between_them() {
+    let m = clausters_gui_draw::metrics::Metrics::default();
+    let ctx = ctx();
+    let host = host_from(
+        r#"{"type":"window","margin":0,"flow":"col","status":false,"children":[
+            {"id":2,"type":"layout","flow":"col","divide":1,"hug":1,"frame":1,"margin":0,"children":[
+                {"id":3,"type":"label","text":"one"},
+                {"id":4,"type":"label","text":"two"},
+                {"id":5,"type":"label","text":"three"}]}]}"#,
+    );
+    let rows: Vec<Rect> = [3, 4, 5]
+        .iter()
+        .map(|id| rect_of(&host, &ctx, *id))
+        .collect();
+    assert!(rows.iter().all(|r| r.h >= m.list_row_h), "{rows:?}");
+    assert_eq!(rows[1].y, rows[0].y + rows[0].h, "no gap of their own");
+    let placed = host.layout_window(1, ctx.fb_w, ctx.fb_h).unwrap();
+    let lines = crate::host::chrome::rules(&placed, &m);
+    assert_eq!(lines.len(), 2);
+    let list = rect_of(&host, &ctx, 2);
+    assert!(lines.iter().all(|(_, l)| l.x == list.x && l.w == list.w));
+}
+
+/// **A scroll bar is the specification's**: as thick as `scrollbar_w`,
+/// with no track drawn under its thumb.
+#[test]
+fn a_planes_scroll_bar_is_as_thick_as_the_role() {
+    let m = clausters_gui_draw::metrics::Metrics::default();
+    let ctx = ctx();
+    let host = host_from(
+        r#"{"type":"window","margin":0,"status":false,"children":[
+            {"id":2,"type":"plane","bars":true,"zoom":false,"axis":"y","margin":0,"content_h":4000,"children":[
+                {"id":3,"type":"label","text":"x"}]}]}"#,
+    );
+    let placed = host.layout_window(1, ctx.fb_w, ctx.fb_h).unwrap();
+    let plane = placed.iter().find(|p| p.widget.id == Some(2)).unwrap();
+    let bars = crate::host::chrome::bars(plane, &m);
+    assert_eq!(bars.len(), 1);
+    assert_eq!(bars[0].track.w, m.scrollbar_w);
+    assert_eq!(bars[0].thumb.w, m.scrollbar_w);
+}

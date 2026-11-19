@@ -855,6 +855,68 @@ impl Mesh {
         }
     }
 
+    /// **A dashed rounded frame**: the outline of `rect` with
+    /// `radius`-rounded corners, `w` thick, walked along its middle in
+    /// dashes `dash` long with as much between them -- a drop zone's edge.
+    pub fn dashed_round_border(
+        &mut self,
+        rect: Rect,
+        w: f32,
+        radius: f32,
+        dash: f32,
+        color: Color,
+    ) {
+        if rect.w <= w || rect.h <= w || w <= 0.0 || dash <= 0.0 {
+            return;
+        }
+        // the path along the middle of the stroke, its corners in segments
+        let half = w * 0.5;
+        let r = (radius - half).clamp(0.0, (rect.w.min(rect.h) - w) * 0.5);
+        let (x0, y0) = (rect.x + half, rect.y + half);
+        let (x1, y1) = (rect.x + rect.w - half, rect.y + rect.h - half);
+        const STEPS: usize = 6;
+        let mut path: Vec<[f32; 2]> = Vec::new();
+        let corner = |path: &mut Vec<[f32; 2]>, cx: f32, cy: f32, from: f32| {
+            for i in 0..=STEPS {
+                let a = from + std::f32::consts::FRAC_PI_2 * i as f32 / STEPS as f32;
+                path.push([cx + r * a.cos(), cy + r * a.sin()]);
+            }
+        };
+        use std::f32::consts::PI;
+        corner(&mut path, x0 + r, y0 + r, PI);
+        corner(&mut path, x1 - r, y0 + r, 1.5 * PI);
+        corner(&mut path, x1 - r, y1 - r, 0.0);
+        corner(&mut path, x0 + r, y1 - r, 0.5 * PI);
+        path.push(path[0]);
+        // dashes along it: on for `dash`, off for `dash`
+        let mut along = 0.0f32;
+        for pair in path.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            let len = ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt();
+            let mut t = 0.0f32;
+            while t < len {
+                let phase = along % (2.0 * dash);
+                let room = if phase < dash {
+                    dash - phase
+                } else {
+                    2.0 * dash - phase
+                };
+                let step = room.min(len - t);
+                if phase < dash {
+                    let p = |u: f32| {
+                        [
+                            a[0] + (b[0] - a[0]) * u / len,
+                            a[1] + (b[1] - a[1]) * u / len,
+                        ]
+                    };
+                    self.line(p(t), p(t + step), w, color);
+                }
+                t += step;
+                along += step;
+            }
+        }
+    }
+
     /// A filled circle approximated by a triangle fan.
     pub fn disc(&mut self, cx: f32, cy: f32, radius: f32, color: Color) {
         const SEGMENTS: usize = 32;
@@ -1004,6 +1066,41 @@ impl<K: PartialEq> KeptParts<K> {
 
 #[cfg(test)]
 mod tests {
+
+    /// **A dashed frame stays on its outline**, inside the rectangle, and
+    /// leaves gaps: it covers well under what a whole frame does.
+    #[test]
+    fn a_dashed_frame_keeps_to_its_outline_with_gaps() {
+        use super::{Mesh, Rect};
+        let r = Rect::new(10.0, 20.0, 200.0, 100.0);
+        let mut dashed = Mesh::new();
+        dashed.dashed_round_border(r, 2.0, 8.0, 6.0, [1.0, 1.0, 1.0, 1.0]);
+        assert!(!dashed.is_empty());
+        for (x, y) in dashed.positions() {
+            assert!(x >= r.x - 0.5 && x <= r.x + r.w + 0.5, "x {x}");
+            assert!(y >= r.y - 0.5 && y <= r.y + r.h + 0.5, "y {y}");
+            let near_edge = (x - r.x).abs() < 3.0
+                || (x - r.x - r.w).abs() < 3.0
+                || (y - r.y).abs() < 3.0
+                || (y - r.y - r.h).abs() < 3.0;
+            let in_corner =
+                (x < r.x + 9.0 || x > r.x + r.w - 9.0) && (y < r.y + 9.0 || y > r.y + r.h - 9.0);
+            assert!(near_edge || in_corner, "({x}, {y}) is off the outline");
+        }
+        let area = |m: &Mesh| {
+            m.flat_vertices()
+                .chunks(18)
+                .map(|t| {
+                    let (a, b, c) = ((t[0], t[1]), (t[6], t[7]), (t[12], t[13]));
+                    ((b.0 - a.0) * (c.1 - a.1) - (c.0 - a.0) * (b.1 - a.1)).abs() * 0.5
+                })
+                .sum::<f32>()
+        };
+        let mut whole = Mesh::new();
+        whole.round_border(r, 2.0, 8.0, [1.0, 1.0, 1.0, 1.0]);
+        let (d, w) = (area(&dashed), area(&whole));
+        assert!(d > 0.3 * w && d < 0.7 * w, "dashed {d} against whole {w}");
+    }
 
     /// **A shadow fades across its blur**: whole inside it, half at the
     /// edge, nothing past it, so the surface's shape with no line around

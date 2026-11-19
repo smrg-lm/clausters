@@ -133,7 +133,7 @@ impl PostView {
     /// in `header`, the slot of its window's header.
     fn geometry(&self, rect: Rect, scale: f32, m: &Metrics, header: Option<Rect>) -> Geometry {
         let size = self.text_size * scale;
-        let bar_w = (m.pad * 1.5).max(4.0 * scale).round();
+        let bar_w = m.scrollbar_w;
         let pad = m.pad;
         let ui = font::DEFAULT_SIZE * scale;
         let row = control_box(ui, m);
@@ -518,7 +518,7 @@ impl PostView {
             }
         }
         if let Some(thumb) = self.thumb_rect(&g) {
-            mesh.rect(thumb, theme.separator);
+            controls::scroll_thumb(mesh, thumb, ctx.metrics, theme);
         }
         mesh.set_clip(kept);
     }

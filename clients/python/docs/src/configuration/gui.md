@@ -245,7 +245,7 @@ scale = 0.9              # a compact host, every role regenerated
 control_h = 26           # ...except this one, set outright
 ```
 
-The 113 roles, with the value each takes at `scale = 1.0`:
+The 114 roles, with the value each takes at `scale = 1.0`:
 
 | Role | Default | What it sizes |
 | --- | --- | --- |
@@ -358,6 +358,7 @@ The 113 roles, with the value each takes at `scale = 1.0`:
 | `scrollbar_w` | 10 | A scrollbar's width. |
 | `scrollbar_inset` | 2 | How far a scrollbar's thumb keeps off its edges. |
 | `split_grab` | 4 | The band a split's line is grabbed in. |
+| `zone_inset` | 6 | How far a drop zone stands inside the place a dragged panel would land. |
 | `icon` | 16 | An icon's side. |
 | `icon_sm` | 12 | A small icon's side. |
 | `find_h` | 36 | The find bar's height. |

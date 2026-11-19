@@ -1080,6 +1080,17 @@ pub(super) fn draw_dividers(
         let th = p.widget.theme.as_deref().unwrap_or(theme);
         mesh.rect(chrome::divider_line(&d, inputs.metrics), th.separator);
     }
+    // the lines between the rows of a divided list
+    for (container, line) in chrome::rules(placed, inputs.metrics) {
+        if !range.contains(&container) {
+            continue;
+        }
+        let p = &placed[container];
+        mesh.set_clip(p.clip);
+        mesh.set_ink(super::ink_of(p));
+        let th = p.widget.theme.as_deref().unwrap_or(theme);
+        mesh.rect(line, th.separator);
+    }
     mesh.set_clip(None);
 }
 
@@ -1101,8 +1112,7 @@ pub(super) fn draw_bars(
         over.set_clip(Some(p.clip.map_or(p.rect, |c| c.intersect(p.rect))));
         over.set_ink(super::ink_of(p));
         for bar in bars {
-            over.rect(bar.track, with_alpha(th.track, 0.7));
-            over.rect(bar.thumb, th.accent_dim);
+            controls::scroll_thumb(over, bar.thumb, inputs.metrics, th);
         }
     }
     over.set_clip(None);

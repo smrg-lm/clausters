@@ -747,6 +747,8 @@ def test_the_container_chrome_rides_as_flags_and_a_dialog_is_a_modal_layout():
     assert (kit["variant"], kit["size"]) == ("destructive", "sm")
     assert guidef.label("Name", variant="caption")["variant"] == "caption"
     assert guidef.text(value="x", invalid=True)["invalid"] == 1
+    assert guidef.text(placeholder="Find")["placeholder"] == "Find"
+    assert guidef.layout(guidef.label("a"), divide=True, frame=True)["divide"] == 1
     with pytest.raises(ValueError):
         guidef.button(variant="primary")
     bar = guidef.toolbar(guidef.button(icon=guidef.ICON.play, flat=True),

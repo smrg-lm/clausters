@@ -859,11 +859,11 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
 # the same nodes with a familiar name and the props of one common case.
 
 
-def _group(title, frame, collapsed, modal, split, pack=None) -> dict:
+def _group(title, frame, collapsed, modal, split, pack=None, divide=None) -> dict:
     """The props a container shows of itself, as the wire takes them."""
     out = _drop_none(title=title)
     for key, flag in (("frame", frame), ("collapsed", collapsed), ("modal", modal),
-                      ("split", split), ("pack", pack)):
+                      ("split", split), ("pack", pack), ("divide", divide)):
         if flag is not None:
             out[key] = 1 if flag else 0
     return out
@@ -873,7 +873,7 @@ def layout(*children, flow: str | None = None, index: int | None = None,
            margin: float | None = None, gap: float | None = None, cols: int | None = None,
            hug: bool | None = None, title: str | None = None, frame: bool | None = None,
            collapsed: bool | None = None, modal: bool | None = None,
-           split: bool | None = None, pack: bool | None = None,
+           split: bool | None = None, pack: bool | None = None, divide: bool | None = None,
            theme: dict | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A container with **no axes**, arranging its children by ``flow``.
@@ -908,12 +908,16 @@ def layout(*children, flow: str | None = None, index: int | None = None,
     only a child that names a ``weight`` shares what is left. Without it the
     children with no size of their own share the strip evenly, which is right
     for a row of work surfaces and wrong for a row of tools (see `toolbar`).
+
+    ``divide``, on a ``col``, makes it a **list of rows**: a line between each
+    two, every row at least a list row tall, and no gap of their own -- with
+    ``frame``, the design system's bordered list.
     """
     extra = _drop_none(flow=flow, index=index, margin=margin, gap=gap, cols=cols,
                        theme=theme, color=color)
     if hug is not None:
         extra["hug"] = 1 if hug else 0
-    extra.update(_group(title, frame, collapsed, modal, split, pack))
+    extra.update(_group(title, frame, collapsed, modal, split, pack, divide))
     return node("layout", id=id, children=children, **extra, **props)
 
 
@@ -1326,7 +1330,7 @@ def panel(*children, flow: str | None = None, layout: str | None = None,
           margin: float | None = None, gap: float | None = None, cols: int | None = None,
           hug: bool | None = None, title: str | None = None, frame: bool | None = None,
           collapsed: bool | None = None, modal: bool | None = None,
-          split: bool | None = None, pack: bool | None = None,
+          split: bool | None = None, pack: bool | None = None, divide: bool | None = None,
           theme: dict | None = None, color: str | None = None,
           id: int | None = None, **props) -> View:
     """A nestable ``panel`` container; ``layout`` is ``row``/``col``/``grid``/``free``.
@@ -1346,14 +1350,15 @@ def panel(*children, flow: str | None = None, layout: str | None = None,
 
     ``title``, ``frame``, ``collapsed``, ``split`` and ``modal`` are what the
     panel shows of itself -- a titled group, a section that folds, a strip whose
-    gaps are dividers, a dialog -- and ``pack`` sizes its children by their
-    content along the strip; see `layout`.
+    gaps are dividers, a dialog -- ``pack`` sizes its children by their
+    content along the strip, and ``divide`` makes a column a list of rows;
+    see `layout`.
     """
     extra = _drop_none(flow=flow or layout, margin=margin, gap=gap, cols=cols,
                        theme=theme, color=color)
     if hug is not None:
         extra["hug"] = 1 if hug else 0
-    extra.update(_group(title, frame, collapsed, modal, split, pack))
+    extra.update(_group(title, frame, collapsed, modal, split, pack, divide))
     return node("layout", id=id, children=children, **extra, **props)
 
 
@@ -1789,7 +1794,8 @@ def toggle(control=None, *, label: str | None = None, value: bool | None = None,
 
 
 def text(*, value: str | None = None, label: str | None = None, text_size: float | None = None,
-         multiline: bool | None = None, invalid: bool | None = None, color: str | None = None,
+         multiline: bool | None = None, invalid: bool | None = None,
+         placeholder: str | None = None, color: str | None = None,
          id: int | None = None, **props) -> View:
     """An editable ``text`` field. The user types into it and the entered string
     is emitted as a ``/gui_event`` (or forwarded to the server when bound) on
@@ -1797,8 +1803,10 @@ def text(*, value: str | None = None, label: str | None = None, text_size: float
     allows embedded newlines (Enter inserts one) and a growing field; ``value``
     seeds the initial contents (and ``/gui_set value`` sets it live). ``text_size``
     scales the field text and its label. ``invalid=True`` says what it holds is
-    refused: its edge is drawn in the destructive role until it is set off."""
-    extra = _drop_none(value=value, label=label, text_size=text_size, color=color)
+    refused: its edge is drawn in the destructive role until it is set off.
+    ``placeholder`` is what the field shows, quieter, while it holds nothing."""
+    extra = _drop_none(value=value, label=label, text_size=text_size, color=color,
+                       placeholder=placeholder)
     if multiline is not None:
         extra["multiline"] = bool(multiline)
     if invalid is not None:

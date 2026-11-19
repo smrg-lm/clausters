@@ -417,6 +417,9 @@ metrics_roles! {
     scrollbar_inset: grid,
     /// The band a split's line is grabbed in.
     split_grab: grid,
+    /// How far a drop zone stands inside the place a dragged panel would
+    /// land.
+    zone_inset: grid,
     /// An icon's side.
     icon: grid,
     /// A small icon's side.
@@ -576,6 +579,7 @@ impl Metrics {
             scrollbar_w: spec(10.0),
             scrollbar_inset: spec(2.0),
             split_grab: spec(4.0),
+            zone_inset: spec(6.0),
             icon: spec(16.0),
             icon_sm: spec(12.0),
             find_h: spec(36.0),

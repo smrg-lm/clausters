@@ -15,7 +15,7 @@ use clausters_gui_draw::paint::Mesh;
 use clausters_gui_draw::rect::Rect;
 use clausters_gui_draw::theme::{Color, Theme};
 
-use super::{BarPart, Dock, GroupPlace};
+use super::{BarPart, Dock, GroupPlace, Landing, Side};
 use crate::host::frame::{draw_stack, draw_tip};
 use crate::host::graphics::choice;
 use crate::host::graphics::controls::icon;
@@ -43,14 +43,12 @@ impl Dock {
                 self.lit_page(),
             );
         }
+        // the divider under the hand, in the ring's role
         if let Some(divider) = self.lit_divider() {
-            d.mesh.rect(divider.rect, d.theme.accent);
+            d.mesh.rect(divider.rect, d.theme.focus);
         }
-        if let Some((_, place)) = self.landing() {
-            let [r, g, b, _] = d.theme.accent;
-            d.mesh.rect(place, [r, g, b, 0.25]);
-            let w = (2.0 * d.m.divider_w).max(2.0);
-            d.mesh.border(inset(place, w * 0.5), w, d.theme.accent);
+        if let Some((landing, place)) = self.landing() {
+            self.draw_drop_zone(d, landing, place);
         }
         if let Some(menu) = self.menu() {
             let (mesh, m, theme) = d.parts();
@@ -69,6 +67,51 @@ impl Dock {
             let work = Rect::new(0.0, 0.0, self.size.0 as f32, self.size.1 as f32);
             let (mesh, m, theme) = d.parts();
             draw_tip(mesh, &tip, work, m, theme);
+        }
+    }
+
+    /// **Where a dragged panel would land**, as the design system's drop
+    /// zone: inset a little from the place, a dashed edge with the medium
+    /// corner in the ring's role over the ring at a fifth, and the zone's
+    /// name in the medium weight in its middle.
+    fn draw_drop_zone(&self, d: &mut Draw, landing: Landing, place: Rect) {
+        let (mesh, m, theme) = d.parts();
+        let zone = inset(place, m.zone_inset);
+        let w = 2.0 * m.divider_w;
+        let [r, g, b, _] = theme.focus;
+        mesh.round_rect(zone, m.radius_md, [r, g, b, 0.2]);
+        mesh.dashed_round_border(zone, w, m.radius_md, 3.0 * w, theme.focus);
+        let name = self.landing_name(landing);
+        let scale = font::em_scale(font::Family::UiMedium, m.type_sm);
+        let tw = font::width_in(font::Family::UiMedium, &name, scale);
+        let x = zone.x + ((zone.w - tw) * 0.5).max(0.0);
+        let y = zone.y + (zone.h - font::height(scale)) * 0.5;
+        font::text_ellipsis_in(
+            mesh,
+            font::Family::UiMedium,
+            &name,
+            x,
+            y,
+            zone.w,
+            scale,
+            theme.text,
+        );
+    }
+
+    /// What a drop zone is called: the side a panel would stand on, the
+    /// tabs it would join, the page it would go to, or a window of its own.
+    fn landing_name(&self, landing: Landing) -> String {
+        match landing {
+            Landing::Split { side, .. } => match side {
+                Side::Left => "Left",
+                Side::Right => "Right",
+                Side::Top => "Top",
+                Side::Bottom => "Bottom",
+            }
+            .to_string(),
+            Landing::Join { .. } => "Tabs".to_string(),
+            Landing::Out => "New window".to_string(),
+            Landing::Page(i) => self.page_options().get(i).cloned().unwrap_or_default(),
         }
     }
 

@@ -1827,7 +1827,8 @@ impl App {
                 children.push(json!({"id": base + 5, "type": "button", "icon": "trash",
                     "variant": "ghost", "size": "sm", "tip": "Delete the environment"}));
             }
-            json!({"id": base, "type": "layout", "flow": "row", "pack": 1, "children": children})
+            json!({"id": base, "type": "layout", "flow": "row", "pack": 1, "gap": 8,
+                "children": children})
         };
         let mut rows = vec![row(
             0,
@@ -1845,7 +1846,9 @@ impl App {
             }
             rows.push(row(i as i32 + 1, text, e.active, true));
         }
-        json!({"id": ENVS_LIST, "type": "layout", "flow": "col", "gap": 4, "children": rows})
+        // a divided list in a frame, as the reference's
+        json!({"id": ENVS_LIST, "type": "layout", "flow": "col", "frame": 1, "divide": 1,
+            "margin": 0, "hug": 1, "children": rows})
     }
 
     fn envs_refresh(&mut self, status: &str) {

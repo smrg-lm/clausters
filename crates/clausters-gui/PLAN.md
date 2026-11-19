@@ -2816,8 +2816,32 @@ first four are the order the user set; the components come after.
   covers them. Checked: the look of each by tests (a latch, a select's
   height, the floors and the label strip the controls give), every control
   headless in both looks, and the editor's dialogs and close form.
-- ⬜ **ST11: The rest of the chrome.** Scrollbars, split handles, the drop
+- ✅ **ST11: The rest of the chrome.** Scrollbars, split handles, the drop
   zones of a dragged panel, the find bar's segmented choice, list rows.
+  *Shipped:* every scroll bar the host draws is one drawing
+  (`controls::scroll_thumb`): `scrollbar_w` wide, no track, the thumb a
+  pill of the quiet text at two fifths kept `scrollbar_inset` off its
+  edges -- a plane's `bars` (now that thick), the code's, the post window's
+  and a documentation page's. The dock's dividers were already a line of
+  the edge with a grab band; the one under the hand is now drawn in the
+  ring's role. Where a dragged panel would land is the specification's
+  drop zone: inset by the new `zone_inset`, the ring at a fifth under a
+  dashed edge (`Mesh::dashed_round_border`) with the medium corner, and
+  the zone's name in the medium weight (`Left`, `Right`, `Top`, `Bottom`,
+  `Tabs`, a page's, `New window`); only the zone under the hand is drawn,
+  as before, where the reference shows every zone faintly while it
+  drags. The toggle group is one drawing (`choice::draw_segments`) for a
+  `segmented` choice and for the documentation's find bar, whose two
+  scopes it now is; the find bar is `find_h` high with its field and
+  controls `find_field_h` in its middle, and its field says what it would
+  search (a `text`'s new `placeholder`, both clients). A `col` with the new
+  `divide` prop is a list of rows (`chrome::rules`): a line between each
+  two across the list, each row at least `list_row_h` and no gap of their
+  own, with `frame` the bordered list; the editor's environments are one.
+  A field's caret is in the text's role. Checked: the divided list and a
+  plane's scroll bar by tests, and the editor headless: its environments'
+  list, the documentation's find bar, and a panel dragged onto the
+  editor's left.
 - ⬜ **ST12: Motion.** The specification's fades and scales, at 100 ms,
   with no frame drawn at rest. Optional: taken if the captures and the
   budgets say it costs nothing a user feels.

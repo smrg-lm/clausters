@@ -13,7 +13,9 @@ use crate::host::widget::size::{control_box, text_box};
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::font::{self, symbol};
 use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::paint::Mesh;
 use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::Theme;
 
 use super::controls;
 
@@ -244,6 +246,49 @@ pub fn body_min_w(view: View, options: usize, size: f32, m: &Metrics) -> f32 {
     }
 }
 
+/// **A toggle group**, as the design system's segmented choice: a bordered
+/// well (`well`) with the small corner, each of `segments` (its words and
+/// its place) inside a narrow inset, the one at `index` on the `secondary`
+/// fill and the one under the hand (`lit`) on the `muted` one. A `choice`
+/// drawn `segmented` is this, and so is a find bar's choice of where to look.
+#[allow(clippy::too_many_arguments)] // one group: its well, its options, its state
+pub fn draw_segments(
+    mesh: &mut Mesh,
+    m: &Metrics,
+    theme: &Theme,
+    well: Rect,
+    segments: &[(&str, Rect)],
+    index: usize,
+    lit: Option<usize>,
+    size: f32,
+) {
+    let inset = 2.0 * m.divider_w;
+    mesh.round_border(well, m.divider_w, m.radius_sm, theme.input);
+    let glyph = font::height(size);
+    for (i, (words, r)) in segments.iter().enumerate() {
+        let cell = r.inset(inset);
+        let (fill, ink) = if i == index {
+            (Some(theme.secondary), theme.secondary_text)
+        } else if lit == Some(i) {
+            (Some(theme.muted), theme.text)
+        } else {
+            (None, theme.text_dim)
+        };
+        if let Some(fill) = fill {
+            mesh.round_rect(cell, (m.radius_sm - inset).max(0.0), fill);
+        }
+        font::text_ellipsis(
+            mesh,
+            words,
+            (r.x + (r.w - font::width(words, size)) * 0.5).max(r.x + m.pad),
+            r.y + (r.h - glyph) * 0.5,
+            (r.w - 2.0 * m.pad).max(0.0),
+            size,
+            ink,
+        );
+    }
+}
+
 /// The width a choice's body wants when its container is fitted to it.
 pub fn body_w(view: View, options: &[String], size: f32, m: &Metrics) -> f32 {
     let widest = options
@@ -343,35 +388,19 @@ pub fn draw(
                 );
             }
         }
-        // **A toggle group**, as the design system's segmented choice: a
-        // bordered well with the small corner, its options inside a narrow
-        // inset, the chosen one on the `secondary` fill.
         View::Segmented => {
-            let inset = 2.0 * m.divider_w;
-            mesh.round_border(body, m.divider_w, m.radius_sm, theme.input);
-            for (part, r) in &parts {
-                let Part::Option(i) = *part else { continue };
-                let cell = r.inset(inset);
-                let (fill, ink) = if i == index {
-                    (Some(theme.secondary), theme.secondary_text)
-                } else if hover == Some(*part) {
-                    (Some(theme.muted), theme.text)
-                } else {
-                    (None, theme.text_dim)
-                };
-                if let Some(fill) = fill {
-                    mesh.round_rect(cell, (m.radius_sm - inset).max(0.0), fill);
-                }
-                font::text_ellipsis(
-                    mesh,
-                    &options[i],
-                    (r.x + (r.w - font::width(&options[i], size)) * 0.5).max(r.x + m.pad),
-                    ty(*r),
-                    (r.w - 2.0 * m.pad).max(0.0),
-                    size,
-                    ink,
-                );
-            }
+            let segments: Vec<(&str, Rect)> = parts
+                .iter()
+                .filter_map(|(part, r)| match *part {
+                    Part::Option(i) => Some((options[i].as_str(), *r)),
+                    _ => None,
+                })
+                .collect();
+            let lit = hover.and_then(|h| match h {
+                Part::Option(i) => Some(i),
+                _ => None,
+            });
+            draw_segments(mesh, m, theme, body, &segments, index, lit, size);
         }
         View::Tabs => {
             // The line every tab stands on, and the chosen one standing out of

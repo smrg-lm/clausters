@@ -611,11 +611,12 @@ fn column_for(
         .map_or(flow.default_gap(m), |v| snap_px(v, scale))
         .max(0.0);
     let inner = (w - 2.0 * pad).max(0.0);
+    let least = flow.least_row(layout, m);
     let body = match layout {
         Layout::Col => {
             let mut sum = gap * (children.len().max(1) - 1) as f32;
             for c in children {
-                sum += c.height_for(inner, m, scale)?;
+                sum += c.height_for(inner, m, scale)?.max(least);
             }
             sum
         }
@@ -687,13 +688,18 @@ fn compose(
     // height of its own -- and that made the whole content elastic: a dialog
     // holding one fell back to half the window and left its last rows outside
     // the frame, where a press on them was a press behind the dialog.
+    let least = flow.least_row(layout, m);
     let sizes: Vec<Natural> = children
         .iter()
         .map(|c| {
             let (w, h) = c.fitted(m, scale, want);
             (
                 c.place.w.map(|v| snap_px(v, scale)).or(w),
-                c.place.h.map(|v| snap_px(v, scale)).or(h),
+                c.place
+                    .h
+                    .map(|v| snap_px(v, scale))
+                    .or(h)
+                    .map(|h| h.max(least)),
             )
         })
         .collect();
@@ -778,7 +784,14 @@ fn compose_min(
         .map_or(flow.default_gap(m), |v| snap_px(v, scale))
         .max(0.0);
     let gaps = gap * (children.len() - 1) as f32;
-    let floors: Vec<(f32, f32)> = children.iter().map(|c| c.min_size(m, scale)).collect();
+    let least = flow.least_row(layout, m);
+    let floors: Vec<(f32, f32)> = children
+        .iter()
+        .map(|c| {
+            let (w, h) = c.min_size(m, scale);
+            (w, h.max(least))
+        })
+        .collect();
     let widest = floors.iter().map(|f| f.0).fold(0.0f32, f32::max);
     let tallest = floors.iter().map(|f| f.1).fold(0.0f32, f32::max);
     let along = |horizontal: bool| -> f32 {

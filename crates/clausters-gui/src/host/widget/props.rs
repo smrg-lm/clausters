@@ -859,6 +859,10 @@ pub struct Flow {
     /// apart, where any other container takes the window's. Set with the
     /// `modal` prop, never on the wire.
     pub card: bool,
+    /// The `divide` prop of a `col`: **a list of rows**, a line between each
+    /// two, every row at least `list_row_h` tall -- the design system's
+    /// divided list, which a frame around it closes.
+    pub divide: bool,
 }
 
 /// What a `layout` shows of itself: a title strip, a frame, whether it is
@@ -967,7 +971,27 @@ impl Flow {
     /// The gap a container takes when it names no `gap`: a dialog's card its
     /// own, any other the window's.
     pub fn default_gap(&self, m: &clausters_gui_draw::metrics::Metrics) -> f32 {
-        if self.card { m.dialog_gap } else { m.gap }
+        if self.card {
+            m.dialog_gap
+        } else if self.divide {
+            0.0
+        } else {
+            m.gap
+        }
+    }
+
+    /// The least a child of this flow stands along it: a divided list's row
+    /// height down a column, nothing anywhere else.
+    pub fn least_row(
+        &self,
+        layout: super::Layout,
+        m: &clausters_gui_draw::metrics::Metrics,
+    ) -> f32 {
+        if self.divide && layout == super::Layout::Col {
+            m.list_row_h
+        } else {
+            0.0
+        }
     }
 
     pub(super) fn parse(props: &serde_json::Map<String, Value>) -> Flow {
@@ -982,6 +1006,7 @@ impl Flow {
             split: props.get("split").and_then(truthy).unwrap_or(false),
             pack: props.get("pack").and_then(truthy).unwrap_or(false),
             card: props.get("modal").and_then(truthy).unwrap_or(false),
+            divide: props.get("divide").and_then(truthy).unwrap_or(false),
         }
     }
 
@@ -1002,6 +1027,7 @@ impl Flow {
             }
             "split" => truthy(v).map(|b| self.split = b).is_some(),
             "pack" => truthy(v).map(|b| self.pack = b).is_some(),
+            "divide" => truthy(v).map(|b| self.divide = b).is_some(),
             _ => false,
         }
     }

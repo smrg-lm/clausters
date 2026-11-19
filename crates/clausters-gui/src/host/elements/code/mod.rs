@@ -184,7 +184,7 @@ impl CodeView {
         } else {
             0.0
         };
-        let thumb = (m.pad * 0.75).max(3.0 * scale).round();
+        let thumb = m.scrollbar_w;
         Geometry {
             gutter: Rect::new(rect.x, rect.y, gutter_w, rect.h),
             text: Rect::new(
@@ -993,18 +993,22 @@ impl CodeView {
         if total_h > g.text.h + 0.5 {
             let h = (g.text.h * g.text.h / total_h).max(g.row_h);
             let y = g.text.y + (g.text.h - h) * (sy / (total_h - g.text.h)).min(1.0);
-            mesh.rect(
+            crate::host::graphics::controls::scroll_thumb(
+                mesh,
                 Rect::new(area.x + area.w - g.thumb, y, g.thumb, h),
-                theme.separator,
+                ctx.metrics,
+                theme,
             );
         }
         let total_w = self.widest() as f32 * g.cell + 2.0 * g.cell;
         if total_w > g.text.w + 0.5 {
             let w = (g.text.w * g.text.w / total_w).max(g.cell);
             let x = g.text.x + (g.text.w - w) * (sx / (total_w - g.text.w)).min(1.0);
-            mesh.rect(
+            crate::host::graphics::controls::scroll_thumb(
+                mesh,
                 Rect::new(x, g.text.y + g.text.h, w, g.thumb),
-                theme.separator,
+                ctx.metrics,
+                theme,
             );
         }
         mesh.set_clip(kept);

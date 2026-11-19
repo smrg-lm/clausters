@@ -625,8 +625,16 @@ fn child_rects(
             .iter()
             .map(|c| free_rect(inner, c, space))
             .collect(),
-        Layout::Row => strip(inner, children, gap, true, flow.pack, space),
-        Layout::Col => strip(inner, children, gap, false, flow.pack, space),
+        Layout::Row => strip(inner, children, gap, true, flow.pack, 0.0, space),
+        Layout::Col => strip(
+            inner,
+            children,
+            gap,
+            false,
+            flow.pack,
+            flow.least_row(layout, &space.metrics),
+            space,
+        ),
         Layout::Grid => grid(inner, children, gap, flow.cols, space),
     }
 }
@@ -696,12 +704,14 @@ fn fit(cell: Rect, c: &Widget, across_w: bool, across_h: bool, space: Space) -> 
 /// its own floor is made of them and no container places a child under its
 /// floor; only a window the platform made smaller than its minimum can be,
 /// and then the strip runs past its end rather than cut into a floor.
+#[allow(clippy::too_many_arguments)] // a strip: its room, its children and how they are strung
 fn strip(
     inner: Rect,
     children: &[&Widget],
     gap: f32,
     horizontal: bool,
     pack: bool,
+    least: f32,
     space: Space,
 ) -> Vec<Rect> {
     let (m, unit) = (&space.metrics, space.unit);
@@ -718,11 +728,12 @@ fn strip(
         /// A share of the leftover, at this weight.
         Share(f32),
     }
+    // a divided list's rows stand at least a row tall (`least`)
     let floors: Vec<f32> = children
         .iter()
         .map(|c| {
             let (w, h) = c.min_size(m, unit);
-            if horizontal { w } else { h }
+            if horizontal { w } else { h.max(least) }
         })
         .collect();
     let maxes: Vec<Option<f32>> = children

@@ -199,6 +199,31 @@ pub fn flow_children(placed: &[Placed], container: usize) -> Vec<usize> {
         .collect()
 }
 
+/// **The lines of every divided list** (`divide`) in the window: one
+/// between each two of its rows, across the whole list, as the container
+/// at that index holds them.
+pub fn rules(placed: &[Placed], m: &Metrics) -> Vec<(usize, Rect)> {
+    let mut out = Vec::new();
+    for (i, p) in placed.iter().enumerate() {
+        let divided = match &p.widget.kind {
+            WidgetKind::Window { layout, flow, .. } | WidgetKind::Panel { layout, flow, .. } => {
+                flow.divide && *layout == Layout::Col
+            }
+            _ => false,
+        };
+        if !divided {
+            continue;
+        }
+        let kids = flow_children(placed, i);
+        for pair in kids.windows(2) {
+            let (a, b) = (placed[pair[0]].rect, placed[pair[1]].rect);
+            let y = ((a.y + a.h + b.y) * 0.5 - m.divider_w * 0.5).round();
+            out.push((i, Rect::new(p.rect.x, y, p.rect.w, m.divider_w)));
+        }
+    }
+    out
+}
+
 /// Every divider of every split strip in the window.
 pub fn dividers(placed: &[Placed]) -> Vec<Divider> {
     let mut out = Vec::new();
@@ -308,7 +333,7 @@ pub fn bars(p: &Placed, metrics: &Metrics) -> Vec<Bar> {
     let slack = view.axis.slack();
     let vx = scroll::clamp_pan(view.view_x, area.w, zoom, content_w, slack);
     let vy = scroll::clamp_pan(view.view_y, area.h, zoom, content_h, slack);
-    let thick = metrics.handle_thick.min(area.w).min(area.h);
+    let thick = metrics.scrollbar_w.min(area.w).min(area.h);
     let (seen_w, seen_h) = (area.w as f64 / zoom, area.h as f64 / zoom);
     let wants_x = !matches!(view.axis, Axis::Y) && content_w as f64 > seen_w + 0.5;
     let wants_y = !matches!(view.axis, Axis::X) && content_h as f64 > seen_h + 0.5;
