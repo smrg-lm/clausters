@@ -32,7 +32,8 @@ impl Dock {
         if self.page_strip_h() > 0 {
             let strip = self.page_strip();
             d.mesh.rect(strip, d.theme.status_bar);
-            choice::draw(
+            // the tabs of a panel's bar, mirrored: the strip is under the pages
+            choice::draw_at(
                 d,
                 choice::View::Tabs,
                 &self.page_options(),
@@ -41,6 +42,7 @@ impl Dock {
                 strip,
                 size,
                 self.lit_page(),
+                choice::TabEdge::Bottom,
             );
         }
         // the divider under the hand, in the ring's role
@@ -173,25 +175,15 @@ impl Dock {
                 }
                 BarPart::Tab(i) => {
                     let shown = i == group.active;
-                    if shown {
-                        // the tab shown stands on the panel's own ground
-                        mesh.rect(r, theme.background);
-                        let line = (2.0 * m.divider_w).max(2.0);
-                        mesh.rect(
-                            Rect::new(r.x, r.y, r.w, line),
-                            if focused {
-                                theme.focus
-                            } else {
-                                theme.separator
-                            },
-                        );
-                    } else if hot || lit == Some(BarPart::TabClose(i)) {
-                        mesh.rect(r, theme.hover);
-                    }
-                    mesh.rect(
-                        Rect::new(r.x + r.w - m.divider_w, r.y, m.divider_w, r.h),
-                        theme.separator,
-                    );
+                    // the tab shown stands on the panel's own ground, its
+                    // line in the ring's role while its panel has the keys
+                    let mark = shown.then_some(if focused {
+                        theme.focus
+                    } else {
+                        theme.separator
+                    });
+                    let hot = hot || lit == Some(BarPart::TabClose(i));
+                    choice::tab_ground(mesh, m, theme, r, mark, hot, choice::TabEdge::Top);
                     let after = 2.0 * m.tab_end + m.tab_close;
                     font::text_ellipsis(
                         mesh,

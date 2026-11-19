@@ -796,7 +796,16 @@ fn button_face(
     };
     let label_w = label.map_or(0.0, |l| font::width_in(Family::UiMedium, l, size));
     let room = (face.w - 2.0 * m.pad.min(m.button_x)).max(0.0);
-    let total = (icon_w + gap + label_w).min(room);
+    let full = icon_w + gap + label_w;
+    // **An icon alone is centred whole**, as any lone symbol is, even where
+    // it is wider than the room inside the box: cut to the room it stood
+    // off centre, a few pixels from where the same icon is drawn when it
+    // cannot be pressed. Words are cut to the room.
+    let total = if label.is_none() {
+        full
+    } else {
+        full.min(room)
+    };
     let mut x = face.x + (face.w - total) * 0.5;
     if let Some(c) = &icon_s {
         font::text(mesh, c, x, ty, size, ink);
@@ -1569,6 +1578,33 @@ mod tests {
         );
         let max_x = m.positions().map(|(x, _)| x).fold(f32::MIN, f32::max);
         assert!(max_x <= rect.x + rect.w, "single line bleeds past the rect");
+    }
+
+    /// **An icon alone stands where it stands unpressable**: a button's
+    /// lone icon wider than the room inside its box is centred whole, as
+    /// the same glyph drawn as text is, so a way back that becomes possible
+    /// does not move.
+    #[test]
+    fn a_lone_icon_is_centred_whole_like_its_text() {
+        let theme = Theme::default();
+        let m = Metrics::default();
+        let r = Rect::new(10.0, 0.0, 14.0, 24.0);
+        let left = |mesh: &Mesh| mesh.positions().map(|(x, _)| x).fold(f32::MAX, f32::min);
+        let mut pressed = Mesh::new();
+        button(
+            &mut Draw::new(&mut pressed, &m, &theme),
+            None,
+            Some('W'),
+            r,
+            ButtonLook {
+                flat: true,
+                ..ButtonLook::default()
+            },
+            2.0,
+        );
+        let mut text = Mesh::new();
+        font::text_centered(&mut text, "W", r, 2.0, theme.text);
+        assert!((left(&pressed) - left(&text)).abs() < 0.01);
     }
 
     /// **A latch is the design system's toggle**: off, no fill; on, the

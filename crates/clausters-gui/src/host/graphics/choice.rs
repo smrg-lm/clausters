@@ -289,6 +289,82 @@ pub fn draw_segments(
     }
 }
 
+/// **One tab's ground**, every row of tabs' -- a panel's bar, a `choice`'s
+/// tabs, the dock's pages: the line that ends it; chosen (`mark`, the color
+/// of its line), on the ground with that line along its outer edge; under
+/// the hand otherwise, on the `hover` fill.
+pub fn tab_ground(
+    mesh: &mut Mesh,
+    m: &Metrics,
+    theme: &Theme,
+    r: Rect,
+    mark: Option<clausters_gui_draw::theme::Color>,
+    hot: bool,
+    edge: TabEdge,
+) {
+    let line = (2.0 * m.divider_w).max(2.0);
+    match mark {
+        Some(color) => {
+            mesh.rect(r, theme.background);
+            let y = match edge {
+                TabEdge::Top => r.y,
+                TabEdge::Bottom => r.y + r.h - line,
+            };
+            mesh.rect(Rect::new(r.x, y, r.w, line), color);
+        }
+        None if hot => mesh.rect(r, theme.hover),
+        None => {}
+    }
+    mesh.rect(
+        Rect::new(r.x + r.w - m.divider_w, r.y, m.divider_w, r.h),
+        theme.separator,
+    );
+}
+
+/// **A row of tabs**, as a panel's bar draws its own: a line along the row
+/// on its inner edge, each tab ended by an upright line, the chosen one on
+/// the ground with a line along its outer edge (`edge`) and its words in
+/// the text, the others quieter, under the hand on the `hover` fill.
+#[allow(clippy::too_many_arguments)] // one row: its place, its tabs, its state
+pub fn draw_tabs(
+    mesh: &mut Mesh,
+    m: &Metrics,
+    theme: &Theme,
+    body: Rect,
+    parts: &[(Part, Rect)],
+    options: &[String],
+    index: usize,
+    hover: Option<Part>,
+    size: f32,
+    edge: TabEdge,
+) {
+    let inner_y = match edge {
+        TabEdge::Top => body.y + body.h - m.divider_w,
+        TabEdge::Bottom => body.y,
+    };
+    mesh.rect(
+        Rect::new(body.x, inner_y, body.w, m.divider_w),
+        theme.separator,
+    );
+    for (part, r) in parts {
+        let (text, chosen) = match *part {
+            Part::Option(i) => (options[i].clone(), i == index),
+            // The gathered tabs light when the chosen one is among them.
+            Part::More(from) => (symbol::MENU.to_string(), index >= from),
+            _ => continue,
+        };
+        let mark = chosen.then_some(theme.separator);
+        tab_ground(mesh, m, theme, *r, mark, hover == Some(*part), edge);
+        font::text_centered(
+            mesh,
+            &text,
+            *r,
+            size,
+            if chosen { theme.text } else { theme.text_dim },
+        );
+    }
+}
+
 /// The width a choice's body wants when its container is fitted to it.
 pub fn body_w(view: View, options: &[String], size: f32, m: &Metrics) -> f32 {
     let widest = options
@@ -324,6 +400,42 @@ pub fn draw(
     rect: Rect,
     size: f32,
     hover: Option<Part>,
+) {
+    draw_at(
+        d,
+        view,
+        options,
+        index,
+        label,
+        rect,
+        size,
+        hover,
+        TabEdge::Top,
+    );
+}
+
+/// **Which edge of a row of tabs is its outer one**: where the chosen tab's
+/// line runs, away from what the tabs show. A row over its pages has it at
+/// the top, as a panel's bar does; a row under them, as the dock's page
+/// strip is, at the bottom -- the same tabs, mirrored.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TabEdge {
+    Top,
+    Bottom,
+}
+
+/// [`draw`], with its tabs' outer edge ([`TabEdge`]).
+#[allow(clippy::too_many_arguments)] // one control: its data, its place, its state
+pub fn draw_at(
+    d: &mut Draw,
+    view: View,
+    options: &[String],
+    index: usize,
+    label: Option<&str>,
+    rect: Rect,
+    size: f32,
+    hover: Option<Part>,
+    edge: TabEdge,
 ) {
     if view == View::Combo {
         let current = options.get(index).map_or("", String::as_str);
@@ -402,36 +514,9 @@ pub fn draw(
             });
             draw_segments(mesh, m, theme, body, &segments, index, lit, size);
         }
-        View::Tabs => {
-            // The line every tab stands on, and the chosen one standing out of
-            // it: its ground is the field's and its foot is the accent.
-            let foot = (2.0 * m.divider_w).max(2.0);
-            mesh.rect(
-                Rect::new(body.x, body.y + body.h - m.divider_w, body.w, m.divider_w),
-                theme.separator,
-            );
-            for (part, r) in &parts {
-                let (text, chosen) = match *part {
-                    Part::Option(i) => (options[i].clone(), i == index),
-                    // The gathered tabs light when the chosen one is among them.
-                    Part::More(from) => (symbol::MENU.to_string(), index >= from),
-                    _ => continue,
-                };
-                if chosen {
-                    mesh.rect(*r, theme.field);
-                    mesh.rect(Rect::new(r.x, r.y + r.h - foot, r.w, foot), theme.accent);
-                } else if hover == Some(*part) {
-                    mesh.rect(*r, theme.hover);
-                }
-                font::text_centered(
-                    mesh,
-                    &text,
-                    *r,
-                    size,
-                    if chosen { theme.text } else { theme.text_dim },
-                );
-            }
-        }
+        View::Tabs => draw_tabs(
+            mesh, m, theme, body, &parts, options, index, hover, size, edge,
+        ),
         View::Pager => {
             let last = options.len().saturating_sub(1);
             for (part, r) in &parts {
