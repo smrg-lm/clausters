@@ -59,6 +59,7 @@ use crate::host::graphics::code::find::is_word;
 use crate::host::graphics::code::regions::{Block, is_cell_marker};
 use crate::host::graphics::code::syntax::Kind;
 use crate::host::graphics::code::{Code, Indent, Language};
+use crate::host::graphics::controls::{ScrollBar, ThumbGrip};
 use crate::host::graphics::textedit::{self, Caret, Unit};
 use crate::host::menu::Entry;
 use crate::host::popup::{Note, Own, OwnList};
@@ -103,6 +104,8 @@ pub struct CodeView {
     line_numbers: bool,
     /// Where the view is scrolled to, in pixels from the text's top left.
     scroll: Cell<(f32, f32)>,
+    /// The scroll bar's thumb a press holds.
+    thumb: Option<ThumbGrip>,
     /// Whether the caret is to be brought into view at the next frame.
     reveal: Cell<bool>,
     /// Whether it is to be brought to the middle of the view, rather than
@@ -152,6 +155,7 @@ impl CodeView {
             text_size: parse::text_size(props),
             line_numbers: true,
             scroll: Cell::new((0.0, 0.0)),
+            thumb: None,
             reveal: Cell::new(false),
             center: Cell::new(false),
             page: Cell::new(20),
@@ -279,6 +283,20 @@ impl CodeView {
         self.page
             .set((g.text.h / g.row_h).floor().max(1.0) as usize);
         at
+    }
+
+    /// **The scroll bars**, where there is more than is seen: down the
+    /// right edge of `area`, and along the text's bottom.
+    fn bars(&self, area: Rect, g: &Geometry) -> [Option<ScrollBar>; 2] {
+        let (sx, sy) = self.settle(g);
+        let span_y = (self.code.lines() as f32 * g.row_h - g.text.h + g.row_h).max(0.0);
+        let span_x = (self.widest() as f32 * g.cell + 2.0 * g.cell - g.text.w).max(0.0);
+        let down = Rect::new(area.x + area.w - g.thumb, g.text.y, g.thumb, g.text.h);
+        let across = Rect::new(g.text.x, g.text.y + g.text.h, g.text.w, g.thumb);
+        [
+            ScrollBar::new(true, down, g.text.h, span_y, sy, g.row_h),
+            ScrollBar::new(false, across, g.text.w, span_x, sx, g.cell),
+        ]
     }
 
     /// The byte under `(x, y)`, in the window's pixels.
@@ -989,27 +1007,8 @@ impl CodeView {
         }
         // the scroll bars, where there is more than is seen
         mesh.set_clip(Some(clip(area)));
-        let total_h = self.code.lines() as f32 * g.row_h + g.text.h - g.row_h;
-        if total_h > g.text.h + 0.5 {
-            let h = (g.text.h * g.text.h / total_h).max(g.row_h);
-            let y = g.text.y + (g.text.h - h) * (sy / (total_h - g.text.h)).min(1.0);
-            crate::host::graphics::controls::scroll_thumb(
-                mesh,
-                Rect::new(area.x + area.w - g.thumb, y, g.thumb, h),
-                ctx.metrics,
-                theme,
-            );
-        }
-        let total_w = self.widest() as f32 * g.cell + 2.0 * g.cell;
-        if total_w > g.text.w + 0.5 {
-            let w = (g.text.w * g.text.w / total_w).max(g.cell);
-            let x = g.text.x + (g.text.w - w) * (sx / (total_w - g.text.w)).min(1.0);
-            crate::host::graphics::controls::scroll_thumb(
-                mesh,
-                Rect::new(x, g.text.y + g.text.h, w, g.thumb),
-                ctx.metrics,
-                theme,
-            );
+        for bar in self.bars(area, &g).into_iter().flatten() {
+            crate::host::graphics::controls::scroll_thumb(mesh, bar.thumb, ctx.metrics, theme);
         }
         mesh.set_clip(kept);
         if let Some(layout) = self.bar.layout(area, ctx.scale, ctx.metrics) {
@@ -1278,6 +1277,20 @@ impl Element for CodeView {
         self.bar.unfocus();
         self.help.completing = None;
         let g = self.geometry(input.rect, input.scale, input.metrics);
+        // a scroll bar's: its thumb in hand
+        let (sx, sy) = self.settle(&g);
+        for bar in self.bars(input.rect, &g).into_iter().flatten() {
+            let offset = if bar.vertical { sy } else { sx };
+            if let Some((grip, offset)) = bar.press(at, offset) {
+                self.thumb = Some(grip);
+                self.scroll.set(if bar.vertical {
+                    (sx, offset)
+                } else {
+                    (offset, sy)
+                });
+                return Claim::take();
+            }
+        }
         let pos = self.pos_at(at, &g);
         if self.line_numbers && g.gutter.contains(at.0, at.1) {
             let line = self.code.line_of(pos);
@@ -1312,10 +1325,27 @@ impl Element for CodeView {
         {
             return Events::none();
         }
+        let g = self.geometry(input.rect, input.scale, input.metrics);
+        if let Some(grip) = self.thumb {
+            let (sx, sy) = self.settle(&g);
+            let held = self
+                .bars(input.rect, &g)
+                .into_iter()
+                .flatten()
+                .find(|b| b.vertical == grip.vertical());
+            if let Some(bar) = held {
+                let offset = bar.drag(grip, at);
+                self.scroll.set(if bar.vertical {
+                    (sx, offset)
+                } else {
+                    (offset, sy)
+                });
+            }
+            return Events::none();
+        }
         let Some((span, unit)) = self.held else {
             return Events::none();
         };
-        let g = self.geometry(input.rect, input.scale, input.metrics);
         let (sx, sy) = self.scroll.get();
         // past an edge, the text comes to the pointer
         let dy = if (at.1 as f32) < g.text.y {
@@ -1333,6 +1363,7 @@ impl Element for CodeView {
 
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         self.held = None;
+        self.thumb = None;
         self.bar.release();
         Events::none()
     }

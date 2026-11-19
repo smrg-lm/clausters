@@ -2,8 +2,9 @@
 //! ([`Note::card`]), a code editor's help on the name the pointer
 //! rests on. It stays while the pointer is on the name or on it, and goes a
 //! moment after the pointer leaves both, on Escape, on a press elsewhere or
-//! on a key that goes on to the text. Over it the wheel scrolls its
-//! documentation and a drag selects its text, which the copy key copies.
+//! on a key that goes on to the text. Over it the wheel and its scroll bar
+//! scroll its documentation and a drag selects its text, which the copy key
+//! copies.
 //!
 //! The element only says what the note holds; its scroll and its selection
 //! are the host's ([`Card`](super::super::popup::Card)), kept beside the window's other popups.
@@ -64,29 +65,52 @@ impl Gestures {
         else {
             return false;
         };
+        let m = *host.metrics_for(ctx.def_id);
         let card = host.card_mut(ctx.def_id, owner);
         let scroll = card.scroll.min(place.max_scroll());
+        // its scroll bar's thumb in hand
+        if let Some((grip, to)) = place
+            .bar(scroll, &m)
+            .and_then(|bar| bar.press((x, y), scroll))
+        {
+            card.scroll = to;
+            self.drag = Some(Drag::Card {
+                owner,
+                thumb: Some(grip),
+            });
+            out.push(GestureEffect::Redraw(ctx.def_id));
+            return true;
+        }
         let at = note.pos_at(&place, scroll, x as f32, y as f32);
         card.select = Some((at, at));
-        self.drag = Some(Drag::Card { owner });
+        self.drag = Some(Drag::Card { owner, thumb: None });
         out.push(GestureEffect::Redraw(ctx.def_id));
         true
     }
 
-    /// The selecting drag reached `(x, y)`.
+    /// The selecting drag, or the scroll bar's thumb, reached `(x, y)`.
     pub(super) fn card_drag(
         &mut self,
         host: &mut Host,
         ctx: &GestureCtx,
         owner: i32,
+        thumb: Option<crate::host::graphics::controls::ThumbGrip>,
         x: f64,
         y: f64,
     ) -> Vec<GestureEffect> {
         let Some((note, place)) = shown(host, ctx, owner) else {
             return Vec::new();
         };
+        let m = *host.metrics_for(ctx.def_id);
         let card = host.card_mut(ctx.def_id, owner);
         let scroll = card.scroll.min(place.max_scroll());
+        if let Some(grip) = thumb {
+            let Some(bar) = place.bar(scroll, &m) else {
+                return Vec::new();
+            };
+            card.scroll = bar.drag(grip, (x, y));
+            return vec![GestureEffect::Redraw(ctx.def_id)];
+        }
         let at = note.pos_at(&place, scroll, x as f32, y as f32);
         match card.select.as_mut() {
             Some((_, end)) if *end != at => *end = at,

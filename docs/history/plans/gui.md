@@ -8088,3 +8088,19 @@ module of its own.
   Documentation`, `Close Other Tabs`, `Octave Up`, `Transpose Fifth Up`,
   `Add Note Bend`, `Write A`, `Use bundled`), the descriptions and tips,
   which are sentences, keeping theirs.
+
+- ✅ **A scroll bar could not be dragged** *(2026-11-19, the user, the
+  editor)*. A press on the thumb selected text in the code and passed
+  through in the documentation: those two elements drew a thumb and took
+  no hand on it, where a plane's bar and the post window's did. The
+  bar is now one model (`controls::ScrollBar`: the thumb held where it is
+  taken, a press off it on the track bringing its middle there, a drag
+  moving the view as far as the thumb moves), and the code (both its
+  bars) and the documentation draw and take theirs through it. Checked
+  headlessly in the editor: the code, the documentation, the post window,
+  a score's page and its palettes each scrolled by a drag.
+
+- ✅ **The documentation's tooltips had no scroll bar** *(2026-11-19)*. A
+  hover card longer than its room scrolled by the wheel alone; it now has
+  the same bar in its right inset (`NotePlace::bar`), whose thumb a press
+  holds and a drag moves, selecting nothing.

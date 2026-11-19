@@ -171,7 +171,11 @@ enum Drag {
     Element { at: element::At, edge: bool },
     /// **Selecting the text of a hover card**: the card is `owner`'s note,
     /// and the selection is the host's ([`card`]).
-    Card { owner: i32 },
+    Card {
+        owner: i32,
+        /// Its scroll bar's thumb, when the press took that.
+        thumb: Option<crate::host::graphics::controls::ThumbGrip>,
+    },
     /// **The marquee**: the objects a rectangle covers -- a patcher's boxes, a
     /// multitrack's clips -- and nothing else.
     ///

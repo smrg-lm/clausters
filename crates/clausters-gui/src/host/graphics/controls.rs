@@ -839,6 +839,117 @@ pub fn scroll_thumb(
     mesh.round_rect(r, r.w.min(r.h) * 0.5, with_alpha(theme.text_dim, 0.4));
 }
 
+/// **A scroll bar over content an element scrolls itself** (the code, the
+/// documentation): where its thumb stands along its track, and the hand on
+/// it. A press on the thumb holds it where it was taken; a press on the
+/// track off it brings the thumb's middle to the pointer first, as a
+/// plane's bar does; a drag moves the view as far as the thumb moves.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScrollBar {
+    /// Whether it runs down the element's right edge (and scrolls down).
+    pub vertical: bool,
+    /// The groove the thumb travels in.
+    pub track: Rect,
+    /// The thumb: where the view stands, and how much of it is seen.
+    pub thumb: Rect,
+    /// The most the view's offset goes to.
+    span: f32,
+}
+
+/// What a press on a [`ScrollBar`] holds: where along the track it was and
+/// the offset the view had then.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ThumbGrip {
+    vertical: bool,
+    from: f32,
+    offset: f32,
+}
+
+impl ScrollBar {
+    /// The bar along `track` of a view `seen` long over content it scrolls
+    /// by up to `span`, at `offset`, its thumb no shorter than `least`; `None`
+    /// when there is nothing to scroll.
+    pub fn new(
+        vertical: bool,
+        track: Rect,
+        seen: f32,
+        span: f32,
+        offset: f32,
+        least: f32,
+    ) -> Option<Self> {
+        if span <= 0.5 {
+            return None;
+        }
+        let len = if vertical { track.h } else { track.w };
+        let size = (len * seen / (seen + span)).max(least.min(len)).min(len);
+        let at = (len - size) * (offset / span).clamp(0.0, 1.0);
+        let thumb = if vertical {
+            Rect::new(track.x, track.y + at, track.w, size)
+        } else {
+            Rect::new(track.x + at, track.y, size, track.h)
+        };
+        Some(Self {
+            vertical,
+            track,
+            thumb,
+            span,
+        })
+    }
+
+    fn along(&self, (x, y): (f64, f64)) -> f32 {
+        if self.vertical { y as f32 } else { x as f32 }
+    }
+
+    /// The view's offset per pixel of the thumb's travel.
+    fn per_px(&self) -> f32 {
+        let (len, size) = if self.vertical {
+            (self.track.h, self.thumb.h)
+        } else {
+            (self.track.w, self.thumb.w)
+        };
+        self.span / (len - size).max(1.0)
+    }
+
+    /// **A press at `at`**, the view at `offset`: on the track, the hold and
+    /// the offset the view takes now (the thumb's middle at the pointer when
+    /// the press was off it); elsewhere, `None`.
+    pub fn press(&self, at: (f64, f64), offset: f32) -> Option<(ThumbGrip, f32)> {
+        if !self.track.contains(at.0, at.1) {
+            return None;
+        }
+        let along = self.along(at);
+        let (start, size) = if self.vertical {
+            (self.thumb.y, self.thumb.h)
+        } else {
+            (self.thumb.x, self.thumb.w)
+        };
+        let offset = if along < start || along > start + size {
+            (offset + (along - (start + size * 0.5)) * self.per_px()).clamp(0.0, self.span)
+        } else {
+            offset
+        };
+        let grip = ThumbGrip {
+            vertical: self.vertical,
+            from: along,
+            offset,
+        };
+        Some((grip, offset))
+    }
+
+    /// The offset the view takes with the thumb held by `grip` dragged to
+    /// `at`.
+    pub fn drag(&self, grip: ThumbGrip, at: (f64, f64)) -> f32 {
+        (grip.offset + (self.along(at) - grip.from) * self.per_px()).clamp(0.0, self.span)
+    }
+}
+
+impl ThumbGrip {
+    /// Whether it holds the vertical bar's thumb.
+    pub fn vertical(&self) -> bool {
+        self.vertical
+    }
+}
+
 /// `c` at `alpha` of its own strength.
 fn with_alpha(c: Color, alpha: f32) -> Color {
     [c[0], c[1], c[2], c[3] * alpha]
@@ -1661,5 +1772,32 @@ mod tests {
             "knob geometry spills {:.1}px below the cell (max_y {max_y} > bottom {bottom})",
             max_y - bottom
         );
+    }
+
+    /// **A scroll bar is held where it is taken**: a press on the thumb
+    /// keeps the view, a press on the track off it brings the thumb's middle
+    /// there, and a drag moves the view as far as the thumb moves, between
+    /// the top and the end.
+    #[test]
+    fn a_scroll_bar_is_dragged_by_its_thumb() {
+        let track = Rect::new(90.0, 0.0, 10.0, 100.0);
+        // a quarter seen: the thumb is 25 long, 75 of travel over 300
+        let bar = ScrollBar::new(true, track, 100.0, 300.0, 0.0, 4.0).expect("a bar");
+        assert_eq!((bar.thumb.y, bar.thumb.h), (0.0, 25.0));
+        assert!(ScrollBar::new(true, track, 100.0, 0.0, 0.0, 4.0).is_none());
+        let (grip, offset) = bar.press((95.0, 10.0), 0.0).expect("on the thumb");
+        assert_eq!(offset, 0.0, "a press on the thumb keeps the view");
+        assert!((bar.drag(grip, (95.0, 35.0)) - 100.0).abs() < 1e-3);
+        assert_eq!(
+            bar.drag(grip, (95.0, 500.0)),
+            300.0,
+            "no further than the end"
+        );
+        let (_, offset) = bar.press((95.0, 50.0), 0.0).expect("on the track");
+        assert!(
+            (offset - 150.0).abs() < 1e-3,
+            "the thumb's middle at the press"
+        );
+        assert!(bar.press((50.0, 50.0), 0.0).is_none(), "off the track");
     }
 }

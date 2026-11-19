@@ -24,6 +24,7 @@
 //! ([`Element::picked`](super::widget::Element::picked)); a menu's entries
 //! carry a verb and the host reports it.
 
+use super::graphics::controls::ScrollBar;
 use super::menu::{self, Entry};
 use super::menubar::{self, Title};
 use super::widget::Widget;
@@ -530,6 +531,21 @@ impl NotePlace {
     /// The furthest the documentation scrolls.
     pub fn max_scroll(&self) -> f32 {
         (self.lines.len() as f32 * self.line_h - self.doc.h).max(0.0)
+    }
+
+    /// **The documentation's scroll bar**, in the card's right inset beside
+    /// it, with it scrolled by `scroll`; `None` when all of it is seen.
+    pub fn bar(&self, scroll: f32, m: &Metrics) -> Option<ScrollBar> {
+        let w = m.scrollbar_w.min(m.card_x);
+        let track = Rect::new(self.rect.x + self.rect.w - w, self.doc.y, w, self.doc.h);
+        ScrollBar::new(
+            true,
+            track,
+            self.doc.h,
+            self.max_scroll(),
+            scroll,
+            self.line_h,
+        )
     }
 
     /// Every line a selection walks: the head's, then the documentation's.

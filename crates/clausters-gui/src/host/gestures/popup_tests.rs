@@ -1694,6 +1694,33 @@ fn a_hover_card_scrolls_and_its_text_is_selected_and_copied() {
     assert!(card_rect(&host, &ctx).is_some());
 }
 
+/// **A hover card's scroll bar is dragged**: a press on its thumb holds
+/// it, a drag scrolls the documentation as far as the thumb moves and
+/// selects nothing, and a release lets it go.
+#[test]
+fn a_hover_card_s_scroll_bar_is_dragged() {
+    let mut host = host_from(CODE);
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    let doc: String = (0..80)
+        .map(|i| format!("Line {i} of the help.\n"))
+        .collect();
+    rest_on_a_name(&mut g, &mut host, &mut ctx, &doc);
+    let (_, _, place) = host.card_place(1, ctx.fb_w, ctx.fb_h).expect("a card");
+    let m = *host.metrics_for(1);
+    let bar = place.bar(0.0, &m).expect("a long help has a bar");
+    let thumb = mid(bar.thumb);
+    g.motion(&mut host, &ctx, thumb.0, thumb.1);
+    g.press(&mut host, &ctx, thumb.0, thumb.1);
+    assert!(g.dragging(), "the thumb is held");
+    let to = thumb.1 + f64::from(bar.track.h) * 0.25;
+    g.drag_to(&mut host, &ctx, thumb.0, to);
+    g.release(&mut host, &ctx, thumb.0, to);
+    let card = host.popups(1).and_then(|p| p.card.clone()).expect("up");
+    assert!(card.scroll > 0.0, "scrolled: {}", card.scroll);
+    assert!(card.select.is_none(), "and nothing selected");
+}
+
 /// The placement of dialog `id` in window 1.
 fn dialog_place(
     host: &Host,

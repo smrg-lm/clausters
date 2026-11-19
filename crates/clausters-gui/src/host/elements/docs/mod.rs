@@ -212,6 +212,8 @@ pub struct DocsView {
     history: Vec<Visit>,
     pos: usize,
     scroll: Cell<f32>,
+    /// The scroll bar's thumb a press holds.
+    thumb: Option<controls::ThumbGrip>,
     /// A place to be brought to the top once the page is laid out.
     reveal: RefCell<Option<String>>,
     /// The page laid out: for which page, at which width and size.
@@ -251,6 +253,7 @@ impl DocsView {
             }],
             pos: 0,
             scroll: Cell::new(0.0),
+            thumb: None,
             reveal: RefCell::new(None),
             laid: RefCell::new(None),
             index: RefCell::new(None),
@@ -653,6 +656,16 @@ impl DocsView {
         (s, laid)
     }
 
+    /// **The scroll bar**, down the page's right edge, where there is more
+    /// than is seen.
+    fn bar(&self, g: &Geometry, m: &Metrics) -> Option<controls::ScrollBar> {
+        let (scroll, laid) = self.settle(g);
+        let w = m.scrollbar_w;
+        let track = Rect::new(g.page.x + g.page.w - w, g.page.y, w, g.page.h);
+        let span = (laid.height - g.text.h * 0.5).max(0.0);
+        controls::ScrollBar::new(true, track, g.text.h, span, scroll, m.pad * 2.0)
+    }
+
     /// **Where the find bar's text stands on the page**, as rectangles from
     /// the page's top left: every piece of text that holds it, case aside.
     fn matches(&self, laid: &Laid) -> Vec<(f32, f32, f32, f32)> {
@@ -919,17 +932,8 @@ impl DocsView {
                 mesh.rect(Rect::new(left + x, top + y, *w, *h), color);
             }
             // the scroll bar, where there is more than is seen
-            let total = laid.height + g.text.h * 0.5;
-            if total > g.text.h + 0.5 {
-                let bar = m.scrollbar_w;
-                let h = (g.page.h * g.text.h / total).max(m.pad * 2.0);
-                let y = g.page.y + (g.page.h - h) * (scroll / (total - g.text.h)).min(1.0);
-                controls::scroll_thumb(
-                    mesh,
-                    Rect::new(g.page.x + g.page.w - bar, y, bar, h),
-                    m,
-                    theme,
-                );
+            if let Some(bar) = self.bar(&g, m) {
+                controls::scroll_thumb(mesh, bar.thumb, m, theme);
             }
             // the strip along the top, or in the window's header, whose
             // ground and line the header draws
@@ -1278,6 +1282,14 @@ impl Element for DocsView {
         if !g.page.contains(at.0, at.1) {
             return Claim::take();
         }
+        // the scroll bar's: its thumb in hand
+        if let Some(bar) = self.bar(&g, input.metrics)
+            && let Some((grip, offset)) = bar.press(at, self.scroll.get())
+        {
+            self.thumb = Some(grip);
+            self.scroll.set(offset);
+            return Claim::take();
+        }
         let (scroll, laid) = self.settle(&g);
         let (px, py) = (at.0 as f32 - g.text.x, at.1 as f32 - g.text.y + scroll);
         if let Some(code) = laid.copy_at(px, py) {
@@ -1288,6 +1300,21 @@ impl Element for DocsView {
             return Claim::events(self.follow(&href));
         }
         Claim::take()
+    }
+
+    fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
+        if let Some(grip) = self.thumb {
+            let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
+            if let Some(bar) = self.bar(&g, input.metrics) {
+                self.scroll.set(bar.drag(grip, at));
+            }
+        }
+        Events::none()
+    }
+
+    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
+        self.thumb = None;
+        Events::none()
     }
 
     fn wheel(&mut self, _at: (f64, f64), delta: (f64, f64), input: &Input) -> Option<Events> {

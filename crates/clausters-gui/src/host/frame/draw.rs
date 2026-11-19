@@ -1255,6 +1255,13 @@ fn draw_note(
     over.round_rect(rect, m.radius_sm, theme.popup);
     over.round_border(rect, m.divider_w, m.radius_sm, theme.separator);
     let scroll = card.map_or(0.0, |c| c.scroll.min(place.max_scroll()));
+    // the documentation's scroll bar, on a card, where there is more than
+    // is seen
+    if card.is_some()
+        && let Some(bar) = place.bar(scroll, m)
+    {
+        controls::scroll_thumb(over, bar.thumb, m, theme);
+    }
     // the selection, under the text it selects
     if let Some((a, b)) = card.and_then(|c| c.select).filter(|(a, b)| a != b) {
         let (a, b) = if a <= b { (a, b) } else { (b, a) };

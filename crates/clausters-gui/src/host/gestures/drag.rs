@@ -81,7 +81,7 @@ impl Gestures {
             return out;
         };
         match drag {
-            Drag::Card { owner } => return self.card_drag(host, ctx, owner, cx, cy),
+            Drag::Card { owner, thumb } => return self.card_drag(host, ctx, owner, thumb, cx, cy),
             // **The marquee, wherever a hand sweeps one over a plane**: the
             // machine holds the anchor and the frame draws the rectangle; the
             // element only says what fell inside it.
@@ -443,7 +443,7 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
-        if let Some(Drag::Card { owner }) = self.drag {
+        if let Some(Drag::Card { owner, .. }) = self.drag {
             self.drag = None;
             self.card_release(host, ctx, owner);
             return out;

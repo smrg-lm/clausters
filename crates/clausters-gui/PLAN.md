@@ -3254,14 +3254,6 @@ finished work, where a pending item reads as done.
   directory listing does, or the page's front keeps the store in memory and
   writes it through.
 
-- ⬜ **A scroll bar cannot be dragged** *(2026-11-19, the user, the
-  editor)*. A press and drag on the thumb of a scrolled view selects text
-  in the code and passes through in the other views; the thumb moves only
-  with the wheel.
-
-- ⬜ **The documentation's tooltips have no scroll bar** *(2026-11-19)*. A
-  tooltip longer than its room wants the same scroll bar as the panels.
-
 - ⬜ **The documentation's tooltips draw plain text** *(2026-11-19, new)*.
   A docstring is Markdown; the tooltip could draw it as the documentation
   panel does.
