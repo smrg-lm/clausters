@@ -2268,6 +2268,49 @@ something reusable if the track stops there.
   view reading the session's server by eye; a node session's server reached
   by a WebSocket gives a native host no leg (`clients/web/PLAN.md`).
 
+- ⬜ **WS16: An application is a page, and a view is `edit`** *(added
+  2026-11-19 at the user's request, after reviewing WS15)*. WS15 put an
+  application on a page of its own; what a page is for is now settled, and
+  it changes how a page is made, what it holds and what each client verb
+  opens.
+  - **A page is made from the bar.** At the right end of the menu bar, one
+    button per kind of application (the multitrack, the score editor, the
+    audio editor, the notes editor and any other application of
+    `clausters-apps`) opens a new page holding a new, empty application of
+    that kind. The bar is the host's, so the buttons are there whichever
+    menu it shows. There is no button for another code page: one is
+    enough, though a second may still be made.
+  - **An application's page is exclusive to it.** It holds that
+    application only: its menu in the host's bar, and no panel bar between
+    the menu and the application's view. An application is never a panel
+    beside the code: a tab is not dropped onto its page, and its window is
+    not docked as a panel of the code's page. Panels (the code, the post
+    window, the documentation, a scope) stay on the code's page.
+  - **The page tab has no menu.** Show is a click on the tab, Copy Page
+    shares the same window on two pages and serves nothing, New Page is the
+    bar's buttons, and Close Page is a close cross on the tab, as on any
+    tab. The strip's `+` goes with New Page.
+  - **`editor(...)` opens an application's page**, as `edit` did until
+    WS15: given a structure (a sequence, a multitrack, a take), it opens
+    the application that edits it; `editor(app="multitrack")` opens an
+    empty one of that kind. `open_app` is no longer what an example calls.
+    The same in both clients.
+  - **`edit(...)` opens the view only**: the multitrack's, the score's, the
+    roll's, the audio editor's, with none of the application's chrome (no
+    menu, no bar, no status line), as a panel beside the code. It does not
+    exist yet. It either returns the edited structure or edits the one it
+    was given in place, so the code goes on working with it. Which of the
+    two, and when the change reaches the client's object, is decided here.
+  - **The example drops the page switch by code**
+    (`dock_call({"verb": "page", ...})`): the user switches with the tab,
+    and the tab already gives the code's page its own menu back.
+  - **Done when** the bar's buttons open each application on a page of its
+    own, an application's page has no panel bar and refuses a panel, the
+    page tab has no menu and closes by its cross, `editor` and `edit` do
+    what is above in both clients, and
+    `clients/python/examples/panels/applications.py` and its JavaScript
+    twin show it, evaluated cell by cell natively and in a served page.
+
 ### Open decisions (taken in the milestone that needs them)
 
 - **Where the editor's application lives -- decided 2026-11-16.** A member of
@@ -3188,3 +3231,40 @@ finished work, where a pending item reads as done.
   the store either becomes a request the event loop answers later, as a
   directory listing does, or the page's front keeps the store in memory and
   writes it through.
+
+- ⬜ **A scroll bar cannot be dragged** *(2026-11-19, the user, the
+  editor)*. A press and drag on the thumb of a scrolled view selects text
+  in the code and passes through in the other views; the thumb moves only
+  with the wheel.
+
+- ⬜ **The documentation's tooltips have no scroll bar** *(2026-11-19)*. A
+  tooltip longer than its room wants the same scroll bar as the panels.
+
+- ⬜ **The documentation's tooltips draw plain text** *(2026-11-19, new)*.
+  A docstring is Markdown; the tooltip could draw it as the documentation
+  panel does.
+
+- ⬜ **The post window's face differs natively and in the page**
+  *(2026-11-19)*. The two fronts draw it in different typefaces; the host
+  is one, so the face must be the same.
+
+- ⬜ **A glitch between the page tab and the menu** *(2026-11-19, a
+  capture)*. Drawing the page tab's menu leaves a seam where it meets the
+  tab. The page tab's menu goes with WS16, so this is checked against
+  whatever replaces it.
+
+- ⬜ **A text field's caret does not blink** *(2026-11-19)*. The host draws
+  a steady caret. Blinking becomes the host's capability and its default,
+  at the pace of the platform, without waking the frame when nothing else
+  moves.
+
+- ⬜ **Text is drawn thinner natively than in the webview editor**
+  *(2026-11-19, captures of the documentation side by side)*. The same
+  face reads lighter in the host's documentation than in the current
+  editor's. The host's rasterization (gamma, hinting, coverage, subpixel
+  positioning) is to follow the rules the webview's text renderer applies,
+  looked up rather than tuned by eye.
+
+- ⬜ **Menu labels carry an article English does not use** *(2026-11-19)*.
+  `Search the Documentation` is `Search Documentation`; every menu label
+  of the editor and the applications is read for the same.
