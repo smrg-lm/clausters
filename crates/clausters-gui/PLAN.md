@@ -3136,19 +3136,6 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **A documentation page draws an image as its description**
-  *(2026-11-17, WS11; the bar's "should": images in a page)*. The `docs`
-  panel is given each document's Markdown, not the files beside it, so an
-  image has no bytes to draw. The owner would hand an image's bytes over
-  as it hands a document's (a set the host decodes, or a path it reads
-  through the bulk loader natively and from the page's storage), and the
-  layout would give it a box at its natural size, narrowed to the page.
-
-- ⬜ **A documentation page's long code line is cut at the page's edge**
-  *(2026-11-17, WS11)*. The current editor scrolls a code block across;
-  the panel draws the line up to its width. A block wider than the page
-  wants a horizontal scroll of its own, or the page's.
-
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** (2026-10-21, the user, browser). Playback was
   right and switching the view away and back redrew it; until then the

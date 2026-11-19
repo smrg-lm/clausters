@@ -58,13 +58,33 @@ pub enum Block {
         rows: Vec<Vec<Vec<Run>>>,
     },
     Rule,
-    /// An image, which is drawn as its description.
+    /// An image: the picture its `url` names, or its description while
+    /// there is none to draw.
     Image {
         url: String,
         alt: String,
     },
     /// A place a link can land on, with no text of its own.
     Anchor(String),
+}
+
+/// **Every picture `blocks` name**, in the order they are read, a list's
+/// and a quote's included.
+pub fn pictures(blocks: &[Block]) -> Vec<&str> {
+    let mut out = Vec::new();
+    for block in blocks {
+        match block {
+            Block::Image { url, .. } => out.push(url.as_str()),
+            Block::List { items, .. } => {
+                for item in items {
+                    out.extend(pictures(item));
+                }
+            }
+            Block::Quote(inner) => out.extend(pictures(inner)),
+            _ => {}
+        }
+    }
+    out
 }
 
 /// **A heading's id**, as GitHub and mdBook make one: lower case, letters,

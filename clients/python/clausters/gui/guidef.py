@@ -2144,7 +2144,7 @@ def code(text: str = "", *, language: str | None = None,
     return node("code", id=id, **extra, **props)
 
 
-def docs(*, books=None, documents=None, text_size: float | None = None,
+def docs(*, books=None, documents=None, roots=None, text_size: float | None = None,
          id: int | None = None, **props) -> View:
     """A ``docs`` panel: the documentation of a set of books, read as an
     editor's documentation panel reads it.
@@ -2156,8 +2156,15 @@ def docs(*, books=None, documents=None, text_size: float | None = None,
     a path set to ``None`` takes one away). The panel draws it all: a start
     page listing every book, a book's contents, a document with its headings,
     lists, tables and code (Python and JavaScript in the colors of their
-    syntax, each block with a copy button), back and forward along a strip
-    that says where the page is.
+    syntax, each block with a copy button) and its pictures, back and
+    forward along a strip that says where the page is.
+
+    ``roots`` says where the documents were read from: a dict from the
+    prefix a document's path starts with to its directory
+    (``{"": "/books/main"}``). A picture a document names (a PNG or a JPEG)
+    is read from there by the host, relative to the document, and drawn at
+    its own size, narrowed to the page; one it cannot read is written as its
+    description.
 
     Ctrl+F finds in the page and Ctrl+Shift+F searches every document. A
     link to another document opens it, at its heading; a link out of the
@@ -2169,7 +2176,8 @@ def docs(*, books=None, documents=None, text_size: float | None = None,
     most; else ``text``, a session's own help for it. Its query reports the
     ``page`` shown, a search's ``results`` and the matches ``found`` in the
     page."""
-    extra = _drop_none(books=books, documents=documents, text_size=text_size)
+    extra = _drop_none(books=books, documents=documents, roots=roots,
+                       text_size=text_size)
     return node("docs", id=id, **extra, **props)
 
 

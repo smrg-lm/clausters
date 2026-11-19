@@ -239,3 +239,122 @@ fn a_code_block_is_copied() {
     v.verb(Verb::Copy, &mut ki);
     assert_eq!(clip.text(), code);
 }
+
+/// **A picture a page names is read and drawn at its size**: laid out, the
+/// page writes its description and asks for the file under the root its
+/// document was read from; read, it lays the picture out at its own size,
+/// narrowed to the page; a file that is not a picture keeps its description.
+#[test]
+fn a_picture_a_page_names_is_read_and_laid_out() {
+    let mut props = Map::new();
+    props.insert(
+        "documents".into(),
+        serde_json::json!({
+            "book/ch/a.md": "# A\n\n![a dot](../img/dot.png)\n\n![wide](../img/wide.png)\n\n![none](../img/none.png)\n",
+        }),
+    );
+    props.insert(
+        "roots".into(),
+        serde_json::json!({"book/": "/books/b", "": "/x"}),
+    );
+    let mut v = DocsView::new(&props);
+    v.set("open", &Value::from("book/ch/a.md"));
+    let laid = v.laid(300.0, 2.0);
+    let pictures = |laid: &Laid| {
+        laid.items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Picture { rect, url } => Some((url.clone(), rect.w, rect.h)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert!(pictures(&laid).is_empty(), "nothing read yet");
+    let mut asks = v.wants_files();
+    asks.sort_by(|a, b| a.path.cmp(&b.path));
+    let paths: Vec<&str> = asks.iter().map(|a| a.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        [
+            "/books/b/img/dot.png",
+            "/books/b/img/none.png",
+            "/books/b/img/wide.png"
+        ]
+    );
+    assert!(v.wants_files().is_empty(), "asked once");
+    let png =
+        |w: u32, h: u32| crate::host::png::encode_rgba(w, h, &vec![200; (w * h * 4) as usize]);
+    assert!(v.read(asks[0].ticket, Ok(png(10, 6))));
+    assert!(v.read(asks[1].ticket, Ok(b"not a picture".to_vec())));
+    assert!(v.read(asks[2].ticket, Ok(png(600, 100))));
+    assert!(!v.read(asks[2].ticket, Ok(png(1, 1))), "read once");
+    let laid = v.laid(300.0, 2.0);
+    let shown = pictures(&laid);
+    // at the page's scale (its size over the panel's own text size), and
+    // narrowed to the page in proportion
+    let scale = 2.0 / v.text_size;
+    assert_eq!(
+        shown[0],
+        ("../img/dot.png".into(), 10.0 * scale, 6.0 * scale)
+    );
+    assert_eq!(shown[1].0, "../img/wide.png");
+    assert!((shown[1].1 - 300.0).abs() < 1e-3 && (shown[1].2 - 50.0).abs() < 1e-3);
+    assert_eq!(
+        shown.len(),
+        2,
+        "the file that is not a picture keeps its description"
+    );
+    assert!(
+        v.picture_uv("../img/dot.png").is_some(),
+        "packed into the sheet"
+    );
+}
+
+/// **A code block wider than the page scrolls across on its own**: Shift
+/// with the wheel over it moves its lines and no further than its longest
+/// one, the page stays where it was, and a block that fits does not move.
+#[test]
+fn a_long_code_line_scrolls_across_its_block() {
+    let long = "x = ".to_string() + &"1 + ".repeat(80) + "1";
+    let mut props = Map::new();
+    props.insert(
+        "documents".into(),
+        serde_json::json!({
+            "a.md": format!("# A\n\n```python\n{long}\n```\n\n```python\nshort = 1\n```\n"),
+        }),
+    );
+    let mut v = DocsView::new(&props);
+    v.set("open", &Value::from("a.md"));
+    let m = Metrics::default();
+    let mut input = input(&m);
+    let g = v.geometry(RECT, 1.0, &m, None);
+    let (scroll, laid) = v.settle(&g);
+    assert_eq!(laid.pans.len(), 2);
+    let (wide, fits) = (laid.pans[0], laid.pans[1]);
+    assert!(wide.most() > 0.0 && fits.most() == 0.0, "{wide:?} {fits:?}");
+    let (left, top) = (g.text.x, g.text.y - scroll);
+    let over = |b: &crate::host::graphics::docs::layout::Pan| {
+        (
+            f64::from(left + b.rect.x + 10.0),
+            f64::from(top + b.rect.y + b.rect.h * 0.5),
+        )
+    };
+    input.mods.shift = true;
+    assert!(v.wheel(over(&wide), (0.0, -1.0), &input).is_some());
+    let moved = v.pan_of(0);
+    assert!(moved > 0.0, "it moved across");
+    assert_eq!(v.scroll.get(), scroll, "the page stayed");
+    for _ in 0..500 {
+        v.wheel(over(&wide), (0.0, -1.0), &input);
+    }
+    assert!(
+        (v.pan_of(0) - wide.most()).abs() < 1e-3,
+        "no further than its line"
+    );
+    assert!(v.wheel(over(&fits), (0.0, -1.0), &input).is_none() || v.pan_of(1) == 0.0);
+    assert_eq!(v.pan_of(1), 0.0, "a block that fits does not move");
+    // a sideways wheel, without Shift, moves it back
+    input.mods.shift = false;
+    v.wheel(over(&wide), (1.0, 0.0), &input);
+    assert!(v.pan_of(0) < wide.most());
+}

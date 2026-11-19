@@ -713,7 +713,7 @@ fn rows_of(laid: &crate::host::graphics::docs::layout::Laid) -> Vec<NoteLine> {
                 size,
                 ..
             } => Some((*y, *x, text.as_str(), *family, *size)),
-            Item::Fill { .. } => None,
+            Item::Fill { .. } | Item::Picture { .. } => None,
         })
         .collect();
     texts.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));

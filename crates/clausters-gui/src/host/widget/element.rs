@@ -2285,6 +2285,22 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **The files this element wants read**, each asked once: the element
+    /// clears an ask as it makes it. Empty (the default) for one that reads
+    /// none. The front reads each -- off the disk natively, from the page's
+    /// storage in a tab -- and hands the bytes back through
+    /// [`read`](Element::read) with the ask's ticket ([`crate::host::files`]).
+    fn wants_files(&mut self) -> Vec<crate::host::files::Ask> {
+        Vec::new()
+    }
+
+    /// The answer to the read `ticket` -- the file's bytes, or why it could
+    /// not be read. Answers whether the element took it, and so has
+    /// something new to draw.
+    fn read(&mut self, _ticket: u64, _bytes: Result<Vec<u8>, String>) -> bool {
+        false
+    }
+
     /// **A row of the list this element opened was picked**: `path` is the
     /// row's position, from the first list down ([`Events::and_popup`]).
     ///

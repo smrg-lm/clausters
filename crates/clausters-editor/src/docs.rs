@@ -92,8 +92,12 @@ pub fn roots() -> Result<Vec<Root>, String> {
 
 /// **Every book and every document**, read now: the books as the `docs`
 /// element's `books`, the documents by path as its `documents`.
-pub fn read_all() -> Result<(Vec<Book>, BTreeMap<String, String>), String> {
+pub fn read_all() -> Result<crate::app::Docs, String> {
     let roots = roots()?;
+    let dirs = roots
+        .iter()
+        .map(|r| (r.prefix.clone(), r.dir.to_string_lossy().into_owned()))
+        .collect();
     let books = roots.iter().map(book).collect();
     let mut documents = BTreeMap::new();
     for root in &roots {
@@ -105,7 +109,7 @@ pub fn read_all() -> Result<(Vec<Book>, BTreeMap<String, String>), String> {
             }
         }
     }
-    Ok((books, documents))
+    Ok((books, documents, dirs))
 }
 
 #[derive(serde::Serialize, Debug, PartialEq)]

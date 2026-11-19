@@ -2850,7 +2850,15 @@ export function code(
  * takes one away). The panel draws it all: a start page listing every book, a
  * book's contents, a document with its headings, lists, tables and code
  * (Python and JavaScript in the colors of their syntax, each block with a copy
- * button), back and forward along a strip that says where the page is.
+ * button) and its pictures, back and forward along a strip that says where the
+ * page is.
+ *
+ * `roots` says where the documents were read from: an object from the prefix a
+ * document's path starts with to its directory (`{ "": "/books/main" }`). A
+ * picture a document names (a PNG or a JPEG) is read from there by the host,
+ * relative to the document -- in a page, from the page's storage -- and drawn
+ * at its own size, narrowed to the page; one it cannot read is written as its
+ * description.
  *
  * Ctrl+F finds in the page and Ctrl+Shift+F searches every document. A link
  * to another document opens it, at its heading; a link out of the
@@ -2866,15 +2874,17 @@ export function docs(
     options: WidgetOptions & {
         books?: unknown[];
         documents?: Record<string, string | null>;
+        roots?: Record<string, string>;
         textSize?: number;
     } = {},
 ): View {
-    const { books, documents, textSize, ...rest } = options;
+    const { books, documents, roots, textSize, ...rest } = options;
     return node("docs", {
         ...rest,
         ...drop([
             ["books", books],
             ["documents", documents],
+            ["roots", roots],
             ["text_size", textSize],
         ]),
     });

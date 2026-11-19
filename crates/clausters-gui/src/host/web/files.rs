@@ -188,11 +188,45 @@ pub(super) async fn fetch_listing(host: HostId, def_id: i32, widget_id: i32, ask
     }
 }
 
+/// Reads one file of the page's storage and hands its bytes back through
+/// the proxy, under the ticket it was asked with.
+pub(super) async fn fetch_read(host: HostId, def_id: i32, widget_id: i32, ask: Ask) {
+    let result = read_opfs(&ask.path).await;
+    if let Some(proxy) = web_proxy() {
+        let _ = proxy.send_event(HostEvent::To(
+            host,
+            WebEvent::Read {
+                def_id,
+                widget_id,
+                ticket: ask.ticket,
+                result,
+            },
+        ));
+    }
+}
+
 impl WebApp {
-    /// Starts a listing for every directory an element is waiting on.
+    /// Starts a listing for every directory an element is waiting on, and a
+    /// read for every file.
     pub(super) fn start_listings(&mut self) {
         for (def, widget, ask) in self.host.pending_listings() {
             wasm_bindgen_futures::spawn_local(fetch_listing(self.id, def, widget, ask));
+        }
+        for (def, widget, ask) in self.host.pending_reads() {
+            wasm_bindgen_futures::spawn_local(fetch_read(self.id, def, widget, ask));
+        }
+    }
+
+    /// A file came back: the element takes it, and its window repaints.
+    pub(super) fn on_read(
+        &mut self,
+        def: i32,
+        widget: i32,
+        ticket: u64,
+        result: Result<Vec<u8>, String>,
+    ) {
+        if self.host.deliver_read(def, widget, ticket, result) {
+            self.request_redraw(def);
         }
     }
 

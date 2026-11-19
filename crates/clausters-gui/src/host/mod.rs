@@ -150,6 +150,7 @@ pub mod winit_keys;
 // gesture, and the takes the pictures draw.
 mod answer;
 mod apps;
+mod picture;
 mod quit;
 pub use quit::DockClose;
 #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]

@@ -8255,3 +8255,33 @@ module of its own.
   standalone audio editor asks, keeps, saves and quits the same way; host
   tests over two audio editors in one dock and over the client's request.
   Both clients: `on_quit` / `onQuit`.)*
+
+- ✅ **A documentation page draws an image as its description**
+  *(2026-11-17, WS11; the bar's "should": images in a page)*. The `docs`
+  panel is given each document's Markdown, not the files beside it, so an
+  image has no bytes to draw. The owner would hand an image's bytes over
+  as it hands a document's (a set the host decodes, or a path it reads
+  through the bulk loader natively and from the page's storage), and the
+  layout would give it a box at its natural size, narrowed to the page.
+  *(Fixed 2026-11-19: the `docs` element takes `roots`, the directory each
+  prefix of its documents' paths was read from, and reads a picture a page
+  names from there, relative to the document, as a chooser asks for a
+  listing (`Element::wants_files`, answered off the disk natively and from
+  the page's storage in a tab); it decodes PNG and JPEG (`host::picture`,
+  the `png` and `zune-jpeg` crates) and draws the picture at its own size,
+  narrowed to the page. The pixels go into a sheet of pictures beside the
+  glyph atlas (`clausters_gui_draw::image`), sampled by a pipeline of its
+  own that shares the glyphs' code (`painter::Sheet`). A page asks for its
+  pictures when it comes up, so a headless window has them by its first
+  capture. The editor hands its books' folders over. A picture on the web
+  or one that cannot be read keeps its description.)*
+
+- ✅ **A documentation page's long code line is cut at the page's edge**
+  *(2026-11-17, WS11)*. The current editor scrolls a code block across;
+  the panel draws the line up to its width. A block wider than the page
+  wants a horizontal scroll of its own, or the page's.
+  *(Fixed 2026-11-19: a code block wider than the page scrolls across on
+  its own, by a sideways wheel or Shift with the wheel over it, its lines
+  cut to its ground, with a bar under its last line saying how far
+  (`Laid::pans`); the page never scrolls sideways, and a block that fits
+  does not move.)*

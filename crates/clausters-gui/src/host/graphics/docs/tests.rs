@@ -78,7 +78,9 @@ fn a_page_is_laid_out() {
     assert!(laid.height > 0.0);
     let inside = laid.items.iter().all(|i| match i {
         Item::Text { x, .. } => *x >= 0.0 && *x < 300.0,
-        Item::Fill { rect, .. } => rect.x >= 0.0 && rect.x + rect.w <= 300.5,
+        Item::Fill { rect, .. } | Item::Picture { rect, .. } => {
+            rect.x >= 0.0 && rect.x + rect.w <= 300.5
+        }
     });
     assert!(inside, "everything inside the width");
     let lines: std::collections::BTreeSet<u32> = laid

@@ -354,10 +354,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   holds everything natively and in a page. The native application
   (`clausters-editor-host`) runs beside the webview one, and putting the two
   side by side opened the `ST` track below; checkpoint 3 is decided at its
-  end, and `WS13` comes after it. The gaps the plan's "Found by use" holds
-  from WS11 and WS12 (an image in a documentation page, a long code line, the
-  code font, the dock's arrangement and the window's place between runs) are
-  weighed along the way.
+  end, and `WS13` comes after it.
 - **The host's look, the `ST` track** *(`crates/clausters-gui/PLAN.md`, ST
   track)*. Taken now, before `WS13`: one design system as the specification
   of every application's general components, with the current editor as the

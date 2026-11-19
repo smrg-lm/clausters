@@ -219,6 +219,13 @@ enum WebEvent {
         ticket: u64,
         result: Result<crate::host::files::Listing, String>,
     },
+    /// A file an element asked for has been read (`files`).
+    Read {
+        def_id: i32,
+        widget_id: i32,
+        ticket: u64,
+        result: Result<Vec<u8>, String>,
+    },
     /// A window's capture, or the dock's, was written into the page's
     /// storage, or was not (`capture`): what is left is to say so.
     Captured {
@@ -1251,6 +1258,12 @@ impl WebApp {
                 ticket,
                 result,
             } => self.on_listed(def_id, widget_id, ticket, result),
+            WebEvent::Read {
+                def_id,
+                widget_id,
+                ticket,
+                result,
+            } => self.on_read(def_id, widget_id, ticket, result),
             WebEvent::Captured { of, path, result } => match of {
                 capture::CaptureOf::Window(def_id) => {
                     self.queue(super::captured(def_id, &path, result.err().as_deref()))

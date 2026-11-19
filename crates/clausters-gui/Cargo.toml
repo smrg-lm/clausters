@@ -91,6 +91,12 @@ font-atlas = ["clausters-gui-draw/font-atlas"]
 apps = ["dep:clausters-app-engine", "clausters-apps/notation"]
 
 [dependencies]
+# **The pictures a documentation page shows**, decoded where the host draws
+# them (`host::picture`): PNG and JPEG, pure Rust, so a page decodes them as
+# a window does.
+png = "0.18.1"
+zune-jpeg = "0.5.15"
+zune-core = "0.5.3"
 # `Instant` that works on both targets. std's panics outright in wasm ("time not
 # implemented on this platform"), and the one thing here that reads a clock is
 # the `canvas` widget's `time` uniform -- so a shader took the whole page down

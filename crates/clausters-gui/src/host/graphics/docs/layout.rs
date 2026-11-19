@@ -46,19 +46,32 @@ pub enum Item {
         ink: Ink,
         underline: bool,
         strike: bool,
+        /// The [`Pan`] it scrolls across with, for a code block's line.
+        pan: Option<usize>,
     },
     Fill {
         rect: Rect,
         ink: Ink,
     },
+    /// **A picture**, in `rect`: the image at `url`, as the page's
+    /// [`Pictures`] found it.
+    Picture {
+        rect: Rect,
+        url: String,
+    },
 }
+
+/// **How large a picture is**, by the `url` a page writes it with: its
+/// natural size in the page's pixels, `None` while it is not read (or could
+/// not be), when the page writes its description instead.
+pub type Pictures<'a> = &'a dyn Fn(&str) -> Option<(f32, f32)>;
 
 impl Item {
     /// The top of what it draws.
     pub fn top(&self) -> f32 {
         match self {
             Item::Text { y, .. } => *y,
-            Item::Fill { rect, .. } => rect.y,
+            Item::Fill { rect, .. } | Item::Picture { rect, .. } => rect.y,
         }
     }
 
@@ -66,7 +79,7 @@ impl Item {
     pub fn bottom(&self) -> f32 {
         match self {
             Item::Text { y, size, .. } => y + font::line_advance(*size),
-            Item::Fill { rect, .. } => rect.y + rect.h,
+            Item::Fill { rect, .. } | Item::Picture { rect, .. } => rect.y + rect.h,
         }
     }
 }
@@ -82,6 +95,30 @@ pub struct Laid {
     pub links: Vec<(Rect, String)>,
     /// A code block's copy button, and the code it copies.
     pub copies: Vec<(Rect, String)>,
+
+    /// **The code blocks wider than the page**, each scrolled across on its
+    /// own ([`Pan`]).
+    pub pans: Vec<Pan>,
+}
+
+/// **A code block whose longest line is wider than the page**: its ground,
+/// which its lines are cut to, and how wide they are, so it scrolls across
+/// on its own -- the page never does.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pan {
+    pub rect: Rect,
+    /// The width its lines take, their margins included.
+    pub content: f32,
+    /// Its copy button, which a line beside it stops short of, so the
+    /// button's label never reads through the code.
+    pub button: Rect,
+}
+
+impl Pan {
+    /// How far it scrolls at most.
+    pub fn most(&self) -> f32 {
+        (self.content - self.rect.w).max(0.0)
+    }
 }
 
 impl Laid {
@@ -117,6 +154,23 @@ pub fn draw_items(
     view: Rect,
     ink: impl Fn(Ink) -> Color,
 ) {
+    draw_items_with(mesh, laid, (left, top), view, ink, &|_| None, &|_| 0.0);
+}
+
+/// [`draw_items`], each picture drawn from the texels of the sheet of
+/// pictures `uv` names it by (`clausters_gui_draw::image`) -- one it names
+/// none for is not drawn -- and each code block's lines moved across by how
+/// far `pan` says it is scrolled, cut to its ground.
+pub fn draw_items_with(
+    mesh: &mut Mesh,
+    laid: &Laid,
+    (left, top): (f32, f32),
+    view: Rect,
+    ink: impl Fn(Ink) -> Color,
+    uv: &dyn Fn(&str) -> Option<[f32; 4]>,
+    pan: &dyn Fn(usize) -> f32,
+) {
+    let kept = mesh.clip();
     for item in &laid.items {
         if item.bottom() + top < view.y || item.top() + top > view.y + view.h {
             continue;
@@ -126,6 +180,13 @@ pub fn draw_items(
                 Rect::new(left + rect.x, top + rect.y, rect.w, rect.h),
                 ink(*role),
             ),
+            Item::Picture { rect, url } => {
+                if let Some(uv) = uv(url) {
+                    let r = Rect::new(left + rect.x, top + rect.y, rect.w, rect.h);
+                    let r = Rect::new(r.x.round(), r.y.round(), r.w.round(), r.h.round());
+                    mesh.image(r, uv);
+                }
+            }
             Item::Text {
                 x,
                 y,
@@ -135,8 +196,29 @@ pub fn draw_items(
                 ink: role,
                 underline,
                 strike,
+                pan: across,
             } => {
                 let color = ink(*role);
+                let mut left = left;
+                if let Some(p) = across.and_then(|i| laid.pans.get(i).map(|b| (i, b))) {
+                    let (i, block) = p;
+                    left -= pan(i).clamp(0.0, block.most());
+                    let mut ground = Rect::new(
+                        left + pan(i).clamp(0.0, block.most()) + block.rect.x,
+                        top + block.rect.y,
+                        block.rect.w,
+                        block.rect.h,
+                    );
+                    // a line beside the copy button stops short of it
+                    let b = block.button;
+                    let row = font::line_advance(*size);
+                    if *y < b.y + b.h && y + row > b.y {
+                        ground.w = (b.x - block.rect.x - font::height(*size) * 0.5).max(0.0);
+                    }
+                    mesh.set_clip(Some(kept.map_or(ground, |k| k.intersect(ground))));
+                } else {
+                    mesh.set_clip(kept);
+                }
                 font::text_in(mesh, *family, text, left + x, top + y, *size, color);
                 let w = font::width_in(*family, text, *size);
                 let thick = (size * 0.5).max(1.0).round();
@@ -151,24 +233,28 @@ pub fn draw_items(
             }
         }
     }
+    mesh.set_clip(kept);
 }
 
 /// What a code block's copy button says.
 pub const COPY: &str = "Copy";
 
-/// The sizes and spacing a page is laid out with, from its text's size.
-#[derive(Clone, Copy, Debug)]
-struct Measures {
+/// The sizes and spacing a page is laid out with, from its text's size,
+/// and how large its pictures are.
+#[derive(Clone, Copy)]
+struct Measures<'a> {
     size: f32,
     /// The em of the text: a capital is about three quarters of it.
     em: f32,
+    pictures: Pictures<'a>,
 }
 
-impl Measures {
-    fn new(size: f32) -> Measures {
+impl Measures<'_> {
+    fn new(size: f32) -> Measures<'static> {
         Measures {
             size,
             em: font::height(size) / 0.727,
+            pictures: &|_| None,
         }
     }
 
@@ -204,7 +290,17 @@ fn family_of(run: &Run, base: Family) -> Family {
 
 /// **A document laid out** at width `width`, its text at `size`.
 pub fn lay(blocks: &[Block], width: f32, size: f32) -> Laid {
-    let m = Measures::new(size);
+    lay_with(blocks, width, size, &|_| None)
+}
+
+/// [`lay`], with its pictures drawn at the sizes `pictures` says: a picture
+/// at its natural size, narrowed to the page in proportion where it is
+/// wider; its description, as [`lay`] writes it, where it has none.
+pub fn lay_with(blocks: &[Block], width: f32, size: f32, pictures: Pictures<'_>) -> Laid {
+    let m = Measures {
+        pictures,
+        ..Measures::new(size)
+    };
     let mut out = Laid::default();
     let mut y = 0.0;
     lay_blocks(
@@ -227,7 +323,7 @@ fn lay_blocks(
     x: f32,
     w: f32,
     y: &mut f32,
-    m: Measures,
+    m: Measures<'_>,
     ink: Ink,
 ) {
     let gap = m.em * 1.0;
@@ -285,6 +381,7 @@ fn lay_blocks(
                         ink: Ink::Dim,
                         underline: false,
                         strike: false,
+                        pan: None,
                     });
                     let mut inner = *y;
                     lay_blocks(out, item, x + indent, w - indent, &mut inner, m, ink);
@@ -315,6 +412,17 @@ fn lay_blocks(
                     ink: Ink::Line,
                 });
                 *y += gap;
+            }
+            Block::Image { url, .. } if let Some((pw, ph)) = (m.pictures)(url) => {
+                // its natural size, narrowed to the page in proportion
+                let scale = (w / pw.max(1.0)).min(1.0);
+                let (pw, ph) = (pw * scale, ph * scale);
+                *y += m.em * 0.5;
+                out.items.push(Item::Picture {
+                    rect: Rect::new(x, *y, pw, ph),
+                    url: url.clone(),
+                });
+                *y += ph + m.em * 0.5;
             }
             Block::Image { alt, .. } => {
                 let text = if alt.is_empty() {
@@ -465,6 +573,7 @@ fn place(
         underline: lu,
         strike: lst,
         x: lx,
+        pan: None,
     }) = out.items.last_mut()
         && *ly == y
         && *lf == family
@@ -489,6 +598,7 @@ fn place(
         ink,
         underline,
         strike: run.strike,
+        pan: None,
     });
 }
 
@@ -503,13 +613,14 @@ fn language_of(lang: &str) -> Language {
 
 /// **A code block**: its ground, its lines in the code's face colored by
 /// their syntax, and a copy button at its top right.
-fn lay_code(out: &mut Laid, lang: &str, text: &str, x: f32, w: f32, y: &mut f32, m: Measures) {
+fn lay_code(out: &mut Laid, lang: &str, text: &str, x: f32, w: f32, y: &mut f32, m: Measures<'_>) {
     let size = m.size * 0.857;
     let line_h = font::line_advance(size) * 1.3;
     let (pad_x, pad_y) = (m.em, m.em * 0.67);
     *y += m.em * 0.25;
     let lines: Vec<&str> = text.split('\n').collect();
-    let h = lines.len() as f32 * line_h + 2.0 * pad_y;
+    let mut h = lines.len() as f32 * line_h + 2.0 * pad_y;
+    let ground = out.items.len();
     out.items.push(Item::Fill {
         rect: Rect::new(x, *y, w, h),
         ink: Ink::CodeGround,
@@ -520,6 +631,8 @@ fn lay_code(out: &mut Laid, lang: &str, text: &str, x: f32, w: f32, y: &mut f32,
     let spans = syntax.spans(text, 0, text.len());
     let mut next = 0;
     let mut start = 0;
+    let pan = out.pans.len();
+    let mut content = w;
     for (n, line) in lines.iter().enumerate() {
         let ty = *y + pad_y + n as f32 * line_h + (line_h - font::height(size)) * 0.5;
         let mut pen = x + pad_x;
@@ -540,27 +653,44 @@ fn lay_code(out: &mut Laid, lang: &str, text: &str, x: f32, w: f32, y: &mut f32,
             }
             let piece = line[at..edge].replace('\t', "    ");
             let pw = font::width_in(Family::Mono, &piece, size);
-            if pen < x + w {
-                out.items.push(Item::Text {
-                    x: pen,
-                    y: ty,
-                    text: piece,
-                    family: Family::Mono,
-                    size,
-                    ink: Ink::Code(kind),
-                    underline: false,
-                    strike: false,
-                });
-            }
+            out.items.push(Item::Text {
+                x: pen,
+                y: ty,
+                text: piece,
+                family: Family::Mono,
+                size,
+                ink: Ink::Code(kind),
+                underline: false,
+                strike: false,
+                pan: Some(pan),
+            });
             pen += pw;
             at = edge;
         }
+        content = content.max(pen - x + pad_x);
         start += line.len() + 1;
     }
+    // a block wider than the page scrolls across, with room under its last
+    // line for the bar that says how far; one that fits does not need to,
+    // and its lines are cut to its ground all the same
+    if content > w + 0.5 {
+        h += m.em * 0.75;
+        if let Some(Item::Fill { rect, .. }) = out.items.get_mut(ground) {
+            rect.h = h;
+        }
+    }
+    out.pans.push(Pan {
+        rect: Rect::new(x, *y, w, h),
+        content,
+        button: Rect::new(x + w, *y, 0.0, 0.0),
+    });
     let label_size = m.size * 0.75;
     let bw = font::width_in(Family::Prose, COPY, label_size) + m.em * 0.8;
     let bh = font::line_advance(label_size) + m.em * 0.3;
     let button = Rect::new(x + w - bw - m.em * 0.3, *y + m.em * 0.3, bw, bh);
+    if let Some(last) = out.pans.last_mut() {
+        last.button = button;
+    }
     out.items.push(Item::Text {
         x: button.x + m.em * 0.4,
         y: button.y + (bh - font::height(label_size)) * 0.5,
@@ -570,6 +700,7 @@ fn lay_code(out: &mut Laid, lang: &str, text: &str, x: f32, w: f32, y: &mut f32,
         ink: Ink::Dim,
         underline: false,
         strike: false,
+        pan: None,
     });
     out.copies.push((button, text.to_string()));
     *y += h + m.em * 1.0;
@@ -586,7 +717,7 @@ fn lay_table(
     x: f32,
     w: f32,
     y: &mut f32,
-    m: Measures,
+    m: Measures<'_>,
 ) {
     let size = m.size * 0.857;
     let line_h = m.line(size);

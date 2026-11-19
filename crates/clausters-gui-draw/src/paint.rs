@@ -21,8 +21,7 @@ use crate::theme::Color;
 pub const FLOATS_PER_VERTEX: usize = 6;
 
 /// `[x, y, u, v, r, g, b, a]` per glyph vertex -- the same, plus where in the
-/// atlas texture it samples.
-#[cfg(feature = "font-atlas")]
+/// atlas texture it samples. A picture's vertices are laid out the same.
 pub const FLOATS_PER_GLYPH_VERTEX: usize = 8;
 
 /// **How a widget's own triangles are emitted** -- the two paint capabilities
@@ -145,6 +144,11 @@ pub struct Mesh {
     /// overlay batch still paints over both).
     #[cfg(feature = "font-atlas")]
     glyphs: Vec<f32>,
+    /// The **picture** vertices, laid out as the glyphs' (`[x, y, u, v, r, g,
+    /// b, a]`), sampling the window's copy of the sheet of pictures
+    /// ([`crate::image`]): drawn over the flat geometry and under the
+    /// glyphs of their batch.
+    images: Vec<f32>,
     /// The active clip rectangle, if any: every triangle emitted while it is
     /// set is clipped to it geometrically (so a scrolled widget's chrome never
     /// bleeds outside its `scroll` container). Geometry, not a GPU scissor --
@@ -163,6 +167,7 @@ impl Mesh {
 
     pub fn clear(&mut self) {
         self.verts.clear();
+        self.images.clear();
         #[cfg(feature = "font-atlas")]
         self.glyphs.clear();
     }
@@ -173,6 +178,7 @@ impl Mesh {
     /// with nothing to resolve.
     pub fn append(&mut self, other: &Mesh) {
         self.verts.extend_from_slice(&other.verts);
+        self.images.extend_from_slice(&other.images);
         #[cfg(feature = "font-atlas")]
         self.glyphs.extend_from_slice(&other.glyphs);
     }
@@ -190,6 +196,13 @@ impl Mesh {
             }
         }
         shifted(&mut self.verts, &other.verts, FLOATS_PER_VERTEX, dx, dy);
+        shifted(
+            &mut self.images,
+            &other.images,
+            FLOATS_PER_GLYPH_VERTEX,
+            dx,
+            dy,
+        );
         #[cfg(feature = "font-atlas")]
         shifted(
             &mut self.glyphs,
@@ -205,7 +218,7 @@ impl Mesh {
         if !self.glyphs.is_empty() {
             return false;
         }
-        self.verts.is_empty()
+        self.verts.is_empty() && self.images.is_empty()
     }
 
     /// **Where each of its triangles lies**, flat and glyph, as `[x0, y0,
@@ -229,6 +242,7 @@ impl Mesh {
         }
         let mut out = Vec::new();
         bounds(&mut out, &self.verts, FLOATS_PER_VERTEX);
+        bounds(&mut out, &self.images, FLOATS_PER_GLYPH_VERTEX);
         #[cfg(feature = "font-atlas")]
         bounds(&mut out, &self.glyphs, FLOATS_PER_GLYPH_VERTEX);
         out
@@ -256,7 +270,8 @@ impl Mesh {
         if !same(&self.glyphs, &other.glyphs, FLOATS_PER_GLYPH_VERTEX) {
             return false;
         }
-        same(&self.verts, &other.verts, FLOATS_PER_VERTEX)
+        same(&self.images, &other.images, FLOATS_PER_GLYPH_VERTEX)
+            && same(&self.verts, &other.verts, FLOATS_PER_VERTEX)
     }
 
     /// A glyph quad: `r` in device pixels, textured with `uv` (`[u0, v0, u1,
@@ -268,6 +283,23 @@ impl Mesh {
     /// left half rather than a squeezed whole one.
     #[cfg(feature = "font-atlas")]
     pub fn glyph(&mut self, r: Rect, uv: [f32; 4], color: Color) {
+        let mut glyphs = std::mem::take(&mut self.glyphs);
+        self.textured(&mut glyphs, r, uv, color);
+        self.glyphs = glyphs;
+    }
+
+    /// **A picture's quad**: `r` in device pixels, showing `uv` (`[u0, v0,
+    /// u1, v1]`, texels of the sheet of pictures, [`crate::image`]), clipped
+    /// as a glyph is and drawn at the [`Ink`]'s opacity.
+    pub fn image(&mut self, r: Rect, uv: [f32; 4]) {
+        let mut images = std::mem::take(&mut self.images);
+        self.textured(&mut images, r, uv, [1.0, 1.0, 1.0, 1.0]);
+        self.images = images;
+    }
+
+    /// A textured quad into `out`, clipped to the clip rectangle with its
+    /// texture coordinates cut in proportion.
+    fn textured(&self, out: &mut Vec<f32>, r: Rect, uv: [f32; 4], color: Color) {
         if r.w <= 0.0 || r.h <= 0.0 {
             return;
         }
@@ -299,16 +331,7 @@ impl Mesh {
         }
         let alpha = self.ink.alpha;
         let mut vertex = |x: f32, y: f32, u: f32, v: f32| {
-            self.glyphs.extend_from_slice(&[
-                x,
-                y,
-                u,
-                v,
-                color[0],
-                color[1],
-                color[2],
-                color[3] * alpha,
-            ]);
+            out.extend_from_slice(&[x, y, u, v, color[0], color[1], color[2], color[3] * alpha]);
         };
         vertex(x0, y1, u0, v1);
         vertex(x1, y1, u1, v1);
@@ -316,6 +339,11 @@ impl Mesh {
         vertex(x0, y1, u0, v1);
         vertex(x1, y0, u1, v0);
         vertex(x0, y0, u0, v0);
+    }
+
+    /// The picture vertices accumulated, laid out as the glyphs'.
+    pub fn image_vertices(&self) -> &[f32] {
+        &self.images
     }
 
     /// The flat vertices accumulated, `[x, y, r, g, b, a]` each.

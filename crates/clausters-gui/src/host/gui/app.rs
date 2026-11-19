@@ -1034,6 +1034,9 @@ impl App {
 
         // **A directory a chooser waits on is listed**, off the disk and at
         // once: the element asked, and the answer goes back to it.
+        // What either answers changes what the element draws, so the loop
+        // comes back at once to draw it: a headless window has no platform
+        // to ask it for that frame.
         for (def_id, widget, ask) in self.host.pending_listings() {
             let listing = crate::host::files::list_dir(&ask.path);
             if self
@@ -1041,6 +1044,17 @@ impl App {
                 .deliver_listing(def_id, widget, ask.ticket, listing)
             {
                 self.redraw(def_id);
+                next_wake = Some(now);
+            }
+        }
+
+        // **A file an element waits on is read**, off the disk and at once,
+        // as a listing is.
+        for (def_id, widget, ask) in self.host.pending_reads() {
+            let bytes = std::fs::read(&ask.path).map_err(|e| format!("{}: {e}", ask.path));
+            if self.host.deliver_read(def_id, widget, ask.ticket, bytes) {
+                self.redraw(def_id);
+                next_wake = Some(now);
             }
         }
 

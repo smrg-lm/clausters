@@ -35,8 +35,8 @@ use serde_json::{Map, Value};
 use crate::host::elements::text::edit_key;
 use crate::host::graphics::controls::{self, ButtonLook};
 use crate::host::graphics::docs::index::{Hit, Index, talking_about};
-use crate::host::graphics::docs::layout::{Ink, Item, Laid, draw_items, lay};
-use crate::host::graphics::docs::markdown::{Block, Run, parse, slugify};
+use crate::host::graphics::docs::layout::{Ink, Item, Laid, draw_items_with, lay_with};
+use crate::host::graphics::docs::markdown::{Block, Run, parse, pictures, slugify};
 use crate::host::graphics::textedit::{self, Caret};
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyInput, Verb};
 use crate::host::widget::parse as props;
@@ -200,7 +200,7 @@ struct Geometry {
 }
 
 /// A page laid out, for which page, at which width and size.
-type Kept = (Page, f32, f32, Rc<Laid>);
+type Kept = (Page, f32, f32, u64, Rc<Laid>);
 
 /// The documentation panel.
 #[derive(Debug, Clone)]
@@ -232,6 +232,41 @@ pub struct DocsView {
     reveal_match: Cell<bool>,
     /// What a press on a copy button left to copy.
     copy: Option<String>,
+    /// **Where the documents were read from** (`roots`): the directory of
+    /// the documents whose path starts with each prefix, where a picture a
+    /// document names is read from.
+    roots: Vec<(String, String)>,
+    /// **The pictures the pages name**, by the file each is read from.
+    pictures: RefCell<HashMap<String, Picture>>,
+    /// Moved whenever a picture was read, which lays the page out again.
+    pictures_read: Cell<u64>,
+    /// The page whose pictures were last looked for: a page shown is read
+    /// for its pictures once, when it comes up.
+    pictures_of: Option<Page>,
+    /// The roots or the documents changed since the page was looked at.
+    roots_moved: bool,
+    /// **How far each code block of the page is scrolled across**, by its
+    /// place among the page's blocks wider than it ([`Laid::pans`]).
+    pans: RefCell<HashMap<usize, f32>>,
+}
+
+/// **Where a picture of a page stands.**
+#[derive(Clone, Debug)]
+enum Picture {
+    /// Named by a page laid out, and not asked for yet.
+    Wanted,
+    /// Asked to be read, under this ticket.
+    Asked(u64),
+    /// Read and decoded: its key in the sheet of pictures, and its texels,
+    /// kept to be packed again when the sheet is.
+    Read {
+        key: u64,
+        width: u32,
+        height: u32,
+        rgba: Rc<Vec<u8>>,
+    },
+    /// It could not be read or decoded: its description is written.
+    Failed,
 }
 
 pub(super) fn build(
@@ -265,6 +300,12 @@ impl DocsView {
             current: 0,
             reveal_match: Cell::new(false),
             copy: None,
+            roots: Vec::new(),
+            pictures: RefCell::new(HashMap::new()),
+            pictures_read: Cell::new(0),
+            pictures_of: None,
+            roots_moved: false,
+            pans: RefCell::new(HashMap::new()),
         };
         for (key, value) in p {
             view.set(key, value);
@@ -526,16 +567,81 @@ impl DocsView {
     /// **The page laid out** at `width` and `size`, kept while neither nor
     /// the page changes.
     fn laid(&self, width: f32, size: f32) -> Rc<Laid> {
-        if let Some((page, w, s, laid)) = self.laid.borrow().as_ref()
+        let read = self.pictures_read.get();
+        if let Some((page, w, s, r, laid)) = self.laid.borrow().as_ref()
             && page == self.page()
             && *w == width
             && *s == size
+            && *r == read
         {
             return laid.clone();
         }
-        let laid = Rc::new(lay(&self.blocks(), width, size));
-        *self.laid.borrow_mut() = Some((self.page().clone(), width, size, laid.clone()));
+        // a picture's pixels at the page's scale: its size over the panel's
+        // own text size is the display's
+        let scale = size / self.text_size.max(0.01);
+        let pictures = |url: &str| {
+            let file = self.picture_file(url)?;
+            let mut pictures = self.pictures.borrow_mut();
+            match pictures.entry(file).or_insert(Picture::Wanted) {
+                Picture::Read { width, height, .. } => {
+                    Some((*width as f32 * scale, *height as f32 * scale))
+                }
+                _ => None,
+            }
+        };
+        // a page laid out again is another page, or the same at another
+        // size: its code blocks start where their lines start
+        self.pans.borrow_mut().clear();
+        let laid = Rc::new(lay_with(&self.blocks(), width, size, &pictures));
+        *self.laid.borrow_mut() = Some((self.page().clone(), width, size, read, laid.clone()));
         laid
+    }
+
+    /// **The file a picture the page shown names is read from**: `url`,
+    /// written in the document shown, from the root its path starts with
+    /// (`roots`). `None` for a picture on the web, on a page that is not a
+    /// document, or under no root.
+    fn picture_file(&self, url: &str) -> Option<String> {
+        if url.contains("://") || url.starts_with("data:") {
+            return None;
+        }
+        let Page::Doc { path, .. } = self.page() else {
+            return None;
+        };
+        let key = if let Some(abs) = url.strip_prefix('/') {
+            abs.to_string()
+        } else {
+            resolve(path, url)
+        };
+        let (prefix, dir) = self
+            .roots
+            .iter()
+            .filter(|(prefix, _)| key.starts_with(prefix.as_str()))
+            .max_by_key(|(prefix, _)| prefix.len())?;
+        let rest = &key[prefix.len()..];
+        Some(format!("{}/{rest}", dir.trim_end_matches('/')))
+    }
+
+    /// Where picture `url` of the page shown is in the sheet of pictures,
+    /// packed again where the sheet let it go.
+    fn picture_uv(&self, url: &str) -> Option<[f32; 4]> {
+        let file = self.picture_file(url)?;
+        let pictures = self.pictures.borrow();
+        let Some(Picture::Read {
+            key,
+            width,
+            height,
+            rgba,
+        }) = pictures.get(&file)
+        else {
+            return None;
+        };
+        clausters_gui_draw::image::with(|sheet| {
+            sheet
+                .get(*key)
+                .or_else(|| sheet.insert(*key, *width, *height, rgba))
+                .map(|placed| placed.uv)
+        })
     }
 
     /// Where the parts are in `rect`, the strip along its top -- or in
@@ -666,6 +772,11 @@ impl DocsView {
         controls::ScrollBar::new(true, track, g.text.h, span, scroll, m.pad * 2.0)
     }
 
+    /// How far code block `i` of the page is scrolled across.
+    fn pan_of(&self, i: usize) -> f32 {
+        self.pans.borrow().get(&i).copied().unwrap_or(0.0)
+    }
+
     /// **Where the find bar's text stands on the page**, as rectangles from
     /// the page's top left: every piece of text that holds it, case aside.
     fn matches(&self, laid: &Laid) -> Vec<(f32, f32, f32, f32)> {
@@ -681,11 +792,13 @@ impl DocsView {
                 text,
                 family,
                 size,
+                pan,
                 ..
             } = item
             else {
                 continue;
             };
+            let x = x - pan.map_or(0.0, |i| self.pan_of(i));
             let lower = text.to_lowercase();
             // only where lowering kept the bytes, so a place is the text's
             if lower.len() != text.len() {
@@ -751,7 +864,7 @@ impl DocsView {
         self.laid
             .borrow()
             .as_ref()
-            .map_or(0, |(_, _, _, laid)| self.matches(laid).len())
+            .map_or(0, |(_, _, _, _, laid)| self.matches(laid).len())
     }
 
     /// **A link followed**: a page the panel writes, a document of the books
@@ -889,9 +1002,40 @@ impl DocsView {
             mesh.set_clip(Some(clip(g.page)));
             let (left, top) = (g.text.x, g.text.y - scroll);
             let marks = self.matches(&laid);
-            draw_items(mesh, &laid, (left, top), g.page, |ink| {
-                ink_color(theme, ink)
-            });
+            draw_items_with(
+                mesh,
+                &laid,
+                (left, top),
+                g.page,
+                |ink| ink_color(theme, ink),
+                &|url| self.picture_uv(url),
+                &|i| self.pan_of(i),
+            );
+            // a code block wider than the page says how far across it is
+            for (i, block) in laid.pans.iter().enumerate() {
+                let ground = Rect::new(
+                    left + block.rect.x,
+                    top + block.rect.y,
+                    block.rect.w,
+                    block.rect.h,
+                );
+                let track = Rect::new(
+                    ground.x,
+                    ground.y + ground.h - m.scrollbar_w,
+                    ground.w,
+                    m.scrollbar_w,
+                );
+                if let Some(bar) = controls::ScrollBar::new(
+                    false,
+                    track,
+                    block.rect.w,
+                    block.most(),
+                    self.pan_of(i),
+                    m.pad * 2.0,
+                ) {
+                    controls::scroll_thumb(mesh, bar.thumb, m, theme);
+                }
+            }
             for (i, (x, y, w, h)) in marks.iter().enumerate() {
                 let color = if i == self.current {
                     theme.find_current
@@ -1111,6 +1255,19 @@ impl Element for DocsView {
                         }
                     }
                     self.index.replace(None);
+                    self.roots_moved = true;
+                    self.laid.replace(None);
+                })
+                .is_some(),
+            "roots" => structure(v)
+                .and_then(|v| v.as_object().cloned())
+                .map(|roots| {
+                    self.roots = roots
+                        .into_iter()
+                        .filter_map(|(prefix, dir)| Some((prefix, dir.as_str()?.to_string())))
+                        .collect();
+                    self.pictures.borrow_mut().clear();
+                    self.roots_moved = true;
                     self.laid.replace(None);
                 })
                 .is_some(),
@@ -1142,6 +1299,66 @@ impl Element for DocsView {
     /// What a set does rather than keeps: going somewhere, asking for help.
     fn writes(&self, key: &str) -> bool {
         matches!(key, "open" | "help")
+    }
+
+    fn wants_files(&mut self) -> Vec<crate::host::files::Ask> {
+        // the page's pictures, looked for when it comes up rather than when
+        // it is first drawn: a window that draws only when it is asked to
+        // (headless, checked by a script) has them read by then
+        if self.pictures_of.as_ref() != Some(self.page()) || self.roots_moved {
+            self.roots_moved = false;
+            self.pictures_of = Some(self.page().clone());
+            let blocks = self.blocks();
+            let files: Vec<String> = pictures(&blocks)
+                .into_iter()
+                .filter_map(|url| self.picture_file(url))
+                .collect();
+            let mut held = self.pictures.borrow_mut();
+            for file in files {
+                held.entry(file).or_insert(Picture::Wanted);
+            }
+        }
+        let mut asks = Vec::new();
+        for (path, picture) in self.pictures.borrow_mut().iter_mut() {
+            if matches!(picture, Picture::Wanted) {
+                let ticket = crate::host::files::ticket();
+                *picture = Picture::Asked(ticket);
+                asks.push(crate::host::files::Ask {
+                    ticket,
+                    path: path.clone(),
+                });
+            }
+        }
+        asks
+    }
+
+    fn read(&mut self, ticket: u64, bytes: Result<Vec<u8>, String>) -> bool {
+        use std::hash::{Hash, Hasher};
+        let mut pictures = self.pictures.borrow_mut();
+        let Some((path, picture)) = pictures
+            .iter_mut()
+            .find(|(_, p)| matches!(p, Picture::Asked(t) if *t == ticket))
+        else {
+            return false;
+        };
+        *picture = match bytes.and_then(|b| crate::host::picture::decode(&b)) {
+            Ok((width, height, rgba)) => {
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                path.hash(&mut hasher);
+                Picture::Read {
+                    key: hasher.finish(),
+                    width,
+                    height,
+                    rgba: Rc::new(rgba),
+                }
+            }
+            Err(why) => {
+                crate::host::diag::warn!("docs: the picture {path} was not drawn: {why}");
+                Picture::Failed
+            }
+        };
+        self.pictures_read.set(self.pictures_read.get() + 1);
+        true
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
@@ -1286,7 +1503,7 @@ impl Element for DocsView {
         Events::none()
     }
 
-    fn wheel(&mut self, _at: (f64, f64), delta: (f64, f64), input: &Input) -> Option<Events> {
+    fn wheel(&mut self, at: (f64, f64), delta: (f64, f64), input: &Input) -> Option<Events> {
         // Ctrl+wheel is the size of the text, not a scroll: declined, the
         // window's own zoom takes it.
         if input.mods.ctrl {
@@ -1294,6 +1511,34 @@ impl Element for DocsView {
         }
         let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
         let line = font::line_advance(g.size) * 1.4;
+        // **across a code block wider than the page**: a sideways wheel, or
+        // Shift with the wheel, over it
+        let across = if input.mods.shift {
+            delta.1
+        } else if delta.0.abs() > delta.1.abs() {
+            delta.0
+        } else {
+            0.0
+        };
+        if across != 0.0 {
+            let (scroll, laid) = self.settle(&g);
+            let (left, top) = (g.text.x, g.text.y - scroll);
+            let (x, y) = (at.0 as f32, at.1 as f32);
+            let hit = laid.pans.iter().enumerate().find(|(_, b)| {
+                b.most() > 0.0
+                    && Rect::new(left + b.rect.x, top + b.rect.y, b.rect.w, b.rect.h)
+                        .contains(f64::from(x), f64::from(y))
+            });
+            if let Some((i, block)) = hit {
+                let before = self.pan_of(i);
+                let after = (before - across as f32 * WHEEL_LINES * line).clamp(0.0, block.most());
+                self.pans.borrow_mut().insert(i, after);
+                return (after != before).then(Events::none);
+            }
+            if delta.1 == 0.0 || !input.mods.shift {
+                return None;
+            }
+        }
         let before = self.scroll.get();
         self.scroll
             .set(before - delta.1 as f32 * WHEEL_LINES * line);
@@ -1344,7 +1589,7 @@ impl Element for DocsView {
             .laid
             .borrow()
             .as_ref()
-            .map_or(400.0, |(_, w, _, _)| *w)
+            .map_or(400.0, |(_, w, _, _, _)| *w)
             .max(1.0);
         let line = font::line_advance(self.text_size) * 1.4;
         let s = self.scroll.get();

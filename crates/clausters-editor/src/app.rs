@@ -57,7 +57,14 @@ pub enum Msg {
 }
 
 /// Every book and every document.
-pub type Docs = (Vec<Book>, BTreeMap<String, String>);
+/// Every book, every document, and the folder each book's documents were
+/// read from, by the prefix their paths start with (where a picture a page
+/// names is read from).
+pub type Docs = (
+    Vec<Book>,
+    BTreeMap<String, String>,
+    BTreeMap<String, String>,
+);
 
 // -- the fixed windows, and the ids of what is inside them
 
@@ -1520,7 +1527,7 @@ impl App {
     }
 
     fn feed_docs(&self) {
-        let Some((books, documents)) = &self.docs else {
+        let Some((books, documents, roots)) = &self.docs else {
             return;
         };
         if !self.docs_shown {
@@ -1536,6 +1543,7 @@ impl App {
             &[
                 ("books", serde_json::to_value(books).unwrap_or(Value::Null)),
                 ("documents", Value::Object(documents)),
+                ("roots", json!(roots)),
             ],
         );
     }

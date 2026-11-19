@@ -28,6 +28,7 @@
 
 pub mod draw;
 pub mod font;
+pub mod image;
 pub mod metrics;
 pub mod paint;
 #[cfg(feature = "path")]

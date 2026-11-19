@@ -79,8 +79,9 @@ pub struct Ask {
 }
 
 /// A ticket no ask has had yet: one counter for the process, so two choosers,
-/// or one chooser built again by a redraw, never share one.
-fn ticket() -> u64 {
+/// or one chooser built again by a redraw, never share one -- and a file an
+/// element asks to read takes one from the same counter.
+pub(crate) fn ticket() -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
@@ -289,6 +290,37 @@ impl Host {
             });
         }
         out
+    }
+
+    /// **Every file an element of an open window waits to have read**, as
+    /// `(window, widget, ask)`: each asked once, as a listing is.
+    pub fn pending_reads(&mut self) -> Vec<(i32, i32, Ask)> {
+        let mut out = Vec::new();
+        for (&def, tree) in self.window_defs.iter_mut() {
+            tree.walk_mut(&mut |w| {
+                if let (Some(id), Some(el)) = (w.id, w.kind.as_element_mut()) {
+                    for ask in el.wants_files() {
+                        out.push((def, id, ask));
+                    }
+                }
+            });
+        }
+        out
+    }
+
+    /// Hands widget `widget` of window `def` the bytes the read `ticket`
+    /// read, answering whether it took them.
+    pub fn deliver_read(
+        &mut self,
+        def: i32,
+        widget: i32,
+        ticket: u64,
+        bytes: Result<Vec<u8>, String>,
+    ) -> bool {
+        self.window_def_mut(def)
+            .and_then(|tree| tree.find_mut(widget))
+            .and_then(|w| w.kind.as_element_mut())
+            .is_some_and(|el| el.read(ticket, bytes))
     }
 
     /// Hands widget `widget` of window `def` the answer to the ask `ticket`,
