@@ -991,7 +991,8 @@ class GuiHost:
         ``title``, whether it is ``shown``, its ``rect`` and its ``tab`` as
         ``[x, y, w, h]``), ``dividers``, ``focus``, ``out`` (the windows
         taken out), ``pages`` (each ``name`` with its ``layout``), ``page``
-        (the one shown) and ``page_tabs``. Raises `ValueError`
+        (the one shown), ``page_tabs`` and ``members`` (every pane
+        it holds, on whichever page). Raises `ValueError`
         for a call it cannot read, `clausters.errors.CommandError` for a move
         it cannot make, `RuntimeError` when the host has no dock open.
         """

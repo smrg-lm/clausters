@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """``open_app(env)``: draw an envelope and hear the server play it.
 
-An `clausters.defs.Env` is a **curve**, so ``edit`` opens it -- one ``bpf``
+An `clausters.defs.Env` is a **curve**, so ``open_app`` opens it -- one ``bpf``
 widget, the ``points`` vocabulary, and the editing history that comes with the
 verb. The envelope's segments carry the server's own shape numbers and the host
 evaluates them through the same shared math (``clausters-core``) the server's
@@ -82,7 +82,7 @@ def play():
 
 # %% [markdown]
 # ## One verb, with a widget of the script's own, and who plays it
-# `clausters.gui.edit` dispatches on **what the structure holds**: an `Env` can
+# `clausters.gui.open_app` dispatches on **what the structure holds**: an `Env` can
 # give and take break points, so it opens as a
 # `clausters.gui.editing.PointsEditor`. ``extra`` appends widgets to the row
 # under the curve, beside the segment shape menu -- they are the script's, and

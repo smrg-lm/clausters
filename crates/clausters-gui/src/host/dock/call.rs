@@ -203,7 +203,8 @@ impl Dock {
     }
 
     /// **The dock as it stands**, as every call answers it: the layout as
-    /// data, the surface's size, and where everything a hand can reach is --
+    /// data, the surface's size, every pane it holds (`members`, on whichever
+    /// page), and where everything a hand can reach is --
     /// each pane's body and tab, each divider -- in the surface's device
     /// pixels, which are a capture's.
     pub fn state(&self) -> Value {
@@ -285,6 +286,8 @@ impl Dock {
             "dividers": dividers,
             "edges": edges,
             "focus": self.focus(),
+            // every pane the dock holds, on whichever page
+            "members": self.panes(),
         })
     }
 }

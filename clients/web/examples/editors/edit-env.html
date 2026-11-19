@@ -46,7 +46,7 @@ bar</b> plays it, as the <b>play</b> button under the curve does.
 
     <!--
       The web sibling of clients/python/examples/editors/edit_env.py, call for
-      call: the ADSR-shaped Env, `play`, `edit` with the declared axis and the
+      call: the ADSR-shaped Env, `play`, `openApp` with the declared axis and the
       two widgets of the page's own, and the envelope rewritten from the script
       and adopted at the end.
 
@@ -88,7 +88,7 @@ bar</b> plays it, as the <b>play</b> button under the curve does.
         // this object knows it is going to be edited.
         env = new Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2], ["exp", -4.0, "sin"]);
 
-        // One verb, with a widget of the page's own. `edit` dispatches on
+        // One verb, with a widget of the page's own. `openApp` dispatches on
         // **what the structure holds**: an `Env` can give and take break
         // points, so it opens as a PointsEditor. `extra` appends widgets to the
         // row under the curve, beside the segment shape menu -- they are the

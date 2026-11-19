@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """``open_app(curve)``: a break-point curve in a window of its own.
 
-The smallest of the three structures `clausters.gui.edit` opens, and the one
+The smallest of the three structures `clausters.gui.open_app` opens, and the one
 that shows what the verb is for. There is **no multitrack here** -- no
 arrangement, no document, no track. A script builds a
-`clausters.defs.Bpf`, hands it to ``edit``, and reads the edited curve back out
+`clausters.defs.Bpf`, hands it to ``open_app``, and reads the edited curve back out
 of the object it already holds.
 
 What to do in the window:
@@ -19,7 +19,7 @@ What to do in the window:
 - **Ctrl+Z** / **Ctrl+Shift+Z** undo and redo -- the history belongs to the
   curve, not to the window, which is what the second cell shows.
 
-**Nothing here drives a loop.** ``edit`` opens the window and the host's event
+**Nothing here drives a loop.** ``open_app`` opens the window and the host's event
 loop delivers each gesture to the curve on its own thread, so reading the
 `clausters.defs.Bpf` at any moment reads what the hand has left there.
 
@@ -66,7 +66,7 @@ curve = Bpf([(0.0, 200.0, "lin"),      # linear up
 # %% [markdown]
 # ## One verb
 #
-# `clausters.gui.edit` dispatches on **what the structure holds**, never on its
+# `clausters.gui.open_app` dispatches on **what the structure holds**, never on its
 # class: anything that can give and take break points -- a `clausters.defs.Bpf`,
 # an `clausters.defs.Env`, a `clausters.document.Automation` -- opens as a
 # `clausters.gui.editing.PointsEditor`: one `bpf` widget, the ``points``
@@ -86,7 +86,7 @@ editor = open_app(curve, sample_rate=48_000.0, title="cutoff", min=20.0, max=500
 # %% [markdown]
 # ## Two windows, one stack
 #
-# Calling `edit` again over the **same** curve gives a second window. It is not a
+# Calling `open_app` again over the **same** curve gives a second window. It is not a
 # copy and it does not get a history of its own: an undo stack belongs to the
 # data, so `Ctrl+Z` in either window steps the one order both of them made.
 

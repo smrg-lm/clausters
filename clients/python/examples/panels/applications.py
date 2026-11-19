@@ -21,9 +21,11 @@ a = EventSequence.from_rows([(60, 1), (62, 0.5), (64, 0.5), (67, 1), (72, 1)])
 
 # %% the score editor over the sequence, on a page of its own
 q = open_app(a, view="score", title="a")
+print(q.title)
 
 # %% an empty multitrack, on another page
 mt = open_app(app="multitrack")
+print(mt.title)
 
 # %% the roll over the same sequence, beside the code: no menu, no toolbar
 r = edit(a, title="a")

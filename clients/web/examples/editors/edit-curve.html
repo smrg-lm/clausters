@@ -52,7 +52,7 @@ lands.</div>
 
     <!--
       The web sibling of clients/python/examples/editors/edit_curve.py, call for
-      call: the same four break points, the same `edit`, the same second view
+      call: the same four break points, the same `openApp`, the same second view
       over one curve, and the same read-back out of the object the page holds.
 
       The platform's difference is the usual one: the host is the wasm one in
@@ -98,7 +98,7 @@ lands.</div>
 
       async function run() {
         $("run").disabled = true;
-        // No `session.gui()`: `edit` resolves the ambient host and opens one if
+        // No `session.gui()`: `openApp` resolves the ambient host and opens one if
         // it has to, which is why the script names no host either. The session
         // is here for the same reason it is there -- a curve is data, and this
         // example never plays it. The script boots no server; a page's session
@@ -106,7 +106,7 @@ lands.</div>
         // biome-ignore lint/correctness/noUnusedVariables: the Python script's line, named as it names it
         const session = await Session.embed();
 
-        // One verb. `edit` dispatches on **what the structure holds**, never
+        // One verb. `openApp` dispatches on **what the structure holds**, never
         // on its class: anything that can give and take break points -- a
         // `Bpf`, an `Env`, a `multitrack.Automation` -- opens as a
         // PointsEditor: one `bpf` widget, the `points` vocabulary, and the
@@ -124,7 +124,7 @@ lands.</div>
 
         log("draw in the window; Ctrl+Z undoes. Close it when you are done.");
 
-        // Calling `edit` again over the **same** curve gives a second window.
+        // Calling `openApp` again over the **same** curve gives a second window.
         // It is not a copy and it does not get a history of its own: an undo
         // stack belongs to the data, so Ctrl+Z in either window steps the one
         // order both of them made. The script calls it from a cell; a page has

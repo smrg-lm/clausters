@@ -22,7 +22,7 @@ What it shows, in the order it does it:
   before the window opens; the same operators are the window's Transform
   menu.
 * **`open_app(score)` opens the editor over the very score the script holds.**
-  It returns the editor, as `edit` does for every structure; the edited data is
+  It returns the editor, as `open_app` does for every structure; the edited data is
   read on the score passed in, which *is* the edited one.
 * **The window is the application's.** Nothing in it is this script's:
   - the **menu bar** holds every action the editor has -- the file, the
@@ -105,7 +105,7 @@ What it shows, in the order it does it:
   gesture, and prints the rows of the sequence the score renders into, a
   voice at a time.
   The whole window is closed first: a second editor over the score would draw
-  on the first one's widgets, so `edit` hands back the editor that is open.
+  on the first one's widgets, so `open_app` hands back the editor that is open.
 * **Closing loses nothing.** The score is the script's: the window closes at
   once, by its close mark or File, Close, changes and all, and the score
   keeps them -- to save, read, or open again. Only a standalone host's

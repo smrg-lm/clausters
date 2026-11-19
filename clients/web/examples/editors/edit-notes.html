@@ -219,7 +219,7 @@ leaves every other note its own.</div>
 
     <!--
       The web sibling of clients/python/examples/editors/edit_notes.py, call for
-      call: the same events, the same `edit`, the same play of the sequence,
+      call: the same events, the same `openApp`, the same play of the sequence,
       and the same read-back showing each event's id and what the roll never
       drew.
 
@@ -283,7 +283,7 @@ leaves every other note its own.</div>
         $("run").disabled = true;
         // `activate` is what makes this session the **ambient** one, and the
         // free-standing verbs are what need it: `play` below resolves its
-        // server from here, the way `edit` resolves its host.
+        // server from here, the way `openApp` resolves its host.
         session = (await Session.embed()).activate();
         await session.gui();
 

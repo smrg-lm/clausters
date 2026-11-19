@@ -130,7 +130,7 @@ moves its first note an octave up: Ctrl+Z in either window takes it back.</div>
       The web sibling of clients/python/examples/editors/edit_multitrack.py,
       call for call: the same five takes rendered offline and written as the
       same files, the same sequence of notes, the same multitrack written
-      plainly, the same session, and the same one `edit` over it. The files
+      plainly, the same session, and the same one `openApp` over it. The files
       are in the page's own storage (the origin private file system, `opfs`),
       out/edit_multitrack.json beside its takes, where load-multitrack.html
       opens it again.
@@ -295,7 +295,7 @@ moves its first note an octave up: Ctrl+Z in either window takes it back.</div>
 
         // ---- one verb ----
         // A saved session opens in the multitrack, the GUI host's application,
-        // and `edit` answers its handler, a `MultitrackEditor`.
+        // and `openApp` answers its handler, a `MultitrackEditor`.
         const session = await Session.embed();
         await session.gui();   // the host, which holds the multitrack
         const editor = await gui.openApp(saved, { title: "multitrack", stage: $("stage") });

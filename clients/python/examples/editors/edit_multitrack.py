@@ -3,7 +3,7 @@
 
 The fourth structure, and the one that holds the other three: a
 `clausters.document.Multitrack` -- the document the three applications share --
-saved as a **session** and opened with `clausters.gui.edit` like a sound file.
+saved as a **session** and opened with `clausters.gui.open_app` like a sound file.
 **One verb, and the editor is the application**: the GUI host opens the
 multitrack in a window of its own, reads the session's takes from their files
 and plays them on an engine of its own; the picture, the gestures, the history
@@ -70,7 +70,7 @@ What to do in the window:
 **The takes are rendered here and the multitrack is written plainly**, which is all
 this file is: five takes written as files, a join of two of them, a sequence of
 notes, four tracks, seven boxes and two curves, saved as one session. Everything
-after that is `edit`.
+after that is `open_app`.
 
 **The keys track is notes.** Its box is a window onto an `EventSequence` the
 session holds in the file itself: it draws the notes its window reads and plays
@@ -265,7 +265,7 @@ print(f"wrote {saved.save(os.path.join(OUT, 'edit_multitrack.json'))}")
 # ## One verb
 #
 # A saved session opens in the multitrack, the GUI host's application, and
-# `edit` answers its handler, a `clausters.gui.editing.MultitrackEditor`.
+# `open_app` answers its handler, a `clausters.gui.editing.MultitrackEditor`.
 
 # %%
 session = Session.live()

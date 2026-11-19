@@ -2,7 +2,7 @@
 """``open_app(timeline)``: a timeline's events on a roll, edited note by note.
 
 A `clausters.seq.Timeline` is code -- events, patterns, routines, other
-timelines -- and a roll edits data. So ``edit`` renders the timeline first
+timelines -- and a roll edits data. So ``open_app`` renders the timeline first
 (`clausters.seq.Timeline.render_events`) and opens the events it produced: a
 `clausters.seq.EventSequence`, in the timeline's beats with its tempo map, each
 event with an id of its own. The editor edits that sequence in place, and the
@@ -213,7 +213,7 @@ timeline = Timeline([
 # %%
 # `activate` is what makes this session the **ambient** one, and the free-standing
 # verbs are what need it: `play` below resolves its server from here, the way
-# `edit` resolves its host.
+# `open_app` resolves its host.
 session = Session.live().activate()
 session.gui()          # the host wired to this session's server
 notes = timeline.render_events()   # what the roll edits, in place

@@ -1231,7 +1231,8 @@ export class GuiHost {
      * takes), `size`, `panes` (each with its `id`, `title`, whether it is
      * `shown`, its `rect` and its `tab` as `[x, y, w, h]`), `dividers`,
      * `focus`, `out` (the windows taken out), `pages` (each `name` with its
-     * `layout`), `page` (the one shown) and `page_tabs`. Rejects with a `RangeError` for a call it cannot read, a
+     * `layout`), `page` (the one shown), `page_tabs` and `members` (every pane
+     * it holds, on whichever page). Rejects with a `RangeError` for a call it cannot read, a
      * `CommandError` for a move it cannot make, an `Error` when the host has
      * no dock open.
      */

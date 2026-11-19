@@ -2268,7 +2268,7 @@ something reusable if the track stops there.
   view reading the session's server by eye; a node session's server reached
   by a WebSocket gives a native host no leg (`clients/web/PLAN.md`).
 
-- ⬜ **WS16: An application is a page, and a view is `edit`** *(added
+- ✅ **WS16: An application is a page, and a view is `edit`** *(added
   2026-11-19 at the user's request, after reviewing WS15)*. WS15 put an
   application on a page of its own; what a page is for is now settled, and
   it changes how a page is made, what it holds and what each client verb
@@ -2310,6 +2310,28 @@ something reusable if the track stops there.
     what is above in both clients, and
     `clients/python/examples/panels/applications.py` and its JavaScript
     twin show it, evaluated cell by cell natively and in a served page.
+  *Shipped:* the verb that opens an application is `open_app(x)` (the
+  user's name for it, a bare verb; `openApp` in the web client), and
+  `open_app(app=...)` opens one over nothing. `edit(x)` opens the view
+  with the chrome off and edits the structure in place, as every editor
+  already did; the view and the application over one structure are two
+  windows. `dock_page` is set by the chrome itself (`chrome::dress`, the
+  score's menu), so the roll and the points editor became applications
+  too, and `/gui_app_open` takes `chrome` for the audio editor and the
+  multitrack. The dock keeps its applications apart (`Dock::add_on`,
+  `page_app`): a new page each, numbered when the name is taken, no
+  panel's bar, nothing landing, placed or moved there; a page tab has a
+  cross (the first page none) and no menu, and an application's cross
+  asks the application to close. The editor's bar ends in one button per
+  application (`/gui_app_open` with no options); the session's windows
+  are freed on a restart on whichever page they are (the dock's state
+  lists its `members`), and what the bar opened stays. Checked: dock tests
+  of the application pages and the strip, the clients' tests of `edit`
+  and `open_app`, and the example driven headlessly in the native editor
+  (each application on its page with its menu in the bar, the roll and a
+  scope beside the code, the bar's buttons, a page's cross, a restart).
+  The editor's page still runs the twin with each window in its windows
+  panel until WS13.
 
 ### Open decisions (taken in the milestone that needs them)
 
@@ -3247,11 +3269,6 @@ finished work, where a pending item reads as done.
 - ⬜ **The post window's face differs natively and in the page**
   *(2026-11-19)*. The two fronts draw it in different typefaces; the host
   is one, so the face must be the same.
-
-- ⬜ **A glitch between the page tab and the menu** *(2026-11-19, a
-  capture)*. Drawing the page tab's menu leaves a seam where it meets the
-  tab. The page tab's menu goes with WS16, so this is checked against
-  whatever replaces it.
 
 - ⬜ **A text field's caret does not blink** *(2026-11-19)*. The host draws
   a steady caret. Blinking becomes the host's capability and its default,

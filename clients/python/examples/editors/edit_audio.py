@@ -3,7 +3,7 @@
 
 A `clausters.SoundFile` opens in the audio editor, an application the GUI
 host holds, in a window of the host's and on an engine of its own; what
-``edit`` answers is its handler, `clausters.gui.editing.AudioEditor`. The
+``open_app`` answers is its handler, `clausters.gui.editing.AudioEditor`. The
 editor reads the file where it is and writes nothing it was handed until it
 is saved. The take is a list of spans of files, and every edit leaves a new
 list:

@@ -8,7 +8,7 @@ program would.
 
 - **Opening** (`Session.open`) gives the multitrack and its source table back, and
   nothing more: every box names a source id, and a source says where it is.
-- **Editing** is `edit` over the session: the multitrack, the GUI host's
+- **Editing** is `open_app` over the session: the multitrack, the GUI host's
   application, reads each take from the file beside the session, the join from
   the takes it is made of, and the notes from the file -- the same opening
   ``clausters-gui --multitrack`` does. The join plays the glide's first half and

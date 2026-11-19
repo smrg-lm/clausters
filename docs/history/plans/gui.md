@@ -8074,3 +8074,9 @@ module of its own.
   session's environment, both clients attach to it and point it at the
   session's server with `/gui_server`, and the editor's own windows take
   ids no client allocates.
+
+- ✅ **A glitch between the page tab and the menu** *(2026-11-19, a
+  capture)*. Drawing the page tab's menu left a seam where it met the
+  tab. WS16 took the page tab's menu away (a click shows a page, its
+  cross closes it, the bar's buttons make one), so there is nothing left
+  to meet the tab.

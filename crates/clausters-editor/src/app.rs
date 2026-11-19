@@ -254,6 +254,9 @@ pub struct App {
     after_save: HashMap<i32, Ask>,
     docs: Option<Docs>,
     docs_shown: bool,
+    /// **The applications the bar's buttons opened**: the editor's, not
+    /// the session's, so a restart leaves them open.
+    apps: Vec<i32>,
     system_dark: bool,
     dock_calls: HashMap<i32, DockFor>,
     /// The closes gathered, and when the last arrived.
@@ -292,6 +295,7 @@ impl App {
             after_save: HashMap::new(),
             docs: None,
             docs_shown: true,
+            apps: Vec::new(),
             system_dark: false,
             dock_calls: HashMap::new(),
             closes: (HashSet::new(), None),
@@ -428,6 +432,9 @@ impl App {
                 if let Some(message) = reply["error"]["message"].as_str() {
                     self.post("info", &format!("{message}\n"));
                 }
+                if let Some(window) = reply["ok"]["window"].as_i64() {
+                    self.apps.extend(i32::try_from(window).ok());
+                }
             }
             Said::Info { id, props } => self.on_info(id, &props),
             Said::Other => {}
@@ -541,6 +548,7 @@ impl App {
     }
 
     fn on_closed(&mut self, id: i32) {
+        self.apps.retain(|&a| a != id);
         match id {
             // the post window is freed by nobody but the quit: gone, it is the
             // dock's window closed over what was asked, and the editor ends
@@ -626,12 +634,13 @@ impl App {
             DockFor::Quit => self.quit_now(),
             DockFor::Look => {}
             DockFor::Orphans => {
-                // every window not the editor's own is the session's
-                let ids = state["panes"]
+                // every window not the editor's own is the session's, on
+                // whichever page, but what the bar's buttons opened
+                let ids = state["members"]
                     .as_array()
                     .into_iter()
                     .flatten()
-                    .filter_map(|p| p["id"].as_i64())
+                    .filter_map(Value::as_i64)
                     .chain(
                         state["out"]
                             .as_array()
@@ -642,6 +651,7 @@ impl App {
                 for id in ids {
                     if let Ok(id) = i32::try_from(id)
                         && id < IDS
+                        && !self.apps.contains(&id)
                     {
                         self.link.free(id);
                     }

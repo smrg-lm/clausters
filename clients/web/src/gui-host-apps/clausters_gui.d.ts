@@ -280,6 +280,17 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memcmp: (a: number, b: number, c: number) => number;
+    readonly apps_files_check: () => [number, number];
+    readonly apps_files_checked: () => number;
+    readonly apps_files_failed: () => [number, number];
+    readonly apps_folder: () => [number, number];
+    readonly apps_folder_check: () => [number, number];
+    readonly apps_folder_check_wake: () => void;
+    readonly apps_folder_checked: () => number;
+    readonly apps_thread_check: () => [number, number];
+    readonly apps_thread_check_wake: () => void;
+    readonly apps_thread_checked: () => number;
+    readonly apps_thread_run: (a: number) => void;
     readonly __wbg_guibridge_free: (a: number, b: number) => void;
     readonly apps_engine_block: () => number;
     readonly apps_engine_process: (a: number) => number;
@@ -303,17 +314,6 @@ export interface InitOutput {
     readonly guibridge_server_reply: (a: number, b: number, c: number) => void;
     readonly guibridge_set_visible: (a: number, b: number, c: number) => void;
     readonly start: () => number;
-    readonly apps_files_check: () => [number, number];
-    readonly apps_files_checked: () => number;
-    readonly apps_files_failed: () => [number, number];
-    readonly apps_folder: () => [number, number];
-    readonly apps_folder_check: () => [number, number];
-    readonly apps_folder_check_wake: () => void;
-    readonly apps_folder_checked: () => number;
-    readonly apps_thread_check: () => [number, number];
-    readonly apps_thread_check_wake: () => void;
-    readonly apps_thread_checked: () => number;
-    readonly apps_thread_run: (a: number) => void;
     readonly iswspace: (a: number) => number;
     readonly iswdigit: (a: number) => number;
     readonly iswalpha: (a: number) => number;

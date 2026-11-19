@@ -19,9 +19,11 @@ const a = EventSequence.fromRows([[60, 1], [62, 0.5], [64, 0.5], [67, 1], [72, 1
 
 // %% the score editor over the sequence, on a page of its own
 const q = await openApp(a, { view: "score", title: "a" });
+console.log(q.title);
 
 // %% an empty multitrack, on another page
 const mt = await openApp(null, { app: "multitrack" });
+console.log(mt.title);
 
 // %% the roll over the same sequence, beside the code: no menu, no toolbar
 const r = await edit(a, { title: "a" });
@@ -36,7 +38,7 @@ const w = await scope(0);
 // %%
 p.stop();
 w.close();
-r.close();
+await r.close();
 
 // %%
 s.close();
