@@ -1127,6 +1127,11 @@ pub struct Host {
     /// logical pixels -- an application's name and the size it was left at,
     /// where an application set them, and the host's own otherwise.
     pub dock_opens: Option<(String, (u32, u32))>,
+    /// **Where the dock's window opens on the screen**: its outer corner,
+    /// in the screen's pixels, as a dock's state answered it (`position`)
+    /// -- the place an application left it at. A desktop that does not let
+    /// a window place itself puts it where it puts any.
+    pub dock_at: Option<(i32, i32)>,
     /// **How much recorded audio a picture waits for** before it re-reads
     /// its summary, in seconds (`--follow-block`, default `0` -- every frame).
     ///
@@ -1283,6 +1288,7 @@ impl Host {
             headless_scale: 1.0,
             dock: false,
             dock_opens: None,
+            dock_at: None,
             follow_block: 0.0,
             resolved_metrics: HashMap::new(),
             focused: None,

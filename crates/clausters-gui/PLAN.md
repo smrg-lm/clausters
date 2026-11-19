@@ -3136,9 +3136,6 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **The editor keeps its window's size and not its place** *(2026-11-17,
-  WS12)*. The current editor restores both on the desktops that let it.
-
 - ⬜ **Quitting the application is not an act: the dock's close is
   guessed from its panes' closes** *(2026-11-17, WS12; seen again
   2026-11-18 after ST4)*. The window manager's close on the dock's window

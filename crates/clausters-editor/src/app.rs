@@ -635,6 +635,13 @@ impl App {
                 self.settings.window = Some((w.round() as u32, h.round() as u32));
             }
         }
+        if let Some([x, y]) = state.get("position").and_then(|p| {
+            let p = p.as_array()?;
+            Some([p.first()?.as_i64()?, p.get(1)?.as_i64()?])
+        }) && let (Ok(x), Ok(y)) = (i32::try_from(x), i32::try_from(y))
+        {
+            self.settings.position = Some((x, y));
+        }
         let groups = groups(state);
         let split = self.editor_groups(&groups).len() > 1;
         if split != self.split {
@@ -1115,7 +1122,8 @@ impl App {
         self.ask(win, Ask::Quit, &says);
     }
 
-    /// Quits once the window's size is read, to open at it next time.
+    /// Quits once the window's size and place are read, to open at them
+    /// next time.
     fn quit_saved(&mut self) {
         if self.quitting {
             return;

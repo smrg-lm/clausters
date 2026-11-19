@@ -212,9 +212,14 @@ impl App {
     ) -> Option<Shell> {
         let (gpu, scale) = match lp {
             Loop::Shown(event_loop) => {
-                let attrs = Window::default_attributes()
+                let mut attrs = Window::default_attributes()
                     .with_title(title)
                     .with_inner_size(LogicalSize::new(f64::from(size.0), f64::from(size.1)));
+                // the place the dock was left at, where the desktop lets a
+                // window be placed
+                if let (false, Some((x, y))) = (floating, self.host.dock_at) {
+                    attrs = attrs.with_position(winit::dpi::PhysicalPosition::new(x, y));
+                }
                 let window = match event_loop.create_window(attrs) {
                     Ok(w) => Arc::new(w),
                     Err(e) => {
@@ -691,7 +696,17 @@ impl App {
             .as_ref()
             .map_or_else(call::closed_state, |s| s.layout.state());
         let out: Vec<i32> = self.undocked.iter().copied().collect();
-        call::with_out(state, &out)
+        let mut state = call::with_out(state, &out);
+        // where the window is on the screen, on a desktop that says it
+        if let Some(at) = self
+            .dock
+            .as_ref()
+            .and_then(|s| s.gpu.window())
+            .and_then(|w| w.outer_position().ok())
+        {
+            state["position"] = serde_json::json!([at.x, at.y]);
+        }
+        state
     }
 
     /// **A scripted hand on a shell's surface**, at `(x, y)` of it: the

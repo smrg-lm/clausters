@@ -1,7 +1,7 @@
 //! **The preferences and what the editor remembers between runs**: the
 //! theme, the size of the text, the indentation, the post window's scroll,
 //! how a block is evaluated, the recent files, the files left open, the
-//! dock's arrangement, the window's size and the code's font -- `settings.json` in the
+//! dock's arrangement, the window's size and place, and the code's font -- `settings.json` in the
 //! configuration folder.
 
 use std::path::PathBuf;
@@ -50,6 +50,9 @@ pub struct Settings {
     pub layout: Option<Value>,
     /// The window's size, in logical pixels.
     pub window: Option<(u32, u32)>,
+    /// Where the window was on the screen, its outer corner in the screen's
+    /// pixels, on a desktop that says it.
+    pub position: Option<(i32, i32)>,
     /// The family code is written in, `None` for the one the host carries.
     pub font: Option<String>,
 }
@@ -68,6 +71,7 @@ impl Default for Settings {
             active_file: None,
             layout: None,
             window: None,
+            position: None,
             font: None,
         }
     }

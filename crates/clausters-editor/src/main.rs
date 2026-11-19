@@ -90,6 +90,7 @@ fn run(cli: Cli) -> Result<(), String> {
     host.dock = true;
     let size = settings.window.unwrap_or((1280, 800));
     host.dock_opens = Some(("clausters-editor".into(), size));
+    host.dock_at = settings.position;
     // the look the editor opens in, so the first frame is not the host's
     let table = match settings.theme {
         ThemePref::Dark => theme::dark(),

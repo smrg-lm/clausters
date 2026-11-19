@@ -8165,3 +8165,13 @@ module of its own.
   name joins the group of the first file it does, and a layout missing
   the post window, the documentation or every file falls back to the
   first arrangement. `crates/clausters-editor/src/arrangement.rs`.)*
+
+- ✅ **The editor keeps its window's size and not its place** *(2026-11-17,
+  WS12)*. The current editor restores both on the desktops that let it.
+  *(Fixed 2026-11-19: a native dock's state answers `position`, its
+  window's outer corner in the screen's pixels, where the desktop says it,
+  and the host opens the dock at `dock_at` when an application sets it.
+  The editor keeps the position beside the size at quit and hands it back
+  at start. A Wayland desktop neither says nor takes a window's place, so
+  there the window opens where the compositor puts it, as the webview
+  editor's does; checked under X11.)*
