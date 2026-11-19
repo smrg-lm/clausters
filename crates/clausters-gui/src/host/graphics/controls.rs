@@ -1368,6 +1368,7 @@ fn draw_line(
     // The caret, when focused and sitting on this line within the visible
     // window, at the visual place of its logical position.
     if let Some(caret) = caret
+        && crate::host::blink::shown()
         && (from..=to).contains(&caret.pos)
         && textedit::line_col(value, caret.pos).0
             == value[..line_byte].bytes().filter(|&b| b == b'\n').count()

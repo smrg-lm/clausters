@@ -365,7 +365,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   code font, the dock's arrangement and the window's place between runs) are
   weighed along the way. **Next, before anything else in the track:**
   the entries of that plan's "Found by use" dated 2026-11-19 (the tooltips' Markdown, the post window's face, the
-  caret's blink, the text's weight).
+  text's weight).
 - **The host's look, the `ST` track** *(`crates/clausters-gui/PLAN.md`, ST
   track)*. Taken now, before `WS13`: one design system as the specification
   of every application's general components, with the current editor as the

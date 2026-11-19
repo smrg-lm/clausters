@@ -181,6 +181,8 @@ enum WebEvent {
     /// coalesced, so a document that opens forty canvases in one pass asks
     /// once rather than forty times.
     SyncStreams,
+    /// The caret's blink came to its next phase ([`WebApp::ensure_blink`]).
+    Blink,
     /// Ask the server for what the bound widgets write
     /// ([`crate::host::readback`]): the read-back interval's beat.
     ReadBack,
@@ -314,6 +316,10 @@ struct WebApp {
     /// Whether a subscription re-derivation is already queued for the end of
     /// this turn, so a burst of tree changes schedules one.
     stream_sync_pending: bool,
+    /// The caret's phase last drawn, and in which canvas, and when the
+    /// timer set for its next change runs out ([`Host::caret_due`]).
+    caret_drawn: Option<(i32, bool)>,
+    blink_at: Option<f64>,
     /// How many buses the last subscription had to leave out, so the log says
     /// so when it *changes* rather than once per canvas: a document's opening
     /// pass re-derives the subscription per canvas, and a line each would bury
@@ -394,6 +400,8 @@ impl WebApp {
             stream_bus_cap: live::INITIAL_STREAM_BUS_CAP,
             stream_dropped: 0,
             stream_sync_pending: false,
+            caret_drawn: None,
+            blink_at: None,
             server_rate: 0.0,
             tick: None,
             read_back: None,
@@ -684,6 +692,44 @@ impl WebApp {
                 log(&format!("cannot queue the subscription sync: {e:?}"));
                 self.sync_streams();
             }
+        }
+    }
+
+    /// **The caret's blink**: the canvas holding one is drawn when it
+    /// changes phase, and one timer of no repeat wakes the page for the next
+    /// change -- nothing ticks for it.
+    fn ensure_blink(&mut self) {
+        let now = js_sys::Date::now();
+        let Some((def, due)) = self.host.caret_due(now) else {
+            if let Some((def, false)) = self.caret_drawn.take() {
+                // the caret left while hidden: drawn as it stands
+                self.request_redraw(def);
+            }
+            return;
+        };
+        let phase = (def, self.host.caret_shown(def, now));
+        if self.caret_drawn != Some(phase) {
+            self.caret_drawn = Some(phase);
+            self.request_redraw(def);
+        }
+        if self.blink_at.is_some_and(|at| at > now && at <= due) {
+            return;
+        }
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let host = self.id;
+        let callback = Closure::once_into_js(move || {
+            if let Some(proxy) = web_proxy() {
+                let _ = proxy.send_event(HostEvent::To(host, WebEvent::Blink));
+            }
+        });
+        let wait = (due - now).ceil().max(1.0) as i32;
+        if window
+            .set_timeout_with_callback_and_timeout_and_arguments_0(callback.unchecked_ref(), wait)
+            .is_ok()
+        {
+            self.blink_at = Some(due);
         }
     }
 
@@ -1175,6 +1221,7 @@ impl WebApp {
             }
             WebEvent::ServerInbound(bytes) => self.on_server_inbound(&bytes),
             WebEvent::SyncStreams => self.sync_streams(),
+            WebEvent::Blink => self.blink_at = None,
             WebEvent::Tick => self.on_tick(),
             // The subscriptions and the tick follow the page as they follow
             // the viewport, and a tab brought back draws what it shows again.
@@ -1365,6 +1412,7 @@ impl ApplicationHandler<HostEvent> for WebHosts {
                 Some(app) => {
                     app.on_user_event(event_loop, event);
                     app.finish_captures();
+                    app.ensure_blink();
                 }
                 // A packet for an instance that was closed while it was in
                 // flight. Dropping it is the whole handling: the canvases it
@@ -1386,6 +1434,7 @@ impl ApplicationHandler<HostEvent> for WebHosts {
             .map(|(host, _)| *host);
         if let Some(app) = owner.and_then(|host| self.apps.get_mut(&host)) {
             app.on_window_event(event_loop, id, event);
+            app.ensure_blink();
         }
     }
 }

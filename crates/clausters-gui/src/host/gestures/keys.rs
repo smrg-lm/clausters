@@ -178,6 +178,8 @@ impl Gestures {
         key: Key,
         pointer: Option<(f64, f64)>,
     ) -> Option<Vec<GestureEffect>> {
+        // a key shows the caret, held still while the hand types
+        host.caret_moved(ctx.now_ms);
         let mut out = with_clipboard(host, |host, clip| {
             self.press_key_with(host, ctx, key, pointer, clip)
         })?;

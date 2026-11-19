@@ -253,6 +253,8 @@ pub(super) struct App {
     /// When this front started -- what a wall clock in milliseconds is measured
     /// from, since the gesture machine wants elapsed time and not a date.
     pub(super) started: Instant,
+    /// The caret's phase last drawn, and in which window ([`Host::caret_due`]).
+    pub(super) caret_drawn: Option<(i32, bool)>,
     pub(super) next_frame: Instant,
     /// The server-buffer fetch machine (`/buffer_query` -> chunked `/buffer_getRange`),
     /// shared with the browser front.
@@ -343,6 +345,7 @@ impl App {
             resumed: false,
             head_said: u64::MAX,
             started: Instant::now(),
+            caret_drawn: None,
             next_frame: Instant::now(),
             fetches: BufferFetches::default(),
             hold: Default::default(),
@@ -772,6 +775,9 @@ impl App {
             status: statuses.get(&def_id),
             popups: self.host.popups(def_id),
             float: self.host.floating_area(def_id),
+            caret: self
+                .host
+                .caret_shown(def_id, self.started.elapsed().as_secs_f64() * 1000.0),
         };
         let ws = self.windows.get_mut(&def_id)?;
         if capture {
@@ -1052,6 +1058,22 @@ impl App {
         if timing {
             let t = now + FRAME;
             next_wake = Some(next_wake.map_or(t, |w| w.min(t)));
+        }
+
+        // **The caret's blink**: the window holding one is drawn when it
+        // changes phase, and the loop sleeps until the next change.
+        let now_ms = self.started.elapsed().as_secs_f64() * 1000.0;
+        if let Some((def_id, due)) = self.host.caret_due(now_ms) {
+            let phase = (def_id, self.host.caret_shown(def_id, now_ms));
+            if self.caret_drawn != Some(phase) {
+                self.caret_drawn = Some(phase);
+                self.redraw(def_id);
+            }
+            let t = self.started + Duration::from_secs_f64(due / 1000.0);
+            next_wake = Some(next_wake.map_or(t, |w| w.min(t)));
+        } else if let Some((def_id, false)) = self.caret_drawn.take() {
+            // the caret left while hidden: drawn as it stands
+            self.redraw(def_id);
         }
 
         // **The frame tick**, for the windows whose tree asks for it: what

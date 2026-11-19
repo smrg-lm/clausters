@@ -2035,3 +2035,32 @@ fn the_docks_bar_shows_the_menu_of_the_application_shown() {
     let code = shown(&host, 2).unwrap();
     assert_eq!(code[0].label, "Code");
 }
+
+/// **The caret blinks while the keys are on text**, half a cycle shown and
+/// half hidden, and a press or a key shows it again at once; the front is
+/// told when the next change comes, and nothing with no caret.
+#[test]
+fn the_caret_blinks_and_holds_still_under_the_hand() {
+    let mut host = host_from(CODE);
+    assert!(
+        host.caret_due(0.0).is_none(),
+        "no caret, nothing to wake for"
+    );
+    host.focus(1, 9);
+    let half = crate::host::blink::Blink::DEFAULT_MS * 0.5;
+    assert!(host.caret_shown(1, 10.0));
+    assert!(
+        !host.caret_shown(1, half + 10.0),
+        "hidden in the second half"
+    );
+    assert_eq!(host.caret_due(10.0), Some((1, half)));
+    assert_eq!(host.caret_due(half + 10.0), Some((1, 2.0 * half)));
+    // a key shows it again, from there
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    ctx.now_ms = half + 100.0;
+    let _ = g.press_key(&mut host, &ctx, Key::Char('x'), None);
+    assert!(host.caret_shown(1, half + 120.0), "shown at once");
+    host.set_caret_blink(0.0);
+    assert!(host.caret_shown(1, 3.0 * half + 1.0) && host.caret_due(0.0).is_none());
+}

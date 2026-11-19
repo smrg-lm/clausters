@@ -201,6 +201,9 @@ pub(crate) struct FrameInputs<'a> {
     /// the dock draws over every pane. `None` draws them into the window's
     /// own picture, inside its content area.
     pub(crate) float: Option<Rect>,
+    /// **Whether a caret drawn in this frame shows**: the phase of its
+    /// blink ([`super::blink`]), on for a window with no caret.
+    pub(crate) caret: bool,
 }
 
 impl Default for FrameInputs<'_> {
@@ -220,6 +223,7 @@ impl Default for FrameInputs<'_> {
             clipboard: None,
             selected: None,
             float: None,
+            caret: true,
         }
     }
 }
@@ -715,6 +719,7 @@ pub(crate) fn render(
 ) -> Drawn {
     let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
     batches.cost = FrameCost::default();
+    super::blink::set_phase(inputs.caret);
     // **The host's own chrome draws in the window's theme**: the status bar,
     // the menu bar, the lists and the tip that open over the tree, the scrim
     // behind a dialog. They belong to no widget, so they used to take the

@@ -3262,11 +3262,6 @@ finished work, where a pending item reads as done.
   *(2026-11-19)*. The two fronts draw it in different typefaces; the host
   is one, so the face must be the same.
 
-- ⬜ **A text field's caret does not blink** *(2026-11-19)*. The host draws
-  a steady caret. Blinking becomes the host's capability and its default,
-  at the pace of the platform, without waking the frame when nothing else
-  moves.
-
 - ⬜ **Text is drawn thinner natively than in the webview editor**
   *(2026-11-19, captures of the documentation side by side)*. The same
   face reads lighter in the host's documentation than in the current

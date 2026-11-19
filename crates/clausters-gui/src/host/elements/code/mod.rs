@@ -999,7 +999,7 @@ impl CodeView {
                 x += font::width_in(Family::Mono, piece, g.size);
                 at = end;
             }
-            if n == caret_line && keys_here {
+            if n == caret_line && keys_here && crate::host::blink::shown() {
                 let cx = left + Self::x_of(line, caret.pos - start, &g);
                 let w = (1.5 * ctx.scale).round().max(1.0);
                 mesh.rect(Rect::new(cx.round(), y, w, g.row_h), theme.text);

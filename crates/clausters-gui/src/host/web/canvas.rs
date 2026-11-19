@@ -570,6 +570,7 @@ impl WebApp {
             status: statuses.get(&def),
             popups: self.host.popups(def),
             float: self.host.floating_area(def),
+            caret: self.host.caret_shown(def, js_sys::Date::now()),
         };
         let Some(render) = slot.render.as_mut() else {
             return capture.then(|| Err("the canvas has no GPU yet".into()));

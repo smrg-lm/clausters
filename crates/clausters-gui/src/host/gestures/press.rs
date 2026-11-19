@@ -84,6 +84,8 @@ impl Gestures {
         cy: f64,
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
+        // a press shows the caret where it lands
+        host.caret_moved(ctx.now_ms);
         // **One press per gesture**, which is the single-pointer rule the touch
         // slot already states for fingers and nothing stated for the pointer. A
         // press arriving while a drag is in flight is never a new gesture: it is

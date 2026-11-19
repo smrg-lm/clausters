@@ -53,6 +53,7 @@ pub mod ack;
 mod actions;
 pub mod activity;
 pub mod bind;
+pub mod blink;
 // The other way of a binding: what a bound widget writes, asked for and read
 // back onto it.
 pub(crate) mod panel;
@@ -1160,6 +1161,8 @@ pub struct Host {
     /// [`Element::key`](widget::Element::key) and only falls through to the
     /// key table when the element does not answer it.
     focused: Option<(i32, i32)>,
+    /// The caret's pace and when the hand last moved it ([`blink`]).
+    blink: blink::Blink,
     /// **Whether the focus is shown with its ring** (focus-visible): only
     /// after the keyboard moved it (Tab), never after a press -- a press
     /// says where the hand is already looking, so a ring there is noise
@@ -1283,6 +1286,7 @@ impl Host {
             follow_block: 0.0,
             resolved_metrics: HashMap::new(),
             focused: None,
+            blink: blink::Blink::default(),
             focus_visible: false,
             pending_effects: Vec::new(),
             scripted: Default::default(),

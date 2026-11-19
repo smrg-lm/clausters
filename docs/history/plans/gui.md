@@ -8104,3 +8104,12 @@ module of its own.
   hover card longer than its room scrolled by the wheel alone; it now has
   the same bar in its right inset (`NotePlace::bar`), whose thumb a press
   holds and a drag moves, selecting nothing.
+
+- ✅ **A text field's caret did not blink** *(2026-11-19)*. The host drew a
+  steady caret. It blinks now, as the host's own capability and on by
+  default (`host::blink`): shown for half of a 1.2 s cycle, the pace of the
+  desktop's fields and of the webview editor, and shown at once and held
+  for half a cycle after a key or a press. The phase rides each frame's
+  inputs to every caret drawn (a field, the code); a front wakes only when
+  it changes (`Host::caret_due`: the native loop's next wake, a one-shot
+  timer in a page) and draws nothing for it while the keys are on no text.
