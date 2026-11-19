@@ -2210,6 +2210,41 @@ something reusable if the track stops there.
   the page's interface removed; the third-party licenses regenerated; the
   wheel, `install.sh` and the README rebuilt around the new binary; the
   editor's documentation rewritten where it names what moved.
+- ⬜ **WS15 — Applications as the editor's pages** *(added 2026-11-18 at
+  the user's request, taken before ST12)*. WS4 built a page as an
+  arrangement of panels per kind of work; what pages were asked for is one
+  window holding several applications, one per page, switched by the
+  strip of pages. Pages keep holding any arrangement of panels; an
+  application on a page of its own is what this milestone completes. Two
+  things are missing for it:
+  - **The session's windows open in the editor's dock.** Absorbs the
+    entry of "Found by use" of that name. The editor tells its session
+    where its host is, in the environment (`CLAUSTERS_GUI_HOST`). A
+    client's `Session.gui()`, and the ambient host a view opens on,
+    attach to that host instead of booting one. The client then points
+    the host at the session's server with `/gui_server <host:port> [shm]
+    [i/of]`: the host's client leg, the segment it maps and its share of
+    the server's ids, what `--server`, `--shm` and `--id-share` give a
+    host at boot. The editor's own windows take ids outside the range a
+    client allocates widgets from, so the two owners never meet. Under
+    node the variable is read as Python reads it; a page's host is the
+    page's own already, and WS13 is where the page's editor takes it.
+  - **An application's menu replaces the editor's while its page is
+    shown.** A window with a menu, on a dock whose top edge holds an
+    application's bar (an edge window with a menu), draws no bar of its
+    own. The edge bar shows that window's titles while the page that holds
+    it is shown, and its own otherwise; with several such windows on the
+    page, the one that last had the keyboard. A pick is the application
+    window's, as from its own bar: its state flips in that window's menu
+    and its verb is performed on that window. The bar's tools stay the
+    editor's, since they act on the code.
+  - **Done when** a script run in the editor that opens the multitrack and
+    the score editor lands each on a page of its own in the editor's dock,
+    the bar showing its menu while its page is shown and the editor's
+    again on the code's page, a pick of each reaching its application, and
+    a view bound to the session's server reading it; headless captures of
+    each step, tests of `/gui_server` and of the menu shown in the bar in
+    the host, and both clients attaching by the variable.
 
 ### Open decisions (taken in the milestone that needs them)
 
@@ -3035,6 +3070,7 @@ finished work, where a pending item reads as done.
   aim is one window for everything: the session would be told the editor's
   host (an address in its environment) and both clients would attach to it
   rather than boot one, which is a client change made in both at once.
+  Taken by WS15, which gives the shape.
 
 - ⬜ **Quitting the application is not an act: the dock's close is
   guessed from its panes' closes** *(2026-11-17, WS12; seen again

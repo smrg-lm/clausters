@@ -362,11 +362,15 @@ Named, not enumerated: each is written where it belongs and is read there.
   side by side opened the `ST` track below; checkpoint 3 is decided at its
   end, and `WS13` comes after it. The gaps the plan's "Found by use" holds
   from WS11 and WS12 (an image in a documentation page, a long code line, the
-  code font, the dock's arrangement and the window's place between runs, the
-  session's own windows outside the editor's dock) are weighed along the
-  way.
+  code font, the dock's arrangement and the window's place between runs) are
+  weighed along the way; the session's own windows outside the editor's dock
+  is `WS15`'s.
+- **Applications as the editor's pages, `WS15`**
+  *(`crates/clausters-gui/PLAN.md`, WS track)*. Taken now, before `ST12`:
+  the session's windows open in the editor's dock, an application on a page
+  of its own, its menu in the editor's bar while its page is shown.
 - **The host's look, the `ST` track** *(`crates/clausters-gui/PLAN.md`, ST
-  track)*. Taken now, before `WS13`: one design system as the specification
+  track)*. Taken after `WS15`, before `WS13`: one design system as the specification
   of every application's general components, with the current editor as the
   measured reference. Motion next (`ST12`, optional), then the review
   that closes checkpoint 3 (`ST13`).
