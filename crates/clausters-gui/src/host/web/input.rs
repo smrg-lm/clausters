@@ -133,6 +133,7 @@ impl WebApp {
                 // sees, so the page around it would become unreachable, which
                 // is a worse regression than having no keyboard at all.
                 GestureEffect::FocusOut(def_id) => self.blur(def_id),
+                GestureEffect::Perform { window, verb } => self.perform_verb(window, &verb),
             }
         }
         // A gesture may have left an element with work for the tick (a code

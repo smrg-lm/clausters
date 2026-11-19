@@ -1907,3 +1907,104 @@ fn a_planes_scroll_bar_is_as_thick_as_the_role() {
     assert_eq!(bars[0].track.w, m.scrollbar_w);
     assert_eq!(bars[0].thumb.w, m.scrollbar_w);
 }
+
+/// **The dock's bar shows the menu of the application on the page shown**:
+/// the application's window draws no bar of its own, the edge bar shows its
+/// titles, a pick that flips a state is the application's (its menu and the
+/// bar's both read it), one that does not is performed on its window, and
+/// the bar shows its own menu again once no application is shown.
+#[test]
+fn the_docks_bar_shows_the_menu_of_the_application_shown() {
+    use crate::host::dock::{Dock, Edge};
+    use crate::host::menubar;
+    let mut host = host_from(BAR);
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_DEF.into(),
+            args: vec![
+                OscType::Int(2),
+                OscType::String(
+                    r#"{"type":"window","dock_edge":"top","h":40,
+                        "menu":[{"label":"Code","menu":[{"label":"New","verb":"new_file"}]}],
+                        "children":[{"id":20,"type":"label","text":"tools"}]}"#
+                        .into(),
+                ),
+            ],
+        }),
+        from(),
+    );
+    let mut dock = Dock::new((600, 440), host.metrics.resolved(1.0));
+    dock.add_edge(2, Edge::Top, 40);
+    dock.add(1);
+    // the bar's lists go anywhere over the dock, as the fronts say
+    host.set_popup_area(2, dock.popup_area(2));
+    let mut changed = host.show_menus(&dock);
+    changed.sort();
+    assert_eq!(changed, [1, 2]);
+    let own =
+        |host: &Host, id| menubar::own_entries(host.window_def(id).unwrap()).map(<[_]>::to_vec);
+    let shown = |host: &Host, id| menubar::entries(host.window_def(id).unwrap()).map(<[_]>::to_vec);
+    assert_eq!(
+        shown(&host, 2),
+        own(&host, 1),
+        "the bar shows the application's"
+    );
+    assert_eq!(shown(&host, 1), None);
+    assert!(
+        host.menu_bar_rect(1, 600, 400).is_none(),
+        "and it has no bar of its own"
+    );
+    assert!(
+        host.show_menus(&dock).is_empty(),
+        "settled: nothing changes again"
+    );
+
+    // a pick that flips a state: the application's
+    let mut g = Gestures::default();
+    let bar = GestureCtx::new(2, 600, 40);
+    let title = |host: &Host, n: usize| {
+        let band = host.menu_bar_rect(2, 600, 40).unwrap();
+        let titles = menubar::titles(
+            menubar::entries(host.window_def(2).unwrap()).unwrap(),
+            band,
+            host.metrics_for(2),
+        );
+        mid(titles[n].1)
+    };
+    let at = title(&host, 0);
+    click(&mut g, &mut host, &bar, at);
+    let placed = host.popup_placed(2, 600, 40).unwrap();
+    let effects = click(&mut g, &mut host, &bar, mid(placed[0].rows[2]));
+    assert_eq!(
+        emitted(&effects, 1),
+        vec![vec![
+            OscType::String("menu".into()),
+            OscType::String("loop".into()),
+            OscType::Int(1)
+        ]],
+        "the application's window reports it"
+    );
+    let file = |host: &Host, id| shown(host, id).unwrap()[0].submenu().unwrap()[2].marked();
+    assert!(
+        menubar::own_entries(host.window_def(1).unwrap()).unwrap()[0]
+            .submenu()
+            .unwrap()[2]
+            .marked()
+    );
+    assert!(file(&host, 2), "the bar shows it checked");
+
+    // one that does not: performed on the application's window
+    click(&mut g, &mut host, &bar, at);
+    let placed = host.popup_placed(2, 600, 40).unwrap();
+    let effects = click(&mut g, &mut host, &bar, mid(placed[0].rows[0]));
+    assert!(effects.contains(&GestureEffect::Perform {
+        window: 1,
+        verb: "open".into()
+    }));
+
+    // no application shown: the bar's own
+    dock.remove(1);
+    host.show_menus(&dock);
+    let code = shown(&host, 2).unwrap();
+    assert_eq!(code[0].label, "Code");
+}

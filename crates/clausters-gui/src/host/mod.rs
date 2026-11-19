@@ -895,6 +895,9 @@ pub struct Host {
     /// documents the windowed front builds windows from. Non-window roots live
     /// only in the generic registry.
     window_defs: HashMap<i32, Widget>,
+    /// The application whose menu the dock's bar showed last
+    /// ([`Host::show_menus`]): kept while the keyboard is elsewhere.
+    menu_chosen: Option<i32>,
     /// The audio buses the host has asked the audio server to record, so the
     /// sample views can read them. Kept as a set and re-diffed whenever the
     /// documents change: the host is the one that turns "this scope watches
@@ -1211,6 +1214,7 @@ impl Host {
             drawn_clocks: HashMap::new(),
             glides: std::cell::RefCell::new(HashMap::new()),
             window_defs: HashMap::new(),
+            menu_chosen: None,
             watched_buses: Vec::new(),
             buffer_stream: (Vec::new(), 0),
             server: None,

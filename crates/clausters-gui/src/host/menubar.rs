@@ -12,7 +12,8 @@
 //! do not fit the window gather under a last one, whose list holds them as
 //! submenus -- so a narrow window loses no entry.
 
-use super::dock::Edge;
+use super::Host;
+use super::dock::{Dock, Edge};
 use super::menu::{Entry, EntryKind};
 use super::popup;
 use super::widget::{Widget, WidgetKind};
@@ -20,11 +21,166 @@ use clausters_gui_draw::font::{self, symbol};
 use clausters_gui_draw::metrics::Metrics;
 use clausters_gui_draw::rect::Rect;
 
-/// The window's menu, when it carries one with anything in it.
+/// **Where a window's bar shows a menu from**, in a dock whose top edge
+/// holds an application's bar ([`Host::show_menus`]): the window's own, by
+/// default; none, for an application's window whose menu the edge bar
+/// shows (`Away`); or another window's, for the edge bar showing it
+/// (`From`). The host's state, never a prop: the dock decides it from the
+/// page shown and where the keyboard is.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum MenuShown {
+    #[default]
+    Own,
+    Away,
+    From {
+        window: i32,
+        entries: Vec<Entry>,
+    },
+}
+
+/// The menu a window's bar shows, when it shows one with anything in it:
+/// its own, another's it shows in its place, or none while its own is shown
+/// in the dock's bar.
 pub fn entries(tree: &Widget) -> Option<&[Entry]> {
+    match &tree.kind {
+        WidgetKind::Window { menu_shown, .. } => match menu_shown {
+            MenuShown::Own => own_entries(tree),
+            MenuShown::Away => None,
+            MenuShown::From { entries, .. } => Some(entries.as_slice()).filter(|m| !m.is_empty()),
+        },
+        _ => None,
+    }
+}
+
+/// **The window's own menu**, wherever its bar is shown: what a key bound
+/// to one of its verbs picks.
+pub fn own_entries(tree: &Widget) -> Option<&[Entry]> {
     match tree.kind {
         WidgetKind::Window { .. } => tree.menu.as_deref().filter(|m| !m.is_empty()),
         _ => None,
+    }
+}
+
+/// The entries a bar shows in place of its own, as they were copied.
+fn entries_of(tree: &Widget) -> Option<&[Entry]> {
+    match &tree.kind {
+        WidgetKind::Window {
+            menu_shown: MenuShown::From { entries, .. },
+            ..
+        } => Some(entries.as_slice()),
+        _ => None,
+    }
+}
+
+/// The window whose menu window `tree`'s bar shows in place of its own.
+pub fn shown_from(tree: &Widget) -> Option<i32> {
+    match &tree.kind {
+        WidgetKind::Window {
+            menu_shown: MenuShown::From { window, .. },
+            ..
+        } => Some(*window),
+        _ => None,
+    }
+}
+
+/// The window a pick in window `def`'s bar belongs to: the one whose menu
+/// it shows, or `def` itself.
+pub fn owner_of(host: &Host, def: i32) -> i32 {
+    host.window_def(def).and_then(shown_from).unwrap_or(def)
+}
+
+impl Host {
+    /// **Which window's menu the dock's bar shows**: the dock's application
+    /// bar (a window along its top edge with a menu) shows the menu of the
+    /// application on the page shown -- a panel's window with a menu, the
+    /// one that last had the keyboard -- and that window draws no bar of its
+    /// own; with none, the bar shows its own. Answers the windows whose bar
+    /// changed, to be drawn again.
+    pub fn show_menus(&mut self, dock: &Dock) -> Vec<i32> {
+        let has_menu = |host: &Host, id: i32| host.window_def(id).and_then(own_entries).is_some();
+        let shown: Vec<i32> = dock.placed().map(|(id, _)| id).collect();
+        let bar = shown
+            .iter()
+            .copied()
+            .find(|&id| dock.edge_of(id) == Some(Edge::Top) && has_menu(self, id));
+        let apps: Vec<i32> = shown
+            .iter()
+            .copied()
+            .filter(|&id| dock.edge_of(id).is_none() && has_menu(self, id))
+            .collect();
+        let source = bar.and_then(|_| {
+            dock.focus()
+                .filter(|f| apps.contains(f))
+                .or(self.menu_chosen.filter(|c| apps.contains(c)))
+                .or_else(|| apps.first().copied())
+        });
+        if source.is_some() {
+            self.menu_chosen = source;
+        }
+        let mut changed = Vec::new();
+        for id in dock.panes() {
+            let want = match (bar, source) {
+                (Some(b), Some(src)) if id == b => {
+                    // copied only when it is not the one shown already: this
+                    // runs with every motion of the pointer
+                    let entries = self.window_def(src).and_then(own_entries).unwrap_or(&[]);
+                    let shows = self.window_def(id).is_some_and(|tree| {
+                        shown_from(tree) == Some(src) && entries_of(tree) == Some(entries)
+                    });
+                    if shows {
+                        continue;
+                    }
+                    MenuShown::From {
+                        window: src,
+                        entries: entries.to_vec(),
+                    }
+                }
+                (Some(_), Some(src)) if id == src => MenuShown::Away,
+                _ => MenuShown::Own,
+            };
+            if self.set_menu_shown(id, want) {
+                changed.push(id);
+            }
+        }
+        changed
+    }
+
+    /// Window `id`'s bar shows `want`; answers whether that changed it.
+    fn set_menu_shown(&mut self, id: i32, want: MenuShown) -> bool {
+        let Some(tree) = self.window_def_mut(id) else {
+            return false;
+        };
+        let WidgetKind::Window { menu_shown, .. } = &mut tree.kind else {
+            return false;
+        };
+        if *menu_shown == want {
+            return false;
+        }
+        *menu_shown = want;
+        true
+    }
+
+    /// **Window `id`'s own menu changed**: a bar showing it in its place
+    /// shows the new one. Answers that bar, to be drawn again.
+    pub(crate) fn menu_changed(&mut self, id: i32) -> Option<i32> {
+        let entries = self
+            .window_def(id)
+            .and_then(own_entries)
+            .map(<[Entry]>::to_vec)
+            .unwrap_or_default();
+        let bar = self
+            .window_defs
+            .iter()
+            .find(|(_, tree)| shown_from(tree) == Some(id))
+            .map(|(&w, _)| w)?;
+        self.set_menu_shown(
+            bar,
+            MenuShown::From {
+                window: id,
+                entries,
+            },
+        );
+        Some(bar)
     }
 }
 

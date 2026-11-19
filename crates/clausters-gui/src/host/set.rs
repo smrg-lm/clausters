@@ -291,6 +291,12 @@ impl Host {
         if touches_dialog && let Some(root) = self.registry.root_of(id) {
             self.settle_dialog(root, effects);
         }
+        // a window's menu shown in the dock's bar: the bar shows the new one
+        if keys.iter().any(|k| k.as_str() == "menu")
+            && let Some(bar) = self.menu_changed(id)
+        {
+            effects.push(HostEffect::Redraw(bar));
+        }
         true
     }
 }

@@ -333,6 +333,12 @@ impl App {
                 }
                 shell.gpu.request_redraw();
             }
+            // the bar shows the menu of the application on the page shown
+            for id in host.show_menus(&shell.layout) {
+                if let Some(ws) = windows.get(&id) {
+                    ws.repaint();
+                }
+            }
             // a divider under the pointer, or in the hand, says it is dragged
             let cursor = shell.layout.resize_cursor();
             if cursor != shell.cursor {

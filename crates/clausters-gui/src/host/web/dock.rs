@@ -455,6 +455,12 @@ impl WebApp {
                 }
                 shell.window.request_redraw();
             }
+            // the bar shows the menu of the application on the page shown
+            for def in host.show_menus(&shell.layout) {
+                if let Some(slot) = canvases.get_mut(&def) {
+                    slot.request_redraw();
+                }
+            }
             // a divider under the pointer, or in the hand, says it is dragged
             let cursor = shell.layout.resize_cursor();
             if cursor != shell.cursor {

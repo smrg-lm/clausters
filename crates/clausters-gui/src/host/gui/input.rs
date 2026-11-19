@@ -113,6 +113,7 @@ impl App {
                 // the next Tab enters it again. (In a page this is what keeps a
                 // mounted GuiDef from trapping the keyboard -- `web::input`.)
                 GestureEffect::FocusOut(_) => {}
+                GestureEffect::Perform { window, verb } => self.perform_verb(window, &verb),
             }
         }
     }

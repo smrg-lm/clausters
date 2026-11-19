@@ -157,6 +157,10 @@ pub enum WidgetKind {
         /// shares the row with its tree: the titles first, the tree after
         /// them. None by default: the window is a panel.
         dock_edge: Option<crate::host::dock::Edge>,
+        /// **Where its bar shows a menu from** in a dock with an
+        /// application's bar ([`crate::host::menubar::MenuShown`]): the
+        /// host's state, not a prop, so a window is defined showing its own.
+        menu_shown: crate::host::menubar::MenuShown,
         /// The `dock_tab` prop: **the window is a document**, shown in its
         /// panel as a tab even when it is the panel's only window, as an
         /// editor's file is. Off by default: a panel of one window shows a

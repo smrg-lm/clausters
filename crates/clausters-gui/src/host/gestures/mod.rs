@@ -71,6 +71,10 @@ pub enum GestureEffect {
     /// browser's own tab order carries on past the mounted GuiDef instead of
     /// trapping the reader inside it.
     FocusOut(i32),
+    /// **Perform verb `verb` on window `window`**, as its own tool or key
+    /// would: a pick in the dock's bar from the menu of an application
+    /// whose window is another ([`crate::host::menubar::MenuShown`]).
+    Perform { window: i32, verb: String },
 }
 
 /// **The window event that calls the owner's work off**: the button of the
