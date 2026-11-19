@@ -60,6 +60,7 @@ mod bridge;
 mod bulk;
 mod canvas;
 mod capture;
+mod clipboard;
 mod compose;
 mod disk;
 mod dock;
@@ -220,6 +221,21 @@ enum WebEvent {
         ticket: u64,
         result: Result<crate::host::files::Listing, String>,
     },
+    /// **The browser's `paste` landed on window `def_id`**, with the text it
+    /// carried (`clipboard`).
+    Pasted { def_id: i32, text: Option<String> },
+    /// The paste key was pressed on window `def_id` and let through to the
+    /// browser (`clipboard`).
+    PasteKey { def_id: i32 },
+    /// A moment after it, for a browser that fired no `paste`.
+    PasteKeyLate { def_id: i32 },
+    /// The browser's clipboard was read for a paste that waited on it:
+    /// the text, or `None` where the read was refused.
+    ClipboardRead {
+        def_id: i32,
+        verb: String,
+        text: Option<String>,
+    },
     /// A file an element asked for has been read (`files`).
     Read {
         def_id: i32,
@@ -266,6 +282,10 @@ struct WebApp {
     /// id is always at hand where a proxy is taken.
     id: HostId,
     host: Host,
+    /// The text the browser's clipboard last handed over (`clipboard`).
+    clipboard_text: clipboard::Text,
+    /// The windows whose paste key waits for the browser's `paste`.
+    paste_keys: std::collections::HashSet<i32>,
     outbox: Rc<RefCell<VecDeque<Vec<u8>>>>,
     /// One canvas per `window`-rooted def, keyed by its def id.
     canvases: HashMap<i32, CanvasSlot>,
@@ -387,12 +407,18 @@ impl WebApp {
         // Its named GuiDefs are kept in the page's storage, as a native
         // host keeps them in its data directory.
         host.store_defs(store::PageStore::open());
+        // Text crosses to the browser's clipboard and back (`clipboard`).
+        let clipboard_text = clipboard::Text::default();
+        host.clipboard
+            .attach(Box::new(clipboard::PageClipboard(clipboard_text.clone())));
         // An application's thread wakes the loop when it has said something.
         #[cfg(feature = "apps")]
         host.set_app_wake(threads::wake(id.0));
         Self {
             id,
             host,
+            clipboard_text,
+            paste_keys: Default::default(),
             outbox,
             canvases: HashMap::new(),
             by_winit: HashMap::new(),
@@ -1268,6 +1294,10 @@ impl WebApp {
                 ticket,
                 result,
             } => self.on_read(def_id, widget_id, ticket, result),
+            WebEvent::Pasted { def_id, text } => self.on_pasted(def_id, "paste", text),
+            WebEvent::PasteKey { def_id } => self.on_paste_key(def_id),
+            WebEvent::PasteKeyLate { def_id } => self.on_paste_key_late(def_id),
+            WebEvent::ClipboardRead { def_id, verb, text } => self.on_pasted(def_id, &verb, text),
             WebEvent::Captured { of, path, result } => match of {
                 capture::CaptureOf::Window(def_id) => {
                     self.queue(super::captured(def_id, &path, result.err().as_deref()))

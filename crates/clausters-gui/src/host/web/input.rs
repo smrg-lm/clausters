@@ -100,8 +100,10 @@ impl WebApp {
     }
 
     pub(super) fn apply_gesture_effects(&mut self, effects: Vec<GestureEffect>) {
-        // A gesture may have sent a chooser into another directory.
+        // A gesture may have sent a chooser into another directory, or a
+        // paste to wait for the browser's clipboard.
         self.start_listings();
+        self.read_clipboard_if_asked();
         let any = !effects.is_empty();
         for effect in effects {
             match effect {

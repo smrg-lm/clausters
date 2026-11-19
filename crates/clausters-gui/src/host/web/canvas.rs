@@ -124,6 +124,9 @@ pub(super) struct CanvasSlot {
     /// is focused, so the browser composes for it (`compose`). `None` on a
     /// document that would not have one, which costs only composition.
     pub(super) composer: Option<compose::Composer>,
+    /// The listeners that let Ctrl+V through to the browser, whose `paste`
+    /// hands its text over (`clipboard`).
+    pub(super) paster: Option<super::clipboard::Paster>,
 }
 
 /// The window-level pointer listener a [`CanvasSlot`] keeps, removed when the
@@ -203,6 +206,7 @@ impl CanvasSlot {
             histories: HashMap::new(),
             pending_bulk: Vec::new(),
             composer: None,
+            paster: None,
         }
     }
 
@@ -401,6 +405,9 @@ impl WebApp {
         slot.appended = appending;
         slot.watch_buttons();
         slot.composer = compose::Composer::attach(self.id, def_id);
+        slot.paster = window
+            .canvas()
+            .and_then(|c| super::clipboard::Paster::attach(self.id, def_id, c.into()));
         self.canvases.insert(def_id, slot);
         log(&format!(
             "def {def_id}: canvas attached; requesting GPU adapter"

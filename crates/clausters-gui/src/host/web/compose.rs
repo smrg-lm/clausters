@@ -162,6 +162,11 @@ impl Composer {
                 if event.is_composing() || key == "Dead" || key == "Process" {
                     return;
                 }
+                // the paste key is the browser's: its paste lands in this
+                // field as text, the browser's clipboard's
+                if super::clipboard::is_paste_key(&event) {
+                    return;
+                }
                 let chord = event.ctrl_key() || event.alt_key() || event.meta_key();
                 // A character with no chord over it is text, and text has one
                 // road. Dropping it here is what keeps `a` from arriving as

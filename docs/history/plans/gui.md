@@ -3705,6 +3705,17 @@ Section added 2026-07-19; **reconceived 2026-07-22.** G23 gave the logical group
   menu. The resize cursor and a hand's way back into the dock stay open in
   the plan.
 
+- ✅ **The page's clipboard reaches the browser's** *(left by `G42`, 2026-10-04)*. A page keeps the host's own clipboard, so text copied in a canvas does not paste in another tab or program. Reaching it takes code on the page's side: a copy writes `navigator.clipboard` in the gesture that made it, Ctrl+V takes the text the browser's `paste` event carries before it pastes, and the menu's Paste reads it asynchronously (a browser may ask the reader's permission). A page has no primary selection at all, so the middle button stays the host's own there. *(Done 2026-11-19, in that shape: the page attaches a `SystemClipboard`
+  (`web::clipboard::PageClipboard`). A copy writes `navigator.clipboard`;
+  the paste key is kept from the shell so the browser fires its `paste`,
+  whose text is handed over before the host pastes, and a canvas whose
+  browser fires none pastes a moment later through a read; a text field's
+  hidden input takes the browser's paste as typed text. A paste from a
+  menu waits for an asynchronous read (`Clip::must_ask`, the trait's
+  `reads_later`) and is performed again once it is in, with the host's own
+  clipboard where the read was refused. gui.html checks the paste's road
+  into a focused field.)*
+
 ## Found by use: the entries that were fixed
 
 - ✅ **A capture of the multitrack example's window never answers, headless**

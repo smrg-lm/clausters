@@ -55,6 +55,13 @@ pub trait SystemClipboard: Send {
     }
     /// Makes `text` the primary selection, on a platform that has one.
     fn write_primary(&mut self, _text: &str) {}
+    /// **Whether the platform answers a read later**, not at once: a page's
+    /// clipboard is read with a promise, so a paste the host was not handed
+    /// the text for first asks for it ([`Clip::must_ask`]) and is performed
+    /// again once it is in.
+    fn reads_later(&mut self) -> bool {
+        false
+    }
 }
 
 /// The system clipboard a [`Clip`] is attached to, shared by its clones.
@@ -89,6 +96,12 @@ pub struct Clip {
     mirrored: Option<String>,
     /// The host's own primary selection: the last text selected in it.
     primary: Option<String>,
+    /// The platform's text was just handed over, for the paste about to be
+    /// performed: a platform that reads later is not asked again for it.
+    fresh: bool,
+    /// **A paste waiting on the platform's text**: the window and the verb,
+    /// performed again once the front has read it.
+    asked: Option<(i32, String)>,
 }
 
 impl Clip {
@@ -97,11 +110,41 @@ impl Clip {
         self.system = Some(System(Arc::new(Mutex::new(system))));
     }
 
+    /// **Whether a paste must first ask for the platform's text**: where the
+    /// platform answers a read later and the text was not just handed over.
+    pub fn must_ask(&self) -> bool {
+        !self.fresh
+            && self
+                .system
+                .as_ref()
+                .and_then(|s| s.with(|s| s.reads_later()))
+                .unwrap_or(false)
+    }
+
+    /// **Verb `verb` of window `window` waits for the platform's text**: the
+    /// front reads it ([`take_ask`](Self::take_ask)), hands it over
+    /// ([`mark_fresh`](Self::mark_fresh)) and performs the verb again.
+    pub fn ask_read(&mut self, window: i32, verb: &str) {
+        self.asked = Some((window, verb.to_string()));
+    }
+
+    /// The paste waiting on the platform's text, taken.
+    pub fn take_ask(&mut self) -> Option<(i32, String)> {
+        self.asked.take()
+    }
+
+    /// The platform's text was just handed over: the next paste takes it as
+    /// it is, without asking.
+    pub fn mark_fresh(&mut self) {
+        self.fresh = true;
+    }
+
     /// **Before a paste**: takes the text on the platform's clipboard when
     /// another program put it there since the host last wrote or read it.
     /// What the host put there itself, or nothing new, leaves the host's own
     /// -- a block of samples included.
     pub fn refresh(&mut self) {
+        self.fresh = false;
         let Some(text) = self
             .system
             .as_ref()
@@ -431,5 +474,49 @@ mod tests {
         clip.refresh();
         assert_eq!(clip.doc().map(Clipboard::kind), Some("text"));
         assert!(clip.blobs().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod later_tests {
+    use super::*;
+
+    /// A platform that answers a read later, as a page's does.
+    struct Later(Arc<Mutex<Option<String>>>);
+
+    impl SystemClipboard for Later {
+        fn read_text(&mut self) -> Option<String> {
+            self.0.lock().unwrap().clone()
+        }
+        fn write_text(&mut self, text: &str) {
+            *self.0.lock().unwrap() = Some(text.to_string());
+        }
+        fn reads_later(&mut self) -> bool {
+            true
+        }
+    }
+
+    /// **A paste on a platform that reads later asks first**: it waits,
+    /// names what waits, and once the text is handed over it is taken
+    /// without asking again -- for that one paste.
+    #[test]
+    fn a_paste_waits_for_a_platform_that_reads_later() {
+        let text = Arc::new(Mutex::new(None));
+        let mut clip = Clip::default();
+        assert!(
+            !clip.must_ask(),
+            "a host with no platform's clipboard never asks"
+        );
+        clip.attach(Box::new(Later(text.clone())));
+        assert!(clip.must_ask());
+        clip.ask_read(3, "paste");
+        assert_eq!(clip.take_ask(), Some((3, "paste".into())));
+        assert_eq!(clip.take_ask(), None);
+        *text.lock().unwrap() = Some("from another tab".into());
+        clip.mark_fresh();
+        assert!(!clip.must_ask());
+        clip.refresh();
+        assert_eq!(clip.text(), "from another tab");
+        assert!(clip.must_ask(), "the next paste asks again");
     }
 }

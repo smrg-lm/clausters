@@ -301,6 +301,13 @@ impl Gestures {
         if !host.offers(ctx.def_id, name) {
             return Vec::new();
         }
+        // **A paste reads the platform's clipboard first**, and where the
+        // platform answers that later (a page), the verb waits for it and is
+        // performed again once the text is in
+        if matches!(name, "paste" | "mix") && clipboard.must_ask() {
+            clipboard.ask_read(ctx.def_id, name);
+            return Vec::new();
+        }
         if matches!(name, "paste" | "mix") {
             clipboard.refresh();
         }

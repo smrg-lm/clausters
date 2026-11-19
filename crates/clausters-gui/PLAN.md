@@ -3080,8 +3080,6 @@ holds what is open.
   for one of them; the hit-test entry in "Found by use" is what made the
   question concrete, since it is a press on a staff that raised it.
 
-- ⬜ **The page's clipboard reaches the browser's** *(left by `G42`, 2026-10-04)*. A page keeps the host's own clipboard, so text copied in a canvas does not paste in another tab or program. Reaching it takes code on the page's side: a copy writes `navigator.clipboard` in the gesture that made it, Ctrl+V takes the text the browser's `paste` event carries before it pastes, and the menu's Paste reads it asynchronously (a browser may ask the reader's permission). A page has no primary selection at all, so the middle button stays the host's own there.
-
 - ⬜ **A frame of what moves presents only what moved** *(named
   2026-10-27, measuring the audio editor playing in a window of 3840 by
   2071 pixels)*. With the picture kept on the card, a frame of what moves is

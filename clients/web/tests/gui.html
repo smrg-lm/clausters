@@ -267,6 +267,20 @@
         }
         log(`scripted keys typed into the field: ${JSON.stringify(typed.map((a) => a.at(-1)))}`);
 
+        // **The browser's clipboard reaches the canvas**: a `paste` the
+        // browser fires on it hands its text over, and the host pastes it
+        // into the field that has the keys -- the road Ctrl+V takes in a page.
+        const pasted = new DataTransfer();
+        pasted.setData("text/plain", " there");
+        form.canvas.dispatchEvent(new ClipboardEvent("paste", {
+          clipboardData: pasted, bubbles: true, cancelable: true,
+        }));
+        for (let i = 0; i < 40 && entered() !== "he there"; i++) await sleep(50);
+        if (entered() !== "he there") {
+          throw new Error("the browser's paste never reached the field: " + JSON.stringify(typed));
+        }
+        log("the browser's paste reached the field");
+
         // **A post window holds what is written and copies what a hand
         // selects**: three lines in one write, a drag from the first row into
         // the second, and the text selected is exactly what lies between.
@@ -459,7 +473,7 @@
         synth.free();
         verdict(`PASS: page GUI carrier -- event ${JSON.stringify(events[0])}, `
           + `bound freq ${before} -> ${after}, touch ${touched}, scripted ${scripted}, `
-          + `scripted keys typed "${entered()}", a post window selected, code edited, a played key painted, `
+          + `scripted keys typed and the browser's paste made "${entered()}", a post window selected, code edited, a played key painted, `
           + `subtree freed`);
       }
 
