@@ -8046,3 +8046,19 @@ module of its own.
   marks the panel gone, the panel's view is its window's `main`, and
   showing the documentation puts the dock's focus and the keyboard on it,
   so what it was opened for is typed there.
+
+- ✅ **A menu's row over a panel's bar, and a key held into a new pane**
+  *(found using the editor, 2026-11-18; done the same day)*. File > New
+  did nothing from the menu: the dock asked its own chrome (the page
+  tabs, the dividers, the panels' bars) before what a pane floats over
+  it, so a row of the bar's open list lying over a panel's bar was a
+  press on that bar. What a pane floats over the dock (a list, a dialog)
+  now takes the pointer before the chrome under it: the press, the
+  hover, a tab's tip, the secondary and the middle button
+  (`a_list_a_pane_opens_floats_over_the_dock`). And Ctrl+N held typed an
+  `n` into the file it opened: the platform tells the modifiers once, to
+  the panes there when they change, so the new pane read the repeated
+  key with no Ctrl held. The dock's shell now keeps the modifiers and
+  hands them to a pane with each button and key. A sweep of every entry
+  of the editor's menus and every key of its table, headless, reaches
+  its action.

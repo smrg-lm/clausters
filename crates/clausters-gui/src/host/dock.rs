@@ -623,7 +623,7 @@ impl Dock {
         let Some((x, y)) = self.at else {
             return false;
         };
-        if self.menu.is_some() || self.grip.is_some() {
+        if self.menu.is_some() || self.grip.is_some() || self.overlay_at(x, y).is_some() {
             return false;
         }
         match self.tab_at(x, y) {
@@ -928,7 +928,10 @@ impl Dock {
             self.hot = hot;
             self.dirty.chrome = true;
         }
-        self.rest_on(self.tab_at(x, y));
+        let tab = self
+            .tab_at(x, y)
+            .filter(|_| self.overlay_at(x, y).is_none());
+        self.rest_on(tab);
         let to = self.at(x, y);
         let now = to.map(|(id, _)| id);
         let left = self.pointer.filter(|&was| Some(was) != now);
@@ -957,6 +960,12 @@ impl Dock {
             self.menu_pressed(x, y);
             return None;
         }
+        // what a pane floats over the dock (an open list, a dialog) is over
+        // the dock's own chrome too: a menu's row over a panel's bar is the
+        // row's
+        if self.overlay_at(x, y).is_some() {
+            return self.press_pane();
+        }
         if let Some(part) = self.page_at(x, y) {
             self.dismiss_lists(None);
             self.press_page(part);
@@ -976,6 +985,12 @@ impl Dock {
             self.dirty.chrome = true;
             return None;
         }
+        self.press_pane()
+    }
+
+    /// The press is the pane's under the pointer: it holds the press and,
+    /// unless it is along an edge, takes the keyboard.
+    fn press_pane(&mut self) -> Option<i32> {
         let pane = self.pointer;
         self.dismiss_lists(pane);
         let pane = pane?;
@@ -999,7 +1014,7 @@ impl Dock {
             self.close_menu();
             return true;
         }
-        if self.grip.is_some() {
+        if self.grip.is_some() || self.overlay_at(x, y).is_some() {
             return false;
         }
         if let Some(part) = self.page_at(x, y) {
@@ -1164,6 +1179,10 @@ impl Dock {
 
     /// What the chrome lights at `(x, y)`.
     fn hot_at(&self, x: f64, y: f64) -> Option<Hot> {
+        // under what a pane floats over the dock, nothing of the dock's is
+        if self.overlay_at(x, y).is_some() {
+            return None;
+        }
         if let Some(part) = self.page_at(x, y) {
             return Some(Hot::Page(part));
         }

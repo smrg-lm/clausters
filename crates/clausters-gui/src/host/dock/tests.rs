@@ -980,6 +980,17 @@ fn a_list_a_pane_opens_floats_over_the_dock() {
     assert!(!over.floats[0].is_empty());
     assert_eq!(d.at(50.0, 100.0), Some((10, (50.0, 100.0))));
     assert_eq!(d.focus(), Some(10), "the open list takes the keys");
+    // a row of the list over pane 1's bar is the list's, not the bar's:
+    // neither lit, nor pressed, nor a tab's tip
+    let bar = d.groups()[0].strip;
+    assert!(bar.y < 140.0, "pane 1's bar is under the list");
+    let (x, y) = (50.0, f64::from(bar.y + bar.h * 0.5));
+    assert!(d.bar_at(x, y).is_some());
+    d.moved(x, y);
+    assert_eq!(d.hot, None);
+    assert_eq!(d.pressed(), Some(10));
+    d.released();
+    assert!(!d.context_pressed() && !d.middle_pressed());
     // a press on pane 2 goes to it, and takes the bar's list down
     d.moved(300.0, 200.0);
     assert_eq!(d.pressed(), Some(2));

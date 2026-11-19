@@ -23,7 +23,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use tracing::{info, warn};
 use winit::dpi::{LogicalSize, PhysicalPosition};
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{ElementState, Modifiers, MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
@@ -60,6 +60,9 @@ pub(in crate::host::gui) struct Shell {
     hidden: HashSet<i32>,
     /// The resize cursor the window shows ([`Dock::resize_cursor`]).
     cursor: Option<bool>,
+    /// The modifiers held, as the platform last said them: a pane made
+    /// while a key is held (Ctrl+N's new file) was not there to be told.
+    mods: Option<Modifiers>,
 }
 
 impl App {
@@ -267,6 +270,7 @@ impl App {
             scale,
             hidden: HashSet::new(),
             cursor: None,
+            mods: None,
         })
     }
 
@@ -381,6 +385,10 @@ impl App {
             return;
         };
         let panes = shell.layout.panes().to_vec();
+        if let WindowEvent::ModifiersChanged(mods) = &event {
+            shell.mods = Some(*mods);
+        }
+        let mods = shell.mods;
         match event {
             WindowEvent::RedrawRequested => self.compose_dock(which),
             // the dock's window is the application's: its floating panels
@@ -472,14 +480,14 @@ impl App {
                     _ => shell.layout.pointer(),
                 };
                 if let Some(id) = pane {
-                    self.def_event(event_loop, id, event);
+                    self.input_event(event_loop, id, mods, event);
                 }
                 let handed = self.settle_dock();
                 self.hand_over(Loop::Shown(event_loop), handed);
             }
             WindowEvent::MouseWheel { .. } => {
                 if let Some(id) = shell.layout.pointer() {
-                    self.def_event(event_loop, id, event);
+                    self.input_event(event_loop, id, mods, event);
                 }
             }
             // Escape takes down the dock's open menu before any pane hears it
@@ -497,11 +505,27 @@ impl App {
             }
             WindowEvent::KeyboardInput { .. } | WindowEvent::Ime(_) => {
                 if let Some(id) = shell.layout.focus() {
-                    self.def_event(event_loop, id, event);
+                    self.input_event(event_loop, id, mods, event);
                 }
             }
             _ => {}
         }
+    }
+
+    /// **A button or a key handed to pane `id`**, after the modifiers held
+    /// now: whichever pane it reaches reads them as they are, though it was
+    /// made, or shown, after they were pressed.
+    fn input_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        id: i32,
+        mods: Option<Modifiers>,
+        event: WindowEvent,
+    ) {
+        if let Some(mods) = mods {
+            self.def_event(event_loop, id, WindowEvent::ModifiersChanged(mods));
+        }
+        self.def_event(event_loop, id, event);
     }
 
     /// **A shell's frame**: each shown pane that asked for a frame draws
