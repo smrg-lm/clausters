@@ -3281,7 +3281,3 @@ finished work, where a pending item reads as done.
   editor's. The host's rasterization (gamma, hinting, coverage, subpixel
   positioning) is to follow the rules the webview's text renderer applies,
   looked up rather than tuned by eye.
-
-- ⬜ **Menu labels carry an article English does not use** *(2026-11-19)*.
-  `Search the Documentation` is `Search Documentation`; every menu label
-  of the editor and the applications is read for the same.

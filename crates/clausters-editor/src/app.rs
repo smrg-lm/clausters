@@ -1748,7 +1748,7 @@ impl App {
             ]},
             {"label": "Help", "menu": [
                 {"label": "Documentation", "verb": "docs"},
-                {"label": "Search the Documentation", "verb": "search_docs"},
+                {"label": "Search Documentation", "verb": "search_docs"},
                 {"label": "Documentation Folder...", "verb": "docs_folder"},
                 "-",
                 {"label": "Keyboard Shortcuts", "verb": "keys"},
@@ -1829,7 +1829,7 @@ impl App {
                     buttons(&[
                         json!({"id": PREFS_DOCS_CHOOSE, "type": "button", "label": "Choose folder...",
                             "variant": "outline"}),
-                        json!({"id": PREFS_DOCS_BUNDLED, "type": "button", "label": "Use the bundled one",
+                        json!({"id": PREFS_DOCS_BUNDLED, "type": "button", "label": "Use bundled",
                             "variant": "ghost"}),
                     ]),
                 ]),
@@ -1844,7 +1844,7 @@ impl App {
                         json!({"id": PREFS_SAVE, "type": "button", "label": "Save",
                             "variant": "outline"}),
                         json!({"id": PREFS_SAVE_RESTART, "type": "button",
-                            "label": "Save and restart the session", "variant": "ghost"}),
+                            "label": "Save and restart session", "variant": "ghost"}),
                     ]),
                 ]),
                 footer(json!({"id": PREFS_CLOSE, "type": "button", "label": "Close", "default": 1,
@@ -1874,7 +1874,7 @@ impl App {
                 field(&[caption("Environments"), self.envs_list()]),
                 {"type": "layout", "flow": "col", "hug": 1, "margin": 16, "gap": 16, "frame": 1,
                     "children": [
-                    json!({"type": "label", "text": "Create a new environment", "variant": "caption"}),
+                    json!({"type": "label", "text": "New environment", "variant": "caption"}),
                     field(&[
                         caption("1. Install source"),
                         json!({"id": ENVS_SOURCE, "type": "text",

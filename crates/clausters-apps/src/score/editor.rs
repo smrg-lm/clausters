@@ -1513,7 +1513,7 @@ impl ScoreEditor {
         (reason, Some(shown))
     }
 
-    /// **Back to the start**: the cursor a pass starts from is the score's
+    /// **Back to start**: the cursor a pass starts from is the score's
     /// first beat, and a stopped playback is cued there. One item picked is a
     /// place a pass would start from instead, so it goes; a stretch is what a
     /// pass plays, as a time range is, so it stays, and the start is its own.

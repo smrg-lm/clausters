@@ -356,7 +356,7 @@ fn transport_tools(ids: Option<TransportIds>) -> Vec<Value> {
     };
     vec![
         named(
-            button(&chrome::glyph(chrome::TO_START), "Back to the start"),
+            button(&chrome::glyph(chrome::TO_START), "Back to start"),
             REWIND,
             ids.map(|i| i.rewind),
         ),

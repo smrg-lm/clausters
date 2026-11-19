@@ -361,11 +361,11 @@ class ScoreEditor(SequenceHandler):
         return self._act({"action": "silence"})
 
     def select_left(self) -> bool:
-        """Select the item before -- the window's ``select_left`` (`verb`)."""
+        """Select previous item -- the window's ``select_left`` (`verb`)."""
         return self.verb("select_left")
 
     def select_right(self) -> bool:
-        """Select the item after -- the window's ``select_right`` (`verb`)."""
+        """Select next item -- the window's ``select_right`` (`verb`)."""
         return self.verb("select_right")
 
     def cursor_left(self) -> bool:

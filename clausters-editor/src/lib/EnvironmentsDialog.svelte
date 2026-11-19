@@ -159,7 +159,7 @@
     </div>
 
     <form class="grid gap-4 rounded-md border p-4" onsubmit={create}>
-      <p class="text-sm font-medium">Create a new environment</p>
+      <p class="text-sm font-medium">New environment</p>
 
       <div class="grid gap-1.5">
         <Label for="install-source">1. Install source</Label>

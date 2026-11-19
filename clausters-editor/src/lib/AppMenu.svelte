@@ -177,7 +177,7 @@
     <Menubar.Trigger>Help</Menubar.Trigger>
     <Menubar.Content>
       {@render item("Documentation", a.openDocs, "F1")}
-      {@render item("Search the Documentation", a.searchDocs, "Ctrl+Shift+F")}
+      {@render item("Search Documentation", a.searchDocs, "Ctrl+Shift+F")}
       {#if host.docsFolder}{@render item("Documentation Folder...", a.chooseDocsFolder)}{/if}
     </Menubar.Content>
   </Menubar.Menu>

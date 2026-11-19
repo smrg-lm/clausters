@@ -426,12 +426,12 @@ export class ScoreEditor extends SequenceHandler {
         return this.#act({ action: "silence" });
     }
 
-    /** Select the item before -- the window's `select_left` (`verb`). */
+    /** Select previous item -- the window's `select_left` (`verb`). */
     selectLeft(): Promise<boolean> {
         return this.verb("select_left");
     }
 
-    /** Select the item after -- the window's `select_right` (`verb`). */
+    /** Select next item -- the window's `select_right` (`verb`). */
     selectRight(): Promise<boolean> {
         return this.verb("select_right");
     }

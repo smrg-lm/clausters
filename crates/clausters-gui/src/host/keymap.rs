@@ -666,15 +666,15 @@ mod tests {
                 "entry": {"keys": "N", "label": "Note entry on or off"},
                 "delete": ["Delete", "Backspace"],
                 "deselect": "Escape",
-                "select_left": {"keys": "Left", "label": "Select the item before"},
+                "select_left": {"keys": "Left", "label": "Select previous item"},
                 "select_right": "Right",
                 "step_up": "Up",
             },
             "note_entry": {
                 "entry": "N",
                 "entry_off": "Escape",
-                "pitch_c": {"keys": "C", "label": "Write a C"},
-                "pitch_e": {"keys": "E", "label": "Write an E"},
+                "pitch_c": {"keys": "C", "label": "Write C"},
+                "pitch_e": {"keys": "E", "label": "Write E"},
                 "cursor_left": {"keys": "Left", "label": "Cursor back"},
                 "cursor_right": "Right",
                 "step_up": "Up",
@@ -819,10 +819,10 @@ mod tests {
                 .find(|(w, _)| w == what)
                 .map(|(_, keys)| keys.clone())
         };
-        assert_eq!(row(0, "Write an E").as_deref(), Some("E"));
+        assert_eq!(row(0, "Write E").as_deref(), Some("E"));
         assert_eq!(row(0, "Cursor back").as_deref(), Some("Left"));
         // the arrows are note entry's, so the selection's are not listed
-        assert_eq!(row(1, "Select the item before"), None);
+        assert_eq!(row(1, "Select previous item"), None);
         // and E is a pitch, so the table's split is gone
         assert_eq!(row(2, "Split"), None);
         assert_eq!(row(2, "Redo").as_deref(), Some("Ctrl+Shift+Z, Ctrl+Y"));
@@ -859,7 +859,7 @@ mod tests {
                 .is_empty()
         );
         assert!(
-            map.declare("note_entry", "pitch_e", &["E"], Some("Write an E"))
+            map.declare("note_entry", "pitch_e", &["E"], Some("Write E"))
                 .is_empty()
         );
         assert!(
@@ -880,13 +880,13 @@ mod tests {
         assert!(
             sheet[0]
                 .rows
-                .contains(&("Write an E".into(), "Shift+E".into()))
+                .contains(&("Write E".into(), "Shift+E".into()))
         );
         assert!(sheet[0].rows.contains(&("Pitch d".into(), "D".into())));
         // a window defined again declares again, and nothing moves
         let before = map.clone();
         assert!(
-            map.declare("note_entry", "pitch_e", &["E"], Some("Write an E"))
+            map.declare("note_entry", "pitch_e", &["E"], Some("Write E"))
                 .is_empty()
         );
         assert_eq!(map, before);

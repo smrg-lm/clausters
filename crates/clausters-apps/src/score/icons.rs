@@ -57,7 +57,7 @@ pub const BREAK_PAGE: &str = "10000A";
 /// No break: the engraver's to fill.
 pub const BREAK_NONE: &str = "10000B";
 
-/// Back to the start: the transport's, which the host's own symbols lack.
+/// Back to start: the transport's, which the host's own symbols lack.
 pub const REWIND: &str = "10000C";
 /// Note entry: a pencil.
 pub const ENTRY: &str = "10000D";
@@ -659,7 +659,7 @@ fn break_none() -> String {
     pen.done()
 }
 
-/// Back to the start: a stop, and the arrow that runs into it.
+/// Back to start: a stop, and the arrow that runs into it.
 fn rewind() -> String {
     const HIGH: f64 = 520.0;
     let mut pen = Pen::new();

@@ -349,7 +349,7 @@ pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
         tool(
             ids,
             "rewind",
-            symbols(press(&shown(icons::REWIND, "|<"), "Back to the start")),
+            symbols(press(&shown(icons::REWIND, "|<"), "Back to start")),
         ),
         tool(
             ids,
@@ -427,7 +427,7 @@ pub enum Tool {
     Voice(usize),
     /// How the window looks at the score.
     Layout(View),
-    /// Back to the start.
+    /// Back to start.
     Rewind,
     /// Play, or stop what plays.
     Play,

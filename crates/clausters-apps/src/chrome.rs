@@ -61,7 +61,7 @@ pub enum App {
     Points,
 }
 
-/// **Back to the start**: a bar and a triangle pointing at it, drawn here
+/// **Back to start**: a bar and a triangle pointing at it, drawn here
 /// since the host's own symbols have none -- in a codepoint of the editors'
 /// private plane, as the window's `glyphs` carry it.
 pub const TO_START: &str = "F0100";

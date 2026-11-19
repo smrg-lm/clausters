@@ -192,7 +192,7 @@ fn entries(state: &State<'_>) -> Value {
             "Play",
             vec![
                 word("Play or stop", "play"),
-                word("Back to the start", "rewind"),
+                word("Back to start", "rewind"),
                 sep(),
                 json!({"label": "Loop", "verb": "loop", "checked": state.looping}),
             ],
@@ -330,19 +330,19 @@ fn entries(state: &State<'_>) -> Value {
             "Transform",
             vec![
                 transform(
-                    "Transpose up an octave",
+                    "Transpose octave up",
                     json!({"name": "transpose", "semitones": 12}),
                 ),
                 transform(
-                    "Transpose down an octave",
+                    "Transpose octave down",
                     json!({"name": "transpose", "semitones": -12}),
                 ),
                 transform(
-                    "Transpose up a fifth",
+                    "Transpose fifth up",
                     json!({"name": "transpose", "semitones": 7, "steps": 4}),
                 ),
                 transform(
-                    "Transpose down a fifth",
+                    "Transpose fifth down",
                     json!({"name": "transpose", "semitones": -7, "steps": -4}),
                 ),
                 sep(),
@@ -385,7 +385,7 @@ pub enum Pick {
     Close,
     /// Play, or stop what plays.
     Play,
-    /// Back to the start.
+    /// Back to start.
     Rewind,
     /// Whether a pass loops.
     Loop(bool),

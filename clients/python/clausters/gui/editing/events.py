@@ -512,7 +512,7 @@ class NotesEditor(Marking, SequenceHandler):
         """**What the roll shows in notation mode**: ``"system"``, every
         staff; ``("part", n)``, the staves of part ``n``; or ``("staff",
         n)``. The window's, like its zoom: setting it is no edit. The View's
-        Notation menu has it as Show the system, the part or the staff."""
+        Notation menu has it as Show system, Show part or Show staff."""
         said = self._call("editing").get("scope") or {"show": "system"}
         if said.get("show", "system") == "system":
             return "system"

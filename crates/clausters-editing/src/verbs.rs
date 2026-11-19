@@ -7,7 +7,7 @@
 //! client's call. Every one of them is a caller of the same verb, so none of
 //! them names it in words of its own. Before this table the words lived beside
 //! each caller, and they drifted: one verb was "Zoom to fit" in a menu and
-//! "Show the whole view" on the key sheet. Now a menu, a toolbar and the host's
+//! "Show whole view" on the key sheet. Now a menu, a toolbar and the host's
 //! key table read the row, and a verb added is added here.
 //!
 //! **A client's handler is one more caller**, and the one nothing here ties to
@@ -340,10 +340,10 @@ pub const NOTES: &[Verb] = &[
     verb("unjoin", &["Shift+J"], "Unjoin"),
     // the selection, or every note taken, moved: a semitone in MIDI mode, a
     // step of the key in notation mode, an octave in both
-    verb("step_up", &["Up"], "Up a step"),
-    verb("step_down", &["Down"], "Down a step"),
-    verb("octave_up", &["Ctrl+Up"], "Up an octave"),
-    verb("octave_down", &["Ctrl+Down"], "Down an octave"),
+    verb("step_up", &["Up"], "Step up"),
+    verb("step_down", &["Down"], "Step down"),
+    verb("octave_up", &["Ctrl+Up"], "Octave up"),
+    verb("octave_down", &["Ctrl+Down"], "Octave down"),
     // every note sharing a pitch, a channel, a voice or a staff with the
     // selection, selected
     verb("select_pitch", &[], "Select by pitch"),
@@ -375,14 +375,14 @@ pub const NOTES: &[Verb] = &[
     choice("channel", "channel_15", &[], "Channel 15"),
     choice("channel", "channel_16", &[], "Channel 16"),
     // the curves the sequence's format allows, added and taken away
-    verb("curve_cc1", &[], "Add a modulation curve"),
-    verb("curve_cc11", &[], "Add an expression curve"),
-    verb("curve_bend", &[], "Add a channel's bend"),
-    verb("curve_pressure", &[], "Add a channel's pressure"),
-    verb("note_bend", &[], "Add a bend to the notes"),
-    verb("note_pressure", &[], "Add a pressure to the notes"),
-    verb("note_timbre", &[], "Add a timbre to the notes"),
-    verb("curve_remove", &[], "Remove the curve shown"),
+    verb("curve_cc1", &[], "Add modulation curve"),
+    verb("curve_cc11", &[], "Add expression curve"),
+    verb("curve_bend", &[], "Add channel bend"),
+    verb("curve_pressure", &[], "Add channel pressure"),
+    verb("note_bend", &[], "Add note bend"),
+    verb("note_pressure", &[], "Add note pressure"),
+    verb("note_timbre", &[], "Add note timbre"),
+    verb("curve_remove", &[], "Remove shown curve"),
     // the roll's file, when the window is its sequence's only holder
     verb("new_file", &[], "New"),
     verb("open_file", &["Ctrl+O"], "Open..."),
@@ -395,11 +395,11 @@ pub const NOTES: &[Verb] = &[
     verb("convert_mpe", &[], "Convert to MPE"),
     verb("convert_midi2", &[], "Convert to MIDI 2.0"),
     // what the notation mode shows, and the voice it edits
-    choice("show", "show_system", &[], "Show the system"),
-    choice("show", "show_part", &[], "Show the part"),
-    choice("show", "show_staff", &[], "Show the staff"),
-    verb("staff_up", &[], "Edit the staff above"),
-    verb("staff_down", &[], "Edit the staff below"),
+    choice("show", "show_system", &[], "Show system"),
+    choice("show", "show_part", &[], "Show part"),
+    choice("show", "show_staff", &[], "Show staff"),
+    verb("staff_up", &[], "Edit staff above"),
+    verb("staff_down", &[], "Edit staff below"),
     choice("voice", "voice_1", &["Ctrl+Alt+1"], "Voice 1"),
     choice("voice", "voice_2", &["Ctrl+Alt+2"], "Voice 2"),
     choice("voice", "voice_3", &["Ctrl+Alt+3"], "Voice 3"),
@@ -409,18 +409,8 @@ pub const NOTES: &[Verb] = &[
     choice("color", "color_staff", &[], "Color by staff"),
     choice("color", "color_part", &[], "Color by part"),
     // how a part writes its polyphony: the same music, written two ways
-    choice(
-        "writing",
-        "write_voices",
-        &[],
-        "Write the polyphony in voices",
-    ),
-    choice(
-        "writing",
-        "write_ties",
-        &[],
-        "Write the polyphony with ties",
-    ),
+    choice("writing", "write_voices", &[], "Write polyphony in voices"),
+    choice("writing", "write_ties", &[], "Write polyphony with ties"),
     // the marks a page writes over the selected notes
     verb("slur", &["S"], "Slur"),
     verb("slur_join", &["Shift+S"], "Slur joined or attacked"),
@@ -463,7 +453,7 @@ pub const EDITOR: &[Verb] = &[
     toggle(
         "eval_paragraph",
         &[],
-        "Evaluate contiguous lines as a block",
+        "Evaluate contiguous lines as one block",
     ),
     verb("interrupt", &["Ctrl+."], "Interrupt"),
     verb("restart", &[], "Restart session"),
@@ -479,7 +469,7 @@ pub const EDITOR: &[Verb] = &[
     verb("zoom_out", &["Ctrl+-"], "Decrease size"),
     verb("zoom_reset", &["Ctrl+0"], "Default size"),
     verb("docs", &["F1"], "Documentation"),
-    verb("search_docs", &["Ctrl+Shift+F"], "Search the documentation"),
+    verb("search_docs", &["Ctrl+Shift+F"], "Search documentation"),
     verb("docs_folder", &[], "Documentation folder..."),
 ];
 
@@ -503,42 +493,42 @@ pub const SCORE: &[Verb] = &[
         "Delete what is selected",
     ),
     verb("deselect", &["Escape"], "Select nothing"),
-    verb("select_left", &["Left"], "Select the item before"),
-    verb("select_right", &["Right"], "Select the item after"),
-    verb("step_up", &["Up"], "Up a step"),
-    verb("step_down", &["Down"], "Down a step"),
-    verb("octave_up", &["Ctrl+Up"], "Up an octave"),
-    verb("octave_down", &["Ctrl+Down"], "Down an octave"),
+    verb("select_left", &["Left"], "Select previous item"),
+    verb("select_right", &["Right"], "Select next item"),
+    verb("step_up", &["Up"], "Step up"),
+    verb("step_down", &["Down"], "Step down"),
+    verb("octave_up", &["Ctrl+Up"], "Octave up"),
+    verb("octave_down", &["Ctrl+Down"], "Octave down"),
 ];
 
 /// **Note entry's keys**: the letters write, the digits choose the value.
 pub const NOTE_ENTRY: &[Verb] = &[
     toggle("entry", &["N"], "Note entry on or off"),
     verb("entry_off", &["Escape"], "Leave note entry"),
-    verb("pitch_a", &["A"], "Write an A"),
-    verb("pitch_b", &["B"], "Write a B"),
-    verb("pitch_c", &["C"], "Write a C"),
-    verb("pitch_d", &["D"], "Write a D"),
-    verb("pitch_e", &["E"], "Write an E"),
-    verb("pitch_f", &["F"], "Write an F"),
-    verb("pitch_g", &["G"], "Write a G"),
-    verb("chord_a", &["Shift+A"], "Add an A to the chord"),
-    verb("chord_b", &["Shift+B"], "Add a B to the chord"),
-    verb("chord_c", &["Shift+C"], "Add a C to the chord"),
-    verb("chord_d", &["Shift+D"], "Add a D to the chord"),
-    verb("chord_e", &["Shift+E"], "Add an E to the chord"),
-    verb("chord_f", &["Shift+F"], "Add an F to the chord"),
-    verb("chord_g", &["Shift+G"], "Add a G to the chord"),
+    verb("pitch_a", &["A"], "Write A"),
+    verb("pitch_b", &["B"], "Write B"),
+    verb("pitch_c", &["C"], "Write C"),
+    verb("pitch_d", &["D"], "Write D"),
+    verb("pitch_e", &["E"], "Write E"),
+    verb("pitch_f", &["F"], "Write F"),
+    verb("pitch_g", &["G"], "Write G"),
+    verb("chord_a", &["Shift+A"], "Add A to chord"),
+    verb("chord_b", &["Shift+B"], "Add B to chord"),
+    verb("chord_c", &["Shift+C"], "Add C to chord"),
+    verb("chord_d", &["Shift+D"], "Add D to chord"),
+    verb("chord_e", &["Shift+E"], "Add E to chord"),
+    verb("chord_f", &["Shift+F"], "Add F to chord"),
+    verb("chord_g", &["Shift+G"], "Add G to chord"),
     verb("cursor_left", &["Left"], "Cursor back"),
     verb("cursor_right", &["Right"], "Cursor forward"),
-    verb("bar_left", &["Ctrl+Left"], "Cursor to the bar before"),
-    verb("bar_right", &["Ctrl+Right"], "Cursor to the bar after"),
-    verb("staff_up", &["Alt+Up"], "Cursor to the staff above"),
-    verb("staff_down", &["Alt+Down"], "Cursor to the staff below"),
-    verb("step_up", &["Up"], "Up a step"),
-    verb("step_down", &["Down"], "Down a step"),
-    verb("octave_up", &["Ctrl+Up"], "Up an octave"),
-    verb("octave_down", &["Ctrl+Down"], "Down an octave"),
+    verb("bar_left", &["Ctrl+Left"], "Cursor to previous bar"),
+    verb("bar_right", &["Ctrl+Right"], "Cursor to next bar"),
+    verb("staff_up", &["Alt+Up"], "Cursor to staff above"),
+    verb("staff_down", &["Alt+Down"], "Cursor to staff below"),
+    verb("step_up", &["Up"], "Step up"),
+    verb("step_down", &["Down"], "Step down"),
+    verb("octave_up", &["Ctrl+Up"], "Octave up"),
+    verb("octave_down", &["Ctrl+Down"], "Octave down"),
     choice("voice", "voice_1", &["Ctrl+Alt+1"], "Voice 1"),
     choice("voice", "voice_2", &["Ctrl+Alt+2"], "Voice 2"),
     choice("voice", "voice_3", &["Ctrl+Alt+3"], "Voice 3"),

@@ -126,7 +126,7 @@
       </div>
       <div class="flex gap-2">
         <Button variant="outline" onclick={chooseDocsDir}>Choose folder...</Button>
-        <Button variant="ghost" onclick={() => setDocsDir(null)} disabled={docsDir === null}>Use the bundled one</Button>
+        <Button variant="ghost" onclick={() => setDocsDir(null)} disabled={docsDir === null}>Use bundled</Button>
       </div>
     </div>
     {/if}
@@ -166,7 +166,7 @@
         >
           Save
         </Button>
-        <Button variant="ghost" onclick={() => saveStartupCode(true)}>Save and restart the session</Button>
+        <Button variant="ghost" onclick={() => saveStartupCode(true)}>Save and restart session</Button>
       </div>
     </div>
 

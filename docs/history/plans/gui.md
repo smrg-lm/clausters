@@ -8080,3 +8080,11 @@ module of its own.
   tab. WS16 took the page tab's menu away (a click shows a page, its
   cross closes it, the bar's buttons make one), so there is nothing left
   to meet the tab.
+
+- ✅ **Menu labels carried an article English does not use** *(2026-11-19)*.
+  `Search the Documentation` and the like: a menu or a button names its
+  act without one. Every label of the verb table, the score editor's menu,
+  the dock's panel menu and the editor's dialogs went without it (`Search
+  Documentation`, `Close Other Tabs`, `Octave Up`, `Transpose Fifth Up`,
+  `Add Note Bend`, `Write A`, `Use bundled`), the descriptions and tips,
+  which are sentences, keeping theirs.

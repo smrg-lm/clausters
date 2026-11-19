@@ -299,7 +299,7 @@ impl Dock {
         entries.push(submenu("Move to Page", pages));
         entries.push(Entry::action("Move to Its Own Window", "undock"));
         entries.push(Entry::separator());
-        let others = Entry::action("Close the Other Tabs", "close_others");
+        let others = Entry::action("Close Other Tabs", "close_others");
         let any = g.panes.iter().any(|&p| p != pane && self.closable(p));
         entries.push(if any { others } else { others.disabled() });
         if self.closable(pane) {
