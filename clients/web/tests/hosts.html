@@ -310,13 +310,33 @@
           throw new Error("host B stopped working when host A closed");
         }
 
+        // A named GuiDef is kept in the page's storage: B saves one, and a
+        // host started after it loads it by name, as a standalone page
+        // reopens an application.
+        const kept = `kept-${Date.now()}`;
+        b.bridge.feed(encodeMessage("/gui_def", [["i", 2000], ["s", JSON.stringify({
+          type: "window", id: 2000, name: kept, title: "kept", w: 200, h: 100,
+          children: [{ type: "label", id: 2001, text: "kept in the page" }],
+        })]]));
+        await sleep(600);
+        const c = { bridge: start(), seen: [] };
+        await sleep(600);
+        c.bridge.feed(encodeMessage("/gui_load", [["s", kept]]));
+        const keptInfo = await query(c.bridge, 2001, c.seen);
+        if (!keptInfo.includes("kept in the page")) {
+          throw new Error(`the GuiDef loaded by name is not the one saved: ${JSON.stringify(keptInfo)}`);
+        }
+        c.bridge.close();
+        log(`a GuiDef saved by name in one host loaded in another from the page's storage`);
+
         a.synth.free();
         b.synth.free();
         verdict(
           `PASS: two hosts in one page -- both drew, widget 1003 held 0.2 and ` +
           `0.8 at once, a gesture on A left B's outbox empty, A's bound knob ` +
-          `drove ${beforeA} -> ${afterA} while B stayed ${afterB}, and B ` +
-          `survived A's close (${beforeClose} -> ${afterClose})`);
+          `drove ${beforeA} -> ${afterA} while B stayed ${afterB}, B ` +
+          `survived A's close (${beforeClose} -> ${afterClose}), and a named ` +
+          `GuiDef was loaded from the page's storage by a host started later`);
       }
 
       accept().catch((error) => verdict(`FAIL: ${error}`));

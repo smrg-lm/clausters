@@ -73,6 +73,7 @@ pub mod clipboard;
 pub mod document;
 pub mod elements;
 pub mod guidef;
+pub mod guistore;
 // Which of a container's layered contents a hand is editing -- the one rule
 // that decides between claimants over the same pixels, read by the drawing,
 // the press and the wire alike.
@@ -391,12 +392,11 @@ impl Transport for ServerLink {
 }
 
 /// On-disk (or otherwise persisted) GuiDefs: named-GuiDef auto-save and the
-/// `/gui_load` path. The native filesystem store ([`native::store::GuiStore`])
-/// implements it. A page has a filesystem too (OPFS), but its calls are
-/// asynchronous and this trait is not, so a wasm host runs without a store
-/// for now -- a gap of the port, written in the GUI plan, not a property of
-/// the browser. Behind the trait so the protocol dispatch saves and loads
-/// without naming the filesystem store.
+/// `/gui_load` path. The native filesystem store (`native::store::GuiStore`)
+/// implements it, and so does the page's (`web::store::PageStore`), held in
+/// memory and written through to the page's storage, whose calls answer
+/// with promises where this trait answers at once. Behind the trait so the
+/// protocol dispatch saves and loads without naming either.
 pub trait DefStore: Send {
     /// Persists GuiDef `id` (its verbatim tree JSON) under `name`.
     fn save(&self, name: &str, id: i32, tree_json: &[u8]) -> std::io::Result<()>;
@@ -1476,8 +1476,13 @@ impl Host {
     /// Attaches the GuiDef store (named GuiDefs auto-persist; `/gui_load` reads
     /// from it).
     pub fn with_store<S: DefStore + 'static>(mut self, store: S) -> Self {
-        self.store = Some(Box::new(store));
+        self.store_defs(store);
         self
+    }
+
+    /// [`with_store`](Self::with_store), on a host already made.
+    pub fn store_defs<S: DefStore + 'static>(&mut self, store: S) {
+        self.store = Some(Box::new(store));
     }
 
     /// Loads the typeface `source` offers, if it offers one and the rasterizer

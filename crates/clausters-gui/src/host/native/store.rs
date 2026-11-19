@@ -16,8 +16,8 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+/// The record and the file name, kept in the store every platform shares.
+pub use super::super::guistore::{SavedGuiDef, sanitize_name};
 
 /// Env var overriding the data directory (matches the server's `defstore`).
 const DATA_DIR_ENV: &str = "CLAUSTERS_DATA_DIR";
@@ -46,13 +46,6 @@ pub fn resolve_data_dir(cli_override: Option<&str>) -> Option<PathBuf> {
         .map(|home| PathBuf::from(home).join(".local/share/clausters"))
 }
 
-/// A persisted GuiDef record: the id it was defined with plus its tree JSON.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SavedGuiDef {
-    pub id: i32,
-    pub gui: Value,
-}
-
 /// The GuiDef store under `<data_dir>/defs/guidefs`, with read access to the
 /// sibling SynthDef/GraphDef spec directories the standalone boot needs.
 pub struct GuiStore {
@@ -65,7 +58,7 @@ impl GuiStore {
     /// Opens (creating the `guidefs` directory) the store under `<data_dir>/defs`.
     pub fn open(data_dir: &Path) -> io::Result<Self> {
         let defs = data_dir.join("defs");
-        let guidefs_dir = defs.join("guidefs");
+        let guidefs_dir = data_dir.join(super::super::guistore::GUIDEFS);
         std::fs::create_dir_all(&guidefs_dir)?;
         Ok(Self {
             guidefs_dir,
@@ -76,14 +69,12 @@ impl GuiStore {
 
     fn guidef_path(&self, name: &str) -> PathBuf {
         self.guidefs_dir
-            .join(format!("{}.json", sanitize_name(name)))
+            .join(super::super::guistore::file_name(name))
     }
 
     /// Persists GuiDef `id` (its verbatim tree JSON) under `name`.
     pub fn save(&self, name: &str, id: i32, tree_json: &[u8]) -> io::Result<()> {
-        let gui: Value = serde_json::from_slice(tree_json).map_err(io::Error::other)?;
-        let record = SavedGuiDef { id, gui };
-        let bytes = serde_json::to_vec_pretty(&record).map_err(io::Error::other)?;
+        let bytes = super::super::guistore::record(id, tree_json)?;
         atomic_write(&self.guidef_path(name), &bytes)
     }
 
@@ -91,9 +82,7 @@ impl GuiStore {
     /// as a `/gui_def`).
     pub fn load(&self, name: &str) -> io::Result<(i32, Vec<u8>)> {
         let bytes = std::fs::read(self.guidef_path(name))?;
-        let record: SavedGuiDef = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
-        let tree = serde_json::to_vec(&record.gui).map_err(io::Error::other)?;
-        Ok((record.id, tree))
+        super::super::guistore::read_record(&bytes)
     }
 
     /// The names of every persisted GuiDef (file stems, sorted).
@@ -130,8 +119,8 @@ impl GuiStore {
 
 /// The filesystem store is the native fill of the [`DefStore`](super::super::DefStore)
 /// seam: the protocol dispatch persists named GuiDefs and serves `/gui_load`
-/// through this trait, so it never names the filesystem directly (a browser host
-/// simply runs without a store).
+/// through this trait, so it never names the filesystem directly (a page's
+/// host keeps its own, in the page's storage).
 impl super::super::DefStore for GuiStore {
     fn save(&self, name: &str, id: i32, tree_json: &[u8]) -> io::Result<()> {
         GuiStore::save(self, name, id, tree_json)
@@ -146,20 +135,6 @@ impl super::super::DefStore for GuiStore {
 /// [`bundle`](super::super::bundle) module (the browser bundle boot needs it too);
 /// re-exported so the native standalone path keeps its `store::` spelling.
 pub use super::super::bundle::boot_messages;
-
-/// Maps an arbitrary def name to a safe file stem (percent-encoding anything
-/// outside `[A-Za-z0-9._-]`), matching the server's `defstore::sanitize_name`.
-pub fn sanitize_name(name: &str) -> String {
-    let mut out = String::with_capacity(name.len());
-    for b in name.bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-') {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{b:02X}"));
-        }
-    }
-    out
-}
 
 /// Writes `bytes` to `path` atomically (temp file + rename), so a crash mid-write
 /// cannot leave a torn file.
@@ -210,7 +185,7 @@ mod tests {
         let (id, json) = store.load("inst").unwrap();
         assert_eq!(id, 7);
         // The reloaded tree parses back to the same structure (int/float kept).
-        let v: Value = serde_json::from_slice(&json).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&json).unwrap();
         assert_eq!(v["type"], "window");
         assert_eq!(v["children"][0]["value"], 0.5);
         assert_eq!(store.list(), vec!["inst".to_string()]);

@@ -8285,3 +8285,23 @@ module of its own.
   cut to its ground, with a bar under its last line saying how far
   (`Laid::pans`); the page never scrolls sideways, and a block that fits
   does not move.)*
+
+- ✅ **A page's host keeps no named GuiDef** *(found 2026-11-15, wiring a
+  widget's `path` and `cache` to the page's storage)*. The native host
+  saves a named GuiDef and answers `/gui_load` from its def store
+  (`native::store::GuiStore`, behind the `DefStore` trait); the browser
+  front runs with none, so a page's `/gui_load` finds nothing and a
+  standalone page cannot reopen a saved application by name. A page has a
+  filesystem (OPFS), and the host already reads and writes it
+  (`host/web/files.rs`), so this is a gap of the port: what stands in the
+  way is that `DefStore` is synchronous and OPFS answers with promises, so
+  the store either becomes a request the event loop answers later, as a
+  directory listing does, or the page's front keeps the store in memory and
+  writes it through.
+  *(Fixed 2026-11-19, the second shape: the page's front keeps the store
+  in memory and writes it through (`web::store::PageStore`). A save is in
+  memory at once and written to the page's storage under the native
+  store's `defs/guidefs`, in its record (`host::guistore`, now shared by
+  both stores); the store is read from the storage when the page's host
+  starts. hosts.html saves a named GuiDef in one host and loads it by name
+  in a host started after it.)*

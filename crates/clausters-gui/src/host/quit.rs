@@ -51,6 +51,7 @@ pub(crate) enum Quitting {
     /// The question is up, or the client was told: unanswered.
     Asked(QuitFor),
     /// Save all is under way.
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     Saving,
 }
 
@@ -207,6 +208,7 @@ impl Host {
     /// **The applications' Save all ended**: `true` with nothing left to
     /// lose. The dock calls that waited are answered, and the host's own quit
     /// ends, or is called off.
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     pub(super) fn saved_all(&mut self, saved: bool, effects: &mut Vec<HostEffect>) {
         let waiting = std::mem::take(&mut self.quit_waiting);
         for w in waiting {
@@ -354,6 +356,7 @@ impl Host {
 }
 
 /// The origin of what the host sends itself.
+#[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
 fn own_origin() -> ClientId {
     use std::net::{Ipv4Addr, SocketAddr};
     ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))

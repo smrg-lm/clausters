@@ -71,6 +71,7 @@ mod input;
 #[cfg(feature = "midi")]
 mod midi;
 mod serverleg;
+mod store;
 mod threads;
 
 pub use bridge::{GuiBridge, bundle_boot_packets, start};
@@ -383,6 +384,9 @@ impl WebApp {
         host.load_default_face();
         // A list of segments over files is read from the page's storage.
         host.set_disk_link(Box::new(disk::WebDisk::new(id)));
+        // Its named GuiDefs are kept in the page's storage, as a native
+        // host keeps them in its data directory.
+        host.store_defs(store::PageStore::open());
         // An application's thread wakes the loop when it has said something.
         #[cfg(feature = "apps")]
         host.set_app_wake(threads::wake(id.0));
