@@ -150,7 +150,8 @@
         }
         log("a floating panel's menu put it back");
 
-        // a window naming its page opens on it; switching pages moves panes
+        // a window naming its page is an application, alone on a page of
+        // its own: nothing is placed there, and switching pages moves panes
         // and frees none
         const main = await host.dockLayout();
         const c = host.open(gui.view({ title: "c", w: 300, h: 200, dockPage: "Mix" },
@@ -160,7 +161,10 @@
         if (st.page !== "Mix" || st.panes.length !== 1 || st.panes[0].id !== c.id) {
           throw new Error(`the window naming its page: ${JSON.stringify(st)}`);
         }
-        await host.dockCall({ verb: "place", pane: a.id });
+        const placed = await host.dockCall({ verb: "place", pane: a.id }).then(() => null, (e) => e);
+        if (!String(placed?.message ?? "").includes("alone on its page")) {
+          throw new Error(`a pane was placed on an application's page: ${placed}`);
+        }
         const mix = (await host.dockCall({ verb: "layout" })).layout;
         st = await host.dockCall({ verb: "page", name: "Main" });
         if (JSON.stringify(st.layout) !== JSON.stringify(main)) {

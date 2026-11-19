@@ -18,7 +18,7 @@ import { loadCore } from "../src/base/core.ts";
 import { Editing } from "../src/document.ts";
 import {
     AudioEditor, Domain, Editor, Marking, NotesEditor, PointsEditor,
-    View, edit, watch,
+    View, edit, openApp, watch,
 } from "../src/gui/editing/index.ts";
 import { unwatch } from "../src/base/log.ts";
 import { POINTS } from "../src/document.ts";
@@ -693,14 +693,18 @@ test("a curve window has its menu and says what it does not do", async () => {
     // history, and its readings refuse the rest with why; `chrome: false`
     // draws the curve alone. It reads them from the moment it opens.
     const host = new FakeHost();
-    const editor = (await edit(aCurve(), { sampleRate: SR, host: host as unknown as GuiHost })) as unknown as PointsEditor;
-    const tree = host.trees[host.trees.length - 1] as unknown as { menu: { label: string }[] };
+    const editor = (await openApp(aCurve(), { sampleRate: SR, host: host as unknown as GuiHost })) as unknown as PointsEditor;
+    const tree = host.trees[host.trees.length - 1] as unknown as { menu: { label: string }[]; dock_page: string };
     assert.deepEqual(tree.menu.map((title) => title.label), ["File", "Edit", "Help"]);
+    assert.equal(tree.dock_page, "Points", "the application's own page");
     const read = host.props.get(editor.id!)!.actions as unknown as Record<string, { enabled: boolean }>;
     assert.equal(read.undo.enabled, false);
     const actions = editor.actions as Record<string, { reason?: string }>;
     assert.ok(actions.paste.reason?.includes("clipboard"));
     assert.ok(actions.play.reason?.includes("does not play"));
+    // `edit` draws the curve alone, a panel
+    const view = (await edit(aCurve(), { sampleRate: SR, host: new FakeHost() as unknown as GuiHost })) as unknown as PointsEditor;
+    assert.equal(view.chrome, false);
     const bare = new PointsEditor(aCurve(), { sampleRate: SR, chrome: false });
     assert.equal((bare.draw() as unknown as { menu?: unknown }).menu, undefined);
 });

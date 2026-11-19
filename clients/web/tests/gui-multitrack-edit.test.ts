@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { MultitrackEditor, edit } from "../src/gui/editing/index.ts";
+import { MultitrackEditor, edit, openApp } from "../src/gui/editing/index.ts";
 import type { GuiHost } from "../src/gui/host.ts";
 import { Content, Multitrack, Region, Source } from "../src/document.ts";
 import { MultitrackSession } from "../src/gui/editing/multitrack-session.ts";
@@ -181,13 +181,18 @@ function aSession(path = "/songs/song.json"): MultitrackSession {
     return session;
 }
 
-test("edit opens a saved session in the multitrack application", async () => {
+test("openApp opens a saved session in the multitrack application", async () => {
     const host = new FakeHost();
-    const editor = await edit(aSession(), { host: host as unknown as GuiHost });
+    const editor = await openApp(aSession(), { host: host as unknown as GuiHost });
     assert.ok(editor instanceof MultitrackEditor);
     assert.deepEqual(host.calls[0], ["open", "multitrack", { title: "song.json", path: "/songs/song.json" }]);
     assert.ok(editor.window !== null && !editor.closed);
-    assert.equal(await edit(aSession(), { host: host as unknown as GuiHost }), editor, "a second edit finds it");
+    assert.equal(await openApp(aSession(), { host: host as unknown as GuiHost }), editor, "a second call finds it");
+    const view = await edit(aSession(), { host: host as unknown as GuiHost });
+    assert.deepEqual(host.calls.filter((c) => c[0] === "open").at(-1), [
+        "open", "multitrack", { title: "song.json", path: "/songs/song.json", chrome: false },
+    ]);
+    assert.equal(view.chrome, false);
 });
 
 test("a session with no file is refused", () => {

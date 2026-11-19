@@ -59,7 +59,7 @@ from .audio import AudioEditor, AudioTransport, reads_in_place
 from .domain import Domain
 from .echo import Echo
 from .controls import NodeEditor
-from .edit import edit
+from .edit import edit, open_app
 from .multitrack_session import MultitrackSession
 from .multitrack_view import MultitrackView, TakeLaneView, TrackView
 from .editor import Editor, not_an_edit
@@ -99,6 +99,7 @@ __all__ = [
     "ScoreEditor",
     "View",
     "edit",
+    "open_app",
     "not_an_edit",
     "watch",
     "measures",

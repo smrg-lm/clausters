@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AudioEditor, edit, readsInPlace } from "../src/gui/editing/index.ts";
+import { AudioEditor, edit, openApp, readsInPlace } from "../src/gui/editing/index.ts";
 import type { GuiHost } from "../src/gui/host.ts";
 import { Segment } from "../src/segments.ts";
 import { SoundFile } from "../src/soundfile.ts";
@@ -95,14 +95,15 @@ async function opened(answers: Record<string, unknown> = {}): Promise<[AudioEdit
     return [editor, host];
 }
 
-test("edit opens the host's application on the file", async () => {
-    const [editor, host] = await opened();
-    assert.deepEqual(host.calls[0], ["open", "audio", { title: "Audio", path: "/takes/take.wav" }]);
-    assert.equal(editor.id, 7);
-    assert.equal(editor.closed, false);
-    // a second edit of the same file is the editor already open
-    assert.equal(await edit(aFile(), { host: host as unknown as GuiHost }), editor);
-    assert.equal(host.calls.filter((c) => c[0] === "open").length, 1);
+test("edit opens the take alone beside the application", async () => {
+    const host = new FakeHost();
+    const view = await edit(aFile(), { host: host as unknown as GuiHost });
+    assert.deepEqual(host.calls[0], ["open", "audio", { title: "Audio", path: "/takes/take.wav", chrome: false }]);
+    assert.equal(await edit(aFile(), { host: host as unknown as GuiHost }), view);
+    assert.notEqual(
+        await openApp(aFile(), { host: host as unknown as GuiHost }), view,
+        "the application is another window",
+    );
 });
 
 test("a title and layers are the open's", async () => {
@@ -123,7 +124,7 @@ test("a buffer is not edited", async () => {
 
 test("silence not on disk opens as a new file and a compressed one opens", async () => {
     const host = new FakeHost();
-    await edit(SoundFile.empty(2, 100, SR), { host: host as unknown as GuiHost });
+    await openApp(SoundFile.empty(2, 100, SR), { host: host as unknown as GuiHost });
     assert.deepEqual(host.calls[0], ["open", "audio", { title: "Audio" }]);
     assert.deepEqual(host.calls[host.calls.length - 1]![2], {
         do: { verb: "newFile", shape: { channels: 2, frames: 100, rate: SR } },

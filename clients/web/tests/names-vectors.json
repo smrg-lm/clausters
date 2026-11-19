@@ -790,6 +790,7 @@
     "nodes",
     "nodetree",
     "number",
+    "openApp",
     "pageJson",
     "pager",
     "pane",
@@ -860,6 +861,7 @@
     "edit",
     "measures",
     "notAnEdit",
+    "openApp",
     "readsInPlace",
     "watch"
   ],
