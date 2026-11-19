@@ -1716,21 +1716,24 @@ impl App {
                 field(&[
                     caption("Theme"),
                     json!({"id": PREFS_THEME, "type": "choice",
-                        "options": ["Light", "Dark", "System"], "index": theme, "w": 176}),
+                        "options": ["Light", "Dark", "System"], "index": theme,
+                        "max_w": 176, "anchor": "left"}),
                 ]),
                 field(&[
                     caption("Indentation"),
                     json!({"id": PREFS_INDENT, "type": "choice",
                         "options": ["Tab character", "2 spaces", "4 spaces"], "index": indent,
-                        "w": 176}),
+                        "max_w": 176, "anchor": "left"}),
                     help("What Tab inserts at the caret, and one level of indentation for the selected lines."),
                 ]),
                 field(&[
                     caption("Documentation folder (.md files)"),
                     json!({"id": PREFS_DOCS_DIR, "type": "label", "text": docs_dir_text(&config)}),
                     buttons(&[
-                        json!({"id": PREFS_DOCS_CHOOSE, "type": "button", "label": "Choose folder..."}),
-                        json!({"id": PREFS_DOCS_BUNDLED, "type": "button", "label": "Use the bundled one"}),
+                        json!({"id": PREFS_DOCS_CHOOSE, "type": "button", "label": "Choose folder...",
+                            "variant": "outline"}),
+                        json!({"id": PREFS_DOCS_BUNDLED, "type": "button", "label": "Use the bundled one",
+                            "variant": "ghost"}),
                     ]),
                 ]),
                 field(&[
@@ -1741,11 +1744,14 @@ impl App {
                         "text_size": self.settings.text_size()}),
                     help("Runs every time the session starts (when it is first needed, when it is restarted or when its environment changes) and is shown in the post window."),
                     buttons(&[
-                        json!({"id": PREFS_SAVE, "type": "button", "label": "Save"}),
-                        json!({"id": PREFS_SAVE_RESTART, "type": "button", "label": "Save and restart the session"}),
+                        json!({"id": PREFS_SAVE, "type": "button", "label": "Save",
+                            "variant": "outline"}),
+                        json!({"id": PREFS_SAVE_RESTART, "type": "button",
+                            "label": "Save and restart the session", "variant": "ghost"}),
                     ]),
                 ]),
-                footer(json!({"id": PREFS_CLOSE, "type": "button", "label": "Close", "default": 1})),
+                footer(json!({"id": PREFS_CLOSE, "type": "button", "label": "Close", "default": 1,
+                    "variant": "outline"})),
             ]
         });
         self.prefs_open = true;
@@ -1771,7 +1777,7 @@ impl App {
                 field(&[caption("Environments"), self.envs_list()]),
                 {"type": "layout", "flow": "col", "hug": 1, "margin": 16, "gap": 16, "frame": 1,
                     "children": [
-                    caption("Create a new environment"),
+                    json!({"type": "label", "text": "Create a new environment", "variant": "caption"}),
                     field(&[
                         caption("1. Install source"),
                         json!({"id": ENVS_SOURCE, "type": "text",
@@ -1789,7 +1795,8 @@ impl App {
                     ]),
                 ]},
                 {"id": ENVS_STATUS, "type": "label", "text": "", "wrap": 1, "muted": 1},
-                footer(json!({"id": ENVS_CLOSE, "type": "button", "label": "Close", "default": 1})),
+                footer(json!({"id": ENVS_CLOSE, "type": "button", "label": "Close", "default": 1,
+                    "variant": "outline"})),
             ]
         });
         self.envs_open = true;
@@ -1805,13 +1812,20 @@ impl App {
             let mut children =
                 vec![json!({"id": base + 1, "type": "label", "text": text, "weight": 1})];
             if active {
-                children.push(json!({"id": base + 2, "type": "label", "text": "in use"}));
+                children.push(
+                    json!({"id": base + 2, "type": "label", "text": "in use", "variant": "badge"}),
+                );
             } else {
-                children.push(json!({"id": base + 3, "type": "button", "label": "Use"}));
+                children.push(json!({"id": base + 3, "type": "button", "label": "Use",
+                    "variant": "ghost", "size": "sm"}));
             }
             if tools {
-                children.push(json!({"id": base + 4, "type": "button", "label": "Update"}));
-                children.push(json!({"id": base + 5, "type": "button", "label": "Delete"}));
+                children.push(
+                    json!({"id": base + 4, "type": "button", "icon": "refresh-cw",
+                    "variant": "ghost", "size": "sm", "tip": "Reinstall from its install source"}),
+                );
+                children.push(json!({"id": base + 5, "type": "button", "icon": "trash",
+                    "variant": "ghost", "size": "sm", "tip": "Delete the environment"}));
             }
             json!({"id": base, "type": "layout", "flow": "row", "pack": 1, "children": children})
         };
@@ -1839,7 +1853,12 @@ impl App {
             return;
         }
         self.link.def(ENVS_LIST, &self.envs_list());
-        self.link.set(ENVS_STATUS, &[("text", json!(status))]);
+        self.envs_say(status);
+    }
+
+    /// What the environments' dialog says it is doing.
+    fn envs_say(&self, text: &str) {
+        self.link.set(ENVS_STATUS, &[("text", json!(text))]);
     }
 
     fn envs_row(&mut self, id: i32) {
@@ -1855,15 +1874,9 @@ impl App {
         let result = match (what, name) {
             (3, name) => envs::use_env(&self.session, name),
             (4, Some(name)) => {
-                self.link.set(
-                    ENVS_STATUS,
-                    &[(
-                        "text",
-                        json!(format!(
-                            "Updating \"{name}\"... (progress in the post window)"
-                        )),
-                    )],
-                );
+                self.envs_say(&format!(
+                    "Updating \"{name}\"... (progress in the post window)"
+                ));
                 return self.report_envs(envs::install_in_env(&self.tx, &self.session, name));
             }
             (5, Some(name)) => envs::delete_env(&self.session, name),
@@ -1878,27 +1891,18 @@ impl App {
         let name = name.trim().to_string();
         let source = self.fields.get(&ENVS_SOURCE).cloned().unwrap_or_default();
         if name.is_empty() {
-            return self.link.set(
-                ENVS_STATUS,
-                &[("text", json!("Name the environment first."))],
-            );
+            return self.envs_say("Name the environment first.");
         }
-        self.link.set(
-            ENVS_STATUS,
-            &[(
-                "text",
-                json!(format!(
-                    "Creating \"{name}\"... (progress in the post window)"
-                )),
-            )],
-        );
+        self.envs_say(&format!(
+            "Creating \"{name}\"... (progress in the post window)"
+        ));
         let result = envs::create_env(&self.tx, &self.session, name, source);
         self.report_envs(result);
     }
 
     fn report_envs(&mut self, started: Result<(), String>) {
         if let Err(e) = started {
-            self.link.set(ENVS_STATUS, &[("text", json!(e))]);
+            self.envs_say(&e);
         }
     }
 }
@@ -1911,12 +1915,12 @@ fn field(children: &[Value]) -> Value {
 
 /// A field's caption.
 fn caption(text: &str) -> Value {
-    json!({"type": "label", "text": text})
+    json!({"type": "label", "text": text, "variant": "caption"})
 }
 
 /// The sentence under a field that says what it is for, quieter.
 fn help(text: &str) -> Value {
-    json!({"type": "label", "text": text, "wrap": 1, "muted": 1})
+    json!({"type": "label", "text": text, "wrap": 1, "variant": "help"})
 }
 
 /// A row of buttons, as wide as what they say.

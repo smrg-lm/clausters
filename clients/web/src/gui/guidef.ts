@@ -1929,6 +1929,11 @@ export function scroll(
  * kept picture, so a `set` of its text redraws the label and not the window.
  * A live label sizes nothing: give it a `w` or a `weight`, since a container
  * fitted to its content does not follow it.
+ *
+ * `variant` says what the label is, as the design system's: `"text"` (the
+ * default), `"caption"` (a field's caption over it, in the medium weight and
+ * flush with the field), `"help"` (the sentence under a field, smaller and
+ * quiet) or `"badge"` (a small pill on the secondary fill).
  */
 export function label(
     text = "",
@@ -1944,9 +1949,10 @@ export function label(
         dot?: string;
         /** The text in the dimmed role, as a status line's is. */
         muted?: boolean;
+        variant?: "text" | "caption" | "help" | "badge";
     } = {},
 ): View {
-    const { textSize, wrap, align, live, dot, muted, ...rest } = options;
+    const { textSize, wrap, align, live, dot, muted, variant, ...rest } = options;
     return node("label", {
         ...rest,
         text,
@@ -1957,6 +1963,7 @@ export function label(
             ["live", flag(live)],
             ["dot", dot],
             ["muted", flag(muted)],
+            ["variant", variant],
         ]),
     });
 }
@@ -2247,6 +2254,15 @@ export interface ButtonOptions extends WidgetOptions {
      * them to.
      */
     default?: boolean;
+    /**
+     * What the button is for, as the design system's: `"default"` (the
+     * primary fill: what a form is for), `"outline"`, `"secondary"`,
+     * `"ghost"` (no fill until the pointer is over it, as `flat`),
+     * `"destructive"` or `"link"`.
+     */
+    variant?: "default" | "outline" | "secondary" | "ghost" | "destructive" | "link";
+    /** Its height: `"default"`, `"sm"`, `"xs"` or `"lg"`; an icon alone makes it square. */
+    size?: "default" | "sm" | "xs" | "lg";
     textSize?: number;
 }
 
@@ -2287,8 +2303,8 @@ export function button(
 ): View {
     const [source_, opts] = controlArgs<ButtonOptions>(control, options);
     const {
-        label: text, mode, on, off, icon, flat, menu: list, verb, default: isDefault, textSize,
-        ...rest
+        label: text, mode, on, off, icon, flat, menu: list, verb, default: isDefault, variant,
+        size, textSize, ...rest
     } = opts;
     if (mode !== undefined && mode !== "gate" && mode !== "press") {
         throw new Error(
@@ -2300,6 +2316,7 @@ export function button(
         ["label", text], ["mode", mode], ["on", on], ["off", off],
         ["icon", icon], ["menu", list === undefined ? undefined : [...list]], ["verb", verb],
         ["text_size", textSize], ["flat", flag(flat)], ["default", flag(isDefault)],
+        ["variant", variant], ["size", size],
     ]);
     let built;
     if (source_ === null) {
@@ -2381,17 +2398,19 @@ export function toggle(
  * An editable `text` field. The entered string is emitted on **every** edit --
  * like a slider's value, never gated on Enter. `multiline` allows embedded
  * newlines and a growing field; `value` seeds the contents (and sets them
- * live).
+ * live). `invalid` says what it holds is refused: its edge is drawn in the
+ * destructive role until it is set off.
  */
 export function text(
     options: WidgetOptions & {
         value?: string;
         label?: string;
         multiline?: boolean;
+        invalid?: boolean;
         textSize?: number;
     } = {},
 ): View {
-    const { value, label: name, multiline, textSize, ...rest } = options;
+    const { value, label: name, multiline, invalid, textSize, ...rest } = options;
     return node("text", {
         ...rest,
         ...drop([
@@ -2400,6 +2419,7 @@ export function text(
             // A true boolean here, as on a slider's `vertical`: the host reads
             // both forms, and these two props have always ridden as bools.
             ["multiline", multiline],
+            ["invalid", flag(invalid)],
             ["text_size", textSize],
         ]),
     });

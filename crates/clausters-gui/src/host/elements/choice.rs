@@ -22,13 +22,12 @@ use serde_json::{Map, Value};
 use clausters_core::osc::OscType;
 
 use crate::host::graphics::choice::{self, Part, View};
-use crate::host::graphics::controls;
 use crate::host::menu::Entry;
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput, PopupRequest,
 };
 use crate::host::widget::parse;
-use crate::host::widget::size::{Natural, body_inset, label_strip, text_box};
+use crate::host::widget::size::{Natural, label_strip, text_box};
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::metrics::Metrics;
 use clausters_gui_draw::rect::Rect;
@@ -96,7 +95,8 @@ impl Choice {
     /// The **body** the parts are drawn in -- the cell minus its label strip
     /// and inset, the same rectangle the renderer draws them in.
     fn body(&self, input: &Input) -> Rect {
-        controls::body_rect_at(
+        choice::body_of(
+            self.view,
             input.rect,
             self.label.is_some(),
             self.text_size * input.scale,
@@ -199,7 +199,7 @@ impl Element for Choice {
             .flatten()
             .and_then(|(x, y)| {
                 let body =
-                    controls::body_rect_at(ctx.rect, self.label.is_some(), size, ctx.metrics);
+                    choice::body_of(self.view, ctx.rect, self.label.is_some(), size, ctx.metrics);
                 let parts = choice::parts(self.view, &self.options, body, size, ctx.metrics);
                 choice::part_at(&parts, x, y)
             });
@@ -221,7 +221,7 @@ impl Element for Choice {
             None,
             Some(
                 label_strip(self.label.is_some(), size, m)
-                    + body_inset(m)
+                    + choice::body_air(self.view, m)
                     + choice::body_h(self.view, self.options.len(), size, m),
             ),
         )
@@ -236,7 +236,10 @@ impl Element for Choice {
         let size = self.text_size * scale;
         (
             Some(choice::body_min_w(self.view, self.options.len(), size, m) + 2.0 * m.pad),
-            Some(body_inset(m) + choice::body_h(self.view, self.options.len(), size, m)),
+            Some(
+                choice::body_air(self.view, m)
+                    + choice::body_h(self.view, self.options.len(), size, m),
+            ),
         )
     }
 
@@ -533,8 +536,9 @@ mod tests {
     #[test]
     fn a_stacked_view_is_a_row_per_option_tall_and_the_others_are_one_line() {
         let m = Metrics::default();
-        let line = choice("combo").natural(&m, 1.0).1.unwrap();
-        assert_eq!(choice("tabs").natural(&m, 1.0).1, Some(line));
+        let line = choice("tabs").natural(&m, 1.0).1.unwrap();
+        // a select is the design system's, as tall as a field
+        assert_eq!(choice("combo").natural(&m, 1.0).1, Some(m.field_h));
         assert_eq!(choice("pager").natural(&m, 1.0).1, Some(line));
         assert!(choice("radio").natural(&m, 1.0).1.unwrap() > 2.0 * line);
         // The view is a prop, live like any other.

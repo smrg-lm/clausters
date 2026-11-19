@@ -17,7 +17,7 @@ use clausters_core::osc::OscType;
 use crate::host::graphics::controls::{self, ToggleView};
 use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input};
 use crate::host::widget::parse;
-use crate::host::widget::size::{Natural, control_box, text_box};
+use crate::host::widget::size::{Natural, control_box};
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::metrics::Metrics;
 
@@ -131,11 +131,17 @@ impl Element for Toggle {
     }
 
     /// A toggle owns its cell: the box and its label sit on one row, so the
-    /// box's own side is the floor its height cannot go under.
+    /// box's own side is the floor its height cannot go under -- and drawn as
+    /// a button it is one, as tall as a button.
     fn natural(&self, m: &Metrics, scale: f32) -> Natural {
+        let row = control_box(self.text_size * scale, m).max(m.check_w);
         (
             None,
-            Some(control_box(self.text_size * scale, m).max(m.box_side)),
+            Some(match self.view {
+                ToggleView::Button => m.button_h.max(row),
+                ToggleView::Switch => row.max(m.switch_h),
+                ToggleView::Check => row,
+            }),
         )
     }
 
@@ -143,16 +149,15 @@ impl Element for Toggle {
     /// an ellipsis -- and its label cut to nothing: the mark is the control.
     fn floor(&self, m: &Metrics, scale: f32) -> Natural {
         let size = self.text_size * scale;
-        let h = control_box(size, m).max(m.box_side);
-        let side = m.box_side.min(h);
+        let h = control_box(size, m).max(m.check_w);
         let w = match self.view {
             ToggleView::Button => controls::caption_floor(
                 controls::button_text(self.label.as_deref().or(Some("")), self.icon).trim_end(),
                 size,
                 m,
             ),
-            ToggleView::Switch => side * 1.8 + 2.0 * m.pad,
-            _ => side + 2.0 * m.pad,
+            ToggleView::Switch => m.switch_w,
+            ToggleView::Check => m.check_w,
         };
         (Some(w), Some(h))
     }
@@ -161,24 +166,29 @@ impl Element for Toggle {
     /// lays out, measured.
     fn hug(&self, m: &Metrics, scale: f32) -> Natural {
         let size = self.text_size * scale;
-        let h = control_box(size, m).max(m.box_side);
+        let h = self.natural(m, scale).1.unwrap_or(m.button_h);
         let text = controls::button_text(self.label.as_deref().or(Some("")), self.icon);
         let text = text.trim_end();
-        // Drawn as a button it is one: as wide as what it says.
+        // Drawn as a button it is one: as wide as what it says, and never
+        // narrower than it is tall.
         if self.view == ToggleView::Button {
-            return (Some(text_box(text, size, m)), Some(h));
+            let words = clausters_gui_draw::font::width_in(
+                clausters_gui_draw::font::Family::UiMedium,
+                text,
+                size,
+            );
+            return (Some((words + 2.0 * m.toggle_x).ceil().max(h)), Some(h));
         }
-        let side = m.box_side.min(h);
         let mark = match self.view {
-            ToggleView::Switch => side * 1.8,
-            _ => side,
+            ToggleView::Switch => m.switch_w,
+            _ => m.check_w,
         };
-        // The label starts one pad past the box and gets one more at the right
-        // edge, so a hugged toggle never draws its own text into an ellipsis.
+        // The label starts the toggle's gap past the box, and the hug ends
+        // where it does, so a hugged toggle never cuts its own words.
         let label = if text.is_empty() {
             0.0
         } else {
-            text_box(text, size, m)
+            m.check_gap + clausters_gui_draw::font::width(text, size).ceil()
         };
         (Some(mark + label), Some(h))
     }

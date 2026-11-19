@@ -404,7 +404,8 @@ fn transport(ids: Option<TransportIds>) -> Value {
     };
     let button = |label: &str, name: &str, width: f64, id: Option<i32>| {
         numbered(
-            json!({"type": "button", "label": label, "name": name, "w": width}),
+            json!({"type": "button", "label": label, "name": name, "w": width,
+                   "variant": "outline"}),
             id,
         )
     };

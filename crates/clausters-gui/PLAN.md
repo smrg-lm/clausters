@@ -2775,10 +2775,47 @@ first four are the order the user set; the components come after.
   the scrim taking them down, and the close form as an alert. The controls
   inside (the checkbox, the fields' look, the buttons' variants) are
   `ST10`'s.
-- ⬜ **ST10: Controls.** Button (variants and sizes), toggle, toggle group,
+- ✅ **ST10: Controls.** Button (variants and sizes), toggle, toggle group,
   field, text area, select, checkbox, label with help text, badge and
   separator with every state of the inventory, in every application that
   shows them.
+  *Shipped:* a `button` takes the specification's `variant` (`default`,
+  the `primary` fill and what a button naming none is; `outline`, on the
+  ground with the field's edge and the extra small shadow; `secondary`;
+  `ghost`, which `flat` now is; `destructive`, its ink on its faint fill;
+  `link`, underlined under the hand) and `size` (`default`, `sm`, `xs`,
+  `lg`, the `button_` roles; an icon alone is square), the medium corner,
+  its words in the medium weight at the type scale's size, the icon a
+  `button_gap` before them; under the hand or on, a ghost or outlined one
+  takes `muted` and a filled one fades to four fifths, and held, what it
+  says stands `press_shift` lower (`controls::button`). A `toggle` is the
+  checkbox (`check_w`, `check_radius`, `primary` with Lucide's check when
+  on), the switch (`switch_w` by `switch_h`) or the toggle button (a ghost
+  button, `muted` when on). The `segmented` choice is the toggle group (a
+  bordered well with the small corner, the chosen option on `secondary`),
+  the radio the specification's, and a `combo` the select: the field's box
+  with a chevron. A `text` is the input, flush with its cell under its label
+  strip (`controls::field_box`), `field_h` tall, the `input` edge, the
+  `focus` edge while it has the keys and the new `invalid` prop's
+  `destructive` edge; multiline it is the text area, at least
+  `text_area_h`. A `label` takes `variant`: `caption` (the medium weight,
+  set solid, flush with its field), `help` (`type_xs` on `line_xs`, quiet)
+  and `badge` (a pill on `secondary`), so a field's anatomy is three widgets
+  and no new one. A disabled widget is drawn at half strength, and the
+  focus ring is the specification's: a band of `focus` at half strength,
+  `focus_ring` (now 3) wide, outside the widget with the medium corner.
+  The size roles gained `check_w`, `check_radius`, `check_gap`, `switch_w`,
+  `switch_h` and `toggle_x`. In the applications: the shared forms set a
+  caption over each field, Cancel `outline` and OK `default`; the close
+  form's Don't save is `destructive` and Cancel `outline`; the multitrack's
+  transport row is `outline`; the editor's preferences use the checkbox,
+  selects 176 wide, outline and ghost buttons as the reference does, and its
+  environments a badge for the one in use and ghost icon buttons to
+  reinstall and delete. Both clients' `button` take `variant` and `size`,
+  `label` takes `variant` and `text` takes `invalid`; the parity sweep
+  covers them. Checked: the look of each by tests (a latch, a select's
+  height, the floors and the label strip the controls give), every control
+  headless in both looks, and the editor's dialogs and close form.
 - ⬜ **ST11: The rest of the chrome.** Scrollbars, split handles, the drop
   zones of a dragged panel, the find bar's segmented choice, list rows.
 - ⬜ **ST12: Motion.** The specification's fades and scales, at 100 ms,

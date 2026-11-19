@@ -492,11 +492,17 @@ mod tests {
             let dialog = &page["children"][0];
             assert_eq!(dialog["modal"], true);
             assert_eq!(dialog["id"], ids[form.prefix()]);
-            // a row per field -- the close form's question in place of them
-            // -- and the buttons
-            let rows = dialog["children"].as_array().unwrap();
-            let asked = usize::from(form == Form::Close);
-            assert_eq!(rows.len(), form.fields().len() + asked + 1);
+            // a body of a field each and the buttons -- the close form's
+            // buttons alone, its question being its description
+            let parts = dialog["children"].as_array().unwrap();
+            if form == Form::Close {
+                assert_eq!(parts.len(), 1);
+                assert!(dialog["description"].is_string());
+            } else {
+                assert_eq!(parts.len(), 2);
+                let fields = parts[0]["children"].as_array().unwrap();
+                assert_eq!(fields.len(), form.fields().len());
+            }
         }
         // every name is a widget, each under an id of its own
         let text = stack.to_string();

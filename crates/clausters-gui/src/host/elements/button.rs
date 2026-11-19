@@ -31,7 +31,7 @@ use clausters_editing::verbs::ActionState;
 use crate::host::graphics::controls;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
 use crate::host::widget::parse;
-use crate::host::widget::size::{Natural, control_box, text_box};
+use crate::host::widget::size::{Natural, control_box};
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::metrics::Metrics;
 
@@ -99,6 +99,14 @@ pub struct Button {
     /// takes no focus, and a press on it leaves the focus where it was: what
     /// it acts on is what the focus is on.
     pub verb: Option<String>,
+    /// The `variant` prop: what the button is for, read in its fill, edge
+    /// and ink -- the design system's variants. `flat` is the ghost one.
+    pub variant: controls::Variant,
+    /// The `size` prop: the height of its box.
+    pub size: controls::ButtonSize,
+    /// Whether its `text_size` was named: one that was not draws at the
+    /// interface's size of the type scale, in the medium weight.
+    sized: bool,
     /// The `default` prop: the **default action** of the dialog it is in,
     /// which has the keyboard when the dialog comes up and has no field to
     /// give it to.
@@ -127,6 +135,25 @@ impl Button {
             None => self.held,
         }
     }
+
+    /// The scale its words are drawn at.
+    fn face(&self, m: &Metrics, scale: f32) -> f32 {
+        if self.sized {
+            self.text_size * scale
+        } else {
+            controls::ui_size(clausters_gui_draw::font::Family::UiMedium, m)
+        }
+    }
+
+    /// How tall its box is: its size's, or its text's where that is taller.
+    fn box_h(&self, m: &Metrics, scale: f32) -> f32 {
+        let h = self.size.height(m);
+        if self.sized {
+            h.max(control_box(self.face(m, scale), m))
+        } else {
+            h
+        }
+    }
 }
 
 fn from_props(props: &Map<String, Value>) -> Button {
@@ -139,6 +166,17 @@ fn from_props(props: &Map<String, Value>) -> Button {
         icon: props.get("icon").and_then(crate::host::menu::icon_of),
         flat: props.get("flat").and_then(parse::truthy).unwrap_or(false),
         verb: verb_of(props.get("verb")),
+        variant: props
+            .get("variant")
+            .and_then(Value::as_str)
+            .and_then(controls::Variant::from_str)
+            .unwrap_or_default(),
+        size: props
+            .get("size")
+            .and_then(Value::as_str)
+            .and_then(controls::ButtonSize::from_str)
+            .unwrap_or_default(),
+        sized: props.contains_key("text_size"),
         default: props
             .get("default")
             .and_then(parse::truthy)
@@ -151,7 +189,20 @@ impl Element for Button {
     fn set(&mut self, key: &str, v: &Value) -> bool {
         match key {
             "label" => parse::set_label(&mut self.label, v),
-            "text_size" => parse::set_size(&mut self.text_size, v),
+            "text_size" => {
+                self.sized = true;
+                parse::set_size(&mut self.text_size, v)
+            }
+            "variant" => v
+                .as_str()
+                .and_then(controls::Variant::from_str)
+                .map(|x| self.variant = x)
+                .is_some(),
+            "size" => v
+                .as_str()
+                .and_then(controls::ButtonSize::from_str)
+                .map(|x| self.size = x)
+                .is_some(),
             "mode" => mode_from(v).map(|m| self.mode = m).is_some(),
             "on" => parse::set_f(&mut self.on, v),
             "off" => parse::set_f(&mut self.off, v),
@@ -183,7 +234,7 @@ impl Element for Button {
     fn draw_action(&self, d: &mut Draw, ctx: &Ctx, state: Option<&ActionState>) {
         let size = controls::symbol_size(
             &controls::button_text(self.label.as_deref(), self.icon),
-            self.text_size * ctx.scale,
+            self.face(ctx.metrics, ctx.scale),
             ctx.text_fit,
             ctx.metrics,
         );
@@ -193,16 +244,18 @@ impl Element for Button {
             self.icon,
             ctx.rect,
             controls::ButtonLook {
-                active: self.active(state),
+                active: state.and_then(|s| s.checked).unwrap_or(false),
+                held: self.active(state) && state.and_then(|s| s.checked).is_none(),
                 hovered: ctx.hovered && state.is_none_or(|s| s.enabled),
                 flat: self.flat,
+                variant: self.variant,
             },
             size,
         );
     }
 
     fn natural(&self, m: &Metrics, scale: f32) -> Natural {
-        (None, Some(control_box(self.text_size * scale, m)))
+        (None, Some(self.box_h(m, scale)))
     }
 
     /// A button takes all the room it is given -- a grid of them is a step
@@ -212,31 +265,40 @@ impl Element for Button {
     /// the ellipsis -- a tool's one symbol -- floors at itself. Its padding
     /// is what it gives up first.
     fn floor(&self, m: &Metrics, scale: f32) -> Natural {
-        let size = self.text_size * scale;
+        let size = self.face(m, scale);
         let caption = controls::button_text(self.label.as_deref(), None);
         let cut = match self.icon {
             Some(icon) if self.label.is_some() => {
-                clausters_gui_draw::font::width(&format!("{icon} "), size)
+                clausters_gui_draw::font::width(&icon.to_string(), size)
+                    + m.button_gap
                     + controls::caption_floor(&caption, size, m)
             }
             Some(icon) => clausters_gui_draw::font::width(&icon.to_string(), size),
             None => controls::caption_floor(&caption, size, m),
         };
-        (Some(cut), Some(control_box(size, m)))
+        // its box is what it reads at: nothing of its height is given up
+        (Some(cut), Some(self.box_h(m, scale)))
     }
 
     /// A button *is* its box, and its caption is a prop: fitted to its content
-    /// it is as wide as the text it centres, padded on both sides.
+    /// it is as wide as its icon and its words, inset on both sides by the
+    /// button's inset -- or, an icon alone, a square of its height.
     fn hug(&self, m: &Metrics, scale: f32) -> Natural {
-        let size = self.text_size * scale;
-        (
-            Some(text_box(
-                &controls::button_text(self.label.as_deref(), self.icon),
-                size,
-                m,
-            )),
-            Some(control_box(size, m)),
-        )
+        let size = self.face(m, scale);
+        let h = self.box_h(m, scale);
+        let w = match (self.icon, self.label.as_deref()) {
+            (Some(_), None) => h,
+            (icon, label) => {
+                let font = clausters_gui_draw::font::Family::UiMedium;
+                let words =
+                    clausters_gui_draw::font::width_in(font, label.unwrap_or("BUTTON"), size);
+                let icon = icon.map_or(0.0, |c| {
+                    clausters_gui_draw::font::width(&c.to_string(), size) + m.button_gap
+                });
+                (icon + words + 2.0 * m.button_x).ceil()
+            }
+        };
+        (Some(w), Some(h))
     }
 
     /// A button is momentary either way: the press *is* the event, so what it

@@ -1356,7 +1356,7 @@ mod tests {
             .natural_size(&m, 1.0)
             .1
             .unwrap();
-        let big = kind(r#"{"type":"button","label":"go","text_size":4}"#)
+        let big = kind(r#"{"type":"button","label":"go","text_size":8}"#)
             .natural_size(&m, 1.0)
             .1
             .unwrap();

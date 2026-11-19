@@ -395,6 +395,18 @@ metrics_roles! {
     text_area_h: grid,
     /// Between a label and the control it names.
     label_to_field: grid,
+    /// A checkbox's side.
+    check_w: grid,
+    /// A checkbox's corner.
+    check_radius: grid,
+    /// Between a checkbox or a switch and the words beside it.
+    check_gap: grid,
+    /// A switch's track, along it.
+    switch_w: grid,
+    /// A switch's track, across it.
+    switch_h: grid,
+    /// A toggle button's inset across.
+    toggle_x: grid,
     /// A badge's height.
     badge_h: grid,
     /// A badge's inset across.
@@ -467,7 +479,7 @@ impl Metrics {
             header_w: grid(8.0 * font::advance(text_scale)),
             panel_h: spec(36.0),
             divider_w: hairline(k),
-            focus_ring: hairline(2.0 * k),
+            focus_ring: hairline(3.0 * k),
             trace_w: (1.5 * k).max(0.5),
             point_radius: pad,
             plate_radius: pad,
@@ -553,6 +565,12 @@ impl Metrics {
             field_y: spec(4.0),
             text_area_h: spec(64.0),
             label_to_field: spec(8.0),
+            check_w: spec(16.0),
+            check_radius: spec(4.0),
+            check_gap: spec(8.0),
+            switch_w: spec(32.0),
+            switch_h: spec(18.0),
+            toggle_x: spec(8.0),
             badge_h: spec(20.0),
             badge_x: spec(8.0),
             scrollbar_w: spec(10.0),
@@ -744,7 +762,7 @@ mod tests {
         assert_eq!(m.ruler_w, 46.0);
         assert_eq!(m.header_w, 72.0);
         assert_eq!(m.divider_w, 1.0);
-        assert_eq!(m.focus_ring, 2.0);
+        assert_eq!(m.focus_ring, 3.0);
         assert_eq!(m.trace_w, 1.5);
         assert_eq!(m.point_radius, 4.0);
         assert_eq!(m.plate_radius, 4.0);

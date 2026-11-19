@@ -131,9 +131,9 @@ pub fn dialog(dialog_id: Option<i32>, says: &str, id: impl Fn(&str) -> Option<i3
         "margin": 0,
         "gap": FOOTER_GAP,
         "children": [
-            {"type": "button", "id": id(DISCARD), "label": "Don't save"},
+            {"type": "button", "id": id(DISCARD), "label": "Don't save", "variant": "destructive"},
             spring,
-            {"type": "button", "id": id(CANCEL), "label": "Cancel"},
+            {"type": "button", "id": id(CANCEL), "label": "Cancel", "variant": "outline"},
             {"type": "button", "id": id(SAVE), "label": "Save", "default": true},
         ],
     });

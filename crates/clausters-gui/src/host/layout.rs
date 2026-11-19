@@ -1551,19 +1551,19 @@ mod tests {
         let m = Metrics::default();
         let w = tree(
             r#"{"type":"window","flow":"grid","cols":3,"margin":0,"gap":0,"children":[
-            {"id":2,"type":"button","label":"a","max_w":60,"max_h":30},
-            {"id":3,"type":"button","label":"b","max_w":60,"max_h":30,"anchor":"bottom_right"},
+            {"id":2,"type":"button","label":"a","max_w":60,"max_h":40},
+            {"id":3,"type":"button","label":"b","max_w":60,"max_h":40,"anchor":"bottom_right"},
             {"id":4,"type":"button","label":"c","max_h":1,"min_w":190}]}"#,
         );
         let placed = layout(area(), &w, &m);
         let cell = (200.0, 400.0);
         let a = rect_of(&placed, 2);
-        assert_eq!((a.w, a.h), (60.0, 30.0));
+        assert_eq!((a.w, a.h), (60.0, 40.0));
         assert_eq!(
             (a.x, a.y),
             (
                 ((cell.0 - 60.0) * 0.5f32).round(),
-                ((cell.1 - 30.0) * 0.5f32).round()
+                ((cell.1 - 40.0) * 0.5f32).round()
             )
         );
         let b = rect_of(&placed, 3);

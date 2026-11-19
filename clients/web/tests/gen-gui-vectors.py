@@ -290,6 +290,11 @@ REQUIRED: dict = {}
 #: Sweeping the generic shape here would compare two clients stringifying a
 #: float, which is a difference about `str(0.0)` and not about the builder.
 PER_BUILDER = {
+    # what a button is for, its height, and what a label is: each a name
+    # the builder checks
+    ("button", "variant"): "outline",
+    ("button", "size"): "sm",
+    ("label", "variant"): "caption",
     ("meter", "zones"): [[-1.0, "#d04040"], [-0.5, "meter_low", "lin"],
                          [0.0, "meter_mid", -3.0]],
     # `view` is a signal's presentation everywhere else; on these two it is

@@ -354,9 +354,19 @@ pub(super) fn collect_widgets(
         // where the keyboard points, which is a window's answer rather than a
         // widget's. What being focused means *inside* an element (a field's
         // caret) is the element's, and reaches it as `Ctx::focused`.
+        // It is the design system's: a band of the ring's role at half
+        // strength around the widget, outside it, its corner the control's
+        // grown by the band.
         if p.widget.id.is_some() && p.widget.id == inputs.ring {
             mesh.set_clip(p.clip);
-            mesh.border(p.rect, m.focus_ring, th.focus);
+            let w = m.focus_ring;
+            let around = Rect::new(
+                p.rect.x - w,
+                p.rect.y - w,
+                p.rect.w + 2.0 * w,
+                p.rect.h + 2.0 * w,
+            );
+            mesh.round_border(around, w, m.radius_md + w, with_alpha(th.focus, 0.5));
         }
     }
 

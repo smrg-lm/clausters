@@ -36,6 +36,12 @@ pub struct Label {
     pub dot: Option<String>,
     /// The `muted` prop: the text in the theme's dimmed role.
     pub muted: bool,
+    /// The `variant` prop: what the label is -- text, a field's caption,
+    /// the help under a field, a badge ([`controls::LabelVariant`]).
+    pub variant: controls::LabelVariant,
+    /// Whether its `text_size` was named: a variant's text is otherwise at
+    /// its size of the type scale.
+    sized: bool,
 }
 
 pub(super) fn build(
@@ -64,20 +70,45 @@ fn from_props(props: &Map<String, Value>) -> Label {
             .filter(|s| !s.is_empty())
             .map(str::to_string),
         muted: props.get("muted").and_then(parse::truthy).unwrap_or(false),
+        variant: props
+            .get("variant")
+            .and_then(Value::as_str)
+            .and_then(controls::LabelVariant::from_str)
+            .unwrap_or_default(),
+        sized: props.contains_key("text_size"),
     }
 }
 
 impl Label {
+    /// The scale its text is drawn at: its `text_size`, or its variant's
+    /// size of the type scale when it named none.
+    fn size(&self, m: &Metrics, scale: f32) -> f32 {
+        match self.variant.size(m).filter(|_| !self.sized) {
+            Some(size) => size,
+            None => self.text_size * scale,
+        }
+    }
+
+    /// The line one line of it stands on.
+    fn line(&self, m: &Metrics, scale: f32) -> f32 {
+        let size = self.size(m, scale);
+        match self.variant.line(m) {
+            Some(line) if !self.sized => line.max(font::height(size)),
+            _ => line_box(size, m),
+        }
+    }
+
     fn paint(&self, d: &mut Draw, ctx: &Ctx) {
         let look = controls::LabelLook {
             dot: self.dot.as_deref().and_then(|role| d.theme.get(role)),
             muted: self.muted,
+            variant: self.variant,
         };
         controls::draw_label_as(
             d,
             &self.text,
             ctx.rect,
-            self.text_size * ctx.scale,
+            self.size(ctx.metrics, ctx.scale),
             self.wrap,
             self.align,
             look,
@@ -92,7 +123,10 @@ impl Element for Label {
             "text_size" => v
                 .as_f64()
                 .filter(|n| *n > 0.0)
-                .map(|n| self.text_size = n as f32)
+                .map(|n| {
+                    self.text_size = n as f32;
+                    self.sized = true;
+                })
                 .is_some(),
             "wrap" => parse::truthy(v).map(|b| self.wrap = b).is_some(),
             "live" => parse::truthy(v).map(|b| self.live = b).is_some(),
@@ -101,6 +135,11 @@ impl Element for Label {
                 true
             }
             "muted" => parse::truthy(v).map(|b| self.muted = b).is_some(),
+            "variant" => v
+                .as_str()
+                .and_then(controls::LabelVariant::from_str)
+                .map(|x| self.variant = x)
+                .is_some(),
             "align" => v
                 .as_str()
                 .and_then(Align::from_str)
@@ -133,7 +172,7 @@ impl Element for Label {
             None,
             // A wrapped label's line count follows its string, which is data:
             // it stays elastic and clips what does not fit.
-            (!self.wrap).then(|| line_box(self.text_size * scale, m)),
+            (!self.wrap).then(|| self.line(m, scale)),
         )
     }
 
@@ -142,8 +181,8 @@ impl Element for Label {
     /// as an ellipsis: a line that does not fit is cut, so the text sets no
     /// width of its own.
     fn floor(&self, m: &Metrics, scale: f32) -> Natural {
-        let size = self.text_size * scale;
-        (Some(ellipsis_w(size)), Some(line_box(size, m)))
+        let size = self.size(m, scale);
+        (Some(ellipsis_w(size)), Some(self.line(m, scale)))
     }
 
     /// A label's `text` is a presentation prop resolved at a mutation point, so
@@ -151,11 +190,16 @@ impl Element for Label {
     /// **wrapped** label is the exception on both axes: its width is what wraps
     /// it, so it has none of its own.
     fn hug(&self, m: &Metrics, scale: f32) -> Natural {
-        let size = self.text_size * scale;
+        let size = self.size(m, scale);
+        let family = self.variant.family();
+        let words = || font::width_in(family, &self.text, size);
         (
             // A reading sizes nothing: its text is written on a tick, and a
             // container fitted to it would be laid out on each one.
-            (!self.wrap && !self.live).then(|| text_box(&self.text, size, m)),
+            (!self.wrap && !self.live).then(|| match self.variant {
+                controls::LabelVariant::Text => text_box(&self.text, size, m),
+                variant => (words() + 2.0 * variant.inset(m)).ceil(),
+            }),
             self.natural(m, scale).1,
         )
     }
@@ -166,13 +210,19 @@ impl Element for Label {
         if !self.wrap || self.live {
             return None;
         }
-        let size = self.text_size * scale;
-        let mut avail = (w - 2.0 * m.pad).max(1.0);
+        let size = self.size(m, scale);
+        let mut avail = (w - 2.0 * self.variant.inset(m)).max(1.0);
         if self.dot.is_some() {
             avail = (avail - 2.0 * (font::height(size) * 0.4).max(1.0) - m.pad).max(1.0);
         }
-        let lines = font::wrap(&self.text, avail, size).len().max(1) as f32;
-        Some((lines * font::line_advance(size)).max(line_box(size, m)))
+        let lines = font::wrap_in(self.variant.family(), &self.text, avail, size)
+            .len()
+            .max(1) as f32;
+        let advance = match self.variant.line(m) {
+            Some(line) if !self.sized => line,
+            _ => font::line_advance(size),
+        };
+        Some((lines * advance).max(self.line(m, scale)))
     }
 
     fn value(&self) -> Option<OscType> {

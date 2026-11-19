@@ -339,6 +339,7 @@ const camel = (name: string): string =>
  */
 const SUBJECT: Record<string, { option: string; blank: unknown }> = {
     label: { option: "text", blank: "" },
+    code: { option: "text", blank: "" },
     choice: { option: "options", blank: [] },
     files: { option: "path", blank: "." },
     progress: { option: "value", blank: undefined },

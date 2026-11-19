@@ -13,8 +13,8 @@ use super::textedit;
 use crate::host::widget::size;
 use crate::host::widget::{Align, Range};
 use clausters_gui_draw::draw::Draw;
-use clausters_gui_draw::font;
-use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::font::{self, Family};
+use clausters_gui_draw::metrics::{Elevation, Metrics};
 use clausters_gui_draw::paint::Mesh;
 use clausters_gui_draw::rect::Rect;
 use clausters_gui_draw::theme::Color;
@@ -375,6 +375,71 @@ pub fn draw_label(d: &mut Draw, text: &str, rect: Rect, size: f32, wrap: bool, a
 pub struct LabelLook {
     pub dot: Option<clausters_gui_draw::theme::Color>,
     pub muted: bool,
+    pub variant: LabelVariant,
+}
+
+/// **What a label is**, the design system's: plain text, a field's caption
+/// (the medium weight, set solid, flush with its field), the help under a
+/// field (the small size, quiet), or a badge (a pill on the `secondary`
+/// fill, in the small size and the medium weight).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LabelVariant {
+    #[default]
+    Text,
+    Caption,
+    Help,
+    Badge,
+}
+
+impl LabelVariant {
+    pub(crate) fn from_str(s: &str) -> Option<LabelVariant> {
+        Some(match s {
+            "text" => LabelVariant::Text,
+            "caption" => LabelVariant::Caption,
+            "help" => LabelVariant::Help,
+            "badge" => LabelVariant::Badge,
+            _ => return None,
+        })
+    }
+
+    /// The face it is drawn in.
+    pub fn family(self) -> Family {
+        match self {
+            LabelVariant::Caption | LabelVariant::Badge => Family::UiMedium,
+            _ => Family::Ui,
+        }
+    }
+
+    /// The scale its text is drawn at when its `text_size` is the default:
+    /// the type scale's size for it.
+    pub fn size(self, m: &Metrics) -> Option<f32> {
+        match self {
+            LabelVariant::Text => None,
+            LabelVariant::Caption => Some(font::em_scale(Family::UiMedium, m.type_sm)),
+            LabelVariant::Help => Some(font::em_scale(Family::Ui, m.type_xs)),
+            LabelVariant::Badge => Some(font::em_scale(Family::UiMedium, m.type_xs)),
+        }
+    }
+
+    /// The line its text is set on, for a variant of the type scale.
+    pub fn line(self, m: &Metrics) -> Option<f32> {
+        match self {
+            LabelVariant::Text => None,
+            LabelVariant::Caption => Some(m.type_sm),
+            LabelVariant::Help => Some(m.line_xs),
+            LabelVariant::Badge => Some(m.badge_h),
+        }
+    }
+
+    /// The inset its text stands in across: a plain label's pad, nothing
+    /// for a caption or a help, which line up with their field.
+    pub fn inset(self, m: &Metrics) -> f32 {
+        match self {
+            LabelVariant::Caption | LabelVariant::Help => 0.0,
+            LabelVariant::Badge => m.badge_x,
+            LabelVariant::Text => m.pad,
+        }
+    }
 }
 
 /// [`draw_label`], with its [`LabelLook`]: the dot, the size of a lower
@@ -389,8 +454,30 @@ pub fn draw_label_as(
     look: LabelLook,
 ) {
     let (mesh, m, theme) = d.parts();
-    let mut left = rect.x + m.pad;
-    let mut avail = (rect.w - 2.0 * m.pad).max(0.0);
+    let family = look.variant.family();
+    if look.variant == LabelVariant::Badge {
+        // a pill as wide as what it says, at the start of its cell
+        let h = m.badge_h.min(rect.h);
+        let w = (font::width_in(family, text, size) + 2.0 * m.badge_x).min(rect.w);
+        let x = align_x(align, rect.x, rect.w, w);
+        let pill = Rect::new(x, rect.y + (rect.h - h) * 0.5, w, h);
+        mesh.round_rect(pill, h * 0.5, theme.secondary);
+        let ty = pill.y + (pill.h - font::height(size)) * 0.5;
+        font::text_ellipsis_in(
+            mesh,
+            family,
+            text,
+            pill.x + m.badge_x,
+            ty,
+            (pill.w - 2.0 * m.badge_x).max(0.0),
+            size,
+            theme.secondary_text,
+        );
+        return;
+    }
+    let inset = look.variant.inset(m);
+    let mut left = rect.x + inset;
+    let mut avail = (rect.w - 2.0 * inset).max(0.0);
     if let Some(color) = look.dot {
         let r = (font::height(size) * 0.4).max(1.0);
         let cy = rect.y + rect.h * 0.5;
@@ -399,14 +486,17 @@ pub fn draw_label_as(
         left += taken;
         avail = (avail - taken).max(0.0);
     }
-    let ink = if look.muted {
+    let ink = if look.muted || look.variant == LabelVariant::Help {
         theme.text_dim
     } else {
         theme.text
     };
     if wrap {
-        let lines = font::wrap(text, avail, size);
-        let advance = font::line_advance(size);
+        let lines = font::wrap_in(family, text, avail, size);
+        let advance = look
+            .variant
+            .line(m)
+            .unwrap_or_else(|| font::line_advance(size));
         let block_h = lines.len() as f32 * advance;
         let mut y = (rect.y + (rect.h - block_h) * 0.5).max(rect.y);
         for (i, line) in lines.iter().enumerate() {
@@ -414,14 +504,23 @@ pub fn draw_label_as(
             if i > 0 && y + font::height(size) > rect.y + rect.h {
                 break;
             }
-            let x = align_x(align, left, avail, font::width(line, size));
-            font::text(mesh, line, x, y, size, ink);
+            let x = align_x(align, left, avail, font::width_in(family, line, size));
+            let ty = match look.variant.line(m) {
+                Some(_) => y + (advance - font::height(size)).max(0.0) * 0.5,
+                None => y,
+            };
+            font::text_in(mesh, family, line, x, ty, size, ink);
             y += advance;
         }
     } else {
         let y = (rect.y + (rect.h - font::height(size)) * 0.5).max(rect.y);
-        let x = align_x(align, left, avail, font::width(text, size).min(avail));
-        font::text_ellipsis(mesh, text, x, y, avail, size, ink);
+        let x = align_x(
+            align,
+            left,
+            avail,
+            font::width_in(family, text, size).min(avail),
+        );
+        font::text_ellipsis_in(mesh, family, text, x, y, avail, size, ink);
     }
 }
 
@@ -443,16 +542,99 @@ fn border(mesh: &mut Mesh, rect: Rect, w: f32, color: Color) {
     mesh.rect(Rect::new(rect.x + rect.w - w, rect.y, w, rect.h), color);
 }
 
-/// How a button stands right now, and which of its two looks it wears.
+/// **A button's variant**, the design system's: what it is for, read in
+/// its fill, its edge and its ink.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Variant {
+    /// The button that does what a form is for: the `primary` fill.
+    #[default]
+    Default,
+    /// An edge and the ground: a second action beside the first.
+    Outline,
+    /// The `secondary` fill: a quieter action.
+    Secondary,
+    /// No fill until the pointer is over it: a tool in a row of tools.
+    Ghost,
+    /// An action that destroys, in the `destructive` ink on its faint fill.
+    Destructive,
+    /// Words, underlined under the pointer.
+    Link,
+}
+
+impl Variant {
+    pub(crate) fn from_str(s: &str) -> Option<Variant> {
+        Some(match s {
+            "default" => Variant::Default,
+            "outline" => Variant::Outline,
+            "secondary" => Variant::Secondary,
+            "ghost" => Variant::Ghost,
+            "destructive" => Variant::Destructive,
+            "link" => Variant::Link,
+            _ => return None,
+        })
+    }
+}
+
+/// **A button's size**, the design system's: the height of its box, which
+/// an icon alone fills as a square.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ButtonSize {
+    #[default]
+    Default,
+    Sm,
+    Xs,
+    Lg,
+}
+
+impl ButtonSize {
+    pub(crate) fn from_str(s: &str) -> Option<ButtonSize> {
+        Some(match s {
+            "default" => ButtonSize::Default,
+            "sm" => ButtonSize::Sm,
+            "xs" => ButtonSize::Xs,
+            "lg" => ButtonSize::Lg,
+            _ => return None,
+        })
+    }
+
+    /// The height of its box.
+    pub fn height(self, m: &Metrics) -> f32 {
+        match self {
+            ButtonSize::Default => m.button_h,
+            ButtonSize::Sm => m.button_sm_h,
+            ButtonSize::Xs => m.button_xs_h,
+            ButtonSize::Lg => m.button_lg_h,
+        }
+    }
+}
+
+/// How a button stands right now, and which look it wears.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ButtonLook {
-    /// Held down (or, for a toggle drawn as a button, on).
+    /// On: a tool whose switch is on, a toggle drawn as a button.
     pub active: bool,
     /// The pointer is over it.
     pub hovered: bool,
-    /// The `flat` look: no fill until the pointer is over it -- what a row of
-    /// tools wants, where a wall of filled boxes would outweigh the work.
+    /// The `flat` look: the ghost variant, whatever `variant` says -- what a
+    /// row of tools wants, where a wall of filled boxes would outweigh the
+    /// work.
     pub flat: bool,
+    /// Its variant.
+    pub variant: Variant,
+    /// Held down by the hand: what it says stands a little lower.
+    pub held: bool,
+}
+
+/// Whether `theme` is a dark look: its ground darker than its middle grey.
+pub(crate) fn dark(theme: &clausters_gui_draw::theme::Theme) -> bool {
+    let [r, g, b, _] = theme.background;
+    0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5
+}
+
+/// The scale a control's words are drawn at when its `text_size` is the
+/// default: the interface's size of the type scale, in `family`.
+pub fn ui_size(family: Family, m: &Metrics) -> f32 {
+    font::em_scale(family, m.type_sm)
 }
 
 /// **The character of the icon `name`** the host carries, or `fallback`
@@ -522,6 +704,12 @@ pub fn caption_floor(caption: &str, size: f32, m: &Metrics) -> f32 {
     }
 }
 
+/// **A button**, as the design system draws one: its box with the medium
+/// corner in its variant's fill and edge, and centred in it the icon, then
+/// the label in the medium weight, its variant's ink; a little lower while it
+/// is held. Its states are its variant's: under the pointer or on, a ghost
+/// or an outlined button takes the `muted` fill and a filled one fades to
+/// four fifths.
 pub fn button(
     d: &mut Draw,
     label: Option<&str>,
@@ -530,28 +718,104 @@ pub fn button(
     look: ButtonLook,
     size: f32,
 ) {
+    let variant = if look.flat {
+        Variant::Ghost
+    } else {
+        look.variant
+    };
+    let lit = look.hovered || look.active;
+    let radius = d.m.radius_md;
+    if variant == Variant::Outline {
+        d.shadow(rect, radius, Elevation::Xs);
+    }
     let (mesh, m, theme) = d.parts();
-    // A button *is* its box, so it fills its whole cell rather than insetting a
-    // `body_rect` the way a slider/field does (whose track must not touch the
-    // cell edge). The layout `gap` already separates it from its neighbours, and
-    // the full cell is also its hit area, so drawing and click now agree. Without
-    // this the box shrank to the text height inside a control bar and floated in
-    // dead space.
-    let fill = match (look.flat, look.active, look.hovered) {
-        (_, true, _) => Some(theme.hilite),
-        // Flat and at rest it draws no box at all: only what it says.
-        (true, false, true) => Some(theme.hover),
-        (true, false, false) => None,
-        (false, false, _) => Some(theme.accent_dim),
+    let dark = dark(theme);
+    let fade = |c: Color| if lit { with_alpha(c, 0.8) } else { c };
+    let (fill, edge, ink) = match variant {
+        Variant::Default => (Some(fade(theme.primary)), None, theme.primary_text),
+        Variant::Secondary => (Some(fade(theme.secondary)), None, theme.secondary_text),
+        Variant::Outline => {
+            let ground = if lit {
+                theme.muted
+            } else if dark {
+                with_alpha(theme.input, 0.3)
+            } else {
+                theme.background
+            };
+            let edge = if dark { theme.input } else { theme.separator };
+            (Some(ground), Some(edge), theme.text)
+        }
+        Variant::Ghost => (lit.then_some(theme.muted), None, theme.text),
+        Variant::Destructive => (
+            Some(with_alpha(theme.destructive, if lit { 0.2 } else { 0.1 })),
+            None,
+            theme.destructive,
+        ),
+        Variant::Link => (None, None, theme.primary),
     };
     if let Some(fill) = fill {
-        mesh.rect(rect, fill);
+        mesh.round_rect(rect, radius, fill);
     }
-    if !look.flat && !look.active && look.hovered {
-        border(mesh, rect, m.divider_w, theme.hilite);
+    if let Some(edge) = edge {
+        mesh.round_border(rect, m.divider_w, radius, edge);
     }
-    let ink = fill.map_or(theme.text, |f| theme.text_on(f));
-    font::text_centered(mesh, &button_text(label, icon), rect, size, ink);
+    let dy = if look.held { m.press_shift } else { 0.0 };
+    let face = Rect::new(rect.x, rect.y + dy, rect.w, rect.h);
+    let (left, right) = button_face(mesh, label, icon, face, size, m, ink);
+    if variant == Variant::Link && look.hovered && right > left {
+        let y = face.y + (face.h + font::height(size)) * 0.5 + m.divider_w;
+        mesh.rect(Rect::new(left, y, right - left, m.divider_w), ink);
+    }
+}
+
+/// **What a button says, centred in `face`**: its icon, the button's gap,
+/// its label in the medium weight -- cut short where the box is narrower.
+/// The span the label took, for an underline.
+fn button_face(
+    mesh: &mut Mesh,
+    label: Option<&str>,
+    icon: Option<char>,
+    face: Rect,
+    size: f32,
+    m: &Metrics,
+    ink: Color,
+) -> (f32, f32) {
+    let glyph = font::height(size);
+    let ty = face.y + (face.h - glyph) * 0.5;
+    let icon_s = icon.map(|c| c.to_string());
+    let icon_w = icon_s.as_deref().map_or(0.0, |c| font::width(c, size));
+    let label = match (label, icon) {
+        (Some(l), _) => Some(l),
+        (None, Some(_)) => None,
+        (None, None) => Some("BUTTON"),
+    };
+    let gap = if icon.is_some() && label.is_some() {
+        m.button_gap
+    } else {
+        0.0
+    };
+    let label_w = label.map_or(0.0, |l| font::width_in(Family::UiMedium, l, size));
+    let room = (face.w - 2.0 * m.pad.min(m.button_x)).max(0.0);
+    let total = (icon_w + gap + label_w).min(room);
+    let mut x = face.x + (face.w - total) * 0.5;
+    if let Some(c) = &icon_s {
+        font::text(mesh, c, x, ty, size, ink);
+        x += icon_w + gap;
+    }
+    let start = x;
+    if let Some(l) = label {
+        let avail = (face.x + face.w - x)
+            .max(0.0)
+            .min(label_w.max(room - icon_w - gap));
+        font::text_ellipsis_in(mesh, Family::UiMedium, l, x, ty, avail, size, ink);
+        x += label_w.min(avail);
+    }
+    (start, x)
+}
+
+/// `c` at `alpha` of its own strength.
+fn with_alpha(c: Color, alpha: f32) -> Color {
+    [c[0], c[1], c[2], c[3] * alpha]
 }
 
 /// How a toggle is drawn.
@@ -577,16 +841,17 @@ impl ToggleView {
     }
 }
 
-/// **The box a toggle is drawn as**, inside its cell: a square of at most
-/// `box_side`, centred vertically at the left of the rect.
+/// **The box a toggle is drawn as**, inside its cell: the design system's
+/// checkbox (`check_w` square) or switch (`switch_w` by `switch_h`),
+/// centred vertically at the left of the rect.
 pub fn toggle_box(rect: Rect, view: ToggleView, m: &Metrics) -> Rect {
-    let side = rect.h.min(rect.w).min(m.box_side);
-    // A switch is a track twice as long as it is tall; a check is square.
-    let w = match view {
-        ToggleView::Switch => (side * 1.8).min(rect.w),
-        _ => side,
+    let (w, h) = match view {
+        ToggleView::Switch => (m.switch_w, m.switch_h),
+        _ => (m.check_w, m.check_w),
     };
-    Rect::new(rect.x, rect.y + (rect.h - side) * 0.5, w, side)
+    let h = h.min(rect.h);
+    let w = w.min(rect.w);
+    Rect::new(rect.x, rect.y + (rect.h - h) * 0.5, w, h)
 }
 
 /// **What a toggle answers the pointer on**: the box, plus the label beside it
@@ -618,7 +883,7 @@ pub fn toggle_hit(
     }
     let b = toggle_box(rect, view, m);
     let Some(text) = label else { return b };
-    let tx = b.x + b.w + m.pad;
+    let tx = b.x + b.w + m.check_gap;
     let w = font::width(text, size).min((rect.x + rect.w - tx).max(0.0));
     let h = b.h.max(font::height(size)).min(rect.h);
     Rect::new(
@@ -629,6 +894,12 @@ pub fn toggle_hit(
     )
 }
 
+/// **A toggle**, as the design system draws its three: a checkbox (a
+/// rounded square on the field's edge, filled `primary` with a check in its
+/// text when on), a switch (a round track, `primary` when on and the field's
+/// edge when off, its thumb on the ground crossing to the far end), or a
+/// toggle button (a ghost button whose on state is the `muted` fill). The
+/// words stand after the box in the interface's size.
 #[allow(clippy::too_many_arguments)] // one control: its state, its place, its look
 pub fn toggle(
     d: &mut Draw,
@@ -641,139 +912,129 @@ pub fn toggle(
     size: f32,
 ) {
     if view == ToggleView::Button {
-        // **A latch reads as one option of a segmented choice**: off is the
-        // well an option not chosen sits in, on is the chosen one's fill. Drawn
-        // as a button at rest, off took the fill a chosen segment has, so a
-        // row of tools showed every latch as on.
-        let (mesh, _, theme) = d.parts();
-        let fill = match (on, hovered) {
-            (true, _) => theme.accent_dim,
-            (false, true) => theme.hover,
-            (false, false) => theme.field,
+        let (mesh, m, theme) = d.parts();
+        let radius = m.radius_md;
+        let lit = on || hovered;
+        if lit {
+            mesh.round_rect(rect, radius, theme.muted);
+        }
+        let ink = if hovered && !on {
+            theme.text_dim
+        } else {
+            theme.text
         };
-        mesh.rect(rect, fill);
-        font::text_centered(
-            mesh,
-            &button_text(label, icon),
-            rect,
-            size,
-            theme.text_on(fill),
-        );
+        button_face(mesh, label, icon, rect, size, m, ink);
         return;
     }
-    let box_rect = toggle_box(rect, view, d.m);
+    let b = toggle_box(rect, view, d.m);
     let (mesh, m, theme) = d.parts();
-    // Like `button`, the toggle draws its box and its label at the left of the
-    // cell; the layout gap does the separating.
-    let body = rect;
-    let side = box_rect.h;
+    let dark = dark(theme);
     match view {
         ToggleView::Switch => {
-            // The track takes the accent when it is on, and the knob crosses to
-            // the far end: the two readings of one state, so it is legible
-            // without color.
-            // The track is drawn on the separator's ring, so an off switch is
-            // a visible shape on any panel and not a dark hole in it.
-            mesh.round_rect(box_rect, side * 0.5, theme.separator);
-            let rim = m.divider_w;
-            mesh.round_rect(
-                Rect::new(
-                    box_rect.x + rim,
-                    box_rect.y + rim,
-                    (box_rect.w - 2.0 * rim).max(0.0),
-                    (side - 2.0 * rim).max(0.0),
-                ),
-                (side * 0.5 - rim).max(0.0),
-                if on { theme.accent_dim } else { theme.field },
-            );
-            let r = side * 0.5 - (side * 0.14).max(1.0);
-            let cx = if on {
-                box_rect.x + box_rect.w - side * 0.5
+            let radius = b.h * 0.5;
+            let track = if on {
+                theme.primary
+            } else if dark {
+                with_alpha(theme.input, 0.8)
             } else {
-                box_rect.x + side * 0.5
+                theme.input
             };
-            mesh.disc(
-                cx,
-                box_rect.y + side * 0.5,
-                r,
-                if on { theme.accent } else { theme.text_dim },
+            mesh.round_rect(b, radius, track);
+            let knob = (b.h - 2.0 * m.divider_w).max(1.0);
+            let x = if on {
+                b.x + b.w - m.divider_w - knob
+            } else {
+                b.x + m.divider_w
+            };
+            let thumb = match (dark, on) {
+                (true, true) => theme.primary_text,
+                (true, false) => theme.text,
+                _ => theme.background,
+            };
+            mesh.round_rect(
+                Rect::new(x, b.y + m.divider_w, knob, knob),
+                knob * 0.5,
+                thumb,
             );
         }
         _ => {
-            mesh.rect(box_rect, theme.track);
+            let radius = m.check_radius;
             if on {
-                let inset = side * 0.22;
-                mesh.rect(
-                    Rect::new(
-                        box_rect.x + inset,
-                        box_rect.y + inset,
-                        side - 2.0 * inset,
-                        side - 2.0 * inset,
-                    ),
-                    theme.accent,
-                );
+                mesh.round_rect(b, radius, theme.primary);
+                let check = self::icon("check", font::symbol::CHECK);
+                let scale = font::em_scale(Family::Ui, b.h * 0.875);
+                font::text_centered(mesh, &check.to_string(), b, scale, theme.primary_text);
+            } else {
+                if dark {
+                    mesh.round_rect(b, radius, with_alpha(theme.input, 0.3));
+                }
+                mesh.round_border(b, m.divider_w, radius, theme.input);
             }
         }
-    }
-    if hovered {
-        border(mesh, box_rect, m.divider_w, theme.hilite);
     }
     let text = match (icon, label) {
         (None, None) => return,
         (icon, label) => button_text(label.or(Some("")), icon),
     };
-    let tx = box_rect.x + box_rect.w + m.pad;
-    let ty = body.y + (body.h - font::height(size)) * 0.5;
-    let avail = (body.x + body.w - tx).max(0.0);
+    let tx = b.x + b.w + m.check_gap;
+    let ty = rect.y + (rect.h - font::height(size)) * 0.5;
+    let avail = (rect.x + rect.w - tx).max(0.0);
     font::text_ellipsis(mesh, text.trim_end(), tx, ty, avail, size, theme.text);
 }
 
-/// Draws a `choice`: the chosen option in a field, with a **marker** in a
-/// gutter at its right edge.
-///
-/// The marker points **down**: a press opens the option list over the window,
-/// and a press on a row picks it. A chooser drawn as a bare field reads as a
-/// label, and then the click that changes the value comes as a surprise. The
-/// gutter is reserved out of the text's width, so a long option ellipsizes
-/// before it reaches the marker.
+/// Draws a `choice` as the design system's select: the chosen option in a
+/// field, and a chevron at its right pointing down, since a press opens the
+/// option list over the window. The chevron's room is taken out of the
+/// text's width, so a long option is cut before it reaches it.
 pub fn choice(d: &mut Draw, current: &str, label: Option<&str>, rect: Rect, size: f32) {
-    let gutter = font::height(size) + d.m.pad;
-    let text_cell = Rect::new(rect.x, rect.y, (rect.w - gutter).max(0.0), rect.h);
-    field(d, current, label, text_cell, size, false, None);
-    // The marker rides the body's own row, not the cell's: a labelled chooser has
-    // a label strip over it, and the two must not overlap.
-    let body = body_rect_at(rect, label.is_some(), size, d.m);
+    let m = d.m;
+    let body = field_box(rect, label.is_some(), size, m);
+    let chevron_w = m.icon + m.field_x;
+    field_with(d, current, label, rect, size, false, None, chevron_w, false);
     let (mesh, m, theme) = d.parts();
-    mesh.rect(
-        Rect::new(text_cell.x + text_cell.w - m.pad, body.y, gutter, body.h),
-        theme.field,
-    );
-    // The marker is a glyph of the symbol set, like every mark the chrome
-    // draws: one drawing for the floor and for a loaded face.
-    let glyph = font::height(size);
-    font::text(
+    let chevron = icon("chevron-down", font::symbol::POINT_DOWN);
+    let cell = Rect::new(body.x + body.w - chevron_w, body.y, m.icon, body.h);
+    let scale = font::em_scale(Family::Ui, m.type_sm);
+    font::text_centered(
         mesh,
-        &font::symbol::POINT_DOWN.to_string(),
-        rect.x + rect.w - m.pad - gutter + (gutter - font::advance(size)) * 0.5,
-        body.y + (body.h - glyph) * 0.5,
-        size,
-        theme.accent,
+        &chevron.to_string(),
+        cell,
+        scale,
+        with_alpha(theme.text_dim, 0.5),
     );
 }
 
-/// The editable text field. `caret` is `Some` only while the field is focused
-/// (it then draws the selection and the blinking-less caret). The **layout does
-/// not depend on focus**: a multiline field always lays its lines top-aligned
-/// like a text editor (not a centered label), and a single-line field always
-/// sits on one vertically-centered row -- an unfocused field uses a caret at the
-/// start (scroll offset 0), so the pre-written text reads exactly as it will
-/// once clicked into. A single-line field clips overflow with an ellipsis when
-/// unfocused, and scrolls to the caret when focused. (A `choice`'s read-out reuses
-/// this as an unfocused single-line field.)
-///
-/// Draws an editable text field: its label strip, its body, the visible text --
-/// scrolled to the caret when `caret` is `Some` (the field is focused) -- and,
-/// then, the selection and the caret themselves.
+/// **The box a field is drawn as**: its whole cell under the label strip,
+/// as wide as the cell -- the design system's input, flush with the caption
+/// over it.
+pub fn field_box(rect: Rect, has_label: bool, size: f32, m: &Metrics) -> Rect {
+    let top = rect.y + label_height(rect.h, has_label, size, m);
+    Rect::new(rect.x, top, rect.w, (rect.y + rect.h - top).max(0.0))
+}
+
+/// Where a field's text starts across its box, and how wide it may run.
+fn field_text(body: Rect, m: &Metrics, end: f32) -> (f32, f32) {
+    let x = body.x + m.field_x;
+    (x, (body.w - 2.0 * m.field_x - end).max(0.0))
+}
+
+/// The top inset of a text area's lines.
+fn area_top(m: &Metrics) -> f32 {
+    2.0 * m.field_y
+}
+
+/// The editable text field, as the design system's input: a box with the
+/// medium corner on the field's edge (the ring's while it has the keys, the
+/// destructive's while it is `invalid`), lifted a little, its text inset.
+/// `caret` is `Some` only while the field is focused (it then draws the
+/// selection and the caret). The **layout does not depend on focus**: a
+/// multiline field always lays its lines top-aligned like a text editor (not a
+/// centered label), and a single-line field always sits on one
+/// vertically-centered row -- an unfocused field uses a caret at the start
+/// (scroll offset 0), so the pre-written text reads exactly as it will once
+/// clicked into. A single-line field clips overflow with an ellipsis when
+/// unfocused, and scrolls to the caret when focused. (A `choice`'s read-out
+/// reuses this as an unfocused single-line field.)
 pub fn field(
     d: &mut Draw,
     value: &str,
@@ -783,13 +1044,45 @@ pub fn field(
     multiline: bool,
     caret: Option<textedit::Caret>,
 ) {
+    field_with(d, value, label, rect, size, multiline, caret, 0.0, false);
+}
+
+/// [`field`], keeping `end` pixels free at its right (a select's chevron),
+/// and drawn `invalid`.
+#[allow(clippy::too_many_arguments)] // the field, and what its owner adds to it
+pub fn field_with(
+    d: &mut Draw,
+    value: &str,
+    label: Option<&str>,
+    rect: Rect,
+    size: f32,
+    multiline: bool,
+    caret: Option<textedit::Caret>,
+    end: f32,
+    invalid: bool,
+) {
     label_strip(d, label, rect, size);
     let m = d.m;
-    let body = body_rect_at(rect, label.is_some(), size, m);
-    d.mesh.rect(body, d.theme.field);
+    let body = field_box(rect, label.is_some(), size, m);
+    let radius = m.radius_md;
+    d.shadow(body, radius, Elevation::Xs);
+    let dark = dark(d.theme);
+    let ground = if dark {
+        with_alpha(d.theme.input, 0.3)
+    } else {
+        d.theme.background
+    };
+    d.mesh.round_rect(body, radius, ground);
+    let edge = if invalid {
+        d.theme.destructive
+    } else if caret.is_some() {
+        d.theme.focus
+    } else {
+        d.theme.input
+    };
+    d.mesh.round_border(body, m.divider_w, radius, edge);
 
-    let text_x = body.x + m.pad;
-    let text_w = (body.w - 2.0 * m.pad).max(0.0);
+    let (text_x, text_w) = field_text(body, m, end);
     // The scroll window is counted in clusters -- a caret moves by clusters,
     // so what has to stay visible is one -- while every *position* inside the
     // line is measured as drawn, which is what a proportional face and a line
@@ -816,12 +1109,12 @@ pub fn field(
     // caret's line/column so it stays visible; from the top-left otherwise.
     let hstart = textedit::h_scroll(textedit::line_col(value, lay.pos).1, cols);
     let row_h = font::line_advance(size);
-    let rows = (((body.h - 2.0 * m.pad) / row_h) as usize).max(1);
+    let rows = (((body.h - 2.0 * area_top(m)) / row_h) as usize).max(1);
     let row_start = textedit::h_scroll(textedit::line_col(value, lay.pos).0, rows);
     let mut byte = 0usize; // running byte offset of each line's start
     for (i, line) in value.split('\n').enumerate() {
         if i >= row_start && i < row_start + rows {
-            let ty = body.y + m.pad + (i - row_start) as f32 * row_h;
+            let ty = body.y + area_top(m) + (i - row_start) as f32 * row_h;
             draw_line(
                 d, value, byte, text_x, ty, hstart, cols, text_w, size, caret,
             );
@@ -942,9 +1235,8 @@ pub fn caret_at(
     y: f64,
     m: &Metrics,
 ) -> usize {
-    let body = body_rect_at(rect, has_label, size, m);
-    let text_x = body.x + m.pad;
-    let text_w = (body.w - 2.0 * m.pad).max(0.0);
+    let body = field_box(rect, has_label, size, m);
+    let (text_x, text_w) = field_text(body, m, 0.0);
     let cols = font::fit_chars(text_w, size);
     let caret_col = textedit::line_col(value, current.pos).1;
     let hstart = textedit::h_scroll(caret_col, cols);
@@ -967,10 +1259,10 @@ pub fn caret_at(
 
     let caret_line = textedit::line_col(value, current.pos).0;
     let row_h = font::line_advance(size);
-    let rows = (((body.h - 2.0 * m.pad) / row_h) as usize).max(1);
+    let rows = (((body.h - 2.0 * area_top(m)) / row_h) as usize).max(1);
     let row_start = textedit::h_scroll(caret_line, rows);
     let n_lines = value.split('\n').count();
-    let rel = ((y as f32 - (body.y + m.pad)) / row_h).max(0.0) as usize;
+    let rel = ((y as f32 - (body.y + area_top(m))) / row_h).max(0.0) as usize;
     let line = (row_start + rel).min(n_lines.saturating_sub(1));
     at_in(textedit::offset_of(value, line, 0))
 }
@@ -1237,11 +1529,10 @@ mod tests {
         assert!(max_x <= rect.x + rect.w, "single line bleeds past the rect");
     }
 
-    /// **A latch reads as a segment of a choice**: off, the well of an option
-    /// not chosen; on, the chosen one's fill -- never the fill of a chosen
-    /// option while it is off.
+    /// **A latch is the design system's toggle**: off, no fill; on, the
+    /// `muted` fill a ghost button lights with.
     #[test]
-    fn a_latch_is_drawn_as_an_option_chosen_or_not() {
+    fn a_latch_is_drawn_as_a_toggle_on_or_off() {
         let theme = Theme::default();
         let fill = |on: bool| {
             let mut mesh = Mesh::new();
@@ -1257,8 +1548,8 @@ mod tests {
             );
             mesh.colors_by_y().next().map(|(_, color)| color)
         };
-        assert_eq!(fill(false), Some(theme.field));
-        assert_eq!(fill(true), Some(theme.accent_dim));
+        assert_ne!(fill(false), Some(theme.muted));
+        assert_eq!(fill(true), Some(theme.muted));
     }
 
     #[test]

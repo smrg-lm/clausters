@@ -200,8 +200,31 @@ pub fn row_h(size: f32, m: &Metrics) -> f32 {
 pub fn body_h(view: View, options: usize, size: f32, m: &Metrics) -> f32 {
     if view.stacked() {
         row_h(size, m) * options.max(1) as f32
+    } else if view == View::Combo {
+        m.field_h.max(control_box(size, m))
     } else {
         control_box(size, m)
+    }
+}
+
+/// **The body a choice draws its parts in**: a select's field box, flush
+/// with its cell ([`controls::field_box`]); any other view's body inside the
+/// control's inset.
+pub fn body_of(view: View, rect: Rect, has_label: bool, size: f32, m: &Metrics) -> Rect {
+    if view == View::Combo {
+        controls::field_box(rect, has_label, size, m)
+    } else {
+        controls::body_rect_at(rect, has_label, size, m)
+    }
+}
+
+/// The air a choice's body stands in, around it, by view: none for a
+/// select, which is its field box.
+pub fn body_air(view: View, m: &Metrics) -> f32 {
+    if view == View::Combo {
+        0.0
+    } else {
+        crate::host::widget::size::body_inset(m)
     }
 }
 
@@ -212,8 +235,8 @@ pub fn body_h(view: View, options: usize, size: f32, m: &Metrics) -> f32 {
 pub fn body_min_w(view: View, options: usize, size: f32, m: &Metrics) -> f32 {
     let cut = font::width("\u{2026}", size);
     match view {
-        View::Combo => cut + 2.0 * m.pad + font::height(size) + m.pad,
-        View::Radio => m.box_side + cut + 2.0 * m.pad,
+        View::Combo => cut + 3.0 * m.field_x + m.icon,
+        View::Radio => m.check_w + cut + 2.0 * m.pad,
         View::List => cut + 2.0 * m.pad,
         View::Segmented => (cut + 3.0 * m.pad) * options.max(1) as f32,
         View::Tabs => tab_w("\u{2026}", size, m),
@@ -228,8 +251,8 @@ pub fn body_w(view: View, options: &[String], size: f32, m: &Metrics) -> f32 {
         .map(|o| font::width(o, size))
         .fold(0.0f32, f32::max);
     match view {
-        View::Combo => widest + 2.0 * m.pad + font::height(size) + m.pad,
-        View::Radio => m.box_side + widest + 2.0 * m.pad,
+        View::Combo => widest + 3.0 * m.field_x + m.icon,
+        View::Radio => m.check_w + widest + 2.0 * m.pad,
         View::List => widest + 2.0 * m.pad,
         View::Segmented => (widest + 3.0 * m.pad) * options.len().max(1) as f32,
         View::Tabs => options.iter().map(|o| tab_w(o, size, m)).sum(),
@@ -262,7 +285,7 @@ pub fn draw(
         return controls::choice(d, current, label, rect, size);
     }
     controls::label_strip(d, label, rect, size);
-    let body = controls::body_rect_at(rect, label.is_some(), size, d.m);
+    let body = body_of(view, rect, label.is_some(), size, d.m);
     let parts = parts(view, options, body, size, d.m);
     let (mesh, m, theme) = d.parts();
     let glyph = font::height(size);
@@ -272,15 +295,16 @@ pub fn draw(
         View::Radio => {
             for (part, r) in &parts {
                 let Part::Option(i) = *part else { continue };
-                let side = m.box_side.min(r.h);
+                // the design system's radio: a ring on the field's edge, the
+                // chosen one marked with a dot of the primary
+                let side = m.check_w.min(r.h);
                 let (cx, cy) = (r.x + side * 0.5, r.y + r.h * 0.5);
-                // A ring, so an option that is not chosen is still a mark.
-                mesh.disc(cx, cy, side * 0.5, theme.separator);
-                mesh.disc(cx, cy, side * 0.5 - m.divider_w, theme.field);
+                mesh.disc(cx, cy, side * 0.5, theme.input);
+                mesh.disc(cx, cy, side * 0.5 - m.divider_w, theme.background);
                 if i == index {
-                    mesh.disc(cx, cy, side * 0.26, theme.accent);
+                    mesh.disc(cx, cy, side * 0.25, theme.primary);
                 } else if hover == Some(*part) {
-                    mesh.disc(cx, cy, side * 0.26, theme.hover);
+                    mesh.disc(cx, cy, side * 0.25, theme.muted);
                 }
                 font::text_ellipsis(
                     mesh,
@@ -319,23 +343,24 @@ pub fn draw(
                 );
             }
         }
+        // **A toggle group**, as the design system's segmented choice: a
+        // bordered well with the small corner, its options inside a narrow
+        // inset, the chosen one on the `secondary` fill.
         View::Segmented => {
-            mesh.rect(body, theme.field);
+            let inset = 2.0 * m.divider_w;
+            mesh.round_border(body, m.divider_w, m.radius_sm, theme.input);
             for (part, r) in &parts {
                 let Part::Option(i) = *part else { continue };
-                let fill = if i == index {
-                    Some(theme.accent_dim)
+                let cell = r.inset(inset);
+                let (fill, ink) = if i == index {
+                    (Some(theme.secondary), theme.secondary_text)
                 } else if hover == Some(*part) {
-                    Some(theme.hover)
+                    (Some(theme.muted), theme.text)
                 } else {
-                    None
+                    (None, theme.text_dim)
                 };
                 if let Some(fill) = fill {
-                    mesh.rect(*r, fill);
-                }
-                let ink = fill.map_or(theme.text, |f| theme.text_on(f));
-                if i > 0 {
-                    mesh.rect(Rect::new(r.x, r.y, m.divider_w, r.h), theme.separator);
+                    mesh.round_rect(cell, (m.radius_sm - inset).max(0.0), fill);
                 }
                 font::text_ellipsis(
                     mesh,
@@ -347,7 +372,6 @@ pub fn draw(
                     ink,
                 );
             }
-            mesh.border(body, m.divider_w, theme.separator);
         }
         View::Tabs => {
             // The line every tab stands on, and the chosen one standing out of

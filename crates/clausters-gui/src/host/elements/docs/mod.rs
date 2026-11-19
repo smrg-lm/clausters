@@ -986,9 +986,8 @@ impl DocsView {
             }
         }
         let flat = ButtonLook {
-            active: false,
-            hovered: false,
             flat: true,
+            ..ButtonLook::default()
         };
         d.mesh.set_clip(Some(clip(strip_clip)));
         for (part, r) in &g.parts {

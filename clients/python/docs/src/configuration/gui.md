@@ -245,7 +245,7 @@ scale = 0.9              # a compact host, every role regenerated
 control_h = 26           # ...except this one, set outright
 ```
 
-The 107 roles, with the value each takes at `scale = 1.0`:
+The 113 roles, with the value each takes at `scale = 1.0`:
 
 | Role | Default | What it sizes |
 | --- | --- | --- |
@@ -266,7 +266,7 @@ The 107 roles, with the value each takes at `scale = 1.0`:
 | `header_w` | 72 | The width of a row's header column (a lane's name and controls). |
 | `panel_h` | 36 | The height of a **panel's header**: the one strip along a panel's top, which a dock's panel draws its grip, its tabs or its tools and its buttons in, and a window that names a `header` its tools in. |
 | `divider_w` | 1 | A hairline: a divider between lanes, a box edge. |
-| `focus_ring` | 2 | The weight of the ring around the widget holding the keyboard focus. Heavier than a hairline on purpose: it has to read *over* the edge a control already draws. |
+| `focus_ring` | 3 | The weight of the ring around the widget holding the keyboard focus. Heavier than a hairline on purpose: it has to read *over* the edge a control already draws. |
 | `trace_w` | 1.5 | The weight of a drawn signal trace. |
 | `point_radius` | 4 | The radius of a placed point (a break-point, an automation node). |
 | `plate_radius` | 4 | The corner radius of a **text plate** — the ground a caption drawn over a picture sits on. |
@@ -347,6 +347,12 @@ The 107 roles, with the value each takes at `scale = 1.0`:
 | `field_y` | 4 | A field's inset down. |
 | `text_area_h` | 64 | The least a text area is high. |
 | `label_to_field` | 8 | Between a label and the control it names. |
+| `check_w` | 16 | A checkbox's side. |
+| `check_radius` | 4 | A checkbox's corner. |
+| `check_gap` | 8 | Between a checkbox or a switch and the words beside it. |
+| `switch_w` | 32 | A switch's track, along it. |
+| `switch_h` | 18 | A switch's track, across it. |
+| `toggle_x` | 8 | A toggle button's inset across. |
 | `badge_h` | 20 | A badge's height. |
 | `badge_x` | 8 | A badge's inset across. |
 | `scrollbar_w` | 10 | A scrollbar's width. |

@@ -455,9 +455,8 @@ impl Bar {
         let size = layout.size;
         let q = self.finder.query();
         let look = ButtonLook {
-            active: false,
-            hovered: false,
-            flat: false,
+            variant: controls::Variant::Outline,
+            ..ButtonLook::default()
         };
         let flat = ButtonLook { flat: true, ..look };
         for (part, rect) in &layout.parts {

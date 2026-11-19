@@ -34,7 +34,7 @@ use crate::host::widget::element::{
     Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput, Mods, Verb,
 };
 use crate::host::widget::parse;
-use crate::host::widget::size::{Natural, body_inset, control_box, label_strip, text_box};
+use crate::host::widget::size::{Natural, control_box, label_strip, text_box};
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::metrics::Metrics;
 
@@ -52,6 +52,9 @@ pub struct Text {
     /// Whether Enter inserts a newline and the field draws a block of rows
     /// (a text *surface*) instead of one scrolling line.
     pub multiline: bool,
+    /// The `invalid` prop: what it holds is refused, and its edge says so in
+    /// the destructive role.
+    pub invalid: bool,
     /// **View state**, never parsed from or sent over the wire: the insertion
     /// point and the selection, meaningful only while the field is focused.
     caret: Caret,
@@ -120,6 +123,10 @@ fn from_props(props: &Map<String, Value>) -> Text {
         text_size: parse::text_size(props),
         multiline: props
             .get("multiline")
+            .and_then(parse::truthy)
+            .unwrap_or(false),
+        invalid: props
+            .get("invalid")
             .and_then(parse::truthy)
             .unwrap_or(false),
         caret: Caret::default(),
@@ -268,12 +275,13 @@ impl Element for Text {
             "label" => parse::set_label(&mut self.label, v),
             "text_size" => parse::set_size(&mut self.text_size, v),
             "multiline" => parse::truthy(v).map(|b| self.multiline = b).is_some(),
+            "invalid" => parse::truthy(v).map(|b| self.invalid = b).is_some(),
             _ => false,
         }
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
-        controls::field(
+        controls::field_with(
             d,
             &self.value,
             self.label.as_deref(),
@@ -283,6 +291,8 @@ impl Element for Text {
             // The caret and the selection are drawn only while the field is
             // focused: unfocused, the value is text like any other.
             ctx.focused.then_some(self.caret),
+            0.0,
+            self.invalid,
         );
     }
 
@@ -293,7 +303,7 @@ impl Element for Text {
             // A multiline field is a text *surface*: its height is the caller's,
             // and it scrolls its rows inside it.
             (!self.multiline).then(|| {
-                label_strip(self.label.is_some(), size, m) + body_inset(m) + control_box(size, m)
+                label_strip(self.label.is_some(), size, m) + m.field_h.max(control_box(size, m))
             }),
         )
     }
@@ -309,7 +319,11 @@ impl Element for Text {
         let size = self.text_size * scale;
         (
             Some(text_box(FLOOR_TEXT, size, m)),
-            Some(body_inset(m) + control_box(size, m)),
+            Some(if self.multiline {
+                m.text_area_h
+            } else {
+                m.field_h.max(control_box(size, m))
+            }),
         )
     }
 
@@ -336,7 +350,7 @@ impl Element for Text {
     /// air a row stretched around it used to focus the field and land a caret
     /// in text nobody pointed at.
     fn hit_area(&self, input: &Input) -> HitArea {
-        HitArea::Rect(controls::body_rect_at(
+        HitArea::Rect(controls::field_box(
             input.rect,
             self.label.is_some(),
             self.text_size * input.scale,

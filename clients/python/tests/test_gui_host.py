@@ -743,6 +743,12 @@ def test_the_container_chrome_rides_as_flags_and_a_dialog_is_a_modal_layout():
                         description="The take is not saved.", alert=True, wide=False)
     assert (ask["description"], ask["alert"], ask["wide"]) == ("The take is not saved.", 1, 0)
     assert ask["children"][0]["default"] == 1
+    kit = guidef.button(label="Delete", variant="destructive", size="sm")
+    assert (kit["variant"], kit["size"]) == ("destructive", "sm")
+    assert guidef.label("Name", variant="caption")["variant"] == "caption"
+    assert guidef.text(value="x", invalid=True)["invalid"] == 1
+    with pytest.raises(ValueError):
+        guidef.button(variant="primary")
     bar = guidef.toolbar(guidef.button(icon=guidef.ICON.play, flat=True),
                          guidef.separator(), guidef.separator(weight=1, line=False))
     assert (bar["flow"], bar["hug"], bar["pack"]) == ("row", 1, 1)

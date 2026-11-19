@@ -139,12 +139,9 @@ pub fn numbered<F: Spec>(forms: &[F], ids: &Ids) -> bool {
     names(forms).iter().all(|name| ids.contains_key(name))
 }
 
-/// How wide a row's caption is: the longest of them, "Bottom margin (mm)",
-/// at the size text is drawn, in either face.
-const CAPTION_W: f64 = 170.0;
-
-/// How wide a field is: a title, a path, a line of a footnote.
-const FIELD_W: f64 = 340.0;
+/// Between a field's caption and the field under it, in logical pixels:
+/// the specification's.
+const CAPTION_GAP: f64 = 8.0;
 
 /// Between the fields of a form, in logical pixels: the specification's
 /// gap inside a dialog's body.
@@ -166,16 +163,9 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
         .iter()
         .map(|(name, label)| {
             let chooser = form.chooser(name);
-            let mut caption = json!({"type": "label", "text": label});
-            // **A caption beside a chooser is as wide as its text**, and the
-            // chooser takes the rest of the row: the column of captions a
-            // form lines its text fields up on is width a file list has
-            // better use for.
-            if chooser.is_none()
-                && let Some(map) = caption.as_object_mut()
-            {
-                map.insert("w".into(), json!(CAPTION_W));
-            }
+            // **A field's caption stands over it**, as the design system's
+            // form sets one, in the caption's weight
+            let mut caption = json!({"type": "label", "text": label, "variant": "caption"});
             // the caption a form corrects is the question it is asking
             if let (Some(_), Some(map)) = (form.label(), caption.as_object_mut()) {
                 map.insert("id".into(), json!(id("label")));
@@ -196,37 +186,34 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
                         "id": id(name),
                         "options": options,
                         "index": option_index(options, held(name)),
-                        "w": FIELD_W,
                     }),
-                    None => {
-                        json!({"type": "text", "id": id(name), "value": held(name), "w": FIELD_W})
-                    }
+                    None => json!({"type": "text", "id": id(name), "value": held(name)}),
                 },
             };
             if let Some(map) = field.as_object_mut() {
                 form.field(name, map);
             }
-            // a row is its caption and its field and no air of its own: the
-            // dialog's gap is what separates one row from the next
+            // a field is its caption over its control, the caption's gap
+            // between them; the body's gap separates one field from the next
             let mut row = json!({
                 "type": "layout",
-                "flow": "row",
+                "flow": "col",
                 "hug": true,
                 "margin": 0,
+                "gap": CAPTION_GAP,
                 "children": [caption, field],
             });
-            // the row a chooser stands in is as wide as a caption and the
-            // chooser were, so the dialog keeps its width, and packed, so the
-            // caption is its text and the chooser's weight the rest
+            // the field a chooser stands in is as wide as the chooser, so
+            // the dialog takes its width
             if let (Some(chooser), Some(map)) = (chooser, row.as_object_mut()) {
-                map.insert("w".into(), json!(CAPTION_W + chooser.w));
-                map.insert("pack".into(), json!(true));
+                map.insert("w".into(), json!(chooser.w));
             }
             row
         })
         .collect();
     let spring = json!({"type": "separator", "weight": 1, "line": false});
-    let cancel = json!({"type": "button", "id": id("cancel"), "label": "Cancel"});
+    let cancel =
+        json!({"type": "button", "id": id("cancel"), "label": "Cancel", "variant": "outline"});
     let ok = json!({"type": "button", "id": id("ok"), "label": "OK", "default": true});
     let buttons = json!({
         "type": "layout",
@@ -659,12 +646,9 @@ mod tests {
             tree["children"].as_array()?.iter().find_map(row_of)
         }
         let row = row_of(&stack).unwrap();
-        assert_eq!(row["w"].as_f64(), Some(CAPTION_W + 400.0));
-        assert_eq!(row["pack"], true);
-        assert!(
-            row["children"][0].get("w").is_none(),
-            "the caption hugs its text"
-        );
+        assert_eq!(row["w"].as_f64(), Some(400.0));
+        assert_eq!(row["flow"], "col", "the caption stands over the chooser");
+        assert_eq!(row["children"][0]["variant"], "caption");
         assert!(
             chooser.get("value").is_none(),
             "a chooser is not typed into"

@@ -482,7 +482,10 @@ fn resolve_style_under(
     // Opacity **composes**: a control at 0.5 inside a panel at 0.5 draws at
     // 0.25, which is what makes a fade a property of a group rather than of one
     // box. What it is not is layer compositing -- see [`clausters_gui_draw::paint::Ink`].
-    let alpha = (alpha * widget.opacity.unwrap_or(1.0)).clamp(0.0, 1.0);
+    // And a disabled widget is drawn at half strength, as the design
+    // system's are -- once, where it is disabled, for its whole subtree.
+    let disabled = if widget.enabled { 1.0 } else { 0.5 };
+    let alpha = (alpha * widget.opacity.unwrap_or(1.0) * disabled).clamp(0.0, 1.0);
     widget.alpha = alpha;
     let group = match &widget.theme_over {
         Some(table) => {

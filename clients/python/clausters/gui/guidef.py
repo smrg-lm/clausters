@@ -1506,9 +1506,19 @@ def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> di
     return from_control
 
 
+#: What a `label` may be (its ``variant``).
+LABEL_VARIANTS = ("text", "caption", "help", "badge")
+
+#: What a `button` may be for (its ``variant``).
+BUTTON_VARIANTS = ("default", "outline", "secondary", "ghost", "destructive", "link")
+
+#: How big a `button` is (its ``size``).
+BUTTON_SIZES = ("default", "sm", "xs", "lg")
+
+
 def label(text: str = "", *, text_size: float | None = None, wrap: bool | None = None,
           align: str | None = None, live: bool | None = None, color: str | None = None,
-          dot: str | None = None, muted: bool | None = None,
+          dot: str | None = None, muted: bool | None = None, variant: str | None = None,
           id: int | None = None, **props) -> View:
     """Static ``label`` text, passed positionally: ``label("hello")``.
 
@@ -1529,8 +1539,15 @@ def label(text: str = "", *, text_size: float | None = None, wrap: bool | None =
     ``dot`` draws a dot before the text in a role of the theme -- a state:
     ``"success"``, ``"warning"`` or ``"destructive"`` -- and ``muted=True``
     the text in the dimmed role, as a status line's is.
+
+    ``variant`` says what the label is, as the design system's: ``"text"``
+    (the default), ``"caption"`` (a field's caption over it, in the medium
+    weight and flush with the field), ``"help"`` (the sentence under a field,
+    smaller and quiet) or ``"badge"`` (a small pill on the secondary fill).
     """
-    extra = _drop_none(text_size=text_size, align=align, color=color, dot=dot)
+    if variant is not None and variant not in LABEL_VARIANTS:
+        raise ValueError(f"unknown label variant {variant!r}; use one of {LABEL_VARIANTS}")
+    extra = _drop_none(text_size=text_size, align=align, color=color, dot=dot, variant=variant)
     if muted is not None:
         extra["muted"] = 1 if muted else 0
     if wrap is not None:
@@ -1636,6 +1653,7 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
            on: float | None = None, off: float | None = None,
            icon: str | None = None, flat: bool | None = None, menu: list | None = None,
            verb: str | None = None, default: bool | None = None,
+           variant: str | None = None, size: str | None = None,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A push ``button``, whose **press is the event**. ``text_size`` scales its
@@ -1690,6 +1708,13 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
     ``main``, and the window's owner hears it where the host performs no such
     verb. A tool reports nothing of its own and takes no focus.
 
+    ``variant`` says what the button is for, as the design system's:
+    ``"default"`` (the primary fill: what a form is for), ``"outline"``,
+    ``"secondary"``, ``"ghost"`` (no fill until the pointer is over it, as
+    ``flat``), ``"destructive"`` or ``"link"``. ``size`` is its height:
+    ``"default"``, ``"sm"``, ``"xs"`` or ``"lg"``; an icon alone makes it
+    square.
+
     ``default`` marks the **default action** of the dialog the button is in:
     the keys go to it as the dialog comes up, when the dialog has no field to
     give them to."""
@@ -1697,8 +1722,12 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
         raise ValueError(
             f"unknown button mode {mode!r}; use \"gate\" (on while held) or "
             "\"press\" (one message, the bang)")
+    if variant is not None and variant not in BUTTON_VARIANTS:
+        raise ValueError(f"unknown button variant {variant!r}; use one of {BUTTON_VARIANTS}")
+    if size is not None and size not in BUTTON_SIZES:
+        raise ValueError(f"unknown button size {size!r}; use one of {BUTTON_SIZES}")
     extra = _drop_none(label=label, mode=mode, on=on, off=off, icon=icon, menu=menu,
-                       verb=verb, text_size=text_size, color=color)
+                       verb=verb, text_size=text_size, color=color, variant=variant, size=size)
     if flat is not None:
         extra["flat"] = 1 if flat else 0
     if default is not None:
@@ -1760,17 +1789,20 @@ def toggle(control=None, *, label: str | None = None, value: bool | None = None,
 
 
 def text(*, value: str | None = None, label: str | None = None, text_size: float | None = None,
-         multiline: bool | None = None, color: str | None = None, id: int | None = None, **props
-         ) -> View:
+         multiline: bool | None = None, invalid: bool | None = None, color: str | None = None,
+         id: int | None = None, **props) -> View:
     """An editable ``text`` field. The user types into it and the entered string
     is emitted as a ``/gui_event`` (or forwarded to the server when bound) on
     **every** edit -- like a slider's value, never gated on Enter. ``multiline``
     allows embedded newlines (Enter inserts one) and a growing field; ``value``
     seeds the initial contents (and ``/gui_set value`` sets it live). ``text_size``
-    scales the field text and its label."""
+    scales the field text and its label. ``invalid=True`` says what it holds is
+    refused: its edge is drawn in the destructive role until it is set off."""
     extra = _drop_none(value=value, label=label, text_size=text_size, color=color)
     if multiline is not None:
         extra["multiline"] = bool(multiline)
+    if invalid is not None:
+        extra["invalid"] = 1 if invalid else 0
     return node("text", id=id, **extra, **props)
 
 
