@@ -262,10 +262,23 @@ pub(super) enum ToApp {
     /// window it asked to open again. It is the client's to keep, as one it
     /// opened, and asks nothing before a close.
     Adopt { def_id: i32 },
+    /// **What a quit would lose** ([`clausters_apps::quitting`]): answered
+    /// with [`FromApp::Unsaved`].
+    Unsaved,
+    /// **A quit's Save all**: every document a quit would lose work in is
+    /// saved through its own Save, and [`FromApp::Saved`] says so once
+    /// nothing is left -- or that the saving was called off, when work
+    /// appeared that was not there to be saved.
+    SaveAll,
 }
 
 /// What the application says back to the host.
 pub(super) enum FromApp {
+    /// The documents a quit would lose work in ([`ToApp::Unsaved`]).
+    Unsaved(Vec<clausters_apps::quitting::Unsaved>),
+    /// A quit's Save all ended ([`ToApp::SaveAll`]): `true` with nothing
+    /// left to lose, `false` called off.
+    Saved(bool),
     /// The takes what follows names by number, handed over by reference
     /// (`clausters_apps::audio::shared`, the context's): sent before the answer that names
     /// them, so the host holds each one when it reads its number.
@@ -372,6 +385,9 @@ struct App {
     asked: HashMap<u64, (i32, Reply)>,
     next_token: u64,
     out: Said,
+    /// **A quit's Save all under way**: the windows it saves, until nothing
+    /// is left to lose in them.
+    saving_all: Option<Vec<i32>>,
 }
 
 /// **What wakes the host's loop** when the application has said something:
@@ -470,6 +486,7 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
         asked: HashMap::new(),
         next_token: 1,
         out,
+        saving_all: None,
     };
     loop {
         let mut asked = false;
@@ -484,6 +501,7 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
             }
         }
         state.landed();
+        state.saved_all();
         if !asked {
             std::thread::park_timeout(if state.app.busy() { IDLE } else { REST });
         }
@@ -606,6 +624,12 @@ impl App {
                     seq,
                 },
             ),
+            ToApp::Unsaved => {
+                self.saving_all = None;
+                let work = self.editing.unsaved_work();
+                self.out.send(self.editing.said(), FromApp::Unsaved(work));
+            }
+            ToApp::SaveAll => self.save_all(),
             ToApp::Close { def_id } => {
                 if let Some(member) = self.windows.get(&def_id).map(|w| w.member) {
                     let _ = self.app.act(
@@ -684,6 +708,54 @@ impl App {
             "call": {"verb": "focus_file", "file": file}});
         let ran = self.app.act(&mut self.editing, member, action, 0, None);
         self.said(def_id, ran, false);
+    }
+
+    /// **A quit's Save all begins**: each document with unsaved work saved
+    /// through its window's own Save -- an audio window's files one after
+    /// the other, each brought into view first -- and one with no file yet
+    /// asks where in its window. What is said once it ends is
+    /// [`saved_all`](Self::saved_all)'s.
+    fn save_all(&mut self) {
+        let work = self.editing.unsaved_work();
+        let windows: Vec<i32> = work.iter().map(|u| u.window).collect();
+        for window in &windows {
+            let Some(member) = self.windows.get(window).map(|w| w.member) else {
+                continue;
+            };
+            let files = self.editing.unsaved_audio_files(member);
+            if files.is_empty() {
+                self.window_verb(*window, member, "save");
+            }
+            for file in files {
+                self.focus_file(*window, member, file);
+                self.window_verb(*window, member, "save");
+            }
+        }
+        self.saving_all = Some(windows);
+    }
+
+    /// **Whether a quit's Save all ended**, asked after every turn while one
+    /// is under way: with nothing left to lose it did; with work in a window
+    /// it was not saving, a hand edited since, and the quit is called off.
+    fn saved_all(&mut self) {
+        let Some(windows) = &self.saving_all else {
+            return;
+        };
+        let work = self.editing.unsaved_work();
+        let done = work.is_empty();
+        let off = work.iter().any(|u| !windows.contains(&u.window));
+        if done || off {
+            self.saving_all = None;
+            self.out.send(self.editing.said(), FromApp::Saved(done));
+        }
+    }
+
+    /// **Window `def_id`'s verb `verb`**, as its menu or its key performs
+    /// it: the event the window tells its owner.
+    fn window_verb(&mut self, def_id: i32, _member: MemberId, verb: &str) {
+        let version = self.editing.version();
+        let args = vec![json!(def_id), json!(0), json!(version), json!(verb)];
+        self.event(def_id, "/gui_event", args);
     }
 
     /// **The editor opened**, in its working folder, over `path` or none.

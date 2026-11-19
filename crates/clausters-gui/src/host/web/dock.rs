@@ -522,6 +522,32 @@ impl WebApp {
         self.closed_by_hand(def);
     }
 
+    /// **The dock closes as the host decided** ([`crate::host::DockClose`]),
+    /// for a script's `{"verb": "close"}`: a page has no window of its own
+    /// for a hand to close.
+    pub(super) fn dock_closed(&mut self, close: crate::host::DockClose) {
+        use crate::host::DockClose;
+        let mut panes: Vec<i32> = self
+            .dock
+            .as_ref()
+            .map(|s| s.layout.panes().to_vec())
+            .unwrap_or_default();
+        panes.extend(self.undocked.iter().copied());
+        match close {
+            DockClose::Asked => {}
+            DockClose::Panes => {
+                for def in panes {
+                    self.close_by_hand(def);
+                }
+            }
+            DockClose::All => {
+                for def in panes {
+                    self.closed_by_hand(def);
+                }
+            }
+        }
+    }
+
     fn closed_by_hand(&mut self, def: i32) {
         self.queue(OscMessage {
             addr: crate::host::GUI_CLOSED.into(),

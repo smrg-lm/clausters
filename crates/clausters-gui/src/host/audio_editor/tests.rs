@@ -3060,3 +3060,74 @@ fn a_gesture_after_a_script_s_edit_is_not_refused() {
     host.close_audio(def_id);
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+/// **Quitting is asked once over every application's unsaved work**: two
+/// editors in one dock, each with an edit, put one question up at the dock's
+/// close, naming both; Cancel keeps everything, a second close then asks
+/// again, Save all saves both through their own Save and only then closes
+/// everything; and a close that nobody answers is closed at the second.
+#[test]
+fn a_quit_asks_once_over_every_application() {
+    use crate::host::quit::Quitting;
+    use crate::host::{DockClose, OscType};
+
+    let paths = [take("quit-a", 24_000), take("quit-b", 24_000)];
+    let mut host = host();
+    host.dock = true;
+    let windows: Vec<i32> = paths.iter().map(|p| opened(&mut host, p)).collect();
+    for (n, &def_id) in windows.iter().enumerate() {
+        let widget = widget_of(&host, def_id);
+        let delete = host.event_message(
+            widget,
+            n as i32 + 1,
+            vec![
+                OscType::String("delete".into()),
+                OscType::Float(0.0),
+                OscType::Float(12_000.0),
+            ],
+        );
+        assert!(host.deliver(def_id, &delete));
+    }
+    until(&mut host, "the edits never marked the titles", |h| {
+        windows
+            .iter()
+            .all(|&w| h.window_title(w).is_some_and(|t| t.starts_with('*')))
+    });
+    let mut fx = Vec::new();
+    let question = |host: &mut Host| {
+        until(host, "the question never came up", |h| h.question.is_some());
+        host.question.unwrap()
+    };
+    let click = |host: &mut Host, window: i32, button: i32| {
+        let click = host.event_message(button, 9, vec![OscType::String("click".into())]);
+        assert!(host.deliver(window, &click));
+    };
+    // asked, and cancelled
+    assert_eq!(host.dock_close(&mut fx), DockClose::Asked);
+    let ids = question(&mut host);
+    let says = host.window_defs[&ids.stack]
+        .find(ids.dialog)
+        .map(|w| format!("{:?}", w.kind));
+    let says = says.unwrap_or_default();
+    assert!(says.contains("Save changes before quitting?"), "{says}");
+    click(&mut host, ids.stack, ids.cancel);
+    assert!(host.question.is_none() && host.quit.is_none());
+    // asked again, and not answered: the second close ends it
+    assert_eq!(host.dock_close(&mut fx), DockClose::Asked);
+    question(&mut host);
+    assert_eq!(host.dock_close(&mut fx), DockClose::All);
+    assert!(host.question.is_none());
+    // asked, and Save all: closes once both are written
+    assert_eq!(host.dock_close(&mut fx), DockClose::Asked);
+    let ids = question(&mut host);
+    click(&mut host, ids.stack, ids.save);
+    assert_eq!(host.quit, Some(Quitting::Saving));
+    until(&mut host, "the quit never ended", |h| h.quit.is_none());
+    for &w in &windows {
+        let title = host.window_title(w).unwrap();
+        assert!(!title.starts_with('*'), "{title} was not saved");
+    }
+    for path in &paths {
+        let _ = std::fs::remove_file(path);
+    }
+}

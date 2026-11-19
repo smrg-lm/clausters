@@ -578,6 +578,7 @@ impl App {
                 HostEffect::Capture { window, path } => self.capture(window, path, from),
                 HostEffect::Server { addr, shm } => self.attach_server(&addr, shm),
                 HostEffect::Dock { seq, call } => self.dock_call(lp, from, seq, call),
+                HostEffect::DockClose(close) => self.dock_closed(close, lp),
             }
         }
     }

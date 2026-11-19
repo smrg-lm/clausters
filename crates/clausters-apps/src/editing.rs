@@ -919,6 +919,48 @@ impl Editing {
     /// ([`crate::closing::shown_title`]). `None` for a member with no window
     /// of its own to title.
     pub fn window_title(&self, member: MemberId) -> Option<String> {
+        let (title, asks, unsaved) = self.work_of(member)?;
+        Some(crate::closing::shown_title(&title, asks, unsaved))
+    }
+
+    /// **What a quit would lose** ([`crate::quitting`]): every member whose
+    /// window is the work's only holder and holds work its file does not, by
+    /// its window, named by its own title.
+    pub fn unsaved_work(&self) -> Vec<crate::quitting::Unsaved> {
+        (0..self.seats.len() as MemberId)
+            .filter_map(|member| {
+                let (title, asks, unsaved) = self.work_of(member)?;
+                let window = self.member_window(member)?;
+                (asks && unsaved).then_some(crate::quitting::Unsaved { window, title })
+            })
+            .collect()
+    }
+
+    /// **The files of audio member `member` that hold unsaved work**, the
+    /// one in view first: what a Save of each saves in turn.
+    pub fn unsaved_audio_files(&self, member: MemberId) -> Vec<i64> {
+        match self.member(member) {
+            Some(Member::Audio(editor)) => editor.unsaved_files(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Member `member`'s window, when it has one open.
+    fn member_window(&self, member: MemberId) -> Option<i32> {
+        use crate::turn::Converse;
+        match self.member(member)? {
+            Member::Audio(editor) => editor.window_id(),
+            Member::Multitrack(editor) => editor.window_id(),
+            #[cfg(feature = "notation")]
+            Member::Score(editor) => editor.window_id(),
+            Member::Notes(editor) => editor.window_id(),
+            _ => None,
+        }
+    }
+
+    /// Member `member`'s title, whether its window asks before it closes,
+    /// and whether it holds work its file does not.
+    fn work_of(&self, member: MemberId) -> Option<(String, bool, bool)> {
         use crate::turn::Converse;
         let (title, asks, unsaved) = match self.member(member)? {
             Member::Audio(editor) => (editor.title(), editor.asks_to_close(), editor.unsaved()),
@@ -938,7 +980,7 @@ impl Editing {
             }
             _ => return None,
         };
-        Some(crate::closing::shown_title(title, asks, unsaved))
+        Some((title.to_string(), asks, unsaved))
     }
 
     /// **The audio member that holds the sound file at `path`**, and that

@@ -233,6 +233,7 @@ class GuiHost:
         self._left: dict = {}
         # what is told when a hand moves what each window holds
         self._on_app_changed: dict = {}
+        self._on_quit = None
         # the session snapshot each window let go of (`/gui_closed`'s third
         # argument, `/gui_app_released`'s second), until its handler takes it
         self._left_snapshot: dict = {}
@@ -1008,6 +1009,28 @@ class GuiHost:
         return self._app_request("/gui_dock", json.dumps(dict(call)), timeout=timeout,
                                  answers="/gui_dock_reply")
 
+    def on_quit(self, handler, timeout: float = 5.0):
+        """Makes this client **the one that quits the application**: the
+        close of the dock's window, from then on, is not a close of each pane
+        but one request to it, and ``handler(unsaved)`` is called with what
+        the applications the host holds would lose -- a list of
+        ``{"window": id, "title": name}``, the documents whose window is
+        their only holder and holds unsaved work.
+
+        The handler answers: it quits (frees the windows, `stop`), or it
+        keeps everything with ``dock_call({"verb": "stay"})``. Its own
+        documents and the host's are one question, which the handler asks;
+        ``dock_call({"verb": "save_all"})`` saves the host's through their own
+        Save and answers once nothing is left to lose (raising when the
+        saving was called off). A close the handler leaves unanswered is
+        closed anyway at the second, so a script that stopped answering does
+        not keep the dock open. ``dock_call({"verb": "unsaved"})`` asks what
+        the host's applications would lose at any other time, for a Quit of
+        the script's own.
+        """
+        self._on_quit = handler
+        return self.dock_call({"verb": "own_quit"}, timeout)
+
     def dock_layout(self, timeout: float = 5.0) -> dict:
         """The dock's layout as data -- splits whose leaves are groups of
         tabs -- which `dock_restore` puts back. See `dock_call`."""
@@ -1593,6 +1616,12 @@ class GuiHost:
             func = self._on_closed.get(wid)
             if func is not None:
                 func()
+                return True
+        elif addr == "/gui_dock_quit":
+            func = self._on_quit
+            if func is not None:
+                asked = json.loads(str(args[0])) if args else {}
+                func(asked.get("unsaved", []))
                 return True
         elif addr == "/gui_app_changed" and args:
             func = self._on_app_changed.get(int(args[0]))

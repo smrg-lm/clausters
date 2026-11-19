@@ -135,6 +135,11 @@ impl BusSource for EngineSource {
 }
 
 impl AudioHost {
+    /// Whether it holds a window open.
+    pub(crate) fn has_windows(&self) -> bool {
+        !self.windows.is_empty()
+    }
+
     /// The application, its engine made by `make` when its first window
     /// opens.
     fn new(make: MakeEngine, wake: WakeSlot) -> AudioHost {
@@ -153,7 +158,7 @@ impl AudioHost {
     }
 
     /// **Asks the application**, its thread started on the first ask.
-    fn ask(&mut self, ask: ToApp) -> Result<(), String> {
+    pub(super) fn ask(&mut self, ask: ToApp) -> Result<(), String> {
         if self.to_app.is_none() {
             let make = self.make.take().ok_or("the audio editor's thread ended")?;
             let (tx, thread) = super::audio_app::start(make, self.out.clone())
@@ -193,7 +198,7 @@ impl Host {
 
     /// The audio editor's application, made on the first open: its engine
     /// on the machine's output, or in a page on the page's.
-    fn audio_host(&mut self) -> &mut AudioHost {
+    pub(super) fn audio_host(&mut self) -> &mut AudioHost {
         let wake = self.app_wake.clone();
         self.audio.get_or_insert_with(|| {
             AudioHost::new(
@@ -610,6 +615,18 @@ impl Host {
         for one in said {
             match one {
                 FromApp::Lists(lists) => super::disk::receive(lists),
+                FromApp::Unsaved(work) => {
+                    let work: Vec<(i32, String)> =
+                        work.into_iter().map(|u| (u.window, u.title)).collect();
+                    let mut fx = Vec::new();
+                    self.unsaved_gathered(&work, &mut fx);
+                    self.pending_effects.extend(fx);
+                }
+                FromApp::Saved(saved) => {
+                    let mut fx = Vec::new();
+                    self.saved_all(saved, &mut fx);
+                    self.pending_effects.extend(fx);
+                }
                 FromApp::Engine(reading) => {
                     if let Some(audio) = self.audio.as_mut() {
                         audio.source = Some(Arc::new(EngineSource(reading)));

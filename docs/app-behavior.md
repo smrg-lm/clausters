@@ -138,6 +138,17 @@ code that keeps it lives.
   bar's list hangs over the panels. The application's state (a session up,
   busy or down) is said the same way, in a footer of the application's
   along the dock's bottom, never in a panel's title.
+- **Quitting is the application's act, asked once over all its unsaved
+  work.** The close of the dock's window is one request, never a close of
+  each pane: the client that quits the application (`own_quit`) is told
+  (`/gui_dock_quit`), or, with none, the host asks over the applications it
+  holds. One question names every document whose window is its work's only
+  holder and holds unsaved work -- a client's documents beside the host's --
+  answered Don't save, Cancel (everything stays, the panes included) or Save
+  all (each document through its own Save, and the application ends only
+  once nothing is left to lose). With nothing to lose it ends at the first
+  close; a close left unanswered ends it at the second. A pane's own close
+  (its tab, its panel's mark) stays that pane's.
 - **A panel has one header.** Its bar is the only strip over it: the grip
   and the panel's buttons at the ends, and in the middle the tabs of its
   documents (`dock_tab`), the strip of tools its window names (`header`), or

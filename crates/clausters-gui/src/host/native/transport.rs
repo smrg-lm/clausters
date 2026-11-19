@@ -191,6 +191,7 @@ fn perform(
                 from,
                 super::super::captured(window, &path, Some("this front draws nothing")),
             ),
+            HostEffect::DockClose(_) => diag::info!("the dock closes (headless: there is none)"),
             HostEffect::Dock { seq, .. } => reply(
                 from,
                 super::super::dock::call::reply(

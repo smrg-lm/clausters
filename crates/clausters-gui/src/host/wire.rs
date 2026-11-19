@@ -382,6 +382,14 @@ impl Host {
             )));
             return;
         }
+        if let Ok(call) = serde_json::from_str::<Value>(json)
+            && let Some(answer) = self.quit_call(&call, from, seq, effects)
+        {
+            if let Some(answer) = answer {
+                effects.push(HostEffect::Reply(dock::call::reply(seq, Ok(answer))));
+            }
+            return;
+        }
         match dock::call::Call::read(json) {
             Ok(call) => effects.push(HostEffect::Dock { seq, call }),
             Err(e) => effects.push(HostEffect::Reply(dock::call::reply(seq, Err(e)))),

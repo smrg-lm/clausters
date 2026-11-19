@@ -581,6 +581,7 @@ impl WebApp {
                     }
                 }
                 HostEffect::Dock { seq, call } => self.dock_call(event_loop, seq, call),
+                HostEffect::DockClose(close) => self.dock_closed(close),
             }
         }
     }

@@ -127,12 +127,6 @@ already carry it.
 - ⬜ **`faust_compiler` failed once in a parallel workspace run** *(`crates/clausters-server/PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
-- ⬜ **Quitting the application is not an act: the dock's close is guessed
-  from its panes' closes** *(`crates/clausters-gui/PLAN.md`, Found by use)*.
-  The dock's close closes the editor's panels in batches instead of quitting.
-  The host says the quit once, one rule beside `closing` asks about all the
-  unsaved work together, and the editor's 400 ms guess goes.
-
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and

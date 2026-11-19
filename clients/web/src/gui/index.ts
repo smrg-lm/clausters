@@ -23,6 +23,7 @@
 // object either way.
 
 export { formatWidgetInfo, formatWindowProfile, GuiHost, DEFAULT_PORT } from "./host.ts";
+export type { UnsavedDocument } from "./host.ts";
 export { ambientHost, appClock, setAmbientHost } from "./ambient.ts";
 export type {
     EventListener, PropValue, WidgetInfo, WindowActivity, WindowProfile,

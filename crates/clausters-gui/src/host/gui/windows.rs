@@ -509,6 +509,14 @@ impl App {
     /// window has the placeholder origin (UDP port 0) -- there is no script to
     /// notify, so the `/gui_closed` is skipped (sending to port 0 fails with
     /// EINVAL).
+    /// [`close_by_user`](Self::close_by_user), for a window a quit closes
+    /// with every other.
+    pub(super) fn close_all_by_user(&mut self, id: i32) {
+        if self.windows.contains_key(&id) {
+            self.close_by_user(id);
+        }
+    }
+
     fn close_by_user(&mut self, id: i32) {
         if let Some(ws) = self.windows.get(&id)
             && ws.origin != PLACEHOLDER_ORIGIN

@@ -381,6 +381,37 @@ impl App {
         }
     }
 
+    /// **The dock's window closes as the host decided** ([`DockClose`]):
+    /// each pane and floating panel as its own close, or every window at
+    /// once, nothing asked, the application quitting.
+    pub(super) fn dock_closed(&mut self, close: crate::host::DockClose, lp: Loop) {
+        use crate::host::DockClose;
+        match close {
+            DockClose::Asked => {}
+            DockClose::Panes => {
+                let panes = self
+                    .dock
+                    .as_ref()
+                    .map(|s| s.layout.panes().to_vec())
+                    .unwrap_or_default();
+                let floats: Vec<i32> = self.floats.keys().copied().collect();
+                for id in panes.into_iter().chain(floats) {
+                    self.user_close(id, lp);
+                }
+            }
+            DockClose::All => {
+                let mut all: Vec<i32> = self.windows.keys().copied().collect();
+                all.sort_unstable();
+                for id in all {
+                    self.close_all_by_user(id);
+                }
+                if self.standalone {
+                    lp.exit();
+                }
+            }
+        }
+    }
+
     /// **What the platform said of the dock's window**, handed to the
     /// pane it is about: the motion and the buttons to the pane under the
     /// pointer (or the one a press holds), the keys to the pane last pressed
@@ -404,15 +435,22 @@ impl App {
             WindowEvent::RedrawRequested => self.compose_dock(which),
             // the dock's window is the application's: its floating panels
             // close with it
-            WindowEvent::CloseRequested => {
-                let floats: Vec<i32> = match which {
-                    Which::Main => self.floats.keys().copied().collect(),
-                    Which::Float(_) => Vec::new(),
-                };
-                for id in panes.into_iter().chain(floats) {
-                    self.user_close(id, Loop::Shown(event_loop));
+            // **the dock's window is the application's**: its close is one
+            // request, answered by whoever quits the application; a floating
+            // panel's closes the windows in it
+            WindowEvent::CloseRequested => match which {
+                Which::Main => {
+                    let mut effects = Vec::new();
+                    let close = self.host.dock_close(&mut effects);
+                    self.apply(Loop::Shown(event_loop), own_origin(), effects);
+                    self.dock_closed(close, Loop::Shown(event_loop));
                 }
-            }
+                Which::Float(_) => {
+                    for id in panes {
+                        self.user_close(id, Loop::Shown(event_loop));
+                    }
+                }
+            },
             WindowEvent::Resized(size) => {
                 shell.gpu.resize(size.width, size.height);
                 shell
@@ -813,4 +851,10 @@ fn resize_icon(cursor: Option<bool>) -> winit::window::CursorIcon {
         Some(false) => winit::window::CursorIcon::RowResize,
         None => winit::window::CursorIcon::Default,
     }
+}
+
+/// The origin of what the host's own front hands the host.
+fn own_origin() -> crate::host::ClientId {
+    use std::net::{Ipv4Addr, SocketAddr};
+    crate::host::ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
 }

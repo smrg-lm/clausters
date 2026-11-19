@@ -487,6 +487,19 @@ impl AudioEditor {
         }
     }
 
+    /// **Every file that holds unsaved work**, the one in view first: what a
+    /// quit's Save all saves, one after the other.
+    pub fn unsaved_files(&self) -> Vec<i64> {
+        if !self.open_files.open {
+            return Vec::new();
+        }
+        std::iter::once(&self.file)
+            .chain(self.open_files.parked.values())
+            .filter(|file| file.dirty)
+            .map(|file| file.id.0)
+            .collect()
+    }
+
     /// **The next file a close would lose work in**: the one in view first,
     /// then the others, leaving out those the hand said to let go of.
     pub(super) fn next_unsaved(&self) -> Option<i64> {

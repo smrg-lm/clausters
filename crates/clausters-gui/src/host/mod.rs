@@ -150,6 +150,8 @@ pub mod winit_keys;
 // gesture, and the takes the pictures draw.
 mod answer;
 mod apps;
+mod quit;
+pub use quit::DockClose;
 #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
 mod audio_app;
 #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
@@ -765,6 +767,12 @@ pub const GUI_DOCK: &str = "/gui_dock";
 /// same `seq`: `{"ok": state}`, the dock as it stands after the call, or
 /// `{"error": {"type", "message"}}`.
 pub const GUI_DOCK_REPLY: &str = "/gui_dock_reply";
+/// `/gui_dock_quit <json>`: **the application is asked to quit** -- the
+/// dock's window was closed -- sent to the client that said it quits it
+/// (`{"verb": "own_quit"}` on [`GUI_DOCK`]). `json` is `{"unsaved":
+/// [{"window", "title"}...]}`, what the applications this host holds would
+/// lose; the client answers by quitting, or with `{"verb": "stay"}`.
+pub const GUI_DOCK_QUIT: &str = "/gui_dock_quit";
 /// `/gui_server <host:port> [shm] [i/of]`: **points a running host at an
 /// audio server** -- its client leg, the shared segment it maps (an empty
 /// string for none) and its share of the server's ids -- what `--server`,
@@ -845,6 +853,10 @@ pub enum HostEffect {
     /// `/gui_dock` called the dock: the front, which holds it, carries the
     /// call out and answers [`GUI_DOCK_REPLY`] to the client that asked.
     Dock { seq: i32, call: dock::call::Call },
+    /// **The dock's window closes as [`Host::dock_close`] decided**: each
+    /// pane as its own close, or every window at once, the application
+    /// quitting.
+    DockClose(DockClose),
 }
 
 /// What a scripted pointer event is ([`GUI_POINTER`]).
@@ -1123,6 +1135,16 @@ pub struct Host {
     /// platform each. One setting per host that the shell consumes, as
     /// [`msaa`](Self::msaa) is.
     pub dock: bool,
+    /// **The client that quits the application**, told [`GUI_DOCK_QUIT`]
+    /// when the dock's window is closed ([`quit`]).
+    quitter: Option<ClientId>,
+    /// A quit under way ([`Host::dock_close`]).
+    quit: Option<quit::Quitting>,
+    /// The dock calls about quitting that wait on the applications.
+    quit_waiting: Vec<quit::Waiting>,
+    /// The host's own question before a quit, while it is up.
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+    question: Option<clausters_apps::closing::Ids>,
     /// **What the dock's window opens as**: its title and its size in
     /// logical pixels -- an application's name and the size it was left at,
     /// where an application set them, and the host's own otherwise.
@@ -1287,6 +1309,11 @@ impl Host {
             msaa: DEFAULT_MSAA,
             headless_scale: 1.0,
             dock: false,
+            quitter: None,
+            quit: None,
+            quit_waiting: Vec::new(),
+            #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+            question: None,
             dock_opens: None,
             dock_at: None,
             follow_block: 0.0,

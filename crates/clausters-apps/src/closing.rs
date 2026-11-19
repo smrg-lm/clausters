@@ -122,6 +122,20 @@ pub const TITLE: &str = "Save changes?";
 /// the dialog itself is `dialog_id`.
 #[must_use]
 pub fn dialog(dialog_id: Option<i32>, says: &str, id: impl Fn(&str) -> Option<i32>) -> Value {
+    asking(dialog_id, TITLE, says, "Save", id)
+}
+
+/// **A question before work is lost, as an alert dialog**: [`dialog`]'s,
+/// titled `title` and with its saving button labelled `save` -- the form a
+/// quit asks in ([`crate::quitting`]) is this one over every document.
+#[must_use]
+pub fn asking(
+    dialog_id: Option<i32>,
+    title: &str,
+    says: &str,
+    save: &str,
+    id: impl Fn(&str) -> Option<i32>,
+) -> Value {
     let spring = json!({"type": "separator", "weight": 1, "line": false});
     let buttons = json!({
         "type": "layout",
@@ -134,7 +148,7 @@ pub fn dialog(dialog_id: Option<i32>, says: &str, id: impl Fn(&str) -> Option<i3
             {"type": "button", "id": id(DISCARD), "label": "Don't save", "variant": "destructive"},
             spring,
             {"type": "button", "id": id(CANCEL), "label": "Cancel", "variant": "outline"},
-            {"type": "button", "id": id(SAVE), "label": "Save", "default": true},
+            {"type": "button", "id": id(SAVE), "label": save, "default": true},
         ],
     });
     json!({
@@ -143,7 +157,7 @@ pub fn dialog(dialog_id: Option<i32>, says: &str, id: impl Fn(&str) -> Option<i3
         "modal": true,
         "alert": true,
         "hug": true,
-        "title": TITLE,
+        "title": title,
         "description": says,
         "flow": "col",
         "children": [buttons],
@@ -187,6 +201,17 @@ impl Ids {
         .any(|id| i64::from(*id) == widget)
     }
 
+    /// The button named `name` ([`SAVE`], [`DISCARD`], [`CANCEL`]).
+    #[must_use]
+    pub fn button(&self, name: &str) -> Option<i32> {
+        match name {
+            SAVE => Some(self.save),
+            DISCARD => Some(self.discard),
+            CANCEL => Some(self.cancel),
+            _ => None,
+        }
+    }
+
     /// **What a report from the form answers**: a button's click, or the
     /// dialog's own `cancel` (its close mark, Escape).
     #[must_use]
@@ -215,12 +240,15 @@ impl Ids {
 /// a correction of the stack's `index` ([`shown`]) and nothing is defined.
 #[must_use]
 pub fn stack(ids: &Ids, says: &str) -> Value {
-    let form = dialog(Some(ids.dialog), says, |name| match name {
-        SAVE => Some(ids.save),
-        DISCARD => Some(ids.discard),
-        CANCEL => Some(ids.cancel),
-        _ => None,
-    });
+    let form = dialog(Some(ids.dialog), says, |name| ids.button(name));
+    holding(ids, form)
+}
+
+/// **A form held as the close form is** ([`stack`]): `form` on page 1 of a
+/// stack that takes no room -- the close form's, or a quit's question
+/// ([`crate::quitting::stack`]) numbered with the same ids.
+#[must_use]
+pub fn holding(ids: &Ids, form: Value) -> Value {
     json!({
         "type": "layout",
         "id": ids.stack,

@@ -291,6 +291,14 @@ export const INTERFACE_EVENTS: readonly string[] = ["press", "release", "click"]
  */
 const PROBE_ID = 0;
 
+/** **A document a quit would lose work in**, as {@link GuiHost.onQuit} is told it. */
+export interface UnsavedDocument {
+    /** The window that holds it. */
+    window: number;
+    /** What it is called. */
+    title: string;
+}
+
 export class GuiHost {
     // Where this handle's host is, and its address -- the constructor's
     // `transport`/`url`, kept privately so the public surface stays the verbs.
@@ -370,6 +378,7 @@ export class GuiHost {
      */
     private readonly onInterfaceHandlers = new Map<number, Map<string, () => void>>();
     private readonly onClosedHandlers = new Map<number, () => void>();
+    private onQuitHandler: ((unsaved: UnsavedDocument[]) => void) | null = null;
     /** What an application left each closed window as (`/gui_closed`'s second argument), until its handler takes it. */
     private readonly left = new Map<number, unknown>();
     /** The session each window let go of (`/gui_closed`'s third argument), until its handler takes it. */
@@ -1251,6 +1260,32 @@ export class GuiHost {
     }
 
     /**
+     * Makes this client **the one that quits the application**: the close of
+     * the dock's window, from then on, is not a close of each pane but one
+     * request to it, and `handler(unsaved)` is called with what the
+     * applications the host holds would lose -- the documents whose window is
+     * their only holder and holds unsaved work.
+     *
+     * The handler answers: it quits (frees the windows, `stop`), or it keeps
+     * everything with `dockCall({ verb: "stay" })`. Its own documents and the
+     * host's are one question, which the handler asks;
+     * `dockCall({ verb: "save_all" })` saves the host's through their own
+     * Save and answers once nothing is left to lose (rejecting when the
+     * saving was called off). A close the handler leaves unanswered is
+     * closed anyway at the second, so a script that stopped answering does
+     * not keep the dock open. `dockCall({ verb: "unsaved" })` asks what the
+     * host's applications would lose at any other time, for a Quit of the
+     * script's own.
+     */
+    async onQuit(
+        handler: (unsaved: UnsavedDocument[]) => void,
+        timeout = 5.0,
+    ): Promise<Record<string, unknown>> {
+        this.onQuitHandler = handler;
+        return this.dockCall({ verb: "own_quit" }, timeout);
+    }
+
+    /**
      * The dock's layout as data -- splits whose leaves are groups of tabs --
      * which {@link GuiHost.dockRestore} puts back. See {@link GuiHost.dockCall}.
      */
@@ -1885,6 +1920,9 @@ export class GuiHost {
             }
             const handler = this.onEventHandlers.get(wid);
             if (handler) handler(...(payload as EventArgs));
+        } else if (msg.addr === "/gui_dock_quit") {
+            const asked = msg.args.length > 0 ? JSON.parse(String(msg.args[0])) : {};
+            this.onQuitHandler?.((asked.unsaved ?? []) as UnsavedDocument[]);
         } else if (msg.addr === "/gui_closed" && msg.args.length > 0) {
             const id = Number(msg.args[0]);
             if (msg.args.length > 1) this.left.set(id, JSON.parse(String(msg.args[1])));
