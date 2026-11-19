@@ -46,7 +46,7 @@ import { Server } from "./defs/server/index.ts";
 import type { ServerOptions } from "./defs/server/index.ts";
 import type { ClaustersServer } from "./engine/server.ts";
 import { engine as engineInstance } from "./engine/server.ts";
-import { GuiHost } from "./gui/host.ts";
+import { GuiHost, namedHost } from "./gui/host.ts";
 import { newGuiHost } from "./gui/page.ts";
 import type { ClaustersGui } from "./gui/page.ts";
 import type { EventStreamPlayer } from "./seq/eventstream.ts";
@@ -460,7 +460,10 @@ export class Session extends Environment {
      * `<body>` included); one holding its own engine gets a host of its own,
      * which appends no canvas -- pass yours to the def, as a component does.
      * A session in a worker names the page's host with `port`, the link the
-     * page made to it, and draws where the page places its windows.
+     * page made to it, and draws where the page places its windows. Under
+     * node, where the environment names a host (`CLAUSTERS_GUI_HOST`, which
+     * an editor sets for the sessions it runs), this attaches to it over its
+     * `ws://` address and points it at this session's server.
      */
     /**
      * The GUI host this session already has, or `null` when none was opened --
@@ -488,10 +491,19 @@ export class Session extends Environment {
         // its engine: a session that is one of two clients on an engine is one
         // of two on its host as well.
         const share = this.server.share;
+        const named = port === undefined ? namedHost() : null;
         if (port !== undefined) {
             // The page's host, from another realm: attached, never booted,
             // and its windows are the page's to place.
             this.gui_ = await new GuiHost({ connection: await portConnection(port), share }).attach();
+        } else if (named !== null) {
+            // **A host the environment names is attached to, not opened**:
+            // an editor running this session, whose window the session's
+            // windows open in, pointed at this session's server as an opened
+            // one is wired to it.
+            this.gui_ = await new GuiHost({ transport: "ws", url: named, share }).attach();
+            const address = this.server.connection.url;
+            if (address !== undefined) this.gui_.server(address, { idShare: this.server.splitShare() });
         } else if (this.ownedEngine) {
             // A host of this session's own, wired to this session's engine --
             // and this session's to close, unlike the page's shared one. **It

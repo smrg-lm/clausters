@@ -393,7 +393,9 @@ def _ambient_host(server=None):
     """The GUI host the ambient visual verbs open windows on: one registered
     through `clausters.gui.set_ambient_host` if there is one, else the current
     (else default) session's `gui` host when one is already up, else a
-    standalone host booted once and owned by this module.
+    standalone host booted once and owned by this module -- or, where the
+    environment names a host (an editor's, `clausters.gui.host.named_host`),
+    that one attached to.
 
     A registered host wins outright, ``server`` included: it is a front this
     module cannot boot, reconnect or point elsewhere (that is the whole reason
@@ -426,10 +428,19 @@ def _ambient_host(server=None):
         # another server): replace it with one wired to `server`.
         _own_host.stop()
         _own_host = None
-    if server is None:
+    from .gui.host import named_host
+
+    named = named_host()
+    addr = None if server is None else f"{server.target.host}:{server.target.port}"
+    if named is not None:
+        # the host the environment names (an editor's): attached to, and
+        # pointed at the server, never booted
+        _own_host = GuiHost(host=named[0], port=named[1]).attach(adopt_ambient=False)
+        if server is not None:
+            _own_host.server(addr, shm=server.shm, id_share=server.split_share())
+    elif server is None:
         _own_host = GuiHost().boot(server=None, adopt_ambient=False)
     else:
-        addr = f"{server.target.host}:{server.target.port}"
         _own_host = GuiHost().boot(server=addr, shm=server.shm,
                                    adopt_ambient=False)
     _own_host_server = server

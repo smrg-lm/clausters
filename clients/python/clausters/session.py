@@ -398,7 +398,13 @@ class Session(Environment):
         they come from the session. The host is owned by the session and stopped
         on `close` (or interpreter exit).
 
-        Idempotent: repeated calls return the same `GuiHost` (the ``port`` and
+        **Where the environment names a host** (``CLAUSTERS_GUI_HOST``, which an
+        editor sets for the sessions it runs) this attaches to it instead of
+        launching one, and points it at this session's server: the session's
+        windows open in the editor's window. ``port``, ``verbose``,
+        ``data_dir`` and ``extra_args`` then have nothing to start.
+
+                Idempotent: repeated calls return the same `GuiHost` (the ``port`` and
         other options of the first call stand). A session **given** a host (the
         constructor's ``gui``) is already settled: this returns that host and
         launches nothing, so the arguments below are ignored -- the same way
@@ -441,6 +447,20 @@ class Session(Environment):
         # **The host allocates on this server too** -- its voices, its take
         # monitor, the multitrack it plays -- so the session's ids are split with
         # it: the session keeps the first half and the host takes the second.
+        from .gui.host import named_host
+
+        named = named_host()
+        if named is not None:
+            # **A host the environment names is attached to, not booted**:
+            # an editor running this session, whose window the session's
+            # windows open in. It is pointed at this session's server as a
+            # booted one is at boot.
+            self._gui = GuiHost(
+                host=named[0], port=named[1], transport=transport, share=widgets,
+            ).attach()
+            self._gui.server(server_addr, shm=self.server.shm,
+                             id_share=self.server.split_share())
+            return self._gui
         self._gui = GuiHost(
             port=DEFAULT_PORT if port is None else port, transport=transport,
             share=widgets,

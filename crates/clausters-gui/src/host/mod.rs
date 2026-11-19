@@ -764,6 +764,12 @@ pub const GUI_DOCK: &str = "/gui_dock";
 /// same `seq`: `{"ok": state}`, the dock as it stands after the call, or
 /// `{"error": {"type", "message"}}`.
 pub const GUI_DOCK_REPLY: &str = "/gui_dock_reply";
+/// `/gui_server <host:port> [shm] [i/of]`: **points a running host at an
+/// audio server** -- its client leg, the shared segment it maps (an empty
+/// string for none) and its share of the server's ids -- what `--server`,
+/// `--shm` and `--id-share` give a host at boot. How a session attaches to a
+/// host it did not boot (an editor's) and wires it to its own server.
+pub const GUI_SERVER: &str = "/gui_server";
 
 /// What handling a packet asks the host's *front* to do, beyond mutating the
 /// host's own state. The protocol logic stays transport- and GPU-agnostic and
@@ -809,6 +815,10 @@ pub enum HostEffect {
     /// front performs it through the gesture machine with that window's
     /// context, as a tool would, and carries out what it does.
     Perform { window: i32, verb: String },
+    /// `/gui_server` named the audio server the host is a client of, at
+    /// `addr`, with the segment `shm` to map: the front opens the leg and
+    /// reads its replies, and maps the segment where it can.
+    Server { addr: String, shm: Option<String> },
     /// `/gui_pointer` played a hand to the window rooted at `window`: the
     /// front puts its pointer at `(x, y)` with `mods` held and hands the
     /// window's gesture machine the `kind` of event its own input would.

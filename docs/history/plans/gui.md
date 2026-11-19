@@ -8062,3 +8062,15 @@ module of its own.
   hands them to a pane with each button and key. A sweep of every entry
   of the editor's menus and every key of its table, headless, reaches
   its action.
+
+- ✅ **The session's own windows do not open in the editor's dock**
+  *(2026-11-17, WS12)*. A script run in the editor that opens a GuiDef
+  boots a host of its own, as it does under the current editor. The track's
+  aim is one window for everything: the session would be told the editor's
+  host (an address in its environment) and both clients would attach to it
+  rather than boot one, which is a client change made in both at once.
+  Taken by WS15, which gives the shape.
+  Done by WS15 the next day (2026-11-18): the editor names its host in the
+  session's environment, both clients attach to it and point it at the
+  session's server with `/gui_server`, and the editor's own windows take
+  ids no client allocates.

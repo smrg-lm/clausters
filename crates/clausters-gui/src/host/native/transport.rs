@@ -159,6 +159,24 @@ fn perform(
             HostEffect::Raise(id) => diag::info!("window {id}: brought forward (headless)"),
             // no title bar headless
             HostEffect::Retitle(_) => {}
+            // the leg opened as `--server` opens it here: what it sends goes
+            // out, and nothing draws what would read the segment
+            HostEffect::Server { addr, .. } => {
+                use std::net::ToSocketAddrs;
+                match addr
+                    .to_socket_addrs()
+                    .ok()
+                    .and_then(|mut a| a.next())
+                    .map(super::client::ServerLeg::connect)
+                {
+                    Some(Ok(leg)) => {
+                        host.set_server_link(crate::host::ServerLink::Udp(leg));
+                        host.on_link_attached();
+                    }
+                    Some(Err(e)) => diag::warn!("/gui_server {addr}: client leg: {e}"),
+                    None => diag::warn!("/gui_server {addr}: no address resolved"),
+                }
+            }
             // nothing to repaint headless
             HostEffect::Redraw(_) | HostEffect::RedrawLive(_) => {}
             HostEffect::Pointer { window, .. } => {

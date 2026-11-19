@@ -256,17 +256,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly memcmp: (a: number, b: number, c: number) => number;
-    readonly apps_files_check: () => [number, number];
-    readonly apps_files_checked: () => number;
-    readonly apps_files_failed: () => [number, number];
-    readonly apps_folder: () => [number, number];
-    readonly apps_folder_check: () => [number, number];
-    readonly apps_folder_check_wake: () => void;
-    readonly apps_folder_checked: () => number;
-    readonly apps_thread_check: () => [number, number];
-    readonly apps_thread_check_wake: () => void;
-    readonly apps_thread_checked: () => number;
-    readonly apps_thread_run: (a: number) => void;
     readonly __wbg_guibridge_free: (a: number, b: number) => void;
     readonly bundle_boot_packets: (a: any, b: any, c: number, d: number, e: number, f: number, g: number) => any;
     readonly guibridge_attach: (a: number, b: number, c: any) => void;
@@ -286,6 +275,17 @@ export interface InitOutput {
     readonly guibridge_server_reply: (a: number, b: number, c: number) => void;
     readonly guibridge_set_visible: (a: number, b: number, c: number) => void;
     readonly start: () => number;
+    readonly apps_files_check: () => [number, number];
+    readonly apps_files_checked: () => number;
+    readonly apps_files_failed: () => [number, number];
+    readonly apps_folder: () => [number, number];
+    readonly apps_folder_check: () => [number, number];
+    readonly apps_folder_check_wake: () => void;
+    readonly apps_folder_checked: () => number;
+    readonly apps_thread_check: () => [number, number];
+    readonly apps_thread_check_wake: () => void;
+    readonly apps_thread_checked: () => number;
+    readonly apps_thread_run: (a: number) => void;
     readonly iswspace: (a: number) => number;
     readonly iswdigit: (a: number) => number;
     readonly iswalpha: (a: number) => number;

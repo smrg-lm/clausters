@@ -151,6 +151,16 @@ holds what is open.
 
 - ⬜ **Native plugins and the in-page engine** *(named 2026-10-13 with the server plan's J track)*. Port `PluginDef`, discovery, parameters, state, events, recovery and editor control alongside the Python client as each server capability lands, with the same calls and examples. A page connected to a native server controls its CLAP/VST3 instances; a native editor opens on that server's machine. The in-page wasm engine cannot load native plugin binaries and must report that capability explicitly while keeping the same builder surface. A possible WAM2 integration is an open design question: a different plugin binary/runtime is not automatically the same capability, and no independent DSP, mapping or drawing implementation is authorized by this entry. The native-server client port closes with the J track; any remaining in-page design stays pending here.
 
+- ⬜ **A native host's client leg to a server reached by a WebSocket**
+  *(left by the GUI plan's WS15, 2026-11-18)*. A node session run by an
+  editor attaches to the editor's host (`CLAUSTERS_GUI_HOST`, its `ws://`
+  address) and points it at its server with `/gui_server`, but a native host
+  opens its client leg over UDP only, and a node session knows its server by
+  a `ws://` address. Until the native host can take that leg (or the session
+  is told the server's UDP address too), such a host draws the session's
+  windows with no client leg. The editor runs Python sessions, so nothing
+  reaches this today.
+
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what

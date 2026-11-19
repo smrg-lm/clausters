@@ -560,6 +560,18 @@ impl WebApp {
                     self.host.performed(window);
                 }
                 HostEffect::Capture { window, path } => self.capture(window, path),
+                // a page reaches a server over a WebSocket, as
+                // `GuiBridge.connectServer` attaches one; a segment is the
+                // native host's
+                HostEffect::Server { addr, .. } => {
+                    if addr.starts_with("ws://") || addr.starts_with("wss://") {
+                        self.connect_server(&addr);
+                    } else {
+                        log(&format!(
+                            "/gui_server {addr}: a page reaches its server over ws:// or its own engine"
+                        ));
+                    }
+                }
                 HostEffect::Dock { seq, call } => self.dock_call(event_loop, seq, call),
             }
         }
@@ -594,6 +606,18 @@ impl WebApp {
     /// ends and sends `/server_query`, whose reply also carries the ceiling on
     /// how many buses one subscription may list -- this leg's own, since the
     /// answer depends on the carrier.
+    /// The audio-server leg over a WebSocket to `url`.
+    fn connect_server(&mut self, url: &str) {
+        match WsServerLink::connect(url, self.id) {
+            Ok(link) => {
+                self.host.set_server_link(ServerLink::Ws(link));
+                log(&format!("audio-server leg connecting to {url}"));
+                self.on_server_attached();
+            }
+            Err(e) => log(&format!("cannot open audio-server WebSocket {url}: {e}")),
+        }
+    }
+
     fn on_server_attached(&mut self) {
         self.streamed.clear();
         self.tap_streamed = (Vec::new(), 0);
@@ -1142,14 +1166,7 @@ impl WebApp {
                 self.request_redraw(def_id);
             }
             WebEvent::Inbound(bytes) => self.on_inbound(event_loop, &bytes),
-            WebEvent::ConnectServer(url) => match WsServerLink::connect(&url, self.id) {
-                Ok(link) => {
-                    self.host.set_server_link(ServerLink::Ws(link));
-                    log(&format!("audio-server leg connecting to {url}"));
-                    self.on_server_attached();
-                }
-                Err(e) => log(&format!("cannot open audio-server WebSocket {url}: {e}")),
-            },
+            WebEvent::ConnectServer(url) => self.connect_server(&url),
             WebEvent::ConnectPage(callback) => {
                 self.host
                     .set_server_link(ServerLink::Page(PageServerLink { callback }));

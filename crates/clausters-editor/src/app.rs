@@ -58,19 +58,24 @@ pub type Docs = (Vec<Book>, BTreeMap<String, String>);
 
 // -- the fixed windows, and the ids of what is inside them
 
-const POST_WIN: i32 = 1;
-const POST: i32 = 2;
-const DOCS_WIN: i32 = 3;
-const DOCS: i32 = 4;
+/// **Where the editor's ids start**: past the window a client allocates its
+/// widgets from (1000 and a million after it) and the ids below 1000 a
+/// script picks by hand, since the session's windows open on this host too.
+const IDS: i32 = 1 << 24;
+
+const POST_WIN: i32 = IDS + 1;
+const POST: i32 = IDS + 2;
+const DOCS_WIN: i32 = IDS + 3;
+const DOCS: i32 = IDS + 4;
 /// The application's bar, along the dock's top: the menu and the tools.
-const BAR_WIN: i32 = 5;
+const BAR_WIN: i32 = IDS + 5;
 /// The bar's height, in logical pixels.
 const BAR_H: i32 = 40;
 /// The side of one of the bar's tools, in logical pixels.
 const TOOL: i32 = 32;
 /// The application's footer, along the dock's bottom: the session's state.
-const FOOT_WIN: i32 = 11;
-const FOOT: i32 = 12;
+const FOOT_WIN: i32 = IDS + 11;
+const FOOT: i32 = IDS + 12;
 /// The footer's height, in logical pixels.
 const FOOT_H: i32 = 24;
 /// The footer's text size: 12 pixels to the em of the interface's face
@@ -78,42 +83,42 @@ const FOOT_H: i32 = 24;
 const FOOT_TEXT: f64 = 12.0 * 0.727 / 7.0;
 
 /// The line between the bar's menu titles and its tools.
-const BAR_LINE: i32 = 18;
+const BAR_LINE: i32 = IDS + 18;
 /// Where the bar holds the dialog that is up: the preferences or the
 /// environments, over the whole dock.
-const DIALOG_HOLD: i32 = 19;
+const DIALOG_HOLD: i32 = IDS + 19;
 /// The preferences' dialog.
-const PREFS_DIALOG: i32 = 20;
-const PREFS_REOPEN: i32 = 22;
-const PREFS_INDENT: i32 = 23;
-const PREFS_THEME: i32 = 24;
-const PREFS_DOCS_DIR: i32 = 25;
-const PREFS_DOCS_CHOOSE: i32 = 27;
-const PREFS_DOCS_BUNDLED: i32 = 28;
-const PREFS_STARTUP: i32 = 30;
-const PREFS_SAVE: i32 = 32;
-const PREFS_SAVE_RESTART: i32 = 33;
-const PREFS_CLOSE: i32 = 35;
+const PREFS_DIALOG: i32 = IDS + 20;
+const PREFS_REOPEN: i32 = IDS + 22;
+const PREFS_INDENT: i32 = IDS + 23;
+const PREFS_THEME: i32 = IDS + 24;
+const PREFS_DOCS_DIR: i32 = IDS + 25;
+const PREFS_DOCS_CHOOSE: i32 = IDS + 27;
+const PREFS_DOCS_BUNDLED: i32 = IDS + 28;
+const PREFS_STARTUP: i32 = IDS + 30;
+const PREFS_SAVE: i32 = IDS + 32;
+const PREFS_SAVE_RESTART: i32 = IDS + 33;
+const PREFS_CLOSE: i32 = IDS + 35;
 
 /// The environments' dialog.
-const ENVS_DIALOG: i32 = 40;
-const ENVS_LIST: i32 = 42;
-const ENVS_SOURCE: i32 = 71;
-const ENVS_NAME: i32 = 72;
-const ENVS_CREATE: i32 = 73;
-const ENVS_STATUS: i32 = 74;
-const ENVS_CLOSE: i32 = 75;
+const ENVS_DIALOG: i32 = IDS + 40;
+const ENVS_LIST: i32 = IDS + 42;
+const ENVS_SOURCE: i32 = IDS + 71;
+const ENVS_NAME: i32 = IDS + 72;
+const ENVS_CREATE: i32 = IDS + 73;
+const ENVS_STATUS: i32 = IDS + 74;
+const ENVS_CLOSE: i32 = IDS + 75;
 /// The rows of the list, redefined whole: ten ids a row from here.
-const ENVS_ROWS: i32 = 300;
+const ENVS_ROWS: i32 = IDS + 300;
 /// Where the nodes of the two dialogs with no role of their own are
 /// numbered from.
-const PREFS_SPARE: i32 = 100;
-const ENVS_SPARE: i32 = 150;
+const PREFS_SPARE: i32 = IDS + 100;
+const ENVS_SPARE: i32 = IDS + 150;
 
 /// A file window's ids, from its base: the window, its column, the code,
 /// the stack its dialog is a page of, the empty page, the dialog, its text,
 /// its row of buttons and the two buttons.
-const FILE_BASE: i32 = 1000;
+const FILE_BASE: i32 = IDS + 1000;
 const FILE_STRIDE: i32 = 16;
 /// Where a file window's nodes with no role of their own are numbered from.
 const FILE_SPARE: i32 = 10;
@@ -202,6 +207,8 @@ enum DockFor {
     Quit,
     /// Nothing but the state.
     Look,
+    /// The session's windows freed: it ended, and nothing answers for them.
+    Orphans,
 }
 
 /// The session's state, as the post window's title says it.
@@ -367,6 +374,7 @@ impl App {
                 let code = code.map_or_else(|| "?".to_string(), |c| c.to_string());
                 self.post("info", &format!("Python session ended (code {code})\n"));
                 self.say_session();
+                self.free_session_windows();
             }
             Msg::EnvsDone(result) => {
                 let status = match result {
@@ -600,6 +608,28 @@ impl App {
             DockFor::MoveTab => self.move_tab(&groups),
             DockFor::Quit => self.quit_now(),
             DockFor::Look => {}
+            DockFor::Orphans => {
+                // every window not the editor's own is the session's
+                let ids = state["panes"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|p| p["id"].as_i64())
+                    .chain(
+                        state["out"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_i64),
+                    );
+                for id in ids {
+                    if let Ok(id) = i32::try_from(id)
+                        && id < IDS
+                    {
+                        self.link.free(id);
+                    }
+                }
+            }
         }
     }
 
@@ -1497,9 +1527,16 @@ impl App {
         }
     }
 
+    /// **The session's windows go with it**: they opened in the editor's
+    /// dock, and a session that ended or restarts answers for none of them.
+    fn free_session_windows(&mut self) {
+        self.dock(json!({"verb": "layout"}), DockFor::Orphans);
+    }
+
     fn restart(&mut self) {
         self.post("info", "Restarting the Python session...\n");
         self.py.alive = false;
+        self.free_session_windows();
         if let Err(e) = self.session.restart() {
             self.post("err", &format!("{e}\n"));
         }

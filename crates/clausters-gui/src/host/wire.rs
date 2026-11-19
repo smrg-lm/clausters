@@ -65,12 +65,50 @@ impl Host {
             GUI_APP_OPEN => self.on_app_open(&msg.args, from, effects),
             GUI_APP_CALL => self.on_app_call(&msg.args, from, effects),
             GUI_DOCK => self.on_dock(&msg.args, from, effects),
+            GUI_SERVER => self.on_server(&msg.args, from, effects),
             GUI_ACTIVITY => match int_arg(&msg.args, 0) {
                 Some(window) => effects.push(HostEffect::Reply(self.activity_reply(window))),
                 None => diag::warn!("{from}: {GUI_ACTIVITY} needs a window id"),
             },
             _other => diag::debug!("{from}: ignoring unhandled address {_other}"),
         }
+    }
+
+    /// `/gui_server <host:port> [shm] [i/of]` ([`GUI_SERVER`]): the share
+    /// of the server's ids taken here, the leg and the segment handed to the
+    /// front, which holds the sockets and the mappings.
+    pub(super) fn on_server(
+        &mut self,
+        args: &[OscType],
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let Some(addr) = string_arg(args, 0).filter(|a| !a.is_empty()) else {
+            return diag::warn!("{from}: {GUI_SERVER} needs the server's host:port");
+        };
+        // a UDP address may say its carrier; any other is the front's to read
+        let addr = addr.strip_prefix("udp://").unwrap_or(addr);
+        let shm = string_arg(args, 1)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        if let Some(share) = string_arg(args, 2).filter(|s| !s.is_empty()) {
+            let parsed = share.split_once('/').and_then(|(i, of)| {
+                clausters_core::ids::IdShare::new(i.trim().parse().ok()?, of.trim().parse().ok()?)
+                    .ok()
+            });
+            match parsed {
+                Some(share) => {
+                    if let Err(e) = self.set_id_share(share) {
+                        diag::warn!("{from}: {GUI_SERVER} {share:?}: {e}");
+                    }
+                }
+                None => diag::warn!("{from}: {GUI_SERVER}: the id share is i/of, not {share}"),
+            }
+        }
+        effects.push(HostEffect::Server {
+            addr: addr.to_string(),
+            shm,
+        });
     }
 
     /// `/gui_load <name>` -- load a persisted GuiDef and instantiate it (build its

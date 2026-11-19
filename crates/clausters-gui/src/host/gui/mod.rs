@@ -160,7 +160,7 @@ impl Loop<'_> {
 /// channel the headless loop waits on. Both answer `Err` once the loop has
 /// gone, which is what ends a thread.
 #[derive(Clone)]
-enum Proxy {
+pub(super) enum Proxy {
     Winit(EventLoopProxy<UserEvent>),
     Channel(std::sync::mpsc::Sender<UserEvent>),
 }
@@ -206,6 +206,7 @@ pub fn run(
     set_app_wake(&mut host, &proxy);
     let inflight = spawn_fronts(&host, &socket, &proxy, tcp, ws)?;
     let mut app = App::new(host, socket, bus, inflight, false);
+    app.proxy = Some(proxy.clone());
     event_loop.run_app(&mut app).map_err(|e| e.to_string())
 }
 
@@ -233,8 +234,8 @@ pub fn run_headless(
     // The threads hold the senders, and the host one more for its
     // applications' wake; this one would keep the channel open after the
     // threads are gone.
-    drop(proxy);
-    let app = App::new(host, socket, bus, inflight, true);
+    let mut app = App::new(host, socket, bus, inflight, true);
+    app.proxy = Some(proxy);
     headless_loop(app, events)
 }
 
@@ -273,13 +274,17 @@ fn headless_loop(mut app: App, events: std::sync::mpsc::Receiver<UserEvent>) -> 
 /// ([`LocalReplies`]), and the application is then a client of the host as a
 /// script is, by the same protocol, with no socket between the two
 /// ([`ClientId::Local`]). The script front still listens on `socket`, so a
-/// script may drive the same host beside it. `headless` draws the windows
-/// offscreen, as [`run_headless`] does, which is how the application is
-/// checked by script.
+/// script may drive the same host beside it, over `tcp` and `ws` too when
+/// they are given (an address and the largest frame each takes), as a host
+/// started alone listens. `headless` draws the windows offscreen, as
+/// [`run_headless`] does, which is how the application is checked by
+/// script.
 pub fn run_local(
     host: Host,
     socket: Arc<UdpSocket>,
     headless: bool,
+    tcp: Option<(SocketAddr, usize)>,
+    ws: Option<(SocketAddr, usize)>,
     link: impl FnOnce(LocalLink) -> LocalReplies,
 ) -> Result<(), String> {
     let mut host = host;
@@ -288,9 +293,12 @@ pub fn run_local(
         let proxy = Proxy::Channel(sender);
         spawn_disk(&mut host, &proxy)?;
         set_app_wake(&mut host, &proxy);
-        let inflight = spawn_fronts(&host, &socket, &proxy, None, None)?;
-        let replies = link(LocalLink { proxy });
+        let inflight = spawn_fronts(&host, &socket, &proxy, tcp, ws)?;
+        let replies = link(LocalLink {
+            proxy: proxy.clone(),
+        });
         let mut app = App::new(host, socket, None, inflight, true);
+        app.proxy = Some(proxy);
         app.local = Some(replies);
         return headless_loop(app, events);
     }
@@ -301,9 +309,12 @@ pub fn run_local(
     let proxy = Proxy::Winit(event_loop.create_proxy());
     spawn_disk(&mut host, &proxy)?;
     set_app_wake(&mut host, &proxy);
-    let inflight = spawn_fronts(&host, &socket, &proxy, None, None)?;
-    let replies = link(LocalLink { proxy });
+    let inflight = spawn_fronts(&host, &socket, &proxy, tcp, ws)?;
+    let replies = link(LocalLink {
+        proxy: proxy.clone(),
+    });
     let mut app = App::new(host, socket, None, inflight, false);
+    app.proxy = Some(proxy);
     app.local = Some(replies);
     event_loop.run_app(&mut app).map_err(|e| e.to_string())
 }
@@ -466,7 +477,11 @@ fn transport_loop(socket: Arc<UdpSocket>, proxy: Proxy, inflight: &Inflight) {
 
 /// Drains the client leg's socket, forwarding the audio server's replies to the
 /// main thread (which routes `/buffer_query.reply`/`/buffer_getRange.reply` into the buffer-fetch path).
-fn server_reply_loop(socket: Arc<UdpSocket>, leg: crate::host::instance::Leg, proxy: Proxy) {
+pub(super) fn server_reply_loop(
+    socket: Arc<UdpSocket>,
+    leg: crate::host::instance::Leg,
+    proxy: Proxy,
+) {
     let mut buf = vec![0u8; 65536];
     loop {
         match socket.recv_from(&mut buf) {

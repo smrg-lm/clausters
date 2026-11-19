@@ -1720,3 +1720,47 @@ fn a_listing_reaches_only_the_chooser_that_asked() {
         "no such window"
     );
 }
+
+/// **`/gui_server` points a running host at an audio server**: its share of
+/// the server's ids is taken at once, and the leg and the segment are the
+/// front's to open, with a UDP address's carrier read off.
+#[test]
+fn a_client_points_a_running_host_at_its_server() {
+    let mut host = Host::new();
+    let effects = host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_SERVER.into(),
+            args: vec![
+                OscType::String("udp://127.0.0.1:57110".into()),
+                OscType::String("/dev/shm/clausters".into()),
+                OscType::String("1/2".into()),
+            ],
+        }),
+        from(),
+    );
+    assert!(
+        matches!(&effects[..], [HostEffect::Server { addr, shm: Some(shm) }]
+            if addr == "127.0.0.1:57110" && shm == "/dev/shm/clausters"),
+        "{effects:?}"
+    );
+    assert_eq!(
+        host.ids().share(),
+        clausters_core::ids::IdShare::new(1, 2).unwrap()
+    );
+    // with neither a segment nor a share: the leg alone
+    let effects = host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_SERVER.into(),
+            args: vec![
+                OscType::String("127.0.0.1:57110".into()),
+                OscType::String(String::new()),
+                OscType::String(String::new()),
+            ],
+        }),
+        from(),
+    );
+    assert!(
+        matches!(&effects[..], [HostEffect::Server { addr, shm: None }] if addr == "127.0.0.1:57110"),
+        "{effects:?}"
+    );
+}

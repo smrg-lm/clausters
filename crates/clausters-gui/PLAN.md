@@ -2210,7 +2210,7 @@ something reusable if the track stops there.
   the page's interface removed; the third-party licenses regenerated; the
   wheel, `install.sh` and the README rebuilt around the new binary; the
   editor's documentation rewritten where it names what moved.
-- ⬜ **WS15 — Applications as the editor's pages** *(added 2026-11-18 at
+- ✅ **WS15 — Applications as the editor's pages** *(added 2026-11-18 at
   the user's request, taken before ST12)*. WS4 built a page as an
   arrangement of panels per kind of work; what pages were asked for is one
   window holding several applications, one per page, switched by the
@@ -2245,6 +2245,28 @@ something reusable if the track stops there.
     a view bound to the session's server reading it; headless captures of
     each step, tests of `/gui_server` and of the menu shown in the bar in
     the host, and both clients attaching by the variable.
+  *Shipped:* the bar's menu is `menubar::MenuShown` on a window (its own,
+  away in the dock's bar, or another's copied), decided by
+  `Host::show_menus` as each front settles the dock; a pick in the bar
+  flips its state in the application's menu and reports it from there, and
+  any other entry is performed on the application's window
+  (`GestureEffect::Perform`). `/gui_server` takes the share of the ids at
+  once and hands the leg and the segment to the front (`HostEffect::Server`:
+  natively a leg, its reader and the mapping; in a page a `ws://` leg). The
+  editor's host listens on TCP and WebSocket beside UDP, names itself to its
+  sessions as `udp://` and `ws://` addresses in `CLAUSTERS_GUI_HOST`, takes
+  its own ids from `1 << 24` so a session's never meet them, and frees the
+  session's windows when the session ends or restarts. `Session.gui()` and
+  the ambient verbs attach in both clients (`named_host`, `namedHost`,
+  `GuiHost.server`). Checked: host tests of the bar showing an
+  application's menu, its picks, its return to its own, and of
+  `/gui_server`; both clients' tests of the variable and the message; a
+  headless editor whose session boots a server and opens the multitrack,
+  which lands on its own page with its menu in the editor's bar, the
+  editor's menu back on the code's page, and the multitrack freed by a
+  restart of the session. Not checked: the score editor beside it and a
+  view reading the session's server by eye; a node session's server reached
+  by a WebSocket gives a native host no leg (`clients/web/PLAN.md`).
 
 ### Open decisions (taken in the milestone that needs them)
 
@@ -3063,14 +3085,6 @@ finished work, where a pending item reads as done.
 
 - ⬜ **The editor keeps its window's size and not its place** *(2026-11-17,
   WS12)*. The current editor restores both on the desktops that let it.
-
-- ⬜ **The session's own windows do not open in the editor's dock**
-  *(2026-11-17, WS12)*. A script run in the editor that opens a GuiDef
-  boots a host of its own, as it does under the current editor. The track's
-  aim is one window for everything: the session would be told the editor's
-  host (an address in its environment) and both clients would attach to it
-  rather than boot one, which is a client change made in both at once.
-  Taken by WS15, which gives the shape.
 
 - ⬜ **Quitting the application is not an act: the dock's close is
   guessed from its panes' closes** *(2026-11-17, WS12; seen again

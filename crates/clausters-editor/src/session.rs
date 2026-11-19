@@ -27,6 +27,16 @@ struct Proc {
     generation: u64,
 }
 
+/// **Where the editor's host listens**, a URL per carrier (`udp://host:port`,
+/// whose port takes TCP as well, and `ws://host:port`), told to every session
+/// it starts as `CLAUSTERS_GUI_HOST`.
+static GUI_HOST: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Names the editor's host to the sessions started from here on.
+pub fn set_gui_host(addr: String) {
+    let _ = GUI_HOST.set(addr);
+}
+
 /// The session: at most one process, started when it is first needed.
 #[derive(Clone)]
 pub struct Session {
@@ -122,6 +132,11 @@ impl Session {
                     Ok(())
                 });
             }
+        }
+        // **The session's windows open in the editor's window**: a client
+        // there attaches to this host rather than booting one of its own.
+        if let Some(addr) = GUI_HOST.get() {
+            command.env("CLAUSTERS_GUI_HOST", addr);
         }
         let mut child = command
             .spawn()

@@ -90,6 +90,31 @@ const DEFAULT_WS_URL = `ws://127.0.0.1:${DEFAULT_WS_PORT}`;
  */
 export type GuiTransportName = "page" | "ws";
 
+/**
+ * The environment variable an application names its own host in, for the
+ * sessions it starts: a client there attaches to that host rather than
+ * opening one, so the session's windows open in the application's window
+ * ({@link namedHost}). It holds an address per carrier the host listens on,
+ * separated by spaces -- `udp://host:port` (whose port takes TCP as well) and
+ * `ws://host:port` -- and each client takes the one it speaks.
+ */
+export const HOST_VARIABLE = "CLAUSTERS_GUI_HOST";
+
+/**
+ * The host the environment names ({@link HOST_VARIABLE}), as the `ws://`
+ * address this client reaches it at, or `null` when it names none -- and
+ * always in a page, which has no environment. The reference client's
+ * `named_host`, which takes the `udp://` one.
+ */
+export function namedHost(): string | null {
+    const env = (globalThis as { process?: { env?: Record<string, string | undefined> } })
+        .process?.env;
+    for (const spec of (env?.[HOST_VARIABLE] ?? "").split(/\s+/)) {
+        if (spec.startsWith("ws://") || spec.startsWith("wss://")) return spec;
+    }
+    return null;
+}
+
 /** What {@link GuiHost} is built with -- the reference's constructor, page-shaped. */
 export interface GuiHostOptions {
     /** Where the host is; `"page"` (the default) or `"ws"`. */
@@ -1418,6 +1443,19 @@ export class GuiHost {
         this.onClosedHandlers.delete(id);
         this.handles.delete(id);
         this.alloc.free(id);
+    }
+
+    /**
+     * `/gui_server` -- points the host at the audio server it is a client
+     * of: its client leg to `server`, the shared-memory segment `shm` it
+     * maps where it can, and `idShare`, its share of that server's ids. What
+     * a booted host is given as it starts, for one this handle attached to:
+     * how a session wires a host it did not open, an editor's, to its own
+     * server.
+     */
+    server(server: string, { shm, idShare }: { shm?: string | null; idShare?: IdShare | null } = {}): void {
+        const share = idShare ? `${idShare.index}/${idShare.of}` : "";
+        this.send("/gui_server", server, shm ?? "", share);
     }
 
     /**

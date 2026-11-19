@@ -228,6 +228,10 @@ pub(super) struct App {
     /// **Where what the host says to an application in its process goes**
     /// ([`ClientId::Local`]), when one is linked ([`super::run_local`]).
     pub(super) local: Option<super::LocalReplies>,
+    /// What wakes the loop, for a reader started after it ran: the audio
+    /// server's replies once a client points the host at one
+    /// (`/gui_server`).
+    pub(super) proxy: Option<super::Proxy>,
     /// The script front's frames in flight: each `Osc`, `TcpOsc` and `WsOsc`
     /// event releases its place here as it is handled.
     pub(super) inflight: Arc<Inflight>,
@@ -331,6 +335,7 @@ impl App {
             tcp_conns: HashMap::new(),
             ws_conns: HashMap::new(),
             local: None,
+            proxy: None,
             inflight,
             pending: Vec::new(),
             pending_asks: Vec::new(),
@@ -568,6 +573,7 @@ impl App {
                     self.host.performed(window);
                 }
                 HostEffect::Capture { window, path } => self.capture(window, path, from),
+                HostEffect::Server { addr, shm } => self.attach_server(&addr, shm),
                 HostEffect::Dock { seq, call } => self.dock_call(lp, from, seq, call),
             }
         }
@@ -1493,4 +1499,62 @@ fn key_pressed(event: &winit::event::KeyEvent, chord: bool) -> Key {
         return Key::Character(text.clone());
     }
     event.logical_key.clone()
+}
+
+impl App {
+    /// **A client named the audio server this host is a client of**
+    /// (`/gui_server`): the leg opened toward it, its replies read on a
+    /// thread of their own as the leg `--server` opens at boot, and its
+    /// segment mapped where it can be -- the buses the meters read and the
+    /// samples drawn in place.
+    pub(super) fn attach_server(&mut self, addr: &str, shm: Option<String>) {
+        use std::net::ToSocketAddrs;
+        if addr.contains("://") {
+            return warn!(
+                "/gui_server {addr}: a native host reaches its server over UDP, at host:port"
+            );
+        }
+        let target = match addr.to_socket_addrs().map(|mut a| a.next()) {
+            Ok(Some(target)) => target,
+            Ok(None) => return warn!("/gui_server {addr}: no address resolved"),
+            Err(e) => return warn!("/gui_server {addr}: {e}"),
+        };
+        match crate::host::native::client::ServerLeg::connect(target) {
+            Ok(leg) => {
+                let socket = leg.socket();
+                self.host.set_server_link(crate::host::ServerLink::Udp(leg));
+                if let Some(proxy) = self.proxy.clone() {
+                    let spawned = std::thread::Builder::new()
+                        .name("clausters-gui-server".into())
+                        .spawn(move || {
+                            super::server_reply_loop(
+                                socket,
+                                crate::host::instance::Leg::Server,
+                                proxy,
+                            )
+                        });
+                    if let Err(e) = spawned {
+                        warn!("/gui_server {addr}: cannot read its replies: {e}");
+                    }
+                }
+                self.host.on_link_attached();
+                tracing::info!("client leg ready: host -> audio server at {target}");
+            }
+            Err(e) => return warn!("/gui_server {addr}: client leg: {e}"),
+        }
+        #[cfg(unix)]
+        {
+            let (bus, buffers) = super::open_shm_buffers(shm);
+            if bus.is_some() {
+                self.shm = bus;
+            }
+            if let Some(buffers) = buffers {
+                self.host.set_shared_buffers(buffers);
+            }
+        }
+        #[cfg(not(unix))]
+        if let Some(bus) = super::open_shm(shm) {
+            self.shm = Some(bus);
+        }
+    }
 }

@@ -118,19 +118,44 @@ fn run(cli: Cli) -> Result<(), String> {
         );
     }
     let files = cli.files;
-    clausters_gui::host::gui::run_local(host, Arc::new(socket), cli.headless, move |local| {
-        let (tx, rx) = std::sync::mpsc::channel::<Msg>();
-        let replies_tx = tx.clone();
-        let replies: LocalReplies = Box::new(move |packet| {
-            for said in Said::read(packet) {
-                let _ = replies_tx.send(Msg::Host(said));
-            }
-        });
-        let link = Link::new(local);
-        std::thread::Builder::new()
-            .name("clausters-editor".into())
-            .spawn(move || App::new(link, tx, settings).run(rx, files))
-            .expect("the application's thread starts");
-        replies
-    })
+    // a session's client reaches this host over TCP as it reaches any, on
+    // the same port, so a large tree is not bounded by a datagram
+    let frame = clausters_core::osc::DEFAULT_MAX_FRAME;
+    let tcp = socket.local_addr().ok().map(|addr| (addr, frame));
+    // and a client that speaks only WebSocket, on a port of its own
+    let ws = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .and_then(|l| l.local_addr())
+        .ok()
+        .map(|addr| (addr, frame));
+    // the sessions are told where, in each carrier
+    let mut named = Vec::new();
+    if let Some((addr, _)) = tcp {
+        named.push(format!("udp://{addr}"));
+    }
+    if let Some((addr, _)) = ws {
+        named.push(format!("ws://{addr}"));
+    }
+    crate::session::set_gui_host(named.join(" "));
+    clausters_gui::host::gui::run_local(
+        host,
+        Arc::new(socket),
+        cli.headless,
+        tcp,
+        ws,
+        move |local| {
+            let (tx, rx) = std::sync::mpsc::channel::<Msg>();
+            let replies_tx = tx.clone();
+            let replies: LocalReplies = Box::new(move |packet| {
+                for said in Said::read(packet) {
+                    let _ = replies_tx.send(Msg::Host(said));
+                }
+            });
+            let link = Link::new(local);
+            std::thread::Builder::new()
+                .name("clausters-editor".into())
+                .spawn(move || App::new(link, tx, settings).run(rx, files))
+                .expect("the application's thread starts");
+            replies
+        },
+    )
 }

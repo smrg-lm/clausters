@@ -98,6 +98,35 @@ class WidgetInfo:
 #: (UDP/TCP 57110, WebSocket 57120).
 DEFAULT_PORT = 57210
 
+#: The environment variable an application names its own host in, for the
+#: sessions it starts: a client there attaches to that host rather than
+#: booting one, so the session's windows open in the application's window
+#: (`named_host`). It holds an address per carrier the host listens on,
+#: separated by spaces -- ``udp://host:port`` (whose port takes TCP as well)
+#: and ``ws://host:port`` -- and each client takes the one it speaks.
+HOST_VARIABLE = "CLAUSTERS_GUI_HOST"
+
+
+def named_host():
+    """The host the environment names (`HOST_VARIABLE`) as ``(host, port)``,
+    or ``None`` when it names none.
+
+    An editor that runs a session tells it where its own host listens, so
+    `clausters.Session.gui` and the ambient verbs attach there instead of
+    booting a host of their own: the session's windows open in the editor's
+    window, an application on a page of its own.
+    """
+    import os
+
+    for spec in os.environ.get(HOST_VARIABLE, "").split():
+        scheme, _, address = spec.rpartition("://")
+        if scheme not in ("", "udp", "tcp"):
+            continue
+        host, _, port = address.rpartition(":")
+        if port.isdigit():
+            return (host or "127.0.0.1", int(port))
+    return None
+
 #: How long a `GuiHost.wait` sleeps between looks at what it is waiting for.
 #: It is not a poll of the socket -- the loop delivers on its own thread -- only
 #: how sharply a script notices that the last window went away.
@@ -415,6 +444,19 @@ class GuiHost:
         self._open.add(int(id))
         _ = self.loop                   # an open window is delivered to
         return handle
+
+    def server(self, server: str, *, shm: "str | None" = None, id_share=None):
+        """``/gui_server`` -- point the host at the audio server it is a client
+        of: its client leg to ``server`` (``"host:port"``), the shared-memory
+        segment ``shm`` it maps where it can, and ``id_share``, its
+        `clausters.base.ids.IdShare` of that server's ids.
+
+        What `boot` gives a host it starts (``--server``, ``--shm``,
+        ``--id-share``), for one this handle `attach`-ed to: how a session
+        wires a host it did not boot, an editor's, to its own server.
+        """
+        share = "" if id_share is None else f"{id_share.index}/{id_share.of}"
+        self._send("/gui_server", str(server), str(shm or ""), share)
 
     def close(self, id: int):
         """Close a window opened with `open` (or any widget subtree): ``/gui_free``

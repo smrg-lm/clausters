@@ -142,6 +142,16 @@ const session = await Session.live("ws://127.0.0.1:57120");   // a `clausters --
 A page's worker has no document either, and imports the same way (see
 [Sessions](sessions.md#a-session-in-a-worker)).
 
+**A node session run by an editor draws in the editor's window.** An
+application that runs sessions names its own host in the environment,
+`CLAUSTERS_GUI_HOST` (an address per carrier the host listens on, separated by
+spaces). Where it names a `ws://` one, `session.gui()` and the ambient verbs
+attach to that host instead of opening one, and point it at the session's
+server with `GuiHost.server`, the `/gui_server` message: the session's windows
+open in the editor's dock, an application on a page of its own. A native host
+reaches its server over UDP, so a session on a server reached by a WebSocket
+leaves that host with no client leg for now.
+
 `loadCore()` is the one call that has to know where it is: in a browser it
 fetches the module next to the glue, and under node it reads it off disk. Both
 are the same call with no argument — the environment decides, not the caller.

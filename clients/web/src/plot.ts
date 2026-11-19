@@ -51,7 +51,7 @@ import { Synth } from "./defs/node.ts";
 import type { Controls } from "./defs/node.ts";
 import { SynthDef } from "./defs/synthdef.ts";
 import { Bpf, Env, control, envGen, out } from "./defs/ugens/index.ts";
-import { GuiHost, newGuiHost, pageGuiConnection } from "./gui/host.ts";
+import { GuiHost, namedHost, newGuiHost, pageGuiConnection } from "./gui/host.ts";
 import type { Stage } from "./gui/host.ts";
 import type { PropValue } from "./gui/host.ts";
 import { ambientHost } from "./gui/ambient.ts";
@@ -565,12 +565,25 @@ function isRow(value: unknown): boolean {
  * resolves through the same ladder and shares this module's own host. The
  * Python client shares it the same way, as `plot._ambient_host`.
  */
+/** The host the environment names, once attached ({@link _resolveHost}). */
+let namedOwn: GuiHost | undefined;
+
 export async function _resolveHost(server?: Server | null): Promise<GuiHost> {
     const registered = ambientHost();
     if (registered) return registered;
     const session = main.currentSession as { guiHost?: GuiHost | null } | null;
     const sessionHost = session?.guiHost ?? null;
     if (sessionHost) return sessionHost;
+    // The host the environment names (an editor's, under node): attached
+    // to and pointed at the server, never opened -- as the reference
+    // client's `plot._ambient_host` does.
+    const named = namedHost();
+    if (named !== null) {
+        namedOwn ??= await new GuiHost({ transport: "ws", url: named }).attach({ adoptAmbient: false });
+        const address = server?.connection.url;
+        if (address !== undefined) namedOwn.server(address, { idShare: server?.splitShare() });
+        return namedOwn;
+    }
     // A host of our own: the core wasm has to be in before one exists (its id
     // allocators are core registries), and the ambient verbs are exactly the
     // surface that resolves what it needs rather than asking for it. A page

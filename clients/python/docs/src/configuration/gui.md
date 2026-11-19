@@ -50,7 +50,13 @@ user+project chain with one file. Verbosity is the server's: `-v`/`-vv`/`-vvv`,
 
 From Python you rarely write `server` or `shm`: `Session.gui()` points the
 client leg at the session's own server and maps the segment that server was
-launched with, and it passes `--port` itself. What the file is for is everything a script should not have to know — the
+launched with, and it passes `--port` itself. A session an editor runs boots
+no host at all: the editor names its own in the environment,
+`CLAUSTERS_GUI_HOST` (an address per carrier, separated by spaces, of which
+Python takes the `udp://` one), and `Session.gui()` and the ambient verbs
+attach to it and point it at the session's server with `GuiHost.server` (the
+`/gui_server` message), so the session's windows open in the editor's dock,
+an application on a page of its own. What the file is for is everything a script should not have to know — the
 look, the sizing, the data directory.
 
 ## `[gui.theme]`
