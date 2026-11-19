@@ -3136,12 +3136,6 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **The editor's dock arrangement is not kept between runs** *(2026-11-17,
-  WS12)*. The window's size is; where the panels were is not, so a run opens
-  in the first arrangement. The layout the dock answers names panes by id,
-  and a file's window gets another id next time, so keeping it means naming
-  the panes by role (a file by its path) and translating back on start.
-
 - ⬜ **The editor keeps its window's size and not its place** *(2026-11-17,
   WS12)*. The current editor restores both on the desktops that let it.
 

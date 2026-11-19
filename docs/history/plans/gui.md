@@ -8151,3 +8151,17 @@ module of its own.
   on a thread at start, as the webview editor does, lists them in View >
   Font beside the bundled face and keeps the choice in its settings; a
   family no longer installed falls back to the bundled face.)*
+
+- ✅ **The editor's dock arrangement is not kept between runs** *(2026-11-17,
+  WS12)*. The window's size is; where the panels were is not, so a run opens
+  in the first arrangement. The layout the dock answers names panes by id,
+  and a file's window gets another id next time, so keeping it means naming
+  the panes by role (a file by its path) and translating back on start.
+  *(Fixed 2026-11-19: at quit the editor keeps the page the post window is
+  on, each pane named by its role -- `post`, `docs`, `file:<path>` -- and
+  an untitled file's tab or a session's window left out, the tree pruned
+  of what that empties. At start, once every pane has arrived, the kept
+  layout is translated to this run's ids and restored; a file it does not
+  name joins the group of the first file it does, and a layout missing
+  the post window, the documentation or every file falls back to the
+  first arrangement. `crates/clausters-editor/src/arrangement.rs`.)*

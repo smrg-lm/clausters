@@ -9,6 +9,7 @@
 //! own, as in the webview application, and so are the environments.
 
 mod app;
+mod arrangement;
 mod config;
 mod desktop;
 mod docs;

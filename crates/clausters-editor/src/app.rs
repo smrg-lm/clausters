@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 
 use clausters_apps::closing;
 
+use crate::arrangement;
 use crate::desktop::{self, Purpose};
 use crate::docs::Book;
 use crate::session::Session;
@@ -644,7 +645,10 @@ impl App {
             DockFor::Arrange => self.arrange(&groups),
             DockFor::Split => self.split_or_join(&groups),
             DockFor::MoveTab => self.move_tab(&groups),
-            DockFor::Quit => self.quit_now(),
+            DockFor::Quit => {
+                self.keep_arrangement(state);
+                self.quit_now()
+            }
             DockFor::Look => {}
             DockFor::Orphans => {
                 // every window not the editor's own is the session's, on
@@ -1131,6 +1135,26 @@ impl App {
         self.dock_calls.insert(i32::MAX, DockFor::Quit);
     }
 
+    /// **The arrangement kept by role**: the page the post window is on, as
+    /// the dock answered it, every pane named by its role
+    /// ([`role_of`](Self::role_of)) and the ones with none left out.
+    fn keep_arrangement(&mut self, state: &Value) {
+        let page = state["pages"].as_array().and_then(|pages| {
+            pages.iter().find(|p| {
+                arrangement::panes(&p["layout"])
+                    .iter()
+                    .any(|id| id.as_i64() == Some(i64::from(POST_WIN)))
+            })
+        });
+        let Some(layout) = page.map(|p| &p["layout"]) else {
+            return;
+        };
+        self.settings.layout = arrangement::rename(layout, &|id| {
+            let win = i32::try_from(id.as_i64()?).ok()?;
+            self.role_of(win).map(Value::from)
+        });
+    }
+
     /// **The editor ends**: what it remembers is written, the session is
     /// stopped and the host's loop is asked to end, which ends the program on
     /// the thread that holds the windows. Ending it from this thread instead
@@ -1184,6 +1208,12 @@ impl App {
         let Some(first) = self.files.first().map(|f| f.win) else {
             return;
         };
+        if self.restore_arrangement() {
+            if let Some(win) = self.active {
+                self.show_file(win);
+            }
+            return;
+        }
         for f in self.files.iter().skip(1) {
             let call = json!({"verb": "join", "pane": f.win, "of": first});
             self.link.dock(&call);
@@ -1200,6 +1230,71 @@ impl App {
         }
         if let Some(win) = self.active {
             self.show_file(win);
+        }
+    }
+
+    /// **The arrangement of the last run, put back**: what was kept by role
+    /// ([`Settings::layout`]) in this run's ids, and a file it does not name
+    /// joined to the group of the first file it does. `false`, and nothing
+    /// done, when nothing was kept or what was kept misses a pane this run
+    /// shows (the post window, the documentation, every file), which the
+    /// first arrangement then places.
+    fn restore_arrangement(&mut self) -> bool {
+        let Some(saved) = self.settings.layout.clone() else {
+            return false;
+        };
+        let Some(layout) = arrangement::rename(&saved, &|role| {
+            self.pane_of(role.as_str()?).map(Value::from)
+        }) else {
+            return false;
+        };
+        let named: Vec<i32> = arrangement::panes(&layout)
+            .iter()
+            .filter_map(|v| v.as_i64().and_then(|v| i32::try_from(v).ok()))
+            .collect();
+        let Some(&of) = named
+            .iter()
+            .find(|w| self.files.iter().any(|f| f.win == **w))
+        else {
+            return false;
+        };
+        if !named.contains(&POST_WIN) || (self.docs_shown && !named.contains(&DOCS_WIN)) {
+            return false;
+        }
+        self.link
+            .dock(&json!({"verb": "restore", "layout": layout}));
+        for f in self.files.iter().filter(|f| !named.contains(&f.win)) {
+            self.link
+                .dock(&json!({"verb": "join", "pane": f.win, "of": of}));
+        }
+        true
+    }
+
+    /// The role pane `win` is kept by: the post window, the documentation, a
+    /// file by its path; none for an untitled file or a window not the
+    /// editor's.
+    fn role_of(&self, win: i32) -> Option<String> {
+        match win {
+            POST_WIN => Some("post".into()),
+            DOCS_WIN => Some("docs".into()),
+            _ => self
+                .files
+                .iter()
+                .find(|f| f.win == win)
+                .and_then(|f| f.path.as_ref())
+                .map(|p| format!("file:{}", p.to_string_lossy())),
+        }
+    }
+
+    /// The pane of this run that `role` names, if it is open.
+    fn pane_of(&self, role: &str) -> Option<i32> {
+        match role {
+            "post" => Some(POST_WIN),
+            "docs" => self.docs_shown.then_some(DOCS_WIN),
+            _ => {
+                let path = Path::new(role.strip_prefix("file:")?);
+                self.file_at(path).map(|f| f.win)
+            }
         }
     }
 
