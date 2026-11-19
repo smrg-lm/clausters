@@ -27,81 +27,83 @@ use std::fmt::Write as _;
 
 use super::tools::Outlines;
 
-/// Where the editor's own codepoints start: the first of the private plane
-/// (`U+F0000`), which no music font writes in -- SMuFL's are all in the basic
-/// plane's private area.
-pub const OWN: u32 = 0xF0000;
+/// Where the editor's own codepoints start: the first of the last private
+/// plane (`U+100000`), which no music font writes in -- SMuFL's are all in
+/// the basic plane's private area -- and the host's icons do not either:
+/// theirs is the plane before (`U+F0000`), and the table of outlines is one
+/// for every window, so two sets in one plane drew each other's shapes.
+pub const OWN: u32 = 0x100000;
 
 /// A slur: a curve over a phrase.
-pub const SLUR: &str = "F0001";
+pub const SLUR: &str = "100001";
 /// A tie: two notes of one pitch joined.
-pub const TIE: &str = "F0002";
+pub const TIE: &str = "100002";
 /// The other voice of the staff.
-pub const VOICE: &str = "F0003";
+pub const VOICE: &str = "100003";
 /// Nothing: what takes a mark away.
-pub const NONE: &str = "F0004";
+pub const NONE: &str = "100004";
 /// An empty measure opened before.
-pub const MEASURE_BEFORE: &str = "F0005";
+pub const MEASURE_BEFORE: &str = "100005";
 /// An empty measure opened after.
-pub const MEASURE_AFTER: &str = "F0006";
+pub const MEASURE_AFTER: &str = "100006";
 /// Measures taken out.
-pub const MEASURE_REMOVE: &str = "F0007";
+pub const MEASURE_REMOVE: &str = "100007";
 /// A barline that is not drawn.
-pub const BARLINE_INVISIBLE: &str = "F0008";
+pub const BARLINE_INVISIBLE: &str = "100008";
 /// A system break.
-pub const BREAK_SYSTEM: &str = "F0009";
+pub const BREAK_SYSTEM: &str = "100009";
 /// A page break.
-pub const BREAK_PAGE: &str = "F000A";
+pub const BREAK_PAGE: &str = "10000A";
 /// No break: the engraver's to fill.
-pub const BREAK_NONE: &str = "F000B";
+pub const BREAK_NONE: &str = "10000B";
 
 /// Back to the start: the transport's, which the host's own symbols lack.
-pub const REWIND: &str = "F000C";
+pub const REWIND: &str = "10000C";
 /// Note entry: a pencil.
-pub const ENTRY: &str = "F000D";
+pub const ENTRY: &str = "10000D";
 /// Let it ring: a tie into nothing.
-pub const LET_RING: &str = "F000E";
+pub const LET_RING: &str = "10000E";
 /// A glissando: a line from one note to another.
-pub const GLISSANDO: &str = "F000F";
+pub const GLISSANDO: &str = "10000F";
 /// A phrase mark: a slur with its ends turned down.
-pub const PHRASE: &str = "F0010";
+pub const PHRASE: &str = "100010";
 /// A bracket over a stretch of notes.
-pub const BRACKET: &str = "F0011";
+pub const BRACKET: &str = "100011";
 /// A beam across a barline.
-pub const BEAM_SPAN: &str = "F0012";
+pub const BEAM_SPAN: &str = "100012";
 /// Two notes alternating: two notes joined by tremolo strokes.
-pub const TWO_NOTE_TREMOLO: &str = "F0013";
+pub const TWO_NOTE_TREMOLO: &str = "100013";
 /// A rehearsal mark: a letter in a box.
-pub const REHEARSAL: &str = "F0014";
+pub const REHEARSAL: &str = "100014";
 /// An ending: the bracket of a first-time bar.
-pub const ENDING: &str = "F0015";
+pub const ENDING: &str = "100015";
 /// A staff of one line.
-pub const ONE_LINE: &str = "F0016";
+pub const ONE_LINE: &str = "100016";
 /// A staff of five lines.
-pub const FIVE_LINES: &str = "F0017";
+pub const FIVE_LINES: &str = "100017";
 /// Staves joined by a line.
-pub const GROUP_LINE: &str = "F0018";
+pub const GROUP_LINE: &str = "100018";
 /// A chord rolled up: a wavy line, its arrow at the top.
-pub const ARPEGGIO_UP: &str = "F0019";
+pub const ARPEGGIO_UP: &str = "100019";
 /// ...and down.
-pub const ARPEGGIO_DOWN: &str = "F001A";
+pub const ARPEGGIO_DOWN: &str = "10001A";
 /// The window as pages: a sheet with its systems.
-pub const PAGE_VIEW: &str = "F001B";
+pub const PAGE_VIEW: &str = "10001B";
 /// The window as one system running on.
-pub const LINE_VIEW: &str = "F001C";
+pub const LINE_VIEW: &str = "10001C";
 
 /// **A key signature**, by its tonic: the face's sharps or flats in a row, a
 /// natural for none -- under codepoints of the editor's own, from `F0020`.
 pub const KEY_SIGNS: [(&str, &str, i32); 9] = [
-    ("C", "F0020", 0),
-    ("G", "F0021", 1),
-    ("D", "F0022", 2),
-    ("A", "F0023", 3),
-    ("E", "F0024", 4),
-    ("F", "F0025", -1),
-    ("Bb", "F0026", -2),
-    ("Eb", "F0027", -3),
-    ("Ab", "F0028", -4),
+    ("C", "100020", 0),
+    ("G", "100021", 1),
+    ("D", "100022", 2),
+    ("A", "100023", 3),
+    ("E", "100024", 4),
+    ("F", "100025", -1),
+    ("Bb", "100026", -2),
+    ("Eb", "100027", -3),
+    ("Ab", "100028", -4),
 ];
 
 /// SMuFL's own, for the symbols it names and a face may leave out.

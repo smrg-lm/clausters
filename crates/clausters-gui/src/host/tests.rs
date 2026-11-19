@@ -1764,3 +1764,19 @@ fn a_client_points_a_running_host_at_its_server() {
         "{effects:?}"
     );
 }
+
+/// **The host's icons and the score editor's own symbols never share a
+/// codepoint**: the table of outlines is one for every window, so a score
+/// editor opened beside other windows drew its symbols in their icons when
+/// the two sets began at the same private codepoint.
+#[cfg(feature = "notation")]
+#[test]
+fn the_icons_and_the_score_editors_symbols_are_apart() {
+    use clausters_gui_draw::font::outline;
+    let own = clausters_apps::score::icons::OWN;
+    for name in outline::icon_names() {
+        if let Some(c) = outline::icon(name) {
+            assert!((c as u32) < own, "icon {name} at {:X}", c as u32);
+        }
+    }
+}
