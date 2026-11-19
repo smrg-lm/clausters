@@ -507,8 +507,9 @@ impl PostView {
                     continue;
                 }
                 let x = g.text.x + font::width_in(Family::Mono, &shown[..s - from], g.size);
-                font::text(
+                font::text_in(
                     mesh,
+                    Family::Mono,
                     &shown[s - from..e - from],
                     x,
                     ty,

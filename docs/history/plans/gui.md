@@ -8113,3 +8113,10 @@ module of its own.
   inputs to every caret drawn (a field, the code); a front wakes only when
   it changes (`Host::caret_due`: the native loop's next wake, a one-shot
   timer in a page) and draws nothing for it while the keys are on no text.
+
+- ✅ **The post window's face differed natively and in the page**
+  *(2026-11-19)*. The webview editor's post window writes in the code's
+  monospaced face; the host's measured its lines in that face and drew
+  them through `font::text`, which is the interface's, so the native one
+  read in a proportional face. It draws in `Family::Mono` now, as its own
+  module says it does.

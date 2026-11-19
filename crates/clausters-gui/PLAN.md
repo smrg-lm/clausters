@@ -3258,10 +3258,6 @@ finished work, where a pending item reads as done.
   A docstring is Markdown; the tooltip could draw it as the documentation
   panel does.
 
-- ⬜ **The post window's face differs natively and in the page**
-  *(2026-11-19)*. The two fronts draw it in different typefaces; the host
-  is one, so the face must be the same.
-
 - ⬜ **Text is drawn thinner natively than in the webview editor**
   *(2026-11-19, captures of the documentation side by side)*. The same
   face reads lighter in the host's documentation than in the current
