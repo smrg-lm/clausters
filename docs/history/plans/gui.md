@@ -8034,3 +8034,15 @@ module of its own.
   something else measured it; closing a page now measures the dock
   (`a_page_keeps_its_own_arrangement`). Both were the host's, not the
   editor's: any `choice` of tabs and any dock with pages.
+
+- ✅ **The documentation reopened by its key and its menu** *(found using
+  the editor, 2026-11-18; done the same day)*. Once its panel was closed by
+  its own close mark, neither F1 nor Help's entries opened it again, and
+  Search the Documentation showed no find bar unless the panel had been
+  used: the editor freed the panel's window on that close but went on
+  believing it shown, so its calls went to a window that was gone; and the
+  panel named no view to take the window's verbs and keys, so a search
+  asked before anything in it was pressed reached nothing. The close now
+  marks the panel gone, the panel's view is its window's `main`, and
+  showing the documentation puts the dock's focus and the keyboard on it,
+  so what it was opened for is typed there.

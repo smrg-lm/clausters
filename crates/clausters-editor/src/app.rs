@@ -558,7 +558,12 @@ impl App {
                 // the post window stays: it is where the session speaks; the
                 // bar is the application's, and goes only with it
                 BAR_WIN | FOOT_WIN | POST_WIN => {}
-                DOCS_WIN => self.link.free(win),
+                // freed here, the panel is gone: F1 and the menu open it again
+                DOCS_WIN => {
+                    self.link.free(win);
+                    self.docs_shown = false;
+                    self.menus();
+                }
                 win => self.close_tab(Some(win)),
             }
         }
@@ -1250,6 +1255,9 @@ impl App {
         let mut tree = self.window(DOCS_WIN, "Documentation");
         // its way back, where the page is and find are its panel's header
         tree["header"] = json!(DOCS);
+        // its view takes the window's verbs (search, from the menu) and its
+        // keys, before anything in it was pressed
+        tree["main"] = json!(DOCS);
         tree["children"] = json!([{
             "id": DOCS, "type": "docs", "text_size": self.settings.text_size(),
         }]);
@@ -1273,6 +1281,8 @@ impl App {
             self.menus();
         }
         self.dock(json!({"verb": "select", "pane": DOCS_WIN}), DockFor::Look);
+        // and the keyboard on it, so what it was opened for is typed there
+        self.link.set(DOCS, &[("focus", json!(1))]);
     }
 
     fn read_docs(&self) {
