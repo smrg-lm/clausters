@@ -11,12 +11,22 @@ publish = false
 name = "clausters-editor-host"
 path = "src/main.rs"
 
+[features]
+default = ["score"]
+# The score editor, which a session opens on a page of the editor's window
+# beside the multitrack: the host's engraver, which links libverovio. On by
+# default, since the editor is where the applications are hosted.
+score = ["clausters-gui/score", "dep:clausters-verovio"]
+
 [dependencies]
 # The host it links, drawn in one dock: the windows, the elements (code, post,
 # docs) and the GPU are its, and this crate is an application of it, linked
 # in the process (`gui::run_local`).
 clausters-gui = { path = "../clausters-gui" }
 clausters-core = { path = "../clausters-core" }
+# Named here only for where its library is (`build.rs`): a link argument
+# reaches the package that links, and this one links the editor's binary.
+clausters-verovio = { path = "../clausters-verovio", optional = true }
 clausters-gui-draw = { path = "../clausters-gui-draw", default-features = false }
 clausters-editing = { path = "../clausters-editing" }
 # The close form every application asks in.

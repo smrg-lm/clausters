@@ -42,6 +42,7 @@ A pair is found by its path: `views/rulers.py` is `views/rulers.html`, with
 |---|---|---|
 | `panels/standalone` | `panels/standalone.mjs` | the page beside it is not this example's other half: `standalone.html` is the counterpart of *running* `clausters-gui --standalone`, in a tab. Authoring a bundle is a node script's job, because a page never writes one |
 | `views/recording_mapped` | `views/recording.html` | the same three pictures, by the two data paths: the script's host **maps** the engine's memory and reads everything locally; the page's is sent the overview instead. That difference is the whole of both files, so they are one example |
+| `panels/applications` | `panels/applications.js` | both are evaluated a cell at a time in an editor, the script in the native editor and its twin in the editor's page, so the twin is a file of the page's session rather than a page of its own |
 | `io/osc_responder` | `io/responders.html` | the page is named for what it holds, since the other responder example a page can run (`io/midi-responder.html`) sits beside it |
 
 ## Examples with no twin
@@ -492,6 +493,14 @@ in the middle of an example.
 | Only in | Call | Why |
 |---|---|---|
 | web | `set` | a key of an event, written while it plays: the script assigns it (`notes.events[1]["degree"] = 4`), which is no call; TypeScript has no `__setitem__`, so the page writes `.set("degree", 4)`, which the audit reads as a node's `set` |
+
+
+### `panels/applications`
+
+| Only in | Call | Why |
+|---|---|---|
+| python | `embed` | audit false positive: the global `Session.live`/`Session.embed` idiom normalizes the script's live call; the twin runs in the editor page's session, a worker, where `Session.live` attaches to the page's engine, so both actually call `Session.live` |
+| web | `live` | the other half of the row above |
 
 
 ### `plugins/editor`

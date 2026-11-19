@@ -22,6 +22,10 @@ clausters-notation = { path = "../clausters-notation", optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
+[dev-dependencies]
+# The tests write their durations as the shared core's ratios.
+clausters-core = { path = "../clausters-core" }
+
 [features]
 # Off by default: notation is an optional GUI producer, and a plain build must
 # link no libverovio (mirrors how the server keeps a SynthDef-only build free of

@@ -855,6 +855,7 @@ dependencies = [
  "clausters-editing",
  "clausters-gui",
  "clausters-gui-draw",
+ "clausters-verovio",
  "dirs",
  "futures-util",
  "libc",
@@ -997,6 +998,7 @@ dependencies = [
 name = "clausters-verovio"
 version = "0.11.0"
 dependencies = [
+ "clausters-core",
  "clausters-notation",
  "serde",
  "serde_json",
