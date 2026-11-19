@@ -35,7 +35,7 @@ use serde_json::{Map, Value};
 use crate::host::elements::text::edit_key;
 use crate::host::graphics::controls::{self, ButtonLook};
 use crate::host::graphics::docs::index::{Hit, Index, talking_about};
-use crate::host::graphics::docs::layout::{Ink, Item, Laid, lay};
+use crate::host::graphics::docs::layout::{Ink, Item, Laid, draw_items, lay};
 use crate::host::graphics::docs::markdown::{Block, Run, parse, slugify};
 use crate::host::graphics::textedit::{self, Caret};
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyInput, Verb};
@@ -889,40 +889,9 @@ impl DocsView {
             mesh.set_clip(Some(clip(g.page)));
             let (left, top) = (g.text.x, g.text.y - scroll);
             let marks = self.matches(&laid);
-            for item in &laid.items {
-                if item.bottom() + top < g.page.y || item.top() + top > g.page.y + g.page.h {
-                    continue;
-                }
-                match item {
-                    Item::Fill { rect, ink } => mesh.rect(
-                        Rect::new(left + rect.x, top + rect.y, rect.w, rect.h),
-                        ink_color(theme, *ink),
-                    ),
-                    Item::Text {
-                        x,
-                        y,
-                        text,
-                        family,
-                        size,
-                        ink,
-                        underline,
-                        strike,
-                    } => {
-                        let color = ink_color(theme, *ink);
-                        font::text_in(mesh, *family, text, left + x, top + y, *size, color);
-                        let w = font::width_in(*family, text, *size);
-                        let thick = (size * 0.5).max(1.0).round();
-                        if *underline {
-                            let uy = top + y + font::height(*size) + thick;
-                            mesh.rect(Rect::new(left + x, uy, w, thick), color);
-                        }
-                        if *strike {
-                            let sy = top + y + font::height(*size) * 0.5;
-                            mesh.rect(Rect::new(left + x, sy, w, thick), color);
-                        }
-                    }
-                }
-            }
+            draw_items(mesh, &laid, (left, top), g.page, |ink| {
+                ink_color(theme, ink)
+            });
             for (i, (x, y, w, h)) in marks.iter().enumerate() {
                 let color = if i == self.current {
                     theme.find_current
@@ -1107,7 +1076,7 @@ impl DocsView {
 }
 
 /// The color an ink is drawn in: its theme role.
-fn ink_color(theme: &Theme, ink: Ink) -> Color {
+pub(crate) fn ink_color(theme: &Theme, ink: Ink) -> Color {
     match ink {
         Ink::Text => theme.text,
         Ink::Dim => theme.text_dim,

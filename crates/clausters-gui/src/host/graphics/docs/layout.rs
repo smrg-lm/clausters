@@ -12,7 +12,9 @@
 //! page's edge.
 
 use clausters_gui_draw::font::{self, Family};
+use clausters_gui_draw::paint::Mesh;
 use clausters_gui_draw::rect::Rect;
+use clausters_gui_draw::theme::Color;
 
 use super::markdown::{Align, Block, Run};
 use crate::host::graphics::code::Language;
@@ -105,6 +107,52 @@ impl Laid {
     }
 }
 
+/// **The items of `laid` drawn into `mesh`**, its top left at `at`, those
+/// inside `view` alone, each in the color `ink` gives its role: the
+/// documentation panel's page and a hover card's documentation alike.
+pub fn draw_items(
+    mesh: &mut Mesh,
+    laid: &Laid,
+    (left, top): (f32, f32),
+    view: Rect,
+    ink: impl Fn(Ink) -> Color,
+) {
+    for item in &laid.items {
+        if item.bottom() + top < view.y || item.top() + top > view.y + view.h {
+            continue;
+        }
+        match item {
+            Item::Fill { rect, ink: role } => mesh.rect(
+                Rect::new(left + rect.x, top + rect.y, rect.w, rect.h),
+                ink(*role),
+            ),
+            Item::Text {
+                x,
+                y,
+                text,
+                family,
+                size,
+                ink: role,
+                underline,
+                strike,
+            } => {
+                let color = ink(*role);
+                font::text_in(mesh, *family, text, left + x, top + y, *size, color);
+                let w = font::width_in(*family, text, *size);
+                let thick = (size * 0.5).max(1.0).round();
+                if *underline {
+                    let uy = top + y + font::height(*size) + thick;
+                    mesh.rect(Rect::new(left + x, uy, w, thick), color);
+                }
+                if *strike {
+                    let sy = top + y + font::height(*size) * 0.5;
+                    mesh.rect(Rect::new(left + x, sy, w, thick), color);
+                }
+            }
+        }
+    }
+}
+
 /// What a code block's copy button says.
 pub const COPY: &str = "Copy";
 
@@ -128,6 +176,13 @@ impl Measures {
     fn line(&self, size: f32) -> f32 {
         (font::height(size) / 0.727 * 1.6).max(font::line_advance(size))
     }
+}
+
+/// **How far apart two lines of one paragraph stand**, at `size`: a book
+/// page's leading, what a reader of a laid-out page (a card's selection)
+/// tells a line of a paragraph from the next paragraph by.
+pub fn line_pitch(size: f32) -> f32 {
+    Measures::new(size).line(size)
 }
 
 /// The face a run is written in, over `base`.

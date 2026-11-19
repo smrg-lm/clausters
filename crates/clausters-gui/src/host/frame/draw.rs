@@ -1257,7 +1257,7 @@ fn draw_note(
     let scroll = card.map_or(0.0, |c| c.scroll.min(place.max_scroll()));
     // the documentation's scroll bar, on a card, where there is more than
     // is seen
-    if card.is_some()
+    if note.card
         && let Some(bar) = place.bar(scroll, m)
     {
         controls::scroll_thumb(over, bar.thumb, m, theme);
@@ -1336,6 +1336,18 @@ fn draw_note(
         );
     }
     over.set_clip(Some(place.doc));
+    // a card's documentation: its Markdown, as the documentation panel
+    // draws a page
+    if let Some(laid) = &place.laid {
+        crate::host::graphics::docs::layout::draw_items(
+            over,
+            laid,
+            (place.doc.x, place.doc.y - scroll),
+            place.doc,
+            |ink| crate::host::elements::docs::ink_color(theme, ink),
+        );
+        return;
+    }
     let glyph = font::height(note.text_size);
     for (i, line) in place.lines.iter().enumerate() {
         let top = place.doc.y + i as f32 * place.line_h - scroll;

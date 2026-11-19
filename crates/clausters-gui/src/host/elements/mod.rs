@@ -49,7 +49,7 @@ mod choice;
 mod code;
 mod control;
 pub(crate) mod curve;
-mod docs;
+pub(crate) mod docs;
 mod files;
 pub(crate) mod keys;
 mod knob;

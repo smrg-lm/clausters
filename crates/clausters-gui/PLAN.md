@@ -3253,7 +3253,3 @@ finished work, where a pending item reads as done.
   the store either becomes a request the event loop answers later, as a
   directory listing does, or the page's front keeps the store in memory and
   writes it through.
-
-- ⬜ **The documentation's tooltips draw plain text** *(2026-11-19, new)*.
-  A docstring is Markdown; the tooltip could draw it as the documentation
-  panel does.

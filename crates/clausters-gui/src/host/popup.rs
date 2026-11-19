@@ -509,6 +509,84 @@ pub struct Note {
 pub struct NoteLine {
     pub text: String,
     pub ends: bool,
+    /// **The runs it is drawn in**, left to right: where each starts in
+    /// `text`, how far right of the line's start it stands, its face and
+    /// its size. One run of a plain line, several of a line of Markdown.
+    pub runs: Vec<NoteRun>,
+    /// Its top and its height, from the documentation's top; for the
+    /// head's lines, from the head's.
+    pub y: f32,
+    pub h: f32,
+}
+
+/// One run of a [`NoteLine`]: from byte `from` of its text to the next
+/// run's, at `x`, in `family` at `size`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NoteRun {
+    pub from: usize,
+    pub x: f32,
+    pub family: font::Family,
+    pub size: f32,
+}
+
+impl NoteLine {
+    /// A line written in one face at one size, `y` from its top.
+    fn plain(text: String, ends: bool, family: font::Family, size: f32, y: f32, h: f32) -> Self {
+        Self {
+            text,
+            ends,
+            runs: vec![NoteRun {
+                from: 0,
+                x: 0.0,
+                family,
+                size,
+            }],
+            y,
+            h,
+        }
+    }
+
+    /// The runs with the end of each, as `(run, to)`.
+    fn spans(&self) -> impl Iterator<Item = (&NoteRun, usize)> {
+        self.runs.iter().enumerate().map(|(i, r)| {
+            let to = self.runs.get(i + 1).map_or(self.text.len(), |n| n.from);
+            (r, to)
+        })
+    }
+
+    /// The x of byte `at`, from the line's start.
+    pub fn x_of(&self, at: usize) -> f32 {
+        let at = at.min(self.text.len());
+        let mut last = 0.0;
+        for (r, to) in self.spans() {
+            if at <= to {
+                let piece = self.text.get(r.from..at.max(r.from)).unwrap_or_default();
+                return r.x + font::width_in(r.family, piece, r.size);
+            }
+            last = r.x + font::width_in(r.family, &self.text[r.from..to], r.size);
+        }
+        last
+    }
+
+    /// The byte nearest `dx` right of the line's start.
+    pub fn byte_at(&self, dx: f32) -> usize {
+        for (r, to) in self.spans() {
+            let piece = &self.text[r.from..to];
+            let end = r.x + font::width_in(r.family, piece, r.size);
+            if dx >= end {
+                continue;
+            }
+            for (i, c) in piece.char_indices() {
+                let left = r.x + font::width_in(r.family, &piece[..i], r.size);
+                let w = font::width_in(r.family, &piece[i..i + c.len_utf8()], r.size);
+                if dx < left + w * 0.5 {
+                    return r.from + i;
+                }
+            }
+            return to;
+        }
+        self.text.len()
+    }
 }
 
 /// **A note, placed**: its card, the band of its head and the lines it is
@@ -525,12 +603,18 @@ pub struct NotePlace {
     pub doc: Rect,
     pub lines: Vec<NoteLine>,
     pub line_h: f32,
+    /// **A card's documentation as Markdown**, laid out as the
+    /// documentation panel lays a page out; its lines are its rows of
+    /// text, what a selection walks. `None` for a note that is no card.
+    pub laid: Option<crate::host::graphics::docs::layout::Laid>,
+    /// How tall the documentation is, all of it.
+    pub doc_full: f32,
 }
 
 impl NotePlace {
     /// The furthest the documentation scrolls.
     pub fn max_scroll(&self) -> f32 {
-        (self.lines.len() as f32 * self.line_h - self.doc.h).max(0.0)
+        (self.doc_full - self.doc.h).max(0.0)
     }
 
     /// **The documentation's scroll bar**, in the card's right inset beside
@@ -564,11 +648,10 @@ impl NotePlace {
     /// Where line `i` is drawn, with the documentation scrolled by `scroll`:
     /// its top and its height.
     pub fn line_top(&self, i: usize, scroll: f32) -> (f32, f32) {
-        if i < self.heads.len() {
-            (self.head.y + i as f32 * self.head_line, self.head_line)
-        } else {
-            let row = (i - self.heads.len()) as f32;
-            (self.doc.y + row * self.line_h - scroll, self.line_h)
+        match self.line(i) {
+            Some((l, true)) => (self.head.y + l.y, l.h),
+            Some((l, false)) => (self.doc.y + l.y - scroll, l.h),
+            None => (self.doc.y, self.line_h),
         }
     }
 }
@@ -595,18 +678,87 @@ const NOTE_CHARS: f32 = 72.0;
 const CARD_SHARE: f32 = 0.9;
 
 /// `text` wrapped to `w` in `family`, each line saying whether the text
-/// ends with it.
-fn wrapped(family: font::Family, text: &str, w: f32, size: f32) -> Vec<NoteLine> {
+/// ends with it, `line` apart from `y`.
+fn wrapped(
+    family: font::Family,
+    text: &str,
+    w: f32,
+    size: f32,
+    y: f32,
+    line: f32,
+) -> Vec<NoteLine> {
     let lines = font::wrap_in(family, text, w, size);
     let n = lines.len();
     lines
         .into_iter()
         .enumerate()
-        .map(|(i, text)| NoteLine {
-            text,
-            ends: i + 1 == n,
-        })
+        .map(|(i, text)| NoteLine::plain(text, i + 1 == n, family, size, y + i as f32 * line, line))
         .collect()
+}
+
+/// **The rows of text of a laid-out document**, each its runs in the
+/// order they stand: what a selection in a card walks. A row ends its
+/// paragraph where the next one stands further below than a line.
+fn rows_of(laid: &crate::host::graphics::docs::layout::Laid) -> Vec<NoteLine> {
+    use crate::host::graphics::docs::layout::Item;
+    let mut texts: Vec<(f32, f32, &str, font::Family, f32)> = laid
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Text {
+                x,
+                y,
+                text,
+                family,
+                size,
+                ..
+            } => Some((*y, *x, text.as_str(), *family, *size)),
+            Item::Fill { .. } => None,
+        })
+        .collect();
+    texts.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    let mut rows: Vec<NoteLine> = Vec::new();
+    for (y, x, text, family, size) in texts {
+        let h = font::line_advance(size);
+        match rows.last_mut() {
+            Some(row) if (row.y - y).abs() < 0.5 => {
+                // the space the layout leaves between two runs, which no
+                // piece carries, is text a copy keeps
+                let end = row.x_of(row.text.len());
+                if x - end > 0.3 * font::width_in(family, " ", size) {
+                    row.text.push(' ');
+                }
+                row.runs.push(NoteRun {
+                    from: row.text.len(),
+                    x,
+                    family,
+                    size,
+                });
+                row.text.push_str(text);
+                row.h = row.h.max(h);
+            }
+            _ => rows.push(NoteLine {
+                text: text.to_string(),
+                ends: true,
+                runs: vec![NoteRun {
+                    from: 0,
+                    x,
+                    family,
+                    size,
+                }],
+                y,
+                h,
+            }),
+        }
+    }
+    // a row ends its paragraph where the next stands further down than a
+    // line of the paragraph would
+    for i in 1..rows.len() {
+        let size = rows[i - 1].runs.first().map_or(1.0, |r| r.size);
+        let pitch = crate::host::graphics::docs::layout::line_pitch(size);
+        rows[i - 1].ends = rows[i].y - rows[i - 1].y > pitch * 1.25;
+    }
+    rows
 }
 
 /// **Where a note goes, and the lines of its documentation**: over its
@@ -631,54 +783,82 @@ pub fn place_note(note: &Note, work: Rect, m: &Metrics) -> NotePlace {
     .min(work.w)
     .max(1.0);
     let wrap_w = (most - 2.0 * m.card_x).max(1.0);
+    let head_line = font::line_advance(note.code_size);
     let heads = if note.card {
         wrapped(
             font::Family::Mono,
             &head,
             (wrap_w - aside_w).max(1.0),
             note.code_size,
+            0.0,
+            head_line,
         )
     } else {
-        vec![NoteLine {
-            text: head.clone(),
-            ends: true,
-        }]
+        vec![NoteLine::plain(
+            head.clone(),
+            true,
+            font::Family::Mono,
+            note.code_size,
+            0.0,
+            head_line,
+        )]
     };
     let head_w = heads
         .iter()
         .map(|l| font::width_in(font::Family::Mono, &l.text, note.code_size))
         .fold(0.0f32, f32::max)
         + aside_w;
-    let mut lines: Vec<NoteLine> = Vec::new();
-    for line in note.doc.trim().lines() {
-        if line.trim().is_empty() {
-            lines.push(NoteLine {
-                text: String::new(),
-                ends: true,
-            });
-        } else {
-            lines.extend(wrapped(font::Family::Ui, line, wrap_w, note.text_size));
+    let line_h = font::line_advance(note.text_size);
+    // **A card's documentation is Markdown**, laid out as the documentation
+    // panel lays a page out; a note's that is no card, a few plain lines
+    let (lines, laid, doc_full) = if note.card && !note.doc.trim().is_empty() {
+        use crate::host::graphics::docs::{layout, markdown};
+        let laid = layout::lay(&markdown::parse(note.doc.trim()), wrap_w, note.text_size);
+        let full = laid.height;
+        (rows_of(&laid), Some(laid), full)
+    } else {
+        let mut lines: Vec<NoteLine> = Vec::new();
+        for line in note.doc.trim().lines() {
+            let y = lines.len() as f32 * line_h;
+            if line.trim().is_empty() {
+                lines.push(NoteLine::plain(
+                    String::new(),
+                    true,
+                    font::Family::Ui,
+                    note.text_size,
+                    y,
+                    line_h,
+                ));
+            } else {
+                lines.extend(wrapped(
+                    font::Family::Ui,
+                    line,
+                    wrap_w,
+                    note.text_size,
+                    y,
+                    line_h,
+                ));
+            }
+            if !note.card && lines.len() >= note.doc_lines {
+                break;
+            }
         }
-        if !note.card && lines.len() >= note.doc_lines {
-            break;
+        if !note.card {
+            lines.truncate(note.doc_lines);
         }
-    }
-    if !note.card {
-        lines.truncate(note.doc_lines);
-    }
+        let full = lines.len() as f32 * line_h;
+        (lines, None, full)
+    };
     let doc_w = lines
         .iter()
-        .map(|l| font::width(&l.text, note.text_size))
+        .map(|l| l.x_of(l.text.len()))
         .fold(0.0f32, f32::max);
     let w = (head_w.max(doc_w) + 2.0 * m.card_x).min(most);
-    let line_h = font::line_advance(note.text_size);
-    let head_line = font::line_advance(note.code_size);
     let head_h = heads.len().max(1) as f32 * head_line;
-    let all = lines.len() as f32 * line_h;
     let doc_h = if note.card {
-        all.min(m.card_doc_h)
+        doc_full.min(m.card_doc_h)
     } else {
-        all
+        doc_full
     };
     let h = head_h
         + if lines.is_empty() {
@@ -716,6 +896,8 @@ pub fn place_note(note: &Note, work: Rect, m: &Metrics) -> NotePlace {
         doc,
         lines,
         line_h,
+        laid,
+        doc_full,
     }
 }
 
@@ -723,15 +905,6 @@ impl Note {
     /// The head as one line, the runs joined.
     pub fn head_text(&self) -> String {
         self.head.iter().map(|(t, _)| t.as_str()).collect()
-    }
-
-    /// Line `i` of the text a selection walks, its family and size.
-    fn line<'a>(&self, place: &'a NotePlace, i: usize) -> (&'a str, font::Family, f32) {
-        match place.line(i) {
-            Some((l, true)) => (l.text.as_str(), font::Family::Mono, self.code_size),
-            Some((l, false)) => (l.text.as_str(), font::Family::Ui, self.text_size),
-            None => ("", font::Family::Ui, self.text_size),
-        }
     }
 
     /// **The place in the text at `(x, y)`**, with the documentation scrolled
@@ -745,34 +918,24 @@ impl Note {
                 .max(0.0) as usize;
             row.min(heads.saturating_sub(1))
         } else {
-            let row = ((y - place.doc.y + scroll) / place.line_h.max(1.0))
-                .floor()
-                .max(0.0) as usize;
-            heads + row.min(place.lines.len() - 1)
+            // the row it is on, or the last above it
+            let at = y - place.doc.y + scroll;
+            let row = place.lines.iter().rposition(|l| l.y <= at).unwrap_or(0);
+            heads + row
         };
-        let (text, family, size) = self.line(place, line);
         let dx = x - place.head.x;
-        let mut at = text.len();
-        for (i, c) in text.char_indices() {
-            let left = font::width_in(family, &text[..i], size);
-            let w = font::width_in(family, &text[i..i + c.len_utf8()], size);
-            if dx < left + w * 0.5 {
-                at = i;
-                break;
-            }
-        }
+        let at = place.line(line).map_or(0, |(l, _)| l.byte_at(dx));
         (line, at)
     }
 
     /// The x of byte `at` of line `i`, from the text's left.
     pub fn x_of(&self, place: &NotePlace, i: usize, at: usize) -> f32 {
-        let (text, family, size) = self.line(place, i);
-        font::width_in(family, &text[..at.min(text.len())], size)
+        place.line(i).map_or(0.0, |(l, _)| l.x_of(at))
     }
 
     /// The length of line `i`.
     pub fn line_len(&self, place: &NotePlace, i: usize) -> usize {
-        self.line(place, i).0.len()
+        place.line(i).map_or(0, |(l, _)| l.text.len())
     }
 
     /// **The text from `a` to `b`**, in either order: the head and the
@@ -782,7 +945,7 @@ impl Note {
         let (a, b) = if a <= b { (a, b) } else { (b, a) };
         let mut out = String::new();
         for i in a.0..=b.0 {
-            let (text, ..) = self.line(place, i);
+            let text = place.line(i).map_or("", |(l, _)| l.text.as_str());
             let from = if i == a.0 { a.1.min(text.len()) } else { 0 };
             let to = if i == b.0 {
                 b.1.min(text.len())
@@ -1874,12 +2037,12 @@ mod tests {
     fn a_hover_card_keeps_every_line_and_scrolls_past_its_height() {
         let m = Metrics::default();
         let long: String = (0..60)
-            .map(|i| format!("Line {i} of the help.\n"))
+            .map(|i| format!("Line {i} of the help.\n\n"))
             .collect();
         let note = card(&long);
         let area = Rect::new(0.0, 0.0, 1000.0, 800.0);
         let p = place_note(&note, area, &m);
-        assert_eq!(p.lines.len(), 60, "every line is kept");
+        assert_eq!(p.lines.len(), 60, "every paragraph is kept");
         assert_eq!(p.doc.h, m.card_doc_h);
         assert!(p.max_scroll() > 0.0);
         assert!(p.rect.w <= m.card_w);
@@ -1910,7 +2073,7 @@ mod tests {
     fn a_card_s_selection_is_its_text_unwrapped() {
         let m = Metrics::default();
         let words: String = "alpha beta gamma delta ".repeat(20);
-        let note = card(&format!("{}\nNext.", words.trim()));
+        let note = card(&format!("{}\n\nNext.", words.trim()));
         let area = Rect::new(0.0, 0.0, 400.0, 800.0);
         let p = place_note(&note, area, &m);
         assert!(p.lines.len() > 2, "it wraps: {:?}", p.lines);
@@ -1927,7 +2090,45 @@ mod tests {
         let end = note.pos_at(&p, 0.0, p.rect.x + p.rect.w + 50.0, p.doc.y + 1.0);
         assert_eq!(end, (1, p.lines[0].text.len()));
         // the scroll moves which line a point is on
-        let scrolled = note.pos_at(&p, p.line_h, p.head.x, p.doc.y + 1.0);
+        let scrolled = note.pos_at(&p, p.lines[1].y, p.head.x, p.doc.y + 1.0);
         assert_eq!(scrolled.0, 2);
+    }
+
+    /// **A card's documentation is Markdown**: a strong word in the bold
+    /// face, code in the monospaced one, a heading and a code block laid out
+    /// as the documentation panel lays them out; and a selection over it
+    /// still copies its text, from run to run.
+    #[test]
+    fn a_card_draws_its_documentation_as_markdown() {
+        let m = Metrics::default();
+        let note = card("Returns the **square root** of `x`.\n\n    sqrt(2)\n");
+        let p = place_note(&note, Rect::new(0.0, 0.0, 800.0, 600.0), &m);
+        assert!(p.laid.is_some(), "laid out as a page");
+        let first = &p.lines[0];
+        let families: Vec<font::Family> = first.runs.iter().map(|r| r.family).collect();
+        assert!(families.len() >= 3, "{:?}", first.runs);
+        assert!(families.contains(&font::Family::Mono), "code: {families:?}");
+        assert!(
+            families
+                .iter()
+                .any(|f| *f != font::Family::Mono && *f != families[0]),
+            "a strong word in another face: {families:?}"
+        );
+        assert_eq!(first.text, "Returns the square root of x.");
+        // the code block is a row of its own, in the monospaced face
+        let block = p
+            .lines
+            .iter()
+            .find(|l| l.text.contains("sqrt(2)"))
+            .expect("the block");
+        assert_eq!(block.runs[0].family, font::Family::Mono);
+        // a selection across the runs copies the words
+        let at = |i: usize| first.text.find("square").map(|b| b + i).unwrap_or(0);
+        let copied = note.text_between(&p, (1, at(0)), (1, at(11)));
+        assert_eq!(copied, "square root");
+        // a point over a run lands in it
+        let x = p.head.x + first.x_of(at(2));
+        let pos = note.pos_at(&p, 0.0, x + 0.1, p.doc.y + first.y + 1.0);
+        assert_eq!(pos, (1, at(2)));
     }
 }

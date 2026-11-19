@@ -8130,3 +8130,11 @@ module of its own.
   read as dark; subpixel antialiasing stays out, since one host draws one
   picture on both fronts and a page has no per-channel blend. The record is
   in `docs/decisions/gui.md`, "Text is drawn as a browser draws it".
+
+- ✅ **The documentation's tooltips drew plain text** *(2026-11-19, new)*.
+  A docstring is Markdown, and the hover card wrote it line by line in one
+  face. A card's documentation is now laid out by the documentation
+  panel's own layout (`graphics::docs::layout::lay`) and drawn by its own
+  drawing, factored out to serve both (`draw_items`); what a selection
+  walks is its rows of text, each in its runs (`NoteLine::runs`), so a
+  drag still selects and the copy key copies the words across faces.
