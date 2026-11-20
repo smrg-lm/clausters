@@ -2290,6 +2290,15 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ⬜ **The host's window and drawing libraries are updated before the next
+  release** (2026-11-20, the user, building the editor). Cargo warns that
+  `naga`, `wgpu`, `wgpu-core`, `wgpu-hal` 29.0.4 and `winit` 0.30.13 hold
+  code a future Rust will reject (`cargo report
+  future-incompatibilities`). It builds today; the next release raises
+  them to the versions that no longer warn, with the host's tests, the
+  page's build and its e2e run on the new ones, and regenerates the
+  editor's third-party notices in the same commit.
+
 - ⬜ **Enter in a dialog's field does not press its default button**
   (2026-11-20, WS13). A single-line `text` ignores Enter, and the dialog
   does nothing with a key its field left, so a name typed in the editor's

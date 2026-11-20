@@ -103,6 +103,10 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
+- ⬜ **The host's window and drawing libraries are updated before the next
+  release** *(`crates/clausters-gui/PLAN.md`, Found by use)*. wgpu, naga and
+  winit carry code a future Rust rejects; raised before the release is cut.
+
 - ⬜ **The `worklet` smoke timed out once in CI** *(`clients/web/PLAN.md`,
   Found by use)*. Intermittent, passes locally and on a rerun. The case now
   reports the step it stopped at and the page's console; what is open is the
