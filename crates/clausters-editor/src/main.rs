@@ -112,6 +112,12 @@ fn run(cli: Cli) -> Result<(), String> {
     }
     host.load_default_face();
     host.headless_scale = cli.scale;
+    // a window taken out of the dock opens at the size it was left at
+    if !cli.headless
+        && let Some(path) = clausters_gui::host::sizes::default_path()
+    {
+        host.sizes = clausters_gui::host::sizes::Sizes::at(path);
+    }
     let bind = SocketAddr::from((Ipv4Addr::LOCALHOST, cli.port.unwrap_or(0)));
     let socket = UdpSocket::bind(bind).map_err(|e| format!("cannot bind {bind}: {e}"))?;
     if cli.headless {

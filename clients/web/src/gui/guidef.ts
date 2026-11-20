@@ -1646,6 +1646,15 @@ export function view(
     /** What its tab says under a resting pointer in a dock: a file's path. */
     dockTip?: string;
     /**
+     * **The key the host keeps the window's size under**: a window that
+     * names one opens at the size it was last left at, closed and opened
+     * again or in the next run, over its `w`/`h` and its `hug`. The size is
+     * the host's, kept beside its configuration; the key is what the window
+     * is (the applications name their kind, `Audio`, `Multitrack`,
+     * `Score`...). With none the window opens at what it declares.
+     */
+    remember?: string;
+    /**
      * **The child whose strip of tools is the window's header** -- a `docs`
      * element's way back and find, a `post` with `tools` -- drawn in a band
      * along the window's top rather than along the child's, and in a dock in
@@ -1709,7 +1718,7 @@ export function view(
 ): View {
     const {
         title, flow, layout, margin, gap, cols, hug, status, plays, keys, verbs, askClose,
-        history, dockPage, dockEdge, dockTab, dockTip, header, closable, modified, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs,
+        history, dockPage, dockEdge, dockTab, dockTip, remember, header, closable, modified, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs,
         ...rest
     } = options;
     return node("window", {
@@ -1736,6 +1745,7 @@ export function view(
             ["dock_edge", dockEdge],
             ["dock_tab", flag(dockTab)],
             ["dock_tip", dockTip],
+            ["remember", remember],
             ["header", header],
             ["closable", flag(closable)],
             ["modified", flag(modified)],

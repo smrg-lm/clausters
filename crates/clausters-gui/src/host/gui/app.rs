@@ -1247,6 +1247,11 @@ impl ApplicationHandler<UserEvent> for App {
         self.start(Loop::Shown(event_loop));
     }
 
+    /// The sizes windows were left at outlive the host.
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        self.host.sizes.save();
+    }
+
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         self.on_event(Loop::Shown(event_loop), event);
     }
@@ -1303,6 +1308,7 @@ impl App {
                     ws.gpu.resize(size.width, size.height);
                     ws.repaint();
                 }
+                self.host.window_resized(def_id, (size.width, size.height));
             }
             // The window moved to a display of another density (or the desktop's
             // scaling changed under it): re-resolve this window's size table at

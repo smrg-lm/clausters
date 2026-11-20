@@ -457,6 +457,12 @@ impl App {
                     .layout
                     .set_size((size.width.max(1), size.height.max(1)));
                 shell.gpu.request_redraw();
+                // a floating panel is its window's size under its bar
+                if let Which::Float(def) = which {
+                    let bar = shell.layout.bar_height();
+                    let pane = (size.width, size.height.saturating_sub(bar));
+                    self.host.window_resized(def, pane);
+                }
                 self.settle_dock();
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {

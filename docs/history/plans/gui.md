@@ -3716,6 +3716,28 @@ Section added 2026-07-19; **reconceived 2026-07-22.** G23 gave the logical group
   clipboard where the read was refused. gui.html checks the paste's road
   into a focused field.)*
 
+- ✅ **A window opens at the size it was last left at** *(asked 2026-10-29 by
+  the user, looking at the multitrack opening at its minimum)*. A window
+  opens at the size its def declares, and a redefinition keeps the size the
+  person gave it, but nothing survives the window: closed and opened again,
+  an editor is back at its declared size. Where that memory lives is the open
+  question. It is the host's by what it is about -- the geometry of a window
+  on a screen, which no application sees -- and keyed by what the window is,
+  which only the application can name: an application's kind (the audio
+  editor, the multitrack, a roll), a def's `name`, a client's own key. A
+  `window` prop naming that key, read and written by the host in its own
+  settings beside the key table, is the shape to weigh first.
+  *Done 2026-11-19:* the `remember` prop on `window` names the key, the
+  host keeps the size under it in logical pixels (`host::sizes`), in
+  `windows.json` beside the user configuration, and a window that names
+  one opens at it over its `w`/`h` and its `hug`, never under its floor.
+  A shown window's resize and a floating panel's (less its bar) record it;
+  the file is written as a window closes and as the host ends. A headless
+  host remembers only while it runs, and a page keeps none, since its
+  windows are canvases the page sizes. The applications name their kind
+  through `chrome::dress` (and the score's window), and both clients carry
+  the prop.
+
 ## Found by use: the entries that were fixed
 
 - ✅ **A capture of the multitrack example's window never answers, headless**

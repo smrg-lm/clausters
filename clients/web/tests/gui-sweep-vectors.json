@@ -4662,6 +4662,15 @@
  },
  {
   "builder": "view",
+  "option": "remember",
+  "value": "q",
+  "tree": {
+   "type": "window",
+   "remember": "q"
+  }
+ },
+ {
+  "builder": "view",
   "option": "header",
   "value": 7,
   "tree": {
@@ -5481,6 +5490,15 @@
   "tree": {
    "type": "window",
    "dock_tip": "q"
+  }
+ },
+ {
+  "builder": "window",
+  "option": "remember",
+  "value": "q",
+  "tree": {
+   "type": "window",
+   "remember": "q"
   }
  },
  {

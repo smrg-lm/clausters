@@ -500,6 +500,8 @@ impl App {
             self.by_winit.remove(&window.id());
         }
         self.close_pane(id);
+        // the size it was left at is kept as it closes
+        self.host.sizes.save();
         // Drop any pending buffer wants this window had, so a finished fetch does
         // not try to fill a window that is gone (or being rebuilt).
         self.fetches.drop_def(id);

@@ -98,6 +98,7 @@
       "theme": {
         "window_fill": "#0d0d12"
       },
+      "remember": "workspace",
       "children": [
         {
           "type": "plane",

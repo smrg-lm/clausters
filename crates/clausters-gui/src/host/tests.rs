@@ -833,6 +833,39 @@ fn a_host_draws_with_four_samples_unless_told() {
     assert_eq!(crate::host::DEFAULT_MSAA, 4);
 }
 
+/// A window that names a `remember` key opens at the size it was last left
+/// at, over what it declares and over what it holds; one that names none
+/// keeps nothing, and a size under the window's floor is lifted to it.
+#[test]
+fn a_window_opens_at_the_size_it_was_left_at() {
+    let mut host = Host::new();
+    let kept = r#"{"type":"window","w":420,"h":300,"remember":"mixer","children":[
+        {"id":10,"type":"slider","label":"mix"}
+    ]}"#;
+    host.handle_packet(def_msg(1, kept), from());
+    assert_eq!(host.window_size(1), Some((420, 300)), "nothing kept yet");
+
+    // made larger by a person on a display at 2: kept in logical pixels
+    host.set_ui_scale(1, 2.0);
+    host.window_resized(1, (1800, 1000));
+    assert_eq!(host.sizes.get("mixer"), Some((900, 500)));
+
+    // freed and opened again, under another id: the key is what is kept
+    host.handle_packet(def_msg(2, kept), from());
+    assert_eq!(host.window_size(2), Some((900, 500)));
+    assert_eq!(host.window_size_px(2), None, "nothing to fit at its scale");
+
+    // a window naming no key keeps nothing
+    host.handle_packet(def_msg(3, TREE), from());
+    host.window_resized(3, (999, 777));
+    assert_eq!(host.window_size(3), Some((640, 360)));
+
+    // a size smaller than the window's floor opens at the floor
+    host.sizes.set("mixer", (1, 1));
+    let (w, h) = host.window_size(2).unwrap();
+    assert!(w > 1 && h > 1, "lifted to the floor: {w}x{h}");
+}
+
 /// A window asks for what it declared -- and, with `hug`, for what it holds
 /// on the axes its content settles, keeping the declared number on the
 /// others. This is the workaround it retires: a single control in a window

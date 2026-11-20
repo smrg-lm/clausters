@@ -89,6 +89,7 @@ def cases():
                 id=4, index=1, margin=4.0,
             ),
             title="workspace", layout="col", theme={"window_fill": "#0d0d12"},
+            remember="workspace",
         ),
     ))
 

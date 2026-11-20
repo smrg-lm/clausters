@@ -1121,7 +1121,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          ask_close: bool | None = None, activation: bool | None = None,
          history: bool | None = None, dock_page: str | None = None,
          dock_edge: str | None = None, dock_tab: bool | None = None,
-         dock_tip: str | None = None, header: int | None = None,
+         dock_tip: str | None = None, remember: str | None = None,
+         header: int | None = None,
          closable: bool | None = None, modified: bool | None = None,
          progress: float | None = None, progress_label: str | None = None,
          split: bool | None = None, menu: list | None = None,
@@ -1227,6 +1228,14 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     several. ``dock_tip`` is what its tab says under a resting pointer (a
     file's path).
 
+    ``remember`` names **the key the host keeps the window's size under**:
+    a window that names one opens at the size it was last left at, closed
+    and opened again or in the next run, over its ``w``/``h`` and its
+    ``hug``. The size is the host's, kept beside its configuration; the key
+    is what the window is (the applications name their kind, ``Audio``,
+    ``Multitrack``, ``Score``...). With none the window opens at what it
+    declares.
+
     ``header`` names the child whose **strip of tools is the window's
     header** -- a ``docs`` element's way back and find, a ``post`` with
     ``tools`` -- drawn in a band along the window's top rather than along
@@ -1296,6 +1305,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
         extra["dock_tab"] = 1 if dock_tab else 0
     if dock_tip is not None:
         extra["dock_tip"] = dock_tip
+    if remember is not None:
+        extra["remember"] = remember
     if header is not None:
         extra["header"] = header
     if closable is not None:

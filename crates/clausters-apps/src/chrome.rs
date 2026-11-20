@@ -568,12 +568,15 @@ impl App {
 
 /// **A window dressed as `app`**: its menu bar, its toolbar on top, the
 /// view the menu acts on (`main`), the chrome's symbols, and the page of its
-/// own it opens on in a dock ([`App::page`]).
+/// own it opens on in a dock ([`App::page`]), whose name is also the key
+/// the host keeps the window's size under (`remember`), so an editor opens
+/// at the size it was last left at.
 pub fn dress(window: &mut Value, app: App, menu: Value, toolbar: Value, main: i32) {
     let Some(map) = window.as_object_mut() else {
         return;
     };
     map.insert("dock_page".into(), json!(app.page()));
+    map.insert("remember".into(), json!(app.page()));
     map.insert("menu".into(), menu);
     map.insert("main".into(), json!(main));
     map.insert("glyphs".into(), glyphs());
@@ -732,6 +735,7 @@ mod tests {
         );
         assert_eq!(window["main"], 4);
         assert_eq!(window["dock_page"], "Notes");
+        assert_eq!(window["remember"], "Notes");
         assert_eq!(window["children"][0]["type"], "layout");
         assert_eq!(window["children"][1]["id"], 4);
         assert!(window["glyphs"][TO_START].is_string());

@@ -255,10 +255,12 @@ pub fn window(w: Window<'_>) -> Value {
         "children": children,
     });
     // **With its menu it is the application**, alone on a page of its own
-    // in a dock; with none, a view among the panels
+    // in a dock and opening at the size it was last left at; with none, a
+    // view among the panels
     if let (Some(menu), Some(map)) = (menu, window.as_object_mut()) {
         map.insert("menu".into(), menu);
         map.insert("dock_page".into(), json!("Score"));
+        map.insert("remember".into(), json!("Score"));
     }
     if let (false, Some(map)) = (glyphs.is_empty(), window.as_object_mut()) {
         map.insert("glyphs".into(), json!(glyphs));

@@ -185,6 +185,12 @@ pub enum WidgetKind {
         /// The `dock_tip` prop: **what its tab says under a resting
         /// pointer** in a dock -- an editor's file's path. None by default.
         dock_tip: Option<String>,
+        /// The `remember` prop: **the key the host keeps this window's size
+        /// under** ([`sizes`](crate::host::sizes)). A window that names one
+        /// opens at the size it was last left at, wherever its owner opens it
+        /// from; one that names none opens at its declared size. None by
+        /// default.
+        remember: Option<String>,
     },
     /// A nestable container.
     Panel {

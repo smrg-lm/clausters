@@ -3092,18 +3092,6 @@ holds what is open.
   regions) would cut both to the boxes. Take it when the graphics layer
   offers it on every backend the host draws with, the page included.
 
-- ⬜ **A window opens at the size it was last left at** *(asked 2026-10-29 by
-  the user, looking at the multitrack opening at its minimum)*. A window
-  opens at the size its def declares, and a redefinition keeps the size the
-  person gave it, but nothing survives the window: closed and opened again,
-  an editor is back at its declared size. Where that memory lives is the open
-  question. It is the host's by what it is about -- the geometry of a window
-  on a screen, which no application sees -- and keyed by what the window is,
-  which only the application can name: an application's kind (the audio
-  editor, the multitrack, a roll), a def's `name`, a client's own key. A
-  `window` prop naming that key, read and written by the host in its own
-  settings beside the key table, is the shape to weigh first.
-
 - ⬜ **An element says which pointer and which tip the point under it
   means** *(2026-11-10, from `crates/clausters-apps/PLAN.md`, `X37` and
   `X40`: the roll's tools and what is under its pointer)*. The host cannot

@@ -165,6 +165,7 @@ mod dialogs;
 mod monitor_tests;
 mod scripted;
 mod set;
+pub mod sizes;
 mod takes;
 #[cfg(test)]
 mod tests;
@@ -1150,6 +1151,10 @@ pub struct Host {
     /// logical pixels -- an application's name and the size it was left at,
     /// where an application set them, and the host's own otherwise.
     pub dock_opens: Option<(String, (u32, u32))>,
+    /// **The sizes windows were last left at**, by their `remember` key
+    /// ([`sizes`]). The native shell points it at its file; elsewhere it
+    /// remembers for as long as the host runs.
+    pub sizes: sizes::Sizes,
     /// **Where the dock's window opens on the screen**: its outer corner,
     /// in the screen's pixels, as a dock's state answered it (`position`)
     /// -- the place an application left it at. A desktop that does not let
@@ -1316,6 +1321,7 @@ impl Host {
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             question: None,
             dock_opens: None,
+            sizes: sizes::Sizes::default(),
             dock_at: None,
             follow_block: 0.0,
             resolved_metrics: HashMap::new(),
@@ -1779,6 +1785,10 @@ impl Host {
         let tree = self.window_def(id)?;
         let metrics = self.metrics_for(id);
         let sized = self.sized_window(id, metrics, metrics.ui_scale)?;
+        if let Some((w, h)) = self.remembered_size(id) {
+            let declared = |v: u32| ((v as f32) * metrics.ui_scale).ceil().max(1.0) as u32;
+            return (sized.0 > declared(w) || sized.1 > declared(h)).then_some(sized);
+        }
         match &tree.kind {
             WidgetKind::Window { hug: true, .. } => Some(sized),
             // **a declared size is kept unless the window's floor is larger**:
@@ -1790,6 +1800,32 @@ impl Host {
             }
             _ => None,
         }
+    }
+
+    /// **The key window `id` keeps its size under** (its `remember`).
+    pub fn window_remember_key(&self, id: i32) -> Option<&str> {
+        match &self.window_def(id)?.kind {
+            WidgetKind::Window { remember, .. } => remember.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// The size window `id` was last left at, logical, where it names a key
+    /// and the host has one under it.
+    fn remembered_size(&self, id: i32) -> Option<(u32, u32)> {
+        self.sizes.get(self.window_remember_key(id)?)
+    }
+
+    /// **Window `id` was made `(w, h)` physical pixels** by a person: kept
+    /// under its `remember` key, in logical pixels at its own scale. A
+    /// window that names no key keeps nothing.
+    pub fn window_resized(&mut self, id: i32, (w, h): (u32, u32)) {
+        let scale = self.ui_scale(id).max(0.1);
+        let Some(key) = self.window_remember_key(id).map(str::to_string) else {
+            return;
+        };
+        let logical = |v: u32| ((v as f32) / scale).round().max(1.0) as u32;
+        self.sizes.set(&key, (logical(w), logical(h)));
     }
 
     /// **The smallest window `id` may be made**, in physical pixels: its
@@ -1828,6 +1864,11 @@ impl Host {
             let h = h + status::bar_h(tree, metrics) + menubar::bar_h(tree, metrics);
             (w.ceil() as u32, h.ceil() as u32)
         };
+        // **the size it was last left at** wins over what it declares and
+        // over its content's: a person chose it
+        if let Some((w, h)) = self.remembered_size(id) {
+            return Some((declared(w).max(min_w), declared(h).max(min_h)));
+        }
         if !*hug {
             return Some((declared(*width).max(min_w), declared(*height).max(min_h)));
         }

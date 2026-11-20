@@ -114,7 +114,7 @@ const trees: Record<string, () => GuiNode> = {
 
     containers: () =>
         window(
-            { title: "workspace", layout: "col", theme: { window_fill: "#0d0d12" } },
+            { title: "workspace", layout: "col", theme: { window_fill: "#0d0d12" }, remember: "workspace" },
             scroll(
                 {
                     id: 1, axis: "y", zoom: false, contentH: 1200.0, viewY: 40.0,

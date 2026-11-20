@@ -227,6 +227,13 @@ impl Look {
         host.dock = self.dock;
         host.follow_block = self.follow_block;
         load_face(host, self.font, self.headless);
+        // a window shown on a screen opens at the size it was left at; a
+        // headless host's windows open at what they declare, every run
+        if !self.headless
+            && let Some(path) = clausters_gui::host::sizes::default_path()
+        {
+            host.sizes = clausters_gui::host::sizes::Sizes::at(path);
+        }
     }
 }
 
