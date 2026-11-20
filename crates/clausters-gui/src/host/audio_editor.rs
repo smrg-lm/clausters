@@ -1051,7 +1051,7 @@ impl Host {
         let asked = self.audio_host().ask(ToApp::After {
             def_id: window,
             call: json!({ "settled": true }),
-            to: ClientId::Web,
+            to: ClientId::Web(0),
             seq: 0,
         });
         if asked.is_err() {

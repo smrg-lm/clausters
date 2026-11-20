@@ -549,10 +549,13 @@ impl WebApp {
     }
 
     fn closed_by_hand(&mut self, def: i32) {
-        self.queue(OscMessage {
-            addr: crate::host::GUI_CLOSED.into(),
-            args: vec![OscType::Int(def)],
-        });
+        self.queue_to(
+            self.origin(def),
+            OscMessage {
+                addr: crate::host::GUI_CLOSED.into(),
+                args: vec![OscType::Int(def)],
+            },
+        );
         // an application's window is the application's to let go
         #[cfg(feature = "apps")]
         self.host.closed_by_user(def);
@@ -891,7 +894,7 @@ impl WebApp {
                 answer.map(|_| self.dock_state())
             }
         };
-        self.queue(call::reply(seq, answer));
+        self.queue_to(self.asker, call::reply(seq, answer));
     }
 
     /// The dock as it stands, with the windows taken out of it.
@@ -944,6 +947,7 @@ impl WebApp {
         }
         let clear = divider_color(&self.host.theme);
         let host_id = self.id;
+        let asker = self.asker;
         let WebApp {
             dock,
             floats,
@@ -965,7 +969,7 @@ impl WebApp {
         let readback = composer.capture(gpu, clear, &views, &chrome)?;
         wasm_bindgen_futures::spawn_local(super::capture::finish(
             host_id,
-            CaptureOf::Dock(seq),
+            CaptureOf::Dock(seq, asker),
             path,
             readback,
             gpu.device.clone(),

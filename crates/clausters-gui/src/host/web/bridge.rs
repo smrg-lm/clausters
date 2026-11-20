@@ -25,7 +25,30 @@ pub struct GuiBridge {
     /// instances share one event loop and one proxy.
     id: HostId,
     proxy: EventLoopProxy<HostEvent>,
-    outbox: Rc<RefCell<VecDeque<Vec<u8>>>>,
+    outbox: Rc<RefCell<VecDeque<(u32, Vec<u8>)>>>,
+}
+
+/// One outbound packet and the client of the page it is for
+/// ([`GuiBridge::poll_for`]).
+#[wasm_bindgen]
+pub struct Polled {
+    peer: u32,
+    packet: Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl Polled {
+    /// The client it is for: `0` for every client of the page.
+    #[wasm_bindgen(getter)]
+    pub fn peer(&self) -> u32 {
+        self.peer
+    }
+
+    /// The OSC packet.
+    #[wasm_bindgen(getter)]
+    pub fn packet(&self) -> Vec<u8> {
+        self.packet.clone()
+    }
 }
 
 impl GuiBridge {
@@ -42,9 +65,20 @@ impl GuiBridge {
 #[wasm_bindgen]
 impl GuiBridge {
     /// Feeds one raw OSC packet (e.g. a `/gui_def`/`/gui_set`/`/gui_bind`) to the
-    /// host, exactly as the WS wire format delivers it (one packet per call).
+    /// host, exactly as the WS wire format delivers it (one packet per call),
+    /// from the page's own script.
     pub fn feed(&self, packet: &[u8]) {
-        self.send(WebEvent::Inbound(packet.to_vec()));
+        self.send(WebEvent::Inbound(0, packet.to_vec()));
+    }
+
+    /// Feeds one packet from **client `peer`** of the page, a number above
+    /// zero the page gives each client it links to the host: what answers the
+    /// packet, and the events of the windows it defines, are drained with
+    /// that number ([`poll_for`](Self::poll_for)), so each reaches its own
+    /// client.
+    #[wasm_bindgen(js_name = feedFrom)]
+    pub fn feed_from(&self, peer: u32, packet: &[u8]) {
+        self.send(WebEvent::Inbound(peer, packet.to_vec()));
     }
 
     /// Gives one `window`-rooted def its own `<canvas>`, which the caller
@@ -140,7 +174,20 @@ impl GuiBridge {
     /// Pops the next outbound OSC packet (`/gui_event`/`/gui_closed`/`/gui_info`)
     /// for the page to decode, or `undefined` when the queue is empty.
     pub fn poll(&self) -> Option<Vec<u8>> {
-        self.outbox.borrow_mut().pop_front()
+        self.outbox
+            .borrow_mut()
+            .pop_front()
+            .map(|(_, packet)| packet)
+    }
+
+    /// Pops the next outbound packet with **the client it is for**: `0` for
+    /// every client of the page (the page's own script's, and what is
+    /// nobody's in particular), another number for the one client fed with it
+    /// ([`feed_from`](Self::feed_from)). `undefined` when the queue is empty.
+    #[wasm_bindgen(js_name = pollFor)]
+    pub fn poll_for(&self) -> Option<Polled> {
+        let (peer, packet) = self.outbox.borrow_mut().pop_front()?;
+        Some(Polled { peer, packet })
     }
 
     /// Attaches the host's audio-server leg to a `--ws` server `url`, so a bound

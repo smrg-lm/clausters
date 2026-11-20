@@ -244,8 +244,12 @@ pub enum ClientId {
     /// on the same connection. The browser's carrier into a native host.
     Ws(u64),
     /// The browser's in-page binding surface (the wasm front feeds OSC packets
-    /// in and drains events out through it; there is no socket address).
-    Web,
+    /// in and drains events out through it; there is no socket address), by
+    /// the page's number for the client: `0` the page's own script, any other
+    /// a client the page linked to the host from another realm or module (a
+    /// session's worker, an application of the page's), so a reply reaches
+    /// the client that asked and an event the client whose window it is.
+    Web(u32),
     /// **An application in the host's own process**, linked to it natively
     /// (`gui::run_local`): the editor's application, which speaks the protocol
     /// a script speaks, with no socket between the two.
@@ -258,7 +262,8 @@ impl std::fmt::Display for ClientId {
             ClientId::Udp(addr) => write!(f, "{addr}"),
             ClientId::Tcp(id) => write!(f, "tcp client {id}"),
             ClientId::Ws(id) => write!(f, "ws client {id}"),
-            ClientId::Web => write!(f, "web"),
+            ClientId::Web(0) => write!(f, "web"),
+            ClientId::Web(peer) => write!(f, "web client {peer}"),
             ClientId::Local => write!(f, "local application"),
         }
     }

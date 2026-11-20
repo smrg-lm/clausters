@@ -125,7 +125,7 @@ impl WebApp {
                         self.post_host_effects();
                         continue;
                     }
-                    self.queue(message);
+                    self.queue_to(self.origin(def_id), message);
                 }
                 GestureEffect::Redraw(def_id) => self.request_redraw(def_id),
                 // The focus stepped past the ring: **blur the canvas**, so the

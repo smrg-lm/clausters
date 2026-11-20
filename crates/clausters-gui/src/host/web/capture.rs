@@ -14,8 +14,10 @@ use crate::host::{captured, png};
 /// with this `seq`).
 #[derive(Clone, Copy, Debug)]
 pub(super) enum CaptureOf {
-    Window(i32),
-    Dock(i32),
+    /// A window, answered to the client that asked.
+    Window(i32, ClientId),
+    /// The dock, answered to the call `seq` of the client that asked.
+    Dock(i32, ClientId),
 }
 
 /// How long a capture waits for its canvas' picture to be read before it is
@@ -31,7 +33,7 @@ impl WebApp {
     /// [`CAPTURE_WAIT_MS`].
     pub(super) fn capture(&mut self, def: i32, path: String) {
         let until = canvas::now_ms() + CAPTURE_WAIT_MS;
-        self.capturing.push((def, path, until));
+        self.capturing.push((def, path, until, self.asker));
         self.finish_captures();
     }
 
@@ -42,28 +44,34 @@ impl WebApp {
             return;
         }
         let now = canvas::now_ms();
-        for (def, path, until) in std::mem::take(&mut self.capturing) {
+        for (def, path, until, to) in std::mem::take(&mut self.capturing) {
             // a window owed what it has not asked yet is drawn, which asks
             if now < until && self.awaits_reads(def) {
-                self.capturing.push((def, path, until));
+                self.capturing.push((def, path, until, to));
                 continue;
             }
             let readback = self.capture_frame(def);
             self.ask_owed_spans(&[def]);
             if now < until && self.awaits_picture(def) {
-                self.capturing.push((def, path, until));
+                self.capturing.push((def, path, until, to));
                 continue;
             }
-            self.write_capture(def, path, readback);
+            self.write_capture(def, path, readback, to);
         }
     }
 
-    fn write_capture(&mut self, def: i32, path: String, readback: Result<Readback, String>) {
+    fn write_capture(
+        &mut self,
+        def: i32,
+        path: String,
+        readback: Result<Readback, String>,
+        to: ClientId,
+    ) {
         let readback = match readback {
             Ok(readback) => readback,
             Err(e) => {
                 log(&format!("/gui_capture {def} {path}: {e}"));
-                return self.queue(captured(def, &path, Some(&e)));
+                return self.queue_to(to, captured(def, &path, Some(&e)));
             }
         };
         let Some(device) = self
@@ -72,11 +80,14 @@ impl WebApp {
             .and_then(|slot| slot.render.as_ref())
             .map(|render| render.gpu.device.clone())
         else {
-            return self.queue(captured(def, &path, Some("no canvas holds that window")));
+            return self.queue_to(
+                to,
+                captured(def, &path, Some("no canvas holds that window")),
+            );
         };
         wasm_bindgen_futures::spawn_local(finish(
             self.id,
-            CaptureOf::Window(def),
+            CaptureOf::Window(def, to),
             path,
             readback,
             device,

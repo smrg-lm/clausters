@@ -174,7 +174,9 @@ export interface ClaustersGui {
      * of the one canvas the dock draws in, so `place` is not asked: that
      * canvas is where the page put the dock. `onOpen` hears each window
      * the client opens, a def or an application, as it opens -- what tells
-     * a page to show the place its dock is in. The host's audio leg stays
+     * a page to show the place its dock is in. The client is a client of its
+     * own, as a socket's is to a native host: what answers its packets, and
+     * the events of the windows it defines, reach it alone. The host's audio leg stays
      * the engine it was wired to, so a widget the client binds reaches that
      * engine. A window the client opened leaves the page, or the dock, when
      * it closes or the link does.
@@ -415,14 +417,26 @@ async function boot(
         bridge.connect_page((bytes: Uint8Array) => engine.send(bytes, peer));
     }
 
-    // Drain the host's outbound events to the page's listeners.
+    // Drain the host's outbound events to the page's listeners -- and to its
+    // linked clients, each by the number the host was fed its packets with:
+    // what answers a client, and the events of the windows it defined, reach
+    // that client alone, as a native host answers each socket on its own.
     const listeners = new Set<EventListener>();
+    /** The linked clients' listeners, by their number (`feedFrom`). */
+    const peers = new Map<number, EventListener>();
+    /** The number the next linked client takes; `0` is the page's own. */
+    let nextPeer = 1;
     const deliver = (packet: Uint8Array) => {
         for (const listener of [...listeners]) listener(packet);
+        for (const listener of [...peers.values()]) listener(packet);
     };
     const drain = setInterval(() => {
-        let packet: Uint8Array | undefined;
-        while ((packet = bridge.poll()) !== undefined) deliver(packet);
+        for (let out = bridge.pollFor(); out !== undefined; out = bridge.pollFor()) {
+            const { peer, packet } = out;
+            out.free();
+            if (peer === 0) deliver(packet);
+            else peers.get(peer)?.(packet);
+        }
     }, 33);
 
     // Which defs already have a canvas. It lives here rather than in whoever
@@ -452,12 +466,15 @@ async function boot(
             for (const link of [...links]) link.close();
             clearInterval(drain);
             listeners.clear();
+            peers.clear();
             canvases.clear();
             bridge.close();
         },
         link: ({ place, onOpen } = {}) => {
             const control = new MessageChannel();
             let open = true;
+            /** This client's number, which its packets are fed with. */
+            const peer = nextPeer++;
             /** The clients opened over the link, each a port of its own. */
             const clients = new Set<MessagePort>();
             /** Window id -> the canvas made for it (none for a pane of the
@@ -518,7 +535,7 @@ async function boot(
                         onOpen?.(id);
                     } else if (addr === "/gui_free") freed.push(id);
                 }
-                bridge.feed(packet);
+                bridge.feedFrom(peer, packet);
                 // After the feed, for the reason `pageGuiConnection` gives.
                 for (const id of freed) unmount(id);
             };
@@ -528,7 +545,7 @@ async function boot(
                     if (!open) return;
                     open = false;
                     links.delete(link);
-                    listeners.delete(forward);
+                    peers.delete(peer);
                     for (const id of [...windows.keys()]) unmount(id);
                     for (const client of clients) client.onmessage = null;
                     clients.clear();
@@ -553,7 +570,7 @@ async function boot(
                     }
                 };
                 clients.add(client);
-                listeners.add(forward);
+                peers.set(peer, forward);
                 control.port1.postMessage(
                     { type: "port", port: channel.port2, peer: 0, ticket: ask.ticket ?? 0 } satisfies LinkMessage,
                     [channel.port2],

@@ -375,12 +375,18 @@ impl WebApp {
         }
     }
 
-    /// Encodes `msg` and pushes it to the outbox for the page to drain; also logs
-    /// a short summary so events are visible without a JS OSC decoder.
-    pub(super) fn queue(&self, msg: OscMessage) {
+    /// Encodes `msg` and pushes it to the outbox for client `to` to drain
+    /// ([`ClientId::Web`]): the page's own script's goes to every client of
+    /// the page, as a page with one client had it. Also logs a short summary
+    /// so events are visible without a JS OSC decoder.
+    pub(super) fn queue_to(&self, to: ClientId, msg: OscMessage) {
         log(&format!("-> {} {:?}", msg.addr, msg.args));
+        let peer = match to {
+            ClientId::Web(peer) => peer,
+            _ => 0,
+        };
         match encode(&OscPacket::Message(msg)) {
-            Ok(bytes) => self.outbox.borrow_mut().push_back(bytes),
+            Ok(bytes) => self.outbox.borrow_mut().push_back((peer, bytes)),
             Err(e) => log(&format!("failed to encode an outbound packet: {e}")),
         }
     }

@@ -146,14 +146,14 @@ mod tests {
             1,
             Step::Query {
                 id: 10,
-                from: ClientId::Web,
+                from: ClientId::Web(0),
             },
         );
         s.push(
             1,
             Step::Query {
                 id: 11,
-                from: ClientId::Web,
+                from: ClientId::Web(0),
             },
         );
         assert!(matches!(s.next(1), Some(Step::Query { id: 10, .. })));

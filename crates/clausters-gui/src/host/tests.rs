@@ -1230,7 +1230,7 @@ fn an_acknowledgement_retires_what_it_covers_and_records_the_state() {
             OscType::Int(2),
             OscType::String("snapped to the grid".into()),
         ]),
-        ClientId::Web,
+        ClientId::Web(0),
     );
 
     // One rule and no branch: everything at or below the stamp is settled,
@@ -1256,7 +1256,7 @@ fn an_acknowledgement_with_nothing_to_say_is_still_an_acknowledgement() {
     let seq = host.outbox.borrow_mut().stamp(1, 10);
     host.handle_packet(
         ack_msg(vec![OscType::Int(seq), OscType::Int(0)]),
-        ClientId::Web,
+        ClientId::Web(0),
     );
     assert!(host.outbox.borrow().pending().is_empty());
     assert_eq!(host.outbox.borrow().last().unwrap().reason, None);
@@ -1266,7 +1266,7 @@ fn an_acknowledgement_with_nothing_to_say_is_still_an_acknowledgement() {
 fn a_malformed_acknowledgement_changes_nothing() {
     let mut host = Host::new();
     host.outbox.borrow_mut().stamp(1, 10);
-    host.handle_packet(ack_msg(vec![]), ClientId::Web);
+    host.handle_packet(ack_msg(vec![]), ClientId::Web(0));
     assert_eq!(host.outbox.borrow().pending().len(), 1);
 }
 
@@ -1275,7 +1275,7 @@ fn freeing_a_window_drops_the_edits_it_had_in_flight() {
     let mut host = Host::new();
     host.handle_packet(
         def_msg(1, r#"{"type":"window","children":[]}"#),
-        ClientId::Web,
+        ClientId::Web(0),
     );
     host.outbox.borrow_mut().stamp(1, 10);
     host.handle_packet(
@@ -1283,7 +1283,7 @@ fn freeing_a_window_drops_the_edits_it_had_in_flight() {
             addr: GUI_FREE.into(),
             args: vec![OscType::Int(1)],
         }),
-        ClientId::Web,
+        ClientId::Web(0),
     );
     assert!(host.outbox.borrow().pending().is_empty());
 }
@@ -1298,13 +1298,13 @@ fn redefining_a_window_drops_the_edits_it_had_in_flight() {
     let mut host = Host::new();
     host.handle_packet(
         def_msg(1, r#"{"type":"window","children":[]}"#),
-        ClientId::Web,
+        ClientId::Web(0),
     );
     host.outbox.borrow_mut().stamp(1, 10);
     let other = host.outbox.borrow_mut().stamp(2, 20);
     host.handle_packet(
         def_msg(1, r#"{"type":"window","children":[]}"#),
-        ClientId::Web,
+        ClientId::Web(0),
     );
     let outbox = host.outbox.borrow();
     assert_eq!(outbox.pending().len(), 1, "only that window's");

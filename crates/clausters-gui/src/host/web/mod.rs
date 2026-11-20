@@ -126,7 +126,7 @@ enum HostEvent {
     /// Take a new instance into the set, with the outbox its bridge drains.
     Add {
         id: HostId,
-        outbox: Rc<RefCell<VecDeque<Vec<u8>>>>,
+        outbox: Rc<RefCell<VecDeque<(u32, Vec<u8>)>>>,
     },
     /// Drop an instance: its canvases, its GPU slots, its tick and its
     /// audio-server leg go with it.
@@ -188,8 +188,10 @@ enum WebEvent {
     /// Ask the server for what the bound widgets write
     /// ([`crate::host::readback`]): the read-back interval's beat.
     ReadBack,
-    /// One inbound OSC packet from the in-page binding surface (a `/gui_*`).
-    Inbound(Vec<u8>),
+    /// One inbound OSC packet from the in-page binding surface (a `/gui_*`),
+    /// and the page's number for the client that sent it
+    /// ([`ClientId::Web`]).
+    Inbound(u32, Vec<u8>),
     /// Attach the audio-server leg to this `--ws` URL (for bound widgets).
     ConnectServer(String),
     /// Attach the audio-server leg to the in-page engine: outbound packets go
@@ -286,14 +288,20 @@ struct WebApp {
     clipboard_text: clipboard::Text,
     /// The windows whose paste key waits for the browser's `paste`.
     paste_keys: std::collections::HashSet<i32>,
-    outbox: Rc<RefCell<VecDeque<Vec<u8>>>>,
+    outbox: Rc<RefCell<VecDeque<(u32, Vec<u8>)>>>,
+    /// The client whose packet is being answered: where a reply goes
+    /// ([`HostEffect::Reply`]), the page's own script between packets.
+    asker: ClientId,
+    /// **The client each window was defined by**, where its events go
+    /// ([`WebApp::origin`]).
+    origins: HashMap<i32, ClientId>,
     /// One canvas per `window`-rooted def, keyed by its def id.
     canvases: HashMap<i32, CanvasSlot>,
     /// The reverse index winit's per-window events route through.
     by_winit: HashMap<WindowId, i32>,
     /// **Captures waiting for their picture to be read**: the canvas, the
     /// path and when to give up waiting, on the page's clock.
-    capturing: Vec<(i32, String, f64)>,
+    capturing: Vec<(i32, String, f64, ClientId)>,
     /// Whether the event loop resumed -- a window can only be created after it,
     /// so an `attach` that arrives first waits here.
     resumed: bool,
@@ -393,7 +401,7 @@ struct WebApp {
 }
 
 impl WebApp {
-    fn new(id: HostId, outbox: Rc<RefCell<VecDeque<Vec<u8>>>>) -> Self {
+    fn new(id: HostId, outbox: Rc<RefCell<VecDeque<(u32, Vec<u8>)>>>) -> Self {
         let mut host = Host::new();
         // The same wasm runs everywhere, so the platform is the browser's to
         // say: on a Mac the menus show Cmd where the table says Ctrl.
@@ -420,6 +428,8 @@ impl WebApp {
             clipboard_text,
             paste_keys: Default::default(),
             outbox,
+            asker: ClientId::Web(0),
+            origins: HashMap::new(),
             canvases: HashMap::new(),
             by_winit: HashMap::new(),
             capturing: Vec::new(),
@@ -473,13 +483,24 @@ impl WebApp {
     /// Handles one inbound OSC packet (from the binding surface) through the real
     /// protocol dispatch, then carries out the effects: open/redraw the window,
     /// queue replies for the page to drain.
-    fn on_inbound(&mut self, event_loop: &ActiveEventLoop, bytes: &[u8]) {
+    fn on_inbound(&mut self, event_loop: &ActiveEventLoop, from: u32, bytes: &[u8]) {
         let packet = match decode_packet(bytes) {
             Ok(p) => p,
             Err(e) => return log(&format!("malformed OSC packet from the page: {e}")),
         };
-        let effects = self.host.handle_packet(packet, ClientId::Web);
+        let from = ClientId::Web(from);
+        let effects = self.host.handle_packet(packet, from);
+        // what answers the packet goes to who sent it
+        self.asker = from;
         self.apply_effects(event_loop, effects);
+        self.asker = ClientId::Web(0);
+    }
+
+    /// **The client whose window `def` is**: the one that defined it, as a
+    /// native window keeps its origin; the page's own script for a window
+    /// nobody linked defined.
+    pub(super) fn origin(&self, def: i32) -> ClientId {
+        self.origins.get(&def).copied().unwrap_or(ClientId::Web(0))
     }
 
     /// Carries out what the host asks of this front: open or redraw a window,
@@ -487,9 +508,11 @@ impl WebApp {
     fn apply_effects(&mut self, event_loop: &ActiveEventLoop, effects: Vec<HostEffect>) {
         for effect in effects {
             match effect {
-                // a page has the one client
-                HostEffect::Reply(msg) | HostEffect::Send { msg, .. } => self.queue(msg),
+                HostEffect::Reply(msg) => self.queue_to(self.asker, msg),
+                HostEffect::Send { to, msg } => self.queue_to(to, msg),
                 HostEffect::OpenWindow(id) => {
+                    // the window's events go to the client that defined it
+                    self.origins.insert(id, self.asker);
                     log(&format!("/gui_def {id}: opened from the page"));
                     // a pane attached before its def knows its title now
                     self.retitle_pane(id);
@@ -1249,7 +1272,7 @@ impl WebApp {
                 }
                 self.request_redraw(def_id);
             }
-            WebEvent::Inbound(bytes) => self.on_inbound(event_loop, &bytes),
+            WebEvent::Inbound(from, bytes) => self.on_inbound(event_loop, from, &bytes),
             WebEvent::ConnectServer(url) => self.connect_server(&url),
             WebEvent::ConnectPage(callback) => {
                 self.host
@@ -1299,15 +1322,18 @@ impl WebApp {
             WebEvent::PasteKeyLate { def_id } => self.on_paste_key_late(def_id),
             WebEvent::ClipboardRead { def_id, verb, text } => self.on_pasted(def_id, &verb, text),
             WebEvent::Captured { of, path, result } => match of {
-                capture::CaptureOf::Window(def_id) => {
-                    self.queue(super::captured(def_id, &path, result.err().as_deref()))
+                capture::CaptureOf::Window(def_id, to) => {
+                    self.queue_to(to, super::captured(def_id, &path, result.err().as_deref()))
                 }
-                capture::CaptureOf::Dock(seq) => self.queue(super::dock::call::reply(
-                    seq,
-                    result
-                        .map(|()| serde_json::json!({ "path": path }))
-                        .map_err(|e| ("runtime".to_string(), e)),
-                )),
+                capture::CaptureOf::Dock(seq, to) => self.queue_to(
+                    to,
+                    super::dock::call::reply(
+                        seq,
+                        result
+                            .map(|()| serde_json::json!({ "path": path }))
+                            .map_err(|e| ("runtime".to_string(), e)),
+                    ),
+                ),
             },
             #[cfg(feature = "midi")]
             WebEvent::Midi(bytes) => self.on_midi(&bytes),
@@ -1423,7 +1449,7 @@ struct WebHosts {
 }
 
 impl WebHosts {
-    fn new(id: HostId, outbox: Rc<RefCell<VecDeque<Vec<u8>>>>) -> Self {
+    fn new(id: HostId, outbox: Rc<RefCell<VecDeque<(u32, Vec<u8>)>>>) -> Self {
         let mut apps = HashMap::new();
         apps.insert(id, WebApp::new(id, outbox));
         Self {

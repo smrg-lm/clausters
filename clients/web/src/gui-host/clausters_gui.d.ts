@@ -76,9 +76,17 @@ export class GuiBridge {
     dock(canvas: HTMLCanvasElement): void;
     /**
      * Feeds one raw OSC packet (e.g. a `/gui_def`/`/gui_set`/`/gui_bind`) to the
-     * host, exactly as the WS wire format delivers it (one packet per call).
+     * host, exactly as the WS wire format delivers it (one packet per call),
+     * from the page's own script.
      */
     feed(packet: Uint8Array): void;
+    /**
+     * Feeds one packet from **client `peer`** of the page, a number above
+     * zero the page gives each client it links to the host: what answers the
+     * packet, and the events of the windows it defines, are drained with
+     * that number ([`poll`](Self::poll)), so each reaches its own client.
+     */
+    feedFrom(peer: number, packet: Uint8Array): void;
     /**
      * Takes share `index` of `of` of the audio server's node ids, buses and
      * buffers -- the browser form of the native `--id-share`, given by
@@ -115,6 +123,13 @@ export class GuiBridge {
      */
     poll(): Uint8Array | undefined;
     /**
+     * Pops the next outbound packet with **the client it is for**: `0` for
+     * every client of the page (the page's own script's, and what is
+     * nobody's in particular), another number for the one client fed with it
+     * ([`feed_from`](Self::feed_from)). `undefined` when the queue is empty.
+     */
+    pollFor(): Polled | undefined;
+    /**
      * Sizes a canvas in **device pixels**, with the **scale** those pixels were
      * measured at -- a component's `ResizeObserver` box times
      * `devicePixelRatio`, and that ratio. The host never reads the DOM: the
@@ -150,6 +165,24 @@ export class GuiBridge {
      * for the other forty-seven.
      */
     set_visible(def_id: number, visible: boolean): void;
+}
+
+/**
+ * One outbound packet and the client of the page it is for
+ * ([`GuiBridge::poll_for`]).
+ */
+export class Polled {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * The OSC packet.
+     */
+    readonly packet: Uint8Array;
+    /**
+     * The client it is for: `0` for every client of the page.
+     */
+    readonly peer: number;
 }
 
 /**
@@ -256,25 +289,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly memcmp: (a: number, b: number, c: number) => number;
-    readonly __wbg_guibridge_free: (a: number, b: number) => void;
-    readonly bundle_boot_packets: (a: any, b: any, c: number, d: number, e: number, f: number, g: number) => any;
-    readonly guibridge_attach: (a: number, b: number, c: any) => void;
-    readonly guibridge_close: (a: number) => void;
-    readonly guibridge_connect_page: (a: number, b: any) => void;
-    readonly guibridge_connect_server: (a: number, b: number, c: number) => void;
-    readonly guibridge_def: (a: number, b: number, c: number, d: number) => void;
-    readonly guibridge_detach: (a: number, b: number) => void;
-    readonly guibridge_dock: (a: number, b: any) => void;
-    readonly guibridge_feed: (a: number, b: number, c: number) => void;
-    readonly guibridge_id_share: (a: number, b: number, c: number) => void;
-    readonly guibridge_midi: (a: number, b: number, c: number) => void;
-    readonly guibridge_msaa: (a: number, b: number) => void;
-    readonly guibridge_poll: (a: number) => [number, number];
-    readonly guibridge_resize: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly guibridge_resizeDock: (a: number, b: number, c: number, d: number) => void;
-    readonly guibridge_server_reply: (a: number, b: number, c: number) => void;
-    readonly guibridge_set_visible: (a: number, b: number, c: number) => void;
-    readonly start: () => number;
     readonly apps_files_check: () => [number, number];
     readonly apps_files_checked: () => number;
     readonly apps_files_failed: () => [number, number];
@@ -286,6 +300,30 @@ export interface InitOutput {
     readonly apps_thread_check_wake: () => void;
     readonly apps_thread_checked: () => number;
     readonly apps_thread_run: (a: number) => void;
+    readonly __wbg_guibridge_free: (a: number, b: number) => void;
+    readonly __wbg_polled_free: (a: number, b: number) => void;
+    readonly bundle_boot_packets: (a: any, b: any, c: number, d: number, e: number, f: number, g: number) => any;
+    readonly guibridge_attach: (a: number, b: number, c: any) => void;
+    readonly guibridge_close: (a: number) => void;
+    readonly guibridge_connect_page: (a: number, b: any) => void;
+    readonly guibridge_connect_server: (a: number, b: number, c: number) => void;
+    readonly guibridge_def: (a: number, b: number, c: number, d: number) => void;
+    readonly guibridge_detach: (a: number, b: number) => void;
+    readonly guibridge_dock: (a: number, b: any) => void;
+    readonly guibridge_feed: (a: number, b: number, c: number) => void;
+    readonly guibridge_feedFrom: (a: number, b: number, c: number, d: number) => void;
+    readonly guibridge_id_share: (a: number, b: number, c: number) => void;
+    readonly guibridge_midi: (a: number, b: number, c: number) => void;
+    readonly guibridge_msaa: (a: number, b: number) => void;
+    readonly guibridge_poll: (a: number) => [number, number];
+    readonly guibridge_pollFor: (a: number) => number;
+    readonly guibridge_resize: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly guibridge_resizeDock: (a: number, b: number, c: number, d: number) => void;
+    readonly guibridge_server_reply: (a: number, b: number, c: number) => void;
+    readonly guibridge_set_visible: (a: number, b: number, c: number) => void;
+    readonly polled_packet: (a: number) => [number, number];
+    readonly polled_peer: (a: number) => number;
+    readonly start: () => number;
     readonly iswspace: (a: number) => number;
     readonly iswdigit: (a: number) => number;
     readonly iswalpha: (a: number) => number;

@@ -625,7 +625,7 @@ impl App {
                 }
             }
             // The wasm front never reaches the native event loop.
-            ClientId::Web => warn!("reply {addr} to a web client on the native front"),
+            ClientId::Web(_) => warn!("reply {addr} to a web client on the native front"),
             // taken before the encoding, above
             ClientId::Local => {}
         }
