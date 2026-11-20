@@ -2058,3 +2058,48 @@ mod window_tests {
         );
     }
 }
+
+/// An edge of the dock a window may stand along (its `dock_edge`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DockEdge {
+    /// Along the top: an application's bar.
+    Top,
+    /// Along the bottom, under the page strip: an application's footer.
+    Bottom,
+}
+
+impl DockEdge {
+    /// The edge a `dock_edge` prop names.
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "top" => Some(Self::Top),
+            "bottom" => Some(Self::Bottom),
+            _ => None,
+        }
+    }
+
+    /// Its name on the wire.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Top => "top",
+            Self::Bottom => "bottom",
+        }
+    }
+}
+
+/// **Where a window's bar shows a menu from**, in a dock whose top edge
+/// holds an application's bar ([`Host::show_menus`](crate::host::Host::show_menus)): the window's own, by
+/// default; none, for an application's window whose menu the edge bar
+/// shows (`Away`); or another window's, for the edge bar showing it
+/// (`From`). The host's state, never a prop: the dock decides it from the
+/// page shown and where the keyboard is.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum MenuShown {
+    #[default]
+    Own,
+    Away,
+    From {
+        window: i32,
+        entries: Vec<crate::host::menu::Entry>,
+    },
+}

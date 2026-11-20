@@ -381,7 +381,7 @@ impl App {
         }
     }
 
-    /// **The dock's window closes as the host decided** ([`DockClose`]):
+    /// **The dock's window closes as the host decided** ([`DockClose`](crate::host::DockClose)):
     /// each pane and floating panel as its own close, or every window at
     /// once, nothing asked, the application quitting.
     pub(super) fn dock_closed(&mut self, close: crate::host::DockClose, lp: Loop) {

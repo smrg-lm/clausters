@@ -583,7 +583,7 @@ const SMALL: &[&str] = &[
 
 /// **A label as a menu writes it**: in header capitalization, as the
 /// desktop's guidelines and the specification's editor write a menu -- every
-/// word starting with a capital but the small ones ([`SMALL`]) inside the
+/// word starting with a capital but the small ones (`SMALL`) inside the
 /// label, each part of a hyphenated word too. A word with a capital past its
 /// first letter (`MIDI`) is left as it is, and so is what follows a word
 /// (`...`, a comma). A description or a help text stays in sentence case,

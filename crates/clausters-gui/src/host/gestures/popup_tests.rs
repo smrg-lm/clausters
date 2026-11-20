@@ -1938,12 +1938,10 @@ fn a_planes_scroll_bar_is_as_thick_as_the_role() {
 /// **The dock's bar shows the menu of the application on the page shown**:
 /// the application's window draws no bar of its own, the edge bar shows its
 /// titles, a pick that flips a state is the application's (its menu and the
-/// bar's both read it), one that does not is performed on its window, and
-/// the bar shows its own menu again once no application is shown.
+/// bar's both read it), and one that does not is performed on its window.
 #[test]
 fn the_docks_bar_shows_the_menu_of_the_application_shown() {
-    use crate::host::dock::{Dock, Edge};
-    use crate::host::menubar;
+    use crate::host::menubar::{self, MenuShown};
     let mut host = host_from(BAR);
     host.handle_packet(
         OscPacket::Message(OscMessage {
@@ -1960,14 +1958,14 @@ fn the_docks_bar_shows_the_menu_of_the_application_shown() {
         }),
         from(),
     );
-    let mut dock = Dock::new((600, 440), host.metrics.resolved(1.0));
-    dock.add_edge(2, Edge::Top, 40);
-    dock.add(1);
-    // the bar's lists go anywhere over the dock, as the fronts say
-    host.set_popup_area(2, dock.popup_area(2));
-    let mut changed = host.show_menus(&dock);
-    changed.sort();
-    assert_eq!(changed, [1, 2]);
+    // the bar shows the application's menu, as the dock decides
+    // (`dock::menus`, tested there)
+    host.set_popup_area(2, Some(Rect::new(0.0, 0.0, 600.0, 440.0)));
+    let entries = menubar::own_entries(host.window_def(1).unwrap())
+        .unwrap()
+        .to_vec();
+    host.set_menu_shown(2, MenuShown::From { window: 1, entries });
+    host.set_menu_shown(1, MenuShown::Away);
     let own =
         |host: &Host, id| menubar::own_entries(host.window_def(id).unwrap()).map(<[_]>::to_vec);
     let shown = |host: &Host, id| menubar::entries(host.window_def(id).unwrap()).map(<[_]>::to_vec);
@@ -1980,10 +1978,6 @@ fn the_docks_bar_shows_the_menu_of_the_application_shown() {
     assert!(
         host.menu_bar_rect(1, 600, 400).is_none(),
         "and it has no bar of its own"
-    );
-    assert!(
-        host.show_menus(&dock).is_empty(),
-        "settled: nothing changes again"
     );
 
     // a pick that flips a state: the application's
@@ -2028,12 +2022,6 @@ fn the_docks_bar_shows_the_menu_of_the_application_shown() {
         window: 1,
         verb: "open".into()
     }));
-
-    // no application shown: the bar's own
-    dock.remove(1);
-    host.show_menus(&dock);
-    let code = shown(&host, 2).unwrap();
-    assert_eq!(code[0].label, "Code");
 }
 
 /// **The caret blinks while the keys are on text**, half a cycle shown and

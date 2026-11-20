@@ -2198,15 +2198,10 @@ pub trait Element: fmt::Debug {
 
     /// **What this element shows in the popup layer of its own accord**,
     /// placed at `rect` at `scale`: a list its own keys walk and a note
-    /// ([`Own`](crate::host::popup::Own)): a code editor's completions and
+    /// ([`Own`](super::own::Own)): a code editor's completions and
     /// the parameters of the call being typed. Asked at every frame, so what
     /// the element holds is what shows; nothing by default.
-    fn own_popups(
-        &self,
-        _rect: Rect,
-        _scale: f32,
-        _m: &Metrics,
-    ) -> Option<crate::host::popup::Own> {
+    fn own_popups(&self, _rect: Rect, _scale: f32, _m: &Metrics) -> Option<super::own::Own> {
         None
     }
 

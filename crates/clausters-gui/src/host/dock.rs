@@ -46,6 +46,7 @@ mod bar;
 pub mod call;
 mod chrome;
 mod edges;
+mod menus;
 mod pages;
 pub mod tree;
 
@@ -182,14 +183,7 @@ pub struct PaneLook {
     pub tip: Option<String>,
 }
 
-/// **A pane's header band** ([`Dock::band`]): its height, and the room the
-/// panel's bar keeps at each end of it, in device pixels.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Band {
-    pub h: f32,
-    pub left: f32,
-    pub right: f32,
-}
+pub use super::header::Band;
 
 /// A divider as measured: the gap between part `before` and the next of the
 /// split at `split`, and what the parts of that split measure along it.

@@ -88,7 +88,10 @@ fn open_title(
     else {
         return;
     };
-    host.action_entries(menubar::owner_of(host, ctx.def_id), &mut entries);
+    host.action_entries(
+        menubar::owner_of(host.window_def(ctx.def_id), ctx.def_id),
+        &mut entries,
+    );
     if !menubar::live(&entries, title) {
         return;
     }
@@ -138,7 +141,7 @@ fn report_pick(
     if let Owner::Bar(_) = owner {
         // a bar showing another window's menu: the pick is that window's,
         // its state flipped in its own menu (which the bar then shows)
-        def_id = menubar::owner_of(host, def_id);
+        def_id = menubar::owner_of(host.window_def(def_id), def_id);
     }
     let Some(tree) = host.window_def_mut(def_id) else {
         return;
@@ -229,7 +232,7 @@ fn pick(host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>, path: V
         // reported with the state it flipped to.
         Owner::Bar(title) => {
             let full = menubar::path(title, &path);
-            let window = menubar::owner_of(host, ctx.def_id);
+            let window = menubar::owner_of(host.window_def(ctx.def_id), ctx.def_id);
             match verb.filter(|_| !holds_state(host, ctx, &full)) {
                 // the menu of the application on the page shown, in the
                 // dock's bar: performed on the application's window, as

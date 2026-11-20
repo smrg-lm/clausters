@@ -59,6 +59,7 @@ mod axes;
 mod build;
 pub(crate) use build::signal_element;
 pub mod element;
+pub mod own;
 pub(crate) mod parse;
 mod props;
 mod query;
@@ -71,9 +72,9 @@ mod tests;
 pub(super) use axes::{AXES, flatten as flatten_axes, flatten_tree as flatten_tree_axes};
 pub use element::{Claim, Element, Needs};
 pub use props::{
-    Align, Anchor, Axis, EditorProps, Flow, GestureMap, GesturePlan, GestureStep, Group, Layout,
-    Marker, Naming, Place, Range, Rate, Ruler, RulerDir, RulerY, ScrollView, SourceWindow,
-    YMeasure, markers_json,
+    Align, Anchor, Axis, DockEdge, EditorProps, Flow, GestureMap, GesturePlan, GestureStep, Group,
+    Layout, Marker, MenuShown, Naming, Place, Range, Rate, Ruler, RulerDir, RulerY, ScrollView,
+    SourceWindow, YMeasure, markers_json,
 };
 pub use size::Natural;
 
@@ -156,11 +157,11 @@ pub enum WidgetKind {
         /// declares -- an application's bar or its footer. Its menu then
         /// shares the row with its tree: the titles first, the tree after
         /// them. None by default: the window is a panel.
-        dock_edge: Option<crate::host::dock::Edge>,
+        dock_edge: Option<DockEdge>,
         /// **Where its bar shows a menu from** in a dock with an
-        /// application's bar ([`crate::host::menubar::MenuShown`]): the
+        /// application's bar ([`MenuShown`]): the
         /// host's state, not a prop, so a window is defined showing its own.
-        menu_shown: crate::host::menubar::MenuShown,
+        menu_shown: MenuShown,
         /// The `dock_tab` prop: **the window is a document**, shown in its
         /// panel as a tab even when it is the panel's only window, as an
         /// editor's file is. Off by default: a panel of one window shows a

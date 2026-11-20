@@ -53,7 +53,7 @@ pub(super) fn build_kind(
             dock_edge: props
                 .get("dock_edge")
                 .and_then(Value::as_str)
-                .and_then(crate::host::dock::Edge::parse),
+                .and_then(super::DockEdge::parse),
             dock_tab: props.get("dock_tab").and_then(truthy).unwrap_or(false),
             menu_shown: Default::default(),
             header: props

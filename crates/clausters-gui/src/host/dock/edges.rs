@@ -24,33 +24,7 @@ use clausters_gui_draw::theme::Theme;
 
 use super::{Dock, PaneRect};
 
-/// An edge of the dock a pane may stand along.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Edge {
-    /// Along the top: an application's bar.
-    Top,
-    /// Along the bottom, under the page strip: an application's footer.
-    Bottom,
-}
-
-impl Edge {
-    /// The edge a `dock_edge` prop names.
-    pub fn parse(name: &str) -> Option<Self> {
-        match name {
-            "top" => Some(Self::Top),
-            "bottom" => Some(Self::Bottom),
-            _ => None,
-        }
-    }
-
-    /// Its name on the wire.
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Top => "top",
-            Self::Bottom => "bottom",
-        }
-    }
-}
+pub use crate::host::widget::DockEdge as Edge;
 
 /// **What a shell draws over its panes**: its chrome, and over that what
 /// the panes float over it, as two batches.

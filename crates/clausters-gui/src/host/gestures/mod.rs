@@ -380,7 +380,7 @@ pub struct Gestures {
     sizing: f64,
     /// Where the pointer last stood over an open list, and since when it
     /// has been on its way to an open submenu across other rows
-    /// ([`popup::aiming`]).
+    /// ([`popup::aiming`](crate::host::popup::aiming)).
     menu_path: (Option<(f64, f64)>, Option<f64>),
 }
 

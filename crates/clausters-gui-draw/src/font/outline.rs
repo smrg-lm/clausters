@@ -53,9 +53,11 @@ const ICON_BASE: u32 = 0xF0000;
 /// interface's text is 14 to the em, as the specification sizes an icon
 /// beside its text -- the em drawn [`EM_PER_CELL`] body boxes tall, the body
 /// box the face's capital, 0.727 of Inter's em.
+#[cfg(feature = "path")]
 const ICON_UNITS: f32 = 1000.0 * (16.0 / 14.0) / (EM_PER_CELL * 0.727);
 
 /// The width an icon's lines are stroked at in its box of 24: Lucide's.
+#[cfg(feature = "path")]
 const ICON_STROKE: f32 = 2.0;
 
 /// The names an icon is also called by: a name of one character is the

@@ -269,6 +269,7 @@ fn a_key_and_its_frame_in_five_thousand_lines_of_python() {
     fresh.parse(None);
     assert_eq!(v.code.spans(0..5001), fresh.spans(0..5001));
     // the rows in view are drawn in more than one color
+    #[cfg_attr(not(feature = "font-atlas"), allow(unused_mut))] // the glyphs' colors join it
     let mut colors: std::collections::HashSet<[u32; 4]> = first
         .colors_by_y()
         .map(|(_, c)| c.map(f32::to_bits))

@@ -19,8 +19,16 @@
 use clausters_gui_draw::metrics::Metrics;
 use clausters_gui_draw::rect::Rect;
 
-use super::dock::Band;
 use super::widget::{Widget, WidgetKind};
+
+/// **A pane's header band** ([`Dock::band`](crate::host::dock::Dock::band)): its height, and the room the
+/// panel's bar keeps at each end of it, in device pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Band {
+    pub h: f32,
+    pub left: f32,
+    pub right: f32,
+}
 
 /// Where a window's header stands, in its own pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]

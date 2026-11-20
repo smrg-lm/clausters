@@ -454,10 +454,13 @@ mod tests {
     fn an_icon_is_a_carried_name_or_a_character() {
         use clausters_gui_draw::font::outline;
         let of = |s: &str| icon_of(&Value::from(s));
-        assert_eq!(of("eraser"), outline::icon("eraser"));
+        // a build that tessellates no outlines carries no icons, and the
+        // name is then its first character
+        assert_eq!(of("eraser"), outline::icon("eraser").or(Some('e')));
+        #[cfg(feature = "notation")]
         assert!(of("eraser").is_some_and(outline::has));
         assert_eq!(of("x"), Some('x'));
-        assert_eq!(of("close"), outline::icon("x"));
+        assert_eq!(of("close"), outline::icon("x").or(Some('c')));
         assert_eq!(of("\u{25B6}"), Some('\u{25B6}'));
         assert_eq!(of("hello"), Some('h'));
         assert_eq!(of(""), None);
