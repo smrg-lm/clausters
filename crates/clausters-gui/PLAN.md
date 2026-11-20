@@ -2246,8 +2246,9 @@ something reusable if the track stops there.
   a path into the old tree) and the editor's book (`docs/`, which
   `docs.rs` finds beside the binary or in the old tree) move into
   `crates/clausters-editor`; the application's icons (`app-icon.svg`, the
-  sized PNGs) and its name and identifier (today read by `install.sh` from
-  `tauri.conf.json`); the binary takes the name `clausters-editor`, so the
+  sized PNGs) and its name and identifier (today read from `tauri.conf.json` by
+  `install.sh` and by `scripts/install-venv.sh`'s reset of the local state,
+  which then reads `paths::IDENTIFIER`); the binary takes the name `clausters-editor`, so the
   menu entry, the wheel's `clausters-editor` command and
   `CLAUSTERS_EDITOR_BIN` keep working; the wheel's launcher stops checking
   for WebKitGTK; `install.sh` builds the crate (`cargo build -p
