@@ -184,10 +184,11 @@ so they also build and read offline:
 
 ## clausters-editor
 
-[`clausters-editor/`](clausters-editor/) is a standalone Python editor with an interactive
-session (Tauri 2 + Svelte 5), kept in this repository but independent of the
-server, the host and the clients: its own Cargo workspace, its own npm package
-and its own CI workflow. See [`clausters-editor/README.md`](clausters-editor/README.md).
+[`crates/clausters-editor/`](crates/clausters-editor/) is a Python editor with an
+interactive session, drawn by the GUI host in one window that also hosts the
+applications, and working with any Python; built for a browser it is a
+JavaScript editor on the web client's engine. `pip install clausters[editor]`
+installs it. See [`crates/clausters-editor/README.md`](crates/clausters-editor/README.md).
 
 ## License
 

@@ -6,7 +6,7 @@
 //! documentation, the preferences -- as a pane of one dock, and the
 //! application (`app`) decides what they show and what a verb does, through
 //! the protocol any script speaks. The Python session is a process of its
-//! own, as in the webview application, and so are the environments.
+//! own, and so are the environments' operations.
 
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::{Path, PathBuf};
@@ -25,7 +25,7 @@ use clausters_editor::wire::{Link, Said};
 
 /// A Python editor with an interactive session.
 #[derive(Parser, Debug)]
-#[command(name = "clausters-editor-host", version)]
+#[command(name = "clausters-editor", version)]
 struct Cli {
     /// Files to open, each in a tab of its own. A file that does not exist
     /// yet opens empty and is made when it is saved.
@@ -66,13 +66,15 @@ fn main() -> ExitCode {
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("clausters-editor-host: {e}");
+            eprintln!("clausters-editor: {e}");
             ExitCode::FAILURE
         }
     }
 }
 
 fn run(cli: Cli) -> Result<(), String> {
+    // the webview application's folders, under the program's name now
+    clausters_editor::native::paths::migrate();
     let settings = Settings::load();
     let mut host = Host::new();
     host.dock = true;
@@ -110,7 +112,7 @@ fn run(cli: Cli) -> Result<(), String> {
     let socket = UdpSocket::bind(bind).map_err(|e| format!("cannot bind {bind}: {e}"))?;
     if cli.headless {
         eprintln!(
-            "clausters-editor-host: headless, udp://{}",
+            "clausters-editor: headless, udp://{}",
             socket.local_addr().map_err(|e| e.to_string())?
         );
     }

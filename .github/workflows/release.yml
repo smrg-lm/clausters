@@ -7,9 +7,9 @@
 # schedule.
 #
 # The same tag builds clausters-editor's wheel, which the client's `editor`
-# extra installs. The editor keeps its own version (clausters-editor/src-tauri/
-# tauri.conf.json), so its PyPI upload skips a version already there: a release
-# publishes the editor only when its version moved.
+# extra installs. The editor is a crate of the workspace and takes its
+# version, so it is published with every release; its PyPI upload still skips
+# a version already there, so a run repeated for one tag is not a failure.
 #
 # PyPI auth is Trusted Publishing (OIDC): the PyPI project `clausters` must
 # list this repository/workflow as a trusted publisher and the repo must have
@@ -257,47 +257,43 @@ jobs:
 
   build-editor:
     name: clausters-editor wheel (manylinux_2_35)
-    # No event guard, as `build` has none. Built on the oldest Ubuntu with
-    # WebKitGTK 4.1, which the binary links from the system: the wheel's tag is
-    # the build machine's glibc, so a wheel built here runs on every
-    # distribution that has the library.
+    # No event guard, as `build` has none. Built on the oldest Ubuntu the
+    # runners offer: the wheel's tag is the build machine's glibc, so a wheel
+    # built here runs on every distribution since. It carries libverovio,
+    # staged from the prefix the composite restores or builds.
     needs: verify
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/rust
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential file \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y pkg-config libasound2-dev clang
+      - uses: ./.github/actions/verovio
+        with:
+          prefix: ${{ env.VEROVIO_PREFIX }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: clausters-editor/src-tauri
+          key: editor-wheel
       - name: Build the wheel
-        working-directory: clausters-editor
         run: |
-          npm ci
           pip install build
-          python -m build --wheel wheel
+          python -m build --wheel crates/clausters-editor/wheel
       - uses: actions/upload-artifact@v6
         with:
           name: editor-wheel
-          path: clausters-editor/wheel/dist/*.whl
+          path: crates/clausters-editor/wheel/dist/*.whl
 
   publish-pypi-editor:
     name: publish clausters-editor to PyPI (trusted publishing)
     # After the client's upload, for the reason the client's waits on npm: one
-    # way, and in order. `skip-existing` because the editor's version is its
-    # own -- a tag that did not move it finds it already on PyPI, which is not
-    # a failure. The PyPI project `clausters-editor` lists this workflow and
+    # way, and in order. `skip-existing` so a run repeated for one tag finds
+    # its version already on PyPI without failing. The PyPI project `clausters-editor` lists this workflow and
     # the `pypi` environment as a trusted publisher, as `clausters` does.
     needs: [build-editor, publish-pypi]
     if: github.event_name == 'push'

@@ -1,13 +1,11 @@
-# clausters-editor: the standalone Python editor under clausters-editor/ (Tauri 2 + Svelte 5).
+# clausters-editor: the code editor, crates/clausters-editor.
 #
-# A workflow of its own rather than a job in ci.yml, for the `paths` filter:
-# clausters-editor shares no code with the server, the clients or the host, so a change
-# anywhere else cannot break it and a change to it cannot break them. It runs
-# only when clausters-editor/ (or this file) changes, and ci.yml never builds it.
-#
-# `npm run build` is the frontend's compile check, as svelte-check is its type
-# check. The cargo steps are debug builds, which point Tauri at the dev server
-# instead of embedding `dist/`, so they do not depend on it.
+# The crate is a member of the workspace, so ci.yml builds, lints and tests
+# its Rust with the rest, checks its library for wasm32 and builds its page
+# (the `web` job). This workflow keeps what is the editor's alone: the
+# session's driver (Python, spoken to as a subprocess), the third-party
+# notices, the Python wheel, and the page's npm lockfile against the
+# advisory databases. It runs only when the crate (or this file) changes.
 #
 # The weekly schedule runs the `audit` job alone: an advisory is published
 # against a lockfile nobody touched, so it is checked between changes too, the
@@ -19,18 +17,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "clausters-editor/**"
-      - "crates/clausters-editor/page/package*.json"
+      - "crates/clausters-editor/**"
       - ".github/workflows/clausters-editor.yml"
-      - "rust-toolchain.toml"
-      - ".github/actions/rust/**"
   pull_request:
     paths:
-      - "clausters-editor/**"
-      - "crates/clausters-editor/page/package*.json"
+      - "crates/clausters-editor/**"
       - ".github/workflows/clausters-editor.yml"
-      - "rust-toolchain.toml"
-      - ".github/actions/rust/**"
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:
@@ -40,107 +32,80 @@ env:
 
 jobs:
   check:
-    name: frontend + fmt + clippy + test
+    name: driver + notices
     if: github.event_name != 'schedule'
     runs-on: ubuntu-26.04
     defaults:
       run:
-        working-directory: clausters-editor
+        working-directory: crates/clausters-editor
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/rust
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-      # Tauri's Linux build deps (WebKitGTK 4.1 and friends), as in the README.
-      - name: System deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential file \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: clausters-editor/src-tauri
-      - run: npm ci
-      - run: npm run check
-      - run: npm run build
-      # The page's dependencies, whose licenses the notices below carry: the
-      # editor as a page is the GUI host's now (crates/clausters-editor/page),
-      # built by ci.yml's web job.
-      - run: npm ci
-        working-directory: crates/clausters-editor/page
-      # The page's pure modules under node's own runner, straight from the
-      # sources (tests/resolve.mjs), and the driver spoken to as a subprocess.
-      - run: npm test
-      - run: python3 -m unittest discover -s src-tauri/python -p 'test_*.py'
+      # The driver, spoken to as a subprocess.
+      - run: python3 -m unittest discover -s python -p 'test_*.py'
       # The third-party notices follow the dependencies: a lockfile change that
-      # adds or bumps a package without `npm run notices` fails here. Pinned,
-      # since another cargo-about may word the same licenses differently.
+      # adds or bumps a crate or a package of the page without regenerating
+      # them fails here. Pinned, since another cargo-about may word the same
+      # licenses differently. The page's dependencies are read installed.
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-about@0.9.2
-      - run: npm run notices -- --check
-      - run: cargo fmt --check
-        working-directory: clausters-editor/src-tauri
-      - run: cargo clippy --all-targets -- -D warnings
-        working-directory: clausters-editor/src-tauri
-      - run: cargo test
-        working-directory: clausters-editor/src-tauri
+      - run: npm ci
+        working-directory: crates/clausters-editor/page
+      - run: node scripts/notices.mjs --check
 
   # The Python package (`pip install clausters-editor`, or clausters[editor]).
-  # Built on the oldest Ubuntu with WebKitGTK 4.1, since the wheel's manylinux
+  # Built on the oldest Ubuntu the runners offer, since the wheel's manylinux
   # tag is the build machine's glibc: a wheel built here runs on every
-  # distribution that has the library. Kept as an artifact; publishing it is
-  # a release step.
+  # distribution since. It carries libverovio, the score editor's engraver,
+  # restored or built by the composite the client's jobs use. Kept as an
+  # artifact; publishing it is a release step.
   wheel:
     name: Python wheel (manylinux_2_35)
     if: github.event_name != 'schedule'
     runs-on: ubuntu-22.04
+    env:
+      VEROVIO_PREFIX: /home/runner/.local
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/rust
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential file \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y pkg-config libasound2-dev clang
+      - uses: ./.github/actions/verovio
+        with:
+          prefix: ${{ env.VEROVIO_PREFIX }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: clausters-editor/src-tauri
+          key: editor-wheel
       - name: Build the wheel
-        working-directory: clausters-editor
         run: |
-          npm ci
           pip install build
-          python -m build --wheel wheel
+          python -m build --wheel crates/clausters-editor/wheel
       - uses: actions/upload-artifact@v6
         with:
           name: clausters-editor-wheel
-          path: clausters-editor/wheel/dist/*.whl
+          path: crates/clausters-editor/wheel/dist/*.whl
 
-  # Both lockfiles against the advisory databases. Only vulnerabilities fail:
-  # cargo audit passes on unmaintained, unsound and yanked crates and prints
-  # them, and npm audit skips devDependencies, which build the app and are not
-  # shipped in it.
+  # The page's lockfile against the advisory databases. Only vulnerabilities
+  # fail, and npm audit skips devDependencies, which build the page and are
+  # not shipped in it. The crates are the workspace's, which audit.yml checks.
   audit:
-    name: cargo audit + npm audit
+    name: npm audit (the page)
     runs-on: ubuntu-26.04
     defaults:
       run:
-        working-directory: clausters-editor
+        working-directory: crates/clausters-editor/page
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-audit
-      - run: cargo audit --file src-tauri/Cargo.lock
       - run: npm audit --omit=dev

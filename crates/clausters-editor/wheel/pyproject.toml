@@ -1,0 +1,41 @@
+[build-system]
+# `wheel` for the platform-tagged wheel: the package carries a native binary
+# (see setup.py). setuptools>=77 for PEP 639's `license` expression.
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clausters-editor"
+# The workspace's version, which the crate takes, read from the repository's
+# Cargo.toml by setup.py so it is written in one place.
+dynamic = ["version"]
+description = "A lightweight Python editor with an interactive session."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "GPL-3.0-or-later"
+# setup.py copies the repository's COPYING here before it builds.
+license-files = ["COPYING"]
+authors = [{ name = "Lucas Samaruga" }]
+# Jedi gives the session its completions, signatures and hover help (driver.py).
+# Installed beside the package, it is in the environment the session runs on.
+dependencies = ["jedi>=0.19"]
+
+[project.urls]
+Source = "https://github.com/smrg-lm/clausters/tree/main/crates/clausters-editor"
+Issues = "https://github.com/smrg-lm/clausters/issues"
+
+[project.scripts]
+clausters-editor = "clausters_editor._cli:main"
+
+# Found as namespace packages, so the staged directories (bin/, share/,
+# _libs/) are packages setuptools knows of rather than importable
+# directories it warns it would ignore; what they hold is package data.
+[tool.setuptools.packages.find]
+include = ["clausters_editor*"]
+namespaces = true
+
+# The staged application: the binary in bin/, its book and the third-party
+# licenses in share/ where the binary looks for them, and the engraver's
+# library in _libs/ -- see setup.py.
+[tool.setuptools.package-data]
+clausters_editor = ["bin/*", "share/**", "_libs/**"]

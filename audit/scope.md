@@ -23,6 +23,6 @@ Acceptance criteria must be agreed and recorded before measurement. Draft scenar
 | Components | workspace, audio, gui, combined | Every project component crate, including browser/FFI/plugin seams; device and interaction coverage retained separately |
 | Python client | python | Reference API and behavior; package, native bindings, scheduling and examples |
 | Web client | web | Same capabilities and calls as Python, with language idioms distinguished from gaps; own node/browser acceptance |
-| Editor application | editor | Independent Tauri/Svelte/Python application and Rust workspace; own version, dependencies, UI and licensing |
+| Editor application | editor | The code editor crate on the GUI host, its page and its wheel; own dependencies, UI and licensing |
 
 Use separate preparation roots and records/baselines for each unit. A complete component scenario says nothing about client/editor quality; a complete client scenario says nothing about untested server/host paths. Python is the API/behavior reference, not a substitute for web measurements. New non-Rust packages require an explicit unit/scope review as well; package.json and pyproject.toml identities and lockfiles are retained with preparation. No package's results are averaged into another's score.

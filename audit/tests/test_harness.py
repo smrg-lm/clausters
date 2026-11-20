@@ -265,7 +265,7 @@ class HarnessTests(unittest.TestCase):
             self.assertEqual(row["sha256"], audit.digest(self.root / "fixture-one" / row["path"]))
 
     def test_inventory_keeps_editor_separate_and_new_crates_visible(self):
-        for directory, name in (("crates/new-core", "new-core"), ("clausters-editor/src-tauri", "clausters-editor")):
+        for directory, name in (("crates/new-core", "new-core"), ("crates/clausters-editor", "clausters-editor")):
             path = self.repo / directory / "Cargo.toml"
             path.parent.mkdir(parents=True)
             path.write_text(f'[package]\nname = "{name}"\nversion = "0.0.0"\n'.replace("\\n", "\n"))
@@ -360,9 +360,9 @@ class HarnessTests(unittest.TestCase):
 
 
     def test_tracked_resources_only_and_directory_ignore_targets(self):
-        editor = self.repo / "clausters-editor/src-tauri"
+        editor = self.repo / "crates/clausters-editor/page"
         editor.mkdir(parents=True)
-        (editor.parent / ".gitignore").write_text("/src-tauri/target/\n")
+        (editor / ".gitignore").write_text("/dist/\n")
         (self.repo / ".gitignore").write_text("target\naudit/records/\naudit/fuzz/target/\n")
         self.git("add", ".")
         self.git("commit", "-m", "Real directory ignore contracts")
@@ -373,7 +373,7 @@ class HarnessTests(unittest.TestCase):
         # resource exists beside tracked files in the runner's directory.
         with patch.object(audit, "AUDIT", self.repo / "audit"):
             work = self.prepare()
-        self.assertFalse((work / "source/clausters-editor/src-tauri/target").exists())
+        self.assertFalse((work / "source/crates/clausters-editor/page/dist").exists())
         self.assertFalse((work / "resources/records").exists())
         with tarfile.open(work / "resources.tar") as archive:
             self.assertFalse(any("large.bin" in n for n in archive.getnames()))
@@ -437,8 +437,8 @@ class HarnessTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             controls.policy_environment({"disk_floor_gib": 1e30}, self.root)
         self.assertEqual(controls.policy_environment({}, self.root)["CARGO_INCREMENTAL"], "0")
-        paths = {controls.target_for(self.root / "target", name) for name in (".", "crates/clausters-gui", "audit/fuzz", "clausters-editor/src-tauri")}
-        self.assertEqual(len(paths), 4)
+        paths = {controls.target_for(self.root / "target", name) for name in (".", "crates/clausters-gui", "audit/fuzz")}
+        self.assertEqual(len(paths), 3)
         with self.assertRaises(ValueError):
             controls.validate_build_contract({"argv": ["cargo", "test", "--release"], "profile": "debug"}, self.repo)
         with self.assertRaises(ValueError):

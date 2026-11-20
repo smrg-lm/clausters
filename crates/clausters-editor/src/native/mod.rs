@@ -28,11 +28,20 @@ pub struct Native {
 }
 
 impl Native {
+    /// The platform, telling the application on `tx`; the environments the
+    /// webview application's folder held are built again here, if any were
+    /// moved (`paths::migrate`).
     pub fn new(tx: Sender<Msg>) -> Self {
-        Self {
+        let native = Self {
             session: Session::new(tx.clone()),
             tx,
+        };
+        if let Err(e) = envs::rebuild_moved(&native.tx, &native.session) {
+            let _ = native.tx.send(Msg::Py(
+                serde_json::json!({"type": "info", "text": format!("{e}\n")}),
+            ));
         }
+        native
     }
 
     /// `run` on a thread of its own, its answer told to the application.

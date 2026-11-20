@@ -24,11 +24,11 @@ Building from the repository needs the system dependencies, Rust, and libfaust a
 
 ```sh
 pip install build                                # once: the PEP 517 front end
-rm -rf clients/python/dist clausters-editor/wheel/dist   # dist/ keeps earlier builds, which the globs below would match
+rm -rf clients/python/dist crates/clausters-editor/wheel/dist   # dist/ keeps earlier builds, which the globs below would match
 python -m build --wheel clients/python           # -> clients/python/dist/*.whl
 pip install clients/python/dist/clausters-*.whl  # self-contained, no cargo
-python -m build --wheel clausters-editor/wheel   # the editor's (the editor extra)
-pip install clients/python/dist/clausters-*.whl clausters-editor/wheel/dist/*.whl
+python -m build --wheel crates/clausters-editor/wheel   # the editor's (the editor extra)
+pip install clients/python/dist/clausters-*.whl crates/clausters-editor/wheel/dist/*.whl
 ```
 
 In a plain source checkout (no install), the loaders fall back to the workspace `target/{release,debug}/`, so the historic build-and-run workflow still works:
@@ -46,12 +46,12 @@ Building it adds a wgpu compile (a minute or two the first time). For a lighter,
 
 ### The editor
 
-`pip install clausters[editor]` also installs **clausters-editor**, a Python editor with an interactive session, as a separate package. Its `clausters-editor` command opens a session on the environment it was installed in, so `import clausters` works there from the first line, and its documentation viewer carries this book: the wheel holds it as Markdown, the API reference included, so the editor's search and its help on a name (`Ctrl+D`) reach it offline. On Linux it needs the system's WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`, in every desktop distribution since 2022), which no wheel carries; the command says how to install it when it is missing.
+`pip install clausters[editor]` also installs **clausters-editor**, a Python editor with an interactive session, as a separate package. Its `clausters-editor` command opens a session on the environment it was installed in, so `import clausters` works there from the first line, and its documentation viewer carries this book: the wheel holds it as Markdown, the API reference included, so the editor's search and its help on a name (`Ctrl+D`) reach it offline. It is drawn by the same GUI host as the windows a session opens, and those open in it, each application on a page of its own.
 
 From a checkout, both paths go in one command, and pip takes the second as the `clausters-editor` the extra names, as it would take PyPI's:
 
 ```sh
-pip install -e "./clients/python[editor]" ./clausters-editor/wheel
+pip install -e "./clients/python[editor]" ./crates/clausters-editor/wheel
 ```
 
 ### Runtime requirement: PipeWire (Linux)

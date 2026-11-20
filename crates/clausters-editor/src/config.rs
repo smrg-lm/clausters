@@ -1,7 +1,6 @@
 //! **The application's persistent configuration** (`config.json`, kept by
 //! [`store`](crate::store)): the active environment, the pip install source,
-//! the documentation folder and the startup code -- the file the webview
-//! application keeps, read and written as it does.
+//! the documentation folder and the startup code.
 
 use std::sync::{Mutex, PoisonError};
 

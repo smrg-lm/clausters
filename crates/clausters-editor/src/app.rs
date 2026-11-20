@@ -1367,7 +1367,7 @@ impl App {
         self.dock_calls.insert(seq, purpose);
     }
 
-    /// **The first arrangement**, as the webview application's: the editor
+    /// **The first arrangement**: the editor
     /// on the left, the documentation over the post window on the right.
     /// Asked again until every pane has arrived in the dock.
     fn arrange(&mut self, groups: &[Vec<i32>]) {
@@ -1550,7 +1550,7 @@ impl App {
         let mut tree = self.window(BAR_WIN, "Editor");
         tree["dock_edge"] = json!("top");
         tree["h"] = json!(BAR_H);
-        // a tool: a ghost button of 32 with its icon, as the webview's
+        // a tool: a ghost button of 32 with its icon
         let tool = |id: i32, icon: &str, verb: &str, tip: &str| {
             json!({"id": id, "type": "button", "icon": icon, "flat": 1, "w": TOOL, "h": TOOL,
                 "verb": verb, "tip": tip})

@@ -80,24 +80,24 @@ done
 
 # The local state, where the server, the client and the editor resolve it
 # (crates/clausters-core/src/config.rs, crates/clausters-server/src/server/defstore.rs, the shared
-# memory segments of src/shm, and Tauri's app_config_dir/app_data_dir/
-# app_cache_dir for the editor's identifier).
+# memory segments of src/shm, and the editor's folders under its name,
+# crates/clausters-editor/src/native/paths.rs -- with the webview
+# application's under its old identifier, if any are left).
 reset_state() {
   local config_home=${XDG_CONFIG_HOME:-$HOME/.config}
   local data_home=${XDG_DATA_HOME:-$HOME/.local/share}
   local cache_home=${XDG_CACHE_HOME:-$HOME/.cache}
-  local editor_id
-  editor_id=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["identifier"])' \
-    "$root/clausters-editor/src-tauri/tauri.conf.json")
-  [[ -n $editor_id ]] || die "could not read the editor's identifier"
   local config=${CLAUSTERS_CONFIG:-$config_home/clausters/config.toml}
   local targets=(
     "${CLAUSTERS_CONFIG:-$config_home/clausters}"
     "${CLAUSTERS_DATA_DIR:-$data_home/clausters}"
     "${TMPDIR:-/tmp}/clausters-tmpdefs"
-    "$config_home/$editor_id"
-    "$data_home/$editor_id"
-    "$cache_home/$editor_id"
+    "$config_home/clausters-editor"
+    "$data_home/clausters-editor"
+    "$cache_home/clausters-editor"
+    "$config_home/io.github.smrg-lm.clausters.editor"
+    "$data_home/io.github.smrg-lm.clausters.editor"
+    "$cache_home/io.github.smrg-lm.clausters.editor"
   )
   # A data directory the user config moves the data to, in any of its sections:
   # read before the config itself goes.
@@ -175,7 +175,7 @@ if [[ $refresh == 1 ]]; then
   if [[ $editor == 1 ]]; then
     info "Building and installing the editor"
     # A local directory is always reinstalled, even at the same version.
-    "${pip[@]}" install --no-deps ./clausters-editor/wheel
+    "${pip[@]}" install --no-deps ./crates/clausters-editor/wheel
   fi
   info "Done"
   exit 0
@@ -193,7 +193,7 @@ if [[ $editable == 1 ]]; then
 else
   args+=("$client")
 fi
-[[ $editor == 0 ]] || args+=(./clausters-editor/wheel)
+[[ $editor == 0 ]] || args+=(./crates/clausters-editor/wheel)
 [[ $dev == 0 ]] || args+=(--group ./clients/python/pyproject.toml:dev)
 
 info "Installing (builds every native piece in release: minutes the first time)"

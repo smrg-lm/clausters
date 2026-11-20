@@ -26,14 +26,14 @@ setup-unit runs npm ci --offline against the isolated source and external cache.
 
 ## Standalone editor
 
-Provision its own npm lockfile cache and the system WebKitGTK/Tauri headers listed in the selected editor README/workflow. Do not borrow the web client's node_modules. Its scenario checks the frontend, builds it, and runs fmt/clippy/tests in its independent Rust workspace. The optional license command uses cargo-about 0.9.2, matching the editor workflow; its output is mandatory manual review evidence.
+Provision its page's own npm lockfile cache (crates/clausters-editor/page) and, for the score editor, libverovio as the editor README says. Do not borrow the web client's node_modules. Its scenario builds and typechecks the page, runs the crate's fmt/clippy/tests in the root workspace, and the session driver's tests. The optional license command uses cargo-about 0.9.2, matching the editor workflow; its output is mandatory manual review evidence.
 
 ```sh
 python3 /tmp/clausters-editor-audit/resources/scripts/audit.py setup-unit --work /tmp/clausters-editor-audit --unit editor
 python3 /tmp/clausters-editor-audit/resources/scripts/audit.py run --work /tmp/clausters-editor-audit --scenario /tmp/clausters-editor-audit/resources/scenarios/editor.json --name editor-01
 ```
 
-No library is added, removed or updated by the audit. Use npm run notices -- --check; do not regenerate licenses to hide drift. If tests execute zero cases, the campaign records an error and requires a reviewed scenario revision or real test coverage; zero tests are not evidence of correctness.
+No library is added, removed or updated by the audit. Use node scripts/notices.mjs --check in the editor crate; do not regenerate licenses to hide drift. If tests execute zero cases, the campaign records an error and requires a reviewed scenario revision or real test coverage; zero tests are not evidence of correctness.
 
 
 Before the web build, explicitly provision `vendor/verovio/{verovio.js,verovio.wasm}` and `vendor/faust/{libfaust-wasm.js,libfaust-wasm.wasm,libfaust-wasm.data,version}` in the disposable source. Build them from the selected source's third_party pins or copy a reviewed cache with retained source/build receipts. The harness checks presence, nonempty bytes and hashes before a web build; it never downloads or rebuilds them implicitly. Generated declaration diffs are retained by web-build, so repeat runs do not mistake builder output for intentional instrumentation.

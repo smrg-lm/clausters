@@ -1,8 +1,8 @@
 # Dependency audit: every lockfile of the project against the public advisory
 # databases -- RustSec for the Cargo workspace, the npm registry's for the
 # web client. The Python client declares no runtime dependencies, so it has
-# nothing to audit; clausters-editor audits its own lockfiles in
-# clausters-editor.yml.
+# nothing to audit; the editor's crates are the workspace's, and its page's
+# npm lockfile is audited in clausters-editor.yml.
 #
 # A workflow of its own rather than a job in ci.yml for the schedule: an
 # advisory is published against a lockfile nobody touched, so a check that runs

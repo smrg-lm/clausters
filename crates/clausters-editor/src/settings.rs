@@ -26,7 +26,7 @@ pub enum ThemePref {
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub theme: ThemePref,
-    /// The text's size, in the webview application's pixels.
+    /// The text's size, in pixels of the code's face.
     pub size: f32,
     /// The post window follows each new output.
     pub autoscroll: bool,

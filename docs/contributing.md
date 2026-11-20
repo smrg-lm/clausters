@@ -278,11 +278,11 @@ that same commit:
   the package compiles cdylibs from the Rust workspace, which an sdist of
   `clients/python` would not contain. The wheel carries the client's book as
   Markdown, so its build needs `pydoc-markdown` for the API pages.
-- **clausters-editor rides the same tag with its own version.** The `v*` tag
-  also builds the editor's wheel (on Ubuntu 22.04, the oldest release with
-  WebKitGTK 4.1) and uploads it after the client's, skipping a version PyPI
-  already has: the editor is published when `tauri.conf.json`'s version moved,
-  and not otherwise. Its PyPI project, `clausters-editor`, needs the same
+- **clausters-editor rides the same tag and the same version.** The `v*` tag
+  also builds the editor's wheel (on Ubuntu 22.04, so its manylinux tag is an
+  old glibc; libverovio staged in it) and uploads it after the client's; the
+  editor is a crate of the workspace and takes its version, so every release
+  publishes it, and a repeated run skips the version PyPI already has. Its PyPI project, `clausters-editor`, needs the same
   trusted publisher as `clausters` (workflow `release.yml`, environment
   `pypi`); before its first upload that is a *pending* publisher, set up on
   PyPI under the project's name.

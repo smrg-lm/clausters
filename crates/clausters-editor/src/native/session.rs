@@ -1,7 +1,7 @@
 //! **The persistent Python process that runs the code sent from the editor.**
 //!
-//! The driver (`python/driver.py` of the editor's webview application, the
-//! one session both applications run) reads one JSON request per line on its
+//! The driver (`python/driver.py` beside the crate's sources, with its test)
+//! reads one JSON request per line on its
 //! stdin and writes one JSON message per line on its stdout. This only
 //! carries them: each line of stdout reaches the application as a driver
 //! message, and output on stderr (the driver's own errors, output from C or
@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use super::paths;
 use crate::app::Msg;
 
-const DRIVER: &str = include_str!("../../../../clausters-editor/src-tauri/python/driver.py");
+const DRIVER: &str = include_str!("../../python/driver.py");
 
 struct Proc {
     child: Child,

@@ -15,8 +15,8 @@ import { defineConfig, type Plugin } from "vite";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
-/** Where the editor's book and licenses are, until they move into the crate. */
-const EDITOR = "../../../clausters-editor/";
+/** The crate, which holds the editor's book and its licenses. */
+const EDITOR = "../";
 
 /** The editor's book, TypeScript's library and the licenses, copied beside the page. */
 function besideThePage(): Plugin {
@@ -32,7 +32,7 @@ function besideThePage(): Plugin {
       const out = here("./dist");
       // The licenses travel with the copies, as with the application's.
       cpSync(here(`${EDITOR}licenses`), `${out}/licenses`, { recursive: true });
-      cpSync(here(`${EDITOR}COPYING`), `${out}/COPYING`);
+      cpSync(here("../../../COPYING"), `${out}/COPYING`);
       cpSync(here(`${EDITOR}docs`), `${out}/docs`, { recursive: true });
       const pages = readdirSync(here(`${EDITOR}docs`), { recursive: true, encoding: "utf8" })
         .filter((p) => p.endsWith(".md") && !p.endsWith("SUMMARY.md"))

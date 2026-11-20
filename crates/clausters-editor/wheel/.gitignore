@@ -1,0 +1,8 @@
+# Staged by setup.py from the crate's build and the repository root.
+/clausters_editor/bin/
+/clausters_editor/share/
+/clausters_editor/_libs/
+/COPYING
+/build/
+/dist/
+*.egg-info/

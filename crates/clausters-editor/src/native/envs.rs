@@ -1,6 +1,6 @@
 //! **Python virtual environments in the application's data folder**
-//! (`~/.local/share/<identifier>/venvs` on Linux), the ones the webview
-//! application keeps: created, installed into, chosen and deleted.
+//! (`~/.local/share/clausters-editor/venvs` on Linux): created, installed
+//! into, chosen and deleted.
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -237,6 +237,63 @@ pub fn delete_env(session: &Session, name: String) -> Result<(), String> {
         session.restart()?;
     }
     std::fs::remove_dir_all(&dir).map_err(|e| format!("Could not delete {}: {e}", dir.display()))
+}
+
+/// **The environments moved from the webview application's folder, built
+/// again where they are now** (`paths::migrate` marks them): a virtual
+/// environment's scripts name the path it was made at, so each is made
+/// again from the system's Python and its install source installed in it,
+/// one after the other on a thread of their own, and the session started
+/// again if it uses one of them. `Ok` with nothing marked.
+pub fn rebuild_moved(tx: &Sender<Msg>, session: &Session) -> Result<(), String> {
+    let marked: Vec<PathBuf> = std::fs::read_dir(envs_dir())
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.join(super::paths::REBUILD).exists())
+                .collect()
+        })
+        .unwrap_or_default();
+    if marked.is_empty() {
+        return Ok(());
+    }
+    let (log_tx, session) = (tx.clone(), session.clone());
+    exclusive(tx, move || {
+        let tx = log_tx;
+        let base = PathBuf::from(session::default_python());
+        let active = config::get().active_env;
+        let mut restart = false;
+        for dir in marked {
+            let name = dir
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            log(
+                &tx,
+                format!("Building the environment '{name}' again where it moved...\n"),
+            );
+            let source = source_of(&dir);
+            run(
+                &tx,
+                &base,
+                &[
+                    "-m".into(),
+                    "venv".into(),
+                    "--clear".into(),
+                    dir.to_string_lossy().into(),
+                ],
+            )
+            .and_then(|_| std::fs::write(dir.join(SOURCE_FILE), &source).map_err(|e| e.to_string()))
+            .and_then(|_| pip_install(&tx, &dir, &source))?;
+            restart |= active.as_deref() == Some(name.as_str());
+        }
+        log(&tx, "The environments are ready.\n");
+        if restart {
+            session.restart()?;
+        }
+        Ok(())
+    })
 }
 
 /// Chooses the session's environment (`None` = the system Python) and restarts the session.

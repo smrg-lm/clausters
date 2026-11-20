@@ -32,9 +32,8 @@ pip install "clausters[editor]"   # also clausters-editor, the Python editor
 ```
 
 The `editor` extra adds **clausters-editor**, a Python editor with an
-interactive session that opens on the environment it is installed in. On Linux
-it needs the system's WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`), which no wheel
-carries; its command says how to install it when it is missing.
+interactive session that opens on the environment it is installed in, drawn by
+the same GUI host as the client's windows, which open in it.
 
 The client is driven **interactively** — from a REPL, or cell by cell in an
 editor. No globals to set up, no build context to open: every line stands alone.
@@ -210,11 +209,11 @@ explicitly:
 
 ```sh
 pip install build                                # once: the PEP 517 front end
-rm -rf clients/python/dist clausters-editor/wheel/dist   # dist/ keeps earlier builds, which the globs below would match
+rm -rf clients/python/dist crates/clausters-editor/wheel/dist   # dist/ keeps earlier builds, which the globs below would match
 python -m build --wheel clients/python           # -> clients/python/dist/*.whl
 pip install clients/python/dist/clausters-*.whl  # self-contained, no cargo
-python -m build --wheel clausters-editor/wheel   # the editor's (the editor extra)
-pip install clients/python/dist/clausters-*.whl clausters-editor/wheel/dist/*.whl
+python -m build --wheel crates/clausters-editor/wheel   # the editor's (the editor extra)
+pip install clients/python/dist/clausters-*.whl crates/clausters-editor/wheel/dist/*.whl
 ```
 
 The wheel also bundles the **visual server** (the `clausters-gui` host binary),
@@ -238,15 +237,12 @@ sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev \
   clang libdbus-1-dev patchelf python3-venv
 # to build libfaust
 sudo apt install cmake make g++ llvm-18-dev zlib1g-dev
-# to build the editor (Tauri over WebKitGTK)
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
-Plus Rust ([rustup](https://rustup.rs), the stable toolchain) and Node 22 with
-npm, which builds the editor's interface. [`BUILD.md`](../../BUILD.md) has the
-optional features' dependencies, and the editor's are those of its own
-[README](../../clausters-editor/README.md).
+Plus Rust ([rustup](https://rustup.rs), the stable toolchain).
+[`BUILD.md`](../../BUILD.md) has the optional features' dependencies; the
+editor is a crate of the workspace and needs nothing more
+([README](../../crates/clausters-editor/README.md)).
 
 **2. libfaust, libverovio and pydoc-markdown** (once). The two libraries are
 built from a pinned source into `~/.local`, where the build finds them
@@ -267,7 +263,7 @@ or `CLAUSTERS_SKIP_DOCS=1` builds without that piece.
 
 ```sh
 python3 -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install "./clients/python[editor]" ./clausters-editor/wheel \
+pip install "./clients/python[editor]" ./crates/clausters-editor/wheel \
   --group ./clients/python/pyproject.toml:dev
 ```
 
@@ -329,8 +325,8 @@ change is installed again with step 3's `pip install` of the client
   rebuilt crate is not what runs until it is staged again; a manual test would
   silently exercise the old one.
 - **The editor** — repeat step 3's `pip install`: it is not editable. With the
-  binaries already built (`npm run tauri build -- --no-bundle` in
-  `clausters-editor/`), `CLAUSTERS_SKIP_NATIVE_BUILD=1
+  binaries already built (`cargo build -p clausters-editor --release`),
+  `CLAUSTERS_SKIP_NATIVE_BUILD=1
   CLAUSTERS_EDITOR_SKIP_BUILD=1` in front of it stages them without rebuilding
   anything.
 
@@ -362,7 +358,7 @@ Knobs (env vars), all optional:
   `FaustDef`) or without libverovio (the `score` widget does not engrave).
 - `CLAUSTERS_SKIP_DOCS` — build without the offline book (no pydoc-markdown
   needed).
-- `CLAUSTERS_EDITOR_SKIP_BUILD` — for `./clausters-editor/wheel`: stage the
+- `CLAUSTERS_EDITOR_SKIP_BUILD` — for `./crates/clausters-editor/wheel`: stage the
   editor binary already built instead of building it.
 - `CLAUSTERS_GUI_FEATURES` — extra cargo features for the GUI binary (e.g.
   `standalone`); default none.

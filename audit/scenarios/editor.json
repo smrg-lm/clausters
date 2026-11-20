@@ -3,19 +3,18 @@
   "id": "editor",
   "unit": "editor",
   "status": "ready",
-  "scope": "clausters-editor is a separate Tauri/Svelte/Python application with its own packages and version. Do not infer its quality from the audio project.",
-  "acceptance": "Frontend checks/build and separate Rust fmt/clippy/tests plus UI/session, packaging and third-party license review. System WebKit dependencies must be prepared explicitly.",
+  "scope": "clausters-editor (crates/clausters-editor) is the code editor: a crate of the workspace linking the GUI host, its page (an npm package of its own) and its Python wheel. Do not infer its quality from the audio project.",
+  "acceptance": "The page's typecheck and build, the crate's fmt/clippy/tests, the session driver's tests, plus UI/session, packaging and third-party license review.",
   "steps": [
     {
-      "id": "editor-frontend-check",
+      "id": "editor-page-build",
       "kind": "command",
       "required": true,
       "argv": [
-        "npm",
-        "run",
-        "check"
+        "./build.sh",
+        "debug"
       ],
-      "cwd": "clausters-editor",
+      "cwd": "crates/clausters-editor/page",
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
@@ -24,20 +23,22 @@
       "profile": "debug"
     },
     {
-      "id": "editor-frontend-build",
+      "id": "editor-page-check",
       "kind": "command",
       "required": true,
       "argv": [
         "npm",
         "run",
-        "build"
+        "check"
       ],
-      "cwd": "clausters-editor",
+      "cwd": "crates/clausters-editor/page",
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
       "timeout_seconds": 1800,
-      "depends_on": [],
+      "depends_on": [
+        "editor-page-build"
+      ],
       "profile": "debug"
     },
     {
@@ -47,9 +48,11 @@
       "argv": [
         "cargo",
         "fmt",
-        "--check"
+        "--check",
+        "-p",
+        "clausters-editor"
       ],
-      "cwd": "clausters-editor/src-tauri",
+      "cwd": ".",
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
@@ -67,19 +70,19 @@
         "--message-format=json",
         "--locked",
         "--offline",
+        "-p",
+        "clausters-editor",
         "--all-targets",
         "--",
         "-D",
         "warnings"
       ],
-      "cwd": "clausters-editor/src-tauri",
+      "cwd": ".",
       "parser": "exit",
       "repetitions": 1,
       "warmup": 0,
       "timeout_seconds": 3600,
-      "depends_on": [
-        "editor-frontend-build"
-      ],
+      "depends_on": [],
       "profile": "debug"
     },
     {
@@ -91,23 +94,45 @@
         "test",
         "--message-format=json",
         "--locked",
-        "--offline"
+        "--offline",
+        "-p",
+        "clausters-editor"
       ],
-      "cwd": "clausters-editor/src-tauri",
+      "cwd": ".",
       "parser": "rust-tests",
       "repetitions": 1,
       "warmup": 0,
       "timeout_seconds": 3600,
-      "depends_on": [
-        "editor-frontend-build"
+      "depends_on": [],
+      "profile": "debug"
+    },
+    {
+      "id": "editor-driver",
+      "kind": "command",
+      "required": true,
+      "argv": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "crates/clausters-editor/python",
+        "-p",
+        "test_*.py"
       ],
+      "cwd": ".",
+      "parser": "exit",
+      "repetitions": 1,
+      "warmup": 0,
+      "timeout_seconds": 1800,
+      "depends_on": [],
       "profile": "debug"
     },
     {
       "id": "editor-review",
       "kind": "manual",
       "required": true,
-      "instructions": "Follow procedures/editor.md. Include the editor Rust manifest in coverage, UI/session/recovery, Python package and notices --check with cargo-about 0.9.2. Retain separate performance and license evidence.",
+      "instructions": "Follow procedures/editor.md. Include the editor's crate, page and wheel manifests in coverage, UI/session/recovery, the Python package and `node scripts/notices.mjs --check` with cargo-about 0.9.2. Retain separate performance and license evidence.",
       "depends_on": []
     }
   ]

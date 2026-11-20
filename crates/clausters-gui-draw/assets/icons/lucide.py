@@ -8,12 +8,12 @@ ellipse) is written as one path of absolute moves, lines and cubic curves --
 an arc becomes the cubics that draw it -- so the host's path scanner reads
 it with nothing more than it reads an engraver's outline with.
 
-    crates/clausters-gui-draw/assets/icons/lucide.py \\
-        clausters-editor/node_modules/@lucide/svelte
+    npm pack @lucide/svelte@1.47.0 && tar -xzf lucide-svelte-1.47.0.tgz
+    crates/clausters-gui-draw/assets/icons/lucide.py package
 
 The argument is an unpacked ``@lucide/svelte`` package (1.47.0 at the time
-of writing; ISC, see LICENSE beside this file). Run from the repository
-root.
+of writing; ISC, see LICENSE beside this file), which ``npm pack`` fetches
+and ``tar`` unpacks as ``package/``. Run from the repository root.
 """
 
 import json

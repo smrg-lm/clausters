@@ -11,10 +11,9 @@
 # commit. Formatting one file is sub-second, so doing it here removes the
 # whole class of "the commit needed a formatting pass" churn.
 #
-# `rustfmt` directly rather than `cargo fmt`: the tree has three workspaces
-# (root, audit/fuzz, clausters-editor/src-tauri), and `cargo fmt` would take
-# the edition from whichever manifest it found. All three use edition 2024,
-# so it is passed explicitly.
+# `rustfmt` directly rather than `cargo fmt`: the tree has two workspaces
+# (root, audit/fuzz), and `cargo fmt` would take the edition from whichever
+# manifest it found. Both use edition 2024, so it is passed explicitly.
 #
 # Formatting failures return feedback after the edit, which remains applied.
 # A file that does not parse yet can be picked up by the next fmt pass.

@@ -343,22 +343,13 @@ Named, not enumerated: each is written where it belongs and is read there.
   ids a parent hands a child, events routed to the application that owns each
   widget, and who answers a key when applications nest -- a window's own keys
   are built (its `keys` scopes), and nesting is what is left of them.
-- **The host as the application's one window, the `WS` track**
-  *(`crates/clausters-gui/PLAN.md`, WS track)*. Experimental: the editor's
-  code, post and documentation as host elements in the dock, so one window
-  holds everything natively and in a page. The native application
-  (`clausters-editor-host`) runs beside the webview one, and putting the two
-  side by side opened the `ST` track below. Checkpoint 3 was decided on
-  2026-11-20: the webview application is retired, and with the page now the
-  host's, `WS14` (the removal) is next, carrying the list of what it keeps.
-  After it, the "Found by use" entry *Enter in a dialog's field does not
-  press its default button*.
-- **The host's look, the `ST` track** *(`crates/clausters-gui/PLAN.md`, ST
-  track)*. One design system as the specification of every application's
-  general components, with the current editor as the measured reference. `ST13` closed with checkpoint 3's decision; its two
-  "Found by use" entries (a textured view in a docked pane's dialog, the
-  documentation's folder button) and `ST12` (motion, optional) wait until
-  after `WS14`.
+- **The host's look, the `ST` track, and what the editor's move left**
+  *(`crates/clausters-gui/PLAN.md`, ST track and "Found by use")*. With the
+  webview editor retired (`WS14`, the `WS` track closed), next are the
+  "Found by use" entries *Enter in a dialog's field does not press its
+  default button*, *A textured view in a docked pane's dialog is not drawn*
+  and *The documentation's header has no folder button*; `ST12` (motion,
+  optional) after them.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the

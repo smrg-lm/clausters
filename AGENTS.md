@@ -102,18 +102,22 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   run each family, and at most name one or two entry points. A topic page may
   still point at *one* example that shows what it is explaining — that is a
   cross-reference, not a catalog.
-- **`clausters-editor/` is a standalone application**, not a package of the project:
-  a Python editor with an interactive session (Tauri 2 + Svelte 5) that works
-  with any Python, clausters or not; the editor as a page (a JavaScript
-  editor with its session in a worker on the clausters web client's engine)
-  is the GUI host's, `crates/clausters-editor/page`. It is its own Cargo workspace
-  (`clausters-editor/src-tauri`) and its own npm package, keeps its own version, and
-  is built and checked only by `.github/workflows/clausters-editor.yml`. Nothing below
-  about the packages moving together, the clients or the books applies to it;
-  the language conventions and the commit workflow do. **Adding, removing or
-  updating one of its libraries regenerates its third-party licenses** (`npm run
-  notices`, in the same commit; CI checks it) after checking the new license
-  against its GPL -- the rule is in its README, "Third-party licenses".
+- **The code editor is `crates/clausters-editor`**, a crate of the workspace:
+  a Python editor with an interactive session that works with any Python,
+  clausters or not, drawn by the GUI host it links -- the application
+  (`src/app.rs`) is a client of the host in its process, and asks the
+  program it runs in for everything else through a `Platform` trait. The
+  same application built for wasm32 is the editor as a page, with a
+  JavaScript session on the web client's engine (`page/`, its own npm
+  package and build). Its binary is `clausters-editor`, its version the
+  workspace's, and its wheel (`wheel/`) is the client's `editor` extra.
+  `.github/workflows/clausters-editor.yml` checks what is its alone (the
+  session's driver, the notices, the wheel); its Rust is checked with the
+  workspace's. **Adding, removing or updating a library it ships -- a crate
+  the binary links, an npm package of the page -- regenerates its
+  third-party licenses** (`node scripts/notices.mjs` in the crate, in the
+  same commit; CI checks it) after checking the new license against its
+  GPL -- the rule is in its README, "Third-party licenses".
 
 - **This file is read by every coding agent working on the repository**
   (Claude Code through `CLAUDE.md`, which only imports it; Codex directly).

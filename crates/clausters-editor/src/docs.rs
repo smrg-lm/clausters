@@ -24,8 +24,10 @@ use std::path::{Path, PathBuf};
 pub const SUMMARY: &str = "SUMMARY.md";
 
 /// The editor's own documentation: the configured folder, else
-/// `CLAUSTERS_EDITOR_DOCS`, else a `docs` folder beside the binary, else the
-/// one in the repository it was built from.
+/// `CLAUSTERS_EDITOR_DOCS`, else where an installed binary has it -- a
+/// `docs` folder beside it, or `../share/clausters-editor/docs` from it, as
+/// `install.sh` and the wheel lay it out -- else the crate's own, which a
+/// binary run from the repository reads.
 #[cfg(not(target_arch = "wasm32"))]
 fn docs_dir() -> Result<PathBuf, String> {
     let dir = if let Some(custom) = crate::config::get().docs_dir {
@@ -33,13 +35,13 @@ fn docs_dir() -> Result<PathBuf, String> {
     } else if let Some(env) = std::env::var_os("CLAUSTERS_EDITOR_DOCS") {
         PathBuf::from(env)
     } else {
-        let beside = std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|d| d.join("docs")))
-            .filter(|d| d.is_dir());
-        beside.unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../clausters-editor/docs")
-        })
+        let installed = std::env::current_exe().ok().and_then(|exe| {
+            let bin = exe.parent()?;
+            [bin.join("docs"), bin.join("../share/clausters-editor/docs")]
+                .into_iter()
+                .find(|d| d.is_dir())
+        });
+        installed.unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("docs"))
     };
     dir.canonicalize()
         .map_err(|e| format!("Documentation folder not found: {e}"))

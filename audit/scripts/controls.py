@@ -55,8 +55,6 @@ def target_for(base, workspace):
     workspace = str(workspace)
     if workspace.startswith("crates/clausters-gui"):
         return Path(str(base) + "-gui")
-    if workspace.startswith("clausters-editor"):
-        return Path(str(base) + "-editor")
     if workspace.startswith("audit/fuzz"):
         return Path(str(base) + "-fuzz")
     return Path(base)

@@ -14,7 +14,7 @@ publish = false
 crate-type = ["rlib", "cdylib"]
 
 [[bin]]
-name = "clausters-editor-host"
+name = "clausters-editor"
 path = "src/main.rs"
 
 [features]

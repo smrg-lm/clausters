@@ -1,5 +1,5 @@
-//! **The editor's two looks**: the host's own, dark and light, which are the
-//! specification's the webview application draws with. The editor names
+//! **The editor's two looks**: the host's own, dark and light, the design
+//! system's. The editor names
 //! which one, as a `/gui_theme` table holding only the reserved `look` key;
 //! every role is the host's.
 

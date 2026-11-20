@@ -39,9 +39,8 @@ clausters = "clausters._cli:main"
 clausters-gui = "clausters._cli:gui_main"
 
 # `pip install clausters[editor]`: the Python editor with an interactive
-# session, a separate package (clausters-editor/ in the repository) whose
-# `clausters-editor` command opens on the environment it is installed in. On
-# Linux it needs the system's WebKitGTK 4.1, which no wheel carries.
+# session, a separate package (crates/clausters-editor/ in the repository)
+# whose `clausters-editor` command opens on the environment it is installed in.
 [project.optional-dependencies]
 editor = ["clausters-editor>=0.1"]
 

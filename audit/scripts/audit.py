@@ -156,7 +156,7 @@ def package_inventory(source):
                 data = tomllib.load(stream).get("project", {})
         if not data.get("name"):
             continue
-        unit = "editor" if name.startswith("clausters-editor/") else "python" if name.startswith("clients/python/") else "web" if name.startswith("clients/web/") else "unassigned"
+        unit = "editor" if name.startswith("crates/clausters-editor/") else "python" if name.startswith("clients/python/") else "web" if name.startswith("clients/web/") else "unassigned"
         result.append({"manifest": name, "package": data["name"], "sha256": digest(path), "unit": unit})
     return result
 
@@ -181,7 +181,7 @@ def crate_inventory(source):
             package = data.get("package")
         if package:
             result.append({"manifest": name, "package": package["name"], "sha256": digest(path),
-                           "unit": "editor" if Path(name).parts[0] == "clausters-editor" else "components",
+                           "unit": "editor" if Path(name).parts[:2] == ("crates", "clausters-editor") else "components",
                            "declared_features": sorted(data.get("features", {}))})
     return result
 
@@ -233,7 +233,7 @@ def prepare(work, revision, policy=None):
               "resource_files": {str(p.relative_to(work / "resources")): digest(p) for p in sorted((work / "resources").rglob("*")) if p.is_file()},
               "tools": selected_tools, "source": str(checkout), "crates": crate_inventory(checkout), "packages": package_inventory(checkout),
               "lockfiles": {str(p.relative_to(checkout)): digest(p)
-                            for p in [checkout / n for n in ("Cargo.lock", "clausters-editor/src-tauri/Cargo.lock", "clients/web/package-lock.json", "clausters-editor/package-lock.json", "clients/python/pyproject.toml")] if p.exists()}})
+                            for p in [checkout / n for n in ("Cargo.lock", "clients/web/package-lock.json", "crates/clausters-editor/page/package-lock.json", "clients/python/pyproject.toml")] if p.exists()}})
     print(work / "prepared.json")
 
 
@@ -270,7 +270,7 @@ def setup_unit(work, unit, wheelhouse=None):
             commands.append(([python, "-m", "pip", "check"], source))
             commands.append(([python, "-m", "pip", "freeze", "--all"], source))
         else:
-            relative = "clients/web" if unit == "web" else "clausters-editor"
+            relative = "clients/web" if unit == "web" else "crates/clausters-editor/page"
             commands.append((["npm", "ci", "--offline", "--audit=false", "--fund=false"], source / relative))
             # Existing web staging and Python builders resolve workspace/target literally.
             for parent in (source, source / "crates/clausters-gui"):
