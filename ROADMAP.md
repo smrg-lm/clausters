@@ -348,15 +348,17 @@ Named, not enumerated: each is written where it belongs and is read there.
   code, post and documentation as host elements in the dock, so one window
   holds everything natively and in a page. The native application
   (`clausters-editor-host`) runs beside the webview one, and putting the two
-  side by side opened the `ST` track below; checkpoint 3 is decided at its
-  end, and `WS13` comes after it.
+  side by side opened the `ST` track below. Checkpoint 3 was decided on
+  2026-11-20: the webview application is retired, so `WS13` (the page) is
+  next and `WS14` (the removal) after it, each carrying the list of what it
+  keeps.
 - **The host's look, the `ST` track** *(`crates/clausters-gui/PLAN.md`, ST
   track)*. Taken now, before `WS13`: one design system as the specification
   of every application's general components, with the current editor as the
-  measured reference. `ST13`'s review is done (2026-11-19): checkpoint 3's
-  decision is what is left of it, before `WS13`. Its two "Found by use"
-  entries (a textured view in a docked pane's dialog, the documentation's
-  folder button) and `ST12` (motion, optional) wait until after `WS14`.
+  measured reference. `ST13` closed with checkpoint 3's decision; its two
+  "Found by use" entries (a textured view in a docked pane's dialog, the
+  documentation's folder button) and `ST12` (motion, optional) wait until
+  after `WS14`.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the

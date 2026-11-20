@@ -1787,6 +1787,27 @@ something reusable if the track stops there.
   against the current editor done: whether the current application is
   retired (WS12-WS14) or the track stops with the dock and the elements as
   parts the current application does not use.
+  **Decided 2026-11-20, at the user's request: the current application is
+  retired.** The bar was checked item by item against `clausters-editor-host`:
+  every "must" of editing, evaluation, language help, the post window, the
+  documentation, files, tabs and layout, preferences and the session has a
+  counterpart shipped by WS5-WS12 and WS15-WS16, and every command the
+  webview's Rust answered (`list_books`, `cli_files`, the configuration, the
+  environments, the session's four verbs, `list_mono_fonts`, the books'
+  files and their search) has its port in `crates/clausters-editor`. What
+  the host lacked when the track started and the editor needed was closed
+  as "Found by use" on 2026-11-19: the code's font, the dock's arrangement
+  and the window's place between runs, quitting as one act, pictures and
+  wide code in the documentation, a page's named GuiDefs and its clipboard.
+  The "must" items of a page (its storage as the file system, upload and
+  download) are `WS13`'s. **The losses, named:** a screen reader reads
+  nothing in the host (a later track over an accessibility tree is the
+  remedy); raw HTML in a documentation page is not drawn; and the
+  webview's own preferences (the theme, the size, the recent files, kept in
+  its local storage) do not carry over: the new application starts from
+  its defaults once, while the configuration (the startup code, the
+  documentation folder) and the environments are shared files and carry
+  over whole. What the removal has to keep is listed under `WS14`.
 - **The two applications were first put side by side on 2026-11-17**, after
   WS12, and the look was found behind in almost every place a user looks.
   The style review became a track of its own, the ST track below, specified
@@ -2206,10 +2227,39 @@ something reusable if the track stops there.
   dock full-window, with the JavaScript session and the TypeScript
   service feeding it, and the file dialog over the page's storage as a host
   window. The page's Svelte interface is retired.
+  *What it keeps of the page (listed at checkpoint 3):* the session worker
+  (`src/page/session-worker.ts`, the JavaScript session on the web
+  client's engine) and the code worker (`code-worker.ts`, the TypeScript
+  service's completions, signatures and descriptions) move out of the
+  Svelte tree to wherever the page application is built; the file
+  dialog's listing, new folder, rename, delete, upload and download over
+  OPFS (`FileDialog.svelte`, `opfs.ts`); `serve:web` and the page's
+  end-to-end test (`tests/page.e2e.mjs`), ported to the new page; the
+  page's chapter of the editor's book (`docs/page.md`).
 - ⬜ **WS14 — Retiring the webview application.** Tauri, Svelte, CodeMirror and
   the page's interface removed; the third-party licenses regenerated; the
   wheel, `install.sh` and the README rebuilt around the new binary; the
   editor's documentation rewritten where it names what moved.
+  *What the removal keeps (listed at checkpoint 3), each moved before the
+  tree it lives in goes:* the session's driver (`src-tauri/python/driver.py`
+  and its test, which `crates/clausters-editor/src/session.rs` includes by
+  a path into the old tree) and the editor's book (`docs/`, which
+  `docs.rs` finds beside the binary or in the old tree) move into
+  `crates/clausters-editor`; the application's icons (`app-icon.svg`, the
+  sized PNGs) and its name and identifier (today read by `install.sh` from
+  `tauri.conf.json`); the binary takes the name `clausters-editor`, so the
+  menu entry, the wheel's `clausters-editor` command and
+  `CLAUSTERS_EDITOR_BIN` keep working; the wheel's launcher stops checking
+  for WebKitGTK; `install.sh` builds the crate (`cargo build -p
+  clausters-editor --release`) and installs the binary, the book and the
+  menu entry; the third-party notices are the new binary's crates (the
+  `cargo about` configuration moves with it) and the fonts it embeds; the
+  `clausters-editor.yml` workflow builds and checks the new crate instead,
+  and `AGENTS.md`'s paragraph on `clausters-editor/` as its own Cargo
+  workspace and npm package is rewritten. **The commit that removes the
+  webview application carries the tag `webview-editor-removed`**, so its
+  parent is the last commit with the old editor, for a comparison from a
+  checkout of its own.
 - ✅ **WS15 — Applications as the editor's pages** *(added 2026-11-18 at
   the user's request, taken before ST12)*. WS4 built a page as an
   arrangement of panels per kind of work; what pages were asked for is one
@@ -2967,11 +3017,12 @@ first four are the order the user set; the components come after.
 - ⬜ **ST12: Motion.** The specification's fades and scales, at 100 ms,
   with no frame drawn at rest. Optional: taken if the captures and the
   budgets say it costs nothing a user feels.
-- ⬜ **ST13: The review closes.** The WS track's comparative style review,
+- ✅ **ST13: The review closes.** The WS track's comparative style review,
   done against the bar item by item in both themes with every difference
   matched or named as the user's choice; then checkpoint 3's decision. `WS13`
   is taken after it, so the page application starts from the finished look.
-  *The review, 2026-11-19; the decision is still to take.* What `ST9` to
+  *The review, 2026-11-19; checkpoint 3 decided 2026-11-20 (retired; see
+  the WS track's checkpoints).* What `ST9` to
   `ST11` had left different was matched: a widget's `shown` (a status line
   with nothing to say takes no row), a label's `path` and `code` variants
   (the preferences' folder, the environments' two-line rows), tabular
