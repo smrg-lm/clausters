@@ -312,10 +312,10 @@ impl Bar {
         let mut parts = Vec::new();
         let square = row;
         let y0 = strip.y + ((line - row) * 0.5).max(0.0);
-        let close = Rect::new(strip.x + strip.w - square - m.pad * 0.5, y0, square, row);
+        let close = Rect::new(strip.x + strip.w - square - m.pad, y0, square, row);
         parts.push((Part::Close, close));
         let char_w = font::width("0", size).max(1.0);
-        let button = |label: &str| text_box(label, size, m) + m.pad;
+        let button = |label: &str| text_box(label, size, m) + 2.0 * m.button_x;
         let note = match mode {
             Mode::Find => {
                 let tail = [
@@ -328,7 +328,7 @@ impl Bar {
                 let fixed: f32 = tail.iter().map(|t| t.1).sum::<f32>() + square;
                 let field_w = (close.x - strip.x - m.pad - fixed - 10.0 * char_w)
                     .clamp(FIELD_CHARS.0 * char_w, FIELD_CHARS.1 * char_w);
-                let mut x = strip.x + m.pad * 0.5;
+                let mut x = strip.x + m.pad;
                 parts.push((Part::Field(Field::Find), Rect::new(x, y0, field_w, row)));
                 x += field_w;
                 for (part, w) in tail {
@@ -337,7 +337,7 @@ impl Bar {
                 }
                 let note = Rect::new(x + m.pad, y0, (close.x - x - 2.0 * m.pad).max(0.0), row);
                 let y1 = y0 + line;
-                let mut x = strip.x + m.pad * 0.5;
+                let mut x = strip.x + m.pad;
                 parts.push((Part::Field(Field::Replace), Rect::new(x, y1, field_w, row)));
                 x += field_w;
                 for (part, label) in [(Part::Replace, "Replace"), (Part::All, "All")] {
@@ -349,7 +349,7 @@ impl Bar {
             }
             Mode::Line => {
                 let label_w = text_box("Go to line", size, m);
-                let mut x = strip.x + m.pad * 0.5;
+                let mut x = strip.x + m.pad;
                 let note = Rect::new(x, y0, label_w, row);
                 x += label_w;
                 let field_w = 12.0 * char_w + 2.0 * m.pad;

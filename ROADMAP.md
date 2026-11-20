@@ -353,8 +353,10 @@ Named, not enumerated: each is written where it belongs and is read there.
 - **The host's look, the `ST` track** *(`crates/clausters-gui/PLAN.md`, ST
   track)*. Taken now, before `WS13`: one design system as the specification
   of every application's general components, with the current editor as the
-  measured reference. Motion next (`ST12`, optional), then the review
-  that closes checkpoint 3 (`ST13`).
+  measured reference. `ST13`'s review is done (2026-11-19): checkpoint 3's
+  decision is what is left of it, before `WS13`. Its two "Found by use"
+  entries (a textured view in a docked pane's dialog, the documentation's
+  folder button) and `ST12` (motion, optional) wait until after `WS14`.
 - **The remaining "Future directions"** of each plan — the server's (a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the

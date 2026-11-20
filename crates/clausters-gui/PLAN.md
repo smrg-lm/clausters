@@ -2971,6 +2971,27 @@ first four are the order the user set; the components come after.
   done against the bar item by item in both themes with every difference
   matched or named as the user's choice; then checkpoint 3's decision. `WS13`
   is taken after it, so the page application starts from the finished look.
+  *The review, 2026-11-19; the decision is still to take.* What `ST9` to
+  `ST11` had left different was matched: a widget's `shown` (a status line
+  with nothing to say takes no row), a label's `path` and `code` variants
+  (the preferences' folder, the environments' two-line rows), tabular
+  figures for a count in place (`font::text_figures`), the code's find bar
+  on the documentation's measures, a control's label strip in the medium
+  weight and flush with a field, a `choice`'s tabs as the specification's
+  Tabs, the focus ring round a checkbox's box or a switch's track
+  (`Element::focus_area`), every drop place drawn faintly while a panel is
+  dragged, and a dialog's cross whole under the hand. The reference's
+  `trash-2` is `trash` in Lucide 1.47. **Named as the user's choice:** the
+  slight blur behind a dialog is not drawn (the scrim alone; the user,
+  2026-11-19: an effect a window may have, not one a dialog needs).
+  **Named, for the user to confirm:** a button naming no `variant` is
+  `secondary`, so scripts keep their quiet buttons, and the applications
+  name `default` for the action a form is for; a panel's menu (the dock's
+  own) stands in every panel's bar, which the reference has none of. **Left open, in "Found by use":** a textured
+  view inside a docked pane's dialog, and the documentation's folder
+  button. Motion is `ST12`'s, optional. The editor was captured headless in
+  both themes (the window, a menu, the find bar, the preferences and the
+  environments) against the inventory above.
 
 ## Definition of done (per milestone)
 
@@ -3121,6 +3142,19 @@ open, and that file is where a search for a fixed one ends.
 Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
+
+- ⬜ **A textured view in a docked pane's dialog is not drawn**
+  (2026-11-19, the style review). A docked pane's dialog stands over the
+  whole dock, drawn into the pane's float batch, which carries meshes and
+  no textures: a spectrogram, a waveform's kept picture or a canvas inside
+  such a dialog is left out. No dialog of the applications holds one yet;
+  the float needs the textured passes a pane's frame has.
+
+- ⬜ **The documentation's header has no folder button** (2026-11-19, the
+  style review). The reference's header ends in find, the documentation
+  folder and close; the host's has find and close (and the dock's panel
+  menu). The folder is chosen from Help and from the preferences, so this
+  is a shortcut missing, not a function.
 
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** (2026-10-21, the user, browser). Playback was
