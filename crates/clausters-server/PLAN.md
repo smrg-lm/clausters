@@ -1601,6 +1601,37 @@ holds what is open.
   where every command is seen in one list. It touches the audio thread, so
   it would close with a bench before and after.
 
+- ⬜ **Release builds tuned for size, never at the cost of speed**
+  *(asked by the user, 2026-11-20, after measuring the packages)*. The
+  workspace has no `[profile.release]`: every artifact is built with
+  cargo's defaults (no LTO, 16 codegen units, `opt-level = 3`, unwinding
+  panics), and the same Rust is linked again into each artifact. Sizes
+  measured that day, uncompressed: natively `clausters-gui` 41 MB,
+  `libclausters_ffi` 21 MB, the server 11 MB, `libclausters` 9 MB, the
+  editor 60 MB before stripping; in a page the GUI host 18 MB and 33 MB
+  with the applications, the core 14 MB, the engine 4.8 MB. **The rule
+  the user set: whatever makes the binaries smaller and keeps or improves
+  their speed is taken; what makes them slower is not an optimization,
+  however much it saves.** To measure, one change at a time, each against
+  the binaries' size and against the benchmarks and the real-time budget
+  (the audio thread first, then a frame of the GUI host):
+  - `lto = "fat"` (or `"thin"`) and `codegen-units = 1`, which usually
+    shrink and speed up at once, paid in build time;
+  - `panic = "abort"`, only after checking that nothing catches a panic
+    (the server, the FFI boundary, a plugin's host) -- an unwound panic
+    that is relied on rules it out for that artifact;
+  - what dominates each artifact (`cargo bloat` per crate and per
+    function): monomorphized generics, serde, wgpu and naga, the fonts
+    and grammars the host embeds, the server the applications' engine
+    carries, and which of them a target could leave out by a feature;
+  - for wasm, `wasm-opt` over the bundles, judged by the same rule;
+  - `opt-level = "s"` or `"z"` only for a crate where it is measured not
+    to be slower, never workspace-wide on faith.
+  What is taken goes into the profile and the build scripts together
+  (`clients/python/build_native.py`, `clients/web/build.sh`, the editor's
+  wheel), and the sizes and timings that decided it into
+  `docs/decisions.md`.
+
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what

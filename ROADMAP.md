@@ -350,7 +350,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   default button*, *A textured view in a docked pane's dialog is not drawn*
   and *The documentation's header has no folder button*; `ST12` (motion,
   optional) after them.
-- **The remaining "Future directions"** of each plan — the server's (a long take
+- **The remaining "Future directions"** of each plan — the server's (release builds tuned for size, never at the cost of speed; a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the
   builders from the catalog instead of contrasting against them; per-output
