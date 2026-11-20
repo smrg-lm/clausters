@@ -11,8 +11,8 @@
 
 use crate::host::widget::size::{control_box, text_box};
 use clausters_gui_draw::draw::Draw;
-use clausters_gui_draw::font::{self, symbol};
-use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::font::{self, Family, symbol};
+use clausters_gui_draw::metrics::{Elevation, Metrics};
 use clausters_gui_draw::paint::Mesh;
 use clausters_gui_draw::rect::Rect;
 use clausters_gui_draw::theme::Theme;
@@ -203,18 +203,19 @@ pub fn row_h(size: f32, m: &Metrics) -> f32 {
 pub fn body_h(view: View, options: usize, size: f32, m: &Metrics) -> f32 {
     if view.stacked() {
         row_h(size, m) * options.max(1) as f32
-    } else if view == View::Combo {
+    } else if matches!(view, View::Combo | View::Tabs) {
+        // a select is a field, and the tabs' well a field high
         m.field_h.max(control_box(size, m))
     } else {
         control_box(size, m)
     }
 }
 
-/// **The body a choice draws its parts in**: a select's field box, flush
-/// with its cell ([`controls::field_box`]); any other view's body inside the
-/// control's inset.
+/// **The body a choice draws its parts in**: a select's field box and the
+/// tabs' well, flush with its cell ([`controls::field_box`]); any other
+/// view's body inside the control's inset.
 pub fn body_of(view: View, rect: Rect, has_label: bool, size: f32, m: &Metrics) -> Rect {
-    if view == View::Combo {
+    if matches!(view, View::Combo | View::Tabs) {
         controls::field_box(rect, has_label, size, m)
     } else {
         controls::body_rect_at(rect, has_label, size, m)
@@ -222,9 +223,9 @@ pub fn body_of(view: View, rect: Rect, has_label: bool, size: f32, m: &Metrics) 
 }
 
 /// The air a choice's body stands in, around it, by view: none for a
-/// select, which is its field box.
+/// select, which is its field box, nor for the tabs' well.
 pub fn body_air(view: View, m: &Metrics) -> f32 {
-    if view == View::Combo {
+    if matches!(view, View::Combo | View::Tabs) {
         0.0
     } else {
         crate::host::widget::size::body_inset(m)
@@ -322,31 +323,26 @@ pub fn tab_ground(
     );
 }
 
-/// **A row of tabs**, as a panel's bar draws its own: a line along the row
-/// on its inner edge, each tab ended by an upright line, the chosen one on
-/// the ground with a line along its outer edge (`edge`) and its words in
-/// the text, the others quieter, under the hand on the `hover` fill.
+/// **A choice's tabs**, as the design system's tabs: a well on the `muted`
+/// fill with the large corner, each tab inside it a narrow inset in, the
+/// chosen one standing on the ground with the medium corner and the extra
+/// small shadow, its words in the medium weight. A tab's words are the
+/// text's where it is chosen or under the hand, and else the text's in the
+/// light look and the quiet text's in the dark one, as the reference's.
 #[allow(clippy::too_many_arguments)] // one row: its place, its tabs, its state
-pub fn draw_tabs(
-    mesh: &mut Mesh,
-    m: &Metrics,
-    theme: &Theme,
+fn draw_tab_list(
+    d: &mut Draw,
     body: Rect,
     parts: &[(Part, Rect)],
     options: &[String],
     index: usize,
     hover: Option<Part>,
     size: f32,
-    edge: TabEdge,
 ) {
-    let inner_y = match edge {
-        TabEdge::Top => body.y + body.h - m.divider_w,
-        TabEdge::Bottom => body.y,
-    };
-    mesh.rect(
-        Rect::new(body.x, inner_y, body.w, m.divider_w),
-        theme.separator,
-    );
+    let m = d.m;
+    let p = (3.0 * m.divider_w).round().max(1.0);
+    let quiet = controls::dark(d.theme);
+    d.mesh.round_rect(body, m.radius_lg, d.theme.muted);
     for (part, r) in parts {
         let (text, chosen) = match *part {
             Part::Option(i) => (options[i].clone(), i == index),
@@ -354,14 +350,31 @@ pub fn draw_tabs(
             Part::More(from) => (symbol::MENU.to_string(), index >= from),
             _ => continue,
         };
-        let mark = chosen.then_some(theme.separator);
-        tab_ground(mesh, m, theme, *r, mark, hover == Some(*part), edge);
-        font::text_centered(
-            mesh,
+        let cell = Rect::new(
+            r.x + p * 0.5,
+            r.y + p,
+            (r.w - p).max(1.0),
+            (r.h - 2.0 * p).max(1.0),
+        );
+        if chosen {
+            d.shadow(cell, m.radius_md, Elevation::Xs);
+            d.mesh.round_rect(cell, m.radius_md, d.theme.background);
+        }
+        let ink = if chosen || hover == Some(*part) || !quiet {
+            d.theme.text
+        } else {
+            d.theme.text_dim
+        };
+        let w = font::width_in(Family::UiMedium, &text, size);
+        font::text_ellipsis_in(
+            d.mesh,
+            Family::UiMedium,
             &text,
-            *r,
+            (cell.x + (cell.w - w) * 0.5).max(cell.x),
+            cell.y + (cell.h - font::height(size)) * 0.5,
+            cell.w,
             size,
-            if chosen { theme.text } else { theme.text_dim },
+            ink,
         );
     }
 }
@@ -389,6 +402,16 @@ pub fn body_w(view: View, options: &[String], size: f32, m: &Metrics) -> f32 {
     }
 }
 
+/// **Which edge of a row of tabs is its outer one**: where the chosen tab's
+/// line runs, away from what the tabs show. A row over its pages has it at
+/// the top, as a panel's bar does; a row under them, as the dock's page
+/// strip is, at the bottom -- the same tabs, mirrored.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TabEdge {
+    Top,
+    Bottom,
+}
+
 /// Draws a choice in `view` over `rect`: its label strip, then its parts.
 /// `hover` is the part under the pointer, if any.
 #[allow(clippy::too_many_arguments)] // one control: its data, its place, its state
@@ -402,42 +425,6 @@ pub fn draw(
     size: f32,
     hover: Option<Part>,
 ) {
-    draw_at(
-        d,
-        view,
-        options,
-        index,
-        label,
-        rect,
-        size,
-        hover,
-        TabEdge::Top,
-    );
-}
-
-/// **Which edge of a row of tabs is its outer one**: where the chosen tab's
-/// line runs, away from what the tabs show. A row over its pages has it at
-/// the top, as a panel's bar does; a row under them, as the dock's page
-/// strip is, at the bottom -- the same tabs, mirrored.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TabEdge {
-    Top,
-    Bottom,
-}
-
-/// [`draw`], with its tabs' outer edge ([`TabEdge`]).
-#[allow(clippy::too_many_arguments)] // one control: its data, its place, its state
-pub fn draw_at(
-    d: &mut Draw,
-    view: View,
-    options: &[String],
-    index: usize,
-    label: Option<&str>,
-    rect: Rect,
-    size: f32,
-    hover: Option<Part>,
-    edge: TabEdge,
-) {
     if view == View::Combo {
         let current = options.get(index).map_or("", String::as_str);
         return controls::choice(d, current, label, rect, size);
@@ -445,6 +432,9 @@ pub fn draw_at(
     controls::label_strip(d, label, rect, size);
     let body = body_of(view, rect, label.is_some(), size, d.m);
     let parts = parts(view, options, body, size, d.m);
+    if view == View::Tabs {
+        return draw_tab_list(d, body, &parts, options, index, hover, size);
+    }
     let (mesh, m, theme) = d.parts();
     let glyph = font::height(size);
     let ty = |r: Rect| r.y + (r.h - glyph) * 0.5;
@@ -515,9 +505,7 @@ pub fn draw_at(
             });
             draw_segments(mesh, m, theme, body, &segments, index, lit, size);
         }
-        View::Tabs => draw_tabs(
-            mesh, m, theme, body, &parts, options, index, hover, size, edge,
-        ),
+        View::Tabs => {}
         View::Pager => {
             let last = options.len().saturating_sub(1);
             for (part, r) in &parts {

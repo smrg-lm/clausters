@@ -166,11 +166,14 @@ fn from_props(props: &Map<String, Value>) -> Button {
         icon: props.get("icon").and_then(crate::host::menu::icon_of),
         flat: props.get("flat").and_then(parse::truthy).unwrap_or(false),
         verb: verb_of(props.get("verb")),
+        // **a button naming no variant is a quiet one**, the `secondary`
+        // fill: what a script's row of buttons has always looked like, so
+        // the primary fill is a choice the owner makes for its one action
         variant: props
             .get("variant")
             .and_then(Value::as_str)
             .and_then(controls::Variant::from_str)
-            .unwrap_or_default(),
+            .unwrap_or(controls::Variant::Secondary),
         size: props
             .get("size")
             .and_then(Value::as_str)

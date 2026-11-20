@@ -536,10 +536,11 @@ mod tests {
     #[test]
     fn a_stacked_view_is_a_row_per_option_tall_and_the_others_are_one_line() {
         let m = Metrics::default();
-        let line = choice("tabs").natural(&m, 1.0).1.unwrap();
-        // a select is the design system's, as tall as a field
+        let line = choice("pager").natural(&m, 1.0).1.unwrap();
+        // a select and the tabs' well are the design system's, a field high
         assert_eq!(choice("combo").natural(&m, 1.0).1, Some(m.field_h));
-        assert_eq!(choice("pager").natural(&m, 1.0).1, Some(line));
+        assert_eq!(choice("tabs").natural(&m, 1.0).1, Some(m.field_h));
+        assert_eq!(choice("segmented").natural(&m, 1.0).1, Some(line));
         assert!(choice("radio").natural(&m, 1.0).1.unwrap() > 2.0 * line);
         // The view is a prop, live like any other.
         let mut c = choice("combo");

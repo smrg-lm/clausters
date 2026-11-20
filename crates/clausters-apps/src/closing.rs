@@ -148,7 +148,8 @@ pub fn asking(
             {"type": "button", "id": id(DISCARD), "label": "Don't save", "variant": "destructive"},
             spring,
             {"type": "button", "id": id(CANCEL), "label": "Cancel", "variant": "outline"},
-            {"type": "button", "id": id(SAVE), "label": save, "default": true},
+            {"type": "button", "id": id(SAVE), "label": save, "default": true,
+                "variant": "default"},
         ],
     });
     json!({

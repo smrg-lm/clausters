@@ -71,6 +71,9 @@ layout (all in **logical** pixels, all optional, all live via ``set``):
   default), ``"top"``, ``"bottom"``, ``"left"``, ``"right"``,
   ``"top_left"``, ``"top_right"``, ``"bottom_left"``, ``"bottom_right"``.
 - ``min_w``/``min_h`` -- a floor larger than the widget's own.
+- ``shown`` -- off, the widget takes no room at all: its container leaves it
+  out, with the gap beside it, and it is neither drawn nor hit. On by
+  default; a status line with nothing to say yet starts off.
 
 A ``row``/``col`` resolves its main axis in **one order**: a fixed ``w``/``h``,
 else an explicit ``weight``, else the widget's **natural size** -- how big that
@@ -1523,7 +1526,7 @@ def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> di
 
 
 #: What a `label` may be (its ``variant``).
-LABEL_VARIANTS = ("text", "caption", "help", "badge")
+LABEL_VARIANTS = ("text", "caption", "help", "badge", "path", "code")
 
 #: What a `button` may be for (its ``variant``).
 BUTTON_VARIANTS = ("default", "outline", "secondary", "ghost", "destructive", "link")
@@ -1559,7 +1562,10 @@ def label(text: str = "", *, text_size: float | None = None, wrap: bool | None =
     ``variant`` says what the label is, as the design system's: ``"text"``
     (the default), ``"caption"`` (a field's caption over it, in the medium
     weight and flush with the field), ``"help"`` (the sentence under a field,
-    smaller and quiet) or ``"badge"`` (a small pill on the secondary fill).
+    smaller and quiet), ``"badge"`` (a small pill on the secondary fill),
+    ``"path"`` (a value read and not typed, such as a folder: a field's box
+    on the muted fill, in the code face) or ``"code"`` (a path or a command
+    in a line of a list: the code face, small and quiet).
     """
     if variant is not None and variant not in LABEL_VARIANTS:
         raise ValueError(f"unknown label variant {variant!r}; use one of {LABEL_VARIANTS}")
@@ -1726,8 +1732,9 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
 
     ``variant`` says what the button is for, as the design system's:
     ``"default"`` (the primary fill: what a form is for), ``"outline"``,
-    ``"secondary"``, ``"ghost"`` (no fill until the pointer is over it, as
-    ``flat``), ``"destructive"`` or ``"link"``. ``size`` is its height:
+    ``"secondary"`` (the quiet fill a button naming none has), ``"ghost"``
+    (no fill until the pointer is over it, as ``flat``), ``"destructive"`` or
+    ``"link"``. ``size`` is its height:
     ``"default"``, ``"sm"``, ``"xs"`` or ``"lg"``; an icon alone makes it
     square.
 

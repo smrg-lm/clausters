@@ -1102,13 +1102,16 @@ impl DocsView {
                 } else {
                     "0/0".to_string()
                 };
-                let w = font::width(&text, g.ui);
-                font::text(
+                // the specification's count: 12, in tabular figures, so
+                // stepping through the matches never moves the arrows' text
+                let small = font::em_scale(font::Family::Ui, m.type_xs);
+                let w = font::figures_width(&text, small);
+                font::text_figures(
                     mesh,
                     &text,
                     r.x + (r.w - w) * 0.5,
-                    r.y + (r.h - font::height(g.ui)) * 0.5,
-                    g.ui,
+                    r.y + (r.h - font::height(small)) * 0.5,
+                    small,
                     theme.text_dim,
                 );
             }

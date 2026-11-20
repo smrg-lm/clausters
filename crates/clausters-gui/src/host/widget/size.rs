@@ -339,11 +339,12 @@ impl Widget {
     }
 
     /// The children this container's flow arranges -- every one but its
-    /// dialogs, which stand over the window and take no room in it.
+    /// dialogs, which stand over the window and take no room in it, and
+    /// those not `shown`, which take none at all.
     fn flow_children(&self) -> Vec<&Widget> {
         self.children
             .iter()
-            .filter(|c| !c.kind.is_modal())
+            .filter(|c| !c.kind.is_modal() && c.place.shown)
             .collect()
     }
 

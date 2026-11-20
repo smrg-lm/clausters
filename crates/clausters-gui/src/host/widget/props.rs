@@ -1554,6 +1554,11 @@ pub struct Place {
     /// `weight` or its fixed size -- what makes a query answer them, since they
     /// are then no longer what the def said.
     pub split_moved: bool,
+    /// The `shown` prop: off, the widget **takes no room at all** -- its
+    /// container's flow leaves it out, with the gap beside it, and it is
+    /// neither drawn nor hit -- and back on it is where it was. On by
+    /// default: a status line with nothing to say yet is not a blank row.
+    pub shown: bool,
 }
 
 impl Place {
@@ -1571,6 +1576,10 @@ impl Place {
             max_h: f("max_h"),
             anchor: Anchor::parse(props.get("anchor").and_then(Value::as_str)),
             split_moved: false,
+            shown: props
+                .get("shown")
+                .and_then(super::parse::truthy)
+                .unwrap_or(true),
         }
     }
 
@@ -1588,6 +1597,10 @@ impl Place {
             "max_h" => &mut self.max_h,
             "anchor" => {
                 self.anchor = Anchor::parse(v.as_str());
+                return true;
+            }
+            "shown" => {
+                self.shown = super::parse::truthy(v).unwrap_or(true);
                 return true;
             }
             _ => return false,

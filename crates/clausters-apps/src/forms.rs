@@ -214,7 +214,8 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
     let spring = json!({"type": "separator", "weight": 1, "line": false});
     let cancel =
         json!({"type": "button", "id": id("cancel"), "label": "Cancel", "variant": "outline"});
-    let ok = json!({"type": "button", "id": id("ok"), "label": "OK", "default": true});
+    let ok = json!({"type": "button", "id": id("ok"), "label": "OK", "default": true,
+        "variant": "default"});
     let buttons = json!({
         "type": "layout",
         "flow": "row",

@@ -20,6 +20,7 @@ use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, control_box};
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 use super::switch_value;
 
@@ -96,6 +97,17 @@ impl Element for Toggle {
                 true
             }
             _ => false,
+        }
+    }
+
+    /// A checkbox's ring is round its box, a switch's round its track, as
+    /// the design system's; a toggle button's is the button's.
+    fn focus_area(&self, rect: Rect, m: &Metrics) -> Option<(Rect, f32)> {
+        let b = controls::toggle_box(rect, self.view, m);
+        match self.view {
+            ToggleView::Button => None,
+            ToggleView::Switch => Some((b, b.h * 0.5)),
+            _ => Some((b, m.check_radius)),
         }
     }
 

@@ -21,7 +21,7 @@ use crate::host::graphics::code::find::{Finder, Query};
 use crate::host::graphics::controls::{self, ButtonLook, ToggleView};
 use crate::host::graphics::textedit::{self, Caret, Unit};
 use crate::host::widget::element::{Key, KeyInput};
-use crate::host::widget::size::{control_box, text_box};
+use crate::host::widget::size::text_box;
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::font;
 use clausters_gui_draw::metrics::Metrics;
@@ -302,22 +302,20 @@ impl Bar {
     pub fn layout(&self, area: Rect, scale: f32, m: &Metrics) -> Option<Layout> {
         let mode = self.mode?;
         let size = font::DEFAULT_SIZE * scale;
-        let row = control_box(size, m);
+        // **as the documentation's find bar**: each row `find_h` high, its
+        // fields and its controls `find_field_h` high in its middle
+        let line = m.find_h.max(m.find_field_h);
+        let row = m.find_field_h.min(line);
         let rows = if mode == Mode::Find { 2.0 } else { 1.0 };
-        let h = (rows * row + m.pad).min(area.h);
+        let h = (rows * line).min(area.h);
         let strip = Rect::new(area.x, area.y + area.h - h, area.w, h);
         let mut parts = Vec::new();
         let square = row;
-        let close = Rect::new(
-            strip.x + strip.w - square - m.pad * 0.5,
-            strip.y + m.pad * 0.5,
-            square,
-            row,
-        );
+        let y0 = strip.y + ((line - row) * 0.5).max(0.0);
+        let close = Rect::new(strip.x + strip.w - square - m.pad * 0.5, y0, square, row);
         parts.push((Part::Close, close));
         let char_w = font::width("0", size).max(1.0);
         let button = |label: &str| text_box(label, size, m) + m.pad;
-        let y0 = strip.y + m.pad * 0.5;
         let note = match mode {
             Mode::Find => {
                 let tail = [
@@ -338,7 +336,7 @@ impl Bar {
                     x += w;
                 }
                 let note = Rect::new(x + m.pad, y0, (close.x - x - 2.0 * m.pad).max(0.0), row);
-                let y1 = y0 + row;
+                let y1 = y0 + line;
                 let mut x = strip.x + m.pad * 0.5;
                 parts.push((Part::Field(Field::Replace), Rect::new(x, y1, field_w, row)));
                 x += field_w;
@@ -486,9 +484,9 @@ impl Bar {
                 }
                 Part::Next | Part::Previous | Part::Close => {
                     let symbol = match part {
-                        Part::Next => font::symbol::DOWN,
-                        Part::Previous => font::symbol::UP,
-                        _ => font::symbol::CLOSE,
+                        Part::Next => controls::icon("chevron-down", font::symbol::DOWN),
+                        Part::Previous => controls::icon("chevron-up", font::symbol::UP),
+                        _ => controls::icon("x", font::symbol::CLOSE),
                     };
                     controls::button(d, None, Some(symbol), inset(*rect, d.m), flat, size);
                 }
@@ -509,14 +507,21 @@ impl Bar {
                 Some(Mode::Line) => ("Go to line".to_string(), false),
                 _ => note.unwrap_or_default(),
             };
-            let ty = rect.y + (rect.h - font::height(size)) * 0.5;
-            let x = if self.mode == Some(Mode::Line) {
-                rect.x + m.pad
-            } else {
-                rect.x
-            };
             let color = if warn { theme.warn } else { theme.text_dim };
-            font::text_ellipsis(mesh, &text, x, ty, rect.w, size, color);
+            if self.mode == Some(Mode::Line) {
+                let ty = rect.y + (rect.h - font::height(size)) * 0.5;
+                font::text_ellipsis(mesh, &text, rect.x + m.pad, ty, rect.w, size, color);
+            } else {
+                // the count as the documentation's: the small size, in
+                // tabular figures, so stepping never moves its words
+                let small = font::em_scale(font::Family::Ui, m.type_xs);
+                let ty = rect.y + (rect.h - font::height(small)) * 0.5;
+                if warn || font::figures_width(&text, small) > rect.w {
+                    font::text_ellipsis(mesh, &text, rect.x, ty, rect.w, small, color);
+                } else {
+                    font::text_figures(mesh, &text, rect.x, ty, small, color);
+                }
+            }
         }
     }
 }

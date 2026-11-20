@@ -305,7 +305,8 @@ fn flow_children<'a>(
     let (dialogs, kids): (Vec<&Widget>, Vec<&Widget>) =
         widget.children.iter().partition(|c| c.kind.is_modal());
     modals.extend(dialogs.into_iter().map(|d| (d, me)));
-    kids
+    // a child not `shown` takes no room, and its gap goes with it
+    kids.into_iter().filter(|c| c.place.shown).collect()
 }
 
 /// What one layout pass carries besides its recursion state: the window's size
@@ -1716,6 +1717,43 @@ mod tests {
         // Text is logical as well: the placement scale carries the window's.
         assert_eq!(plain[2].scale, 1.0);
         assert_eq!(hidpi[2].scale, 2.0);
+    }
+
+    /// A child not `shown` is not placed, and the gap beside it goes with
+    /// it: what follows stands where it would with the child not there, and
+    /// a hugging container is as tall as what it shows.
+    #[test]
+    fn a_child_not_shown_takes_no_room_and_no_gap() {
+        let with = |shown: u8| {
+            format!(
+                r#"{{"type":"window","flow":"col","margin":0,"gap":10,"children":[
+                {{"id":11,"type":"layout","h":28}},
+                {{"id":12,"type":"label","text":"status","shown":{shown}}},
+                {{"id":13,"type":"layout","h":28}}]}}"#
+            )
+        };
+        let m = Metrics::default();
+        let hidden = tree(&with(0));
+        let placed = layout(area(), &hidden, &m);
+        assert!(placed.iter().all(|p| p.widget.id != Some(12)));
+        let last = placed.iter().find(|p| p.widget.id == Some(13)).unwrap();
+        assert_eq!(last.rect.y, 28.0 + 10.0);
+        let shown = tree(&with(1));
+        let placed = layout(area(), &shown, &m);
+        let last = placed.iter().find(|p| p.widget.id == Some(13)).unwrap();
+        assert!(last.rect.y > 28.0 + 10.0 + 10.0, "the label and its gap");
+        // and a hugging column measures only what it shows
+        let col = |shown: u8| {
+            format!(
+                r#"{{"type":"window","children":[{{"type":"layout","flow":"col","hug":1,
+                "margin":0,"gap":10,"children":[
+                {{"type":"layout","h":28}},
+                {{"type":"label","text":"status","shown":{shown}}}]}}]}}"#
+            )
+        };
+        let h = |t: &Widget| t.children[0].hug_size(&m, 1.0).1.unwrap();
+        assert_eq!(h(&tree(&col(0))), 28.0);
+        assert!(h(&tree(&col(1))) > 38.0);
     }
 
     #[test]

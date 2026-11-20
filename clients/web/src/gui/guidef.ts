@@ -687,6 +687,12 @@ export interface WidgetOptions {
     max_w?: number;
     max_h?: number;
     /**
+     * Off, the widget takes no room at all: its container leaves it out,
+     * with the gap beside it, and it is neither drawn nor hit. On by
+     * default; a status line with nothing to say yet starts off.
+     */
+    shown?: boolean;
+    /**
      * Where the widget stands in a cell larger than it is: `"center"` (the
      * default), `"top"`, `"bottom"`, `"left"`, `"right"`, `"top_left"`,
      * `"top_right"`, `"bottom_left"` or `"bottom_right"`.
@@ -1951,7 +1957,10 @@ export function scroll(
  * `variant` says what the label is, as the design system's: `"text"` (the
  * default), `"caption"` (a field's caption over it, in the medium weight and
  * flush with the field), `"help"` (the sentence under a field, smaller and
- * quiet) or `"badge"` (a small pill on the secondary fill).
+ * quiet), `"badge"` (a small pill on the secondary fill), `"path"` (a
+ * value read and not typed, such as a folder: a field's box on the muted
+ * fill, in the code face) or `"code"` (a path or a command in a line of a
+ * list: the code face, small and quiet).
  */
 export function label(
     text = "",
@@ -1967,7 +1976,7 @@ export function label(
         dot?: string;
         /** The text in the dimmed role, as a status line's is. */
         muted?: boolean;
-        variant?: "text" | "caption" | "help" | "badge";
+        variant?: "text" | "caption" | "help" | "badge" | "path" | "code";
     } = {},
 ): View {
     const { textSize, wrap, align, live, dot, muted, variant, ...rest } = options;
@@ -2274,9 +2283,9 @@ export interface ButtonOptions extends WidgetOptions {
     default?: boolean;
     /**
      * What the button is for, as the design system's: `"default"` (the
-     * primary fill: what a form is for), `"outline"`, `"secondary"`,
-     * `"ghost"` (no fill until the pointer is over it, as `flat`),
-     * `"destructive"` or `"link"`.
+     * primary fill: what a form is for), `"outline"`, `"secondary"` (the
+     * quiet fill a button naming none has), `"ghost"` (no fill until the
+     * pointer is over it, as `flat`), `"destructive"` or `"link"`.
      */
     variant?: "default" | "outline" | "secondary" | "ghost" | "destructive" | "link";
     /** Its height: `"default"`, `"sm"`, `"xs"` or `"lg"`; an icon alone makes it square. */

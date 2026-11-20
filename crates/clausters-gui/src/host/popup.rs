@@ -974,6 +974,9 @@ pub struct Popups {
     /// The widget the pointer is over, when it is one a hand can act on -- what
     /// a control draws its hover from.
     pub hover: Option<i32>,
+    /// The dialog whose close button the pointer is over, which draws it
+    /// lit.
+    pub close_hover: Option<i32>,
 }
 
 /// **The rectangle a stack hangs off, as it stands now**: its owner's
@@ -1516,6 +1519,17 @@ impl super::Host {
             return false;
         }
         popups.hover = widget;
+        true
+    }
+
+    /// The dialog of window `def_id` whose close button the pointer is
+    /// over, written by pointer motion. Answers whether it changed.
+    pub(crate) fn set_close_hover(&mut self, def_id: i32, dialog: Option<i32>) -> bool {
+        let popups = self.popups.entry(def_id).or_default();
+        if popups.close_hover == dialog {
+            return false;
+        }
+        popups.close_hover = dialog;
         true
     }
 

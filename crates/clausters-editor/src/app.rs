@@ -2053,7 +2053,7 @@ impl App {
                 ]),
                 field(&[
                     caption("Documentation folder (.md files)"),
-                    json!({"id": PREFS_DOCS_DIR, "type": "label", "text": docs_dir_text(&config)}),
+                    json!({"id": PREFS_DOCS_DIR, "type": "label", "variant": "path", "text": docs_dir_text(&config)}),
                     buttons(&[
                         json!({"id": PREFS_DOCS_CHOOSE, "type": "button", "label": "Choose folder...",
                             "variant": "outline"}),
@@ -2114,12 +2114,15 @@ impl App {
                         buttons(&[
                             json!({"id": ENVS_NAME, "type": "text", "weight": 1,
                                 "value": self.fields.get(&ENVS_NAME).cloned().unwrap_or_default()}),
-                            json!({"id": ENVS_CREATE, "type": "button", "label": "Create"}),
+                            json!({"id": ENVS_CREATE, "type": "button", "label": "Create",
+                                "variant": "default"}),
                         ]),
                         help("A short name: letters, digits, \".\", \"_\" or \"-\"."),
                     ]),
                 ]},
-                {"id": ENVS_STATUS, "type": "label", "text": "", "wrap": 1, "muted": 1},
+                // **nothing to say is no row**: shown once it says something
+                {"id": ENVS_STATUS, "type": "label", "text": "", "wrap": 1, "muted": 1,
+                    "shown": 0},
                 footer(json!({"id": ENVS_CLOSE, "type": "button", "label": "Close", "default": 1,
                     "variant": "outline"})),
             ]
@@ -2132,44 +2135,71 @@ impl App {
     fn envs_list(&self) -> Value {
         let envs = envs::list_envs();
         let system_active = !envs.iter().any(|e| e.active);
-        let row = |i: i32, text: String, active: bool, tools: bool| {
-            let base = ENVS_ROWS + i * 10;
-            let mut children =
-                vec![json!({"id": base + 1, "type": "label", "text": text, "weight": 1})];
-            if active {
-                children.push(
+        // **a row is two lines**, as the reference's: the name in the medium
+        // weight with its Python beside it, quiet, and under them where it
+        // was installed from, in the code face
+        let row =
+            |i: i32, name: String, version: String, source: String, active: bool, tools: bool| {
+                let base = ENVS_ROWS + i * 10;
+                let mut head = vec![json!({"id": base + 6, "type": "label", "text": name,
+                "variant": "caption"})];
+                if !version.is_empty() {
+                    head.push(json!({"id": base + 7, "type": "label", "text": version,
+                    "muted": 1}));
+                }
+                let text = json!({"id": base + 1, "type": "layout", "flow": "col", "weight": 1,
+                "margin": 0, "gap": 2, "hug": 1, "children": [
+                    {"type": "layout", "flow": "row", "pack": 1, "margin": 0, "gap": 8,
+                        "hug": 1, "children": head},
+                    {"id": base + 8, "type": "label", "text": source, "variant": "code"},
+                ]});
+                let mut children = vec![text];
+                if active {
+                    children.push(
                     json!({"id": base + 2, "type": "label", "text": "in use", "variant": "badge"}),
                 );
-            } else {
-                children.push(json!({"id": base + 3, "type": "button", "label": "Use",
+                } else {
+                    children.push(json!({"id": base + 3, "type": "button", "label": "Use",
                     "variant": "ghost", "size": "sm"}));
-            }
-            if tools {
-                children.push(
-                    json!({"id": base + 4, "type": "button", "icon": "refresh-cw",
+                }
+                if tools {
+                    children.push(
+                        json!({"id": base + 4, "type": "button", "icon": "refresh-cw",
                     "variant": "ghost", "size": "sm", "tip": "Reinstall from its install source"}),
-                );
-                children.push(json!({"id": base + 5, "type": "button", "icon": "trash",
+                    );
+                    children.push(json!({"id": base + 5, "type": "button", "icon": "trash",
                     "variant": "ghost", "size": "sm", "tip": "Delete the environment"}));
-            }
-            json!({"id": base, "type": "layout", "flow": "row", "pack": 1, "gap": 8,
+                }
+                json!({"id": base, "type": "layout", "flow": "row", "pack": 1, "gap": 8,
                 "children": children})
-        };
+            };
         let mut rows = vec![row(
             0,
-            format!("System Python ({})", crate::session::default_python()),
+            "System Python".into(),
+            String::new(),
+            crate::session::default_python(),
             system_active,
             false,
         )];
         for (i, e) in envs.iter().enumerate() {
-            let mut text = e.name.clone();
-            if !e.version.is_empty() {
-                text.push_str(&format!("  Python {}", e.version));
-            }
-            if !e.source.is_empty() {
-                text.push_str(&format!("  ({})", e.source));
-            }
-            rows.push(row(i as i32 + 1, text, e.active, true));
+            let version = if e.version.is_empty() {
+                String::new()
+            } else {
+                format!("Python {}", e.version)
+            };
+            let source = if e.source.is_empty() {
+                "only jedi, for the completions".to_string()
+            } else {
+                e.source.clone()
+            };
+            rows.push(row(
+                i as i32 + 1,
+                e.name.clone(),
+                version,
+                source,
+                e.active,
+                true,
+            ));
         }
         // a divided list in a frame, as the reference's
         json!({"id": ENVS_LIST, "type": "layout", "flow": "col", "frame": 1, "divide": 1,
@@ -2186,7 +2216,10 @@ impl App {
 
     /// What the environments' dialog says it is doing.
     fn envs_say(&self, text: &str) {
-        self.link.set(ENVS_STATUS, &[("text", json!(text))]);
+        self.link.set(
+            ENVS_STATUS,
+            &[("text", json!(text)), ("shown", json!(!text.is_empty()))],
+        );
     }
 
     fn envs_row(&mut self, id: i32) {

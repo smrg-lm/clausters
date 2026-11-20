@@ -155,7 +155,11 @@ pub(super) fn collect_widgets(
         // accent), resolved at mutation points -- one reference per widget.
         let th = p.widget.theme.as_deref().unwrap_or(theme);
         match &p.widget.kind {
-            WidgetKind::Panel { group, .. } => draw_group(mesh, p, group, in_card, m, th),
+            WidgetKind::Panel { group, .. } => {
+                let lit = p.widget.id.is_some()
+                    && p.widget.id == inputs.popups.and_then(|o| o.close_hover);
+                draw_group(mesh, p, group, in_card, lit, m, th)
+            }
             WidgetKind::Scroll { .. } | WidgetKind::Stack { .. } => mesh.rect(p.rect, th.panel),
             WidgetKind::TimeRuler { editor, .. } | WidgetKind::Pane { editor, .. } => {
                 let body = match &p.widget.kind {
@@ -359,14 +363,7 @@ pub(super) fn collect_widgets(
         // grown by the band.
         if p.widget.id.is_some() && p.widget.id == inputs.ring {
             mesh.set_clip(p.clip);
-            let w = m.focus_ring;
-            let around = Rect::new(
-                p.rect.x - w,
-                p.rect.y - w,
-                p.rect.w + 2.0 * w,
-                p.rect.h + 2.0 * w,
-            );
-            mesh.round_border(around, w, m.radius_md + w, with_alpha(th.focus, 0.5));
+            focus_ring(mesh, p.widget, p.rect, m, th);
         }
     }
 
@@ -375,6 +372,22 @@ pub(super) fn collect_widgets(
         ruler_items,
         canvas_frames,
     }
+}
+
+/// **The focus ring** around `widget` placed at `rect`: a band of the ring's
+/// role at half strength, outside what the element says the keys point at
+/// ([`Element::focus_area`](crate::host::widget::element::Element::focus_area)),
+/// its corner that box's grown by the band. One drawing, for the picture
+/// and for a live layer drawn over it.
+pub(crate) fn focus_ring(mesh: &mut Mesh, widget: &Widget, rect: Rect, m: &Metrics, th: &Theme) {
+    let (area, radius) = match &widget.kind {
+        WidgetKind::Custom(el) => el.focus_area(rect, m),
+        _ => None,
+    }
+    .unwrap_or((rect, m.radius_md));
+    let w = m.focus_ring;
+    let around = Rect::new(area.x - w, area.y - w, area.w + 2.0 * w, area.h + 2.0 * w);
+    mesh.round_border(around, w, radius + w, with_alpha(th.focus, 0.5));
 }
 
 /// Draws a `layout`'s own picture: its ground, and what it shows of itself --
@@ -388,11 +401,12 @@ fn draw_group(
     p: &layout::Placed<'_>,
     group: &crate::host::widget::Group,
     in_card: bool,
+    close_lit: bool,
     m: &Metrics,
     th: &Theme,
 ) {
     if group.modal {
-        return draw_card(mesh, p, group, m, th);
+        return draw_card(mesh, p, group, close_lit, m, th);
     }
     if in_card {
         if group.frame {
@@ -445,11 +459,13 @@ fn draw_group(
 /// window by the large shadow, on the popover's ground with the extra large
 /// corner and a faint ring; at its top, inside its inset, the title in the
 /// medium weight and the description under it in the quiet text, and the
-/// close button's cross at the corner, a little quieter than the text.
+/// close button's cross at the corner, a little quieter than the text and
+/// whole under the hand (`close_lit`).
 fn draw_card(
     mesh: &mut Mesh,
     p: &layout::Placed<'_>,
     group: &crate::host::widget::Group,
+    close_lit: bool,
     m: &Metrics,
     th: &Theme,
 ) {
@@ -492,6 +508,12 @@ fn draw_card(
     if let Some(c) = head.close {
         let cross = crate::host::graphics::controls::icon("x", font::symbol::CLOSE).to_string();
         let scale = font::em_scale(font::Family::Ui, m.type_sm);
-        font::text_centered(mesh, &cross, c, scale, with_alpha(th.text, 0.7));
+        // the reference's: seven tenths at rest, whole under the hand
+        let ink = if close_lit {
+            th.text
+        } else {
+            with_alpha(th.text, 0.7)
+        };
+        font::text_centered(mesh, &cross, c, scale, ink);
     }
 }

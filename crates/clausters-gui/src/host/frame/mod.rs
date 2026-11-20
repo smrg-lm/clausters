@@ -685,7 +685,7 @@ fn draw_live_places(
         if ctx.focused && widget.id == inputs.ring {
             mesh.set_clip(place.clip);
             mesh.set_ink(Ink::default());
-            mesh.border(place.rect, m.focus_ring, th.focus);
+            items::focus_ring(mesh, widget, place.rect, m, th);
         }
     }
     mesh.set_clip(None);

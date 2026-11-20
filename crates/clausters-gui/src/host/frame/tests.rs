@@ -812,11 +812,9 @@ fn the_focus_ring_is_drawn_over_the_live_layer() {
             .live
             .vertex_count()
     };
-    assert_eq!(
-        live(Some(5)),
-        live(None) + 4 * 6,
-        "the four strips of the ring, last"
-    );
+    // the ring is the picture's own drawing, a rounded band, drawn again
+    // as the live layer's last
+    assert!(live(Some(5)) > live(None), "the ring, last");
 }
 
 /// **What a whole frame of the score editor costs**, the heaviest window

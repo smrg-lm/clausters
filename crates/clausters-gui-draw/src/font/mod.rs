@@ -717,6 +717,47 @@ pub fn em_scale(family: Family, px: f32) -> f32 {
     px * 0.75 / GLYPH_H as f32
 }
 
+/// The cell a figure takes when figures are set **tabular**: the widest of
+/// the ten digits, so a count that changes never moves what stands after it.
+pub fn figure_cell(scale: f32) -> f32 {
+    ('0'..='9')
+        .map(|d| width(d.encode_utf8(&mut [0; 4]), scale))
+        .fold(0.0, f32::max)
+}
+
+/// The width of `s` set in tabular figures ([`text_figures`]).
+pub fn figures_width(s: &str, scale: f32) -> f32 {
+    let cell = figure_cell(scale);
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_digit() {
+                cell
+            } else {
+                width(c.encode_utf8(&mut [0; 4]), scale)
+            }
+        })
+        .sum()
+}
+
+/// **`s` in tabular figures**: each digit centered in a cell of the widest
+/// digit's, everything else at its own advance -- what a face's `tnum`
+/// feature gives, for a count or a time that changes in place.
+pub fn text_figures(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) {
+    let cell = figure_cell(scale);
+    let mut pen = x;
+    for c in s.chars() {
+        let one = c.encode_utf8(&mut [0; 4]).to_string();
+        let w = width(&one, scale);
+        if c.is_ascii_digit() {
+            text(mesh, &one, pen + (cell - w) * 0.5, y, scale, color);
+            pen += cell;
+        } else {
+            text(mesh, &one, pen, y, scale, color);
+            pen += w;
+        }
+    }
+}
+
 /// The width of the first `cols` characters of `s` -- where a caret sits, and
 /// where a selection band starts and ends.
 pub fn prefix_width(s: &str, cols: usize, scale: f32) -> f32 {

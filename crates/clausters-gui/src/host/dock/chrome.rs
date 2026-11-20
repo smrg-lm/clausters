@@ -39,6 +39,7 @@ impl Dock {
             d.mesh.rect(divider.rect, d.theme.focus);
         }
         if let Some((landing, place)) = self.landing() {
+            self.draw_drop_places(d);
             self.draw_drop_zone(d, landing, place);
         }
         if let Some(menu) = self.menu() {
@@ -87,6 +88,20 @@ impl Dock {
             scale,
             theme.text,
         );
+    }
+
+    /// **Every place a dragged panel may land**, faintly, while it is
+    /// dragged: each panel's body under a dashed edge of the ring's role at
+    /// two fifths, so the hand sees where it can go before it is there; the
+    /// zone under it is drawn over them ([`draw_drop_zone`](Self::draw_drop_zone)).
+    fn draw_drop_places(&self, d: &mut Draw) {
+        let (mesh, m, theme) = d.parts();
+        let w = 2.0 * m.divider_w;
+        let [r, g, b, _] = theme.focus;
+        for group in &self.groups {
+            let zone = inset(group.body.rect(), m.zone_inset);
+            mesh.dashed_round_border(zone, w, m.radius_md, 3.0 * w, [r, g, b, 0.4]);
+        }
     }
 
     /// What a drop zone is called: the side a panel would stand on, the

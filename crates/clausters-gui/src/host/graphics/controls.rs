@@ -144,17 +144,27 @@ pub fn drag_fraction_delta(dy: f64, body_h: f32) -> f32 {
 /// Draws the label strip above a control body, if it has a label (clipped to
 /// the cell with an ellipsis).
 pub(crate) fn label_strip(d: &mut Draw, label: Option<&str>, rect: Rect, size: f32) {
+    let pad = d.m.pad;
+    label_strip_at(d, label, rect, size, pad);
+}
+
+/// **A control's label strip**, as the design system's label: the medium
+/// weight, its start `inset` in from the cell's -- where the control's body
+/// starts, so the caption stands flush with what it names (a field's box
+/// is flush with its cell, a slider's track a pad in).
+pub(crate) fn label_strip_at(d: &mut Draw, label: Option<&str>, rect: Rect, size: f32, inset: f32) {
     let (mesh, m, theme) = d.parts();
     if label_height(rect.h, label.is_some(), size, m) <= 0.0 {
         return; // no room for both: the body keeps the cell
     }
     if let Some(text) = label {
-        font::text_ellipsis(
+        font::text_ellipsis_in(
             mesh,
+            Family::UiMedium,
             text,
-            rect.x + m.pad,
+            rect.x + inset,
             rect.y + m.pad,
-            (rect.w - 2.0 * m.pad).max(0.0),
+            (rect.w - inset - m.pad).max(0.0),
             size,
             theme.text,
         );
@@ -380,8 +390,12 @@ pub struct LabelLook {
 
 /// **What a label is**, the design system's: plain text, a field's caption
 /// (the medium weight, set solid, flush with its field), the help under a
-/// field (the small size, quiet), or a badge (a pill on the `secondary`
-/// fill, in the small size and the medium weight).
+/// field (the small size, quiet), a badge (a pill on the `secondary`
+/// fill, in the small size and the medium weight), a path (a value a
+/// person reads and does not type: a field's box with the `border` edge on
+/// `muted` at two fifths, the code face at the type scale's size), or code
+/// (a path or a command in a line of a list: the code face, small and
+/// quiet, as a help is).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LabelVariant {
     #[default]
@@ -389,6 +403,8 @@ pub enum LabelVariant {
     Caption,
     Help,
     Badge,
+    Path,
+    Code,
 }
 
 impl LabelVariant {
@@ -398,6 +414,8 @@ impl LabelVariant {
             "caption" => LabelVariant::Caption,
             "help" => LabelVariant::Help,
             "badge" => LabelVariant::Badge,
+            "path" => LabelVariant::Path,
+            "code" => LabelVariant::Code,
             _ => return None,
         })
     }
@@ -406,6 +424,7 @@ impl LabelVariant {
     pub fn family(self) -> Family {
         match self {
             LabelVariant::Caption | LabelVariant::Badge => Family::UiMedium,
+            LabelVariant::Path | LabelVariant::Code => Family::Mono,
             _ => Family::Ui,
         }
     }
@@ -418,6 +437,8 @@ impl LabelVariant {
             LabelVariant::Caption => Some(font::em_scale(Family::UiMedium, m.type_sm)),
             LabelVariant::Help => Some(font::em_scale(Family::Ui, m.type_xs)),
             LabelVariant::Badge => Some(font::em_scale(Family::UiMedium, m.type_xs)),
+            LabelVariant::Path => Some(font::em_scale(Family::Mono, m.type_sm)),
+            LabelVariant::Code => Some(font::em_scale(Family::Mono, m.type_xs)),
         }
     }
 
@@ -428,6 +449,8 @@ impl LabelVariant {
             LabelVariant::Caption => Some(m.type_sm),
             LabelVariant::Help => Some(m.line_xs),
             LabelVariant::Badge => Some(m.badge_h),
+            LabelVariant::Path => Some(m.field_h),
+            LabelVariant::Code => Some(m.line_xs),
         }
     }
 
@@ -435,8 +458,9 @@ impl LabelVariant {
     /// for a caption or a help, which line up with their field.
     pub fn inset(self, m: &Metrics) -> f32 {
         match self {
-            LabelVariant::Caption | LabelVariant::Help => 0.0,
+            LabelVariant::Caption | LabelVariant::Help | LabelVariant::Code => 0.0,
             LabelVariant::Badge => m.badge_x,
+            LabelVariant::Path => m.field_x,
             LabelVariant::Text => m.pad,
         }
     }
@@ -475,6 +499,13 @@ pub fn draw_label_as(
         );
         return;
     }
+    if look.variant == LabelVariant::Path {
+        // the box across its cell, one field high, in the middle of it
+        let h = m.field_h.min(rect.h);
+        let body = Rect::new(rect.x, rect.y + (rect.h - h) * 0.5, rect.w, h);
+        mesh.round_rect(body, m.radius_md, with_alpha(theme.muted, 0.4));
+        mesh.round_border(body, m.divider_w, m.radius_md, theme.separator);
+    }
     let inset = look.variant.inset(m);
     let mut left = rect.x + inset;
     let mut avail = (rect.w - 2.0 * inset).max(0.0);
@@ -486,7 +517,7 @@ pub fn draw_label_as(
         left += taken;
         avail = (avail - taken).max(0.0);
     }
-    let ink = if look.muted || look.variant == LabelVariant::Help {
+    let ink = if look.muted || matches!(look.variant, LabelVariant::Help | LabelVariant::Code) {
         theme.text_dim
     } else {
         theme.text
@@ -1220,7 +1251,7 @@ pub fn field_with(
     look: FieldLook,
 ) {
     let (end, invalid) = (look.end, look.invalid);
-    label_strip(d, label, rect, size);
+    label_strip_at(d, label, rect, size, 0.0);
     let m = d.m;
     let body = field_box(rect, label.is_some(), size, m);
     let radius = m.radius_md;

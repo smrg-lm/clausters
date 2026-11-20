@@ -2285,6 +2285,14 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **Where its focus ring goes**, in `rect` (its placement): the box
+    /// and its corner the ring rounds, grown by the band. `None` (the
+    /// default) is the whole placement with the medium corner; a checkbox
+    /// or a switch answers its box, which is what the keys point at.
+    fn focus_area(&self, _rect: Rect, _m: &Metrics) -> Option<(Rect, f32)> {
+        None
+    }
+
     /// **The files this element wants read**, each asked once: the element
     /// clears an ask as it makes it. Empty (the default) for one that reads
     /// none. The front reads each -- off the disk natively, from the page's
