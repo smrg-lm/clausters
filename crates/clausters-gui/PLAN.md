@@ -2247,8 +2247,7 @@ something reusable if the track stops there.
   `docs.rs` finds beside the binary or in the old tree) move into
   `crates/clausters-editor`; the application's icons (`app-icon.svg`, the
   sized PNGs) and its name and identifier (today read from `tauri.conf.json` by
-  `install.sh` and by `scripts/install-venv.sh`'s reset of the local state,
-  which then reads `paths::IDENTIFIER`); the binary takes the name `clausters-editor`, so the
+  `install.sh` and by `scripts/install-venv.sh`'s reset of the local state); the binary takes the name `clausters-editor`, so the
   menu entry, the wheel's `clausters-editor` command and
   `CLAUSTERS_EDITOR_BIN` keep working; the wheel's launcher stops checking
   for WebKitGTK; `install.sh` builds the crate (`cargo build -p
@@ -2261,6 +2260,19 @@ something reusable if the track stops there.
   webview application carries the tag `webview-editor-removed`**, so its
   parent is the last commit with the old editor, for a comparison from a
   checkout of its own.
+  *The editor's folders take its name (decided 2026-11-20, at the user's
+  request).* The reverse-domain identifier (`io.github.smrg-lm.clausters.editor`)
+  was a requirement of the webview's framework; with it gone the folders
+  are the platform's ordinary ones under the program's name,
+  `clausters-editor` (`$XDG_CONFIG_HOME`, `$XDG_DATA_HOME` and
+  `$XDG_CACHE_HOME` on Linux, the `dirs` crate's equivalents elsewhere),
+  changed in `paths.rs` in the removal commit and not before, since until
+  then the two applications share one configuration and one set of
+  environments on purpose. The first start after it moves the old folders'
+  contents to the new ones when the new ones do not exist yet (the
+  configuration, the preferences and the environments; a virtual
+  environment is rebuilt rather than moved where its scripts name its old
+  path), and `scripts/install-venv.sh`'s reset names the new folders.
 - ✅ **WS15 — Applications as the editor's pages** *(added 2026-11-18 at
   the user's request, taken before ST12)*. WS4 built a page as an
   arrangement of panels per kind of work; what pages were asked for is one
