@@ -1,10 +1,16 @@
 # The editor in a page
 
 The editor also runs as a page in a browser tab, for **JavaScript**: the same
-editor, post window and documentation, with a JavaScript session where the
-desktop application has its Python one. Its session plays on the
+editor, post window and documentation, drawn by the same GUI host across the
+whole tab, with a JavaScript session where the desktop application has its
+Python one. Its session plays on the
 [clausters](https://clausters-web.readthedocs.io/) engine the page runs, and
-draws on its GUI host.
+draws on the same host.
+
+What the page has not, the menus do not offer: environments (its session is
+the page's worker), a documentation folder of your own, the system's fonts,
+and Quit (the browser closes the tab, and asks first when a file has changes
+that are not saved).
 
 ## The session
 
@@ -63,13 +69,11 @@ r.play();
 The engine's audio starts at the page's first key or click, as a browser
 requires.
 
-A window the session opens is drawn in the *windows* panel, which shows once
-the session opens its first one and goes with the session. Every window is a
-pane of it, with a tab: drag a tab onto another pane to put the two in one
-group or side by side, drag the line between two panes to resize them, or drag
-a tab out of the panel to give the window a canvas of its own. An application
-the session opens (`edit()` of a pattern opens the notes editor) is a pane like
-any other window.
+A window the session opens is a pane of the editor's window, as on the
+desktop, with a tab: drag a tab onto another pane to put the two in one group
+or side by side, or drag the line between two panes to resize them. An
+application the session opens (`edit()` of a pattern opens the notes editor)
+is a pane like any other window. The session's windows go with the session.
 
 ## Interrupting
 
@@ -85,9 +89,12 @@ The post window says which of the two happened.
 ## Files
 
 A page's files are its own storage, which the browser keeps for the page: File
-→ Open and File → Save show it. In the same dialog, **Upload** copies files from
-the disk into the folder shown, the download button beside a file hands it back
-to the disk, and folders are made and deleted there.
+→ Open and File → Save show it, in the editor's own dialog. In the same
+dialog, **Upload** copies files from the disk into the folder shown,
+**Download** hands the file selected back to the disk, **New folder** makes the
+folder whose name is typed, **Rename** gives the file selected the name typed,
+and **Delete** deletes the file selected, or the folder shown when none is
+(it asks first).
 
 ## Completions and help
 
@@ -98,17 +105,20 @@ storage it does not read.
 
 ## Serving the page
 
-From the editor's folder, with the clausters web package built beside it
-(`./build.sh` in `clients/web`):
+From the page's folder in the repository (`crates/clausters-editor/page`),
+with the clausters web package built beside it (`./build.sh` in
+`clients/web`):
 
 ```
-npm run build:web
-npm run serve:web
+npm ci
+./build.sh
+npm run serve
 ```
 
 and open the address it prints. The page loads the clausters package from
-`clausters/` beside it; `serve:web` serves it there from `CLAUSTERS_WEB` (the
-repository's `clients/web` by default), and a page built with `VITE_CLAUSTERS`
-loads it from that address instead.
+`clausters/` beside it; `npm run serve` serves it there from `CLAUSTERS_WEB`
+(the repository's `clients/web` by default), and a page built with
+`VITE_CLAUSTERS` loads it from that address instead. `npm test` drives the
+page in headless Chrome (`npm test -- firefox` in Firefox).
 
 [Back to the start](index.md#shortcuts)

@@ -1,10 +1,8 @@
 //! **The preferences and what the editor remembers between runs**: the
 //! theme, the size of the text, the indentation, the post window's scroll,
 //! how a block is evaluated, the recent files, the files left open, the
-//! dock's arrangement, the window's size and place, and the code's font -- `settings.json` in the
-//! configuration folder.
-
-use std::path::PathBuf;
+//! dock's arrangement, the window's size and place, and the code's font --
+//! `settings.json`, kept by [`store`](crate::store).
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -77,14 +75,11 @@ impl Default for Settings {
     }
 }
 
-fn path() -> PathBuf {
-    crate::paths::config_dir().join("settings.json")
-}
+const NAME: &str = "settings.json";
 
 impl Settings {
     pub fn load() -> Self {
-        let mut s: Settings = std::fs::read_to_string(path())
-            .ok()
+        let mut s: Settings = crate::store::read(NAME)
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default();
         s.size = s.size.clamp(MIN_SIZE, MAX_SIZE);
@@ -97,12 +92,10 @@ impl Settings {
     }
 
     pub fn save(&self) {
-        let path = path();
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(path, json);
+        if let Ok(json) = serde_json::to_string_pretty(self)
+            && let Err(e) = crate::store::write(NAME, &json)
+        {
+            tracing::warn!("the preferences are not kept: {e}");
         }
     }
 

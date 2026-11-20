@@ -1,0 +1,20 @@
+{
+  "name": "clausters-editor-page",
+  "private": true,
+  "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "build": "./build.sh",
+    "check": "tsc --noEmit",
+    "serve": "node scripts/serve.mjs",
+    "test": "node tests/page.e2e.mjs"
+  },
+  "dependencies": {
+    "acorn": "^8.19.0",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "vite": "^8.3.0"
+  }
+}

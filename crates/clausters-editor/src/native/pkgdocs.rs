@@ -37,7 +37,7 @@ static CACHE: Mutex<Option<(String, Vec<Book>)>> = Mutex::new(None);
 
 /// The books of the session's environment, by package name, sorted.
 pub fn books() -> Vec<Book> {
-    let (exe, _) = crate::session::python_exe();
+    let (exe, _) = super::session::python_exe();
     let mut cache = CACHE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

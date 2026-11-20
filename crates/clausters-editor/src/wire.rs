@@ -1,31 +1,39 @@
 //! **What the application says to the host, and reads back**: the protocol a
-//! script speaks (`docs/gui-protocol.md`), over the link the host gives an
-//! application in its process. Nothing here is the editor's: a def, a set, a
-//! free, a call to the dock, and the events and replies taken apart.
+//! script speaks (`docs/gui-protocol.md`), over whatever carries it -- the
+//! link the host gives an application in its process on the desktop, the
+//! port a page's host gives a client in a page. Nothing here is the
+//! editor's: a def, a set, a free, a call to the dock, and the events and
+//! replies taken apart.
 
 use std::cell::Cell;
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType};
-use clausters_gui::host::gui::LocalLink;
 use serde_json::Value;
+
+/// What carries a message to the host: `false` once the host has gone.
+pub type Carrier = Box<dyn Fn(OscMessage) -> bool>;
 
 /// The application's end of the link, with the stamps of its dock calls.
 pub struct Link {
-    local: LocalLink,
+    carry: Carrier,
+    end: Box<dyn Fn()>,
     seq: Cell<i32>,
 }
 
 impl Link {
-    pub fn new(local: LocalLink) -> Self {
+    /// The link over `carry`; `end` ends the host's loop, where the
+    /// application may end it.
+    pub fn new(carry: Carrier, end: Box<dyn Fn()>) -> Self {
         Self {
-            local,
+            carry,
+            end,
             seq: Cell::new(0),
         }
     }
 
     /// One message to the host; `false` once the host has gone.
     pub fn send(&self, addr: &str, args: Vec<OscType>) -> bool {
-        self.local.send(OscMessage {
+        (self.carry)(OscMessage {
             addr: addr.into(),
             args,
         })
@@ -52,7 +60,7 @@ impl Link {
 
     /// Ends the host's loop: the program ends once the windows are down.
     pub fn quit(&self) {
-        self.local.quit();
+        (self.end)();
     }
 
     /// `/gui_free id`: a window freed is closed.
@@ -212,6 +220,15 @@ impl Said {
     }
 }
 
+/// **A field's text, when the event is its value**: a string with nothing
+/// after it, which [`Said::read`] took for the tag. Only the widget's kind
+/// tells the two apart -- a button's `"click"` is alone too -- so this is
+/// asked only of a widget whose value is text. `None` for an event with a
+/// payload (`"focus" 1`).
+pub fn typed(tag: &str, args: &[OscType]) -> Option<String> {
+    args.is_empty().then(|| tag.to_string())
+}
+
 /// An event's argument as a string.
 pub fn text(args: &[OscType], i: usize) -> String {
     match args.get(i) {
@@ -274,6 +291,26 @@ mod tests {
         };
         assert!(tag.is_empty());
         assert_eq!(int(args, 0), 2);
+    }
+
+    /// A field's text is the string alone, which the event's reading took
+    /// for its tag; an interface event with a payload is not a value.
+    #[test]
+    fn a_text_alone_is_a_value() {
+        let m = OscMessage {
+            addr: "/gui_event".into(),
+            args: vec![
+                OscType::Int(7),
+                OscType::Int(1),
+                OscType::Int(0),
+                OscType::String("venv-1".into()),
+            ],
+        };
+        let [Said::Event { tag, args, .. }] = &Said::read(OscPacket::Message(m))[..] else {
+            panic!("not an event");
+        };
+        assert_eq!(typed(tag, args).as_deref(), Some("venv-1"));
+        assert_eq!(typed("focus", &[OscType::Int(1)]), None);
     }
 
     /// A list or an object rides as its JSON; a whole number as an int.

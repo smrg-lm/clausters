@@ -1,26 +1,12 @@
 //! **The code editor, drawn by the GUI host**: one program holding the host,
-//! its dock and the editor's application, which is a client of the host in
-//! its process.
+//! its dock and the editor's application (`clausters_editor::app`), which is
+//! a client of the host in its process.
 //!
 //! The host draws every panel -- the code, the post window, the
 //! documentation, the preferences -- as a pane of one dock, and the
 //! application (`app`) decides what they show and what a verb does, through
 //! the protocol any script speaks. The Python session is a process of its
 //! own, as in the webview application, and so are the environments.
-
-mod app;
-mod arrangement;
-mod config;
-mod desktop;
-mod docs;
-mod envs;
-mod fonts;
-mod paths;
-mod pkgdocs;
-mod session;
-mod settings;
-mod theme;
-mod wire;
 
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::{Path, PathBuf};
@@ -31,9 +17,11 @@ use clap::Parser;
 use clausters_gui::host::Host;
 use clausters_gui::host::gui::LocalReplies;
 
-use crate::app::{App, Msg};
-use crate::settings::{Settings, ThemePref};
-use crate::wire::{Link, Said};
+use clausters_editor::app::{App, Msg};
+use clausters_editor::native::Native;
+use clausters_editor::settings::{Settings, ThemePref};
+use clausters_editor::theme;
+use clausters_editor::wire::{Link, Said};
 
 /// A Python editor with an interactive session.
 #[derive(Parser, Debug)]
@@ -144,7 +132,7 @@ fn run(cli: Cli) -> Result<(), String> {
     if let Some((addr, _)) = ws {
         named.push(format!("ws://{addr}"));
     }
-    crate::session::set_gui_host(named.join(" "));
+    clausters_editor::native::session::set_gui_host(named.join(" "));
     clausters_gui::host::gui::run_local(
         host,
         Arc::new(socket),
@@ -159,10 +147,19 @@ fn run(cli: Cli) -> Result<(), String> {
                     let _ = replies_tx.send(Msg::Host(said));
                 }
             });
-            let link = Link::new(local);
             std::thread::Builder::new()
                 .name("clausters-editor".into())
-                .spawn(move || App::new(link, tx, settings).run(rx, files))
+                .spawn(move || {
+                    let local = std::sync::Arc::new(local);
+                    let ends = local.clone();
+                    let link = Link::new(
+                        Box::new(move |msg| local.send(msg)),
+                        Box::new(move || {
+                            ends.quit();
+                        }),
+                    );
+                    App::new(link, Box::new(Native::new(tx)), settings).run(rx, files)
+                })
                 .expect("the application's thread starts");
             replies
         },

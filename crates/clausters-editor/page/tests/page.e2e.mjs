@@ -1,10 +1,12 @@
-// The editor as a page, driven as a hand drives it: headless Chrome over the
-// DevTools protocol types into the editor, presses its keys and reads the post
-// window. What it checks is the JavaScript session's behaviour as the editor's
+// The editor as a page, driven as a hand drives it: a client of the page's
+// GUI host -- the protocol's own, as a script checks a host it did not start
+// -- presses the editor's keys, types into it and reads its post window,
+// and the browser gives the page the one gesture a page waits for before its
+// audio. What it checks is the JavaScript session's behaviour as the editor's
 // documentation describes it (docs/page.md), against the real clausters
 // engine and GUI host the page brings up.
 //
-//   npm run build:web && npm run test:page -- [chrome|firefox]
+//   ./build.sh && npm test -- [chrome|firefox]
 //
 // Chrome is driven over the DevTools protocol, Firefox over WebDriver BiDi.
 // Needs a built clausters web package (clients/web, ./build.sh; or
@@ -41,7 +43,7 @@ if (!bin || !["chrome", "firefox"].includes(BROWSER)) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const server = spawn(process.execPath, [join(here, "scripts", "serve-web.mjs"), String(PORT)], { stdio: "inherit" });
+const server = spawn(process.execPath, [join(here, "scripts", "serve.mjs"), String(PORT)], { stdio: "inherit" });
 // Firefox installed as a snap reads only profiles under its own folder.
 const profile = mkdtempSync(
   BROWSER === "firefox" ? join(homedir(), "snap", "firefox", "common", "editor-page-") : join(tmpdir(), "editor-page-"),
@@ -127,20 +129,18 @@ async function chrome() {
   }
   const target = await (await fetch(`http://127.0.0.1:${port}/json/new?${PAGE}`, { method: "PUT" })).json();
   const send = await rpc(target.webSocketDebuggerUrl);
-  const press = async (type, key, code, keyCode, modifiers) =>
-    send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: keyCode, modifiers });
   return {
     evaluate: async (expression) => {
       const { result, exceptionDetails } = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
       if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text);
       return result.value;
     },
-    key: async ({ key, code, keyCode }, { shift = false, ctrl = false } = {}) => {
-      const modifiers = (shift ? 8 : 0) | (ctrl ? 2 : 0);
-      await press("rawKeyDown", key, code, keyCode, modifiers);
-      await press("keyUp", key, code, keyCode, modifiers);
+    /** A click of the browser's own at (x, y): the page's first gesture. */
+    click: async (x, y) => {
+      for (const type of ["mousePressed", "mouseReleased"]) {
+        await send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
+      }
     },
-    insertText: (text) => send("Input.insertText", { text }),
   };
 }
 
@@ -162,25 +162,24 @@ async function firefox() {
     if (answer.type === "exception") throw new Error(answer.exceptionDetails?.text ?? "an exception");
     return plain(answer.result);
   };
-  const CODES = { Enter: "\uE007", Escape: "\uE00C", " ": " " };
   return {
     evaluate,
-    key: async ({ key }, { shift = false, ctrl = false } = {}) => {
-      const value = CODES[key] ?? key;
-      const down = [...(ctrl ? ["\uE009"] : []), ...(shift ? ["\uE008"] : []), value];
-      await send("input.performActions", {
+    /** A click of the browser's own at (x, y): the page's first gesture. */
+    click: (x, y) =>
+      send("input.performActions", {
         context,
         actions: [
           {
-            type: "key",
-            id: "keyboard",
-            actions: [...down.map((v) => ({ type: "keyDown", value: v })), ...down.reverse().map((v) => ({ type: "keyUp", value: v }))],
+            type: "pointer",
+            id: "mouse",
+            actions: [
+              { type: "pointerMove", x, y },
+              { type: "pointerDown", button: 0 },
+              { type: "pointerUp", button: 0 },
+            ],
           },
         ],
-      });
-    },
-    // Text as the browser's own insertion, which the editor reads as typing.
-    insertText: (text) => evaluate(`document.execCommand("insertText", false, ${JSON.stringify(text)})`),
+      }),
   };
 }
 
@@ -199,50 +198,83 @@ async function finish(code) {
   process.exit(code);
 }
 
+// The editor's windows, by the ids it gives them (crates/clausters-editor,
+// app.rs): its own start past every id a client allocates.
+const IDS = 1 << 24;
+const POST_WIN = IDS + 1;
+const POST = IDS + 2;
+const DOCS = IDS + 4;
+const BAR = IDS + 5;
+const FILE = IDS + 1000;
+const CODE = FILE + 2;
+/** The editor's file dialog, its field (filedialog.rs). */
+const NAME = IDS - 100000 + 2;
+
 try {
   const page = BROWSER === "firefox" ? await firefox() : await chrome();
   const evaluate = page.evaluate;
-  const post = () => evaluate(`document.querySelector("pre")?.innerText ?? ""`);
+  // the page, loaded
+  for (let i = 0; i < 300; i++) {
+    const state = await evaluate("location.href + ' ' + document.readyState").catch(() => null);
+    if (state === `${PAGE} complete`) break;
+    await sleep(100);
+  }
+  // A client of the page's host, in the page: the protocol's GuiHost over a
+  // link of its own, as a session's worker has one.
+  await evaluate(`(async () => {
+    const until = Date.now() + 30000;
+    while (!document.querySelector("#dock canvas") && Date.now() < until) await new Promise((r) => setTimeout(r, 100));
+    const c = await import("./clausters/dist/index.js");
+    const p = await import("./clausters/dist/page.js");
+    const gui = await p.guiHost();
+    globalThis.check = await new c.GuiHost({ connection: await p.portConnection(gui.link().port) }).attach({ adoptAmbient: false });
+    return true;
+  })()`);
+  /** Something the test's client does in the page, `host` its GuiHost. */
+  const host = (body) => evaluate(`(async (host) => { ${body} })(globalThis.check)`);
+  /** The post window's text: all of it selected, and the selection read. */
+  const post = () =>
+    host(`
+      host.set(${POST}, { focus: 1 });
+      host.verb(${POST_WIN}, "select_all");
+      const text = (await host.query(${POST})).props.selected ?? "";
+      host.set(${CODE}, { focus: 1 });
+      return String(text);
+    `);
   /** Waits until the post window has `text` after `from` characters. */
   const waitFor = async (text, from = 0, ms = 15000) => {
     const end = Date.now() + ms;
     while (Date.now() < end) {
       const now = await post();
       if (now.slice(from).includes(text)) return true;
-      await sleep(100);
+      await sleep(200);
     }
     return false;
   };
-  const KEYS = {
-    a: { key: "a", code: "KeyA", keyCode: 65 },
-    s: { key: "s", code: "KeyS", keyCode: 83 },
-    ".": { key: ".", code: "Period", keyCode: 190 },
-    " ": { key: " ", code: "Space", keyCode: 32 },
-    Enter: { key: "Enter", code: "Enter", keyCode: 13 },
-    Escape: { key: "Escape", code: "Escape", keyCode: 27 },
-  };
-  const key = (name, modifiers) => page.key(KEYS[name], modifiers);
-  /** Replaces the document with `code` and evaluates all of it. */
+  /** A key on the file's window, as a hand presses it. */
+  const key = (name, mods = "") => host(`host.pressKey(${FILE}, ${JSON.stringify(name)}, ${JSON.stringify(mods)})`);
+  /** Replaces the document with `code`, whole, as a paste puts it (typed a
+   *  key at a time, the code's own indentation and closing brackets would
+   *  be added to it), and evaluates all of it. */
   const run = async (code) => {
-    await evaluate(`document.querySelector(".cm-content").focus()`);
-    await key("a", { ctrl: true });
-    await page.insertText(code);
-    await key("a", { ctrl: true });
+    await host(`host.set(${CODE}, { focus: 1, text: ${JSON.stringify(code)} })`);
+    await key("a", "ctrl");
     const from = (await post()).length;
-    await key("Enter", { shift: true });
+    await key("Enter", "shift");
     return from;
   };
-  const interrupt = async () => {
-    await evaluate(`document.querySelector(".cm-content").focus()`);
-    await key(".", { ctrl: true });
-  };
+  const interrupt = () => key(".", "ctrl");
+  /** The panes of the page's dock that are not the editor's own. */
+  const sessionPanes = () =>
+    host(`return (await host.dockCall({ verb: "layout" })).members.filter((id) => id < ${IDS});`);
 
   // Until a key or a click the page may start no audio, so the session waits,
   // and an evaluation asked for meanwhile runs once it has started, after the
   // startup code.
   check(await waitFor("starts at the first key or click", 0, 30000), "the session waits for the page's first gesture");
   let at = await run("1 + 1");
-  check(await waitFor("JavaScript worker ready", 0, 30000), "the session starts in a worker at the first key");
+  await page.click(300, 300);
+  check(await waitFor("JavaScript worker ready", 0, 30000), "the session starts in a worker at the first click");
   check(await waitFor("-> 2", at, 15000), "the evaluation asked for meanwhile runs");
   const order = await post();
   check(order.indexOf("Startup code") >= 0 && order.indexOf("Startup code") < order.indexOf("-> 2"), "after the startup code");
@@ -252,7 +284,7 @@ try {
   at = await run('const greeting = (name) => `Hello, ${name}`;\ngreeting("world")');
   check(await waitFor('-> "Hello, world"', at), "a value is shown after ->");
 
-  at = await run('const greeting = 1;\ngreeting + 1');
+  at = await run("const greeting = 1;\ngreeting + 1");
   check(await waitFor("-> 2", at), "declaring a name again redefines it");
 
   at = await run('await new Promise((r) => setTimeout(r, 300));\n"half a second later"');
@@ -272,7 +304,7 @@ try {
   check(await waitFor("-> 1", at), "a synth plays on the page's engine");
 
   // A note played now sounds now: the engine's axis follows the wall clock
-  // across the time its audio waited for the first key.
+  // across the time its audio waited for the first gesture.
   at = await run('import { play } from "clausters";\nconst t0 = performance.now();\nplay({ freq: 440, amp: 0 });\nwhile ((await session.server.status()).synths === 0) await new Promise((r) => setTimeout(r, 5));\nperformance.now() - t0 < 200');
   check(await waitFor("-> true", at), "a note played now sounds within the latency");
 
@@ -299,21 +331,18 @@ try {
   at = await run("greeting");
   check(await waitFor("-> 1", at), "and the session keeps its names");
 
-  // A window from the session's code, drawn by the page.
-  at = await run('import * as gui from "clausters/gui";\nconst host = await session.gui();\nhost.open(gui.view({ title: "level" }, gui.slider({ name: "level" })));\n"opened"');
-  await waitFor('-> "opened"', at);
+  // A window from the session's code: a pane of the page's one dock.
+  at = await run('import * as gui from "clausters/gui";\nconst host = await session.gui();\nconst level = host.open(gui.view({ title: "level" }, gui.slider({ name: "level" })));\nlevel.id');
+  await waitFor("-> ", at);
   await sleep(500);
-  check(
-    await evaluate(`(() => { const d = document.querySelector(".session-dock"); return !!d?.querySelector("canvas") && d.getBoundingClientRect().height > 0 && !!d.offsetParent; })()`),
-    "a window the session opens is drawn in the windows panel",
-  );
+  check((await sessionPanes()).length === 1, "a window the session opens is a pane of the dock");
 
   // An application: the page is cross-origin isolated, so its host has them.
   at = await run('import { pbind, pseq } from "clausters/seq";\nimport { edit } from "clausters/gui";\nconst notes = await edit(await pbind({ midinote: pseq([60, 62, 64]), dur: 0.5 }).renderEvents());\nnotes.constructor.name');
   check(await waitFor('-> "NotesEditor"', at), "edit() of a rendered pattern opens the notes editor");
   await sleep(500);
-  at = await run('const docked = await host.dockCall({ verb: "layout" });\n`${docked.panes.length}:${docked.panes.every((p) => p.rect[2] > 0 && p.rect[3] > 0)}`');
-  check(await waitFor('-> "2:true"', at), "an application's window is a pane of the dock, with a size");
+  at = await run('const docked = await host.dockCall({ verb: "layout" });\ndocked.members.filter((id) => id < 2 ** 24).length');
+  check(await waitFor("-> 2", at), "an application's window is a pane of the dock, and the session's dock calls are answered to it");
 
   // An infinite loop: the worker is terminated and the session started again.
   at = await run("for (;;) {}");
@@ -321,59 +350,62 @@ try {
   await interrupt();
   check(await waitFor("could not stop it, so it was started again", at), "Ctrl+. stops an infinite loop");
   check(await waitFor("JavaScript worker ready", at, 15000), "and a new session starts");
-  check(await evaluate(`!document.querySelector(".session-dock")?.offsetParent`), "the windows panel goes with the old session");
   await sleep(1500);
+  check((await sessionPanes()).length === 0, "the old session's windows left the dock");
   at = await run("typeof greeting");
   check(await waitFor('-> "undefined"', at), "the stuck session's names are gone");
-  at = await run('(await host.dockCall({ verb: "layout" })).panes.length');
-  check(await waitFor("-> 0", at), "and its windows left the dock");
 
   // Restart clears every name.
   at = await run("const kept = 1;\nkept");
   await waitFor("-> 1", at);
-  await evaluate(`document.querySelector('[aria-label="Restart the session"]').click()`);
+  await host(`host.verb(${BAR}, "restart")`);
   check(await waitFor("JavaScript worker ready", at, 15000), "Restart starts a new session");
   await sleep(1500);
   at = await run("typeof kept");
   check(await waitFor('-> "undefined"', at), "Restart clears every name");
 
-  // Completions from the TypeScript language service.
-  await evaluate(`document.querySelector(".cm-content").focus()`);
-  await key("a", { ctrl: true });
-  await page.insertText('import { Session } from "clausters";\nSession.');
-  await key(" ", { ctrl: true });
-  let options = "";
-  for (let i = 0; i < 100 && !options.includes("live"); i++) {
-    await sleep(200);
-    options = await evaluate(`document.querySelector(".cm-tooltip-autocomplete")?.innerText ?? ""`);
+  // Completions from the TypeScript language service: the one that fits is
+  // taken.
+  await host(`host.set(${CODE}, { focus: 1 })`);
+  await key("a", "ctrl");
+  await host(`host.typeText(${FILE}, 'import { Session } from "clausters";\\nSession.li')`);
+  let text = "";
+  for (let i = 0; i < 30 && !text.includes("Session.live"); i++) {
+    await key("space", "ctrl");
+    await sleep(500);
+    await key("Enter");
+    text = await host(`return String((await host.query(${CODE})).props.text)`);
+    // a list not up yet took no Enter: the line it broke is joined again
+    if (!text.includes("Session.live")) await key("Backspace");
   }
-  check(options.includes("live") && options.includes("nrt"), "completions come from the package's types");
-  await key("Escape");
+  check(text.includes("Session.live"), "completions come from the package's types");
 
-  // Saving into the page's storage, and opening it back.
-  await evaluate(`document.querySelector(".cm-content").focus()`);
-  await key("a", { ctrl: true });
-  await page.insertText("// a sketch\n1 + 1\n");
-  await key("s", { ctrl: true });
+  // Saving into the page's storage, in the editor's own file dialog.
+  await key("a", "ctrl");
+  await host(`host.typeText(${FILE}, "// a sketch\\n1 + 1\\n")`);
+  await key("s", "ctrl");
   await sleep(500);
-  await evaluate(`(() => {
-    const input = document.querySelector('[aria-label="File name"]');
-    input.value = "/sketches/one.mjs";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  })()`);
-  await sleep(100);
-  await evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Save").click()`);
-  await sleep(800);
+  await host(`host.set(${NAME}, { focus: 1 }); host.pressKey(${BAR}, "a", "ctrl"); host.typeText(${BAR}, "/sketches/one.mjs");`);
+  await sleep(300);
+  // past Cancel to Save, and pressed
+  await host(`host.pressKey(${BAR}, "Tab"); host.pressKey(${BAR}, "Tab"); host.pressKey(${BAR}, "space");`);
+  await sleep(1000);
   const saved = await evaluate(`(async () => {
-    const root = await navigator.storage.getDirectory();
-    const dir = await root.getDirectoryHandle("sketches");
-    return (await (await dir.getFileHandle("one.mjs")).getFile()).text();
+    try {
+      const root = await navigator.storage.getDirectory();
+      const dir = await root.getDirectoryHandle("sketches");
+      return (await (await dir.getFileHandle("one.mjs")).getFile()).text();
+    } catch (e) {
+      return String(e);
+    }
   })()`);
   check(saved === "// a sketch\n1 + 1\n", "a file is saved into the page's storage");
+  const tab = await host(`return (await host.dockCall({ verb: "layout" })).panes.find((p) => p.id === ${FILE})?.title`);
+  check(tab === "one.mjs", "and its tab takes the file's name");
 
   // The documentation: the editor's book and the package's.
-  const books = await evaluate(`document.body.innerText`);
-  check(/clausters web client/i.test(books) || /clausters-editor/i.test(books), "the documentation viewer lists the books");
+  const documents = await host(`return (await host.query(${DOCS})).props.documents`);
+  check(documents > 3, "the documentation holds the editor's book and the package's");
 
   console.log(failures ? `${failures} failed` : "all passed");
   await finish(failures ? 1 : 0);

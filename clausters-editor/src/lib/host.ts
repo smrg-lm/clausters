@@ -1,16 +1,12 @@
 // What the editor asks of the program it runs in: its files, its sessions,
-// its configuration, its window. The editor is one frontend built twice, and
-// this is the seam between the two builds:
+// its configuration, its window -- here the desktop application
+// (`host-desktop.ts`): Tauri, whose Rust side runs the Python session as a
+// process and reads the disk. The editor as a page is no longer this
+// frontend: it is the GUI host's dock with the editor's application, built
+// in crates/clausters-editor/page.
 //
-// - the desktop application (`host-desktop.ts`): Tauri, whose Rust side runs
-//   the Python session as a process and reads the disk;
-// - the page (`../page/host.ts`): the editor in a browser tab, whose files are
-//   the page's storage (OPFS) and whose JavaScript session is a worker on the
-//   page's clausters engine.
-//
-// A build imports its implementation as `$host` (vite.config.ts and
-// vite.web.config.ts alias it), and nothing else in the frontend names
-// either program. `invoke` and `listen` keep the desktop's command and event
+// The build imports the implementation as `$host` (vite.config.ts aliases
+// it), and nothing else in the frontend names the program. `invoke` and `listen` keep the desktop's command and event
 // names, so a component asks the same thing of both.
 
 import type { Lang } from "./languages";

@@ -104,9 +104,9 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   cross-reference, not a catalog.
 - **`clausters-editor/` is a standalone application**, not a package of the project:
   a Python editor with an interactive session (Tauri 2 + Svelte 5) that works
-  with any Python, clausters or not, whose frontend also builds as a page: a
-  JavaScript editor with its session in a worker on the clausters web
-  client's engine (`npm run build:web`). It is its own Cargo workspace
+  with any Python, clausters or not; the editor as a page (a JavaScript
+  editor with its session in a worker on the clausters web client's engine)
+  is the GUI host's, `crates/clausters-editor/page`. It is its own Cargo workspace
   (`clausters-editor/src-tauri`) and its own npm package, keeps its own version, and
   is built and checked only by `.github/workflows/clausters-editor.yml`. Nothing below
   about the packages moving together, the clients or the books applies to it;

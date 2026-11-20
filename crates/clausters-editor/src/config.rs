@@ -1,9 +1,8 @@
-//! **The application's persistent configuration** (`config.json` in the
-//! configuration folder): the active environment, the pip install source,
+//! **The application's persistent configuration** (`config.json`, kept by
+//! [`store`](crate::store)): the active environment, the pip install source,
 //! the documentation folder and the startup code -- the file the webview
 //! application keeps, read and written as it does.
 
-use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
@@ -24,24 +23,30 @@ pub struct Config {
 
 static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
 
-fn path() -> PathBuf {
-    crate::paths::config_dir().join("config.json")
-}
+const NAME: &str = "config.json";
+
+/// **The startup code a page's session starts with** until the preferences
+/// say otherwise: the page's engine and host, ready to use. A desktop's
+/// session starts with none, since its Python may not have the client.
+#[cfg(target_arch = "wasm32")]
+const STARTUP: &str = "import { Session } from \"clausters\";\n\
+    const session = (await Session.live()).activate();\n\
+    const host = await session.gui();\n";
+#[cfg(not(target_arch = "wasm32"))]
+const STARTUP: &str = "";
 
 fn load() -> Config {
-    std::fs::read_to_string(path())
-        .ok()
+    crate::store::read(NAME)
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        .unwrap_or_else(|| Config {
+            startup_code: STARTUP.into(),
+            ..Config::default()
+        })
 }
 
 fn save(config: &Config) -> Result<(), String> {
-    let path = path();
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
     let json = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    std::fs::write(path, json).map_err(|e| e.to_string())
+    crate::store::write(NAME, &json)
 }
 
 /// A copy of the current configuration.

@@ -2223,21 +2223,40 @@ something reusable if the track stops there.
   and the session's own windows docking into the editor. The portal's
   dialogs, a link opened in the browser and the theme followed live need a
   desktop and are the eye pass's.
-- ⬜ **WS13 — The page application.** The editor page becomes the host's
+- ✅ **WS13 — The page application.** The editor page becomes the host's
   dock full-window, with the JavaScript session and the TypeScript
   service feeding it, and the file dialog over the page's storage as a host
   window. The page's Svelte interface is retired.
-  *What it keeps of the page (listed at checkpoint 3):* the session worker
-  (`src/page/session-worker.ts`, the JavaScript session on the web
-  client's engine) and the code worker (`code-worker.ts`, the TypeScript
-  service's completions, signatures and descriptions) move out of the
-  Svelte tree to wherever the page application is built; the file
-  dialog's listing, new folder, rename, delete, upload and download over
-  OPFS (`FileDialog.svelte`, `opfs.ts`); `serve:web` and the page's
-  end-to-end test (`tests/page.e2e.mjs`), ported to the new page; the
-  page's chapter of the editor's book (`docs/page.md`).
-- ⬜ **WS14 — Retiring the webview application.** Tauri, Svelte, CodeMirror and
-  the page's interface removed; the third-party licenses regenerated; the
+  *Done 2026-11-20.* **One application, two platforms:** `crates/clausters-editor`
+  is a library and the desktop's binary; what the application asks of the
+  program it runs in (the session, the files, the dialogs, the look, the
+  books, the fonts, the environments, a timer) is a `Platform` trait, with
+  every answer that takes time a message on the application's turn, so a
+  file read or written is a message on both platforms. The desktop's is
+  the process, the disk and the portal (`native`); the page's (`page`, a
+  `PageEditor` exported with wasm-bindgen, 256 kB gzipped, a module of its
+  own) asks the page's script for the session's workers, the page's
+  storage and the served books, and reaches the local storage, the color
+  scheme and the timers itself. What a platform has not (environments, a
+  documentation folder, the system's fonts, a quit) the menus and the
+  preferences do not offer. **The application is one more client of the
+  page's host:** a page's clients are told apart by the number the page
+  gives each link (`ClientId::Web(n)`, `GuiBridge.feedFrom` and
+  `pollFor`), so a reply reaches the client that asked and an event the
+  client whose window it is, as natively. **The file dialog** is the
+  protocol's: the host's `files` chooser (which lists the page's storage
+  itself), a field bound to it and the buttons, with upload, download, a
+  new folder, a rename of a file and a delete that asks once; the platform
+  makes the changes. The books' folders are fetched by the page and made
+  into books by the same Rust as the desktop's (`docs::read`). The page
+  is `crates/clausters-editor/page`: its `build.sh`, `npm run serve` and
+  `npm test`, the end-to-end test driving the editor as a client of the
+  page's host (keys, typing, the post window read back), passing in Chrome
+  and Firefox. Found on the way and fixed: an environment's name and
+  source typed in the dialog never reached the application (a field's
+  value, a string alone, was read as the event's tag).
+- ⬜ **WS14 — Retiring the webview application.** Tauri, Svelte and CodeMirror
+  removed; the third-party licenses regenerated; the
   wheel, `install.sh` and the README rebuilt around the new binary; the
   editor's documentation rewritten where it names what moved.
   *What the removal keeps (listed at checkpoint 3), each moved before the
@@ -2253,7 +2272,10 @@ something reusable if the track stops there.
   for WebKitGTK; `install.sh` builds the crate (`cargo build -p
   clausters-editor --release`) and installs the binary, the book and the
   menu entry; the third-party notices are the new binary's crates (the
-  `cargo about` configuration moves with it) and the fonts it embeds; the
+  `cargo about` configuration moves with it), the fonts it embeds and the
+  page's npm dependencies (`crates/clausters-editor/page`, which the old
+  `scripts/notices.mjs` already reads), and the page's build copies the
+  book and the licenses from their new places; the
   `clausters-editor.yml` workflow builds and checks the new crate instead,
   and `AGENTS.md`'s paragraph on `clausters-editor/` as its own Cargo
   workspace and npm package is rewritten. **The commit that removes the
@@ -3206,6 +3228,15 @@ open, and that file is where a search for a fixed one ends.
 Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
+
+- ⬜ **Enter in a dialog's field does not press its default button**
+  (2026-11-20, WS13). A single-line `text` ignores Enter, and the dialog
+  does nothing with a key its field left, so a name typed in the editor's
+  file dialog is saved with a click on Save or Tab to it, where the
+  webview's dialog saved at Enter (a form submits on Enter). Every
+  application's form has the same: the dialog's default button is where
+  the keyboard starts when there is no field, never what Enter in a field
+  presses.
 
 - ⬜ **A textured view in a docked pane's dialog is not drawn**
   (2026-11-19, the style review). A docked pane's dialog stands over the

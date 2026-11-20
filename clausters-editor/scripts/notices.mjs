@@ -5,7 +5,9 @@
 //
 // - the frontend: the npm packages whose modules or files the Vite build puts
 //   into `dist/` (which `package.json` alone does not say -- several "dev"
-//   dependencies are compiled in), plus the stylesheets `src/app.css` imports;
+//   dependencies are compiled in), plus the stylesheets `src/app.css` imports,
+//   and the dependencies of the page (crates/clausters-editor/page), which its
+//   bundle and its files carry whole;
 // - the binary: the crates `cargo about` resolves for every release target,
 //   configured by `src-tauri/about.toml` and rendered by `src-tauri/about.hbs`.
 //
@@ -21,6 +23,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+/** The editor as a page, built on its own (its build.sh). */
+const page = join(root, "..", "crates", "clausters-editor", "page");
 const out = join(root, "licenses", "THIRD-PARTY.txt");
 const rule = "-".repeat(80);
 
@@ -30,8 +34,10 @@ function packageOf(path) {
   return m?.[1];
 }
 
-/** Every npm package the builds read into their bundles: the desktop
- *  application's and the page's (vite.web.config.ts), workers included. */
+/** Every npm package the builds read into their bundles, by name, with the
+ *  folder it is installed in: the desktop application's, and the page's
+ *  dependencies (the session's parser and TypeScript, whose library
+ *  declarations it also carries as files). */
 async function bundledPackages() {
   const found = new Set();
   const listing = () => ({
@@ -44,25 +50,24 @@ async function bundledPackages() {
       }
     },
   });
-  for (const config of ["vite.config.ts", "vite.web.config.ts"]) {
-    await build({
-      root,
-      configFile: join(root, config),
-      logLevel: "silent",
-      build: { write: false },
-      plugins: [listing()],
-      worker: { plugins: () => [listing()] },
-    });
-  }
-  // The page also carries TypeScript's library declarations as files.
-  found.add("typescript");
+  await build({
+    root,
+    configFile: join(root, "vite.config.ts"),
+    logLevel: "silent",
+    build: { write: false },
+    plugins: [listing()],
+    worker: { plugins: () => [listing()] },
+  });
   // What Tailwind compiles in from the stylesheets the app imports.
   const css = readFileSync(join(root, "src", "app.css"), "utf8");
   for (const [, spec] of css.matchAll(/@import\s+"([^".][^"]*)"/g)) {
     found.add(spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0]);
   }
   found.delete(undefined);
-  return [...found].sort();
+  const where = new Map([...found].map((name) => [name, join(root, "node_modules", name)]));
+  const pageDeps = JSON.parse(readFileSync(join(page, "package.json"), "utf8")).dependencies ?? {};
+  for (const name of Object.keys(pageDeps)) where.set(name, join(page, "node_modules", name));
+  return [...where].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 /** The license files a package directory carries. */
@@ -107,8 +112,7 @@ function authorOf(meta) {
 function frontend(packages) {
   const byText = new Map();
   const missing = [];
-  for (const name of packages) {
-    const dir = join(root, "node_modules", name);
+  for (const [name, dir] of packages) {
     const meta = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
     let texts = licenseFiles(dir);
     // A package that ships no file but names MIT and an author gets the MIT

@@ -10,10 +10,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "notices": "node scripts/notices.mjs",
     "test": "node --import ./tests/resolve.mjs --experimental-transform-types --no-warnings --test tests/*.test.ts",
-    "tauri": "tauri",
-    "build:web": "vite build --config vite.web.config.ts",
-    "serve:web": "node scripts/serve-web.mjs",
-    "test:page": "node tests/page.e2e.mjs"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@babel/runtime": "^8.0.5",
@@ -32,7 +29,6 @@
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-opener": "^2.5.5",
     "@uiw/codemirror-theme-vscode": "^4.25.11",
-    "acorn": "^8.19.0",
     "bits-ui": "^2.19.2",
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.15",

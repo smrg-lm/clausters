@@ -9,16 +9,7 @@ use std::thread;
 
 use crate::app::Msg;
 
-/// What a file dialog was opened for, handed back with what was chosen.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Purpose {
-    /// A file to open in a tab.
-    Open,
-    /// Where to save the tab of window `win`.
-    SaveAs { win: i32 },
-    /// The documentation folder.
-    DocsFolder,
-}
+pub use crate::platform::Purpose;
 
 /// The file types the dialogs offer.
 fn python(dialog: rfd::AsyncFileDialog) -> rfd::AsyncFileDialog {

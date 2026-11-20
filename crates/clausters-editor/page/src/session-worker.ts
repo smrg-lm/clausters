@@ -20,7 +20,6 @@
 
 import { parse } from "acorn";
 import type { Node } from "acorn";
-import { readText } from "./opfs";
 
 /** The global the rewritten code calls into; not enumerable, so not in the way. */
 const HOOK = "__clausters_editor__";
@@ -343,6 +342,19 @@ async function resolve(specifier: string, from: string | null): Promise<string> 
   if (!url) throw new Error(`'${specifier}' is not exported by '${name}'`);
   imported.add(name);
   return url;
+}
+
+/** A file of the page's storage as text, read with the clausters package's
+ *  own reader of that storage. */
+async function readText(path: string): Promise<string> {
+  const base = packages.get("clausters")?.base;
+  if (base === undefined) throw new Error(`Could not read ${path}: the page serves no clausters package`);
+  const { readFile } = await import(/* @vite-ignore */ new URL("dist/engine/opfs.js", base).href);
+  try {
+    return new TextDecoder().decode(await readFile(path));
+  } catch {
+    throw new Error(`Could not read ${path}: no such file in the page's storage`);
+  }
 }
 
 /** The page's own modules, by their text: the same text is the same module. */

@@ -10,8 +10,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, Sender};
-use std::time::Duration;
+use std::sync::mpsc::Receiver;
 
 use clausters_core::osc::OscType;
 use serde_json::{Value, json};
@@ -19,12 +18,12 @@ use serde_json::{Value, json};
 use clausters_apps::{closing, quitting};
 
 use crate::arrangement;
-use crate::desktop::{self, Purpose};
 use crate::docs::Book;
-use crate::session::Session;
+use crate::filedialog::{self, Does, FileDialog};
+use crate::platform::{self, Language, MonoFamily, Offers, Platform, Purpose, Read};
 use crate::settings::{Settings, ThemePref};
 use crate::wire::{self, Link, Said};
-use crate::{config, envs, theme};
+use crate::{config, theme};
 
 /// What reaches the application's thread.
 pub enum Msg {
@@ -53,7 +52,21 @@ pub enum Msg {
     /// Time to ask the dock again whether every pane has arrived.
     Arrange,
     /// The system's monospaced families, found.
-    Fonts(Vec<crate::fonts::MonoFamily>),
+    Fonts(Vec<MonoFamily>),
+    /// A file read for a tab, or why it could not be.
+    Read {
+        path: PathBuf,
+        why: Read,
+        text: Result<String, String>,
+    },
+    /// The save of the code `code` written to `path`, or why it was not.
+    Written {
+        path: PathBuf,
+        code: i32,
+        done: Result<(), String>,
+    },
+    /// A change of the editor's file dialog made, or why it was not.
+    Changed(Result<(), String>),
 }
 
 /// Every book and every document.
@@ -241,8 +254,11 @@ struct Py {
 
 pub struct App {
     link: Link,
-    tx: Sender<Msg>,
-    session: Session,
+    platform: Box<dyn Platform>,
+    /// The session's language, as the platform runs it.
+    lang: &'static Language,
+    /// What the platform has beside what every one has.
+    offers: Offers,
     settings: Settings,
     files: Vec<File>,
     /// The window of the file the menus and the keys act on: the one whose
@@ -282,16 +298,23 @@ pub struct App {
     /// Whether the files are in more than one group, as the dock last said.
     split: bool,
     /// The system's monospaced families, once found.
-    fonts: Vec<crate::fonts::MonoFamily>,
+    fonts: Vec<MonoFamily>,
+    /// **The files the start opens, still being read**: once the last is
+    /// in, the start goes on ([`Self::started`]). `None` once it has.
+    opening: Option<usize>,
+    /// Whether a file the start asked for opened.
+    opened: bool,
+    /// The editor's own file dialog, while it is up.
+    file_dialog: Option<FileDialog>,
 }
 
 impl App {
-    pub fn new(link: Link, tx: Sender<Msg>, settings: Settings) -> Self {
-        let session = Session::new(tx.clone());
+    pub fn new(link: Link, platform: Box<dyn Platform>, settings: Settings) -> Self {
         Self {
             link,
-            tx,
-            session,
+            lang: platform.language(),
+            offers: platform.offers(),
+            platform,
             settings,
             files: Vec::new(),
             active: None,
@@ -317,6 +340,9 @@ impl App {
             saving_startup: None,
             split: false,
             fonts: Vec::new(),
+            opening: None,
+            opened: false,
+            file_dialog: None,
         }
     }
 
@@ -329,34 +355,57 @@ impl App {
         }
     }
 
-    fn start(&mut self, cli: Vec<PathBuf>) {
+    /// Whether a file has changes that are not saved.
+    pub fn unsaved(&self) -> bool {
+        self.files.iter().any(|f| f.dirty)
+    }
+
+    /// **The editor starts**: its panels, its look, and the files of the
+    /// last run and then the ones `cli` names, read before the start goes
+    /// on (`started`).
+    pub fn start(&mut self, cli: Vec<PathBuf>) {
         // the dock's close is asked of the editor, once, as a quit
-        self.link.dock(&json!({"verb": "own_quit"}));
+        if self.offers.quit {
+            self.link.dock(&json!({"verb": "own_quit"}));
+        }
         self.apply_theme();
-        self.find_fonts();
-        desktop::follow_color_scheme(&self.tx);
-        self.read_docs();
+        if self.offers.fonts {
+            self.platform.find_fonts();
+        }
+        self.platform.follow_color_scheme();
+        self.platform.read_docs();
         self.open_bar();
         self.open_footer();
         self.open_post();
         self.open_docs();
         // the files of the last run, then the ones the command line names,
         // the last of them on screen
-        let mut opened = false;
+        let mut reading = 0;
         if self.settings.reopen_files {
             for path in self.settings.open_files.clone() {
-                opened |= self.open_path(Path::new(&path), false);
+                reading += usize::from(self.open_path(Path::new(&path), Read::Reopen));
             }
         }
         for path in cli {
-            if path.exists() {
-                opened |= self.open_path(&path, true);
+            if self.platform.exists(&path) {
+                reading += usize::from(self.open_path(&path, Read::Open));
             } else {
                 self.open_missing(&path);
-                opened = true;
+                self.opened = true;
             }
         }
-        if !opened {
+        self.opening = Some(reading);
+        if reading == 0 {
+            self.started();
+        }
+    }
+
+    /// **The start, once its files are read**: an empty tab if none opened,
+    /// the one the last run left on screen shown, the panels arranged and
+    /// the session started.
+    fn started(&mut self) {
+        self.opening = None;
+        if !self.opened && self.files.is_empty() {
             self.new_file();
         }
         if let Some(active) = self.settings.active_file.clone()
@@ -366,12 +415,14 @@ impl App {
             self.show_file(win);
         }
         self.dock(json!({"verb": "layout"}), DockFor::Arrange);
-        if let Err(e) = self.session.start() {
+        if let Err(e) = self.platform.start_session() {
             self.post("err", &format!("{e}\n"));
         }
     }
 
-    fn on(&mut self, msg: Msg) {
+    /// **One message, on the application's turn**: what the host said, the
+    /// session, or a platform's answer.
+    pub fn on(&mut self, msg: Msg) {
         match msg {
             Msg::Host(said) => self.on_host(said),
             Msg::Py(m) => self.on_py(m),
@@ -379,7 +430,7 @@ impl App {
                 self.py.generation = generation;
                 self.py.env = env;
                 self.py.busy.clear();
-                self.read_docs();
+                self.platform.read_docs();
                 self.say_session();
             }
             Msg::PyExit { generation, code } => {
@@ -389,7 +440,8 @@ impl App {
                 self.py.alive = false;
                 self.py.busy.clear();
                 let code = code.map_or_else(|| "?".to_string(), |c| c.to_string());
-                self.post("info", &format!("Python session ended (code {code})\n"));
+                let says = format!("{} session ended (code {code})\n", self.lang.name);
+                self.post("info", &says);
                 self.say_session();
                 self.free_session_windows();
             }
@@ -424,6 +476,15 @@ impl App {
                 self.system_dark = dark;
                 if self.settings.theme == ThemePref::System {
                     self.apply_theme();
+                }
+            }
+            Msg::Read { path, why, text } => self.on_read(path, why, text),
+            Msg::Written { path, code, done } => self.on_written(path, code, done),
+            // drawn again, its chooser lists its folder afresh
+            Msg::Changed(done) => {
+                if let Some(dialog) = self.file_dialog.as_mut() {
+                    dialog.changed(done);
+                    self.show_file_dialog();
                 }
             }
         }
@@ -464,7 +525,7 @@ impl App {
         }
         match id {
             POST | DOCS => match tag {
-                "link" => open_url(&wire::text(args, 0)),
+                "link" => self.platform.open_url(&wire::text(args, 0)),
                 // the post window's own tool, kept between runs
                 "autoscroll" => {
                     self.settings.autoscroll = args.first().is_some_and(on);
@@ -495,10 +556,13 @@ impl App {
             PREFS_CLOSE if tag == "click" => self.close_dialog(),
             // the close button, Escape and the scrim ask a dialog to go
             PREFS_DIALOG | ENVS_DIALOG if tag == "cancel" => self.close_dialog(),
-            ENVS_SOURCE | ENVS_NAME if tag.is_empty() => {
-                self.fields.insert(id, wire::text(args, 0));
+            ENVS_SOURCE | ENVS_NAME => {
+                if let Some(text) = wire::typed(tag, args) {
+                    self.fields.insert(id, text);
+                }
             }
             ENVS_CREATE if tag == "click" => self.envs_create(),
+            id if FileDialog::owns(id) => self.on_file_dialog(id, tag, args),
             ENVS_CLOSE if tag == "click" => self.close_dialog(),
             id if (ENVS_ROWS..ENVS_ROWS + 500).contains(&id) && tag == "click" => self.envs_row(id),
             id if id >= FILE_BASE => self.on_file_event(id, tag, args),
@@ -696,8 +760,14 @@ impl App {
         let Some(path) = self.saving.remove(&id) else {
             return;
         };
+        self.platform.write(path, text, id);
+    }
+
+    /// **A save written**, or why not: the tab names its file and shows no
+    /// changes, and whatever waited for the save goes on.
+    fn on_written(&mut self, path: PathBuf, id: i32, done: Result<(), String>) {
         let win = id - CODE;
-        match std::fs::write(&path, &text) {
+        match done {
             Ok(()) => {
                 self.link.set(id, &[("saved", json!(1))]);
                 if let Some(f) = self.files.iter_mut().find(|f| f.win == win) {
@@ -774,7 +844,7 @@ impl App {
             }
             font if font.starts_with("font:") => {
                 let name = &font["font:".len()..];
-                self.settings.font = (name != crate::fonts::BUNDLED).then(|| name.to_string());
+                self.settings.font = (name != platform::BUNDLED).then(|| name.to_string());
                 self.settings.save();
                 self.apply_font();
                 self.menus();
@@ -799,7 +869,7 @@ impl App {
             recent if recent.starts_with("recent_") => {
                 let i: usize = recent["recent_".len()..].parse().unwrap_or(usize::MAX);
                 if let Some(path) = self.settings.recent.get(i).cloned() {
-                    self.open_path(Path::new(&path), true);
+                    self.open_path(Path::new(&path), Read::Open);
                 }
             }
             _ => {}
@@ -814,34 +884,49 @@ impl App {
         self.open_window(None, name, String::new());
     }
 
-    /// Opens `path` in a tab, or shows the tab that has it; `false` when it
-    /// could not be read.
-    fn open_path(&mut self, path: &Path, remember: bool) -> bool {
-        let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    /// Opens `path` in a tab, or shows the tab that has it: `true` when it
+    /// is read for one, which opens once it is in ([`Self::on_read`]).
+    fn open_path(&mut self, path: &Path, why: Read) -> bool {
+        let path = self.platform.absolute(path);
         if let Some(win) = self.file_at(&path).map(|f| f.win) {
             self.show_file(win);
-            return true;
+            self.opened = true;
+            return false;
         }
-        match std::fs::read_to_string(&path) {
+        self.platform.read(path, why);
+        true
+    }
+
+    /// **A file read for a tab**: it opens, taking the place of an empty
+    /// one; one that could not be read leaves the recent files.
+    fn on_read(&mut self, path: PathBuf, why: Read, text: Result<String, String>) {
+        match text {
+            // a tab opened for it meanwhile is the one it has
+            Ok(_) if self.file_at(&path).is_some() => self.opened = true,
             Ok(text) => {
                 let blank = self.blank_tab();
                 self.open_window(Some(path.clone()), file_name(&path), text);
                 if let Some(win) = blank {
                     self.link.free(win);
                 }
-                if remember {
+                if why == Read::Open {
                     self.settings.add_recent(&path.to_string_lossy());
                     self.settings.save();
                     self.menus();
                 }
-                true
+                self.opened = true;
             }
             Err(e) => {
                 let shown = path.to_string_lossy().into_owned();
                 self.settings.recent.retain(|p| *p != shown);
                 self.settings.save();
                 self.post("info", &format!("Could not read {shown}: {e}\n"));
-                false
+            }
+        }
+        if let Some(left) = self.opening {
+            self.opening = Some(left.saturating_sub(1));
+            if left <= 1 {
+                self.started();
             }
         }
     }
@@ -915,7 +1000,7 @@ impl App {
             "id": win + 1, "type": "layout", "flow": "col", "margin": 0, "gap": 0,
             "children": [
                 {
-                    "id": win + CODE, "type": "code", "text": text, "language": "python",
+                    "id": win + CODE, "type": "code", "text": text, "language": self.lang.code,
                     "weight": 1,
                     "indent": self.settings.indent_prop(),
                     "paragraph": self.settings.eval_paragraph,
@@ -982,10 +1067,12 @@ impl App {
                 self.link.query(file.code());
             }
             (path, _) => {
+                let name = format!("{}.{}", file.name.replace(' ', "_"), self.lang.extension);
                 let start = path
                     .clone()
-                    .unwrap_or_else(|| home().join(format!("{}.py", file.name.replace(' ', "_"))));
-                desktop::choose(&self.tx, Purpose::SaveAs { win: file.win }, Some(start));
+                    .unwrap_or_else(|| self.platform.home().join(name));
+                let purpose = Purpose::SaveAs { win: file.win };
+                self.ask_path(purpose, Some(start));
             }
         }
     }
@@ -995,7 +1082,50 @@ impl App {
             .and_then(|w| self.files.iter().find(|f| f.win == w))
             .and_then(|f| f.path.clone())
             .or_else(|| self.settings.recent.first().map(PathBuf::from));
-        desktop::choose(&self.tx, purpose, start);
+        self.ask_path(purpose, start);
+    }
+
+    /// **A path asked for `purpose`**: of the platform's dialog, or of the
+    /// editor's own over the platform's storage where it has none.
+    fn ask_path(&mut self, purpose: Purpose, start: Option<PathBuf>) {
+        if self.offers.dialogs {
+            return self.platform.choose(purpose, start);
+        }
+        if self.prefs_open || self.envs_open || self.file_dialog.is_some() {
+            return;
+        }
+        self.file_dialog = Some(FileDialog::new(purpose, start.as_deref()));
+        self.show_file_dialog();
+    }
+
+    /// The editor's file dialog, drawn again as it is now.
+    fn show_file_dialog(&mut self) {
+        if let Some(tree) = self.file_dialog.as_ref().map(FileDialog::tree) {
+            self.show_dialog(tree, filedialog::SPARE);
+        }
+    }
+
+    /// What the hand did in the editor's file dialog.
+    fn on_file_dialog(&mut self, id: i32, tag: &str, args: &[OscType]) {
+        let Some(dialog) = self.file_dialog.as_mut() else {
+            return;
+        };
+        // a field's or the chooser's value is a string alone
+        let said = match wire::typed(tag, args).filter(|_| FileDialog::valued(id)) {
+            Some(value) => dialog.on(id, "", value),
+            None => dialog.on(id, tag, wire::text(args, 0)),
+        };
+        match said {
+            Does::Nothing => {}
+            Does::Redraw => self.show_file_dialog(),
+            Does::Change(change) => self.platform.change(change),
+            Does::Chosen(path) => {
+                let purpose = dialog.purpose.clone();
+                self.file_dialog = None;
+                self.close_dialog();
+                self.chosen(purpose, path);
+            }
+        }
     }
 
     fn chosen(&mut self, purpose: Purpose, path: Option<PathBuf>) {
@@ -1011,7 +1141,7 @@ impl App {
         };
         match purpose {
             Purpose::Open => {
-                self.open_path(&path, true);
+                self.open_path(&path, Read::Open);
             }
             Purpose::SaveAs { win } => {
                 self.saving.insert(win + CODE, path);
@@ -1177,14 +1307,11 @@ impl App {
         self.remember_files();
         self.dock(json!({"verb": "layout"}), DockFor::Quit);
         // a dock that does not answer does not keep the editor open
-        let tx = self.tx.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(500));
-            let _ = tx.send(Msg::Host(Said::Dock {
-                seq: i32::MAX,
-                reply: Value::Null,
-            }));
+        let silence = Msg::Host(Said::Dock {
+            seq: i32::MAX,
+            reply: Value::Null,
         });
+        self.platform.later(500, silence);
         self.dock_calls.insert(i32::MAX, DockFor::Quit);
     }
 
@@ -1215,7 +1342,7 @@ impl App {
     fn quit_now(&mut self) {
         tracing::debug!("quitting");
         self.settings.save();
-        self.session.kill();
+        self.platform.stop();
         self.link.quit();
     }
 
@@ -1251,11 +1378,7 @@ impl App {
         }
         wanted.extend(self.files.iter().map(|f| f.win));
         if !wanted.iter().all(|w| present.contains(w)) {
-            let tx = self.tx.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(30));
-                let _ = tx.send(Msg::Arrange);
-            });
+            self.platform.later(30, Msg::Arrange);
             return;
         }
         let Some(first) = self.files.first().map(|f| f.win) else {
@@ -1519,13 +1642,6 @@ impl App {
         self.link.set(DOCS, &[("focus", json!(1))]);
     }
 
-    fn read_docs(&self) {
-        let tx = self.tx.clone();
-        std::thread::spawn(move || {
-            let _ = tx.send(Msg::Docs(crate::docs::read_all()));
-        });
-    }
-
     fn feed_docs(&self) {
         let Some((books, documents, roots)) = &self.docs else {
             return;
@@ -1560,19 +1676,22 @@ impl App {
     }
 
     fn choose_docs_folder(&mut self) {
+        if !self.offers.docs_folder {
+            return;
+        }
         let start = config::get().docs_dir.map(PathBuf::from);
-        desktop::choose(&self.tx, Purpose::DocsFolder, start);
+        self.platform.choose(Purpose::DocsFolder, start);
     }
 
     fn set_docs_dir(&mut self, dir: Option<String>) {
         if let Some(d) = &dir
-            && !Path::new(d).is_dir()
+            && !self.platform.is_dir(Path::new(d))
         {
             return self.post("info", &format!("Not a folder: {d}\n"));
         }
         match config::update(|c| c.docs_dir = dir) {
             Ok(config) => {
-                self.read_docs();
+                self.platform.read_docs();
                 if self.prefs_open {
                     self.link
                         .set(PREFS_DOCS_DIR, &[("text", json!(docs_dir_text(&config)))]);
@@ -1592,7 +1711,8 @@ impl App {
             "ready" => {
                 self.py.alive = true;
                 self.py.version = text.split(' ').next().unwrap_or("").to_string();
-                self.post("info", &format!("Python {} ready\n", self.py.version));
+                let says = format!("{} {} ready\n", self.lang.name, self.py.version);
+                self.post("info", &says);
                 self.say_session();
                 self.run_startup_code();
             }
@@ -1666,7 +1786,7 @@ impl App {
         request["id"] = json!(id);
         request["op"] = json!(op);
         self.queries.insert(id, query);
-        if let Err(e) = self.session.send(&request) {
+        if let Err(e) = self.platform.ask(&request) {
             self.queries.remove(&id);
             self.post("err", &format!("{e}\n"));
         }
@@ -1709,7 +1829,7 @@ impl App {
         self.py.busy.insert(id);
         self.say_session();
         let request = json!({"id": id, "op": "eval", "code": code, "file": file, "line": line});
-        if let Err(e) = self.session.send(&request) {
+        if let Err(e) = self.platform.send(&request) {
             self.py.busy.remove(&id);
             self.post("err", &format!("{e}\n"));
             self.say_session();
@@ -1721,7 +1841,7 @@ impl App {
         if code.trim().is_empty() {
             return;
         }
-        self.post("info", "Startup code (Python):\n");
+        self.post("info", &format!("Startup code ({}):\n", self.lang.name));
         self.post("out", &format!("{}\n", code.trim_end()));
         self.eval(&code, "<startup code>", 1);
     }
@@ -1741,7 +1861,7 @@ impl App {
     }
 
     fn interrupt(&mut self) {
-        if let Err(e) = self.session.interrupt() {
+        if let Err(e) = self.platform.interrupt() {
             self.post("info", &format!("{e}\n"));
         }
     }
@@ -1753,16 +1873,20 @@ impl App {
     }
 
     fn restart(&mut self) {
-        self.post("info", "Restarting the Python session...\n");
+        self.post(
+            "info",
+            &format!("Restarting the {} session...\n", self.lang.name),
+        );
         self.py.alive = false;
         self.free_session_windows();
-        if let Err(e) = self.session.restart() {
+        if let Err(e) = self.platform.restart() {
             self.post("err", &format!("{e}\n"));
         }
     }
 
     /// **The session's state, in the footer**: its dot (stopped, running,
-    /// ready) and `Python <version> | <environment> | <state>`.
+    /// ready) and `<language> <version> | <environment> | <state>`, the
+    /// environment where the platform keeps them.
     fn say_session(&self) {
         let state = if !self.py.alive {
             "stopped".to_string()
@@ -1772,8 +1896,9 @@ impl App {
             format!("running ({})", self.py.busy.len())
         };
         let env = match &self.py.env {
-            Some(name) => format!("environment \"{name}\""),
-            None => "system".into(),
+            Some(name) => format!(" | environment \"{name}\""),
+            None if self.offers.envs => " | system".into(),
+            None => String::new(),
         };
         let dot = if !self.py.alive {
             "destructive"
@@ -1783,11 +1908,11 @@ impl App {
             "warning"
         };
         let python = if self.py.version.is_empty() {
-            "Python".to_string()
+            self.lang.name.to_string()
         } else {
-            format!("Python {}", self.py.version)
+            format!("{} {}", self.lang.name, self.py.version)
         };
-        let line = format!("{python} | {env} | {state}");
+        let line = format!("{python}{env} | {state}");
         self.link
             .set(FOOT, &[("text", json!(line)), ("dot", json!(dot))]);
     }
@@ -1815,14 +1940,6 @@ impl App {
         }
     }
 
-    /// Finds the system's monospaced families, off the editor's turn.
-    fn find_fonts(&self) {
-        let tx = self.tx.clone();
-        std::thread::spawn(move || {
-            let _ = tx.send(Msg::Fonts(crate::fonts::system_mono()));
-        });
-    }
-
     /// **Code drawn in the chosen family**: its two weights handed to the
     /// host, or the host's own face again for the bundled one -- and for a
     /// family no longer installed, which is how the current editor falls
@@ -1833,8 +1950,7 @@ impl App {
             .font
             .as_ref()
             .and_then(|name| self.fonts.iter().find(|f| &f.name == name));
-        let read =
-            |path: Option<&PathBuf>| path.and_then(|p| std::fs::read(p).ok()).unwrap_or_default();
+        let read = |path: Option<&PathBuf>| path.map(|p| self.platform.font(p)).unwrap_or_default();
         let regular = read(family.map(|f| &f.regular));
         // a family with no bold draws its bold as its regular, not as the
         // host's own
@@ -1878,7 +1994,7 @@ impl App {
                 .iter()
                 .enumerate()
                 .map(|(i, p)| {
-                    let (name, folder) = recent_label(p);
+                    let (name, folder) = recent_label(p, &self.platform.home());
                     json!({"label": name, "aside": folder, "verb": format!("recent_{i}")})
                 })
                 .collect()
@@ -1894,7 +2010,7 @@ impl App {
                 "checked": self.settings.theme == pref})
         };
         let split = self.editor_split();
-        json!([
+        let mut menu = json!([
             {"label": "File", "menu": [
                 {"label": "New", "verb": "new_file"},
                 {"label": "Open...", "verb": "open_file"},
@@ -1958,24 +2074,36 @@ impl App {
                 "-",
                 {"label": "Keyboard Shortcuts", "verb": "keys"},
             ]},
-        ])
+        ]);
+        // what the platform does not have is not offered
+        let mut hidden = Vec::new();
+        if !self.offers.quit {
+            hidden.push("quit");
+        }
+        if !self.offers.envs {
+            hidden.push("environments");
+        }
+        if !self.offers.docs_folder {
+            hidden.push("docs_folder");
+        }
+        if !self.offers.fonts {
+            hidden.push("Font");
+        }
+        hide(&mut menu, &hidden);
+        menu
     }
 
     /// View > Font: the bundled face, then the system's monospaced
     /// families, the one in use checked.
     fn font_menu(&self) -> Value {
-        let chosen = self
-            .settings
-            .font
-            .as_deref()
-            .unwrap_or(crate::fonts::BUNDLED);
+        let chosen = self.settings.font.as_deref().unwrap_or(platform::BUNDLED);
         let entry = |name: &str, label: String| {
             json!({"label": label, "verb": format!("font:{name}"), "group": "font",
                 "checked": name == chosen})
         };
         let mut entries = vec![entry(
-            crate::fonts::BUNDLED,
-            format!("{} (bundled)", crate::fonts::BUNDLED),
+            platform::BUNDLED,
+            format!("{} (bundled)", platform::BUNDLED),
         )];
         if !self.fonts.is_empty() {
             entries.push(json!("-"));
@@ -2010,6 +2138,7 @@ impl App {
     fn close_dialog(&mut self) {
         self.prefs_open = false;
         self.envs_open = false;
+        self.file_dialog = None;
         self.link.def(
             DIALOG_HOLD,
             &json!({"type": "layout", "w": 0, "h": 0, "margin": 0}),
@@ -2018,7 +2147,7 @@ impl App {
     }
 
     fn open_prefs(&mut self) {
-        if self.prefs_open || self.envs_open {
+        if self.prefs_open || self.envs_open || self.file_dialog.is_some() {
             return;
         }
         let config = config::get();
@@ -2031,7 +2160,7 @@ impl App {
             ThemePref::Dark => 1,
             ThemePref::System => 2,
         };
-        let dialog = json!({
+        let mut dialog = json!({
             "id": PREFS_DIALOG, "type": "layout", "modal": 1, "wide": 1, "hug": 1,
             "title": "Preferences", "flow": "col",
             "children": [
@@ -2079,6 +2208,12 @@ impl App {
                     "variant": "outline"})),
             ]
         });
+        // a folder of the user's only where the platform has one to choose
+        if !self.offers.docs_folder
+            && let Some(children) = dialog["children"].as_array_mut()
+        {
+            children.retain(|field| !holds(field, PREFS_DOCS_DIR));
+        }
         self.prefs_open = true;
         self.show_dialog(dialog, PREFS_SPARE);
     }
@@ -2090,7 +2225,7 @@ impl App {
     }
 
     fn open_envs(&mut self) {
-        if self.prefs_open || self.envs_open {
+        if self.prefs_open || self.envs_open || self.file_dialog.is_some() {
             return;
         }
         let dialog = json!({
@@ -2133,7 +2268,7 @@ impl App {
 
     /// The list of environments, a row each, the system's Python first.
     fn envs_list(&self) -> Value {
-        let envs = envs::list_envs();
+        let envs = self.platform.envs();
         let system_active = !envs.iter().any(|e| e.active);
         // **a row is two lines**, as the reference's: the name in the medium
         // weight with its Python beside it, quiet, and under them where it
@@ -2175,9 +2310,9 @@ impl App {
             };
         let mut rows = vec![row(
             0,
-            "System Python".into(),
+            self.lang.system.into(),
             String::new(),
-            crate::session::default_python(),
+            self.platform.default_interpreter(),
             system_active,
             false,
         )];
@@ -2228,19 +2363,21 @@ impl App {
         let name = if i == 0 {
             None
         } else {
-            envs::list_envs()
+            self.platform
+                .envs()
                 .get(i as usize - 1)
                 .map(|e| e.name.clone())
         };
         let result = match (what, name) {
-            (3, name) => envs::use_env(&self.session, name),
+            (3, name) => self.platform.use_env(name),
             (4, Some(name)) => {
                 self.envs_say(&format!(
                     "Updating \"{name}\"... (progress in the post window)"
                 ));
-                return self.report_envs(envs::install_in_env(&self.tx, &self.session, name));
+                let started = self.platform.install_in_env(name);
+                return self.report_envs(started);
             }
-            (5, Some(name)) => envs::delete_env(&self.session, name),
+            (5, Some(name)) => self.platform.delete_env(name),
             _ => return,
         };
         let status = result.err().unwrap_or_default();
@@ -2257,7 +2394,7 @@ impl App {
         self.envs_say(&format!(
             "Creating \"{name}\"... (progress in the post window)"
         ));
-        let result = envs::create_env(&self.tx, &self.session, name, source);
+        let result = self.platform.create_env(name, source);
         self.report_envs(result);
     }
 
@@ -2294,6 +2431,44 @@ fn buttons(children: &[Value]) -> Value {
 fn footer(button: Value) -> Value {
     json!({"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0, "gap": 8,
         "children": [{"type": "separator", "weight": 1, "line": 0}, button]})
+}
+
+/// **Takes out of a menu the entries named in `hidden`**, by their verb or,
+/// for a submenu, its label, and the separators that are left with nothing
+/// to separate.
+fn hide(menu: &mut Value, hidden: &[&str]) {
+    let Some(items) = menu.as_array_mut() else {
+        return;
+    };
+    items.retain(|item| {
+        let named = |key: &str| item[key].as_str().is_some_and(|v| hidden.contains(&v));
+        !named("verb") && !(item.get("menu").is_some() && named("label"))
+    });
+    for item in items.iter_mut() {
+        if let Some(sub) = item.get_mut("menu") {
+            hide(sub, hidden);
+        }
+    }
+    let line = |item: &Value| item.as_str() == Some("-");
+    let mut tidy: Vec<Value> = Vec::new();
+    for item in items.drain(..) {
+        if line(&item) && tidy.last().is_none_or(line) {
+            continue;
+        }
+        tidy.push(item);
+    }
+    if tidy.last().is_some_and(line) {
+        tidy.pop();
+    }
+    *items = tidy;
+}
+
+/// Whether `tree` holds the node `id`.
+fn holds(tree: &Value, id: i32) -> bool {
+    tree["id"].as_i64() == Some(i64::from(id))
+        || tree["children"]
+            .as_array()
+            .is_some_and(|c| c.iter().any(|child| holds(child, id)))
 }
 
 /// **Gives every node of `tree` that has none an id**, counting from
@@ -2355,19 +2530,15 @@ fn file_name(path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
-fn home() -> PathBuf {
-    dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
-}
-
 /// A recent file as a menu lists it: its name, then its folder, written
-/// from `~` under the home folder.
-fn recent_label(path: &str) -> (String, String) {
+/// from `~` under the user's folder `home`.
+fn recent_label(path: &str, home: &Path) -> (String, String) {
     let p = Path::new(path);
     let dir = p
         .parent()
         .map(|d| d.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let home = home().to_string_lossy().into_owned();
+    let home = home.to_string_lossy().into_owned();
     let dir = match dir.strip_prefix(&home) {
         Some(rest) if !home.is_empty() => format!("~{rest}"),
         _ => dir,
@@ -2380,18 +2551,6 @@ fn docs_dir_text(config: &config::Config) -> String {
         .docs_dir
         .clone()
         .unwrap_or_else(|| "The one that comes with the editor".into())
-}
-
-/// Opens a web address in the desktop's browser.
-fn open_url(url: &str) {
-    let program = if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    if let Err(e) = std::process::Command::new(program).arg(url).spawn() {
-        tracing::warn!("cannot open {url}: {e}");
-    }
 }
 
 #[cfg(test)]
@@ -2419,6 +2578,22 @@ mod tests {
         let state = json!({"bars": [{"panes": [1000, 1016]}, {"panes": [3]}]});
         assert_eq!(groups(&state), vec![vec![1000, 1016], vec![3]]);
         assert!(groups(&json!({})).is_empty());
+    }
+
+    /// A hidden entry goes with the separator it leaves alone.
+    #[test]
+    fn a_hidden_entry_takes_its_line() {
+        let mut menu = json!([{"label": "File", "menu": [
+            {"label": "New", "verb": "new_file"},
+            "-",
+            {"label": "Quit", "verb": "quit"},
+        ]}, {"label": "View", "menu": [{"label": "Font", "menu": []}]}]);
+        hide(&mut menu, &["quit", "Font"]);
+        assert_eq!(
+            menu[0]["menu"],
+            json!([{"label": "New", "verb": "new_file"}])
+        );
+        assert_eq!(menu[1]["menu"], json!([]));
     }
 
     /// A file window's close form stays inside the ids the window owns.

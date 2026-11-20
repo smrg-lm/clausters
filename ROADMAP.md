@@ -349,13 +349,13 @@ Named, not enumerated: each is written where it belongs and is read there.
   holds everything natively and in a page. The native application
   (`clausters-editor-host`) runs beside the webview one, and putting the two
   side by side opened the `ST` track below. Checkpoint 3 was decided on
-  2026-11-20: the webview application is retired, so `WS13` (the page) is
-  next and `WS14` (the removal) after it, each carrying the list of what it
-  keeps.
+  2026-11-20: the webview application is retired, and with the page now the
+  host's, `WS14` (the removal) is next, carrying the list of what it keeps.
+  After it, the "Found by use" entry *Enter in a dialog's field does not
+  press its default button*.
 - **The host's look, the `ST` track** *(`crates/clausters-gui/PLAN.md`, ST
-  track)*. Taken now, before `WS13`: one design system as the specification
-  of every application's general components, with the current editor as the
-  measured reference. `ST13` closed with checkpoint 3's decision; its two
+  track)*. One design system as the specification of every application's
+  general components, with the current editor as the measured reference. `ST13` closed with checkpoint 3's decision; its two
   "Found by use" entries (a textured view in a docked pane's dialog, the
   documentation's folder button) and `ST12` (motion, optional) wait until
   after `WS14`.

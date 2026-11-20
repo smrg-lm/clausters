@@ -16,10 +16,10 @@ use std::thread;
 
 use serde_json::{Value, json};
 
+use super::paths;
 use crate::app::Msg;
-use crate::paths;
 
-const DRIVER: &str = include_str!("../../../clausters-editor/src-tauri/python/driver.py");
+const DRIVER: &str = include_str!("../../../../clausters-editor/src-tauri/python/driver.py");
 
 struct Proc {
     child: Child,
@@ -69,7 +69,7 @@ pub fn python_exe() -> (String, Option<String>) {
     if let Ok(exe) = std::env::var("CLAUSTERS_EDITOR_PYTHON") {
         return (exe, None);
     }
-    if let Some((name, python)) = crate::envs::active_python() {
+    if let Some((name, python)) = super::envs::active_python() {
         return (python.to_string_lossy().into_owned(), Some(name));
     }
     (default_python(), None)
@@ -104,7 +104,7 @@ impl Session {
 
     fn spawn(&self) -> Result<Proc, String> {
         // A new session may import other packages: their books are asked again.
-        crate::pkgdocs::forget();
+        super::pkgdocs::forget();
         let dir = paths::cache_dir();
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let driver = dir.join("driver.py");

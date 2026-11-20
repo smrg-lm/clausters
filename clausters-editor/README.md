@@ -2,9 +2,9 @@
 
 A lightweight Python editor with an interactive session: an editor, a *post*
 window with the output and a Markdown documentation viewer. Tauri 2 + Svelte 5 +
-CodeMirror 6. The same frontend also builds as a page, a JavaScript editor whose
-session runs in a worker on the clausters web client's engine ("The editor as a
-page", below). The interface uses [shadcn-svelte](https://shadcn-svelte.com)
+CodeMirror 6. The editor as a page, a JavaScript editor whose session runs in a
+worker on the clausters web client's engine, is the GUI host's now ("The editor
+as a page", below). The interface uses [shadcn-svelte](https://shadcn-svelte.com)
 (Neutral theme) and Tailwind; the editor uses VS Code's syntax colors.
 
 It lives in the `clausters` repository but is independent of it: every command
@@ -30,22 +30,10 @@ npm run tauri build    # binary and packages in src-tauri/target/release/bundle
 
 ### The editor as a page
 
-```sh
-npm run build:web      # the page, in dist-web/
-npm run serve:web      # serves it, with the clausters web package at /clausters/
-npm run test:page      # drives it in headless Chrome (-- firefox: in Firefox)
-```
-
-The page needs the clausters web package built (`./build.sh` in
-`clients/web`; `CLAUSTERS_WEB` names another folder), and is served cross-origin
-isolated (`Cross-Origin-Opener-Policy: same-origin`,
-`Cross-Origin-Embedder-Policy: require-corp`): only then does it load the GUI
-host with the applications, so a server of its own sends the two headers too. Its frontend is this
-one: what differs between the two builds is the host it runs in
-(`src/lib/host.ts`), `src/lib/host-desktop.ts` for Tauri and `src/page/` for
-the page -- files in the page's storage, the JavaScript session in a worker,
-the TypeScript language service in another. `docs/page.md` is its user
-documentation.
+The editor as a page is no longer this frontend: it is the GUI host's dock
+across the tab with the editor's application of `crates/clausters-editor`
+built for the browser, in `crates/clausters-editor/page` (its `build.sh`,
+`npm run serve` and `npm test`). `docs/page.md` is its user documentation.
 
 The application takes files to open and a few options; none of them opens a
 window when it only answers:
@@ -212,11 +200,8 @@ src/
   lib/settings.svelte.ts   theme, font, size, indentation, recent files, panel layout and grid sizes (remembered)
   lib/session.svelte.ts    communication with each language's session
   lib/languages.ts         the languages: names, files, grammars (which ones a build runs is its host's)
-  lib/host.ts              the seam between the two builds: what the editor asks of the program it runs in
+  lib/host.ts              what the editor asks of the program it runs in
   lib/host-desktop.ts      the desktop's host: Tauri, and its Python session's commands
-  page/                    the page's host: opfs.ts (files), FileDialog.svelte, session.ts and
-                           session-worker.ts (the JavaScript session), code-worker.ts (TypeScript),
-                           docs.ts (the books), main.ts (the entry, mounted by page.html)
   lib/EnvironmentsDialog.svelte, lib/PreferencesDialog.svelte   configuration dialogs
 src-tauri/
   python/driver.py         driver: runs the code in a persistent namespace, and the
@@ -235,15 +220,13 @@ docs/                      Markdown documentation (bundled with the package)
 wheel/                     the Python package: setup.py stages the build, clausters_editor/_cli.py runs it
 licenses/                  THIRD-PARTY.txt: the license of every package the app ships, shipped
                            with it -- `npm run notices` writes it (needs `cargo about`)
-scripts/notices.mjs        what writes it: both Vite bundles' packages + `cargo about`
-scripts/serve-web.mjs      serves the page with the clausters web package beside it
-vite.web.config.ts         the page's build (vite.config.ts is the desktop's)
-tests/                     the page's pure modules under `node --test`, from the sources;
-                           page.e2e.mjs drives the page in a browser (npm run test:page)
+scripts/notices.mjs        what writes it: the Vite bundle's packages, the page's dependencies
+                           (crates/clausters-editor/page) + `cargo about`
+tests/                     the frontend's pure modules under `node --test`, from the sources
 ```
 
 The checks the workflow runs, and what to run before a commit: `npm run check`,
-`npm run build` and `npm run build:web`; `npm test` (the page's pure modules, run straight from
+`npm run build`; `npm test` (the frontend's pure modules, run straight from
 the sources by node, `tests/resolve.mjs` resolving their imports as vite
 does); `python3 -m unittest discover -s src-tauri/python -p 'test_*.py'` (the
 driver); and in `src-tauri/`, `cargo fmt --check`, `cargo clippy --all-targets

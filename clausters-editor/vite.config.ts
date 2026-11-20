@@ -12,8 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       $lib: fileURLToPath(new URL("./src/lib", import.meta.url)),
-      // The program the editor runs in (src/lib/host.ts): the desktop's here,
-      // the page's in vite.web.config.ts.
+      // The program the editor runs in (src/lib/host.ts): the desktop's.
       $host: fileURLToPath(new URL("./src/lib/host-desktop.ts", import.meta.url)),
     },
   },

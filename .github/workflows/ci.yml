@@ -260,6 +260,11 @@ jobs:
       # full staged package (build_native) would be a job of its own.
       - name: The smokes
         run: ./scripts/smoke-web.sh
+      # The code editor as a page: its application built for wasm32 with its
+      # glue, and the page around it (crates/clausters-editor/page).
+      - name: The editor's page
+        working-directory: crates/clausters-editor/page
+        run: npm ci && ./build.sh debug && npm run check
 
   python:
     name: python client (pytest)

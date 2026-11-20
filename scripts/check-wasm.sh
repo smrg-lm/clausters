@@ -14,7 +14,8 @@
 # core's and the NRT worker's. Between them and `crates/clausters-gui/check-wasm.sh`
 # (the GUI host's) that is every bundle
 # `clients/web/build.sh` compiles, which is what makes a pass here mean the
-# package still builds.
+# package still builds. The code editor's application, which its page builds
+# for the browser (`crates/clausters-editor/page`), is checked last.
 #
 # One-time setup: `rustup target add wasm32-unknown-unknown`.
 set -euo pipefail
@@ -34,3 +35,4 @@ cargo check --lib --target "$TARGET" --no-default-features --features synth,faus
 cargo check -p clausters-web --target "$TARGET" "$@"
 cargo check -p clausters-core-web --target "$TARGET" "$@"
 cargo check -p clausters-nrt-web --target "$TARGET" "$@"
+cargo check -p clausters-editor --lib --target "$TARGET" "$@"

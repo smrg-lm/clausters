@@ -1,7 +1,0 @@
-/* The session's windows: the dock the GUI host draws them all in, filling
-   the editor's windows panel. */
-.session-dock {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}

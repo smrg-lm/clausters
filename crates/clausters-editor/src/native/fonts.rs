@@ -5,16 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-/// The face the host carries for code, which needs no file.
-pub const BUNDLED: &str = "JetBrains Mono";
-
-/// One monospaced family: its regular weight's file and its bold's.
-#[derive(Clone, Debug)]
-pub struct MonoFamily {
-    pub name: String,
-    pub regular: PathBuf,
-    pub bold: Option<PathBuf>,
-}
+pub use crate::platform::{BUNDLED, MonoFamily};
 
 /// A face's file and its weight, the nearest found to the one wanted.
 type Weighed = Option<(u16, PathBuf)>;

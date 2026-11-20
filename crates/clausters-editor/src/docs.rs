@@ -10,8 +10,13 @@
 //! part, and each `[Title](page.md)` is a chapter, nested by its indentation.
 //! A folder without one is a book of a single part listing its pages, each
 //! titled by its first heading.
+//!
+//! What a book is built from is a [`Folder`], read: the desktop reads one
+//! from the disk (`read_all`), a page from where it is served. The book
+//! is built here for both.
 
 use std::collections::BTreeMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 
 /// The name mdBook gives a book's table of contents: read as the book's
@@ -21,6 +26,7 @@ pub const SUMMARY: &str = "SUMMARY.md";
 /// The editor's own documentation: the configured folder, else
 /// `CLAUSTERS_EDITOR_DOCS`, else a `docs` folder beside the binary, else the
 /// one in the repository it was built from.
+#[cfg(not(target_arch = "wasm32"))]
 fn docs_dir() -> Result<PathBuf, String> {
     let dir = if let Some(custom) = crate::config::get().docs_dir {
         PathBuf::from(custom)
@@ -39,6 +45,7 @@ fn docs_dir() -> Result<PathBuf, String> {
         .map_err(|e| format!("Documentation folder not found: {e}"))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn collect_md(root: &Path, dir: &Path, out: &mut Vec<String>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -58,6 +65,7 @@ pub fn collect_md(root: &Path, dir: &Path, out: &mut Vec<String>) {
 
 /// A folder of documentation and the prefix its documents are listed under:
 /// none for the editor's own, the package's name and a slash for a package's.
+#[cfg(not(target_arch = "wasm32"))]
 pub struct Root {
     pub prefix: String,
     pub dir: PathBuf,
@@ -65,6 +73,7 @@ pub struct Root {
 
 /// The editor's documentation, then the book of every package of the
 /// session's environment that registers one.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn roots() -> Result<Vec<Root>, String> {
     let own = docs_dir();
     let mut roots: Vec<Root> = own
@@ -76,7 +85,7 @@ pub fn roots() -> Result<Vec<Root>, String> {
         })
         .into_iter()
         .collect();
-    for (name, dir) in crate::pkgdocs::books() {
+    for (name, dir) in crate::native::pkgdocs::books() {
         if let Ok(dir) = dir.canonicalize() {
             roots.push(Root {
                 prefix: format!("{name}/"),
@@ -90,26 +99,68 @@ pub fn roots() -> Result<Vec<Root>, String> {
     }
 }
 
-/// **Every book and every document**, read now: the books as the `docs`
-/// element's `books`, the documents by path as its `documents`.
+/// **Every book and every document**, read now from the disk: the books
+/// as the `docs` element's `books`, the documents by path as its
+/// `documents`.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn read_all() -> Result<crate::app::Docs, String> {
-    let roots = roots()?;
-    let dirs = roots
-        .iter()
-        .map(|r| (r.prefix.clone(), r.dir.to_string_lossy().into_owned()))
-        .collect();
-    let books = roots.iter().map(book).collect();
-    let mut documents = BTreeMap::new();
-    for root in &roots {
-        let mut docs = Vec::new();
-        collect_md(&root.dir, &root.dir, &mut docs);
-        for rel in docs {
-            if let Ok(text) = std::fs::read_to_string(root.dir.join(&rel)) {
-                documents.insert(format!("{}{rel}", root.prefix), text);
+    let folders = roots()?
+        .into_iter()
+        .map(|root| {
+            let mut docs = Vec::new();
+            collect_md(&root.dir, &root.dir, &mut docs);
+            let documents = docs
+                .into_iter()
+                .filter_map(|rel| {
+                    let text = std::fs::read_to_string(root.dir.join(&rel)).ok()?;
+                    Some((rel, text))
+                })
+                .collect();
+            Folder {
+                name: root
+                    .dir
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                summary: std::fs::read_to_string(root.dir.join(SUMMARY)).ok(),
+                documents,
+                at: root.dir.to_string_lossy().into_owned(),
+                prefix: root.prefix,
             }
+        })
+        .collect();
+    Ok(read(folders))
+}
+
+/// **A folder of documentation, read**: what its book and its documents
+/// are made of, wherever it was read from.
+pub struct Folder {
+    /// What its documents' paths start with: empty for the editor's own,
+    /// a package's name and a slash for a package's.
+    pub prefix: String,
+    /// Its own name, which titles a book of the editor's that names none.
+    pub name: String,
+    /// Its table of contents (`SUMMARY.md`), if it has one.
+    pub summary: Option<String>,
+    /// Every document, by its path inside the folder, `/` separated.
+    pub documents: Vec<(String, String)>,
+    /// Where it is, which a picture a page names is read from: a folder on
+    /// the disk, or where a page serves it.
+    pub at: String,
+}
+
+/// **Every book and every document** of `folders`, in their order.
+pub fn read(folders: Vec<Folder>) -> crate::app::Docs {
+    let books = folders.iter().map(book).collect();
+    let mut documents = BTreeMap::new();
+    let mut roots = BTreeMap::new();
+    for folder in folders {
+        roots.insert(folder.prefix.clone(), folder.at);
+        for (rel, text) in folder.documents {
+            documents.insert(format!("{}{rel}", folder.prefix), text);
         }
     }
-    Ok((books, documents, dirs))
+    (books, documents, roots)
 }
 
 #[derive(serde::Serialize, Debug, PartialEq)]
@@ -135,46 +186,43 @@ pub struct Book {
     parts: Vec<Part>,
 }
 
-fn book(root: &Root) -> Book {
+fn book(folder: &Folder) -> Book {
     // Without a title of its own, a package's book is named after the package
     // and the editor's after its folder.
-    let fallback = match root.prefix.strip_suffix('/') {
+    let fallback = match folder.prefix.strip_suffix('/') {
         Some(name) => name.to_string(),
-        None => root
-            .dir
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default(),
+        None => folder.name.clone(),
     };
-    let (title, parts) = match std::fs::read_to_string(root.dir.join(SUMMARY)) {
-        Ok(text) => parse_summary(&text, &root.prefix),
-        Err(_) => (None, vec![listing(&root.dir, &root.prefix)]),
+    let (title, parts) = match &folder.summary {
+        Some(text) => parse_summary(text, &folder.prefix),
+        None => (None, vec![listing(folder)]),
     };
     Book {
-        prefix: root.prefix.clone(),
+        prefix: folder.prefix.clone(),
         title: title.unwrap_or(fallback),
         parts,
     }
 }
 
-/// A folder without a table of contents: its pages, in `list_docs`' order.
-fn listing(dir: &Path, prefix: &str) -> Part {
-    let mut docs = Vec::new();
-    collect_md(dir, dir, &mut docs);
-    docs.sort_by_key(|d| (d.to_lowercase() != "index.md", d.clone()));
+/// A folder without a table of contents: its pages, `index.md` first and
+/// the others by their path.
+fn listing(folder: &Folder) -> Part {
+    let mut docs: Vec<&(String, String)> = folder
+        .documents
+        .iter()
+        .filter(|(rel, _)| rel.ends_with(".md") && rel.rsplit('/').next() != Some(SUMMARY))
+        .collect();
+    docs.sort_by_key(|(rel, _)| (rel.to_lowercase() != "index.md", rel.clone()));
     let chapters = docs
         .into_iter()
-        .map(|rel| {
-            let title = std::fs::read_to_string(dir.join(&rel))
-                .ok()
-                .and_then(|text| {
-                    text.lines()
-                        .find_map(|l| l.strip_prefix("# ").map(|t| t.trim().to_string()))
-                })
+        .map(|(rel, text)| {
+            let title = text
+                .lines()
+                .find_map(|l| l.strip_prefix("# ").map(|t| t.trim().to_string()))
                 .unwrap_or_else(|| rel.trim_end_matches(".md").to_string());
             Chapter {
                 title,
-                path: Some(format!("{prefix}{rel}")),
+                path: Some(format!("{}{rel}", folder.prefix)),
                 children: Vec::new(),
             }
         })
@@ -343,16 +391,16 @@ mod tests {
 
     #[test]
     fn a_folder_without_one_lists_its_pages() {
-        let dir =
-            std::env::temp_dir().join(format!("clausters-editor-books-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("b.md"), "Intro text.\n# Second page\n").unwrap();
-        std::fs::write(dir.join("index.md"), "# Start\n").unwrap();
-        let book = book(&Root {
+        let book = book(&Folder {
             prefix: "pkg/".into(),
-            dir: dir.clone(),
+            name: "docs".into(),
+            summary: None,
+            documents: vec![
+                ("b.md".into(), "Intro text.\n# Second page\n".into()),
+                ("index.md".into(), "# Start\n".into()),
+            ],
+            at: String::new(),
         });
-        std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(book.title, "pkg");
         assert_eq!(titles(&book.parts[0].chapters), ["Start", "Second page"]);
         assert_eq!(book.parts[0].chapters[1].path.as_deref(), Some("pkg/b.md"));

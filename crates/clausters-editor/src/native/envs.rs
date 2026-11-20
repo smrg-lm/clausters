@@ -9,12 +9,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::thread;
 
-use serde::Serialize;
 use serde_json::json;
 
+use super::session::{self, Session};
 use crate::app::Msg;
 use crate::config;
-use crate::session::{self, Session};
+pub use crate::platform::EnvInfo;
 
 /// Only one create/install operation at a time.
 static BUSY: AtomicBool = AtomicBool::new(false);
@@ -35,15 +35,6 @@ impl Drop for Busy {
     }
 }
 
-#[derive(Serialize)]
-pub struct EnvInfo {
-    pub name: String,
-    pub version: String,
-    pub active: bool,
-    /// The `pip install` arguments it was created with (empty if nothing was installed).
-    pub source: String,
-}
-
 /// File, inside each environment, holding its install source.
 const SOURCE_FILE: &str = "clausters-editor-source.txt";
 
@@ -55,7 +46,7 @@ fn source_of(dir: &Path) -> String {
 }
 
 fn envs_dir() -> PathBuf {
-    crate::paths::data_dir().join("venvs")
+    super::paths::data_dir().join("venvs")
 }
 
 fn env_dir(name: &str) -> Result<PathBuf, String> {

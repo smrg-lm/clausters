@@ -865,6 +865,7 @@ dependencies = [
  "dirs",
  "fontdb",
  "futures-util",
+ "js-sys",
  "libc",
  "pollster",
  "rfd",
@@ -873,6 +874,9 @@ dependencies = [
  "shell-words",
  "tracing",
  "tracing-subscriber",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

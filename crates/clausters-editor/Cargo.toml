@@ -7,6 +7,12 @@ description = "A Python editor with an interactive session, drawn by the Clauste
 # An application, not a library: never published to a registry.
 publish = false
 
+# A library the binary links, and the same library built for a page
+# (`cdylib`, for wasm-bindgen): the application, written once, with what
+# each platform answers it behind `platform::Platform`.
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [[bin]]
 name = "clausters-editor-host"
 path = "src/main.rs"
@@ -19,21 +25,24 @@ default = ["score"]
 score = ["clausters-gui/score", "dep:clausters-verovio"]
 
 [dependencies]
-# The host it links, drawn in one dock: the windows, the elements (code, post,
-# docs) and the GPU are its, and this crate is an application of it, linked
-# in the process (`gui::run_local`).
-clausters-gui = { path = "../clausters-gui" }
 clausters-core = { path = "../clausters-core" }
-# Named here only for where its library is (`build.rs`): a link argument
-# reaches the package that links, and this one links the editor's binary.
-clausters-verovio = { path = "../clausters-verovio", optional = true }
-clausters-gui-draw = { path = "../clausters-gui-draw", default-features = false }
 clausters-editing = { path = "../clausters-editing" }
 # The close form every application asks in.
 clausters-apps = { path = "../clausters-apps" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+
+# What only the desktop's program has: the host it links, the session's
+# process, the portal's dialogs, the system's fonts.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# The host it links, drawn in one dock: the windows, the elements (code, post,
+# docs) and the GPU are its, and this crate is an application of it, linked
+# in the process (`gui::run_local`).
+clausters-gui = { path = "../clausters-gui" }
+# Named here only for where its library is (`build.rs`): a link argument
+# reaches the package that links, and this one links the editor's binary.
+clausters-verovio = { path = "../clausters-verovio", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4.6.7", features = ["derive"] }
 shell-words = "1.1.1"
@@ -52,3 +61,20 @@ futures-util = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+
+# The page's program: the bindings its script holds, the page's storage and
+# its timers, and the promises its script answers with.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = "0.4"
+js-sys = { workspace = true }
+web-sys = { version = "0.3", features = [
+    "EventTarget",
+    "MediaQueryList",
+    "MediaQueryListEvent",
+    "Storage",
+    "Window",
+] }
+
+[dev-dependencies]
+clausters-gui-draw = { path = "../clausters-gui-draw", default-features = false }
