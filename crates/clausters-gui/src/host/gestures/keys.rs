@@ -1163,7 +1163,7 @@ fn press_default(host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>
     }
     let Some(button) = host
         .dialog(ctx.def_id)
-        .and_then(crate::host::dialogs::default_button)
+        .and_then(crate::host::widget::Widget::default_button)
     else {
         return;
     };

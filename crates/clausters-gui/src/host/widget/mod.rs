@@ -544,6 +544,41 @@ fn actions_of(
 }
 
 impl Widget {
+    /// **Every widget of it a reader sees**, in order: visible, and on the
+    /// shown page of a stack.
+    pub(crate) fn each_read(&self, each: &mut impl FnMut(&Widget)) {
+        if !self.visible {
+            return;
+        }
+        each(self);
+        if let WidgetKind::Stack { index, .. } = &self.kind {
+            if let Some(page) = usize::try_from(*index)
+                .ok()
+                .and_then(|i| self.children.get(i))
+            {
+                page.each_read(each);
+            }
+            return;
+        }
+        for child in &self.children {
+            child.each_read(each);
+        }
+    }
+
+    /// **The default button of the dialog it is**, the one Enter in a field
+    /// presses: the first a reader sees that names itself `default` and can
+    /// be pressed.
+    pub(crate) fn default_button(&self) -> Option<i32> {
+        let mut found = None;
+        self.each_read(&mut |w| {
+            if found.is_none() && w.enabled && w.kind.as_element().is_some_and(|el| el.is_default())
+            {
+                found = w.id;
+            }
+        });
+        found
+    }
+
     /// Interprets a generic [`GuiNode`] (and the blobs carried beside it in the
     /// `/gui_def` message) into a typed widget tree. `root_id` is the def id from
     /// the OSC argument, used for the root whose JSON carries no `id`.

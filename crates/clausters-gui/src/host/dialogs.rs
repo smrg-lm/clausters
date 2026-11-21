@@ -2,7 +2,7 @@
 //! the keys as it comes up -- to its first field, else to its default button
 //! -- and gives them back to what had them when it goes, as the design
 //! system's dialog does. Enter in one of its fields presses that default
-//! button, as a form submits ([`default_button`]). Tab staying inside it is the ring's
+//! button, as a form submits ([`Widget::default_button`]). Tab staying inside it is the ring's
 //! ([`gestures::focus`](super::gestures)), and Escape and a press on the
 //! scrim asking it to go are the gesture machine's.
 //!
@@ -10,7 +10,7 @@
 //! turned, freed, its `modal` set -- so the host looks after each change that
 //! can do it ([`Host::settle_dialog`]) rather than in any one of them.
 
-use super::widget::{Widget, WidgetKind};
+use super::widget::Widget;
 use super::{Host, HostEffect};
 
 /// A dialog up in a window, and what had the keyboard before it came up.
@@ -27,7 +27,7 @@ pub(crate) struct Up {
 fn first_stop(dialog: &Widget) -> Option<i32> {
     let mut field = None;
     let mut default = None;
-    walk(dialog, &mut |w| {
+    dialog.each_read(&mut |w| {
         let Some(el) = w.kind.as_element().filter(|el| el.accepts_focus()) else {
             return;
         };
@@ -41,40 +41,10 @@ fn first_stop(dialog: &Widget) -> Option<i32> {
     field.or(default)
 }
 
-/// **The dialog's default button**, the one Enter in a field presses: the
-/// first a reader sees that names itself `default` and can be pressed.
-pub(crate) fn default_button(dialog: &Widget) -> Option<i32> {
-    let mut found = None;
-    walk(dialog, &mut |w| {
-        if found.is_none() && w.enabled && w.kind.as_element().is_some_and(|el| el.is_default()) {
-            found = w.id;
-        }
-    });
-    found
-}
-
-/// Every widget of `w` a reader sees, in order: visible, and on the shown
-/// page of a stack.
-fn walk(w: &Widget, each: &mut impl FnMut(&Widget)) {
-    if !w.visible {
-        return;
-    }
-    each(w);
-    if let WidgetKind::Stack { index, .. } = &w.kind {
-        if let Some(page) = usize::try_from(*index).ok().and_then(|i| w.children.get(i)) {
-            walk(page, each);
-        }
-        return;
-    }
-    for child in &w.children {
-        walk(child, each);
-    }
-}
-
 /// Whether widget `id` is one of `tree`'s a reader sees.
 fn shown(tree: &Widget, id: i32) -> bool {
     let mut found = false;
-    walk(tree, &mut |w| found |= w.id == Some(id));
+    tree.each_read(&mut |w| found |= w.id == Some(id));
     found
 }
 
