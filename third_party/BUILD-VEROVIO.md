@@ -203,38 +203,38 @@ as a model of the stack.)
 verovio is **LGPL-3.0-only**; Clausters is **GPL-3.0-or-later**. LGPL-3 code
 combines into a GPL-3 work without friction (that direction is the one the
 licenses are written to allow), so linking it — dynamically as here — raises
-nothing to resolve. Note it stays a *client-side* dependency: the server does
-not link verovio, and neither does the GUI host (see below).
+nothing to resolve. The server never links verovio; the GUI host links it
+only under its `score` feature, and the code editor turns that on (see below).
 
 ## Building clausters against it
 
-Nothing in the workspace links verovio **today** — the notation track keeps it
-strictly client-side, which is the whole reason the `score` widget consumes a
-display list rather than a score. The GUI host draws the display list and knows
-nothing about MEI; the web client reuses that same renderer against the
-same seam. So:
+The server links verovio in no build. Three crates of the workspace do, each
+behind a feature, and `build.rs` (in `clausters-verovio`) finds this prefix
+through `VEROVIO_PREFIX`, falling back to `~/.local` then `/usr/local`:
 
-- `cargo build` / `cargo test` need **none** of this. There is no feature flag
-  to set and no `build.rs` probing for a prefix, so no Rust job in CI touches
-  verovio.
-- The Python client needs the **library**, built here and staged into its
-  package by `build_native.py`. Nothing is installed into an interpreter.
+- `clausters-ffi`, under its `verovio` feature, for the Python client, which
+  binds the library with ctypes from the package (`build_native.py` stages it
+  there). Nothing is installed into an interpreter.
+- The GUI host, under its `score` feature, which reads a score file into the
+  display list the `score` widget draws.
+- The code editor, `crates/clausters-editor`, whose default `score` feature is
+  the host's. So `cargo build --workspace` and `cargo test --workspace` need
+  the library, and the server's test runs exclude the editor (they would also
+  unify the host's features onto the server).
 
-CI builds it for exactly the two jobs that stage the package — the `python` job
-and the release — through `.github/actions/verovio`, the composite that mirrors
-the libfaust one (restore from cache, build from this pin on a miss).
+CI restores it through `.github/actions/verovio`, the composite that mirrors
+the libfaust one (restore from cache, build from this pin on a miss), for the
+jobs that need it: the `python` job and the `gui` job (which tests the host's
+`score` feature and the editor) in `ci.yml`, the editor's wheel in
+`clausters-editor.yml`, and the release's wheels.
 
-A missing engraver fails the build on its own now: `build_native.py` requires
-both vendored libraries by default and stops with the recipe. Both jobs also set
-`CLAUSTERS_REQUIRE_COMPLETE=1`, which refuses a deliberate `CLAUSTERS_SKIP_*`,
-so nothing can opt out of the engraver (or of a def family) on the way to a
-release. Without that, a green run and a wheel whose `score` widget raises at
-the user's run time look identical: the notation tests skip themselves when
-there is no engraver.
-
-When the native producer lands, it will link this prefix from its own crate
-(**not** the GUI host — that would break the seam), and only then does a verovio
-prefix become a build dependency of anything in the workspace.
+A missing engraver fails the package build on its own: `build_native.py`
+requires both vendored libraries by default and stops with the recipe. The
+jobs that stage the client's package also set `CLAUSTERS_REQUIRE_COMPLETE=1`, which
+refuses a deliberate `CLAUSTERS_SKIP_*`, so nothing can opt out of the engraver
+(or of a def family) on the way to a release. Without that, a green run and a
+wheel whose `score` widget raises at the user's run time look identical: the
+notation tests skip themselves when there is no engraver.
 
 ## Verified 2026-07-24 (this build)
 

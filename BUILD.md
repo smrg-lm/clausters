@@ -204,18 +204,20 @@ python clients/python/build_native.py # stages it (and everything else) into the
 ```
 
 `clausters-verovio` links it, behind the **`verovio` feature, off by default**
-— a plain `cargo build --workspace` links no libverovio and that crate is empty,
-exactly as a SynthDef-only server carries no libfaust. `clausters-ffi` re-exports
-the C surface behind the same feature (which pulls `notation`, the pure half in
-`clausters-core`), and the wheel turns it on; `build.rs` finds the library
-through `VEROVIO_PREFIX`, falling back to `~/.local` then `/usr/local`. The GUI
-host still links nothing: it draws a display list and knows nothing about MEI.
+— with the feature off that crate is empty, exactly as a SynthDef-only server
+carries no libfaust, and the server links no libverovio in any build. Three
+crates turn it on: `clausters-ffi` re-exports the C surface behind its own
+`verovio` feature (which pulls `notation`, the pure half in `clausters-core`),
+and the Python wheel turns it on; the GUI host's **`score` feature** links it
+to read a score file; and the code editor (`crates/clausters-editor`) turns
+`score` on **by default**, so `cargo build --workspace` and `cargo test
+--workspace` need the library unless they exclude the editor. `build.rs` finds
+the library through `VEROVIO_PREFIX`, falling back to `~/.local` then
+`/usr/local`.
 
 Two things separate it from libfaust. It needs no LLVM and no submodules —
-verovio vendors its dependencies in-tree. And it is **built from a `develop`
-commit rather than a release**, because the score editor is dead in 6.2.1 (a
-guard typo upstream fixed after it) — which is also why the published PyPI
-module is not an option.
+verovio vendors its dependencies in-tree. And it is **built from the pinned
+release rather than taken from PyPI** (`third_party/verovio.pin` says why).
 
 The full recipe, the importer trim and the upstream bug are in
 [`third_party/BUILD-VEROVIO.md`](third_party/BUILD-VEROVIO.md).

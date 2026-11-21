@@ -89,7 +89,10 @@ jobs:
   #    moment being wrong is unrecoverable is this one. It only ever reads --
   #    it is a gate, not a formatter, and it never gets a --fix pass.
   #  - `cargo test` on the default set and on `+embed`, the same two runs CI's
-  #    test-default job makes, against the exact commit the tag points at.
+  #    test-default job makes, against the exact commit the tag points at. The
+  #    host and the code editor sit out as they do there: the editor links
+  #    libverovio, which this job does not restore, and both would unify
+  #    features onto the server.
   #
   # Deliberately NOT re-run here: the libfaust-free test combos, the GUI/wasm
   # gate and the Python suite. Those are CI's per-push job and duplicating them
@@ -139,8 +142,8 @@ jobs:
       # Faust SIGILL, and a release failing here is exactly when the dump is
       # worth having.
       - uses: ./.github/actions/coredump
-      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui
-      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui --features embed
+      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui --exclude clausters-editor
+      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui --exclude clausters-editor --features embed
       - uses: ./.github/actions/coredump
         if: failure()
         with:
@@ -293,8 +296,9 @@ jobs:
     name: publish clausters-editor to PyPI (trusted publishing)
     # After the client's upload, for the reason the client's waits on npm: one
     # way, and in order. `skip-existing` so a run repeated for one tag finds
-    # its version already on PyPI without failing. The PyPI project `clausters-editor` lists this workflow and
-    # the `pypi` environment as a trusted publisher, as `clausters` does.
+    # its version already on PyPI without failing. The PyPI project
+    # `clausters-editor` lists this workflow and the `pypi` environment as a
+    # trusted publisher, as `clausters` does.
     needs: [build-editor, publish-pypi]
     if: github.event_name == 'push'
     runs-on: ubuntu-26.04
