@@ -1615,9 +1615,14 @@ impl App {
         // its view takes the window's verbs (search, from the menu) and its
         // keys, before anything in it was pressed
         tree["main"] = json!(DOCS);
-        tree["children"] = json!([{
+        let mut docs = json!({
             "id": DOCS, "type": "docs", "text_size": self.settings.text_size(),
-        }]);
+        });
+        // the header's folder button, where a folder can be chosen
+        if self.offers.docs_folder {
+            docs["folder"] = json!("docs_folder");
+        }
+        tree["children"] = json!([docs]);
         self.link.def(DOCS_WIN, &tree);
         self.docs_shown = true;
         self.feed_docs();

@@ -2880,6 +2880,10 @@ export function code(
  * at its own size, narrowed to the page; one it cannot read is written as its
  * description.
  *
+ * `folder` names the verb that chooses the documentation's folder: the strip
+ * then ends in a folder button, after find, and a press on it asks for that
+ * verb as a menu entry naming it would.
+ *
  * Ctrl+F finds in the page and Ctrl+Shift+F searches every document. A link
  * to another document opens it, at its heading; a link out of the
  * documentation is reported as the event `"link"` with its address, for the
@@ -2895,16 +2899,18 @@ export function docs(
         books?: unknown[];
         documents?: Record<string, string | null>;
         roots?: Record<string, string>;
+        folder?: string;
         textSize?: number;
     } = {},
 ): View {
-    const { books, documents, roots, textSize, ...rest } = options;
+    const { books, documents, roots, folder, textSize, ...rest } = options;
     return node("docs", {
         ...rest,
         ...drop([
             ["books", books],
             ["documents", documents],
             ["roots", roots],
+            ["folder", folder],
             ["text_size", textSize],
         ]),
     });

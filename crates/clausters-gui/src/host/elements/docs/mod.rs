@@ -174,6 +174,8 @@ enum Part {
     /// The book on the trail: its contents.
     Book,
     Find,
+    /// The documentation folder: the verb its owner names performed.
+    Folder,
     Field,
     Previous,
     Next,
@@ -221,6 +223,9 @@ pub struct DocsView {
     /// The search index, built at the first search.
     index: RefCell<Option<Rc<Index>>>,
     find_open: bool,
+    /// The verb the header's folder button performs, when its owner
+    /// offers a choice of folder (`folder`); no button without one.
+    folder: Option<String>,
     scope: Scope,
     find: String,
     caret: Caret,
@@ -293,6 +298,7 @@ impl DocsView {
             laid: RefCell::new(None),
             index: RefCell::new(None),
             find_open: false,
+            folder: None,
             scope: Scope::Page,
             find: String::new(),
             caret: Caret::default(),
@@ -667,7 +673,13 @@ impl DocsView {
             parts.push((part, Rect::new(x, sy, square, row)));
             x += square;
         }
-        let find = Rect::new(strip.x + strip.w - square, sy, square, row);
+        // find, then the folder at the end, as the reference's header
+        let mut end = strip.x + strip.w;
+        if self.folder.is_some() {
+            end -= square;
+            parts.push((Part::Folder, Rect::new(end, sy, square, row)));
+        }
+        let find = Rect::new(end - square, sy, square, row);
         parts.push((Part::Find, find));
         let (book, _) = self.trail();
         let trail_x = x + m.pad;
@@ -1134,6 +1146,7 @@ impl DocsView {
             match part {
                 Part::Back
                 | Part::Find
+                | Part::Folder
                 | Part::Forward
                 | Part::Home
                 | Part::Previous
@@ -1150,6 +1163,7 @@ impl DocsView {
                         ),
                         Part::Home => (controls::icon("house", '\u{2302}'), true),
                         Part::Find => (controls::icon("search", '?'), true),
+                        Part::Folder => (controls::icon("folder", '/'), true),
                         Part::Previous => (controls::icon("chevron-up", font::symbol::UP), true),
                         Part::Next => (controls::icon("chevron-down", font::symbol::DOWN), true),
                         _ => (controls::icon("x", font::symbol::CLOSE), true),
@@ -1289,6 +1303,10 @@ impl Element for DocsView {
                 })
                 .is_some(),
             "help" => structure(v).map(|v| self.help(&v)).is_some(),
+            "folder" => {
+                self.folder = v.as_str().filter(|s| !s.is_empty()).map(str::to_string);
+                true
+            }
             "text_size" => v
                 .as_f64()
                 .filter(|n| *n > 0.0)
@@ -1433,6 +1451,11 @@ impl Element for DocsView {
                     }
                 }
                 Part::Find => self.open_find(Scope::Page),
+                Part::Folder => {
+                    if let Some(verb) = &self.folder {
+                        return Claim::events(Events::none().and_command(verb));
+                    }
+                }
                 Part::Field => {
                     let pos = controls::caret_at(
                         r,

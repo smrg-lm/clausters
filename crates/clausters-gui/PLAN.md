@@ -1685,12 +1685,6 @@ finished work, where a pending item reads as done.
   such a dialog is left out. No dialog of the applications holds one yet;
   the float needs the textured passes a pane's frame has.
 
-- ⬜ **The documentation's header has no folder button** (2026-11-19, the
-  style review). The reference's header ends in find, the documentation
-  folder and close; the host's has find and close (and the dock's panel
-  menu). The folder is chosen from Help and from the preferences, so this
-  is a shortcut missing, not a function.
-
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** (2026-10-21, the user, browser). Playback was
   right and switching the view away and back redrew it; until then the

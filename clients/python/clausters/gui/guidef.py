@@ -2163,8 +2163,8 @@ def code(text: str = "", *, language: str | None = None,
     return node("code", id=id, **extra, **props)
 
 
-def docs(*, books=None, documents=None, roots=None, text_size: float | None = None,
-         id: int | None = None, **props) -> View:
+def docs(*, books=None, documents=None, roots=None, folder: str | None = None,
+         text_size: float | None = None, id: int | None = None, **props) -> View:
     """A ``docs`` panel: the documentation of a set of books, read as an
     editor's documentation panel reads it.
 
@@ -2185,6 +2185,10 @@ def docs(*, books=None, documents=None, roots=None, text_size: float | None = No
     its own size, narrowed to the page; one it cannot read is written as its
     description.
 
+    ``folder`` names the verb that chooses the documentation's folder: the
+    strip then ends in a folder button, after find, and a press on it asks
+    for that verb as a menu entry naming it would.
+
     Ctrl+F finds in the page and Ctrl+Shift+F searches every document. A
     link to another document opens it, at its heading; a link out of the
     documentation is reported as the event ``"link"`` with its address, for
@@ -2196,7 +2200,7 @@ def docs(*, books=None, documents=None, roots=None, text_size: float | None = No
     ``page`` shown, a search's ``results`` and the matches ``found`` in the
     page."""
     extra = _drop_none(books=books, documents=documents, roots=roots,
-                       text_size=text_size)
+                       folder=folder, text_size=text_size)
     return node("docs", id=id, **extra, **props)
 
 

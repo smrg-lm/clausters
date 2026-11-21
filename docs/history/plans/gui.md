@@ -9969,3 +9969,14 @@ module of its own.
   every application's form has it with nothing bound. A multiline field
   keeps Enter for its new line, and a field outside a dialog presses
   nothing.)*
+
+- ✅ **The documentation's header has no folder button** (2026-11-19, the
+  style review). The reference's header ends in find, the documentation
+  folder and close; the host's has find and close (and the dock's panel
+  menu). The folder is chosen from Help and from the preferences, so this
+  is a shortcut missing, not a function.
+  *(Fixed 2026-11-21: a `docs` view given `folder`, the verb that
+  chooses the documentation's folder, ends its strip in a folder button
+  after find, and a press asks for that verb as the Help entry does; the
+  editor names `docs_folder` where it offers a choice of folder. Both
+  clients' builders take it.)*

@@ -358,3 +358,25 @@ fn a_long_code_line_scrolls_across_its_block() {
     v.wheel(over(&wide), (1.0, 0.0), &input);
     assert!(v.pan_of(0) < wide.most());
 }
+
+/// **The header ends in find and the folder**, as the reference's, when
+/// its owner names the verb that chooses the folder; a press on it asks
+/// for that verb, and with none named there is no button.
+#[test]
+fn the_folder_button_performs_its_owners_verb() {
+    let m = Metrics::default();
+    let mut v = panel();
+    let parts = |v: &DocsView| v.geometry(RECT, 1.0, &m, None).parts;
+    assert!(!parts(&v).iter().any(|(p, _)| *p == Part::Folder));
+    v.set("folder", &Value::from("docs_folder"));
+    let parts = parts(&v);
+    let rect = |part| parts.iter().find(|(p, _)| *p == part).unwrap().1;
+    let (folder, find) = (rect(Part::Folder), rect(Part::Find));
+    assert_eq!(folder.x + folder.w, RECT.w, "the folder ends the strip");
+    assert_eq!(find.x + find.w, folder.x, "find stands before it");
+    let at = (f64::from(folder.x + 2.0), f64::from(folder.y + 2.0));
+    let Claim::Take(mut t) = v.press(at, &input(&m)) else {
+        panic!()
+    };
+    assert_eq!(t.events.take_command().as_deref(), Some("docs_folder"));
+}
