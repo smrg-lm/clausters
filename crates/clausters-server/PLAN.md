@@ -1632,6 +1632,25 @@ holds what is open.
   wheel), and the sizes and timings that decided it into
   `docs/decisions.md`.
 
+- ⬜ **Every UGen of SuperCollider's base library, in the catalog**
+  *(asked by the user, 2026-11-21, after finding `IRand` missing)*. The
+  U track closed with the families it set out to cover, and the registry
+  holds 168 scsynth names; it never took the base library as its measure,
+  so what is missing is found by use, one UGen at a time. The `Rand`
+  family is the case that showed it: only `Rand` exists, while `IRand`,
+  `ExpRand`, `LinRand`, `NRand`, `TRand`, `TIRand`, `TExpRand` and
+  `CoinGate` do not -- and U0 had promised `Rand`'s exponential sibling
+  with U6, which shipped the noise without it. The work: an inventory of
+  the UGens the base library ships (the server's own plugins, not the
+  extensions distributed apart from it), checked against the registry
+  row by row, each missing one either added or named out of scope with
+  the reason (a platform UGen, one superseded by another already here,
+  one the document's own model replaces). Each added UGen follows the U
+  track's stances (one core per family, scsynth names on the wire, a
+  better realization allowed where the transfer function is kept, a
+  test per row), and reaches both clients' builders in the same commit,
+  as the contrast tests require.
+
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what
