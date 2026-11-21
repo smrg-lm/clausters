@@ -128,7 +128,7 @@ node tools/gen-faust-env.mjs
 # imported dynamically, inside a boot that only ever runs in a browser, and
 # there it resolves against dist/.
 #
-# The three declaration files git keeps (see .gitignore) go through
+# Every declaration file staged here is versioned, and each goes through
 # tools/stage-dts.mjs, which drops the linker's list of raw exports: its order
 # changes from one build to the next, and copied as it is, it would leave the
 # tree modified after every build with no change to the API.
@@ -137,12 +137,13 @@ cp dist/core/clausters_core_web.js src/core/
 node tools/stage-dts.mjs dist/core/clausters_core_web.d.ts src/core/clausters_core_web.d.ts
 node tools/stage-dts.mjs dist/gui-host/clausters_gui.d.ts src/gui-host/clausters_gui.d.ts
 node tools/stage-dts.mjs dist/gui-host-apps/clausters_gui.d.ts src/gui-host-apps/clausters_gui.d.ts
-cp dist/engine/clausters_web.js dist/engine/clausters_web.d.ts src/engine/
+cp dist/engine/clausters_web.js src/engine/
+node tools/stage-dts.mjs dist/engine/clausters_web.d.ts src/engine/clausters_web.d.ts
 # The NRT worker's decoder: only the .d.ts, since the glue is imported
 # dynamically inside a Worker that only exists in a browser, where it
 # resolves against dist/ -- the same rule the GUI host's glue follows.
 mkdir -p src/nrt
-cp dist/nrt/clausters_nrt_web.d.ts src/nrt/
+node tools/stage-dts.mjs dist/nrt/clausters_nrt_web.d.ts src/nrt/clausters_nrt_web.d.ts
 
 # The engraver: vendored, not built here. `third_party/build-verovio-wasm.sh`
 # compiles the pinned verovio with the Emscripten SDK -- the same sources and

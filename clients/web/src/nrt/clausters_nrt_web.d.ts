@@ -174,47 +174,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_decoded_free: (a: number, b: number) => void;
-    readonly __wbg_probed_free: (a: number, b: number) => void;
-    readonly __wbg_soundshape_free: (a: number, b: number) => void;
-    readonly decodeAudio: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
-    readonly decoded_channels: (a: number) => number;
-    readonly decoded_frames: (a: number) => number;
-    readonly decoded_sampleRate: (a: number) => number;
-    readonly decoded_samples: (a: number) => [number, number];
-    readonly encodeWavFrames: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly faustBoxFromJson: (a: number, b: number) => [number, number, number];
-    readonly faustSignalsFromJson: (a: number, b: number) => [number, number, number, number];
-    readonly probeAudio: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
-    readonly probed_channels: (a: number) => number;
-    readonly probed_codec: (a: number) => [number, number];
-    readonly probed_sampleFormat: (a: number) => [number, number];
-    readonly probed_sampleRate: (a: number) => number;
-    readonly soundHeader: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number, number];
-    readonly soundShape: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly soundshape_bitsPerSample: (a: number) => number;
-    readonly soundshape_blockAlign: (a: number) => number;
-    readonly soundshape_dataOffset: (a: number) => number;
-    readonly soundshape_float: (a: number) => number;
-    readonly soundshape_frames: (a: number) => number;
-    readonly stripFaustData: (a: number, b: number) => [number, number, number, number];
-    readonly wavHeader: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly probed_frames: (a: number) => number;
-    readonly soundshape_channels: (a: number) => number;
-    readonly soundshape_sampleRate: (a: number) => number;
-    readonly clausters_abi_version: () => number;
-    readonly clausters_free_samples: (a: number, b: bigint) => void;
-    readonly clausters_read_soundfile: (a: number, b: bigint, c: bigint, d: number, e: number, f: number, g: number, h: number) => number;
-    readonly clausters_render: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
-    readonly clausters_render_log: (a: number, b: number) => number;
-    readonly clausters_soundfile_info: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => number;
-    readonly clausters_write_soundfile: (a: number, b: number, c: bigint, d: number, e: number, f: number, g: number, h: number) => number;
-    readonly __wbindgen_externrefs: WebAssembly.Table;
-    readonly __wbindgen_malloc: (a: number, b: number) => number;
-    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-    readonly __externref_table_dealloc: (a: number) => void;
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
-    readonly __wbindgen_start: () => void;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;
