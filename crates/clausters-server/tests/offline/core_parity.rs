@@ -162,18 +162,20 @@ fn fused_ugens_match_the_core_composition() {
     }
 }
 
-/// The server's `WhiteNoise` now delegates wholesale to
-/// `clausters_core::rng::WhiteNoise` (exactness covered by that crate's unit
-/// tests). Here we just confirm the delegation actually drives the UGen path:
-/// in range and not a constant.
+/// A `WhiteNoise` drawing alone from a table seeded with `seed` plays
+/// `clausters_core::rng::WhiteNoise::from_seed(seed)`, sample for sample:
+/// what lets a client reproduce a server's noise.
 #[test]
-fn white_noise_delegation_runs() {
+fn white_noise_is_the_cores_stream() {
     let buses = Buses::new(ControlBuses::new(1024), 128);
     let buffers: Vec<Option<Arc<Buffer>>> = vec![];
     let mut ctx = ctx(&buses, &buffers);
 
     let mut out = vec![0.0f32; BLOCK_SIZE];
     WhiteNoise::with_seed(SEED_STRIDE).process(&mut ctx, &[], &mut out);
+    let mut want = vec![0.0f32; BLOCK_SIZE];
+    clausters::clausters_core::rng::WhiteNoise::from_seed(SEED_STRIDE).fill(&mut want);
+    assert_eq!(out, want);
 
     assert!(out.iter().all(|s| (-1.0..1.0).contains(s)), "out of range");
     assert!(

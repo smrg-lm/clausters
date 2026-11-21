@@ -7,7 +7,7 @@ use super::*;
 
 pub(super) static UGENS: &[UGenDescriptor] = &[
     // --- noise ---
-    desc(
+    desc_draws(desc(
         "PinkNoise",
         Fixed(0),
         I_NONE,
@@ -16,9 +16,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(PinkNoise::with_seed(ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(PinkNoise::new(ctx.rand())),
+    )),
+    desc_draws(desc(
         "BrownNoise",
         Fixed(0),
         I_NONE,
@@ -27,9 +27,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(BrownNoise::with_seed(ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(BrownNoise::new(ctx.rand())),
+    )),
+    desc_draws(desc(
         "GrayNoise",
         Fixed(0),
         I_NONE,
@@ -38,9 +38,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(GrayNoise::with_seed(ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(GrayNoise::new(ctx.rand())),
+    )),
+    desc_draws(desc(
         "ClipNoise",
         Fixed(0),
         I_NONE,
@@ -49,9 +49,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(ClipNoise::with_seed(ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(ClipNoise::new(ctx.rand())),
+    )),
+    desc_draws(desc(
         "LFNoise0",
         Fixed(1),
         I_LF_NOISE,
@@ -60,9 +60,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(LfNoise::with_seed(LfNoiseShape::Step, ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(LfNoise::new(LfNoiseShape::Step, ctx.rand())),
+    )),
+    desc_draws(desc(
         "LFNoise1",
         Fixed(1),
         I_LF_NOISE,
@@ -71,9 +71,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(LfNoise::with_seed(LfNoiseShape::Linear, ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(LfNoise::new(LfNoiseShape::Linear, ctx.rand())),
+    )),
+    desc_draws(desc(
         "LFNoise2",
         Fixed(1),
         I_LF_NOISE,
@@ -82,9 +82,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(LfNoise::with_seed(LfNoiseShape::Quadratic, ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(LfNoise::new(LfNoiseShape::Quadratic, ctx.rand())),
+    )),
+    desc_draws(desc(
         "LFClipNoise",
         Fixed(1),
         I_LF_NOISE,
@@ -93,9 +93,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(LfNoise::with_seed(LfNoiseShape::Clip, ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(LfNoise::new(LfNoiseShape::Clip, ctx.rand())),
+    )),
+    desc_draws(desc(
         "Dust",
         Fixed(1),
         I_DENSITY,
@@ -104,9 +104,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(Dust::with_seed(DustMode::Unipolar, ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(Dust::new(DustMode::Unipolar, ctx.rand())),
+    )),
+    desc_draws(desc(
         "Dust2",
         Fixed(1),
         I_DENSITY,
@@ -115,9 +115,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(Dust::with_seed(DustMode::Bipolar, ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(Dust::new(DustMode::Bipolar, ctx.rand())),
+    )),
+    desc_draws(desc(
         "Crackle",
         Fixed(1),
         I_CHAOS,
@@ -126,6 +126,6 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Crackle::default()),
-    ),
+        |_, ctx| Box::new(Crackle::new(ctx.rand())),
+    )),
 ];

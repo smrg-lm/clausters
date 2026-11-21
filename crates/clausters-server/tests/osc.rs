@@ -4366,3 +4366,21 @@ fn freeing_the_governed_group_unbinds_the_transport() {
 
     server.quit();
 }
+
+/// `/server_seed seed` reseeds the generators and answers the seed in force,
+/// as a decimal string (a seed is 64 bits); with no argument it only answers.
+#[test]
+fn server_seed_sets_and_reports_the_seed() {
+    let server = TestServer::spawn();
+    let big = "18446744073709551615";
+    server.send("/server_seed", vec![OscType::String(big.into())]);
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/server_seed.reply");
+    assert_eq!(reply.args, vec![OscType::String(big.into())]);
+    server.send("/server_seed", vec![OscType::Int(1956)]);
+    assert_eq!(server.recv().args, vec![OscType::String("1956".into())]);
+    server.send("/server_seed", vec![]);
+    let reply = server.recv();
+    assert_eq!(reply.args, vec![OscType::String("1956".into())]);
+    server.quit();
+}

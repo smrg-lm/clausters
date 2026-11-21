@@ -127,11 +127,6 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Once, 70 minutes; the
   wait it hung in is bounded now, and the next failure says where.
 
-- ⬜ **`Rand` is seeded from a counter of the process, so a render with it
-  does not replay** *(`crates/clausters-server/PLAN.md`, Found by use)*. Its
-  seed should come from the synth's build context, as every other random
-  UGen's does.
-
 - ⬜ **`faust_compiler` failed once in a parallel workspace run** *(`crates/clausters-server/PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
@@ -351,7 +346,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   ids a parent hands a child, events routed to the application that owns each
   widget, and who answers a key when applications nest -- a window's own keys
   are built (its `keys` scopes), and nesting is what is left of them.
-- **The remaining "Future directions"** of each plan — the server's (release builds tuned for size, never at the cost of speed; every UGen of SuperCollider's base library, in the catalog; a UGen's builder never takes the name of a client function; the server runs from a seed, and its random UGens draw from shared generators; a long take
+- **The remaining "Future directions"** of each plan — the server's (release builds tuned for size, never at the cost of speed; every UGen of SuperCollider's base library, in the catalog; a UGen's builder never takes the name of a client function; a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; per-output
   and intra-SynthDef latency; the def selector over persistent plugin

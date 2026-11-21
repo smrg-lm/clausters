@@ -33,16 +33,17 @@ The layout that benefits is *independent chains*: subgroups (voices, mixer chann
 
 Per processing block the engine scans the group's children **in order**, batching them greedily into a stage while each next unit:
 
-- writes nothing the stage already reads or writes, and
-- reads nothing the stage writes.
+- writes nothing the stage already reads or writes,
+- reads nothing the stage writes, and
+- draws from no random generator a stage member draws from.
 
-A conflicting unit closes the stage and opens the next one, so anything that *must* be ordered (two writers summing into the same bus, a reader after its writer) is automatically serialized — same-bus mixing keeps the child order, exactly like sequential execution. A **dynamic** unit (a bus index computed by a signal: the engine cannot know what it touches) always runs alone. Nested parallel groups dispatched to a worker run sequentially inside it (parallelism does not nest in v1).
+The last rule is the random UGens': they draw from the server's shared generators (`/server_seed` in [`schemas.md`](schemas.md)), and two units drawing from one generator draw in child order or not at all reproducibly. Units meant to run side by side and draw randomness select different generators with `RandID`. A conflicting unit closes the stage and opens the next one, so anything that *must* be ordered (two writers summing into the same bus, a reader after its writer) is automatically serialized — same-bus mixing keeps the child order, exactly like sequential execution. A **dynamic** unit (a bus index computed by a signal: the engine cannot know what it touches) always runs alone. Nested parallel groups dispatched to a worker run sequentially inside it (parallelism does not nest in v1).
 
 The masks come from the same per-def analysis as the auto-sorted groups (`In`/`Out`/ `ReplaceOut` and the Faust reserved `in`/`out` buses, constants and controls; `/node_set` on a control used as a bus index re-ships the masks), but the copy the scheduler trusts lives **in the engine**, shipped with each synth — stage safety never depends on network-side state.
 
 ## Determinism
 
-Parallel rendering is **bit-identical** to sequential rendering. Stage members touch pairwise disjoint buses and read nothing the stage writes, so their results are independent of worker interleaving; stages and the serialized conflicts preserve child order. `crates/clausters-server/tests/parallel.rs` pins this down for live engines and NRT renders, including across an `/node_set` that retargets a bus. Goldens, the RT/NRT sample-identity guarantee and the `--workers` flag therefore compose: workers only change wall-clock time.
+Parallel rendering is **bit-identical** to sequential rendering. Stage members touch pairwise disjoint buses, read nothing the stage writes and draw from pairwise different generators, so their results are independent of worker interleaving; stages and the serialized conflicts preserve child order. `crates/clausters-server/tests/parallel.rs` pins this down for live engines and NRT renders, including across an `/node_set` that retargets a bus. Goldens, the RT/NRT sample-identity guarantee and the `--workers` flag therefore compose: workers only change wall-clock time.
 
 ## Workers and the real-time path
 

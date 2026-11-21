@@ -490,6 +490,7 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.send_server_query(f);
         Ok(())
     }),
+    ("/server_seed", |s, _, m, f| s.handle_server_seed(m, f)),
     ("/server_status", |s, _, _, f| {
         s.send_server_status(f);
         Ok(())

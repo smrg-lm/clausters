@@ -37,10 +37,11 @@ from .ugens import ChannelList, Ugen, out
 #: a file. It also passes its input through, but the criterion is applied
 #: without an exception, so ``play(disk_out(sig, path=p))`` records without
 #: sounding and recording *and* hearing is the explicit
-#: ``out(0, disk_out(sig, path=p))``.
+#: ``out(0, disk_out(sig, path=p))``. `RandSeed` is one too: it writes the
+#: server's generator, which every synth drawing from it reads.
 _SINK_KINDS = {
     "Out", "ReplaceOut", "OutCtl", "LocalOut", "DiskOut",
-    "SendTrig", "SendReply", "Poll",
+    "SendTrig", "SendReply", "Poll", "RandSeed",
 }
 
 #: Prefix marking a def as **ephemeral** -- the server keeps it in memory and

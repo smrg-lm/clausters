@@ -1035,6 +1035,23 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         if addr == "/fail":
             raise CommandError(f"{args[0] if args else 'a command'} failed: {args[1:]}")
 
+    def seed(self, value: "int | None" = None, timeout: "float | None" = None) -> "int | None":
+        """**The server's seed**: with ``value``, reseeds the server's random
+        generators from it (``/server_seed``), so the same seed and the same
+        commands at the same times give the same samples; without, asks for
+        the seed in force -- the one a server booted from entropy printed, and
+        the way to have that take again. Returns the seed.
+
+        Reseeding does not wait for an answer, so it is safe from a routine;
+        asking does (RT only). In a timed bundle the reseed happens at the
+        bundle's time, and in a score at the event's. A seed is a 64-bit
+        integer and travels as a decimal string."""
+        if value is not None:
+            self.send_msg("/server_seed", str(int(value)))
+            return int(value)
+        _, args = self.request("/server_seed", timeout=timeout, expect=("/server_seed.reply",))
+        return int(args[0])
+
     def sync(self, timeout: "float | None" = None) -> int:
         """The async barrier (scsynth ``/server_sync``): sends ``/server_sync id`` and blocks
         until the server answers ``/server_sync.reply id``, which it does only once every

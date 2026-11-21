@@ -170,10 +170,19 @@ fn every_ugen_computes_what_scsynth_computes() {
                 v => v.as_f64().unwrap(),
             })
             .collect();
+        // A random source's stream starts one sample's draws later in scsynth,
+        // whose constructor runs a sample of the calculation: `shift` says by
+        // how many samples the server's output leads.
+        let shift = case.get("shift").and_then(Value::as_u64).unwrap_or(0) as usize;
+        assert!(
+            shift == 0 || case.get("why").is_some(),
+            "{name}: a shift needs a `why`"
+        );
         match render(case) {
             Err(e) => failures.push(format!("{name}: {e}")),
             Ok(got) => {
-                if let Some(why) = compare(&got, &want, tol) {
+                let (got, want) = (&got[shift..], &want[..want.len() - shift]);
+                if let Some(why) = compare(got, want, tol) {
                     failures.push(format!("{name}: {why}"));
                 }
             }

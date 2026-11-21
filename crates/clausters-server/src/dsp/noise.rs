@@ -1,17 +1,19 @@
-//! Noise sources: the stochastic generators, all drawing from the same
-//! seeded stream.
+//! Noise sources: the stochastic generators, each scsynth's algorithm over
+//! scsynth's generator.
 //!
-//! **Every generator here takes its randomness from `clausters_core::rng`**,
-//! the xorshift the sequencing layer and the client's `pwhite` already use, and
-//! every one of them is built from an explicit seed -- there is no seedless
-//! constructor, and no process-global counter behind one. The seed comes from
-//! the instance's [`crate::dsp::registry::BuildCtx`], which reserves a
-//! contiguous run per synth, so a render is reproducible: the same score and
-//! the same starting seed replay the same samples, which is what lets a noisy
-//! patch have a golden file at all. What is *not* in the core is the
-//! shaping -- the dice table, the random walk, the interpolation -- so a client
-//! that wanted to draw a pink stream itself would need that moved over first.
-//! Only `WhiteNoise`'s generator is mirrored there today.
+//! **Every generator here draws from its synth's generator in the engine's
+//! table** ([`crate::dsp::rand`]): the one the synth selects (`RandID`, 0
+//! unless told), seeded from the server's seed. So a render is reproducible --
+//! the same score and the same seed replay the same samples, which is what
+//! lets a noisy patch have a golden file at all -- and two sources in one graph
+//! are two runs of one stream, drawn in turn, never the same samples. What
+//! each one draws, and how it shapes the draws, is scsynth's `NoiseUGens.cpp`:
+//! the same generator, the same conversions, the same order of draws.
+//!
+//! The one thing that differs is when the first draw happens. A scsynth
+//! constructor runs one sample of its calculation before the first block, so
+//! the stream a scsynth source plays starts one sample's draws in; here the
+//! first sample is the first draw. The streams are the same, a sample apart.
 //!
 //! The families:
 //!
@@ -24,24 +26,24 @@
 //!   curved between. These are modulation sources, deliberately not band
 //!   limited, like the `LF*` oscillators.
 //! - **Impulsive and chaotic** -- `Dust`/`Dust2` (random impulses at a mean
-//!   density) and `Crackle` (a chaotic map, not a random process at all).
+//!   density) and `Crackle` (a chaotic map from a random start).
 
-use clausters_core::rng;
-
+use crate::dsp::rand::SynthRand;
 use crate::dsp::{ProcessCtx, UGen, at};
 
-/// White noise in [-1, 1], xorshift per sample. No inputs. The generator
-/// itself is `clausters_core::rng::WhiteNoise`, so a client can reproduce the
-/// stream from the same seed; only the per-instance seeding lives here.
+/// White noise in `[-1, 1)`: scsynth's `frand2` per sample. No inputs.
 pub struct WhiteNoise {
-    noise: rng::WhiteNoise,
+    rand: SynthRand,
 }
 
 impl WhiteNoise {
+    /// One drawing from a table of its own, seeded from `seed`.
     pub fn with_seed(seed: u64) -> Self {
-        Self {
-            noise: rng::WhiteNoise::from_seed(seed),
-        }
+        Self::new(SynthRand::detached(seed))
+    }
+
+    pub fn new(rand: SynthRand) -> Self {
+        Self { rand }
     }
 }
 
@@ -51,52 +53,47 @@ impl UGen for WhiteNoise {
     }
 
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
-        self.noise.fill(output);
+        self.rand.draw(|g| {
+            for s in output.iter_mut() {
+                *s = g.frand2();
+            }
+        });
     }
 }
 
-/// Number of generators in the Voss-McCartney sum. Sixteen covers about five
-/// decades -- from a period of 2 samples to one of 2^16 -- which is the whole
-/// audible band and then some at any sample rate we run at.
+/// Number of dice in the Voss-McCartney sum: sixteen, scsynth's.
 const PINK_ROWS: usize = 16;
 
 /// `PinkNoise`: equal energy per octave, -3 dB/octave. No inputs.
 ///
-/// **Voss-McCartney**, and deliberately not Trammell's stochastic variant. Both
-/// sum a set of white generators updated at halving rates; the difference is
-/// the schedule. Voss-McCartney re-rolls the generator picked by the number of
-/// trailing zeros in a counter, so **exactly one** of them changes per sample --
-/// a fixed cost, every sample, forever. Trammell's version decides at random
-/// which rows to update, which is cheaper on average and unbounded in the worst
-/// case. An audio callback is not paid on average: it has one block's budget
-/// and a run of expensive samples inside it is a dropout. The deterministic
-/// schedule is worth more here than the average saving.
-///
-/// The output is the sum of the rows plus one fresh white sample, mapped
-/// linearly onto [-1, 1). Its *peak* therefore reaches +/-1 only when all
-/// seventeen agree, so like scsynth's it is a quiet signal -- around 0.13 RMS
-/// against white noise's 0.58. That is the level a ported def expects.
+/// **Voss-McCartney**, scsynth's: sixteen dice, and the die re-rolled at each
+/// sample is the one picked by the number of trailing zeros in a random word,
+/// so die `k` changes once every `2^k` samples on average and **exactly one**
+/// changes per sample -- a fixed cost, every sample, forever, which is what
+/// an audio callback wants (Trammell's variant is cheaper on average and
+/// unbounded in the worst case). The output is the dice's sum plus one fresh
+/// draw, read as the mantissa of a float in `[-1, 1)`. Its *peak* reaches
+/// +/-1 only when all seventeen agree, so it is a quiet signal -- around 0.13
+/// RMS against white noise's 0.58.
 pub struct PinkNoise {
-    rng: rng::Rng,
-    rows: [f32; PINK_ROWS],
-    total: f32,
-    counter: u32,
+    rand: SynthRand,
+    dice: [u32; PINK_ROWS],
+    total: u32,
+    primed: bool,
 }
 
 impl PinkNoise {
+    /// One drawing from a table of its own, seeded from `seed`.
     pub fn with_seed(seed: u64) -> Self {
-        let mut rng = rng::Rng::from_seed(seed);
-        let mut rows = [0.0f32; PINK_ROWS];
-        let mut total = 0.0;
-        for r in rows.iter_mut() {
-            *r = rng.next_f64() as f32;
-            total += *r;
-        }
+        Self::new(SynthRand::detached(seed))
+    }
+
+    pub fn new(rand: SynthRand) -> Self {
         Self {
-            rng,
-            rows,
-            total,
-            counter: 0,
+            rand,
+            dice: [0; PINK_ROWS],
+            total: 0,
+            primed: false,
         }
     }
 }
@@ -107,43 +104,54 @@ impl UGen for PinkNoise {
     }
 
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
-        for s in output.iter_mut() {
-            self.counter = self.counter.wrapping_add(1);
-            // Which row to re-roll: the number of trailing zeros doubles the
-            // interval at each step, so row k updates every 2^k samples. That
-            // *is* the octave spacing the spectrum comes from.
-            let k = (self.counter.trailing_zeros() as usize) & (PINK_ROWS - 1);
-            let fresh = self.rng.next_f64() as f32;
-            self.total += fresh - self.rows[k];
-            self.rows[k] = fresh;
-            // Rows + one white sample: 17 uniforms in [0, 1), mean 8.5.
-            let sum = self.total + self.rng.next_f64() as f32;
-            *s = sum * (2.0 / (PINK_ROWS + 1) as f32) - 1.0;
-        }
+        let (dice, total, primed) = (&mut self.dice, &mut self.total, &mut self.primed);
+        self.rand.draw(|g| {
+            if !*primed {
+                *primed = true;
+                *total = 0;
+                for d in dice.iter_mut() {
+                    *d = g.trand() >> 13;
+                    *total = total.wrapping_add(*d);
+                }
+            }
+            for s in output.iter_mut() {
+                let counter = g.trand();
+                let fresh = counter >> 13;
+                let k = (counter.trailing_zeros() as usize) & (PINK_ROWS - 1);
+                let prev = dice[k];
+                dice[k] = fresh;
+                *total = total.wrapping_add(fresh.wrapping_sub(prev));
+                let extra = g.trand() >> 13;
+                *s = f32::from_bits(total.wrapping_add(extra) | 0x4000_0000) - 3.0;
+            }
+        });
     }
 }
 
-/// The largest step a [`BrownNoise`] takes per sample, as scsynth's does. It
-/// sets how fast the walk can travel, and with the reflection below it is the
-/// whole of the algorithm.
-const BROWN_STEP: f64 = 0.125;
-
 /// `BrownNoise`: a random walk, -6 dB/octave. No inputs.
 ///
-/// The walk **reflects** at +/-1 rather than clamping. Clamping would let the
-/// signal rest against a rail -- a constant, which is a click on the way in and
-/// silence while it lasts; reflecting keeps it moving and keeps the
-/// distribution flat instead of piling probability up at the ends.
+/// scsynth's: a step of up to an eighth either way per sample (`frand8`),
+/// starting from a random level. The walk **reflects** at +/-1 rather than
+/// clamping: clamping would let the signal rest against a rail -- a constant,
+/// which is a click on the way in and silence while it lasts; reflecting keeps
+/// it moving and keeps the distribution flat.
 pub struct BrownNoise {
-    rng: rng::Rng,
-    z: f64,
+    rand: SynthRand,
+    z: f32,
+    primed: bool,
 }
 
 impl BrownNoise {
+    /// One drawing from a table of its own, seeded from `seed`.
     pub fn with_seed(seed: u64) -> Self {
+        Self::new(SynthRand::detached(seed))
+    }
+
+    pub fn new(rand: SynthRand) -> Self {
         Self {
-            rng: rng::Rng::from_seed(seed),
+            rand,
             z: 0.0,
+            primed: false,
         }
     }
 }
@@ -151,19 +159,25 @@ impl BrownNoise {
 impl UGen for BrownNoise {
     fn reset(&mut self) {
         // The generator's stream goes on: a restarted voice draws new numbers.
-        self.z = 0.0;
     }
 
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
-        for s in output.iter_mut() {
-            self.z += self.rng.uniform(-BROWN_STEP, BROWN_STEP);
-            if self.z > 1.0 {
-                self.z = 2.0 - self.z;
-            } else if self.z < -1.0 {
-                self.z = -2.0 - self.z;
+        let (z, primed) = (&mut self.z, &mut self.primed);
+        self.rand.draw(|g| {
+            if !*primed {
+                *primed = true;
+                *z = g.frand2();
             }
-            *s = self.z as f32;
-        }
+            for s in output.iter_mut() {
+                *z += g.frand8();
+                if *z > 1.0 {
+                    *z = 2.0 - *z;
+                } else if *z < -1.0 {
+                    *z = -2.0 - *z;
+                }
+                *s = *z;
+            }
+        });
     }
 }
 
@@ -183,16 +197,18 @@ impl UGen for BrownNoise {
 /// against the word's 31 and rounds by an amount that depends on the magnitude
 /// the flip just changed.
 pub struct GrayNoise {
-    rng: rng::Rng,
+    rand: SynthRand,
     word: i32,
 }
 
 impl GrayNoise {
+    /// One drawing from a table of its own, seeded from `seed`.
     pub fn with_seed(seed: u64) -> Self {
-        Self {
-            rng: rng::Rng::from_seed(seed),
-            word: 0,
-        }
+        Self::new(SynthRand::detached(seed))
+    }
+
+    pub fn new(rand: SynthRand) -> Self {
+        Self { rand, word: 0 }
     }
 }
 
@@ -202,27 +218,34 @@ impl UGen for GrayNoise {
     }
 
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
-        for s in output.iter_mut() {
-            self.word ^= 1i32 << (self.rng.next_u64() & 31);
-            *s = self.word as f32 * (1.0 / 2_147_483_648.0);
-        }
+        let word = &mut self.word;
+        self.rand.draw(|g| {
+            for s in output.iter_mut() {
+                *word ^= 1i32 << (g.trand() & 31);
+                *s = *word as f32 * (1.0 / 2_147_483_648.0);
+            }
+        });
     }
 }
 
 /// `ClipNoise`: -1 or 1, nothing between. No inputs.
 ///
-/// A coin flip per sample. Its spectrum is flat like white noise's, but every
-/// sample is at full scale, so it is the loudest noise available at a given
-/// peak -- which is the reason to reach for it and the reason to be careful.
+/// A coin flip per sample (scsynth's `fcoin`). Its spectrum is flat like white
+/// noise's, but every sample is at full scale, so it is the loudest noise
+/// available at a given peak -- which is the reason to reach for it and the
+/// reason to be careful.
 pub struct ClipNoise {
-    rng: rng::Rng,
+    rand: SynthRand,
 }
 
 impl ClipNoise {
+    /// One drawing from a table of its own, seeded from `seed`.
     pub fn with_seed(seed: u64) -> Self {
-        Self {
-            rng: rng::Rng::from_seed(seed),
-        }
+        Self::new(SynthRand::detached(seed))
+    }
+
+    pub fn new(rand: SynthRand) -> Self {
+        Self { rand }
     }
 }
 
@@ -232,13 +255,11 @@ impl UGen for ClipNoise {
     }
 
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
-        for s in output.iter_mut() {
-            *s = if self.rng.next_u64() & 1 == 0 {
-                -1.0
-            } else {
-                1.0
-            };
-        }
+        self.rand.draw(|g| {
+            for s in output.iter_mut() {
+                *s = g.fcoin();
+            }
+        });
     }
 }
 
@@ -257,118 +278,130 @@ pub enum LfNoiseShape {
 }
 
 /// `LFNoise0`, `LFClipNoise`, `LFNoise1` and `LFNoise2`: a new random value
-/// every `1/freq` seconds. Input 0 `freq`.
+/// every `1/freq` seconds. Input 0 `freq`. scsynth's, draw for draw.
 ///
 /// Not band limited, and deliberately so -- like the `LF*` oscillators these are
 /// modulation shapes. A step is a step, and asking for one at audio rate is
 /// asking for its harmonics.
 ///
-/// The segment length is recomputed **only at a segment boundary**, from the
-/// frequency at that moment. So a modulated `freq` changes how long the *next*
-/// segment lasts and never stretches the one already running, which would make
-/// the value jump.
+/// The segment length is the rate over the frequency, truncated, and it is
+/// worked out **only at a segment boundary**, from the frequency at that
+/// moment: a modulated `freq` changes how long the *next* segment lasts and
+/// never stretches the one already running, which would make the value jump.
+/// A segment is at least one sample, two for the quadratic, whose curve needs
+/// an interior to bend over.
 pub struct LfNoise {
-    rng: rng::Rng,
+    rand: SynthRand,
     shape: LfNoiseShape,
     /// Samples left in the current segment.
-    counter: i64,
-    level: f64,
-    slope: f64,
-    curve: f64,
-    /// `Quadratic` only: the value drawn for the *next* segment, needed to know
-    /// where this one's midpoint is.
-    next_value: f64,
+    counter: i32,
+    level: f32,
+    slope: f32,
+    curve: f32,
+    /// `Quadratic` only: the value drawn for the *next* segment and the
+    /// midpoint the current one aims at.
+    next_value: f32,
+    next_midpoint: f32,
     primed: bool,
 }
 
 impl LfNoise {
+    /// One drawing from a table of its own, seeded from `seed`.
     pub fn with_seed(shape: LfNoiseShape, seed: u64) -> Self {
+        Self::new(shape, SynthRand::detached(seed))
+    }
+
+    pub fn new(shape: LfNoiseShape, rand: SynthRand) -> Self {
         Self {
-            rng: rng::Rng::from_seed(seed),
+            rand,
             shape,
             counter: 0,
             level: 0.0,
             slope: 0.0,
             curve: 0.0,
             next_value: 0.0,
+            next_midpoint: 0.0,
             primed: false,
         }
-    }
-
-    /// A fresh value in the shape's own range.
-    #[inline]
-    fn draw(&mut self) -> f64 {
-        match self.shape {
-            LfNoiseShape::Clip => {
-                if self.rng.next_u64() & 1 == 0 {
-                    -1.0
-                } else {
-                    1.0
-                }
-            }
-            _ => self.rng.uniform(-1.0, 1.0),
-        }
-    }
-
-    /// Segment length in samples, never shorter than two -- a one-sample
-    /// segment has no interior for the interpolating shapes to interpolate
-    /// over, and the curve's denominator would collapse.
-    #[inline]
-    fn segment(freq: f32, sr: f32) -> i64 {
-        ((sr / freq.abs().max(0.001)) as i64).max(2)
     }
 }
 
 impl UGen for LfNoise {
     fn reset(&mut self) {
         // The generator's stream goes on: a restarted voice draws new numbers.
-        self.counter = 0;
-        self.level = 0.0;
-        self.slope = 0.0;
-        self.curve = 0.0;
-        self.next_value = 0.0;
-        self.primed = false;
+        *self = Self::new(self.shape, self.rand.clone());
     }
 
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
-        let sr = ctx.sample_rate;
-        if !self.primed {
-            self.primed = true;
-            self.level = self.draw();
-            self.next_value = self.draw();
-        }
-        for (i, s) in output.iter_mut().enumerate() {
-            if self.counter <= 0 {
-                let n = Self::segment(at(inputs[0], i), sr);
-                self.counter = n;
-                let value = self.next_value;
-                self.next_value = self.draw();
-                match self.shape {
-                    LfNoiseShape::Step | LfNoiseShape::Clip => self.level = value,
-                    LfNoiseShape::Linear => self.slope = (value - self.level) / n as f64,
+        let sr = ctx.sample_rate as f64;
+        let shape = self.shape;
+        let Self {
+            rand,
+            counter,
+            level,
+            slope,
+            curve,
+            next_value,
+            next_midpoint,
+            primed,
+            ..
+        } = self;
+        rand.draw(|g| {
+            if !*primed {
+                *primed = true;
+                // scsynth's constructors: the ramp starts from a random level,
+                // the curve aims at the midpoint of a first random value.
+                match shape {
+                    LfNoiseShape::Linear => *level = g.frand2(),
                     LfNoiseShape::Quadratic => {
-                        // Aim at the midpoint between this value and the next,
-                        // which is what makes consecutive segments meet with
-                        // the same slope. The curve that lands there after `n`
-                        // steps of `slope += curve; level += slope` follows
-                        // from summing that recurrence.
-                        let midpoint = 0.5 * (value + self.next_value);
-                        let n = n as f64;
-                        self.curve = 2.0 * (midpoint - self.level - n * self.slope) / (n * n + n);
+                        *next_value = g.frand2();
+                        *next_midpoint = *next_value * 0.5;
+                    }
+                    _ => {}
+                }
+            }
+            for (i, s) in output.iter_mut().enumerate() {
+                if *counter <= 0 {
+                    let freq = at(inputs[0], i).max(0.001);
+                    let n = (sr / freq as f64) as i32;
+                    match shape {
+                        LfNoiseShape::Step => {
+                            *counter = n.max(1);
+                            *level = g.frand2();
+                        }
+                        LfNoiseShape::Clip => {
+                            *counter = n.max(1);
+                            *level = g.fcoin();
+                        }
+                        LfNoiseShape::Linear => {
+                            *counter = n.max(1);
+                            let next = g.frand2();
+                            *slope = (next - *level) / *counter as f32;
+                        }
+                        LfNoiseShape::Quadratic => {
+                            let value = *next_value;
+                            *next_value = g.frand2();
+                            *level = *next_midpoint;
+                            *next_midpoint = (*next_value + value) * 0.5;
+                            *counter = n.max(2);
+                            let len = *counter as f32;
+                            *curve =
+                                2.0 * (*next_midpoint - *level - len * *slope) / (len * len + len);
+                        }
+                    }
+                }
+                *counter -= 1;
+                *s = *level;
+                match shape {
+                    LfNoiseShape::Step | LfNoiseShape::Clip => {}
+                    LfNoiseShape::Linear => *level += *slope,
+                    LfNoiseShape::Quadratic => {
+                        *slope += *curve;
+                        *level += *slope;
                     }
                 }
             }
-            self.counter -= 1;
-            *s = self.level as f32;
-            match self.shape {
-                LfNoiseShape::Step | LfNoiseShape::Clip => {}
-                LfNoiseShape::Linear => self.level += self.slope,
-                LfNoiseShape::Quadratic => {
-                    self.slope += self.curve;
-                    self.level += self.slope;
-                }
-            }
-        }
+        });
     }
 }
 
@@ -391,18 +424,21 @@ pub enum DustMode {
 /// use one rather than the other.
 ///
 /// The amplitudes are random too -- the trial's own value, rescaled -- which is
-/// scsynth's behaviour and worth knowing before using `Dust` as a clock.
+/// scsynth's behaviour and worth knowing before using `Dust` as a clock. The
+/// density is read once a block, as scsynth's is.
 pub struct Dust {
-    rng: rng::Rng,
+    rand: SynthRand,
     mode: DustMode,
 }
 
 impl Dust {
+    /// One drawing from a table of its own, seeded from `seed`.
     pub fn with_seed(mode: DustMode, seed: u64) -> Self {
-        Self {
-            rng: rng::Rng::from_seed(seed),
-            mode,
-        }
+        Self::new(mode, SynthRand::detached(seed))
+    }
+
+    pub fn new(mode: DustMode, rand: SynthRand) -> Self {
+        Self { rand, mode }
     }
 }
 
@@ -412,31 +448,40 @@ impl UGen for Dust {
     }
 
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
-        let density = inputs[0];
-        let sr = ctx.sample_rate as f64;
-        // Block-level fast path: a scalar density means one division per block
-        // rather than one per sample.
-        let const_thresh = (density.len() == 1).then(|| density[0] as f64 / sr);
-        for (i, s) in output.iter_mut().enumerate() {
-            let thresh = const_thresh.unwrap_or_else(|| at(density, i) as f64 / sr);
-            let z = self.rng.next_f64();
-            *s = if thresh > 0.0 && z < thresh {
-                match self.mode {
-                    DustMode::Unipolar => (z / thresh) as f32,
-                    DustMode::Bipolar => (2.0 * z / thresh - 1.0) as f32,
-                }
-            } else {
-                0.0
-            };
-        }
+        let thresh = inputs[0][0] * (1.0 / ctx.sample_rate as f64) as f32;
+        let mode = self.mode;
+        let scale = if thresh > 0.0 {
+            match mode {
+                DustMode::Unipolar => 1.0 / thresh,
+                DustMode::Bipolar => 2.0 / thresh,
+            }
+        } else {
+            0.0
+        };
+        self.rand.draw(|g| {
+            for s in output.iter_mut() {
+                let z = g.frand();
+                *s = if z < thresh {
+                    match mode {
+                        DustMode::Unipolar => z * scale,
+                        DustMode::Bipolar => z * scale - 1.0,
+                    }
+                } else {
+                    0.0
+                };
+            }
+        });
     }
 }
 
 /// `Crackle(chaos)`: the chaotic map `y[n] = |chaos*y[n-1] - y[n-2] - 0.05|`.
 /// Input 0 `chaos`.
 ///
-/// **Not a random process.** It has no RNG at all: it is deterministic, and the
-/// same `chaos` always gives the same signal from the same start. What makes it
+/// **Not a random process.** Only its starting point is drawn, as scsynth's is;
+/// from there it is deterministic, and the same `chaos` always gives the same
+/// signal from the same start. It runs in `f32`, as scsynth's does: a chaotic
+/// orbit computed in another width parts from scsynth's within a few hundred
+/// samples. What makes it
 /// noise-like is that the orbit does not close -- measured here, no period up to
 /// 512 samples -- and that `chaos` changes the signal drastically and **not
 /// monotonically**: the spread runs 0.56, 0.20, 0.08, 0.05, 0.19, 0.05, 0.06
@@ -445,30 +490,45 @@ impl UGen for Dust {
 /// **unipolar** (the absolute value is part of the map), so it carries DC;
 /// subtract its mean or pass it through `LeakDC` before summing it into a bus.
 pub struct Crackle {
-    y1: f64,
-    y2: f64,
+    rand: SynthRand,
+    y1: f32,
+    y2: f32,
+    primed: bool,
 }
 
-impl Default for Crackle {
-    fn default() -> Self {
-        // scsynth's start point. Zero for both would be a fixed point of the
-        // map with `chaos` at its default, i.e. a constant.
-        Self { y1: 0.3, y2: 0.0 }
+impl Crackle {
+    /// One drawing from a table of its own, seeded from `seed`.
+    pub fn with_seed(seed: u64) -> Self {
+        Self::new(SynthRand::detached(seed))
+    }
+
+    pub fn new(rand: SynthRand) -> Self {
+        Self {
+            rand,
+            y1: 0.0,
+            y2: 0.0,
+            primed: false,
+        }
     }
 }
 
 impl UGen for Crackle {
     fn reset(&mut self) {
-        *self = Self::default();
+        self.primed = false;
     }
 
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        if !self.primed {
+            self.primed = true;
+            self.y1 = self.rand.draw(|g| g.drand()) as f32;
+            self.y2 = 0.0;
+        }
         for (i, s) in output.iter_mut().enumerate() {
-            let chaos = at(inputs[0], i) as f64;
-            let y0 = (chaos * self.y1 - self.y2 - 0.05).abs();
+            let chaos = at(inputs[0], i);
+            let y0 = (self.y1 * chaos - self.y2 - 0.05).abs();
             self.y2 = self.y1;
             self.y1 = y0;
-            *s = y0 as f32;
+            *s = y0;
         }
     }
 }

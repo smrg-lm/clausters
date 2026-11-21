@@ -28,13 +28,13 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     // A random draw per sample from `clausters_core::rng::Draw`, by name --
     // the distribution a client draws a value from. Seeded like every
     // stochastic UGen.
-    desc_op(
+    desc_draws(desc_op(
         "RandOpUGen",
         Fixed(2),
         I_RANDOP,
         OpFamily::Draw,
-        |c, ctx| Box::new(RandOp::new(c.op.unwrap_or(0), ctx.next_seed())),
-    ),
+        |c, ctx| Box::new(RandOp::new(c.op.unwrap_or(0), ctx.rand())),
+    )),
     // An input kept inside `lo..hi`: `clausters_core::builtins::apply_bound`,
     // the function a client clips, wraps or folds a value with.
     desc(

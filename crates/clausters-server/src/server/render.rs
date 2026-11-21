@@ -355,6 +355,7 @@ impl OfflineRender {
             DEFAULT_CONTROL_BUSES,
             cfg.limits,
         );
+        let generators = Arc::clone(handle.generators());
         let r = Renderer {
             engine,
             handle,
@@ -365,6 +366,7 @@ impl OfflineRender {
                     DEFAULT_CONTROL_BUSES,
                     cfg.limits,
                 );
+                t.set_generators(generators);
                 t.set_seed(seed);
                 t.offline = true;
                 #[cfg(all(

@@ -1330,6 +1330,34 @@ export class Server {
      * command sent earlier -- def compiles, buffer jobs -- has completed.
      * Returns the id used.
      */
+    /**
+     * **The server's seed**: with `value`, reseeds the server's random
+     * generators from it (`/server_seed`), so the same seed and the same
+     * commands at the same times give the same samples; without, asks for the
+     * seed in force -- the one a server booted from entropy printed, and the
+     * way to have that take again. Resolves to the seed.
+     *
+     * Reseeding resolves at once, with no answer awaited; asking awaits the
+     * reply. In a timed bundle the reseed happens at the bundle's time, and in
+     * a score at the event's. A seed is a 64-bit integer and travels as a
+     * decimal string.
+     */
+    async seed(value?: number | bigint, timeout?: number): Promise<bigint> {
+        if (value !== undefined) {
+            const seed = BigInt(value);
+            this.sendMsg("/server_seed", ["s", seed.toString()]);
+            return seed;
+        }
+        const reply = this.awaitReply(
+            (msg) => msg.addr === "/server_seed.reply",
+            timeout,
+            "/server_seed.reply",
+        );
+        this.sendMsg("/server_seed");
+        const msg = await reply;
+        return BigInt(String(msg.args[0]));
+    }
+
     async sync(timeout?: number): Promise<number> {
         const id = ++this.syncCounter;
         // A score is not concurrent: everything in it is already ordered by

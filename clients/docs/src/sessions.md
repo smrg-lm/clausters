@@ -88,6 +88,14 @@ independently — seeding one never perturbs another. Outside any session,
 {{alt `clausters.seed(n)` (equivalently `main.seed(n)`) || `seed(n)` (equivalently `main.seed(n)`)}} governs the **default session** (the free-standing draws and
 anything played free-standing). See [Routines and clocks](routines-and-clocks.md).
 
+**The same call seeds the session's server**, when it has one: its random UGens
+draw from the server's generators, and `seed(n)` reseeds those too
+(`{{api Server.seed}}`, the `/server_seed` command), so one call pins a take on
+both sides. A server that boots after the call starts from its own seed —
+printed at boot, and asked for with {{alt `server.seed()` || `await server.seed()`}} —
+so seed once it is up. The server's half replays exactly when the same
+commands reach it at the same times: a score does, a hand does not.
+
 <!-- python -->
 `Session.live()` is a **real-time** session that sounds on a device over the network. By default it **ensures a server** the way `nrt()` ensures a renderer: if one already answers it attaches to it, and if none does it **launches a separate `clausters` process** — choosing a shared-memory segment for you — and connects to that. So the everyday live case is one line, whether or not a server is already up; a server the session started is stopped when the session is closed or the interpreter exits, and one it merely attached to is left alone.
 

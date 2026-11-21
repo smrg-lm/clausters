@@ -18,14 +18,8 @@
 //!   pool and the tree mirror, as reply arguments.
 //! - `buffers` -- the `/buffer_*` commands, parsed into NRT jobs.
 
-use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-
-// Only the UGen-instance seed walk uses the stride; the sequence's *start*
-// comes from `entropy_seed`, which is not tied to a def family.
-#[cfg(feature = "synth")]
-use clausters_core::rng::SEED_STRIDE;
 
 use rosc::OscType;
 
@@ -343,17 +337,14 @@ pub struct CmdTranslator {
         allow(dead_code)
     )]
     sample_rate: f32,
-    /// Start of the next instance's run of stochastic-UGen seeds. It belongs
-    /// to the translator -- one per server or per offline render -- rather than
-    /// to the process, so a score's noise depends only on the score and on
-    /// the starting seed, never on how many synths were built earlier in the
-    /// same process. `Cell` because `make_synth` takes `&self`.
-    ///
-    /// It starts from entropy, so a booted server is a fresh performance;
-    /// [`CmdTranslator::set_seed`] is how a caller that wants the same one
-    /// twice asks for it.
-    #[cfg_attr(not(feature = "synth"), allow(dead_code))]
-    next_seed: Cell<u64>,
+    /// The engine's random generators, which every synth built here draws
+    /// from ([`crate::dsp::rand`]). It belongs to the engine -- one per server
+    /// or per offline render -- rather than to the process, so a score's
+    /// noise depends only on the score and on the seed, never on what else
+    /// the process built. A translator of its own starts with a table of its
+    /// own, from entropy; a server's is handed the engine's
+    /// ([`CmdTranslator::set_generators`]).
+    generators: Arc<crate::dsp::rand::Generators>,
     /// The load table the synths built here hand their I/O threads (`DiskIn`,
     /// `DiskOut`). A table nobody reads until [`CmdTranslator::set_meters`]
     /// hands over the server's -- which an offline render and a test never do,
@@ -466,17 +457,28 @@ impl CmdTranslator {
         Self::with_buses(sample_rate, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES)
     }
 
-    /// Restarts the stochastic-UGen seed sequence at `seed` -- how a caller
-    /// asks for *this* take rather than a new one. The offline renderer calls
-    /// it with the seed it resolved (see
-    /// [`crate::server::render::RenderConfig::seed`]); left alone, the
-    /// sequence starts from entropy.
     pub fn sample_rate(&self) -> f32 {
         self.sample_rate
     }
 
+    /// Reseeds the generators from `seed` -- how a caller asks for *this*
+    /// take rather than a new one. The offline renderer calls it with the
+    /// seed it resolved (see [`crate::server::render::RenderConfig::seed`])
+    /// before the render runs; a running server reseeds through the engine
+    /// instead (`Cmd::Seed`), since its audio thread is drawing.
     pub fn set_seed(&mut self, seed: u64) {
-        self.next_seed.set(seed);
+        self.generators.reseed(seed);
+    }
+
+    /// Hands over the engine's generators, so the synths built here draw
+    /// from the table the engine reseeds.
+    pub fn set_generators(&mut self, generators: Arc<crate::dsp::rand::Generators>) {
+        self.generators = generators;
+    }
+
+    /// The generators the synths built here draw from.
+    pub fn generators(&self) -> &Arc<crate::dsp::rand::Generators> {
+        &self.generators
     }
 
     /// Hands over the server's load table, so the disk threads of the synths
@@ -524,7 +526,7 @@ impl CmdTranslator {
             compensation_dirty: false,
             compensation_revision: None,
             sample_rate,
-            next_seed: Cell::new(clausters_core::rng::entropy_seed()),
+            generators: crate::dsp::rand::Generators::seeded(clausters_core::rng::entropy_seed()),
             meters: Meters::detached(),
             #[cfg(feature = "synth")]
             synth_defs,
@@ -627,13 +629,10 @@ impl CmdTranslator {
     pub fn make_synth(&self, name: &str) -> Result<(Box<dyn SynthNode>, NodeDef), String> {
         #[cfg(feature = "synth")]
         if let Some(def) = self.synth_defs.get(name) {
-            let seed = self.next_seed.get();
-            self.next_seed
-                .set(seed.wrapping_add(SEED_STRIDE.wrapping_mul(UGenSynth::seeds_needed(def))));
             let synth = Box::new(UGenSynth::built(
                 Arc::clone(def),
                 self.sample_rate,
-                seed,
+                &self.generators,
                 Arc::clone(&self.meters),
                 self.offline,
             ));
@@ -1859,6 +1858,15 @@ impl CmdTranslator {
             // The immediate form writes the shared atomics on the network
             // thread, but a scheduled write must land at its exact sample on
             // the engine.
+            "/server_seed" => {
+                // With a seed, reseed the engine's generators at the sample
+                // the command runs; with none, it is a query, which the
+                // server answers itself.
+                if let Some(arg) = msg.args.first() {
+                    cmds.push(Cmd::Seed(seed_arg(arg)?));
+                }
+                Ok(())
+            }
             "/bus_set" => {
                 for pair in msg.args.chunks(2) {
                     let (OscType::Int(index), Some(value)) = (&pair[0], float_value(&pair[1]))
@@ -1916,5 +1924,20 @@ pub fn int_value(arg: &OscType) -> Option<i32> {
     match arg {
         OscType::Int(i) => Some(*i),
         _ => None,
+    }
+}
+
+/// A seed as `/server_seed` takes it: an int, a 64-bit int, or a decimal
+/// string (the form a seed is reported in, since an OSC int is 32 bits and
+/// not every client sends 64).
+pub(crate) fn seed_arg(arg: &OscType) -> Result<u64, String> {
+    match arg {
+        OscType::Int(n) => Ok(*n as u32 as u64),
+        OscType::Long(n) => Ok(*n as u64),
+        OscType::String(s) => s
+            .trim()
+            .parse::<u64>()
+            .map_err(|_| format!("a seed is a non-negative integer, not {s:?}")),
+        _ => Err("expected a seed: an int, a 64-bit int or a decimal string".into()),
     }
 }

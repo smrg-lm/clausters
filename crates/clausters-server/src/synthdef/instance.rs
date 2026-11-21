@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::dsp::rand::{Generators, SynthRand};
 use crate::dsp::registry::{BuildCtx, ExecMode};
 use crate::dsp::spectral::SpectralChain;
 use crate::dsp::{
@@ -155,44 +156,38 @@ impl DemandInputs for Pull<'_> {
 }
 
 impl UGenSynth {
-    /// How many seeds an instance of `def` reserves: one per UGen, whether or
-    /// not that kind draws one. Reserving by UGen count rather than by which
-    /// kinds are stochastic keeps the arithmetic independent of the registry.
-    pub fn seeds_needed(def: &SynthDef) -> u64 {
-        def.ugens.len() as u64
-    }
-
     /// Builds the instance on the network thread. `sample_rate` reaches the
     /// UGens' constructors through [`BuildCtx`], for the kinds whose
     /// *allocation* is sized in samples (a delay line); the engine's own rate
     /// arrives per block in `ProcessCtx` as before.
     ///
-    /// `seed` starts this instance's stochastic UGens. The caller reserves
-    /// [`UGenSynth::seeds_needed`] consecutive seeds per instance, so two
-    /// synths never share a noise stream and replaying a score replays the
-    /// same noise.
+    /// The instance's random UGens draw from a table of generators of its
+    /// own, seeded from `seed`: a synth outside a server, as a test or a
+    /// render of one graph builds it. A server's synths draw from the
+    /// engine's table ([`UGenSynth::built`]).
     pub fn new(def: Arc<SynthDef>, sample_rate: f32, seed: u64) -> Self {
         Self::metered(def, sample_rate, seed, Meters::detached())
     }
 
-    /// [`UGenSynth::new`] for a synth a server builds: the UGens that own a
-    /// thread (`DiskIn`, `DiskOut`) account its work in `meters`, the server's
-    /// load table.
+    /// [`UGenSynth::new`] whose UGens that own a thread (`DiskIn`, `DiskOut`)
+    /// account its work in `meters`, a server's load table.
     pub fn metered(def: Arc<SynthDef>, sample_rate: f32, seed: u64, meters: Arc<Meters>) -> Self {
-        Self::built(def, sample_rate, seed, meters, false)
+        Self::built(def, sample_rate, &Generators::seeded(seed), meters, false)
     }
 
-    /// [`UGenSynth::metered`] for a synth an offline render plays, when
-    /// `offline` (`BuildCtx::offline`): its streams wait for their threads
+    /// The instance a server builds: its random UGens draw from
+    /// `generators`, the engine's table ([`crate::dsp::rand`]), and when
+    /// `offline` (`BuildCtx::offline`) its streams wait for their threads
     /// instead of racing them.
     pub fn built(
         def: Arc<SynthDef>,
         sample_rate: f32,
-        seed: u64,
+        generators: &Arc<Generators>,
         meters: Arc<Meters>,
         offline: bool,
     ) -> Self {
-        let mut build_ctx = BuildCtx::metered(sample_rate, BLOCK_SIZE, seed, meters);
+        let rand = SynthRand::new(Arc::clone(generators));
+        let mut build_ctx = BuildCtx::metered(sample_rate, BLOCK_SIZE, rand, meters);
         build_ctx.offline = offline;
         let controls = def.control_defaults.clone();
         let maps = vec![ControlMap::UNMAPPED; controls.len()];

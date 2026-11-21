@@ -206,14 +206,12 @@ the golden-file tests passed and nobody noticed; but the *second* render in one
 process drew different seeds than the first, so the same score gave different
 noise. That is a strange property for an offline renderer — a bounce is supposed
 to be a function of its score — and the noise module already claimed the
-opposite in its own header. The counter now lives in `BuildCtx`, which every
-UGen factory already receives, and `CmdTranslator` reserves one contiguous run of
-seeds per synth, so the sequence is a function of the score and of
-`RenderConfig::seed`. Two synths still never share a stream, which was the
-original reason for a counter at all; what changed is only *whose* counter it is.
-The seedless constructors went with it: `WhiteNoise::new()` had no correct
-meaning once seeding was per-instance, and a default that silently correlates two
-generators is worse than no default.
+opposite in its own header. The seed moved into the render, so the sequence is a
+function of the score and of `RenderConfig::seed`. *(Since 2026-11-21 what the
+render holds is a table of scsynth's generators, seeded from that seed — see
+"The random UGens draw from shared generators, scsynth's, from one seed" in the
+defs page; the per-instance run of seeds described here is gone, and so is
+`Rand`'s own counter, which this change had missed.)*
 
 **Where the sequence starts: a random process is unpredictable first.** Moving
 the counter into the render left a second question, and the first answer to it

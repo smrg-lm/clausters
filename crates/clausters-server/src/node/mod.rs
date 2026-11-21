@@ -1717,7 +1717,8 @@ impl NodeTree {
 
     /// Greedy stage partition of a parallel group's children, in order:
     /// a child joins the current stage while it writes nothing the stage
-    /// reads or writes and reads nothing the stage writes; conflicts close
+    /// reads or writes, reads nothing the stage writes and draws from no
+    /// random generator a member draws from; conflicts close
     /// the stage (those children run after -- sequential semantics
     /// preserved); a `dynamic` child (signal-driven bus index) always runs
     /// alone. Since stage members touch pairwise disjoint buses and stages
@@ -1731,6 +1732,7 @@ impl NodeTree {
         while i < children.len() {
             let mut reads = 0u128;
             let mut writes = 0u128;
+            let mut generators = 0u64;
             let mut j = i;
             while j < children.len() {
                 let usage = self.subtree_usage(children[j]);
@@ -1740,12 +1742,16 @@ impl NodeTree {
                     }
                     break;
                 }
-                if j > i && ((usage.writes & (reads | writes)) != 0 || (usage.reads & writes) != 0)
+                if j > i
+                    && ((usage.writes & (reads | writes)) != 0
+                        || (usage.reads & writes) != 0
+                        || (usage.generators & generators) != 0)
                 {
                     break;
                 }
                 reads |= usage.reads;
                 writes |= usage.writes;
+                generators |= usage.generators;
                 j += 1;
             }
             if j - i >= 2 {

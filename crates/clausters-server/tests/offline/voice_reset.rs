@@ -85,6 +85,14 @@ const STATELESS: &[(&str, &str)] = &[
 /// `tests/offline/demand.rs`).
 const STOCHASTIC: &[&str] = &[
     "Rand",
+    "IRand",
+    "ExpRand",
+    "LinRand",
+    "NRand",
+    "TRand",
+    "TIRand",
+    "TExpRand",
+    "CoinGate",
     "RandOpUGen",
     "Dwhite",
     "Diwhite",
@@ -104,10 +112,19 @@ const STOCHASTIC: &[&str] = &[
     "LFClipNoise",
     "Dust",
     "Dust2",
+    "Crackle",
 ];
 
 /// Kinds whose state is not the voice's to reset.
 const NOT_RESET: &[(&str, &str)] = &[
+    (
+        "RandID",
+        "the generator a synth draws from is the engine's, and so is its choice",
+    ),
+    (
+        "RandSeed",
+        "it reseeds the engine's generator, which a voice's reset does not own",
+    ),
     (
         "DiskIn",
         "a stream is its I/O thread's; a Voices node refuses the def",

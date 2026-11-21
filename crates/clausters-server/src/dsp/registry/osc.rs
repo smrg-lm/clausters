@@ -29,7 +29,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Impulse::new()),
     ),
-    desc(
+    desc_draws(desc(
         "WhiteNoise",
         Fixed(0),
         I_NONE,
@@ -38,8 +38,8 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(WhiteNoise::with_seed(ctx.next_seed())),
-    ),
+        |_, ctx| Box::new(WhiteNoise::new(ctx.rand())),
+    )),
     // --- the phase family: one f64 accumulator, PolyBLEP where the
     //     waveform is meant to be heard and exact corners where it is meant to
     //     modulate. See `dsp::phase` for why this is not scsynth's impulse

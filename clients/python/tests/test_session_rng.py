@@ -79,3 +79,21 @@ def test_context_manager_restores_previous_session():
             assert main.current_session is b
         assert main.current_session is a   # restored, not clobbered
     assert main.current_session is None
+
+
+def test_seeding_a_session_seeds_its_server():
+    # One call pins both halves of a take: the session's random context and
+    # the server's generators, which its random UGens draw from. Offline, the
+    # reseed is an event of the score, at its start.
+    s = Session.nrt()
+    assert s.seed(1956) == 1956
+    score = s.server.interface.score.bytes()
+    assert b"/server_seed" in score and b"1956" in score
+
+
+def test_a_first_draw_does_not_reseed_the_server():
+    # The context seeds itself lazily on a first draw; that is its own seed,
+    # not a call to seed the environment, and must not reach the server.
+    s = Session.nrt()
+    s.rng.rand()
+    assert b"/server_seed" not in s.server.interface.score.bytes()

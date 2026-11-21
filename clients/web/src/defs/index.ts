@@ -98,7 +98,7 @@ export {
     localOut, madd, meter, mix, osc, oscN, out, outCtl, partconvFrames, playBuf,
     poll, pvAdd, pvBinShift, pvBrickWall, pvCopyPhase, pvKernel, pvMagAbove,
     pvMagBelow, pvMagClip, pvMagFreeze, pvMagMul, pvMagShift, pvMagSmear, pvMax,
-    pvMin, pvMul, rand, recordBuf, replaceOut, sampleRate, sendReply, sendTrig,
+    pvMin, pvMul, rand, irand, expRand, linRand, nRand, tRand, tiRand, tExpRand, coinGate, randId, randSeed, recordBuf, replaceOut, sampleRate, sendReply, sendTrig,
     shaper, sine, sum3, sum4, tduty, transportBufRd, transportDiskIn, transportFade,
     transportPos, truePeak, varLag, vosc, whiteNoise,
 } from "./ugens/index.ts";

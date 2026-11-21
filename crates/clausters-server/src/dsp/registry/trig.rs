@@ -260,15 +260,4 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(SampleRate),
     ),
-    desc(
-        "Rand",
-        Fixed(2),
-        &[inp("lo", 0.0), inp("hi", 1.0)],
-        Ir,
-        R_IR,
-        Normal,
-        BusRole::None,
-        false,
-        |_, _| Box::new(Rand::new()),
-    ),
 ];

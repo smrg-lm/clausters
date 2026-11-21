@@ -61,7 +61,9 @@ export class RandomContext {
      * seeded from entropy unless `seed` was called.
      */
     get rng(): Rng {
-        if (this.rngRoot === null) this.seed(this.seedValue ?? undefined);
+        // The context's own seed, not the environment's: a first draw must
+        // not reseed a server.
+        if (this.rngRoot === null) RandomContext.prototype.seed.call(this, this.seedValue ?? undefined);
         return this.rngRoot!;
     }
 }
@@ -82,6 +84,22 @@ export class Environment extends RandomContext {
      * around one.
      */
     server: Server | null = null;
+
+    /**
+     * Seeds this environment's randomness from one number (with none, one
+     * drawn from entropy), and returns it: the random context its patterns
+     * and routines draw from, and -- when it has a server -- the server's
+     * generators, which its random UGens draw from (`Server.seed`). One call,
+     * so a script that wants the same take twice says so once.
+     *
+     * A server set or started after the call draws from its own seed; seed
+     * again once it is up.
+     */
+    override seed(value?: number): number {
+        const used = super.seed(value);
+        void this.server?.seed(used);
+        return used;
+    }
 
     /**
      * **Stops everything this environment plays**, and leaves it ready to

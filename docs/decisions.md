@@ -93,6 +93,7 @@ quoted title lands here, on the link to the entry.
 - [Pink noise takes the schedule with the worse average and the bounded worst case](decisions/defs.md#pink-noise-takes-the-schedule-with-the-worse-average-and-the-bounded-worst-case)
 - [Three noise findings that contradict the obvious reading](decisions/defs.md#three-noise-findings-that-contradict-the-obvious-reading)
 - [Noise is reproducible on request, and two instances are never the same stream](decisions/defs.md#noise-is-reproducible-on-request-and-two-instances-are-never-the-same-stream)
+- [The random UGens draw from shared generators, scsynth's, from one seed](decisions/defs.md#the-random-ugens-draw-from-shared-generators-scsynths-from-one-seed)
 - [The pan law is a polynomial, not a table, and it is evaluated per sample](decisions/defs.md#the-pan-law-is-a-polynomial-not-a-table-and-it-is-evaluated-per-sample)
 - [Rotation and width are different operations, so width gets a name](decisions/defs.md#rotation-and-width-are-different-operations-so-width-gets-a-name)
 - [`SelectX` is one row, not two `Select`s and a crossfade](decisions/defs.md#selectx-is-one-row-not-two-selects-and-a-crossfade)

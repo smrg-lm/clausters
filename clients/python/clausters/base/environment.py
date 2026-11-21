@@ -50,7 +50,9 @@ class RandomContext:
         core generator -- reproducible across client languages). Created lazily,
         seeded from entropy unless `seed` was called."""
         if self._rng is None:
-            self.seed(self._seed)
+            # The context's own seed, not the environment's: a first draw
+            # must not reseed a server.
+            RandomContext.seed(self, self._seed)
         return self._rng
 
 
@@ -103,6 +105,20 @@ class Environment(RandomContext):
             self.server.panic()
         free_responders()
         return self
+
+    def seed(self, value=None):
+        """Seeds this environment's randomness from one number (None draws one
+        from entropy), and returns it: the random context its patterns and
+        routines draw from, and -- when it has a server -- the server's
+        generators, which its random UGens draw from (`Server.seed`). One
+        call, so a script that wants the same take twice says so once.
+
+        A server set or booted after the call draws from its own seed; seed
+        again once it is up."""
+        value = super().seed(value)
+        if self.server is not None:
+            self.server.seed(value)
+        return value
 
     def _owns(self, clock) -> bool:
         """Whether ``clock`` plays in this environment: one it adopted."""

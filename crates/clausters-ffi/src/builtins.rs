@@ -268,8 +268,9 @@ pub unsafe extern "C" fn clausters_core_map(
     0
 }
 
-/// Fills `out` with `n` white-noise samples from `seed`, identical to the
-/// server's `WhiteNoise` UGen seeded the same way.
+/// Fills `out` with `n` white-noise samples from `seed`, identical to a
+/// server's `WhiteNoise` UGen drawing alone from the first generator of a
+/// server seeded with `seed`.
 ///
 /// # Safety
 /// `out` must be writable for `n` `f32`s.

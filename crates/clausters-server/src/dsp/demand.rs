@@ -49,8 +49,8 @@
 //! - [`Demand`] and [`Duty`] -- the drivers, which turn pulls into samples.
 
 use clausters_core::builtins::fold;
-use clausters_core::rng;
 
+use crate::dsp::rand::SynthRand;
 use crate::dsp::trig::Edge;
 use crate::dsp::{DemandInputs, DoneAction, MAX_UGEN_INPUTS, ProcessCtx, UGen};
 
@@ -113,14 +113,6 @@ impl Repeats {
         self.count = 0.0;
         self.started = false;
     }
-}
-
-/// A non-negative integer width for a draw, capped well short of where `u64`
-/// arithmetic would wrap. A range wider than a billion is past anything an
-/// integer stream means, and the cap is what keeps a nonsense `hi` from
-/// overflowing the draw rather than merely being useless.
-fn span(width: f32) -> u64 {
-    width.clamp(0.0, 1e9) as u64
 }
 
 /// Rounds a demanded value to the integer index or count it stands for, the
@@ -241,13 +233,15 @@ impl RandKind {
 /// rather than clipped, scsynth's choice and the better one: a walk that
 /// clipped would pile up against the bound instead of turning around.
 ///
-/// Randomness comes from [`clausters_core::rng`], seeded per instance from the
-/// same shared counter the noise generators use -- two `Dwhite`s in one graph
-/// must not draw the same stream -- and reproducible from an explicit seed.
+/// The draws are scsynth's, from the synth's generator
+/// ([`crate::dsp::rand`]): `Dwhite` `lo + frand * (hi - lo)`, `Diwhite` an
+/// integer in `[lo, hi]` with both bounds rounded, the walks starting at a
+/// draw inside their range and stepping by `frand2 * step` (an integer step
+/// of up to `step` either way for `Dibrown`, whose bounds truncate).
 pub struct Drandom {
     kind: RandKind,
     rep: Repeats,
-    rng: rng::Rng,
+    rand: SynthRand,
     lo: f32,
     hi: f32,
     step: f32,
@@ -256,11 +250,16 @@ pub struct Drandom {
 }
 
 impl Drandom {
+    /// One drawing from a table of its own, seeded from `seed`.
     pub fn with_seed(kind: RandKind, seed: u64) -> Self {
+        Self::new(kind, SynthRand::detached(seed))
+    }
+
+    pub fn new(kind: RandKind, rand: SynthRand) -> Self {
         Self {
             kind,
             rep: Repeats::new(),
-            rng: rng::Rng::from_seed(seed),
+            rand,
             lo: 0.0,
             hi: 1.0,
             step: 0.01,
@@ -268,25 +267,33 @@ impl Drandom {
         }
     }
 
-    /// A uniform draw on `[lo, hi]` -- over the integers when the kind is an
-    /// integer one, where both ends are included.
+    /// A uniform draw on `[lo, hi)`, or on the integers `[lo, hi]` for an
+    /// integer kind -- `Diwhite` rounds its bounds, `Dibrown` truncates them,
+    /// as scsynth's do.
     fn draw(&mut self) -> f32 {
-        if self.kind.is_int() {
-            let lo = self.lo.floor();
-            let hi = self.hi.floor();
-            lo + self.rng.next_below(span(hi - lo) + 1) as f32
-        } else {
-            self.rng.uniform(self.lo as f64, self.hi as f64) as f32
+        let (lo, hi) = (self.lo, self.hi);
+        match self.kind {
+            RandKind::IWhite => {
+                let lo = round(lo) as i32;
+                let range = round(hi) as i32 - lo + 1;
+                (self.rand.draw(|g| g.irand(range)) + lo) as f32
+            }
+            RandKind::IBrown => {
+                let (lo, hi) = (lo as i32, hi as i32);
+                (self.rand.draw(|g| g.irand(hi - lo + 1)) + lo) as f32
+            }
+            _ => self.rand.draw(|g| g.frand()) * (hi - lo) + lo,
         }
     }
 
-    /// A step of at most `step` in either direction, integer or not.
+    /// A walk's step: `frand2 * step`, or an integer of at most `step` either
+    /// way.
     fn stride(&mut self) -> f32 {
         if self.kind.is_int() {
-            let s = span(self.step.abs());
-            self.rng.next_below(s * 2 + 1) as f32 - s as f32
+            let s = self.step as i32;
+            self.rand.draw(|g| g.irand2(s)) as f32
         } else {
-            (self.rng.next_f64() * 2.0 - 1.0) as f32 * self.step
+            self.rand.draw(|g| g.frand2()) * self.step
         }
     }
 }
@@ -332,7 +339,11 @@ impl UGen for Drandom {
         if self.kind.is_walk() {
             let v = self.value;
             let stepped = v + self.stride();
-            self.value = fold(stepped, self.lo, self.hi);
+            self.value = if self.kind.is_int() {
+                fold(stepped, (self.lo as i32) as f32, (self.hi as i32) as f32)
+            } else {
+                fold(stepped, self.lo, self.hi)
+            };
             v
         } else {
             self.draw()
@@ -381,7 +392,7 @@ impl ListOrder {
 pub struct Dlist {
     order: ListOrder,
     rep: Repeats,
-    rng: rng::Rng,
+    rand: SynthRand,
     /// Position within the list, 0-based over the values (input `1 + index`).
     index: usize,
     /// Shuffled slot order (`Dshuf`), rebuilt on every reset.
@@ -392,7 +403,12 @@ pub struct Dlist {
 }
 
 impl Dlist {
+    /// One drawing from a table of its own, seeded from `seed`.
     pub fn with_seed(order: ListOrder, seed: u64) -> Self {
+        Self::new(order, SynthRand::detached(seed))
+    }
+
+    pub fn new(order: ListOrder, rand: SynthRand) -> Self {
         let mut perm = [0u8; MAX_UGEN_INPUTS];
         for (i, p) in perm.iter_mut().enumerate() {
             *p = i as u8;
@@ -400,7 +416,7 @@ impl Dlist {
         Self {
             order,
             rep: Repeats::new(),
-            rng: rng::Rng::from_seed(seed),
+            rand,
             index: 0,
             perm,
             reset_child: false,
@@ -423,7 +439,7 @@ impl Dlist {
         match self.order {
             ListOrder::Seq | ListOrder::Shuf => self.index += 1,
             ListOrder::Rand => {
-                self.index = self.rng.next_below(n as u64) as usize;
+                self.index = self.rand.draw(|g| g.irand(n as i32)) as usize;
                 self.rep.advance();
             }
             ListOrder::Xrand => {
@@ -431,7 +447,7 @@ impl Dlist {
                 // them, then skip past the current slot if it is at or after
                 // it. With one value there is no other slot to pick.
                 if n > 1 {
-                    let j = self.rng.next_below(n as u64 - 1) as usize;
+                    let j = self.rand.draw(|g| g.irand(n as i32 - 1)) as usize;
                     self.index = if j < self.index { j } else { j + 1 };
                 }
                 self.rep.advance();
@@ -440,10 +456,12 @@ impl Dlist {
     }
 
     /// Fisher-Yates over the first `n` slots, so a `Dshuf` plays one order for
-    /// the life of its stream and a new one after a reset.
+    /// the life of its stream and a new one after a reset. scsynth's order of
+    /// draws: forward, slot `i` swapped with one of `i..n`.
     fn shuffle(&mut self, n: usize) {
-        for i in (1..n.min(MAX_UGEN_INPUTS)).rev() {
-            let j = self.rng.next_below(i as u64 + 1) as usize;
+        let n = n.min(MAX_UGEN_INPUTS);
+        for i in 0..n.saturating_sub(1) {
+            let j = i + self.rand.draw(|g| g.irand((n - i) as i32)) as usize;
             self.perm.swap(i, j);
         }
     }
@@ -476,7 +494,7 @@ impl UGen for Dlist {
                 // at slot 0 and only then drawing would make the head of every
                 // `Drand` predictable.
                 ListOrder::Rand | ListOrder::Xrand => {
-                    self.index = self.rng.next_below(n as u64) as usize;
+                    self.index = self.rand.draw(|g| g.irand(n as i32)) as usize;
                 }
                 ListOrder::Seq => {}
             }

@@ -529,6 +529,20 @@
       "inputs": []
     },
     {
+      "name": "CoinGate",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "prob",
+          "default": 0.5
+        },
+        {
+          "name": "trig",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "CombC",
       "arity": 3,
       "inputs": [
@@ -1061,6 +1075,20 @@
       ]
     },
     {
+      "name": "ExpRand",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "lo",
+          "default": 0.009999999776482582
+        },
+        {
+          "name": "hi",
+          "default": 1.0
+        }
+      ]
+    },
+    {
       "name": "FFT",
       "arity": 2,
       "inputs": [
@@ -1152,6 +1180,20 @@
         {
           "name": "chain",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "IRand",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "lo",
+          "default": 0.0
+        },
+        {
+          "name": "hi",
+          "default": 127.0
         }
       ]
     },
@@ -1386,6 +1428,24 @@
       ]
     },
     {
+      "name": "LinRand",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "lo",
+          "default": 0.0
+        },
+        {
+          "name": "hi",
+          "default": 1.0
+        },
+        {
+          "name": "minmax",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "LinXFade2",
       "arity": 4,
       "inputs": [
@@ -1517,6 +1577,24 @@
         },
         {
           "name": "c",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "NRand",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "lo",
+          "default": 0.0
+        },
+        {
+          "name": "hi",
+          "default": 1.0
+        },
+        {
+          "name": "n",
           "default": 0.0
         }
       ]
@@ -2073,6 +2151,16 @@
       ]
     },
     {
+      "name": "RandID",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "id",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "RandOpUGen",
       "arity": 2,
       "inputs": [
@@ -2083,6 +2171,20 @@
         {
           "name": "b",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "RandSeed",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "trig",
+          "default": 0.0
+        },
+        {
+          "name": "seed",
+          "default": 56789.0
         }
       ]
     },
@@ -2529,6 +2631,60 @@
         },
         {
           "name": "gap_first",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "TExpRand",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "lo",
+          "default": 0.009999999776482582
+        },
+        {
+          "name": "hi",
+          "default": 1.0
+        },
+        {
+          "name": "trig",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "TIRand",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "lo",
+          "default": 0.0
+        },
+        {
+          "name": "hi",
+          "default": 127.0
+        },
+        {
+          "name": "trig",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "TRand",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "lo",
+          "default": 0.0
+        },
+        {
+          "name": "hi",
+          "default": 1.0
+        },
+        {
+          "name": "trig",
           "default": 0.0
         }
       ]

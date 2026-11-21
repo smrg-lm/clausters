@@ -26,6 +26,16 @@ __all__ = [
     "buf_channels",
     "buf_dur",
     "rand",
+    "irand",
+    "exp_rand",
+    "lin_rand",
+    "n_rand",
+    "t_rand",
+    "ti_rand",
+    "t_exp_rand",
+    "coin_gate",
+    "rand_id",
+    "rand_seed",
 ]
 
 
@@ -194,3 +204,82 @@ def rand(lo=0.0, hi=1.0) -> Ugen:
     held for the node's life (`ir`); `lo`/`hi` must be constants or `ir`.
     """
     return Ugen("Rand", [lo, hi], rate="ir")
+
+
+def irand(lo=0.0, hi=127.0) -> Ugen:
+    """One random integer in `[lo, hi]`, both bounds included (and truncated),
+    drawn once at synth init and held.
+    """
+    return Ugen("IRand", [lo, hi], rate="ir")
+
+
+def exp_rand(lo=0.01, hi=1.0) -> Ugen:
+    """One value between `lo` and `hi` with equal chances per ratio (log-uniform,
+    so an octave is as likely as any other), drawn once at synth init and held.
+    `lo` and `hi` must have one sign and not be zero.
+    """
+    return Ugen("ExpRand", [lo, hi], rate="ir")
+
+
+def lin_rand(lo, hi, minmax=0.0) -> Ugen:
+    """One value in `[lo, hi)` leaning towards `lo` (the lower of two uniform
+    draws), or towards `hi` when `minmax` is positive, drawn once at synth init
+    and held.
+    """
+    return Ugen("LinRand", [lo, hi, minmax], rate="ir")
+
+
+def n_rand(lo=0.0, hi=1.0, n=0.0) -> Ugen:
+    """One value in `[lo, hi)`, the mean of `n` uniform draws: flat for 1, a
+    triangle for 2, nearer a bell the more there are. Drawn once at synth init
+    and held.
+    """
+    return Ugen("NRand", [lo, hi, n], rate="ir")
+
+
+def t_rand(lo=0.0, hi=1.0, trig=0.0) -> Ugen:
+    """A uniform random value in `[lo, hi)`, drawn again at each rising edge of
+    `trig` and held between; the first is drawn at the synth's start.
+    """
+    return Ugen("TRand", [lo, hi, trig])
+
+
+def ti_rand(lo=0.0, hi=127.0, trig=0.0) -> Ugen:
+    """A random integer in `[lo, hi]`, drawn again at each rising edge of `trig`
+    and held between; the first is drawn at the synth's start.
+    """
+    return Ugen("TIRand", [lo, hi, trig])
+
+
+def t_exp_rand(lo=0.01, hi=1.0, trig=0.0) -> Ugen:
+    """A log-uniform random value between `lo` and `hi`, drawn again at each
+    rising edge of `trig` and held between; the first is drawn at the synth's
+    start.
+    """
+    return Ugen("TExpRand", [lo, hi, trig])
+
+
+def coin_gate(prob=0.5, trig=0.0) -> Ugen:
+    """Lets each rising edge of `trig` through with probability `prob` (the
+    trigger's own value, for that sample), and outputs 0 otherwise.
+    """
+    return Ugen("CoinGate", [prob, trig])
+
+
+def rand_id(id=0.0) -> Ugen:
+    """Chooses which of the server's 64 random generators this synth's random
+    UGens draw from, `id` 0 to 63 (0 until it runs). Synths drawing from
+    different generators are independent streams: a reseed of one leaves the
+    others alone, and they can run side by side in a parallel group. Outputs 0.
+    """
+    return Ugen("RandID", [id])
+
+
+def rand_seed(trig=0.0, seed=56789.0) -> Ugen:
+    """At each rising edge of `trig`, reseeds the generator this synth draws from
+    with `seed`, so every synth drawing from it starts the same sequence again
+    -- how a group's randomness is restarted on purpose. At the initial rate it
+    reseeds once, when the synth starts. A def of its own does nothing else:
+    it is a root, and is not wrapped in an `out`. Outputs 0.
+    """
+    return Ugen("RandSeed", [trig, seed])

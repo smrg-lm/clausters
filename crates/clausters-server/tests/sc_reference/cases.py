@@ -89,6 +89,7 @@ def cases() -> list[dict]:
         _buffers,
         _envelopes,
         _demand,
+        _random,
     ]:
         out.extend(f())
     return out
@@ -655,4 +656,52 @@ def _demand() -> list[dict]:
     durs = g.add("Dseq", "dr", 1, 0.0003, 0.0005)
     g.add("Duty", "ar", durs, 0, 1, 2, sc={"inputs": [durs, 0, 2, 1]})
     out.append(case("Duty.done", g, 8))
+    return out
+
+
+_PRIMED = "scsynth's constructor runs one sample of the calculation, so its stream starts a sample's draws in"
+
+
+def _random() -> list[dict]:
+    """The random UGens, drawn from scsynth's generator with the seed the
+    harness and the server both seed their tables with: the same numbers."""
+    out = []
+    for kind in ["WhiteNoise", "PinkNoise", "BrownNoise", "GrayNoise", "ClipNoise"]:
+        for rate, blocks in [("ar", 4), ("kr", 32)]:
+            # BrownNoise's constructor draws its start and does not prime.
+            primed = {} if kind == "BrownNoise" else {"shift": 1, "why": _PRIMED}
+            out.append(one(f"{kind}.{rate}", kind, rate, blocks=blocks, seed=1956, **primed))
+    for kind in ["LFNoise0", "LFNoise1", "LFNoise2", "LFClipNoise"]:
+        for rate, blocks, freq in [("ar", 8, 2333.0), ("kr", 64, 41.0)]:
+            out.append(one(f"{kind}.{rate}", kind, rate, freq, blocks=blocks, seed=77, shift=1, why=_PRIMED))
+    for kind in ["Dust", "Dust2"]:
+        out.append(one(f"{kind}.ar", kind, "ar", 3000, blocks=8, seed=5, shift=1, why=_PRIMED))
+    out.append(one("Crackle.ar", "Crackle", "ar", 1.5, blocks=2, seed=9, shift=1, why=_PRIMED))
+    # Drawn once: the constructor's draw is the value.
+    out.append(one("Rand.ir", "Rand", "ir", -2, 3, seed=11))
+    out.append(one("IRand.ir", "IRand", "ir", -5, 30, seed=12))
+    out.append(one("ExpRand.ir", "ExpRand", "ir", 20, 2000, seed=13))
+    out.append(one("LinRand.ir", "LinRand", "ir", 0, 10, 1, seed=14))
+    out.append(one("NRand.ir", "NRand", "ir", -1, 1, 4, seed=15))
+    for kind, lo, hi in [("TRand", -1, 1), ("TIRand", 0, 9), ("TExpRand", 100, 1000)]:
+        for rate, blocks, freq in [("ar", 8, 1700.0), ("kr", 64, 37.0)]:
+            g = G()
+            t = g.add("Impulse", rate, freq, 0.5)
+            g.add(kind, rate, lo, hi, t)
+            out.append(case(f"{kind}.{rate}", g, blocks, seed=21))
+    g = G()
+    t = g.add("Impulse", "ar", 1700, 0.5)
+    g.add("CoinGate", "ar", 0.4, t)
+    out.append(case("CoinGate.ar", g, 8, seed=22))
+    # RandSeed reseeds the generator at the start: the noise is the stream of
+    # 1234, whatever the case's seed.
+    g = G()
+    g.add("RandSeed", "ir", 1, 1234)
+    g.add("WhiteNoise", "ar")
+    out.append(case("RandSeed.ir", g, 4, seed=23, shift=1, why=_PRIMED))
+    # RandID: the noise draws from generator 5, seeded with the seed plus 5.
+    g = G()
+    g.add("RandID", "ir", 5)
+    g.add("WhiteNoise", "ar")
+    out.append(case("RandID.ir", g, 4, seed=24, shift=1, why=_PRIMED))
     return out

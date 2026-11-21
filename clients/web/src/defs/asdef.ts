@@ -36,11 +36,12 @@ export type Expr = Ugen | ChannelList | Signal | Box;
  * writes 0/1 for the rest of the graph, which is inward. `diskOut` *is* a
  * sink: it delivers audio to a file. It passes its input through too, but the
  * criterion is applied without an exception, so `play(diskOut(p, sig))`
- * records without sounding.
+ * records without sounding. `randSeed` is one too: it writes the server's
+ * generator, which every synth drawing from it reads.
  */
 const SINK_KINDS = new Set([
     "Out", "ReplaceOut", "OutCtl", "LocalOut", "DiskOut",
-    "SendTrig", "SendReply", "Poll",
+    "SendTrig", "SendReply", "Poll", "RandSeed",
 ]);
 
 /**

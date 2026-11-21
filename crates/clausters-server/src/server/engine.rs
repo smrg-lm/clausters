@@ -15,6 +15,8 @@
 
 use std::ops::Range;
 use std::sync::Arc;
+
+use crate::dsp::rand::Generators;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use clausters_core::transport_pass::{TransportPass, TransportReading};
@@ -220,6 +222,9 @@ pub enum Cmd {
         bus: i32,
         audio: bool,
     },
+    /// `/server_seed`: reseeds the engine's random generators from a seed,
+    /// at the sample the command runs, on the thread that draws from them.
+    Seed(u64),
     /// Installs (`Some`) or removes (`None`) a buffer in the pool. The
     /// buffer arrives fully built by the NRT thread; the replaced one leaves
     /// through the garbage FIFO.
@@ -456,6 +461,7 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         | Cmd::TransportEnd { .. }
         | Cmd::TransportFade { .. }
         | Cmd::SetBuffer { .. }
+        | Cmd::Seed(_)
         | Cmd::SetControlBus { .. }
         | Cmd::SetTap { .. }
         | Cmd::ClearSched { .. }
@@ -631,6 +637,9 @@ pub const LEVEL_RELEASE_DB_PER_SEC: f32 = clausters_core::measure::METER_FALL_DB
 
 /// Audio-thread half. `process_block` does not allocate, lock or do I/O.
 pub struct Engine {
+    /// The random generators every synth of this engine draws from
+    /// ([`crate::dsp::rand`]), reseeded here by `Cmd::Seed`.
+    generators: Arc<Generators>,
     sample_rate: f32,
     /// Per-block decay applied to the published bus levels (see
     /// [`level_release`]), computed once from the sample rate.
@@ -705,6 +714,9 @@ pub struct Engine {
 /// Network-thread half: sends commands, collects garbage and events, reads
 /// counters, serves the control buses directly.
 pub struct EngineHandle {
+    /// The engine's random generators, for the synths the network thread
+    /// builds to draw from.
+    generators: Arc<Generators>,
     pub sample_rate: f32,
     pub channels: usize,
     /// Configured audio bus count (after clamping to the 128 ceiling).
@@ -822,7 +834,9 @@ pub fn engine_pair_full(
     let node_costs = Arc::clone(tree.costs());
     let tap_buses = vec![-1i32; ipc.as_ref().map_or(0, |s| s.taps())];
     let segment = ipc.clone();
+    let generators = Generators::seeded(clausters_core::rng::entropy_seed());
     let engine = Engine {
+        generators: Arc::clone(&generators),
         sample_rate,
         level_release: level_release(sample_rate),
         channels,
@@ -871,6 +885,7 @@ pub fn engine_pair_full(
         meters,
         node_costs,
         segment,
+        generators,
         device_epoch: DeviceEpoch::default(),
     };
     (engine, handle)
@@ -1579,6 +1594,7 @@ impl Engine {
                         t.fade_len = samples;
                     }
                 }
+                Cmd::Seed(seed) => self.generators.reseed(seed),
                 Cmd::SetBuffer { index, buffer } => {
                     if let Some(slot) = self.buffers.get_mut(index) {
                         if let Some(old) = std::mem::replace(slot, buffer) {
@@ -2104,6 +2120,12 @@ impl EngineHandle {
     /// The per-role load table, for `/server_load`.
     pub fn meters(&self) -> &Arc<Meters> {
         &self.meters
+    }
+
+    /// The engine's random generators: what the synths built for this
+    /// engine draw from, and the seed in force ([`Generators::seed`]).
+    pub fn generators(&self) -> &Arc<Generators> {
+        &self.generators
     }
 
     /// The per-synth cost table, for `/server_profile`.

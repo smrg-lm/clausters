@@ -204,6 +204,100 @@ One uniform random value in `[lo, hi)`, drawn once at synth init and
 held for the node's life (`ir`); `lo`/`hi` must be constants or `ir`.
 '''
 
+[[ugen]]
+kind = "IRand"
+builder = "irand"
+rate = "ir"
+doc = '''
+One random integer in `[lo, hi]`, both bounds included (and truncated),
+drawn once at synth init and held.
+'''
+
+[[ugen]]
+kind = "ExpRand"
+builder = "exp_rand"
+rate = "ir"
+doc = '''
+One value between `lo` and `hi` with equal chances per ratio (log-uniform,
+so an octave is as likely as any other), drawn once at synth init and held.
+`lo` and `hi` must have one sign and not be zero.
+'''
+
+[[ugen]]
+kind = "LinRand"
+builder = "lin_rand"
+required = ["lo", "hi"]
+rate = "ir"
+doc = '''
+One value in `[lo, hi)` leaning towards `lo` (the lower of two uniform
+draws), or towards `hi` when `minmax` is positive, drawn once at synth init
+and held.
+'''
+
+[[ugen]]
+kind = "NRand"
+builder = "n_rand"
+rate = "ir"
+doc = '''
+One value in `[lo, hi)`, the mean of `n` uniform draws: flat for 1, a
+triangle for 2, nearer a bell the more there are. Drawn once at synth init
+and held.
+'''
+
+[[ugen]]
+kind = "TRand"
+builder = "t_rand"
+doc = '''
+A uniform random value in `[lo, hi)`, drawn again at each rising edge of
+`trig` and held between; the first is drawn at the synth's start.
+'''
+
+[[ugen]]
+kind = "TIRand"
+builder = "ti_rand"
+doc = '''
+A random integer in `[lo, hi]`, drawn again at each rising edge of `trig`
+and held between; the first is drawn at the synth's start.
+'''
+
+[[ugen]]
+kind = "TExpRand"
+builder = "t_exp_rand"
+doc = '''
+A log-uniform random value between `lo` and `hi`, drawn again at each
+rising edge of `trig` and held between; the first is drawn at the synth's
+start.
+'''
+
+[[ugen]]
+kind = "CoinGate"
+builder = "coin_gate"
+doc = '''
+Lets each rising edge of `trig` through with probability `prob` (the
+trigger's own value, for that sample), and outputs 0 otherwise.
+'''
+
+[[ugen]]
+kind = "RandID"
+builder = "rand_id"
+doc = '''
+Chooses which of the server's 64 random generators this synth's random
+UGens draw from, `id` 0 to 63 (0 until it runs). Synths drawing from
+different generators are independent streams: a reseed of one leaves the
+others alone, and they can run side by side in a parallel group. Outputs 0.
+'''
+
+[[ugen]]
+kind = "RandSeed"
+builder = "rand_seed"
+doc = '''
+At each rising edge of `trig`, reseeds the generator this synth draws from
+with `seed`, so every synth drawing from it starts the same sequence again
+-- how a group's randomness is restarted on purpose. At the initial rate it
+reseeds once, when the synth starts. A def of its own does nothing else:
+it is a root, and is not wrapped in an `out`. Outputs 0.
+'''
+
 [[hand]]
 kind = "RecordBuf"
 why = "`done_action` is a `DoneAction`, and TypeScript takes the optional inputs as an options object"

@@ -51,6 +51,10 @@ pub struct ServerConfig {
     pub port: Option<u16>,
     /// DSP worker threads (`--workers`); 0 lets the server choose.
     pub workers: Option<usize>,
+    /// The seed the server's random generators start from (`--seed`), so a
+    /// booted server is the same take every time; unset draws one from
+    /// entropy, and the server reports it.
+    pub seed: Option<u64>,
     /// Imposed output rate in Hz (`--sample-rate`); 0 follows the device.
     pub sample_rate: Option<u32>,
     /// Audio bus count (`--audio-buses`).
@@ -455,6 +459,7 @@ impl ServerConfig {
         ServerConfig {
             port: pick(self.port, h.port),
             workers: pick(self.workers, h.workers),
+            seed: pick(self.seed, h.seed),
             sample_rate: pick(self.sample_rate, h.sample_rate),
             audio_buses: pick(self.audio_buses, h.audio_buses),
             control_buses: pick(self.control_buses, h.control_buses),

@@ -2868,8 +2868,9 @@ def map_range(op: int, clip: int, x, in_lo: float, in_hi: float,
 
 
 def white_noise(seed: int, n: int) -> array:
-    """`n` white-noise samples from `seed`, identical to the server's
-    `WhiteNoise` UGen seeded the same way."""
+    """`n` white-noise samples from `seed`, identical to a server's
+    `WhiteNoise` drawing alone from the first generator of a server seeded
+    with `seed`."""
     out = array("f", bytes(4 * n))
     lib().clausters_core_whitenoise(ctypes.c_uint64(seed), _ptr(out), n)
     return out

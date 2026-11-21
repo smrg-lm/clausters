@@ -400,6 +400,22 @@ test("two sessions are two random contexts", () =>
         b.session.close();
     }));
 
+test("seeding a session seeds its server, and a first draw does not", () =>
+    withCleanDefault(async () => {
+        const { session, packets } = await fakeSession();
+        // A first draw seeds the context lazily: its own seed, not a call to
+        // seed the environment, so nothing reaches the server.
+        session.use(() => session.rng.rand());
+        assert.ok(!addrs(packets).includes("/server_seed"));
+        // One call pins both halves of a take.
+        assert.equal(session.seed(1956), 1956);
+        assert.deepEqual(
+            sent(packets).filter(([a]) => a === "/server_seed"),
+            [["/server_seed", ["1956"]]],
+        );
+        session.close();
+    }));
+
 test("play dispatches by kind against the ambient context", () =>
     withCleanDefault(async () => {
         const { session, packets } = await fakeSession();

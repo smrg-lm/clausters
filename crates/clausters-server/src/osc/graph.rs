@@ -93,7 +93,39 @@ fn ugen_usage_impl(def: &SynthDef, controls: &[f32], replace_reads: bool) -> (Bu
             usage.mark(value, read, write);
         }
     }
+    usage.generators = generator_usage(def, controls, &mut bus_controls);
     (usage, bus_controls)
+}
+
+/// **Which random generators a def draws from**, one bit each
+/// ([`crate::dsp::rand`]). Generator 0 unless a `RandID` chooses another, and
+/// then both: the UGens before it in the graph draw from 0 on the synth's
+/// first block and from the chosen one after. A `RandID` whose id is not a
+/// function of the controls could choose any of them. A control it reads is
+/// noted in `bus_controls`, so a `/node_set` of it re-runs the analysis.
+#[cfg(feature = "synth")]
+fn generator_usage(def: &SynthDef, controls: &[f32], bus_controls: &mut Vec<u32>) -> u64 {
+    use crate::dsp::rand::GENERATORS;
+    use crate::dsp::registry::RandomRole;
+    let mut draws = false;
+    let mut selected = 1u64;
+    for ugen in &def.ugens {
+        match ugen.desc.random {
+            RandomRole::None => {}
+            RandomRole::Draws => draws = true,
+            RandomRole::Selects => {
+                match static_value(def, ugen.inputs[0], controls, bus_controls) {
+                    Some(id) if id >= 0.0 && (id as usize) < GENERATORS => {
+                        selected |= 1 << id as usize
+                    }
+                    // An id past the table is ignored, as the UGen ignores it.
+                    Some(_) => {}
+                    None => selected = u64::MAX,
+                }
+            }
+        }
+    }
+    if draws { selected } else { 0 }
 }
 
 /// **What an input is worth, when the node's controls alone say**: a

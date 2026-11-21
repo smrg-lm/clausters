@@ -467,6 +467,10 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `var_lag(signal, time=0.1, start=None)` | a straight line to each new value, taking `time` seconds, from `start` (the signal itself unless given) |
 | Scalar (`ir`) | `sample_rate()` | the engine sample rate in Hz, computed once at init |
 | | `rand(lo=0.0, hi=1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |
+| | `irand(lo=0.0, hi=127.0)`, `exp_rand(lo=0.01, hi=1.0)`, `lin_rand(lo, hi, minmax=0.0)`, `n_rand(lo=0.0, hi=1.0, n=0.0)` | one integer, log-uniform, linear or mean-of-`n` value, drawn once and held |
+| | `t_rand(lo, hi, trig)`, `ti_rand(...)`, `t_exp_rand(...)` | a random value drawn at the start and again at each trigger |
+| | `coin_gate(prob=0.5, trig=0.0)` | lets each trigger through with probability `prob` |
+| | `rand_id(id=0.0)`, `rand_seed(trig=0.0, seed=56789.0)` | choose the server generator the synth draws from; reseed it on a trigger (a root) |
 | Demand (`dr`) | `dseq(values, repeats=0.0)` | yields `values` in order, `repeats` passes (**0 is endless**); a value that is itself a stream is drained, not taken once |
 | | `drand(values, repeats=0.0)` / `dxrand(...)` | `repeats` **items** drawn at random from the list; `dxrand` never picks the value it just used |
 | | `dshuf(values, repeats=0.0)` | the list shuffled **once** and replayed in that order, `repeats` passes |
@@ -577,6 +581,10 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `varLag(signal, time = 0.1, start?)` | a straight line to each new value, taking `time` seconds, from `start` (the signal itself unless given) |
 | Scalar (`ir`) | `sampleRate()` | the engine sample rate in Hz, computed once at init |
 | | `rand(lo = 0.0, hi = 1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |
+| | `irand(lo = 0.0, hi = 127.0)`, `expRand(lo = 0.01, hi = 1.0)`, `linRand(lo, hi, minmax = 0.0)`, `nRand(lo = 0.0, hi = 1.0, n = 0.0)` | one integer, log-uniform, linear or mean-of-`n` value, drawn once and held |
+| | `tRand(lo, hi, trig)`, `tiRand(...)`, `tExpRand(...)` | a random value drawn at the start and again at each trigger |
+| | `coinGate(prob = 0.5, trig = 0.0)` | lets each trigger through with probability `prob` |
+| | `randId(id = 0.0)`, `randSeed(trig = 0.0, seed = 56789.0)` | choose the server generator the synth draws from; reseed it on a trigger (a root) |
 | Demand (`dr`) | `dseq(values, repeats = 0.0)` | yields `values` in order, `repeats` passes (**0 is endless**); a value that is itself a stream is drained, not taken once |
 | | `drand(values, repeats = 0.0)` / `dxrand(values, repeats = 0.0)` | `repeats` **items** drawn at random from the list; `dxrand` never picks the value it just used |
 | | `dshuf(values, repeats = 0.0)` | the list shuffled **once** and replayed in that order, `repeats` passes |

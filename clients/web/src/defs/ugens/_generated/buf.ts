@@ -185,3 +185,87 @@ export const bufDur = (bufnum: Channel): Ugen =>
  */
 export const rand = (lo: Channel = 0.0, hi: Channel = 1.0): Ugen =>
     new Ugen("Rand", [lo, hi], { rate: "ir" });
+
+/**
+ * One random integer in `[lo, hi]`, both bounds included (and truncated),
+ * drawn once at synth init and held.
+ */
+export const irand = (lo: Channel = 0.0, hi: Channel = 127.0): Ugen =>
+    new Ugen("IRand", [lo, hi], { rate: "ir" });
+
+/**
+ * One value between `lo` and `hi` with equal chances per ratio (log-uniform,
+ * so an octave is as likely as any other), drawn once at synth init and held.
+ * `lo` and `hi` must have one sign and not be zero.
+ */
+export const expRand = (lo: Channel = 0.01, hi: Channel = 1.0): Ugen =>
+    new Ugen("ExpRand", [lo, hi], { rate: "ir" });
+
+/**
+ * One value in `[lo, hi)` leaning towards `lo` (the lower of two uniform
+ * draws), or towards `hi` when `minmax` is positive, drawn once at synth init
+ * and held.
+ */
+export const linRand = (lo: Channel, hi: Channel, minmax: Channel = 0.0): Ugen =>
+    new Ugen("LinRand", [lo, hi, minmax], { rate: "ir" });
+
+/**
+ * One value in `[lo, hi)`, the mean of `n` uniform draws: flat for 1, a
+ * triangle for 2, nearer a bell the more there are. Drawn once at synth init
+ * and held.
+ */
+export const nRand = (lo: Channel = 0.0, hi: Channel = 1.0, n: Channel = 0.0): Ugen =>
+    new Ugen("NRand", [lo, hi, n], { rate: "ir" });
+
+/**
+ * A uniform random value in `[lo, hi)`, drawn again at each rising edge of
+ * `trig` and held between; the first is drawn at the synth's start.
+ */
+export const tRand = (lo: Channel = 0.0, hi: Channel = 1.0, trig: Channel = 0.0): Ugen =>
+    new Ugen("TRand", [lo, hi, trig]);
+
+/**
+ * A random integer in `[lo, hi]`, drawn again at each rising edge of `trig`
+ * and held between; the first is drawn at the synth's start.
+ */
+export const tiRand = (
+    lo: Channel = 0.0,
+    hi: Channel = 127.0,
+    trig: Channel = 0.0,
+): Ugen => new Ugen("TIRand", [lo, hi, trig]);
+
+/**
+ * A log-uniform random value between `lo` and `hi`, drawn again at each
+ * rising edge of `trig` and held between; the first is drawn at the synth's
+ * start.
+ */
+export const tExpRand = (
+    lo: Channel = 0.01,
+    hi: Channel = 1.0,
+    trig: Channel = 0.0,
+): Ugen => new Ugen("TExpRand", [lo, hi, trig]);
+
+/**
+ * Lets each rising edge of `trig` through with probability `prob` (the
+ * trigger's own value, for that sample), and outputs 0 otherwise.
+ */
+export const coinGate = (prob: Channel = 0.5, trig: Channel = 0.0): Ugen =>
+    new Ugen("CoinGate", [prob, trig]);
+
+/**
+ * Chooses which of the server's 64 random generators this synth's random
+ * UGens draw from, `id` 0 to 63 (0 until it runs). Synths drawing from
+ * different generators are independent streams: a reseed of one leaves the
+ * others alone, and they can run side by side in a parallel group. Outputs 0.
+ */
+export const randId = (id: Channel = 0.0): Ugen => new Ugen("RandID", [id]);
+
+/**
+ * At each rising edge of `trig`, reseeds the generator this synth draws from
+ * with `seed`, so every synth drawing from it starts the same sequence again
+ * -- how a group's randomness is restarted on purpose. At the initial rate it
+ * reseeds once, when the synth starts. A def of its own does nothing else:
+ * it is a root, and is not wrapped in an `out`. Outputs 0.
+ */
+export const randSeed = (trig: Channel = 0.0, seed: Channel = 56789.0): Ugen =>
+    new Ugen("RandSeed", [trig, seed]);

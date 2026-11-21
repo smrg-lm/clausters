@@ -2,11 +2,15 @@ use clausters::server::render::{OscScore, RenderConfig, render_to_wav_with};
 
 const USAGE: &str = "\
 usage:
-  clausters [--port <n>] [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--prune-defs] [--udp [addr:]port] [--tcp [[addr:]port] | --no-tcp] [--ws [[addr:]port]] [--midi [name]] [--sample-rate <hz>]
+  clausters [--port <n>] [--workers <n>] [--seed <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--prune-defs] [--udp [addr:]port] [--tcp [[addr:]port] | --no-tcp] [--ws [[addr:]port]] [--midi [name]] [--sample-rate <hz>]
                                                real-time server (OSC on UDP + TCP 57110)
       --port <n>           the base OSC port, default 57110: UDP binds it and
                            TCP follows it, so one flag moves the whole server
                            and several can run side by side
+      --seed <n>           the seed the random UGens' generators start from
+                           (default: a fresh one each boot, printed at boot and
+                           answered by /server_seed); the same seed and the
+                           same commands at the same times give the same samples
       --sample-rate <hz>   imposed output rate, default 48000; 0 follows the
                            device (PipeWire honors it per-app; other hosts fall
                            back to the device rate if unsupported)
@@ -340,6 +344,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // back to the compiled default. Precedence: flag > project > user > default.
     let cfg = clausters_core::config::Config::load().server;
     let mut workers = cfg.workers.unwrap_or(0);
+    let mut seed: Option<u64> = cfg.seed;
     let mut shm_path: Option<String> = cfg.shm.clone();
     let mut data_dir: Option<String> = cfg.data_dir.clone();
     // `persist = false` in config is the same as `--no-persist`; the flag can
@@ -476,6 +481,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 let value = flag_value("--workers", "a value", &mut it)?;
                 workers = parse_workers(value)?;
             }
+            "--seed" => seed = Some(flag_parse("--seed", "a value", &mut it)?),
             "--shm" => {
                 let value = flag_value("--shm", "a path", &mut it)?;
                 shm_path = Some(value.clone());
@@ -659,7 +665,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             clausters::server::rt::request_audio_pin(&[cpu]);
         }
     }
-    let (backend, handle) = clausters::server::backend::start(
+    let (backend, mut handle) = clausters::server::backend::start(
         workers,
         segment.clone(),
         sample_rate,
@@ -697,6 +703,16 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             backend.sample_rate
         );
     }
+    // The generators start from the configured seed, or from entropy -- and
+    // either way the seed is said, so a take worth keeping can be had again.
+    let seed = seed.unwrap_or_else(clausters_core::rng::entropy_seed);
+    if handle
+        .send(clausters::server::engine::Cmd::Seed(seed))
+        .is_err()
+    {
+        return Err("the engine's command queue is full at boot".into());
+    }
+    handle.generators().note_seed(seed);
     let mut osc = OscServer::bind(udp_bind, info, handle)?;
     // Before the listeners: the TCP/WS hubs capture the ceiling when they bind.
     osc.set_max_frame(max_frame);
@@ -770,11 +786,12 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     println!(
-        "clausters -- silent until /synth_new | {} Hz, {} out / {} in ch | {} DSP worker(s) | OSC on {} | /server_quit or Ctrl-C to stop",
+        "clausters -- silent until /synth_new | {} Hz, {} out / {} in ch | {} DSP worker(s) | seed {} | OSC on {} | /server_quit or Ctrl-C to stop",
         backend.sample_rate,
         backend.channels,
         backend.input_channels,
         workers,
+        seed,
         osc.local_addr()?
     );
     // The OSC server runs on the main thread; the audio runs in cpal's

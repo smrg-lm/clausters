@@ -11,10 +11,7 @@
 //! dependency analysis) and [`Arity`]. A UGen names one of each; it does
 //! not invent new control flow.
 
-use std::cell::Cell;
 use std::sync::Arc;
-
-use clausters_core::rng::SEED_STRIDE;
 
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::bound::Bound;
@@ -42,10 +39,12 @@ use crate::dsp::noise::{
 use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
 use crate::dsp::pan::{Pan, PanAz, PanKind, RotKind, Rotate, Select, SelectKind};
 use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw, TransportFade, TransportPos};
+use crate::dsp::rand::SynthRand;
+use crate::dsp::random::{CoinGate, Once, OnceKind, RandId, RandSeed, Triggered, TriggeredKind};
 use crate::dsp::randop::RandOp;
 use crate::dsp::rangemap::RangeMap;
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
-use crate::dsp::scalar::{Rand, SampleRate};
+use crate::dsp::scalar::SampleRate;
 use crate::dsp::sine::Sine;
 use crate::dsp::spectral::{
     CombineOp, Fft, Ifft, MagMode, PvBinShift, PvBrickWall, PvCombine, PvKernel, PvMag,
@@ -138,11 +137,10 @@ pub struct BuildCtx {
     /// block into shorter runs, so this is a **capacity**, not the length any
     /// single `process` call sees -- size buffers by it, never loop over it.
     pub block_size: usize,
-    /// The next seed for a stochastic UGen in this instance, handed out by
-    /// [`BuildCtx::next_seed`]. It is a `Cell` because `build` takes `&self`
-    /// and every UGen in one graph must get a *different* stream: correlated
-    /// "noise" sums to a comb filter rather than to more noise.
-    seed: Cell<u64>,
+    /// The synth's access to its engine's random generators, which every
+    /// random UGen of the synth draws from ([`crate::dsp::rand`]): clone it
+    /// into the UGen with [`BuildCtx::rand`].
+    rand: SynthRand,
     /// The server's load table, for the UGens that own a thread (`DiskIn`,
     /// `DiskOut`): the thread accounts its work there, as every other worker
     /// of the server does. A table nobody reads unless
@@ -157,36 +155,41 @@ pub struct BuildCtx {
 }
 
 impl BuildCtx {
-    /// A build context whose stochastic UGens start their seeds at `seed`.
-    ///
-    /// The seed sequence belongs to the *instance*, not to the process: the
-    /// caller (`UGenSynth::new`) reserves one contiguous run of seeds per
-    /// synth, so replaying the same score replays the same noise. A
-    /// process-global counter would make a render depend on how many synths
-    /// happened to be built before it.
+    /// A build context whose random UGens draw from a table of their own,
+    /// seeded from `seed`: a synth built outside a server, for a test or a
+    /// render of one graph.
     pub fn new(sample_rate: f32, block_size: usize, seed: u64) -> Self {
-        Self::metered(sample_rate, block_size, seed, Meters::detached())
+        Self::metered(
+            sample_rate,
+            block_size,
+            SynthRand::detached(seed),
+            Meters::detached(),
+        )
     }
 
-    /// [`BuildCtx::new`] with the load table its UGens' threads report to --
-    /// what a server builds a synth with. Taking the table here rather than
-    /// swapping it in afterwards keeps a `/synth_new` from allocating one it
-    /// then throws away.
-    pub fn metered(sample_rate: f32, block_size: usize, seed: u64, meters: Arc<Meters>) -> Self {
+    /// [`BuildCtx::new`] with the synth's access to its engine's generators
+    /// and the load table its UGens' threads report to -- what a server
+    /// builds a synth with. Taking the table here rather than swapping it in
+    /// afterwards keeps a `/synth_new` from allocating one it then throws
+    /// away.
+    pub fn metered(
+        sample_rate: f32,
+        block_size: usize,
+        rand: SynthRand,
+        meters: Arc<Meters>,
+    ) -> Self {
         Self {
             sample_rate,
             block_size,
-            seed: Cell::new(seed),
+            rand,
             meters,
             offline: false,
         }
     }
 
-    /// The next seed, advancing the sequence.
-    pub fn next_seed(&self) -> u64 {
-        let s = self.seed.get();
-        self.seed.set(s.wrapping_add(SEED_STRIDE));
-        s
+    /// The synth's access to its generators, for a random UGen to keep.
+    pub fn rand(&self) -> SynthRand {
+        self.rand.clone()
     }
 }
 
@@ -328,6 +331,17 @@ pub enum OpFamily {
     Draw,
 }
 
+/// How a kind touches the engine's random generators ([`crate::dsp::rand`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RandomRole {
+    /// Draws nothing.
+    None,
+    /// Draws from (or reseeds) the generator the synth selects.
+    Draws,
+    /// Chooses the generator the synth draws from (`RandID`).
+    Selects,
+}
+
 /// The audio-bus role a UGen plays, for the dependency analysis
 /// (`osc::graph::ugen_usage`), read off input 0 (the bus index).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -379,6 +393,11 @@ pub struct UGenDescriptor {
     /// rejects the rest by name, since watching a UGen that never finishes
     /// would read zero for the life of the node with nothing to see.
     pub has_done_flag: bool,
+    /// Whether the kind draws from the synth's random generator, or chooses
+    /// which one the synth draws from: what the stage scheduler reads to keep
+    /// two nodes drawing from one generator out of one parallel stage
+    /// ([`crate::dsp::rand`]).
+    pub random: RandomRole,
     /// Builds an instance. Runs on the network thread (allocates); `config`
     /// carries static per-UGen parameters, ignored by most kinds, and `ctx` the
     /// engine facts a kind may need to size that allocation (the sample rate,
@@ -439,6 +458,7 @@ const fn desc_full(
         spectral,
         build,
         has_done_flag: false,
+        random: RandomRole::None,
     }
 }
 
@@ -448,6 +468,22 @@ const fn desc_full(
 const fn desc_done(d: UGenDescriptor) -> UGenDescriptor {
     UGenDescriptor {
         has_done_flag: true,
+        ..d
+    }
+}
+
+/// A kind that draws from the synth's random generator (or reseeds it).
+const fn desc_draws(d: UGenDescriptor) -> UGenDescriptor {
+    UGenDescriptor {
+        random: RandomRole::Draws,
+        ..d
+    }
+}
+
+/// A kind that chooses which generator the synth draws from (`RandID`).
+const fn desc_selects(d: UGenDescriptor) -> UGenDescriptor {
+    UGenDescriptor {
+        random: RandomRole::Selects,
         ..d
     }
 }
@@ -773,6 +809,7 @@ mod lag;
 mod noise;
 mod osc;
 mod pan;
+mod random;
 mod reply;
 mod spectral;
 mod trig;
@@ -799,6 +836,7 @@ static FAMILIES: &[&[UGenDescriptor]] = &[
     noise::UGENS,
     pan::UGENS,
     trig::UGENS,
+    random::UGENS,
     demand::UGENS,
     reply::UGENS,
     spectral::UGENS,

@@ -1,9 +1,10 @@
-//! Seeded white noise, identical to the server's `dsp::noise`.
+//! The seeded generators: scsynth's [`RGen`], which the server's UGens draw
+//! from, and the sequencing layer's [`Rng`], which a client's patterns draw
+//! from, with the distributions both read ([`Draw`]).
 //!
-//! Keeping the generator here lets a client reproduce a server noise stream
-//! sample for sample from the same seed. Both the splitmix64 seed mixer and
-//! the xorshift step / sample scaling are the exact code the server's
-//! `WhiteNoise` UGen now calls. Allocation-free.
+//! [`WhiteNoise`] is the server's white noise, kept here so a client can
+//! reproduce a server noise stream sample for sample from the same seed.
+//! Allocation-free.
 
 /// SplitMix64 -- mixes a raw seed into a well-distributed state word. The same
 /// constant the server uses to seed successive `WhiteNoise` instances.
@@ -67,29 +68,29 @@ pub fn entropy_seed() -> u64 {
     }
 }
 
-/// White noise in [-1, 1], one xorshift64 step per sample. No inputs.
+/// White noise in `[-1, 1)`, the server's: scsynth's `frand2` per sample, from
+/// the generator a server seeded with `seed` gives its synths first
+/// (`dsp::rand` in the server). A `WhiteNoise` UGen drawing alone from that
+/// generator plays exactly this stream.
 #[derive(Clone, Copy)]
 pub struct WhiteNoise {
-    state: u64,
+    g: RGen,
 }
 
 impl WhiteNoise {
-    /// Builds a generator from a raw seed exactly as the server does:
-    /// `splitmix64(seed) | 1` (the state is never zero).
+    /// The stream of a server seeded with `seed`: its first generator, which
+    /// takes the seed's low word with the high one folded in.
     #[inline]
     pub fn from_seed(seed: u64) -> Self {
         Self {
-            state: splitmix64(seed) | 1,
+            g: RGen::new((seed ^ (seed >> 32)) as u32),
         }
     }
 
     /// Next sample in [-1, 1).
     #[inline]
     pub fn next_sample(&mut self) -> f32 {
-        self.state ^= self.state << 13;
-        self.state ^= self.state >> 17;
-        self.state ^= self.state << 5;
-        (self.state as i32 as f32) * (1.0 / 2_147_483_648.0)
+        self.g.frand2()
     }
 
     /// Fills a slice with successive samples. Allocation-free.
@@ -102,7 +103,7 @@ impl WhiteNoise {
 }
 
 /// A seeded value-level generator for the sequencing layer (`pwhite`, `prand`,
-/// ...): the same splitmix64 seeding and xorshift64 step as [`WhiteNoise`], but
+/// ...): splitmix64 seeding and a xorshift64 step, but
 /// yielding `f64` uniforms and bounded integers instead of audio samples. It
 /// lives here so a seeded pattern replays the **same stream in every client
 /// language** -- the host language's own RNG (e.g. Python's Mersenne Twister)
@@ -287,44 +288,72 @@ impl Draw {
     }
 }
 
+/// A source of uniform draws in `[0, 1)`, which is all a [`Draw`] reads: the
+/// sequencing layer's [`Rng`], or scsynth's [`RGen`] on the server.
+pub trait Uniform {
+    fn next_f64(&mut self) -> f64;
+}
+
+impl Uniform for Rng {
+    #[inline]
+    fn next_f64(&mut self) -> f64 {
+        Rng::next_f64(self)
+    }
+}
+
+impl Uniform for RGen {
+    #[inline]
+    fn next_f64(&mut self) -> f64 {
+        self.drand()
+    }
+}
+
 impl Rng {
     /// One draw from distribution `d` with its arguments `a` and `b` (see
     /// [`Draw`] for what each reads).
     pub fn draw(&mut self, d: Draw, a: f64, b: f64) -> f64 {
+        d.sample(self, a, b)
+    }
+}
+
+impl Draw {
+    /// One draw of this distribution from `u`, with its arguments `a` and `b`.
+    pub fn sample<U: Uniform + ?Sized>(self, u: &mut U, a: f64, b: f64) -> f64 {
+        let d = self;
         use Draw::*;
         match d {
-            Rand => self.next_f64() * a,
-            Rand2 => (2.0 * self.next_f64() - 1.0) * a,
-            Rrand => a + self.next_f64() * (b - a),
-            Exprand => a * ((b / a).ln() * self.next_f64()).exp(),
+            Rand => u.next_f64() * a,
+            Rand2 => (2.0 * u.next_f64() - 1.0) * a,
+            Rrand => a + u.next_f64() * (b - a),
+            Exprand => a * ((b / a).ln() * u.next_f64()).exp(),
             Linrand => {
-                let (x, y) = (self.next_f64(), self.next_f64());
+                let (x, y) = (u.next_f64(), u.next_f64());
                 x.min(y) * a
             }
             Bilinrand => {
-                let (x, y) = (self.next_f64(), self.next_f64());
+                let (x, y) = (u.next_f64(), u.next_f64());
                 (x - y) * a
             }
             Sum3rand => {
-                let sum = self.next_f64() + self.next_f64() + self.next_f64();
+                let sum = u.next_f64() + u.next_f64() + u.next_f64();
                 (sum - 1.5) * (2.0 / 3.0) * a
             }
-            Coin => (self.next_f64() < a) as u8 as f64,
-            Irand => (a * self.next_f64()).floor(),
-            Irand2 => ((2.0 * a + 1.0) * self.next_f64() - a).floor(),
+            Coin => (u.next_f64() < a) as u8 as f64,
+            Irand => (a * u.next_f64()).floor(),
+            Irand2 => ((2.0 * a + 1.0) * u.next_f64() - a).floor(),
             Irrand => {
                 let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
-                lo + ((hi - lo + 1.0) * self.next_f64()).floor()
+                lo + ((hi - lo + 1.0) * u.next_f64()).floor()
             }
             // `1 - u` rather than sclang's `u`: the uniform reaches 0 and
             // never 1, and `ln(0)` would be an infinity for one draw in 2^53.
             Gauss => {
-                let (u, v) = (self.next_f64(), self.next_f64());
+                let (u, v) = (u.next_f64(), u.next_f64());
                 (-2.0 * (1.0 - u).ln()).sqrt() * (core::f64::consts::TAU * v).sin() * b + a
             }
             Lprand | Hprand | Meanrand => {
-                let x = a + self.next_f64() * (b - a);
-                let y = a + self.next_f64() * (b - a);
+                let x = a + u.next_f64() * (b - a);
+                let y = a + u.next_f64() * (b - a);
                 match d {
                     Lprand => x.min(y),
                     Hprand => x.max(y),
@@ -335,8 +364,8 @@ impl Rng {
                 let (ra, rb) = (1.0 / a, 1.0 / b);
                 // sclang's loop: draw until the two powers sum to at most 1.
                 loop {
-                    let x = self.next_f64().powf(ra);
-                    let sum = x + self.next_f64().powf(rb);
+                    let x = u.next_f64().powf(ra);
+                    let sum = x + u.next_f64().powf(rb);
                     if sum <= 1.0 {
                         break if sum > 0.0 { x / sum } else { 0.0 };
                     }
@@ -344,25 +373,27 @@ impl Rng {
             }
             Cauchy => {
                 // A uniform of exactly one half would be the pole of tan.
-                let mut u = 0.5;
-                while u == 0.5 {
-                    u = self.next_f64();
+                let mut x = 0.5;
+                while x == 0.5 {
+                    x = u.next_f64();
                 }
-                b * (u * core::f64::consts::PI).tan() + a
+                b * (x * core::f64::consts::PI).tan() + a
             }
             Poisson => {
                 let limit = (-a).exp();
                 let mut count = 0.0;
-                let mut test = self.next_f64();
+                let mut test = u.next_f64();
                 while test > limit {
                     count += 1.0;
-                    test *= self.next_f64();
+                    test *= u.next_f64();
                 }
                 count
             }
         }
     }
+}
 
+impl Rng {
     /// One draw shaped by a table [`ListOp::Asrandomtable`](crate::numeric::ListOp)
     /// built: the table read at a uniform position, sclang's `tableRand`. An
     /// empty table gives NaN.
@@ -581,6 +612,227 @@ mod tests {
         for _ in 0..10_000 {
             let s = n.next_sample();
             assert!((-1.0..1.0).contains(&s), "out of range: {s}");
+        }
+    }
+}
+
+/// **scsynth's generator**: the three-word Tausworthe generator (L'Ecuyer's
+/// `taus88`) every UGen of scsynth's draws from, with its seeding and its
+/// conversions -- `SC_RGen.h`, ported exactly, so a seed gives the stream
+/// scsynth gives for it.
+///
+/// The server's UGens draw from this rather than from [`Rng`] for that
+/// reason: a def ported from SuperCollider and run from the seed it was run
+/// from in SuperCollider (`RandSeed`, or the server's seed) gives the same
+/// numbers, and the server's own reference tests can hold the random UGens to
+/// scsynth's samples rather than to their statistics. [`Rng`] stays the
+/// sequencing layer's: a client's patterns are not scsynth's and never drew
+/// from this.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RGen {
+    s1: u32,
+    s2: u32,
+    s3: u32,
+}
+
+/// Thomas Wang's 32-bit integer hash, scsynth's `Hash`: what `RGen::init`
+/// passes a seed through, since people tend to use small ones.
+#[inline]
+pub fn sc_hash(key: i32) -> i32 {
+    let mut hash = key as u32;
+    hash = hash.wrapping_add(!(hash << 15));
+    hash ^= hash >> 10;
+    hash = hash.wrapping_add(hash << 3);
+    hash ^= hash >> 6;
+    hash = hash.wrapping_add(!(hash << 11));
+    hash ^= hash >> 16;
+    hash as i32
+}
+
+impl RGen {
+    /// A generator seeded as scsynth's `RGen::init` seeds one.
+    pub fn new(seed: u32) -> Self {
+        let mut g = Self {
+            s1: 0,
+            s2: 0,
+            s3: 0,
+        };
+        g.init(seed);
+        g
+    }
+
+    /// Reseeds in place, scsynth's `RGen::init`.
+    pub fn init(&mut self, seed: u32) {
+        let seed = sc_hash(seed as i32) as u32;
+        self.s1 = 1_243_598_713 ^ seed;
+        if self.s1 < 2 {
+            self.s1 = 1_243_598_713;
+        }
+        self.s2 = 3_093_459_404 ^ seed;
+        if self.s2 < 8 {
+            self.s2 = 3_093_459_404;
+        }
+        self.s3 = 1_821_928_721 ^ seed;
+        if self.s3 < 16 {
+            self.s3 = 1_821_928_721;
+        }
+    }
+
+    /// One step: a random 32-bit word.
+    #[inline]
+    pub fn trand(&mut self) -> u32 {
+        self.s1 = ((self.s1 & 0xFFFF_FFFE) << 12) ^ (((self.s1 << 13) ^ self.s1) >> 19);
+        self.s2 = ((self.s2 & 0xFFFF_FFF8) << 4) ^ (((self.s2 << 2) ^ self.s2) >> 25);
+        self.s3 = ((self.s3 & 0xFFFF_FFF0) << 17) ^ (((self.s3 << 3) ^ self.s3) >> 11);
+        self.s1 ^ self.s2 ^ self.s3
+    }
+
+    /// `[1, 2)`, the 23 high bits of a word as a float's mantissa.
+    #[inline]
+    pub fn frand0(&mut self) -> f32 {
+        f32::from_bits(0x3F80_0000 | (self.trand() >> 9))
+    }
+
+    /// `[0, 1)`.
+    #[inline]
+    pub fn frand(&mut self) -> f32 {
+        f32::from_bits(0x3F80_0000 | (self.trand() >> 9)) - 1.0
+    }
+
+    /// `[-1, 1)`.
+    #[inline]
+    pub fn frand2(&mut self) -> f32 {
+        f32::from_bits(0x4000_0000 | (self.trand() >> 9)) - 3.0
+    }
+
+    /// `[-0.125, 0.125)`.
+    #[inline]
+    pub fn frand8(&mut self) -> f32 {
+        f32::from_bits(0x3E80_0000 | (self.trand() >> 9)) - 0.375
+    }
+
+    /// `-1` or `+1`.
+    #[inline]
+    pub fn fcoin(&mut self) -> f32 {
+        f32::from_bits(0x3F80_0000 | (0x8000_0000 & self.trand()))
+    }
+
+    /// `[0, 1)` with a word's 32 bits of resolution.
+    #[inline]
+    pub fn drand(&mut self) -> f64 {
+        self.trand() as f64 / 4_294_967_296.0
+    }
+
+    /// `[-1, 1)`.
+    #[inline]
+    pub fn drand2(&mut self) -> f64 {
+        self.drand() * 2.0 - 1.0
+    }
+
+    /// `[0, 1)`, the lower of two: a linear distribution.
+    #[inline]
+    pub fn flinrand(&mut self) -> f32 {
+        let (a, b) = (self.frand(), self.frand());
+        a.min(b)
+    }
+
+    /// `(-1, 1)`, the difference of two: a triangular distribution.
+    #[inline]
+    pub fn fbilinrand(&mut self) -> f32 {
+        let (a, b) = (self.frand(), self.frand());
+        a - b
+    }
+
+    /// Three uniforms summed and centred: a rough bell in about `(-1, 1)`.
+    #[inline]
+    pub fn fsum3rand(&mut self) -> f32 {
+        let sum = self.frand() + self.frand() + self.frand();
+        ((sum as f64 - 1.5) * 0.666_666_667) as f32
+    }
+
+    /// `[0, scale)` in a linear distribution.
+    #[inline]
+    pub fn linrand(&mut self, scale: f64) -> f64 {
+        let (a, b) = (self.drand(), self.drand());
+        a.min(b) * scale
+    }
+
+    /// `(-scale, scale)` in a triangular distribution.
+    #[inline]
+    pub fn bilinrand(&mut self, scale: f64) -> f64 {
+        let (a, b) = (self.drand(), self.drand());
+        (a - b) * scale
+    }
+
+    /// `[lo, hi)` log-uniformly, scsynth's `exprandrng` (`lo` and `hi`
+    /// positive).
+    #[inline]
+    pub fn exprandrng(&mut self, lo: f64, hi: f64) -> f64 {
+        lo * ((hi / lo).ln() * self.drand()).exp()
+    }
+
+    /// Three uniforms summed and centred, scaled.
+    #[inline]
+    pub fn sum3rand(&mut self, scale: f64) -> f64 {
+        (self.drand() + self.drand() + self.drand() - 1.5) * 0.666_666_667 * scale
+    }
+
+    /// An integer in `[0, scale)`.
+    #[inline]
+    pub fn irand(&mut self, scale: i32) -> i32 {
+        (scale as f64 * self.drand()).floor() as i32
+    }
+
+    /// An integer in `[-scale, scale]`.
+    #[inline]
+    pub fn irand2(&mut self, scale: i32) -> i32 {
+        ((2.0 * scale as f64 + 1.0) * self.drand() - scale as f64).floor() as i32
+    }
+}
+
+#[cfg(test)]
+mod rgen_tests {
+    use super::*;
+
+    #[test]
+    fn the_stream_is_scsynths() {
+        // Computed with scsynth's own `Hash` and `RGen` (SC_RGen.h, Hash.h).
+        assert_eq!(sc_hash(0), 1_177_991_625);
+        assert_eq!(sc_hash(1956), -2_019_139_805);
+        let mut g = RGen::new(1956);
+        let words: Vec<u32> = (0..4).map(|_| g.trand()).collect();
+        assert_eq!(
+            words,
+            [19_990_754, 741_962_571, 1_167_491_941, 3_662_646_931]
+        );
+        assert_eq!(g.drand(), 0.016_599_499_154_835_94);
+        assert_eq!(g.frand2(), 0.155_036_21);
+        assert_eq!(g.frand(), 0.153_249_74);
+    }
+
+    #[test]
+    fn a_seed_replays_and_two_seeds_part() {
+        let (mut a, mut b, mut c) = (RGen::new(1956), RGen::new(1956), RGen::new(1957));
+        let xa: Vec<u32> = (0..8).map(|_| a.trand()).collect();
+        let xb: Vec<u32> = (0..8).map(|_| b.trand()).collect();
+        let xc: Vec<u32> = (0..8).map(|_| c.trand()).collect();
+        assert_eq!(xa, xb);
+        assert_ne!(xa, xc);
+    }
+
+    #[test]
+    fn the_conversions_stay_in_their_ranges() {
+        let mut g = RGen::new(7);
+        for _ in 0..10_000 {
+            let f = g.frand();
+            assert!((0.0..1.0).contains(&f));
+            let f2 = g.frand2();
+            assert!((-1.0..1.0).contains(&f2));
+            let f8 = g.frand8();
+            assert!((-0.125..0.125).contains(&f8));
+            let d = g.drand();
+            assert!((0.0..1.0).contains(&d));
+            assert!(g.fcoin().abs() == 1.0);
         }
     }
 }

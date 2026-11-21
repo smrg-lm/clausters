@@ -51,9 +51,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(Dlist::with_seed(ListOrder::Seq, ctx.next_seed())),
+        |_, ctx| Box::new(Dlist::new(ListOrder::Seq, ctx.rand())),
     ),
-    desc(
+    desc_draws(desc(
         "Drand",
         Variadic,
         I_REPEATS,
@@ -62,9 +62,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(Dlist::with_seed(ListOrder::Rand, ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(Dlist::new(ListOrder::Rand, ctx.rand())),
+    )),
+    desc_draws(desc(
         "Dxrand",
         Variadic,
         I_REPEATS,
@@ -73,9 +73,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(Dlist::with_seed(ListOrder::Xrand, ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(Dlist::new(ListOrder::Xrand, ctx.rand())),
+    )),
+    desc_draws(desc(
         "Dshuf",
         Variadic,
         I_REPEATS,
@@ -84,8 +84,8 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(Dlist::with_seed(ListOrder::Shuf, ctx.next_seed())),
-    ),
+        |_, ctx| Box::new(Dlist::new(ListOrder::Shuf, ctx.rand())),
+    )),
     desc(
         "Dseries",
         Fixed(3),
@@ -108,7 +108,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Dramp::new(RampKind::Geom)),
     ),
-    desc(
+    desc_draws(desc(
         "Dwhite",
         Fixed(3),
         I_DRAW,
@@ -117,9 +117,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(Drandom::with_seed(RandKind::White, ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(Drandom::new(RandKind::White, ctx.rand())),
+    )),
+    desc_draws(desc(
         "Diwhite",
         Fixed(3),
         I_DRAW,
@@ -128,9 +128,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(Drandom::with_seed(RandKind::IWhite, ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(Drandom::new(RandKind::IWhite, ctx.rand())),
+    )),
+    desc_draws(desc(
         "Dbrown",
         Fixed(4),
         I_DWALK,
@@ -139,9 +139,9 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(Drandom::with_seed(RandKind::Brown, ctx.next_seed())),
-    ),
-    desc(
+        |_, ctx| Box::new(Drandom::new(RandKind::Brown, ctx.rand())),
+    )),
+    desc_draws(desc(
         "Dibrown",
         Fixed(4),
         // Same shape as `I_DWALK`, but a walk over the integers whose default
@@ -157,8 +157,8 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, ctx| Box::new(Drandom::with_seed(RandKind::IBrown, ctx.next_seed())),
-    ),
+        |_, ctx| Box::new(Drandom::new(RandKind::IBrown, ctx.rand())),
+    )),
     desc(
         "Dstutter",
         Fixed(2),

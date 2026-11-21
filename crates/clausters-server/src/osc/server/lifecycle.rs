@@ -94,8 +94,10 @@ impl OscServer {
             handle.control_buses().len(),
             handle.limits,
         );
-        // The disk threads of the synths it builds are this server's workers.
+        // The disk threads of the synths it builds are this server's workers,
+        // and its synths draw from the engine's generators.
         translator.set_meters(Arc::clone(&meters));
+        translator.set_generators(Arc::clone(handle.generators()));
         #[cfg(all(
             any(feature = "plugin-clap", feature = "plugin-vst3"),
             target_os = "linux"

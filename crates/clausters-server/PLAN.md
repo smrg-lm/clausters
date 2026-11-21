@@ -1650,13 +1650,14 @@ holds what is open.
   scsynth name in snake_case, and a client's random functions are sclang's
   (`rand`, `irand`, `exprand`, `linrand`): sclang never meets the two
   because its UGens are capitalized, and here they meet. Today the clash is
-  one name -- `rand` is both the client's draw-now function
+  two names -- `rand` is both the client's draw-now function
   (`clausters.base.rand`, a number) and scsynth's `Rand` (`defs.rand`, a
-  value drawn once at the synth's start), so `from clausters import *`
-  followed by `from clausters.defs import *` changes what `rand` means, in
-  both clients. Completing the catalog makes it a family: `IRand` would be
-  `irand`, the client's integer function; `ExpRand` and `LinRand` would sit
-  one underscore from `exprand` and `linrand`. To decide, before the first
+  value drawn once at the synth's start), and `irand` both the client's
+  integer function and scsynth's `IRand`, which joined the catalog on
+  2026-11-21 under the existing convention -- so `from clausters import *`
+  followed by `from clausters.defs import *` changes what they mean, in both
+  clients. `ExpRand` and `LinRand` (`exp_rand`, `lin_rand`) sit one
+  underscore from `exprand` and `linrand`. To decide, before the first
   of them is added, and as one rule for the family rather than a name each:
   - **Names weighed with the user that day.** `rnd` (`rnd`, `irnd`,
     `exprnd`, `linrnd`, `nrnd`; `t_rnd` for the triggered ones): short and
@@ -1675,53 +1676,6 @@ holds what is open.
     equals a name the client exports at its top level or in its
     `builtins`, in both clients, so the next UGen added cannot reintroduce
     it.
-
-- ⬜ **The server runs from a seed, and its random UGens draw from shared
-  generators (`RandSeed`, `RandID`)** *(asked by the user, 2026-11-21)*.
-  **The requirement: a server can be run from a seed and give
-  reproducible results**, in real time as offline, so a performance, a
-  render and a test are each the same take when asked to be. Today only
-  half of it holds. An offline render takes `--seed` (and the embed door
-  a seed), reports the one it used, and replays from it; a booted server
-  starts its sequence from entropy and offers no way to set it -- no
-  flag, no configuration key, no command -- and does not report it. And
-  every random UGen instance owns a generator of its own, seeded at build
-  from the synth's run of seeds (`BuildCtx::next_seed`), which the user
-  judges too much: a generator per UGen, and a seed scheme that cannot
-  express what scsynth's can.
-  **The direction: scsynth's model.** The world holds a small table of
-  generators; every random UGen draws from the one its synth selects,
-  `RandID` selects it (0 unless told), and `RandSeed` reseeds it, from a
-  trigger, so a def or a group can restart a sequence on purpose. The
-  server seeds the table from one seed: given at boot (a `--seed` flag and
-  a `[server]` key, as the offline render's), set at run time by a command
-  (a `/server_seed`, answering the seed in force), and reported when it is
-  drawn from entropy, as a render's already is. What to settle in the
-  design, each in `docs/decisions.md` when taken:
-  - **Order is the seed's other half.** With shared generators a value
-    depends on the order the UGens draw in, so reproducibility needs that
-    order fixed: the node tree's order within a block, sequential. A
-    `/group_parallel` group draws from several threads at once, so it
-    needs generators of its own (per group, or per worker run in a fixed
-    order) or it breaks the property; which one keeps parallel and
-    sequential runs equal is the decision.
-  - **What replaces the per-instance seeds.** The reason they exist
-    (`docs/decisions/engine.md`, "A render's noise belongs to the render,
-    and its file to the server") is that two generators with one seed
-    correlate; drawing in turn from one stream does not, so shared
-    generators keep that property. The `Rand` seeding fix in "Found by
-    use" is folded in here if this lands first.
-  - **The other sources of randomness.** A FaustDef's noise is its own
-    code's (check whether its state is seeded by anything the server
-    controls); a third-party plugin's is out of reach and is named as
-    such; the client's patterns and routines already have one seedable
-    context (`main.seed`, `Session.seed`), and a script that seeds both
-    should be one call, in both clients.
-  - **Real time is reproducible up to what arrives.** A live server
-    replays a take only if the commands reach it at the same blocks; a
-    score with timestamps does, a hand does not. The property promised is
-    the server's: same seed, same commands at the same times, same
-    samples.
 
 ## Found by use: the running list of fixes
 
@@ -1750,19 +1704,3 @@ finished work, where a pending item reads as done.
   call outside `faust::ffi_lock()`, or the compiler cache shared between
   suites.
 
-- ⬜ **`Rand` is seeded from a counter of the process, so a render with it
-  does not replay** *(found 2026-11-21, reading how the random UGens are
-  seeded)*. Every other random UGen (the noise family, `Dust`, the demand
-  UGens) is built with its own generator seeded by the synth's build
-  context (`BuildCtx::next_seed`), so the same score and the same starting
-  seed replay the same samples. `Rand` (`src/dsp/scalar.rs`) instead takes
-  its seed from a `static` atomic counter advanced by every `Rand` the
-  process ever built: the value a synth gets depends on how many came
-  before it in the process, a render is not reproducible, and two engines
-  in one process (an embedded server beside an application's) share the
-  sequence. `src/dsp/noise.rs` states the rule it breaks -- no
-  process-global counter behind a seed. The fix: a `with_seed` built from
-  `ctx.next_seed()` in its registry row, as `WhiteNoise` is, and a test that
-  two renders of a def with `Rand` give the same value -- unless "The server
-  runs from a seed, and its random UGens draw from shared generators" lands
-  first, which replaces per-instance seeding.

@@ -1,0 +1,136 @@
+//! The random values and the generator a synth draws from.
+//!
+//! One slice of the catalog, in its place in the table order;
+//! `super::FAMILIES` concatenates them all.
+
+use super::*;
+
+const I_LO_HI: &[UGenInput] = &[inp("lo", 0.0), inp("hi", 1.0)];
+const I_LO_HI_TRIG: &[UGenInput] = &[inp("lo", 0.0), inp("hi", 1.0), inp("trig", 0.0)];
+
+pub(super) static UGENS: &[UGenDescriptor] = &[
+    // --- drawn once, at the synth's start ---
+    desc_draws(desc(
+        "Rand",
+        Fixed(2),
+        I_LO_HI,
+        Ir,
+        R_IR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(Once::new(OnceKind::Uniform, ctx.rand())),
+    )),
+    desc_draws(desc(
+        "IRand",
+        Fixed(2),
+        &[inp("lo", 0.0), inp("hi", 127.0)],
+        Ir,
+        R_IR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(Once::new(OnceKind::Integer, ctx.rand())),
+    )),
+    desc_draws(desc(
+        "ExpRand",
+        Fixed(2),
+        &[inp("lo", 0.01), inp("hi", 1.0)],
+        Ir,
+        R_IR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(Once::new(OnceKind::Exponential, ctx.rand())),
+    )),
+    desc_draws(desc(
+        "LinRand",
+        Fixed(3),
+        &[inp("lo", 0.0), inp("hi", 1.0), inp_opt("minmax", 0.0)],
+        Ir,
+        R_IR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(Once::new(OnceKind::Linear, ctx.rand())),
+    )),
+    desc_draws(desc(
+        "NRand",
+        Fixed(3),
+        &[inp("lo", 0.0), inp("hi", 1.0), inp("n", 0.0)],
+        Ir,
+        R_IR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(Once::new(OnceKind::Mean, ctx.rand())),
+    )),
+    // --- drawn on a trigger ---
+    desc_draws(desc(
+        "TRand",
+        Fixed(3),
+        I_LO_HI_TRIG,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(Triggered::new(TriggeredKind::Uniform, ctx.rand())),
+    )),
+    desc_draws(desc(
+        "TIRand",
+        Fixed(3),
+        &[inp("lo", 0.0), inp("hi", 127.0), inp("trig", 0.0)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(Triggered::new(TriggeredKind::Integer, ctx.rand())),
+    )),
+    desc_draws(desc(
+        "TExpRand",
+        Fixed(3),
+        &[inp("lo", 0.01), inp("hi", 1.0), inp("trig", 0.0)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(Triggered::new(TriggeredKind::Exponential, ctx.rand())),
+    )),
+    desc_draws(desc(
+        "CoinGate",
+        Fixed(2),
+        &[inp("prob", 0.5), inp("trig", 0.0)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(CoinGate::new(ctx.rand())),
+    )),
+    // --- the generator ---
+    desc_selects(desc(
+        "RandID",
+        Fixed(1),
+        &[inp("id", 0.0)],
+        Kr,
+        R_IR_KR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(RandId::new(ctx.rand())),
+    )),
+    desc_draws(desc(
+        "RandSeed",
+        Fixed(2),
+        &[inp("trig", 0.0), inp("seed", 56789.0)],
+        Kr,
+        R_IR_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(RandSeed::new(ctx.rand())),
+    )),
+];

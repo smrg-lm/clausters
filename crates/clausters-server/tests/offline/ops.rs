@@ -382,7 +382,7 @@ fn bound_ugens_keep_a_signal_inside_two_bounds() {
 /// two draws in one graph are two streams, and every value is in its range.
 #[test]
 fn rand_op_ugen_draws_per_sample_from_its_own_stream() {
-    use clausters::clausters_core::rng::{Draw, Rng};
+    use clausters::clausters_core::rng::Draw;
     let def = |op: &str, inputs: &str| {
         let spec: SynthDefSpec = serde_json::from_str(&format!(
             r#"{{"name": "r", "ugens": [
@@ -416,10 +416,12 @@ fn rand_op_ugen_draws_per_sample_from_its_own_stream() {
         a.windows(2).any(|w| w[0] != w[1]),
         "a new value every sample"
     );
-    // The stream is the core's, seeded with the graph's first seed.
-    let mut rng = Rng::from_seed(SEED_STRIDE);
+    // The stream is the first generator of a table seeded with the synth's
+    // seed, through the core's distribution.
+    let mut g =
+        clausters::clausters_core::rng::RGen::new((SEED_STRIDE ^ (SEED_STRIDE >> 32)) as u32);
     let want: Vec<f32> = (0..BLOCK_SIZE)
-        .map(|_| rng.draw(Draw::Rrand, 200.0, 800.0) as f32)
+        .map(|_| Draw::Rrand.sample(&mut g, 200.0, 800.0) as f32)
         .collect();
     assert_eq!(a, want);
     // A one-argument draw leaves the declared tail off.

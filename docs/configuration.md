@@ -61,6 +61,7 @@ grouped by audience.
 [server]
 port = 57110             # base OSC port: UDP binds it, TCP follows it
 workers = 0              # DSP worker threads; 0 lets the server choose
+seed = 1956              # the random generators' seed; unset draws one (printed at boot)
 sample_rate = 48000      # imposed output rate in Hz; 0 follows the device
 audio_buses = 128        # audio bus count
 control_buses = 16384    # control bus count

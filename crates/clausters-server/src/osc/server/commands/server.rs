@@ -81,6 +81,37 @@ impl OscServer {
         Ok(())
     }
 
+    /// `/server_seed [seed]`: with a seed, reseeds the engine's random
+    /// generators from it ([`crate::dsp::rand`]) -- in a timed bundle, at the
+    /// bundle's sample -- so the same seed and the same commands at the same
+    /// times give the same samples. Either way it answers
+    /// `/server_seed.reply seed`, the seed in force as a decimal string (an
+    /// OSC int is 32 bits, a seed 64), which is how a take drawn from entropy
+    /// is had again.
+    pub(in crate::osc::server) fn handle_server_seed(
+        &mut self,
+        msg: &OscMessage,
+        from: ClientId,
+    ) -> Answer {
+        let seed = match msg.args.first() {
+            Some(arg) => {
+                let seed = crate::osc::translate::seed_arg(arg)?;
+                let mut cmds = Vec::new();
+                self.translator.translate(msg, &mut cmds)?;
+                self.send_all(cmds)?;
+                self.handle.generators().note_seed(seed);
+                seed
+            }
+            None => self.handle.generators().seed(),
+        };
+        self.reply(
+            from,
+            "/server_seed.reply",
+            vec![OscType::String(seed.to_string())],
+        );
+        Ok(())
+    }
+
     pub(in crate::osc::server) fn send_server_status(&mut self, to: ClientId) {
         let counters = self.handle.counters();
         let num_defs = self.translator.def_count();

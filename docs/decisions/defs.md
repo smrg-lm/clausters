@@ -809,10 +809,13 @@ allocated at build, the filter coefficients are recomputed per block rather than
 per sample): the cost is made **flat and knowable** even when that is not the
 cheapest thing on a spreadsheet.
 
-Measured slope, over 40 Hz – 10 kHz: **−3.26 dB/octave** against the ideal
-−3.01. That gap is Voss–McCartney's own — the octave-spaced staircase only
-approximates 1/f — and it is published here rather than smoothed over, on the
-same rule as the oscillators' alias figures.
+Measured slope, over 40 Hz – 10 kHz: **−3.44 dB/octave** against the ideal
+−3.01 (−3.26 with the counter-driven schedule this used before it became
+scsynth's, which picks the die from a random word's trailing zeros). That gap
+is Voss–McCartney's own — the octave-spaced staircase only approximates 1/f —
+and it is published here rather than smoothed over, on the same rule as the
+oscillators' alias figures. scsynth's sum also sits at a DC of 1/16, which a
+ported def has, so this one does too.
 
 ## Three noise findings that contradict the obvious reading
 
@@ -843,31 +846,77 @@ distribution and the spectrum — and the docs state the limit.
 **`Crackle` does not settle below a chaos of 1.** The obvious reading of a
 chaos parameter is that low values are periodic and high ones are not. Measured
 across 0.3 to 1.9 there is **no period up to 512 samples anywhere**, and the
-spread runs 0.56, 0.20, 0.08, 0.05, 0.19, 0.05, 0.06 — not monotonic in either
-direction. It is a map, not a level control, and the honest documentation says
+spread at 0.3, 0.6, 0.9, 1.2, 1.5, 1.7 and 1.9 runs 0.56, 0.14, 0.06, 0.19,
+0.33, 0.04, 0.06 — not monotonic in either direction. (Those are scsynth's
+orbit, in `f32` from a drawn start, as its `Crackle` runs; the `f64` orbit from
+a fixed start this measured first gave other numbers and the same shape.) It is a map, not a level control, and the honest documentation says
 to reach for it by ear. (A longer or quasi-period would not be caught by that
 test, which is the limit of what a test can say about a chaotic map, and the
 test says so.)
 
 ## Noise is reproducible on request, and two instances are never the same stream
 
-Every generator draws from `clausters_core::rng` — the xorshift the sequencing
-layer and the client's `Pwhite` already use — and each is built from an explicit
-seed, so a render replays exactly when it is given one. That is what lets a patch
-with noise in it have a golden file at all. Where the seed *comes from* when
-nobody says is its own decision, below ("A random process is unpredictable
-first").
+A random UGen draws from its engine's generators, and a seed replays it
+exactly: that is what lets a patch with noise in it have a golden file at all.
+Where the seed *comes from* when nobody says is its own decision
+("A random process is unpredictable first", in the engine's page), and how the
+generators are shared is the next entry.
 
-Each *instance* takes the next seed from the render's own counter, so two
-`WhiteNoise` UGens in one def are two streams. This is invisible until someone
-writes one: correlated noise summed with itself is a comb filter, not more noise,
-and subtracted from itself is silence. There is a test that puts two in a graph
-and subtracts them.
+Two `WhiteNoise` UGens in one def are never the same stream. This is invisible
+until someone writes one: correlated noise summed with itself is a comb filter,
+not more noise, and subtracted from itself is silence. The first answer gave
+each instance a generator of its own, seeded from a run of seeds the synth
+reserved; the answer now is scsynth's, a stream shared and drawn in turn, which
+keeps the property for the same reason (`tests/offline/seeds.rs`).
 
-What is **not** in the core is the shaping — the dice table, the random walk, the
-interpolation. So the claim "a client can reproduce the stream" holds today only
-for `WhiteNoise`, whose generator is mirrored there. Saying so is cheaper than
-moving ten algorithms across a boundary for a use nobody has yet.
+`clausters_core::rng::WhiteNoise` is the server's stream, generator for
+generator, so a client can reproduce a server's noise; the rest of the shaping
+-- the dice, the walks, the interpolation -- lives in the server.
+
+## The random UGens draw from shared generators, scsynth's, from one seed
+
+Every random UGen owned a generator, seeded at build from the synth's run of
+seeds, and `Rand` took its seed from a counter of the process -- so a render
+with `Rand` in it did not replay, and two engines in one process shared its
+sequence. A generator per UGen also could not express what scsynth's model
+can: restarting a sequence on purpose, or giving one group a stream of its own.
+
+**Decision: scsynth's model, and scsynth's generator.** Each engine holds a
+table of 64 generators (`dsp::rand`); every random UGen draws from the one its
+synth selects, `RandID` selects it, `RandSeed` reseeds it, and the draws and
+their shaping are scsynth's `NoiseUGens.cpp` over scsynth's `taus88`
+(`clausters_core::rng::RGen`, held to scsynth's own stream). One seed seeds the
+table -- generator `i` from the seed's low word plus `i` -- and comes from
+`--seed`, the `[server]` key, `/server_seed`, a render's configuration, or
+entropy, reported either way.
+
+- **The same numbers as scsynth.** Run from the same seed, a random UGen gives
+  scsynth's values, which is what lets `tests/offline/sc_reference.rs` hold
+  them sample by sample rather than by their statistics. The one difference is
+  a sample: a scsynth constructor computes one sample of its calculation before
+  the first block, so scsynth's stream starts a sample's draws in. Copying that
+  would be copying the priming everywhere, and it is the one artifact a case
+  allows with a `shift`.
+- **Order is the seed's other half.** A value depends on the order the UGens
+  draw in, which is the node tree's. A `/group_parallel` group keeps it by
+  treating a generator as a resource, like a bus: the stage scheduler never
+  puts two nodes that draw from one generator in one stage, so a parallel
+  render draws exactly what a sequential one does. Nodes meant to run side by
+  side draw from different generators (`RandID`). The alternatives -- a
+  generator per worker, or forked per stage -- would have made a parallel
+  render a different take from a sequential one.
+- **Real time is reproducible up to what arrives.** The property promised is
+  the server's: the same seed and the same commands at the same samples give
+  the same samples. A score with timestamps does; a hand does not.
+- **What is outside the table is named.** A FaustDef's noise is its own code's:
+  Faust's `no.noise` starts the same recursion in every instance and nothing the
+  server controls seeds it. A plugin's randomness is the plugin's. The clients'
+  patterns draw from their own seedable context (`Rng`, not scsynth's), and
+  `Session.seed` seeds that and the session's server in one call.
+- **Some of scsynth's quirks are not ported.** Its `Dxrand` never starts on
+  the list's first item; its `rrand` operator scales a bipolar draw and reaches
+  below `lo`. Here the first is uniform over the list and the second over the
+  range, as sclang's own `rrand` is.
 
 ## The pan law is a polynomial, not a table, and it is evaluated per sample
 

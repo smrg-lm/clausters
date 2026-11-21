@@ -56,6 +56,7 @@ mod rates;
 mod registry;
 mod sc_reference;
 mod schema;
+mod seeds;
 mod signal_asserts;
 mod soundfile;
 mod spectral;

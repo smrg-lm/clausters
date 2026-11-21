@@ -84,6 +84,9 @@ pub mod osc;
 pub mod pan;
 #[cfg(feature = "synth")]
 pub mod phase;
+pub mod rand;
+#[cfg(feature = "synth")]
+pub mod random;
 #[cfg(feature = "synth")]
 pub mod randop;
 pub mod rangemap;
@@ -428,6 +431,10 @@ pub struct BusUsage {
     /// A bus index fed by a computed signal: the node may touch *any* bus,
     /// so it keeps its position and never runs in parallel with anything.
     pub dynamic: bool,
+    /// The random generators the node draws from, one bit each
+    /// ([`crate::dsp::rand`]): two nodes drawing from one generator draw in
+    /// the tree's order, so they never share a parallel stage.
+    pub generators: u64,
 }
 
 fn bit_set(bits: &mut Vec<u64>, index: usize) {
@@ -465,6 +472,7 @@ impl BusUsage {
             control_reads: self.control_reads.clone(),
             control_writes: self.control_writes.clone(),
             dynamic: self.dynamic,
+            generators: self.generators,
             ..Self::default()
         };
         let last = count.max(1) - 1;
@@ -562,6 +570,10 @@ pub struct StageMask {
     /// A bus index fed by a computed signal: the node may touch *any* bus,
     /// so it keeps its position and never runs in parallel with anything.
     pub dynamic: bool,
+    /// The random generators the node draws from ([`BusUsage::generators`]):
+    /// a stage holds at most one node per generator, so a parallel render
+    /// draws what a sequential one does.
+    pub generators: u64,
 }
 
 impl StageMask {
@@ -569,6 +581,7 @@ impl StageMask {
     pub fn of(usage: &BusUsage) -> Self {
         let mut mask = Self {
             dynamic: usage.dynamic,
+            generators: usage.generators,
             ..Self::default()
         };
         for bus in usage.reads() {
@@ -594,6 +607,7 @@ impl StageMask {
             reads: self.reads | other.reads,
             writes: self.writes | other.writes,
             dynamic: self.dynamic || other.dynamic,
+            generators: self.generators | other.generators,
         }
     }
 

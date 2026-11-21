@@ -482,7 +482,7 @@
       "name": "crackle",
       "kind": "Crackle",
       "inputs": [{ "const": 1.5 }],
-      "traits": ["stateful"]
+      "traits": ["stateful", "stochastic"]
     }
   ],
 
