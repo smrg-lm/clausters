@@ -2060,7 +2060,7 @@ fn a_document_that_does_not_read_is_refused_and_the_score_stays() {
 }
 
 /// **A window with no document** offers to make or open one and refuses the
-/// rest with why.
+/// rest with why, its menu bar the same bar with the rest disabled.
 #[test]
 fn a_window_with_no_document_has_its_file_verbs_and_nothing_else() {
     let mut editor = with_dialogs();
@@ -2074,9 +2074,19 @@ fn a_window_with_no_document_has_its_file_verbs_and_nothing_else() {
     assert!(actions["delete"].reason.is_some());
     assert!(actions["close"].reason.is_none());
     assert!(actions["new_file"].reason.is_none());
-    let menu = editor.menu().to_string();
-    assert!(menu.contains("new_file") && menu.contains("dialog:open"));
-    assert!(!menu.contains("close_file") && !menu.contains("\"save\""));
+    let menu = editor.menu();
+    let file = &menu[0]["menu"];
+    let by = |verb: &str| {
+        file.as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["verb"] == verb)
+            .cloned()
+            .unwrap_or_else(|| panic!("{verb} in File"))
+    };
+    assert!(by("new_file")["enabled"] != false && by("dialog:open")["enabled"] != false);
+    assert_eq!(by("close_file")["enabled"], false);
+    assert_eq!(by("save")["enabled"], false);
     assert!(editor.allows_empty(&pick("new_file", None)));
     assert!(editor.allows_empty(&pick("dialog:open", None)));
     assert!(!editor.allows_empty(&pick("save", None)));

@@ -37,8 +37,8 @@ pub struct State<'a> {
     pub dialogs: bool,
     /// Whether a pass loops.
     pub looping: bool,
-    /// Whether the window has a document: with none its bar holds what
-    /// makes or opens one.
+    /// Whether the window has a document: with none its bar is the same,
+    /// and only what makes or opens one, and the close, are taken.
     pub document: bool,
 }
 
@@ -85,20 +85,44 @@ pub fn menu(state: &State<'_>) -> Value {
     clausters_editing::verbs::titled(entries(state))
 }
 
+/// **The verbs a window with no document takes**: what makes or opens one,
+/// and the close ([`super::editor::Editor::allows_empty`]).
+const WITHOUT_DOCUMENT: &[&str] = &["new_file", "dialog:open", "close"];
+
+/// Every entry of `entries` that is not one of [`WITHOUT_DOCUMENT`],
+/// disabled: a window with nothing open keeps its menu bar, as every
+/// application's does, and says by it what it cannot do yet.
+fn disable_without_document(entries: &mut Value) {
+    let Some(list) = entries.as_array_mut() else {
+        return;
+    };
+    for entry in list {
+        let Some(map) = entry.as_object_mut() else {
+            continue;
+        };
+        if let Some(menu) = map.get_mut("menu") {
+            disable_without_document(menu);
+            continue;
+        }
+        let verb = map.get("verb").and_then(Value::as_str).unwrap_or("");
+        if !WITHOUT_DOCUMENT.contains(&verb) {
+            map.insert("enabled".into(), json!(false));
+        }
+    }
+}
+
 /// The menu bar's entries, as the editor words them.
 fn entries(state: &State<'_>) -> Value {
-    let sep = || json!("-");
+    let mut bar = document_entries(state);
     if !state.document {
-        return json!([sub(
-            "File",
-            vec![
-                word("New", "new_file"),
-                form("Open...", "open", state),
-                sep(),
-                word("Close", "close"),
-            ],
-        )]);
+        disable_without_document(&mut bar);
     }
+    bar
+}
+
+/// The menu bar's entries over a document.
+fn document_entries(state: &State<'_>) -> Value {
+    let sep = || json!("-");
     let mark =
         |label: &str, key: &str, name: &str| act(label, json!({"action": key, "name": name}));
     let transform = |label: &str, params: Value| {
@@ -484,6 +508,33 @@ mod tests {
                 _ => {}
             }
         }
+    }
+
+    /// **With nothing open the bar is the same bar**: every menu is there,
+    /// and only New, Open and Close are taken.
+    #[test]
+    fn a_window_with_no_document_keeps_its_menu_bar() {
+        let open = menu(&state());
+        let empty = menu(&State {
+            document: false,
+            ..state()
+        });
+        let titles = |bar: &Value| -> Vec<Value> {
+            bar.as_array()
+                .unwrap()
+                .iter()
+                .map(|m| m["label"].clone())
+                .collect()
+        };
+        assert_eq!(titles(&empty), titles(&open));
+        let mut all = Vec::new();
+        entries(&empty, &mut all);
+        let taken: Vec<&str> = all
+            .iter()
+            .filter(|e| e["enabled"] != false)
+            .filter_map(|e| e["verb"].as_str())
+            .collect();
+        assert_eq!(taken, ["new_file", "dialog:open", "close"]);
     }
 
     #[test]
