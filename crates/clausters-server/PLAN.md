@@ -1677,3 +1677,18 @@ finished work, where a pending item reads as done.
   the next failure's output: the case, and whether it is load, a libfaust
   call outside `faust::ffi_lock()`, or the compiler cache shared between
   suites.
+
+- ⬜ **`Rand` is seeded from a counter of the process, so a render with it
+  does not replay** *(found 2026-11-21, reading how the random UGens are
+  seeded)*. Every other random UGen (the noise family, `Dust`, the demand
+  UGens) is built with its own generator seeded by the synth's build
+  context (`BuildCtx::next_seed`), so the same score and the same starting
+  seed replay the same samples. `Rand` (`src/dsp/scalar.rs`) instead takes
+  its seed from a `static` atomic counter advanced by every `Rand` the
+  process ever built: the value a synth gets depends on how many came
+  before it in the process, a render is not reproducible, and two engines
+  in one process (an embedded server beside an application's) share the
+  sequence. `src/dsp/noise.rs` states the rule it breaks -- no
+  process-global counter behind a seed. The fix: a `with_seed` built from
+  `ctx.next_seed()` in its registry row, as `WhiteNoise` is, and a test that
+  two renders of a def with `Rand` give the same value.

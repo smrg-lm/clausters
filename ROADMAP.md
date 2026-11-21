@@ -127,6 +127,11 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Once, 70 minutes; the
   wait it hung in is bounded now, and the next failure says where.
 
+- ⬜ **`Rand` is seeded from a counter of the process, so a render with it
+  does not replay** *(`crates/clausters-server/PLAN.md`, Found by use)*. Its
+  seed should come from the synth's build context, as every other random
+  UGen's does.
+
 - ⬜ **`faust_compiler` failed once in a parallel workspace run** *(`crates/clausters-server/PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
   output.
 
