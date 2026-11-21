@@ -162,9 +162,11 @@ code that keeps it lives.
   over a link, the hand; over what a drag carries, the open hand, closed
   while it is carried (a box, a note); over an edge a drag pulls, the
   resize arrow of its direction (a box's or a note's ends, a track's bottom
-  edge, a divider); over a press that draws, the crosshair (the pencil, a
-  point Ctrl adds); over what a press takes away or cuts, the eraser and the
-  scissors, drawn from the host's icons; and the arrow over buttons and
+  edge, a divider); over a press that draws, the crosshair (a point Ctrl
+  adds); a roll's tool is the icon its toolbar shows it with, drawn from the
+  host's icons (the pencil over the grid it draws on, the eraser, the
+  scissors and the stretch over what they take away, cut and stretch); and
+  the arrow over buttons and
   over everything a press only clicks. It is the press's own question
   asked with no button down (`Element::pointer`), so a part that changes
   what a press does changes the pointer with it. A press keeps the shape it

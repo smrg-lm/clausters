@@ -13,7 +13,8 @@
 //! platform's cursor theme, in a page the canvas's CSS `cursor`. Both are
 //! named by the one list below, by the CSS names, so the two fronts ask for
 //! the same cursor by construction. A shape the list has no name for (the
-//! roll's eraser and scissors) is drawn from the host's icon of it and set
+//! roll's pencil, eraser, scissors and stretch, each the icon of its tool on
+//! the toolbar) is drawn from the host's icon of it and set
 //! as a picture ([`Cursors`]), on both fronts too; where a platform takes
 //! no picture, its named shape stands in ([`Pointer::named`]).
 
@@ -54,6 +55,12 @@ pub enum Pointer {
     /// The scissors: a press cuts what it lands on there. Drawn from the
     /// host's icon, the crosshair where it cannot be.
     Cut,
+    /// The pencil: a press draws a note where it lands. Drawn from the
+    /// host's icon, the crosshair where it cannot be.
+    Draw,
+    /// The stretch: a drag stretches what it takes in time. Drawn from the
+    /// host's icon, the sideways resize where it cannot be.
+    Stretch,
 }
 
 /// The shapes drawn from an icon: the icon's name, and where in its box of
@@ -63,6 +70,10 @@ const PICTURED: &[(Pointer, &str, (f32, f32))] = &[
     (Pointer::Erase, "eraser", (5.0, 19.0)),
     // where the blades cross
     (Pointer::Cut, "scissors", (12.0, 12.0)),
+    // the pencil's point
+    (Pointer::Draw, "pencil", (2.0, 22.0)),
+    // the line the arrows leave
+    (Pointer::Stretch, "unfold-horizontal", (12.0, 12.0)),
 ];
 
 impl Pointer {
@@ -71,7 +82,8 @@ impl Pointer {
     pub fn named(self) -> Pointer {
         match self {
             Pointer::Erase => Pointer::Default,
-            Pointer::Cut => Pointer::Crosshair,
+            Pointer::Cut | Pointer::Draw => Pointer::Crosshair,
+            Pointer::Stretch => Pointer::EwResize,
             p => p,
         }
     }
@@ -91,7 +103,9 @@ impl Pointer {
             Pointer::RowResize => "row-resize",
             Pointer::EwResize => "ew-resize",
             Pointer::NsResize => "ns-resize",
-            Pointer::Erase | Pointer::Cut => unreachable!("a named shape"),
+            Pointer::Erase | Pointer::Cut | Pointer::Draw | Pointer::Stretch => {
+                unreachable!("a named shape")
+            }
         }
     }
 
@@ -112,7 +126,9 @@ impl Pointer {
             Pointer::RowResize => CursorIcon::RowResize,
             Pointer::EwResize => CursorIcon::EwResize,
             Pointer::NsResize => CursorIcon::NsResize,
-            Pointer::Erase | Pointer::Cut => unreachable!("a named shape"),
+            Pointer::Erase | Pointer::Cut | Pointer::Draw | Pointer::Stretch => {
+                unreachable!("a named shape")
+            }
         }
     }
 }
@@ -192,6 +208,8 @@ mod tests {
             Pointer::NsResize,
             Pointer::Erase,
             Pointer::Cut,
+            Pointer::Draw,
+            Pointer::Stretch,
         ] {
             assert_eq!(p.icon().name(), p.css(), "{p:?}");
         }

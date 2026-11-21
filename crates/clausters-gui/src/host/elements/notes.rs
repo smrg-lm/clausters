@@ -1279,8 +1279,9 @@ impl Element for Notes {
 
     /// **What a press would do, by the tool and the part under the
     /// pointer**: a note taken by its body and pulled by its ends, the
-    /// pencil's precise placement on empty grid, the eraser and the
-    /// scissors over what they take away and cut, a velocity drawn up and
+    /// pencil over empty grid it draws on, the eraser, the scissors and the
+    /// stretch over what they take away, cut and stretch (each tool's
+    /// pointer the icon of it on the toolbar), a velocity drawn up and
     /// down. The order is the press's ([`press`](Self::press)), and nothing
     /// is pressed.
     fn pointer(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
@@ -1315,15 +1316,15 @@ impl Element for Notes {
         if input.mods.ctrl {
             return match note {
                 Some(_) => Some(Pointer::Erase),
-                None => own.then_some(Pointer::Crosshair),
+                None => own.then_some(Pointer::Draw),
             };
         }
         match (self.tool, note) {
-            (Tool::Draw, None) if own => return Some(Pointer::Crosshair),
+            (Tool::Draw, None) if own => return Some(Pointer::Draw),
             (Tool::Erase, Some(_)) => return Some(Pointer::Erase),
             (Tool::Erase, None) if own => return Some(Pointer::Erase),
             (Tool::Split, Some(_)) => return Some(Pointer::Cut),
-            (Tool::Stretch, Some(_)) => return Some(Pointer::EwResize),
+            (Tool::Stretch, Some(_)) => return Some(Pointer::Stretch),
             _ => {}
         }
         match note {

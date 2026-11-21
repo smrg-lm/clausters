@@ -25,16 +25,19 @@ from pathlib import Path
 # The icons the host carries, by Lucide's name: the editor's tools and its
 # components', the host's chrome, the transport an application's toolbar
 # shows, and the applications a bar opens (audio-waveform, keyboard-music,
-# layers, music), and the roll's tools a pointer is drawn from (eraser,
-# scissors).
+# layers, music), the applications' edit tools (the roll's, which its
+# pointer is drawn from too: mouse-pointer-2, pencil, eraser, scissors,
+# unfold-horizontal; the snap switch, magnet; the audio editor's clipboard,
+# scissors, copy, clipboard-paste, trash).
 SUBSET = [
     "arrow-down-to-line", "arrow-left", "arrow-right", "audio-waveform",
     "check", "chevron-down", "chevron-left", "chevron-right", "chevron-up",
-    "circle", "copy", "download", "ellipsis-vertical", "eraser", "file-text",
-    "folder", "folder-open", "grip-vertical", "house", "keyboard-music",
-    "layers", "list-video", "menu", "minus", "music", "pause", "play",
-    "plus", "refresh-cw", "repeat", "rotate-ccw", "scissors", "search",
-    "skip-back", "skip-forward", "square", "trash", "x",
+    "circle", "clipboard-paste", "copy", "download", "ellipsis-vertical",
+    "eraser", "file-text", "folder", "folder-open", "grip-vertical", "house",
+    "keyboard-music", "layers", "list-video", "magnet", "menu", "minus",
+    "mouse-pointer-2", "music", "pause", "pencil", "play", "plus",
+    "refresh-cw", "repeat", "rotate-ccw", "scissors", "search", "skip-back",
+    "skip-forward", "square", "trash", "unfold-horizontal", "x",
 ]
 
 TOKEN = re.compile(r"[MmLlHhVvCcSsQqTtAaZz]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?")

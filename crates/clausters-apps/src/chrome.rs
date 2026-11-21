@@ -67,16 +67,20 @@ pub enum App {
 pub const TO_START: &str = "F0100";
 /// **On to the end**: the same, turned.
 pub const TO_END: &str = "F0101";
-/// **Snap to grid**: a horseshoe magnet, its poles up.
-pub const SNAP: &str = "F0102";
-/// **The roll's tools**, drawn here as the transport's are: the pointer (an
-/// arrow), the pencil, the eraser, the scissors and the stretch (an arrow
-/// both ways between two bars).
-pub const POINTER: &str = "F0103";
-pub const PENCIL: &str = "F0104";
-pub const ERASER: &str = "F0105";
-pub const SCISSORS: &str = "F0106";
-pub const STRETCH: &str = "F0107";
+/// **The edit tools' icons**, by the name the host carries them under:
+/// the roll's tools (the pointer, the pencil, the eraser, the scissors and
+/// the stretch), which its pointer is drawn from too, the snap switch, and
+/// the audio editor's clipboard.
+const POINTER: &str = "mouse-pointer-2";
+const PENCIL: &str = "pencil";
+const ERASER: &str = "eraser";
+const SCISSORS: &str = "scissors";
+const STRETCH: &str = "unfold-horizontal";
+const SNAP: &str = "magnet";
+const CUT: &str = "scissors";
+const COPY: &str = "copy";
+const PASTE: &str = "clipboard-paste";
+const DELETE: &str = "trash";
 
 /// The host's own symbols the tools use.
 pub(crate) const PLAY: &str = "\u{25B6}";
@@ -94,22 +98,6 @@ pub fn glyphs() -> Value {
     json!({
         TO_START: "M0 0L80 0L80 520L0 520Z M560 0L560 520L150 260Z",
         TO_END: "M480 0L560 0L560 520L480 520Z M0 0L410 260L0 520Z",
-        SNAP: "M0 400L0 280C0 125 125 0 280 0C435 0 560 125 560 280L560 400L400 400\
-               L400 280C400 214 346 160 280 160C214 160 160 214 160 280L160 400Z \
-               M0 450L160 450L160 560L0 560Z M400 450L560 450L560 560L400 560Z",
-        POINTER: "M0 560L0 100L120 210L220 0L300 40L200 250L380 250Z",
-        PENCIL: "M0 0L170 60L560 450L450 560L60 170Z",
-        ERASER: "M40 220L220 40L360 180L180 360Z M210 390L390 210L560 380L380 560Z",
-        SCISSORS: "M240 120L224 180L180 224L120 240L60 224L16 180L0 120L16 60L60 16L120 0\
-                   L180 16L224 60Z M172 90L150 68L120 60L90 68L68 90L60 120L68 150L90 172\
-                   L120 180L150 172L172 150L180 120Z M560 120L544 180L500 224L440 240\
-                   L380 224L336 180L320 120L336 60L380 16L440 0L500 16L544 60Z M492 90\
-                   L470 68L440 60L410 68L388 90L380 120L388 150L410 172L440 180L470 172\
-                   L492 150L500 120Z M190 200L560 520L520 560L150 240Z\
-                   M370 200L0 520L40 560L410 240Z",
-        STRETCH: "M0 80L60 80L60 480L0 480Z M500 80L560 80L560 480L500 480Z \
-                  M80 280L180 380L180 310L380 310L380 380L480 280L380 180L380 250L180 250\
-                  L180 180Z",
     })
 }
 
@@ -450,6 +438,14 @@ pub(crate) fn grid_actions(
 /// A tool: a flat button that performs `verb`, its face `symbol` drawn at
 /// twice the words' size, or the verb's words when it has none -- and its tip
 /// the verb's words either way.
+/// **A tool drawn as an icon the host carries** (`icon`, by its name), its
+/// verb's words its tip: the edit tools, square and as large as the
+/// interface's icons.
+pub(crate) fn icon_tool(app: App, verb: &str, icon: &str) -> Value {
+    let words = verbs::label(scope(app), verb);
+    json!({"type": "button", "flat": true, "verb": verb, "icon": icon, "tip": words})
+}
+
 pub(crate) fn tool(app: App, verb: &str, symbol: Option<&str>) -> Value {
     let words = verbs::label(scope(app), verb);
     let face = symbol.map_or_else(|| words.clone(), str::to_string);
@@ -480,11 +476,16 @@ fn transport(app: App) -> Vec<Value> {
 /// (`split`, `join`, `quantize`) stays there.
 fn edits(app: App) -> Vec<Value> {
     match app {
-        App::Audio => ["cut", "copy", "paste", "delete"]
-            .iter()
-            .map(|verb| tool(app, verb, None))
-            .collect(),
-        App::Multitrack => vec![tool(app, "snap", Some(&glyph(SNAP)))],
+        App::Audio => [
+            ("cut", CUT),
+            ("copy", COPY),
+            ("paste", PASTE),
+            ("delete", DELETE),
+        ]
+        .iter()
+        .map(|(verb, icon)| icon_tool(app, verb, icon))
+        .collect(),
+        App::Multitrack => vec![icon_tool(app, "snap", SNAP)],
         // the roll's tools, then its snap switch
         App::Notes => [
             ("tool_select", POINTER),
@@ -495,7 +496,7 @@ fn edits(app: App) -> Vec<Value> {
             ("snap", SNAP),
         ]
         .iter()
-        .map(|(verb, code)| tool(app, verb, Some(&glyph(code))))
+        .map(|(verb, icon)| icon_tool(app, verb, icon))
         .collect(),
         App::Points => Vec::new(),
     }
