@@ -1579,18 +1579,6 @@ holds what is open.
   for one of them; the hit-test entry in "Found by use" is what made the
   question concrete, since it is a press on a staff that raised it.
 
-- ⬜ **A frame of what moves presents only what moved** *(named
-  2026-10-27, measuring the audio editor playing in a window of 3840 by
-  2071 pixels)*. With the picture kept on the card, a frame of what moves is
-  a copy of the window's pixels and the boxes of its live layers: the copy
-  alone measured 13 % of an integrated GPU at thirty frames a second in
-  that window, and the
-  compositor's own copy beside it. Both are the cost of presenting a whole
-  image, since a swapchain keeps no picture to draw over. Presenting with
-  the rectangles that changed (incremental present, the compositor's damage
-  regions) would cut both to the boxes. Take it when the graphics layer
-  offers it on every backend the host draws with, the page included.
-
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what

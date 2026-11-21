@@ -5464,6 +5464,27 @@ first four are the order the user set; the components come after.
   and with Ctrl over a note, which takes it away too, and the scissors over
   a note with that tool.)*
 
+- ✅ **A frame of what moves presents only what moved** *(named
+  2026-10-27, measuring the audio editor playing in a window of 3840 by
+  2071 pixels)*. With the picture kept on the card, a frame of what moves is
+  a copy of the window's pixels and the boxes of its live layers: the copy
+  alone measured 13 % of an integrated GPU at thirty frames a second in
+  that window, and the
+  compositor's own copy beside it. Both are the cost of presenting a whole
+  image, since a swapchain keeps no picture to draw over. Presenting with
+  the rectangles that changed (incremental present, the compositor's damage
+  regions) would cut both to the boxes. Take it when the graphics layer
+  offers it on every backend the host draws with, the page included.
+  *(Closed 2026-11-21 without being done. What it waited for is the
+  graphics layer's, and no plan of this project counts on it arriving: the
+  graphics layer presents the whole image on every backend, and a page has
+  no partial present at all, since a WebGPU canvas hands the browser its
+  whole picture and the browser composites it. An entry that waits for a
+  third party to ship something is not pending work, so it left the list
+  rather than standing open indefinitely. The drawing half is what was in
+  the project's hands and it shipped: the picture is kept on the card and a
+  frame of what moves redraws only its live layers.)*
+
 ## Found by use: the entries that were fixed
 
 - ✅ **A capture of the multitrack example's window never answers, headless**

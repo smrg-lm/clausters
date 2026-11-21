@@ -365,8 +365,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   the GUI's (subpixel antialiasing of text where the desktop asks for it;
   a steady goniometer; a Tauri wrapper, only a possibility; the page's clipboard
   reaching the browser's; a selected staff edited by its line count; a paste
-  that could make tracks; a frame of what moves that presents only what
-  moved), the web client's (type-safe GuiDef/def schemas, a
+  that could make tracks), the web client's (type-safe GuiDef/def schemas, a
   remote-server standalone page, native plugins and the in-page engine), the
   Python client's three open questions, the document crate's (an interpreter
   inside a standalone host; a region's level on the top of its fade
