@@ -25,7 +25,7 @@ pub struct GuiBridge {
     /// instances share one event loop and one proxy.
     id: HostId,
     proxy: EventLoopProxy<HostEvent>,
-    outbox: Rc<RefCell<VecDeque<(u32, Vec<u8>)>>>,
+    outbox: Outbox,
 }
 
 /// One outbound packet and the client of the page it is for

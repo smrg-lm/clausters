@@ -115,6 +115,10 @@ impl std::fmt::Display for HostId {
     }
 }
 
+/// **What an instance sends the page**, each packet with the client of
+/// the page it is for: the event loop writes it, its bridge drains it.
+type Outbox = Rc<RefCell<VecDeque<(u32, Vec<u8>)>>>;
+
 /// One [`WebEvent`] addressed to its instance, plus the two that manage the set
 /// itself.
 ///
@@ -124,10 +128,7 @@ impl std::fmt::Display for HostId {
 /// packet sent immediately after [`start`] queues behind the `Add` in order.
 enum HostEvent {
     /// Take a new instance into the set, with the outbox its bridge drains.
-    Add {
-        id: HostId,
-        outbox: Rc<RefCell<VecDeque<(u32, Vec<u8>)>>>,
-    },
+    Add { id: HostId, outbox: Outbox },
     /// Drop an instance: its canvases, its GPU slots, its tick and its
     /// audio-server leg go with it.
     Remove(HostId),
@@ -288,7 +289,7 @@ struct WebApp {
     clipboard_text: clipboard::Text,
     /// The windows whose paste key waits for the browser's `paste`.
     paste_keys: std::collections::HashSet<i32>,
-    outbox: Rc<RefCell<VecDeque<(u32, Vec<u8>)>>>,
+    outbox: Outbox,
     /// The client whose packet is being answered: where a reply goes
     /// ([`HostEffect::Reply`]), the page's own script between packets.
     asker: ClientId,
@@ -404,7 +405,7 @@ struct WebApp {
 }
 
 impl WebApp {
-    fn new(id: HostId, outbox: Rc<RefCell<VecDeque<(u32, Vec<u8>)>>>) -> Self {
+    fn new(id: HostId, outbox: Outbox) -> Self {
         let mut host = Host::new();
         // The same wasm runs everywhere, so the platform is the browser's to
         // say: on a Mac the menus show Cmd where the table says Ctrl.
@@ -1453,7 +1454,7 @@ struct WebHosts {
 }
 
 impl WebHosts {
-    fn new(id: HostId, outbox: Rc<RefCell<VecDeque<(u32, Vec<u8>)>>>) -> Self {
+    fn new(id: HostId, outbox: Outbox) -> Self {
         let mut apps = HashMap::new();
         apps.insert(id, WebApp::new(id, outbox));
         Self {
