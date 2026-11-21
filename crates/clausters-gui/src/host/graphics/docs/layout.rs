@@ -251,8 +251,15 @@ pub fn draw_items_with(
     mesh.set_clip(kept);
 }
 
-/// What a code block's copy button says.
+/// What a code block's copy button says where the host carries no icon
+/// of it.
 pub const COPY: &str = "Copy";
+
+/// **What a code block's copy button shows**: the host's copy icon, as a
+/// documentation page's code blocks commonly have, or its word.
+fn copy_face() -> String {
+    font::outline::icon("copy").map_or_else(|| COPY.to_string(), String::from)
+}
 
 /// The sizes and spacing a page is laid out with, from its text's size,
 /// and how large its pictures are.
@@ -719,16 +726,19 @@ fn lay_code(out: &mut Laid, lang: &str, text: &str, x: f32, w: f32, y: &mut f32,
         button: Rect::new(x + w, *y, 0.0, 0.0),
     });
     let label_size = m.size * 0.75;
-    let bw = font::width_in(Family::Prose, COPY, label_size) + m.em * 0.8;
+    let face = copy_face();
     let bh = font::line_advance(label_size) + m.em * 0.3;
+    let fw = font::width_in(Family::Prose, &face, label_size);
+    // an icon alone stands in a square, a word inset on both sides
+    let bw = if face == COPY { fw + m.em * 0.8 } else { bh };
     let button = Rect::new(x + w - bw - m.em * 0.3, *y + m.em * 0.3, bw, bh);
     if let Some(last) = out.pans.last_mut() {
         last.button = button;
     }
     out.items.push(Item::Text {
-        x: button.x + m.em * 0.4,
+        x: button.x + (bw - fw) * 0.5,
         y: button.y + (bh - font::height(label_size)) * 0.5,
-        text: COPY.to_string(),
+        text: face,
         family: Family::Prose,
         size: label_size,
         ink: Ink::Dim,

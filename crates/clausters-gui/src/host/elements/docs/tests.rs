@@ -461,5 +461,31 @@ fn the_pages_text_is_selected_and_copied() {
         "{all:?}"
     );
     assert!(all.ends_with("\nb = Buffer.read(path)"), "{all:?}");
-    assert!(!all.contains("Copy"), "the copy button is not text");
+    let button = clausters_gui_draw::font::outline::icon("copy")
+        .map_or_else(|| "Copy".to_string(), String::from);
+    assert!(!all.contains(&button), "the copy button is not text");
+}
+
+/// **A code block's text selects as the prose does**: two clicks on a word
+/// of its line take the word, a drag across the line takes what it
+/// crosses, and the pointer over it is the I-beam.
+#[test]
+fn a_code_blocks_text_is_selected_and_copied() {
+    let m = Metrics::default();
+    let mut v = panel();
+    v.set("open", &Value::from("buffers.md"));
+    let word = on_word(&v, "path)");
+    let twice = Input {
+        clicks: 2,
+        ..input(&m)
+    };
+    v.press(word, &twice);
+    v.release(word, true, &twice);
+    assert_eq!(copied(&mut v), "path");
+    assert_eq!(v.pointer(word, &input(&m)), Some(Pointer::Text));
+    let from = on_word(&v, "b = ");
+    v.press(from, &input(&m));
+    v.drag(word, &input(&m));
+    v.release(word, true, &input(&m));
+    assert_eq!(v.selected_text().as_deref(), Some("b = Buffer.read("));
 }
