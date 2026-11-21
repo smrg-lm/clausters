@@ -406,24 +406,7 @@ def mix(x):
     return items[0]
 
 
-# ---- lowercase UGen callables (the client's "instruction set") ----
-# Input order matches the server's registry; see docs/schemas.md.
-
-# ---- fused arithmetic (the forms the server optimizes) ----
-
-
-def madd(a, b, c) -> Ugen:
-    """``a*b + c`` in one UGen (the multiply-accumulate the server fuses). The
-    plain expression ``a * b + c`` builds the same value with two op UGens; this
-    is the fused equivalent."""
-    return Ugen("MulAdd", [a, b, c])
-
-
-def sum3(a, b, c) -> Ugen:
-    """``a + b + c`` in one UGen."""
-    return Ugen("Sum3", [a, b, c])
-
-
-def sum4(a, b, c, d) -> Ugen:
-    """``a + b + c + d`` in one UGen."""
-    return Ugen("Sum4", [a, b, c, d])
+# The fused arithmetic that mirrors the wire, generated. Imported last: the
+# generated module builds on `Ugen`, defined above.
+from ._generated.graph import *  # noqa: E402, F403 -- the builders that mirror the wire
+from ._generated.graph import sum3, sum4  # noqa: E402 -- `mix` folds through them

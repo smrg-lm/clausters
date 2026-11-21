@@ -8,6 +8,7 @@
 import { Ugen } from "./graph.ts";
 import type { Channel } from "./graph.ts";
 import type { MsgArg } from "../../base/osc.ts";
+export * from "./_generated/env.ts";
 
 /**
  * The action `envGen` takes when its envelope finishes -- scsynth's full
@@ -399,33 +400,6 @@ export const xLine = (
     dur: Channel = 1.0,
     doneAction: number = DoneAction.NONE,
 ): Ugen => new Ugen("XLine", [start, end, dur, Number(doneAction)]);
-
-/**
- * Frees the enclosing synth while `signal` is greater than zero, passing it
- * through unchanged -- the trigger-driven counterpart of a `DoneAction`.
- */
-export const freeSelf = (signal: Channel): Ugen => new Ugen("FreeSelf", [signal]);
-
-/**
- * Pauses the enclosing synth while `signal` is greater than zero, passing it
- * through. Resume with `Server.run`.
- */
-export const pauseSelf = (signal: Channel): Ugen => new Ugen("PauseSelf", [signal]);
-
-/**
- * 1 once `source` has finished, 0 before -- a trigger the rest of the graph
- * can read. `source` must be a UGen that *can* finish (`envGen`, `line`,
- * `xLine`); the server rejects the def by name otherwise.
- */
-export const done = (source: Channel): Ugen => new Ugen("Done", [source]);
-
-/**
- * Passes `source` through and frees the synth once it has finished -- the
- * idiom for an envelope whose own `doneAction` is `NONE` because something
- * else in the graph still needs it.
- */
-export const freeSelfWhenDone = (source: Channel): Ugen =>
-    new Ugen("FreeSelfWhenDone", [source]);
 
 /**
  * A break point, in any of the spellings {@link quads} reads: `[at, value]`,

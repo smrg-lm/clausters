@@ -6,6 +6,7 @@ multichannel rule, applied to the stereo primitives.
 """
 
 from .graph import ChannelList, Ugen, chans, mix
+from ._generated.pan import *  # noqa: F403 -- the builders that mirror the wire
 
 # ---- panning, the stereo field and selection --------------------------------
 # A UGen has one output, so every row that produces two channels is built
@@ -109,21 +110,6 @@ def pan_az(numchans, signal, pos=0.0, level=1.0, width=2.0,
                        float(numchans), float(c)])
         for c in range(numchans)
     ])
-
-
-def xfade2(a, b, pan=0.0, level=1.0) -> Ugen:
-    """Equal-power crossfade between two signals: -1 is all ``a``, 1 is all
-    ``b``, and the two gains hold unit power in between -- which keeps
-    *uncorrelated* signals at one loudness across the fade, and lifts
-    correlated ones by 3 dB in the middle. Use `lin_xfade2` when the two
-    sides are the same signal."""
-    return Ugen("XFade2", [a, b, pan, level])
-
-
-def lin_xfade2(a, b, pan=0.0, level=1.0) -> Ugen:
-    """Crossfade with the constant-amplitude law -- a plain interpolation, half
-    of each at the centre. The right one for correlated sources."""
-    return Ugen("LinXFade2", [a, b, pan, level])
 
 
 def select(which, *sources) -> Ugen:

@@ -1,0 +1,215 @@
+# Filters, delays and smoothers: what a signal is put through.
+#
+# The `filter` builders of both clients: each `[[ugen]]` is generated into
+# `clients/python/clausters/defs/ugens/_generated/filter.py` and
+# `clients/web/src/defs/ugens/_generated/filter.ts` by
+# `crates/clausters-server/tests/ugen_builders.rs`, which reads its
+# signature from the registry and its documentation from here. Each
+# `[[hand]]` is a kind whose builder is written by hand in the client's
+# `filter` module, and why. That test's documentation has the format.
+
+[[ugen]]
+kind = "LPF"
+builder = "lpf"
+required = ["signal"]
+doc = '''
+Second-order Butterworth lowpass: -3 dB at `freq`, -12 dB/octave.
+'''
+
+[[ugen]]
+kind = "HPF"
+builder = "hpf"
+required = ["signal"]
+doc = '''
+Second-order Butterworth highpass: -3 dB at `freq`, -12 dB/octave.
+'''
+
+[[ugen]]
+kind = "OnePole"
+builder = "one_pole"
+required = ["signal"]
+doc = '''
+`y[n] = (1-|coef|)*x[n] + coef*y[n-1]` -- lowpass for a positive
+coefficient, highpass for a negative one, unity in the passband.
+
+The parameter is the **pole**, not a cutoff, as in sclang. Use `lag` when
+what you want is a time constant.
+'''
+
+[[ugen]]
+kind = "OneZero"
+builder = "one_zero"
+required = ["signal"]
+doc = '''
+`y[n] = (1-|coef|)*x[n] + coef*x[n-1]` -- the zero-only sibling of
+`one_pole`.
+'''
+
+[[ugen]]
+kind = "LeakDC"
+builder = "leak_dc"
+required = ["signal"]
+doc = '''
+Removes DC: a zero exactly at 0 Hz with a pole just inside it. The
+default corner is low enough to leave audio untouched.
+'''
+
+[[ugen]]
+kind = "Integrator"
+builder = "integrator"
+required = ["signal"]
+doc = '''
+Leaky accumulator, `y[n] = x[n] + coef*y[n-1]`. The coefficient is
+clamped just inside 1 on the server, so it always forgets eventually
+instead of running away on a DC input.
+'''
+
+[[ugen]]
+kind = "Lag"
+builder = "lag"
+required = ["signal"]
+doc = '''
+One-pole smoother: `signal` lagged over `time` seconds (symmetric);
+`time` 0 passes through. The same UGen the server inserts for a lagged
+control -- use it directly to smooth any signal.
+'''
+
+[[ugen]]
+kind = "VarLag"
+builder = "var_lag"
+required = ["signal"]
+doc = '''
+One-pole smoother with separate rise (`up`) and fall (`down`) times.
+'''
+
+[[ugen]]
+kind = "BufDelayN"
+builder = "buf_delay_n"
+required = ["bufnum", "chan", "signal"]
+doc = '''
+`delay_n` over a channel of a pool buffer.
+'''
+
+[[ugen]]
+kind = "BufDelayL"
+builder = "buf_delay_l"
+required = ["bufnum", "chan", "signal"]
+doc = '''
+`delay_l` over a channel of a pool buffer.
+'''
+
+[[ugen]]
+kind = "BufDelayC"
+builder = "buf_delay_c"
+required = ["bufnum", "chan", "signal"]
+doc = '''
+`delay_c` over a channel of a pool buffer.
+'''
+
+[[ugen]]
+kind = "BufCombN"
+builder = "buf_comb_n"
+required = ["bufnum", "chan", "signal"]
+doc = '''
+`comb_n` over a channel of a pool buffer.
+'''
+
+[[ugen]]
+kind = "BufCombL"
+builder = "buf_comb_l"
+required = ["bufnum", "chan", "signal"]
+doc = '''
+`comb_l` over a channel of a pool buffer.
+'''
+
+[[ugen]]
+kind = "BufCombC"
+builder = "buf_comb_c"
+required = ["bufnum", "chan", "signal"]
+doc = '''
+`comb_c` over a channel of a pool buffer.
+'''
+
+[[ugen]]
+kind = "BufAllpassN"
+builder = "buf_allpass_n"
+required = ["bufnum", "chan", "signal"]
+doc = '''
+`allpass_n` over a channel of a pool buffer.
+'''
+
+[[ugen]]
+kind = "BufAllpassL"
+builder = "buf_allpass_l"
+required = ["bufnum", "chan", "signal"]
+doc = '''
+`allpass_l` over a channel of a pool buffer.
+'''
+
+[[ugen]]
+kind = "BufAllpassC"
+builder = "buf_allpass_c"
+required = ["bufnum", "chan", "signal"]
+doc = '''
+`allpass_c` over a channel of a pool buffer.
+'''
+
+[[hand]]
+kind = "RLPF"
+why = "the resonance is given as `rq` or `q`"
+
+[[hand]]
+kind = "RHPF"
+why = "the resonance is given as `rq` or `q`"
+
+[[hand]]
+kind = "BPF"
+why = "the resonance is given as `rq` or `q`"
+
+[[hand]]
+kind = "BRF"
+why = "the resonance is given as `rq` or `q`"
+
+[[hand]]
+kind = "Resonz"
+why = "the resonance is given as `rq` or `q`"
+
+[[hand]]
+kind = "Svf"
+why = "the resonance is given as `rq` or `q`"
+
+[[hand]]
+kind = "DelayN"
+why = "`max_delay` is a static field: it sizes the line"
+
+[[hand]]
+kind = "DelayL"
+why = "`max_delay` is a static field: it sizes the line"
+
+[[hand]]
+kind = "DelayC"
+why = "`max_delay` is a static field: it sizes the line"
+
+[[hand]]
+kind = "CombN"
+why = "`max_delay` is a static field: it sizes the line"
+
+[[hand]]
+kind = "CombL"
+why = "`max_delay` is a static field: it sizes the line"
+
+[[hand]]
+kind = "CombC"
+why = "`max_delay` is a static field: it sizes the line"
+
+[[hand]]
+kind = "AllpassN"
+why = "`max_delay` is a static field: it sizes the line"
+
+[[hand]]
+kind = "AllpassL"
+why = "`max_delay` is a static field: it sizes the line"
+
+[[hand]]
+kind = "AllpassC"
+why = "`max_delay` is a static field: it sizes the line"

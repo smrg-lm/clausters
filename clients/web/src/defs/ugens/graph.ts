@@ -1,5 +1,8 @@
 import { AbstractObject } from "../../base/absobject.ts";
 import type { Composed, Fan } from "../../base/absobject.ts";
+// The fused arithmetic that mirrors the wire is generated; `mix` folds through it.
+import { sum3, sum4 } from "./_generated/graph.ts";
+export * from "./_generated/graph.ts";
 
 // The graph itself: a UGen node, a control, a channel list (mirrors
 // `clausters/defs/ugens/graph.py`).
@@ -640,24 +643,6 @@ export function mix(x: OpOperand): Channel {
     }
     return items[0]!;
 }
-
-// ---- fused arithmetic (the forms the server optimizes) ----
-
-/** `a*b + c` in one UGen (the multiply-accumulate the server fuses). */
-export const madd = (a: Channel, b: Channel, c: Channel): Ugen =>
-    new Ugen("MulAdd", [a, b, c]);
-
-/** `a + b + c` in one UGen. */
-export const sum3 = (a: Channel, b: Channel, c: Channel): Ugen =>
-    new Ugen("Sum3", [a, b, c]);
-
-/** `a + b + c + d` in one UGen. */
-export const sum4 = (
-    a: Channel,
-    b: Channel,
-    c: Channel,
-    d: Channel,
-): Ugen => new Ugen("Sum4", [a, b, c, d]);
 
 // ---- the free binary functions (the number-on-the-left case) ----
 

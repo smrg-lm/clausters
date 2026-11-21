@@ -1,0 +1,66 @@
+# Panning, rotation and selection between channels.
+#
+# The `pan` builders of both clients: each `[[ugen]]` is generated into
+# `clients/python/clausters/defs/ugens/_generated/pan.py` and
+# `clients/web/src/defs/ugens/_generated/pan.ts` by
+# `crates/clausters-server/tests/ugen_builders.rs`, which reads its
+# signature from the registry and its documentation from here. Each
+# `[[hand]]` is a kind whose builder is written by hand in the client's
+# `pan` module, and why. That test's documentation has the format.
+
+[[ugen]]
+kind = "XFade2"
+builder = "xfade2"
+required = ["a", "b"]
+doc = '''
+Equal-power crossfade between two signals: -1 is all `a`, 1 is all
+`b`, and the two gains hold unit power in between -- which keeps
+*uncorrelated* signals at one loudness across the fade, and lifts
+correlated ones by 3 dB in the middle. Use `lin_xfade2` when the two
+sides are the same signal.
+'''
+
+[[ugen]]
+kind = "LinXFade2"
+builder = "lin_xfade2"
+required = ["a", "b"]
+doc = '''
+Crossfade with the constant-amplitude law -- a plain interpolation, half
+of each at the centre. The right one for correlated sources.
+'''
+
+[[hand]]
+kind = "Pan2"
+why = "built once per output channel, filling `chan`"
+
+[[hand]]
+kind = "LinPan2"
+why = "built once per output channel, filling `chan`"
+
+[[hand]]
+kind = "Balance2"
+why = "built once per output channel, filling `chan`"
+
+[[hand]]
+kind = "Rotate2"
+why = "built once per output channel, filling `chan`"
+
+[[hand]]
+kind = "MidSide"
+why = "built once per output channel, filling `chan`"
+
+[[hand]]
+kind = "StereoWidth"
+why = "built once per output channel, filling `chan`"
+
+[[hand]]
+kind = "PanAz"
+why = "built `numchans` times: `numchans` leads here and trails on the wire"
+
+[[hand]]
+kind = "Select"
+why = "the value list is a variadic tail"
+
+[[hand]]
+kind = "SelectX"
+why = "the value list is a variadic tail"

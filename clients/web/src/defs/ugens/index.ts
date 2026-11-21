@@ -29,6 +29,10 @@
 // Reserved controls `in` and `out` (the input/output buses, set with
 // `/synth_new ... "in" b "out" b`) are added by the server, not declared here.
 //
+// A builder that only mirrors a row of the server's catalog is generated from
+// it, into `_generated/<family>.ts`, which the family module re-exports; the
+// ones that do more are written in the family module itself.
+//
 // **Where things live.** The callables are grouped by family, one module each
 // -- the same split the Python package makes: `graph` (the node, control and
 // channel-list types, plus the fused arithmetic), `osc`, `filter` (filters,

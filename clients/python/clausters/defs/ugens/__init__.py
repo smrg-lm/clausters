@@ -55,6 +55,9 @@ Reserved controls ``in`` and ``out`` (the input/output buses, set with
 feedback), `buf`, `spectral`, `trig`, `demand` and `env`. Every name is
 re-exported here, so `from clausters.defs.ugens import sine` -- and the `defs`
 package's own re-export -- is what it always was: the split is navigational.
+A builder that only mirrors a row of the server's catalog is generated from it,
+into the private `_generated` module of its family, which the family module
+re-exports; the ones that do more are written in the family module itself.
 
 `ugen_input_names` stays in this file rather than in a family module because it
 reads the **package's** namespace: it maps each server kind to the parameter

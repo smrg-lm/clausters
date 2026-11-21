@@ -12,7 +12,11 @@ modules added after it were missing from the reference with no error.
 Each module gets `src/api/<dotted.name>.md`: its docstring, a contents list and
 its members. A package's members include what its `__init__` imports from a
 private module of its own (`from ._multitrack import Multitrack`): the private
-file is where the code is kept, and the package is where a reader finds it. A package's page also lists its modules and subpackages, linked;
+file is where the code is kept, and the package is where a reader finds it. A
+module's members include what it imports from a private module the same way
+(`from ._generated.osc import *`, the builders generated beside a family's
+hand-written ones), after its own. A
+package's page also lists its modules and subpackages, linked;
 a page the guide links to lists those guide pages back ("In the guide"); and a
 name in backticks that resolves to one documented object is a link to it, so a
 docstring's `boot` or `ServerOptions` reads as a reference. The table of those
@@ -80,36 +84,49 @@ def discover() -> list:
 
 
 def private_imports(names: list) -> dict:
-    """For each public package, the names its `__init__` imports from a private
-    module beside it: package -> {private module: [names]}."""
+    """For each public package, the names it imports from a private module
+    beside it, and for each public module, the private modules it re-exports
+    whole (`from ._generated.osc import *`): importer -> {private module:
+    [names]}, where `*` stands for every public name of the private module."""
     found = {}
     for name in names:
-        init = os.path.join(CLIENT, *name.split("."), "__init__.py")
-        if not os.path.exists(init):
-            continue
-        with open(init, encoding="utf-8") as fp:
+        parts = name.split(".")
+        init = os.path.join(CLIENT, *parts, "__init__.py")
+        if os.path.exists(init):
+            path, base = init, name
+        else:
+            path, base = os.path.join(CLIENT, *parts) + ".py", ".".join(parts[:-1])
+            if not os.path.exists(path):
+                continue
+        with open(path, encoding="utf-8") as fp:
             tree = ast.parse(fp.read())
         for node in tree.body:
             if (isinstance(node, ast.ImportFrom) and node.level == 1 and node.module
                     and node.module.startswith("_")):
-                found.setdefault(name, {}).setdefault(f"{name}.{node.module}", []).extend(
-                    alias.name for alias in node.names if alias.asname is None)
+                # A module's named import of a private module is a helper it
+                # uses; only its `*` is a re-export.
+                if path != init and [a.name for a in node.names] != ["*"]:
+                    continue
+                wanted = found.setdefault(name, {}).setdefault(f"{base}.{node.module}", [])
+                wanted.extend(alias.name for alias in node.names if alias.asname is None)
     return found
 
 
 def graft(modules: list, imports: dict) -> list:
-    """Moves the members a package imports from its private modules into the
-    package, and leaves the private modules out."""
+    """Moves the members a package or module imports from its private modules
+    into it, and leaves the private modules out."""
     by_name = {m.name: m for m in modules}
     private = set()
-    for package, sources in imports.items():
-        target = by_name.get(package)
+    for importer, sources in imports.items():
+        target = by_name.get(importer)
         for source, wanted in sources.items():
             private.add(source)
             module = by_name.get(source)
             if target is None or module is None:
                 continue
-            target.members.extend(m for m in module.members if m.name in wanted)
+            target.members.extend(
+                m for m in module.members
+                if m.name in wanted or ("*" in wanted and not m.name.startswith("_")))
         if target is not None:
             target.sync_hierarchy()
     return [m for m in modules if m.name not in private]

@@ -759,6 +759,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "symphonia",
+ "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
 ]

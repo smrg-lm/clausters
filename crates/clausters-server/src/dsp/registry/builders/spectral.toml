@@ -1,0 +1,160 @@
+# The spectral chain: FFT, the PV_ operations over it, and convolution.
+#
+# The `spectral` builders of both clients: each `[[ugen]]` is generated into
+# `clients/python/clausters/defs/ugens/_generated/spectral.py` and
+# `clients/web/src/defs/ugens/_generated/spectral.ts` by
+# `crates/clausters-server/tests/ugen_builders.rs`, which reads its
+# signature from the registry and its documentation from here. Each
+# `[[hand]]` is a kind whose builder is written by hand in the client's
+# `spectral` module, and why. That test's documentation has the format.
+
+[[ugen]]
+kind = "IFFT"
+builder = "ifft"
+required = ["chain"]
+doc = '''
+Closes a spectral chain: inverse-transforms each fresh frame and
+overlap-adds it back to audio (window-normalized, so a bare `fft`->`ifft`
+reconstructs at unity gain, delayed by one window). `chain` is the output
+of an `fft` or a `pv_*` filter.
+'''
+
+[[ugen]]
+kind = "PV_MagAbove"
+builder = "pv_mag_above"
+required = ["chain", "threshold"]
+doc = '''
+Passes only the bins whose magnitude is **above** `threshold`, zeroing
+the rest. `chain` comes from `fft` or another `pv_*`.
+'''
+
+[[ugen]]
+kind = "PV_MagBelow"
+builder = "pv_mag_below"
+required = ["chain", "threshold"]
+doc = '''
+Passes only the bins whose magnitude is **below** `threshold`.
+'''
+
+[[ugen]]
+kind = "PV_BrickWall"
+builder = "pv_brick_wall"
+required = ["chain", "wipe"]
+doc = '''
+Brick-wall band limit: `wipe > 0` zeroes the top fraction of bins (a low
+pass), `wipe < 0` the bottom (a high pass), `0` passes everything
+(`wipe` in -1..1).
+'''
+
+[[ugen]]
+kind = "PV_MagClip"
+builder = "pv_mag_clip"
+required = ["chain", "threshold"]
+doc = '''
+Limits each bin's magnitude **to** `threshold`: louder bins are scaled
+down to it (phases kept), quieter bins pass untouched.
+'''
+
+[[ugen]]
+kind = "PV_Add"
+builder = "pv_add"
+required = ["chain_a", "chain_b"]
+doc = '''
+Two-chain combiner: per-bin complex sum. Both inputs must be spectral
+chains of the same `fft_size`, `hop` and `wintype` (and distinct); the
+result lands in chain A, which the combiner's output carries onward.
+'''
+
+[[ugen]]
+kind = "PV_Mul"
+builder = "pv_mul"
+required = ["chain_a", "chain_b"]
+doc = '''
+Two-chain combiner: per-bin complex product (spectral ring modulation).
+'''
+
+[[ugen]]
+kind = "PV_Min"
+builder = "pv_min"
+required = ["chain_a", "chain_b"]
+doc = '''
+Two-chain combiner: per bin, whichever input has the **smaller**
+magnitude.
+'''
+
+[[ugen]]
+kind = "PV_Max"
+builder = "pv_max"
+required = ["chain_a", "chain_b"]
+doc = '''
+Two-chain combiner: per bin, whichever input has the **larger**
+magnitude.
+'''
+
+[[ugen]]
+kind = "PV_MagMul"
+builder = "pv_mag_mul"
+required = ["chain_a", "chain_b"]
+doc = '''
+Two-chain combiner: A's bins scaled by B's magnitudes -- A's phases kept
+(a spectral envelope transfer, the classic "vocoder" cross-synthesis).
+'''
+
+[[ugen]]
+kind = "PV_CopyPhase"
+builder = "pv_copy_phase"
+required = ["chain_a", "chain_b"]
+doc = '''
+Two-chain combiner: A's magnitudes with B's phases (the complementary
+cross-synthesis to `pv_mag_mul`).
+'''
+
+[[ugen]]
+kind = "PV_MagFreeze"
+builder = "pv_mag_freeze"
+required = ["chain"]
+doc = '''
+While `freeze <= 0` stores each frame's magnitudes and passes through;
+while `> 0` rescales every bin to the stored magnitudes -- the spectral
+envelope holds while the phases keep running.
+'''
+
+[[ugen]]
+kind = "PV_MagSmear"
+builder = "pv_mag_smear"
+required = ["chain"]
+doc = '''
+Averages each bin's magnitude over `bins` neighbors on each side
+(`0` is transparent), phases untouched -- a spectral blur.
+'''
+
+[[ugen]]
+kind = "PV_BinShift"
+builder = "pv_bin_shift"
+required = ["chain"]
+doc = '''
+Remaps bin `b` to `round(b * stretch + shift)`: colliding bins sum,
+out-of-range bins are dropped. `stretch=1, shift=0` is transparent; a
+positive `shift` moves every partial up by `shift` bin widths.
+'''
+
+[[ugen]]
+kind = "PV_MagShift"
+builder = "pv_mag_shift"
+required = ["chain"]
+doc = '''
+The `pv_bin_shift` remap applied to the magnitude envelope only, laid
+over the frame's original phases.
+'''
+
+[[hand]]
+kind = "FFT"
+why = "the window's size, hop and type are static fields"
+
+[[hand]]
+kind = "PV_Kernel"
+why = "the magnitude and phase programs are static fields"
+
+[[hand]]
+kind = "Conv"
+why = "the kernel's partitions are a static field"

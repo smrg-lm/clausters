@@ -1,0 +1,209 @@
+# Buffers: reading, writing and asking a buffer of the pool.
+#
+# The `buf` builders of both clients: each `[[ugen]]` is generated into
+# `clients/python/clausters/defs/ugens/_generated/buf.py` and
+# `clients/web/src/defs/ugens/_generated/buf.ts` by
+# `crates/clausters-server/tests/ugen_builders.rs`, which reads its
+# signature from the registry and its documentation from here. Each
+# `[[hand]]` is a kind whose builder is written by hand in the client's
+# `buf` module, and why. That test's documentation has the format.
+
+[[ugen]]
+kind = "PlayBuf"
+builder = "play_buf"
+required = ["bufnum"]
+doc = '''
+Mono buffer player with linear interpolation; `rate` is frames per
+output sample (1.0 = server rate).
+
+Playing starts at `start_pos` and a rising `trigger` re-cues there,
+so one player is a re-usable voice rather than a one-use node. Without
+`loop`, reaching the end stops it and fires `done_action` (2 frees the
+synth, so a one-shot leaves the tree by itself); a looping player never
+finishes, so the action never fires.
+'''
+
+[[ugen]]
+kind = "BufRd"
+builder = "buf_rd"
+required = ["bufnum", "chan", "phase"]
+doc = '''
+Reads a buffer at a `phase` signal in frames (linear interpolation).
+'''
+
+[[ugen]]
+kind = "TransportBufRd"
+builder = "transport_buf_rd"
+required = ["bufnum", "chan"]
+doc = '''
+Reads a buffer **at the transport's position**: `buf_rd` at
+`(position - offset) * rate + start` frames, the phase worked out inside
+the UGen in double precision.
+
+`offset` is where frame `start` sits on the transport's axis (as
+`transport_pos` takes it), and `rate` the buffer's frames per frame of
+the transport -- `buf_rate_scale` for a buffer at another rate, times a
+playrate. Like `transport_pos` it seeks, loops and holds with the
+transport.
+
+It is one UGen rather than `buf_rd` with `transport_pos` as its phase
+because a phase handed between UGens is a 32-bit signal, which past about
+six minutes at 48 kHz repeats and drops frames: a long take read that way
+distorts more the further it plays. Here nothing that changes per sample
+is rounded to 32 bits.
+
+```python
+take = transport_buf_rd(buf.bufnum, 0, rate=buf_rate_scale(buf.bufnum))
+```
+
+```ts
+const take = transportBufRd(buf.bufnum, 0, 0, bufRateScale(buf.bufnum));
+```
+'''
+
+[[ugen]]
+kind = "TransportDiskIn"
+builder = "transport_disk_in"
+required = ["bufnum", "chan"]
+doc = '''
+Plays a **fed buffer at the transport's position**: the reader of a
+take an application that holds its engine reads itself and hands over
+through a ring. Over any other buffer it is silent; a buffer of the pool
+is read at the transport's position by `transport_buf_rd`.
+
+It follows the transport as `transport_buf_rd` does -- `offset` is where
+frame `start` sits on the transport's axis. A locate is a short silence
+and never a stale frame; an owner that cannot keep up plays silence too,
+counted in `ServerStatus.starved_samples`. Silent outside the stream and
+while the transport is stopped.
+
+Mono, like every buffer reader: `chan` picks one channel of the stream.
+'''
+
+[[ugen]]
+kind = "BufWr"
+builder = "buf_wr"
+required = ["bufnum", "chan", "phase", "loop", "signal"]
+doc = '''
+**Writes** `signal` into a buffer at `phase` (frames) -- `buf_rd`'s
+write-side twin, and stateless in the same way.
+
+No interpolation: the write lands on the frame the phase names, truncated.
+Spreading one sample over two frames would store a value the signal never
+had, and consecutive writes would fight over the same cells.
+
+Passes `signal` through as its output, so a chain can go on using what it
+just recorded without a second wire. Out-of-range phases wrap with `loop`
+and write nothing otherwise.
+'''
+
+[[ugen]]
+kind = "Osc"
+builder = "osc"
+required = ["bufnum"]
+doc = '''
+Interpolating wavetable oscillator. `bufnum` must hold a
+**wavetable-format** buffer (fill it with `buf.gen(...)` and a
+`/buffer_gen` command whose wavetable flag is set); `phase` is an offset in
+radians.
+'''
+
+[[ugen]]
+kind = "OscN"
+builder = "oscn"
+ts = "oscN"
+required = ["bufnum"]
+doc = '''
+Non-interpolating oscillator over a **plain** (non-wavetable) buffer;
+rawer and cheaper than `osc`.
+'''
+
+[[ugen]]
+kind = "VOsc"
+builder = "vosc"
+required = ["bufpos"]
+doc = '''
+Like `osc` but the buffer number is a signal: reads wavetables
+`bufpos` and `bufpos + 1` and crossfades by the fractional part, so
+sweeping `bufpos` morphs a bank of adjacent tables (allocate them
+contiguously, all the same size).
+'''
+
+[[ugen]]
+kind = "Shaper"
+builder = "shaper"
+required = ["bufnum", "signal"]
+doc = '''
+Waveshaper: maps `signal` (in +-1, clamped) through a transfer table
+in wavetable format (typically a `cheby` `/buffer_gen`); the table's first
+point is `signal = -1`, its last `signal = +1`.
+'''
+
+[[ugen]]
+kind = "SampleRate"
+builder = "sample_rate"
+rate = "ir"
+doc = '''
+The engine sample rate in Hz, computed once at init (`ir`).
+'''
+
+[[ugen]]
+kind = "BufFrames"
+builder = "buf_frames"
+rate = "kr"
+required = ["bufnum"]
+doc = '''
+The number of frames in a buffer, block-constant (`kr`).
+'''
+
+[[ugen]]
+kind = "BufSampleRate"
+builder = "buf_sample_rate"
+rate = "kr"
+required = ["bufnum"]
+doc = '''
+The buffer's own sample rate (Hz), block-constant (`kr`).
+'''
+
+[[ugen]]
+kind = "BufRateScale"
+builder = "buf_rate_scale"
+rate = "kr"
+required = ["bufnum"]
+doc = '''
+`file_sr / server_sr`, block-constant (`kr`); feed `play_buf`'s
+`rate` (`buf_rate_scale(buf) * pitch`) to play at the file's true pitch
+without the client knowing either rate.
+'''
+
+[[ugen]]
+kind = "BufChannels"
+builder = "buf_channels"
+rate = "kr"
+required = ["bufnum"]
+doc = '''
+The buffer's channel count, block-constant (`kr`).
+'''
+
+[[ugen]]
+kind = "BufDur"
+builder = "buf_dur"
+rate = "kr"
+required = ["bufnum"]
+doc = '''
+The buffer's duration in seconds (`frames / file_sr`), block-constant
+(`kr`).
+'''
+
+[[ugen]]
+kind = "Rand"
+builder = "rand"
+rate = "ir"
+doc = '''
+One uniform random value in `[lo, hi)`, drawn once at synth init and
+held for the node's life (`ir`); `lo`/`hi` must be constants or `ir`.
+'''
+
+[[hand]]
+kind = "RecordBuf"
+why = "`done_action` is a `DoneAction`, and TypeScript takes the optional inputs as an options object"

@@ -353,8 +353,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   are built (its `keys` scopes), and nesting is what is left of them.
 - **The remaining "Future directions"** of each plan — the server's (release builds tuned for size, never at the cost of speed; every UGen of SuperCollider's base library, in the catalog; a UGen's builder never takes the name of a client function; the server runs from a seed, and its random UGens draw from shared generators; a long take
   played out of the pool -- a seek, and a join over files; a play that
-  runs backwards; generating the
-  builders from the catalog instead of contrasting against them; per-output
+  runs backwards; per-output
   and intra-SynthDef latency; the def selector over persistent plugin
   bindings; what an effect is, behind `mt.fx`; the mixer's free routing,
   pre- or post-fader sends, tracks wider than stereo and a silent track that

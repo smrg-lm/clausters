@@ -1,0 +1,79 @@
+# The fused arithmetic and the kinds the graph's operators build.
+#
+# The `graph` builders of both clients: each `[[ugen]]` is generated into
+# `clients/python/clausters/defs/ugens/_generated/graph.py` and
+# `clients/web/src/defs/ugens/_generated/graph.ts` by
+# `crates/clausters-server/tests/ugen_builders.rs`, which reads its
+# signature from the registry and its documentation from here. Each
+# `[[hand]]` is a kind whose builder is written by hand in the client's
+# `graph` module, and why. That test's documentation has the format.
+
+[[ugen]]
+kind = "MulAdd"
+builder = "madd"
+required = ["a", "b", "c"]
+doc = '''
+`a*b + c` in one UGen (the multiply-accumulate the server fuses). The
+plain expression `a * b + c` builds the same value with two op UGens; this
+is the fused equivalent.
+'''
+
+[[ugen]]
+kind = "Sum3"
+builder = "sum3"
+required = ["a", "b", "c"]
+doc = '''
+`a + b + c` in one UGen.
+'''
+
+[[ugen]]
+kind = "Sum4"
+builder = "sum4"
+required = ["a", "b", "c", "d"]
+doc = '''
+`a + b + c + d` in one UGen.
+'''
+
+[[operator]]
+kind = "Add"
+why = "built by the `+` operator on a graph node"
+
+[[operator]]
+kind = "Sub"
+why = "built by the `-` operator on a graph node"
+
+[[operator]]
+kind = "Mul"
+why = "built by the `*` operator on a graph node"
+
+[[operator]]
+kind = "Div"
+why = "built by the `/` operator on a graph node"
+
+[[operator]]
+kind = "BinaryOpUGen"
+why = "built by every other binary selector on a graph node"
+
+[[operator]]
+kind = "UnaryOpUGen"
+why = "built by every unary selector method on a graph node"
+
+[[operator]]
+kind = "RangeMapUGen"
+why = "built by every range-map method on a graph node"
+
+[[operator]]
+kind = "Clip"
+why = "built by the `clip(lo, hi)` method on a graph node"
+
+[[operator]]
+kind = "Wrap"
+why = "built by the `wrap(lo, hi)` method on a graph node"
+
+[[operator]]
+kind = "Fold"
+why = "built by the `fold(lo, hi)` method on a graph node"
+
+[[operator]]
+kind = "RandOpUGen"
+why = "built by every random-draw method on a graph node"

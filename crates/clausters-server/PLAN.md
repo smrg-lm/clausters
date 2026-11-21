@@ -1373,12 +1373,6 @@ holds what is open.
   remaining document questions would be much harder to take back than a missing feature. This entry is what outlives the
   spec the node system was built from.
 
-- ⬜ **The builders could be generated from the catalog instead of contrasted against it** *(named 2026-08-16, after the two contrast tests together caught eleven drifted builders, ten misspelled parameters and one UGen a client never got)*. The server's registry is the source of truth and each client hand-writes a mirror of it; the tests prove the mirrors agree, which is strictly weaker than not having mirrors. Generating `defs/ugens/*.py` and `defs/ugens/*.ts` from the registry would delete the class of bug rather than detect it.
-
-  **The user's condition, stated when the idea was raised** *(2026-08-16)*: it is worth having **if the corroboration happens at compile time**. That points at the shape — not a generator anyone must remember to run, but a checked-in generated file plus a build step that regenerates and **fails on a diff**, the way `docs/bindings.md` is enforced by `tests/bindings.rs`. A generator whose output is not verified by the build is one more thing to forget.
-
-  **What makes it real work rather than a script**: the builders are not tables. They carry the published documentation (docstrings and TSDoc become the API reference), and they carry deliberate ergonomic departures from the wire — the panner family whose builder fills `chan` once per output channel, `env_gen` taking the `Env` first, the static fields that belong behind a `*` or in an options object, the resonance pair given as `rq` or `q`. Every one of those is currently a declared entry in a contrast test's exception list, which is exactly the annotation a generator would need — so the honest sequencing is that the exception lists **are** the specification, and this becomes tractable once they have stopped moving.
-
 - ⬜ **Free routing: a track's output is any bus, and a track can feed another**
   *(named 2026-09-10 in the node system's spec, left open on purpose)*. Group
   buses, folders and a sidechain are one capability: a track's output going

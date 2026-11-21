@@ -105,6 +105,7 @@ quoted title lands here, on the link to the entry.
 - [A UGen's trailing inputs may be declared optional, and only where the default is inert](decisions/defs.md#a-ugens-trailing-inputs-may-be-declared-optional-and-only-where-the-default-is-inert)
 - [The built-in `default` is a subtractive voice with the MPE controls](decisions/defs.md#the-built-in-default-is-a-subtractive-voice-with-the-mpe-controls)
 - [`scaleneg` is the UGen kernels' form, not the header's](decisions/defs.md#scaleneg-is-the-ugen-kernels-form-not-the-headers)
+- [A builder that mirrors the registry is generated, and one that does more is written beside it](decisions/defs.md#a-builder-that-mirrors-the-registry-is-generated-and-one-that-does-more-is-written-beside-it)
 
 ## [Faust](decisions/faust.md)
 

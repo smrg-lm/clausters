@@ -1439,3 +1439,45 @@ windows, `ramp`, `scurve`) agree with scsynth's definitions on every argument
 of a 24 001-point sweep, including the windows' mixed precision — Hann takes
 the phase times `2π` in `f32` and the cosine in `f64`, Welch multiplies by `π`
 in `f64` — which a port in plain `f32` misses on up to a third of arguments.
+
+## A builder that mirrors the registry is generated, and one that does more is written beside it
+
+*2026-11-21.* Each client wrote its UGen builders by hand, as mirrors of the
+server's registry, and two contrast tests caught the drift after it happened:
+eleven builders, ten parameter names and one kind a client never got. The
+builders that only mirror a row (their parameters are the wire's inputs, in
+order, and they return one node) are now generated from the registry, into a
+private module per family in each client (`_generated/<module>.py`,
+`_generated/<module>.ts`) that the family module re-exports.
+
+- **The signature stays in the registry.** A row's inputs are read by its
+  constructor by position, so their order belongs beside the code that reads
+  them; moving names and defaults into a data file the Rust registry loads
+  would put two things that must agree in two places again. What a builder says
+  that the registry does not -- the Python name, the inputs a caller must give,
+  a rate the client chooses, the documentation -- is a TOML file per family
+  module, `crates/clausters-server/src/dsp/registry/builders/<module>.toml`.
+  TOML over JSON or YAML: it is edited by hand, takes multi-line strings and
+  comments, and has no ambiguous scalars.
+- **Generating is a test, not a script or a query.** The test reads the
+  registry in its own process and compares the committed files with what it
+  would write; `CLAUSTERS_BLESS=1` writes them. So the check runs with
+  `cargo test`, as the C header's does, needs no server running (as asking
+  `/ugen_query` would) and cannot be forgotten. The generated files are
+  committed, so a diff shows what a catalog change does to both clients, and a
+  client installs with no Rust.
+- **The documentation is written once, in Markdown, in Python's spelling.**
+  The TypeScript rendering spells an inline code span's snake-case names in
+  camel case and `name=value` as `name: value`; a fenced block tagged `python`
+  or `ts` reaches that client alone. A span the rules cannot carry is reworded
+  in the description, not given a rule.
+- **A builder that is more than its row is written by hand, beside the
+  generated ones** (the generation gap). A value list that leads, a static
+  field, one row per output channel, a resonance given as `rq` or `q`: each is
+  a `[[hand]]` entry with its reason, as an operator-built kind is an
+  `[[operator]]`. Teaching the generator those shapes would make its
+  description a language of its own, harder to read than the forty-odd
+  builders it would replace. Every kind of the registry is in exactly one of
+  the three lists, so a kind the server grows fails the test until both
+  clients have it; the clients' contrast tests still check the hand-written
+  signatures against the catalog.

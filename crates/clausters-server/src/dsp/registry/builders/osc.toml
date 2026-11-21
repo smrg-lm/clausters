@@ -1,0 +1,257 @@
+# Oscillators and noise: what a graph starts from.
+#
+# The `osc` builders of both clients: each `[[ugen]]` is generated into
+# `clients/python/clausters/defs/ugens/_generated/osc.py` and
+# `clients/web/src/defs/ugens/_generated/osc.ts` by
+# `crates/clausters-server/tests/ugen_builders.rs`, which reads its
+# signature from the registry and its documentation from here. Each
+# `[[hand]]` is a kind whose builder is written by hand in the client's
+# `osc` module, and why. That test's documentation has the format.
+
+[[ugen]]
+kind = "Sine"
+builder = "sine"
+doc = '''
+Sine by f64 phase accumulation, starting at phase 0.
+'''
+
+[[ugen]]
+kind = "Impulse"
+builder = "impulse"
+doc = '''
+A single-sample `1.0` every `freq` Hz, `0.0` between (`freq` 0 =
+one impulse then silence). The first sample is always an impulse.
+'''
+
+[[ugen]]
+kind = "WhiteNoise"
+builder = "white_noise"
+doc = '''
+Uniform white noise in +/-1.
+'''
+
+[[ugen]]
+kind = "PinkNoise"
+builder = "pink_noise"
+doc = '''
+Equal energy per octave, -3 dB/octave (Voss-McCartney).
+
+A **quiet** signal by construction -- around 0.13 RMS against white noise's
+0.58, which is the level a def ported from sclang expects. Scale it up
+rather than assuming something is wrong.
+'''
+
+[[ugen]]
+kind = "BrownNoise"
+builder = "brown_noise"
+doc = '''
+A random walk, -6 dB/octave. It **reflects** at +/-1 rather than clamping,
+so it never rests against a rail.
+'''
+
+[[ugen]]
+kind = "GrayNoise"
+builder = "gray_noise"
+doc = '''
+One randomly chosen bit of a 31-bit word flipped per sample.
+
+Not white noise with a twist: its spectrum leans low (about -2.9 dB/octave)
+and its steps span every order of magnitude, which is what makes it sound
+grainy rather than smooth.
+'''
+
+[[ugen]]
+kind = "ClipNoise"
+builder = "clip_noise"
+doc = '''
+-1 or 1, nothing between -- a coin flip per sample. The loudest noise
+available at a given peak, since every sample is at full scale.
+'''
+
+[[ugen]]
+kind = "LFNoise0"
+builder = "lf_noise0"
+doc = '''
+A new random value in +/-1 every `1/freq` seconds, **held** -- steps.
+Not band limited: like the `lf_saw` family it is a modulation shape.
+'''
+
+[[ugen]]
+kind = "LFNoise1"
+builder = "lf_noise1"
+doc = '''
+`lf_noise0` with a linear ramp between values, so it has corners but no
+jumps.
+'''
+
+[[ugen]]
+kind = "LFNoise2"
+builder = "lf_noise2"
+doc = '''
+`lf_noise0` with a quadratic between values, so the slope is continuous
+too and there are no corners either.
+
+It aims at the midpoints between draws and carries its slope across them,
+so it **overshoots**: the output reaches about +/-1.7, not +/-1. scsynth's does
+the same.
+'''
+
+[[ugen]]
+kind = "LFClipNoise"
+builder = "lf_clip_noise"
+doc = '''
+`lf_noise0` restricted to +/-1 -- a random square.
+'''
+
+[[ugen]]
+kind = "Dust"
+builder = "dust"
+doc = '''
+Random impulses in [0, 1) at a **mean** `density` per second.
+
+Every sample is an independent trial, so the gaps are exponential: this is
+not a clock. Ten per second means ten on average, with clusters and silences
+-- use `impulse` when you want them evenly spaced. The amplitudes are random
+too, which matters if you feed it to something that cares.
+'''
+
+[[ugen]]
+kind = "Dust2"
+builder = "dust2"
+doc = '''
+`dust` firing both ways, in +/-1.
+'''
+
+[[ugen]]
+kind = "Crackle"
+builder = "crackle"
+doc = '''
+The chaotic map `y[n] = |chaos*y[n-1] - y[n-2] - 0.05|`.
+
+It has no RNG: the same `chaos` always gives the same signal, so it is
+reproducible without a seed. The parameter changes the sound drastically and
+**not** monotonically, so reach for it by ear. The output is one-sided and
+carries DC -- put a `leak_dc` after it before summing it into a bus.
+'''
+
+[[ugen]]
+kind = "Saw"
+builder = "saw"
+doc = '''
+Band-limited rising sawtooth in +/-1, starting at 0.
+
+Anti-aliased with PolyBLEP, which is very clean over the low and middle
+range and progressively less so toward Nyquist (its residual grows about
+as the square of the frequency). It carries no DC offset.
+'''
+
+[[ugen]]
+kind = "Pulse"
+builder = "pulse"
+doc = '''
+Band-limited pulse in +/-1; `width` is the duty cycle (0.5 = square).
+
+Anti-aliased like `saw`. The width is clamped just inside `(0, 1)`,
+where the two edges would coincide.
+'''
+
+[[ugen]]
+kind = "LFSaw"
+builder = "lf_saw"
+doc = '''
+Rising sawtooth in +/-1, **not** band-limited -- a modulation shape.
+
+`iphase` is the initial phase in **cycles**, `[0, 1)`, read once at the
+first sample. (sclang measures the same argument in `[0, 2)`; every phase
+in this client is in cycles.)
+'''
+
+[[ugen]]
+kind = "LFPulse"
+builder = "lf_pulse"
+doc = '''
+Square in `[0, 1]` -- a gate, not a bipolar waveform like `pulse` -- with
+`width` as its duty cycle. Not band-limited. `iphase` as in `lf_saw`.
+'''
+
+[[ugen]]
+kind = "LFTri"
+builder = "lf_tri"
+doc = '''
+Triangle in +/-1, starting at 0 and rising. Not band-limited.
+`iphase` as in `lf_saw`.
+'''
+
+[[ugen]]
+kind = "VarSaw"
+builder = "var_saw"
+doc = '''
+Triangle whose peak sits at `width` of the cycle, in +/-1: sweeps from a
+falling ramp through a triangle to a rising one. Not band-limited.
+`iphase` as in `lf_saw`.
+'''
+
+[[ugen]]
+kind = "Phasor"
+builder = "phasor"
+doc = '''
+Ramp from `start` to `end` advancing by `rate` **per sample**,
+wrapping at `end`; a rising `trig` jumps to `reset_pos`.
+
+`rate` is in output units per sample, not Hz, which is what makes this the
+index source for a buffer reader: a rate of 1 advances one frame per sample.
+'''
+
+[[ugen]]
+kind = "TransportPos"
+builder = "transport_pos"
+doc = '''
+The **transport's position**, in frames, minus `offset`.
+
+A buffer reader whose phase is this one follows the transport instead of
+carrying a position of its own, so seeking
+(`Server.transport_locate_sample`), looping (`Server.transport_loop`) and
+pausing (`Server.transport_stop` over a governed group) belong to the
+transport and not to the def. That is the shape a multitrack needs -- many
+readers, one time -- and it is why a locate never has to reach into a node.
+
+It ramps one frame per sample while the transport rolls and holds while it
+is stopped. `offset` is where this signal starts on that axis, so a clip
+reads its own frame 0 when the transport reaches it; the subtraction happens
+in double precision inside the UGen, which is what keeps the value exact
+deep into a long take (a signal is 32-bit, and past about six minutes at
+48 kHz it can no longer count single frames -- subtracting afterwards with
+`sub` has already lost that).
+
+```python
+take = buf_rd(buf.bufnum, chan=0, phase=transport_pos())
+```
+
+```ts
+const take = bufRd(buf.bufnum, 0, transportPos());
+```
+'''
+
+[[ugen]]
+kind = "TransportFade"
+builder = "transport_fade"
+doc = '''
+The **transport's declick level**: 1 while it rolls, 0 while it is
+stopped, and a straight ramp between the two across a stop and a play,
+as long as `Server.transport_fade` says (with none set, it is simply
+whether the transport rolls).
+
+An output that must not click on a stop sits **outside** the governed
+group, in one that follows the transport (`Server.transport_follow`), and
+multiplies what the readers wrote by this: with a ramp the transport keeps
+rolling while it falls, so the readers are still playing when it reaches
+zero.
+
+```python
+out(0, in_(bus) * transport_fade())
+```
+
+```ts
+out(0, mul(in_(bus), transportFade()));
+```
+'''

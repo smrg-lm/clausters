@@ -5,9 +5,21 @@
 // delay line behind the nine `delay`/`comb`/`allpass` forms (chosen by
 // interpolation), and the one-pole smoothers that make a control move instead
 // of jump.
+//
+// The nine delay forms also run over a **pool buffer** (`bufDelayN` and the
+// rest): same interpolation, same feedback, same arithmetic; what differs is
+// where the line lives. A pool buffer's contents are addressable, so the delay
+// can be inspected, resampled, saved or played by another node while it runs
+// -- the shared case, and the whole reason these exist beside the private
+// family. No `maxDelay`: the buffer's own frame count is the bound. The buffer
+// is **not** zeroed by the UGen (allocating and clearing it are yours), a
+// missing buffer or a channel it does not have plays silence, and
+// `bufnum`/`chan` being inputs means a line can be moved between buffers with
+// a `node.set`.
 
 import { Ugen, channelBinop, channelUnop } from "./graph.ts";
 import type { Channel } from "./graph.ts";
+export * from "./_generated/filter.ts";
 
 /** Resolves the mutually exclusive `rq`/`q` pair into a wire `rq`. */
 function resonance(rq?: Channel, q?: Channel): Channel {
@@ -27,14 +39,6 @@ export interface Resonance {
     rq?: Channel;
     q?: Channel;
 }
-
-/** Second-order Butterworth lowpass: -3 dB at `freq`, -12 dB/octave. */
-export const lpf = (signal: Channel, freq: Channel = 440.0): Ugen =>
-    new Ugen("LPF", [signal, freq]);
-
-/** Second-order Butterworth highpass: -3 dB at `freq`, -12 dB/octave. */
-export const hpf = (signal: Channel, freq: Channel = 440.0): Ugen =>
-    new Ugen("HPF", [signal, freq]);
 
 /** Resonant lowpass; unity gain at DC. */
 export const rlpf = (
@@ -123,25 +127,6 @@ export function svfMorph(pos: Channel): [Channel, Channel, Channel] {
     );
     return [low, band, high];
 }
-
-/** One-pole filter: `coef` positive lowpasses, negative highpasses. */
-export const onePole = (signal: Channel, coef: Channel = 0.5): Ugen =>
-    new Ugen("OnePole", [signal, coef]);
-
-/** One-zero filter: `coef` positive lowpasses, negative highpasses. */
-export const oneZero = (signal: Channel, coef: Channel = 0.5): Ugen =>
-    new Ugen("OneZero", [signal, coef]);
-
-/**
- * Removes the DC offset with a very low corner -- what a feedback loop or an
- * asymmetric waveshaper leaves behind.
- */
-export const leakDc = (signal: Channel, coef: Channel = 0.995): Ugen =>
-    new Ugen("LeakDC", [signal, coef]);
-
-/** A leaky integrator: `y[n] = x[n] + coef*y[n-1]`. */
-export const integrator = (signal: Channel, coef: Channel = 0.999): Ugen =>
-    new Ugen("Integrator", [signal, coef]);
 
 // --- delay lines ---
 //
@@ -265,111 +250,3 @@ export const allpassC = (
     new Ugen("AllpassC", [signal, delaytime, decaytime], {
         static: lineSize("AllpassC", delaytime, maxDelay),
     });
-
-// --- one-pole smoothers ---
-
-// --- one-pole smoothers ---
-
-/**
- * One-pole smoother: `signal` lagged over `time` seconds (symmetric); `time`
- * 0 passes through. The same UGen the server inserts for a lagged control.
- */
-export const lag = (signal: Channel, time: Channel = 0.1): Ugen =>
-    new Ugen("Lag", [signal, time]);
-
-/** One-pole smoother with separate rise (`up`) and fall (`down`) times. */
-export const varLag = (
-    signal: Channel,
-    up: Channel = 0.1,
-    down: Channel = 0.1,
-): Ugen => new Ugen("VarLag", [signal, up, down]);
-
-
-// ---- the same nine over a pool buffer ---------------------------------------
-//
-// Same interpolation, same feedback, same arithmetic; what differs is where the
-// line lives. A pool buffer's contents are addressable, so the delay can be
-// inspected, resampled, saved or played by another node while it runs -- the
-// shared case, and the whole reason these exist beside the private family. No
-// `maxDelay`: the buffer's own frame count is the bound. The buffer is **not**
-// zeroed by the UGen (allocating and clearing it are yours), a missing buffer
-// or a channel it does not have plays silence, and `bufnum`/`chan` being inputs
-// means a line can be moved between buffers with a `node.set`.
-
-/** `delayN` over a channel of a pool buffer. */
-export const bufDelayN = (
-    bufnum: Channel,
-    chan: Channel,
-    signal: Channel,
-    delaytime: Channel = 0.2,
-): Ugen => new Ugen("BufDelayN", [bufnum, chan, signal, delaytime]);
-
-/** `delayL` over a channel of a pool buffer. */
-export const bufDelayL = (
-    bufnum: Channel,
-    chan: Channel,
-    signal: Channel,
-    delaytime: Channel = 0.2,
-): Ugen => new Ugen("BufDelayL", [bufnum, chan, signal, delaytime]);
-
-/** `delayC` over a channel of a pool buffer. */
-export const bufDelayC = (
-    bufnum: Channel,
-    chan: Channel,
-    signal: Channel,
-    delaytime: Channel = 0.2,
-): Ugen => new Ugen("BufDelayC", [bufnum, chan, signal, delaytime]);
-
-/** `combN` over a channel of a pool buffer. */
-export const bufCombN = (
-    bufnum: Channel,
-    chan: Channel,
-    signal: Channel,
-    delaytime: Channel = 0.2,
-    decaytime: Channel = 1.0,
-): Ugen => new Ugen("BufCombN", [bufnum, chan, signal, delaytime, decaytime]);
-
-/** `combL` over a channel of a pool buffer. */
-export const bufCombL = (
-    bufnum: Channel,
-    chan: Channel,
-    signal: Channel,
-    delaytime: Channel = 0.2,
-    decaytime: Channel = 1.0,
-): Ugen => new Ugen("BufCombL", [bufnum, chan, signal, delaytime, decaytime]);
-
-/** `combC` over a channel of a pool buffer. */
-export const bufCombC = (
-    bufnum: Channel,
-    chan: Channel,
-    signal: Channel,
-    delaytime: Channel = 0.2,
-    decaytime: Channel = 1.0,
-): Ugen => new Ugen("BufCombC", [bufnum, chan, signal, delaytime, decaytime]);
-
-/** `allpassN` over a channel of a pool buffer. */
-export const bufAllpassN = (
-    bufnum: Channel,
-    chan: Channel,
-    signal: Channel,
-    delaytime: Channel = 0.2,
-    decaytime: Channel = 1.0,
-): Ugen => new Ugen("BufAllpassN", [bufnum, chan, signal, delaytime, decaytime]);
-
-/** `allpassL` over a channel of a pool buffer. */
-export const bufAllpassL = (
-    bufnum: Channel,
-    chan: Channel,
-    signal: Channel,
-    delaytime: Channel = 0.2,
-    decaytime: Channel = 1.0,
-): Ugen => new Ugen("BufAllpassL", [bufnum, chan, signal, delaytime, decaytime]);
-
-/** `allpassC` over a channel of a pool buffer. */
-export const bufAllpassC = (
-    bufnum: Channel,
-    chan: Channel,
-    signal: Channel,
-    delaytime: Channel = 0.2,
-    decaytime: Channel = 1.0,
-): Ugen => new Ugen("BufAllpassC", [bufnum, chan, signal, delaytime, decaytime]);

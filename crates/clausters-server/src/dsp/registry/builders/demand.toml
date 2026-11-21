@@ -1,0 +1,136 @@
+# The demand family: values produced one at a time, when asked.
+#
+# The `demand` builders of both clients: each `[[ugen]]` is generated into
+# `clients/python/clausters/defs/ugens/_generated/demand.py` and
+# `clients/web/src/defs/ugens/_generated/demand.ts` by
+# `crates/clausters-server/tests/ugen_builders.rs`, which reads its
+# signature from the registry and its documentation from here. Each
+# `[[hand]]` is a kind whose builder is written by hand in the client's
+# `demand` module, and why. That test's documentation has the format.
+
+[[ugen]]
+kind = "Dseries"
+builder = "dseries"
+rate = "dr"
+doc = '''
+An arithmetic sequence: `start`, `start + step`, ... The step is read
+on every item, so it may itself be a stream.
+'''
+
+[[ugen]]
+kind = "Dgeom"
+builder = "dgeom"
+rate = "dr"
+doc = '''
+A geometric sequence: `start`, `start * grow`, ...
+'''
+
+[[ugen]]
+kind = "Dwhite"
+builder = "dwhite"
+rate = "dr"
+doc = '''
+Independent uniform draws on `[lo, hi]`.
+'''
+
+[[ugen]]
+kind = "Diwhite"
+builder = "diwhite"
+rate = "dr"
+doc = '''
+`dwhite` over the integers in `[lo, hi]`, both ends included.
+'''
+
+[[ugen]]
+kind = "Dbrown"
+builder = "dbrown"
+rate = "dr"
+doc = '''
+A random walk of at most `step` per item, **folded** into
+`[lo, hi]` -- it turns around at a bound rather than piling up against
+it.
+'''
+
+[[ugen]]
+kind = "Dibrown"
+builder = "dibrown"
+rate = "dr"
+doc = '''
+`dbrown` over the integers.
+'''
+
+[[ugen]]
+kind = "Dstutter"
+builder = "dstutter"
+rate = "dr"
+required = ["repeats", "value"]
+doc = '''
+Repeats each item of the `value` stream `repeats` times. The count
+is pulled per item, so it may vary.
+'''
+
+[[ugen]]
+kind = "Dbufrd"
+builder = "dbufrd"
+rate = "dr"
+required = ["bufnum", "phase"]
+doc = '''
+Reads the buffer frame the `phase` stream names -- a `dseries` phase
+walks it as a step sequence. Out of range it wraps when `loop` is set and
+clamps when it is not.
+'''
+
+[[ugen]]
+kind = "Demand"
+builder = "demand"
+required = ["trig", "reset", "source"]
+doc = '''
+Demand driver: pulls the next value from `source` on each rising edge
+of `trig` and holds it between triggers; a rising `reset` restarts the
+stream. Once the stream ends the last value is held.
+'''
+
+[[ugen]]
+kind = "Duty"
+builder = "duty"
+required = ["dur"]
+doc = '''
+Demand driver with a clock of its own: pulls one `level` every
+`dur` seconds and holds it.
+
+Both `dur` and `level` are pulled, which is what makes a sequencer of
+it -- a stream of durations against a stream of pitches, the two free to be
+different lengths. When either ends, `done_action` fires (see
+`DoneAction`).
+'''
+
+[[ugen]]
+kind = "TDuty"
+builder = "tduty"
+required = ["dur"]
+doc = '''
+`duty` emitting each level on its own sample and nothing in between -- a
+trigger stream whose amplitudes are the levels. With `gap_first` the
+first duration is spent before the first level, so the stream opens with a
+gap instead of a trigger.
+'''
+
+[[hand]]
+kind = "Dseq"
+why = "the value list leads, where `repeats` leads on the wire"
+
+[[hand]]
+kind = "Drand"
+why = "the value list leads, where `repeats` leads on the wire"
+
+[[hand]]
+kind = "Dxrand"
+why = "the value list leads, where `repeats` leads on the wire"
+
+[[hand]]
+kind = "Dshuf"
+why = "the value list leads, where `repeats` leads on the wire"
+
+[[hand]]
+kind = "Dswitch1"
+why = "the value list is a variadic tail"
