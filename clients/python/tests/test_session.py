@@ -376,24 +376,29 @@ _WIRE_ORDER_DIFFERS = {
     **_WIRE_CHANNEL_IS_THE_BUILDERS,
 }
 
-# Kinds with no builder of their own, because another surface builds them. The
-# contrast below **fails** on a kind that is in neither this list nor the
-# callables: a kind the server grew and no client can write is exactly what the
-# signature check cannot see, since a missing builder has no signature to
-# disagree with. `Meter` sat here unwritten for a week for that reason.
-_NO_CALLABLE = {
-    "Add": "built by the `+` operator on a graph node",
-    "Sub": "built by the `-` operator on a graph node",
-    "Mul": "built by the `*` operator on a graph node",
-    "Div": "built by the `/` operator on a graph node",
-    "BinaryOpUGen": "built by every other binary selector on a graph node",
-    "UnaryOpUGen": "built by every unary selector method on a graph node",
-    "RangeMapUGen": "built by every range-map method on a graph node",
-    "Clip": "built by the `clip(lo, hi)` method on a graph node",
-    "Wrap": "built by the `wrap(lo, hi)` method on a graph node",
-    "Fold": "built by the `fold(lo, hi)` method on a graph node",
-    "RandOpUGen": "built by every random-draw method on a graph node",
-}
+def _builder_lists():
+    """The server's builder descriptions
+    (`crates/clausters-server/src/dsp/registry/builders/*.toml`): which kinds
+    have a generated builder, and which a hand-written one or none, with why."""
+    import tomllib
+
+    root = Path(__file__).resolve().parents[3]
+    generated, hand, operator = set(), {}, {}
+    for path in sorted((root / "crates/clausters-server/src/dsp/registry/builders").glob("*.toml")):
+        with open(path, "rb") as fp:
+            module = tomllib.load(fp)
+        generated.update(u["kind"] for u in module.get("ugen", []))
+        hand.update((e["kind"], e["why"]) for e in module.get("hand", []))
+        operator.update((e["kind"], e["why"]) for e in module.get("operator", []))
+    return generated, hand, operator
+
+
+# Kinds with no builder of their own, because an operator on a graph node builds
+# them. The contrast below **fails** on a kind that is in neither this list nor
+# the callables: a kind the server grew and no client can write is exactly what
+# the signature check cannot see, since a missing builder has no signature to
+# disagree with. `Meter` sat unwritten for a week for that reason.
+_NO_CALLABLE = _builder_lists()[2]
 
 
 def _python_callables_by_kind():
@@ -493,8 +498,16 @@ def test_ugen_catalog_matches_the_python_callables():
         for name in _NO_CALLABLE:
             assert name in kinds, f"{name} is no longer in the server catalog"
             assert name not in by_kind, (
-                f"{name} has a Python callable now -- take it out of "
-                f"_NO_CALLABLE so it is contrasted like the rest"
+                f"{name} has a Python callable now -- make it a builder in "
+                f"the server's builder descriptions instead of an operator"
+            )
+        # A generated builder is the wire's row by construction, so only a
+        # hand-written one can depart from it: an excuse naming any other kind
+        # is stale.
+        hand = _builder_lists()[1]
+        for name in _WIRE_ORDER_DIFFERS:
+            assert name in hand, (
+                f"{name} is excused here but its builder is not a hand-written one"
             )
     finally:
         s.close()

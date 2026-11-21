@@ -42,20 +42,19 @@ const catalog: WireKind[] = JSON.parse(
     readFileSync(`${HERE}ugen-vectors.json`, "utf8"),
 ).kinds;
 
-/** Kinds with no builder of their own, because another surface builds them. */
-const NO_BUILDER: Record<string, string> = {
-    Add: "built by the `+` operator on a graph node",
-    Sub: "built by the `-` operator on a graph node",
-    Mul: "built by the `*` operator on a graph node",
-    Div: "built by the `/` operator on a graph node",
-    BinaryOpUGen: "built by every other binary selector on a graph node",
-    UnaryOpUGen: "built by every unary selector method on a graph node",
-    RangeMapUGen: "built by every range-map method on a graph node",
-    Clip: "built by the `clip(lo, hi)` method on a graph node",
-    Wrap: "built by the `wrap(lo, hi)` method on a graph node",
-    Fold: "built by the `fold(lo, hi)` method on a graph node",
-    RandOpUGen: "built by every random-draw method on a graph node",
-};
+/**
+ * Which kinds have a generated builder, a hand-written one or none, as the
+ * server's builder descriptions say (`ugen-builders.json`, written with the
+ * generated builders by `crates/clausters-server/tests/ugen_builders.rs`).
+ */
+const lists: {
+    generated: string[];
+    hand: Record<string, string>;
+    operator: Record<string, string>;
+} = JSON.parse(readFileSync(`${HERE}ugen-builders.json`, "utf8"));
+
+/** Kinds with no builder of their own, because an operator on a node builds them. */
+const NO_BUILDER: Record<string, string> = lists.operator;
 
 /**
  * Kinds whose parameters are the wire's, plus or minus a declared tail. The
@@ -287,5 +286,14 @@ test("every declared exception still names a live kind and builder", () => {
     for (const name of Object.keys(ALIASES)) {
         assert.ok(kinds.has(name), `${name} is no longer in the catalog`);
         assert.ok(byKind.has(name), `${name} has no builder any more`);
+    }
+    // A generated builder is the wire's row by construction, so only a
+    // hand-written one can depart from it: an exception naming any other kind
+    // is stale.
+    for (const name of Object.keys({ ...TRAILING, ...SIGNATURE_DIFFERS, ...ALIASES })) {
+        assert.ok(
+            name in lists.hand,
+            `${name} is excused here but its builder is not a hand-written one`,
+        );
     }
 });

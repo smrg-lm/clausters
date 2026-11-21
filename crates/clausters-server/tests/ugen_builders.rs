@@ -42,7 +42,11 @@
 //!   node builds it, and `why`.
 //!
 //! Every kind of the registry is in exactly one of those lists, so a kind the
-//! server grows fails here until it has a place in both clients.
+//! server grows fails here until it has a place in both clients. The clients'
+//! catalog contrasts, which still check the hand-written signatures, take the
+//! lists from here too: the Python one reads the TOML files, and the web one,
+//! which has no TOML reader, `clients/web/tests/ugen-builders.json`, written
+//! and checked with the generated builders.
 
 #![cfg(feature = "synth")]
 
@@ -537,7 +541,35 @@ fn generated() -> BTreeMap<PathBuf, String> {
             typescript(module, &rows, &ts_names),
         );
     }
+    out.insert(
+        repo().join("clients/web/tests/ugen-builders.json"),
+        lists(&modules),
+    );
     out
+}
+
+/// The three lists, for the web client's catalog contrast, which has no TOML
+/// reader: every generated kind, and every hand-written and operator-built
+/// one with its reason. The Python contrast reads the descriptions directly.
+fn lists(modules: &BTreeMap<String, Module>) -> String {
+    let mut generated = BTreeSet::new();
+    let mut hand = BTreeMap::new();
+    let mut operator = BTreeMap::new();
+    for m in modules.values() {
+        generated.extend(m.ugen.iter().map(|b| b.kind.clone()));
+        hand.extend(m.hand.iter().map(|e| (e.kind.clone(), e.why.clone())));
+        operator.extend(m.operator.iter().map(|e| (e.kind.clone(), e.why.clone())));
+    }
+    let json = serde_json::json!({
+        "_comment": format!(
+            "Which UGen kinds have a generated builder, a hand-written one or none. {}",
+            regenerate("<module>").replace('\n', " ")
+        ),
+        "generated": generated,
+        "hand": hand,
+        "operator": operator,
+    });
+    serde_json::to_string_pretty(&json).unwrap() + "\n"
 }
 
 #[test]
