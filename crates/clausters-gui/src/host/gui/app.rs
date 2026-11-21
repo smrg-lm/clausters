@@ -255,6 +255,9 @@ pub(super) struct App {
     pub(super) started: Instant,
     /// The caret's phase last drawn, and in which window ([`Host::caret_due`]).
     pub(super) caret_drawn: Option<(i32, bool)>,
+    /// **Frames are being drawn at rest**: a dock's capture draws its panes
+    /// with what opens over them standing ([`crate::host::motion`]).
+    pub(super) still: bool,
     pub(super) next_frame: Instant,
     /// The server-buffer fetch machine (`/buffer_query` -> chunked `/buffer_getRange`),
     /// shared with the browser front.
@@ -346,6 +349,7 @@ impl App {
             head_said: u64::MAX,
             started: Instant::now(),
             caret_drawn: None,
+            still: false,
             next_frame: Instant::now(),
             fetches: BufferFetches::default(),
             hold: Default::default(),
@@ -717,6 +721,13 @@ impl App {
                 return None;
             }
         }
+        // what opens over the window comes in on the front's clock; a
+        // capture draws it standing and leaves its coming in alone
+        let still = capture || self.still;
+        if !still {
+            let now_ms = self.started.elapsed().as_secs_f64() * 1000.0;
+            self.host.entrance_begin(def_id, now_ms, false);
+        }
         let server_attached = self.host.server().is_some();
         // A window reads its own source where it has one (an application's
         // engine), the segment otherwise.
@@ -779,6 +790,11 @@ impl App {
             caret: self
                 .host
                 .caret_shown(def_id, self.started.elapsed().as_secs_f64() * 1000.0),
+            entrance: if still {
+                None
+            } else {
+                self.host.entrance(def_id)
+            },
         };
         let ws = self.windows.get_mut(&def_id)?;
         if capture {
@@ -811,6 +827,10 @@ impl App {
         );
         let took = started.elapsed();
         drop(statuses);
+        if !still {
+            self.host
+                .entrance_end(def_id, matches!(drawn, frame::Drawn::Whole));
+        }
         if tracing::enabled!(tracing::Level::DEBUG) {
             ws.frames.count(def_id, drawn, took);
         }
@@ -832,6 +852,14 @@ impl App {
             && let Some(ws) = self.windows.get(&def_id)
         {
             ws.repaint_live();
+        }
+        // a part still coming in asks for the next frame at the display's
+        // pace, and one standing asks for none
+        let now_ms = self.started.elapsed().as_secs_f64() * 1000.0;
+        if self.host.entering(now_ms).contains(&def_id)
+            && let Some(ws) = self.windows.get(&def_id)
+        {
+            ws.repaint();
         }
         None
     }
@@ -1089,6 +1117,17 @@ impl App {
         } else if let Some((def_id, false)) = self.caret_drawn.take() {
             // the caret left while hidden: drawn as it stands
             self.redraw(def_id);
+        }
+
+        // **What is coming in over a window** is drawn a frame at a time
+        // until it stands ([`crate::host::motion`]); at rest nothing asks.
+        let entering = self.host.entering(now_ms);
+        for def_id in &entering {
+            self.redraw(*def_id);
+        }
+        if !entering.is_empty() {
+            let t = now + FRAME;
+            next_wake = Some(next_wake.map_or(t, |w| w.min(t)));
         }
 
         // **The frame tick**, for the windows whose tree asks for it: what

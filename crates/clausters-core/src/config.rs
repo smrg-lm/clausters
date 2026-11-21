@@ -185,6 +185,11 @@ pub struct GuiConfig {
     /// follow every frame; a larger block is cheaper and choppier, and neither
     /// the sound nor any playhead over it reads this.
     pub follow_block: Option<f64>,
+    /// Whether what opens over a window comes in (`--no-motion` turns it
+    /// off): a list, a tip, a hover card and a dialog fading in and growing
+    /// over a tenth of a second rather than appearing at once. On by
+    /// default; nothing is drawn for it once each stands.
+    pub motion: Option<bool>,
     /// `[gui.theme]` -- color-role overrides for the host's look, each entry
     /// `role = "#rrggbb[aa]"`. A partial table: unlisted roles keep the
     /// default theme. The role names are the GUI host's `Theme` fields
@@ -506,6 +511,7 @@ impl GuiConfig {
             font: pick(self.font, h.font),
             msaa: pick(self.msaa, h.msaa),
             follow_block: pick(self.follow_block, h.follow_block),
+            motion: pick(self.motion, h.motion),
             // The theme and metrics tables merge per key (the overlay
             // semantics): the higher layer's roles win, its unlisted roles fall
             // through.

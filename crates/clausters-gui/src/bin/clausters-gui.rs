@@ -174,6 +174,9 @@ usage:
                             One multisampled attachment per window and nothing
                             per widget; a count this GPU does not offer for the
                             surface format falls back to 1 with a warning.
+      --no-motion           draw what opens over a window (a list, a tip, a
+                            hover card, a dialog) at once, instead of fading
+                            it in and growing it over a tenth of a second
       --dock                open every window as a pane of one window, side
                             by side, instead of a window each; each keeps
                             its def, its replies and its picture
@@ -210,6 +213,8 @@ struct Look {
     /// summary (`--follow-block`). Not a *look*, strictly -- it is here because
     /// it is resolved and applied with the rest, on both launch paths.
     follow_block: f64,
+    /// Whether what opens over a window comes in (`--no-motion`).
+    motion: bool,
     /// The typeface the command line or the config named, else `None` for
     /// the one the host carries -- loaded on every launch path, a session's
     /// and a score's as much as a script's ([`load_face`]).
@@ -226,6 +231,7 @@ impl Look {
         host.msaa = self.msaa;
         host.dock = self.dock;
         host.follow_block = self.follow_block;
+        host.set_motion(self.motion);
         load_face(host, self.font, self.headless);
         // a window shown on a screen opens at the size it was left at; a
         // headless host's windows open at what they declare, every run
@@ -310,6 +316,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut cli_id_share = IdShare::WHOLE;
     let mut cli_headless = false;
     let mut cli_dock = false;
+    let mut cli_no_motion = false;
     let mut cli_data_dir: Option<String> = None;
     let mut cli_head: Option<HeadClock> = None;
     let mut standalone_flag = false;
@@ -487,6 +494,7 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             "--headless" => cli_headless = true,
             "--dock" => cli_dock = true,
+            "--no-motion" => cli_no_motion = true,
             "--help" | "-h" => {
                 println!("{USAGE}");
                 return Ok(());
@@ -583,6 +591,7 @@ fn run(args: &[String]) -> Result<(), String> {
         msaa,
         dock: cli_dock,
         follow_block,
+        motion: !cli_no_motion && cfg.gui.motion != Some(false),
         font: font_path.or_else(|| cfg.gui.font.clone()),
         headless,
     };

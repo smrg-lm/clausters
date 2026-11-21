@@ -940,6 +940,23 @@ export class GuiHost {
     }
 
     /**
+     * `/gui_motion <0|1>` -- whether what opens over a window comes in.
+     *
+     * On (the default), a list, a tip, a hover card and a dialog fade in and
+     * grow from 95 % of their size over a tenth of a second, a list or a tip
+     * sliding the last few pixels from the side it opens off; off, each
+     * appears at once. Nothing is drawn for it once each stands, and a
+     * capture always shows them standing.
+     *
+     * It is the host's, for every canvas. The native launch-time spelling is
+     * `--no-motion` (`motion = false` under `[gui]` in the shared config),
+     * which a page has no counterpart for -- this verb is how a tab says it.
+     */
+    motion(on: boolean): void {
+        this.send("/gui_motion", ["i", on ? 1 : 0]);
+    }
+
+    /**
      * `/gui_verb <id> <verb>` -- perform `verb` on window `id` (an id or a
      * handle) as its key, its menu entry or its tool would.
      *

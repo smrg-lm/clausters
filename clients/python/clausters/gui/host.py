@@ -734,6 +734,21 @@ class GuiHost:
         """
         self._send("/gui_keys", json.dumps(dict(table)))
 
+    def motion(self, on: bool):
+        """``/gui_motion <0|1>`` -- whether what opens over a window comes in.
+
+        On (the default), a list, a tip, a hover card and a dialog fade in and
+        grow from 95 % of their size over a tenth of a second, a list or a tip
+        sliding the last few pixels from the side it opens off; off, each
+        appears at once. Nothing is drawn for it once each stands, and a
+        capture always shows them standing.
+
+        It is the host's, for every window. The launch-time spelling is the
+        host's own ``--no-motion`` (``motion = false`` under ``[gui]`` in the
+        shared config).
+        """
+        self._send("/gui_motion", 1 if on else 0)
+
     def verb(self, id, verb: str):
         """``/gui_verb <id> <verb>`` -- perform ``verb`` on window ``id`` (an id
         or a handle) as its key, its menu entry or its tool would.

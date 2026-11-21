@@ -191,10 +191,21 @@ impl Dock {
     /// own pixels, and whether a list the keyboard walks is open in it),
     /// moved to where the pane is. What each covers is kept, so the hand
     /// finds it where it was drawn.
-    pub fn picture(&mut self, theme: &Theme, floats: &[PaneFloat<'_>]) -> Overlay {
+    ///
+    /// `clock` is the front's time, with which the dock's own menu and tips
+    /// come in ([`crate::host::motion`]); `None` draws them standing, as a
+    /// capture and a host with motion off do.
+    pub fn picture(
+        &mut self,
+        theme: &Theme,
+        floats: &[PaneFloat<'_>],
+        clock: Option<f64>,
+    ) -> Overlay {
         let mut chrome = Mesh::new();
         let metrics = *self.metrics();
+        self.entrance.begin(clock.unwrap_or(0.0), clock.is_some());
         self.draw(&mut Draw::new(&mut chrome, &metrics, theme));
+        self.entrance.end(true);
         let layers = floats.iter().map(|f| f.layers.len()).max().unwrap_or(0);
         let mut meshes: Vec<Mesh> = (0..layers).map(|_| Mesh::new()).collect();
         let mut overlays = Vec::new();

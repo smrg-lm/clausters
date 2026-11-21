@@ -204,6 +204,9 @@ pub(crate) struct FrameInputs<'a> {
     /// **Whether a caret drawn in this frame shows**: the phase of its
     /// blink ([`super::blink`]), on for a window with no caret.
     pub(crate) caret: bool,
+    /// **How far in what opens over the window is** ([`super::motion`]):
+    /// `None` draws every list, tip, card and dialog standing.
+    pub(crate) entrance: Option<&'a super::motion::Entrance>,
 }
 
 impl Default for FrameInputs<'_> {
@@ -224,6 +227,7 @@ impl Default for FrameInputs<'_> {
             selected: None,
             float: None,
             caret: true,
+            entrance: None,
         }
     }
 }
@@ -1460,18 +1464,28 @@ fn picture(
             inputs,
             theme,
         );
+        // **The dialog comes in** from its middle, and the scrim fades in
+        // with it ([`super::motion`]).
+        let card = &dialog[0];
+        let t = inputs.entrance.map_or(1.0, |e| {
+            e.progress(&super::motion::Part::Dialog(card.widget.id.unwrap_or(-1)))
+        });
+        let came = super::motion::motion(t, card.rect, None, inputs.metrics.motion_slide);
+        under.move_since(Default::default(), came);
+        above.move_since(Default::default(), came);
+        let scrim = with_alpha(theme.scrim, theme.scrim[3] * t);
         // A pane's dialog stands over the whole dock, the scrim with it.
         match inputs.float {
             Some(dock) => {
                 let [dialog, over_dialog, _] = &mut float;
-                dialog.rect(dock, theme.scrim);
+                dialog.rect(dock, scrim);
                 dialog.append(&under);
                 over_dialog.append(&above);
             }
             None => {
                 live.set_clip(None);
                 live.set_ink(Ink::default());
-                live.rect(area, theme.scrim);
+                live.rect(area, scrim);
                 live.append(&under);
                 top.append(&above);
             }

@@ -66,7 +66,6 @@ Where the work lives:
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
 | `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux`, `Jx` | `crates/clausters-server/PLAN.md` | the server, its engine in the browser (`Bx`), and third-party plugins (`Jx`) |
-| `WSx`, `STx` | `crates/clausters-gui/PLAN.md` (WS and ST tracks) | the dock as the application's one window, and the host's look specified from one design system |
 | `APx` | `crates/clausters-gui/PLAN.md` (AP track) | the application scope: the window set, the derived widget id, the reconcile, one undo order |
 | `Qx` | `crates/clausters-notate/PLAN.md` | from a performance to a page: beats, quantization, meter, voices, spelling |
 
@@ -347,13 +346,10 @@ Named, not enumerated: each is written where it belongs and is read there.
   ids a parent hands a child, events routed to the application that owns each
   widget, and who answers a key when applications nest -- a window's own keys
   are built (its `keys` scopes), and nesting is what is left of them.
-- **The host's look, the `ST` track, and what the editor's move left**
-  *(`crates/clausters-gui/PLAN.md`, ST track and "Found by use")*. With the
-  webview editor retired (`WS14`, the `WS` track closed), next are the
-  "Found by use" entries *Enter in a dialog's field does not press its
-  default button*, *A textured view in a docked pane's dialog is not drawn*
-  and *The documentation's header has no folder button*; `ST12` (motion,
-  optional) after them.
+- **What the editor's move left** *(`crates/clausters-gui/PLAN.md`,
+  "Found by use")*: the entries *Enter in a dialog's field does not press
+  its default button*, *A textured view in a docked pane's dialog is not
+  drawn* and *The documentation's header has no folder button*.
 - **The remaining "Future directions"** of each plan — the server's (release builds tuned for size, never at the cost of speed; a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the

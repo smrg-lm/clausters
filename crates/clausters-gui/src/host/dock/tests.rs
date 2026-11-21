@@ -1046,7 +1046,7 @@ fn a_list_a_pane_opens_floats_over_the_dock() {
         keys: true,
         dialog: false,
     }];
-    let over = d.picture(&Theme::default(), &floats);
+    let over = d.picture(&Theme::default(), &floats, None);
     assert!(!over.floats[0].is_empty());
     assert_eq!(d.at(50.0, 100.0), Some((10, (50.0, 100.0))));
     assert_eq!(d.focus(), Some(10), "the open list takes the keys");

@@ -14,6 +14,7 @@ use crate::host::graphics::controls;
 use crate::host::graphics::selection;
 use crate::host::graphics::signal::layers::{Domain, Paint};
 use crate::host::menubar;
+use crate::host::motion;
 use crate::host::popup;
 use crate::host::widget::{Marker, Naming, RulerDir};
 use clausters_gui_draw::metrics::Elevation;
@@ -1147,10 +1148,10 @@ pub(super) fn draw_popups(
             .unwrap_or(theme);
         let owner = popup::owner_rect(stack, tree, placed, window, m);
         let lists = popup::layout(stack, owner, work, m);
-        draw_stack(over, stack, &lists, m, th);
+        draw_stack(over, stack, &lists, owner, inputs.entrance, m, th);
     }
     if let Some(tip) = &popups.tip {
-        draw_tip(over, tip, work, m, theme);
+        draw_tip(over, tip, work, inputs.entrance, m, theme);
     }
     over.set_clip(None);
 }
@@ -1159,7 +1160,22 @@ pub(super) fn draw_popups(
 /// inside `work`: a pane's, and a dock's tab's. The specification's: the
 /// text's own color as its fill and the ground's as its text, rounded, an
 /// arrow toward what it is the tip of, and the key as a key cap at its end.
-pub(crate) fn draw_tip(over: &mut Mesh, tip: &popup::Tip, work: Rect, m: &Metrics, theme: &Theme) {
+pub(crate) fn draw_tip(
+    over: &mut Mesh,
+    tip: &popup::Tip,
+    work: Rect,
+    entrance: Option<&motion::Entrance>,
+    m: &Metrics,
+    theme: &Theme,
+) {
+    let part = motion::Part::Tip(tip.widget);
+    motion::enter(over, entrance, part, Some(tip.anchor), m, |over| {
+        Some(tip_standing(over, tip, work, m, theme))
+    });
+}
+
+/// A tooltip where it stands ([`draw_tip`]).
+fn tip_standing(over: &mut Mesh, tip: &popup::Tip, work: Rect, m: &Metrics, theme: &Theme) -> Rect {
     let size = popup::tip_size(m);
     let place = popup::place_tip(tip, size, work, m);
     let rect = place.rect;
@@ -1199,6 +1215,7 @@ pub(crate) fn draw_tip(over: &mut Mesh, tip: &popup::Tip, work: Rect, m: &Metric
             theme.background,
         );
     }
+    rect
 }
 
 /// Draws **what elements show in the popup layer of their own accord**
@@ -1226,11 +1243,15 @@ pub(super) fn draw_own_popups(
                 .popups
                 .and_then(|p| p.card.as_ref())
                 .filter(|c| note.card && c.owner == id);
-            draw_note(over, note, card, work, m, th);
+            let part = motion::Part::Note(id);
+            motion::enter(over, inputs.entrance, part, Some(note.anchor), m, |over| {
+                Some(draw_note(over, note, card, work, m, th))
+            });
         }
         if let Some(list) = &own.list {
             let stack = list.stack(id);
-            draw_stack(over, &stack, &popup::layout(&stack, None, work, m), m, th);
+            let lists = popup::layout(&stack, None, work, m);
+            draw_stack(over, &stack, &lists, None, inputs.entrance, m, th);
         }
     }
     over.set_clip(None);
@@ -1247,7 +1268,7 @@ fn draw_note(
     work: Rect,
     m: &Metrics,
     theme: &Theme,
-) {
+) -> Rect {
     let place = popup::place_note(note, work, m);
     let rect = place.rect;
     over.set_clip(None);
@@ -1346,7 +1367,7 @@ fn draw_note(
             place.doc,
             |ink| crate::host::elements::docs::ink_color(theme, ink),
         );
-        return;
+        return rect;
     }
     let glyph = font::height(note.text_size);
     for (i, line) in place.lines.iter().enumerate() {
@@ -1363,6 +1384,7 @@ fn draw_note(
             theme.text_dim,
         );
     }
+    rect
 }
 
 /// Draws the **menu bar** into `band`: the titles of the window's menu, the
@@ -1438,14 +1460,33 @@ pub(super) fn draw_menu_bar(
 /// **Every list of a stack**, first to last: the first raised as a menu is,
 /// a submenu (or a list standing on its own) raised further, and the row
 /// whose submenu is open shown open.
+///
+/// Each list comes in on its own ([`motion`]): the first off what opened it
+/// (`owner`, where it stands now, else the stack's anchor), a submenu off
+/// the row that opened it.
 pub(crate) fn draw_stack(
     over: &mut Mesh,
     stack: &popup::Stack,
     lists: &[popup::Placed],
+    owner: Option<Rect>,
+    entrance: Option<&motion::Entrance>,
     m: &Metrics,
     theme: &Theme,
 ) {
     for (i, (level, at)) in stack.levels.iter().zip(lists).enumerate() {
+        let from = match (i, stack.anchor) {
+            (0, popup::Anchor::Below(a)) => Some(owner.unwrap_or(a)),
+            (0, popup::Anchor::At(x, y)) => Some(Rect::new(x, y, 0.0, 0.0)),
+            (0, popup::Anchor::Centre) => None,
+            _ => {
+                let parent = &lists[i - 1];
+                let row = level.path.last().and_then(|r| parent.rows.get(*r));
+                Some(row.map_or(parent.rect, |r| {
+                    Rect::new(parent.rect.x, r.y, parent.rect.w, r.h)
+                }))
+            }
+        };
+        let mark = over.mark();
         let raised = if i > 0 || stack.anchor == popup::Anchor::Centre {
             Elevation::Lg
         } else {
@@ -1456,6 +1497,10 @@ pub(crate) fn draw_stack(
             .get(i + 1)
             .and_then(|next| next.path.last().copied());
         draw_list(over, level, at, stack.text_size, open, raised, m, theme);
+        if let Some(entrance) = entrance {
+            let t = entrance.progress(&motion::Part::List(stack.owner.clone(), level.path.clone()));
+            over.move_since(mark, motion::motion(t, at.rect, from, m.motion_slide));
+        }
     }
     over.set_clip(None);
 }

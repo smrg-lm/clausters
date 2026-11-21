@@ -54,6 +54,7 @@ mod actions;
 pub mod activity;
 pub mod bind;
 pub mod blink;
+pub mod motion;
 // The other way of a binding: what a bound widget writes, asked for and read
 // back onto it.
 pub(crate) mod panel;
@@ -633,6 +634,14 @@ pub const GUI_METRICS: &str = "/gui_metrics";
 /// how a tab sets its keys -- and how a script gives its application's verbs
 /// a key without the user editing anything.
 pub const GUI_KEYS: &str = "/gui_keys";
+/// `/gui_motion <0|1>` -- whether what opens over a window in this **host**
+/// comes in ([`motion`]): a list, a tip, a hover card and a dialog fading
+/// in and growing over a tenth of a second, or appearing at once.
+///
+/// A host-wide verb for the reason the others are: a native host says it at
+/// launch (`--no-motion`, `[gui] motion`) and a page could not say it at
+/// all. On by default.
+pub const GUI_MOTION: &str = "/gui_motion";
 /// `/gui_headClock <"device"|"transport">` -- which of the engine's counters every
 /// playhead in this **host** is drawn from.
 ///
@@ -1201,6 +1210,11 @@ pub struct Host {
     focused: Option<(i32, i32)>,
     /// The caret's pace and when the hand last moved it ([`blink`]).
     blink: blink::Blink,
+    /// **Whether what opens over a window comes in** ([`motion`]): the
+    /// host's, on by default.
+    motion: bool,
+    /// Where each window's parts came in ([`motion::Entrance`]).
+    entrances: HashMap<i32, motion::Entrance>,
     /// **Whether the focus is shown with its ring** (focus-visible): only
     /// after the keyboard moved it (Tab), never after a press -- a press
     /// says where the hand is already looking, so a ring there is noise
@@ -1332,6 +1346,8 @@ impl Host {
             resolved_metrics: HashMap::new(),
             focused: None,
             blink: blink::Blink::default(),
+            motion: true,
+            entrances: HashMap::new(),
             focus_visible: false,
             pending_effects: Vec::new(),
             scripted: Default::default(),

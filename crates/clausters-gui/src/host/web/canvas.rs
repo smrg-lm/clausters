@@ -542,6 +542,12 @@ impl WebApp {
                 return None;
             }
         }
+        // what opens over the canvas comes in on the page's clock; a capture
+        // draws it standing and leaves its coming in alone
+        let still = capture || self.still;
+        if !still {
+            self.host.entrance_begin(def, js_sys::Date::now(), false);
+        }
         let server_attached = self.host.server().is_some();
         let focused = self
             .host
@@ -578,6 +584,7 @@ impl WebApp {
             popups: self.host.popups(def),
             float: self.host.floating_area(def),
             caret: self.host.caret_shown(def, js_sys::Date::now()),
+            entrance: if still { None } else { self.host.entrance(def) },
         };
         let Some(render) = slot.render.as_mut() else {
             return capture.then(|| Err("the canvas has no GPU yet".into()));
@@ -633,6 +640,10 @@ impl WebApp {
         // fetch below has this canvas' host to itself. (`inputs` borrows it
         // and holds nothing to release; its borrow ended at the render.)
         drop(statuses);
+        if !still {
+            self.host
+                .entrance_end(def, matches!(drawn, frame::Drawn::Whole));
+        }
         let counted = match drawn {
             frame::Drawn::Whole => Some(Count::Whole(took)),
             frame::Drawn::Live => Some(Count::Live(took)),
@@ -651,6 +662,11 @@ impl WebApp {
             && let Some(slot) = self.canvases.get(&def)
         {
             slot.request_redraw_live();
+        }
+        // a part still coming in asks for the next animation frame, and one
+        // standing asks for none
+        if self.host.entering(js_sys::Date::now()).contains(&def) {
+            self.request_redraw(def);
         }
         // **What this frame could not draw.** A view zoomed finer than its
         // summary left the span it was asked for on its slot; a page cannot

@@ -55,6 +55,7 @@ impl Host {
             GUI_THEME => self.on_theme(&msg.args, from, effects),
             GUI_METRICS => self.on_metrics(&msg.args, from, effects),
             GUI_KEYS => self.on_keys(&msg.args, from, effects),
+            GUI_MOTION => self.on_motion(&msg.args, from),
             GUI_CLOCK => self.on_clock(&msg.args, from, effects),
             GUI_VERB => self.on_verb(&msg.args, from, effects),
             GUI_CAPTURE => self.on_capture(&msg.args, from, effects),
@@ -290,6 +291,22 @@ impl Host {
     /// The theme's rules again: partial, overlaying the host's table, and
     /// every chord that cannot be read is reported and skipped. Every window
     /// redraws, since an open menu shows the chords its entries are bound to.
+    /// `/gui_motion <0|1>` -- turn motion on or off for every window
+    /// ([`super::motion`]). Nothing redraws: what is open stands as it is,
+    /// and what opens next comes in or does not.
+    pub(super) fn on_motion(&mut self, args: &[OscType], from: ClientId) {
+        let on = match args.first() {
+            Some(OscType::Bool(b)) => Some(*b),
+            Some(OscType::Float(f)) => Some(*f != 0.0),
+            _ => int_arg(args, 0).map(|n| n != 0),
+        };
+        let Some(on) = on else {
+            return diag::warn!("{from}: {GUI_MOTION} needs 0 or 1");
+        };
+        self.set_motion(on);
+        diag::info!("{from}: {GUI_MOTION}: {}", if on { "on" } else { "off" });
+    }
+
     pub(super) fn on_keys(
         &mut self,
         args: &[OscType],

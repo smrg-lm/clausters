@@ -533,6 +533,36 @@ fn metrics_arrive_the_same_way_and_scale_regenerates_the_set() {
     assert!(effects.iter().any(|e| matches!(e, HostEffect::Redraw(1))));
 }
 
+/// Motion is the host's, on by default and turned off or on again by
+/// `/gui_motion`; off, no window is drawn for it.
+#[test]
+fn motion_is_the_hosts_and_the_wire_turns_it_off() {
+    let mut host = Host::new();
+    host.handle_packet(def_msg(1, TREE), from());
+    assert!(host.motion());
+    host.entrance_begin(1, 0.0, false);
+    let part = super::motion::Part::Dialog(5);
+    assert_eq!(host.entrance(1).map(|e| e.progress(&part)), Some(0.0));
+    host.entrance_end(1, true);
+    assert_eq!(host.entering(10.0), vec![1]);
+    let off = |on: i32| {
+        OscPacket::Message(OscMessage {
+            addr: GUI_MOTION.into(),
+            args: vec![OscType::Int(on)],
+        })
+    };
+    host.handle_packet(off(0), from());
+    assert!(!host.motion());
+    assert!(
+        host.entering(10.0).is_empty(),
+        "off, nothing is drawn for it"
+    );
+    host.entrance_begin(1, 20.0, false);
+    assert!(host.entrance(1).is_none(), "and nothing is kept");
+    host.handle_packet(off(1), from());
+    assert!(host.motion());
+}
+
 /// A `/gui_set` may carry its samples as a **blob**, which is the door a
 /// client past the inline ceiling needs: a native one rewrites the file it
 /// spilled to, and a page has no file. The bytes expand to exactly the

@@ -302,6 +302,7 @@ impl Host {
             self.sync_lists();
             // The window goes, and with it the scale a shell reported for it.
             self.resolved_metrics.remove(&id);
+            self.entrances.remove(&id);
             // ...and whatever it had in flight: an acknowledgement for a widget
             // that no longer exists is never coming, and a pending edit that
             // waits for one holds the outbox open forever.

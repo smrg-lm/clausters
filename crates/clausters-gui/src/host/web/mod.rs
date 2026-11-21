@@ -356,6 +356,9 @@ struct WebApp {
     /// timer set for its next change runs out ([`Host::caret_due`]).
     caret_drawn: Option<(i32, bool)>,
     blink_at: Option<f64>,
+    /// **Frames are being drawn at rest**: a dock's capture draws its panes
+    /// with what opens over them standing ([`crate::host::motion`]).
+    still: bool,
     /// How many buses the last subscription had to leave out, so the log says
     /// so when it *changes* rather than once per canvas: a document's opening
     /// pass re-derives the subscription per canvas, and a line each would bury
@@ -449,6 +452,7 @@ impl WebApp {
             stream_sync_pending: false,
             caret_drawn: None,
             blink_at: None,
+            still: false,
             server_rate: 0.0,
             tick: None,
             read_back: None,

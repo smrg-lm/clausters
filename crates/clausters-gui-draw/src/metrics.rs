@@ -428,6 +428,11 @@ metrics_roles! {
     find_h: grid,
     /// The find bar's field's height.
     find_field_h: grid,
+
+    // -- Motion --
+    /// How far a list, a tip or a card slides as it comes in, from the side
+    /// of what it opens off.
+    motion_slide: grid,
 }
 
 impl Default for Metrics {
@@ -584,6 +589,7 @@ impl Metrics {
             icon_sm: spec(12.0),
             find_h: spec(36.0),
             find_field_h: spec(28.0),
+            motion_slide: spec(8.0),
 
             ui_scale: 1.0,
         }

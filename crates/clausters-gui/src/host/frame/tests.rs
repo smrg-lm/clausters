@@ -1740,3 +1740,129 @@ fn stft_channels_keep_the_hop_past_a_textures_width() {
     assert!(stacks[0].n_frames() <= crate::spectrogram::max_frames(256));
     assert_eq!(stacks[0].total_samples(), n);
 }
+
+/// The picture of window 1 of a host holding `json`, with `popups` open over
+/// it and what opens there coming in by `entrance`.
+fn picture_entering(
+    json: &str,
+    popups: Option<&crate::host::popup::Popups>,
+    entrance: Option<&crate::host::motion::Entrance>,
+) -> Picture {
+    use clausters_core::osc::{OscMessage, OscPacket, OscType};
+    let mut host = crate::host::Host::new();
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: crate::host::GUI_DEF.into(),
+            args: vec![OscType::Int(1), OscType::String(json.into())],
+        }),
+        crate::host::ClientId::Udp(std::net::SocketAddr::from((
+            std::net::Ipv4Addr::LOCALHOST,
+            9000,
+        ))),
+    );
+    let inputs = FrameInputs {
+        metrics: host.metrics_for(1),
+        world: World {
+            timelines: host.timelines(),
+            ..World::default()
+        },
+        popups,
+        entrance,
+        ..FrameInputs::default()
+    };
+    picture(
+        host.window_def(1).expect("the window is defined"),
+        &inputs,
+        &host.theme,
+        &HashMap::new(),
+        &HashMap::new(),
+        (800, 600),
+    )
+}
+
+/// **A dialog comes in and then stands as it is drawn**: on its first frame
+/// it and its scrim are not seen, half way it is smaller than it stands and
+/// partly seen, and once it has come in its frame is the frame drawn with
+/// no motion at all -- so motion is a transform over the one drawing.
+#[test]
+fn a_dialog_comes_in_and_then_is_the_frame_drawn_standing() {
+    use crate::host::motion::{ENTER_MS, Entrance};
+    const DIALOG: &str = r#"{"type":"window","children":[
+        {"id":3,"type":"label","text":"behind"},
+        {"id":9,"type":"layout","modal":true,"title":"t","children":[
+            {"id":10,"type":"label","text":"x"}]}]}"#;
+    let standing = picture_entering(DIALOG, None, None);
+    let mut e = Entrance::default();
+    e.begin(0.0, true);
+    let first = picture_entering(DIALOG, None, Some(&e));
+    e.end(true);
+    assert!(first.live.alphas().all(|a| a == 0.0), "nothing seen yet");
+    assert!(!standing.live.alphas().all(|a| a == 0.0));
+    e.begin(ENTER_MS * 0.5, true);
+    let half = picture_entering(DIALOG, None, Some(&e));
+    e.end(true);
+    // the card, after the scrim's two triangles
+    let card = |p: &Picture| {
+        let points: Vec<(f32, f32)> = p.live.positions().skip(6).collect();
+        let w = points.iter().map(|p| p.0).fold(f32::MIN, f32::max)
+            - points.iter().map(|p| p.0).fold(f32::MAX, f32::min);
+        let h = points.iter().map(|p| p.1).fold(f32::MIN, f32::max)
+            - points.iter().map(|p| p.1).fold(f32::MAX, f32::min);
+        (w, h)
+    };
+    let (full, mid) = (card(&standing), card(&half));
+    assert!(mid.0 < full.0 && mid.1 < full.1, "{mid:?} in {full:?}");
+    assert!(half.live.alphas().any(|a| a > 0.0 && a < 1.0));
+    e.begin(ENTER_MS, true);
+    let rest = picture_entering(DIALOG, None, Some(&e));
+    e.end(true);
+    assert!(rest.live.near(&standing.live, 0.0));
+    assert!(rest.top.near(&standing.top, 0.0));
+    assert!(!e.moving(ENTER_MS), "standing, nothing asks for a frame");
+}
+
+/// **A tip comes in toward what it is the tip of**: under its widget it
+/// starts higher than it stands and slides down into place, unseen on its
+/// first frame; standing, it is the tip drawn with no motion.
+#[test]
+fn a_tip_slides_in_from_what_it_is_the_tip_of() {
+    use crate::host::motion::{ENTER_MS, Entrance};
+    use crate::host::popup::{Popups, Tip};
+    const WINDOW: &str = r#"{"type":"window","children":[
+        {"id":3,"type":"label","text":"x"}]}"#;
+    let popups = Popups {
+        tip: Some(Tip {
+            widget: 3,
+            text: "a tip".into(),
+            key: None,
+            // at the top of the window: the tip goes under it
+            anchor: Rect::new(100.0, 0.0, 60.0, 20.0),
+        }),
+        ..Popups::default()
+    };
+    // what the window's top batch holds with no tip, which the tip follows
+    let under = picture_entering(WINDOW, None, None).top.vertex_count() as usize;
+    let top = |p: &Picture| -> f32 {
+        p.top
+            .positions()
+            .skip(under)
+            .map(|p| p.1)
+            .fold(f32::MAX, f32::min)
+    };
+    let standing = picture_entering(WINDOW, Some(&popups), None);
+    let mut e = Entrance::default();
+    e.begin(0.0, true);
+    let first = picture_entering(WINDOW, Some(&popups), Some(&e));
+    e.end(true);
+    assert!(first.top.alphas().skip(under).all(|a| a == 0.0));
+    assert!(standing.top.alphas().skip(under).any(|a| a > 0.0));
+    e.begin(ENTER_MS * 0.25, true);
+    let early = picture_entering(WINDOW, Some(&popups), Some(&e));
+    e.end(true);
+    let (full, now) = (top(&standing), top(&early));
+    assert!(now < full, "it comes down into place: {now} {full}");
+    e.begin(ENTER_MS, true);
+    let rest = picture_entering(WINDOW, Some(&popups), Some(&e));
+    e.end(true);
+    assert!(rest.top.near(&standing.top, 0.0));
+}

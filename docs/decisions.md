@@ -247,6 +247,7 @@ quoted title lands here, on the link to the entry.
 - [The host's look is specified from one design system, not drawn piece by piece (2026-11-17)](decisions/gui.md#the-hosts-look-is-specified-from-one-design-system-not-drawn-piece-by-piece-2026-11-17)
 - [Text is drawn as a browser draws it: fractional sizes, quarter pixels, corrected coverage (2026-11-17)](decisions/gui.md#text-is-drawn-as-a-browser-draws-it-fractional-sizes-quarter-pixels-corrected-coverage-2026-11-17)
 - [The specification's tokens answer to the host's roles, and two looks are the host's (2026-11-18)](decisions/gui.md#the-specifications-tokens-answer-to-the-hosts-roles-and-two-looks-are-the-hosts-2026-11-18)
+- [What opens over a window comes in by moving its drawing, and only while it comes in (2026-11-21)](decisions/gui.md#what-opens-over-a-window-comes-in-by-moving-its-drawing-and-only-while-it-comes-in-2026-11-21)
 
 ## [The document and the applications](decisions/apps.md)
 

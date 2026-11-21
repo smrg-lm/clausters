@@ -44,7 +44,20 @@ impl Dock {
         }
         if let Some(menu) = self.menu() {
             let (mesh, m, theme) = d.parts();
-            draw_stack(mesh, &menu.stack, &self.menu_placed(), m, theme);
+            let placed = self.menu_placed();
+            let owner = match menu.stack.anchor {
+                crate::host::popup::Anchor::Below(a) => Some(a),
+                _ => None,
+            };
+            draw_stack(
+                mesh,
+                &menu.stack,
+                &placed,
+                owner,
+                Some(&self.entrance),
+                m,
+                theme,
+            );
         }
         // a tab's tip, at the tab it was rested on
         if let Some((pane, text)) = self.shown_tip()
@@ -58,7 +71,7 @@ impl Dock {
             };
             let work = Rect::new(0.0, 0.0, self.size.0 as f32, self.size.1 as f32);
             let (mesh, m, theme) = d.parts();
-            draw_tip(mesh, &tip, work, m, theme);
+            draw_tip(mesh, &tip, work, Some(&self.entrance), m, theme);
         }
     }
 

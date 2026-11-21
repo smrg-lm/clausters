@@ -113,6 +113,9 @@ host_port = 57210        # port for the host's script-facing front (UDP + TCP)
 #                             # follows every frame; larger is cheaper and
 #                             # choppier. Neither the sound nor a playhead
 #                             # reads it
+# motion = true               # what opens over a window (a list, a tip, a
+#                             # card, a dialog) fades in and grows over 100 ms;
+#                             # false draws it at once (--no-motion)
 
 [gui.theme]              # color-role overrides for the host's look (optional)
 # accent = "#ff8c40"     # each entry is role = "#rrggbb" or "#rrggbbaa"; the
@@ -182,7 +185,7 @@ server off 57110 opens `clausters:<port>` rather than a second `clausters`.
   key of its own: in a file, write the base in `port` and give `tcp` a number.
 - **GUI host** — the `[gui]` section supplies the defaults for `clausters-gui`
   (`--port`, `--tcp`/`--no-tcp`, `--ws`, `--max-frame`, `--server`, `--shm`,
-  `--data-dir`, `--headless`); the `[standalone]`
+  `--data-dir`, `--headless`, `--no-motion`); the `[standalone]`
   section supplies the standalone launch. The `[gui.theme]` table restyles the
   host's color roles; `--theme <path>` lays a free-standing theme file — the
   same flat `role = "#rrggbb[aa]"` table — over it, so a look can be shared as

@@ -147,6 +147,11 @@ impl App {
         let now = self.started.elapsed().as_secs_f64() * 1000.0;
         let mut waiting = false;
         for shell in self.dock.iter_mut().chain(self.floats.values_mut()) {
+            // the dock's menu or a tab's tip coming in, a frame at a time
+            if shell.layout.entering(now) {
+                shell.gpu.request_redraw();
+                waiting = true;
+            }
             if shell.layout.waiting() {
                 // a tip that came due is drawn
                 if shell.layout.elapsed(now) {
@@ -607,6 +612,7 @@ impl App {
             floats,
             windows,
             host,
+            started,
             ..
         } = self;
         let shell = match which {
@@ -633,7 +639,10 @@ impl App {
         let target = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let chrome = picture(&mut shell.layout, windows, host);
+        let clock = host
+            .motion()
+            .then(|| started.elapsed().as_secs_f64() * 1000.0);
+        let chrome = picture(&mut shell.layout, windows, host, clock);
         let views: Vec<_> = shell
             .layout
             .placed()
@@ -784,12 +793,15 @@ impl App {
         let shown: Vec<i32> = shell_mut!(self, which)
             .map(|s| s.layout.placed().map(|(id, _)| id).collect())
             .unwrap_or_default();
+        // a capture is drawn at rest, the panes in it too
+        self.still = true;
         for &id in &shown {
             if let Some(ws) = self.windows.get(&id) {
                 ws.batches.want_whole();
             }
             self.render(id);
         }
+        self.still = false;
         let clear = divider_color(&self.host.theme);
         let App {
             dock,
@@ -803,7 +815,7 @@ impl App {
             Which::Float(id) => floats.get_mut(&id),
         };
         let shell = shell.ok_or("the dock closed")?;
-        let chrome = picture(&mut shell.layout, windows, host);
+        let chrome = picture(&mut shell.layout, windows, host, None);
         let views: Vec<_> = shell
             .layout
             .placed()
@@ -827,6 +839,7 @@ fn picture(
     layout: &mut Dock,
     windows: &std::collections::HashMap<i32, super::app::WindowState>,
     host: &crate::host::Host,
+    clock: Option<f64>,
 ) -> crate::host::dock::Overlay {
     let shown: Vec<i32> = layout.placed().map(|(id, _)| id).collect();
     let floats: Vec<crate::host::dock::PaneFloat<'_>> = shown
@@ -841,7 +854,7 @@ fn picture(
             })
         })
         .collect();
-    layout.picture(&host.theme, &floats)
+    layout.picture(&host.theme, &floats, clock)
 }
 
 /// A window's declared height, in logical pixels, at the shell's scale.

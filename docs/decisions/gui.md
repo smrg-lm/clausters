@@ -3440,3 +3440,43 @@ interpolated by the rasterizer, which is the browser's falloff to within a
 few hundredths and costs a few dozen triangles a surface. Each level's
 layers are the specification's per pixel of its lift (`shadow_md` is 4), so
 a lift set by hand deepens its level whole.
+
+## What opens over a window comes in by moving its drawing, and only while it comes in (2026-11-21)
+
+*Taken closing the ST track's motion (`crates/clausters-gui/PLAN.md`,
+archived).* The specification animates its overlays: a menu, a tooltip, a
+hover card and a dialog fade in and grow from 95 % over 100 ms, a list
+sliding a few pixels from the side it opens on. Three choices were not
+obvious.
+
+**The motion moves the drawing; it is not a second drawing.** Each part is
+drawn where it stands, as it always was, and the run of the batch it drew
+is then transformed (`Mesh::move_since`: scaled about the edge facing what
+it opens off, shifted, its opacity multiplied). The alternative, each
+drawing function taking a progress and drawing a smaller, fainter part,
+would have put motion into every list, tip and card and made the picture
+at rest one of many. As a transform, a part's anatomy, its hit test and
+its picture at rest are the one drawing, and a test says so: standing, the
+frame is the frame drawn with no motion at all. A glyph scaled by 95 % is
+sampled off its atlas cell for a few frames, which is a blur nobody sees
+in a tenth of a second.
+
+**Only the coming in is drawn.** The specification fades a closing list
+out too. Drawing that would keep a list on the screen that is no longer
+open, over what the hand does next and answering to nothing, and would
+need its last picture kept after its state is gone. What closes goes at
+once.
+
+**It is on by default, the host's to turn off, and costs no frame at
+rest.** A part's time is the time of its first frame, kept while it stays
+open by what it is (a list by its owner and its rows, a tip by its widget,
+a note by its element, a dialog by its group), so a list whose rows change
+does not come in again and a submenu opened in place of another does. A
+front asks for another frame only while a part is coming in, at the
+display's pace, and those frames are the whole frames a pointer over the
+list already draws: at most seven at 60 Hz an opening, and a whole frame of
+the score editor is a quarter of a millisecond. A capture draws every part
+standing, so a script's picture of a menu it just opened is the menu.
+`[gui] motion = false`, `--no-motion` and `/gui_motion 0` (both clients'
+`GuiHost.motion`) turn it off for the whole host, as its look is the
+host's.

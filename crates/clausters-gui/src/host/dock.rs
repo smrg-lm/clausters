@@ -326,6 +326,9 @@ pub struct Dock {
     /// their open lists, their tips -- as the last picture placed it
     /// ([`edges::Float`]).
     overlays: Vec<edges::Float>,
+    /// Where the dock's own menu and tab tips came in
+    /// ([`crate::host::motion`]).
+    entrance: crate::host::motion::Entrance,
     dirty: Dirty,
 }
 
@@ -361,6 +364,7 @@ impl Dock {
             edges: Vec::new(),
             edge_places: Vec::new(),
             overlays: Vec::new(),
+            entrance: Default::default(),
             dirty: Dirty::default(),
         }
     }
@@ -606,6 +610,13 @@ impl Dock {
             }
             Some(_) => false,
         }
+    }
+
+    /// **Whether the dock's menu or a tab's tip is coming in at `now_ms`**:
+    /// what keeps a front drawing the dock's frames, and nothing else does
+    /// ([`crate::host::motion`]).
+    pub fn entering(&self, now_ms: f64) -> bool {
+        self.entrance.moving(now_ms)
     }
 
     /// The tab whose tip shows, and what it says.

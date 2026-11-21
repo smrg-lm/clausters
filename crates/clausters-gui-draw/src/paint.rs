@@ -961,6 +961,45 @@ impl Mesh {
         }
     }
 
+    /// **Where the batch stands now**: what [`move_since`](Self::move_since)
+    /// moves everything drawn after.
+    pub fn mark(&self) -> Mark {
+        Mark {
+            verts: self.verts.len(),
+            images: self.images.len(),
+            #[cfg(feature = "font-atlas")]
+            glyphs: self.glyphs.len(),
+        }
+    }
+
+    /// **Everything drawn since `mark`, moved as `motion` says**: scaled
+    /// about its origin, shifted, and its opacity multiplied -- flat
+    /// geometry, pictures and glyphs alike, so a thing drawn whole moves
+    /// whole. What a popup coming in is drawn with: it is drawn where it
+    /// stands, then moved to where it is on its way there.
+    pub fn move_since(&mut self, mark: Mark, motion: Motion) {
+        if motion.is_rest() {
+            return;
+        }
+        fn moved(verts: &mut [f32], stride: usize, m: Motion) {
+            let [ox, oy] = m.origin;
+            for v in verts.chunks_exact_mut(stride) {
+                v[0] = ox + (v[0] - ox) * m.scale + m.shift[0];
+                v[1] = oy + (v[1] - oy) * m.scale + m.shift[1];
+                v[stride - 1] *= m.alpha;
+            }
+        }
+        let from = mark.verts.min(self.verts.len());
+        moved(&mut self.verts[from..], FLOATS_PER_VERTEX, motion);
+        let from = mark.images.min(self.images.len());
+        moved(&mut self.images[from..], FLOATS_PER_GLYPH_VERTEX, motion);
+        #[cfg(feature = "font-atlas")]
+        {
+            let from = mark.glyphs.min(self.glyphs.len());
+            moved(&mut self.glyphs[from..], FLOATS_PER_GLYPH_VERTEX, motion);
+        }
+    }
+
     /// The number of vertices accumulated (three per triangle).
     pub fn vertex_count(&self) -> u32 {
         (self.verts.len() / FLOATS_PER_VERTEX) as u32
@@ -982,6 +1021,42 @@ impl Mesh {
             y1 = y1.max(y);
         }
         Some(Rect::new(x0, y0, x1 - x0, y1 - y0))
+    }
+}
+
+/// **A place in a batch** ([`Mesh::mark`]): how much of each of its lists
+/// was drawn when it was taken.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Mark {
+    verts: usize,
+    images: usize,
+    #[cfg(feature = "font-atlas")]
+    glyphs: usize,
+}
+
+/// **How a run of a batch is moved** ([`Mesh::move_since`]): every point
+/// taken to `origin + (point - origin) * scale + shift`, every alpha
+/// multiplied by `alpha`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Motion {
+    pub origin: [f32; 2],
+    pub scale: f32,
+    pub shift: [f32; 2],
+    pub alpha: f32,
+}
+
+impl Motion {
+    /// What leaves a run where it was drawn.
+    pub const REST: Self = Self {
+        origin: [0.0, 0.0],
+        scale: 1.0,
+        shift: [0.0, 0.0],
+        alpha: 1.0,
+    };
+
+    /// Whether it moves nothing.
+    pub fn is_rest(&self) -> bool {
+        self.scale == 1.0 && self.shift == [0.0, 0.0] && self.alpha == 1.0
     }
 }
 
@@ -1418,6 +1493,38 @@ mod tests {
         m.set_ink(Ink::default());
         m.rect(Rect::new(0.0, 0.0, 10.0, 10.0), [1.0; 4]);
         assert!(m.alphas().skip(12).all(|a| a == 1.0));
+    }
+
+    /// What is moved since a mark is the run after it, and all of it: what
+    /// came before stays where it was drawn.
+    #[test]
+    fn a_run_moves_from_its_mark_and_no_further_back() {
+        let mut m = Mesh::new();
+        m.rect(Rect::new(0.0, 0.0, 10.0, 10.0), [1.0; 4]);
+        let mark = m.mark();
+        m.rect(Rect::new(10.0, 10.0, 10.0, 10.0), [1.0, 1.0, 1.0, 0.8]);
+        m.move_since(
+            mark,
+            Motion {
+                origin: [10.0, 10.0],
+                scale: 0.5,
+                shift: [0.0, -4.0],
+                alpha: 0.5,
+            },
+        );
+        let points: Vec<(f32, f32)> = m.positions().collect();
+        let alphas: Vec<f32> = m.alphas().collect();
+        assert!(points[..6].iter().all(|&(x, y)| x <= 10.0 && y <= 10.0));
+        assert!(alphas[..6].iter().all(|&a| a == 1.0));
+        for &(x, y) in &points[6..] {
+            assert!((10.0..=15.0).contains(&x), "{x}");
+            assert!((6.0..=11.0).contains(&y), "{y}");
+        }
+        assert!(alphas[6..].iter().all(|a| (a - 0.4).abs() < 1e-6));
+        // at rest nothing moves
+        let before: Vec<(f32, f32)> = m.positions().collect();
+        m.move_since(Mark::default(), Motion::REST);
+        assert_eq!(before, m.positions().collect::<Vec<_>>());
     }
 
     /// A rounded box is the same box with its corners cut: it never leaves its

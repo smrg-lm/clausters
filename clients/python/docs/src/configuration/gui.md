@@ -31,6 +31,7 @@ Every key is optional, and unknown keys are ignored.
 | `headless` | boolean | `false` | `--headless` | Show no window: draw each one offscreen, to be captured and played to from a script, on any adapter a software one included; with none at all, run the protocol alone (tests, machines with no GPU) |
 | `font` | string (path) | off — the host's own face | `--font` | The typeface to draw text with, on a host built with a rasterizer (its optional `font-atlas` feature); with the feature and no path, one of the system's faces. Any other build draws its embedded bitmap face and ignores this |
 | `msaa` | integer | `1` — off | `--msaa` | Antialiasing: the MSAA sample count of every window's render pass (`4` is the usual smoothing). One multisampled attachment per window and nothing per widget; a count the GPU does not offer for the surface format falls back to `1` |
+| `motion` | boolean | `true` | `--no-motion` | Whether what opens over a window — a list, a tip, a hover card, a dialog — fades in and grows over 100 ms, or appears at once. Frames are drawn for it only while something comes in; `GuiHost.motion` says the same at run time |
 | `theme` | table | the built-in dark theme | `--theme <path>` | Color-role overrides — [the table below](#guitheme) |
 | `metrics` | table | the generated table | — | Size-role overrides — [the table below](#guimetrics) |
 
@@ -369,6 +370,7 @@ The 114 roles, with the value each takes at `scale = 1.0`:
 | `icon_sm` | 12 | A small icon's side. |
 | `find_h` | 36 | The find bar's height. |
 | `find_field_h` | 28 | The find bar's field's height. |
+| `motion_slide` | 8 | How far a list, a tip or a card slides as it comes in, from the side of what it opens off. |
 
 Sizes here are the host's **shared vocabulary**, not every number it draws: a
 widget's own interlocking geometry (the patcher's box and port series, the piano

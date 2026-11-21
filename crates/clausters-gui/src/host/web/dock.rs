@@ -794,7 +794,17 @@ impl WebApp {
         let Some(shell) = shell else {
             return;
         };
-        let chrome = picture(&mut shell.layout, canvases, host);
+        let now = js_sys::Date::now();
+        let chrome = picture(
+            &mut shell.layout,
+            canvases,
+            host,
+            host.motion().then_some(now),
+        );
+        // the dock's menu or a tab's tip coming in asks for the next frame
+        if shell.layout.entering(now) {
+            shell.window.request_redraw();
+        }
         let Some((gpu, composer)) = shell.render.as_mut() else {
             return;
         };
@@ -938,6 +948,8 @@ impl WebApp {
         let shown: Vec<i32> = shell_mut!(self, which)
             .map(|s| s.layout.placed().map(|(def, _)| def).collect())
             .unwrap_or_default();
+        // a capture is drawn at rest, the panes in it too
+        self.still = true;
         for def in shown {
             if let Some(slot) = self.canvases.get(&def) {
                 slot.request_redraw();
@@ -945,6 +957,7 @@ impl WebApp {
             }
             self.draw(def);
         }
+        self.still = false;
         let clear = divider_color(&self.host.theme);
         let host_id = self.id;
         let asker = self.asker;
@@ -960,7 +973,7 @@ impl WebApp {
             Which::Float(def) => floats.get_mut(&def),
         };
         let shell = shell.ok_or("the dock closed")?;
-        let chrome = picture(&mut shell.layout, canvases, host);
+        let chrome = picture(&mut shell.layout, canvases, host, None);
         let (gpu, composer) = shell
             .render
             .as_mut()
@@ -1001,6 +1014,7 @@ fn picture(
     layout: &mut Dock,
     canvases: &HashMap<i32, CanvasSlot>,
     host: &Host,
+    clock: Option<f64>,
 ) -> crate::host::dock::Overlay {
     let shown: Vec<i32> = layout.placed().map(|(def, _)| def).collect();
     let floats: Vec<crate::host::dock::PaneFloat<'_>> = shown
@@ -1015,7 +1029,7 @@ fn picture(
             })
         })
         .collect();
-    layout.picture(&host.theme, &floats)
+    layout.picture(&host.theme, &floats, clock)
 }
 
 /// A window's declared height, in logical pixels, at the shell's scale.

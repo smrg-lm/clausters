@@ -463,6 +463,57 @@ impl super::Host {
     }
 }
 
+/// **Motion**, as the host keeps it for every window ([`super::motion`]).
+impl super::Host {
+    /// Whether what opens over a window comes in rather than appearing.
+    pub fn motion(&self) -> bool {
+        self.motion
+    }
+
+    /// **Turns motion on or off** for every window. Off, every part stands
+    /// at once and no frame is drawn for it.
+    pub fn set_motion(&mut self, on: bool) {
+        self.motion = on;
+        if !on {
+            self.entrances.clear();
+        }
+    }
+
+    /// **A frame of window `def_id` starts at `now_ms`**: what it reads its
+    /// parts' progress from ([`Self::entrance`]). A capture draws at rest
+    /// (`still`), and so does a host with motion off.
+    pub fn entrance_begin(&mut self, def_id: i32, now_ms: f64, still: bool) {
+        let on = self.motion && !still;
+        if !on && !self.entrances.contains_key(&def_id) {
+            return;
+        }
+        self.entrances.entry(def_id).or_default().begin(now_ms, on);
+    }
+
+    /// What window `def_id`'s frame reads its parts' progress from.
+    pub fn entrance(&self, def_id: i32) -> Option<&super::motion::Entrance> {
+        self.entrances.get(&def_id)
+    }
+
+    /// **The frame of window `def_id` ended**, `whole` or of its live layers
+    /// alone.
+    pub fn entrance_end(&mut self, def_id: i32, whole: bool) {
+        if let Some(e) = self.entrances.get_mut(&def_id) {
+            e.end(whole);
+        }
+    }
+
+    /// **The windows something is coming in over at `now_ms`**: the ones a
+    /// front draws another frame of. None at rest.
+    pub fn entering(&self, now_ms: f64) -> Vec<i32> {
+        self.entrances
+            .iter()
+            .filter(|(_, e)| e.moving(now_ms))
+            .map(|(id, _)| *id)
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod glide_tests {
     use super::Glide;
