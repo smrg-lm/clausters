@@ -2278,7 +2278,8 @@ export interface ButtonOptions extends WidgetOptions {
     /**
      * Marks the **default action** of the dialog the button is in: the keys
      * go to it as the dialog comes up, when the dialog has no field to give
-     * them to.
+     * them to, and Enter in one of the dialog's single-line fields presses
+     * it, as a form submits.
      */
     default?: boolean;
     /**

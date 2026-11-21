@@ -1854,6 +1854,44 @@ fn a_dialog_takes_the_keys_as_it_comes_up_and_gives_them_back() {
     }
 }
 
+/// **Enter in a dialog's field presses its default button**, as a form
+/// submits: what was typed is reported first, then the press. A multiline
+/// field keeps Enter for its new line, and a field outside a dialog presses
+/// nothing.
+#[test]
+fn enter_in_a_dialogs_field_presses_its_default_button() {
+    let tree = |multiline: i32, modal: i32| {
+        format!(
+            r#"{{"type":"window","margin":0,"status":false,"children":[
+                {{"id":10,"type":"layout","modal":{modal},"w":300,"h":200,"children":[
+                    {{"id":11,"type":"text","value":"","multiline":{multiline}}},
+                    {{"id":12,"type":"button","label":"Cancel"}},
+                    {{"id":13,"type":"button","label":"Save","default":1}}]}}]}}"#
+        )
+    };
+    for (multiline, modal, pressed) in [(0, 1, true), (1, 1, false), (0, 0, false)] {
+        let mut host = host_from(&tree(multiline, modal));
+        let mut effects = Vec::new();
+        host.set_props(
+            11,
+            vec![("focus".into(), serde_json::json!(1))],
+            &mut effects,
+        );
+        let mut g = Gestures::default();
+        press_key(&mut g, &mut host, &ctx(), Key::Char('a'));
+        let e = press_key(&mut g, &mut host, &ctx(), Key::Enter);
+        assert_eq!(
+            !emitted(&e, 13).is_empty(),
+            pressed,
+            "multiline {multiline}, modal {modal}"
+        );
+        assert!(
+            emitted(&e, 12).is_empty(),
+            "the other button is not pressed"
+        );
+    }
+}
+
 /// **A pane's dialog stands over the whole dock**, centred in the area its
 /// front gave it, as its lists do.
 #[test]

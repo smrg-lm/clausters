@@ -1678,15 +1678,6 @@ finished work, where a pending item reads as done.
   page's build and its e2e run on the new ones, and regenerates the
   editor's third-party notices in the same commit.
 
-- ⬜ **Enter in a dialog's field does not press its default button**
-  (2026-11-20, WS13). A single-line `text` ignores Enter, and the dialog
-  does nothing with a key its field left, so a name typed in the editor's
-  file dialog is saved with a click on Save or Tab to it, where the
-  webview's dialog saved at Enter (a form submits on Enter). Every
-  application's form has the same: the dialog's default button is where
-  the keyboard starts when there is no field, never what Enter in a field
-  presses.
-
 - ⬜ **A textured view in a docked pane's dialog is not drawn**
   (2026-11-19, the style review). A docked pane's dialog stands over the
   whole dock, drawn into the pane's float batch, which carries meshes and

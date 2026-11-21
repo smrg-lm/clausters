@@ -177,6 +177,10 @@ impl Element for Number {
         true
     }
 
+    fn submits(&self) -> bool {
+        true
+    }
+
     fn reports_focus(&self) -> bool {
         false
     }

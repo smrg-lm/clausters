@@ -360,6 +360,10 @@ impl Element for Text {
         true
     }
 
+    fn submits(&self) -> bool {
+        !self.multiline
+    }
+
     /// **The field, not the cell.** A field is the body drawn under its label,
     /// single-line or multiline alike, and a press on the label strip or on the
     /// air a row stretched around it used to focus the field and land a caret

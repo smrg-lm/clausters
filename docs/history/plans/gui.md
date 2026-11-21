@@ -9953,3 +9953,19 @@ module of its own.
   both stores); the store is read from the storage when the page's host
   starts. hosts.html saves a named GuiDef in one host and loads it by name
   in a host started after it.)*
+
+- ✅ **Enter in a dialog's field does not press its default button**
+  (2026-11-20, WS13). A single-line `text` ignores Enter, and the dialog
+  does nothing with a key its field left, so a name typed in the editor's
+  file dialog is saved with a click on Save or Tab to it, where the
+  webview's dialog saved at Enter (a form submits on Enter). Every
+  application's form has the same: the dialog's default button is where
+  the keyboard starts when there is no field, never what Enter in a field
+  presses.
+  *(Fixed 2026-11-21: Enter in a single-line field -- a `text` that is
+  not multiline, a `number` -- presses the default button of the dialog
+  it stands in, after the field's own report, as a form submits
+  (`Element::submits`, `dialogs::default_button`); the host does it, so
+  every application's form has it with nothing bound. A multiline field
+  keeps Enter for its new line, and a field outside a dialog presses
+  nothing.)*

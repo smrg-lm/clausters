@@ -584,6 +584,11 @@ code that keeps it lives.
 - **A dialog reads typed text, not notifications.** A field's report is its
   text; its focus (`"focus" 1|0`) is a notification and never a value
   (`forms::read`).
+- **Enter in a form's field is its default button.** Every form names one
+  button `default` (`OK`, Save), and Enter in a single-line field presses
+  it after the field has reported what was typed, as a form submits; a
+  multiline field keeps Enter for its new line. The host does it, so no
+  application binds Enter itself.
 - **A file is chosen in the host's chooser, never in an application's
   own.** A form field that names files is the host's `files` element
   (`forms::Spec::chooser`): it lists the disk in a window and the page's

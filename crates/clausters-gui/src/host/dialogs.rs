@@ -1,7 +1,8 @@
 //! **Where the keyboard goes as a dialog comes and goes.** A dialog takes
 //! the keys as it comes up -- to its first field, else to its default button
 //! -- and gives them back to what had them when it goes, as the design
-//! system's dialog does. Tab staying inside it is the ring's
+//! system's dialog does. Enter in one of its fields presses that default
+//! button, as a form submits ([`default_button`]). Tab staying inside it is the ring's
 //! ([`gestures::focus`](super::gestures)), and Escape and a press on the
 //! scrim asking it to go are the gesture machine's.
 //!
@@ -38,6 +39,18 @@ fn first_stop(dialog: &Widget) -> Option<i32> {
         }
     });
     field.or(default)
+}
+
+/// **The dialog's default button**, the one Enter in a field presses: the
+/// first a reader sees that names itself `default` and can be pressed.
+pub(crate) fn default_button(dialog: &Widget) -> Option<i32> {
+    let mut found = None;
+    walk(dialog, &mut |w| {
+        if found.is_none() && w.enabled && w.kind.as_element().is_some_and(|el| el.is_default()) {
+            found = w.id;
+        }
+    });
+    found
 }
 
 /// Every widget of `w` a reader sees, in order: visible, and on the shown

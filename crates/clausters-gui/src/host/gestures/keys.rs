@@ -140,11 +140,11 @@ impl Gestures {
         // The element's own arm first; then, for Space and Enter, the
         // keyboard's press -- do what a click on this control does.
         let pressed = matches!(key, Key::Enter | Key::Char(' '));
-        let (events, selected) = element::with(host, ctx, at, |el, placed| {
+        let (events, selected, submits) = element::with(host, ctx, at, |el, placed| {
             let events = el
                 .key(&key, &mut input)
                 .or_else(|| pressed.then(|| el.activate(placed)).flatten());
-            (events, el.selected_text())
+            (events, el.selected_text(), el.submits())
         })?;
         let events = events?;
         // **What a field has selected is the primary selection**, whichever
@@ -156,6 +156,12 @@ impl Gestures {
         // The element consumed it, so the window repaints whether or not
         // anything was reported: a caret that moved is a picture that changed.
         element::report(host, &mut out, ctx, id, events);
+        // **Enter in a dialog's field presses its default button**, as a form
+        // submits: after the field's own report, so whoever reads the press
+        // already has what was typed.
+        if key == Key::Enter && submits && !(ctx.shift || ctx.ctrl || ctx.alt) {
+            press_default(host, ctx, &mut out);
+        }
         out.push(GestureEffect::Redraw(ctx.def_id));
         Some(out)
     }
@@ -1147,4 +1153,30 @@ fn focused_takes_tab(host: &Host, ctx: &GestureCtx) -> bool {
             host.widget_kind(ctx.def_id, id),
             Some(crate::host::widget::WidgetKind::Custom(el)) if el.takes_tab()
         )
+}
+
+/// **The default button of the dialog up in the window, pressed** -- what a
+/// click on it does -- when the focus is inside that dialog.
+fn press_default(host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>) {
+    if host.focused_in_dialog(ctx.def_id).is_none() {
+        return;
+    }
+    let Some(button) = host
+        .dialog(ctx.def_id)
+        .and_then(crate::host::dialogs::default_button)
+    else {
+        return;
+    };
+    let Some(at) = host
+        .layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h)
+        .and_then(|placed| {
+            let p = placed.iter().find(|p| p.widget.id == Some(button))?;
+            Some(element::At::widget(button, p.rect, p.scale, p.indent))
+        })
+    else {
+        return;
+    };
+    if let Some(events) = element::with(host, ctx, at, |el, placed| el.activate(placed)).flatten() {
+        element::report(host, out, ctx, button, events);
+    }
 }

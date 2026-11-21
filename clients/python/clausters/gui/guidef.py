@@ -1740,7 +1740,8 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
 
     ``default`` marks the **default action** of the dialog the button is in:
     the keys go to it as the dialog comes up, when the dialog has no field to
-    give them to."""
+    give them to, and Enter in one of the dialog's single-line fields presses
+    it, as a form submits."""
     if mode is not None and mode not in ("gate", "press"):
         raise ValueError(
             f"unknown button mode {mode!r}; use \"gate\" (on while held) or "

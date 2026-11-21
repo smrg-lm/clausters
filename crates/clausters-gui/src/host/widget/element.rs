@@ -1946,6 +1946,15 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **Whether Enter here submits the form it stands in**: a single-line
+    /// field, where Enter has nothing of its own to do, so in a dialog it
+    /// presses the dialog's default button, as a form submits on Enter. A
+    /// multiline field or code keeps Enter for a new line. `false` by
+    /// default.
+    fn submits(&self) -> bool {
+        false
+    }
+
     /// Whether a **press** moves the focus here, for an element that takes it.
     /// `false` keeps the element a stop on the tab ring while a hand that
     /// reaches it leaves the keys where they were.
