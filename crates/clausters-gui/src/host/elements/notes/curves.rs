@@ -29,6 +29,7 @@ use super::*;
 use crate::host::elements::curve;
 use crate::host::graphics::choice::{self, View as ChoiceView};
 use crate::host::graphics::track;
+use crate::host::pointer::Pointer;
 
 /// A curve of the sequence, as a row under the plane.
 #[derive(Debug, Clone, PartialEq)]
@@ -597,6 +598,71 @@ impl Notes {
             .map(|(i, _)| i)
     }
 
+    /// The pointer over the velocity lane: a bar is drawn up and down, and
+    /// the pencil or a ramp is placed precisely ([`Self::press_velocity`]).
+    pub(super) fn velocity_pointer(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
+        let (_, body) = self.velocity_rects(input.rect, input.indent, input.metrics)?;
+        if !body.contains(at.0, at.1) {
+            return None;
+        }
+        if !self.editable {
+            return Some(Pointer::Default);
+        }
+        let nav = self.view(input.time);
+        Some(
+            if self.tool != Tool::Draw && self.bar_under(at, body, &nav, input.metrics).is_some() {
+                Pointer::NsResize
+            } else {
+                Pointer::Crosshair
+            },
+        )
+    }
+
+    /// **The curve a press at `at` reaches**, where it was drawn and
+    /// against what: anywhere on a row, or on a layer's own line and points
+    /// (Ctrl on a layer's field too), the active layer asked first.
+    fn curve_under(&self, at: (f64, f64), input: &Input) -> Option<(String, Rect, TimeSpace)> {
+        let drawn = self.curves_on_screen(input.rect, input.indent, input.metrics, input.time);
+        let rows = self.shown_rows().len();
+        let wants = |i: usize, name: &str, rect: Rect, space: TimeSpace| {
+            if !rect.contains(at.0, at.1) {
+                return false;
+            }
+            if i < rows || input.mods.ctrl {
+                return true;
+            }
+            self.bodies
+                .get(name)
+                .is_some_and(|b| b.layer_hit(at, &Self::on_curve(input, rect, space)))
+        };
+        drawn
+            .iter()
+            .enumerate()
+            .find(|(i, (name, rect, space))| {
+                self.layer.as_deref() == Some(*name) && wants(*i, name, *rect, *space)
+            })
+            .or_else(|| {
+                drawn
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .find(|(i, (name, rect, space))| wants(*i, name, *rect, *space))
+            })
+            .map(|(_, (name, rect, space))| (name.to_string(), *rect, *space))
+    }
+
+    /// The pointer over a curve the roll draws: the curve's own answer, on
+    /// the curve a press would reach ([`Self::press_curve`]).
+    pub(super) fn curve_pointer(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
+        if !self.editable {
+            return None;
+        }
+        let (name, rect, mut space) = self.curve_under(at, input)?;
+        space.active = true;
+        let sub = Self::on_curve(input, rect, space);
+        self.bodies.get(&name)?.pointer(at, &sub)
+    }
+
     /// **A press in the velocity lane**: on a bar it takes that note's
     /// velocity, or the selection's when the note is selected; anywhere else
     /// it starts a ramp.
@@ -744,33 +810,7 @@ impl Notes {
         if !self.editable {
             return None;
         }
-        let drawn = self.curves_on_screen(input.rect, input.indent, input.metrics, input.time);
-        let rows = self.shown_rows().len();
-        let wants = |i: usize, name: &str, rect: Rect, space: TimeSpace| {
-            if !rect.contains(at.0, at.1) {
-                return false;
-            }
-            if i < rows || input.mods.ctrl {
-                return true;
-            }
-            self.bodies
-                .get(name)
-                .is_some_and(|b| b.layer_hit(at, &Self::on_curve(input, rect, space)))
-        };
-        let (name, rect, mut space) = drawn
-            .iter()
-            .enumerate()
-            .find(|(i, (name, rect, space))| {
-                self.layer.as_deref() == Some(*name) && wants(*i, name, *rect, *space)
-            })
-            .or_else(|| {
-                drawn
-                    .iter()
-                    .enumerate()
-                    .rev()
-                    .find(|(i, (name, rect, space))| wants(*i, name, *rect, *space))
-            })
-            .map(|(_, (name, rect, space))| (name.to_string(), *rect, *space))?;
+        let (name, rect, mut space) = self.curve_under(at, input)?;
         space.active = true;
         self.layer = Some(name.clone());
         let before = self.points_of(&name);

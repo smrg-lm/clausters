@@ -62,6 +62,7 @@ use crate::host::graphics::code::{Code, Indent, Language};
 use crate::host::graphics::controls::{ScrollBar, ThumbGrip};
 use crate::host::graphics::textedit::{self, Caret, Unit};
 use crate::host::menu::Entry;
+use crate::host::pointer::Pointer;
 use crate::host::popup::{Note, Own, OwnList};
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, Input, Key, KeyInput, Live, Mods, Needs, Verb,
@@ -1260,6 +1261,30 @@ impl Element for CodeView {
 
     /// One click places the caret, two select a word, three a line; Shift
     /// extends; a press on a line's number selects the line.
+    /// **The I-beam over the text**, and over the find bar's fields; the
+    /// arrow over the bar's buttons, the scroll bars and the line numbers,
+    /// which a press selects whole.
+    fn pointer(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
+        if let Some(layout) = self.bar.layout(input.rect, input.scale, input.metrics)
+            && layout.strip.contains(at.0, at.1)
+        {
+            return Some(match layout.part_at(at) {
+                Some(bar::Part::Field(_)) => Pointer::Text,
+                _ => Pointer::Default,
+            });
+        }
+        let g = self.geometry(input.rect, input.scale, input.metrics);
+        let on_bar = self
+            .bars(input.rect, &g)
+            .into_iter()
+            .flatten()
+            .any(|b| b.track.contains(at.0, at.1));
+        if on_bar || (self.line_numbers && g.gutter.contains(at.0, at.1)) {
+            return Some(Pointer::Default);
+        }
+        Some(Pointer::Text)
+    }
+
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         if let Some(layout) = self.bar.layout(input.rect, input.scale, input.metrics)
             && layout.strip.contains(at.0, at.1)

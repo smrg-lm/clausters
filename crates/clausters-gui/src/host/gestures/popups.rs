@@ -566,6 +566,7 @@ impl Gestures {
             return self.hover(host, ctx, None);
         }
         if let Some(out) = self.popup_motion(host, ctx, cx, cy) {
+            self.pointer = crate::host::pointer::Pointer::Default;
             return out;
         }
         self.hover(host, ctx, Some((cx, cy)))

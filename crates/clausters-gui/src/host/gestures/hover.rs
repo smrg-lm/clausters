@@ -91,11 +91,14 @@ impl Gestures {
         // **No tip while a list is open**: the list is what is read.
         let tip = at_tree
             .filter(|_| host.popup(def_id).is_none())
-            .and_then(|(x, y)| host.tip_at(def_id, ctx.fb_w, ctx.fb_h, x, y));
+            .and_then(|(x, y)| super::pointer::tip_at(host, ctx, x, y));
+        // **A tip is the place's**: one widget names a tip per part of it (a
+        // roll's notes), so the one up is the same tip only while it says the
+        // same thing.
         let showing = host
             .popups(def_id)
             .and_then(|p| p.tip.as_ref())
-            .map(|t| t.widget);
+            .map(|t| (t.widget, t.text.clone()));
         let skipping = self.tip_gone.is_some_and(|t| ctx.now_ms - t < SKIP_MS);
         match (tip, showing) {
             // Off every widget that has one: nothing waits and nothing shows.
@@ -107,7 +110,7 @@ impl Gestures {
                 changed |= host.set_tip(def_id, None);
             }
             // Still on the widget whose tip is up: it stays where it is.
-            (Some(tip), Some(shown)) if tip.widget == shown => {}
+            (Some(tip), Some(shown)) if (tip.widget, &tip.text) == (shown.0, &shown.1) => {}
             // From one tipped widget onto another while a tip is up, or just
             // after one went: the next one shows at once, which is how a row
             // of tools is read.
@@ -124,6 +127,9 @@ impl Gestures {
                 });
             }
         }
+        self.pointer = at.map_or(crate::host::pointer::Pointer::Default, |(x, y)| {
+            self.pointer_at(host, ctx, x, y)
+        });
         if changed {
             out.push(GestureEffect::Redraw(def_id));
         }
@@ -272,7 +278,7 @@ impl Gestures {
             out.extend(self.context(host, ctx, at.0, at.1).unwrap_or_default());
             return out;
         }
-        let Some(tip) = host.tip_at(def_id, ctx.fb_w, ctx.fb_h, at.0, at.1) else {
+        let Some(tip) = super::pointer::tip_at(host, ctx, at.0, at.1) else {
             return Vec::new();
         };
         if host.set_tip(def_id, Some(tip)) {

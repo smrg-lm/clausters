@@ -226,6 +226,7 @@ impl App {
                 asked: std::cell::Cell::new(None),
                 reads,
                 min_px: None,
+                shown_pointer: crate::host::pointer::Pointer::Default,
             },
         );
         if let Some(ws) = self.windows.get(&id) {

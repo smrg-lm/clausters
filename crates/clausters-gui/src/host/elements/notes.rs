@@ -29,13 +29,14 @@ use clausters_core::osc::OscType;
 use serde_json::{Map, Value};
 
 use crate::host::graphics::pianoroll::{self, Pitches};
+use crate::host::pointer::Pointer;
 use crate::host::ruler;
 use crate::host::structures::boxes::{self, Bounds, Placements};
 use crate::host::structures::notes::OscMarker;
 use crate::host::structures::notes::{self, Note};
 use crate::host::widget::element::{
-    BodyRole, Claim, Ctx, Element, Events, Input, KeyInput, MidiNote, Needs, OnAxis, Swept, Take,
-    TimeSpace, Verb,
+    BodyRole, Claim, Ctx, Element, Events, Input, KeyInput, MidiNote, Needs, OnAxis, PointTip,
+    Swept, Take, TimeSpace, Verb,
 };
 use crate::host::widget::parse::{self, label, number, number_f64, set_label, truthy};
 use crate::host::widget::{EditorProps, GestureMap, Ruler};
@@ -1274,6 +1275,89 @@ impl Element for Notes {
         }
         let h = self.hit(at, input);
         h.region == Region::Grid && h.note.is_some()
+    }
+
+    /// **What a press would do, by the tool and the part under the
+    /// pointer**: a note taken by its body and pulled by its ends, the
+    /// pencil's precise placement on empty grid, a velocity drawn up and
+    /// down. The order is the press's ([`press`](Self::press)), and nothing
+    /// is pressed.
+    fn pointer(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
+        if self
+            .tabs_rect(input.rect, input.indent, input.metrics)
+            .is_some_and(|r| r.contains(at.0, at.1))
+        {
+            return Some(Pointer::Default);
+        }
+        if let Some(p) = self.curve_pointer(at, input) {
+            return Some(p);
+        }
+        if let Some(p) = self.velocity_pointer(at, input) {
+            return Some(p);
+        }
+        let h = self.hit(at, input);
+        if h.region != Region::Grid {
+            return None;
+        }
+        if !self.editable {
+            return Some(Pointer::Default);
+        }
+        let own = !(input.time.is_some() && !self.navigable_placement(input));
+        let note = h.note;
+        if input.mods.shift {
+            return note.map(|_| Pointer::NsResize);
+        }
+        if input.mods.alt {
+            return note.map(|_| Pointer::Default);
+        }
+        if input.mods.ctrl {
+            return match note {
+                Some(_) => Some(Pointer::Default),
+                None => own.then_some(Pointer::Crosshair),
+            };
+        }
+        match (self.tool, note) {
+            (Tool::Draw, None) if own => return Some(Pointer::Crosshair),
+            (Tool::Erase, Some(_)) => return Some(Pointer::Default),
+            (Tool::Erase, None) if own => return Some(Pointer::Default),
+            (Tool::Split, Some(_)) => return Some(Pointer::Crosshair),
+            (Tool::Stretch, Some(_)) => return Some(Pointer::EwResize),
+            _ => {}
+        }
+        match note {
+            Some(nh) if nh.part == boxes::Part::Body => Some(Pointer::Grab),
+            Some(_) => Some(Pointer::EwResize),
+            // empty grid of the roll's own view sweeps a rectangle of notes
+            None => own.then_some(Pointer::Default),
+        }
+    }
+
+    fn held_pointer(&self, _input: &Input) -> Option<Pointer> {
+        match &self.drag {
+            Some(Drag::Note {
+                part: boxes::Part::Body,
+                ..
+            })
+            | Some(Drag::Block { .. }) => Some(Pointer::Grabbing),
+            _ => None,
+        }
+    }
+
+    /// **The note under the pointer, named**: its pitch and its velocity,
+    /// on the note's own box.
+    fn tip_at(&self, at: (f64, f64), input: &Input) -> Option<PointTip> {
+        let h = self.hit(at, input);
+        let nh = h.note?;
+        let note = self.notes.get(nh.index)?;
+        let anchor = pianoroll::note_rect(h.grid, &h.nav, 0.0, note, h.axis)?;
+        Some(PointTip {
+            text: format!(
+                "{}, velocity {}",
+                clausters_core::scale::note_name(note.pitch.round() as i32),
+                note.velocity
+            ),
+            anchor,
+        })
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {

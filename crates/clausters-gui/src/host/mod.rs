@@ -146,6 +146,8 @@ pub mod live;
 pub mod replies;
 // The winit key both shells read, mapped once.
 pub mod winit_keys;
+// The pointer's shape both shells set, named once.
+pub mod pointer;
 
 // The host's own concerns, one module each: the counters a playhead reads, the
 // protocol as it arrives, a definition and a free, a set, the answer to a

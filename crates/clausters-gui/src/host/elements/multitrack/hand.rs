@@ -355,6 +355,41 @@ impl Multitrack {
 }
 
 impl Multitrack {
+    /// **What a press at `at` would take, as the pointer's shape**: the
+    /// order [`Self::press_at`] asks in, and nothing pressed. A box is taken
+    /// by its body and pulled by its edges; a track's bottom edge sizes the
+    /// row; a curve over a box answers for its own points. The slack between
+    /// boxes is the container's, which sweeps it.
+    pub(super) fn pointer_at(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
+        if let Some((_, part)) = self.header_at(input, at) {
+            return Some(match part {
+                track::HeaderPart::Edge => Pointer::RowResize,
+                _ => Pointer::Default,
+            });
+        }
+        if at.0 < f64::from(input.rect.x + input.indent) {
+            return Some(Pointer::Default);
+        }
+        if let Some(name) = self.curve_at(at, input)
+            && let Some((rect, mut space)) = self.curve_place(&name, input)
+        {
+            space.active = true;
+            let sub = Self::on_curve(input, rect, space);
+            if let Some(p) = self.bodies.get(&name).and_then(|b| b.pointer(at, &sub)) {
+                return Some(p);
+            }
+        }
+        let (_, part) = self.clip_at(input, at)?;
+        // Alt adds the box to the selection, or takes it out: a click
+        if input.mods.alt {
+            return Some(Pointer::Default);
+        }
+        Some(match part {
+            Part::Body => Pointer::Grab,
+            _ => Pointer::EwResize,
+        })
+    }
+
     /// **A press takes a clip or a header control, and declines everywhere
     /// else.** The slack between clips and beside them is the container's --
     /// that is where a click places the transport's cursor and a sweep starts a

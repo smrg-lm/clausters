@@ -23,6 +23,7 @@ mod multitrack;
 mod pane;
 mod piano_keys;
 mod plane;
+mod pointer;
 mod roll;
 mod samples;
 #[cfg(feature = "notation")]

@@ -30,6 +30,7 @@ use clausters_editing::verbs::{self, ActionState, ActionTarget, Verb as ActionVe
 
 use crate::host::graphics::controls;
 use crate::host::graphics::textedit::{self, Caret, Unit};
+use crate::host::pointer::Pointer;
 use crate::host::widget::element::{
     Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput, Mods, Verb,
 };
@@ -381,6 +382,11 @@ impl Element for Text {
     /// the convention of every text field, counted by the machine
     /// ([`Input::clicks`]). The press is held: a drag from here extends the
     /// selection by the same unit.
+    /// The I-beam: a press anywhere on the field puts a caret in it.
+    fn pointer(&self, _at: (f64, f64), _input: &Input) -> Option<Pointer> {
+        Some(Pointer::Text)
+    }
+
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         // A stale caret is re-landed first.
         textedit::clamp(&self.value, &mut self.caret);

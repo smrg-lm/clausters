@@ -156,6 +156,20 @@ code that keeps it lives.
   window whose loss nothing could undo (an editor's post window) says it may
   not be closed (`closable`), rather than offering a close mark it would have
   to refuse.
+- **The pointer says what a press will do, before the press.** Over text
+  a press puts a caret in, the I-beam (a field, the code, the post window's
+  lines, a sweep over samples); over a link, the hand; over what a drag
+  carries, the open hand, closed while it is carried (a box, a note); over
+  an edge a drag pulls, the resize arrow of its direction (a box's or a
+  note's ends, a track's bottom edge, a divider); over a press that draws,
+  the crosshair (the pencil, a point Ctrl adds); and the arrow over buttons
+  and over everything a press only clicks. It is the press's own question
+  asked with no button down (`Element::pointer`), so a part that changes
+  what a press does changes the pointer with it. A press keeps the shape it
+  began with until the release: a selection swept out of the text keeps its
+  I-beam over the line numbers. A part that says more than its widget's
+  one tip names itself (`Element::tip_at`): a roll's note its pitch and
+  velocity.
 
 ## Views and layers
 

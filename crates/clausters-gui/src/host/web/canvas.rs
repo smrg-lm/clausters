@@ -68,6 +68,8 @@ pub(super) struct CanvasSlot {
     /// report a cursor at its own top-left corner, which the readout drew as a
     /// hand that was never there.
     pub(super) cursor: Option<(f64, f64)>,
+    /// The pointer's shape set on the canvas, last (`WebApp::show_pointer`).
+    pub(super) shown_pointer: crate::host::pointer::Pointer,
     /// **Which mouse buttons the browser says are down**, as of the last
     /// pointer event on this canvas -- the bitmask of `PointerEvent.buttons`.
     ///
@@ -198,6 +200,7 @@ impl CanvasSlot {
             visible: true,
             owed: Cell::new(true),
             cursor: None,
+            shown_pointer: crate::host::pointer::Pointer::Default,
             buttons: Rc::new(Cell::new(0)),
             mods: Rc::new(Cell::new(0)),
             pointer_listener: None,

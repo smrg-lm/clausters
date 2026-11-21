@@ -20,6 +20,7 @@ use clausters_core::osc::OscType;
 
 use crate::host::graphics::bpf::{self, Axes};
 use crate::host::graphics::controls;
+use crate::host::pointer::Pointer;
 use crate::host::ruler;
 use crate::host::structures::points::{self, BpfPoint};
 use crate::host::widget::element::{
@@ -680,6 +681,30 @@ impl Element for Curve {
                 .hit_point(&self.points, at.0, at.1, input.metrics)
                 .is_some()
                 || ax.on_line(&self.points, at.0, at.1, input.metrics))
+    }
+
+    /// **A break-point moves in both directions**, a segment in hand bends
+    /// up and down, and Ctrl off a point adds one where it lands; nothing of
+    /// the curve's elsewhere, where the press goes back to the container.
+    fn pointer(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
+        if !self.editable {
+            return None;
+        }
+        let ax = self.axes(input.rect, input.indent, input.metrics, input.time);
+        let point = self.grab_point(&ax, at, input.metrics);
+        if input.mods.ctrl && !self.trapezoid {
+            return Some(if point.is_some() {
+                Pointer::Default
+            } else {
+                Pointer::Crosshair
+            });
+        }
+        if point.is_some() {
+            return Some(Pointer::Move);
+        }
+        ((self.trapezoid || self.active(input.time))
+            && self.grab_segment(&ax, at, input.metrics).is_some())
+        .then_some(Pointer::NsResize)
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {

@@ -382,6 +382,8 @@ pub struct Gestures {
     /// has been on its way to an open submenu across other rows
     /// ([`popup::aiming`](crate::host::popup::aiming)).
     menu_path: (Option<(f64, f64)>, Option<f64>),
+    /// The pointer's shape this window asks for ([`Gestures::pointer`]).
+    pointer: crate::host::pointer::Pointer,
 }
 
 impl Gestures {
@@ -496,6 +498,7 @@ mod hover;
 mod keys;
 mod naming;
 mod nav;
+mod pointer;
 mod popups;
 
 pub use chrome::{COLLAPSED, SPLIT};

@@ -1543,54 +1543,6 @@ holds what is open.
   page's WebGL2 does not have, so it is a divergence between the fronts to
   decide on, not a fix: whether the page draws grayscale while the native
   window does not, or neither does.
-- ⬜ **The pointer says what a press will do: a cursor per element, and per
-  part of it** *(named 2026-11-16, by the user, when the dock's dividers got
-  their resize cursor)*. The host sets no cursor anywhere but over the dock's
-  dividers: the pointer is the platform's arrow over a clip's edge that trims
-  it, over a note's body that moves it, over a text field that takes a
-  caret. A desktop application says it before the press, and the
-  applications need it as much as the host's own chrome does -- the
-  multitrack's clips (move, trim each edge, the fades' handles, a copy while
-  the modifier that duplicates is held), the roll's notes (move, the end that
-  lengthens them, the empty grid a press draws on), an audio editor's
-  selection edges, the score editor's elements, every text field.
-
-  **Text first, as the current editor has it** *(added 2026-11-16, at the
-  user's request, after WS6)*. Editing text is where a missing cursor is
-  felt most, and the behaviour to match is the current editor's, checked
-  side by side with it: the I-beam (`text`) over the text a press puts a
-  caret in -- the `code` element's text area, a `text` field, the post
-  window's lines and a documentation page's text, which a press selects --
-  and the arrow over what is not text there: the code's line numbers, the
-  scroll bars, a panel's bar; the hand (`pointer`) over a link, in the post
-  window and in the documentation. A drag that selects keeps the I-beam
-  until its release, wherever the pointer goes.
-
-  **Where it lives.** The cursor is a question the hit-test already answers:
-  what lies under the pointer, and what a press there would start. So it is
-  one more question an element answers (beside `needs`, `natural`, `slot`),
-  for a point of its own -- the part under it, the same parts its gestures
-  already tell apart -- and the gesture machine holds the press's cursor
-  until the release, as a drag owns the pointer. The front only sets what it
-  is told on its window: natively the platform's cursor theme, in a page the
-  canvas's CSS `cursor`, both named by the same list, so the two fronts ask
-  for the same cursor by construction. In the dock the chrome answers over
-  its own parts (`Dock::resize_cursor` is the first of these) and the pane
-  under the pointer answers everywhere else. A host enum of the names below
-  keeps the core free of the windowing crate's type.
-
-  **The cursors a platform has**, by the CSS names both fronts use (the
-  windowing crate's `CursorIcon` carries the same list, and a cursor made
-  from an image is possible besides):
-
-  | Kind | Cursors | What each says, and where it would fit here |
-  |---|---|---|
-  | General | `default`, `pointer`, `text`, `vertical-text`, `crosshair`, `cell`, `help`, `context-menu` | the arrow; a link (desktop buttons keep the arrow); a caret, over text fields and the code element; precise placement, a press that draws (the roll's empty grid, a pencil); a cell of a table; help; a menu |
-  | State | `wait`, `progress`, `not-allowed`, `no-drop` | busy, the hand blocked; busy, the hand still free (a render running); a press that does nothing here; a drop refused here |
-  | Dragging | `grab`, `grabbing`, `move`, `copy`, `alias`, `all-scroll` | a thing that can be taken (a clip, a note, a panel's grip); taken; moving it; a drag that duplicates; a drag that links; panning in every direction |
-  | Resizing | `col-resize`, `row-resize`, `ew-resize`, `ns-resize`, `n-resize` ... `nw-resize` (the eight edges and corners), `nesw-resize`, `nwse-resize` | a divider between columns or rows (the dock's); an edge dragged sideways or up and down (a clip's or a note's ends, a selection's edges, a fade's length); an edge or corner of a box; a corner diagonally |
-  | Zoom | `zoom-in`, `zoom-out` | a press that zooms in or out |
-
 - ⬜ **A paste that needs tracks could make them** *(named 2026-09-12, with the fix above; **the refusal is the decided behaviour**, confirmed by the user the same day -- "if there are no more tracks it is a refuse" -- so this entry is an alternative somebody may want and not a defect waiting)*. A block taller than what is under the selected track is refused today, which is Pro Tools' and Cubase's answer and the honest one for a widget that owns no piece. **REAPER's** is the other: it creates the tracks the block needs and pastes whole. This widget already has the verb — a double click on a header adds a track — so what stands between it and this is not the capability but the **report**: adding tracks is a `lanes` payload and pasting is a `clips` one, and a paste that did both would be the first gesture here to leave two. That is a decision about the conversation and not about the multitrack: whether an owner may be handed a run of payloads from one gesture, in order, as one entry in the history. Worth taking with the audio editor's own paste, which will ask the same question about panes.
 
 - ⬜ **The free arrangement plane (the blueprint view)** — *a second kind of multitrack, not a milestone of the one that shipped: it shares characteristics with the lane stack and its model differs from it structurally, so it is named here and still to be defined and planned.* A second projection of the same arrangement: the L3 workspace with its x `View` joined to the window's navigation group, so the plane's x axis *is* the composition's time axis (ruler, selection, the playhead sweeping the whole plane as a vertical line — all existing group machinery), while y is **free spatial organization** — clips and visual elements placed like an architectural plan, not locked to lanes. The model (`clausters.form`) is untouched: `offset`/`dur` stay the temporal truth, and y is presentation geometry owned by the driver and persisted by the `Editor` beside the tree, exactly the P1 `"move"` pattern. A concrete `Aggregate` draws as a bounding **zone** (visual containment as the aggregate's projection) instead of a lane; the classic lane-stack multitrack becomes the *constrained* case of the free plane, the same general-to-constrained pattern L3 fixes for scrolling — which is the direction of the relation and the reason this cannot be an increment on G22: the general case is the one that is missing. One boundary to hold when this opens: **y means nothing to the render** — not pitch, not bus, not bounce order; presentation only, stated so the view never implies semantics the engine does not have (any later mapped-y is an explicit decision, not drift). The honest precedent is the graphic score — **a UPIC whose material is the multitrack's editing structures**: not freehand curves but clips, groups, snap, selection and the edit-back payloads, placed on a free plane (IanniX is the other kin), and the whole of what "free" means there is what a design has to settle. **What it was waiting on has landed** — G22's clip bodies, L2's placement props and L3's workspace — so what stands between it and a track of its own is that definition, not a dependency.
@@ -1639,17 +1591,14 @@ holds what is open.
   regions) would cut both to the boxes. Take it when the graphics layer
   offers it on every backend the host draws with, the page included.
 
-- ⬜ **An element says which pointer and which tip the point under it
-  means** *(2026-11-10, from `crates/clausters-apps/PLAN.md`, `X37` and
-  `X40`: the roll's tools and what is under its pointer)*. The host cannot
-  set the pointer's shape: a tool that draws, erases or stretches is told
-  apart only by what it does, and the multitrack's grips stand where that
-  capability was missing. And a `tip` (`G38.2`) is a widget's, one text for
-  all of it, where a roll would name the note under the pointer. Both are
-  one answer of an element about a point, read where the hover is already
-  resolved: a pointer's kind (a standard set the native and the browser
-  fronts both name) and an optional text the tip layer shows with the
-  timer it already has. Each front sets the pointer from it.
+- ⬜ **The roll's eraser and scissors have no pointer of their own**
+  *(named 2026-11-21, when the pointer came to say what a press will do)*.
+  The list both fronts name holds no eraser and no blade, so over a note
+  the eraser shows the arrow and the scissors the crosshair, and the tool
+  is told apart by the toolbar and by what it does. A cursor made from an
+  image (the windowing crate's custom cursor, a CSS `url()` in a page) would
+  tell them apart: two images drawn for the window's scale, a hotspot each,
+  on both fronts.
 
 ## Found by use: the running list of fixes
 
@@ -1694,3 +1643,11 @@ finished work, where a pending item reads as done.
   redefine, a view switch no longer redraws from a fresh download, so a stale
   picture, if it happens again, stays until the owner's `reload` and is
   worth a capture of the exact steps.)*
+
+- ⬜ **A documentation page's text is not selected by a press**
+  (2026-11-21, found when the pointer came to say what a press will do).
+  The current editor selects a documentation page's text, as the post
+  window's lines are selected, and copies it; here a press on the page's
+  text does nothing, so the pointer there is the arrow. Selecting it is the
+  post window's selection over the page's laid text, and the I-beam follows
+  from the element's answer.

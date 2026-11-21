@@ -5353,6 +5353,96 @@ first four are the order the user set; the components come after.
   through `chrome::dress` (and the score's window), and both clients carry
   the prop.
 
+- ✅ **The pointer says what a press will do: a cursor per element, and per
+  part of it** *(named 2026-11-16, by the user, when the dock's dividers got
+  their resize cursor)*. The host sets no cursor anywhere but over the dock's
+  dividers: the pointer is the platform's arrow over a clip's edge that trims
+  it, over a note's body that moves it, over a text field that takes a
+  caret. A desktop application says it before the press, and the
+  applications need it as much as the host's own chrome does -- the
+  multitrack's clips (move, trim each edge, the fades' handles, a copy while
+  the modifier that duplicates is held), the roll's notes (move, the end that
+  lengthens them, the empty grid a press draws on), an audio editor's
+  selection edges, the score editor's elements, every text field.
+
+  **Text first, as the current editor has it** *(added 2026-11-16, at the
+  user's request, after WS6)*. Editing text is where a missing cursor is
+  felt most, and the behaviour to match is the current editor's, checked
+  side by side with it: the I-beam (`text`) over the text a press puts a
+  caret in -- the `code` element's text area, a `text` field, the post
+  window's lines and a documentation page's text, which a press selects --
+  and the arrow over what is not text there: the code's line numbers, the
+  scroll bars, a panel's bar; the hand (`pointer`) over a link, in the post
+  window and in the documentation. A drag that selects keeps the I-beam
+  until its release, wherever the pointer goes.
+
+  **Where it lives.** The cursor is a question the hit-test already answers:
+  what lies under the pointer, and what a press there would start. So it is
+  one more question an element answers (beside `needs`, `natural`, `slot`),
+  for a point of its own -- the part under it, the same parts its gestures
+  already tell apart -- and the gesture machine holds the press's cursor
+  until the release, as a drag owns the pointer. The front only sets what it
+  is told on its window: natively the platform's cursor theme, in a page the
+  canvas's CSS `cursor`, both named by the same list, so the two fronts ask
+  for the same cursor by construction. In the dock the chrome answers over
+  its own parts (`Dock::resize_cursor` is the first of these) and the pane
+  under the pointer answers everywhere else. A host enum of the names below
+  keeps the core free of the windowing crate's type.
+
+  **The cursors a platform has**, by the CSS names both fronts use (the
+  windowing crate's `CursorIcon` carries the same list, and a cursor made
+  from an image is possible besides):
+
+  | Kind | Cursors | What each says, and where it would fit here |
+  |---|---|---|
+  | General | `default`, `pointer`, `text`, `vertical-text`, `crosshair`, `cell`, `help`, `context-menu` | the arrow; a link (desktop buttons keep the arrow); a caret, over text fields and the code element; precise placement, a press that draws (the roll's empty grid, a pencil); a cell of a table; help; a menu |
+  | State | `wait`, `progress`, `not-allowed`, `no-drop` | busy, the hand blocked; busy, the hand still free (a render running); a press that does nothing here; a drop refused here |
+  | Dragging | `grab`, `grabbing`, `move`, `copy`, `alias`, `all-scroll` | a thing that can be taken (a clip, a note, a panel's grip); taken; moving it; a drag that duplicates; a drag that links; panning in every direction |
+  | Resizing | `col-resize`, `row-resize`, `ew-resize`, `ns-resize`, `n-resize` ... `nw-resize` (the eight edges and corners), `nesw-resize`, `nwse-resize` | a divider between columns or rows (the dock's); an edge dragged sideways or up and down (a clip's or a note's ends, a selection's edges, a fade's length); an edge or corner of a box; a corner diagonally |
+  | Zoom | `zoom-in`, `zoom-out` | a press that zooms in or out |
+  *(Done 2026-11-21. The host asks the press's own question with no
+  button down (`gestures/pointer.rs`), in the press's order: the modal
+  layers, the window's chrome (a divider's resize arrow), the containers'
+  plans (a sweep's I-beam, a pan's hand, the pencil's crosshair) and the
+  element under the pointer, `Element::pointer`, over the parts its press
+  already tells apart. A press holds the shape it began with until the
+  release, and an element whose drag changes what it does says so
+  (`Element::held_pointer`: a box taken, then carried). The shapes are one
+  host list by their CSS names (`host/pointer.rs`), which each front sets on
+  its window -- the platform's cursor natively, the canvas's CSS `cursor` in
+  a page -- and in a dock the chrome answers over its own parts and the pane
+  under the pointer everywhere else (`Dock::pointer_shape`). Text: the
+  I-beam over a field, the code element's text and its find fields, and the
+  post window's lines; the arrow over the line numbers, the scroll bars and
+  the bars' buttons; the hand over a documentation link. The applications:
+  a box's body is taken (`grab`, `grabbing` while carried) and its edges
+  pulled (`ew-resize`), a track's bottom edge sizes its row, a curve's point
+  moves and a segment in hand bends; a roll's note the same, its velocity
+  drawn up and down, the pencil and a Ctrl add place a crosshair. Two parts
+  of the entry are open entries of their own: a documentation page's text is
+  not selected by a press here, so it shows the arrow, and the roll's eraser
+  and scissors have no cursor in the list. The post window shows no link, so
+  nothing there takes the hand.)*
+
+- ✅ **An element says which pointer and which tip the point under it
+  means** *(2026-11-10, from `crates/clausters-apps/PLAN.md`, `X37` and
+  `X40`: the roll's tools and what is under its pointer)*. The host cannot
+  set the pointer's shape: a tool that draws, erases or stretches is told
+  apart only by what it does, and the multitrack's grips stand where that
+  capability was missing. And a `tip` (`G38.2`) is a widget's, one text for
+  all of it, where a roll would name the note under the pointer. Both are
+  one answer of an element about a point, read where the hover is already
+  resolved: a pointer's kind (a standard set the native and the browser
+  fronts both name) and an optional text the tip layer shows with the
+  timer it already has. Each front sets the pointer from it.
+  *(Done 2026-11-21, with the cursor per element above: the pointer's kind
+  is that entry's answer. The tip of a point is `Element::tip_at`, asked
+  where the hover is resolved and before the widget's `tip`, and the tip
+  layer shows it with the timer it has; a tip up stays only while the place
+  says the same thing, so the pointer crossing from one note to the next
+  shows the next one at once. The roll names the note under the pointer,
+  its pitch and its velocity.)*
+
 ## Found by use: the entries that were fixed
 
 - ✅ **A capture of the multitrack example's window never answers, headless**

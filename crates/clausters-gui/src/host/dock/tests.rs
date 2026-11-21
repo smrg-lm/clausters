@@ -523,6 +523,33 @@ fn a_divider_asks_for_a_resize_cursor() {
     assert_eq!(ws.resize_cursor(), Some(false), "a divider lying across");
 }
 
+/// **The dock's pointer is its chrome's over a divider, and the pane's
+/// everywhere in a pane**: what that pane's gestures say a press would do.
+#[test]
+fn the_pointer_is_the_dividers_or_the_panes() {
+    use crate::host::pointer::Pointer;
+    let mut ws = dock((400, 300), 4.0, &[1, 2]);
+    let gap = ws.dividers()[0].rect;
+    let pane = |id: i32| {
+        if id == 1 {
+            Pointer::Text
+        } else {
+            Pointer::Grab
+        }
+    };
+    ws.moved(50.0, 150.0);
+    assert_eq!(ws.pointer_shape(pane), pane(ws.pointer().unwrap()));
+    ws.moved(f64::from(gap.x + 1.0), 150.0);
+    assert_eq!(ws.pointer_shape(pane), Pointer::ColResize);
+    ws.moved(350.0, 150.0);
+    assert_eq!(ws.pointer_shape(pane), pane(ws.pointer().unwrap()));
+    assert_ne!(
+        ws.pointer_shape(pane),
+        ws.pointer_shape(|_| Pointer::Default),
+        "the pane's own answer"
+    );
+}
+
 /// **An empty dock has no panel**: nothing measured, nothing to draw or to
 /// press -- a page's dock keeps its canvas after its last pane goes.
 #[test]

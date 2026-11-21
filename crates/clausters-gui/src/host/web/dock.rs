@@ -24,6 +24,7 @@ use super::capture::CaptureOf;
 use super::*;
 use crate::host::dock::call::{self, Call};
 use crate::host::dock::{Composer, Dock, Handed, Which, divider_color};
+use crate::host::pointer::Pointer;
 use crate::host::{PointerKind, PointerMods};
 
 /// The dock's canvas, its surface once the GPU is up, and its panes.
@@ -43,8 +44,8 @@ pub(super) struct WebShell {
     pending_size: Option<(u32, u32)>,
     /// The panes behind another's tab, told they are not seen.
     hidden: HashSet<i32>,
-    /// The resize cursor the canvas shows ([`Dock::resize_cursor`]).
-    cursor: Option<bool>,
+    /// The pointer's shape the canvas shows ([`Dock::pointer_shape`]).
+    cursor: Pointer,
 }
 
 /// The shell `which` names, borrowing only the field it lives in.
@@ -78,6 +79,12 @@ impl WebApp {
     /// Whether canvas slot `def` is a pane of the dock.
     pub(super) fn is_pane(&self, def: i32) -> bool {
         self.dock.as_ref().is_some_and(|s| s.layout.holds(def))
+    }
+
+    /// Whether canvas slot `def` is a pane of a shell -- the dock or a
+    /// floating panel -- whose canvas shows the shell's pointer.
+    pub(super) fn in_shell(&self, def: i32) -> bool {
+        self.is_pane(def) || self.floats.values().any(|s| s.layout.holds(def))
     }
 
     /// **The page hands the dock its canvas**: every window opened from
@@ -166,7 +173,7 @@ impl WebApp {
             _listener: listener,
             pending_size: None,
             hidden: HashSet::new(),
-            cursor: None,
+            cursor: Pointer::Default,
         })
     }
 
@@ -461,15 +468,15 @@ impl WebApp {
                     slot.request_redraw();
                 }
             }
-            // a divider under the pointer, or in the hand, says it is dragged
-            let cursor = shell.layout.resize_cursor();
+            // the chrome under the pointer, or the pane, says what a press does
+            let cursor = shell.layout.pointer_shape(|def| {
+                canvases
+                    .get(&def)
+                    .map_or(Pointer::Default, |slot| slot.gestures.pointer())
+            });
             if cursor != shell.cursor {
                 shell.cursor = cursor;
-                shell.window.set_cursor(match cursor {
-                    Some(true) => winit::window::CursorIcon::ColResize,
-                    Some(false) => winit::window::CursorIcon::RowResize,
-                    None => winit::window::CursorIcon::Default,
-                });
+                shell.window.set_cursor(cursor.icon());
             }
             handed.take(dirty);
         }

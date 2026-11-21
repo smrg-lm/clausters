@@ -179,6 +179,23 @@ impl WebApp {
         }
     }
 
+    /// **The pointer's shape the machine asks for**, set on the canvas when
+    /// it changed. A pane of a shell shares its shell's canvas, which the
+    /// shell sets (`Dock::pointer_shape`).
+    fn show_pointer(&mut self, def: i32) {
+        if self.in_shell(def) {
+            return;
+        }
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return;
+        };
+        let p = slot.gestures.pointer();
+        if p != slot.shown_pointer {
+            slot.shown_pointer = p;
+            slot.window.set_cursor(p.icon());
+        }
+    }
+
     /// Pointer press: the shared gesture machine acts by widget kind.
     fn on_press(&mut self, def: i32) {
         let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
@@ -189,6 +206,7 @@ impl WebApp {
         };
         let effects = slot.gestures.press(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
+        self.show_pointer(def);
         // A press is how a field is entered and how one is left, so it is where
         // the keyboard is re-aimed (`compose`).
         self.aim_keyboard(def);
@@ -215,6 +233,7 @@ impl WebApp {
         };
         let effects = slot.gestures.motion(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
+        self.show_pointer(def);
         self.ensure_timers(def);
     }
 
@@ -229,6 +248,7 @@ impl WebApp {
         slot.cursor = None;
         let effects = slot.gestures.hover(&mut self.host, &ctx, None);
         self.apply_gesture_effects(effects);
+        self.show_pointer(def);
         self.request_redraw(def);
     }
 
@@ -311,6 +331,7 @@ impl WebApp {
         };
         let effects = slot.gestures.drag_to(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
+        self.show_pointer(def);
     }
 
     /// Pointer release: the machine finishes the drag (button up, wire landing).
@@ -323,6 +344,7 @@ impl WebApp {
         };
         let effects = slot.gestures.release(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
+        self.show_pointer(def);
         // The drag is over: the tick goes back to what the tree actually asks
         // for (it stays on only if a live widget wants it).
         self.on_tree_changed();

@@ -38,6 +38,7 @@ use crate::host::graphics::docs::index::{Hit, Index, talking_about};
 use crate::host::graphics::docs::layout::{Ink, Item, Laid, draw_items_with, lay_with};
 use crate::host::graphics::docs::markdown::{Block, Run, parse, pictures, slugify};
 use crate::host::graphics::textedit::{self, Caret};
+use crate::host::pointer::Pointer;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyInput, Verb};
 use crate::host::widget::parse as props;
 use crate::host::widget::size::{Natural, control_box, text_box};
@@ -1429,6 +1430,34 @@ impl Element for DocsView {
 
     fn takes_text(&self) -> bool {
         self.find_focus
+    }
+
+    /// **The hand over a link**, which a press follows, and the I-beam over
+    /// the find field; the arrow over the header's buttons, a code block's
+    /// copy button, the scroll bar and the page's text, which a press does
+    /// not select.
+    fn pointer(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
+        let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
+        if let Some(&(part, _)) = g.parts.iter().find(|(_, r)| r.contains(at.0, at.1)) {
+            return Some(if part == Part::Field {
+                Pointer::Text
+            } else {
+                Pointer::Default
+            });
+        }
+        if !g.page.contains(at.0, at.1)
+            || self
+                .bar(&g, input.metrics)
+                .is_some_and(|b| b.track.contains(at.0, at.1))
+        {
+            return Some(Pointer::Default);
+        }
+        let (scroll, laid) = self.settle(&g);
+        let (px, py) = (at.0 as f32 - g.text.x, at.1 as f32 - g.text.y + scroll);
+        if laid.copy_at(px, py).is_none() && laid.link_at(px, py).is_some() {
+            return Some(Pointer::Hand);
+        }
+        Some(Pointer::Default)
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {

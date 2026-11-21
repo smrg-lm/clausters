@@ -74,6 +74,19 @@ impl Gestures {
         cx: f64,
         cy: f64,
     ) -> Vec<GestureEffect> {
+        let out = self.dragged(host, ctx, cx, cy);
+        self.held_moved(host, ctx);
+        out
+    }
+
+    /// The drag step itself ([`Self::drag_to`]).
+    fn dragged(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        cx: f64,
+        cy: f64,
+    ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
         self.press_moved(host.metrics_for(def_id).hit_slop as f64, (cx, cy));
@@ -343,6 +356,8 @@ impl Gestures {
         cy: f64,
     ) -> Vec<GestureEffect> {
         let mut out = self.release_inner(host, ctx, cx, cy);
+        // the hand is free: the pointer says what is under it again
+        self.pointer = self.pointer_at(host, ctx, cx, cy);
         // **What a hand selected in a field is the primary selection** -- a
         // drag, a double or a triple click -- which a middle click pastes.
         super::press::note_primary(host, ctx);

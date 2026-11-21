@@ -98,6 +98,8 @@ pub(super) struct WindowState {
     /// The smallest size the platform was last told this window may be made
     /// ([`crate::gpu::keep_min_size`]).
     pub(super) min_px: Option<(u32, u32)>,
+    /// The pointer's shape set on the window, last ([`App::show_pointer`]).
+    pub(super) shown_pointer: crate::host::pointer::Pointer,
 }
 
 /// **How long a frame may go unanswered before its window counts as hidden.**

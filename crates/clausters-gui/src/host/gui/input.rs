@@ -195,6 +195,25 @@ impl App {
         }
     }
 
+    /// **The pointer's shape the machine asks for**, set on the window when
+    /// it changed. A pane of a shell shows its shell's, which the shell sets
+    /// (`Dock::pointer_shape`).
+    fn show_pointer(&mut self, def_id: i32) {
+        if self.in_shell(def_id) {
+            return;
+        }
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return;
+        };
+        let p = ws.gestures.pointer();
+        if p != ws.shown_pointer {
+            ws.shown_pointer = p;
+            if let Some(window) = ws.gpu.window() {
+                window.set_cursor(p.icon());
+            }
+        }
+    }
+
     /// Press on a widget: the machine acts by kind and possibly starts a drag.
     pub(super) fn on_press(&mut self, def_id: i32) {
         let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
@@ -206,6 +225,7 @@ impl App {
         };
         let effects = ws.gestures.press(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
+        self.show_pointer(def_id);
     }
 
     /// Pointer moved with no button held: the popup layer's hover, the hovered
@@ -217,6 +237,7 @@ impl App {
         };
         let effects = ws.gestures.motion(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
+        self.show_pointer(def_id);
     }
 
     /// The pointer left the window: nothing is hovered and no tip waits.
@@ -227,6 +248,7 @@ impl App {
         };
         let effects = ws.gestures.hover(&mut self.host, &ctx, None);
         self.apply_gesture_effects(effects);
+        self.show_pointer(def_id);
     }
 
     /// The secondary button: the request for a context menu, where the pointer
@@ -295,6 +317,7 @@ impl App {
         };
         let effects = ws.gestures.drag_to(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
+        self.show_pointer(def_id);
     }
 
     /// Release: the machine finishes the drag (button up, wire landing).
@@ -308,6 +331,7 @@ impl App {
         };
         let effects = ws.gestures.release(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
+        self.show_pointer(def_id);
     }
 
     /// Wheel: the machine zooms the time axis or the vertical display window.

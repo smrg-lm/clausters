@@ -868,6 +868,25 @@ impl Dock {
         self.lit_divider().map(|d| d.row)
     }
 
+    /// **The pointer's shape over the dock**: its chrome answers over its
+    /// own parts -- a divider's resize arrow, the arrow over a bar, a tab and
+    /// an open menu -- and the pane under the pointer, or the one a press
+    /// holds, everywhere else, by what that pane's gestures say (`pane`).
+    pub fn pointer_shape(
+        &self,
+        pane: impl Fn(i32) -> crate::host::pointer::Pointer,
+    ) -> crate::host::pointer::Pointer {
+        use crate::host::pointer::Pointer;
+        if self.menu.is_some() {
+            return Pointer::Default;
+        }
+        match self.resize_cursor() {
+            Some(true) => Pointer::ColResize,
+            Some(false) => Pointer::RowResize,
+            None => self.pointer().map_or(Pointer::Default, pane),
+        }
+    }
+
     /// The part of group `path`'s bar lit under the pointer.
     pub fn lit_bar(&self, path: &[usize]) -> Option<BarPart> {
         match (&self.grip, &self.hot, &self.menu) {

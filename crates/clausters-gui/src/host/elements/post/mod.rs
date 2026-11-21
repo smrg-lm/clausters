@@ -29,6 +29,7 @@ use crate::host::graphics::controls::{self, ButtonLook, ToggleView};
 use crate::host::graphics::post::{self, Kind, Pos, Post};
 use crate::host::graphics::textedit::Unit;
 use crate::host::menu::Entry;
+use crate::host::pointer::Pointer;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyInput, Verb};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, control_box};
@@ -633,6 +634,19 @@ impl Element for PostView {
 
     /// One click places nothing but clears the selection, two select a
     /// word, three a line; Shift extends; the bar scrolls.
+    /// **The I-beam over the lines**, which a press selects; the arrow over
+    /// the strip's buttons and the scroll bar.
+    fn pointer(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
+        let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
+        let on_strip = g.strip.is_some_and(|s| s.rect.contains(at.0, at.1));
+        let on_bar = g.bar.contains(at.0, at.1) && self.thumb_rect(&g).is_some();
+        Some(if on_strip || on_bar {
+            Pointer::Default
+        } else {
+            Pointer::Text
+        })
+    }
+
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
         if let Some(s) = g.strip {

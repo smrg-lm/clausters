@@ -31,6 +31,7 @@ use winit::window::{Window, WindowId};
 use crate::gpu::Gpu;
 use crate::host::dock::call::{self, Call};
 use crate::host::dock::{Composer, Dock, Handed, Which, divider_color};
+use crate::host::pointer::Pointer;
 use crate::host::{ClientId, PointerKind, PointerMods, png};
 
 use super::Loop;
@@ -58,8 +59,8 @@ pub(in crate::host::gui) struct Shell {
     scale: f32,
     /// The panes behind another's tab, told they are not seen.
     hidden: HashSet<i32>,
-    /// The resize cursor the window shows ([`Dock::resize_cursor`]).
-    cursor: Option<bool>,
+    /// The pointer's shape the window shows ([`Dock::pointer_shape`]).
+    cursor: Pointer,
     /// The modifiers held, as the platform last said them: a pane made
     /// while a key is held (Ctrl+N's new file) was not there to be told.
     mods: Option<Modifiers>,
@@ -81,6 +82,12 @@ impl App {
     /// Whether window `def_id` is a pane of the dock.
     pub(super) fn is_pane(&self, def_id: i32) -> bool {
         self.dock.as_ref().is_some_and(|s| s.layout.holds(def_id))
+    }
+
+    /// Whether window `def_id` is a pane of a shell -- the dock or a
+    /// floating panel -- whose window shows the shell's pointer.
+    pub(super) fn in_shell(&self, def_id: i32) -> bool {
+        self.is_pane(def_id) || self.floats.values().any(|s| s.layout.holds(def_id))
     }
 
     /// **The GPU of window `id` as a pane of the dock**, the dock's
@@ -279,7 +286,7 @@ impl App {
             gpu,
             scale,
             hidden: HashSet::new(),
-            cursor: None,
+            cursor: Pointer::Default,
             mods: None,
         })
     }
@@ -349,12 +356,16 @@ impl App {
                     ws.repaint();
                 }
             }
-            // a divider under the pointer, or in the hand, says it is dragged
-            let cursor = shell.layout.resize_cursor();
+            // the chrome under the pointer, or the pane, says what a press does
+            let cursor = shell.layout.pointer_shape(|id| {
+                windows
+                    .get(&id)
+                    .map_or(Pointer::Default, |ws| ws.gestures.pointer())
+            });
             if cursor != shell.cursor {
                 shell.cursor = cursor;
                 if let Some(window) = shell.gpu.window() {
-                    window.set_cursor(resize_icon(cursor));
+                    window.set_cursor(cursor.icon());
                 }
             }
             handed.take(dirty);
@@ -883,16 +894,6 @@ fn dialog_views<'a>(
 /// A window's declared height, in logical pixels, at the shell's scale.
 fn px(logical: u32, scale: f32) -> u32 {
     (logical as f32 * scale).round().max(1.0) as u32
-}
-
-/// The platform's cursor for [`Dock::resize_cursor`]: a resize arrow
-/// sideways or up and down, the arrow off a divider.
-fn resize_icon(cursor: Option<bool>) -> winit::window::CursorIcon {
-    match cursor {
-        Some(true) => winit::window::CursorIcon::ColResize,
-        Some(false) => winit::window::CursorIcon::RowResize,
-        None => winit::window::CursorIcon::Default,
-    }
 }
 
 /// The origin of what the host's own front hands the host.

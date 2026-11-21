@@ -83,6 +83,25 @@ impl Gestures {
         cx: f64,
         cy: f64,
     ) -> Vec<GestureEffect> {
+        if self.dragging() {
+            return self.pressed(host, ctx, cx, cy);
+        }
+        // **What the pointer said there is what the press holds**, unless
+        // what took it says otherwise (`pointer`).
+        let before = self.pointer_at(host, ctx, cx, cy);
+        let out = self.pressed(host, ctx, cx, cy);
+        self.pressed_pointer(host, ctx, before, cx, cy);
+        out
+    }
+
+    /// The press itself ([`Self::press`]).
+    fn pressed(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        cx: f64,
+        cy: f64,
+    ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         // a press shows the caret where it lands
         host.caret_moved(ctx.now_ms);

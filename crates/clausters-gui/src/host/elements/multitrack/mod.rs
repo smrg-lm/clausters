@@ -30,6 +30,7 @@ use crate::host::elements::notes::Notes;
 use crate::host::elements::signal::{Presentation, SignalElement};
 use crate::host::graphics::multitrack as stack;
 use crate::host::graphics::track;
+use crate::host::pointer::Pointer;
 use crate::host::structures::boxes::{self, Bounds, Contents, Part, Placement, Placements};
 use crate::host::structures::clips::{self as model, Clip, TrackRow};
 use crate::host::widget::element::{
@@ -487,6 +488,16 @@ impl Element for Multitrack {
     }
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         self.press_at(at, input)
+    }
+    fn pointer(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
+        self.pointer_at(at, input)
+    }
+    fn held_pointer(&self, _input: &Input) -> Option<Pointer> {
+        // a box carried, rather than an edge pulled
+        self.grab
+            .as_ref()
+            .filter(|g| g.part == Part::Body)
+            .map(|_| Pointer::Grabbing)
     }
     fn select_in(&mut self, from: (f64, f64), to: (f64, f64), input: &Input) -> Swept {
         self.swept(from, to, input)

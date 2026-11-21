@@ -1471,6 +1471,14 @@ impl HitArea {
     }
 }
 
+/// **The tip of one place of an element** ([`Element::tip_at`]): what it
+/// says, and the rectangle it is the tip of, in the window's pixels.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointTip {
+    pub text: String,
+    pub anchor: Rect,
+}
+
 /// **What a rectangle swept over an element caught** ([`Element::select_in`]).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Swept {
@@ -1921,6 +1929,41 @@ pub trait Element: fmt::Debug {
     /// release ignores it, which is most of them.
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         Events::none()
+    }
+
+    /// **The pointer's shape at `at`**: what a [`press`](Element::press)
+    /// there would start, said before the hand presses -- the I-beam over
+    /// text a press puts a caret in, a resize arrow over the edge a drag
+    /// pulls. It is asked of the same parts the press tells apart, with the
+    /// same [`Input`], and the press itself is not run.
+    ///
+    /// `None` is "a press here is not mine": the press would decline, so the
+    /// question goes on to the container's plan exactly as the press would
+    /// (a sweep's I-beam over a waveform, a pan's hand). The default, which
+    /// every element without parts of its own keeps, is `None`; one that
+    /// takes a press and means a click by it answers
+    /// [`Pointer::Default`](crate::host::pointer::Pointer::Default), which
+    /// stops the question there.
+    fn pointer(&self, _at: (f64, f64), _input: &Input) -> Option<crate::host::pointer::Pointer> {
+        None
+    }
+
+    /// **The pointer while this element holds the press**, asked at every
+    /// step of the drag: `None` keeps the one the press began with, which is
+    /// what a selection that keeps its I-beam wherever the hand goes needs.
+    /// An element whose drag changes what it is doing says so here -- a box
+    /// taken and now carried.
+    fn held_pointer(&self, _input: &Input) -> Option<crate::host::pointer::Pointer> {
+        None
+    }
+
+    /// **The tip of what is under the pointer at `at`**, where a part of
+    /// this element says more than its widget's one `tip` -- a roll naming
+    /// the note under the pointer. The tip layer shows it with the timer it
+    /// already has, anchored on the rectangle given; `None` leaves the
+    /// widget's own tip, if it has one.
+    fn tip_at(&self, _at: (f64, f64), _input: &Input) -> Option<PointTip> {
+        None
     }
 
     /// Whether this element takes the **keyboard focus** -- whether it is a stop
