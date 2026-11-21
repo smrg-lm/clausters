@@ -787,10 +787,28 @@ pub(crate) fn rows_of(laid: &crate::host::graphics::docs::layout::Laid) -> Vec<N
     }
     // a row ends its stretch of text where the next row is another's
     let starts: Vec<usize> = rows.iter().map(|r| r.1).collect();
+    let tops: Vec<f32> = rows.iter().map(|r| r.0.y).collect();
     rows.into_iter()
         .enumerate()
         .map(|(i, (mut row, _, last))| {
             row.ends = starts.get(i + 1).is_none_or(|&next| next != last);
+            // **A row is its line's box**, as a selection fills it: as tall
+            // as the lines stand apart -- to the next row, or from the one
+            // before, where they stand a line apart -- else a page's
+            // leading, about the middle of its letters. The pieces are laid
+            // at the top of their letters, which a band from there would
+            // hang below.
+            let size = row.runs.iter().map(|r| r.size).fold(0.0f32, f32::max);
+            let pitch = crate::host::graphics::docs::layout::line_pitch(size);
+            let near = |d: f32| (d > 0.0 && d <= pitch * 1.05).then_some(d);
+            let h = tops
+                .get(i + 1)
+                .and_then(|next| near(next - row.y))
+                .or_else(|| i.checked_sub(1).and_then(|j| near(row.y - tops[j])))
+                .unwrap_or(pitch);
+            let middle = row.y + font::height(size) * 0.5;
+            row.y = middle - h * 0.5;
+            row.h = h;
             row
         })
         .collect()

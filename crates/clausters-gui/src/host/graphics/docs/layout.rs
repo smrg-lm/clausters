@@ -279,6 +279,12 @@ impl Measures<'_> {
     }
 }
 
+/// **How far apart two lines of a paragraph stand**, at `size`: a book
+/// page's leading, the line box a selection of a line fills.
+pub fn line_pitch(size: f32) -> f32 {
+    Measures::new(size).line(size)
+}
+
 /// The face a run is written in, over `base`.
 fn family_of(run: &Run, base: Family) -> Family {
     if run.code {
