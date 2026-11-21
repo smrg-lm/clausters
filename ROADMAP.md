@@ -355,7 +355,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   "Found by use")*: the entries *Enter in a dialog's field does not press
   its default button*, *A textured view in a docked pane's dialog is not
   drawn* and *The documentation's header has no folder button*.
-- **The remaining "Future directions"** of each plan — the server's (release builds tuned for size, never at the cost of speed; every UGen of SuperCollider's base library, in the catalog; a long take
+- **The remaining "Future directions"** of each plan — the server's (release builds tuned for size, never at the cost of speed; every UGen of SuperCollider's base library, in the catalog; the server runs from a seed, and its random UGens draw from shared generators; a long take
   played out of the pool -- a seek, and a join over files; a play that
   runs backwards; generating the
   builders from the catalog instead of contrasting against them; per-output

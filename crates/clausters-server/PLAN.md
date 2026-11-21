@@ -1651,6 +1651,53 @@ holds what is open.
   test per row), and reaches both clients' builders in the same commit,
   as the contrast tests require.
 
+- ⬜ **The server runs from a seed, and its random UGens draw from shared
+  generators (`RandSeed`, `RandID`)** *(asked by the user, 2026-11-21)*.
+  **The requirement: a server can be run from a seed and give
+  reproducible results**, in real time as offline, so a performance, a
+  render and a test are each the same take when asked to be. Today only
+  half of it holds. An offline render takes `--seed` (and the embed door
+  a seed), reports the one it used, and replays from it; a booted server
+  starts its sequence from entropy and offers no way to set it -- no
+  flag, no configuration key, no command -- and does not report it. And
+  every random UGen instance owns a generator of its own, seeded at build
+  from the synth's run of seeds (`BuildCtx::next_seed`), which the user
+  judges too much: a generator per UGen, and a seed scheme that cannot
+  express what scsynth's can.
+  **The direction: scsynth's model.** The world holds a small table of
+  generators; every random UGen draws from the one its synth selects,
+  `RandID` selects it (0 unless told), and `RandSeed` reseeds it, from a
+  trigger, so a def or a group can restart a sequence on purpose. The
+  server seeds the table from one seed: given at boot (a `--seed` flag and
+  a `[server]` key, as the offline render's), set at run time by a command
+  (a `/server_seed`, answering the seed in force), and reported when it is
+  drawn from entropy, as a render's already is. What to settle in the
+  design, each in `docs/decisions.md` when taken:
+  - **Order is the seed's other half.** With shared generators a value
+    depends on the order the UGens draw in, so reproducibility needs that
+    order fixed: the node tree's order within a block, sequential. A
+    `/group_parallel` group draws from several threads at once, so it
+    needs generators of its own (per group, or per worker run in a fixed
+    order) or it breaks the property; which one keeps parallel and
+    sequential runs equal is the decision.
+  - **What replaces the per-instance seeds.** The reason they exist
+    (`docs/decisions/engine.md`, "A render's noise belongs to the render,
+    and its file to the server") is that two generators with one seed
+    correlate; drawing in turn from one stream does not, so shared
+    generators keep that property. The `Rand` seeding fix in "Found by
+    use" is folded in here if this lands first.
+  - **The other sources of randomness.** A FaustDef's noise is its own
+    code's (check whether its state is seeded by anything the server
+    controls); a third-party plugin's is out of reach and is named as
+    such; the client's patterns and routines already have one seedable
+    context (`main.seed`, `Session.seed`), and a script that seeds both
+    should be one call, in both clients.
+  - **Real time is reproducible up to what arrives.** A live server
+    replays a take only if the commands reach it at the same blocks; a
+    score with timestamps does, a hand does not. The property promised is
+    the server's: same seed, same commands at the same times, same
+    samples.
+
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what
@@ -1691,4 +1738,6 @@ finished work, where a pending item reads as done.
   sequence. `src/dsp/noise.rs` states the rule it breaks -- no
   process-global counter behind a seed. The fix: a `with_seed` built from
   `ctx.next_seed()` in its registry row, as `WhiteNoise` is, and a test that
-  two renders of a def with `Rand` give the same value.
+  two renders of a def with `Rand` give the same value -- unless "The server
+  runs from a seed, and its random UGens draw from shared generators" lands
+  first, which replaces per-instance seeding.
