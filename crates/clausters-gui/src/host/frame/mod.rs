@@ -26,6 +26,7 @@
 //! [`draw`] is the *write* half: the three mesh passes over those snapshots,
 //! which by then hold no borrow of the host tree.
 
+mod dialog_layer;
 pub(crate) mod draw;
 mod items;
 mod owed;
@@ -41,6 +42,7 @@ pub(crate) use draw::{
 };
 // The arrow's width is the drawing's own business; a gesture asks `marker_at`
 // what was hit. The test that pins the reach to it is the one exception.
+use dialog_layer::{DialogLayer, FloatDialog};
 use items::*;
 pub(crate) use owed::*;
 pub(crate) use slots::*;
@@ -372,6 +374,9 @@ pub(crate) struct Batches {
     /// the dialog's elements draw over themselves, and its popups, one batch
     /// each in that order ([`FLOAT_LAYERS`]). Empty for a window of its own.
     pub(crate) float: [Mesh; FLOAT_LAYERS],
+    /// A pane's dialog's heavy views, drawn apart for the dock to copy over
+    /// the dialog ([`DialogLayer`]).
+    dialog_layer: Option<DialogLayer>,
 }
 
 /// **The batches a pane floats over the dock**, drawn in this order: a
@@ -474,6 +479,7 @@ impl Batches {
             asked: Asked::default(),
             cost: FrameCost::default(),
             float: Default::default(),
+            dialog_layer: None,
         }
     }
 
@@ -544,6 +550,11 @@ struct Kept {
     /// The heavy views of the window and, with a dialog up, of the dialog.
     collected: Option<Collected>,
     inside: Option<Collected>,
+    /// **A pane's dialog that holds heavy views**: they are drawn into a
+    /// texture of their own ([`DialogLayer`]) the dock copies over the
+    /// dialog, since the dialog stands over the whole dock and the pane's
+    /// texture is under it.
+    dialog: Option<FloatDialog>,
     /// The live layer as it was last drawn.
     live: Mesh,
     /// Where what is drawn over the live layers lies (the host's bands, the
@@ -784,7 +795,7 @@ pub(crate) fn render(
     // window of its own draws, into a texture instead of a frame.
     if let Some(target) = gpu.pane_view().cloned() {
         let encoding = web_time::Instant::now();
-        let encoder = encode_pass(
+        let mut encoder = encode_pass(
             gpu,
             renderers,
             batches,
@@ -792,6 +803,14 @@ pub(crate) fn render(
             canvases,
             theme,
             &target,
+        );
+        dialog_layer::encode(
+            gpu,
+            renderers,
+            batches,
+            spectrograms,
+            canvases,
+            &mut encoder,
         );
         gpu.queue.submit(std::iter::once(encoder.finish()));
         batches.cost.encode = encoding.elapsed();
@@ -1003,7 +1022,14 @@ fn draw_under(
 ) {
     batches.base.draw(pass);
     if let Some(collected) = &batches.kept.collected {
-        draw_heavy(pass, renderers, spectrograms, canvases, collected, fb);
+        draw_heavy(
+            pass,
+            renderers,
+            spectrograms,
+            canvases,
+            collected,
+            Space::window(fb),
+        );
     }
     batches.over.draw(pass);
 }
@@ -1018,8 +1044,21 @@ fn draw_above(
     canvases: &HashMap<i32, CanvasView>,
     fb: (u32, u32),
 ) {
-    if let Some(inside) = &batches.kept.inside {
-        draw_heavy(pass, renderers, spectrograms, canvases, inside, fb);
+    // a pane's dialog's are drawn into its dialog layer, over the dialog
+    if let Some(inside) = batches
+        .kept
+        .inside
+        .as_ref()
+        .filter(|_| batches.kept.dialog.is_none())
+    {
+        draw_heavy(
+            pass,
+            renderers,
+            spectrograms,
+            canvases,
+            inside,
+            Space::window(fb),
+        );
     }
     batches.top.draw(pass);
 }
@@ -1271,15 +1310,30 @@ fn draw_whole(
         uploaded += batch.upload(&gpu.device, &gpu.queue, mesh, fb_w, fb_h);
     }
     batches.cost.uploaded = uploaded as u64;
-    for heavy in std::iter::once(&picture.collected).chain(picture.inside.as_ref()) {
+    let dialog = picture
+        .dialog_card
+        .zip(picture.inside.as_ref())
+        .and_then(|(card, inside)| FloatDialog::of(card, inside));
+    let window = Space::window((fb_w, fb_h));
+    upload_heavy(
+        gpu,
+        renderers,
+        spectrograms,
+        canvases,
+        &picture.collected,
+        inputs,
+        window,
+    );
+    if let Some(inside) = &picture.inside {
+        let space = dialog.as_ref().map_or(window, FloatDialog::space);
         upload_heavy(
             gpu,
             renderers,
             spectrograms,
             canvases,
-            heavy,
+            inside,
             inputs,
-            (fb_w, fb_h),
+            space,
         );
     }
     batches.cost.upload = uploading.elapsed();
@@ -1292,6 +1346,7 @@ fn draw_whole(
         places: std::mem::take(&mut picture.places),
         collected: Some(picture.collected),
         inside: picture.inside,
+        dialog,
         live: picture.live,
         over,
     };
@@ -1310,6 +1365,9 @@ struct Picture {
     /// The heavy views of the window and, with a dialog up, of the dialog.
     collected: Collected,
     inside: Option<Collected>,
+    /// The card of a pane's dialog, in the pane's pixels: it floats over
+    /// the dock.
+    dialog_card: Option<Rect>,
     /// Where each element with a live layer was placed.
     places: Vec<LivePlace>,
     /// Whether the frames after this one may keep it: the live batch is where
@@ -1353,6 +1411,7 @@ fn picture(
     let mut live = Mesh::new();
     let mut top = Mesh::new();
     let mut float: [Mesh; FLOAT_LAYERS] = Default::default();
+    let mut dialog_card = None;
     // **A dialog is the tail of the placements** (`layout` places it last), and
     // it is drawn apart: everything before it is the window as it always was,
     // and the dialog goes over all of that, in the overlay.
@@ -1442,6 +1501,9 @@ fn picture(
         let mut under = Mesh::new();
         let mut above = Mesh::new();
         let inside = collect_widgets(dialog, &mut under, inputs, theme);
+        if inputs.float.is_some() {
+            dialog_card = Some(dialog[0].rect);
+        }
         draw_dividers(&mut under, &placed, base.len()..placed.len(), inputs, theme);
         draw_timeline_meshes(
             &mut under,
@@ -1552,8 +1614,34 @@ fn picture(
         places: places.unwrap_or_default(),
         collected,
         inside,
+        dialog_card,
         layout: layout_time,
         placed: placed.len() as u64,
+    }
+}
+
+/// **Where heavy views are drawn**: a framebuffer of `fb` whose top-left
+/// pixel is the window's `origin` -- the window's own framebuffer at
+/// `(0, 0)`, or the texture a pane's dialog's views are drawn in
+/// ([`DialogLayer`]), at the dialog's corner.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Space {
+    origin: (f32, f32),
+    fb: (u32, u32),
+}
+
+impl Space {
+    /// The window's own framebuffer.
+    fn window(fb: (u32, u32)) -> Self {
+        Self {
+            origin: (0.0, 0.0),
+            fb,
+        }
+    }
+
+    /// `r`, in the window's pixels, in this framebuffer's.
+    fn to(&self, r: Rect) -> Rect {
+        Rect::new(r.x - self.origin.0, r.y - self.origin.1, r.w, r.h)
     }
 }
 
@@ -1567,8 +1655,9 @@ fn upload_heavy(
     canvases: &mut HashMap<i32, CanvasView>,
     collected: &Collected,
     inputs: &FrameInputs,
-    (fb_w, fb_h): (u32, u32),
+    space: Space,
 ) {
+    let (fb_w, fb_h) = space.fb;
     for item in &collected.timeline_items {
         // The body the element stated when it described its frame: one
         // rectangle, so the picture and the chrome around it agree.
@@ -1606,7 +1695,7 @@ fn upload_heavy(
                 view.set_alpha(alpha);
                 view.set_freq_window(item.look.y.0, item.look.y.1);
                 view.set_framing(framing_of(
-                    item.look.lanes.rect(body, rows, ch.min(rows - 1)),
+                    space.to(item.look.lanes.rect(body, rows, ch.min(rows - 1))),
                     fb_w,
                     fb_h,
                 ));
@@ -1627,7 +1716,7 @@ fn upload_heavy(
             view.set_shader(&gpu.device, &frame.shader);
             let time = view.elapsed();
             let res = [frame.body.w.max(1.0), frame.body.h.max(1.0)];
-            let framing = framing_of(frame.body, fb_w, fb_h);
+            let framing = framing_of(space.to(frame.body), fb_w, fb_h);
             view.upload(&gpu.queue, res, time, frame.params, framing);
         }
     }
@@ -1643,16 +1732,18 @@ fn draw_heavy(
     spectrograms: &HashMap<SlotAt, SpectrogramSlot>,
     canvases: &HashMap<i32, CanvasView>,
     collected: &Collected,
-    (fb_w, fb_h): (u32, u32),
+    space: Space,
 ) {
+    let (fb_w, fb_h) = space.fb;
     for item in &collected.timeline_items {
         // The body the element stated when it described its frame: one
         // rectangle, so the picture and the chrome around it agree.
-        let body = item.body;
+        let body = space.to(item.body);
         if body.w < 1.0 || body.h < 1.0 {
             continue;
         }
-        if !apply_scissor(pass, item.clip, fb_w, fb_h) {
+        let clip = item.clip.map(|c| space.to(c));
+        if !apply_scissor(pass, clip, fb_w, fb_h) {
             continue;
         }
         if !item.look.layers.has(Paint::Spectrogram) {
@@ -1668,7 +1759,7 @@ fn draw_heavy(
         if item.look.lanes.overflow(rows, body.h) > 0.0
             && !apply_scissor(
                 pass,
-                Some(rows_clip(item.clip, item.rect, body)),
+                Some(rows_clip(clip, space.to(item.rect), body)),
                 fb_w,
                 fb_h,
             )
@@ -1685,12 +1776,13 @@ fn draw_heavy(
         }
     }
     for frame in &collected.canvas_frames {
-        if frame.body.w >= 1.0
-            && frame.body.h >= 1.0
+        let body = space.to(frame.body);
+        if body.w >= 1.0
+            && body.h >= 1.0
             && let Some(view) = canvases.get(&frame.id)
-            && apply_scissor(pass, frame.clip, fb_w, fb_h)
+            && apply_scissor(pass, frame.clip.map(|c| space.to(c)), fb_w, fb_h)
         {
-            let (x, y, w, h) = clamp_viewport(frame.body, fb_w, fb_h);
+            let (x, y, w, h) = clamp_viewport(body, fb_w, fb_h);
             pass.set_viewport(x, y, w, h, 0.0, 1.0);
             view.draw(pass);
         }

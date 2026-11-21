@@ -829,7 +829,8 @@ impl WebApp {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("dock frame"),
             });
-        composer.compose(gpu, &mut encoder, &target, clear, &views, &chrome);
+        let dialogs = dialog_views(&shell.layout, canvases);
+        composer.compose(gpu, &mut encoder, &target, clear, &views, &chrome, &dialogs);
         gpu.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
     }
@@ -979,7 +980,8 @@ impl WebApp {
             .as_mut()
             .ok_or("the dock's device is not up yet")?;
         let views = pane_views(&shell.layout, canvases);
-        let readback = composer.capture(gpu, clear, &views, &chrome)?;
+        let dialogs = dialog_views(&shell.layout, canvases);
+        let readback = composer.capture(gpu, clear, &views, &chrome, &dialogs)?;
         wasm_bindgen_futures::spawn_local(super::capture::finish(
             host_id,
             CaptureOf::Dock(seq, asker),
@@ -1008,6 +1010,21 @@ fn pane_views<'a>(
         .collect()
 }
 
+/// The dialog layer of every shown pane whose dialog holds heavy views, by
+/// pane ([`crate::host::frame::Batches::dialog_copy`]).
+fn dialog_views<'a>(
+    layout: &Dock,
+    canvases: &'a HashMap<i32, CanvasSlot>,
+) -> Vec<(i32, &'a wgpu::TextureView)> {
+    layout
+        .placed()
+        .filter_map(|(def, _)| {
+            let render = canvases.get(&def)?.render.as_ref()?;
+            Some((def, render.batches.dialog_copy()?.view))
+        })
+        .collect()
+}
+
 /// **What a shell draws over its panes**: its chrome, then the popups of
 /// each shown pane, which float over the whole shell.
 fn picture(
@@ -1026,6 +1043,7 @@ fn picture(
                 layers: &render.batches.float,
                 keys: host.popup(def).is_some(),
                 dialog: host.dialog(def).is_some(),
+                views: render.batches.dialog_copy().map(|c| (c.card, c.rects)),
             })
         })
         .collect();

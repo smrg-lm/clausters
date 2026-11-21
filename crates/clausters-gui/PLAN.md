@@ -1678,13 +1678,6 @@ finished work, where a pending item reads as done.
   page's build and its e2e run on the new ones, and regenerates the
   editor's third-party notices in the same commit.
 
-- ⬜ **A textured view in a docked pane's dialog is not drawn**
-  (2026-11-19, the style review). A docked pane's dialog stands over the
-  whole dock, drawn into the pane's float batch, which carries meshes and
-  no textures: a spectrogram, a waveform's kept picture or a canvas inside
-  such a dialog is left out. No dialog of the applications holds one yet;
-  the float needs the textured passes a pane's frame has.
-
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** (2026-10-21, the user, browser). Playback was
   right and switching the view away and back redrew it; until then the

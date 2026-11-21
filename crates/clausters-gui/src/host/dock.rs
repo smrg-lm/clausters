@@ -51,7 +51,7 @@ mod pages;
 pub mod tree;
 
 pub use bar::BarPart;
-pub use edges::{Edge, Overlay, PaneFloat};
+pub use edges::{DialogPlace, Edge, Overlay, PaneFloat};
 pub use pages::PagePart;
 pub use tree::{Group, Node, Path, Side};
 
@@ -1480,6 +1480,8 @@ pub(crate) struct Composer {
     copier: Copier,
     /// One shift buffer a pane, reused frame to frame.
     shifts: Vec<wgpu::Buffer>,
+    /// One a pane's dialog layer copied ([`Overlay::dialogs`]).
+    dialog_shifts: Vec<wgpu::Buffer>,
     /// The dock's own chrome, drawn over the panes.
     chrome: Painter,
     /// What the panes draw over the dock, drawn over the chrome: a batch a
@@ -1498,6 +1500,7 @@ impl Composer {
         Self {
             copier: Copier::new(device, target),
             shifts: Vec::new(),
+            dialog_shifts: Vec::new(),
             floats: Vec::new(),
             chrome,
             target,
@@ -1507,8 +1510,11 @@ impl Composer {
     /// **Encodes the copy of `panes` into `target`**, the dock's
     /// surface or a texture of its size, cleared to `clear` first: each
     /// pane's texture into its rectangle, one texel to one pixel, and the
-    /// shell's picture over them ([`Overlay`]). `dock` is the dock's GPU,
-    /// whose configuration is the surface's size.
+    /// shell's picture over them ([`Overlay`]), with the heavy views of a
+    /// pane's dialog copied out of `dialogs`, its dialog layer by pane, over
+    /// the dialog's card. `dock` is the dock's GPU, whose configuration is
+    /// the surface's size.
+    #[allow(clippy::too_many_arguments)] // the dock's frame, both fronts
     pub(crate) fn compose(
         &mut self,
         dock: &Gpu,
@@ -1517,6 +1523,7 @@ impl Composer {
         clear: wgpu::Color,
         panes: &[(PaneRect, &wgpu::TextureView)],
         over: &Overlay,
+        dialogs: &[(i32, &wgpu::TextureView)],
     ) {
         let (device, queue) = (&dock.device, &dock.queue);
         let size = (dock.config.width, dock.config.height);
@@ -1538,6 +1545,29 @@ impl Composer {
                     mapped_at_creation: false,
                 }));
         }
+        let shift_buffer = |device: &wgpu::Device| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("dialog shift"),
+                size: 16,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+        while self.dialog_shifts.len() < over.dialogs.len() {
+            self.dialog_shifts.push(shift_buffer(device));
+        }
+        // each copy reads its layer at the card's corner
+        let copies: Vec<_> = over
+            .dialogs
+            .iter()
+            .zip(&self.dialog_shifts)
+            .filter_map(|(place, shift)| {
+                let (_, view) = dialogs.iter().find(|(pane, _)| *pane == place.pane)?;
+                let offset = [-place.card.x, -place.card.y, 0.0, 0.0];
+                queue.write_buffer(shift, 0, bytemuck::cast_slice(&offset));
+                Some((place, self.copier.bind(device, view, shift)))
+            })
+            .collect();
         let groups: Vec<_> = panes
             .iter()
             .zip(&self.shifts)
@@ -1585,7 +1615,33 @@ impl Composer {
         pass.set_viewport(0.0, 0.0, sw as f32, sh as f32, 0.0, 1.0);
         pass.set_scissor_rect(0, 0, sw, sh);
         self.chrome.draw(&mut pass);
-        for painter in self.floats.iter().take(over.floats.len()) {
+        let mut floats = self.floats.iter().take(over.floats.len());
+        // the first holds the dialogs' cards, and their views go over it
+        if let Some(cards) = floats.next() {
+            cards.draw(&mut pass);
+        }
+        if !copies.is_empty() {
+            pass.set_pipeline(&self.copier.single);
+        }
+        for (place, group) in &copies {
+            let (x, y, w, h) = crate::host::frame::clamp_viewport(place.card, sw, sh);
+            if w < 1.0 || h < 1.0 {
+                continue;
+            }
+            pass.set_viewport(x, y, w, h, 0.0, 1.0);
+            pass.set_bind_group(0, group, &[]);
+            for r in &place.rects {
+                let (x, y, w, h) = crate::host::frame::clamp_viewport(*r, sw, sh);
+                if w < 1.0 || h < 1.0 {
+                    continue;
+                }
+                pass.set_scissor_rect(x as u32, y as u32, w as u32, h as u32);
+                pass.draw(0..3, 0..1);
+            }
+        }
+        pass.set_viewport(0.0, 0.0, sw as f32, sh as f32, 0.0, 1.0);
+        pass.set_scissor_rect(0, 0, sw, sh);
+        for painter in floats {
             painter.draw(&mut pass);
         }
     }
@@ -1600,6 +1656,7 @@ impl Composer {
         clear: wgpu::Color,
         panes: &[(PaneRect, &wgpu::TextureView)],
         over: &Overlay,
+        dialogs: &[(i32, &wgpu::TextureView)],
     ) -> Result<Readback, String> {
         let size = (dock.config.width, dock.config.height);
         let texture = read_target(&dock.device, dock.config.format, size)?;
@@ -1609,7 +1666,7 @@ impl Composer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("dock capture"),
             });
-        self.compose(dock, &mut encoder, &view, clear, panes, over);
+        self.compose(dock, &mut encoder, &view, clear, panes, over, dialogs);
         Ok(read_back(&dock.device, &dock.queue, encoder, &texture))
     }
 }

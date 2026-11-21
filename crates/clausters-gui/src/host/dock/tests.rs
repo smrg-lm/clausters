@@ -947,7 +947,9 @@ fn the_composed_picture_is_each_panes_own_picture() {
             &super::Overlay {
                 chrome: Mesh::new(),
                 floats: Vec::new(),
+                dialogs: Vec::new(),
             },
+            &[],
         )
         .expect("reads back");
     readback.wait(&dock.device).expect("mapped");
@@ -1045,6 +1047,7 @@ fn a_list_a_pane_opens_floats_over_the_dock() {
         layers: &layers,
         keys: true,
         dialog: false,
+        views: None,
     }];
     let over = d.picture(&Theme::default(), &floats, None);
     assert!(!over.floats[0].is_empty());
@@ -1187,4 +1190,118 @@ fn the_middle_button_closes_a_tab() {
     assert_eq!(ws.take_dirty().close, [2]);
     ws.moved(300.0, 200.0);
     assert!(!ws.middle_pressed(), "over a pane");
+}
+
+/// **A textured view in a pane's dialog is drawn over the dialog**: the
+/// dialog floats over the whole dock and the pane's texture is under it,
+/// so the pane draws its dialog's views into a layer of their own and the
+/// dock copies them over the card. A canvas that shades red is red on the
+/// composed picture, and is not there when the layer is not copied.
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn a_textured_view_in_a_panes_dialog_is_drawn_over_it() {
+    use std::collections::HashMap;
+
+    use clausters_core::osc::{OscMessage, OscPacket, OscType};
+
+    use crate::canvas::CanvasView;
+    use crate::gpu::Gpu;
+    use crate::host::frame::{self, Batches, FrameInputs, clear_color};
+    use crate::host::world::World;
+    use crate::view::Renderers;
+
+    let (w, h) = (360u32, 280u32);
+    let Ok(dock) = pollster::block_on(Gpu::offscreen(w, h, 4)) else {
+        eprintln!("no adapter on this machine: nothing to draw offscreen with");
+        return;
+    };
+    let mut host = crate::host::Host::new();
+    let from = crate::host::ClientId::Udp(std::net::SocketAddr::from((
+        std::net::Ipv4Addr::LOCALHOST,
+        9000,
+    )));
+    let red = "fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> { return vec4<f32>(1.0, 0.0, 0.0, 1.0); }";
+    let json = format!(
+        r#"{{"type":"window","w":360,"h":280,"children":[
+            {{"id":2,"type":"label","text":"behind"}},
+            {{"id":5,"type":"layout","modal":1,"title":"A view","children":[
+                {{"id":8,"type":"canvas","h":60,"shader":{}}}]}}]}}"#,
+        serde_json::to_string(red).unwrap()
+    );
+    host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: crate::host::GUI_DEF.into(),
+            args: vec![OscType::Int(1), OscType::String(json)],
+        }),
+        from,
+    );
+    let mut ws = Dock::new((w, h), metrics(4.0));
+    ws.add(1);
+    let rect = ws.rect(1).expect("placed");
+    let mut gpu = Gpu::pane(&dock, rect.w, rect.h);
+    let mut renderers = Renderers::new(&gpu.device, gpu.target());
+    let mut batches = Batches::new(&gpu.device, gpu.target());
+    let mut canvases = HashMap::new();
+    canvases.insert(8, CanvasView::new(&gpu.device, gpu.target(), red));
+    let inputs = FrameInputs {
+        metrics: host.metrics_for(1),
+        world: World {
+            timelines: host.timelines(),
+            ..World::default()
+        },
+        // the dock, in the pane's pixels: where its dialog floats
+        float: Some(Rect::new(
+            -(rect.x as f32),
+            -(rect.y as f32),
+            w as f32,
+            h as f32,
+        )),
+        ..FrameInputs::default()
+    };
+    let tree = host.window_def(1).expect("defined");
+    frame::render(
+        &mut gpu,
+        &mut renderers,
+        &mut batches,
+        &mut HashMap::new(),
+        &mut HashMap::new(),
+        &mut canvases,
+        tree,
+        &inputs,
+        &host.theme,
+        true,
+    );
+    let copy = batches.dialog_copy().expect("the dialog holds a view");
+    assert_eq!(copy.rects.len(), 1);
+    let floats = [super::PaneFloat {
+        pane: 1,
+        layers: &batches.float,
+        keys: false,
+        dialog: true,
+        views: Some((copy.card, copy.rects)),
+    }];
+    let over = ws.picture(&host.theme, &floats, None);
+    assert_eq!(over.dialogs.len(), 1);
+    let views = [(rect, gpu.pane_view().expect("a pane"))];
+    let clear = clear_color(&host.theme);
+    let mut composer = Composer::new(&dock.device, dock.config.format);
+    let reds = |composer: &mut Composer, dialogs: &[(i32, &wgpu::TextureView)]| {
+        let readback = composer
+            .capture(&dock, clear, &views, &over, dialogs)
+            .expect("reads back");
+        readback.wait(&dock.device).expect("mapped");
+        let (_, _, pixels) = readback.pixels();
+        pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| p[0] > 200 && p[1] < 40 && p[2] < 40)
+            .count()
+    };
+    let without = reds(&mut composer, &[]);
+    let with = reds(&mut composer, &[(1, copy.view)]);
+    let r = copy.rects[0];
+    let area = (r.w * r.h) as usize;
+    assert_eq!(without, 0, "under the dialog, the view is not seen");
+    assert!(with * 10 >= area * 9, "{with} red pixels of {area}");
 }

@@ -34,6 +34,20 @@ pub struct Overlay {
     /// ([`FLOAT_LAYERS`](crate::host::frame::FLOAT_LAYERS)), every pane's
     /// in each.
     pub floats: Vec<Mesh>,
+    /// **The heavy views of a pane's dialog**, copied over its card from
+    /// the pane's dialog layer, between the first float batch (which holds
+    /// the card) and the rest.
+    pub dialogs: Vec<DialogPlace>,
+}
+
+/// **Where a pane's dialog's heavy views go on the dock**: the pane, the
+/// card the pane drew them in and the rectangles they cover, in the
+/// surface's pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DialogPlace {
+    pub pane: i32,
+    pub card: Rect,
+    pub rects: Vec<Rect>,
 }
 
 /// **What one pane floats over the dock**: its layers in its own pixels,
@@ -44,6 +58,10 @@ pub struct PaneFloat<'a> {
     pub layers: &'a [Mesh],
     pub keys: bool,
     pub dialog: bool,
+    /// The card of its dialog and what its heavy views cover, in its own
+    /// pixels, when the dialog holds some
+    /// (`frame::Batches::dialog_copy`).
+    pub views: Option<(Rect, &'a [Rect])>,
 }
 
 /// What one pane draws over the dock, as the last picture placed it.
@@ -209,6 +227,7 @@ impl Dock {
         let layers = floats.iter().map(|f| f.layers.len()).max().unwrap_or(0);
         let mut meshes: Vec<Mesh> = (0..layers).map(|_| Mesh::new()).collect();
         let mut overlays = Vec::new();
+        let mut dialogs = Vec::new();
         for float in floats {
             if float.layers.iter().all(Mesh::is_empty) || !self.shown(float.pane) {
                 continue;
@@ -232,6 +251,14 @@ impl Dock {
             for (into, layer) in meshes.iter_mut().zip(float.layers) {
                 into.append_shifted(layer, dx, dy);
             }
+            if let Some((card, rects)) = float.views {
+                let moved = |r: &Rect| Rect::new(r.x + dx, r.y + dy, r.w, r.h);
+                dialogs.push(DialogPlace {
+                    pane: float.pane,
+                    card: moved(&card),
+                    rects: rects.iter().map(moved).collect(),
+                });
+            }
             overlays.push(Float {
                 pane: float.pane,
                 rect: Rect::new(x0 + dx, y0 + dy, x1 - x0, y1 - y0),
@@ -243,6 +270,7 @@ impl Dock {
         Overlay {
             chrome,
             floats: meshes,
+            dialogs,
         }
     }
 }

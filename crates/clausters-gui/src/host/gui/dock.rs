@@ -653,6 +653,7 @@ impl App {
                     .map(|view| (rect, view))
             })
             .collect();
+        let dialogs = dialog_views(&shell.layout, windows);
         let mut encoder =
             shell
                 .gpu
@@ -660,9 +661,15 @@ impl App {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("dock frame"),
                 });
-        shell
-            .composer
-            .compose(&shell.gpu, &mut encoder, &target, clear, &views, &chrome);
+        shell.composer.compose(
+            &shell.gpu,
+            &mut encoder,
+            &target,
+            clear,
+            &views,
+            &chrome,
+            &dialogs,
+        );
         shell.gpu.queue.submit(std::iter::once(encoder.finish()));
         if let Some(window) = shell.gpu.window() {
             window.pre_present_notify();
@@ -826,7 +833,10 @@ impl App {
                     .map(|view| (rect, view))
             })
             .collect();
-        let readback = shell.composer.capture(&shell.gpu, clear, &views, &chrome)?;
+        let dialogs = dialog_views(&shell.layout, windows);
+        let readback = shell
+            .composer
+            .capture(&shell.gpu, clear, &views, &chrome, &dialogs)?;
         readback.wait(&shell.gpu.device)?;
         let (width, height, rgba) = readback.pixels();
         std::fs::write(path, png::encode_rgba(width, height, &rgba)).map_err(|e| e.to_string())
@@ -851,10 +861,23 @@ fn picture(
                 layers: &ws.batches.float,
                 keys: host.popup(id).is_some(),
                 dialog: host.dialog(id).is_some(),
+                views: ws.batches.dialog_copy().map(|c| (c.card, c.rects)),
             })
         })
         .collect();
     layout.picture(&host.theme, &floats, clock)
+}
+
+/// The dialog layer of every shown pane whose dialog holds heavy views, by
+/// pane ([`crate::host::frame::Batches::dialog_copy`]).
+fn dialog_views<'a>(
+    layout: &Dock,
+    windows: &'a std::collections::HashMap<i32, super::app::WindowState>,
+) -> Vec<(i32, &'a wgpu::TextureView)> {
+    layout
+        .placed()
+        .filter_map(|(id, _)| Some((id, windows.get(&id)?.batches.dialog_copy()?.view)))
+        .collect()
 }
 
 /// A window's declared height, in logical pixels, at the shell's scale.

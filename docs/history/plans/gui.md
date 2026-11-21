@@ -9980,3 +9980,17 @@ module of its own.
   after find, and a press asks for that verb as the Help entry does; the
   editor names `docs_folder` where it offers a choice of folder. Both
   clients' builders take it.)*
+
+- ✅ **A textured view in a docked pane's dialog is not drawn**
+  (2026-11-19, the style review). A docked pane's dialog stands over the
+  whole dock, drawn into the pane's float batch, which carries meshes and
+  no textures: a spectrogram, a waveform's kept picture or a canvas inside
+  such a dialog is left out. No dialog of the applications holds one yet;
+  the float needs the textured passes a pane's frame has.
+  *(Fixed 2026-11-21: the pane draws its dialog's heavy views into a
+  texture of the card's size, over the card's own picture
+  (`frame/dialog_layer.rs`), and the dock copies the rectangles they
+  cover over the card, before the batches drawn over the dialog
+  (`Composer::compose`), on both fronts and in a dock's capture. A GPU
+  test composes a pane whose dialog holds a canvas shaded red and finds
+  it red over the card, and absent when the layer is not copied.)*
