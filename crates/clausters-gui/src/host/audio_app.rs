@@ -1093,7 +1093,7 @@ impl App {
         }
         let sequence = self
             .sequence_of(&mut request, over)?
-            .ok_or("a roll opens over a sequence")?;
+            .unwrap_or_else(|| Arc::new(Mutex::new(clausters_apps::notes::blank())));
         let (key, place) = self.placed(key, over);
         let rate = f64::from(
             self.app

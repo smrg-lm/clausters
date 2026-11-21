@@ -1954,11 +1954,7 @@ impl crate::file::FileWindow for NotesEditor {
 
     /// An empty sequence written for MIDI 1.0.
     fn blank(&self) -> Result<Vec<u8>, String> {
-        let blank = EventSequence {
-            midi: Some(events::MidiSpec::Midi1),
-            ..EventSequence::default()
-        };
-        serde_json::to_vec(&blank).map_err(|e| e.to_string())
+        serde_json::to_vec(&super::blank()).map_err(|e| e.to_string())
     }
 
     fn leaving(&mut self) -> &mut Option<crate::closing::Leaving> {

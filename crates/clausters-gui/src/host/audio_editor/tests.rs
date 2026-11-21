@@ -91,6 +91,28 @@ fn a_roll_opens_a_midi_file_and_saves_it_where_the_host_said() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+/// **A roll opened over nothing is an empty sequence a hand fills**: what
+/// the editor's New notes asks, with no file and no sequence handed over,
+/// opens a roll over no notes, written for MIDI 1.0.
+#[test]
+fn a_roll_opened_over_nothing_is_an_empty_sequence() {
+    let mut host = host();
+    let roll = host
+        .open_app_notes_for(None, json!({}), "roll", None)
+        .expect("opened");
+    until(&mut host, "the roll was never drawn", |h| {
+        h.window_def(roll).is_some()
+    });
+    let call = |host: &mut Host, verb: &str| {
+        ask(
+            host,
+            roll,
+            json!({"do": {"verb": "handle", "call": {"verb": verb}}}),
+        )
+    };
+    assert_eq!(call(&mut host, "len")["len"], 0);
+}
+
 /// A mono float file of `frames` frames, each told apart.
 fn take(name: &str, frames: usize) -> String {
     let path = std::env::temp_dir().join(format!("host-audio-{name}-{}.wav", std::process::id()));

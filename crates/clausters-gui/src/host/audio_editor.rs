@@ -331,7 +331,7 @@ impl Host {
     /// score (MEI, MusicXML, ABC -- what the engraver reads) as the sequence
     /// it plays as, as the roll's own File > Open reads one
     /// (`clausters_apps::notes::file::read`); with no file the roll opens
-    /// over an empty MIDI 1.0 sequence. Its Save writes to `save_to`, and
+    /// over an empty MIDI 1.0 sequence, as every roll opened over nothing does. Its Save writes to `save_to`, and
     /// asks where without it, so the file opened is not written over unasked.
     pub fn open_roll_file(
         &mut self,
@@ -339,16 +339,12 @@ impl Host {
         save_to: Option<&str>,
         title: &str,
     ) -> Result<i32, String> {
-        let request = match path {
-            Some(_) => json!({}),
-            None => json!({"sequence": {"events": [], "midi": "1.0"}}),
-        };
         self.open_app_saving(
             AppKind::Notes,
             path,
             Some(super::audio_app::AppData::Notes {
                 over: None,
-                request,
+                request: json!({}),
             }),
             title,
             None,

@@ -48,6 +48,16 @@ use clausters_editing::verbs;
 /// A sequence the editor and its holder edit together.
 pub type Shared = Arc<Mutex<EventSequence>>;
 
+/// **What a roll holds when it opens over nothing**: an empty sequence
+/// written for MIDI 1.0, which a hand fills. A roll opened with no file and
+/// no sequence, and the roll's own New, both start from it.
+pub fn blank() -> EventSequence {
+    EventSequence {
+        midi: Some(clausters_document::events::MidiSpec::Midi1),
+        ..EventSequence::default()
+    }
+}
+
 /// **Where a roll's marks get their outlines**: the engraver the application
 /// holds, asked for the SMuFL codepoints a page writes marks with, answering
 /// the outline of each it has. The application hands one in where it holds an
