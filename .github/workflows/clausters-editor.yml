@@ -1,11 +1,13 @@
 # clausters-editor: the code editor, crates/clausters-editor.
 #
-# The crate is a member of the workspace, so ci.yml builds, lints and tests
-# its Rust with the rest, checks its library for wasm32 and builds its page
-# (the `web` job). This workflow keeps what is the editor's alone: the
+# The crate is a member of the workspace, so ci.yml lints its Rust with the
+# rest, tests it beside the host (the `gui` job), checks its library for
+# wasm32 and builds its page (the `web` job). This workflow keeps what is the editor's alone: the
 # session's driver (Python, spoken to as a subprocess), the third-party
 # notices, the Python wheel, and the page's npm lockfile against the
-# advisory databases. It runs only when the crate (or this file) changes.
+# advisory databases. It runs when the crate (or this file) changes, and when
+# what the notices are read from does: the workspace's lockfile, the faces the
+# host embeds and libverovio's pin.
 #
 # The weekly schedule runs the `audit` job alone: an advisory is published
 # against a lockfile nobody touched, so it is checked between changes too, the
@@ -20,11 +22,15 @@ on:
       - "crates/clausters-editor/**"
       - ".github/workflows/clausters-editor.yml"
       - "third_party/verovio.pin"
+      - "Cargo.lock"
+      - "crates/clausters-gui-draw/assets/fonts/**"
   pull_request:
     paths:
       - "crates/clausters-editor/**"
       - ".github/workflows/clausters-editor.yml"
       - "third_party/verovio.pin"
+      - "Cargo.lock"
+      - "crates/clausters-gui-draw/assets/fonts/**"
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:
