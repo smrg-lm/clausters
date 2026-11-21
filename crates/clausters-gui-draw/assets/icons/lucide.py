@@ -25,15 +25,16 @@ from pathlib import Path
 # The icons the host carries, by Lucide's name: the editor's tools and its
 # components', the host's chrome, the transport an application's toolbar
 # shows, and the applications a bar opens (audio-waveform, keyboard-music,
-# layers, music).
+# layers, music), and the roll's tools a pointer is drawn from (eraser,
+# scissors).
 SUBSET = [
     "arrow-down-to-line", "arrow-left", "arrow-right", "audio-waveform",
     "check", "chevron-down", "chevron-left", "chevron-right", "chevron-up",
     "circle", "copy", "download", "ellipsis-vertical", "eraser", "file-text",
     "folder", "folder-open", "grip-vertical", "house", "keyboard-music",
     "layers", "list-video", "menu", "minus", "music", "pause", "play",
-    "plus", "refresh-cw", "repeat", "rotate-ccw", "search", "skip-back",
-    "skip-forward", "square", "trash", "x",
+    "plus", "refresh-cw", "repeat", "rotate-ccw", "scissors", "search",
+    "skip-back", "skip-forward", "square", "trash", "x",
 ]
 
 TOKEN = re.compile(r"[MmLlHhVvCcSsQqTtAaZz]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?")

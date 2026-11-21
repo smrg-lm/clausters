@@ -39,6 +39,7 @@ use crate::host::graphics::docs::layout::{Ink, Item, Laid, draw_items_with, lay_
 use crate::host::graphics::docs::markdown::{Block, Run, parse, pictures, slugify};
 use crate::host::graphics::textedit::{self, Caret};
 use crate::host::pointer::Pointer;
+use crate::host::popup::{Flow, NoteLine, rows_of};
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyInput, Verb};
 use crate::host::widget::parse as props;
 use crate::host::widget::size::{Natural, control_box, text_box};
@@ -254,6 +255,14 @@ pub struct DocsView {
     /// **How far each code block of the page is scrolled across**, by its
     /// place among the page's blocks wider than it ([`Laid::pans`]).
     pans: RefCell<HashMap<usize, f32>>,
+    /// **What of the page's text is selected**: from where it was started
+    /// to where it reaches, as places in the page's text read as one
+    /// ([`Flow`]). A page laid out again lets it go.
+    select: Cell<Option<(usize, usize)>>,
+    /// What the press selected and by what unit, while a drag grows it.
+    held: Option<((usize, usize), textedit::Unit)>,
+    /// The page's rows read as one text, for the laid page it was read from.
+    flow: RefCell<Option<(Rc<Laid>, Rc<Flow>)>>,
 }
 
 /// **Where a picture of a page stands.**
@@ -313,6 +322,9 @@ impl DocsView {
             pictures_of: None,
             roots_moved: false,
             pans: RefCell::new(HashMap::new()),
+            select: Cell::new(None),
+            held: None,
+            flow: RefCell::new(None),
         };
         for (key, value) in p {
             view.set(key, value);
@@ -599,6 +611,7 @@ impl DocsView {
         // a page laid out again is another page, or the same at another
         // size: its code blocks start where their lines start
         self.pans.borrow_mut().clear();
+        self.select.set(None);
         let laid = Rc::new(lay_with(&self.blocks(), width, size, &pictures));
         *self.laid.borrow_mut() = Some((self.page().clone(), width, size, read, laid.clone()));
         laid
@@ -783,6 +796,47 @@ impl DocsView {
         let track = Rect::new(g.page.x + g.page.w - w, g.page.y, w, g.page.h);
         let span = (laid.height - g.text.h * 0.5).max(0.0);
         controls::ScrollBar::new(true, track, g.text.h, span, scroll, m.pad * 2.0)
+    }
+
+    /// **The page's rows read as one text** ([`Flow`]), from `laid`.
+    fn flow(&self, laid: &Rc<Laid>) -> Rc<Flow> {
+        if let Some((of, flow)) = self.flow.borrow().as_ref()
+            && Rc::ptr_eq(of, laid)
+        {
+            return flow.clone();
+        }
+        let flow = Rc::new(Flow::of(rows_of(laid)));
+        *self.flow.borrow_mut() = Some((laid.clone(), flow.clone()));
+        flow
+    }
+
+    /// How far row `row` of the page is scrolled across: its code block's.
+    fn row_pan(&self, laid: &Laid, row: &NoteLine) -> f32 {
+        laid.pans
+            .iter()
+            .position(|b| row.y >= b.rect.y && row.y < b.rect.y + b.rect.h)
+            .map_or(0.0, |i| self.pan_of(i).clamp(0.0, laid.pans[i].most()))
+    }
+
+    /// **The place in the page's text at `at`**: the row it is on, or the
+    /// last above it, and the character nearest it there.
+    fn text_at(&self, g: &Geometry, at: (f64, f64)) -> (Rc<Flow>, usize) {
+        let (scroll, laid) = self.settle(g);
+        let flow = self.flow(&laid);
+        let row = flow.row_at(at.1 as f32 - g.text.y + scroll);
+        let byte = flow.rows.get(row).map_or(0, |r| {
+            r.byte_at(at.0 as f32 - g.text.x + self.row_pan(&laid, r))
+        });
+        let at = flow.offset((row, byte));
+        (flow, at)
+    }
+
+    /// The text selected, when something is.
+    fn selected(&self) -> Option<String> {
+        let (a, b) = self.select.get().filter(|(a, b)| a != b)?;
+        let laid = self.laid.borrow().as_ref()?.4.clone();
+        let flow = self.flow(&laid);
+        flow.text().get(a.min(b)..a.max(b)).map(str::to_string)
     }
 
     /// How far code block `i` of the page is scrolled across.
@@ -1015,6 +1069,23 @@ impl DocsView {
             mesh.set_clip(Some(clip(g.page)));
             let (left, top) = (g.text.x, g.text.y - scroll);
             let marks = self.matches(&laid);
+            if let Some((a, b)) = self.select.get().filter(|(a, b)| a != b) {
+                let flow = self.flow(&laid);
+                let fill = clausters_gui_draw::theme::with_alpha(theme.selection, 0.35);
+                for (i, from, to, on) in flow.spans(a, b) {
+                    let row = &flow.rows[i];
+                    let pan = self.row_pan(&laid, row);
+                    let x0 = row.x_of(from);
+                    let mut x1 = row.x_of(to);
+                    if on && let Some(r) = row.runs.last() {
+                        x1 += font::width_in(r.family, " ", r.size);
+                    }
+                    mesh.rect(
+                        Rect::new(left + x0 - pan, top + row.y, (x1 - x0).max(0.0), row.h),
+                        fill,
+                    );
+                }
+            }
             draw_items_with(
                 mesh,
                 &laid,
@@ -1433,9 +1504,9 @@ impl Element for DocsView {
     }
 
     /// **The hand over a link**, which a press follows, and the I-beam over
-    /// the find field; the arrow over the header's buttons, a code block's
-    /// copy button, the scroll bar and the page's text, which a press does
-    /// not select.
+    /// the page's text and the find field, where a press selects; the arrow
+    /// over the header's buttons, a code block's copy button, the scroll bar
+    /// and the page's empty space.
     fn pointer(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
         let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
         if let Some(&(part, _)) = g.parts.iter().find(|(_, r)| r.contains(at.0, at.1)) {
@@ -1454,10 +1525,22 @@ impl Element for DocsView {
         }
         let (scroll, laid) = self.settle(&g);
         let (px, py) = (at.0 as f32 - g.text.x, at.1 as f32 - g.text.y + scroll);
-        if laid.copy_at(px, py).is_none() && laid.link_at(px, py).is_some() {
+        if laid.copy_at(px, py).is_some() {
+            return Some(Pointer::Default);
+        }
+        if laid.link_at(px, py).is_some() {
             return Some(Pointer::Hand);
         }
-        Some(Pointer::Default)
+        let flow = self.flow(&laid);
+        let on_text = flow.rows.iter().any(|r| {
+            let dx = px + self.row_pan(&laid, r);
+            py >= r.y && py < r.y + r.h && dx >= r.x_of(0) && dx <= r.x_of(r.text.len())
+        });
+        Some(if on_text {
+            Pointer::Text
+        } else {
+            Pointer::Default
+        })
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
@@ -1540,22 +1623,63 @@ impl Element for DocsView {
         if let Some(href) = laid.link_at(px, py).map(str::to_string) {
             return Claim::events(self.follow(&href));
         }
+        // **The text selects as text does everywhere**: one click places
+        // the start, two take a word, three the paragraph, Shift extends
+        // what is selected, and the drag grows it by the same unit.
+        let (flow, pos) = self.text_at(&g, at);
+        if input.mods.shift
+            && input.clicks == 1
+            && let Some((anchor, _)) = self.select.get()
+        {
+            self.held = Some(((anchor, anchor), textedit::Unit::Char));
+            self.select.set(Some((anchor, pos)));
+            return Claim::take();
+        }
+        let unit = textedit::Unit::of_clicks(input.clicks);
+        let span = textedit::unit_at(flow.text(), pos, unit);
+        self.held = Some((span, unit));
+        self.select.set(Some(span));
         Claim::take()
     }
 
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
+        let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
         if let Some(grip) = self.thumb {
-            let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
             if let Some(bar) = self.bar(&g, input.metrics) {
                 self.scroll.set(bar.drag(grip, at));
             }
+            return Events::none();
         }
+        let Some((held, unit)) = self.held else {
+            return Events::none();
+        };
+        // past the top or the bottom, the page comes to the pointer
+        let line = font::line_advance(g.size);
+        let y = at.1 as f32;
+        if y < g.text.y {
+            self.scroll.set((self.scroll.get() - line).max(0.0));
+        } else if y > g.text.y + g.text.h {
+            self.scroll.set(self.scroll.get() + line);
+        }
+        let (flow, pos) = self.text_at(&g, at);
+        let caret = textedit::extend_by(flow.text(), held, pos, unit);
+        self.select
+            .set(Some((caret.anchor.unwrap_or(caret.pos), caret.pos)));
         Events::none()
     }
 
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         self.thumb = None;
+        self.held = None;
         Events::none()
+    }
+
+    fn selected_text(&self) -> Option<String> {
+        self.selected()
+    }
+
+    fn holds_selection(&self) -> Option<bool> {
+        Some(self.selected().is_some())
     }
 
     fn wheel(&mut self, at: (f64, f64), delta: (f64, f64), input: &Input) -> Option<Events> {
@@ -1661,13 +1785,21 @@ impl Element for DocsView {
         Some(Events::none())
     }
 
-    /// The code a copy button was pressed on, to the clipboard.
+    /// The code a copy button was pressed on, or the page's selection, to
+    /// the clipboard; Select All selects the page.
     fn verb(&mut self, verb: Verb, input: &mut KeyInput) -> Option<Events> {
         match verb {
+            // a code block's copy button, or what is selected of the page
             Verb::Copy => {
-                if let Some(code) = self.copy.take() {
-                    input.clipboard.set_text(&code);
+                if let Some(text) = self.copy.take().or_else(|| self.selected()) {
+                    input.clipboard.set_text(&text);
                 }
+                Some(Events::none())
+            }
+            Verb::SelectAll if !self.find_focus => {
+                let laid = self.laid.borrow().as_ref().map(|k| k.4.clone());
+                let all = laid.map(|laid| self.flow(&laid).text().len());
+                self.select.set(all.map(|n| (0, n)));
                 Some(Events::none())
             }
             _ => None,

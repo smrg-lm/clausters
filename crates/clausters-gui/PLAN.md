@@ -1591,15 +1591,6 @@ holds what is open.
   regions) would cut both to the boxes. Take it when the graphics layer
   offers it on every backend the host draws with, the page included.
 
-- ⬜ **The roll's eraser and scissors have no pointer of their own**
-  *(named 2026-11-21, when the pointer came to say what a press will do)*.
-  The list both fronts name holds no eraser and no blade, so over a note
-  the eraser shows the arrow and the scissors the crosshair, and the tool
-  is told apart by the toolbar and by what it does. A cursor made from an
-  image (the windowing crate's custom cursor, a CSS `url()` in a page) would
-  tell them apart: two images drawn for the window's scale, a hotspot each,
-  on both fronts.
-
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what
@@ -1643,11 +1634,3 @@ finished work, where a pending item reads as done.
   redefine, a view switch no longer redraws from a fresh download, so a stale
   picture, if it happens again, stays until the owner's `reload` and is
   worth a capture of the exact steps.)*
-
-- ⬜ **A documentation page's text is not selected by a press**
-  (2026-11-21, found when the pointer came to say what a press will do).
-  The current editor selects a documentation page's text, as the post
-  window's lines are selected, and copies it; here a press on the page's
-  text does nothing, so the pointer there is the arrow. Selecting it is the
-  post window's selection over the page's laid text, and the I-beam follows
-  from the element's answer.

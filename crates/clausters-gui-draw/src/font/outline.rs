@@ -76,6 +76,36 @@ pub fn icon(name: &str) -> Option<char> {
     icons_in().then(|| char::from_u32(ICON_BASE + at as u32))?
 }
 
+/// **The icon `name` as pixels**, `px` square: its lines black over a
+/// white halo, as a pointer's shape is drawn to read over any ground, in
+/// straight-alpha RGBA ([`Mesh::rasterize`]). `None` for a name the host
+/// does not carry, or a build that cannot stroke a path.
+pub fn icon_pixels(name: &str, px: u32) -> Option<Vec<u8>> {
+    #[cfg(feature = "path")]
+    {
+        let (_, d) = super::lucide::ICONS.iter().find(|(n, _)| *n == name)?;
+        // the box of 24 inside a pixel of margin on every side, for the halo
+        let k = (px as f32 - 2.0).max(1.0) / 24.0;
+        let mut mesh = Mesh::new();
+        for (width, color) in [
+            (ICON_STROKE + 2.0 / k, [1.0; 4]),
+            (ICON_STROKE, [0.0, 0.0, 0.0, 1.0]),
+        ] {
+            let tris = crate::path::stroke_triangles(d, width, 0.02);
+            for t in tris.as_chunks::<3>().0 {
+                let at = |p: [f32; 2]| [1.0 + p[0] * k, 1.0 + p[1] * k];
+                mesh.tri(at(t[0]), at(t[1]), at(t[2]), color);
+            }
+        }
+        Some(mesh.rasterize(px, px))
+    }
+    #[cfg(not(feature = "path"))]
+    {
+        let _ = (name, px);
+        None
+    }
+}
+
 /// The names of the icons the host carries.
 pub fn icon_names() -> impl Iterator<Item = &'static str> {
     super::lucide::ICONS.iter().map(|(name, _)| *name)

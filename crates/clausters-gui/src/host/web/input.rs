@@ -13,6 +13,10 @@ use crate::host::gestures::{Wheel, WheelDelta};
 use crate::host::widget::element::SlotKey;
 use crate::host::winit_keys::to_key;
 
+/// How large a pointer's picture is in a page: CSS pixels, which the
+/// browser draws at the screen's density itself.
+pub(super) const PAGE_POINTER_PX: u32 = crate::host::pointer::POINTER_PX as u32;
+
 impl WebApp {
     /// **Hands the loop what the host did on its own** -- a window it opened
     /// in answer to a gesture -- since opening a canvas needs the event loop,
@@ -192,7 +196,8 @@ impl WebApp {
         let p = slot.gestures.pointer();
         if p != slot.shown_pointer {
             slot.shown_pointer = p;
-            slot.window.set_cursor(p.icon());
+            slot.window
+                .set_cursor(self.cursors.cursor(p, PAGE_POINTER_PX));
         }
     }
 
@@ -460,6 +465,8 @@ impl WebApp {
         id: WindowId,
         event: WindowEvent,
     ) {
+        // the pointer's pictures, before a gesture asks for one
+        self.cursors.make(event_loop, PAGE_POINTER_PX);
         // the dock's canvas holds panes, each a canvas slot with no
         // canvas of its own
         if let Some(which) = self.shell_of(id) {

@@ -209,7 +209,8 @@ impl App {
         if p != ws.shown_pointer {
             ws.shown_pointer = p;
             if let Some(window) = ws.gpu.window() {
-                window.set_cursor(p.icon());
+                let px = crate::host::pointer::pointer_px(window.scale_factor() as f32);
+                window.set_cursor(self.cursors.cursor(p, px));
             }
         }
     }

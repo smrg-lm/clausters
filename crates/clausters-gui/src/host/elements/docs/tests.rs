@@ -380,3 +380,86 @@ fn the_folder_button_performs_its_owners_verb() {
     };
     assert_eq!(t.events.take_command().as_deref(), Some("docs_folder"));
 }
+
+/// Where `word` of the page's text stands on screen, just inside its
+/// first letter.
+fn on_word(v: &DocsView, word: &str) -> (f64, f64) {
+    let m = Metrics::default();
+    let g = v.geometry(RECT, 1.0, &m, None);
+    let (scroll, laid) = v.settle(&g);
+    let flow = v.flow(&laid);
+    let row = flow
+        .rows
+        .iter()
+        .find(|r| r.text.contains(word))
+        .expect("the word");
+    let at = row.text.find(word).unwrap();
+    (
+        f64::from(g.text.x + row.x_of(at) + 1.0),
+        f64::from(g.text.y + row.y - scroll + row.h * 0.5),
+    )
+}
+
+/// The page's selection, copied.
+fn copied(v: &mut DocsView) -> String {
+    let mut clip = Clip::default();
+    let mut ki = KeyInput {
+        mods: Mods::default(),
+        clipboard: &mut clip,
+        cursor: None,
+    };
+    v.verb(Verb::Copy, &mut ki);
+    clip.text().to_string()
+}
+
+/// **The page's text selects as text does**: two clicks take a word, three
+/// the paragraph, a drag from one paragraph into another takes both with
+/// the break between them, and the copy key copies it. The pointer is the
+/// I-beam over the text and the arrow beside it.
+#[test]
+fn the_pages_text_is_selected_and_copied() {
+    let m = Metrics::default();
+    let mut v = panel();
+    v.set("open", &Value::from("buffers.md"));
+    let holds = on_word(&v, "holds");
+    let twice = Input {
+        clicks: 2,
+        ..input(&m)
+    };
+    v.press(holds, &twice);
+    v.release(holds, true, &twice);
+    assert_eq!(copied(&mut v), "holds");
+    let thrice = Input {
+        clicks: 3,
+        ..input(&m)
+    };
+    v.press(holds, &thrice);
+    v.release(holds, true, &thrice);
+    assert_eq!(copied(&mut v), "A buffer holds samples.");
+    let from = on_word(&v, "samples");
+    let to = on_word(&v, "Reading");
+    v.press(from, &input(&m));
+    v.drag(to, &input(&m));
+    v.release(to, true, &input(&m));
+    assert_eq!(v.selected_text().as_deref(), Some("samples.\n"));
+    assert_eq!(v.pointer(holds, &input(&m)), Some(Pointer::Text));
+    assert_eq!(
+        v.pointer((holds.0 + 500.0, holds.1), &input(&m)),
+        Some(Pointer::Default),
+        "beside the text"
+    );
+    let mut clip = Clip::default();
+    let mut ki = KeyInput {
+        mods: Mods::default(),
+        clipboard: &mut clip,
+        cursor: None,
+    };
+    v.verb(Verb::SelectAll, &mut ki);
+    let all = v.selected_text().unwrap();
+    assert!(
+        all.starts_with("Buffers\nA buffer holds samples.\nReading\n"),
+        "{all:?}"
+    );
+    assert!(all.ends_with("\nb = Buffer.read(path)"), "{all:?}");
+    assert!(!all.contains("Copy"), "the copy button is not text");
+}

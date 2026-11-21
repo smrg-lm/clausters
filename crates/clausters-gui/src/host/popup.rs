@@ -606,6 +606,82 @@ impl NotePlace {
 /// documentation's after them) and a byte in it.
 pub type NotePos = (usize, usize);
 
+/// **Rows of text read as one text**: each row's text in order, a line
+/// break after the row that ends its paragraph and a space after one the
+/// paragraph was wrapped from. So a place in the rows is a place in one
+/// string, which the text model selects over as it selects a field
+/// (`textedit`: a word, a paragraph as its line, a drag growing by either),
+/// and what a selection copies is a slice of it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Flow {
+    pub rows: Vec<NoteLine>,
+    text: String,
+    /// Where each row starts in `text`.
+    starts: Vec<usize>,
+}
+
+impl Flow {
+    pub fn of(rows: Vec<NoteLine>) -> Self {
+        let mut text = String::new();
+        let mut starts = Vec::with_capacity(rows.len());
+        for (i, row) in rows.iter().enumerate() {
+            starts.push(text.len());
+            text.push_str(&row.text);
+            if i + 1 < rows.len() {
+                text.push(if row.ends { '\n' } else { ' ' });
+            }
+        }
+        Self { rows, text, starts }
+    }
+
+    /// All of it, as one text.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// The place `pos` of the rows, in the text.
+    pub fn offset(&self, (row, at): NotePos) -> usize {
+        match (self.starts.get(row), self.rows.get(row)) {
+            (Some(start), Some(r)) => start + at.min(r.text.len()),
+            _ => self.text.len(),
+        }
+    }
+
+    /// The place in the rows of `offset` in the text: a row's end for the
+    /// break or the space after it.
+    pub fn pos(&self, offset: usize) -> NotePos {
+        let row = self
+            .starts
+            .partition_point(|&s| s <= offset)
+            .saturating_sub(1);
+        let start = self.starts.get(row).copied().unwrap_or(0);
+        let len = self.rows.get(row).map_or(0, |r| r.text.len());
+        (row, (offset - start.min(offset)).min(len))
+    }
+
+    /// The row at `y`, from the rows' top: the one it is on, or the last
+    /// above it.
+    pub fn row_at(&self, y: f32) -> usize {
+        self.rows.iter().rposition(|l| l.y <= y).unwrap_or(0)
+    }
+
+    /// **What is selected of each row** from `a` to `b` (text offsets, in
+    /// either order): the row, and its byte range. A row the selection goes
+    /// on past ends selected, the break or the space after it included.
+    pub fn spans(&self, a: usize, b: usize) -> Vec<(usize, usize, usize, bool)> {
+        let (a, b) = (a.min(b), a.max(b));
+        let ((r0, from), (r1, to)) = (self.pos(a), self.pos(b));
+        (r0..=r1)
+            .filter_map(|i| {
+                let len = self.rows.get(i)?.text.len();
+                let s = if i == r0 { from } else { 0 };
+                let e = if i == r1 { to } else { len };
+                Some((i, s, e, i < r1))
+            })
+            .collect()
+    }
+}
+
 /// **A hover card's own state**, the host's, since the element only says what
 /// it shows: how far its documentation is scrolled and what of its text is
 /// selected, from the press to where the drag is.
@@ -643,11 +719,13 @@ fn wrapped(
 }
 
 /// **The rows of text of a laid-out document**, each its runs in the
-/// order they stand: what a selection in a card walks. A row ends its
-/// paragraph where the next one stands further below than a line.
-fn rows_of(laid: &crate::host::graphics::docs::layout::Laid) -> Vec<NoteLine> {
+/// order they stand: what a selection in a card or in the documentation
+/// walks. A row ends where the stretch of text the layout laid it from
+/// ends -- a paragraph, a heading, a line of code -- and a stretch wrapped
+/// onto the next row goes on there.
+pub(crate) fn rows_of(laid: &crate::host::graphics::docs::layout::Laid) -> Vec<NoteLine> {
     use crate::host::graphics::docs::layout::Item;
-    let mut texts: Vec<(f32, f32, &str, font::Family, f32)> = laid
+    let mut texts: Vec<(f32, f32, &str, font::Family, f32, usize)> = laid
         .items
         .iter()
         .filter_map(|item| match item {
@@ -657,23 +735,29 @@ fn rows_of(laid: &crate::host::graphics::docs::layout::Laid) -> Vec<NoteLine> {
                 text,
                 family,
                 size,
+                para: Some(para),
                 ..
-            } => Some((*y, *x, text.as_str(), *family, *size)),
-            Item::Fill { .. } | Item::Picture { .. } => None,
+            } => Some((*y, *x, text.as_str(), *family, *size, *para)),
+            _ => None,
         })
         .collect();
     texts.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
-    let mut rows: Vec<NoteLine> = Vec::new();
-    for (y, x, text, family, size) in texts {
+    // each row, and the stretches of text it begins and ends in
+    let mut rows: Vec<(NoteLine, usize, usize)> = Vec::new();
+    for (y, x, text, family, size, para) in texts {
         let h = font::line_advance(size);
         match rows.last_mut() {
-            Some(row) if (row.y - y).abs() < 0.5 => {
-                // the space the layout leaves between two runs, which no
-                // piece carries, is text a copy keeps
+            Some((row, _, last)) if (row.y - y).abs() < 0.5 => {
+                // a table's cells stand apart by a tab, as a copied table's
+                // do; the space the layout leaves between two runs of one
+                // stretch, which no piece carries, is text a copy keeps
                 let end = row.x_of(row.text.len());
-                if x - end > 0.3 * font::width_in(family, " ", size) {
+                if para != *last {
+                    row.text.push('\t');
+                } else if x - end > 0.3 * font::width_in(family, " ", size) {
                     row.text.push(' ');
                 }
+                *last = para;
                 row.runs.push(NoteRun {
                     from: row.text.len(),
                     x,
@@ -683,28 +767,33 @@ fn rows_of(laid: &crate::host::graphics::docs::layout::Laid) -> Vec<NoteLine> {
                 row.text.push_str(text);
                 row.h = row.h.max(h);
             }
-            _ => rows.push(NoteLine {
-                text: text.to_string(),
-                ends: true,
-                runs: vec![NoteRun {
-                    from: 0,
-                    x,
-                    family,
-                    size,
-                }],
-                y,
-                h,
-            }),
+            _ => rows.push((
+                NoteLine {
+                    text: text.to_string(),
+                    ends: true,
+                    runs: vec![NoteRun {
+                        from: 0,
+                        x,
+                        family,
+                        size,
+                    }],
+                    y,
+                    h,
+                },
+                para,
+                para,
+            )),
         }
     }
-    // a row ends its paragraph where the next stands further down than a
-    // line of the paragraph would
-    for i in 1..rows.len() {
-        let size = rows[i - 1].runs.first().map_or(1.0, |r| r.size);
-        let pitch = crate::host::graphics::docs::layout::line_pitch(size);
-        rows[i - 1].ends = rows[i].y - rows[i - 1].y > pitch * 1.25;
-    }
-    rows
+    // a row ends its stretch of text where the next row is another's
+    let starts: Vec<usize> = rows.iter().map(|r| r.1).collect();
+    rows.into_iter()
+        .enumerate()
+        .map(|(i, (mut row, _, last))| {
+            row.ends = starts.get(i + 1).is_none_or(|&next| next != last);
+            row
+        })
+        .collect()
 }
 
 /// **Where a note goes, and the lines of its documentation**: over its
@@ -879,32 +968,13 @@ impl Note {
         place.line(i).map_or(0.0, |(l, _)| l.x_of(at))
     }
 
-    /// The length of line `i`.
-    pub fn line_len(&self, place: &NotePlace, i: usize) -> usize {
-        place.line(i).map_or(0, |(l, _)| l.text.len())
-    }
-
     /// **The text from `a` to `b`**, in either order: the head and the
     /// documentation on lines of their own, the lines either was wrapped
     /// into joined back with a space.
     pub fn text_between(&self, place: &NotePlace, a: NotePos, b: NotePos) -> String {
-        let (a, b) = if a <= b { (a, b) } else { (b, a) };
-        let mut out = String::new();
-        for i in a.0..=b.0 {
-            let text = place.line(i).map_or("", |(l, _)| l.text.as_str());
-            let from = if i == a.0 { a.1.min(text.len()) } else { 0 };
-            let to = if i == b.0 {
-                b.1.min(text.len())
-            } else {
-                text.len()
-            };
-            out.push_str(text.get(from..to.max(from)).unwrap_or_default());
-            if i < b.0 {
-                let ends = place.line(i).is_none_or(|(l, _)| l.ends);
-                out.push(if ends { '\n' } else { ' ' });
-            }
-        }
-        out
+        let flow = Flow::of(place.heads.iter().chain(&place.lines).cloned().collect());
+        let (a, b) = (flow.offset(a), flow.offset(b));
+        flow.text()[a.min(b)..a.max(b)].to_string()
     }
 }
 

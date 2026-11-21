@@ -1285,18 +1285,12 @@ fn draw_note(
     }
     // the selection, under the text it selects
     if let Some((a, b)) = card.and_then(|c| c.select).filter(|(a, b)| a != b) {
-        let (a, b) = if a <= b { (a, b) } else { (b, a) };
         let fill = with_alpha(theme.selection, 0.35);
-        for i in a.0..=b.0 {
-            let from = if i == a.0 { a.1 } else { 0 };
-            let to = if i == b.0 {
-                b.1
-            } else {
-                note.line_len(&place, i)
-            };
+        let flow = popup::Flow::of(place.heads.iter().chain(&place.lines).cloned().collect());
+        for (i, from, to, on) in flow.spans(flow.offset(a), flow.offset(b)) {
             let x0 = note.x_of(&place, i, from);
             let mut x1 = note.x_of(&place, i, to);
-            if i < b.0 {
+            if on {
                 x1 += font::width(" ", note.text_size);
             }
             let (y, h) = place.line_top(i, scroll);

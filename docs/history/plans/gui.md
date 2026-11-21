@@ -5443,6 +5443,27 @@ first four are the order the user set; the components come after.
   shows the next one at once. The roll names the note under the pointer,
   its pitch and its velocity.)*
 
+- ✅ **The roll's eraser and scissors have no pointer of their own**
+  *(named 2026-11-21, when the pointer came to say what a press will do)*.
+  The list both fronts name holds no eraser and no blade, so over a note
+  the eraser shows the arrow and the scissors the crosshair, and the tool
+  is told apart by the toolbar and by what it does. A cursor made from an
+  image (the windowing crate's custom cursor, a CSS `url()` in a page) would
+  tell them apart: two images drawn for the window's scale, a hotspot each,
+  on both fronts.
+  *(Done 2026-11-21. The two are the host's own icons, Lucide's `eraser`
+  and `scissors` (the latter added to the subset the host carries), drawn
+  black over a white halo into pixels by the processor
+  (`outline::icon_pixels`, over a small rasterizer of the flat triangles
+  that samples each pixel four by four, `Mesh::rasterize`) and set as the
+  windowing crate's custom cursor, which a page shows as the canvas's CSS
+  `url()`: made once per size from the event loop (`pointer::Cursors`), at
+  the window's scale natively and in CSS pixels in a page. A platform that
+  takes no picture shows the named shape in its place, the arrow and the
+  crosshair (`Pointer::named`). The roll shows the eraser with that tool
+  and with Ctrl over a note, which takes it away too, and the scissors over
+  a note with that tool.)*
+
 ## Found by use: the entries that were fixed
 
 - ✅ **A capture of the multitrack example's window never answers, headless**
@@ -10084,3 +10105,26 @@ module of its own.
   (`Composer::compose`), on both fronts and in a dock's capture. A GPU
   test composes a pane whose dialog holds a canvas shaded red and finds
   it red over the card, and absent when the layer is not copied.)*
+
+- ✅ **A documentation page's text is not selected by a press**
+  (2026-11-21, found when the pointer came to say what a press will do).
+  The current editor selects a documentation page's text, as the post
+  window's lines are selected, and copies it; here a press on the page's
+  text does nothing, so the pointer there is the arrow. Selecting it is the
+  post window's selection over the page's laid text, and the I-beam follows
+  from the element's answer.
+  *(Fixed 2026-11-21, by the standard behaviour. The page's rows are read
+  as one text (`popup::Flow`): a line break where a stretch of text ends
+  -- a paragraph, a heading, a line of code, which the layout now numbers
+  on each piece it lays out (`Item::Text::para`) instead of the reader
+  guessing from the distance between rows, which joined a heading to the
+  paragraph under it and a code block's lines into one -- a space where a
+  stretch was wrapped, a tab between a table's cells, and nothing of what
+  is only drawn (a copy button, a list's mark). Over that one text the
+  field's own model selects (`textedit`: a word, a paragraph, a drag
+  growing by either), so a click places the start, two take a word, three
+  the paragraph, Shift extends, and the copy key, Select All and the middle
+  button take it; the selection is drawn under the text, a code block's
+  rows across with its scroll. The hover card copies from the same reading
+  of its rows and draws its selection from the same spans. The pointer is
+  the I-beam over the page's text and the arrow beside it.)*

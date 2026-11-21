@@ -48,6 +48,12 @@ pub enum Item {
         strike: bool,
         /// The [`Pan`] it scrolls across with, for a code block's line.
         pan: Option<usize>,
+        /// **The stretch of text it is part of** -- a paragraph, a
+        /// heading, a cell, a line of code, up to a line break -- by its
+        /// number in the page (`Laid::paras`): what a reading of the page as
+        /// one text ends a line at. `None` for what is drawn and not read,
+        /// a code block's copy button and a list's mark.
+        para: Option<usize>,
     },
     Fill {
         rect: Rect,
@@ -95,6 +101,8 @@ pub struct Laid {
     pub links: Vec<(Rect, String)>,
     /// A code block's copy button, and the code it copies.
     pub copies: Vec<(Rect, String)>,
+    /// How many stretches of text the page holds ([`Item::Text`]'s `para`).
+    pub paras: usize,
 
     /// **The code blocks wider than the page**, each scrolled across on its
     /// own ([`Pan`]).
@@ -128,6 +136,12 @@ impl Laid {
     }
 
     /// The link under `(x, y)`.
+    /// A new stretch of text: its number.
+    fn next_para(&mut self) -> usize {
+        self.paras += 1;
+        self.paras - 1
+    }
+
     pub fn link_at(&self, x: f32, y: f32) -> Option<&str> {
         self.links
             .iter()
@@ -197,6 +211,7 @@ pub fn draw_items_with(
                 underline,
                 strike,
                 pan: across,
+                ..
             } => {
                 let color = ink(*role);
                 let mut left = left;
@@ -262,13 +277,6 @@ impl Measures<'_> {
     fn line(&self, size: f32) -> f32 {
         (font::height(size) / 0.727 * 1.6).max(font::line_advance(size))
     }
-}
-
-/// **How far apart two lines of one paragraph stand**, at `size`: a book
-/// page's leading, what a reader of a laid-out page (a card's selection)
-/// tells a line of a paragraph from the next paragraph by.
-pub fn line_pitch(size: f32) -> f32 {
-    Measures::new(size).line(size)
 }
 
 /// The face a run is written in, over `base`.
@@ -382,6 +390,7 @@ fn lay_blocks(
                         underline: false,
                         strike: false,
                         pan: None,
+                        para: None,
                     });
                     let mut inner = *y;
                     lay_blocks(out, item, x + indent, w - indent, &mut inner, m, ink);
@@ -474,6 +483,7 @@ fn lay_runs(
     // what the line holds so far that has not been placed: a space waits
     // for the word after it
     let mut pending_space = false;
+    let mut para = out.next_para();
     for run in runs {
         let family = family_of(run, base);
         let run_ink = if run.code { Ink::Code(None) } else { ink };
@@ -484,6 +494,7 @@ fn lay_runs(
                 pen = x;
                 pending_space = false;
                 rest = after;
+                para = out.next_para();
                 continue;
             }
             let space = rest.starts_with(char::is_whitespace);
@@ -527,7 +538,18 @@ fn lay_runs(
                 };
                 let piece = &word[..fit];
                 let pw = font::width_in(family, piece, size);
-                place(out, pen, lead, ty(top), piece, family, size, run_ink, run);
+                place(
+                    out,
+                    pen,
+                    lead,
+                    ty(top),
+                    piece,
+                    family,
+                    size,
+                    run_ink,
+                    para,
+                    run,
+                );
                 if let Some(href) = &run.link {
                     out.links
                         .push((Rect::new(pen + lead, top, pw, line_h), href.clone()));
@@ -558,6 +580,7 @@ fn place(
     family: Family,
     size: f32,
     ink: Ink,
+    para: usize,
     run: &Run,
 ) {
     // a link in a heading or in strong words reads as a title, as a
@@ -574,7 +597,9 @@ fn place(
         strike: lst,
         x: lx,
         pan: None,
+        para: lp,
     }) = out.items.last_mut()
+        && *lp == Some(para)
         && *ly == y
         && *lf == family
         && *ls == size
@@ -599,6 +624,7 @@ fn place(
         underline,
         strike: run.strike,
         pan: None,
+        para: Some(para),
     });
 }
 
@@ -634,6 +660,7 @@ fn lay_code(out: &mut Laid, lang: &str, text: &str, x: f32, w: f32, y: &mut f32,
     let pan = out.pans.len();
     let mut content = w;
     for (n, line) in lines.iter().enumerate() {
+        let para = out.next_para();
         let ty = *y + pad_y + n as f32 * line_h + (line_h - font::height(size)) * 0.5;
         let mut pen = x + pad_x;
         let mut at = 0;
@@ -663,6 +690,7 @@ fn lay_code(out: &mut Laid, lang: &str, text: &str, x: f32, w: f32, y: &mut f32,
                 underline: false,
                 strike: false,
                 pan: Some(pan),
+                para: Some(para),
             });
             pen += pw;
             at = edge;
@@ -701,6 +729,7 @@ fn lay_code(out: &mut Laid, lang: &str, text: &str, x: f32, w: f32, y: &mut f32,
         underline: false,
         strike: false,
         pan: None,
+        para: None,
     });
     out.copies.push((button, text.to_string()));
     *y += h + m.em * 1.0;

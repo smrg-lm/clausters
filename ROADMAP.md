@@ -119,10 +119,6 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
   load closing the playback tests' entry; rare.
 
-- ⬜ **A documentation page's text is not selected by a press**
-  *(`crates/clausters-gui/PLAN.md`, Found by use)*. The current editor
-  selects it; here a press does nothing, so the pointer is the arrow.
-
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** *(`crates/clausters-gui/PLAN.md`, Found by use)*. Not
   reproduced in five sequences on a GPU; waits for the exact steps.
@@ -367,8 +363,7 @@ Named, not enumerated: each is written where it belongs and is read there.
   a generic editor that carries the node's own verbs; a buffer position
   wider than a signal, which `Phasor` into `BufRd` and `BufWr` still needs),
   the GUI's (subpixel antialiasing of text where the desktop asks for it;
-  a pointer of their own for the roll's eraser and scissors; a steady
-  goniometer; a Tauri wrapper, only a possibility; the page's clipboard
+  a steady goniometer; a Tauri wrapper, only a possibility; the page's clipboard
   reaching the browser's; a selected staff edited by its line count; a paste
   that could make tracks; a frame of what moves that presents only what
   moved), the web client's (type-safe GuiDef/def schemas, a

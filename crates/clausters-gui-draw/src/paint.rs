@@ -351,6 +351,101 @@ impl Mesh {
         &self.verts
     }
 
+    /// **The flat triangles drawn into pixels by the processor**: `w` by
+    /// `h` of straight-alpha RGBA, the batch's origin at the first pixel's
+    /// corner. For a picture a platform takes as pixels -- a pointer drawn
+    /// from an icon -- never for a frame, which the card draws.
+    ///
+    /// Each pixel is sampled four by four. The triangles of one color are
+    /// one coverage, as one shape (a stroke's pieces overlap and meet edge
+    /// to edge, and two half-covered samples of one shape are one covered
+    /// one), and each color in the order drawn is laid over what is under it.
+    pub fn rasterize(&self, w: u32, h: u32) -> Vec<u8> {
+        const N: usize = 4;
+        let (w, h) = (w as usize, h as usize);
+        let mut out = vec![[0.0f32; 4]; w * h];
+        let tris: Vec<&[f32; 3 * FLOATS_PER_VERTEX]> = self
+            .verts
+            .as_chunks::<{ 3 * FLOATS_PER_VERTEX }>()
+            .0
+            .iter()
+            .collect();
+        let mut i = 0;
+        while i < tris.len() {
+            let color = [tris[i][2], tris[i][3], tris[i][4], tris[i][5]];
+            let mut j = i;
+            while j < tris.len() && tris[j][2..6] == color {
+                j += 1;
+            }
+            let mut mask = vec![false; w * h * N * N];
+            for t in &tris[i..j] {
+                let p = |k: usize| (t[k * FLOATS_PER_VERTEX], t[k * FLOATS_PER_VERTEX + 1]);
+                let (a, b, c) = (p(0), p(1), p(2));
+                let edge = |p: (f32, f32), q: (f32, f32), x: f32, y: f32| {
+                    (q.0 - p.0) * (y - p.1) - (q.1 - p.1) * (x - p.0)
+                };
+                let area = edge(a, b, c.0, c.1);
+                if area.abs() < 1e-9 {
+                    continue;
+                }
+                let lo = |v: f32, n: usize| ((v.floor().max(0.0)) as usize).min(n);
+                let hi = |v: f32, n: usize| ((v.ceil().max(0.0)) as usize).min(n);
+                let (x0, x1) = (lo(a.0.min(b.0).min(c.0), w), hi(a.0.max(b.0).max(c.0), w));
+                let (y0, y1) = (lo(a.1.min(b.1).min(c.1), h), hi(a.1.max(b.1).max(c.1), h));
+                for py in y0..y1 {
+                    for px in x0..x1 {
+                        for sy in 0..N {
+                            for sx in 0..N {
+                                let x = px as f32 + (sx as f32 + 0.5) / N as f32;
+                                let y = py as f32 + (sy as f32 + 0.5) / N as f32;
+                                let (e0, e1, e2) =
+                                    (edge(a, b, x, y), edge(b, c, x, y), edge(c, a, x, y));
+                                let inside = if area > 0.0 {
+                                    e0 >= 0.0 && e1 >= 0.0 && e2 >= 0.0
+                                } else {
+                                    e0 <= 0.0 && e1 <= 0.0 && e2 <= 0.0
+                                };
+                                if inside {
+                                    mask[((py * N + sy) * w + px) * N + sx] = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for py in 0..h {
+                for px in 0..w {
+                    let covered = (0..N)
+                        .flat_map(|sy| (0..N).map(move |sx| (sy, sx)))
+                        .filter(|&(sy, sx)| mask[((py * N + sy) * w + px) * N + sx])
+                        .count();
+                    let a = color[3] * covered as f32 / (N * N) as f32;
+                    let d = &mut out[py * w + px];
+                    // premultiplied, the new over what is there
+                    for k in 0..3 {
+                        d[k] = color[k] * a + d[k] * (1.0 - a);
+                    }
+                    d[3] = a + d[3] * (1.0 - a);
+                }
+            }
+            i = j;
+        }
+        out.iter()
+            .flat_map(|&[r, g, b, a]| {
+                let un = |c: f32| {
+                    let v = if a > 0.0 { c / a } else { 0.0 };
+                    (v.clamp(0.0, 1.0) * 255.0).round() as u8
+                };
+                [
+                    un(r),
+                    un(g),
+                    un(b),
+                    (a.clamp(0.0, 1.0) * 255.0).round() as u8,
+                ]
+            })
+            .collect()
+    }
+
     /// The glyph vertices accumulated, `[x, y, u, v, r, g, b, a]` each.
     #[cfg(feature = "font-atlas")]
     pub fn glyph_vertices(&self) -> &[f32] {
@@ -1239,6 +1334,23 @@ mod tests {
         cut.soft_rect(r, 8.0, 6.0, [0.0, 0.0, 0.0, 0.2]);
         let e = cut.extent().unwrap();
         assert!(e.x + e.w <= 50.0 + 1e-3, "{e:?}");
+    }
+
+    /// **A shape drawn into pixels** covers what it covers and leaves the
+    /// rest clear: two triangles of one square meet with no seam, a half
+    /// covered pixel at its edge is half opaque, and a color drawn after
+    /// another is over it.
+    #[test]
+    fn a_mesh_rasterizes_into_its_pixels() {
+        let mut m = Mesh::new();
+        m.rect(Rect::new(1.0, 1.0, 2.5, 2.0), [1.0, 1.0, 1.0, 1.0]);
+        m.rect(Rect::new(2.0, 2.0, 1.0, 1.0), [0.0, 0.0, 0.0, 1.0]);
+        let px = m.rasterize(4, 4);
+        let at = |x: usize, y: usize| &px[(y * 4 + x) * 4..(y * 4 + x) * 4 + 4];
+        assert_eq!(at(0, 0), &[0, 0, 0, 0], "clear outside");
+        assert_eq!(at(1, 1), &[255, 255, 255, 255], "covered, no seam");
+        assert_eq!(at(2, 2), &[0, 0, 0, 255], "the later color over");
+        assert_eq!(at(3, 1)[3], 128, "half covered at the edge");
     }
 
     /// A batch joined with a shift lands moved, its colors untouched.

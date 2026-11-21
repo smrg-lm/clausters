@@ -124,6 +124,14 @@ fn a_rolls_note_says_which_part_a_press_takes() {
     let mut g = Gestures::default();
     g.motion(&mut host, &ctx, empty, y60);
     assert_eq!(g.pointer(), Pointer::Crosshair, "the pencil");
+    let mut host = roll("erase");
+    let mut g = Gestures::default();
+    g.motion(&mut host, &ctx, body, y60);
+    assert_eq!(g.pointer(), Pointer::Erase, "the eraser");
+    let mut host = roll("split");
+    let mut g = Gestures::default();
+    g.motion(&mut host, &ctx, body, y60);
+    assert_eq!(g.pointer(), Pointer::Cut, "the scissors");
 }
 
 /// **The roll names the note under the pointer** once the pointer rests on

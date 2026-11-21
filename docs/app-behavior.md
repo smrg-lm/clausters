@@ -157,19 +157,30 @@ code that keeps it lives.
   not be closed (`closable`), rather than offering a close mark it would have
   to refuse.
 - **The pointer says what a press will do, before the press.** Over text
-  a press puts a caret in, the I-beam (a field, the code, the post window's
-  lines, a sweep over samples); over a link, the hand; over what a drag
-  carries, the open hand, closed while it is carried (a box, a note); over
-  an edge a drag pulls, the resize arrow of its direction (a box's or a
-  note's ends, a track's bottom edge, a divider); over a press that draws,
-  the crosshair (the pencil, a point Ctrl adds); and the arrow over buttons
-  and over everything a press only clicks. It is the press's own question
+  a press puts a caret in or selects, the I-beam (a field, the code, the
+  post window's lines, a documentation page's text, a sweep over samples);
+  over a link, the hand; over what a drag carries, the open hand, closed
+  while it is carried (a box, a note); over an edge a drag pulls, the
+  resize arrow of its direction (a box's or a note's ends, a track's bottom
+  edge, a divider); over a press that draws, the crosshair (the pencil, a
+  point Ctrl adds); over what a press takes away or cuts, the eraser and the
+  scissors, drawn from the host's icons; and the arrow over buttons and
+  over everything a press only clicks. It is the press's own question
   asked with no button down (`Element::pointer`), so a part that changes
   what a press does changes the pointer with it. A press keeps the shape it
   began with until the release: a selection swept out of the text keeps its
   I-beam over the line numbers. A part that says more than its widget's
   one tip names itself (`Element::tip_at`): a roll's note its pitch and
   velocity.
+- **Text that is read is selected as text.** The post window's lines and
+  a documentation page select by the one model a field does: a click
+  places the start, two take a word, three the paragraph, Shift extends,
+  the drag grows it by the same unit, and the copy key and the middle
+  button take it; a hover card's drag selects over the same reading of its
+  rows. A page is read as one text in reading order: a paragraph, a
+  heading and a line of code each end in a line break, the cells of a
+  table stand apart by a tab, and what is only drawn (a copy button, a
+  list's mark) is not text.
 
 ## Views and layers
 

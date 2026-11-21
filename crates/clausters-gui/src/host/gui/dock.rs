@@ -80,6 +80,15 @@ impl App {
     }
 
     /// Whether window `def_id` is a pane of the dock.
+    /// The display scale of shell `which`'s window.
+    pub(super) fn shell_scale(&self, which: Which) -> Option<f32> {
+        match which {
+            Which::Main => self.dock.as_ref(),
+            Which::Float(id) => self.floats.get(&id),
+        }
+        .map(|s| s.scale)
+    }
+
     pub(super) fn is_pane(&self, def_id: i32) -> bool {
         self.dock.as_ref().is_some_and(|s| s.layout.holds(def_id))
     }
@@ -306,6 +315,7 @@ impl App {
             floats,
             windows,
             host,
+            cursors,
             ..
         } = self;
         let mut handed = Handed::default();
@@ -365,7 +375,8 @@ impl App {
             if cursor != shell.cursor {
                 shell.cursor = cursor;
                 if let Some(window) = shell.gpu.window() {
-                    window.set_cursor(cursor.icon());
+                    let px = crate::host::pointer::pointer_px(shell.scale);
+                    window.set_cursor(cursors.cursor(cursor, px));
                 }
             }
             handed.take(dirty);

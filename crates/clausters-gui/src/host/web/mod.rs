@@ -319,6 +319,9 @@ struct WebApp {
     /// **The floating panels**: each window taken out of the dock, drawn
     /// under its panel's bar in a canvas of its own.
     floats: HashMap<i32, dock::WebShell>,
+    /// The pointer's shapes drawn from an icon, made once: a page's cursor
+    /// picture is in CSS pixels, one size at every density.
+    cursors: crate::host::pointer::Cursors,
     /// Live control-bus values streamed from the audio server (`/bus_stream` ->
     /// `/bus_stream.reply`), the browser's [`BusSource`] for meters/scopes/canvases.
     buses: Arc<StreamedBuses>,
@@ -443,6 +446,7 @@ impl WebApp {
             pending_dock: None,
             undocked: Default::default(),
             floats: HashMap::new(),
+            cursors: Default::default(),
             buses: Arc::new(StreamedBuses::default()),
             streamed: Vec::new(),
             taps: Arc::new(StreamedTaps::default()),

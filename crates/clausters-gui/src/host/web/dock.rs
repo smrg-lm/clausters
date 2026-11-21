@@ -416,6 +416,7 @@ impl WebApp {
             floats,
             canvases,
             host,
+            cursors,
             ..
         } = self;
         let mut handed = Handed::default();
@@ -476,7 +477,9 @@ impl WebApp {
             });
             if cursor != shell.cursor {
                 shell.cursor = cursor;
-                shell.window.set_cursor(cursor.icon());
+                shell
+                    .window
+                    .set_cursor(cursors.cursor(cursor, super::input::PAGE_POINTER_PX));
             }
             handed.take(dirty);
         }

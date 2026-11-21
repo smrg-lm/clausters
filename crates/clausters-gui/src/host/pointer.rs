@@ -12,7 +12,10 @@
 //! The front only sets what it is told, on its window: natively the
 //! platform's cursor theme, in a page the canvas's CSS `cursor`. Both are
 //! named by the one list below, by the CSS names, so the two fronts ask for
-//! the same cursor by construction, and the core names no windowing type.
+//! the same cursor by construction. A shape the list has no name for (the
+//! roll's eraser and scissors) is drawn from the host's icon of it and set
+//! as a picture ([`Cursors`]), on both fronts too; where a platform takes
+//! no picture, its named shape stands in ([`Pointer::named`]).
 
 /// **A pointer shape**, by its CSS name.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -45,12 +48,38 @@ pub enum Pointer {
     /// An edge or a value dragged up and down (`ns-resize`): a velocity,
     /// a segment's bend.
     NsResize,
+    /// The eraser: a press takes away what it lands on. Drawn from the
+    /// host's icon, the arrow where it cannot be.
+    Erase,
+    /// The scissors: a press cuts what it lands on there. Drawn from the
+    /// host's icon, the crosshair where it cannot be.
+    Cut,
 }
 
+/// The shapes drawn from an icon: the icon's name, and where in its box of
+/// 24 the point a press lands on is.
+const PICTURED: &[(Pointer, &str, (f32, f32))] = &[
+    // the corner the eraser rubs with
+    (Pointer::Erase, "eraser", (5.0, 19.0)),
+    // where the blades cross
+    (Pointer::Cut, "scissors", (12.0, 12.0)),
+];
+
 impl Pointer {
-    /// Its CSS name, which is the list both fronts name it by.
-    pub fn css(self) -> &'static str {
+    /// **The named shape it is, or stands in for**: itself, or for a shape
+    /// drawn from an icon the named one a platform shows in its place.
+    pub fn named(self) -> Pointer {
         match self {
+            Pointer::Erase => Pointer::Default,
+            Pointer::Cut => Pointer::Crosshair,
+            p => p,
+        }
+    }
+
+    /// Its CSS name, which is the list both fronts name it by (its named
+    /// shape's, for one drawn from an icon).
+    pub fn css(self) -> &'static str {
+        match self.named() {
             Pointer::Default => "default",
             Pointer::Hand => "pointer",
             Pointer::Text => "text",
@@ -62,6 +91,7 @@ impl Pointer {
             Pointer::RowResize => "row-resize",
             Pointer::EwResize => "ew-resize",
             Pointer::NsResize => "ns-resize",
+            Pointer::Erase | Pointer::Cut => unreachable!("a named shape"),
         }
     }
 
@@ -70,7 +100,7 @@ impl Pointer {
     /// (which the crate writes by the same name as [`Self::css`]).
     pub fn icon(self) -> winit::window::CursorIcon {
         use winit::window::CursorIcon;
-        match self {
+        match self.named() {
             Pointer::Default => CursorIcon::Default,
             Pointer::Hand => CursorIcon::Pointer,
             Pointer::Text => CursorIcon::Text,
@@ -82,6 +112,62 @@ impl Pointer {
             Pointer::RowResize => CursorIcon::RowResize,
             Pointer::EwResize => CursorIcon::EwResize,
             Pointer::NsResize => CursorIcon::NsResize,
+            Pointer::Erase | Pointer::Cut => unreachable!("a named shape"),
+        }
+    }
+}
+
+/// **The shapes drawn from an icon, made for a window's size**: the
+/// platform's picture of each, made once per size from the event loop (the
+/// one place a platform makes one), and the cursor a front sets.
+#[derive(Default)]
+pub struct Cursors {
+    made: std::collections::HashMap<(Pointer, u32), winit::window::CustomCursor>,
+}
+
+/// How large a pointer is drawn, in a window's logical pixels: the size of a
+/// platform's own.
+pub const POINTER_PX: f32 = 24.0;
+
+/// How many pixels square a pointer is drawn at a window's `scale`.
+pub fn pointer_px(scale: f32) -> u32 {
+    (POINTER_PX * scale).round().max(1.0) as u32
+}
+
+impl Cursors {
+    /// Makes the pictured shapes at `px` pixels square, the ones not made
+    /// yet.
+    pub fn make(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, px: u32) {
+        for &(p, name, (hx, hy)) in PICTURED {
+            if self.made.contains_key(&(p, px)) {
+                continue;
+            }
+            let Some(rgba) = clausters_gui_draw::font::outline::icon_pixels(name, px) else {
+                continue;
+            };
+            // the icon's box inside a pixel of margin ([`icon_pixels`])
+            let k = (px as f32 - 2.0).max(1.0) / 24.0;
+            let hot = |v: f32| ((1.0 + v * k).round() as u16).min(px as u16 - 1);
+            let Ok(source) = winit::window::CustomCursor::from_rgba(
+                rgba,
+                px as u16,
+                px as u16,
+                hot(hx),
+                hot(hy),
+            ) else {
+                continue;
+            };
+            self.made
+                .insert((p, px), event_loop.create_custom_cursor(source));
+        }
+    }
+
+    /// **The cursor for `p`** at `px` pixels: its picture when it is drawn
+    /// from an icon and was made, else its named shape.
+    pub fn cursor(&self, p: Pointer, px: u32) -> winit::window::Cursor {
+        match self.made.get(&(p, px)) {
+            Some(c) => c.clone().into(),
+            None => p.icon().into(),
         }
     }
 }
@@ -104,8 +190,30 @@ mod tests {
             Pointer::RowResize,
             Pointer::EwResize,
             Pointer::NsResize,
+            Pointer::Erase,
+            Pointer::Cut,
         ] {
             assert_eq!(p.icon().name(), p.css(), "{p:?}");
+        }
+    }
+
+    /// **A shape drawn from an icon is a picture of it**: black lines on a
+    /// white halo, clear around them, for every shape the list pictures.
+    #[test]
+    fn a_pictured_shape_is_its_icon_in_black_on_white() {
+        for &(_, name, _) in PICTURED {
+            let px = clausters_gui_draw::font::outline::icon_pixels(name, 24).expect(name);
+            assert_eq!(px.len(), 24 * 24 * 4);
+            let texels: Vec<&[u8; 4]> = px.as_chunks::<4>().0.iter().collect();
+            assert_eq!(texels[0][3], 0, "{name}: clear in its corner");
+            assert!(
+                texels.iter().any(|t| **t == [0, 0, 0, 255]),
+                "{name}: its lines"
+            );
+            assert!(
+                texels.iter().any(|t| **t == [255, 255, 255, 255]),
+                "{name}: its halo"
+            );
         }
     }
 }

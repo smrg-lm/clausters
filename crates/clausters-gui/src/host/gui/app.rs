@@ -27,6 +27,7 @@ use crate::host::frame::Batches;
 use crate::host::frame::{self, SlotAt, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::{Gestures, Wheel, WheelDelta};
 use crate::host::live::{self, TickFrame};
+use crate::host::pointer::pointer_px;
 use crate::host::widget::Widget;
 use crate::host::widget::element::Live;
 use crate::host::winit_keys::{command, to_key};
@@ -312,6 +313,8 @@ pub(super) struct App {
     /// **The floating panels**: each window taken out of the dock, drawn
     /// under its panel's bar in a window of its own.
     pub(super) floats: HashMap<i32, super::dock::Shell>,
+    /// The pointer's shapes drawn from an icon, made per size.
+    pub(super) cursors: crate::host::pointer::Cursors,
     /// What a window moving into or out of the dock carries to the window it
     /// opens as: its owner, its modifiers, its gesture machine, its
     /// histories.
@@ -372,6 +375,7 @@ impl App {
             dock: None,
             undocked: Default::default(),
             floats: HashMap::new(),
+            cursors: Default::default(),
             carried: HashMap::new(),
         }
     }
@@ -1313,12 +1317,20 @@ impl ApplicationHandler<UserEvent> for App {
         // the dock's window holds panes, each a window with no surface, and
         // so does a floating panel's
         if let Some(which) = self.shell_of(window_id) {
+            if let Some(scale) = self.shell_scale(which) {
+                self.cursors.make(event_loop, pointer_px(scale));
+            }
             self.dock_event(event_loop, which, event);
             return;
         }
         let Some(&def_id) = self.by_winit.get(&window_id) else {
             return;
         };
+        // the pointer's pictures at the window's size, before a gesture asks
+        if let Some(window) = self.windows.get(&def_id).and_then(|ws| ws.gpu.window()) {
+            let px = pointer_px(window.scale_factor() as f32);
+            self.cursors.make(event_loop, px);
+        }
         self.def_event(event_loop, def_id, event);
     }
 }
