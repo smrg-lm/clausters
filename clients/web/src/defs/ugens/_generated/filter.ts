@@ -141,3 +141,184 @@ export const bufAllpassC = (
     delaytime: Channel = 0.2,
     decaytime: Channel = 1.0,
 ): Ugen => new Ugen("BufAllpassC", [bufnum, chan, signal, delaytime, decaytime]);
+
+/** The input one sample late; `x1` is the sample it starts with. */
+export const delay1 = (signal: Channel, x1: Channel = 0.0): Ugen =>
+    new Ugen("Delay1", [signal, x1]);
+
+/** The input two samples late; `x1` and `x2` are the samples it starts with. */
+export const delay2 = (signal: Channel, x1: Channel = 0.0, x2: Channel = 0.0): Ugen =>
+    new Ugen("Delay2", [signal, x1, x2]);
+
+/** Two-point average, `0.5 (x0 + x1)`: a zero at Nyquist. */
+export const lpz1 = (signal: Channel): Ugen => new Ugen("LPZ1", [signal]);
+
+/** Two-point difference, `0.5 (x0 - x1)`: a zero at DC. */
+export const hpz1 = (signal: Channel): Ugen => new Ugen("HPZ1", [signal]);
+
+/** Two-zero lowpass, `0.25 (x0 + 2 x1 + x2)`. */
+export const lpz2 = (signal: Channel): Ugen => new Ugen("LPZ2", [signal]);
+
+/** Two-zero highpass, `0.25 (x0 - 2 x1 + x2)`. */
+export const hpz2 = (signal: Channel): Ugen => new Ugen("HPZ2", [signal]);
+
+/** Two-zero bandpass, `0.5 (x0 - x2)`: zeros at DC and Nyquist. */
+export const bpz2 = (signal: Channel): Ugen => new Ugen("BPZ2", [signal]);
+
+/** Two-zero band reject, `0.5 (x0 + x2)`: zeros at a quarter of the rate. */
+export const brz2 = (signal: Channel): Ugen => new Ugen("BRZ2", [signal]);
+
+/** The signal's rate of change per second, `rate (x0 - x1)`. */
+export const slope = (signal: Channel): Ugen => new Ugen("Slope", [signal]);
+
+/** Every other sample negated: the spectrum mirrored about a quarter of the rate. */
+export const flip = (signal: Channel): Ugen => new Ugen("Flip", [signal]);
+
+/** Two zeros at `freq` with `radius`. */
+export const twoZero = (
+    signal: Channel,
+    freq: Channel = 440.0,
+    radius: Channel = 0.8,
+): Ugen => new Ugen("TwoZero", [signal, freq, radius]);
+
+/**
+ * First-order section with its coefficients as inputs: `w = x + b1 w1`, `y = a0 w + a1 w1`.
+ */
+export const fos = (
+    signal: Channel,
+    a0: Channel = 0.0,
+    a1: Channel = 0.0,
+    b1: Channel = 0.0,
+): Ugen => new Ugen("FOS", [signal, a0, a1, b1]);
+
+/**
+ * Second-order section with its coefficients as inputs: `w = x + b1 w1 + b2 w2`, `y = a0 w + a1 w1 + a2 w2`.
+ */
+export const sos = (
+    signal: Channel,
+    a0: Channel = 0.0,
+    a1: Channel = 0.0,
+    a2: Channel = 0.0,
+    b1: Channel = 0.0,
+    b2: Channel = 0.0,
+): Ugen => new Ugen("SOS", [signal, a0, a1, a2, b1, b2]);
+
+/** The input sampled every `time` seconds and joined by straight lines. */
+export const ramp = (signal: Channel, time: Channel = 0.1): Ugen =>
+    new Ugen("Ramp", [signal, time]);
+
+/** The input followed at no more than `up` units per second rising and `down` falling. */
+export const slew = (signal: Channel, up: Channel = 1.0, down: Channel = 1.0): Ugen =>
+    new Ugen("Slew", [signal, up, down]);
+
+/** Two poles at `freq` with `radius`: a resonance. */
+export const twoPole = (
+    signal: Channel,
+    freq: Channel = 440.0,
+    radius: Channel = 0.8,
+): Ugen => new Ugen("TwoPole", [signal, freq, radius]);
+
+/** The two-pole allpass at `freq` with `radius`: phase only. */
+export const apf = (
+    signal: Channel,
+    freq: Channel = 440.0,
+    radius: Channel = 0.8,
+): Ugen => new Ugen("APF", [signal, freq, radius]);
+
+/** A resonator at `freq` ringing `decaytime` seconds to -60 dB. */
+export const ringz = (
+    signal: Channel,
+    freq: Channel = 440.0,
+    decaytime: Channel = 1.0,
+): Ugen => new Ugen("Ringz", [signal, freq, decaytime]);
+
+/** A resonance at `freq` that rises in `attacktime` and falls in `decaytime`. */
+export const formlet = (
+    signal: Channel,
+    freq: Channel = 440.0,
+    attacktime: Channel = 1.0,
+    decaytime: Channel = 1.0,
+): Ugen => new Ugen("Formlet", [signal, freq, attacktime, decaytime]);
+
+/** A boost or cut of `db` around `freq`, `rq` its bandwidth. */
+export const midEq = (
+    signal: Channel,
+    freq: Channel = 440.0,
+    rq: Channel = 1.0,
+    db: Channel = 0.0,
+): Ugen => new Ugen("MidEQ", [signal, freq, rq, db]);
+
+/** Cookbook lowpass biquad, `rq` the reciprocal of Q. */
+export const bLowPass = (
+    signal: Channel,
+    freq: Channel = 1200.0,
+    rq: Channel = 1.0,
+): Ugen => new Ugen("BLowPass", [signal, freq, rq]);
+
+/** Cookbook highpass biquad, `rq` the reciprocal of Q. */
+export const bHiPass = (
+    signal: Channel,
+    freq: Channel = 1200.0,
+    rq: Channel = 1.0,
+): Ugen => new Ugen("BHiPass", [signal, freq, rq]);
+
+/** Cookbook allpass biquad, `rq` the reciprocal of Q. */
+export const bAllPass = (
+    signal: Channel,
+    freq: Channel = 1200.0,
+    rq: Channel = 1.0,
+): Ugen => new Ugen("BAllPass", [signal, freq, rq]);
+
+/** Cookbook bandpass biquad, `bw` its bandwidth in octaves. */
+export const bBandPass = (
+    signal: Channel,
+    freq: Channel = 1200.0,
+    bw: Channel = 1.0,
+): Ugen => new Ugen("BBandPass", [signal, freq, bw]);
+
+/** Cookbook band-reject biquad, `bw` its bandwidth in octaves. */
+export const bBandStop = (
+    signal: Channel,
+    freq: Channel = 1200.0,
+    bw: Channel = 1.0,
+): Ugen => new Ugen("BBandStop", [signal, freq, bw]);
+
+/** Cookbook peaking EQ: `db` of boost or cut at `freq`, `rq` its width. */
+export const bPeakEq = (
+    signal: Channel,
+    freq: Channel = 1200.0,
+    rq: Channel = 1.0,
+    db: Channel = 0.0,
+): Ugen => new Ugen("BPeakEQ", [signal, freq, rq, db]);
+
+/** Cookbook low shelf: `db` below `freq`, `rs` the shelf's slope (1 the steepest). */
+export const bLowShelf = (
+    signal: Channel,
+    freq: Channel = 1200.0,
+    rs: Channel = 1.0,
+    db: Channel = 0.0,
+): Ugen => new Ugen("BLowShelf", [signal, freq, rs, db]);
+
+/** Cookbook high shelf: `db` above `freq`, `rs` the shelf's slope (1 the steepest). */
+export const bHiShelf = (
+    signal: Channel,
+    freq: Channel = 1200.0,
+    rs: Channel = 1.0,
+    db: Channel = 0.0,
+): Ugen => new Ugen("BHiShelf", [signal, freq, rs, db]);
+
+/** Two `lag`s in a row: a smoother start than one. */
+export const lag2 = (signal: Channel, time: Channel = 0.1): Ugen =>
+    new Ugen("Lag2", [signal, time]);
+
+/** Three `lag`s in a row. */
+export const lag3 = (signal: Channel, time: Channel = 0.1): Ugen =>
+    new Ugen("Lag3", [signal, time]);
+
+/** Two `lagUd`s in a row, each with separate rise and fall times. */
+export const lag2Ud = (signal: Channel, up: Channel = 0.1, down: Channel = 0.1): Ugen =>
+    new Ugen("Lag2UD", [signal, up, down]);
+
+/** Three `lagUd`s in a row. */
+export const lag3Ud = (signal: Channel, up: Channel = 0.1, down: Channel = 0.1): Ugen =>
+    new Ugen("Lag3UD", [signal, up, down]);

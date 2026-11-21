@@ -464,6 +464,10 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `local_out(channel, signal)` | writes a feedback channel, and passes `signal` through |
 | Smoothers | `lag(signal, time=0.1)` | one-pole smoother (symmetric); the same UGen a lagged control inserts, usable on any signal |
 | | `lag_ud(signal, up=0.1, down=0.1)` | one-pole smoother with separate rise / fall times |
+| | `lag2`, `lag3`, `lag2_ud`, `lag3_ud`, `ramp(signal, time)`, `slew(signal, up, down)` | cascaded smoothers, a segmented line, a rate limiter |
+| | `lpz1`, `hpz1`, `lpz2`, `hpz2`, `bpz2`, `brz2`, `slope`, `flip`, `delay1`, `delay2` | scsynth's fixed FIRs and one- and two-sample delays |
+| | `two_pole`, `two_zero`, `apf`, `ringz`, `formlet`, `mid_eq`, `fos`, `sos` | pole/zero sections and resonators |
+| | `b_low_pass`, `b_hi_pass`, `b_all_pass`, `b_band_pass`, `b_band_stop`, `b_peak_eq`, `b_low_shelf`, `b_hi_shelf` | the cookbook biquads (BEQSuite) |
 | | `var_lag(signal, time=0.1, start=None)` | a straight line to each new value, taking `time` seconds, from `start` (the signal itself unless given) |
 | Scalar (`ir`) | `sample_rate()` | the engine sample rate in Hz, computed once at init |
 | | `rand(lo=0.0, hi=1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |
@@ -578,6 +582,10 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `localOut(channel, signal)` | writes a feedback channel, and passes `signal` through |
 | Smoothers | `lag(signal, time = 0.1)` | one-pole smoother (symmetric); the same UGen a lagged control inserts, usable on any signal |
 | | `lagUd(signal, up = 0.1, down = 0.1)` | one-pole smoother with separate rise / fall times |
+| | `lag2`, `lag3`, `lag2Ud`, `lag3Ud`, `ramp(signal, time)`, `slew(signal, up, down)` | cascaded smoothers, a segmented line, a rate limiter |
+| | `lpz1`, `hpz1`, `lpz2`, `hpz2`, `bpz2`, `brz2`, `slope`, `flip`, `delay1`, `delay2` | scsynth's fixed FIRs and one- and two-sample delays |
+| | `twoPole`, `twoZero`, `apf`, `ringz`, `formlet`, `midEq`, `fos`, `sos` | pole/zero sections and resonators |
+| | `bLowPass`, `bHiPass`, `bAllPass`, `bBandPass`, `bBandStop`, `bPeakEq`, `bLowShelf`, `bHiShelf` | the cookbook biquads (BEQSuite) |
 | | `varLag(signal, time = 0.1, start?)` | a straight line to each new value, taking `time` seconds, from `start` (the signal itself unless given) |
 | Scalar (`ir`) | `sampleRate()` | the engine sample rate in Hz, computed once at init |
 | | `rand(lo = 0.0, hi = 1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |

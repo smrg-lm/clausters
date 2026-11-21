@@ -637,6 +637,24 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `Resonz` | signal, freq (Hz), rq | scsynth's two-pole resonator, its zeros at DC and Nyquist and its poles placed by radius: near unity at the centre for a narrow bandwidth, and not the same response as `BPF` at a wide one |
 | `BRF` | signal, freq (Hz), rq | band reject: unity in both passbands, a true null at `freq` |
 | `Svf` | signal, freq (Hz), rq, low, band, high | the state-variable filter with its three tap gains as **signal inputs**, so the response is modulable. Lowpass = `1,0,0`; bandpass (unity peak) = `0,rq,0`; highpass = `0,0,1`; notch = `1,0,1`; peak = `-1,0,1`; allpass = `1,-rq,1` |
+| `LPZ1`, `HPZ1`, `LPZ2`, `HPZ2`, `BPZ2`, `BRZ2` | signal | scsynth's fixed FIRs: two-point average and difference, and the two-zero low, high, band and band-reject sections |
+| `Slope` | signal | the rate of change per second, `rate·(x0 − x1)` |
+| `Flip` | signal | every other sample negated, the first among them: the spectrum mirrored about a quarter of the rate |
+| `Delay1`, `Delay2` | signal, x1 [, x2] (optional) | the input one or two samples late, starting from `x1` (and `x2`) |
+| `TwoPole`, `TwoZero`, `APF` | signal, freq (Hz), radius | two poles, two zeros, or the two-pole allpass, at `freq` with `radius`. scsynth's `APF` is the identity in exact arithmetic (only its unrolled loop's misread state lets anything else through); this is the allpass its documentation describes |
+| `Ringz` | signal, freq (Hz), decaytime (s) | a resonator ringing `decaytime` to −60 dB |
+| `Formlet` | signal, freq (Hz), attacktime (s), decaytime (s) | a resonance rising in `attacktime`, falling in `decaytime`: two `Ringz`, the slower minus the faster |
+| `MidEQ` | signal, freq (Hz), rq, db | the input plus a bandpass: `db` of boost or cut around `freq` |
+| `BLowPass`, `BHiPass`, `BAllPass` | signal, freq (Hz), rq | the cookbook biquads of scsynth's BEQSuite |
+| `BBandPass`, `BBandStop` | signal, freq (Hz), bw (octaves) | the cookbook band biquads |
+| `BPeakEQ` | signal, freq (Hz), rq, db | cookbook peaking EQ |
+| `BLowShelf`, `BHiShelf` | signal, freq (Hz), rs, db | cookbook shelves; `rs` the slope, 1 the steepest |
+| `FOS` | signal, a0, a1, b1 | first-order section with its coefficients as inputs, direct form |
+| `SOS` | signal, a0, a1, a2, b1, b2 | second-order section with its coefficients as inputs, direct form |
+| `Ramp` | signal, time (s) | the input sampled every `time` and joined by straight lines |
+| `Slew` | signal, up, down | the input followed at no more than `up` units per second rising and `down` falling |
+| `Lag2`, `Lag3` | signal, time | two or three `Lag`s in a row |
+| `Lag2UD`, `Lag3UD` | signal, up, down | two or three `LagUD`s in a row (scsynth's `Lag3UD` reads the second stage's comparison for its third; here each stage reads its own) |
 | `OnePole` | signal, coef | `y[n] = (1−\|c\|)·x[n] + c·y[n−1]` — lowpass for a positive coefficient, highpass for a negative one. The parameter is the **pole**, not a cutoff |
 | `OneZero` | signal, coef | `y[n] = (1−\|c\|)·x[n] + c·x[n−1]` |
 | `LeakDC` | signal, coef | DC blocker: a zero exactly at 0 Hz with a pole just inside it |

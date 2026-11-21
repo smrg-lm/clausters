@@ -310,6 +310,166 @@ fn cases() -> Vec<Case> {
         )
         .source("noise"),
         Case::new(
+            "delay1",
+            json!([input(), {"kind": "Delay1", "inputs": [u(0), c(0.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "delay2",
+            json!([input(), {"kind": "Delay2", "inputs": [u(0), c(0.0), c(0.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "lpz1",
+            json!([input(), {"kind": "LPZ1", "inputs": [u(0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "hpz1",
+            json!([input(), {"kind": "HPZ1", "inputs": [u(0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "lpz2",
+            json!([input(), {"kind": "LPZ2", "inputs": [u(0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "hpz2",
+            json!([input(), {"kind": "HPZ2", "inputs": [u(0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "bpz2",
+            json!([input(), {"kind": "BPZ2", "inputs": [u(0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "brz2",
+            json!([input(), {"kind": "BRZ2", "inputs": [u(0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "slope",
+            json!([input(), {"kind": "Slope", "inputs": [u(0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "flip",
+            json!([input(), {"kind": "Flip", "inputs": [u(0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "twozero",
+            json!([input(), {"kind": "TwoZero", "inputs": [u(0), c(800.0), c(0.9)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "fos",
+            json!([input(), {"kind": "FOS", "inputs": [u(0), c(0.5), c(0.3), c(0.6)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "sos",
+            json!([input(), {"kind": "SOS", "inputs": [u(0), c(0.3), c(0.2), c(0.1), c(1.2), c(-0.5)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "ramp",
+            json!([input(), {"kind": "Ramp", "inputs": [u(0), c(0.002)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "slew",
+            json!([input(), {"kind": "Slew", "inputs": [u(0), c(400.0), c(900.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "twopole",
+            json!([input(), {"kind": "TwoPole", "inputs": [u(0), c(800.0), c(0.9)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "apf",
+            json!([input(), {"kind": "APF", "inputs": [u(0), c(800.0), c(0.9)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "ringz",
+            json!([input(), {"kind": "Ringz", "inputs": [u(0), c(1200.0), c(0.05)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "formlet",
+            json!([input(), {"kind": "Formlet", "inputs": [u(0), c(900.0), c(0.002), c(0.01)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "mideq",
+            json!([input(), {"kind": "MidEQ", "inputs": [u(0), c(1000.0), c(0.5), c(6.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "blowpass",
+            json!([input(), {"kind": "BLowPass", "inputs": [u(0), c(1500.0), c(0.7)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "bhipass",
+            json!([input(), {"kind": "BHiPass", "inputs": [u(0), c(1500.0), c(0.7)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "ballpass",
+            json!([input(), {"kind": "BAllPass", "inputs": [u(0), c(1500.0), c(0.7)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "bbandpass",
+            json!([input(), {"kind": "BBandPass", "inputs": [u(0), c(1500.0), c(1.2)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "bbandstop",
+            json!([input(), {"kind": "BBandStop", "inputs": [u(0), c(1500.0), c(1.2)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "bpeakeq",
+            json!([input(), {"kind": "BPeakEQ", "inputs": [u(0), c(1500.0), c(0.7), c(-9.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "blowshelf",
+            json!([input(), {"kind": "BLowShelf", "inputs": [u(0), c(600.0), c(1.0), c(6.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "bhishelf",
+            json!([input(), {"kind": "BHiShelf", "inputs": [u(0), c(3000.0), c(1.0), c(-6.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "lag2",
+            json!([input(), {"kind": "Lag2", "inputs": [u(0), c(0.003)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "lag3",
+            json!([input(), {"kind": "Lag3", "inputs": [u(0), c(0.003)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "lag2ud",
+            json!([input(), {"kind": "Lag2UD", "inputs": [u(0), c(0.002), c(0.006)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "lag3ud",
+            json!([input(), {"kind": "Lag3UD", "inputs": [u(0), c(0.002), c(0.006)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
             "lagud",
             json!([input(), {"kind": "LagUD", "inputs": [u(0), c(0.004), c(0.02)]}, out(1)]),
         )

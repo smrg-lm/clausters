@@ -40,6 +40,9 @@ use std::f64::consts::PI;
 
 use crate::dsp::{ProcessCtx, UGen, at};
 
+/// `ln(0.001)`: a decay time is the time to fall 60 dB.
+const LOG001: f64 = -6.907_755_278_982_137;
+
 /// Which filter a row is: scsynth's coefficient formula for the named rows,
 /// or the tap gains as inputs for `Svf`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -58,8 +61,40 @@ pub enum SvfMode {
     Resonz,
     /// Band reject: `BRF`.
     Notch,
+    /// Two poles at `freq` with a radius from input 2: `TwoPole`.
+    TwoPole,
+    /// The two-pole allpass at `freq` with a radius from input 2: `APF`.
+    Allpass,
+    /// A resonator ringing `decaytime` seconds (input 2) to -60 dB: `Ringz`.
+    Ringz,
+    /// A boost or cut of `db` (input 3) around `freq`, `rq` its bandwidth:
+    /// `MidEQ`.
+    MidEq,
+    /// The cookbook biquads of scsynth's `BEQSuite`: `BLowPass`, `BHiPass`,
+    /// `BAllPass` (input 2 `rq`), `BBandPass`, `BBandStop` (input 2 `bw`, in
+    /// octaves), `BPeakEQ` (`rq`, then `db`), `BLowShelf`, `BHiShelf` (`rs`,
+    /// the shelf's slope, then `db`).
+    BLowPass,
+    BHiPass,
+    BAllPass,
+    BBandPass,
+    BBandStop,
+    BPeakEq,
+    BLowShelf,
+    BHiShelf,
     /// The three tap gains are signal inputs 3, 4 and 5: `Svf`.
     Mix,
+}
+
+impl SvfMode {
+    /// How many parameters the row reads after the signal and the cutoff.
+    fn params(self) -> usize {
+        match self {
+            SvfMode::Lp | SvfMode::Hp => 0,
+            SvfMode::MidEq | SvfMode::BPeakEq | SvfMode::BLowShelf | SvfMode::BHiShelf => 2,
+            _ => 1,
+        }
+    }
 }
 
 /// A two-pole section as scsynth writes one: `w[n] = x[n] + b1 w[n-1] + b2
@@ -73,10 +108,11 @@ pub struct Biquad {
 }
 
 impl Biquad {
-    /// scsynth's coefficients for `mode` at cutoff `freq` (Hz) and `rq`, at
-    /// `sr`. `freq` is kept inside `(0, sr/2)`, where every formula is
-    /// defined.
-    pub fn scsynth(mode: SvfMode, freq: f64, rq: f64, sr: f64) -> Self {
+    /// scsynth's coefficients for `mode` at cutoff `freq` (Hz), with the
+    /// row's parameter `rq` (or radius, decay time, bandwidth, shelf slope)
+    /// and its gain `db` where it has one, at `sr`. `freq` is kept inside
+    /// `(0, sr/2)`, where every formula is defined.
+    pub fn scsynth(mode: SvfMode, freq: f64, rq: f64, db: f64, sr: f64) -> Self {
         let freq = freq.clamp(1e-3, sr * 0.4999);
         let w = freq * 2.0 * PI / sr;
         // scsynth's `sqrt2_f`: the float, not the double.
@@ -153,6 +189,151 @@ impl Biquad {
                     n: [a0, 0.0, -a0],
                     b1: 2.0 * r * cost,
                     b2: -r2,
+                }
+            }
+            SvfMode::TwoPole | SvfMode::Allpass => {
+                let (b1, b2) = (2.0 * rq * w.cos(), -(rq * rq));
+                if mode == SvfMode::TwoPole {
+                    Self {
+                        n: [1.0, 0.0, 0.0],
+                        b1,
+                        b2,
+                    }
+                } else {
+                    // The allpass with those poles: the numerator is the
+                    // denominator reversed. (scsynth's `APF` is the identity
+                    // in exact arithmetic -- its recurrence subtracts the
+                    // input's history from the output's with the same
+                    // coefficients -- and only its unrolled loop's misread
+                    // state makes it pass anything but its input; this is the
+                    // filter its documentation describes.)
+                    Self {
+                        n: [-b2, -b1, 1.0],
+                        b1,
+                        b2,
+                    }
+                }
+            }
+            SvfMode::Ringz => {
+                let r = if rq == 0.0 {
+                    0.0
+                } else {
+                    (LOG001 / (rq * sr)).exp()
+                };
+                let (two_r, r2) = (2.0 * r, r * r);
+                let cost = (two_r * w.cos()) / (1.0 + r2);
+                Self {
+                    n: [0.5, 0.0, -0.5],
+                    b1: two_r * cost,
+                    b2: -r2,
+                }
+            }
+            SvfMode::MidEq => {
+                let amp = 10f64.powf(db / 20.0) - 1.0;
+                let c = 1.0 / (rq * w * 0.5).tan();
+                let d = 2.0 * w.cos();
+                let a0 = 1.0 / (1.0 + c);
+                let (b1, b2) = (c * d * a0, (1.0 - c) * a0);
+                let a0 = a0 * amp;
+                // The input plus the bandpass: `x + a0 (w0 - w2)`.
+                Self {
+                    n: [1.0 + a0, -b1, -b2 - a0],
+                    b1,
+                    b2,
+                }
+            }
+            SvfMode::BLowPass | SvfMode::BHiPass => {
+                let cosw = w.cos();
+                let alpha = w.sin() * 0.5 * rq;
+                let b0rz = 1.0 / (1.0 + alpha);
+                let i = if mode == SvfMode::BLowPass {
+                    1.0 - cosw
+                } else {
+                    1.0 + cosw
+                };
+                let a0 = i * 0.5 * b0rz;
+                let a1 = if mode == SvfMode::BLowPass {
+                    i * b0rz
+                } else {
+                    -i * b0rz
+                };
+                Self {
+                    n: [a0, a1, a0],
+                    b1: cosw * 2.0 * b0rz,
+                    b2: (1.0 - alpha) * -b0rz,
+                }
+            }
+            SvfMode::BAllPass => {
+                let alpha = w.sin() * 0.5 * rq;
+                let b0rz = 1.0 / (1.0 + alpha);
+                let b1 = w.cos() * 2.0 * b0rz;
+                let a0 = (1.0 - alpha) * b0rz;
+                Self {
+                    n: [a0, -b1, 1.0],
+                    b1,
+                    b2: -a0,
+                }
+            }
+            SvfMode::BBandPass | SvfMode::BBandStop => {
+                let alpha = w.sin() * ((0.346_573_590_279_97 * rq * w) / w.sin()).sinh();
+                let b0rz = 1.0 / (1.0 + alpha);
+                let b1 = w.cos() * 2.0 * b0rz;
+                let b2 = (1.0 - alpha) * -b0rz;
+                if mode == SvfMode::BBandPass {
+                    let a0 = alpha * b0rz;
+                    Self {
+                        n: [a0, 0.0, -a0],
+                        b1,
+                        b2,
+                    }
+                } else {
+                    Self {
+                        n: [b0rz, -b1, b0rz],
+                        b1,
+                        b2,
+                    }
+                }
+            }
+            SvfMode::BPeakEq => {
+                let a = 10f64.powf(db * 0.025);
+                let alpha = w.sin() * 0.5 * rq;
+                let b0rz = 1.0 / (1.0 + alpha / a);
+                let b1 = 2.0 * b0rz * w.cos();
+                Self {
+                    n: [(1.0 + alpha * a) * b0rz, -b1, (1.0 - alpha * a) * b0rz],
+                    b1,
+                    b2: (1.0 - alpha / a) * -b0rz,
+                }
+            }
+            SvfMode::BLowShelf | SvfMode::BHiShelf => {
+                let a = 10f64.powf(db * 0.025);
+                let (sinw, cosw) = (w.sin(), w.cos());
+                let alpha = sinw * 0.5 * ((a + 1.0 / a) * (rq - 1.0) + 2.0).sqrt();
+                let i = (a + 1.0) * cosw;
+                let j = (a - 1.0) * cosw;
+                let k = 2.0 * a.sqrt() * alpha;
+                if mode == SvfMode::BLowShelf {
+                    let b0rz = 1.0 / ((a + 1.0) + j + k);
+                    Self {
+                        n: [
+                            a * ((a + 1.0) - j + k) * b0rz,
+                            2.0 * a * ((a - 1.0) - i) * b0rz,
+                            a * ((a + 1.0) - j - k) * b0rz,
+                        ],
+                        b1: 2.0 * ((a - 1.0) + i) * b0rz,
+                        b2: ((a + 1.0) + j - k) * -b0rz,
+                    }
+                } else {
+                    let b0rz = 1.0 / ((a + 1.0) - j + k);
+                    Self {
+                        n: [
+                            a * ((a + 1.0) + j + k) * b0rz,
+                            -2.0 * a * ((a - 1.0) + i) * b0rz,
+                            a * ((a + 1.0) + j - k) * b0rz,
+                        ],
+                        b1: -2.0 * ((a - 1.0) - i) * b0rz,
+                        b2: -((a + 1.0) - j - k) * b0rz,
+                    }
                 }
             }
             SvfMode::Mix => unreachable!("Svf takes its taps as inputs"),
@@ -255,7 +436,7 @@ pub struct Svf {
     ic2: f64,
     /// Where the last slice left the parameters, and the inputs they came
     /// from (recomputed only when those move).
-    params: Option<(Params, f32, f32)>,
+    params: Option<(Params, [f32; 3])>,
 }
 
 impl Svf {
@@ -280,10 +461,10 @@ impl Svf {
         (v2, v1, v0 - c.k * v1 - v2)
     }
 
-    fn params(&self, freq: f32, rq: f32, sr: f64) -> Params {
+    fn params(&self, [freq, rq, db]: [f32; 3], sr: f64) -> Params {
         match self.mode {
             SvfMode::Mix => Params::cutoff(freq as f64, rq as f64, sr),
-            mode => Biquad::scsynth(mode, freq as f64, rq as f64, sr).svf(),
+            mode => Biquad::scsynth(mode, freq as f64, rq as f64, db as f64, sr).svf(),
         }
     }
 }
@@ -295,24 +476,30 @@ impl UGen for Svf {
 
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let sr = ctx.sample_rate as f64;
-        let (sig, freq) = (inputs[0], inputs[1]);
-        let rq = match self.mode {
-            SvfMode::Lp | SvfMode::Hp => &[0.0][..],
-            _ => inputs[2],
-        };
+        let sig = inputs[0];
         let n = output.len();
         if n == 0 {
             return;
         }
-        let (f, r) = (freq[freq.len() - 1], rq[rq.len() - 1]);
-        let target = match self.params {
-            Some((p, pf, pr)) if pf == f && pr == r => p,
-            _ => self.params(f, r, sr),
+        let last = |x: &[f32]| x[x.len() - 1];
+        let count = if self.mode == SvfMode::Mix {
+            1
+        } else {
+            self.mode.params()
         };
-        let mut c = self.params.map_or(target, |(p, _, _)| p);
+        let key = [
+            last(inputs[1]),
+            if count >= 1 { last(inputs[2]) } else { 0.0 },
+            if count >= 2 { last(inputs[3]) } else { 0.0 },
+        ];
+        let target = match self.params {
+            Some((p, k)) if k == key => p,
+            _ => self.params(key, sr),
+        };
+        let mut c = self.params.map_or(target, |(p, _)| p);
         let d = c.delta(&target, n);
         let ramp = c != target;
-        self.params = Some((target, f, r));
+        self.params = Some((target, key));
 
         // Only the mix row carries tap gains as inputs.
         let taps = (self.mode == SvfMode::Mix).then(|| (inputs[3], inputs[4], inputs[5]));
@@ -393,6 +580,41 @@ impl UGen for OneFilter {
             self.x1 = x;
             self.y1 = y;
             *s = y as f32;
+        }
+    }
+}
+
+/// `Formlet(in, freq, attacktime, decaytime)`: a resonance that rises in
+/// `attacktime` and falls in `decaytime` -- scsynth's, the difference of two
+/// `Ringz` sections at `freq`, the slower ringing minus the faster, halved.
+pub struct Formlet {
+    decay: Svf,
+    attack: Svf,
+}
+
+impl Default for Formlet {
+    fn default() -> Self {
+        Self {
+            decay: Svf::new(SvfMode::Ringz),
+            attack: Svf::new(SvfMode::Ringz),
+        }
+    }
+}
+
+impl UGen for Formlet {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let n = output.len();
+        let mut fast = [0.0f32; crate::dsp::BLOCK_SIZE];
+        self.decay
+            .process(ctx, &[inputs[0], inputs[1], inputs[3]], output);
+        self.attack
+            .process(ctx, &[inputs[0], inputs[1], inputs[2]], &mut fast[..n]);
+        for (s, a) in output.iter_mut().zip(&fast[..n]) {
+            *s = 0.5 * (*s - a);
         }
     }
 }

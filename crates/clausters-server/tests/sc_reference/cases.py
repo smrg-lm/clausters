@@ -90,6 +90,7 @@ def cases() -> list[dict]:
         _envelopes,
         _demand,
         _random,
+        _sections,
     ]:
         out.extend(f())
     return out
@@ -704,4 +705,33 @@ def _random() -> list[dict]:
     g.add("RandID", "ir", 5)
     g.add("WhiteNoise", "ar")
     out.append(case("RandID.ir", g, 4, seed=24, shift=1, why=_PRIMED))
+    return out
+
+
+def _sections() -> list[dict]:
+    """scsynth's small sections and the two-pole rows with named parameters."""
+    out = []
+    for kind in ["LPZ1", "HPZ1", "LPZ2", "HPZ2", "BPZ2", "BRZ2", "Slope", "Flip"]:
+        for rate, blocks in [("ar", 4), ("kr", 32)]:
+            out.append(through(f"{kind}.{rate}", kind, rate, blocks=blocks, source=lambda g, r=rate: sig(g, r)))
+    out.append(through("Delay1.ar", "Delay1", "ar", 0.3))
+    out.append(through("Delay2.ar", "Delay2", "ar", 0.3, -0.2))
+    for kind, params in [
+        ("TwoPole", [800, 0.95]), ("TwoZero", [800, 0.9]), ("Ringz", [1200, 0.01]),
+        ("Formlet", [900, 0.002, 0.01]), ("MidEQ", [1000, 0.5, 6]),
+        ("BLowPass", [1500, 0.7]), ("BHiPass", [1500, 0.7]), ("BAllPass", [1500, 0.7]),
+        ("BBandPass", [1500, 1.2]), ("BBandStop", [1500, 1.2]), ("BPeakEQ", [1500, 0.7, -9]),
+        ("BLowShelf", [600, 1, 6]), ("BHiShelf", [3000, 1, -6]),
+    ]:  # fmt: skip
+        loose = {"tol": 5e-5, "why": "a resonance near a gain of ten amplifies the two realizations' rounding"}
+        out.append(through(f"{kind}.sig", kind, "ar", *params, **(loose if kind == "TwoPole" else {})))
+        out.append(through(f"{kind}.imp", kind, "ar", *params, source=impulse, blocks=8))
+    out.append(through("FOS.ar", "FOS", "ar", 0.5, 0.3, 0.6))
+    out.append(through("SOS.ar", "SOS", "ar", 0.3, 0.2, 0.1, 1.2, -0.5))
+    out.append(through("Ramp.ar", "Ramp", "ar", 0.0007, blocks=8))
+    out.append(through("Slew.ar", "Slew", "ar", 400, 900))
+    # Not Lag3UD: scsynth's third stage reads the second's comparison, a
+    # copy of the line above it, where the server's reads its own.
+    for kind, params in [("Lag2", [0.001]), ("Lag3", [0.001]), ("Lag2UD", [0.0005, 0.002])]:
+        out.append(through(f"{kind}.ar", kind, "ar", *params, blocks=6))
     return out

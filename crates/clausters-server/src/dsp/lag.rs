@@ -252,3 +252,67 @@ impl UGen for VarLag {
         }
     }
 }
+
+/// `Lag2`, `Lag3`, `Lag2UD`, `Lag3UD`: two or three of the one-poles in a
+/// row, which rounds the corner a single one leaves at the start of a change
+/// -- scsynth's cascades, state in `f64` as scsynth's is. Inputs 0 `in`, 1 the
+/// lag time (`Lag2`, `Lag3`) or 1 `up` and 2 `down` (the `UD` pair), each stage
+/// choosing its own time by whether its input is above its state. (scsynth's
+/// `Lag3UD` chooses its third stage's time by the second stage's comparison,
+/// a copy of the line above it; here each stage reads its own, as `Lag2UD`
+/// does.)
+pub struct LagCascade {
+    stages: usize,
+    ud: bool,
+    y: [f64; 3],
+    b1: [Ramp; 2],
+    primed: bool,
+}
+
+impl LagCascade {
+    pub fn new(stages: usize, ud: bool) -> Self {
+        Self {
+            stages: stages.clamp(1, 3),
+            ud,
+            y: [0.0; 3],
+            b1: [Ramp::default(); 2],
+            primed: false,
+        }
+    }
+}
+
+impl UGen for LagCascade {
+    fn reset(&mut self) {
+        *self = Self::new(self.stages, self.ud);
+    }
+
+    fn resume(&mut self) {
+        self.primed = false;
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let n = output.len();
+        let sr = ctx.sample_rate;
+        let times = if self.ud { 2 } else { 1 };
+        let mut b = [(0.0f64, 0.0f64); 2];
+        for k in 0..times {
+            b[k] = self.b1[k].toward(coeff(inputs[1 + k][0], sr) as f64, n);
+        }
+        if !self.primed {
+            self.primed = true;
+            self.y = [inputs[0][0] as f64; 3];
+        }
+        for (i, out) in output.iter_mut().enumerate() {
+            for slot in b.iter_mut().take(times) {
+                slot.0 += slot.1;
+            }
+            let mut x = at(inputs[0], i) as f64;
+            for y in self.y.iter_mut().take(self.stages) {
+                let c = if self.ud && x <= *y { b[1].0 } else { b[0].0 };
+                *y = x + c * (*y - x);
+                x = *y;
+            }
+            *out = x as f32;
+        }
+    }
+}

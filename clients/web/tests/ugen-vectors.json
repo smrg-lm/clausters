@@ -1,6 +1,24 @@
 {
   "kinds": [
     {
+      "name": "APF",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "radius",
+          "default": 0.800000011920929
+        }
+      ]
+    },
+    {
       "name": "Add",
       "arity": 2,
       "inputs": [
@@ -69,6 +87,140 @@
       ]
     },
     {
+      "name": "BAllPass",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 1200.0
+        },
+        {
+          "name": "rq",
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "BBandPass",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 1200.0
+        },
+        {
+          "name": "bw",
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "BBandStop",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 1200.0
+        },
+        {
+          "name": "bw",
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "BHiPass",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 1200.0
+        },
+        {
+          "name": "rq",
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "BHiShelf",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 1200.0
+        },
+        {
+          "name": "rs",
+          "default": 1.0
+        },
+        {
+          "name": "db",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "BLowPass",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 1200.0
+        },
+        {
+          "name": "rq",
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "BLowShelf",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 1200.0
+        },
+        {
+          "name": "rs",
+          "default": 1.0
+        },
+        {
+          "name": "db",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "BPF",
       "arity": 3,
       "inputs": [
@@ -87,6 +239,38 @@
       ]
     },
     {
+      "name": "BPZ2",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "BPeakEQ",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 1200.0
+        },
+        {
+          "name": "rq",
+          "default": 1.0
+        },
+        {
+          "name": "db",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "BRF",
       "arity": 3,
       "inputs": [
@@ -101,6 +285,16 @@
         {
           "name": "rq",
           "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "BRZ2",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
         }
       ]
     },
@@ -697,6 +891,38 @@
       ]
     },
     {
+      "name": "Delay1",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "x1",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Delay2",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "x1",
+          "default": 0.0
+        },
+        {
+          "name": "x2",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "DelayC",
       "arity": 2,
       "inputs": [
@@ -1103,6 +1329,38 @@
       ]
     },
     {
+      "name": "FOS",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "a0",
+          "default": 0.0
+        },
+        {
+          "name": "a1",
+          "default": 0.0
+        },
+        {
+          "name": "b1",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Flip",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Fold",
       "arity": 3,
       "inputs": [
@@ -1116,6 +1374,28 @@
         },
         {
           "name": "hi",
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "Formlet",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "attacktime",
+          "default": 1.0
+        },
+        {
+          "name": "decaytime",
           "default": 1.0
         }
       ]
@@ -1170,6 +1450,26 @@
         {
           "name": "freq",
           "default": 440.0
+        }
+      ]
+    },
+    {
+      "name": "HPZ1",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "HPZ2",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
         }
       ]
     },
@@ -1346,6 +1646,26 @@
       ]
     },
     {
+      "name": "LPZ1",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "LPZ2",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Lag",
       "arity": 2,
       "inputs": [
@@ -1355,6 +1675,70 @@
         },
         {
           "name": "time",
+          "default": 0.10000000149011612
+        }
+      ]
+    },
+    {
+      "name": "Lag2",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "time",
+          "default": 0.10000000149011612
+        }
+      ]
+    },
+    {
+      "name": "Lag2UD",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "up",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "down",
+          "default": 0.10000000149011612
+        }
+      ]
+    },
+    {
+      "name": "Lag3",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "time",
+          "default": 0.10000000149011612
+        }
+      ]
+    },
+    {
+      "name": "Lag3UD",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "up",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "down",
           "default": 0.10000000149011612
         }
       ]
@@ -1527,6 +1911,28 @@
         },
         {
           "name": "hold",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "MidEQ",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "rq",
+          "default": 1.0
+        },
+        {
+          "name": "db",
           "default": 0.0
         }
       ]
@@ -2137,6 +2543,20 @@
       ]
     },
     {
+      "name": "Ramp",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "time",
+          "default": 0.10000000149011612
+        }
+      ]
+    },
+    {
       "name": "Rand",
       "arity": 2,
       "inputs": [
@@ -2297,6 +2717,24 @@
       ]
     },
     {
+      "name": "Ringz",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "decaytime",
+          "default": 1.0
+        }
+      ]
+    },
+    {
       "name": "Rotate2",
       "arity": 4,
       "inputs": [
@@ -2314,6 +2752,36 @@
         },
         {
           "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "SOS",
+      "arity": 6,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "a0",
+          "default": 0.0
+        },
+        {
+          "name": "a1",
+          "default": 0.0
+        },
+        {
+          "name": "a2",
+          "default": 0.0
+        },
+        {
+          "name": "b1",
+          "default": 0.0
+        },
+        {
+          "name": "b2",
           "default": 0.0
         }
       ]
@@ -2441,6 +2909,34 @@
         },
         {
           "name": "phase",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Slew",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "up",
+          "default": 1.0
+        },
+        {
+          "name": "down",
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "Slope",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
           "default": 0.0
         }
       ]
@@ -2823,6 +3319,42 @@
         {
           "name": "hold",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "TwoPole",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "radius",
+          "default": 0.800000011920929
+        }
+      ]
+    },
+    {
+      "name": "TwoZero",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "radius",
+          "default": 0.800000011920929
         }
       ]
     },

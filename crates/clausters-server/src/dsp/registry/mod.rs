@@ -24,11 +24,11 @@ use crate::dsp::demand::{
 };
 use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::envgen::{EnvGen, EnvShape};
-use crate::dsp::filter::{OneFilter, OneKind, Svf, SvfMode};
+use crate::dsp::filter::{Formlet, OneFilter, OneKind, Svf, SvfMode};
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, OutCtl, ReplaceOut};
-use crate::dsp::lag::{Lag, LagUD, VarLag};
+use crate::dsp::lag::{Lag, LagCascade, LagUD, VarLag};
 use crate::dsp::line::{Line, LineShape};
 use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::nodectl::{SelfControl, WhenDone, WhenDoneMode};
@@ -45,6 +45,7 @@ use crate::dsp::randop::RandOp;
 use crate::dsp::rangemap::RangeMap;
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::SampleRate;
+use crate::dsp::sections::{Fir, FirKind, Flip, Fos, LineRamp, SampleDelay, Slew, Sos, TwoZero};
 use crate::dsp::sine::Sine;
 use crate::dsp::spectral::{
     CombineOp, Fft, Ifft, MagMode, PvBinShift, PvBrickWall, PvCombine, PvKernel, PvMag,
@@ -486,6 +487,26 @@ const fn desc_selects(d: UGenDescriptor) -> UGenDescriptor {
         random: RandomRole::Selects,
         ..d
     }
+}
+
+/// The plainest row: a signal processor at audio or control rate, audio by
+/// default, with one fixed input per name -- most of scsynth's library.
+const fn plain(
+    name: &'static str,
+    inputs: &'static [UGenInput],
+    build: fn(&UGenConfig, &BuildCtx) -> Box<dyn UGen>,
+) -> UGenDescriptor {
+    desc(
+        name,
+        Arity::Fixed(inputs.len()),
+        inputs,
+        Rate::Ar,
+        R_KR_AR,
+        ExecMode::Normal,
+        BusRole::None,
+        false,
+        build,
+    )
 }
 
 /// Compact descriptor constructor (keeps `UGENS` readable as a table): a plain

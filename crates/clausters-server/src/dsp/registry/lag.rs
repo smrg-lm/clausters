@@ -41,4 +41,19 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(VarLag::new()),
     ),
+    // --- the one-poles in a row ---
+    plain("Lag2", &[inp("signal", 0.0), inp("time", 0.1)], |_, _| {
+        Box::new(LagCascade::new(2, false))
+    }),
+    plain("Lag3", &[inp("signal", 0.0), inp("time", 0.1)], |_, _| {
+        Box::new(LagCascade::new(3, false))
+    }),
+    plain("Lag2UD", I_LAG_UD, |_, _| {
+        Box::new(LagCascade::new(2, true))
+    }),
+    plain("Lag3UD", I_LAG_UD, |_, _| {
+        Box::new(LagCascade::new(3, true))
+    }),
 ];
+
+const I_LAG_UD: &[UGenInput] = &[inp("signal", 0.0), inp("up", 0.1), inp("down", 0.1)];

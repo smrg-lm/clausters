@@ -916,7 +916,11 @@ entropy, reported either way.
 - **Some of scsynth's quirks are not ported.** Its `Dxrand` never starts on
   the list's first item; its `rrand` operator scales a bipolar draw and reaches
   below `lo`. Here the first is uniform over the list and the second over the
-  range, as sclang's own `rrand` is.
+  range, as sclang's own `rrand` is. The same goes outside the random UGens:
+  scsynth's `APF` is the identity in exact arithmetic (only its unrolled
+  loop's misread state passes anything else) and is the allpass its
+  documentation describes here, and its `Lag3UD` chooses the third stage's
+  time by the second's comparison, where here each stage reads its own.
 
 ## The pan law is a polynomial, not a table, and it is evaluated per sample
 

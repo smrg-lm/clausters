@@ -27,6 +27,38 @@ __all__ = [
     "buf_allpass_n",
     "buf_allpass_l",
     "buf_allpass_c",
+    "delay1",
+    "delay2",
+    "lpz1",
+    "hpz1",
+    "lpz2",
+    "hpz2",
+    "bpz2",
+    "brz2",
+    "slope",
+    "flip",
+    "two_zero",
+    "fos",
+    "sos",
+    "ramp",
+    "slew",
+    "two_pole",
+    "apf",
+    "ringz",
+    "formlet",
+    "mid_eq",
+    "b_low_pass",
+    "b_hi_pass",
+    "b_all_pass",
+    "b_band_pass",
+    "b_band_stop",
+    "b_peak_eq",
+    "b_low_shelf",
+    "b_hi_shelf",
+    "lag2",
+    "lag3",
+    "lag2_ud",
+    "lag3_ud",
 ]
 
 
@@ -130,3 +162,172 @@ def buf_allpass_l(bufnum, chan, signal, delaytime=0.2, decaytime=1.0) -> Ugen:
 def buf_allpass_c(bufnum, chan, signal, delaytime=0.2, decaytime=1.0) -> Ugen:
     """`allpass_c` over a channel of a pool buffer."""
     return Ugen("BufAllpassC", [bufnum, chan, signal, delaytime, decaytime])
+
+
+def delay1(signal, x1=0.0) -> Ugen:
+    """The input one sample late; `x1` is the sample it starts with."""
+    return Ugen("Delay1", [signal, x1])
+
+
+def delay2(signal, x1=0.0, x2=0.0) -> Ugen:
+    """The input two samples late; `x1` and `x2` are the samples it starts with.
+    """
+    return Ugen("Delay2", [signal, x1, x2])
+
+
+def lpz1(signal) -> Ugen:
+    """Two-point average, `0.5 (x0 + x1)`: a zero at Nyquist."""
+    return Ugen("LPZ1", [signal])
+
+
+def hpz1(signal) -> Ugen:
+    """Two-point difference, `0.5 (x0 - x1)`: a zero at DC."""
+    return Ugen("HPZ1", [signal])
+
+
+def lpz2(signal) -> Ugen:
+    """Two-zero lowpass, `0.25 (x0 + 2 x1 + x2)`."""
+    return Ugen("LPZ2", [signal])
+
+
+def hpz2(signal) -> Ugen:
+    """Two-zero highpass, `0.25 (x0 - 2 x1 + x2)`."""
+    return Ugen("HPZ2", [signal])
+
+
+def bpz2(signal) -> Ugen:
+    """Two-zero bandpass, `0.5 (x0 - x2)`: zeros at DC and Nyquist."""
+    return Ugen("BPZ2", [signal])
+
+
+def brz2(signal) -> Ugen:
+    """Two-zero band reject, `0.5 (x0 + x2)`: zeros at a quarter of the rate.
+    """
+    return Ugen("BRZ2", [signal])
+
+
+def slope(signal) -> Ugen:
+    """The signal's rate of change per second, `rate (x0 - x1)`."""
+    return Ugen("Slope", [signal])
+
+
+def flip(signal) -> Ugen:
+    """Every other sample negated: the spectrum mirrored about a quarter of the rate.
+    """
+    return Ugen("Flip", [signal])
+
+
+def two_zero(signal, freq=440.0, radius=0.8) -> Ugen:
+    """Two zeros at `freq` with `radius`."""
+    return Ugen("TwoZero", [signal, freq, radius])
+
+
+def fos(signal, a0=0.0, a1=0.0, b1=0.0) -> Ugen:
+    """First-order section with its coefficients as inputs: `w = x + b1 w1`, `y = a0 w + a1 w1`.
+    """
+    return Ugen("FOS", [signal, a0, a1, b1])
+
+
+def sos(signal, a0=0.0, a1=0.0, a2=0.0, b1=0.0, b2=0.0) -> Ugen:
+    """Second-order section with its coefficients as inputs: `w = x + b1 w1 + b2 w2`, `y = a0 w + a1 w1 + a2 w2`.
+    """
+    return Ugen("SOS", [signal, a0, a1, a2, b1, b2])
+
+
+def ramp(signal, time=0.1) -> Ugen:
+    """The input sampled every `time` seconds and joined by straight lines."""
+    return Ugen("Ramp", [signal, time])
+
+
+def slew(signal, up=1.0, down=1.0) -> Ugen:
+    """The input followed at no more than `up` units per second rising and `down` falling.
+    """
+    return Ugen("Slew", [signal, up, down])
+
+
+def two_pole(signal, freq=440.0, radius=0.8) -> Ugen:
+    """Two poles at `freq` with `radius`: a resonance."""
+    return Ugen("TwoPole", [signal, freq, radius])
+
+
+def apf(signal, freq=440.0, radius=0.8) -> Ugen:
+    """The two-pole allpass at `freq` with `radius`: phase only."""
+    return Ugen("APF", [signal, freq, radius])
+
+
+def ringz(signal, freq=440.0, decaytime=1.0) -> Ugen:
+    """A resonator at `freq` ringing `decaytime` seconds to -60 dB."""
+    return Ugen("Ringz", [signal, freq, decaytime])
+
+
+def formlet(signal, freq=440.0, attacktime=1.0, decaytime=1.0) -> Ugen:
+    """A resonance at `freq` that rises in `attacktime` and falls in `decaytime`.
+    """
+    return Ugen("Formlet", [signal, freq, attacktime, decaytime])
+
+
+def mid_eq(signal, freq=440.0, rq=1.0, db=0.0) -> Ugen:
+    """A boost or cut of `db` around `freq`, `rq` its bandwidth."""
+    return Ugen("MidEQ", [signal, freq, rq, db])
+
+
+def b_low_pass(signal, freq=1200.0, rq=1.0) -> Ugen:
+    """Cookbook lowpass biquad, `rq` the reciprocal of Q."""
+    return Ugen("BLowPass", [signal, freq, rq])
+
+
+def b_hi_pass(signal, freq=1200.0, rq=1.0) -> Ugen:
+    """Cookbook highpass biquad, `rq` the reciprocal of Q."""
+    return Ugen("BHiPass", [signal, freq, rq])
+
+
+def b_all_pass(signal, freq=1200.0, rq=1.0) -> Ugen:
+    """Cookbook allpass biquad, `rq` the reciprocal of Q."""
+    return Ugen("BAllPass", [signal, freq, rq])
+
+
+def b_band_pass(signal, freq=1200.0, bw=1.0) -> Ugen:
+    """Cookbook bandpass biquad, `bw` its bandwidth in octaves."""
+    return Ugen("BBandPass", [signal, freq, bw])
+
+
+def b_band_stop(signal, freq=1200.0, bw=1.0) -> Ugen:
+    """Cookbook band-reject biquad, `bw` its bandwidth in octaves."""
+    return Ugen("BBandStop", [signal, freq, bw])
+
+
+def b_peak_eq(signal, freq=1200.0, rq=1.0, db=0.0) -> Ugen:
+    """Cookbook peaking EQ: `db` of boost or cut at `freq`, `rq` its width."""
+    return Ugen("BPeakEQ", [signal, freq, rq, db])
+
+
+def b_low_shelf(signal, freq=1200.0, rs=1.0, db=0.0) -> Ugen:
+    """Cookbook low shelf: `db` below `freq`, `rs` the shelf's slope (1 the steepest).
+    """
+    return Ugen("BLowShelf", [signal, freq, rs, db])
+
+
+def b_hi_shelf(signal, freq=1200.0, rs=1.0, db=0.0) -> Ugen:
+    """Cookbook high shelf: `db` above `freq`, `rs` the shelf's slope (1 the steepest).
+    """
+    return Ugen("BHiShelf", [signal, freq, rs, db])
+
+
+def lag2(signal, time=0.1) -> Ugen:
+    """Two `lag`s in a row: a smoother start than one."""
+    return Ugen("Lag2", [signal, time])
+
+
+def lag3(signal, time=0.1) -> Ugen:
+    """Three `lag`s in a row."""
+    return Ugen("Lag3", [signal, time])
+
+
+def lag2_ud(signal, up=0.1, down=0.1) -> Ugen:
+    """Two `lag_ud`s in a row, each with separate rise and fall times."""
+    return Ugen("Lag2UD", [signal, up, down])
+
+
+def lag3_ud(signal, up=0.1, down=0.1) -> Ugen:
+    """Three `lag_ud`s in a row."""
+    return Ugen("Lag3UD", [signal, up, down])

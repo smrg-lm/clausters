@@ -94,7 +94,7 @@ export {
     bufDelayL, bufDelayN, bufDur, bufRateScale, bufRd, bufSampleRate, bufWr, chans,
     clipCount, control, conv, dbrown, dbufrd, demand, dgeom, dibrown, diskIn,
     diskOut, diwhite, drand, dseq, dseries, dshuf, dstutter, dswitch1, dup, duty,
-    dwhite, dxrand, envGen, envShape, fft, ifft, impulse, in_, inCtl, lag, lagUd, localIn,
+    dwhite, dxrand, envGen, envShape, fft, ifft, impulse, in_, inCtl, lag, lagUd, delay1, delay2, lpz1, hpz1, lpz2, hpz2, bpz2, brz2, slope, flip, twoZero, fos, sos, ramp, slew, twoPole, apf, ringz, formlet, midEq, bLowPass, bHiPass, bAllPass, bBandPass, bBandStop, bPeakEq, bLowShelf, bHiShelf, lag2, lag3, lag2Ud, lag3Ud, localIn,
     localOut, madd, meter, mix, osc, oscN, out, outCtl, partconvFrames, playBuf,
     poll, pvAdd, pvBinShift, pvBrickWall, pvCopyPhase, pvKernel, pvMagAbove,
     pvMagBelow, pvMagClip, pvMagFreeze, pvMagMul, pvMagShift, pvMagSmear, pvMax,

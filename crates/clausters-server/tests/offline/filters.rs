@@ -95,7 +95,7 @@ fn section(kind: &str, f: f32, fc: f32, rq: f32) -> f64 {
         "Resonz" => SvfMode::Resonz,
         _ => unreachable!(),
     };
-    let b = Biquad::scsynth(mode, fc as f64, rq as f64, SR as f64);
+    let b = Biquad::scsynth(mode, fc as f64, rq as f64, 0.0, SR as f64);
     let w = 2.0 * PI * f as f64 / SR as f64;
     // e^-jw and e^-2jw.
     let (c1, s1) = (w.cos(), -w.sin());

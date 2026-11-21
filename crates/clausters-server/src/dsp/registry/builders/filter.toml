@@ -218,3 +218,259 @@ why = "`max_delay` is a static field: it sizes the line"
 [[hand]]
 kind = "AllpassC"
 why = "`max_delay` is a static field: it sizes the line"
+
+[[ugen]]
+kind = "Delay1"
+builder = "delay1"
+required = ["signal"]
+doc = '''
+The input one sample late; `x1` is the sample it starts with.
+'''
+
+[[ugen]]
+kind = "Delay2"
+builder = "delay2"
+required = ["signal"]
+doc = '''
+The input two samples late; `x1` and `x2` are the samples it starts with.
+'''
+
+[[ugen]]
+kind = "LPZ1"
+builder = "lpz1"
+required = ["signal"]
+doc = '''
+Two-point average, `0.5 (x0 + x1)`: a zero at Nyquist.
+'''
+
+[[ugen]]
+kind = "HPZ1"
+builder = "hpz1"
+required = ["signal"]
+doc = '''
+Two-point difference, `0.5 (x0 - x1)`: a zero at DC.
+'''
+
+[[ugen]]
+kind = "LPZ2"
+builder = "lpz2"
+required = ["signal"]
+doc = '''
+Two-zero lowpass, `0.25 (x0 + 2 x1 + x2)`.
+'''
+
+[[ugen]]
+kind = "HPZ2"
+builder = "hpz2"
+required = ["signal"]
+doc = '''
+Two-zero highpass, `0.25 (x0 - 2 x1 + x2)`.
+'''
+
+[[ugen]]
+kind = "BPZ2"
+builder = "bpz2"
+required = ["signal"]
+doc = '''
+Two-zero bandpass, `0.5 (x0 - x2)`: zeros at DC and Nyquist.
+'''
+
+[[ugen]]
+kind = "BRZ2"
+builder = "brz2"
+required = ["signal"]
+doc = '''
+Two-zero band reject, `0.5 (x0 + x2)`: zeros at a quarter of the rate.
+'''
+
+[[ugen]]
+kind = "Slope"
+builder = "slope"
+required = ["signal"]
+doc = '''
+The signal's rate of change per second, `rate (x0 - x1)`.
+'''
+
+[[ugen]]
+kind = "Flip"
+builder = "flip"
+required = ["signal"]
+doc = '''
+Every other sample negated: the spectrum mirrored about a quarter of the rate.
+'''
+
+[[ugen]]
+kind = "TwoZero"
+builder = "two_zero"
+required = ["signal"]
+doc = '''
+Two zeros at `freq` with `radius`.
+'''
+
+[[ugen]]
+kind = "FOS"
+builder = "fos"
+required = ["signal"]
+doc = '''
+First-order section with its coefficients as inputs: `w = x + b1 w1`, `y = a0 w + a1 w1`.
+'''
+
+[[ugen]]
+kind = "SOS"
+builder = "sos"
+required = ["signal"]
+doc = '''
+Second-order section with its coefficients as inputs: `w = x + b1 w1 + b2 w2`, `y = a0 w + a1 w1 + a2 w2`.
+'''
+
+[[ugen]]
+kind = "Ramp"
+builder = "ramp"
+required = ["signal"]
+doc = '''
+The input sampled every `time` seconds and joined by straight lines.
+'''
+
+[[ugen]]
+kind = "Slew"
+builder = "slew"
+required = ["signal"]
+doc = '''
+The input followed at no more than `up` units per second rising and `down` falling.
+'''
+
+[[ugen]]
+kind = "TwoPole"
+builder = "two_pole"
+required = ["signal"]
+doc = '''
+Two poles at `freq` with `radius`: a resonance.
+'''
+
+[[ugen]]
+kind = "APF"
+builder = "apf"
+required = ["signal"]
+doc = '''
+The two-pole allpass at `freq` with `radius`: phase only.
+'''
+
+[[ugen]]
+kind = "Ringz"
+builder = "ringz"
+required = ["signal"]
+doc = '''
+A resonator at `freq` ringing `decaytime` seconds to -60 dB.
+'''
+
+[[ugen]]
+kind = "Formlet"
+builder = "formlet"
+required = ["signal"]
+doc = '''
+A resonance at `freq` that rises in `attacktime` and falls in `decaytime`.
+'''
+
+[[ugen]]
+kind = "MidEQ"
+builder = "mid_eq"
+required = ["signal"]
+doc = '''
+A boost or cut of `db` around `freq`, `rq` its bandwidth.
+'''
+
+[[ugen]]
+kind = "BLowPass"
+builder = "b_low_pass"
+required = ["signal"]
+doc = '''
+Cookbook lowpass biquad, `rq` the reciprocal of Q.
+'''
+
+[[ugen]]
+kind = "BHiPass"
+builder = "b_hi_pass"
+required = ["signal"]
+doc = '''
+Cookbook highpass biquad, `rq` the reciprocal of Q.
+'''
+
+[[ugen]]
+kind = "BAllPass"
+builder = "b_all_pass"
+required = ["signal"]
+doc = '''
+Cookbook allpass biquad, `rq` the reciprocal of Q.
+'''
+
+[[ugen]]
+kind = "BBandPass"
+builder = "b_band_pass"
+required = ["signal"]
+doc = '''
+Cookbook bandpass biquad, `bw` its bandwidth in octaves.
+'''
+
+[[ugen]]
+kind = "BBandStop"
+builder = "b_band_stop"
+required = ["signal"]
+doc = '''
+Cookbook band-reject biquad, `bw` its bandwidth in octaves.
+'''
+
+[[ugen]]
+kind = "BPeakEQ"
+builder = "b_peak_eq"
+required = ["signal"]
+doc = '''
+Cookbook peaking EQ: `db` of boost or cut at `freq`, `rq` its width.
+'''
+
+[[ugen]]
+kind = "BLowShelf"
+builder = "b_low_shelf"
+required = ["signal"]
+doc = '''
+Cookbook low shelf: `db` below `freq`, `rs` the shelf's slope (1 the steepest).
+'''
+
+[[ugen]]
+kind = "BHiShelf"
+builder = "b_hi_shelf"
+required = ["signal"]
+doc = '''
+Cookbook high shelf: `db` above `freq`, `rs` the shelf's slope (1 the steepest).
+'''
+
+[[ugen]]
+kind = "Lag2"
+builder = "lag2"
+required = ["signal"]
+doc = '''
+Two `lag`s in a row: a smoother start than one.
+'''
+
+[[ugen]]
+kind = "Lag3"
+builder = "lag3"
+required = ["signal"]
+doc = '''
+Three `lag`s in a row.
+'''
+
+[[ugen]]
+kind = "Lag2UD"
+builder = "lag2_ud"
+required = ["signal"]
+doc = '''
+Two `lag_ud`s in a row, each with separate rise and fall times.
+'''
+
+[[ugen]]
+kind = "Lag3UD"
+builder = "lag3_ud"
+required = ["signal"]
+doc = '''
+Three `lag_ud`s in a row.
+'''
