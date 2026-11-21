@@ -3480,3 +3480,29 @@ standing, so a script's picture of a menu it just opened is the menu.
 `[gui] motion = false`, `--no-motion` and `/gui_motion 0` (both clients'
 `GuiHost.motion`) turn it off for the whole host, as its look is the
 host's.
+
+## Two departures from the reference look, confirmed: a quiet button by default, and a menu on every panel (2026-11-21)
+
+The style review that closed the look's track left two differences from
+the reference design named for the user to confirm, and the user
+confirmed both, measured against what design systems and docking
+interfaces commonly do.
+
+**A button that names no `variant` is `secondary`, and an application
+names `default` for the action its form is for.** The reference's button
+with no variant is its primary fill. The host's has been the quiet one
+since scripts first drew rows of buttons, and most design systems agree
+with it: a plain button is neutral and the emphasis is a choice made for
+one action, the one Enter in the form's field presses. Making the primary
+fill the default would have turned every script's row of buttons into a
+row of calls to action, and the applications would have had to name
+`secondary` everywhere to undo it. So the applications name `default`
+(the variant and the default action) on OK and Save, and nothing
+else changes.
+
+**Every panel's bar carries the dock's panel menu**, which the
+reference has none of. A menu of the panel's own actions in its header
+(close, move, take it out of the dock), often repeated as the context
+menu of its tab, is what interfaces with dockable panels commonly have;
+without it, those actions are reachable only by dragging or by the
+application's menus. It stays, in every bar.
