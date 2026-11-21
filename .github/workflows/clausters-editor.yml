@@ -19,10 +19,12 @@ on:
     paths:
       - "crates/clausters-editor/**"
       - ".github/workflows/clausters-editor.yml"
+      - "third_party/verovio.pin"
   pull_request:
     paths:
       - "crates/clausters-editor/**"
       - ".github/workflows/clausters-editor.yml"
+      - "third_party/verovio.pin"
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:
@@ -55,6 +57,17 @@ jobs:
           tool: cargo-about@0.9.2
       - run: npm ci
         working-directory: crates/clausters-editor/page
+      # libverovio's license is read from its pinned source, which a checkout
+      # does not carry (third_party/verovio is ignored, and the composite
+      # restores only the built library): the one file, at the pinned commit.
+      - name: libverovio's license, from the pinned source
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          . third_party/verovio.pin
+          mkdir -p third_party/verovio
+          curl -fsSL "$VEROVIO_ORIGIN/raw/$VEROVIO_SHA/COPYING.LESSER" \
+            -o third_party/verovio/COPYING.LESSER
       - run: node scripts/notices.mjs --check
 
   # The Python package (`pip install clausters-editor`, or clausters[editor]).

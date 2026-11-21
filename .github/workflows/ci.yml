@@ -14,9 +14,10 @@
 # to upgrade the commit or LLVM version (either changes the cache key).
 #
 # libverovio works the same way (`.github/actions/verovio`, pinned by
-# third_party/verovio.pin) but is needed by the `python` job alone: nothing in
-# the Rust workspace links it -- the notation track is client-side, and the
-# library is staged into the Python package and bound with ctypes.
+# third_party/verovio.pin) and is needed by two jobs: `python`, which stages it
+# into the Python package and binds it with ctypes, and `gui`, which tests the
+# code editor, whose default `score` feature links it through the GUI host. The
+# server links it nowhere, so the server's test rows exclude the editor.
 
 name: CI
 
@@ -144,13 +145,13 @@ jobs:
         # The GUI host sits out for the same reason from the other side: it
         # links the application engine with `realtime` and its default `synth`,
         # which unified onto the server would make both rows test a server that
-        # has features they exist to test it without. Its own tests are the
-        # `gui` job's.
+        # has features they exist to test it without. The code editor links
+        # the host, so it sits out with it. Their own tests are the `gui` job's.
         include:
           - name: no-features
-            flags: --no-default-features --exclude clausters-web --exclude clausters-nrt-web --exclude clausters-gui
+            flags: --no-default-features --exclude clausters-web --exclude clausters-nrt-web --exclude clausters-gui --exclude clausters-editor
           - name: synth-only
-            flags: --no-default-features --features synth --exclude clausters-web --exclude clausters-nrt-web --exclude clausters-gui
+            flags: --no-default-features --features synth --exclude clausters-web --exclude clausters-nrt-web --exclude clausters-gui --exclude clausters-editor
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/rust
@@ -168,6 +169,10 @@ jobs:
     name: gui tests + wasm gates (host + engine)
     runs-on: ubuntu-26.04
     timeout-minutes: 20
+    # The code editor's default `score` feature links libverovio through the
+    # host's engraver.
+    env:
+      VEROVIO_PREFIX: /home/runner/.local
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/rust
@@ -179,8 +184,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libasound2-dev clang
+      - uses: ./.github/actions/verovio
+        with:
+          prefix: ${{ env.VEROVIO_PREFIX }}
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p clausters-gui
+      # The code editor links the host, so it is tested here rather than with
+      # the server's rows, and with its default features: the score editor.
+      - run: cargo test -p clausters-editor
       # Browser-readiness gate: the agnostic host core must keep
       # compiling for wasm32 with the native I/O shell excluded.
       - name: wasm build gate (GUI host)
@@ -271,9 +282,9 @@ jobs:
     needs: libfaust
     runs-on: ubuntu-26.04
     timeout-minutes: 20
-    # Scoped to this job: it is the only one that stages the Python package, and
-    # nothing in the Rust workspace links verovio. The pinned commit lives in
-    # third_party/verovio.pin, read by the .github/actions/verovio composite.
+    # The only job that stages the Python package, libverovio included. The
+    # pinned commit lives in third_party/verovio.pin, read by the
+    # .github/actions/verovio composite.
     env:
       VEROVIO_PREFIX: /home/runner/.local
       # Refuse every CLAUSTERS_SKIP_*: this job stages a whole package or none.
@@ -445,8 +456,8 @@ jobs:
       # occurrence landed.
       - uses: ./.github/actions/coredump
       - run: bash third_party/prepare-clap.sh
-      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui
-      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui --features embed
+      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui --exclude clausters-editor
+      - run: ulimit -c unlimited && cargo test --workspace --exclude clausters-gui --exclude clausters-editor --features embed
       - uses: ./.github/actions/coredump
         if: failure()
         with:
